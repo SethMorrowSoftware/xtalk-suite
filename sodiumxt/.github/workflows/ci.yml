@@ -1,0 +1,226 @@
+name: CI
+
+# Builds the native sodiumxt library for the full platform matrix, runs the C
+# smoke test on each, and uploads each platform's binary as an artifact (the
+# `bundle` job collects them into the src/code/<arch>-<platform>/ layout the
+# packaged extension expects). Also runs the gcc ASan/UBSan suite and the LCB
+# static gate. Now that the repo is public, GitHub-hosted runners execute these.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    name: LCB static gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python tools/check-livecodescript.py
+
+  # Integrity gate for the committed native blobs: every src/code/<id>/sodiumxt.*
+  # must be listed in src/code/MANIFEST.sha256 and match its recorded SHA256. This
+  # catches a committed binary that was swapped or corrupted without the manifest
+  # being regenerated (tools/package-extension.py, and the commit-binaries job on
+  # main, keep the manifest in step). It does NOT prove a blob matches its source
+  # - that comes from the native/commit-binaries jobs rebuilding every platform
+  # from the pinned libsodium - so this is the tamper/drift check that pairs with
+  # that rebuild.
+  verify-binaries:
+    name: committed binaries match MANIFEST.sha256
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every committed blob is listed, and every listed blob matches
+        run: |
+          cd src/code
+          test -f MANIFEST.sha256 || { echo "src/code/MANIFEST.sha256 is missing"; exit 1; }
+          # Fail if a sodiumxt.* blob exists that the manifest does not list.
+          missing=0
+          while IFS= read -r blob; do
+            rel="${blob#./}"
+            if ! grep -q -F "  $rel" MANIFEST.sha256; then
+              echo "committed blob not listed in MANIFEST.sha256: $rel"
+              missing=1
+            fi
+          done < <(find . -type f \( -name 'sodiumxt.so' -o -name 'sodiumxt.dll' -o -name 'sodiumxt.dylib' \))
+          [ "$missing" -eq 0 ] || exit 1
+          # Every listed blob exists and matches its recorded hash.
+          sha256sum -c MANIFEST.sha256
+
+  sanitizers:
+    name: ASan + UBSan (gcc)
+    runs-on: ubuntu-latest
+    env:
+      CC: gcc
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build-asan -DSODIUMXT_BUILD_TESTS=ON -DSODIUMXT_SANITIZE=ON
+      - run: cmake --build build-asan
+      - run: ctest --test-dir build-asan --output-on-failure
+
+  native:
+    name: native (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: x86_64-linux
+            ext: so
+          - os: ubuntu-latest
+            platform: x86-linux
+            ext: so
+            multilib: true
+            configure_args: "-DCMAKE_C_FLAGS=-m32 -DSODIUMXT_LIBSODIUM_CFLAGS=-m32 -DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=i686-pc-linux-gnu"
+          - os: macos-latest
+            platform: universal-mac
+            ext: dylib
+            configure_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DSODIUMXT_LIBSODIUM_CFLAGS="-arch arm64 -arch x86_64"'
+          - os: windows-latest
+            platform: x86_64-win32
+            ext: dll
+            msvc_arch: amd64
+            triplet: x64-windows-static
+          - os: windows-latest
+            platform: x86-win32
+            ext: dll
+            msvc_arch: x86
+            triplet: x86-windows-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install 32-bit toolchain (Linux x86)
+        if: matrix.multilib
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      - name: Install libsodium via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install libsodium:${{ matrix.triplet }}
+
+      # Set up the MSVC toolchain in the shell, then build with the NMake
+      # generator. This avoids the "Visual Studio NN" generator's VS-instance
+      # detection (which fails on the current runner image), and the matching
+      # msvc_arch gives us a native x64 or x86 cl.exe.
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Configure, build, test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSODIUMXT_BUILD_TESTS=ON ${{ matrix.configure_args }}
+          cmake --build build --config Release -j
+          ctest --test-dir build --output-on-failure
+
+      - name: Configure, build, test (Windows / MSVC + vcpkg)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DSODIUMXT_BUILD_TESTS=ON `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Package the native library
+        run: python tools/package-extension.py --build-dir build --platform-id ${{ matrix.platform }}
+
+      - name: Upload native library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sodiumxt-${{ matrix.platform }}
+          path: src/code/${{ matrix.platform }}/sodiumxt.${{ matrix.ext }}
+          if-no-files-found: error
+
+  bundle:
+    name: bundle all platforms
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: staged
+      - name: Lay out the src/code/<arch>-<platform>/ tree
+        run: |
+          mkdir -p src/code
+          for d in staged/sodiumxt-*; do
+            id="$(basename "$d" | sed 's/^sodiumxt-//')"
+            mkdir -p "src/code/$id"
+            cp "$d"/* "src/code/$id/"
+          done
+          echo "Bundled native libraries:"
+          find src/code -type f | sort
+      - name: Upload the combined bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sodiumxt-all-platforms
+          path: src/code/**
+          if-no-files-found: error
+
+  # Commit the freshly built binaries back into src/code/<arch>-<platform>/ so a
+  # clone has a working extension on EVERY platform (not just whatever was built
+  # and committed by hand). Runs only on main: it lays the per-platform artifacts
+  # into the tree and commits them with [skip ci], which GitHub honours so the
+  # commit does NOT retrigger this workflow (no loop). A normal merge to main thus
+  # produces one follow-up binary-refresh commit.
+  #
+  # Requires the workflow token to be able to push to main: this needs
+  # `contents: write` (below) AND, if main is a protected branch, an allowance for
+  # GitHub Actions to push to it (or this job will fail at `git push`).
+  commit-binaries:
+    name: commit native binaries to main
+    needs: native
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          path: staged
+          pattern: sodiumxt-*
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Lay binaries into src/code/<arch>-<platform>/
+        run: |
+          for d in staged/sodiumxt-*; do
+            id="$(basename "$d" | sed 's/^sodiumxt-//')"
+            [ "$id" = "all-platforms" ] && continue   # the combined bundle, not a platform
+            mkdir -p "src/code/$id"
+            cp "$d"/* "src/code/$id/"
+          done
+          echo "Native libraries staged into src/code:"
+          find src/code -type f | sort
+      - name: Regenerate the binary provenance manifest
+        run: python tools/package-extension.py --manifest-only
+      - name: Commit refreshed binaries (loop-guarded with [skip ci])
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- src/code; then
+            echo "Binaries unchanged; nothing to commit."
+            exit 0
+          fi
+          git add src/code
+          git commit -m "ci: refresh bundled native binaries for all platforms [skip ci]"
+          git push origin HEAD:main

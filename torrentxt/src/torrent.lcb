@@ -1,0 +1,1970 @@
+library org.openxtalk.library.torrent
+
+-- torrent.lcb - the LCB binding for TorrentXT (library
+-- org.openxtalk.library.torrent). It declares one `private foreign handler`
+-- per btx_* symbol in src/btx_abi.h and wraps each in a `public bt*` handler
+-- that hides every handle, pre-sizes and reuses the poll/status buffers, walks
+-- the big-endian KV records by byte arithmetic, and never throws into script.
+--
+-- The FFI idiom for byte buffers. An LCB Data does NOT auto-bridge to a C
+-- `void*` (the Language Reference is explicit: "No automatic bridging from Data
+-- or String to Pointer exists" - a Data marshals as an MCDataRef). So, matching
+-- the proven htmltidy/HIDAPI bindings:
+--   * OUTPUT buffers (C fills them) are raw blocks from the engine <builtin>
+--     MCMemoryAllocate, passed as a real Pointer. C returns bytes-written (or the
+--     negative of the capacity it needed, so we grow and retry), then we copy the
+--     written bytes back into a Data with MCDataCreateWithBytes and walk them.
+--   * INPUT buffers (C reads them) pass MCDataGetBytePtr(theData) - the read-only
+--     pointer to a Data's own bytes - together with `the number of bytes in` it.
+--   * records are walked with `the code of (byte I of D)` (big-endian u16) and
+--     `byte X to Y of D` for sub-ranges - exactly midi.lcb's `midiPoll`.
+--   * every foreign call sits inside `unsafe ... end unsafe`; all `variable`s
+--     are declared at the top of their handler.
+--
+-- The numeric constants below MIRROR src/btx_record.h; tools/check-record-
+-- registry.py proves they never drift. 64-bit values and info-hashes cross as
+-- ASCII (an LCB number is a double, so a 64-bit int would lose precision) - we
+-- keep them as their decoded String, which is lossless for display.
+--
+-- Runtime behaviour needs an OXT pass to confirm (OXT cannot compile/run .lcb
+-- headlessly); the static gate tools/check-livecodescript.py is run on every
+-- edit. If `textDecode`/byte-chunk operators fail to resolve in a given OXT
+-- build, add `use com.livecode.byte` alongside the foreign import below.
+
+use com.livecode.foreign
+
+metadata version is "0.1.0"
+metadata author is "Seth Morrow Software"
+metadata title is "TorrentXT"
+
+-- ===================================================================== --
+--  Constants
+-- ===================================================================== --
+
+-- Must equal BTX_ABI_VERSION in src/btx_abi.h; _checkABI() throws on skew.
+constant kABIVersion is 11
+
+-- libfoundation MCStringEncoding value for UTF-8 (ASCII=0, Windows1252=1,
+-- MacRoman=2, ISO8859_1=3, UTF8=4). Used by _decodeText via MCStringDecode.
+constant kEncodingUtf8 is 4
+
+-- torrent_flags_t bit VALUES (stable libtorrent constants; mirror of
+-- libtorrent/torrent_flags.hpp). Passed to btSetTorrentFlags / btUnsetTorrentFlags
+-- as decimal strings. Combine by adding the values (the bits are disjoint).
+constant kFlagSeedMode is "1"             -- bit 0:  assume we already have all data
+constant kFlagUploadMode is "2"           -- bit 1:  upload only, never request
+constant kFlagShareMode is "4"            -- bit 2:  optimise for share-ratio
+constant kFlagApplyIpFilter is "8"        -- bit 3:  subject this torrent to the IP filter
+constant kFlagPaused is "16"              -- bit 4:  start paused
+constant kFlagAutoManaged is "32"         -- bit 5:  let libtorrent queue/start/stop it
+constant kFlagSuperSeeding is "256"       -- bit 8:  super-seed (initial-seed) mode
+constant kFlagSequentialDownload is "512" -- bit 9:  download pieces in order (streaming)
+constant kFlagStopWhenReady is "1024"     -- bit 10: pause as soon as checking finishes
+
+-- Reusable buffer capacities (the single-thread performance playbook: allocate
+-- once, reuse every poll, never rebuild). Grown on demand if the shim reports a
+-- bigger -needed.
+constant kDrainCap is 65536
+constant kStatusCap is 8192
+constant kScratchCap is 512
+
+-- Record field value types (mirror btx_record.h FieldType -> kType*).
+constant kTypeInt is 0
+constant kTypeReal is 1
+constant kTypeUtf8 is 2
+constant kTypeRaw is 3
+constant kTypeHex is 4
+
+-- Record field ids (mirror btx_record.h FieldId -> kField*).
+constant kFieldName is 1
+constant kFieldState is 2
+constant kFieldProgress is 3
+constant kFieldDownloadRate is 4
+constant kFieldUploadRate is 5
+constant kFieldTotalDone is 6
+constant kFieldTotalWanted is 7
+constant kFieldNumPeers is 8
+constant kFieldNumSeeds is 9
+constant kFieldSavePath is 10
+constant kFieldInfoHashV1 is 11
+constant kFieldInfoHashV2 is 12
+constant kFieldNumPieces is 13
+constant kFieldPieceLength is 14
+constant kFieldTotalSize is 15
+constant kFieldAllTimeDownload is 16
+constant kFieldAllTimeUpload is 17
+constant kFieldNumComplete is 18
+constant kFieldNumIncomplete is 19
+constant kFieldIsFinished is 20
+constant kFieldIsSeeding is 21
+constant kFieldIsPaused is 22
+constant kFieldError is 23
+constant kFieldEta is 24
+constant kFieldAddedTime is 25
+constant kFieldCompletedTime is 26
+constant kFieldNumConnections is 27
+constant kFieldFlags is 28
+constant kFieldPeerEndpoint is 40
+constant kFieldPeerClient is 41
+constant kFieldPeerDownRate is 42
+constant kFieldPeerUpRate is 43
+constant kFieldPeerProgress is 44
+constant kFieldPeerFlags is 45
+constant kFieldEvtTorrent is 60
+constant kFieldEvtMessage is 61
+constant kFieldEvtErrorCode is 62
+constant kFieldEvtErrorMessage is 63
+constant kFieldEvtPieceIndex is 64
+constant kFieldEvtState is 65
+constant kFieldEvtPrevState is 66
+constant kFieldEvtTrackerUrl is 67
+constant kFieldEvtNumPeers is 68
+constant kFieldEvtResumeData is 69
+constant kFieldEvtInfoHashV1 is 70
+constant kFieldEvtInfoHashV2 is 71
+constant kFieldEvtName is 72
+constant kFieldEvtEndpoint is 73
+constant kFieldEvtExternalIp is 74
+constant kFieldEvtMapExternalPort is 75
+constant kFieldEvtMapTransport is 76
+constant kFieldDhtNodes is 100
+constant kFieldDhtNodeCache is 101
+constant kFieldDhtGlobalNodes is 102
+constant kFieldDhtTorrents is 103
+constant kFieldDhtTarget is 104
+constant kFieldDhtValue is 105
+constant kFieldDhtPublicKey is 106
+constant kFieldDhtSignature is 107
+constant kFieldDhtSeq is 108
+constant kFieldDhtSalt is 109
+constant kFieldDhtAuthoritative is 110
+constant kFieldDhtNumSuccess is 111
+constant kFieldDhtSecretKey is 112
+constant kFieldDhtSeed is 113
+constant kFieldDhtPeers is 114
+constant kFieldRp1Peer is 140
+constant kFieldRp1PeerId is 141
+constant kFieldRp1Endpoint is 142
+constant kFieldRp1Supports is 143
+constant kFieldRp1Token is 144
+constant kFieldRp1Payload is 145
+
+-- file entry fields (one record per file from btFileList)
+constant kFieldFilePath is 120
+constant kFieldFileSize is 121
+constant kFieldFileProgress is 122
+constant kFieldFilePriority is 123
+
+-- tracker + web-seed entry fields (btTrackers / btWebSeeds)
+constant kFieldTrackerUrl is 130
+constant kFieldTrackerTier is 131
+constant kFieldTrackerVerified is 132
+constant kFieldTrackerSource is 133
+constant kFieldUrlSeed is 134
+
+-- Stable alert type codes (mirror btx_record.h AlertType -> kAlert*).
+constant kAlertTorrentAdded is 1
+constant kAlertMetadataReceived is 2
+constant kAlertPieceFinished is 3
+constant kAlertTorrentFinished is 4
+constant kAlertTorrentError is 5
+constant kAlertStateChanged is 6
+constant kAlertTrackerReply is 7
+constant kAlertTrackerError is 8
+constant kAlertResumeDataReady is 9
+constant kAlertResumeDataFailed is 10
+constant kAlertTorrentRemoved is 11
+constant kAlertDhtBootstrap is 12
+constant kAlertListenSucceeded is 13
+constant kAlertListenFailed is 14
+constant kAlertTorrentPaused is 15
+constant kAlertTorrentResumed is 16
+constant kAlertFileCompleted is 17
+constant kAlertFileError is 18
+constant kAlertStorageMoved is 19
+constant kAlertFastresumeRejected is 20
+constant kAlertScrapeReply is 21
+constant kAlertDhtImmutableItem is 22
+constant kAlertDhtMutableItem is 23
+constant kAlertDhtPut is 24
+constant kAlertDhtGetPeers is 25
+constant kAlertRp1PeerConnected is 26
+constant kAlertRp1Handshake is 27
+constant kAlertRp1Message is 28
+constant kAlertRp1PeerDisconnected is 29
+constant kAlertPortMapped is 30
+constant kAlertPortMapError is 31
+constant kAlertExternalIp is 32
+
+-- ===================================================================== --
+--  Module state: the reusable poll/status buffers
+-- ===================================================================== --
+
+-- Reusable raw buffers for the fill-a-buffer FFI (allocated via the verified
+-- engine <builtin> MCMemoryAllocate; an LCB Data does not bridge to a void*).
+-- Each pairs a Pointer with its current byte capacity. They persist for the
+-- process - bounded reuse, the single-thread playbook - because there is no
+-- deterministic library-unload hook to free them at (plan section 4.2).
+variable sDrainPtr as Pointer
+variable sDrainCap as Integer
+variable sStatusPtr as Pointer
+variable sStatusCap as Integer
+variable sScratchPtr as Pointer
+variable sScratchCap as Integer
+
+-- ===================================================================== --
+--  Foreign handlers (one per btx_* symbol in btx_abi.h). Buffer params are
+--  `Pointer` - we hand them MCMemoryAllocate blocks (output) or MCDataGetBytePtr
+--  pointers (input), never a Data value; short strings are ZStringUTF8;
+--  64-bit values ride as ZStringUTF8. All cdecl. Never rename these binds.
+-- ===================================================================== --
+
+private foreign handler _btx_abi_version() returns CInt binds to "c:torrentxt>btx_abi_version!cdecl"
+private foreign handler _btx_session_new() returns CInt binds to "c:torrentxt>btx_session_new!cdecl"
+private foreign handler _btx_session_free(in pS as CInt) returns nothing binds to "c:torrentxt>btx_session_free!cdecl"
+private foreign handler _btx_last_error(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_last_error!cdecl"
+private foreign handler _btx_clear_error() returns nothing binds to "c:torrentxt>btx_clear_error!cdecl"
+
+private foreign handler _btx_set_int(in pS as CInt, in pKey as ZStringUTF8, in pVal as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_set_int!cdecl"
+private foreign handler _btx_set_bool(in pS as CInt, in pKey as ZStringUTF8, in pVal as CInt) returns CInt binds to "c:torrentxt>btx_set_bool!cdecl"
+private foreign handler _btx_set_str(in pS as CInt, in pKey as ZStringUTF8, in pVal as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_set_str!cdecl"
+private foreign handler _btx_get_setting(in pS as CInt, in pKey as ZStringUTF8, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_get_setting!cdecl"
+private foreign handler _btx_set_encryption_policy(in pS as CInt, in pIn as CInt, in pOut as CInt, in pLevel as CInt) returns CInt binds to "c:torrentxt>btx_set_encryption_policy!cdecl"
+
+-- session operations (ABI v7)
+private foreign handler _btx_session_pause(in pS as CInt) returns CInt binds to "c:torrentxt>btx_session_pause!cdecl"
+private foreign handler _btx_session_resume(in pS as CInt) returns CInt binds to "c:torrentxt>btx_session_resume!cdecl"
+private foreign handler _btx_session_is_paused(in pS as CInt) returns CInt binds to "c:torrentxt>btx_session_is_paused!cdecl"
+private foreign handler _btx_listen_port(in pS as CInt) returns CInt binds to "c:torrentxt>btx_listen_port!cdecl"
+private foreign handler _btx_find_torrent(in pS as CInt, in pHash as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_find_torrent!cdecl"
+private foreign handler _btx_dht_announce(in pS as CInt, in pHash as ZStringUTF8, in pPort as CInt) returns CInt binds to "c:torrentxt>btx_dht_announce!cdecl"
+
+private foreign handler _btx_add_magnet(in pS as CInt, in pURI as ZStringUTF8, in pSave as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_magnet!cdecl"
+private foreign handler _btx_add_torrent_file(in pS as CInt, in pData as Pointer, in pLen as CInt, in pSave as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_torrent_file!cdecl"
+
+-- extended add + filtering/streaming (ABI v8)
+private foreign handler _btx_add_magnet_ex(in pS as CInt, in pURI as ZStringUTF8, in pSave as ZStringUTF8, in pFlags as ZStringUTF8, in pMask as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_magnet_ex!cdecl"
+private foreign handler _btx_add_torrent_file_ex(in pS as CInt, in pData as Pointer, in pLen as CInt, in pSave as ZStringUTF8, in pFlags as ZStringUTF8, in pMask as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_torrent_file_ex!cdecl"
+private foreign handler _btx_ip_filter_add(in pS as CInt, in pStart as ZStringUTF8, in pEnd as ZStringUTF8, in pBlock as CInt) returns CInt binds to "c:torrentxt>btx_ip_filter_add!cdecl"
+private foreign handler _btx_ip_filter_clear(in pS as CInt) returns CInt binds to "c:torrentxt>btx_ip_filter_clear!cdecl"
+private foreign handler _btx_set_piece_deadline(in pT as CInt, in pPiece as CInt, in pDeadline as CInt) returns CInt binds to "c:torrentxt>btx_set_piece_deadline!cdecl"
+private foreign handler _btx_clear_piece_deadlines(in pT as CInt) returns CInt binds to "c:torrentxt>btx_clear_piece_deadlines!cdecl"
+private foreign handler _btx_add_with_resume(in pS as CInt, in pData as Pointer, in pLen as CInt, in pSave as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_with_resume!cdecl"
+private foreign handler _btx_remove(in pS as CInt, in pT as CInt, in pDel as CInt) returns CInt binds to "c:torrentxt>btx_remove!cdecl"
+
+private foreign handler _btx_pause(in pT as CInt) returns CInt binds to "c:torrentxt>btx_pause!cdecl"
+private foreign handler _btx_resume(in pT as CInt) returns CInt binds to "c:torrentxt>btx_resume!cdecl"
+private foreign handler _btx_force_recheck(in pT as CInt) returns CInt binds to "c:torrentxt>btx_force_recheck!cdecl"
+private foreign handler _btx_force_reannounce(in pT as CInt) returns CInt binds to "c:torrentxt>btx_force_reannounce!cdecl"
+private foreign handler _btx_set_file_priority(in pT as CInt, in pFile as CInt, in pPrio as CInt) returns CInt binds to "c:torrentxt>btx_set_file_priority!cdecl"
+private foreign handler _btx_set_file_priorities(in pT as CInt, in pPrios as Pointer, in pCount as CInt) returns CInt binds to "c:torrentxt>btx_set_file_priorities!cdecl"
+private foreign handler _btx_set_piece_priority(in pT as CInt, in pPiece as CInt, in pPrio as CInt) returns CInt binds to "c:torrentxt>btx_set_piece_priority!cdecl"
+private foreign handler _btx_set_torrent_limits(in pT as CInt, in pDown as ZStringUTF8, in pUp as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_set_torrent_limits!cdecl"
+
+-- extended control (ABI v4): flags, connection/upload caps, queue, storage
+private foreign handler _btx_set_torrent_flags(in pT as CInt, in pFlags as ZStringUTF8, in pMask as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_set_torrent_flags!cdecl"
+private foreign handler _btx_unset_torrent_flags(in pT as CInt, in pFlags as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_unset_torrent_flags!cdecl"
+private foreign handler _btx_set_max_connections(in pT as CInt, in pMax as CInt) returns CInt binds to "c:torrentxt>btx_set_max_connections!cdecl"
+private foreign handler _btx_set_max_uploads(in pT as CInt, in pMax as CInt) returns CInt binds to "c:torrentxt>btx_set_max_uploads!cdecl"
+private foreign handler _btx_torrent_clear_error(in pT as CInt) returns CInt binds to "c:torrentxt>btx_torrent_clear_error!cdecl"
+private foreign handler _btx_scrape_tracker(in pT as CInt) returns CInt binds to "c:torrentxt>btx_scrape_tracker!cdecl"
+private foreign handler _btx_move_storage(in pT as CInt, in pPath as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_move_storage!cdecl"
+private foreign handler _btx_queue_position(in pT as CInt) returns CInt binds to "c:torrentxt>btx_queue_position!cdecl"
+private foreign handler _btx_queue_move(in pT as CInt, in pOp as CInt) returns CInt binds to "c:torrentxt>btx_queue_move!cdecl"
+
+private foreign handler _btx_torrent_status(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_torrent_status!cdecl"
+private foreign handler _btx_torrent_count(in pS as CInt) returns CInt binds to "c:torrentxt>btx_torrent_count!cdecl"
+private foreign handler _btx_torrent_handle_at(in pS as CInt, in pIndex as CInt) returns CInt binds to "c:torrentxt>btx_torrent_handle_at!cdecl"
+private foreign handler _btx_info_hash_hex(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_info_hash_hex!cdecl"
+private foreign handler _btx_piece_bitfield(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_piece_bitfield!cdecl"
+private foreign handler _btx_peer_list(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_peer_list!cdecl"
+private foreign handler _btx_file_list(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_file_list!cdecl"
+private foreign handler _btx_piece_availability(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_piece_availability!cdecl"
+private foreign handler _btx_trackers(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_trackers!cdecl"
+private foreign handler _btx_add_tracker(in pT as CInt, in pUrl as ZStringUTF8, in pTier as CInt) returns CInt binds to "c:torrentxt>btx_add_tracker!cdecl"
+private foreign handler _btx_add_url_seed(in pT as CInt, in pUrl as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_url_seed!cdecl"
+private foreign handler _btx_remove_url_seed(in pT as CInt, in pUrl as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_remove_url_seed!cdecl"
+private foreign handler _btx_url_seeds(in pT as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_url_seeds!cdecl"
+
+private foreign handler _btx_pop_alerts(in pS as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_pop_alerts!cdecl"
+
+private foreign handler _btx_dht_add_bootstrap(in pS as CInt, in pHost as ZStringUTF8, in pPort as CInt) returns CInt binds to "c:torrentxt>btx_dht_add_bootstrap!cdecl"
+private foreign handler _btx_dht_state(in pS as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_dht_state!cdecl"
+private foreign handler _btx_dht_save_state(in pS as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_dht_save_state!cdecl"
+private foreign handler _btx_dht_load_state(in pS as CInt, in pData as Pointer, in pLen as CInt) returns CInt binds to "c:torrentxt>btx_dht_load_state!cdecl"
+private foreign handler _btx_dht_keypair(in pSeed as ZStringUTF8, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_dht_keypair!cdecl"
+private foreign handler _btx_dht_put_immutable(in pS as CInt, in pData as Pointer, in pLen as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_dht_put_immutable!cdecl"
+private foreign handler _btx_dht_get_immutable(in pS as CInt, in pTarget as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_dht_get_immutable!cdecl"
+private foreign handler _btx_dht_put_mutable(in pS as CInt, in pPub as ZStringUTF8, in pSec as ZStringUTF8, in pSalt as ZStringUTF8, in pData as Pointer, in pLen as CInt) returns CInt binds to "c:torrentxt>btx_dht_put_mutable!cdecl"
+private foreign handler _btx_dht_get_mutable(in pS as CInt, in pPub as ZStringUTF8, in pSalt as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_dht_get_mutable!cdecl"
+private foreign handler _btx_dht_get_peers(in pS as CInt, in pId as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_dht_get_peers!cdecl"
+private foreign handler _btx_add_port_mapping(in pS as CInt, in pExternalPort as CInt, in pLocalPort as CInt, in pIsTcp as CInt) returns CInt binds to "c:torrentxt>btx_add_port_mapping!cdecl"
+private foreign handler _btx_delete_port_mapping(in pS as CInt, in pMappingId as CInt) returns CInt binds to "c:torrentxt>btx_delete_port_mapping!cdecl"
+private foreign handler _btx_dht_bep44_signbuf(in pSalt as ZStringUTF8, in pSeq as ZStringUTF8, in pValue as Pointer, in pLen as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_dht_bep44_signbuf!cdecl"
+private foreign handler _btx_dht_put_signed(in pS as CInt, in pPub as ZStringUTF8, in pSalt as ZStringUTF8, in pSeq as ZStringUTF8, in pValue as Pointer, in pLen as CInt, in pSig as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_dht_put_signed!cdecl"
+
+private foreign handler _btx_add_infohash(in pS as CInt, in pHash as ZStringUTF8, in pSavePath as ZStringUTF8) returns CInt binds to "c:torrentxt>btx_add_infohash!cdecl"
+private foreign handler _btx_rp1_enable(in pS as CInt) returns CInt binds to "c:torrentxt>btx_rp1_enable!cdecl"
+private foreign handler _btx_rp1_set_token(in pS as CInt, in pData as Pointer, in pLen as CInt) returns CInt binds to "c:torrentxt>btx_rp1_set_token!cdecl"
+private foreign handler _btx_rp1_send(in pS as CInt, in pPeer as CInt, in pData as Pointer, in pLen as CInt) returns CInt binds to "c:torrentxt>btx_rp1_send!cdecl"
+private foreign handler _btx_rp1_poll(in pS as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_rp1_poll!cdecl"
+
+private foreign handler _btx_save_resume(in pT as CInt) returns CInt binds to "c:torrentxt>btx_save_resume!cdecl"
+private foreign handler _btx_create_torrent(in pPath as ZStringUTF8, in pPieceSize as CInt, in pFlags as CInt, in pTrackers as ZStringUTF8, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:torrentxt>btx_create_torrent!cdecl"
+
+-- ===================================================================== --
+--  Engine Foundation <builtin> foreign handlers
+-- ===================================================================== --
+-- These bind to the engine's own libfoundation, not to our shim. They are the
+-- sanctioned bridge between LCB Data/Pointer and raw C buffers - an LCB Data does
+-- NOT auto-bridge to a void* (Language Reference: "No automatic bridging from
+-- Data or String to Pointer exists"). Verified against the htmltidy and HIDAPI
+-- bindings and libfoundation/foundation.h. Declared here, before any helper uses
+-- them (OXT resolves identifiers by lexical position).
+--
+-- NOTE: a `<builtin>` handler resolves by its NAME matching the engine symbol, so
+-- these - unlike every other private handler in this file - carry NO leading `_`.
+-- Renaming any of them breaks the binding.
+--   * MCStringDecode: bytes -> String (UTF-8); kEncodingUtf8 == 4.
+--   * MCMemoryAllocate/Deallocate: a raw writable block for the OUTPUT buffers C
+--     fills. The size is pointer-width (UIntSize).
+--   * MCDataCreateWithBytes: copy the C-written bytes back into a Data we walk.
+--     A Data's byte count is uindex_t == uint32 (CUInt).
+--   * MCDataGetBytePtr: the read-only pointer to a Data's own bytes, for the
+--     INPUT buffers C reads (never written through - it is a const byte_t*).
+private foreign handler MCStringDecode(in pData as Data, in pEncoding as CInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
+private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+
+-- ===================================================================== --
+--  Private helpers
+-- ===================================================================== --
+
+-- Throw a clear error if the loaded native library's ABI does not match this
+-- binding (plan section 4.5). Better a legible throw at startup than a crash.
+private handler _checkABI()
+   variable tABI as Integer
+   unsafe
+      put _btx_abi_version() into tABI
+   end unsafe
+   if tABI is not kABIVersion then
+      throw "TorrentXT native library ABI does not match the LCB binding; rebuild and repackage the native library."
+   end if
+end handler
+
+-- Ensure the reusable drain buffer is allocated to at least pNeed bytes. A grow
+-- frees the old block and allocates a fresh one (MCMemoryReallocate is not a
+-- confirmed <builtin>); a grow only happens when the shim reports a -needed past
+-- the current capacity, which is rare. The capacity (0 until first allocation)
+-- doubles as the "is it allocated?" flag, so we never read an unset Pointer.
+private handler _ensureDrain(in pNeed as Integer)
+   variable tOk as Boolean
+   if sDrainCap < pNeed then
+      if sDrainCap > 0 then
+         unsafe
+            MCMemoryDeallocate(sDrainPtr)
+         end unsafe
+      end if
+      put false into tOk
+      unsafe
+         put MCMemoryAllocate(pNeed, sDrainPtr) into tOk
+      end unsafe
+      if not tOk then
+         throw "TorrentXT: failed to allocate the drain buffer."
+      end if
+      put pNeed into sDrainCap
+   end if
+end handler
+
+private handler _ensureStatus(in pNeed as Integer)
+   variable tOk as Boolean
+   if sStatusCap < pNeed then
+      if sStatusCap > 0 then
+         unsafe
+            MCMemoryDeallocate(sStatusPtr)
+         end unsafe
+      end if
+      put false into tOk
+      unsafe
+         put MCMemoryAllocate(pNeed, sStatusPtr) into tOk
+      end unsafe
+      if not tOk then
+         throw "TorrentXT: failed to allocate the status buffer."
+      end if
+      put pNeed into sStatusCap
+   end if
+end handler
+
+private handler _ensureScratch(in pNeed as Integer)
+   variable tOk as Boolean
+   if sScratchCap < pNeed then
+      if sScratchCap > 0 then
+         unsafe
+            MCMemoryDeallocate(sScratchPtr)
+         end unsafe
+      end if
+      put false into tOk
+      unsafe
+         put MCMemoryAllocate(pNeed, sScratchPtr) into tOk
+      end unsafe
+      if not tOk then
+         throw "TorrentXT: failed to allocate the scratch buffer."
+      end if
+      put pNeed into sScratchCap
+   end if
+end handler
+
+-- Copy the pLen bytes the shim wrote into our raw buffer back into a fresh Data
+-- the record walkers can index by byte (MCDataCreateWithBytes, verified
+-- <builtin>). Empty Data on a non-positive length or an allocation failure.
+private handler _bufToData(in pPtr as Pointer, in pLen as Integer) returns Data
+   variable tData as Data
+   variable tOk as Boolean
+   put the empty data into tData
+   if pLen > 0 then
+      put false into tOk
+      unsafe
+         put MCDataCreateWithBytes(pPtr, pLen, tData) into tOk
+      end unsafe
+      if not tOk then
+         put the empty data into tData
+      end if
+   end if
+   return tData
+end handler
+
+-- Read a big-endian u16 at 1-based byte offset pOffset (the wire is network
+-- order; this is the inverse of the shim's put_u16).
+private handler _readU16(in pData as Data, in pOffset as Integer) returns Integer
+   variable tHi as Integer
+   variable tLo as Integer
+   put the code of (byte pOffset of pData) into tHi
+   put the code of (byte (pOffset + 1) of pData) into tLo
+   return tHi * 256 + tLo
+end handler
+
+-- Decode pLen bytes of UTF-8 (1-based pStart) into a String via the engine's
+-- MCStringDecode (declared above); LCB has no `textDecode` handler.
+private handler _decodeText(in pData as Data, in pStart as Integer, in pLen as Integer) returns String
+   variable tSub as Data
+   variable tStr as String
+   variable tOk as Boolean
+   if pLen <= 0 then
+      return ""
+   end if
+   put byte pStart to (pStart + pLen - 1) of pData into tSub
+   put "" into tStr
+   unsafe
+      put MCStringDecode(tSub, kEncodingUtf8, false, tStr) into tOk
+   end unsafe
+   if tOk then
+      return tStr
+   end if
+   return ""
+end handler
+
+-- Map a record field id to its script-facing array key. "" means "skip"
+-- (an unknown id, which the registry checker prevents in practice).
+private handler _fieldKey(in pId as Integer) returns String
+   if pId is kFieldName then
+      return "name"
+   else if pId is kFieldState then
+      return "state"
+   else if pId is kFieldProgress then
+      return "progress"
+   else if pId is kFieldDownloadRate then
+      return "downloadRate"
+   else if pId is kFieldUploadRate then
+      return "uploadRate"
+   else if pId is kFieldTotalDone then
+      return "totalDone"
+   else if pId is kFieldTotalWanted then
+      return "totalWanted"
+   else if pId is kFieldNumPeers then
+      return "numPeers"
+   else if pId is kFieldNumSeeds then
+      return "numSeeds"
+   else if pId is kFieldSavePath then
+      return "savePath"
+   else if pId is kFieldInfoHashV1 then
+      return "infoHashV1"
+   else if pId is kFieldInfoHashV2 then
+      return "infoHashV2"
+   else if pId is kFieldNumPieces then
+      return "numPieces"
+   else if pId is kFieldPieceLength then
+      return "pieceLength"
+   else if pId is kFieldTotalSize then
+      return "totalSize"
+   else if pId is kFieldAllTimeDownload then
+      return "allTimeDownload"
+   else if pId is kFieldAllTimeUpload then
+      return "allTimeUpload"
+   else if pId is kFieldNumComplete then
+      return "numComplete"
+   else if pId is kFieldNumIncomplete then
+      return "numIncomplete"
+   else if pId is kFieldIsFinished then
+      return "isFinished"
+   else if pId is kFieldIsSeeding then
+      return "isSeeding"
+   else if pId is kFieldIsPaused then
+      return "isPaused"
+   else if pId is kFieldError then
+      return "error"
+   else if pId is kFieldEta then
+      return "eta"
+   else if pId is kFieldAddedTime then
+      return "addedTime"
+   else if pId is kFieldCompletedTime then
+      return "completedTime"
+   else if pId is kFieldNumConnections then
+      return "numConnections"
+   else if pId is kFieldFlags then
+      return "flags"
+   else if pId is kFieldPeerEndpoint then
+      return "endpoint"
+   else if pId is kFieldPeerClient then
+      return "client"
+   else if pId is kFieldPeerDownRate then
+      return "downRate"
+   else if pId is kFieldPeerUpRate then
+      return "upRate"
+   else if pId is kFieldPeerProgress then
+      return "progress"
+   else if pId is kFieldPeerFlags then
+      return "flags"
+   else if pId is kFieldEvtTorrent then
+      return "torrent"
+   else if pId is kFieldEvtMessage then
+      return "message"
+   else if pId is kFieldEvtErrorCode then
+      return "errorCode"
+   else if pId is kFieldEvtErrorMessage then
+      return "errorMessage"
+   else if pId is kFieldEvtPieceIndex then
+      return "piece"
+   else if pId is kFieldEvtState then
+      return "state"
+   else if pId is kFieldEvtPrevState then
+      return "prevState"
+   else if pId is kFieldEvtTrackerUrl then
+      return "tracker"
+   else if pId is kFieldEvtNumPeers then
+      return "numPeers"
+   else if pId is kFieldEvtResumeData then
+      return "resumeData"
+   else if pId is kFieldEvtInfoHashV1 then
+      return "infoHashV1"
+   else if pId is kFieldEvtInfoHashV2 then
+      return "infoHashV2"
+   else if pId is kFieldEvtName then
+      return "torrentName"
+   else if pId is kFieldEvtEndpoint then
+      return "endpoint"
+   else if pId is kFieldDhtNodes then
+      return "nodes"
+   else if pId is kFieldDhtNodeCache then
+      return "nodeCache"
+   else if pId is kFieldDhtGlobalNodes then
+      return "globalNodes"
+   else if pId is kFieldDhtTorrents then
+      return "torrents"
+   else if pId is kFieldDhtTarget then
+      return "target"
+   else if pId is kFieldDhtValue then
+      return "value"
+   else if pId is kFieldDhtPublicKey then
+      return "publicKey"
+   else if pId is kFieldDhtSignature then
+      return "signature"
+   else if pId is kFieldDhtSeq then
+      return "seq"
+   else if pId is kFieldDhtSalt then
+      return "salt"
+   else if pId is kFieldDhtAuthoritative then
+      return "authoritative"
+   else if pId is kFieldDhtNumSuccess then
+      return "numSuccess"
+   else if pId is kFieldDhtSecretKey then
+      return "secretKey"
+   else if pId is kFieldDhtSeed then
+      return "seed"
+   else if pId is kFieldDhtPeers then
+      return "peers"
+   else if pId is kFieldRp1Peer then
+      return "peer"
+   else if pId is kFieldRp1PeerId then
+      return "btPeerId"
+   else if pId is kFieldRp1Endpoint then
+      return "endpoint"
+   else if pId is kFieldRp1Supports then
+      return "supportsRp1"
+   else if pId is kFieldRp1Token then
+      return "token"
+   else if pId is kFieldRp1Payload then
+      return "payload"
+   else if pId is kFieldFilePath then
+      return "path"
+   else if pId is kFieldFileSize then
+      return "size"
+   else if pId is kFieldFileProgress then
+      return "progress"
+   else if pId is kFieldFilePriority then
+      return "priority"
+   else if pId is kFieldTrackerUrl then
+      return "url"
+   else if pId is kFieldTrackerTier then
+      return "tier"
+   else if pId is kFieldTrackerVerified then
+      return "verified"
+   else if pId is kFieldTrackerSource then
+      return "source"
+   else if pId is kFieldUrlSeed then
+      return "urlSeed"
+   else if pId is kFieldEvtExternalIp then
+      return "externalIp"
+   else if pId is kFieldEvtMapExternalPort then
+      return "externalPort"
+   else if pId is kFieldEvtMapTransport then
+      return "transport"
+   else
+      return ""
+   end if
+end handler
+
+-- Map a stable alert code to the semantic message name the poll dispatcher
+-- sends (see examples/torrent-helpers.livecodescript).
+private handler _alertName(in pCode as Integer) returns String
+   if pCode is kAlertTorrentAdded then
+      return "torrentAdded"
+   else if pCode is kAlertMetadataReceived then
+      return "metadataReceived"
+   else if pCode is kAlertPieceFinished then
+      return "pieceFinished"
+   else if pCode is kAlertTorrentFinished then
+      return "torrentFinished"
+   else if pCode is kAlertTorrentError then
+      return "torrentError"
+   else if pCode is kAlertStateChanged then
+      return "stateChanged"
+   else if pCode is kAlertTrackerReply then
+      return "trackerReply"
+   else if pCode is kAlertTrackerError then
+      return "trackerError"
+   else if pCode is kAlertResumeDataReady then
+      return "resumeDataReady"
+   else if pCode is kAlertResumeDataFailed then
+      return "resumeDataFailed"
+   else if pCode is kAlertTorrentRemoved then
+      return "torrentRemoved"
+   else if pCode is kAlertDhtBootstrap then
+      return "dhtBootstrap"
+   else if pCode is kAlertListenSucceeded then
+      return "listenSucceeded"
+   else if pCode is kAlertListenFailed then
+      return "listenFailed"
+   else if pCode is kAlertTorrentPaused then
+      return "torrentPaused"
+   else if pCode is kAlertTorrentResumed then
+      return "torrentResumed"
+   else if pCode is kAlertFileCompleted then
+      return "fileCompleted"
+   else if pCode is kAlertFileError then
+      return "fileError"
+   else if pCode is kAlertStorageMoved then
+      return "storageMoved"
+   else if pCode is kAlertFastresumeRejected then
+      return "fastresumeRejected"
+   else if pCode is kAlertScrapeReply then
+      return "scrapeReply"
+   else if pCode is kAlertDhtImmutableItem then
+      return "dhtImmutableItem"
+   else if pCode is kAlertDhtMutableItem then
+      return "dhtMutableItem"
+   else if pCode is kAlertDhtPut then
+      return "dhtPut"
+   else if pCode is kAlertDhtGetPeers then
+      return "dhtGetPeers"
+   else if pCode is kAlertRp1PeerConnected then
+      return "rp1PeerConnected"
+   else if pCode is kAlertRp1Handshake then
+      return "rp1Handshake"
+   else if pCode is kAlertRp1Message then
+      return "rp1Message"
+   else if pCode is kAlertRp1PeerDisconnected then
+      return "rp1PeerDisconnected"
+   else if pCode is kAlertPortMapped then
+      return "portMapped"
+   else if pCode is kAlertPortMapError then
+      return "portMapError"
+   else if pCode is kAlertExternalIp then
+      return "externalIp"
+   else
+      return "torrentEvent"
+   end if
+end handler
+
+-- Walk one bare kvrecord starting at 1-based pStart into an Array, using the
+-- field-id -> key mapping. Raw fields become Data; everything else a String
+-- (which keeps 64-bit ints and hashes lossless). pEndOut returns the offset
+-- just past the record so callers can chain.
+private handler _parseRecord(in pData as Data, in pStart as Integer) returns Array
+   variable tRec as Array
+   variable tOffset as Integer
+   variable tCount as Integer
+   variable tI as Integer
+   variable tId as Integer
+   variable tType as Integer
+   variable tLen as Integer
+   variable tKey as String
+   put {} into tRec
+   put pStart into tOffset
+   put _readU16(pData, tOffset) into tCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tCount
+      put the code of (byte tOffset of pData) into tId
+      put the code of (byte (tOffset + 1) of pData) into tType
+      add 2 to tOffset
+      put _readU16(pData, tOffset) into tLen
+      add 2 to tOffset
+      put _fieldKey(tId) into tKey
+      if tKey is not "" then
+         if tType is kTypeRaw then
+            if tLen > 0 then
+               put byte tOffset to (tOffset + tLen - 1) of pData into tRec[tKey]
+            else
+               put the empty data into tRec[tKey]
+            end if
+         else
+            put _decodeText(pData, tOffset, tLen) into tRec[tKey]
+         end if
+      end if
+      add tLen to tOffset
+   end repeat
+   return tRec
+end handler
+
+-- ===================================================================== --
+--  Public API: lifecycle & diagnostics
+-- ===================================================================== --
+
+-- Start THE session. Verifies the ABI first (throws on skew). Returns a
+-- positive session handle, or 0 on failure (see btLastError). The app MUST
+-- call btStopSession before quitting (no auto unload hook).
+public handler btStartSession() returns Integer
+   variable tSession as Integer
+   _checkABI()
+   unsafe
+      put _btx_session_new() into tSession
+   end unsafe
+   return tSession
+end handler
+
+-- Pause, flush resume data, destroy, and join the session's threads.
+-- Idempotent: a stale handle is a harmless no-op.
+public handler btStopSession(in pSession as Integer)
+   unsafe
+      _btx_session_free(pSession)
+   end unsafe
+end handler
+
+-- The module-static last-error string ("" when there is no error).
+public handler btLastError() returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _btx_last_error(sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureScratch(-tCount)
+      unsafe
+         put _btx_last_error(sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
+end handler
+
+public handler btClearError()
+   unsafe
+      _btx_clear_error()
+   end unsafe
+end handler
+
+-- ===================================================================== --
+--  Public API: session settings (keys map to libtorrent settings_pack names)
+-- ===================================================================== --
+
+-- Set an integer setting. pValue is a STRING so 64-bit values cross losslessly.
+public handler btSetInt(in pSession as Integer, in pKey as String, in pValue as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_int(pSession, pKey, pValue) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btSetBool(in pSession as Integer, in pKey as String, in pValue as Boolean) returns Integer
+   variable tR as Integer
+   variable tV as Integer
+   if pValue then
+      put 1 into tV
+   else
+      put 0 into tV
+   end if
+   unsafe
+      put _btx_set_bool(pSession, pKey, tV) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btSetString(in pSession as Integer, in pKey as String, in pValue as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_str(pSession, pKey, pValue) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Read a setting back as text (diagnostics; not on the hot path).
+public handler btGetSetting(in pSession as Integer, in pKey as String) returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _btx_get_setting(pSession, pKey, sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureScratch(-tCount)
+      unsafe
+         put _btx_get_setting(pSession, pKey, sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
+end handler
+
+-- MSE / protocol encryption. in/out policy: 0=forced 1=enabled 2=disabled;
+-- level: 1=plaintext 2=rc4 3=both.
+public handler btSetEncryption(in pSession as Integer, in pIn as Integer, in pOut as Integer, in pLevel as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_encryption_policy(pSession, pIn, pOut, pLevel) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- session operations (ABI v7) ----------------------------------------
+
+-- Pause / resume the WHOLE session (every torrent). Distinct from the
+-- per-torrent btPause / btResume.
+public handler btSessionPause(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_session_pause(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btSessionResume(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_session_resume(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btSessionIsPaused(in pSession as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _btx_session_is_paused(pSession) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- The TCP port we actually ended up listening on (0 == not listening yet).
+public handler btListenPort(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_listen_port(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Look up an already-added torrent by its 40-hex (v1) info-hash; returns the
+-- torrent handle, or 0 if not found.
+public handler btFindTorrent(in pSession as Integer, in pInfoHash as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_find_torrent(pSession, pInfoHash) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Classic BEP5 DHT peer announce (NOT BEP44): tell the DHT we have peers for
+-- this 40-hex info-hash on pPort (0 == our listen port).
+public handler btDhtAnnounce(in pSession as Integer, in pInfoHash as String, in pPort as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_dht_announce(pSession, pInfoHash, pPort) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Classic BEP5 DHT get_peers: ask who else announced this 40-hex id. The id can
+-- be any caller-derived rendezvous point, not a real torrent, so this is the
+-- presence/discovery primitive. The peer list arrives later as a dhtGetPeers
+-- event carrying "target" and "peers" (a newline-separated "ip:port" list).
+public handler btDhtGetPeers(in pSession as Integer, in pId as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_dht_get_peers(pSession, pId) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Ask the router (UPnP / NAT-PMP) to open pExternalPort and forward it to
+-- pLocalPort on THIS machine, so a plain browser can reach a local server with
+-- no manual port forwarding. pIsTcp true = TCP (use it for an HTTP server).
+-- Returns a mapping id (> 0) to pass to btUnmapPort, or 0 if no mapper is active
+-- (UPnP/NAT-PMP off) or the port is bad. The ACTUAL external port a router
+-- assigns (it may differ from what you asked for) and which mapper won arrive
+-- later as a "portMapped" event (fields externalPort, transport); a failure
+-- arrives as "portMapError", and the machine's external IP as an "externalIp"
+-- event. NOTE: this is the CLEAR-WEB path - the IP is public, so it is NOT
+-- anonymous (use the Tor onion path for that).
+public handler btMapPort(in pSession as Integer, in pExternalPort as Integer, in pLocalPort as Integer, in pIsTcp as Boolean) returns Integer
+   variable tR as Integer
+   variable tTcp as Integer
+   put 0 into tTcp
+   if pIsTcp then
+      put 1 into tTcp
+   end if
+   unsafe
+      put _btx_add_port_mapping(pSession, pExternalPort, pLocalPort, tTcp) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Withdraw a mapping created by btMapPort (idempotent; a stale id is a no-op).
+public handler btUnmapPort(in pSession as Integer, in pMappingId as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_delete_port_mapping(pSession, pMappingId) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: add / remove torrents
+-- ===================================================================== --
+
+public handler btAddMagnet(in pSession as Integer, in pURI as String, in pSavePath as String) returns Integer
+   variable tHandle as Integer
+   unsafe
+      put _btx_add_magnet(pSession, pURI, pSavePath) into tHandle
+   end unsafe
+   return tHandle
+end handler
+
+-- Add from .torrent BYTES (an input buffer: MCDataGetBytePtr hands C the
+-- read-only pointer to the bytes, with their length). Only the metainfo
+-- crosses; payload never does.
+public handler btAddTorrentFile(in pSession as Integer, in pData as Data, in pSavePath as String) returns Integer
+   variable tHandle as Integer
+   variable tPtr as Pointer
+   put 0 into tHandle
+   if the number of bytes in pData > 0 then
+      unsafe
+         put MCDataGetBytePtr(pData) into tPtr
+         put _btx_add_torrent_file(pSession, tPtr, the number of bytes in pData, pSavePath) into tHandle
+      end unsafe
+   end if
+   return tHandle
+end handler
+
+-- ---- extended add: add with add-time torrent_flags (ABI v8) --------------
+-- pFlags / pMask are decimal strings (combine kFlag* constants). The common
+-- use is adding PAUSED (kFlagPaused) to set file priorities before it starts.
+
+public handler btAddMagnetEx(in pSession as Integer, in pURI as String, in pSavePath as String, in pFlags as String, in pMask as String) returns Integer
+   variable tHandle as Integer
+   unsafe
+      put _btx_add_magnet_ex(pSession, pURI, pSavePath, pFlags, pMask) into tHandle
+   end unsafe
+   return tHandle
+end handler
+
+public handler btAddTorrentFileEx(in pSession as Integer, in pData as Data, in pSavePath as String, in pFlags as String, in pMask as String) returns Integer
+   variable tHandle as Integer
+   variable tPtr as Pointer
+   put 0 into tHandle
+   if the number of bytes in pData > 0 then
+      unsafe
+         put MCDataGetBytePtr(pData) into tPtr
+         put _btx_add_torrent_file_ex(pSession, tPtr, the number of bytes in pData, pSavePath, pFlags, pMask) into tHandle
+      end unsafe
+   end if
+   return tHandle
+end handler
+
+-- ---- IP filter + streaming (ABI v8) --------------------------------------
+
+-- Add an inclusive IP range to the session filter; pBlock true blocks it.
+-- Rules accumulate. Start/end must be the same family (both v4 or both v6).
+public handler btIpFilterAdd(in pSession as Integer, in pStartIp as String, in pEndIp as String, in pBlock as Boolean) returns Integer
+   variable tR as Integer
+   variable tB as Integer
+   if pBlock then
+      put 1 into tB
+   else
+      put 0 into tB
+   end if
+   unsafe
+      put _btx_ip_filter_add(pSession, pStartIp, pEndIp, tB) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btIpFilterClear(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_ip_filter_clear(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Streaming: fetch a piece by a deadline (ms from now); soonest deadlines win.
+public handler btSetPieceDeadline(in pTorrent as Integer, in pPieceIndex as Integer, in pDeadlineMs as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_piece_deadline(pTorrent, pPieceIndex, pDeadlineMs) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btClearPieceDeadlines(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_clear_piece_deadlines(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btAddTorrentWithResume(in pSession as Integer, in pResume as Data, in pSavePath as String) returns Integer
+   variable tHandle as Integer
+   variable tPtr as Pointer
+   put 0 into tHandle
+   if the number of bytes in pResume > 0 then
+      unsafe
+         put MCDataGetBytePtr(pResume) into tPtr
+         put _btx_add_with_resume(pSession, tPtr, the number of bytes in pResume, pSavePath) into tHandle
+      end unsafe
+   end if
+   return tHandle
+end handler
+
+public handler btRemoveTorrent(in pSession as Integer, in pTorrent as Integer, in pDeleteFiles as Boolean) returns Integer
+   variable tR as Integer
+   variable tDel as Integer
+   if pDeleteFiles then
+      put 1 into tDel
+   else
+      put 0 into tDel
+   end if
+   unsafe
+      put _btx_remove(pSession, pTorrent, tDel) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: control
+-- ===================================================================== --
+
+public handler btPause(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_pause(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btResume(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_resume(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btForceRecheck(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_force_recheck(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btForceReannounce(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_force_reannounce(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+-- priority: 0=dont_download .. 7=top.
+public handler btSetFilePriority(in pTorrent as Integer, in pFileIndex as Integer, in pPriority as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_file_priority(pTorrent, pFileIndex, pPriority) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Bulk file priorities: one priority byte per file, in file order.
+public handler btSetFilePriorities(in pTorrent as Integer, in pPriorities as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   put 0 into tR
+   if the number of bytes in pPriorities > 0 then
+      unsafe
+         put MCDataGetBytePtr(pPriorities) into tPtr
+         put _btx_set_file_priorities(pTorrent, tPtr, the number of bytes in pPriorities) into tR
+      end unsafe
+   end if
+   return tR
+end handler
+
+public handler btSetPiecePriority(in pTorrent as Integer, in pPieceIndex as Integer, in pPriority as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_piece_priority(pTorrent, pPieceIndex, pPriority) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Per-torrent rate caps in bytes/sec, as STRINGS ("0" == unlimited).
+public handler btSetTorrentLimits(in pTorrent as Integer, in pDownBytesPerSec as String, in pUpBytesPerSec as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_torrent_limits(pTorrent, pDownBytesPerSec, pUpBytesPerSec) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- extended control (ABI v4): flags, caps, queue, storage --------------
+
+-- Set/clear raw torrent_flags_t bits. pFlags and pMask are decimal strings;
+-- combine the kFlag* constants by adding their values. set writes ONLY the
+-- masked bits, so set(flags, mask) is the read-modify-write primitive.
+public handler btSetTorrentFlags(in pTorrent as Integer, in pFlags as String, in pMask as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_torrent_flags(pTorrent, pFlags, pMask) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btUnsetTorrentFlags(in pTorrent as Integer, in pFlags as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_unset_torrent_flags(pTorrent, pFlags) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Convenience: toggle one common flag by name (built on the generic pair).
+public handler btSetSequentialDownload(in pTorrent as Integer, in pOn as Boolean) returns Integer
+   if pOn then
+      return btSetTorrentFlags(pTorrent, kFlagSequentialDownload, kFlagSequentialDownload)
+   end if
+   return btUnsetTorrentFlags(pTorrent, kFlagSequentialDownload)
+end handler
+
+public handler btSetAutoManaged(in pTorrent as Integer, in pOn as Boolean) returns Integer
+   if pOn then
+      return btSetTorrentFlags(pTorrent, kFlagAutoManaged, kFlagAutoManaged)
+   end if
+   return btUnsetTorrentFlags(pTorrent, kFlagAutoManaged)
+end handler
+
+public handler btSetSuperSeeding(in pTorrent as Integer, in pOn as Boolean) returns Integer
+   if pOn then
+      return btSetTorrentFlags(pTorrent, kFlagSuperSeeding, kFlagSuperSeeding)
+   end if
+   return btUnsetTorrentFlags(pTorrent, kFlagSuperSeeding)
+end handler
+
+public handler btSetShareMode(in pTorrent as Integer, in pOn as Boolean) returns Integer
+   if pOn then
+      return btSetTorrentFlags(pTorrent, kFlagShareMode, kFlagShareMode)
+   end if
+   return btUnsetTorrentFlags(pTorrent, kFlagShareMode)
+end handler
+
+public handler btSetUploadMode(in pTorrent as Integer, in pOn as Boolean) returns Integer
+   if pOn then
+      return btSetTorrentFlags(pTorrent, kFlagUploadMode, kFlagUploadMode)
+   end if
+   return btUnsetTorrentFlags(pTorrent, kFlagUploadMode)
+end handler
+
+-- Per-torrent caps: max peer connections, and max unchoked upload slots.
+public handler btSetMaxConnections(in pTorrent as Integer, in pMax as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_max_connections(pTorrent, pMax) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btSetMaxUploads(in pTorrent as Integer, in pMax as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_set_max_uploads(pTorrent, pMax) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Clear a torrent's error state so it can resume (after fixing disk/permission).
+public handler btClearTorrentError(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_torrent_clear_error(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Ask the tracker(s) for current seed/leecher counts (-> scrapeReply event).
+public handler btScrapeTracker(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_scrape_tracker(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Move the downloaded files to a new folder (-> storageMoved / fileError event).
+public handler btMoveStorage(in pTorrent as Integer, in pSavePath as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_move_storage(pTorrent, pSavePath) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Download-queue position: 0-based, or -1 if not queued (or invalid handle).
+public handler btQueuePosition(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_queue_position(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btQueueUp(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_queue_move(pTorrent, 0) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btQueueDown(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_queue_move(pTorrent, 1) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btQueueTop(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_queue_move(pTorrent, 2) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btQueueBottom(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_queue_move(pTorrent, 3) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Request resume data (async; arrives later as a resumeDataReady event whose
+-- "resumeData" key holds the bytes to persist).
+public handler btSaveResumeData(in pTorrent as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_save_resume(pTorrent) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: status & inspection (one snapshot per call)
+-- ===================================================================== --
+
+-- A status snapshot as an Array (keys: name, state, progress, downloadRate,
+-- totalDone, numPeers, savePath, infoHashV1, ...). Empty array on a bad handle.
+public handler btTorrentStatus(in pTorrent as Integer) returns Array
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_torrent_status(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_torrent_status(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return {}
+   end if
+   return _parseRecord(_bufToData(sStatusPtr, tCount), 1)
+end handler
+
+public handler btTorrentCount(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_torrent_count(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btTorrentHandleAt(in pSession as Integer, in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_torrent_handle_at(pSession, pIndex) into tR
+   end unsafe
+   return tR
+end handler
+
+-- The v1 (or, absent v1, v2) info-hash as a hex string.
+public handler btInfoHash(in pTorrent as Integer) returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _btx_info_hash_hex(pTorrent, sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureScratch(-tCount)
+      unsafe
+         put _btx_info_hash_hex(pTorrent, sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
+end handler
+
+-- The packed piece have-bitfield as raw Data (1 bit per piece, MSB first).
+public handler btPieceBitfield(in pTorrent as Integer) returns Data
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_piece_bitfield(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_piece_bitfield(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sStatusPtr, tCount)
+end handler
+
+-- Connected peers as a List of Arrays (keys: endpoint, client, downRate, ...).
+public handler btPeerList(in pTorrent as Integer) returns List
+   variable tPeers as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tPeerCount as Integer
+   variable tBodyLen as Integer
+   variable tPeer as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tPeers
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_peer_list(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_peer_list(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tPeers
+   end if
+   put _bufToData(sStatusPtr, tCount) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tPeerCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tPeerCount
+      -- entry := [bodyLen:u16][kvrecord]; advance by the on-wire bodyLen
+      put _readU16(tBuf, tOffset) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 2) into tPeer
+      push tPeer onto tPeers
+      add (2 + tBodyLen) to tOffset
+   end repeat
+   return tPeers
+end handler
+
+-- The torrent's files as a List of Arrays (one per file), each with keys
+-- "path", "size", "progress" (bytes downloaded) and "priority" (0..7). Empty
+-- until metadata arrives. One FFI round-trip returns the whole file table.
+public handler btFileList(in pTorrent as Integer) returns List
+   variable tFiles as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tFileCount as Integer
+   variable tBodyLen as Integer
+   variable tFile as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tFiles
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_file_list(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_file_list(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tFiles
+   end if
+   put _bufToData(sStatusPtr, tCount) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tFileCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tFileCount
+      -- entry := [bodyLen:u16][kvrecord]; advance by the on-wire bodyLen
+      put _readU16(tBuf, tOffset) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 2) into tFile
+      push tFile onto tFiles
+      add (2 + tBodyLen) to tOffset
+   end repeat
+   return tFiles
+end handler
+
+-- Per-piece availability: one byte per piece (how many connected peers have
+-- that piece, clamped to 255). Empty data until the torrent has metadata+peers.
+public handler btPieceAvailability(in pTorrent as Integer) returns Data
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_piece_availability(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_piece_availability(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sStatusPtr, tCount)
+end handler
+
+-- The torrent's trackers as a List of Arrays, each with keys "url", "tier",
+-- "verified" (0/1), "source". One FFI round-trip for the whole announce list.
+public handler btTrackers(in pTorrent as Integer) returns List
+   variable tTrackers as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tTrackerCount as Integer
+   variable tBodyLen as Integer
+   variable tTracker as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tTrackers
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_trackers(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_trackers(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tTrackers
+   end if
+   put _bufToData(sStatusPtr, tCount) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tTrackerCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tTrackerCount
+      put _readU16(tBuf, tOffset) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 2) into tTracker
+      push tTracker onto tTrackers
+      add (2 + tBodyLen) to tOffset
+   end repeat
+   return tTrackers
+end handler
+
+-- Add an announce URL at the given tier (0 == first tier). Duplicates ignored.
+public handler btAddTracker(in pTorrent as Integer, in pUrl as String, in pTier as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_add_tracker(pTorrent, pUrl, pTier) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Add / remove an HTTP (URL / web) seed (BEP 19).
+public handler btAddWebSeed(in pTorrent as Integer, in pUrl as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_add_url_seed(pTorrent, pUrl) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btRemoveWebSeed(in pTorrent as Integer, in pUrl as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_remove_url_seed(pTorrent, pUrl) into tR
+   end unsafe
+   return tR
+end handler
+
+-- The torrent's web seeds as a List of URL Strings.
+public handler btWebSeeds(in pTorrent as Integer) returns List
+   variable tSeeds as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tSeedCount as Integer
+   variable tBodyLen as Integer
+   variable tRec as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tSeeds
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_url_seeds(pTorrent, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_url_seeds(pTorrent, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tSeeds
+   end if
+   put _bufToData(sStatusPtr, tCount) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tSeedCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tSeedCount
+      put _readU16(tBuf, tOffset) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 2) into tRec
+      push tRec["urlSeed"] onto tSeeds
+      add (2 + tBodyLen) to tOffset
+   end repeat
+   return tSeeds
+end handler
+
+-- ===================================================================== --
+--  Public API: the alert drain (the event firehose)
+-- ===================================================================== --
+
+-- Drain all pending events with ONE FFI round-trip and return them as a List
+-- of Arrays. Each array has "code" (numeric), "name" (the semantic message),
+-- "torrent" (our handle), plus event-specific keys. The poll dispatcher in
+-- examples/torrent-helpers.livecodescript turns each into a sent message.
+public handler btPoll(in pSession as Integer) returns List
+   variable tEvents as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tAlertCount as Integer
+   variable tType as Integer
+   variable tBodyLen as Integer
+   variable tEvent as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tEvents
+   _ensureDrain(kDrainCap)
+   unsafe
+      put _btx_pop_alerts(pSession, sDrainPtr, sDrainCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      -- even the first record did not fit; grow to the needed size and retry once
+      _ensureDrain(-tCount)
+      unsafe
+         put _btx_pop_alerts(pSession, sDrainPtr, sDrainCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tEvents
+   end if
+   -- IMPORTANT: btx_pop_alerts is the ONE buffer call that returns the ALERT
+   -- COUNT on success, not a byte length (every other btx_* returns bytes). So
+   -- copy the WHOLE buffer and let the on-wire framing bound the walk - the
+   -- [alertCount:u16] header below is the loop count and each record carries its
+   -- own bodyLen. The records sit at the front, so the loop stops after
+   -- alertCount of them and the unused tail is never touched.
+   put _bufToData(sDrainPtr, sDrainCap) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tAlertCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tAlertCount
+      -- entry := [alertType:u16][bodyLen:u16][kvrecord]
+      put _readU16(tBuf, tOffset) into tType
+      put _readU16(tBuf, tOffset + 2) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 4) into tEvent
+      put tType into tEvent["code"]
+      put _alertName(tType) into tEvent["name"]
+      push tEvent onto tEvents
+      add (4 + tBodyLen) to tOffset
+   end repeat
+   return tEvents
+end handler
+
+-- ===================================================================== --
+--  Public API: DHT
+-- ===================================================================== --
+
+public handler btDhtAddBootstrap(in pSession as Integer, in pHost as String, in pPort as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_dht_add_bootstrap(pSession, pHost, pPort) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler btDhtState(in pSession as Integer) returns Array
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_dht_state(pSession, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount <= 0 then
+      return {}
+   end if
+   return _parseRecord(_bufToData(sStatusPtr, tCount), 1)
+end handler
+
+-- Opaque DHT routing-table state for persistence across runs.
+public handler btDhtSaveState(in pSession as Integer) returns Data
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_dht_save_state(pSession, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_dht_save_state(pSession, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sStatusPtr, tCount)
+end handler
+
+public handler btDhtLoadState(in pSession as Integer, in pData as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   put 0 into tR
+   if the number of bytes in pData > 0 then
+      unsafe
+         put MCDataGetBytePtr(pData) into tPtr
+         put _btx_dht_load_state(pSession, tPtr, the number of bytes in pData) into tR
+      end unsafe
+   end if
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: BEP44 DHT key-value store
+-- ===================================================================== --
+
+-- Generate (pSeed empty) or deterministically re-derive (pSeed = 64-hex seed)
+-- an ed25519 keypair for mutable items. Returns an Array {publicKey, secretKey,
+-- seed} (all hex); persist the seed (or secretKey) to keep a stable identity.
+public handler btDhtKeypair(in pSeed as String) returns Array
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_dht_keypair(pSeed, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_dht_keypair(pSeed, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return {}
+   end if
+   return _parseRecord(_bufToData(sStatusPtr, tCount), 1)
+end handler
+
+-- Store pData (1..1000 bytes) as an immutable item. Returns its target hash
+-- (the lookup key) as hex, or "" on failure. The store confirms later as a
+-- dhtPut event.
+public handler btDhtPutImmutable(in pSession as Integer, in pData as Data) returns String
+   variable tCount as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pData into tLen
+   if tLen <= 0 then
+      return ""
+   end if
+   _ensureScratch(kScratchCap)
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+      put _btx_dht_put_immutable(pSession, tPtr, tLen, sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
+end handler
+
+-- Look up an immutable item by its 40-hex target. The value arrives as a
+-- dhtImmutableItem event (carrying target + value).
+public handler btDhtGetImmutable(in pSession as Integer, in pTarget as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_dht_get_immutable(pSession, pTarget) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Store pData (1..1000 bytes) as a mutable item under an ed25519 key; the
+-- native layer signs it with pSecretKey (no script on the network thread).
+-- pSalt may be empty. Confirms as a dhtPut event.
+public handler btDhtPutMutable(in pSession as Integer, in pPublicKey as String, in pSecretKey as String, in pSalt as String, in pData as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pData into tLen
+   if tLen <= 0 then
+      return -3
+   end if
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+      put _btx_dht_put_mutable(pSession, pPublicKey, pSecretKey, pSalt, tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Look up a mutable item by its 64-hex public key (+ optional salt). The value
+-- arrives as a dhtMutableItem event (value, seq, signature, authoritative).
+public handler btDhtGetMutable(in pSession as Integer, in pPublicKey as String, in pSalt as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_dht_get_mutable(pSession, pPublicKey, pSalt) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Build the EXACT bytes BEP44 signs for (pSalt, pSeq, pValue): the canonical
+-- buffer [4:salt<len>:<salt>] 3:seqi<seq>e 1:v <value>. pSeq is the sequence
+-- number as a decimal string; pValue is the ALREADY-BENCODED value v. Sign the
+-- returned Data in your own crypto layer (an ed25519 detached signature over
+-- these bytes) and hand the signature to btDhtPutSigned. This exists so a signer
+-- that must keep its key private (e.g. cryptoXT/SodiumXT) can produce a BEP44
+-- signature without any secret key ever crossing into this library. Empty Data
+-- on failure.
+public handler btDhtBep44SignBuf(in pSalt as String, in pSeq as String, in pValue as Data) returns Data
+   variable tCount as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pValue into tLen
+   _ensureStatus(kStatusCap)
+   unsafe
+      put MCDataGetBytePtr(pValue) into tPtr
+      put _btx_dht_bep44_signbuf(pSalt, pSeq, tPtr, tLen, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put MCDataGetBytePtr(pValue) into tPtr
+         put _btx_dht_bep44_signbuf(pSalt, pSeq, tPtr, tLen, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sStatusPtr, tCount)
+end handler
+
+-- Store a mutable item whose signature was produced OUTSIDE this library. pValue
+-- is the already-bencoded v (stored verbatim so it matches what was signed);
+-- pSeq the decimal sequence number; pSignature the 128-hex ed25519 signature over
+-- btDhtBep44SignBuf(pSalt, pSeq, pValue). The native layer VERIFIES the signature
+-- against pPublicKey before storing, so a bad signature returns -3 here instead
+-- of silently vanishing on the network. Confirms as a dhtPut event.
+public handler btDhtPutSigned(in pSession as Integer, in pPublicKey as String, in pSalt as String, in pSeq as String, in pValue as Data, in pSignature as String) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pValue into tLen
+   if tLen <= 0 then
+      return -3
+   end if
+   unsafe
+      put MCDataGetBytePtr(pValue) into tPtr
+      put _btx_dht_put_signed(pSession, pPublicKey, pSalt, pSeq, tPtr, tLen, pSignature) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: create torrents (seeding side)
+-- ===================================================================== --
+
+-- Build a .torrent for pContentPath (file or directory) and return its bytes.
+-- pPieceSize 0 == auto. pTrackers is an optional newline-separated list of
+-- announce URLs (empty = trackerless / DHT-only). Empty Data on failure (see
+-- btLastError).
+public handler btCreateTorrent(in pContentPath as String, in pPieceSize as Integer, in pFlags as Integer, in pTrackers as String) returns Data
+   variable tCount as Integer
+   _ensureStatus(kStatusCap)
+   unsafe
+      put _btx_create_torrent(pContentPath, pPieceSize, pFlags, pTrackers, sStatusPtr, sStatusCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureStatus(-tCount)
+      unsafe
+         put _btx_create_torrent(pContentPath, pPieceSize, pFlags, pTrackers, sStatusPtr, sStatusCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sStatusPtr, tCount)
+end handler
+
+-- ===================================================================== --
+--  Public API: rp1 custom BEP10 extension (Riptide transport)
+-- ===================================================================== --
+
+-- Add a metadata-less "phantom swarm" from a bare 40-hex info-hash. Returns a
+-- torrent handle (0 on failure). Pair with btDhtAnnounce / btDhtGetPeers on the
+-- same id and the btRp1* calls to meet peers with no server and no content.
+public handler btAddInfohash(in pSession as Integer, in pInfoHash as String, in pSavePath as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_add_infohash(pSession, pInfoHash, pSavePath) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Turn on the rp1 extension for this session (idempotent). Call it before adding
+-- the swarms it should apply to. Returns 0 / negative.
+public handler btRp1Enable(in pSession as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _btx_rp1_enable(pSession) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Publish an opaque blob in our extended-handshake "rp1_tok" field (e.g. a signed
+-- recognition token); empty Data clears it. Sent on handshakes made after this
+-- call. Returns 0 / negative (needs rp1 enabled).
+public handler btRp1SetToken(in pSession as Integer, in pToken as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pToken into tLen
+   unsafe
+      put MCDataGetBytePtr(pToken) into tPtr
+      put _btx_rp1_set_token(pSession, tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Queue one rp1 message of opaque bytes to a peer (from an rp1 event). It is sent
+-- on libtorrent's next tick for that peer. Fails (-3) if the peer is unknown,
+-- gone, or has not completed an rp1 handshake. Returns 0 / negative.
+public handler btRp1Send(in pSession as Integer, in pPeer as Integer, in pData as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pData into tLen
+   if tLen <= 0 then
+      return -3
+   end if
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+      put _btx_rp1_send(pSession, pPeer, tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+-- Drain queued rp1 events (peer up/down, handshake, message). Returns a List of
+-- event Arrays in the SAME shape as btPoll (each with a "name", "code", "peer",
+-- and event-specific keys). Reuses the shared drain buffer.
+public handler btRp1Poll(in pSession as Integer) returns List
+   variable tEvents as List
+   variable tCount as Integer
+   variable tOffset as Integer
+   variable tAlertCount as Integer
+   variable tType as Integer
+   variable tBodyLen as Integer
+   variable tEvent as Array
+   variable tI as Integer
+   variable tBuf as Data
+   put [] into tEvents
+   _ensureDrain(kDrainCap)
+   unsafe
+      put _btx_rp1_poll(pSession, sDrainPtr, sDrainCap) into tCount
+   end unsafe
+   if tCount < 0 then
+      _ensureDrain(-tCount)
+      unsafe
+         put _btx_rp1_poll(pSession, sDrainPtr, sDrainCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return tEvents
+   end if
+   put _bufToData(sDrainPtr, sDrainCap) into tBuf
+   put 1 into tOffset
+   put _readU16(tBuf, tOffset) into tAlertCount
+   add 2 to tOffset
+   repeat with tI from 1 up to tAlertCount
+      put _readU16(tBuf, tOffset) into tType
+      put _readU16(tBuf, tOffset + 2) into tBodyLen
+      put _parseRecord(tBuf, tOffset + 4) into tEvent
+      put tType into tEvent["code"]
+      put _alertName(tType) into tEvent["name"]
+      push tEvent onto tEvents
+      add (4 + tBodyLen) to tOffset
+   end repeat
+   return tEvents
+end handler
+
+-- A library module must be closed with `end library` (matching the opening
+-- `library ...` declaration) or OXT reports a syntax error at end-of-file.
+end library

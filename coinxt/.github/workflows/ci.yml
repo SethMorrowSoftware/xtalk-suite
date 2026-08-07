@@ -1,0 +1,42 @@
+name: CoinXT CI
+
+# The automated safety net CoinXT gets. OXT is a GUI runtime with no headless way
+# to compile or run .lcb / .livecodescript, so the script layer is covered by the
+# static gates only; behaviour on a real engine is confirmed manually (CLAUDE.md).
+# The NATIVE shim, by contrast, IS fully testable headless: the known-answer
+# harness builds it from source and drives it through ctypes, and the ASan/UBSan
+# self-test proves it memory-clean. Both run here on every push / PR.
+#
+# NOTE: while CoinXT is staged inside the OnionXT repository this workflow is
+# dormant (GitHub only reads .github/ at the repo root). It goes live the moment
+# CoinXT is split into its own repository (see MIGRATION.md).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Static gate for the script layer (.lcb / .livecodescript)
+        run: python3 tools/check-livecodescript.py
+
+      - name: House-style gate for docs (.md)
+        run: python3 tools/check-docs-style.py
+
+      - name: Vendored-source integrity (trezor-crypto subset)
+        run: cd native && sha256sum -c MANIFEST.sha256
+
+      - name: Known-answer vectors (build the shim, drive it via ctypes)
+        run: python3 tools/coin-kat.py --check
+
+      - name: ASan + UBSan native self-test
+        run: sh native/build.sh asan

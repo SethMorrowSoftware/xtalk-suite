@@ -1,0 +1,30 @@
+name: OnionXT CI
+
+# The only automated safety net OnionXT gets: OXT is a GUI runtime with no
+# headless way to compile or run .livecodescript, so these static gates plus the
+# known-answer vectors are what CI can check. Behaviour against a real tor daemon
+# is confirmed on-engine (CLAUDE.md), not here.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Static gate for the script layer (.lcb / .livecodescript)
+        run: python3 tools/check-livecodescript.py
+
+      - name: House-style gate for docs (.md)
+        run: python3 tools/check-docs-style.py
+
+      - name: Known-answer vectors self-check (base32 / v3 address / ed25519)
+        run: python3 tools/onion-kat.py --check

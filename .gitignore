@@ -1,0 +1,21 @@
+# Suite-level ignores. Each member also carries its own .gitignore; this root
+# file guarantees that the heavy CMake build trees (which are per-member and can
+# reach into the gigabytes for the WebRTC/torrent members) never get committed,
+# no matter which member you built in.
+build/
+build-*/
+*/build/
+*/build-*/
+cmake-build-*/
+
+# Python tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

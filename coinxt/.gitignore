@@ -1,0 +1,8 @@
+# Native build artifacts (release binaries are committed under native/ in the
+# packaging phase, with a MANIFEST.sha256; dev artifacts are not).
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+cnx_selftest

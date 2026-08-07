@@ -1,0 +1,21 @@
+# Suite documentation
+
+Cross-cutting documents that span more than one member live here. Documents
+about a single extension live in that member's own `<member>/docs/`.
+
+| Document | Scope | What it is |
+|---|---|---|
+| [NEXT-EXTENSIONS-PLAN.md](NEXT-EXTENSIONS-PLAN.md) | whole suite | The roadmap: which native capability becomes which extension, in what order, and why. The document that produced enetxt, datachannelxt, onionxt, and coinxt. |
+| [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) | torrentxt + onionxt + sodiumxt | Model C — optional Tor onion transport for the QuickShare and DHT-Channels demos: file bytes travel peer-to-peer over an onion circuit, hiding both IPs, while BitTorrent/DHT stay the public default. |
+| [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) | all six | The capstone concept: a serverless social app composed from the whole suite — one Argon2id-sealed identity seed, a signed BEP44 feed with co-seeded torrent media, rp1 + secretstream DMs, WebRTC live sessions, enet LAN device sync, and an onion-only anonymous persona. |
+
+**Reading order for someone new to the suite:** the root `README.md` (what the
+six are and how they compose) → `NEXT-EXTENSIONS-PLAN.md` (why they exist) →
+`RIPTIDE-SOCIAL-SPEC.md` (what they build together). Then dive into any
+member's own `docs/`.
+
+> **Path caveat.** These documents were consolidated verbatim from the
+> standalone repositories. Where one cites a member-relative path (e.g.
+> `examples/…`, `src/…`) or another project by name, resolve it under that
+> member's directory (`torrentxt/examples/…`, `sodiumxt/src/…`). Rewriting the
+> cross-references to suite-relative paths is a tracked cleanup, not a code bug.

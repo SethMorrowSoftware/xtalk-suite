@@ -1,0 +1,11 @@
+# MANIFEST.sha256 - integrity pins for third-party (vendored) sources and, from
+# the packaging phase on, the shipped per-platform release binaries. Refresh in
+# the SAME change as any vendor re-pin or binary rebuild (CLAUDE.md / VENDOR.md).
+# Verify with:  cd native && sha256sum -c MANIFEST.sha256
+b53d2eb93806f3d618370726f27eafeb6c279c7a90351297f79e073e49e569be  vendor/LICENSE
+496a5a80346a0fb48ef3fbf53c0da2b69399e1de224d67962342657a9dfd77d1  vendor/byte_order.h
+2f014e8d03420b42fb7b9df39f9150a33ac96d1c48a065f5a908a967561bca02  vendor/memzero.c
+ffec031a236dde8df1c0b95cd0c3bd28ca046f6dc62faff36be8401ba82b214a  vendor/memzero.h
+762e3f5cf352740183330743d52e8f7aa977797038f97a3c0d8b88ff98074b1a  vendor/options.h
+f877c5f62bb2a63653bc363e0995f0bdfe70206c52f5a508d50d04aa373ce767  vendor/sha3.c
+3b48be872bfeecf352140c4956482e88e60d76776d06cd22d828d3d89e4e8a5b  vendor/sha3.h

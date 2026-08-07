@@ -1,0 +1,259 @@
+# TorrentXT Examples
+
+Four self-contained demo apps and one reusable helper, all written in pure xTalk on
+top of the **TorrentXT** extension. Each demo is a single stack script: you paste it
+into a stack, reopen the stack, and it builds its own UI and starts a BitTorrent
+session automatically. No helper stacks, no manual layout.
+
+## What is here
+
+| File | What it is | Needs cryptoXT? |
+|------|------------|-----------------|
+| `torrent-quickshare.livecodescript` | The simplest demo: drag a file, get a code, a friend pastes it and downloads it straight from you. Optionally send anonymously over Tor, serve a **folder** as a browsable `.onion` page, or hand out a **direct web link** any browser can open (with automatic router port-opening). | Only for the optional passphrase lock |
+| _(moved)_ **No Cloud Quick Share** | The revamped Quick Share dashboard has graduated into its own standalone-ready project at [`../nocloudquickshare/`](../nocloudquickshare/) (rebranded away from the TorrentXT name, ready to move to its own repository). It keeps the polished two-column dashboard, the plain-English 3-way share choice, the hardened HTTP/Tor server, and all the quality-of-life touches. See that folder's `README.md` and `CLAUDE.md`. | Only for the optional passphrase lock |
+| `torrent-client.livecodescript` | A full multi-torrent client: add magnets / `.torrent` files / URLs, seed a folder, and manage many torrents with a live Files / Peers / Trackers / Log inspector. Shares the family design system (palette, flat inputs, platform-monospace tables, brand band) while staying resizable, plus clipboard auto-detect, a Copied! flash, and standalone readiness. | No |
+| `torrent-dht-channels.livecodescript` | A decentralized "channels" app: publish files under your own key, follow others by their key, no server anywhere (the DHT is the directory). Shares newquickshare's polished design system (rounded cards, flat inputs, platform monospace, metrics-proof labels) plus clipboard card-detect, Enter-to-act, click-to-copy, and standalone readiness. | Only for private (passphrase) channels |
+| `torrent-rp1-chat.livecodescript` | A two-machine **messaging** demo: two peers meet on a shared "room" id and chat directly over the `rp1` peer-wire extension, with no tracker, no server, and no file transfer at all. | No |
+| `torrent-helpers.livecodescript` | A building block, NOT a demo: a poll dispatcher so your own app can drive TorrentXT with plain event handlers. See the last section. | No |
+
+Start with **quickshare** if you just want to see it work, then **client**, then
+**channels** for the full decentralized story, and **rp1 chat** for serverless
+peer-to-peer messaging (a different paradigm: no files, just live messages).
+
+## Before you start
+
+1. **Install OpenXTalk (OXT).** These demos also run in LiveCode 9.6.3+, but OXT is
+   the target.
+2. **Install the TorrentXT extension** and make sure it is loaded. In OXT this is
+   `Tools > Extension Manager`. The library id is `org.openxtalk.library.torrent`.
+   If you are building it yourself, see `../docs/building.md` and
+   `../tools/package-extension.py`.
+3. **(Optional) Install cryptoXT** if you want the encryption features (the private
+   channels in the channels demo, and the passphrase lock in quickshare and on your
+   channel identity). Its library id is `org.openxtalk.library.sodium`. Everything
+   except those encryption features works without it.
+4. **(For Quick Share's optional Tor mode - anonymous sends and folder web pages)
+   Install OnionXT** (library id `org.openxtalk.library.onion`, which itself needs
+   cryptoXT) and run a **local Tor daemon** with the control port enabled - a system
+   tor on `127.0.0.1:9051`, or Tor Browser on `9151`. Quick Share detects all of this
+   and fails closed with a clear message when it is missing; every other feature still
+   works.
+
+## Running any demo
+
+The demos are stack scripts, so you paste one into a stack and let it build itself:
+
+1. In OXT, create a new one-card stack: `File > New Mainstack`.
+2. Open that stack's script: `Object > Stack Script`.
+3. Open the demo's `.livecodescript` file in any text editor, copy ALL of it, and
+   paste it into the stack script. Apply / compile the script.
+4. **Close the stack window and reopen it.** Reopening fires the script's
+   `openStack`, which builds the whole UI and starts a session. (If you would
+   rather not close it, run `send "openStack" to this stack` from the message box.)
+5. Use the app. When you are done, **close the window** so it shuts the session
+   down cleanly (it flushes fast-resume data and releases the port).
+
+That is it. The UI, the session, the poll loop, and the shutdown are all handled by
+the pasted script.
+
+## The demos
+
+### Quick Share (`torrent-quickshare.livecodescript`)
+Drag any file onto the window (or click to choose one). You get a short **code**;
+send that code to a friend and they paste it into "Receive a file" and click
+Download. The file transfers straight from your machine to theirs, no server and no
+size limit, with the DHT finding the peers. Keep your window open until they have
+the whole file.
+Optional: type a **passphrase** before dropping the file (needs cryptoXT) and the
+share is encrypted end to end. The code carries a verifier, so a wrong passphrase is
+caught instantly with no wasted download.
+
+**Send anonymously over Tor.** Tick **Send privately over Tor** (needs OnionXT + a
+local Tor daemon) and the file's bytes ride a Tor onion instead of the swarm: both
+IP addresses are hidden and no torrent is created. Add a passphrase to also encrypt
+and authenticate it, or tick **Serve as web download** to hand out a Tor Browser
+link for a plaintext file.
+
+**Share a whole folder as a Tor web page.** With Tor on, drag a **folder** (instead
+of a file) and Quick Share serves it as a browsable web page at a private `.onion`:
+open the link in **Tor Browser** to browse subfolders and download any file, with no
+web server, no hosting, and no port forwarding - both the server's IP and each
+visitor's stay hidden. Files are **streamed** (a multi-GB file never loads into
+memory) and downloads support **HTTP Range**, so a Tor-interrupted transfer resumes
+instead of restarting and audio/video seeks in the browser. A folder page is cleartext
+over the onion (a browser cannot decrypt), so there is no passphrase for this mode;
+for an encrypted, verified transfer, share a single file with a passphrase.
+
+**Share via a direct web link (no Tor).** Tick **Share via web link** and drop a file
+or folder: Quick Share runs a small web server and hands you a link like
+`http://<your-ip>:<port>/<token>/`. The recipient opens it in **any** browser - no app,
+no Tor. TorrentXT asks your router to open the port automatically (UPnP/NAT-PMP, the
+same machinery a torrent client uses), so on most home networks there is nothing to
+configure; on the same LAN it works instantly. The link carries a random **token**, so
+an open port is not an open directory - only people you send the link to can reach it.
+This path is fast but not private: your IP is visible and the download is not encrypted
+(use Tor for anonymity). If the router won't do UPnP, Quick Share still shows the
+internet link and tells you the single port to **forward manually**; if you are behind
+**carrier-grade NAT** (a shared public IP, common on mobile and some fibre), a direct
+internet link isn't possible at all and it points you to Tor. The local-network link
+always works regardless.
+
+**Host a web app.** Any of the folder-serving modes (Tor or direct web link) is a real
+static web host. If the folder has an **`index.html`**, it is served as a website's home
+page; other files (`css`, `js`, `wasm`, ES modules, fonts, images, source maps, ...) are
+served with correct MIME types, with **HTTP Range** so media streams and seeks. A
+**single-page app** works automatically: an unresolved path that looks like a client-side
+route (no file extension) falls back to `index.html` so the app's own router takes over,
+while a genuinely missing asset still returns 404. Two things to know:
+- The **Tor `.onion`** path is the best home for an app: it serves at the root, and Tor
+  Browser treats an onion as a **secure context**, so features that need HTTPS (service
+  workers, some Web APIs) work. Plain `http://` over the direct web link is *not* a secure
+  context, so those features are blocked there.
+- Over the **direct web link** the app lives under `http://<ip>:<port>/<token>/`, so build
+  it with **relative** asset paths (or a matching base) - absolute paths like `/app.js`
+  resolve above the token and 404. Over Tor (served at the root) absolute paths are fine.
+
+There is a **ready-made demo app** in [`quickshare-webapp/`](quickshare-webapp/): drag that
+folder onto Quick Share and share it to see static assets, correct MIME types, HTTP Range
+(a `<audio>` seek), automatic SPA routing (deep links + refresh), a live `GET /_qs/info`
+call, and a gallery of SVG/PNG images - the same folder working over Tor or the web link.
+See its [README](quickshare-webapp/README.md).
+
+**Give it a backend.** The server also does **dynamic routes**, so a hosted app can call
+back into your stack instead of being purely static. A built-in demo route answers
+`GET /_qs/info` with live share metadata as JSON - visit
+`http://<address>/_qs/info` (or, on the direct web link, `.../<token>/_qs/info`). Add your
+own in the stack script:
+
+```
+qsHttpRoute "POST", "/api/echo", "myEcho"      -- register (any method; POST bodies work)
+...
+command myEcho pConn, pRequest                  -- pRequest has __method/__path/__query/__body + headers
+   qsHttpReply pConn, 200, "application/json; charset=utf-8", ("{" & quote & "you-sent" & quote & ":" & pRequest["__body"] & "}")
+end myEcho
+```
+
+A handler **must call `qsHttpReply` exactly once** - that sends the response and closes
+the connection; a route that returns without replying leaves the request hanging until
+the browser gives up. Routes run on the one UI thread, so keep a handler **light**
+(return quickly); for real data a handler can read/write files or use the engine's
+SQLite. This is a small backend for a self-hosted appliance, not a high-traffic server.
+
+**Edit it live from a browser.** Tick **Enable web editing** and set an **edit
+password**, and the web-shared *folder* becomes editable from a browser: open the shared
+link with **`/_edit`** on the end (e.g. `http://<ip>:<port>/<token>/_edit`) to get a tiny
+built-in editor - a file list, a text pane, and Save. This is deliberately locked down:
+- **LAN-only, always.** The editor answers **only devices on your own local network** -
+  it decides from the browser's TCP address (which a remote client cannot forge), not any
+  header. **Internet and Tor visitors can view the site but can never reach the editor**,
+  even while the port is open to the world for the public link. Carrier-NAT (100.64/10)
+  addresses are treated as *remote*, not LAN.
+- **Password-gated.** The password is run through **Argon2id** (via **cryptoXT** /
+  `org.openxtalk.library.sodium`); a correct login mints a random session token the
+  browser sends back on every save. Without cryptoXT the editor cannot be enabled.
+- **Off by default**, and confined: every write is resolved by `qsEditSafePath`, which
+  refuses anything that could escape the served folder (any `..`, drive/`scheme:` colon,
+  or control byte), so a save can only ever land **inside the shared folder**.
+- It edits **text/code** files up to ~256 KB (a browser textarea, not a binary editor).
+
+The LAN-only rule and the write-path confinement are pinned by adversarial vectors in
+`tests/fileserver_golden.py` (`edit_is_local`, `edit_safe_path`).
+
+### Client (`torrent-client.livecodescript`)
+A real multi-torrent client. Paste a magnet, an `http(s)` `.torrent` URL, a local
+`.torrent` path, or a 40-hex info-hash into the Add box (or drag one onto the
+window). Select a torrent and use the toolbar to Pause / Resume / Recheck / Remove /
+Open Folder, toggle streaming (sequential download), or reorder the queue. The bottom
+panel inspects the selected torrent's **Files** (double-click a file to set its
+priority), **Peers**, **Trackers**, and the event **Log**. You can also build a
+`.torrent` from a folder and seed it. Settings and window size are remembered.
+Shares the family design system - the same palette, flat inputs, platform
+monospace tables, metrics-proof labels, and a brand title band - while staying
+vertically resizable; plus clipboard auto-detect (an addable magnet / info-hash
+pre-fills the Add box on open or refocus), a "Copied!" flash on Copy Magnet, and
+standalone readiness (self-building UI, clean shutdown on Cmd-Q).
+
+### Decentralized Channels (`torrent-dht-channels.livecodescript`)
+The full decentralized story, on two or more machines. Give a channel a name, click
+**Publish a File**, and it seeds the file and publishes the magnet in your channel's
+signed feed on the DHT. Send someone your channel address (the "Copy" button); on
+their machine they paste it, click **Follow**, and see your signed releases, which
+they can Download peer to peer. You can run several channels. Set a **passphrase**
+(needs cryptoXT) to make a channel private: the file list AND the files are
+encrypted, and only followers you give the passphrase to can read anything. Your
+identity, channels, and subscriptions persist automatically, and **Lock Identity**
+seals that saved state with a passphrase. The UI shares newquickshare's design
+system - rounded cards, flat inputs, platform monospace, metrics-proof labels -
+and its quality-of-life touches: a channel card on the clipboard pre-fills the
+Follow box when the window opens or refocuses, Enter acts in every input box,
+the address/code boxes are click-to-copy with a "Copied!" flash, and it is
+standalone-ready (self-building UI, clean shutdown on Cmd-Q).
+
+### rp1 Chat (`torrent-rp1-chat.livecodescript`)
+A different paradigm from the file-transfer demos: **live messaging**, no files. It
+shows off the `rp1` peer-wire extension (the transport the Riptide project rides).
+On two machines, type the **same room name** and click **Join**. Each side joins a
+metadata-less "phantom swarm" at that room's id and announces on the DHT; the DHT
+introduces the two peers, they complete the `rp1` handshake, and then anything you
+type travels straight to the other machine over the peer wire, with **no tracker, no
+server, and no content**. Watch the log: you will see the peer connect, become
+"rp1-capable", and then your messages cross. Messages here are **plaintext on
+purpose** so you can see the transport working; Riptide layers end-to-end encryption
+(SodiumXT) on top of this exact channel. This demo needs a **live peer** to show
+anything, so it is a two-machine test by nature.
+
+## Two-machine demos and the DHT
+
+Quickshare, Channels, and rp1 Chat are peer to peer, so they are best tried on **two
+different computers** (ideally on different networks). A few things to expect:
+
+- **Give the DHT a few seconds** to find peers before the first transfer. A brand
+  new session has to bootstrap into the swarm.
+- **One session per process.** TorrentXT allows one live session at a time, so run
+  one demo per OXT instance. For a two-party test, use two machines rather than two
+  windows on one.
+- Transfers move on TorrentXT's own threads, so the UI stays responsive even during
+  a large transfer.
+
+## Where your files go
+
+- **Downloads** land in a folder the app chooses or lets you pick (the client lets
+  you set it; quickshare and channels use a folder in your Documents). The app tells
+  you the path.
+- **Settings and identity** are saved to a small file under a `TorrentXT` folder in
+  your per-user area (Preferences on Mac, AppData on Windows). This is what lets a
+  packaged standalone remember its state across launches. In the channels demo you
+  can encrypt that file with **Lock Identity**; there is no recovery if you lose that
+  passphrase.
+
+## Packaging a demo as a standalone (.exe / .app)
+
+When you build a standalone, open `File > Standalone Application Settings`, go to the
+Inclusions pane, and **manually include the TorrentXT extension** (and cryptoXT if
+you use encryption). The native library is bundled into the app automatically, so you
+do not ship loose `.dll` / `.so` / `.dylib` files. Because the demos persist their
+state to the external prefs file described above, a standalone keeps its channels and
+settings across launches even though it cannot save its own stack.
+
+## torrent-helpers.livecodescript (a building block, not a demo)
+
+This one does not have a UI. It is a small poll dispatcher for your OWN apps: rather
+than write a poll loop, you `start using stack "torrentHelpers"` (or set it as a
+behavior) and then handle plain messages as TorrentXT events arrive. It drains the
+engine's event buffer on a timer with one FFI call and `send`s one semantic message
+per event, which keeps the "never call script from an engine thread" rule while
+letting you write normal event handlers. The four demos above already include their
+own poll loops, so you do not need this to run them; reach for it when you are
+building something new.
+
+## Troubleshooting
+
+- **"handler not found" / nothing happens on open:** the TorrentXT extension is not
+  installed or not loaded. Check `Tools > Extension Manager`.
+- **The private-channel / passphrase features are greyed out or say "install
+  cryptoXT":** install `org.openxtalk.library.sodium`. Everything else still works
+  without it.
+- **No peers / no transfer:** give the DHT a few seconds, confirm the other side is
+  running and reachable, and remember both peers need to be online at the same time.
+- **The UI did not build after pasting:** you need to reopen the stack (or
+  `send "openStack" to this stack`) so `openStack` runs.
