@@ -53,14 +53,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ cmake ninja-build
+      # ENETXT_SANITIZE is the member's own knob: a STRING, injected GLOBALLY
+      # before FetchContent so the pinned ENet is instrumented too. Hand-rolled
+      # per-build flags would leave the dependency bare.
       - name: Configure + build + test under sanitizers
         run: |
           cmake -S . -B build-asan \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DENETXT_BUILD_TESTS=ON \
-            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+            -DENETXT_SANITIZE=address
           cmake --build build-asan --parallel 4
+          ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
           ctest --test-dir build-asan --output-on-failure --no-tests=error
 
   build-matrix:

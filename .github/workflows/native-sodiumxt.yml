@@ -42,12 +42,14 @@ jobs:
         # A crypto binding is exactly where an off-by-one in buffer sizing
         # hides, so the smoke test's short-buffer and bad-handle cases run
         # instrumented. gcc: clang's ASan runtime is not on the runner image.
+        env:
+          CC: gcc
         run: |
           cmake -S . -B build-asan \
-            -DCMAKE_BUILD_TYPE=Debug \
             -DSODIUMXT_BUILD_TESTS=ON \
-            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+            -DSODIUMXT_SANITIZE=ON
           cmake --build build-asan --parallel 4
+          ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
           ctest --test-dir build-asan --output-on-failure --no-tests=error
 
   build-matrix:

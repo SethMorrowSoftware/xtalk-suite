@@ -45,9 +45,11 @@ jobs:
       - name: Configure + build + test under ASan/UBSan
         run: |
           cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DDATACHANNELXT_BUILD_TESTS=ON \
             -DDATACHANNELXT_SANITIZE=address
           cmake --build build-asan --parallel 4
+          ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
           ctest --test-dir build-asan --output-on-failure --no-tests=error
 
   sanitize-thread:
@@ -65,6 +67,7 @@ jobs:
       - name: Configure + build + test under TSan
         run: |
           cmake -S . -B build-tsan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DDATACHANNELXT_BUILD_TESTS=ON \
             -DDATACHANNELXT_SANITIZE=thread
           cmake --build build-tsan --parallel 4

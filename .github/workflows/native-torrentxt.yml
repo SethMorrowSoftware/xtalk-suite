@@ -44,14 +44,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ cmake ninja-build libtorrent-rasterbar-dev libboost-dev libssl-dev zlib1g-dev
+      # Use the member's OWN sanitizer knob rather than hand-rolled flags: it
+      # sets the compile AND link options together, which hand-rolled
+      # CMAKE_CXX_FLAGS does not.
       - name: Configure + build + test under sanitizers
         run: |
           cmake -S . -B build-asan \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DTORRENTXT_BUILD_TESTS=ON \
             -DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+            -DTORRENTXT_SANITIZE=ON
           cmake --build build-asan --parallel 2
+          # detect_container_overflow off: our ASan code links a NON-instrumented
+          # system libtorrent, and std containers crossing that boundary would
+          # otherwise raise a false positive. (Carried from the member workflow
+          # this lane was ported from; the first abort here had a different
+          # cause - a malformed-blob probe that trips an assertion inside
+          # libtorrent 2.0.10 - see the note in tests/torrent_smoke_test.cpp.)
+          ASAN_OPTIONS=detect_container_overflow=0:halt_on_error=1 \
+          UBSAN_OPTIONS=halt_on_error=1 \
           ctest --test-dir build-asan --output-on-failure --no-tests=error
 
   build-matrix:

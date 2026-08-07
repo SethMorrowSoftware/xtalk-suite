@@ -66,6 +66,16 @@ target_link_libraries(enetxt PRIVATE enetxt_flags)
 target_include_directories(enetxt SYSTEM PRIVATE ${enet_SOURCE_DIR}/include)
 target_link_libraries(enetxt PRIVATE enet)
 
+# Winsock + the multimedia timer, on Windows. ENet's own CMakeLists links these
+# ONLY under MINGW (`if (MINGW) target_link_libraries(enet winmm ws2_32)`), so
+# under MSVC nothing does - and because we fold ENet in as a STATIC archive, the
+# unresolved imports land on OUR shared library: 28 unresolved __imp_htonl /
+# __imp_ntohl / socket externals at link time. Pre-existing, and invisible until
+# a real MSVC build ran for the first time under the root CI matrix.
+if(WIN32)
+  target_link_libraries(enetxt PRIVATE ws2_32 winmm)
+endif()
+
 # Export ONLY the enx_* ABI. Statically linked ENet objects otherwise inherit
 # the .so's public visibility and export ~65 enet_* symbols, which another
 # extension bundling its own ENet could interpose with. -fvisibility=hidden on
