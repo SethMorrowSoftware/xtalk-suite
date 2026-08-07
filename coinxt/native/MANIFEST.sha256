@@ -1,7 +1,10 @@
-# MANIFEST.sha256 - integrity pins for third-party (vendored) sources and, from
-# the packaging phase on, the shipped per-platform release binaries. Refresh in
-# the SAME change as any vendor re-pin or binary rebuild (CLAUDE.md / VENDOR.md).
+# MANIFEST.sha256 - integrity pins for the third-party (vendored) sources.
+# Refresh in the SAME change as any vendor re-pin (CLAUDE.md / VENDOR.md).
 # Verify with:  cd native && sha256sum -c MANIFEST.sha256
+#
+# The SHIPPED per-platform binaries are pinned separately, in
+# src/code/MANIFEST.sha256 - the same place and the same way every other suite
+# member pins them, so one gate shape covers all six.
 b53d2eb93806f3d618370726f27eafeb6c279c7a90351297f79e073e49e569be  vendor/LICENSE
 496a5a80346a0fb48ef3fbf53c0da2b69399e1de224d67962342657a9dfd77d1  vendor/byte_order.h
 ef44ae6fb924e2aa975e58789603e59399f9383887d3eda55e6920d23c627e24  vendor/hmac.c

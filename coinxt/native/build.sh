@@ -1,21 +1,31 @@
 #!/bin/sh
 # build.sh - build the CoinXT native shim.
 #
-# Two outputs, on purpose (CLAUDE.md "Commands"):
-#   libcoinxt.<ext>  - a plain shared library the LCB module (and the ctypes KAT
-#                      harness) loads. Built without sanitizers so it can be loaded
-#                      into a non-instrumented host process.
+# Three outputs, on purpose (CLAUDE.md "Commands"):
+#   libcoinxt.<ext>  - a plain shared library the ctypes KAT harness loads. Built
+#                      without sanitizers so it can be loaded into a
+#                      non-instrumented host process. Lands in native/, which is
+#                      NOT where the extension looks - this one is for tooling.
 #   cnx_selftest     - an ASan + UBSan executable that exercises the shim and is
 #                      run to prove the native code is memory-clean.
+#   src/code/<arch>-<platform>/coinxt.<ext>
+#                    - the SHIPPED library: the exact file the packaged extension
+#                      carries and the engine dlopen()s when src/coinxt.lcb binds
+#                      `c:coinxt>`. Filtered to the cnx_* surface, stripped, and
+#                      named for the bind token (the `pack` target below).
 #
-# Usage:  sh native/build.sh          # build the shared library
-#         sh native/build.sh asan     # build + run the ASan/UBSan self-test
+# Usage:  sh native/build.sh                  # the tooling library (native/)
+#         sh native/build.sh asan             # build + run the ASan/UBSan self-test
+#         sh native/build.sh pack             # the SHIPPED library into src/code/
+#         sh native/build.sh pack x86-linux   # ... for an explicit platform id
+#                                             # (REQUIRED for any cross build)
 #
 # Run from the CoinXT/ directory (or anywhere; paths are resolved from this file).
 
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)   # .../CoinXT/native
+root=$(CDPATH= cd -- "$here/.." && pwd)             # .../CoinXT
 ven="$here/vendor"
 
 # The vendored trezor-crypto translation units this phase needs.
@@ -36,6 +46,112 @@ case "${1:-lib}" in
     out="$here/libcoinxt.$ext"
     cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src -o "$out"
     echo "built $out"
+    ;;
+  pack)
+    # The shipped artifact. Three things make it different from the `lib`
+    # target, and each of them is load-bearing:
+    #
+    #  1. THE NAME. src/coinxt.lcb binds to "c:coinxt>cnx_*". The engine resolves
+    #     that leading token to a file named `coinxt.<ext>` inside the packaged
+    #     extension, NOT `libcoinxt.<ext>` - the `lib` prefix that is idiomatic
+    #     everywhere else in Unix is exactly wrong here. Every sibling member
+    #     ships the same way (sodiumxt.so, enetxt.so, datachannelxt.so).
+    #  2. THE PATH. src/code/<arch>-<platform>/ is where the engine looks, and
+    #     the directory names are the engine's spelling, not uname's.
+    #  3. THE SURFACE. src/coinxt.map narrows the exports from 77 symbols to the
+    #     16 cnx_* entry points; see that file for why shipping the vendored
+    #     trezor-crypto names into an engine process is not acceptable. If the
+    #     linker will not take a version script we say so loudly and continue,
+    #     because a wide-surface library that WORKS beats no library at all - but
+    #     you should not commit that one.
+    #
+    # The platform id may be given explicitly:  sh native/build.sh pack x86-linux
+    # CROSS BUILDS MUST DO THIS. `uname` describes the MACHINE, not the output,
+    # so a 32-bit build driven by a `cc` that wraps `gcc -m32` still reports
+    # x86_64 - and would file an x86 library into x86_64-linux/, silently
+    # overwriting a good committed binary with one for the wrong architecture.
+    # Deriving it is only safe for a native build, so that stays the default and
+    # anything else says what it is building.
+    if [ $# -ge 2 ]; then
+      platform_id="$2"
+      case "$platform_id" in
+        *-mac|universal-mac) ext=dylib ;;
+        *-win32)             ext=dll ;;
+        *)                   ext=so ;;
+      esac
+    else
+      ext=so
+      plat=linux
+      case "$(uname -s 2>/dev/null || echo unknown)" in
+        Darwin*)              ext=dylib; plat=mac ;;
+        MINGW*|MSYS*|CYGWIN*) ext=dll;   plat=win32 ;;
+      esac
+      case "$(uname -m 2>/dev/null || echo unknown)" in
+        x86_64|amd64)  arch=x86_64 ;;
+        i?86)          arch=x86 ;;
+        arm64|aarch64) arch=arm64 ;;
+        *)             arch=$(uname -m) ;;
+      esac
+      # macOS ships one fat binary for both slices, under the engine's own name
+      # for it; there is no per-arch mac directory in this family.
+      if [ "$plat" = mac ]; then
+        platform_id=universal-mac
+      else
+        platform_id="$arch-$plat"
+      fi
+    fi
+    dir="$root/src/code/$platform_id"
+    out="$dir/coinxt.$ext"
+    # Build to a scratch file and move it into place only on success. Writing
+    # straight to $out would truncate a good committed binary the moment a build
+    # failed, and `mkdir -p` up front would leave an empty platform directory
+    # behind that reads as "this platform is supported" when it is not.
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    staged="$stage/coinxt.$ext"
+
+    # Two probes, not one, and the order matters. The obvious single probe -
+    # "does a link WITH the version script succeed?" - cannot tell a linker that
+    # refuses version scripts from a toolchain that cannot link at all, and it
+    # reports the second as the first. That is the worst possible confusion here,
+    # because the "fix" it implies (carry on without the map) silently widens the
+    # exported surface of a money library. So: prove the toolchain links a
+    # trivial shared object FIRST; only if that works does a failure with the
+    # script added mean what the message says. If the plain link fails we stay
+    # silent and let the real build below fail with the real compiler error.
+    vscript="$root/src/coinxt.map"
+    ldflags=""
+    if [ -f "$vscript" ]; then
+      if cc -fPIC -shared -o /dev/null -xc /dev/null 2>/dev/null; then
+        if cc -fPIC -shared -Wl,--version-script="$vscript" -o /dev/null -xc /dev/null 2>/dev/null; then
+          ldflags="-Wl,--version-script=$vscript"
+        else
+          echo "build.sh pack: WARNING - this linker will not take src/coinxt.map;" >&2
+          echo "  the library will export the vendored trezor-crypto symbols too." >&2
+          echo "  Do not COMMIT this one; see src/coinxt.map." >&2
+        fi
+      fi
+    else
+      echo "build.sh pack: WARNING - src/coinxt.map is missing." >&2
+      echo "  Do not COMMIT this one; see the note in native/build.sh." >&2
+    fi
+
+    cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src $ldflags -o "$staged"
+    # Debug info and local symbols are dead weight in a committed binary and
+    # make the artifact differ run to run; --strip-unneeded keeps exactly the
+    # dynamic symbols the engine needs to bind.
+    if command -v strip > /dev/null 2>&1 && [ "$ext" != dylib ]; then
+      strip --strip-unneeded "$staged" 2>/dev/null || strip "$staged" 2>/dev/null || true
+    fi
+    mkdir -p "$dir"
+    mv "$staged" "$out"
+    echo "built $out"
+    # Say what was actually shipped. A surprise in this list is the whole reason
+    # the version script exists, so it is printed rather than assumed.
+    if command -v nm > /dev/null 2>&1 && [ "$ext" = so ]; then
+      echo "exported symbols:"
+      nm -D --defined-only "$out" | awk '{print "  " $3}' | sort
+    fi
     ;;
   asan)
     tmp=$(mktemp -d)
@@ -97,7 +213,7 @@ EOF
     rm -rf "$tmp"
     ;;
   *)
-    echo "usage: sh build.sh [lib|asan]" >&2
+    echo "usage: sh build.sh [lib|asan|pack]" >&2
     exit 2
     ;;
 esac

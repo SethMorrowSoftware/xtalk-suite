@@ -1,8 +1,19 @@
-# Native build artifacts (release binaries are committed under native/ in the
-# packaging phase, with a MANIFEST.sha256; dev artifacts are not).
+# Native build artifacts. The `lib` and `asan` targets drop throwaway output in
+# native/ (and a temp dir); none of that is committed.
 *.o
-*.so
-*.dylib
-*.dll
 *.a
 cnx_selftest
+native/libcoinxt.*
+
+# The SHIPPED per-platform libraries ARE committed, under
+# src/code/<arch>-<platform>/, alongside src/code/MANIFEST.sha256 - the same
+# place and shape as every other suite member. `sh native/build.sh pack` puts
+# them there.
+#
+# A blanket `*.so` / `*.dylib` / `*.dll` used to live here, from before there was
+# anything to ship, and it silently excluded exactly the file the packaged
+# extension needs: `git add` reported nothing wrong, and the omission would only
+# have surfaced as a bind failure on an engine. The ignores below are therefore
+# scoped to where dev artifacts actually land, and src/code/ is re-included
+# explicitly so a future broad rule cannot re-hide it.
+!src/code/**

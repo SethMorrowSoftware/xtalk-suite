@@ -42,13 +42,15 @@ authority; this is the summary:
 | enetxt | yes | x86_64-linux committed; the root CI builds and tests all 5 platforms and publishes them as artifacts | Phase 1 complete; OXT selftest passed 2026-08-07 |
 | datachannelxt | yes | x86_64-linux | Phases 1-2 (data channels); script layer needs an OXT pass |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | none yet | Designed and statically reasoned; the Keccak/SHA3 slice built and verified |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | x86_64-linux + `MANIFEST.sha256` (`native/build.sh pack` builds the rest) | Designed and statically reasoned; the phase-1 hash surface built, KAT-verified, and bound in `src/coinxt.lcb` (needs an OXT pass) |
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
 on a real engine is labelled **"verified statically; needs an OXT pass"** (Tor
 paths: "+ live-Tor pass"). No member claims a runtime behaviour it has not
-measured.
+measured. `docs/OXT-PASS-RUNBOOK.md` is the runbook for closing that gap: what is
+still unproven and where each label lives, the install order, the run order, and
+what to record.
 
 ## The shared engineering rules
 
@@ -91,7 +93,14 @@ put enLibraryVersion()   -- enetxt
 put dcLibraryVersion()   -- datachannelxt
 put oxVersion()          -- onionxt
 put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession it)
+put cxKeccak256Len()     -- coinxt: prints 32
 ```
+
+Or run all six at once: `tests/suite-selftest.livecodescript` is a single stack
+script that builds its own UI, probes for every member, runs each one's headline
+paths plus the cross-member compositions, and reports PASS / FAIL / SKIP in one
+list — a member you did not install skips, it never fails. See
+`docs/OXT-PASS-RUNBOOK.md`.
 
 ## How they compose
 
@@ -122,12 +131,17 @@ monorepo**):
   LiveCodeScript checker, docs house-style, all golden-vector suites, the
   record registries, the known-answer harnesses, standalone freshness, and the
   `MANIFEST.sha256` integrity checks.
-- **`native-<member>.yml`** — the per-member native matrix (all five platforms,
-  each with its own dependency setup), plus that member's sanitizer lanes,
-  scoped by `paths:` so only the member you touched builds. Each lane uploads
-  its built library as an artifact; **CI does not commit binaries** — refreshing
-  a committed binary stays a deliberate change made alongside the shim edit
-  that motivated it.
+- **`native-<member>.yml`** — the per-member native matrix, plus that member's
+  sanitizer lanes, scoped by `paths:` so only the member you touched builds. The
+  four CMake members cover all five platforms, each with its own dependency
+  setup; coinxt builds from a shell script rather than CMake, so its lane covers
+  Linux only and the file says exactly what macOS and Windows would still need.
+  Each lane uploads its built library as an artifact; **CI does not commit
+  binaries** — refreshing a committed binary stays a deliberate change made
+  alongside the shim edit that motivated it, and
+  `coinxt/tools/check-binary-freshness.py` (in the always-on gates) turns
+  forgetting that into a build failure rather than a load failure on a user's
+  machine.
 
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.

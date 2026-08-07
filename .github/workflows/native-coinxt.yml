@@ -1,0 +1,169 @@
+# coinxt's native lane, at the ROOT of the monorepo.
+#
+# WHY THIS FILE EXISTS. Two reasons, and the first is a gap rather than a port:
+#
+#  1. coinxt's ASan + UBSan self-test was running NOWHERE in CI. suite-gates.yml
+#     runs `build-all.sh --gates`, and the sanitizer self-test lives in the FULL
+#     build-all path, which no root workflow invokes. `coin-kat.py --check` did
+#     run (it compiles the shim from source in a temp dir and drives it through
+#     ctypes), so the vectors were covered - but "the vectors are right" and "the
+#     code is memory-clean" are different claims, and only the first had a gate.
+#  2. coinxt/.github/workflows/ci.yml is inert here (GitHub Actions reads only
+#     the repository root in a monorepo). That file stays for when the member is
+#     developed in isolation; this is the copy that fires. Its duplicated static
+#     gates are dropped here, because suite-gates.yml already runs them for every
+#     member on every push - only the compiler work belongs in this file.
+#
+# WHAT IT DOES NOT DO: it does not commit binaries. Same rule as every other
+# native-*.yml here - a native change refreshes its committed library in the same
+# human-authored change, so each lane uploads an ARTIFACT and a maintainer
+# commits deliberately. check-binary-freshness.py (in the always-on gates) is
+# what makes forgetting that a build failure rather than a runtime surprise.
+#
+# LINUX ONLY, on purpose, and this is a scope statement rather than a limit
+# anyone should be happy with. The other four members reach five platforms
+# through CMake; coinxt builds with a POSIX sh script driving `cc`, and each
+# missing platform needs real work rather than a matrix row:
+#
+#   * WINDOWS needs an MSYS2/MinGW toolchain AND a different export mechanism -
+#     src/coinxt.map is GNU ld syntax, so MSVC would want a .def file.
+#   * MACOS needs both slices lipo'd into one universal binary (a single-arch
+#     dylib filed under `universal-mac` would be a lie about what it is), and
+#     Mach-O ignores a version script, so it needs -exported_symbols_list to get
+#     the same narrow surface. Neither has been tried.
+#
+# Adding a lane that has never been run, to claim a platform, is exactly what the
+# suite's honesty convention exists to prevent. These are named here as open work
+# (see coinxt/IMPLEMENTATION-PLAN.md phase 6), not quietly omitted.
+name: native coinxt
+
+on:
+  pull_request:
+    paths:
+      - "coinxt/**"
+      - ".github/workflows/native-coinxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "coinxt/**"
+      - ".github/workflows/native-coinxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-coinxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: coinxt
+
+jobs:
+  sanitize:
+    name: shim ASan+UBSan + KATs (linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Acquire toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+
+      # The shim's own knob, not hand-rolled flags: build.sh compiles the shim
+      # AND the vendored trezor-crypto units under -fsanitize=address,undefined
+      # and runs the self-test executable it builds.
+      - name: ASan + UBSan native self-test
+        run: sh native/build.sh asan
+
+      # Independent of the above: builds a fresh library from source and drives
+      # every export through ctypes against public vectors (FIPS 180-4, RFC 4231,
+      # BIP-39, the Ethereum keccak256 answers), including the Keccak-vs-SHA3
+      # aliasing guard.
+      - name: Known-answer vectors
+        run: python3 tools/coin-kat.py --check
+
+      # Suite rule 5, mechanised: the committed src/code/ library must still
+      # export exactly what the shim defines and answer the ABI the shim
+      # declares. Runs in suite-gates.yml too; repeated here so this lane is
+      # self-contained when it fires on a coinxt-only change.
+      - name: Committed binary is current
+        run: python3 tools/check-binary-freshness.py
+
+  pack:
+    name: pack ${{ matrix.platform_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: x86_64-linux
+            os: ubuntu-24.04
+            acquire: linux64
+          - platform_id: x86-linux
+            os: ubuntu-24.04
+            acquire: linux32
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Acquire toolchain (Linux x86_64)
+        if: matrix.acquire == 'linux64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+
+      - name: Acquire 32-bit toolchain (Linux x86)
+        if: matrix.acquire == 'linux32'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      # build.sh does not read CFLAGS - the supported way to cross-compile is a
+      # wrapper `cc` on PATH, which keeps the script itself simple.
+      - name: Provide a 32-bit cc
+        if: matrix.acquire == 'linux32'
+        run: |
+          mkdir -p "$HOME/bin"
+          printf '#!/bin/sh\nexec gcc -m32 "$@"\n' > "$HOME/bin/cc"
+          chmod +x "$HOME/bin/cc"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # The platform id is passed EXPLICITLY. build.sh derives it from `uname`
+      # when you do not, and uname describes the machine, not the output - the
+      # 32-bit lane above still reports x86_64, so a derived path would file an
+      # x86 library into x86_64-linux/. Cross builds must say what they are.
+      - name: Build the shipped library
+        shell: bash
+        run: sh native/build.sh pack ${{ matrix.platform_id }}
+
+      # The build prints its exported symbol list; assert on it rather than
+      # trusting the eye. Anything beyond the cnx_* surface means the version
+      # script did not apply, which is the one failure mode that produces a
+      # working library you must not ship.
+      - name: Confirm the artifact and its export surface
+        shell: bash
+        run: |
+          ls -l "src/code/${{ matrix.platform_id }}/"
+          test -f "src/code/${{ matrix.platform_id }}/coinxt.so"
+          leaked=$(nm -D --defined-only "src/code/${{ matrix.platform_id }}/coinxt.so" \
+                   | awk '{print $NF}' | grep -v '^cnx_' || true)
+          if [ -n "$leaked" ]; then
+            echo "coinxt.so exports non-cnx_ symbols; src/coinxt.map did not apply:" >&2
+            echo "$leaked" >&2
+            exit 1
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coinxt-${{ matrix.platform_id }}
+          path: coinxt/src/code/${{ matrix.platform_id }}/
+          if-no-files-found: ignore

@@ -5,12 +5,17 @@ rules). Each phase has a concrete "done when" bar and states the risk it retires
 native seam and the KAT harness come first, because everything downstream trusts them.
 
 > Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); the phase-1 NATIVE hash
-> surface done and verified** (see the as-built notes in
+> surface done and verified; the phase-1 `.lcb` binding written and awaiting the engine pass** (see the
+> as-built notes in
 > [CLAUDE.md](CLAUDE.md)): the vendored SHA-3 / SHA-2 / RIPEMD-160 / HMAC / PBKDF2 units, the `cnx_`
 > shim (ABI 2) with Keccak-256, SHA3-256, SHA-256, SHA-512, RIPEMD-160, HMAC-SHA256/512 and
-> PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and the headless KAT harness are in and green. What
-> remains of phase 1 is the `.lcb` on-engine binding; everything from the curve surface on is still to
-> build. Unlike OnionXT
+> PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and the headless KAT harness are in and green.
+> `src/coinxt.lcb` (`library org.openxtalk.library.coin`) now binds all 16 `cnx_` exports and wraps the
+> whole hash surface as `cx*` handlers, with `cxCheckABI()` on ABI 2; it passes the static gate and its
+> foreign declarations were diffed mechanically against the shim, but OXT cannot compile or load a
+> `.lcb` headlessly, so it is **verified statically and needs an OXT pass**. Phase 1 closes when
+> `cxKeccak256` and friends return the pinned vectors from a real engine (the bar below, unchanged);
+> everything from the curve surface on is still to build. Unlike OnionXT
 > (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1 onward,
 > and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI change.
 
@@ -54,8 +59,11 @@ written down and agreed. **Risk retired:** building the wrong thing, or a licens
 - Implement and export the hash surface (`cnx_sha256/512`, `cnx_sha3_256`, `cnx_keccak256`,
   `cnx_ripemd160`, `cnx_hmac_*`, `cnx_pbkdf2_hmac_sha512`), the length functions, and `cnx_abi_version`.
 - Write the `.lcb` module: `use com.livecode.foreign`, the `binds to` declarations, the buffer
-  marshalling helper (in-buffer via `MCDataGetBytePtr`; out-buffer via `MCMemoryAllocate` + the `-needed`
-  re-alloc retry), `unsafe ... end unsafe` around every foreign call, `cxCheckABI()`.
+  marshalling helper (in-buffer via `MCDataGetBytePtr`; out-buffer via `MCMemoryAllocate`),
+  `unsafe ... end unsafe` around every foreign call, `cxCheckABI()`. **As built there is no `-needed`
+  re-alloc retry**, and deliberately so: unlike SodiumXT's, this shim returns a status and writes a
+  FIXED size it reports itself (`cnx_*_len`), or exactly the PBKDF2 output length asked for, so the
+  binding allocates exactly that and copies exactly that back. Nothing hardcodes a size.
 - `cx*` wrappers for the hashes; `tools/coin-kat.py` pins `keccak256("")`, `sha3_256("")`, RIPEMD-160,
   HMAC-SHA512, PBKDF2-HMAC-SHA512.
 
@@ -121,7 +129,14 @@ transaction." Explicitly optional: the primitive layer (phases 1-4) is useful an
 ## Phase 6 - Packaging, examples, release
 
 - Commit per-platform release binaries + a `MANIFEST.sha256`, refreshed in the same change as any shim
-  change (the SodiumXT model). `cxCheckABI()` guards a stale binary.
+  change (the SodiumXT model). `cxCheckABI()` guards a stale binary. **Started early, on purpose**:
+  `native/build.sh pack` and `src/coinxt.map` exist now, and `src/code/x86_64-linux/coinxt.so` +
+  `src/code/MANIFEST.sha256` are committed, because without a library named for the `c:coinxt>` bind
+  token there is no way to run the phase-1 engine pass at all - the packaging step was blocking the
+  phase-1 "done when" bar rather than following it. Pulling the export-filtering decision forward also
+  matters more than it looks: once a surface ships it is frozen, and the unfiltered build exported 61
+  vendored trezor-crypto symbols (see `src/coinxt.map`). What is still genuinely phase 6 is the other
+  four platforms and a `tools/package-extension.py`.
 - A demo stack and a pure offline self-test harness, formatted like OnionXT's
   (`onionxt-demo` / `onionxt-tests` split): show key gen, address derivation, sign/verify, an HD wallet
   from a mnemonic, and (if phase 5) a signed transaction.

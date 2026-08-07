@@ -74,6 +74,15 @@ run_gates() {
     echo "== $m: tools/build-standalone.py --check =="
     ( cd "$m" && python3 tools/build-standalone.py --check )
   fi
+  # Committed-binary FRESHNESS (distinct from the manifests below, which prove a
+  # committed blob is unchanged but say nothing about whether it still matches
+  # the source). This is the automated half of suite rule 5: a shim that gained,
+  # lost, or renamed an export, or bumped its ABI, without its committed library
+  # being rebuilt in the same change.
+  if [ -f "$m/tools/check-binary-freshness.py" ]; then
+    echo "== $m: tools/check-binary-freshness.py =="
+    ( cd "$m" && python3 tools/check-binary-freshness.py )
+  fi
   # Committed-binary / vendored-source integrity manifests: a committed blob
   # that is unlisted or does not match its recorded SHA256 fails the gate.
   if [ -f "$m/src/code/MANIFEST.sha256" ]; then
@@ -90,6 +99,24 @@ run_gates() {
 for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
+
+# --- suite-level: the scripts that live at the ROOT, not inside a member ---
+# tests/suite-selftest.livecodescript drives all six members from one stack, so
+# it belongs to no member and no member's run_gates would ever see it. It is
+# written to satisfy EVERY member's copy of check-livecodescript.py (the copies
+# have diverged - the older lineage does not model `switch` as a block), and
+# that is a claim, so the gate enforces it rather than trusting it: each
+# member's checker runs over the root scripts in turn.
+shopt -s nullglob
+ROOT_SCRIPTS=(tests/*.livecodescript tests/*.lcb)
+shopt -u nullglob
+if [ ${#ROOT_SCRIPTS[@]} -gt 0 ]; then
+  for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt; do
+    [ -f "$m/tools/check-livecodescript.py" ] || continue
+    echo "== suite: tests/ under $m's static gate =="
+    python3 "$m/tools/check-livecodescript.py" "${ROOT_SCRIPTS[@]}"
+  done
+fi
 
 # --- suite-level: every handler CALLED across members must actually EXIST ---
 # The members call into each other by name across a boundary no compiler checks,
