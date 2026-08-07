@@ -91,6 +91,17 @@ for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 
+# --- suite-level: every handler CALLED across members must actually EXIST ---
+# The members call into each other by name across a boundary no compiler checks,
+# and the only runtime that would catch a typo is a GUI engine we cannot run
+# headless. This is the gate that would have caught the shipped example calling
+# sxHashKey (a handler that never existed). It is repo-wide, so it runs once
+# rather than per member.
+if [ -f tools/check-handler-calls.py ]; then
+  echo "== suite: tools/check-handler-calls.py =="
+  python3 tools/check-handler-calls.py
+fi
+
 if [ "$GATES_ONLY" = 1 ]; then
   echo "All static gates passed."
   exit 0
