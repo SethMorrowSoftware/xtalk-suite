@@ -160,4 +160,14 @@ else
   echo "coinxt/native/build.sh missing"; exit 1
 fi
 
+# --- suite-level: the invariants that span two members --------------------
+# Runs HERE, not in run_gates, because it drives the shims the loop above just
+# built. These are the claims tests/suite-selftest.livecodescript makes from
+# script and cannot settle without an engine - but most of them are questions
+# about two C libraries, and two C libraries are exactly what we have.
+if [ -f tests/cross-member-test.py ]; then
+  echo "== suite: tests/cross-member-test.py =="
+  python3 tests/cross-member-test.py
+fi
+
 echo "build-all: every buildable member completed."

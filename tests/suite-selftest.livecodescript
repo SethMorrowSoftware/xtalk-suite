@@ -25,6 +25,21 @@ script "xTalkSuiteSelfTest"
 -- it is a claim about what the code READS as, not about what it DOES. No result
 -- is asserted here or anywhere else on its behalf.
 --
+-- WITH ONE NARROWING, and it is worth knowing before you run this. The
+-- cross-member sections below ask questions that are mostly NOT script
+-- questions - "do libsodium and libtorrent derive the same ed25519 public key
+-- from one seed?" is a question about two C libraries. tests/cross-member-test.py
+-- settles exactly those, headless, by driving the built shims through ctypes,
+-- and they PASS: the two libraries agree on the public key, libtorrent's DHT
+-- secret key really is SodiumXT's expanded key (and not its seed||pk one),
+-- libtorrent verifies a libsodium BEP44 signature and refuses one made for a
+-- different seq, and ENX_MAX_MESSAGE == DCX_MAX_MESSAGE == 60000. So what those
+-- sections still need the engine for is NARROWER than it looks: the FFI
+-- marshalling and the script plumbing that reach those libraries, not the
+-- cryptography underneath. A cross-member FAILURE here, on an engine, therefore
+-- points at the binding rather than at the crypto - which is a much better place
+-- to start debugging than "one of six things is wrong."
+--
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close and reopen the stack. It builds its own
 -- UI, probes for each member, runs everything it can, and shows the list. Use

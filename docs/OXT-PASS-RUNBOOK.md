@@ -52,6 +52,16 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | datachannelxt | shim vs libdatachannel | `datachannelxt/tests/datachannel_smoke_test.cpp`, green under **both** ASan and TSan |
 | onionxt | **the core socket paths, on a real engine against a live tor daemon** | `onionxt/CLAUDE.md`, "Confirmed on-engine (promoted from `VERIFY:`)" items 1-7, plus the `oxh*` hosting layer |
 | coinxt | the native hash surface | `coinxt/native/build.sh asan` self-test + `coinxt/tools/coin-kat.py` against public vectors |
+| **cross-member** | **the four invariants that span two members** | `tests/cross-member-test.py` drives the built sodiumxt and torrentxt shims through ctypes and measures them: libsodium and libtorrent derive the **same** ed25519 public key from one seed; libtorrent's DHT secret key **is** SodiumXT's expanded key and **not** its `seed \|\| pk` one; libtorrent **verifies** a libsodium BEP44 signature and **refuses** one made for a different seq; `ENX_MAX_MESSAGE == DCX_MAX_MESSAGE == 60000`. |
+
+> **What that last row buys you tonight.** The cross-member sections of
+> `tests/suite-selftest.livecodescript` are the suite's headline claims, and they
+> used to be entirely unproven. Most of what they assert is not a script question
+> at all - "do two C libraries agree on a public key?" is answerable headless, and
+> now it is answered. So those sections still need the engine, but for something
+> **narrower**: the FFI marshalling and script plumbing that reach those
+> libraries, not the cryptography underneath. If a cross-member check fails on the
+> engine tonight, the crypto is already known-good, so look at the binding.
 
 **NOT proven. This is the work.** Ranked by how much a pass buys you:
 
