@@ -1,0 +1,38 @@
+/* datachannelxt.map - the linker version script for the shipped library.
+ *
+ * WHY: datachannelxt statically links libdatachannel, libjuice, usrsctp and
+ * plog, and a static archive's symbols inherit the shared library's default
+ * (public) visibility. The shipped .so therefore used to export about 6000
+ * dynamic symbols (35 juice_ ones, 479 usrsctp_ and sctp_ ones, plus the C++
+ * runtime bits from -static-libstdc++) alongside the 32 dcx_ entry points that
+ * are the
+ * actual ABI. Another extension in the same engine process bundling its own
+ * copy of any of those libraries is then an interposition hazard: whichever
+ * definition the loader resolved first would win for both. The engine's dlopen
+ * is typically RTLD_LOCAL, which makes this latent rather than live, but a
+ * shipped artifact should not depend on the host's dlopen flags for its
+ * correctness.
+ *
+ * -fvisibility=hidden on our own target cannot fix it (the dependencies are
+ * built by their own CMake targets, out of reach of our flags); a version
+ * script filters at LINK time, so it does.
+ *
+ * dcx::test::* is exported ON PURPOSE. The smoke test links the REAL shared
+ * library so that every call it makes goes through the real export surface -
+ * testing a differently-linked copy would prove less - and these helpers
+ * (live_peer_count, queue_depth, force_throw, ...) are how it inspects state
+ * the C ABI deliberately does not expose. They are C++-mangled and
+ * unreachable from the FFI, and the sibling torrentxt ships its btx::test::*
+ * helpers for the same reason.
+ *
+ * GNU ld / lld only (Linux). The Windows lane controls exports with a .def
+ * file and macOS uses default visibility, so CMakeLists applies this only
+ * where the linker supports it.
+ */
+{
+    global:
+        dcx_*;
+        _ZN3dcx4test*;   /* dcx::test::* - see above */
+    local:
+        *;
+};

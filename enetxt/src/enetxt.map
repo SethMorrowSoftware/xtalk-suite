@@ -1,0 +1,30 @@
+/* enetxt.map - the linker version script for the shipped shared library.
+ *
+ * WHY: enetxt statically links ENet, and a static archive's symbols inherit
+ * the shared library's default (public) visibility, so the shipped .so used to
+ * export ~65 upstream enet_* symbols alongside our 22 enx_* ABI entry points.
+ * That is a symbol-collision surface: another extension in the same engine
+ * process that also bundles ENet (a different version, even) could interpose,
+ * and whichever library the dynamic loader resolved first would win. The
+ * engine's dlopen is typically RTLD_LOCAL, which makes this latent rather than
+ * live, but "latent" is not a guarantee we want to ship.
+ *
+ * -fvisibility=hidden on our own target cannot fix it: ENet is compiled by its
+ * own CMake target, so our flags never reach it. A version script filters at
+ * LINK time and therefore does reach it.
+ *
+ * The public surface is exactly the enx_* C ABI the .lcb binds to by name;
+ * everything else - ENet, the C++ runtime bits, our internal helpers - is
+ * local. Adding a new entry point means adding an enx_* symbol, which this
+ * pattern already covers; nothing here needs editing per handler.
+ *
+ * GNU ld / lld only (Linux). The Windows lane controls exports with a .def
+ * file and macOS uses default visibility, so CMakeLists applies this only
+ * where the linker supports it.
+ */
+{
+    global:
+        enx_*;
+    local:
+        *;
+};

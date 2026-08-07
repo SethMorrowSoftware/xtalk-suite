@@ -41,14 +41,60 @@ FetchContent_Declare(enet
 )
 FetchContent_MakeAvailable(enet)
 
+# Warning flags for OUR translation units only (the shim + the tests); ENet
+# rides in as a SYSTEM include so its warnings stay mute. MSVC does not
+# understand the GCC spellings - `cl` rejects -Wextra outright with
+# "D8021: invalid numeric argument '/Wextra'" - so it gets /W3, matching the
+# sibling members. (This surfaced the first time the Windows lanes actually
+# ran: the member workflow that defines them is inert in the monorepo, so the
+# unconditional flags below had never been exercised by a real MSVC build.)
+add_library(enetxt_flags INTERFACE)
+if(MSVC)
+  target_compile_options(enetxt_flags INTERFACE /W3 /EHsc /permissive-)
+  target_compile_definitions(enetxt_flags INTERFACE
+    WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
+else()
+  target_compile_options(enetxt_flags INTERFACE -Wall -Wextra)
+endif()
+
 # The shim: ONE shared library, bare token (no 'lib' prefix), same shipping
 # shape as torrentxt/datachannelxt - src/code/<arch>-<platform>/enetxt.so etc.
 add_library(enetxt SHARED src/enet_shim.cpp)
 set_target_properties(enetxt PROPERTIES PREFIX "" OUTPUT_NAME enetxt)
-target_compile_options(enetxt PRIVATE -Wall -Wextra)
+target_link_libraries(enetxt PRIVATE enetxt_flags)
 # ENet's headers are SYSTEM headers to us: their warnings are not our warnings.
 target_include_directories(enetxt SYSTEM PRIVATE ${enet_SOURCE_DIR}/include)
 target_link_libraries(enetxt PRIVATE enet)
+
+# Winsock + the multimedia timer, on Windows. ENet's own CMakeLists links these
+# ONLY under MINGW (`if (MINGW) target_link_libraries(enet winmm ws2_32)`), so
+# under MSVC nothing does - and because we fold ENet in as a STATIC archive, the
+# unresolved imports land on OUR shared library: 28 unresolved __imp_htonl /
+# __imp_ntohl / socket externals at link time. Pre-existing, and invisible until
+# a real MSVC build ran for the first time under the root CI matrix.
+if(WIN32)
+  target_link_libraries(enetxt PRIVATE ws2_32 winmm)
+endif()
+
+# Export ONLY the enx_* ABI. Statically linked ENet objects otherwise inherit
+# the .so's public visibility and export ~65 enet_* symbols, which another
+# extension bundling its own ENet could interpose with. -fvisibility=hidden on
+# this target cannot reach ENet (its own CMake target compiles it), so filter
+# at link time instead. GNU ld / lld only: the Windows lane uses a .def file
+# and macOS defaults, so probe before applying rather than breaking those.
+# See src/enetxt.map for the full why.
+include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _enx_have_check_linker_flag)
+set(_enx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/enetxt.map")
+if(_enx_have_check_linker_flag AND UNIX AND NOT APPLE)
+  check_linker_flag(CXX "-Wl,--version-script=${_enx_version_script}"
+                    ENX_HAVE_VERSION_SCRIPT)
+  if(ENX_HAVE_VERSION_SCRIPT)
+    target_link_options(enetxt PRIVATE
+                        "-Wl,--version-script=${_enx_version_script}")
+    # Relink when the map changes; it is part of the ABI, not a loose input.
+    set_target_properties(enetxt PROPERTIES LINK_DEPENDS "${_enx_version_script}")
+  endif()
+endif()
 
 if(ENETXT_BUILD_TESTS)
   enable_testing()
@@ -56,12 +102,12 @@ if(ENETXT_BUILD_TESTS)
   # The Phase 1 gate: the whole exported ABI over a live loopback. Links ONLY
   # the shared library — every call goes through the real export surface.
   add_executable(enet_smoke_test tests/enet_smoke_test.cpp)
-  target_compile_options(enet_smoke_test PRIVATE -Wall -Wextra)
+  target_link_libraries(enet_smoke_test PRIVATE enetxt_flags)
   target_link_libraries(enet_smoke_test PRIVATE enetxt)
   add_test(NAME enet_smoke_test COMMAND enet_smoke_test)
 
   # Codec + handle-table unit test: header-only, no ENet, runs anywhere.
   add_executable(record_handle_test tests/record_handle_test.cpp)
-  target_compile_options(record_handle_test PRIVATE -Wall -Wextra)
+  target_link_libraries(record_handle_test PRIVATE enetxt_flags)
   add_test(NAME record_handle_test COMMAND record_handle_test)
 endif()

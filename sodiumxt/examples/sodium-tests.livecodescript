@@ -46,6 +46,7 @@ function sxSelfTest
    testOnionPrimitives
    testPadding
    testHashExtras
+   testDiagnostics
 
    put return & "----" & return after sLog
    put "PASSED:" && sPass & "   FAILED:" && sFail after sLog
@@ -307,6 +308,11 @@ on testSign
    local tSk
    local tSig
    local tOk
+   local tSigned
+   local tOpened
+   local tErr
+   local tSeed
+   local tPk2, tSk2, tPk3, tSk3
    sxSection "ed25519 sign/verify"
    sxSignKeypair tPk, tSk
    put sxSignDetached(sxUtf8("release v1.0"), tSk) into tSig
@@ -314,7 +320,52 @@ on testSign
       "a valid signature verifies"
    sxCheck (sxSignVerifyDetached(tSig, sxUtf8("release v1.1"), tPk) is false), \
       "a modified message fails verification"
+   -- The ATTACHED form (signature prepended to the message). sxSign/sxSignOpen
+   -- are a different libsodium call pair from the detached one above, so they
+   -- need their own round trip, their own tamper check, and their own
+   -- wrong-key check - a verifier that ignores the key would pass the first
+   -- two on their own.
+   put sxSign(sxUtf8("attached payload"), tSk) into tSigned
+   sxCheck (textDecode(sxSignOpen(tSigned, tPk), "utf-8") is "attached payload"), \
+      "sxSign / sxSignOpen round-trips the message"
+   sxCheck (the length of tSigned > the length of sxUtf8("attached payload")), \
+      "the attached form carries its signature with the message"
+   put empty into tOpened
+   try
+      put sxSignOpen(sxFlipLastByte(tSigned), tPk) into tOpened
+   catch tErr
+      put "threw" into tOpened
+   end try
+   sxCheck (tOpened is "threw" or tOpened is empty), \
+      "a tampered attached message does not open"
+   -- Deterministic keypair-from-seed: the same seed must yield the same pair,
+   -- which is what makes a seed a backup (and what OnionXT relies on for a
+   -- reproducible .onion).
+   put sxRandomBytes(32) into tSeed
+   sxSignKeypairFromSeed tSeed, tPk2, tSk2
+   sxSignKeypairFromSeed tSeed, tPk3, tSk3
+   sxCheck (tPk2 is tPk3 and tSk2 is tSk3), \
+      "sxSignKeypairFromSeed is deterministic for one seed"
+   sxCheck (tPk2 is not tPk), "a different seed yields a different key"
+   put sxSignDetached(sxUtf8("seeded"), tSk2) into tSig
+   sxCheck (sxSignVerifyDetached(tSig, sxUtf8("seeded"), tPk2) is true), \
+      "a seed-derived key signs and verifies"
 end testSign
+
+-- Flip the last byte of a Data, for tamper checks. Byte discipline: LCS string
+-- literals have no escape syntax, so a byte is built with numToByte and the
+-- data is indexed with `byte x to y of`, never char/line/word.
+function sxFlipLastByte pData
+   local tLast
+   local tLen
+   put the number of bytes of pData into tLen
+   if tLen is 0 then
+      return pData
+   end if
+   put byteToNum(byte tLen of pData) into tLast
+   put (tLast + 1) mod 256 into tLast
+   return (byte 1 to (tLen - 1) of pData) & numToByte(tLast)
+end sxFlipLastByte
 
 on testBox
    local tApk
@@ -450,6 +501,10 @@ on testHashExtras
    local tStream
    local tPath
    local tContent
+   local tKey
+   local tHK
+   local tKeyed
+   local tAbandoned
    sxSection "phase 6 (uniform random, multipart hash, file hash)"
    -- uniform random stays in range
    put true into tInRange
@@ -475,5 +530,58 @@ on testHashExtras
    put tContent into url ("binfile:" & tPath)
    sxCheck (sxHashFile(tPath, 32) is sxHash(tContent, 32)), \
       "sxHashFile matches the one-shot hash of the same bytes"
+   -- KEYED hashing (BLAKE2b as a MAC). The keyed multipart state and the keyed
+   -- file helper are separate entry points from the unkeyed ones above, and the
+   -- property that matters is that the key actually participates: same bytes +
+   -- different key must NOT collide.
+   put sxRandomBytes(32) into tKey
+   put sxHashInitKeyed(tKey, 32) into tHK
+   sxHashUpdate tHK, sxUtf8("a")
+   sxHashUpdate tHK, sxUtf8("bc")
+   put sxHashFinal(tHK, 32) into tKeyed
+   sxCheck (tKeyed is sxHashKeyed(sxUtf8("abc"), tKey, 32)), \
+      "keyed multipart hash matches the one-shot keyed hash"
+   sxCheck (tKeyed is not sxHash(sxUtf8("abc"), 32)), \
+      "the key changes the digest (it is not an unkeyed hash)"
+   sxCheck (sxHashFileKeyed(tPath, tKey, 32) is sxHashKeyed(tContent, tKey, 32)), \
+      "sxHashFileKeyed matches the one-shot keyed hash of the same bytes"
+   -- sxFreeHash: an explicitly abandoned state frees cleanly, and freeing is
+   -- idempotent (there is no deterministic LCB unload hook, so the app frees
+   -- what it opens and a double free must be a harmless no-op, never a crash).
+   put sxHashInit(32) into tAbandoned
+   sxHashUpdate tAbandoned, sxUtf8("never finalised")
+   sxFreeHash tAbandoned
+   sxFreeHash tAbandoned
+   sxCheck true, "sxFreeHash is idempotent on an abandoned state"
    delete file tPath
 end testHashExtras
+
+on testDiagnostics
+   local tErr
+   sxSection "init, presets, and last-error"
+   -- sxInit is safe to call again at any time (it is guarded internally); the
+   -- library has already initialised itself by now, so this asserts the
+   -- re-entry is harmless rather than that it did the first-time work.
+   sxInit
+   sxCheck true, "sxInit is safe to call again"
+   -- The Argon2id memlimit presets are PROBED FOR THEIR VALUE, never used to
+   -- run a hash here: at the sensitive preset a single sxPwHash can occupy the
+   -- one interpreter thread for a long, UI-freezing beat, which is a cost this
+   -- harness should describe rather than pay.
+   sxCheck (sxPwMemInteractive() is not empty), "sxPwMemInteractive returns a value"
+   sxCheck (sxPwMemModerate() is not empty), "sxPwMemModerate returns a value"
+   sxCheck (sxPwMemSensitive() is not empty), "sxPwMemSensitive returns a value"
+   sxCheck (sxPwMemModerate() is not sxPwMemInteractive()), \
+      "moderate is a different cost from interactive"
+   sxCheck (sxPwMemSensitive() is not sxPwMemModerate()), \
+      "sensitive is a different cost from moderate"
+   -- sxLastError reports the most recent failure. Force one, then confirm the
+   -- message is there to be read.
+   put empty into tErr
+   try
+      get sxSecretBoxOpen(sxUtf8("not a real ciphertext"), sxRandomBytes(32))
+   catch tErr
+   end try
+   sxCheck (tErr is not empty or sxLastError() is not empty), \
+      "a failed call surfaces an error (thrown or via sxLastError)"
+end testDiagnostics

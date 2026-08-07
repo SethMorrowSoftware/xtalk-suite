@@ -8,12 +8,13 @@ script "enetSelfTest"
 -- actually runs - the one layer CI cannot reach, since OXT has no headless
 -- way to compile or run .lcb.
 --
--- COVERAGE NOTE (honest): four binds are not driven here yet -
--- enDisconnectNow, enResetPeer, enSetPeerTimeout, enSetHostBandwidth - and
--- enHostStatus is asserted only for the stale-handle case, not on a live
--- host. All are covered at ABI level by tests/enet_smoke_test.cpp; their LCB
--- wrappers are verified statically. Extending the loopback leg to them is a
--- known follow-up.
+-- COVERAGE NOTE (honest): every public en* handler is now driven here.
+-- enDisconnectNow, enResetPeer, enSetPeerTimeout, and enSetHostBandwidth run
+-- in their own isolated section (a client host pointed at a dead port, so an
+-- abrupt teardown cannot perturb the graceful loopback below), and
+-- enHostStatus is asserted BOTH stale (empty) and live (peerCount, address).
+-- The harness itself is verified statically; it needs an OXT pass to become a
+-- runtime result.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
@@ -153,6 +154,7 @@ end stShow
 -- ---- the run -----------------------------------------------------------------
 command stRun
    local tPS, tHS, tBig
+   local tAbruptHost, tAbruptPeer, tResetPeer
    put 0 into sTotal
    put 0 into sPassed
    put 0 into sFailed
@@ -176,6 +178,28 @@ command stRun
    stAssert "enHostDestroy(0) is a no-op 0", enHostDestroy(0) is 0
    stAssert "enConnect on stale host is 0", enConnect(0, "127.0.0.1", 1, 1, 0) is 0
    stAssert "enFlush(0) errors", enFlush(0) < 0
+
+   stSection "tuning + abrupt teardown (isolated: nothing listens on 27099)"
+   -- These four binds have no place in the graceful loopback below: a second
+   -- live connection would race the server's event handlers (which assert on
+   -- the FIRST connect's data payload), and an abrupt teardown would satisfy
+   -- the "closing" phase early. So drive them on their own client host aimed
+   -- at a port nothing listens on. enConnect is asynchronous - the handshake
+   -- never has to complete for these to be exercised, because peer timeout,
+   -- host bandwidth, disconnect-now, and reset are all LOCAL operations.
+   put enHostCreateClient(2, 2, 0, 0) into tAbruptHost
+   stAssert "abrupt-test client host created", tAbruptHost > 0
+   put enConnect(tAbruptHost, "127.0.0.1", 27099, 2, 77) into tAbruptPeer
+   stAssert "abrupt-test peer handle", tAbruptPeer > 0
+   stAssert "enSetPeerTimeout returns 0", enSetPeerTimeout(tAbruptPeer, 32, 5000, 30000) is 0
+   stAssert "enSetHostBandwidth returns 0", enSetHostBandwidth(tAbruptHost, 0, 0) is 0
+   stAssert "enDisconnectNow returns 0", enDisconnectNow(tAbruptPeer, 9) is 0
+   -- A second peer for the reset path: enResetPeer tears the connection down
+   -- with no notification at all, so it needs its own victim.
+   put enConnect(tAbruptHost, "127.0.0.1", 27099, 2, 78) into tResetPeer
+   stAssert "reset-test peer handle", tResetPeer > 0
+   stAssert "enResetPeer returns 0", enResetPeer(tResetPeer) is 0
+   stAssert "abrupt-test host destroyed", enHostDestroy(tAbruptHost) is 0
 
    stSection "loopback: hosts + connect (async)"
    put enHostCreateServer("127.0.0.1", 27098, 8, 2, 0, 0) into sServer
@@ -230,6 +254,11 @@ command stPump
          put enPeerStatus(sClientPeer) into tPS
          stAssert "peer state is connected (5)", tPS["state"] is 5
          stAssert "peer status names the server port", tPS["address"] is "127.0.0.1:27098"
+         -- enHostStatus on a LIVE host (the stale-handle case is asserted
+         -- above; this is the half that proves the record actually populates).
+         put enHostStatus(sServer) into tHS
+         stAssert "live enHostStatus counts the connected peer", tHS["peerCount"] is 1
+         stAssert "live enHostStatus names the bound port", tHS["address"] is "127.0.0.1:27098"
          stAssert "tuning setters return 0", enSetPeerPingInterval(sClientPeer, 250) is 0
          -- binary with REAL embedded NUL/0x01 bytes, byte-exact both ways
          put textEncode("bin", "utf-8") & numToByte(0) & numToByte(1) \

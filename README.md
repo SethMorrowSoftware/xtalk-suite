@@ -39,7 +39,7 @@ authority; this is the summary:
 |---|---|---|---|
 | sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member |
 | torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI, runtime-proven |
-| enetxt | yes | x86_64-linux (a 5-platform matrix is defined in the member's own workflow, inert here; porting it to the root CI is a tracked follow-up) | Phase 1 complete; OXT selftest passed 2026-08-07 |
+| enetxt | yes | x86_64-linux committed; the root CI builds and tests all 5 platforms and publishes them as artifacts | Phase 1 complete; OXT selftest passed 2026-08-07 |
 | datachannelxt | yes | x86_64-linux | Phases 1-2 (data channels); script layer needs an OXT pass |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon |
 | coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | none yet | Designed and statically reasoned; the Keccak/SHA3 slice built and verified |
@@ -113,11 +113,23 @@ The members are deliberately non-overlapping, so real apps mix them:
 ## Development
 
 Members build independently (each has its own `CMakeLists.txt` /
-`tools/`), and `tools/build-all.sh` walks them. The suite CI
-(`.github/workflows/suite-gates.yml`) runs every member's static gates on each
-push; the per-member `.github/` workflows are retained for reference but are
-**inert in the monorepo** (GitHub Actions runs only the root workflow). See
-`CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
+`tools/`), and `tools/build-all.sh` walks them. CI is two layers, both at the
+repository root (GitHub Actions runs only root workflows, so the per-member
+`.github/` files are retained for isolated development but are **inert in the
+monorepo**):
+
+- **`suite-gates.yml`** — every member's compiler-free gates on every push: the
+  LiveCodeScript checker, docs house-style, all golden-vector suites, the
+  record registries, the known-answer harnesses, standalone freshness, and the
+  `MANIFEST.sha256` integrity checks.
+- **`native-<member>.yml`** — the per-member native matrix (all five platforms,
+  each with its own dependency setup), plus that member's sanitizer lanes,
+  scoped by `paths:` so only the member you touched builds. Each lane uploads
+  its built library as an artifact; **CI does not commit binaries** — refreshing
+  a committed binary stays a deliberate change made alongside the shim edit
+  that motivated it.
+
+See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.
 
 ## License

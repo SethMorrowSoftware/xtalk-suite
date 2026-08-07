@@ -228,6 +228,26 @@ if(EXISTS "${DATACHANNELXT_SHIM_SRC}")
 
     target_include_directories(datachannelxt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+    # Export ONLY the dcx_* ABI (plus the deliberately-exported dcx::test::*
+    # helpers the smoke test needs - see src/datachannelxt.map). The visibility
+    # presets above cover OUR translation unit, but libdatachannel, libjuice,
+    # usrsctp and plog are built by their own CMake targets, so ~6000 of their
+    # symbols were still landing in the shipped export table. A version script
+    # filters at link time, which is the only place that reaches them.
+    # GNU ld / lld only: Windows uses a .def file and macOS defaults.
+    include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _dcx_have_check_linker_flag)
+    set(_dcx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/datachannelxt.map")
+    if(_dcx_have_check_linker_flag AND UNIX AND NOT APPLE)
+        check_linker_flag(CXX "-Wl,--version-script=${_dcx_version_script}"
+                          DCX_HAVE_VERSION_SCRIPT)
+        if(DCX_HAVE_VERSION_SCRIPT)
+            target_link_options(datachannelxt PRIVATE
+                                "-Wl,--version-script=${_dcx_version_script}")
+            set_target_properties(datachannelxt PROPERTIES
+                                  LINK_DEPENDS "${_dcx_version_script}")
+        endif()
+    endif()
+
     # Record the pinned dependency version for dcx_library_version diagnostics.
     target_compile_definitions(datachannelxt PRIVATE
         DCX_LIBDATACHANNEL_VERSION="${DATACHANNELXT_LIBDATACHANNEL_TAG}")

@@ -61,9 +61,25 @@ python3 tools/package-extension.py --platform-id x86_64-linux --lib build/enetxt
 
 places the bare-token library into `src/code/<arch>-<platform>/` (the tree
 the packaged extension bundles); the self-contained gate refuses a library
-with unexpected dynamic dependencies. The member workflow
-(`.github/workflows/build.yml`) defines the 5-target matrix and commits the
-self-contained ones on `main`, but it is **inert inside the xtalk-suite
-monorepo** (GitHub runs only the root workflow, which runs the static gates);
-porting the matrix to the root CI is a tracked follow-up, so today only the
-`x86_64-linux` binary is committed and other platforms build from source.
+with unexpected dynamic dependencies. Two things happen to the artifact on
+the way in, and neither touches your build tree's own copy:
+
+- **Only the `enx_*` ABI is exported.** ENet is statically linked, and a
+  static archive's symbols would otherwise inherit the library's public
+  visibility (the shipped `.so` used to export about 65 `enet_*` symbols),
+  which another extension bundling its own ENet could interpose with. A
+  linker version script (`src/enetxt.map`, applied where the linker supports
+  it) filters the export table down to the 22 bound entry points. `-fvisibility=hidden`
+  cannot do this: ENet is compiled by its own CMake target, out of reach of
+  our flags.
+- **The committed copy is stripped** (`strip --strip-unneeded`, which keeps
+  `.dynsym` so the bindings still resolve). Debug tables and absolute build
+  paths are pure payload in a shipped artifact.
+
+The root CI workflow `.github/workflows/native-enetxt.yml` builds and tests the
+5-target matrix (the member's own `.github/workflows/build.yml` is kept for
+isolated development but is inert here, since GitHub runs only root workflows).
+Each lane uploads its library as an artifact; binaries are committed
+deliberately by a maintainer rather than pushed by CI, so today `x86_64-linux`
+is the committed one and the other platforms are a download (or a local build)
+away.

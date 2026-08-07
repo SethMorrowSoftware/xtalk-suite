@@ -298,6 +298,56 @@ static void test_loopback() {
     CHECK(dcx_peer_state(pa) == dcx::PS_CONNECTED);
     CHECK(dcx_peer_state(pb) == dcx::PS_CONNECTED);
 
+    /* The NON-TRICKLE signaling contract, on a live peer. The docs tell an app
+     * to wait for gathering == complete and then ship dcLocalDescription as ONE
+     * blob "which then contains the candidates" - the load-bearing call of the
+     * DHT-chat flagship. Until now only the bogus-handle paths of these three
+     * getters were covered, so the claim itself was untested. Poll the
+     * synchronous getter rather than watching for the event: the earlier
+     * pump_until above may already have drained E_GATHERING_STATE, but the
+     * shadow the getter answers from is refreshed by the callback either way. */
+    ok = pump_until(sh,
+        [&] {
+            return dcx_gathering_state(pa) == dcx::GS_COMPLETE &&
+                   dcx_gathering_state(pb) == dcx::GS_COMPLETE;
+        },
+        [&](const Ev &) {});
+    CHECK(ok);
+    if (ok) {
+        char sdp[16384] = {0};
+        char kind[64]   = {0};
+        int  n = 0;
+
+        n = dcx_local_description(pa, sdp, static_cast<int>(sizeof sdp));
+        CHECK(n > 0);
+        std::string sdpA(sdp, n > 0 ? static_cast<size_t>(n) : size_t{0});
+        CHECK(sdpA.find("v=0") != std::string::npos);            /* a real SDP */
+        CHECK(sdpA.find("a=candidate") != std::string::npos);    /* ...with candidates in it */
+        n = dcx_local_description_type(pa, kind, static_cast<int>(sizeof kind));
+        CHECK(n > 0);
+        CHECK(std::string(kind, n > 0 ? static_cast<size_t>(n) : size_t{0}) == "offer");
+
+        std::memset(sdp, 0, sizeof sdp);
+        std::memset(kind, 0, sizeof kind);
+        n = dcx_local_description(pb, sdp, static_cast<int>(sizeof sdp));
+        CHECK(n > 0);
+        std::string sdpB(sdp, n > 0 ? static_cast<size_t>(n) : size_t{0});
+        CHECK(sdpB.find("v=0") != std::string::npos);
+        CHECK(sdpB.find("a=candidate") != std::string::npos);
+        n = dcx_local_description_type(pb, kind, static_cast<int>(sizeof kind));
+        CHECK(n > 0);
+        CHECK(std::string(kind, n > 0 ? static_cast<size_t>(n) : size_t{0}) == "answer");
+
+        /* The -needed grow-and-retry convention on a LIVE description (the .lcb
+         * layer depends on it): a one-byte buffer must report the full size as
+         * a negative, and must not write past the caller's byte. */
+        char tiny[1] = {'\0'};
+        int needed = dcx_local_description(pa, tiny, 1);
+        CHECK(needed < 0);
+        CHECK(static_cast<size_t>(-needed) == sdpA.size());
+        CHECK(tiny[0] == '\0');
+    }
+
     /* channel label getter matches what the incoming event carried. */
     char lbl[64] = {0};
     int ln = dcx_channel_label(cb, lbl, static_cast<int>(sizeof lbl));
@@ -512,6 +562,12 @@ static void test_loopback() {
     /* =====================================================================
      *  8. Teardown: frees are idempotent; events for freed handles vanish
      * ===================================================================== */
+    /* dcx_peer_close on a LIVE peer: only its bad-handle path was covered
+     * before. A graceful close is DCX_OK and does NOT invalidate the handle -
+     * free is what does that - so the handle still answers afterwards. */
+    CHECK(dcx_peer_close(pa) == DCX_OK);
+    CHECK(dcx_peer_state(pa) >= 0);
+
     dcx_channel_free(ca);
     dcx_channel_free(ca);   /* double free: no-op */
     dcx_peer_free(pa);

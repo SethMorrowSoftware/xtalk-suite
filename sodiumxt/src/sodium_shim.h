@@ -51,8 +51,8 @@ extern "C" {
  * The largest single in-memory out-buffer we will service. The return value of
  * a buffer-filling entry point is OVERLOADED (see below), so a "needed" size
  * and a hard-error code must never collide. We cap an in-memory buffer at this
- * value; anything larger MUST go through the (future) file/stream helpers, not
- * a single Data. Kept well under INT_MAX so -SXT_MAX_BUFFER is representable.
+ * value; anything larger MUST go through the file/stream helpers
+ * (sxt_encrypt_file / sxt_decrypt_file / sxt_hash_file), not a single Data. Kept well under INT_MAX so -SXT_MAX_BUFFER is representable.
  */
 #define SXT_MAX_BUFFER 2000000000
 

@@ -262,8 +262,9 @@ ops.** The rules:
 - A native-library change is only "done" once `tools/package-extension.py` has refreshed the
   committed `src/code/<arch>-<platform>/` binary **and** its `src/code/MANIFEST.sha256` entry
   **in the same change** (the script does both; the suite CI gates fail if a committed blob is
-  unlisted or does not match its recorded SHA256). The full-matrix rebuild lives in the member
-  workflow, inert inside the monorepo; run it when working on SodiumXT in isolation.
+  unlisted or does not match its recorded SHA256). The root `native sodiumxt` workflow rebuilds
+  and tests the full 5-platform matrix and uploads each library as an artifact; committing a
+  refreshed binary stays a deliberate human step, in the same change as the shim edit.
 - **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons,
   parentheses.
 - **Match the surrounding style:** this codebase, like its siblings, comments the *why*,

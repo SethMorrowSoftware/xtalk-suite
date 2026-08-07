@@ -157,6 +157,18 @@ std::unordered_map<int, int> g_rtcChanToHandle;   /* guarded by g_mu */
 std::unordered_map<int, int> g_peerLastState;      /* guarded by g_mu */
 std::unordered_map<int, int> g_peerLastGathering;  /* guarded by g_mu */
 
+/* rtc ids of ORPHANED inbound channels, awaiting teardown on the script thread.
+ * A remote-initiated channel is born inside cb_data_channel, which (per the
+ * lock rule) must drop g_mu before wiring it — and a dcx_peer_free landing in
+ * that window sweeps only the channels its own snapshot saw, so this one, born
+ * after the sweep, would survive with callbacks wired until dcx_cleanup.
+ * cb_data_channel detects that, unpublishes the channel immediately (erasing
+ * its mapping makes every later callback for it a clean no-op), and parks the
+ * rtc id here, because a CALLBACK MAY NOT rtcDelete* — libdatachannel's own
+ * docs forbid it and it is the deadlock this binding already paid for once.
+ * reap_orphan_channels() does the actual delete from the script thread. */
+std::vector<int> g_orphanChans;   /* guarded by g_mu */
+
 /* The bounded inbound queue (the safety valve — see dcx_abi.h §drain). The
  * caps are far beyond what a polling app ever queues (a 30 ms poll drains
  * thousands of events per second); they exist so an app that STOPS polling
@@ -446,6 +458,24 @@ void clear_peer_callbacks(int pcId) {
     rtcSetDataChannelCallback(pcId, nullptr);
 }
 
+/* Delete any channel cb_data_channel orphaned (see g_orphanChans). MUST be
+ * called from a script-thread entry point with g_mu NOT held: it both blocks
+ * (rtcDelete waits for in-flight callbacks, which need g_mu) and does the
+ * delete a callback is not allowed to do. Cheap when there is nothing to reap,
+ * which is the overwhelmingly common case. */
+void reap_orphan_channels() {
+    std::vector<int> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        if (g_orphanChans.empty()) return;
+        ids.swap(g_orphanChans);
+    }
+    for (int id : ids) {
+        clear_channel_callbacks(id);
+        rtcDeleteDataChannel(id);
+    }
+}
+
 void cb_data_channel(int pc, int dc, void *) {
     /* A REMOTE-initiated channel. Runs on an rtc thread: allocate our handle,
      * announce + wire the channel — queue-only outward, per rule 1. */
@@ -466,8 +496,29 @@ void cb_data_channel(int pc, int dc, void *) {
 
         /* register_channel enqueues E_CHANNEL_INCOMING atomically with the
          * handle's birth, so INCOMING always precedes this channel's OPEN. */
-        register_channel(dc, peerH, /*announceIncoming=*/true,
-                         ln > 0 ? label : "", pn > 0 ? proto : "");
+        int h = register_channel(dc, peerH, /*announceIncoming=*/true,
+                                 ln > 0 ? label : "", pn > 0 ? proto : "");
+        if (h == 0) return;   /* table full: nothing was registered */
+
+        /* THE ORPHAN WINDOW (see g_orphanChans): register_channel necessarily
+         * runs unlocked, so a dcx_peer_free may have swept this peer between
+         * our snapshot above and the mapping's birth. Its sweep could not see
+         * this channel — the rtc id did not exist yet — so without this check
+         * the entry would live, with callbacks wired, until dcx_cleanup.
+         * Re-validate the peer and, if it died, unpublish immediately: erasing
+         * the mapping makes every later callback for this id a clean no-op,
+         * and the INCOMING/OPEN we just queued name a now-freed channel handle,
+         * which the drain discards. The rtc object itself is parked for
+         * reap_orphan_channels (a callback may not rtcDelete*). */
+        {
+            std::lock_guard<std::mutex> lock(g_mu);
+            if (g_peers.get(peerH) == nullptr) {
+                ChannelState *cs = g_channels.get(h);
+                if (cs) g_rtcChanToHandle.erase(cs->rtcId);
+                g_channels.free(h);
+                g_orphanChans.push_back(dc);
+            }
+        }
     } catch (...) {}
 }
 
@@ -722,6 +773,10 @@ extern "C" DCX_API int DCX_CALL dcx_cleanup(void) {
                 if (ps) peerIds.push_back(ps->rtcId);
             }
             for (int h : hs) g_peers.free(h);
+            /* Orphans (if any) join the same teardown below, so cleanup never
+             * leaves an rtc channel behind for rtcCleanup to reap. */
+            for (int id : g_orphanChans) chanIds.push_back(id);
+            g_orphanChans.clear();
             g_rtcChanToHandle.clear();
             g_rtcPeerToHandle.clear();
             g_peerLastState.clear();
@@ -1181,6 +1236,10 @@ extern "C" DCX_API int DCX_CALL dcx_set_buffered_low_threshold(int c, int amount
 
 extern "C" DCX_API int DCX_CALL dcx_poll(void *out, int cap) {
     DCX_GUARD_INT(0, {
+        /* The script thread's regular heartbeat, so it is where the orphaned
+         * inbound channels a callback could not delete get torn down. Runs
+         * before the drain and outside g_mu (both required — see the helper). */
+        reap_orphan_channels();
         std::lock_guard<std::mutex> lock(g_mu);
 
         dcx::RecordWriter w(out, cap);

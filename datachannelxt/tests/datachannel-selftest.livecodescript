@@ -8,6 +8,15 @@ script "dataChannelSelfTest"
 -- round-trips) actually runs - the one layer CI cannot reach, since OXT has
 -- no headless way to compile or run .lcb.
 --
+-- COVERAGE NOTE (honest): the harness now drives every public dc* handler,
+-- including the ones that used to appear only in the stale-handle section -
+-- dcCreateChannelEx, dcSetBufferedLowThreshold, dcLocalDescriptionType,
+-- dcChannelProtocol, dcSetLocalDescription - and it pins the non-trickle
+-- signaling contract (a live local description carries "a=candidate", and the
+-- offer/answer roles match the flow). The harness itself is verified
+-- statically; running it on a real engine is what turns any of this into a
+-- runtime result, and no such pass is recorded for this member yet.
+--
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
 -- runs the synchronous checks, then a LIVE LOOPBACK (two in-process peers,
@@ -175,6 +184,12 @@ command stRun
    stAssert "dcChannelIsOpen(0) is false", dcChannelIsOpen(0) is false
    stAssert "dcChannelPeer(0) is 0", dcChannelPeer(0) is 0
    stAssert "dcBufferedAmount(0) is -1", dcBufferedAmount(0) is -1
+   stAssert "dcLocalDescriptionType(0) empty", dcLocalDescriptionType(0) is empty
+   stAssert "dcChannelProtocol(0) empty", dcChannelProtocol(0) is empty
+   stAssert "dcSetLocalDescription(0) errors", dcSetLocalDescription(0, "offer") < 0
+   stAssert "dcSetBufferedLowThreshold(0) errors", dcSetBufferedLowThreshold(0, 4096) < 0
+   stAssert "dcCreateChannelEx(0) is 0", \
+         dcCreateChannelEx(0, "x", "proto", false, -1, -1, false, -1) is 0
    dcFreePeer(0)      -- must not crash
    dcFreeChannel(0)   -- must not crash
    stAssert "dcFreePeer/dcFreeChannel(0) survived", true
@@ -205,7 +220,7 @@ end stRun
 
 -- One poll pass of the async phase; reschedules itself until done/deadline.
 command stPump
-   local tEvents, tEvent, tDest, tPair
+   local tEvents, tEvent, tDest, tPair, tExChan
    if sPhase is "done" or sPhase is empty then
       exit stPump
    end if
@@ -223,7 +238,9 @@ command stPump
             dcAddRemoteCandidate tDest, tEvent["candidate"], tEvent["mid"]
          end if
       else if tEvent["name"] is "dcChannelIncoming" then
-         if tEvent["peer"] is sPeerB then
+         -- FIRST incoming only: the later dcCreateChannelEx check opens a
+         -- second channel, whose incoming event must not retarget sChanB.
+         if tEvent["peer"] is sPeerB and sChanB is empty then
             put tEvent["channel"] into sChanB
          end if
       else if tEvent["name"] is "dcChannelOpen" then
@@ -253,6 +270,21 @@ command stPump
          -- keyed access needs a local (LCS cannot subscript a function result)
          put dcSelectedCandidatePair(sPeerA) into tPair
          stAssert "selected pair has localCandidate", tPair["localCandidate"] is not empty
+         -- The NON-TRICKLE signaling contract on live peers: once negotiated,
+         -- each side's local description is a real SDP carrying its candidates,
+         -- and the offer/answer roles are the ones the flow assigned (A made
+         -- the channel, so A offered). This is the call the DHT-chat demo ships
+         -- as one blob; the stale-handle half is asserted above.
+         stAssert "local description is a real SDP", dcLocalDescription(sPeerA) contains "v=0"
+         stAssert "local description carries candidates", \
+               dcLocalDescription(sPeerA) contains "a=candidate"
+         stAssert "peer A describes itself as the offer", dcLocalDescriptionType(sPeerA) is "offer"
+         stAssert "peer B describes itself as the answer", dcLocalDescriptionType(sPeerB) is "answer"
+         -- a channel created without a protocol reports none (the live half of
+         -- the stale-handle assertion above)
+         stAssert "dcChannelProtocol empty when unset", dcChannelProtocol(sChanA) is empty
+         stAssert "dcSetBufferedLowThreshold on a live channel returns 0", \
+               dcSetBufferedLowThreshold(sChanA, 4096) is 0
          stAssert "dcSendText returns 0", dcSendText(sChanA, "hello oxt") is 0
          put "messaging" into sPhase
       end if
@@ -275,6 +307,15 @@ command stPump
          -- 0x41 match 0x61 inside binary data
          set the caseSensitive to true
          stAssert "binary arrived byte-for-byte (incl. NUL)", sGotBytes is sSentBytes
+         -- dcCreateChannelEx on a LIVE peer, last so its extra negotiation
+         -- cannot disturb the checks above. The protocol is a property of the
+         -- local object, set at creation, so it reads back without waiting for
+         -- the far side to open the channel.
+         put dcCreateChannelEx(sPeerA, "extra", "oxt-proto", true, 0, -1, false, -1) into tExChan
+         stAssert "dcCreateChannelEx > 0", tExChan > 0
+         stAssert "dcChannelProtocol round-trips", dcChannelProtocol(tExChan) is "oxt-proto"
+         stAssert "dcChannelLabel round-trips", dcChannelLabel(tExChan) is "extra"
+         dcFreeChannel tExChan
          stFinish
          exit stPump
       end if

@@ -25,7 +25,8 @@ openxtalk-libraries/
   LICENSE              MIT + third-party attributions for every bundled lib
   docs/                CROSS-CUTTING documents (span >1 member)
   tools/build-all.sh   walk every buildable member
-  .github/workflows/   the ONE CI that runs (member .github dirs are inert here)
+  .github/workflows/   the CI that runs: suite-gates + a native matrix per
+                       member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
 ```
 
@@ -89,10 +90,16 @@ These are summarized in `README.md`; the operational point for editing is:
   shim (clang's ASan runtime is not installed in this environment). Treat every
   native-library header as a **system header** (`-isystem`) so its warnings do
   not pollute the suite's `-Wall -Wextra`.
-- CI: `.github/workflows/suite-gates.yml` runs each member's static gates on
-  every push. The per-member `.github/workflows/` files are kept for when a
-  member is worked on in isolation, but **GitHub Actions runs only the root
-  workflow in a monorepo**, so they do not fire here.
+- CI lives at the repository root, in two layers. `suite-gates.yml` runs every
+  member's compiler-free gates on every push (the set `build-all.sh --gates`
+  runs). `native-<member>.yml` runs that member's full 5-platform native matrix
+  and its sanitizer lanes, scoped by `paths:` so only the touched member
+  builds, on pull requests, pushes to `main`, and on demand. The native lanes
+  upload each built library as an **artifact**; CI does NOT commit binaries,
+  because rule 5 makes refreshing a committed binary part of the human-authored
+  change that motivated it. The per-member `.github/workflows/` files are kept
+  for when a member is worked on in isolation, but **GitHub Actions runs only
+  the root workflows in a monorepo**, so they do not fire here.
 
 ## Git / workflow
 
