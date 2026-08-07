@@ -121,13 +121,26 @@ static void test_session_lifecycle() {
             /* Feeding those exact bytes back is accepted. */
             CHECK(btx_dht_load_state(s3, big, n) == BTX_OK);
 
-            /* The buffer contract: too small reports the true need as a
-             * negative and writes nothing past the caller's byte. */
+            /* The buffer contract: too small reports a need as a negative and
+             * writes nothing past the caller's byte. Do NOT assert the need
+             * equals the `n` measured above - a live session's DHT state is a
+             * MUTATING structure (nodes arrive, the routing table ages), so
+             * two serialisations milliseconds apart may legitimately differ in
+             * size. Asserting they match passes on a quiescent machine and
+             * fails on a networked CI runner, which is exactly what it did. */
             char tiny[1] = {'\0'};
             int needed = btx_dht_save_state(s3, tiny, 1);
             CHECK(needed < 0);
-            CHECK(-needed == n);
+            CHECK(-needed > 0);
             CHECK(tiny[0] == '\0');
+            /* The grow-and-retry the .lcb layer performs: a buffer sized to the
+             * reported need takes it (or reports a new, larger need if the
+             * state grew again in between - never a silent truncation). */
+            std::vector<char> grown(static_cast<size_t>(-needed));
+            int again = btx_dht_save_state(s3, grown.data(),
+                                           static_cast<int>(grown.size()));
+            CHECK(again != 0);
+            CHECK(again <= static_cast<int>(grown.size()));
         }
         /* Garbage in is a clean rejection or a benign no-op, never a crash:
          * read_session_params yields default params for a malformed blob and
