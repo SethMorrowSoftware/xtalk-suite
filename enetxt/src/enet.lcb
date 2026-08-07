@@ -32,9 +32,9 @@ library org.openxtalk.library.enet
 -- The numeric constants below MIRROR src/enx_record.h; tools/check-record-
 -- registry.py proves they never drift.
 --
--- Runtime behaviour needs an OXT pass to confirm (OXT cannot compile/run .lcb
--- headlessly); the static gate tools/check-livecodescript.py is run on every
--- edit.
+-- OXT cannot compile/run .lcb headlessly, so every edit gets the static gate
+-- (tools/check-livecodescript.py) and runtime confirmation waits on a manual
+-- OXT pass. The selftest suite ran green in OXT on 2026-08-07.
 
 use com.livecode.foreign
 
@@ -689,8 +689,9 @@ public handler enPeerStatus(in pPeer as Integer) returns Array
    return _parseRecord(_bufToData(sScratchPtr, tCount), 1)
 end handler
 
--- One live snapshot of a host: keys host, address (the bound socket; a
--- client host shows its ephemeral port), peerCount. {} for a stale handle.
+-- One live snapshot of a host: keys host, address (the bound socket via
+-- getsockname, so a port-0 server shows its real ephemeral port; an unbound
+-- client host shows "0.0.0.0:0"), peerCount. {} for a stale handle.
 public handler enHostStatus(in pHost as Integer) returns Array
    variable tCount as Integer
    variable tRec as Array
