@@ -36,9 +36,12 @@ licenses, reproduced with their sources:
   datachannelxt   libdatachannel                MPL-2.0
                   libjuice (ICE)                MPL-2.0
                   usrsctp (SCTP)                BSD-3-Clause
+                  plog (logging)                MIT
                   OpenSSL (DTLS)                system-provided, not bundled
   onionxt         (no bundled code — connects to a Tor daemon you run)
   coinxt          trezor-crypto                 MIT
 
-The full license text for each is included alongside the corresponding vendored
-sources within that member's directory.
+The full license text for each is reproduced inside the member that bundles it:
+in the member's LICENSE file (sodiumxt), in a THIRD-PARTY-LICENSES.md next to
+the member's LICENSE (torrentxt, enetxt, datachannelxt), or alongside the
+vendored sources (coinxt/native/vendor/LICENSE).

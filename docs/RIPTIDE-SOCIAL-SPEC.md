@@ -511,7 +511,7 @@ exists in a shipping surface. Provenance:
 - **TorrentXT** `btDhtKeypair` `btDhtPutMutable`/`GetMutable` `btDhtPutImmutable`/
   `GetImmutable` `btDhtBep44SignBuf` `btDhtPutSigned` `btDhtAnnounce` `btAddInfohash`
   `btRp1Enable`/`SetToken`/`Send`/`Poll` `btCreateTorrent` `btAddTorrentFile`/`Magnet`
-  `btSetSequentialDownload` `btSetPieceDeadline` `btPoll` — all in `docs/api-reference.md`.
+  `btSetSequentialDownload` `btSetPieceDeadline` `btPoll` — all in `torrentxt/docs/api-reference.md`.
 - **OnionXT** `oxVersion` `oxIsReady` `oxCreateServiceFromSeed` `oxServiceAddress`
   `oxAddressFromPublicKey`/`oxPublicKeyFromAddress`/`oxIsValidAddress` `oxDial`/`oxWrite`/
   `oxCloseStream` `oxSetPeerCallback`/`oxPeerAccepted` `oxSetStatusCallback`; onion-httpd

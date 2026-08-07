@@ -10,5 +10,11 @@ The runtime self-test lives in `../tests/datachannel-selftest.livecodescript` â€
 paste it into a stack script to verify an installed extension end to end
 (synchronous surface, a live loopback, message round-trips, teardown).
 
+> **Honesty note (the suite convention):** these example stacks are **verified
+> statically; needs an OXT pass** â€” the native pipeline beneath them is
+> smoke-test-proven, but no OXT engine run has been recorded for this member's
+> script layer yet. Running the self-test above on a real engine (and recording
+> the result) is the missing pass.
+
 Every demo follows the family rules: self-building idempotent UI, a poll
 interval treated as a latency knob, `dcCleanup()` on `closeStack`.

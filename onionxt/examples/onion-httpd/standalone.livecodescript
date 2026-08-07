@@ -1027,7 +1027,21 @@ end oxCheckServiceArgs
 private function oxStartService pVirtualPort, pLocalPort
    -- Allocate the handle and START the loopback listener before ADD_ONION so a
    -- forwarded connection is never refused (docs/03 step 4, ordering gotcha).
-   local tHandle
+   local tHandle, tPrior
+   put sLocalToService[pLocalPort] into tPrior
+   if tPrior is not empty and sServices[tPrior]["localPort"] is not empty then
+      -- Fail closed: a second service on an in-use local port would overwrite
+      -- the port-to-service mapping, and removing either service would then
+      -- close (or orphan) the shared listener out from under the other, so Tor
+      -- keeps forwarding to a dead port - which looks exactly like a broken
+      -- onion. One local port, one service; pick another local port.
+      -- (Verified statically; needs an OXT pass.)
+      return "OnionXT: local port " & pLocalPort & " already forwards for another service (one service per local port; pick another local port)"
+   end if
+   if tPrior is not empty then
+      -- The mapping is stale (its service is gone); reclaim it and rebind below.
+      delete variable sLocalToService[pLocalPort]
+   end if
    put oxAllocHandle() into tHandle
    put pVirtualPort into sServices[tHandle]["virtualPort"]
    put pLocalPort into sServices[tHandle]["localPort"]
@@ -2029,7 +2043,8 @@ end oxhSetRoot
 
 command oxhServeFiles pFolder
    -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
-   -- directory-listing page (names, sizes, download links) for "/" and each
+   -- directory-listing page (names and download links; no sizes, because
+   -- `the detailedFiles` is an OXT compile-time bad factor) for "/" and each
    -- subfolder, so a visitor can browse and download without you writing an index.
    -- A folder's own index.html, if present, still takes precedence over the listing.
    put oxhStripTrailingSlash(pFolder) into sOxhRoot
@@ -2470,7 +2485,7 @@ end oxhHtmlEscape
 -- spike.livecodescript - share a folder of files over Tor, from OpenXTalk.
 --
 -- Pick a folder, and every file in it is served at a private <56>.onion address
--- with an auto-generated directory-listing page (names, sizes, download links,
+-- with an auto-generated directory-listing page (names and download links,
 -- browse into subfolders). Built entirely on OnionXT's accept loop via the
 -- onion-httpd.livecodescript module (oxh*) - no engine-shipped HTTPD Library, so
 -- it runs wherever OnionXT runs.

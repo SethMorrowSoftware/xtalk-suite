@@ -143,4 +143,5 @@ will accept the TCP connection and then stall, and a silent stall is the worst f
 - It **does** open the tunnel and hand back a raw byte stream.
 - It **does not** encrypt, frame, or interpret the bytes on that stream. If the app wants
   confidentiality and integrity (it should), it seals with SodiumXT before `oxWrite` and opens with
-  SodiumXT after `oxRead`. Tor protects the path; SodiumXT protects the payload.
+  SodiumXT when the stream callback delivers the inbound `Data` (the `"data"` event registered with
+  `oxSetStreamCallback`). Tor protects the path; SodiumXT protects the payload.

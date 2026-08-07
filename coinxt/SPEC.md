@@ -9,7 +9,9 @@ cloud wallet service.
 House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
 `.livecodescript`. Comment the *why*, densely. Public API `cxPascalCase`; C ABI `cnx_snake_case`.
 
-> This is a design spec, not an implementation. Nothing here has been built yet. It is the source of
+> This is a design spec, not an implementation; the as-built status is tracked in
+> [CLAUDE.md](CLAUDE.md)'s as-built notes (the phase-1 Keccak/SHA3 slice is built and verified; the
+> rest is still design). It is the source of
 > truth for WHAT CoinXT is and the contract each layer must meet; the phased HOW is in
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and the hard-won FFI/LCB rules are in
 > [CLAUDE.md](CLAUDE.md).

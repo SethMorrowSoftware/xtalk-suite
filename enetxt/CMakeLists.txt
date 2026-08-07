@@ -17,7 +17,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # globally BEFORE FetchContent or the link fails with ld: "bad value".
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(ENETXT_BUILD_TESTS "Build the Phase 0 spike test" OFF)
+option(ENETXT_BUILD_TESTS "Build the smoke test and the record/handle test" OFF)
 
 # The family's sanitizer knob: a STRING ("address" or "thread"), injected
 # GLOBALLY before FetchContent so the whole dependency is instrumented too

@@ -13,6 +13,7 @@ Formatted like the sibling family's example stacks (SodiumXT's `sodium-demo.live
 | `onion-roundtrip/` | The headline milestone: two instances talk over Tor with no server, sealed by SodiumXT. |
 
 The `ox*` / `oxh*` library paths behind these (SOCKS dial, control auth, publishing an onion, and serving
-HTTP on the accept loop) have had on-engine bring-up against a real tor daemon (CLAUDE.md as-built notes).
-The demo's own UI-building script (create field/button, show/hide by name) is designed and statically
-reasoned like the rest; run it on an OXT engine to confirm the layout.
+HTTP on the accept loop) have had on-engine bring-up against a real tor daemon (CLAUDE.md as-built notes),
+and the tabbed demo's UI has rendered and served on-engine too (the Service tab's live mode swap and the
+About-tab self-test are part of that record). The optional Mode B tor launch remains the one unexercised
+path.

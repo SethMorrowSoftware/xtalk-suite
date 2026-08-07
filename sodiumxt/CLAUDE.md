@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in
-this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in the SodiumXT
+member of the xtalk-suite monorepo (`sodiumxt/`).
 
 > **Read `docs/development/implementation-plan.md` first.** It is the full spec (the engine
 > decision, the C ABI design, the phased plan, the test strategy, the risk register). This
@@ -261,8 +261,9 @@ ops.** The rules:
   `SXT_ABI_VERSION` + `checkABI()` are bumped together.
 - A native-library change is only "done" once `tools/package-extension.py` has refreshed the
   committed `src/code/<arch>-<platform>/` binary **and** its `src/code/MANIFEST.sha256` entry
-  **in the same change** (the script does both; the CI `verify-binaries` job fails if a committed
-  blob is unlisted or does not match its recorded SHA256). CI rebuilds and tests the full matrix.
+  **in the same change** (the script does both; the suite CI gates fail if a committed blob is
+  unlisted or does not match its recorded SHA256). The full-matrix rebuild lives in the member
+  workflow, inert inside the monorepo; run it when working on SodiumXT in isolation.
 - **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons,
   parentheses.
 - **Match the surrounding style:** this codebase, like its siblings, comments the *why*,

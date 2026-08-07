@@ -23,7 +23,7 @@ oxhServeFiles "/full/path/to/a/folder"
 ```
 
 Then, at the onion address, a visitor gets an **auto-generated directory-listing
-page** (file names, human-readable sizes, download links) and can **browse into
+page** (file names and download links) and can **browse into
 subfolders**. You do not write any HTML. Every file is served at its path with the
 right MIME type (images preview, PDFs open, everything else downloads), file names
 are HTML-escaped so a crafted name cannot inject markup, and `..` traversal is

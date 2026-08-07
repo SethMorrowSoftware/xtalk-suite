@@ -1,12 +1,19 @@
 script "enetSelfTest"
 
 -- enet-selftest.livecodescript - a self-building RUNTIME harness that drives
--- the enetxt public API end to end in OXT and reports PASS / FAIL per
+-- the enetxt public API in OXT and reports PASS / FAIL per
 -- handler. This is the OXT-pass companion to the C++ smoke test: the smoke
 -- test proves the shim against ENet in CI; this proves the .lcb BINDING (the
 -- foreign-decl signatures, the record walkers, the buffer round-trips)
 -- actually runs - the one layer CI cannot reach, since OXT has no headless
 -- way to compile or run .lcb.
+--
+-- COVERAGE NOTE (honest): four binds are not driven here yet -
+-- enDisconnectNow, enResetPeer, enSetPeerTimeout, enSetHostBandwidth - and
+-- enHostStatus is asserted only for the stale-handle case, not on a live
+-- host. All are covered at ABI level by tests/enet_smoke_test.cpp; their LCB
+-- wrappers are verified statically. Extending the loopback leg to them is a
+-- known follow-up.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
@@ -15,7 +22,8 @@ script "enetSelfTest"
 -- teardown - and shows a green/red list. Needs the installed
 -- org.openxtalk.library.enet extension.
 --
--- The LCS lessons this file was written under (CLAUDE.md gotchas 9-10): no
+-- The LCS lessons this file was written under (the LiveCodeScript/LCB gotcha
+-- list carried in the family CLAUDE.md files): no
 -- braces, no subscripted function results, array emptiness by counting keys,
 -- binary payloads built with numToByte (string literals have no escapes),
 -- byte-exact compares under caseSensitive, and zero-argument calls BARE in

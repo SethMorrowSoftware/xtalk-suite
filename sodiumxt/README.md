@@ -36,7 +36,8 @@ detected and rejected.
 
 ## Install
 
-1. Get SodiumXT (download a release, or clone this repository).
+1. Get SodiumXT (download a release, or clone the xtalk-suite repository; SodiumXT lives
+   in its `sodiumxt/` directory).
 2. In the OpenXTalk / LiveCode IDE, install it through the **Extension Manager**, the same way
    you install any LCB extension. The per-platform native library under `src/code/` is
    resolved automatically by the engine.
@@ -45,6 +46,8 @@ detected and rejected.
    ```
    put sxVersion()
    -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
+   -- (the Windows binaries are built from libsodium 1.0.22 via vcpkg, so they
+   --  report 1.0.22; see docs/security.md)
    ```
 
 Once installed, the `sx*` handlers are in scope in your stacks. See

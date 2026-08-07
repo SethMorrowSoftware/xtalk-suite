@@ -13,8 +13,9 @@ WHAT IT DOES
     library, no sudo, no /usr/lib, no LD_LIBRARY_PATH, no rename. This script is
     how a CI build (or a developer) drops a new binary into that tree so the
     change is committed alongside the shim/.lcb change that motivated it
-    (CLAUDE.md: "a native-library change is only done once package-extension.py
-    has refreshed the committed binary in the same change").
+    (the family rule, carried in the suite root CLAUDE.md: "a native-library
+    change is only done once package-extension.py has refreshed the committed
+    binary in the same change").
 
 THE FIVE PLATFORM-IDS (exact, ARCHITECTURE FIRST, Windows is -win32 for BOTH
 bitnesses - do not invent variants):
@@ -168,7 +169,7 @@ def assemble_staging(dry_run):
     .lce here. We stage the pieces an OXT package expects so a human can point the
     IDE at them:
 
-        build/package/torrent.lcb            (the LCB binding, if present)
+        build/package/enet.lcb               (the LCB binding, if present)
         build/package/code/<id>/enetxt.*  (the committed per-platform libs)
         build/package/examples/...           (the script helpers/demo, if present)
 
@@ -187,10 +188,10 @@ def assemble_staging(dry_run):
         dst = os.path.join(staging, rel_dst)
         actions.append((src, dst))
 
-    # The LCB binding, the poll-dispatcher sugar, and the loopback demo.
+    # The LCB binding, the poll-dispatcher sugar, and the LAN-chat demo.
     stage(os.path.join("src", "enet.lcb"), "enet.lcb")
-    for ex in ("datachannel-helpers.livecodescript",
-               "datachannel-loopback.livecodescript"):
+    for ex in ("enet-helpers.livecodescript",
+               "enet-lan-chat.livecodescript"):
         stage(os.path.join("examples", ex), os.path.join("examples", ex))
 
     # Every committed per-platform library currently in the tree.

@@ -23,7 +23,7 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
-| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives: secp256k1, ECDSA/recoverable/Schnorr, HD wallets (BIP-32/39), Keccak, address formats |
+| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives, designed: secp256k1, ECDSA/recoverable/Schnorr, HD wallets (BIP-32/39), address formats (the Keccak/SHA3 hash slice is built and KAT-verified; the rest is spec'd in `coinxt/SPEC.md`, not yet built) |
 
 They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachannel,...}`
 — so the engine resolves each binding automatically once its packaged extension
@@ -39,10 +39,10 @@ authority; this is the summary:
 |---|---|---|---|
 | sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member |
 | torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI, runtime-proven |
-| enetxt | yes | x86_64-linux (other platforms build in CI) | Phase 1 complete; OXT selftest passed 2026-08-07 |
-| datachannelxt | yes | x86_64-linux | Phases 1-2 (data channels) |
+| enetxt | yes | x86_64-linux (a 5-platform matrix is defined in the member's own workflow, inert here; porting it to the root CI is a tracked follow-up) | Phase 1 complete; OXT selftest passed 2026-08-07 |
+| datachannelxt | yes | x86_64-linux | Phases 1-2 (data channels); script layer needs an OXT pass |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon |
-| coinxt | yes (source + `build.sh`; not yet built) | none yet | Designed and statically reasoned |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | none yet | Designed and statically reasoned; the Keccak/SHA3 slice built and verified |
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
@@ -73,11 +73,15 @@ specific to it.
 
 ## Install
 
-Each member ships as a standard OXT extension: an LCB (or script) module plus
-the per-platform native library bundled under `src/code/<arch>-<platform>/`.
+Each native member ships as a standard OXT extension: an LCB module plus the
+per-platform native library bundled under `src/code/<arch>-<platform>/`.
 Install through the OpenXTalk / LiveCode **Extension Manager** the same way you
 install any extension; the engine resolves the native library automatically —
-no loose library, no `sudo`, no `LD_LIBRARY_PATH`, no rename. Install only the
+no loose library, no `sudo`, no `LD_LIBRARY_PATH`, no rename. **OnionXT is the
+exception**: it is pure LiveCodeScript with no packaged extension — copy its
+two `src/*.livecodescript` libraries into your app (`start using`), or build a
+paste-and-run standalone with `onionxt/tools/build-standalone.py` (see
+`onionxt/docs/10-usage-guide.md`). Install only the
 members you need, or the whole suite. Verify from the message box — each member
 answers a load-check handler:
 

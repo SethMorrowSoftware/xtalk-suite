@@ -8,7 +8,7 @@ sub-frame latency on a LAN, one broadcast to fan out to every peer.
 enetxt binds [ENet](https://github.com/lsalzman/enet) (v1.3.18, MIT — the
 reliable-UDP library a generation of games shipped on) behind a flat
 `extern "C"` shim with a thin LCB layer on top, the proven shape of its
-siblings TorrentXT (libtorrent), dataChannelXT (libdatachannel), and cryptoXT
+siblings TorrentXT (libtorrent), dataChannelXT (libdatachannel), and SodiumXT
 (libsodium):
 
 ```
@@ -66,9 +66,12 @@ complete two-machine demo.
 
 enetxt ships as a standard OXT extension: the LCB module plus the
 per-platform native library bundled under `src/code/<arch>-<platform>/`
-(`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`).
-Installing the packaged extension makes the engine resolve the `c:enetxt>`
-binding automatically. See `docs/getting-started.md`.
+(the five-id layout: `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
+`universal-mac`). **Currently committed: `x86_64-linux` only** — the other
+platform binaries are pending the root-CI matrix port (build them from source
+with `docs/building.md` in the meantime). Installing the packaged extension
+makes the engine resolve the `c:enetxt>` binding automatically. See
+`docs/getting-started.md`.
 
 One rule the app must follow: **call `enDeinitialize` before quitting**
 (e.g. on `closeStack`) — there is no automatic unload hook.

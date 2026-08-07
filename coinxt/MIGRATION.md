@@ -1,10 +1,11 @@
 # MIGRATION.md - splitting CoinXT into its own repository
 
-CoinXT is staged inside the OnionXT repository but is fully self-contained under `CoinXT/`: the static
-gates, the CI workflow, the portable xTalk/LCB lesson book, the vendored sources and their integrity
-manifest all live inside this directory, and no doc or tool reaches outside it. This file is the
-procedure for the split and the checklist for afterwards. **Delete this file (and the staging paragraph
-in README.md) once the move is complete.**
+CoinXT is staged inside the xtalk-suite monorepo (the source of truth; the former standalone
+repositories, including the OnionXT repo where CoinXT was first staged, are mirrors now) but is fully
+self-contained under `coinxt/`: the static gates, the CI workflow, the portable xTalk/LCB lesson book,
+the vendored sources and their integrity manifest all live inside this directory, and no doc or tool
+reaches outside it. This file is the procedure for the split and the checklist for afterwards.
+**Delete this file (and the staging paragraph in README.md) once the move is complete.**
 
 ## Before you split
 
@@ -26,14 +27,14 @@ example `SethMorrowSoftware/CoinXT`.
 ### Option A: `git subtree split` (no extra tooling; preserves the directory's history)
 
 ```sh
-git clone https://github.com/SethMorrowSoftware/OnionXT.git
-cd OnionXT
-git subtree split --prefix=CoinXT -b coinxt-split
+git clone https://github.com/SethMorrowSoftware/xtalk-suite.git
+cd xtalk-suite
+git subtree split --prefix=coinxt -b coinxt-split
 
 cd ..
 mkdir CoinXT && cd CoinXT
 git init -b main
-git pull ../OnionXT coinxt-split
+git pull ../xtalk-suite coinxt-split
 git remote add origin git@github.com:SethMorrowSoftware/CoinXT.git
 git push -u origin main
 ```
@@ -41,9 +42,9 @@ git push -u origin main
 ### Option B: `git filter-repo` (cleaner rewrite; follows renames; needs `pip install git-filter-repo`)
 
 ```sh
-git clone https://github.com/SethMorrowSoftware/OnionXT.git CoinXT
+git clone https://github.com/SethMorrowSoftware/xtalk-suite.git CoinXT
 cd CoinXT
-git filter-repo --subdirectory-filter CoinXT
+git filter-repo --subdirectory-filter coinxt
 git remote add origin git@github.com:SethMorrowSoftware/CoinXT.git
 git push -u origin main
 ```

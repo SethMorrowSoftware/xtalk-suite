@@ -161,7 +161,8 @@ public:
     /* ---- typed fields: [id:u8][type:u8][len:u16][value] ---- */
     void field_raw(uint8_t id, FieldType t, const void *val, size_t n) {
         /* len is u16; clamp defensively (the shim's message cap keeps every
-         * real field far below 64 KiB — see kDcxMaxMessage in dcx_abi.h). */
+         * real field far below 64 KiB — see DCX_MAX_MESSAGE in dcx_abi.h,
+         * mirrored as kMaxMessage in datachannel.lcb). */
         if (n > 0xFFFF) n = 0xFFFF;
         put_u8(id);
         put_u8(static_cast<uint8_t>(t));

@@ -8,6 +8,7 @@ about a single extension live in that member's own `<member>/docs/`.
 | [NEXT-EXTENSIONS-PLAN.md](NEXT-EXTENSIONS-PLAN.md) | whole suite | The roadmap: which native capability becomes which extension, in what order, and why. The document that produced enetxt, datachannelxt, onionxt, and coinxt. |
 | [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) | torrentxt + onionxt + sodiumxt | Model C — optional Tor onion transport for the QuickShare and DHT-Channels demos: file bytes travel peer-to-peer over an onion circuit, hiding both IPs, while BitTorrent/DHT stay the public default. |
 | [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) | all six | The capstone concept: a serverless social app composed from the whole suite — one Argon2id-sealed identity seed, a signed BEP44 feed with co-seeded torrent media, rp1 + secretstream DMs, WebRTC live sessions, enet LAN device sync, and an onion-only anonymous persona. |
+| [SODIUM-TORRENT-CHANNELS-BRAINSTORM.md](SODIUM-TORRENT-CHANNELS-BRAINSTORM.md) | sodiumxt + torrentxt | An ideas document (labelled brainstorm, not a spec): secure communication channels that piggyback on the BitTorrent network, secured with SodiumXT. Moved here from `sodiumxt/` because it spans two members. |
 
 **Reading order for someone new to the suite:** the root `README.md` (what the
 six are and how they compose) → `NEXT-EXTENSIONS-PLAN.md` (why they exist) →

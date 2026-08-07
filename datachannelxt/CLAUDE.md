@@ -6,7 +6,7 @@ this repository.
 > Read `docs/architecture.md` for the design and `docs/api-reference.md` for the
 > surface. This file is the operational as-built record and the hard-won-lesson
 > list, in the same spirit as the `CLAUDE.md` files in the sibling extensions
-> TorrentXT, Box2Dxt, and ShowControl. The original plan lives in TorrentXT's
+> TorrentXT, Box2Dxt, and ShowControl. The original plan lives in the suite's
 > `docs/NEXT-EXTENSIONS-PLAN.md` Part IV ("libdatachannel — THE HARD ONE").
 
 ## What this is
@@ -263,7 +263,7 @@ the direct channel. Its load-bearing decisions:
 5. **The folder stays standalone.** The demo depends on TorrentXT's EXTENSION,
    never its example files - the bt poll loop is inlined (a dozen lines), and
    both extensions are probed at startup with guarded calls that fail closed
-   (the family's cryptoXT pattern).
+   (the family's SodiumXT probe pattern).
 6. **One standing timer chain per loop**, armed once at start, rescheduling
    first and no-oping by phase. Arming chains per user action (Host/Join/
    Reconnect) stacks duplicates that double every poll and republish.

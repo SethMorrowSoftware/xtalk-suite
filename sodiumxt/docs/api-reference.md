@@ -184,6 +184,11 @@ server's tx and vice versa. rx is for receiving, tx for sending.
 
 ## See also
 
-- `examples/sodium-tests.livecodescript` - `put sxSelfTest()` exercises every handler.
+- `examples/sodium-tests.livecodescript` - `put sxSelfTest()` exercises the core handler
+  surface (round trips, known-answer vectors, tamper checks). A few handlers are covered
+  natively by `tests/sodium_smoke_test.c` but not yet by the on-engine self-test: `sxSign`,
+  `sxSignOpen`, `sxSignKeypairFromSeed`, `sxHashInitKeyed`, `sxHashFileKeyed`, `sxFreeHash`,
+  `sxPwMemModerate`, `sxPwMemSensitive`, `sxInit`, `sxLastError` (their LCB marshaling is
+  verified statically; needs an OXT pass).
 - `examples/sodium-demo.livecodescript` - an interactive, tabbed showcase (Secret Key, Public
   Key, Signatures, Hash & Files, About), with a "Run the full self-test" button on the About tab.

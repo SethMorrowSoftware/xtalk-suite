@@ -1,9 +1,13 @@
 # The suite's root CI. In a monorepo, GitHub Actions runs ONLY the workflows in
 # the repository-root .github/workflows/ - each member's own .github/ is inert
 # here. This workflow runs the fast, deterministic gates that guard every member
-# on every push: the LiveCodeScript static checker, the record-schema registry
-# checks, and the wire-format golden vectors. These need no compiler and no
-# engine, so they are always meaningful and always fast.
+# on every push: the LiveCodeScript static checker, the docs house-style gates,
+# every golden-vector suite (wire formats, BEP44, the file server), the
+# record-schema registry checks, the known-answer harnesses (onionxt pure
+# python; coinxt compiles its small shim in a temp dir), the generated-
+# standalone freshness check, and the committed-binary / vendored-source
+# MANIFEST.sha256 integrity checks. No engine needed; the only compiler use is
+# coinxt's tiny KAT build, so the job stays fast.
 #
 # Heavy native matrix builds (libtorrent, libdatachannel, libsodium, ENet across
 # five platforms) remain defined in each member's own workflow files for when a
@@ -27,5 +31,5 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Run every member's static gates and golden tests
+      - name: Run every member's static gates, golden tests, KATs, and manifests
         run: bash tools/build-all.sh --gates

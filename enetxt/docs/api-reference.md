@@ -97,8 +97,9 @@ Peer states (from `enPeerStatus`'s `state`; ENet's own ladder): 0
 disconnected, 1–4 the connect handshake, **5 connected**, 6–8 the disconnect
 ladder, 9 zombie. Send flags: 0 reliable, 1 unreliable, 2 unsequenced.
 Budget: 60000. The record/event registry constants (`kField*`, `kEvent*`,
-`kType*`, `kPeerState*`, `kSend*`) are public in the module;
-`tools/check-record-registry.py` proves they match `src/enx_record.h`.
+`kType*`, `kPeerState*`, `kSend*`) are mirrored (module-private) in
+`src/enet.lcb` — use the literal values from script;
+`tools/check-record-registry.py` proves the mirror matches `src/enx_record.h`.
 
 ## The rules an app must respect
 

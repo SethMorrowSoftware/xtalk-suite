@@ -19,6 +19,8 @@ scope in your stacks. Confirm it is working from the message box:
 ```
 put sxVersion()
 -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
+-- (on Windows the binaries are built from libsodium 1.0.22 via vcpkg, so they
+--  report 1.0.22; see docs/security.md)
 ```
 
 ## Five conventions

@@ -157,15 +157,18 @@ builds and tests the full matrix; the build (and the script) handle the one
 platform you are on.
 
 `package-extension.py` also refreshes `src/code/MANIFEST.sha256`, a plain
-`sha256sum` list of every committed native blob. The CI `verify-binaries` job
-recomputes those hashes on every push and pull request and fails if a committed
-`sodiumxt.*` is unlisted or does not match, so a binary cannot be swapped or
-corrupted without the manifest being updated in the same change. Verify locally
-with `cd src/code && sha256sum -c MANIFEST.sha256`. The manifest is an integrity
-record, not a source-provenance proof: the binaries that ship are the ones CI
-rebuilds from the pinned libsodium (the `commit-binaries` job on `main`
-regenerates both the blobs and the manifest), so treat those as authoritative and
-build from source when you need end-to-end assurance.
+`sha256sum` list of every committed native blob. The suite CI (the root
+`suite-gates.yml`, via `tools/build-all.sh --gates`) recomputes those hashes on
+every push and fails if a committed `sodiumxt.*` is unlisted or does not match,
+so a binary cannot be swapped or corrupted without the manifest being updated in
+the same change; the member's own `verify-binaries` job does the same when
+SodiumXT is worked on in isolation (member workflows are inert inside the
+monorepo). Verify locally with `cd src/code && sha256sum -c MANIFEST.sha256`.
+The manifest is an integrity record, not a source-provenance proof: the shipped
+binaries are rebuilt from the pinned libsodium by the member workflow's
+`commit-binaries` job (isolation only; porting the native matrix to the root CI
+is a tracked follow-up), so treat those as authoritative and build from source
+when you need end-to-end assurance.
 
 ## A note on the pinned libsodium
 

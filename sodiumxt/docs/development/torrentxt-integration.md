@@ -1,9 +1,10 @@
 # Plan: replace TorrentXT's crypto with SodiumXT
 
-Status: **proposal**. This lives in the SodiumXT repo because that is the repo in
-scope here; the actual edits land in the TorrentXT repo. Items marked
+Status: **proposal**. Written when SodiumXT and TorrentXT were separate
+repositories; both now live in the xtalk-suite monorepo, so the actual edits land
+in the sibling `torrentxt/` directory. Items marked
 **[confirm]** are assumptions about TorrentXT's current code that must be checked
-against its source before implementing.
+against its source (`torrentxt/src/`) before implementing.
 
 ## Why
 
@@ -71,7 +72,8 @@ for coexistence:
 
 - Bundle the `sodiumxt` native library inside TorrentXT the same way SodiumXT
   ships it: `src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}` (the committed
-  binaries from this repo's CI, all five platforms).
+  binaries under `sodiumxt/src/code/`, all five platforms, pinned by
+  `MANIFEST.sha256`).
 - Add `src/sodium.lcb` to TorrentXT's extension (or depend on the installed
   SodiumXT extension so `org.openxtalk.library.sodium` resolves).
 - TorrentXT's helpers then `textEncode` the passphrase and call `sx*`. Compare any

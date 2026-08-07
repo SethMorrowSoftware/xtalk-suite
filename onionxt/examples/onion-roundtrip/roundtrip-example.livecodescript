@@ -85,7 +85,9 @@ end onClientStream
 -- ===================== shared demo helper ==================================
 
 private function demoSharedKey
-   -- A placeholder shared key. In a real app derive this from a key agreement or
-   -- load a pinned contact key; do not hardcode a secret.
-   return sxHashKey("onionxt-roundtrip-demo")
+   -- A placeholder shared key: 32 bytes (the secretbox key size), derived by
+   -- hashing a fixed label with SodiumXT's sxHash. In a real app derive this
+   -- from a key agreement or load a pinned contact key; do not hardcode a
+   -- secret.
+   return sxHash(textEncode("onionxt-roundtrip-demo", "UTF-8"), 32)
 end demoSharedKey

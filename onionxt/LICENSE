@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Seth Morrow Software
+Copyright (c) 2026 Seth Morrow
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,14 +22,6 @@ SOFTWARE.
 
 ---
 
-DataChannelXT statically links the following third-party libraries into its
-committed per-platform binaries:
-
-  - libdatachannel  (MPL-2.0)
-  - libjuice        (MPL-2.0)  - libdatachannel's vendored ICE agent
-  - usrsctp         (BSD-3-Clause) - its vendored SCTP stack
-  - plog            (MIT) - its vendored logging library
-
-DTLS comes from the system OpenSSL, which is not bundled. The full license
-texts are reproduced in THIRD-PARTY-LICENSES.md alongside this file, as those
-licenses require for binary distribution.
+OnionXT bundles no third-party code: it is pure LiveCodeScript and talks to a
+Tor daemon that you install and run yourself (Tor is not distributed with this
+extension).

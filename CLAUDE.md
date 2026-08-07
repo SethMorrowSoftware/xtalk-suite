@@ -78,9 +78,13 @@ These are summarized in `README.md`; the operational point for editing is:
 ## Building & CI
 
 - `tools/build-all.sh` configures, builds, and tests each member that has a
-  `CMakeLists.txt` (sodiumxt, torrentxt, enetxt, datachannelxt), runs
-  `coinxt/build.sh`, and runs OnionXT's static gate (it is pure script — nothing
-  to compile).
+  `CMakeLists.txt` (sodiumxt, torrentxt, enetxt, datachannelxt — with each
+  member's `<MEMBER>_BUILD_TESTS` enabled and `ctest --no-tests=error`, so "no
+  tests registered" can never pass silently), runs coinxt's
+  `native/build.sh asan` self-test and KAT harness, and runs every member's
+  static gates (script checker, docs style, golden vectors, record registries,
+  KATs, standalone freshness, and the MANIFEST.sha256 integrity checks).
+  OnionXT is pure script — nothing to compile.
 - Build under **gcc** with `-fsanitize=address,undefined` while iterating on any
   shim (clang's ASan runtime is not installed in this environment). Treat every
   native-library header as a **system header** (`-isystem`) so its warnings do
