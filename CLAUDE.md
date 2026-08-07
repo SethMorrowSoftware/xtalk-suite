@@ -95,13 +95,17 @@ These are summarized in `README.md`; the operational point for editing is:
   runs). `native-<member>.yml` runs that member's full 5-platform native matrix
   and its sanitizer lanes, scoped by `paths:` so only the touched member
   builds, on pull requests, pushes to `main`, and on demand. The native lanes
-  upload each built library as an **artifact**; CI does NOT commit binaries,
-  because rule 5 makes refreshing a committed binary part of the human-authored
-  change that motivated it. `release-binaries.yml` is the manual assembly step
-  over the top: one `workflow_dispatch` builds every member for every platform
-  (24 jobs), asserts each artifact, and publishes a single bundle, which
-  `tools/install-release-binaries.py` verifies and lands locally so the commit
-  is still a person's. Two things it cannot make: torrentxt's macOS dylib (it
+  upload each built library as an **artifact** and never commit one: they fire on
+  every push, so a commit step there would land binaries nobody asked for on
+  somebody else's change. `release-binaries.yml` is the manual assembly step over
+  the top: one `workflow_dispatch` builds every member for every platform (24
+  jobs), asserts each artifact, then installs each library into its member's
+  `src/code/<platform-id>/`, refreshes the manifests, runs the whole gate set,
+  and commits (`commit_mode`: `branch` / `pr` / `none`). That still satisfies
+  rule 5, whose point is that a committed binary traces to a human decision - the
+  decision is the person pressing "Run workflow". The verification is the same
+  code either way, because the job runs `tools/install-release-binaries.py`
+  rather than reimplementing it. Two things it cannot make: torrentxt's macOS dylib (it
   must be universal, self-contained, and codesigned/notarized — credentials CI
   does not hold), and any claim that an unexecuted artifact works, which is why
   the coinxt Windows lane's output is driven through the published vectors on a

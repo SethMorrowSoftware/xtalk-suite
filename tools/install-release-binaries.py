@@ -10,12 +10,15 @@ directory laid out as
 
     <member>/<platform-id>/<member>.<so|dll|dylib>
 
-WHY THIS EXISTS AT ALL, rather than CI just pushing the binaries. Suite rule 5
-says a native change refreshes its committed binary in the SAME human-authored
-change. A bot that commits binaries breaks that: the one class of file nobody
-can review by reading a diff becomes the one class of file that arrives without
-a human deciding to. So CI stops at a verified bundle and this lands it - one
-command, one reviewable commit, a person's name on it.
+WHO CALLS THIS. Both paths, and they are the same code on purpose:
+
+  * release-binaries.yml's commit job runs it on the runner, so the checks below
+    stand between a freshly built artifact and the repository;
+  * you run it by hand on an unzipped bundle when the workflow was dispatched
+    with commit_mode: none, or when you built something locally.
+
+CI reusing this rather than reimplementing it is the point. A verifier that only
+guards the manual path is a verifier that guards the path nobody takes.
 
 WHAT IT CHECKS BEFORE TOUCHING ANYTHING. Every file is verified first and the
 tree is only written once every check has passed, so a bad bundle cannot leave
@@ -33,8 +36,9 @@ the repository half-updated:
     fails OPEN if it is skipped (a wrong export mechanism yields a WORKING
     library with 77 symbols), so it is asserted here too, not only in CI.
 
-It then refreshes each touched member's src/code/MANIFEST.sha256 and prints what
-changed. It does not commit; that is yours.
+It then refreshes each touched member's src/code/MANIFEST.sha256 - creating one
+for a member that had none, and saying so - and prints what changed. It does not
+commit: in CI that is the calling job's next step, and locally it is yours.
 """
 
 import hashlib
@@ -211,8 +215,17 @@ def main(argv):
 
     # Refresh each touched member's manifest over EVERY library it has, not just
     # the ones in this bundle: the manifest is a statement about the directory.
+    #
+    # Members that have never had one GET one, and that is called out rather than
+    # done quietly. Only sodiumxt and coinxt ship a src/code manifest today, so a
+    # member whose binaries this tool lands is also a member that gains integrity
+    # checking - tools/build-all.sh picks the file up automatically and verifies
+    # it from then on. That is an improvement, but it changes what the gates
+    # cover, so it belongs in the output and in the diff you review rather than
+    # turning up later as a mystery file.
     for member in sorted(touched):
         code = os.path.join(ROOT, member, "src", "code")
+        existed = os.path.exists(os.path.join(code, "MANIFEST.sha256"))
         lines = []
         for dirpath, _dirnames, filenames in os.walk(code):
             for fn in sorted(filenames):
@@ -224,7 +237,8 @@ def main(argv):
                     lines.append(f"{hashlib.sha256(fh.read()).hexdigest()}  {rel}")
         with open(os.path.join(code, "MANIFEST.sha256"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(sorted(lines, key=lambda l: l.split("  ", 1)[1])) + "\n")
-        print(f"  refreshed {member}/src/code/MANIFEST.sha256 ({len(lines)} file(s))")
+        verb = "refreshed" if existed else "CREATED (new integrity coverage for this member)"
+        print(f"  {verb} {member}/src/code/MANIFEST.sha256 ({len(lines)} file(s))")
 
     print("\nInstalled. Review with `git status` / `git diff --stat`, run "
           "`tools/build-all.sh --gates`, then commit deliberately (suite rule 5).")
