@@ -240,12 +240,36 @@ once a CoinXT signature verifies externally.
 - `tools/coin-kat.py --check` builds from source and runs the vectors headless (`self-check OK`). This is
   the CoinXT analogue of OnionXT's KAT harness; it grows with each phase.
 
-Still to do in phase 1, native-side: the rest of the plan's hash surface - `cnx_sha256` / `cnx_sha512`,
-`cnx_ripemd160`, `cnx_hmac_sha256` / `cnx_hmac_sha512`, and `cnx_pbkdf2_hmac_sha512`, each with its KAT
-in `tools/coin-kat.py` (only the Keccak-256 / SHA3-256 slice above is built and verified). The `.lcb`
-foreign module (the on-engine binding) is written and confirmed in a later step, since it needs a real
-OXT engine to load. After that (phase 2): the secp256k1 curve surface (keypair, ECDSA, recoverable,
-recover, ECDH), with a signature that must verify in an independent library.
+**Phase 1, the rest of the hash surface - DONE and verified.** `cnx_sha256`, `cnx_sha512`,
+`cnx_ripemd160`, `cnx_hmac_sha256`, `cnx_hmac_sha512`, and `cnx_pbkdf2_hmac_sha512` are built, with
+their length functions, and the ABI moved 1 -> 2 (additive, but the rule is to bump on any ABI change
+so `cxCheckABI()` can refuse a stale binary instead of failing at the first missing bind):
+
+- Vendored `sha2.c/h`, `ripemd160.c/h`, `hmac.c/h`, `pbkdf2.c/h` at the SAME pinned commit as the
+  existing files, each verified byte-identical to upstream by re-fetching the blob and comparing
+  SHA-256, then pinned in `native/MANIFEST.sha256` (15 files now).
+- **The boundary that mattered.** Our ABI carries lengths as `size_t`, but the vendored primitives do
+  not: `hmac_*` take `uint32_t` and `pbkdf2_hmac_sha512` takes `int`. An oversized `size_t` would be
+  silently TRUNCATED by the implicit conversion and the primitive would hash a shorter message than the
+  caller asked about - a wrong answer, not a crash. `cnx_fits_u32` / `cnx_fits_int` refuse instead
+  (`CNX_ERR_RANGE`, the one new status code). The u32 test compiles out where `size_t` is already
+  32-bit, so `-Wextra` cannot complain about a tautological comparison; both preprocessor branches were
+  compiled clean under `-Werror`.
+- **Two more fail-closed refusals**, both cases where upstream would otherwise be quietly wrong rather
+  than loud: `iterations == 0` (upstream's loop is seeded at 1, so a zero count yields the
+  ONE-iteration key - far weaker than requested, with no error) and `outlen == 0` (the block loop never
+  runs and the call "succeeds" having written nothing).
+- KATs: every digest is pinned to a PUBLIC vector and, where Python has an independent implementation,
+  cross-checked against it live - FIPS 180-4 for SHA-2, the RIPEMD-160 spec vectors, RFC 4231 for HMAC,
+  and the all-"abandon" BIP-39 mnemonic + "TREZOR" seed for PBKDF2 (the exact shape CoinXT will use the
+  KDF for, not just the primitive), plus a non-block-multiple output length to exercise the partial
+  final block. The harness was mutation-tested: dropping the HMAC key, removing the zero-iteration
+  guard, and aliasing a digest each make it fail with a non-zero exit.
+
+Still to do in phase 1: the `.lcb` foreign module (the on-engine binding), which is written and
+confirmed in a later step since it needs a real OXT engine to load. After that (phase 2): the secp256k1
+curve surface (keypair, ECDSA, recoverable, recover, ECDH), with a signature that must verify in an
+independent library.
 
 **Repo-prep - self-contained for the split (2026-07-07).** CoinXT no longer reaches outside its own
 directory for anything; it is ready to become the root of its own repository (the procedure and the

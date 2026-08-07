@@ -4,12 +4,13 @@ The phased build order for CoinXT (see [SPEC.md](SPEC.md) for WHAT, [CLAUDE.md](
 rules). Each phase has a concrete "done when" bar and states the risk it retires. Build in order: the
 native seam and the KAT harness come first, because everything downstream trusts them.
 
-> Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); phase 1 Keccak-256 /
-> SHA3-256 slice done and verified** (see the as-built notes in
-> [CLAUDE.md](CLAUDE.md)): the vendored SHA-3 unit, the `cnx_` shim with `cnx_keccak256` /
-> `cnx_sha3_256`, the ASan + UBSan self-test, and the headless KAT harness are in and green. The rest
-> of the phase-1 hash surface (SHA-2, RIPEMD-160, HMAC, PBKDF2 and their KATs), the
-> `.lcb` on-engine binding, and everything from the curve surface on are still to build. Unlike OnionXT
+> Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); the phase-1 NATIVE hash
+> surface done and verified** (see the as-built notes in
+> [CLAUDE.md](CLAUDE.md)): the vendored SHA-3 / SHA-2 / RIPEMD-160 / HMAC / PBKDF2 units, the `cnx_`
+> shim (ABI 2) with Keccak-256, SHA3-256, SHA-256, SHA-512, RIPEMD-160, HMAC-SHA256/512 and
+> PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and the headless KAT harness are in and green. What
+> remains of phase 1 is the `.lcb` on-engine binding; everything from the curve surface on is still to
+> build. Unlike OnionXT
 > (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1 onward,
 > and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI change.
 
