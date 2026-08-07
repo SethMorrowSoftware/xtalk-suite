@@ -10,7 +10,8 @@ code.
   stable `sxt_*` ABI.
 - `src/sodium.lcb` - the LiveCode Builder binding that presents the public `sx*` handlers.
 - `src/code/<arch>-<platform>/` - the bundled native libraries, plus `MANIFEST.sha256` (their
-  recorded SHA256s, enforced by the CI `verify-binaries` job); refreshed by CI on `main`.
+  recorded SHA256s, verified by the suite CI gates on every push; refreshed by the member
+  workflow's `commit-binaries` job when SodiumXT is worked on in isolation).
 - `tests/sodium_smoke_test.c` - the C test suite (known-answer tests, round trips, and the
   tamper / wrong-key / firewall checks).
 - `tools/` - `check-livecodescript.py` (the static gate for `.lcb` / `.livecodescript`) and
@@ -53,7 +54,9 @@ Windows/vcpkg path, and packaging.
   `SXT_ABI_VERSION` and the `.lcb` `kSXTABIVersion` are bumped together.
 - A native-library change is done once `tools/package-extension.py` has refreshed the committed
   `src/code/<arch>-<platform>/` binary and its `MANIFEST.sha256` entry in the same change.
-- CI builds and tests the full platform matrix and refreshes the committed binaries on `main`.
+- The suite CI runs the static gates and the manifest check on every push; the full
+  platform-matrix build lives in the member workflow, inert inside the monorepo (porting it
+  to the root CI is a tracked follow-up).
 
 ## House style
 

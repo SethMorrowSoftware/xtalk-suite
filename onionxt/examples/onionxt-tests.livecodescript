@@ -38,9 +38,10 @@
 -- proving teardown is idempotent. Run this in a fresh session, or expect it to
 -- tear down whatever is currently open.
 --
--- STATUS: designed and statically reasoned; needs an on-engine pass like the
--- rest of OnionXT, though everything here is pure script with no socket I/O of
--- its own, so the risk surface is much smaller than the library itself.
+-- STATUS: confirmed on-engine: the About-tab self-test run (via the bundled
+-- standalone) executes this harness on a real engine (CLAUDE.md as-built
+-- notes). Everything here is pure script with no socket I/O of its own, so
+-- the risk surface is much smaller than the library itself.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.

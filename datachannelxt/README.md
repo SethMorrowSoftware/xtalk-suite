@@ -6,7 +6,8 @@ NAT-traversing, real-time peer-to-peer messaging from plain xTalk script.
 DataChannelXT binds [libdatachannel](https://github.com/paullouisageneau/libdatachannel)
 (C++17, MPL-2.0 — WebRTC data channels with libjuice ICE and usrsctp SCTP) behind a
 flat `extern "C"` shim with a thin LCB layer on top, the same proven shape as its
-siblings TorrentXT (libtorrent), cryptoXT (libsodium), Box2Dxt, and ShowControl:
+suite siblings TorrentXT (libtorrent) and SodiumXT (libsodium), and the pre-suite
+projects Box2Dxt and ShowControl where the shape was proven:
 
 ```
 libdatachannel + libjuice + usrsctp (+ system OpenSSL)   owns the network threads
@@ -69,8 +70,8 @@ end dcMessage
 **Signaling is yours** — WebRTC needs the two peers to exchange a description and
 candidates over *some* existing channel, and that channel is your choice: a
 TorrentXT DHT rendezvous (the serverless flagship pairing), a copy/paste, a web
-service. `examples/datachannel-loopback.livecodescript` is a complete working
-demo where "signaling" is four lines of script, because both peers live in the
+service. `examples/datachannel-loopback.livecodescript` is a complete demo
+where "signaling" is four lines of script, because both peers live in the
 same stack; `docs/getting-started.md` walks the real thing.
 
 ## Try it now (no network, no setup)
@@ -79,6 +80,14 @@ Open `examples/datachannel-loopback.livecodescript` as a stack script alongside
 the helpers: two real WebRTC peers negotiate inside one process — offer, answer,
 ICE, DTLS, SCTP — and you chat between two panes. If that works, the whole
 pipeline works; real signaling is the only thing left to add.
+
+> **Honesty note (the suite convention):** the native pipeline (shim +
+> libdatachannel) is proven by the C++ smoke test under ASan/UBSan and TSan,
+> but the script layer these walkthroughs describe — the `.lcb` binding and
+> the example stacks — is **verified statically; needs an OXT pass**. No OXT
+> engine run has been recorded for this member yet (contrast enetxt's
+> 2026-08-07 selftest pass); `tests/datachannel-selftest.livecodescript` is
+> the harness to run when one is.
 
 ## Then try the flagship (two machines, no server)
 

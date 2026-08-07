@@ -183,7 +183,7 @@ end ecList
 command ecStart
    local tR
    -- probe the extension with a guarded call; fail closed with a clear
-   -- message when it is missing (the family's cryptoXT pattern)
+   -- message when it is missing (the family's SodiumXT probe pattern)
    try
       put enInitialize() into tR
    catch tErr

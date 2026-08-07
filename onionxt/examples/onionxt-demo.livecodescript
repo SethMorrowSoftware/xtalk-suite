@@ -30,10 +30,10 @@
 -- supplies a route handler (demoServePage) for page mode and a folder for share
 -- mode. Buttons are enabled only when their action is valid, so the flow guides you.
 --
--- STATUS: designed and statically reasoned, like the rest of OnionXT; the UI
--- object-creation calls (create field/button/graphic, set properties, show/hide
--- by name, enable/scroll) need an on-engine pass the same way the socket code
--- does. The ox* calls are the real feature surface being demonstrated.
+-- STATUS: confirmed on-engine (CLAUDE.md as-built notes): the tabbed UI builds
+-- and renders, the Service tab serves and swaps modes live, and the About-tab
+-- self-test runs. The ox* calls are the real feature surface being
+-- demonstrated; the optional Mode B tor launch stays VERIFY in the library.
 
 -- ==========================================================================
 -- Constants: window geometry, ports (docs/07: system tor 9050/9051, Tor Browser
@@ -767,7 +767,7 @@ private command demoBuildAboutTab
       "A Tor transport and self-authenticating rendezvous layer for OXT / LiveCode." & return & \
       "Adds no cryptography of its own: it composes SodiumXT (ABI >= 6) for the" & return & \
       "seed-derived onion key and SAFECOOKIE HMAC, and assumes a locally-running tor" & return & \
-      "daemon. Status: designed and statically reasoned; needs an on-engine pass."
+      "daemon. Status: core paths confirmed on-engine against a live tor daemon."
    demoMakeLabel "about:capsLbl", "24,232,796,254", "Capabilities (oxTransportInfo):"
    demoMakeLog "about:caps", "24,258,796,352"
    demoMakeButton "about:runTests", "24,362,224,392", "Run self-test"

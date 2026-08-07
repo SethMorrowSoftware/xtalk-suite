@@ -1,7 +1,7 @@
 -- spike.livecodescript - share a folder of files over Tor, from OpenXTalk.
 --
 -- Pick a folder, and every file in it is served at a private <56>.onion address
--- with an auto-generated directory-listing page (names, sizes, download links,
+-- with an auto-generated directory-listing page (names and download links,
 -- browse into subfolders). Built entirely on OnionXT's accept loop via the
 -- onion-httpd.livecodescript module (oxh*) - no engine-shipped HTTPD Library, so
 -- it runs wherever OnionXT runs.

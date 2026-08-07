@@ -61,6 +61,9 @@ python3 tools/package-extension.py --platform-id x86_64-linux --lib build/enetxt
 
 places the bare-token library into `src/code/<arch>-<platform>/` (the tree
 the packaged extension bundles); the self-contained gate refuses a library
-with unexpected dynamic dependencies. CI (`.github/workflows/build.yml`)
-builds the 5-target matrix and commits the self-contained ones on `main` —
-push or a manual Run-workflow dispatch both count (the event-outage lesson).
+with unexpected dynamic dependencies. The member workflow
+(`.github/workflows/build.yml`) defines the 5-target matrix and commits the
+self-contained ones on `main`, but it is **inert inside the xtalk-suite
+monorepo** (GitHub runs only the root workflow, which runs the static gates);
+porting the matrix to the root CI is a tracked follow-up, so today only the
+`x86_64-linux` binary is committed and other platforms build from source.

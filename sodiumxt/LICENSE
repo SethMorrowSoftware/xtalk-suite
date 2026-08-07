@@ -22,6 +22,27 @@ SOFTWARE.
 
 ---
 
-SodiumXT statically links libsodium, which is distributed under the ISC license
-(Copyright (c) 2013-2025 Frank Denis and contributors). See
-https://github.com/jedisct1/libsodium for its full license text.
+SodiumXT statically links libsodium into its committed per-platform binaries.
+libsodium is distributed under the ISC license, whose full text follows, as
+that license requires for binary distribution:
+
+ISC License
+
+Copyright (c) 2013-2024
+Frank Denis <j at pureftpd dot org>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+(The Windows binaries are built from libsodium 1.0.22 via vcpkg, whose ISC
+notice is Copyright (c) 2013-2025 Frank Denis; the notice above accompanies
+the pinned 1.0.20 sources used for the Linux and macOS binaries.)

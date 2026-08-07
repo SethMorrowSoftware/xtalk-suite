@@ -4,11 +4,17 @@
 > peer-to-peer over a Tor onion circuit (OnionXT), bypassing BitTorrent, so both IPs are hidden. BitTorrent/DHT
 > stay the default public path. Requires OnionXT + a local Tor daemon + SodiumXT; fails closed, never regresses.
 >
-> **Honesty scope.** OnionXT is not present in this repository (zero `ox*` references anywhere in the tree). Every
-> `ox*` handler, its signature, and its runtime semantics in this plan are **presumed from the design and must be
-> confirmed against the real OnionXT ABI before Phase 1** (see §9.1 and the VERIFY register in §12.3). The qs*/ch*
+> **Honesty scope (updated at consolidation).** This plan was written when OnionXT lived in a separate
+> repository, so the paragraph below treated the `ox*` ABI as external and unconfirmed. In the xtalk-suite
+> monorepo the real surface now ships in-tree at `onionxt/src/onionxt.livecodescript`, documented in
+> `onionxt/docs/05-api-reference.md` — check the §9.1 VERIFY step against that file, not against a
+> presumed design. (RIPTIDE-SOCIAL-SPEC.md §"what changed at consolidation" records the same correction.)
+>
+> Original scope note, kept for the record: every `ox*` handler, its signature, and its runtime semantics
+> in this plan were **presumed from the design and must be confirmed against the real OnionXT ABI before
+> Phase 1** (see §9.1 and the VERIFY register in §12.3). The qs*/ch*
 > handlers, the `BTXQS1:`/`BTXENC2:` markers, and every line number cited for the two demos are grounded in the
-> current sources.
+> current sources (now under `torrentxt/`).
 
 ---
 
@@ -48,8 +54,8 @@ resolve naming/format drift that earlier drafts carried:
 Model C adds a second, **optional** transport that lives entirely beside the existing BitTorrent path. Nothing here
 touches libtorrent: when the anonymous toggle is on, the file's bytes travel over an OnionXT stream and **no torrent
 is ever added** for that transfer. The two demos are separate stack scripts, so this substrate is **pasted into
-each** and instantiated under that demo's prefix. Below, `<pfx>` = `qs` in `torrent-quickshare.livecodescript` and
-`ch` in `torrent-dht-channels.livecodescript`. New handlers use the sub-namespace `<pfx>Onion…`; OnionXT callbacks
+each** and instantiated under that demo's prefix. Below, `<pfx>` = `qs` in `torrentxt/examples/torrent-quickshare.livecodescript` and
+`ch` in `torrentxt/examples/torrent-dht-channels.livecodescript`. New handlers use the sub-namespace `<pfx>Onion…`; OnionXT callbacks
 are registered under prefixed names (we pass explicit prefixed names to the OnionXT setters, overriding OnionXT's
 default convention names so the two demos never collide in a shared stack).
 
@@ -1558,7 +1564,7 @@ earlier use-before-definition gap).
 
 ### 12.2 Pure-compute known-answer vectors
 
-A standalone `tests/onion_frame_golden.py` (in the spirit of `record_golden_test.py`) pins the **single** wire
+A standalone `torrentxt/tests/onion_frame_golden.py` (in the spirit of `record_golden_test.py`) pins the **single** wire
 protocol so the script writer and reader cannot drift. This is the §3.3/§6.4 framing — the earlier typed
 `SELECT/META/DATA/FIN/ABORT` scheme is deleted and **not** tested. All framing integers **big-endian**:
 

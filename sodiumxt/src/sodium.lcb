@@ -8,9 +8,14 @@
 --
 -- ==========================================================================
 -- VERIFIED ON-ENGINE. This module compiles, loads, and runs on the OXT engine
--- (Windows x64): examples/sodium-tests.livecodescript `put sxSelfTest()` reports
--- 35 / 35 PASSED, exercising every sx* handler with round trips, known-answer
--- vectors, and tamper / wrong-key checks. The conventions below were settled
+-- (Windows x64): examples/sodium-tests.livecodescript `put sxSelfTest()` passed
+-- every check (35/35 at the time of that pass; the suite has grown since),
+-- exercising the core sx* surface with round trips, known-answer vectors, and
+-- tamper / wrong-key checks. NOT yet exercised on-engine (covered natively by
+-- tests/sodium_smoke_test.c; their LCB marshaling is verified statically only):
+-- sxSign, sxSignOpen, sxSignKeypairFromSeed, sxHashInitKeyed, sxHashFileKeyed,
+-- sxFreeHash, sxPwMemModerate, sxPwMemSensitive, sxInit, sxLastError.
+-- The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;

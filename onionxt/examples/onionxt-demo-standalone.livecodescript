@@ -1032,7 +1032,21 @@ end oxCheckServiceArgs
 private function oxStartService pVirtualPort, pLocalPort
    -- Allocate the handle and START the loopback listener before ADD_ONION so a
    -- forwarded connection is never refused (docs/03 step 4, ordering gotcha).
-   local tHandle
+   local tHandle, tPrior
+   put sLocalToService[pLocalPort] into tPrior
+   if tPrior is not empty and sServices[tPrior]["localPort"] is not empty then
+      -- Fail closed: a second service on an in-use local port would overwrite
+      -- the port-to-service mapping, and removing either service would then
+      -- close (or orphan) the shared listener out from under the other, so Tor
+      -- keeps forwarding to a dead port - which looks exactly like a broken
+      -- onion. One local port, one service; pick another local port.
+      -- (Verified statically; needs an OXT pass.)
+      return "OnionXT: local port " & pLocalPort & " already forwards for another service (one service per local port; pick another local port)"
+   end if
+   if tPrior is not empty then
+      -- The mapping is stale (its service is gone); reclaim it and rebind below.
+      delete variable sLocalToService[pLocalPort]
+   end if
    put oxAllocHandle() into tHandle
    put pVirtualPort into sServices[tHandle]["virtualPort"]
    put pLocalPort into sServices[tHandle]["localPort"]
@@ -2034,7 +2048,8 @@ end oxhSetRoot
 
 command oxhServeFiles pFolder
    -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
-   -- directory-listing page (names, sizes, download links) for "/" and each
+   -- directory-listing page (names and download links; no sizes, because
+   -- `the detailedFiles` is an OXT compile-time bad factor) for "/" and each
    -- subfolder, so a visitor can browse and download without you writing an index.
    -- A folder's own index.html, if present, still takes precedence over the listing.
    put oxhStripTrailingSlash(pFolder) into sOxhRoot
@@ -2512,9 +2527,10 @@ end oxhHtmlEscape
 -- proving teardown is idempotent. Run this in a fresh session, or expect it to
 -- tear down whatever is currently open.
 --
--- STATUS: designed and statically reasoned; needs an on-engine pass like the
--- rest of OnionXT, though everything here is pure script with no socket I/O of
--- its own, so the risk surface is much smaller than the library itself.
+-- STATUS: confirmed on-engine: the About-tab self-test run (via the bundled
+-- standalone) executes this harness on a real engine (CLAUDE.md as-built
+-- notes). Everything here is pure script with no socket I/O of its own, so
+-- the risk surface is much smaller than the library itself.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.
@@ -2867,10 +2883,10 @@ end testZeroSeed
 -- supplies a route handler (demoServePage) for page mode and a folder for share
 -- mode. Buttons are enabled only when their action is valid, so the flow guides you.
 --
--- STATUS: designed and statically reasoned, like the rest of OnionXT; the UI
--- object-creation calls (create field/button/graphic, set properties, show/hide
--- by name, enable/scroll) need an on-engine pass the same way the socket code
--- does. The ox* calls are the real feature surface being demonstrated.
+-- STATUS: confirmed on-engine (CLAUDE.md as-built notes): the tabbed UI builds
+-- and renders, the Service tab serves and swaps modes live, and the About-tab
+-- self-test runs. The ox* calls are the real feature surface being
+-- demonstrated; the optional Mode B tor launch stays VERIFY in the library.
 
 -- ==========================================================================
 -- Constants: window geometry, ports (docs/07: system tor 9050/9051, Tor Browser
@@ -3604,7 +3620,7 @@ private command demoBuildAboutTab
       "A Tor transport and self-authenticating rendezvous layer for OXT / LiveCode." & return & \
       "Adds no cryptography of its own: it composes SodiumXT (ABI >= 6) for the" & return & \
       "seed-derived onion key and SAFECOOKIE HMAC, and assumes a locally-running tor" & return & \
-      "daemon. Status: designed and statically reasoned; needs an on-engine pass."
+      "daemon. Status: core paths confirmed on-engine against a live tor daemon."
    demoMakeLabel "about:capsLbl", "24,232,796,254", "Capabilities (oxTransportInfo):"
    demoMakeLog "about:caps", "24,258,796,352"
    demoMakeButton "about:runTests", "24,362,224,392", "Run self-test"

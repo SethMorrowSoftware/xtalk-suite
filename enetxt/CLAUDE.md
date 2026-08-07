@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
-> **Phase 1 complete (the full binding).** The plan is `TorrentXT`'s
+> **Phase 1 complete (the full binding).** The plan is the suite's
 > `docs/NEXT-EXTENSIONS-PLAN.md` Part III ("ENet — real-time, step 1");
 > milestones 0–3 are built: the full `enx_` ABI (v2), the LCB layer
 > (`org.openxtalk.library.enet`, public `en*`), helpers, the LAN chat demo,

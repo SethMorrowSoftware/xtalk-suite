@@ -5,6 +5,13 @@ zero-setup proof first, skip to **The loopback demo** — it needs no second
 machine and no signaling infrastructure. If you want the headline act — two
 machines chatting across the internet with no server — that is section 6.
 
+> **Honesty note (the suite convention):** the native pipeline is proven by the
+> C++ smoke test under sanitizers, but the script layer this guide walks — the
+> `.lcb` binding and the example stacks — is **verified statically; needs an
+> OXT pass**. Treat the step-by-step behaviour described here as the designed
+> behaviour until a pass with `tests/datachannel-selftest.livecodescript` is
+> recorded.
+
 ## 1. Install the extension
 
 DataChannelXT is a standard OXT extension package: the LCB module

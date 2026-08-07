@@ -104,8 +104,9 @@ library, not just in CoinXT.
 CoinXT is an independent library: it does not depend on OnionXT (the two compose at the documentation
 level only), and everything it needs (the static gates, the CI workflow, the portable engine-lesson
 book, the vendored sources and their manifest) lives inside this directory. It is currently staged
-inside the OnionXT repository and is ready to be split into its own repository; the exact procedure and
-the post-split checklist are in [MIGRATION.md](MIGRATION.md). (Remove this paragraph after the move.)
+inside the xtalk-suite monorepo and is ready to be split into its own repository; the exact procedure
+and the post-split checklist are in [MIGRATION.md](MIGRATION.md). (Remove this paragraph after the
+move.)
 
 ## A note on handling money
 

@@ -28,7 +28,7 @@ self-authenticating rendezvous for free because a v3 onion address is an ed25519
 ```
 SodiumXT (sx*)   crypto: ed25519 identity, key derivation, AEAD, secretstream, sealing
 TorrentXT (bt*)  the BitTorrent DHT / swarm transport
-OnionXT  (ox*)   the Tor transport + onion rendezvous (this repo)
+OnionXT  (ox*)   the Tor transport + onion rendezvous (this member, onionxt/)
       |
 your app         composes the pieces it needs; OnionXT supplies anonymous dial + onion rendezvous,
                  and a higher-layer protocol can plug into its transport seam (doc 06)

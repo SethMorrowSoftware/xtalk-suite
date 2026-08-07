@@ -240,10 +240,12 @@ once a CoinXT signature verifies externally.
 - `tools/coin-kat.py --check` builds from source and runs the vectors headless (`self-check OK`). This is
   the CoinXT analogue of OnionXT's KAT harness; it grows with each phase.
 
-Still to do in phase 1: nothing native-side for hashes; the `.lcb` foreign module (the on-engine binding)
-is written and confirmed in a later step, since it needs a real OXT engine to load. Next up (phase 2):
-the secp256k1 curve surface (keypair, ECDSA, recoverable, recover, ECDH), with a signature that must
-verify in an independent library.
+Still to do in phase 1, native-side: the rest of the plan's hash surface - `cnx_sha256` / `cnx_sha512`,
+`cnx_ripemd160`, `cnx_hmac_sha256` / `cnx_hmac_sha512`, and `cnx_pbkdf2_hmac_sha512`, each with its KAT
+in `tools/coin-kat.py` (only the Keccak-256 / SHA3-256 slice above is built and verified). The `.lcb`
+foreign module (the on-engine binding) is written and confirmed in a later step, since it needs a real
+OXT engine to load. After that (phase 2): the secp256k1 curve surface (keypair, ECDSA, recoverable,
+recover, ECDH), with a signature that must verify in an independent library.
 
 **Repo-prep - self-contained for the split (2026-07-07).** CoinXT no longer reaches outside its own
 directory for anything; it is ready to become the root of its own repository (the procedure and the

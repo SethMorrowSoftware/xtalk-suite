@@ -62,7 +62,8 @@ end oxhSetRoot
 
 command oxhServeFiles pFolder
    -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
-   -- directory-listing page (names, sizes, download links) for "/" and each
+   -- directory-listing page (names and download links; no sizes, because
+   -- `the detailedFiles` is an OXT compile-time bad factor) for "/" and each
    -- subfolder, so a visitor can browse and download without you writing an index.
    -- A folder's own index.html, if present, still takes precedence over the listing.
    put oxhStripTrailingSlash(pFolder) into sOxhRoot

@@ -12,9 +12,10 @@ TorrentXT), written down so we never re-learn them.
 > wrap a native library for OXT without getting bitten" reference. Parts II-IV are
 > the per-library plans; Part V is sequencing, shared infrastructure, and risk.
 >
-> Companion to `docs/TorrentXT-IMPLEMENTATION-PLAN.md` (the original design brief)
-> and `/CLAUDE.md` (the as-built record). Where those differ from the code, the
-> code wins; where this plan is not yet built, it is marked as plan, not as-built.
+> Companion to `torrentxt/docs/TorrentXT-IMPLEMENTATION-PLAN.md` (the original design brief)
+> and `torrentxt/CLAUDE.md` (the as-built record). Where those differ from the
+> code, the code wins; where this plan is not yet built, it is marked as plan,
+> not as-built.
 
 ---
 
@@ -264,7 +265,7 @@ order: (1) interpreter ops, (2) FFI round-trips, (3) property-set redraws.
   runtime is not installed in our environment).
 - **The OXT pass is unavoidable.** There is no headless way to compile or run
   `.lcb` / `.livecodescript`. A **self-building runtime self-test stack** (see
-  `tests/torrent-selftest.livecodescript`) is the companion to the C++ smoke
+  `torrentxt/tests/torrent-selftest.livecodescript`) is the companion to the C++ smoke
   test - the only way to validate the BINDING. Until a human runs it, everything
   binding-side is **"verified statically; needs an OXT pass."** Never claim
   runtime behaviour you cannot observe.

@@ -168,7 +168,7 @@ def assemble_staging(dry_run):
     .lce here. We stage the pieces an OXT package expects so a human can point the
     IDE at them:
 
-        build/package/torrent.lcb            (the LCB binding, if present)
+        build/package/datachannel.lcb        (the LCB binding, if present)
         build/package/code/<id>/datachannelxt.*  (the committed per-platform libs)
         build/package/examples/...           (the script helpers/demo, if present)
 

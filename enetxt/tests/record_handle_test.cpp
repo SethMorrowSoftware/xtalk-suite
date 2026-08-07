@@ -281,7 +281,7 @@ static void test_handle_basics() {
 }
 
 /* The critical property: a recycled slot does NOT alias under the old handle.
- * This is exactly what protects a drained event that still names a channel
+ * This is exactly what protects a drained event that still names a peer
  * the app freed a moment earlier. */
 static void test_handle_generation() {
     HandleTable<int> t;

@@ -59,8 +59,9 @@ script "DataChannelDhtChat"
 --   2. Machine A clicks "Host a room", waits for "offer published", and sends
 --      the room code to machine B (chat, email, carrier pigeon).
 --   3. Machine B pastes the code and clicks Join. Watch the status walk:
---      fetch offer -> publish answer -> connecting -> OPEN. First contact
---      takes roughly 10-30 s (two DHT round-trips plus ICE).
+--      fetch offer -> publish answer -> connecting -> OPEN. Expect first
+--      contact to take roughly 10-30 s (two DHT round-trips plus ICE).
+--      (This walkthrough is verified statically; needs an OXT pass.)
 --   4. Type. The messages now travel peer-to-peer over DTLS - close the DHT
 --      out of your mind; it was only the introduction.
 --   If both NATs are hostile (rare), add a TURN server line to the ICE field
@@ -285,9 +286,9 @@ command wxAddTips
 end wxAddTips
 
 -- ---- startup: probes, session, loops -----------------------------------------
--- Each extension is probed with a cheap guarded call (the family's cryptoXT
--- pattern): when one is missing the demo fails CLOSED - buttons log a clear
--- install message and nothing else breaks.
+-- Each extension is probed with a cheap guarded call (the family's SodiumXT
+-- probe pattern): when one is missing the demo fails CLOSED - buttons log a
+-- clear install message and nothing else breaks.
 command wxStart
    if sPolling is "true" then
       exit wxStart -- a re-fired openStack must not stack a second set of loops

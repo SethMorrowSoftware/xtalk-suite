@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file guides Claude Code (claude.ai/code) when working in the OnionXT repository.
+This file guides Claude Code (claude.ai/code) when working in the OnionXT member of the
+xtalk-suite monorepo (`onionxt/`).
 
 > **Read the docs first.** [docs/00-overview.md](docs/00-overview.md) (architecture),
 > [docs/01-threat-model.md](docs/01-threat-model.md) (what Tor does and does not promise),
@@ -9,7 +10,8 @@ This file guides Claude Code (claude.ai/code) when working in the OnionXT reposi
 > (the onion-address-is-a-public-key idea) are the source of truth for WHAT OnionXT is.
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) is the phased HOW. This file is the operational
 > as-built record and the hard-won-lesson list, in the same spirit as the `CLAUDE.md` files in our
-> sibling projects Box2Dxt, ShowControl, TorrentXT, and SodiumXT. Most of the OXT/LCB and
+> suite siblings TorrentXT and SodiumXT (and the pre-suite projects Box2Dxt and ShowControl,
+> where this lineage began). Most of the OXT/LCB and
 > FFI lessons below were paid for in full while building those; they are carried here so we do not
 > pay for them twice. The socket-I/O lessons are the new ones and are called out as such.
 

@@ -57,7 +57,7 @@ protocol (doc 06).
 ## Layout
 
 ```
-OnionXT/
+onionxt/                    (the OnionXT member of the xtalk-suite monorepo)
   README.md                 you are here
   CLAUDE.md                 the operational guide + all carried OXT/LCB/FFI lessons (read first)
   IMPLEMENTATION-PLAN.md    the phased build order
@@ -109,8 +109,10 @@ publishing a v3 onion service, and answering an inbound HTTP request so a publis
 web page in Tor Browser (once the loopback forward port is one the OS allows binding, see
 [Troubleshooting](#troubleshooting)). The pure-compute paths (base32, the v3 address, the ed25519 seed
 derivation) are pinned by known-answer vectors in `tools/onion-kat.py`; a few advanced behaviours stay
-flagged `VERIFY:` in the source until each is separately exercised. The static and house-style gates and
-the KAT self-check run in CI on every push / PR.
+flagged `VERIFY:` in the source until each is separately exercised. In the xtalk-suite monorepo the
+suite CI runs the static gate on every push; the house-style gate, the KAT self-check, and the
+standalone-freshness check live in this member's own workflow (inert here; run when OnionXT is worked
+on in isolation) and in `tools/build-all.sh --gates`.
 
 New here? Start with [CLAUDE.md](CLAUDE.md), the [usage guide](docs/10-usage-guide.md), the
 [Troubleshooting](#troubleshooting) section below, and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md).
