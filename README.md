@@ -136,25 +136,30 @@ monorepo**):
   four CMake members cover all five platforms, each with its own dependency
   setup; coinxt builds from a shell script rather than CMake, so its lane covers
   Linux only and the file says exactly what macOS and Windows would still need.
-  Each lane uploads its built library as an artifact; **CI does not commit
-  binaries** — refreshing a committed binary stays a deliberate change made
-  alongside the shim edit that motivated it, and
+  Each lane uploads its built library as an artifact; **these automatic
+  workflows never commit binaries** — they fire on every push, so a commit step
+  here would land binaries nobody asked for on somebody else's change.
   `coinxt/tools/check-binary-freshness.py` (in the always-on gates) turns
-  forgetting that into a build failure rather than a load failure on a user's
-  machine.
+  forgetting to refresh one into a build failure rather than a load failure on a
+  user's machine.
 
 - **`release-binaries.yml`** — the assembly step, run by hand
   (`workflow_dispatch`). One dispatch builds every member for every platform it
   can be built for (24 build jobs), asserts each artifact, runs coinxt's
-  published vectors against the real cross-built DLL on a Windows runner, and
-  publishes **one** bundle. Land it locally with
-  `python3 tools/install-release-binaries.py <bundle>`, which verifies each
-  library's name, object format, and architecture against the directory it
-  claims — and coinxt's export surface — before writing anything, then refreshes
-  every `MANIFEST.sha256`. That keeps rule 5 intact: CI produces, a person
-  commits. The one thing it cannot produce is torrentxt's macOS dylib, which
-  must be universal, self-contained, and codesigned/notarized with credentials
-  CI does not hold (`torrentxt/src/code/universal-mac/README.md`).
+  published vectors against the real cross-built DLL on a Windows runner,
+  publishes one bundle, and then **installs each library into its own member's
+  `src/code/<platform-id>/`, refreshes the manifests, and commits**. It calls
+  `tools/install-release-binaries.py` to do it, so the same checks apply whether
+  CI lands the binaries or you do: each library's name, object format, and
+  architecture are verified against the directory it claims — plus coinxt's
+  export surface — before anything is written, and the whole gate set runs over
+  the result before anything is pushed. `commit_mode` picks `branch` (the
+  default), `pr`, or `none` (bundle only, land it yourself). Rule 5 still holds,
+  because its point is that a committed binary traces to a human decision: here
+  the decision is pressing "Run workflow". The one thing it cannot produce is
+  torrentxt's macOS dylib, which must be universal, self-contained, and
+  codesigned/notarized with credentials CI does not hold
+  (`torrentxt/src/code/universal-mac/README.md`).
 
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.

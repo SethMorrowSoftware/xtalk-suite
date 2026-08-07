@@ -9,18 +9,35 @@
 # x86_64-linux only while CI was quietly building the other platforms all along.
 # This workflow is the assembly step: run it once, get one bundle.
 #
-# IT STILL DOES NOT COMMIT ANYTHING, and that is deliberate rather than a gap.
-# Suite rule 5 says a native change refreshes its committed binary in the SAME
-# human-authored change; a bot that pushes binaries on a schedule turns "which
-# source built this?" into an unanswerable question for a set of files nobody
-# can diff. So this produces a verified bundle and stops. The landing step is
-# local and deliberate:
+# IT LANDS THEM TOO. The final job installs every built library into its own
+# member's src/code/<platform-id>/, refreshes each MANIFEST.sha256, and commits.
 #
-#     python3 tools/install-release-binaries.py <unzipped-bundle-dir>
+# That is a deliberate narrowing of suite rule 5, not an abandonment of it. The
+# rule exists so a committed binary is always traceable to a human decision and
+# to the source that produced it. What it actually forbids is a binary arriving
+# without anyone choosing it - and the danger case is an AUTOMATIC workflow: the
+# per-member native-*.yml files fire on every push, so a commit step there would
+# push binaries nobody asked for, on somebody else's change. Those still upload
+# artifacts and nothing else, and that has not changed.
 #
-# which verifies each library before it touches the tree, installs it under the
-# right member/platform, and refreshes every MANIFEST.sha256 - leaving you one
-# reviewable commit.
+# This workflow is different in the one way that matters: it only ever runs
+# because a person pressed "Run workflow". The human decision is still there; it
+# moved from "download 17 artifacts and run a local command" to "press the
+# button". Everything the local installer checked, the commit job still checks,
+# because it RUNS the local installer (tools/install-release-binaries.py) rather
+# than reimplementing it - name, object format, architecture-vs-directory, and
+# coinxt's export surface are all verified before a single file is written, and
+# the whole static gate set runs afterwards. A bad artifact fails the job with
+# nothing committed.
+#
+#   commit_mode: branch  (default) commit straight to the branch you dispatched
+#                        on. This is what the members' standalone repositories
+#                        did before consolidation.
+#                pr      push to a release-binaries/<run> branch and open a PR,
+#                        when you would rather look before it lands.
+#                none    just the bundle; run
+#                        `python3 tools/install-release-binaries.py <dir>`
+#                        yourself.
 #
 # WHAT IT CANNOT PRODUCE, honestly. Two gaps that no workflow can close by
 # itself, both already documented where they bite:
@@ -39,15 +56,21 @@ name: release binaries
 on:
   workflow_dispatch:
     inputs:
-      members:
-        description: "Which members to build (space-separated, or 'all')"
-        default: "all"
+      commit_mode:
+        description: "How to land the built binaries"
+        type: choice
+        options: [branch, pr, none]
+        default: branch
         required: false
 
 concurrency:
   group: release-binaries-${{ github.ref }}
   cancel-in-progress: true
 
+# Read by default; the commit job raises its own to contents: write. Scoping it
+# per job rather than per workflow means every BUILD job runs with no write token
+# at all, so the only step that can alter the repository is the one whose whole
+# purpose is to.
 permissions:
   contents: read
 
@@ -323,3 +346,126 @@ jobs:
           name: release-binaries
           path: bundle/
           if-no-files-found: error
+
+  # ---------------------------------------------------------------- land them
+  # Install every built library into its member's src/code/<platform-id>/,
+  # refresh the manifests, and commit.
+  #
+  # `needs` plus an explicit success check, NOT `if: always()`. The bundle job
+  # deliberately runs on partial failure so you can see what DID build;
+  # committing must not. A half-built release that lands four platforms of five
+  # is worse than no release, because the missing one looks deliberate afterwards.
+  commit-binaries:
+    name: install into each extension and commit
+    needs: [cmake-members, coinxt, kat-windows, bundle]
+    if: >-
+      github.event.inputs.commit_mode != 'none' &&
+      needs.cmake-members.result == 'success' &&
+      needs.coinxt.result == 'success' &&
+      needs.kat-windows.result == 'success' &&
+      needs.bundle.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Full history is not needed, but the REF is: we commit back onto the
+      # branch the run was dispatched from, so check that out by name rather than
+      # relying on the detached default.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: incoming
+
+      # The SAME verifier the local path uses - not a reimplementation. It checks
+      # each library's filename against the member, its object format and
+      # architecture against the directory it claims (read from the ELF/PE/Mach-O
+      # header, which is what catches a cross build that reported the build
+      # machine's arch), and coinxt's export surface. It refuses to write
+      # anything at all if any file fails, so a bad artifact cannot land a
+      # partial update.
+      - name: Verify, then install into each extension
+        run: python3 tools/install-release-binaries.py incoming
+
+      # Proof the tree is still coherent AFTER the write: the MANIFEST.sha256
+      # files the installer just refreshed, coinxt's binary-freshness gate
+      # (exports and ABI against the shim source), and every other static gate.
+      # If this fails, nothing is pushed.
+      - name: Static gates over the updated tree
+        run: bash tools/build-all.sh --gates
+
+      # NOTE for anyone editing below: every line of a `run: |` block must stay
+      # indented. A multi-line commit message written flush-left terminates the
+      # YAML block scalar and breaks the whole workflow file - which is exactly
+      # what the first draft of this step did. Hence repeated -m flags (each
+      # becomes its own paragraph) rather than an inline multi-line string.
+      - name: Commit
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Every committed binary already matched this build; nothing to do."
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --cached --stat
+          git commit \
+            -m "Refresh the committed native libraries from a release build" \
+            -m "Built by .github/workflows/release-binaries.yml, run ${{ github.run_id }}, from ${{ github.sha }}." \
+            -m "Every library was verified by tools/install-release-binaries.py before it was written: filename against the member, object format and architecture against the directory it claims, and coinxt's export surface. The full static gate set, including each MANIFEST.sha256 and coinxt's binary-freshness check, passed over the result."
+
+      # Push with rebase-and-retry: another push can land between our checkout and
+      # this step, and losing that race would mean re-running 24 build jobs.
+      - name: Push to ${{ github.ref_name }}
+        if: steps.commit.outputs.changed == 'true' && github.event.inputs.commit_mode != 'pr'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              echo "pushed"
+              exit 0
+            fi
+            echo "push failed (attempt $attempt); rebasing onto the branch tip"
+            git pull --rebase origin "${{ github.ref_name }}" || true
+            sleep $((attempt * 2))
+          done
+          echo "could not push after 4 attempts" >&2
+          exit 1
+
+      - name: Open a pull request instead
+        if: steps.commit.outputs.changed == 'true' && github.event.inputs.commit_mode == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="release-binaries/${{ github.run_id }}"
+          git push origin "HEAD:$branch"
+          {
+            echo "Built by \`release-binaries.yml\` (run ${{ github.run_id }}) from ${{ github.sha }}."
+            echo
+            echo "Each library was verified by \`tools/install-release-binaries.py\` before being"
+            echo "written: filename against the member, object format and architecture against the"
+            echo "directory it claims, and coinxt's export surface. The full static gate set -"
+            echo "including every \`MANIFEST.sha256\` and coinxt's binary-freshness check - passed"
+            echo "over the result."
+            echo
+            echo '```'
+            git show --stat --format= HEAD
+            echo '```'
+            echo
+            echo "---"
+            echo "_Generated by [Claude Code](https://claude.ai/code)_"
+          } > /tmp/pr-body.md
+          gh pr create --base "${{ github.ref_name }}" --head "$branch" \
+            --title "Refresh the committed native libraries from a release build" \
+            --body-file /tmp/pr-body.md
