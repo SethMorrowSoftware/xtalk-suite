@@ -177,19 +177,44 @@ def pbkdf2(lib, pw, salt, iters, outlen):
 
 def main(argv):
     check = "--check" in argv[1:]
-    cc = find_cc()
-    if cc is None:
-        print("coin-kat: skipped (no C compiler found)")
-        return 0
+
+    # --lib <path>: drive an ALREADY-BUILT library instead of compiling a fresh
+    # one. The default (build from source in a temp dir) is what the gates want:
+    # it tests the SOURCE and cannot be fooled by a stale artifact. But a release
+    # artifact needs the opposite question answered - "does THIS FILE, the one we
+    # are about to ship, produce the right answers?" - and for a cross-compiled
+    # Windows DLL that question can only be asked on Windows, against the exact
+    # binary. Same vectors either way; only the subject changes.
+    given = None
+    if "--lib" in argv[1:]:
+        i = argv.index("--lib")
+        if i + 1 >= len(argv):
+            print("coin-kat: --lib needs a path")
+            return 2
+        given = argv[i + 1]
+        if not os.path.exists(given):
+            print(f"coin-kat: --lib {given} does not exist")
+            return 1
+
+    cc = None
+    if given is None:
+        cc = find_cc()
+        if cc is None:
+            print("coin-kat: skipped (no C compiler found)")
+            return 0
 
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
-        out_path = os.path.join(tmp, "libcoinxt_kat.so")
-        try:
-            build_lib(cc, out_path)
-        except subprocess.CalledProcessError as exc:
-            print(f"coin-kat: BUILD FAILED ({exc})")
-            return 1
+        if given is not None:
+            out_path = given
+            print(f"coin-kat: driving the given library {given}")
+        else:
+            out_path = os.path.join(tmp, "libcoinxt_kat.so")
+            try:
+                build_lib(cc, out_path)
+            except subprocess.CalledProcessError as exc:
+                print(f"coin-kat: BUILD FAILED ({exc})")
+                return 1
         lib = load(out_path)
 
         abi = lib.cnx_abi_version()

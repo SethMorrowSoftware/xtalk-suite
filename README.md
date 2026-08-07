@@ -143,6 +143,19 @@ monorepo**):
   forgetting that into a build failure rather than a load failure on a user's
   machine.
 
+- **`release-binaries.yml`** — the assembly step, run by hand
+  (`workflow_dispatch`). One dispatch builds every member for every platform it
+  can be built for (24 build jobs), asserts each artifact, runs coinxt's
+  published vectors against the real cross-built DLL on a Windows runner, and
+  publishes **one** bundle. Land it locally with
+  `python3 tools/install-release-binaries.py <bundle>`, which verifies each
+  library's name, object format, and architecture against the directory it
+  claims — and coinxt's export surface — before writing anything, then refreshes
+  every `MANIFEST.sha256`. That keeps rule 5 intact: CI produces, a person
+  commits. The one thing it cannot produce is torrentxt's macOS dylib, which
+  must be universal, self-contained, and codesigned/notarized with credentials
+  CI does not hold (`torrentxt/src/code/universal-mac/README.md`).
+
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.
 

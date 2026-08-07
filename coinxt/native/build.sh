@@ -102,56 +102,110 @@ case "${1:-lib}" in
     fi
     dir="$root/src/code/$platform_id"
     out="$dir/coinxt.$ext"
-    # Build to a scratch file and move it into place only on success. Writing
-    # straight to $out would truncate a good committed binary the moment a build
-    # failed, and `mkdir -p` up front would leave an empty platform directory
-    # behind that reads as "this platform is supported" when it is not.
+    # Build to a scratch dir and move the result into place only on success.
+    # Writing straight to $out would truncate a good committed binary the moment
+    # a build failed, and `mkdir -p` up front would leave an empty platform
+    # directory behind that reads as "this platform is supported" when it is not.
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
     staged="$stage/coinxt.$ext"
 
-    # Two probes, not one, and the order matters. The obvious single probe -
-    # "does a link WITH the version script succeed?" - cannot tell a linker that
-    # refuses version scripts from a toolchain that cannot link at all, and it
-    # reports the second as the first. That is the worst possible confusion here,
-    # because the "fix" it implies (carry on without the map) silently widens the
-    # exported surface of a money library. So: prove the toolchain links a
-    # trivial shared object FIRST; only if that works does a failure with the
-    # script added mean what the message says. If the plain link fails we stay
-    # silent and let the real build below fail with the real compiler error.
-    vscript="$root/src/coinxt.map"
-    ldflags=""
-    if [ -f "$vscript" ]; then
-      if cc -fPIC -shared -o /dev/null -xc /dev/null 2>/dev/null; then
-        if cc -fPIC -shared -Wl,--version-script="$vscript" -o /dev/null -xc /dev/null 2>/dev/null; then
-          ldflags="-Wl,--version-script=$vscript"
-        else
-          echo "build.sh pack: WARNING - this linker will not take src/coinxt.map;" >&2
-          echo "  the library will export the vendored trezor-crypto symbols too." >&2
-          echo "  Do not COMMIT this one; see src/coinxt.map." >&2
-        fi
-      fi
-    else
-      echo "build.sh pack: WARNING - src/coinxt.map is missing." >&2
-      echo "  Do not COMMIT this one; see the note in native/build.sh." >&2
+    # ---- the export surface, per object format ------------------------------
+    # Same goal on every platform: ship the 16 cnx_* entry points and NOTHING
+    # else (see src/coinxt.map for why a wide surface is unacceptable here). The
+    # MECHANISM differs by object format, and picking the wrong one fails OPEN -
+    # you get a working library with 77 exports - so each is handled explicitly
+    # rather than left to a default:
+    #
+    #   ELF   a linker version script (src/coinxt.map). Filters at link time, so
+    #         it reaches the vendored units too.
+    #   PE    a .def file. MinGW AUTO-EXPORTS every global when no .def and no
+    #         __declspec(dllexport) is present - measured: 77 symbols - and a
+    #         version script is silently IGNORED for PE, which is exactly the
+    #         fail-open case. Supplying a .def turns auto-export off.
+    #   Mach-O  -exported_symbols_list. ld64 ignores a version script too.
+    #
+    # The .def and the symbols list are GENERATED from the compiled objects
+    # rather than committed, so they can never drift from the shim: whatever the
+    # objects define as a global cnx_* IS the export list, by construction.
+    NM_TOOL="${NM:-nm}"
+    STRIP_TOOL="${STRIP:-strip}"
+    CC_TOOL="${CC:-cc}"
+
+    objs=""
+    for src in "$here/coinxt.c" $vendor_src; do
+      obj="$stage/$(basename "$src" .c).o"
+      $CC_TOOL -O2 $warn $inc -fPIC -c "$src" -o "$obj"
+      objs="$objs $obj"
+    done
+
+    # Every global cnx_* the objects actually define. `nm -g --defined-only`
+    # spells a defined global as a T/D/R/B code in column 2.
+    exports=$($NM_TOOL -g --defined-only $objs 2>/dev/null \
+              | awk '$2 ~ /^[TDRB]$/ {print $3}' \
+              | sed 's/^_//' | grep '^cnx_' | sort -u)
+    if [ -z "$exports" ]; then
+      echo "build.sh pack: could not read any cnx_* export from the objects" >&2
+      echo "  ($NM_TOOL did not report them; set NM= to the matching nm)" >&2
+      exit 1
     fi
 
-    cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src $ldflags -o "$staged"
+    ldflags=""
+    case "$ext" in
+      so)
+        vscript="$root/src/coinxt.map"
+        if [ ! -f "$vscript" ]; then
+          echo "build.sh pack: src/coinxt.map is missing; refusing to ship a" >&2
+          echo "  wide-surface library. Restore it." >&2
+          exit 1
+        fi
+        # Two probes, not one, and the order matters. The obvious single probe -
+        # "does a link WITH the version script succeed?" - cannot tell a linker
+        # that refuses version scripts from a toolchain that cannot link at all,
+        # and reports the second as the first. That is the worst confusion here,
+        # because the "fix" it implies is to ship the wide surface. So: prove the
+        # toolchain links a trivial shared object FIRST; only then does a failure
+        # with the script added mean what the message says.
+        if $CC_TOOL -fPIC -shared -o /dev/null -xc /dev/null 2>/dev/null; then
+          if $CC_TOOL -fPIC -shared -Wl,--version-script="$vscript" -o /dev/null -xc /dev/null 2>/dev/null; then
+            ldflags="-Wl,--version-script=$vscript"
+          else
+            echo "build.sh pack: this linker will not take src/coinxt.map;" >&2
+            echo "  refusing to ship a wide-surface library." >&2
+            exit 1
+          fi
+        fi
+        ;;
+      dll)
+        printf 'EXPORTS\n' > "$stage/coinxt.def"
+        for sym in $exports; do printf '%s\n' "$sym" >> "$stage/coinxt.def"; done
+        ldflags="$stage/coinxt.def"
+        ;;
+      dylib)
+        # ld64 wants the C symbol name with its leading underscore.
+        : > "$stage/coinxt.exp"
+        for sym in $exports; do printf '_%s\n' "$sym" >> "$stage/coinxt.exp"; done
+        ldflags="-Wl,-exported_symbols_list,$stage/coinxt.exp"
+        ;;
+    esac
+
+    $CC_TOOL -shared $objs $ldflags -o "$staged"
     # Debug info and local symbols are dead weight in a committed binary and
     # make the artifact differ run to run; --strip-unneeded keeps exactly the
-    # dynamic symbols the engine needs to bind.
-    if command -v strip > /dev/null 2>&1 && [ "$ext" != dylib ]; then
-      strip --strip-unneeded "$staged" 2>/dev/null || strip "$staged" 2>/dev/null || true
+    # dynamic symbols the engine needs to bind. macOS strip needs -x (a plain
+    # strip on a dylib removes symbols the dynamic linker still wants).
+    if command -v "$STRIP_TOOL" > /dev/null 2>&1; then
+      if [ "$ext" = dylib ]; then
+        "$STRIP_TOOL" -x "$staged" 2>/dev/null || true
+      else
+        "$STRIP_TOOL" --strip-unneeded "$staged" 2>/dev/null || "$STRIP_TOOL" "$staged" 2>/dev/null || true
+      fi
     fi
     mkdir -p "$dir"
     mv "$staged" "$out"
     echo "built $out"
-    # Say what was actually shipped. A surprise in this list is the whole reason
-    # the version script exists, so it is printed rather than assumed.
-    if command -v nm > /dev/null 2>&1 && [ "$ext" = so ]; then
-      echo "exported symbols:"
-      nm -D --defined-only "$out" | awk '{print "  " $3}' | sort
-    fi
+    echo "exported symbols (the shipped surface):"
+    printf '  %s\n' $exports
     ;;
   asan)
     tmp=$(mktemp -d)
