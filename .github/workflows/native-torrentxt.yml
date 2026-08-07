@@ -1,0 +1,178 @@
+# torrentxt's native build matrix, ported to the ROOT of the monorepo.
+# See native-enetxt.yml for why this file exists, and why it uploads artifacts
+# instead of committing binaries.
+#
+# This is the suite's heaviest matrix by a wide margin: two lanes compile
+# libtorrent (and its Boost dependency) from source. Keep the parallelism caps
+# below - they are not tuning preferences, they are the fix for runners that
+# were taken down by out-of-memory kills.
+name: native torrentxt
+
+on:
+  pull_request:
+    paths:
+      - "torrentxt/**"
+      - ".github/workflows/native-torrentxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "torrentxt/**"
+      - ".github/workflows/native-torrentxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-torrentxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: torrentxt
+
+jobs:
+  sanitize:
+    name: shim ASan+UBSan (linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The sanitizer lane builds against the apt libtorrent on purpose: it
+      # exercises the SHIM under ASan/UBSan without paying for a source build
+      # of libtorrent, which the release lanes already cover.
+      - name: Acquire libtorrent + toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build libtorrent-rasterbar-dev libboost-dev libssl-dev zlib1g-dev
+      - name: Configure + build + test under sanitizers
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DTORRENTXT_BUILD_TESTS=ON \
+            -DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+          cmake --build build-asan --parallel 2
+          ctest --test-dir build-asan --output-on-failure --no-tests=error
+
+  build-matrix:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - FetchContent libtorrent @ the pinned tag, STATICALLY
+          # linked so the committed binary is self-contained. An apt/dynamic
+          # build is not distributable (readelf shows NEEDED
+          # libtorrent-rasterbar.so), so the source-static build is the
+          # shippable one.
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            platform_id: x86_64-linux
+            acquire: linux64src
+            # Cap parallelism: libtorrent's heaviest translation units each peak
+            # at multiple GB, and 4 cores ran a 16 GB runner out of RAM.
+            build_jobs: 2
+            cmake_args: ""
+          # Linux x86 (32-bit) - the same source build under -m32 against the
+          # i386 system libraries. The slowest lane; no 32-bit apt libtorrent.
+          - name: linux-x86
+            os: ubuntu-24.04
+            platform_id: x86-linux
+            acquire: linux32
+            build_jobs: 2
+            cmake_args: "-DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32 -DOPENSSL_SSL_LIBRARY=/usr/lib/i386-linux-gnu/libssl.so -DOPENSSL_CRYPTO_LIBRARY=/usr/lib/i386-linux-gnu/libcrypto.so -DOPENSSL_INCLUDE_DIR=/usr/include -DZLIB_LIBRARY=/usr/lib/i386-linux-gnu/libz.so -DZLIB_INCLUDE_DIR=/usr/include"
+          # macOS (host arch) - brew system libtorrent. A universal + notarized
+          # dylib is a separate release build, which is why the committed
+          # universal-mac slot stays empty (see the member README).
+          - name: macos
+            os: macos-15
+            platform_id: universal-mac
+            acquire: brew
+            cmake_args: "-DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON"
+          - name: windows-x86_64
+            os: windows-2025
+            platform_id: x86_64-win32
+            acquire: vcpkg
+            vcpkg_triplet: x64-windows-static
+            cmake_args: "-DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON"
+          - name: windows-x86
+            os: windows-2025
+            platform_id: x86-win32
+            acquire: vcpkg
+            vcpkg_triplet: x86-windows-static
+            cmake_args: "-DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON -A Win32"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python (for package-extension.py)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Acquire deps for the 64-bit static source build (Linux x86_64)
+        if: matrix.acquire == 'linux64src'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build libboost-dev libssl-dev zlib1g-dev
+
+      - name: Acquire 32-bit toolchain + i386 OpenSSL/zlib (Linux x86)
+        if: matrix.acquire == 'linux32'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y g++-multilib gcc-multilib ninja-build
+          sudo apt-get install -y libssl-dev:i386 zlib1g-dev:i386
+          sudo apt-get install -y libboost-dev
+
+      - name: Acquire libtorrent (Homebrew, macOS host arch)
+        if: matrix.acquire == 'brew'
+        run: |
+          brew update
+          brew install libtorrent-rasterbar boost ninja
+
+      - name: Set up vcpkg + acquire libtorrent (Windows)
+        if: matrix.acquire == 'vcpkg'
+        shell: pwsh
+        run: |
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          & "$vcpkg\vcpkg.exe" install "libtorrent:${{ matrix.vcpkg_triplet }}"
+          echo "CMAKE_TOOLCHAIN_FILE=$vcpkg\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+          echo "VCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}" >> $env:GITHUB_ENV
+
+      - name: Configure
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ -n "${CMAKE_TOOLCHAIN_FILE:-}" ]; then
+            EXTRA="-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+            if [ -n "${VCPKG_TARGET_TRIPLET:-}" ]; then
+              EXTRA="$EXTRA -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
+            fi
+          fi
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTORRENTXT_BUILD_TESTS=ON \
+            ${{ matrix.cmake_args }} \
+            $EXTRA
+
+      - name: Build
+        run: cmake --build build --config Release --parallel ${{ matrix.build_jobs || '4' }}
+
+      - name: Test (ctest)
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      - name: Stage per-platform binary
+        shell: bash
+        run: |
+          python3 tools/package-extension.py \
+            --platform-id ${{ matrix.platform_id }} \
+            --build-dir build || \
+            echo "package-extension: nothing to stage."
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: torrentxt-${{ matrix.platform_id }}
+          path: torrentxt/src/code/${{ matrix.platform_id }}/
+          if-no-files-found: ignore

@@ -91,10 +91,10 @@ version and verified against a pinned SHA256 before it is compiled. The Windows 
 libsodium that vcpkg provides, which is held to the same libsodium 1.0.x line rather than the
 SHA256 pin; every platform must then pass the same known-answer tests (BLAKE2b, Argon2id, ed25519,
 KDF) before its binary ships, which is the functional guard against any drift. The committed native
-binaries under `src/code/` carry a `MANIFEST.sha256` that the suite CI verifies on every push;
-rebuilds of the full platform matrix run in the member's own workflow (inert inside the
-monorepo, used when SodiumXT is worked on in isolation). For the strongest assurance you can
-build from source yourself (see `docs/development/building.md`).
+binaries under `src/code/` carry a `MANIFEST.sha256` that the suite CI verifies on every push,
+and the root `native sodiumxt` workflow rebuilds and tests all five platforms from the pinned
+source. For the strongest assurance you can build from source yourself (see
+`docs/development/building.md`).
 
 If you believe you have found a security issue in SodiumXT's binding layer, report it privately to
 the maintainer rather than opening a public issue. Vulnerabilities in libsodium itself should go to

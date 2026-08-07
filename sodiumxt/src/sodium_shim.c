@@ -166,7 +166,8 @@ SXT_API int SXT_CALL sxt_randombytes(unsigned char *out, int cap, int n)
     if (n >= SXT_MAX_BUFFER) {
         /* Larger than a single in-memory Data may carry; would also collide
          * with the hard-error band once negated. Such sizes belong to the
-         * file/stream helpers (a future phase), not to one buffer. */
+         * file/stream helpers (sxt_encrypt_file / sxt_decrypt_file /
+         * sxt_hash_file), not to one buffer. */
         set_error("sxt_randombytes: count too large for a single buffer");
         return SXT_ERR_BADARG;
     }

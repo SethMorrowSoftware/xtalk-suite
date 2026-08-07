@@ -1,0 +1,148 @@
+# enetxt's native build matrix, ported to the ROOT of the monorepo.
+#
+# WHY THIS FILE EXISTS: GitHub Actions runs only the workflows in the
+# repository-root .github/workflows/, so enetxt/.github/workflows/build.yml is
+# inert here. That file stays for when the member is developed in isolation;
+# this is the copy that actually fires, with the member directory as the
+# working directory.
+#
+# WHAT IT DOES NOT DO: it does not commit binaries. The member workflow had a
+# commit-binaries job that pushed refreshed libraries to main; in a monorepo an
+# automatic multi-member binary push on every main push is a large and
+# surprising side effect, and the suite rule is that a native change refreshes
+# its committed binary in the SAME human-authored change. So each lane uploads
+# its library as a build ARTIFACT, and a maintainer downloads and commits it
+# deliberately (tools/package-extension.py does the placing and stripping).
+#
+# The always-on, compiler-free gates live in suite-gates.yml and cover every
+# member on every push; this heavier matrix is scoped by paths so it only runs
+# when enetxt (or this file) changes.
+name: native enetxt
+
+on:
+  pull_request:
+    paths:
+      - "enetxt/**"
+      - ".github/workflows/native-enetxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "enetxt/**"
+      - ".github/workflows/native-enetxt.yml"
+  workflow_dispatch:
+
+# A superseded run is wasted runner time: keep only the newest per ref.
+concurrency:
+  group: native-enetxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: enetxt
+
+jobs:
+  sanitize:
+    name: full-stack ASan+UBSan (linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build
+      - name: Configure + build + test under sanitizers
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENETXT_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+          cmake --build build-asan --parallel 4
+          ctest --test-dir build-asan --output-on-failure --no-tests=error
+
+  build-matrix:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            platform_id: x86_64-linux
+            acquire: linux64
+            cmake_args: ""
+          - name: linux-x86
+            os: ubuntu-24.04
+            platform_id: x86-linux
+            acquire: linux32
+            cmake_args: "-DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32"
+          - name: macos
+            os: macos-15
+            platform_id: universal-mac
+            acquire: none
+            cmake_args: ""
+          - name: windows-x86_64
+            os: windows-2025
+            platform_id: x86_64-win32
+            acquire: none
+            cmake_args: "-A x64"
+          - name: windows-x86
+            os: windows-2025
+            platform_id: x86-win32
+            acquire: none
+            cmake_args: "-A Win32"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python (for package-extension.py)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Acquire toolchain (Linux x86_64)
+        if: matrix.acquire == 'linux64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build
+
+      - name: Acquire 32-bit toolchain (Linux x86)
+        if: matrix.acquire == 'linux32'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-multilib gcc-multilib cmake ninja-build
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENETXT_BUILD_TESTS=ON \
+            ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      # --no-tests=error: ctest exits 0 on an EMPTY test set, so without this a
+      # misconfigured lane reports green having run nothing (the suite lesson
+      # that made tools/build-all.sh hollow for months).
+      - name: Test (ctest)
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      - name: Stage per-platform binary
+        shell: bash
+        run: |
+          python3 tools/package-extension.py \
+            --platform-id ${{ matrix.platform_id }} \
+            --build-dir build || \
+            echo "package-extension: nothing to stage."
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: enetxt-${{ matrix.platform_id }}
+          path: enetxt/src/code/${{ matrix.platform_id }}/
+          if-no-files-found: ignore

@@ -50,6 +50,26 @@ target_compile_options(enetxt PRIVATE -Wall -Wextra)
 target_include_directories(enetxt SYSTEM PRIVATE ${enet_SOURCE_DIR}/include)
 target_link_libraries(enetxt PRIVATE enet)
 
+# Export ONLY the enx_* ABI. Statically linked ENet objects otherwise inherit
+# the .so's public visibility and export ~65 enet_* symbols, which another
+# extension bundling its own ENet could interpose with. -fvisibility=hidden on
+# this target cannot reach ENet (its own CMake target compiles it), so filter
+# at link time instead. GNU ld / lld only: the Windows lane uses a .def file
+# and macOS defaults, so probe before applying rather than breaking those.
+# See src/enetxt.map for the full why.
+include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _enx_have_check_linker_flag)
+set(_enx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/enetxt.map")
+if(_enx_have_check_linker_flag AND UNIX AND NOT APPLE)
+  check_linker_flag(CXX "-Wl,--version-script=${_enx_version_script}"
+                    ENX_HAVE_VERSION_SCRIPT)
+  if(ENX_HAVE_VERSION_SCRIPT)
+    target_link_options(enetxt PRIVATE
+                        "-Wl,--version-script=${_enx_version_script}")
+    # Relink when the map changes; it is part of the ABI, not a loose input.
+    set_target_properties(enetxt PROPERTIES LINK_DEPENDS "${_enx_version_script}")
+  endif()
+endif()
+
 if(ENETXT_BUILD_TESTS)
   enable_testing()
 

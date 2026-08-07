@@ -54,9 +54,10 @@ Windows/vcpkg path, and packaging.
   `SXT_ABI_VERSION` and the `.lcb` `kSXTABIVersion` are bumped together.
 - A native-library change is done once `tools/package-extension.py` has refreshed the committed
   `src/code/<arch>-<platform>/` binary and its `MANIFEST.sha256` entry in the same change.
-- The suite CI runs the static gates and the manifest check on every push; the full
-  platform-matrix build lives in the member workflow, inert inside the monorepo (porting it
-  to the root CI is a tracked follow-up).
+- The suite CI runs the static gates and the manifest check on every push; the root
+  `native sodiumxt` workflow builds and tests the full platform matrix (on pull requests,
+  pushes to main that touch this member, and on demand) and uploads each library as an
+  artifact for a maintainer to commit deliberately.
 
 ## House style
 

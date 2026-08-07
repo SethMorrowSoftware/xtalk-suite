@@ -259,7 +259,13 @@ int encode_event(int hostHandle, ENetEvent &ev, std::vector<uint8_t> &out) {
  * ====================================================================== */
 
 extern "C" ENX_API int ENX_CALL enx_abi_version(void) {
-    return ENX_ABI_VERSION;
+    /* Returning a compile-time constant cannot throw, so the guard is pure
+     * uniformity: CLAUDE.md rule 2 says EVERY enx_* body runs inside one, and
+     * an invariant with a silent exception is an invariant nobody can check.
+     * The compiler folds the try/catch away, so uniformity is free here. */
+    ENX_GUARD_INT(ENX_ERR_THROWN, {
+        return ENX_ABI_VERSION;
+    });
 }
 
 extern "C" ENX_API int ENX_CALL enx_initialize(void) {

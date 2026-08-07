@@ -93,10 +93,11 @@ later without breaking old data.
 
 | Handler | Returns | Notes |
 |---|---|---|
+| `sxPwSaltBytes()` | `Integer` | The salt length Argon2id expects, read from libsodium. Size your `sxRandomBytes` call with this rather than hardcoding a number. |
 | `sxPwMemInteractive()` | `String` | Memlimit preset (fast; interactive logins). |
 | `sxPwMemModerate()` | `String` | Memlimit preset (moderate). |
 | `sxPwMemSensitive()` | `String` | Memlimit preset (slow; high-value secrets). |
-| `sxPwHash(pPassphrase, pSalt, pKeyLen, pOpsLimit, pMemLimit)` | `Data` | Derive a `pKeyLen`-byte key from a passphrase (`Data`; textEncode it) and a `pSalt` (16 random bytes from `sxRandomBytes`). |
+| `sxPwHash(pPassphrase, pSalt, pKeyLen, pOpsLimit, pMemLimit)` | `Data` | Derive a `pKeyLen`-byte key from a passphrase (`Data`; textEncode it) and a `pSalt` of `sxPwSaltBytes()` random bytes from `sxRandomBytes`. |
 | `sxPwHashStr(pPassphrase, pOpsLimit, pMemLimit)` | `Data` | Self-describing hash string for storage (packs salt + cost); ASCII bytes. |
 | `sxPwHashStrVerify(pHash, pPassphrase)` | `Boolean` | Verify a passphrase against a stored `sxPwHashStr` string (pass the stored hash as a `String`). Constant time. |
 | `sxKdfDerive(pMasterKey, pSubkeyId, pContext, pSubkeyLen)` | `Data` | Derive subkey number `pSubkeyId` (a decimal `String`) from a master key, namespaced by an 8-byte `pContext`. |
@@ -116,10 +117,11 @@ garbage).
 
 ```
 local tSalt, tKey, tBox
-put sxRandomBytes(16) into tSalt
+put sxRandomBytes(sxPwSaltBytes()) into tSalt
 put sxPwHash(textEncode(field "pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
 put sxSecretBox(textEncode(field "msg", "utf-8"), tKey) into tBox
--- store base64(tSalt & tBox); on open, split off the 16-byte salt and re-derive tKey
+-- store base64(tSalt & tBox); on open, split off the first sxPwSaltBytes()
+-- bytes as the salt and re-derive tKey
 ```
 
 ## Streaming AEAD (secretstream) and whole-file encryption
@@ -184,11 +186,10 @@ server's tx and vice versa. rx is for receiving, tx for sending.
 
 ## See also
 
-- `examples/sodium-tests.livecodescript` - `put sxSelfTest()` exercises the core handler
-  surface (round trips, known-answer vectors, tamper checks). A few handlers are covered
-  natively by `tests/sodium_smoke_test.c` but not yet by the on-engine self-test: `sxSign`,
-  `sxSignOpen`, `sxSignKeypairFromSeed`, `sxHashInitKeyed`, `sxHashFileKeyed`, `sxFreeHash`,
-  `sxPwMemModerate`, `sxPwMemSensitive`, `sxInit`, `sxLastError` (their LCB marshaling is
-  verified statically; needs an OXT pass).
+- `examples/sodium-tests.livecodescript` - `put sxSelfTest()` now exercises the whole
+  public handler surface (round trips, known-answer vectors, tamper and wrong-key checks),
+  including the attached signature form, seed-derived keypairs, keyed hashing, and the
+  diagnostics/preset accessors. The recorded on-engine pass predates those additions, so
+  the newer checks are verified statically and need an OXT pass to become a runtime result.
 - `examples/sodium-demo.livecodescript` - an interactive, tabbed showcase (Secret Key, Public
   Key, Signatures, Hash & Files, About), with a "Run the full self-test" button on the About tab.

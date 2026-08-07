@@ -9,13 +9,15 @@
 -- ==========================================================================
 -- VERIFIED ON-ENGINE. This module compiles, loads, and runs on the OXT engine
 -- (Windows x64): examples/sodium-tests.livecodescript `put sxSelfTest()` passed
--- every check (35/35 at the time of that pass; the suite has grown since),
--- exercising the core sx* surface with round trips, known-answer vectors, and
--- tamper / wrong-key checks. NOT yet exercised on-engine (covered natively by
--- tests/sodium_smoke_test.c; their LCB marshaling is verified statically only):
--- sxSign, sxSignOpen, sxSignKeypairFromSeed, sxHashInitKeyed, sxHashFileKeyed,
--- sxFreeHash, sxPwMemModerate, sxPwMemSensitive, sxInit, sxLastError.
--- The conventions below were settled
+-- every check (35/35 at the time of that pass), exercising the core sx* surface
+-- with round trips, known-answer vectors, and tamper / wrong-key checks.
+-- The harness has since GROWN to cover the whole public surface - the attached
+-- signature form (sxSign / sxSignOpen), seed-derived keypairs, keyed multipart
+-- and keyed file hashing, sxFreeHash, the memlimit presets, sxInit and
+-- sxLastError - and those additions postdate that pass, so they are verified
+-- statically and need an OXT pass to become a runtime result. They do have
+-- native coverage in tests/sodium_smoke_test.c; what is unproven is their LCB
+-- marshaling. The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;
@@ -127,9 +129,6 @@ foreign handler _sxt_pwhash_str(in pOut as Pointer, in pCap as CInt, in pPass as
 foreign handler _sxt_pwhash_str_verify(in pHash as ZStringUTF8, in pPass as Pointer, in pPassLen as CInt) returns CInt binds to "c:sodiumxt>sxt_pwhash_str_verify"
 foreign handler _sxt_pwhash_saltbytes() returns CInt binds to "c:sodiumxt>sxt_pwhash_saltbytes"
 foreign handler _sxt_pwhash_strbytes() returns CInt binds to "c:sodiumxt>sxt_pwhash_strbytes"
-foreign handler _sxt_pwhash_opslimit_interactive() returns CInt binds to "c:sodiumxt>sxt_pwhash_opslimit_interactive"
-foreign handler _sxt_pwhash_opslimit_moderate() returns CInt binds to "c:sodiumxt>sxt_pwhash_opslimit_moderate"
-foreign handler _sxt_pwhash_opslimit_sensitive() returns CInt binds to "c:sodiumxt>sxt_pwhash_opslimit_sensitive"
 foreign handler _sxt_pwhash_memlimit_interactive(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:sodiumxt>sxt_pwhash_memlimit_interactive"
 foreign handler _sxt_pwhash_memlimit_moderate(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:sodiumxt>sxt_pwhash_memlimit_moderate"
 foreign handler _sxt_pwhash_memlimit_sensitive(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:sodiumxt>sxt_pwhash_memlimit_sensitive"
@@ -524,6 +523,19 @@ end handler
 -- ==========================================================================
 -- Password hashing / KDF (Argon2id).
 -- ==========================================================================
+
+-- The salt length Argon2id expects, read FROM libsodium rather than assumed.
+-- Size your sxRandomBytes call with this instead of hardcoding 16: the family
+-- rule is that every length constant comes from the shim, because libsodium is
+-- allowed to change one across versions and a hardcoded length is a buffer
+-- overflow waiting to happen.
+public handler sxPwSaltBytes() returns Integer
+   variable tN as Integer
+   unsafe
+      put _sxt_pwhash_saltbytes() into tN
+   end unsafe
+   return tN
+end handler
 
 -- Memlimit presets, returned as decimal Strings ready to pass to sxPwHash /
 -- sxPwHashStr. The opslimit preset is a tiny decimal you pass as a String

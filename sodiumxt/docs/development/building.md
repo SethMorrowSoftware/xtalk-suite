@@ -165,10 +165,12 @@ the same change; the member's own `verify-binaries` job does the same when
 SodiumXT is worked on in isolation (member workflows are inert inside the
 monorepo). Verify locally with `cd src/code && sha256sum -c MANIFEST.sha256`.
 The manifest is an integrity record, not a source-provenance proof: the shipped
-binaries are rebuilt from the pinned libsodium by the member workflow's
-`commit-binaries` job (isolation only; porting the native matrix to the root CI
-is a tracked follow-up), so treat those as authoritative and build from source
-when you need end-to-end assurance.
+binaries are rebuilt from the pinned libsodium by the root CI's
+`native sodiumxt` workflow, which builds and tests all five platforms and
+publishes each as a downloadable artifact. It does NOT commit them: refreshing
+a committed binary stays a deliberate, human-authored change (suite rule 5), so
+a maintainer downloads the artifact and commits it alongside the change that
+motivated it. Build from source yourself when you need end-to-end assurance.
 
 ## A note on the pinned libsodium
 

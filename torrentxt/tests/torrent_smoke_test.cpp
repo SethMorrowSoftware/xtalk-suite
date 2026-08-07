@@ -107,6 +107,39 @@ static void test_session_lifecycle() {
     int s3 = btx_session_new();
     CHECK(s3 > 0);
     CHECK(btx::test::live_session_count() == 1);
+
+    /* The DHT-state ROUND TRIP on a live session. btx_dht_load_state was the
+     * one export nothing here drove: the save half was covered only on a bogus
+     * handle, and the load half only OXT-side by the selftest. The pair is what
+     * lets an app keep its routing table across runs, so prove both halves and
+     * the -needed grow-and-retry the .lcb layer relies on. */
+    {
+        char big[65536];
+        int n = btx_dht_save_state(s3, big, static_cast<int>(sizeof big));
+        CHECK(n > 0);                       /* a live session yields real bytes */
+        if (n > 0) {
+            /* Feeding those exact bytes back is accepted. */
+            CHECK(btx_dht_load_state(s3, big, n) == BTX_OK);
+
+            /* The buffer contract: too small reports the true need as a
+             * negative and writes nothing past the caller's byte. */
+            char tiny[1] = {'\0'};
+            int needed = btx_dht_save_state(s3, tiny, 1);
+            CHECK(needed < 0);
+            CHECK(-needed == n);
+            CHECK(tiny[0] == '\0');
+        }
+        /* Garbage in is a clean rejection or a benign no-op, never a crash:
+         * read_session_params yields default params for a malformed blob and
+         * the firewall catches anything it throws. */
+        const char junk[] = "not a bencoded session_params blob";
+        int r = btx_dht_load_state(s3, junk, static_cast<int>(sizeof junk) - 1);
+        CHECK(r == BTX_OK || r < 0);
+        /* Empty/NULL input is an explicit argument error. */
+        CHECK(btx_dht_load_state(s3, junk, 0) == BTX_ERR_INVALID_ARG);
+        CHECK(btx_dht_load_state(s3, nullptr, 4) == BTX_ERR_INVALID_ARG);
+    }
+
     btx_session_free(s3);
     CHECK(btx::test::live_session_count() == 0);
 }

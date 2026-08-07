@@ -1,0 +1,134 @@
+# sodiumxt's native build matrix, ported to the ROOT of the monorepo.
+# See native-enetxt.yml for why this file exists, and why it uploads artifacts
+# instead of committing binaries.
+#
+# sodiumxt is the one member that ships ALL FIVE platform binaries plus a
+# src/code/MANIFEST.sha256 pinning them. The manifest check is deliberately NOT
+# here: it is compiler-free, so it runs in suite-gates.yml on every push, where
+# it guards the committed blobs continuously rather than only when this heavy
+# matrix fires.
+name: native sodiumxt
+
+on:
+  pull_request:
+    paths:
+      - "sodiumxt/**"
+      - ".github/workflows/native-sodiumxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sodiumxt/**"
+      - ".github/workflows/native-sodiumxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-sodiumxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: sodiumxt
+
+jobs:
+  sanitize:
+    name: ASan + UBSan (gcc)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure + build + test under sanitizers
+        # A crypto binding is exactly where an off-by-one in buffer sizing
+        # hides, so the smoke test's short-buffer and bad-handle cases run
+        # instrumented. gcc: clang's ASan runtime is not on the runner image.
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSODIUMXT_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+          cmake --build build-asan --parallel 4
+          ctest --test-dir build-asan --output-on-failure --no-tests=error
+
+  build-matrix:
+    name: native (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: x86_64-linux
+            ext: so
+          - os: ubuntu-24.04
+            platform: x86-linux
+            ext: so
+            multilib: true
+            configure_args: "-DCMAKE_C_FLAGS=-m32 -DSODIUMXT_LIBSODIUM_CFLAGS=-m32 -DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=i686-pc-linux-gnu"
+          - os: macos-15
+            platform: universal-mac
+            ext: dylib
+            configure_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DSODIUMXT_LIBSODIUM_CFLAGS="-arch arm64 -arch x86_64"'
+          - os: windows-2025
+            platform: x86_64-win32
+            ext: dll
+            msvc_arch: amd64
+            triplet: x64-windows-static
+          - os: windows-2025
+            platform: x86-win32
+            ext: dll
+            msvc_arch: x86
+            triplet: x86-windows-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install 32-bit toolchain (Linux x86)
+        if: matrix.multilib
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      - name: Install libsodium via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install libsodium:${{ matrix.triplet }}
+
+      # The MSVC dev environment is set up explicitly (rather than left to
+      # CMake's detection, which fails on the current runner image), and the
+      # matching msvc_arch gives a native x64 or x86 cl.exe.
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Configure, build, test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSODIUMXT_BUILD_TESTS=ON ${{ matrix.configure_args }}
+          cmake --build build --config Release -j
+          ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Configure, build, test (Windows / MSVC + vcpkg)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DSODIUMXT_BUILD_TESTS=ON `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Package the native library
+        run: python tools/package-extension.py --build-dir build --platform-id ${{ matrix.platform }}
+
+      - name: Upload native library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sodiumxt-${{ matrix.platform }}
+          path: sodiumxt/src/code/${{ matrix.platform }}/sodiumxt.${{ matrix.ext }}
+          if-no-files-found: error
