@@ -1571,8 +1571,14 @@ command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
    oxSetSocksPort tSocks
    oxSetControlPort tControl
    -- open process is platform-specific; launch tor detached with -f <torrc>.
+   -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
+   -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
+   -- and "Files/Tor/tor.exe" and the launch fails - and a data directory under
+   -- "Application Support" or a user folder with a space in the name is the
+   -- normal case on Windows and macOS, not an edge case. The same applies to
+   -- the torrc path, which is derived from pDataDir.
    -- VERIFY: process launch and teardown on your target OXT build.
-   open process (pTorPath & " -f " & tRcPath) for read
+   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
    return empty
 end oxLaunchTor
 

@@ -1,0 +1,325 @@
+# release-binaries.yml - ONE dispatch that builds every member's native library
+# for every platform it can be built for, and publishes them as a single bundle.
+#
+# WHY. The per-member native-*.yml workflows already build these matrices, but
+# they are paths-filtered (they fire only when their member changes) and each
+# uploads its own per-platform artifact. Assembling a release from them means
+# waiting on five runs and downloading ~17 artifacts one at a time, which is
+# exactly the friction that has left enetxt, datachannelxt, and coinxt shipping
+# x86_64-linux only while CI was quietly building the other platforms all along.
+# This workflow is the assembly step: run it once, get one bundle.
+#
+# IT STILL DOES NOT COMMIT ANYTHING, and that is deliberate rather than a gap.
+# Suite rule 5 says a native change refreshes its committed binary in the SAME
+# human-authored change; a bot that pushes binaries on a schedule turns "which
+# source built this?" into an unanswerable question for a set of files nobody
+# can diff. So this produces a verified bundle and stops. The landing step is
+# local and deliberate:
+#
+#     python3 tools/install-release-binaries.py <unzipped-bundle-dir>
+#
+# which verifies each library before it touches the tree, installs it under the
+# right member/platform, and refreshes every MANIFEST.sha256 - leaving you one
+# reviewable commit.
+#
+# WHAT IT CANNOT PRODUCE, honestly. Two gaps that no workflow can close by
+# itself, both already documented where they bite:
+#
+#   * torrentxt universal-mac. CI builds macOS against Homebrew on the host
+#     arch, which yields a THIN, Homebrew-linked dylib that will not load on a
+#     Mac without those exact formulae. The shipped one must be universal,
+#     self-contained, and codesigned + notarized, which needs Apple Developer
+#     credentials CI does not hold. See torrentxt/src/code/universal-mac/README.md
+#     and torrentxt/docs/building.md. The lane is omitted rather than shipping
+#     something undistributable that LOOKS like a release artifact.
+#   * coinxt universal-mac is built here but has never been EXECUTED by anyone
+#     (see the job comment); it is labelled in the bundle accordingly.
+name: release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      members:
+        description: "Which members to build (space-separated, or 'all')"
+        default: "all"
+        required: false
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------- CMake four
+  # sodiumxt, torrentxt, enetxt and datachannelxt all build through CMake with
+  # the same shape, so one matrix covers them. Each member's own
+  # tools/package-extension.py does the placing and stripping, exactly as the
+  # per-member workflows do - this is an assembly workflow, not a second build
+  # system, and it must not diverge from what those lanes produce.
+  cmake-members:
+    name: ${{ matrix.member }} ${{ matrix.platform_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # BOTH dimensions belong in the base matrix. An `include` entry whose
+        # keys do not appear as base keys is merged into every combination
+        # rather than crossed with them, so listing the platforms only under
+        # `include` would collapse this to four jobs carrying the LAST entry's
+        # values - i.e. every member built for x86-win32 and nothing else.
+        # Naming platform_id as a base key makes each include entry attach to
+        # the combinations that already match it, which is the intended cross
+        # product with per-platform settings hung off it.
+        member: [sodiumxt, torrentxt, enetxt, datachannelxt]
+        platform_id: [x86_64-linux, x86-linux, universal-mac, x86_64-win32, x86-win32]
+        include:
+          - platform_id: x86_64-linux
+            os: ubuntu-24.04
+            acquire: linux64
+            cmake_args: ""
+          - platform_id: x86-linux
+            os: ubuntu-24.04
+            acquire: linux32
+            cmake_args: "-DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32"
+          - platform_id: universal-mac
+            os: macos-15
+            acquire: mac
+            cmake_args: ""
+          - platform_id: x86_64-win32
+            os: windows-2025
+            acquire: none
+            cmake_args: "-A x64"
+          - platform_id: x86-win32
+            os: windows-2025
+            acquire: none
+            cmake_args: "-A Win32"
+        exclude:
+          # See the header: a Homebrew-linked thin dylib is not distributable,
+          # and the real one needs credentials CI does not hold.
+          - member: torrentxt
+            platform_id: universal-mac
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.member }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Acquire toolchain (Linux x86_64)
+        if: matrix.acquire == 'linux64'
+        run: sudo apt-get update && sudo apt-get install -y g++ cmake ninja-build
+
+      - name: Acquire 32-bit toolchain (Linux x86)
+        if: matrix.acquire == 'linux32'
+        run: sudo apt-get update && sudo apt-get install -y g++-multilib gcc-multilib cmake ninja-build
+
+      # Only the members that need a system library on macOS pull one; the rest
+      # vendor or FetchContent their dependency and this is a no-op.
+      - name: Acquire macOS dependencies
+        if: matrix.acquire == 'mac' && matrix.member == 'torrentxt'
+        run: brew install libtorrent-rasterbar || true
+
+      - name: Configure
+        shell: bash
+        run: |
+          flag="$(printf '%s' "${{ matrix.member }}" | tr '[:lower:]' '[:upper:]')_BUILD_TESTS"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-D${flag}=ON" ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      # --no-tests=error: ctest exits 0 on an EMPTY test set, so without this a
+      # misconfigured lane reports green having run nothing. A release artifact
+      # that passed no test is worse than no artifact.
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      - name: Stage the per-platform library
+        shell: bash
+        run: |
+          python3 tools/package-extension.py \
+            --platform-id ${{ matrix.platform_id }} --build-dir build
+
+      - name: Confirm something landed
+        shell: bash
+        run: |
+          ls -l "src/code/${{ matrix.platform_id }}/"
+          test -n "$(ls src/code/${{ matrix.platform_id }}/${{ matrix.member }}.* 2>/dev/null)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.member }}-${{ matrix.platform_id }}
+          path: ${{ matrix.member }}/src/code/${{ matrix.platform_id }}/
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------- coinxt
+  # coinxt builds from a shell script, not CMake, so it gets its own job.
+  #
+  # The Windows libraries are CROSS-COMPILED from Linux with MinGW rather than
+  # built on a Windows runner. That is not a shortcut: build.sh is POSIX sh, the
+  # cross toolchain is one apt install, and it produces the same narrow export
+  # surface (verified locally: exactly the 16 cnx_* symbols in the PE export
+  # table, via a generated .def - MinGW auto-exports all 77 globals otherwise,
+  # and a version script is silently IGNORED for PE, which fails OPEN).
+  #
+  # HONESTY: the Windows and macOS libraries this job builds have their export
+  # surface asserted but have never been EXECUTED. The kat-windows job below
+  # runs the published vectors against the real DLL on a real Windows runner,
+  # so the x86_64-win32 artifact IS execution-proven. The macOS one is not - no
+  # macOS execution check exists yet - and the bundle says so.
+  coinxt:
+    name: coinxt ${{ matrix.platform_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: x86_64-linux
+            os: ubuntu-24.04
+            acquire: linux64
+          - platform_id: x86-linux
+            os: ubuntu-24.04
+            acquire: linux32
+          - platform_id: x86_64-win32
+            os: ubuntu-24.04
+            acquire: mingw64
+          - platform_id: x86-win32
+            os: ubuntu-24.04
+            acquire: mingw32
+          - platform_id: universal-mac
+            os: macos-15
+            acquire: mac
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: coinxt
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Acquire toolchain
+        shell: bash
+        run: |
+          case "${{ matrix.acquire }}" in
+            linux64) sudo apt-get update && sudo apt-get install -y gcc ;;
+            linux32) sudo apt-get update && sudo apt-get install -y gcc-multilib ;;
+            mingw64) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 ;;
+            mingw32) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 ;;
+            mac)     : ;;
+          esac
+
+      # build.sh takes CC/NM/STRIP from the environment precisely so a cross
+      # build needs no PATH games, and the platform id is passed EXPLICITLY
+      # because uname describes the machine, not the output.
+      - name: Build the shipped library
+        shell: bash
+        run: |
+          case "${{ matrix.acquire }}" in
+            linux32)
+              mkdir -p "$HOME/bin"
+              printf '#!/bin/sh\nexec gcc -m32 "$@"\n' > "$HOME/bin/cc"
+              chmod +x "$HOME/bin/cc"
+              export PATH="$HOME/bin:$PATH"
+              ;;
+            mingw64)
+              export CC=x86_64-w64-mingw32-gcc NM=x86_64-w64-mingw32-nm STRIP=x86_64-w64-mingw32-strip ;;
+            mingw32)
+              export CC=i686-w64-mingw32-gcc NM=i686-w64-mingw32-nm STRIP=i686-w64-mingw32-strip ;;
+            mac)
+              # One command, both slices: clang lipos a multi-arch link itself.
+              mkdir -p "$HOME/bin"
+              printf '#!/bin/sh\nexec clang -arch x86_64 -arch arm64 "$@"\n' > "$HOME/bin/cc"
+              chmod +x "$HOME/bin/cc"
+              export PATH="$HOME/bin:$PATH"
+              ;;
+          esac
+          sh native/build.sh pack ${{ matrix.platform_id }}
+
+      # The export surface is the one thing that fails OPEN - a wrong mechanism
+      # gives you a WORKING library with 77 exports - so assert it per format
+      # rather than trusting the build's own printout.
+      - name: Assert the export surface is exactly cnx_*
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="src/code/${{ matrix.platform_id }}"
+          case "${{ matrix.platform_id }}" in
+            *-linux)
+              leaked=$(nm -D --defined-only "$d/coinxt.so" | awk '{print $NF}' | grep -v '^cnx_' || true) ;;
+            *-win32)
+              tc=x86_64-w64-mingw32; [ "${{ matrix.platform_id }}" = x86-win32 ] && tc=i686-w64-mingw32
+              leaked=$($tc-objdump -p "$d/coinxt.dll" \
+                       | awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&/^$/{exit} f{print $NF}' \
+                       | grep -v '^cnx_' || true) ;;
+            universal-mac)
+              lipo -info "$d/coinxt.dylib"
+              leaked=$(nm -gU "$d/coinxt.dylib" | awk '{print $NF}' | sed 's/^_//' | grep -v '^cnx_' || true) ;;
+          esac
+          if [ -n "$leaked" ]; then
+            echo "coinxt exports symbols outside the cnx_ surface:" >&2
+            echo "$leaked" >&2
+            exit 1
+          fi
+          echo "export surface OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-coinxt-${{ matrix.platform_id }}
+          path: coinxt/src/code/${{ matrix.platform_id }}/
+          if-no-files-found: error
+
+  # An artifact whose export table is right but which nobody ever RAN is a weak
+  # thing to ship in a library that handles money. This runs the published KAT
+  # vectors against the real cross-built DLL on a real Windows runner, so the
+  # x86_64-win32 artifact is execution-proven and not merely well-formed.
+  kat-windows:
+    name: coinxt x86_64-win32 KATs (on Windows)
+    needs: coinxt
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-coinxt-x86_64-win32
+          path: dll
+      - name: Drive the DLL through the published vectors
+        shell: bash
+        run: python3 coinxt/tools/coin-kat.py --check --lib dll/coinxt.dll
+
+  bundle:
+    name: collect one bundle
+    needs: [cmake-members, coinxt, kat-windows]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: staged
+      - name: Lay the bundle out the way the installer expects
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle
+          # Artifact names are bundle-<member>-<platform_id>; rebuild
+          # <member>/<platform_id>/ from that so the local installer needs no
+          # mapping table of its own.
+          for d in staged/bundle-*; do
+            base=$(basename "$d")
+            rest=${base#bundle-}
+            member=${rest%%-*}
+            platform=${rest#*-}
+            mkdir -p "bundle/$member/$platform"
+            cp -r "$d"/. "bundle/$member/$platform/"
+          done
+          find bundle -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: bundle/
+          if-no-files-found: error

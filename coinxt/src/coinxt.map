@@ -1,0 +1,41 @@
+/* coinxt.map - the linker version script for the shipped shared library.
+ *
+ * WHY: CoinXT compiles the vendored trezor-crypto units (sha3.c, sha2.c,
+ * ripemd160.c, hmac.c, pbkdf2.c, memzero.c) straight into the shared library,
+ * and a plain `cc -shared` gives every one of their symbols default (public)
+ * visibility. Measured on the unfiltered build: 77 exported symbols, of which
+ * only 16 are ours. The other 61 are upstream's - `sha256_Init`, `hmac_sha512`,
+ * `keccak_256`, `ripemd160`, `pbkdf2_hmac_sha512`, and (worst of the set)
+ * `memzero`. Those are ordinary, unprefixed names that another extension in the
+ * same engine process could plausibly also export, and whichever library the
+ * dynamic loader resolved first would win for BOTH. In a library that handles
+ * money, silently executing a stranger's `sha256_Final` is not a risk worth
+ * carrying for zero benefit: nothing outside this .so is supposed to call them.
+ *
+ * This is the same fix, for the same reason, that enetxt applies to its bundled
+ * ENet (see enetxt/src/enetxt.map). It matters MORE here, because CoinXT's
+ * upstream names are generic where ENet's at least carry an `enet_` prefix.
+ *
+ * -fvisibility=hidden would also work for CoinXT specifically (unlike enetxt, we
+ * compile the vendored units ourselves, so our flags do reach them). The version
+ * script is used anyway because it filters at LINK time and therefore cannot be
+ * defeated by a vendored file that carries its own visibility attribute, and
+ * because it states the public surface in one auditable place instead of relying
+ * on every translation unit being compiled with the right flag.
+ *
+ * The public surface is exactly the cnx_* C ABI that src/coinxt.lcb binds to by
+ * name. Adding an entry point means adding a cnx_* symbol, which this pattern
+ * already covers; nothing here needs editing per handler. Removing or renaming
+ * one is an ABI break and must bump CNX_ABI_VERSION.
+ *
+ * GNU ld / lld only (Linux, and MinGW builds that use ld). macOS uses default
+ * visibility and would need -exported_symbols_list; MSVC uses a .def file.
+ * build.sh applies this only where the linker accepts it, and says so when it
+ * does not, rather than silently shipping the wide surface.
+ */
+{
+    global:
+        cnx_*;
+    local:
+        *;
+};

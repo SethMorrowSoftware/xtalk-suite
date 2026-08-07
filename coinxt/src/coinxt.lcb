@@ -1,0 +1,576 @@
+library org.openxtalk.library.coin
+
+-- coinxt.lcb - the LiveCode Builder binding for CoinXT (public cx* surface).
+--
+-- This is the FFI seam and nothing else: one `private foreign handler` per
+-- cnx_* symbol in native/coinxt.c, wrapped in a `public cx*` handler that
+-- allocates the output buffer, marshals the bytes, checks the native status,
+-- and throws a legible "CoinXT: ..." error. Encodings (hex, Base58Check,
+-- Bech32, RLP, addresses) deliberately do NOT live here: they are checksummed
+-- byte-shuffling with no secret-dependent branch, so they belong in the
+-- livecodescript layer where they are diffable and KAT-covered (CLAUDE.md,
+-- "The C-vs-script split").
+--
+-- Phase 1 scope: the hash surface (Keccak-256, SHA3-256, SHA-256, SHA-512,
+-- RIPEMD-160, HMAC-SHA256/512, PBKDF2-HMAC-SHA512), their length accessors,
+-- and the ABI guard. The curve (secp256k1), HD (BIP-32) and mnemonic (BIP-39)
+-- wrappers land in later phases against the same shapes.
+--
+-- ==========================================================================
+-- STATUS: VERIFIED STATICALLY; NEEDS AN OXT PASS. OXT is a GUI runtime and
+-- there is no headless way to compile or run a .lcb, so nothing below has been
+-- observed running. The native side underneath it IS proven headless (ASan +
+-- UBSan self-test, and tools/coin-kat.py drives every one of these symbols
+-- through ctypes against public vectors). Per IMPLEMENTATION-PLAN.md, phase 1
+-- is done when cxKeccak256 and friends return the PINNED vectors from a real
+-- engine. What the engine pass must confirm, in order:
+--   1. the module compiles and loads, and the `c:coinxt>` binds resolve (a
+--      renamed or missing export is a silent bind failure at load);
+--   2. cxCheckABI() returns cleanly against the shipped binary (ABI 2);
+--   3. UIntSize as a foreign RETURN type (the *_len accessors return C size_t).
+--      UIntSize is proven in this family as a PARAMETER (MCMemoryAllocate, in
+--      the on-engine-verified sodium.lcb); as a return type it is reasoned, not
+--      observed. If the engine rejects it, the fallback is CUInt (correct in
+--      practice for these small values on every mainstream ABI, but not
+--      type-exact), and this comment must be updated with what was seen;
+--   4. MCDataGetBytePtr on an EMPTY Data. The C side is safe either way: the
+--      shim accepts a NULL pointer when the length is 0 and substitutes a valid
+--      one-byte source, so no hash internal can dereference NULL. What is NOT
+--      settled is the MARSHALLING. If the engine imports a null byte pointer as
+--      `nothing`, a plain `Pointer` slot rejects it (the family rule below), and
+--      hashing "" would throw instead of returning a digest - which is the FIRST
+--      thing a harness tries. The precedent says it works: sodium.lcb pushes an
+--      empty Data through the identical MCDataGetBytePtr -> plain-`Pointer`
+--      path, and its on-engine harness pins an empty case. But that is
+--      SodiumXT's engine result, not ours. If it fails here, the fix is
+--      `optional Pointer` on the IN-buffer parameters below (the family-
+--      sanctioned way to marshal a null pointer; sodium.lcb already does it for
+--      its unkeyed-hash key) - the shim needs no change, it handles NULL + 0
+--      by construction;
+--   5. the vectors themselves: cxKeccak256("") = c5d2...a470 and the rest of
+--      tools/coin-kat.py, from script, byte for byte.
+--
+-- The conventions below are the family FFI law (CLAUDE.md, "FFI / C-ABI
+-- conventions"), each one paid for once already:
+--   * an LCB library is a bracketed block: it MUST end with `end library`;
+--   * an LCB Data does NOT auto-bridge to a void* (it marshals as an opaque
+--     MCDataRef). An IN buffer passes MCDataGetBytePtr + MCDataGetLength; an
+--     OUT buffer is a raw block from the engine <builtin> MCMemoryAllocate,
+--     passed as a real Pointer, copied back with MCDataCreateWithBytes;
+--   * our lengths are C size_t, so they marshal as UIntSize, NOT CUInt. A
+--     4-byte int into an 8-byte size slot on a 64-bit build corrupts the heap;
+--   * <builtin> handlers resolve BY NAME, so they carry no leading underscore
+--     (renaming one breaks the bind); our own foreign decls use _cnx_*;
+--   * no foreign handler here RETURNS a bridged C string. The engine adopts and
+--     later free()s such a pointer, so a static or library-owned return is
+--     free()-on-static: heap corruption on the first call, and doubly dangerous
+--     with key material. The shim returns only int status / size_t lengths;
+--   * `unsafe ... end unsafe` brackets EVERY foreign call, and every `variable`
+--     is declared at the TOP of its handler (a nested declaration has broken
+--     whole-script compilation before);
+--   * `use com.livecode.foreign` is required wherever a foreign type is named.
+--
+-- One deliberate difference from sodium.lcb, the model this file mirrors. The
+-- SodiumXT shim returns bytes-written or -needed, so its LCB layer guesses a
+-- capacity and retries. The CoinXT shim does not: every output here is a FIXED
+-- size the shim itself reports (cnx_*_len), or, for PBKDF2, exactly the length
+-- the caller asked for. So we ask the shim for the size, allocate exactly that,
+-- and copy exactly that back. There is no -needed retry path to get wrong, and
+-- no size is ever hardcoded in this file (libraries are allowed to change their
+-- digest sizes; a hardcoded 32 is a buffer overflow waiting to happen).
+--
+-- SECRET HYGIENE, HONESTLY. cxPbkdf2HmacSha512 derives a BIP-39 seed, which is
+-- key material. The shim memzeros its own scratch, but the block we allocate
+-- here is freed WITHOUT being wiped: there is no engine <builtin> we can point
+-- at that zeroes a raw block, and this file will not invent one it cannot name.
+-- The returned Data is likewise ordinary engine memory: OXT script variables
+-- are not locked (mlock) memory and can be paged to disk. CoinXT on a
+-- general-purpose desktop is not hardware-wallet isolation; the trust boundary
+-- is the machine (CLAUDE.md, "Secret hygiene"). A future `cnx_memzero(ptr,len)`
+-- export would let this layer wipe the block before freeing it; that is a shim
+-- change and therefore an ABI bump, so it is noted here, not smuggled in.
+-- ==========================================================================
+
+use com.livecode.foreign
+use com.livecode.string
+use com.livecode.arithmetic
+
+metadata version is "0.1.0"
+metadata author  is "Seth Morrow Software"
+metadata title   is "CoinXT"
+metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-crypto (hashes, HMAC, PBKDF2; curve, HD wallet and address layers to follow)."
+
+-- Must equal CNX_ABI_VERSION in native/coinxt.c; cxCheckABI() throws on skew.
+-- Bump BOTH in the same change, always (the family rule): a stale binary must
+-- be refused with a legible error, not discovered at the first missing bind.
+-- Declared before first use - OXT resolves a constant by lexical position, and
+-- a forward reference silently evaluates to nothing.
+constant kABIVersion is 2
+
+-- The largest PBKDF2 iteration count this binding will marshal. The shim takes
+-- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
+-- we can bounds-check unambiguously on the script side (an LCB Integer is
+-- signed) and it is ~1e6 times any real-world count (BIP-39 uses 2048). The
+-- check exists because a NEGATIVE or oversized Integer marshaled into an
+-- unsigned foreign slot becomes a huge positive value, and the sign is only
+-- still visible HERE.
+constant kMaxIterations is 2147483647
+
+-- --------------------------------------------------------------------------
+-- Engine memory + Data bridges. These resolve by NAME against engine symbols,
+-- so - unlike every other private handler in this file - they carry NO leading
+-- underscore. Renaming any of them breaks the binding.
+--   * MCMemoryAllocate / MCMemoryDeallocate: the raw writable block an OUT
+--     buffer needs. The size is C size_t, hence UIntSize (see the header).
+--   * MCDataGetBytePtr: the read-only pointer to a Data's own bytes, for the
+--     IN buffers the shim reads. Never written through (it is a const byte_t*).
+--   * MCDataGetLength / MCDataCreateWithBytes: a Data's byte count is the
+--     engine's uindex_t == uint32, hence CUInt on both (NOT UIntSize - this is
+--     the engine's own width here, not a C size_t).
+-- --------------------------------------------------------------------------
+private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
+private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+private foreign handler MCDataGetLength(in pData as Data) returns CUInt binds to "<builtin>"
+private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+
+-- --------------------------------------------------------------------------
+-- The CoinXT C ABI (native/coinxt.c). Private _cnx_* names; the bind strings
+-- reference the stable exported symbols by name, and those symbols are NEVER
+-- renamed once shipped. Every entry returns an int status (0 ok, negative
+-- error); every buffer crosses as Pointer + a size_t length (UIntSize).
+-- --------------------------------------------------------------------------
+private foreign handler _cnx_abi_version() returns CInt binds to "c:coinxt>cnx_abi_version"
+
+-- The one-shot digests. `in` may be a NULL pointer when its length is 0 (the
+-- shim substitutes a valid source), so an empty Data is always safe to hash.
+-- Keccak-256 is NOT SHA3-256: Ethereum kept the original 0x01 padding, FIPS-202
+-- uses 0x06. Two different functions, never aliased - the classic footgun.
+private foreign handler _cnx_keccak256(in pIn as Pointer, in pInLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_keccak256"
+private foreign handler _cnx_sha3_256(in pIn as Pointer, in pInLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_sha3_256"
+private foreign handler _cnx_sha256(in pIn as Pointer, in pInLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_sha256"
+private foreign handler _cnx_sha512(in pIn as Pointer, in pInLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_sha512"
+private foreign handler _cnx_ripemd160(in pIn as Pointer, in pInLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_ripemd160"
+
+-- Keyed MACs (RFC 2104). Key and message may each be empty; an over-long key is
+-- hashed down by the primitive, so there is no key-length rule to enforce here.
+private foreign handler _cnx_hmac_sha256(in pKey as Pointer, in pKeyLen as UIntSize, in pMsg as Pointer, in pMsgLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_hmac_sha256"
+private foreign handler _cnx_hmac_sha512(in pKey as Pointer, in pKeyLen as UIntSize, in pMsg as Pointer, in pMsgLen as UIntSize, in pOut as Pointer) returns CInt binds to "c:coinxt>cnx_hmac_sha512"
+
+-- The BIP-39 mnemonic-to-seed KDF. The iteration count is a C uint32_t (CUInt),
+-- NOT a size_t: it is the one length-ish argument here that is not UIntSize, and
+-- getting that backwards is exactly the heap bug the family rule warns about.
+private foreign handler _cnx_pbkdf2_hmac_sha512(in pPw as Pointer, in pPwLen as UIntSize, in pSalt as Pointer, in pSaltLen as UIntSize, in pIterations as CUInt, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_pbkdf2_hmac_sha512"
+
+-- Every length is a function of the shim's, never a constant of ours. These
+-- return C size_t, hence UIntSize (see point 3 in the header note).
+private foreign handler _cnx_keccak256_len() returns UIntSize binds to "c:coinxt>cnx_keccak256_len"
+private foreign handler _cnx_sha3_256_len() returns UIntSize binds to "c:coinxt>cnx_sha3_256_len"
+private foreign handler _cnx_sha256_len() returns UIntSize binds to "c:coinxt>cnx_sha256_len"
+private foreign handler _cnx_sha512_len() returns UIntSize binds to "c:coinxt>cnx_sha512_len"
+private foreign handler _cnx_ripemd160_len() returns UIntSize binds to "c:coinxt>cnx_ripemd160_len"
+private foreign handler _cnx_hmac_sha256_len() returns UIntSize binds to "c:coinxt>cnx_hmac_sha256_len"
+private foreign handler _cnx_hmac_sha512_len() returns UIntSize binds to "c:coinxt>cnx_hmac_sha512_len"
+
+-- --------------------------------------------------------------------------
+-- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
+-- handlers stay readable and the foreign-call discipline lives in one place.
+-- All declarations sit at the top of their handler.
+-- --------------------------------------------------------------------------
+
+-- Refuse a mismatched native library BEFORE any call that could corrupt memory.
+-- Called by every public handler (sodium.lcb does the same), deliberately NOT
+-- memoized in a module variable: the default value of an unassigned module
+-- variable is not something we can verify headlessly, and one extra call to a
+-- function that returns a compile-time constant is far cheaper than being wrong
+-- about which binary is loaded in a library that handles money.
+private handler sPrepare() returns nothing
+   variable tABI as Integer
+   unsafe
+      put _cnx_abi_version() into tABI
+   end unsafe
+   if tABI is not kABIVersion then
+      throw "CoinXT: ABI mismatch - the native coinxt library does not match this extension. Reinstall CoinXT (the packaged extension and its bundled library must ship together)."
+   end if
+end handler
+
+private handler sAlloc(in pCap as Integer) returns Pointer
+   variable tPtr as Pointer
+   variable tOk as CBool
+   unsafe
+      put MCMemoryAllocate(pCap, tPtr) into tOk
+   end unsafe
+   if not tOk then
+      throw "CoinXT: out of memory allocating an output buffer."
+   end if
+   return tPtr
+end handler
+
+private handler sFree(in pPtr as Pointer) returns nothing
+   unsafe
+      MCMemoryDeallocate(pPtr)
+   end unsafe
+end handler
+
+-- The read-only pointer to a Data's own bytes. On an EMPTY Data this may be a
+-- null pointer; that is safe here because every shim entry accepts NULL when
+-- the matching length is 0 (it substitutes a valid one-byte source rather than
+-- letting a hash internal dereference NULL).
+private handler sDataPtr(in pData as Data) returns Pointer
+   variable tPtr as Pointer
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+   end unsafe
+   return tPtr
+end handler
+
+private handler sDataLen(in pData as Data) returns Integer
+   variable tLen as Integer
+   unsafe
+      put MCDataGetLength(pData) into tLen
+   end unsafe
+   return tLen
+end handler
+
+private handler sToData(in pPtr as Pointer, in pLen as Integer) returns Data
+   variable tResult as Data
+   variable tOk as CBool
+   unsafe
+      put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
+   end unsafe
+   if not tOk then
+      throw "CoinXT: could not build the result data."
+   end if
+   return tResult
+end handler
+
+-- Map a native status to a human sentence. The set is closed and tiny (the shim
+-- defines exactly these three), and the code number is deliberately NOT
+-- interpolated into the message: LCB number-to-String coercion inside a
+-- concatenation is not something this layer can verify headlessly, and an
+-- unrecognised status can only mean a library newer than this binding - which
+-- cxCheckABI() / sPrepare() would already have refused.
+private handler sStatusText(in pStatus as Integer) returns String
+   if pStatus is -1 then
+      return "a required buffer was missing (null)."
+   end if
+   if pStatus is -2 then
+      return "a buffer had the wrong length."
+   end if
+   if pStatus is -3 then
+      return "a length or count is out of the range the native primitive can represent."
+   end if
+   return "an unexpected native status (the loaded library does not match this binding)."
+end handler
+
+-- The common tail of a buffer-filling call: on a non-zero status free the block
+-- and throw a prefixed, handler-named error a caller can try/catch; on success
+-- copy exactly the bytes the shim promised to write, then free. pLen always
+-- comes from the shim (a cnx_*_len, or the caller's requested PBKDF2 output),
+-- never from a constant in this file.
+private handler sFinish(in pName as String, in pPtr as Pointer, in pStatus as Integer, in pLen as Integer) returns Data
+   variable tResult as Data
+   if pStatus is not 0 then
+      sFree(pPtr)
+      throw "CoinXT:" && pName & ":" && sStatusText(pStatus)
+   end if
+   put sToData(pPtr, pLen) into tResult
+   sFree(pPtr)
+   return tResult
+end handler
+
+-- ==========================================================================
+-- The ABI guard.
+-- ==========================================================================
+
+-- Call this once at startup (or let any cx* call do it for you) to fail loudly
+-- and legibly on a stale or mismatched native library.
+public handler cxCheckABI() returns nothing
+   sPrepare()
+end handler
+
+-- ==========================================================================
+-- Digests. Bytes in, bytes out; an empty input is valid everywhere.
+-- ==========================================================================
+
+-- Keccak-256, Ethereum's hash (original 0x01 padding). This is what an Ethereum
+-- address, an EIP-55 checksum, an ABI selector and a transaction hash are built
+-- from. It is NOT SHA3-256; do not substitute one for the other.
+public handler cxKeccak256(in pData as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _cnx_keccak256_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_keccak256(tInPtr, tInLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxKeccak256", tOut, tStatus, tLen)
+end handler
+
+-- SHA3-256, the NIST FIPS-202 function (0x06 padding). Present so an app that
+-- genuinely wants standard SHA-3 does not reach for cxKeccak256 by mistake.
+public handler cxSha3_256(in pData as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _cnx_sha3_256_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_sha3_256(tInPtr, tInLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxSha3_256", tOut, tStatus, tLen)
+end handler
+
+-- SHA-256. Bitcoin's workhorse: the Base58Check checksum is the first 4 bytes
+-- of SHA256(SHA256(x)), and hash160 is RIPEMD160(SHA256(pubkey)).
+public handler cxSha256(in pData as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _cnx_sha256_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_sha256(tInPtr, tInLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxSha256", tOut, tStatus, tLen)
+end handler
+
+-- SHA-512. What BIP-32 and BIP-39 derive with (via HMAC / PBKDF2 below).
+public handler cxSha512(in pData as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _cnx_sha512_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_sha512(tInPtr, tInLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxSha512", tOut, tStatus, tLen)
+end handler
+
+-- RIPEMD-160. The second half of Bitcoin's hash160 (P2PKH / P2WPKH addresses).
+public handler cxRipemd160(in pData as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _cnx_ripemd160_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_ripemd160(tInPtr, tInLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxRipemd160", tOut, tStatus, tLen)
+end handler
+
+-- ==========================================================================
+-- Keyed MACs. Both arguments may be empty; both are read, never written.
+-- ==========================================================================
+
+-- HMAC-SHA256 (RFC 2104). Used by the Tor control-port SAFECOOKIE exchange and
+-- as a generic domain-separated MAC.
+public handler cxHmacSha256(in pKey as Data, in pMessage as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tKeyPtr as Pointer
+   variable tKeyLen as Integer
+   variable tMsgPtr as Pointer
+   variable tMsgLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pKey) into tKeyLen
+   put sDataPtr(pKey) into tKeyPtr
+   put sDataLen(pMessage) into tMsgLen
+   put sDataPtr(pMessage) into tMsgPtr
+   unsafe
+      put _cnx_hmac_sha256_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_hmac_sha256(tKeyPtr, tKeyLen, tMsgPtr, tMsgLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxHmacSha256", tOut, tStatus, tLen)
+end handler
+
+-- HMAC-SHA512 (RFC 2104). This is the BIP-32 derivation core: I = HMAC-SHA512
+-- (chaincode, data), split 32/32 into the child key tweak and the new chaincode.
+-- The key here can be a chaincode - secret material - so the caller should clear
+-- its own variable as soon as it is done (see the header note on hygiene).
+public handler cxHmacSha512(in pKey as Data, in pMessage as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tKeyPtr as Pointer
+   variable tKeyLen as Integer
+   variable tMsgPtr as Pointer
+   variable tMsgLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pKey) into tKeyLen
+   put sDataPtr(pKey) into tKeyPtr
+   put sDataLen(pMessage) into tMsgLen
+   put sDataPtr(pMessage) into tMsgPtr
+   unsafe
+      put _cnx_hmac_sha512_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_hmac_sha512(tKeyPtr, tKeyLen, tMsgPtr, tMsgLen, tOut) into tStatus
+   end unsafe
+   return sFinish("cxHmacSha512", tOut, tStatus, tLen)
+end handler
+
+-- ==========================================================================
+-- PBKDF2-HMAC-SHA512 (the BIP-39 mnemonic-to-seed KDF).
+-- ==========================================================================
+
+-- BIP-39 calls this as: password = the NFKD mnemonic sentence, salt =
+-- "mnemonic" & the passphrase, iterations = 2048, output = 64 bytes. Text is
+-- textEncode()d to UTF-8 in the livecodescript layer, because textEncode is not
+-- available to an LCB module; this layer only ever sees Data.
+--
+-- The three checks below are NOT redundant with the shim's. The shim refuses a
+-- zero iteration count and a zero output length (upstream would be quietly
+-- WRONG rather than loud in both cases: a zero count yields the one-iteration
+-- key, and a zero length "succeeds" having written nothing). But a NEGATIVE
+-- Integer would never reach those checks intact - it becomes a huge positive
+-- value the moment it marshals into an unsigned foreign slot - so its sign has
+-- to be caught here, on the script side, while it still exists.
+public handler cxPbkdf2HmacSha512(in pPassword as Data, in pSalt as Data, in pIterations as Integer, in pOutLen as Integer) returns Data
+   variable tOut as Pointer
+   variable tPwPtr as Pointer
+   variable tPwLen as Integer
+   variable tSaltPtr as Pointer
+   variable tSaltLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   if pOutLen < 1 then
+      throw "CoinXT: cxPbkdf2HmacSha512: the output length must be at least 1 byte (BIP-39 uses 64)."
+   end if
+   if pIterations < 1 then
+      throw "CoinXT: cxPbkdf2HmacSha512: the iteration count must be at least 1 (BIP-39 uses 2048); a count of 0 would silently derive a one-iteration key."
+   end if
+   if pIterations > kMaxIterations then
+      throw "CoinXT: cxPbkdf2HmacSha512: the iteration count is larger than this binding will marshal."
+   end if
+   put sDataLen(pPassword) into tPwLen
+   put sDataPtr(pPassword) into tPwPtr
+   put sDataLen(pSalt) into tSaltLen
+   put sDataPtr(pSalt) into tSaltPtr
+   put sAlloc(pOutLen) into tOut
+   unsafe
+      put _cnx_pbkdf2_hmac_sha512(tPwPtr, tPwLen, tSaltPtr, tSaltLen, pIterations, tOut, pOutLen) into tStatus
+   end unsafe
+   -- The result is a SEED. See the header: the block is freed unwiped and the
+   -- Data is not locked memory. Clear the caller's variable when done with it.
+   return sFinish("cxPbkdf2HmacSha512", tOut, tStatus, pOutLen)
+end handler
+
+-- ==========================================================================
+-- Length accessors. Every size an app needs to build a buffer comes FROM the
+-- shim; nothing in the CoinXT stack hardcodes 32 / 64 / 20. The ones that earn
+-- their keep in practice: cxSha256Len and cxRipemd160Len size a hash160 and a
+-- Base58Check checksum, cxHmacSha512Len is the 64-byte BIP-32 I that splits
+-- 32/32, cxSha512Len is the BIP-39 seed length, and cxKeccak256Len sizes an
+-- Ethereum address (the last 20 bytes of a Keccak-256 digest). The remaining
+-- two are exposed for symmetry, so no caller has to guess which digest has an
+-- accessor and which does not.
+-- ==========================================================================
+
+public handler cxKeccak256Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_keccak256_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxSha3_256Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_sha3_256_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxSha256Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_sha256_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxSha512Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_sha512_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxRipemd160Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_ripemd160_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxHmacSha256Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_hmac_sha256_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxHmacSha512Len() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_hmac_sha512_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+end library

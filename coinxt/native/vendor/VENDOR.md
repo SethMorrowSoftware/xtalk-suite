@@ -6,18 +6,24 @@ These files are copied verbatim (no local patches) from **trezor-firmware**, dir
 - License: **MIT** (see `LICENSE` in this directory)
 - Pinned commit: `230cfe37e4c5fefb6ca117725d261a7b3646a995` (branch `main`, fetched 2026-07-02)
 
-## Files (phase 1: the hash unit)
+## Files (phase 1: the hash unit, complete)
 
 | file | purpose |
 |---|---|
 | `sha3.h` / `sha3.c` | Keccak-256 (Ethereum, 0x01 padding) and SHA3-256 (NIST FIPS-202, 0x06) |
+| `sha2.h` / `sha2.c` | SHA-256 and SHA-512 (Bitcoin checksums / address hashing; BIP-32 and BIP-39 derivation) |
+| `ripemd160.h` / `ripemd160.c` | RIPEMD-160, the outer half of a Bitcoin `HASH160` |
+| `hmac.h` / `hmac.c` | HMAC-SHA256 / HMAC-SHA512 (RFC 2104) |
+| `pbkdf2.h` / `pbkdf2.c` | PBKDF2-HMAC-SHA512, the BIP-39 mnemonic-to-seed KDF |
 | `memzero.h` / `memzero.c` | best-effort secret wiping used by the hash contexts |
-| `byte_order.h` | endianness macros used by `sha3.c` |
+| `byte_order.h` | endianness macros used by `sha3.c` and `sha2.c` |
 | `options.h` | trezor-crypto compile-time config (USE_KECCAK=1, USE_RFC6979=1, ...) |
 
-Later phases add `secp256k1` + `ecdsa.c` + `bignum.c` (curve), `sha2.c` / `ripemd160.c` / `hmac.c` /
-`pbkdf2.c` (hashes/KDF), `bip32.c` / `bip39.c` (HD + mnemonic), and `base58.c` / `segwit_addr.c` if we
-decide to keep any encoding native rather than in script.
+Every file above is byte-identical to upstream at the pinned commit (verified by re-fetching each blob
+and comparing SHA-256, not just by trusting the local copy).
+
+Later phases add `secp256k1` + `ecdsa.c` + `bignum.c` (curve), `bip32.c` / `bip39.c` (HD + mnemonic),
+and `base58.c` / `segwit_addr.c` if we decide to keep any encoding native rather than in script.
 
 ## Rules (CLAUDE.md)
 

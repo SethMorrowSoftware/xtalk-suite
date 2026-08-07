@@ -97,7 +97,15 @@ These are summarized in `README.md`; the operational point for editing is:
   builds, on pull requests, pushes to `main`, and on demand. The native lanes
   upload each built library as an **artifact**; CI does NOT commit binaries,
   because rule 5 makes refreshing a committed binary part of the human-authored
-  change that motivated it. The per-member `.github/workflows/` files are kept
+  change that motivated it. `release-binaries.yml` is the manual assembly step
+  over the top: one `workflow_dispatch` builds every member for every platform
+  (24 jobs), asserts each artifact, and publishes a single bundle, which
+  `tools/install-release-binaries.py` verifies and lands locally so the commit
+  is still a person's. Two things it cannot make: torrentxt's macOS dylib (it
+  must be universal, self-contained, and codesigned/notarized — credentials CI
+  does not hold), and any claim that an unexecuted artifact works, which is why
+  the coinxt Windows lane's output is driven through the published vectors on a
+  Windows runner before it is bundled. The per-member `.github/workflows/` files are kept
   for when a member is worked on in isolation, but **GitHub Actions runs only
   the root workflows in a monorepo**, so they do not fire here.
 
