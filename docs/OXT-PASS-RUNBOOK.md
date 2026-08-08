@@ -238,13 +238,17 @@ are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
 `c:coinxt>`, so **on Linux and Windows, 32- or 64-bit, there is nothing to build**:
 coinxt installs like any other member and the run below is just a run.
 
-> **One exception as of the phase-2 change (ABI 3).** `x86_64-linux`,
-> `x86_64-win32` and `x86-win32` were rebuilt with the curve surface. **`x86-linux`
-> was not** - the environment that built the others has no 32-bit libc - so until
-> `release-binaries.yml` has run for that lane, a 32-bit Linux engine will get
-> "ABI mismatch - reinstall CoinXT" from `cxCheckABI` and nothing will run. That is
-> the stale-binary guard doing its job. Check `coinxt/tools/check-binary-freshness.py`
-> if unsure: it names any committed library that no longer matches the shim.
+> **All four are current as of the phase-2 change (ABI 3)**, and
+> `coinxt/tools/check-binary-freshness.py` says so on every push. One note on how
+> the `x86-linux` one was produced: the environment that built the other three has
+> no 32-bit libc, so it was cross-compiled with **Zig** (`zig cc -target
+> x86-linux-gnu.2.25`) rather than `gcc -m32`. The artifact is a 32-bit i386 ELF
+> with exactly the 30 `cnx_*` exports, needing only `libc.so.6` at the documented
+> GLIBC 2.25 floor, and CI **executes** it against the published vectors on every
+> push (see the "Execute the COMMITTED library's vectors" step in
+> `native-coinxt.yml`), which is a stronger check than any other committed library
+> had before. If you would rather ship a gcc-built one, running
+> `release-binaries.yml` replaces it and the same CI step will re-verify it.
 
 **macOS is the only gap**, and it is the same gap four of the five native members
 have: CI builds no macOS lane on purpose (the runners are arm64-only, so an
@@ -546,13 +550,12 @@ residuals in `coinxt/IMPLEMENTATION-PLAN.md`, the Status section of
 root `README.md`. A green run retires the phase-1 residual (12 handlers) and the
 phase-2 one (15 handlers) at once, and closes phase 2 outright.
 
-> **Before you run it, check which library you are on.** If your machine is
-> **32-bit Linux (`x86-linux`)**, confirm `coinxt/src/code/x86-linux/coinxt.so`
-> has been refreshed for ABI 3 — at the time this section was written it had not
-> been, because the environment that built the other three could not build it.
-> The symptom is unmissable and harmless: `cxCheckABI` throws "ABI mismatch —
-> reinstall CoinXT" and nothing else runs. It is fail-closed working as designed,
-> not a phase-2 defect. 64-bit Linux and both Windows builds are current.
+> **All four committed libraries are current for ABI 3**, including `x86-linux`
+> (cross-compiled with Zig; see 2.4). So `cxCheckABI` should be silent on every
+> supported platform. If it does throw "ABI mismatch — reinstall CoinXT", that is
+> the stale-binary guard working, not a phase-2 defect: it means the extension you
+> installed and its bundled library came from different commits, and reinstalling
+> the packaged extension is the fix.
 
 > The harness's expected values are hand-copied literals, so
 > `coinxt/tools/check-selftest-vectors.py` re-derives every one of them on every push

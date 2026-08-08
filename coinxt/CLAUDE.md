@@ -435,6 +435,20 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
 - **ECDH returns the RAW 65-byte point** (`0x04 || X || Y`), not the 32 bytes SPEC.md 5.1 sketched.
   Truncating to X or hashing it would be CoinXT inventing a convention; the caller composes the KDF its
   protocol specifies.
+- **The `x86-linux` binary is cross-compiled with Zig, and that is deliberate.** The
+  environment that rebuilt the other three has no 32-bit libc and cannot install
+  `gcc-multilib`, so `src/code/x86-linux/coinxt.so` was built with
+  `zig cc -target x86-linux-gnu.2.25` (a `cc` wrapper on PATH, which is the same
+  mechanism `build.sh` already documents for a cross build). The result is a 32-bit
+  i386 ELF exporting exactly the 30 `cnx_*` names and nothing else, needing only
+  `libc.so.6` at the GLIBC 2.25 floor this member documents. Two things make that
+  safe rather than hopeful: the same source built with the same Zig for x86_64
+  passes the entire KAT suite including the cross-library leg, and CI now
+  **executes** the committed library against the published vectors on every push
+  (`native-coinxt.yml`, "Execute the COMMITTED library's vectors"), which no
+  committed library had before. `release-binaries.yml` will overwrite it with a
+  gcc-multilib build whenever it next runs, and that step re-verifies it the same
+  way; nothing here depends on Zig staying in the picture.
 - Verified: ASan + UBSan clean over the whole curve surface (`sh native/build.sh asan`),
   `tools/coin-kat.py` green (four RFC 6979 vectors, G and 2G, decompression round-trip, 8 verification
   rejections including the overread guard, ecrecover, ECDH both directions, 10 fail-closed guards,

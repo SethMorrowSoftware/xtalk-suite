@@ -6,7 +6,7 @@
 # src/code/MANIFEST.sha256 - the same place and the same way every other suite
 # member pins them, so one gate shape covers all six.
 b53d2eb93806f3d618370726f27eafeb6c279c7a90351297f79e073e49e569be  vendor/LICENSE
-0ca2eaf13fbf5e9313a9133f2f812cea0bf7c0c5b4199d0a24d8f72a3e7ca3f0  vendor/VENDOR.md
+0c47a48215e9a17d67410151b1976c541701e702617af08fee5a8526cdaadb46  vendor/VENDOR.md
 d237a835647ef553f39fc34beac9f2e1aa0be463d62e197e99c74287d458a7e2  vendor/address.c
 612ef87eff552dc85aa5e85dee2ecb43ff164b1867baacd09919eed665e8e914  vendor/address.h
 dc17051117ebab202030d22a7cfbbac04a42c905db49f600b0c7ff3cb0669d82  vendor/base58.c
