@@ -126,12 +126,14 @@ jobs:
             os: windows-2025
             vcpkg_port: libsodium
             triplet: x64-windows-static
+            msvc_arch: amd64
             win_style: nmake
           - member: sodiumxt
             platform_id: x86-win32
             os: windows-2025
             vcpkg_port: libsodium
             triplet: x86-windows-static
+            msvc_arch: x86
             win_style: nmake
 
           # ---- torrentxt: Boost + OpenSSL + zlib; libtorrent from vcpkg on Windows
@@ -237,6 +239,18 @@ jobs:
           & "$vcpkg\vcpkg.exe" install "${{ matrix.vcpkg_port }}:${{ matrix.triplet }}"
           echo "CMAKE_TOOLCHAIN_FILE=$vcpkg\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
           echo "VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}" >> $env:GITHUB_ENV
+
+      # The NMake generator invokes nmake.exe and cl.exe DIRECTLY, so it only
+      # works inside an MSVC developer environment. The Visual Studio generator
+      # that every other Windows lane uses locates the toolchain itself and
+      # needs nothing here - which is exactly why sodiumxt was the only member
+      # to fail with "'nmake' '-?' ... no such file or directory" while
+      # enetxt, datachannelxt and torrentxt built fine beside it.
+      - name: Set up MSVC (Windows, NMake lanes only)
+        if: matrix.msvc_arch
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
 
       # sodiumxt's Windows lane needs its own generator and runtime setting, so
       # it gets its own step rather than being bent into the shared one.
