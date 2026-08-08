@@ -89,7 +89,7 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | # | Unproven thing | Why it matters | The label that says so |
 |---|---|---|---|
 | 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual:** that covered 20 of the 35 public `dc*` handlers; `tests/datachannel-selftest.livecodescript` covers all 35 and has still not been run. | Labels updated in `datachannelxt/README.md`, `examples/README.md`, `docs/getting-started.md`, `tests/datachannel-selftest.livecodescript`, and `src/datachannel.lcb`. |
-| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual:** 12 of the 16 public handlers were not called by name (`cxCheckABI`, the six `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`). | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
+| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual:** 12 of the 16 public handlers were not called by name (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`). | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
 | 3 | **The selftests grew after their passes; the new sections are static-only.** torrentxt, enetxt, and sodiumxt all had coverage added in the "test coverage" follow-up commit, which post-dates every recorded pass. | A green run from an older, smaller harness does not cover handlers added later. The extended sections are where new binding bugs would hide. | `torrentxt/tests/torrent-selftest.livecodescript` COVERAGE NOTE: the v9-v11 surface (`btDhtBep44SignBuf`, `btDhtPutSigned`, `btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, `btRp1*`) "proves the .lcb wrappers, once an engine runs it (verified statically until then)". `enetxt/tests/enet-selftest.livecodescript` COVERAGE NOTE: the isolated `enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth` section, "verified statically; it needs an OXT pass to become a runtime result". `sodiumxt/docs/api-reference.md`: "The recorded on-engine pass predates those additions, so the newer checks are verified statically and need an OXT pass to become a runtime result." |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
@@ -459,42 +459,49 @@ diagnostics / preset accessors.
   those additions, so the newer checks are verified statically and need an OXT pass to
   become a runtime result."
 
-### 4.6 coinxt (inventory item 2)
+### 4.6 coinxt (inventory item 2 — CLOSED 2026-08-08; this is now the residual)
 
-There is no self-building harness. Drive the numbered list in the header of
-`coinxt/src/coinxt.lcb`, **in order**, and record the answer to each:
+**The five numbered questions in the `.lcb` header are answered.** The 2026-08-08
+pass confirmed all of them, each on the side the code assumed: the module loads and
+binds resolve, the ABI guard holds, **`UIntSize` works as a foreign RETURN type**,
+**`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned
+`c5d2…a470` rather than throwing), and the vectors are byte-exact. Neither
+documented fallback — `CUInt`, `optional Pointer` — is needed. Do not re-litigate
+them; the `.lcb` header now records the answers instead of the questions.
 
-1. The module compiles and loads, and the `c:coinxt>` binds resolve. (A renamed or
-   missing export is a silent bind failure at load, so this is the gate.)
-2. `cxCheckABI()` returns cleanly against the shipped binary (ABI 2).
-3. **`UIntSize` as a foreign RETURN type** (the `cx*Len` accessors return C `size_t`).
-   This is the genuinely novel one: `UIntSize` is proven in this family as a
-   *parameter*, never as a return. If the engine rejects it, the documented fallback is
-   `CUInt`, and the `.lcb` comment must be updated with what you actually saw.
-   **Write down the exact error text if it rejects.**
-4. `MCDataGetBytePtr` on an **empty** `Data`. The C side is safe either way (the shim
-   substitutes a valid one-byte source when the length is 0), so the open question is
-   the **marshalling**, not the hashing. If the engine imports a null byte pointer as
-   `nothing`, the plain `Pointer` slot rejects it and `cxKeccak256("")` **throws instead
-   of returning a digest** - which is the very first thing item 5 tries, so a failure
-   here will look like a vector failure and is not one. The documented fallback is
-   `optional Pointer` on the IN-buffer parameters; the shim needs no change.
-   **Write down the exact error text if it throws.**
-5. The vectors themselves, from script, byte for byte: `cxKeccak256("")` must be
-   `c5d2...a470`, and the rest of `coinxt/tools/coin-kat.py`.
+**What is left is coverage.** That run called 4 of the 16 public handlers, because
+coinxt had no self-building harness to drive the rest. It has one now:
 
-**A pass looks like:** all five, in order, with item 5 byte-exact.
+> **Run `coinxt/tests/coin-selftest.livecodescript`.** Same paste-and-reopen
+> procedure as every other member (section 3.1), same green/red UI, same
+> `Re-run` button. It drives **all 16** public `cx*` handlers — `cxCheckABI` by
+> name at last, all seven `*Len` accessors, every digest, both HMACs, and
+> PBKDF2 — against the same published vectors `tools/coin-kat.py` pins.
 
-**What flips:**
+**A pass looks like:** `stSummary` green, zero failures. Sections in order: the ABI
+guard, the seven length accessors, Keccak-256, SHA3-256 **and the aliasing trap**
+(SHA3 and Keccak differ by a padding byte alone, so a crossed wire is a plausible
+wrong answer and on Ethereum a wrong address), SHA-2, RIPEMD-160, RFC 4231 HMAC
+cases 1 and 2, the BIP-39 seed vector, empty-input marshalling across every digest,
+digest independence, and the two fail-closed guards (zero iterations, zero-length
+output).
 
-- `coinxt/src/coinxt.lcb`, the `STATUS: VERIFIED STATICALLY; NEEDS AN OXT PASS` block
-  (and specifically the `UIntSize` return-type note in item 3).
-- `coinxt/CLAUDE.md`: "Phase 1, the `.lcb` foreign module - WRITTEN; verified
-  statically, needs an OXT pass."
-- `coinxt/IMPLEMENTATION-PLAN.md`, the status blockquote. Per that plan, **phase 1
-  closes** when `cxKeccak256` and friends return the pinned vectors from a real engine.
-  This one result closes a phase.
-- Root `README.md`, the coinxt release-status row.
+**Copy back:** the full `stResults` text.
+
+**What it deliberately does not prove:** anything about the curve, HD wallets, or
+address encodings. Those are phases 2-4 and do not exist yet.
+
+**What flips:** the "STILL VERIFIED STATICALLY" paragraph in the `coinxt/src/coinxt.lcb`
+header, the matching sentence in `coinxt/CLAUDE.md`, and the residual noted in
+`coinxt/IMPLEMENTATION-PLAN.md` — all three name the same 12 handlers, so a green run
+retires all three at once.
+
+> The harness's expected values are hand-copied literals, so
+> `coinxt/tools/check-selftest-vectors.py` re-derives every one of them on every push
+> (against `hashlib`/`hmac` where Python has an independent implementation, against
+> the published table otherwise). It is in the always-on gate set and needs no
+> compiler. A drifted expectation would turn a real regression into a green run,
+> which in a money library is the worst failure mode there is.
 
 ### 4.7 onionxt (inventory items 4 and 5)
 
@@ -702,6 +709,8 @@ DEPTH (per-member selftests)  <- this block is now the open work
                                              4:PASS empty Data marshals
                                              5:PASS vectors byte-exact
                                              -> PHASE 1 CLOSED
+[ ] coinxt     coin-selftest                  ___ passed ___ failed
+               (all 16 cx* handlers; the 12 the suite pass never called)
 
 DEMOS
 [ ] datachannel-loopback

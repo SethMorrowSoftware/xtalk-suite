@@ -38,5 +38,12 @@ jobs:
       - name: Known-answer vectors (build the shim, drive it via ctypes)
         run: python3 tools/coin-kat.py --check
 
+      # The OXT self-test carries its expected digests as hand-copied literals,
+      # so they can drift from the shim and from the published answers. A
+      # drifted expectation turns a real regression into a green run. Needs no
+      # compiler, unlike the KAT step above.
+      - name: The OXT self-test's vectors have not drifted
+        run: python3 tools/check-selftest-vectors.py --check
+
       - name: ASan + UBSan native self-test
         run: sh native/build.sh asan

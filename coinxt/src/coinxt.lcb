@@ -48,7 +48,7 @@ library org.openxtalk.library.coin
 --      to avoid). All exact.
 --
 -- STILL VERIFIED STATICALLY: 12 of the 16 public handlers were not called by
--- name in that run - cxCheckABI (see 2), the six *Len accessors, cxSha512,
+-- name in that run - cxCheckABI (see 2), the seven *Len accessors, cxSha512,
 -- cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512. They are built from the same
 -- proven parts (sPrepare + sAlloc + a UIntSize length + sFinish), and
 -- tools/coin-kat.py drives all of them headless through ctypes against public

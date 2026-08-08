@@ -23,7 +23,7 @@ native seam and the KAT harness come first, because everything downstream trusts
 > - was needed.
 >
 > Still verified statically within phase 1: 12 of the 16 public handlers were not called by name
-> (`cxCheckABI`, the six `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`,
+> (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`,
 > `cxPbkdf2HmacSha512`). They are assembled from parts the pass proved, and `tools/coin-kat.py` drives
 > all of them headless, so this is a coverage gap, not a risk to the phase. **Everything from the curve
 > surface on (phase 2 forward) is still to build** - that is now the member's critical path. Unlike

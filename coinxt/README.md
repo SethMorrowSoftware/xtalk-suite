@@ -61,11 +61,19 @@ CoinXT/
     MANIFEST.sha256         integrity pins: the vendored sources now; release binaries and the
                             wordlist join in later phases
     vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE
-  src/                      (lands with the on-engine binding step)
-    coinxt.lcb              the foreign-handler module (binds to cnx_*)
-    coinxt.livecodescript   the public cx* API + the script-side encodings
+  src/
+    coinxt.lcb              the foreign-handler module (binds to cnx_*); phase 1 shipped and
+                            engine-proven 2026-08-08
+    coinxt.livecodescript   the public cx* API + the script-side encodings (later phases)
+  tests/
+    coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
+                            its own UI and drives ALL 16 public cx* handlers against the
+                            published vectors
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
+    check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
+                            drift from the shim or the published answers (no compiler needed)
+    check-binary-freshness.py  does the committed library still match the shim?
     check-livecodescript.py the static gate for .lcb / .livecodescript (carried verbatim)
     check-docs-style.py     the house-style gate for .md (carried verbatim)
   examples/                 (later phases)
@@ -79,22 +87,32 @@ CoinXT/
 python3 tools/check-livecodescript.py         # static gate for the script layer
 python3 tools/check-docs-style.py             # house-style gate for the docs
 python3 tools/coin-kat.py --check             # builds the shim, runs the known-answer vectors
+python3 tools/check-selftest-vectors.py       # the self-test's vectors have not drifted
 sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd native && sha256sum -c MANIFEST.sha256 ) # vendored-source integrity
 ```
 
-All five run in CI (`.github/workflows/ci.yml`). There is no headless way to compile or run
+All six run in CI (`.github/workflows/ci.yml`). There is no headless way to compile or run
 `.livecodescript` / `.lcb` on OXT, so a script change additionally needs an on-engine pass; the honest
 status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
 
 ## Status
 
-**Design done; phase 1 underway.** The native seam is proven: the shim (`native/coinxt.c`) over the
-vendored trezor-crypto SHA-3 unit builds under ASan + UBSan, exposes `cnx_keccak256` / `cnx_sha3_256`
-(the Ethereum-vs-NIST footgun handled), and passes known-answer vectors headless via
-`tools/coin-kat.py` (Keccak against published vectors, SHA3 against Python `hashlib`). That retires the
-FFI/build pipeline, the family's most expensive area. Next: the secp256k1 curve surface (phase 2), then
-encodings/addresses, HD wallets, and the `.lcb` on-engine binding.
+**Phase 1 is CLOSED, by an engine pass on 2026-08-08.** The native seam was already proven headless:
+the shim (`native/coinxt.c`) over the vendored trezor-crypto units builds under ASan + UBSan, exposes
+`cnx_keccak256` / `cnx_sha3_256` (the Ethereum-vs-NIST footgun handled), and passes known-answer
+vectors via `tools/coin-kat.py`. What was missing was the binding, and on 2026-08-08 the suite selftest
+loaded `src/coinxt.lcb` on a real OXT engine and got the pinned hash vectors back byte-exact. Two
+design bets settled in that one run: `UIntSize` works as a foreign RETURN type (novel in this family,
+which had only ever proven it as a parameter), and `MCDataGetBytePtr` marshals an empty `Data`, so
+hashing `""` returns a digest instead of throwing. Neither documented fallback was needed.
+
+That run called 4 of the 16 public handlers, because CoinXT had no self-building harness to drive the
+rest. It has one now: paste `tests/coin-selftest.livecodescript` into a stack script and it exercises
+all 16, including the SHA3-vs-Keccak aliasing trap and the fail-closed guards.
+
+Next: the secp256k1 curve surface (phase 2), then encodings/addresses and HD wallets. Those are the
+product; today CoinXT is a correct, engine-proven hash library and nothing more.
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,
