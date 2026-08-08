@@ -320,9 +320,93 @@ length prefix, a leading zero in a long length, a long form used for a short
 value - because RLP's guarantee is that one value has exactly one encoding, and
 a decoder that accepts two spellings breaks every hash computed over the result.
 
+## HD wallets and mnemonics (phase 4)
+
+BIP-39 mnemonics, BIP-32 derivation and the BIP-44 / BIP-84 paths a wallet
+walks. Like phase 3 these live in `src/coinxt.livecodescript`, not in the `.lcb`
+module; `start using stack "coinxt"` before calling them.
+
+**This is the part of CoinXT that can be wrong without failing.** A signature
+that is wrong does not verify and an address that is wrong fails its checksum,
+but a mis-derived wallet produces perfectly valid keys for the wrong account.
+Everything here is pinned to a published vector for that reason. Check your own
+integration the same way: derive `m/44'/0'/0'/0/0` from the test mnemonic
+`abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon
+abandon about` and confirm you get `1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA` before
+you point it at real funds.
+
+### `cxMnemonicFromEntropy(pEntropy)` / `cxMnemonicToEntropy(pMnemonic)`
+
+16, 20, 24, 28 or 32 bytes of entropy to 12, 15, 18, 21 or 24 words, and back.
+**CoinXT does not generate the entropy** - it is yours, from a source you trust
+(SodiumXT `sxRandomBytes`), for the same reason `cxNewSeckey` takes bytes rather
+than making them. `cxMnemonicToEntropy` verifies the checksum and throws if a
+word is wrong, missing or out of order.
+
+### `cxMnemonicValidate(pMnemonic)`
+
+True or false, not a throw, because a restore screen asks this on every
+keystroke and an exception is the wrong shape for an answer that is routinely
+no.
+
+### `cxMnemonicToSeed(pMnemonic, pPassphrase)`
+
+The 64-byte BIP-39 seed. **It does not verify the checksum** - BIP-39 defines
+the seed for any string, which is what lets other schemes reuse the KDF, but it
+means a typo yields a perfectly good seed for the wrong wallet. Call
+`cxMnemonicValidate` first on anything a human typed.
+
+Whitespace is normalized first (`cxMnemonicNormalize`: trim, and collapse runs
+to one space), because BIP-39 derives the seed from the mnemonic STRING and a
+trailing newline from a paste would otherwise give a different wallet from every
+other implementation. Unicode NFKD is **not** applied: for the English wordlist
+that is a no-op, but **a non-ASCII passphrase is yours to normalize** before
+calling, or your seed will not match a wallet that did.
+
+### `cxHdFromSeed(pSeed)` / `cxHdDeriveChild(pNode, pIndex)` / `cxHdDerivePath(pNode, pPath)`
+
+A node is an array with the fields BIP-32 serializes, in the order it serializes
+them: `seckey` (empty for a watch-only node), `pubkey` (33 bytes, compressed),
+`chaincode`, `depth`, `index`, `parentfp`.
+
+```
+put cxHdFromSeed(cxMnemonicToSeed(tMnemonic, "")) into tMaster
+put cxHdDerivePath(tMaster, "m/44'/0'/0'/0/0") into tAccount
+put cxBtcAddressP2PKH(tAccount["pubkey"]) into tAddress
+```
+
+A path level may carry `'`, `h` or `H` for hardened. The parse is strict on
+purpose: a level that is not plain digits throws rather than being coerced,
+because `m/1e3` quietly becoming 1000 is a different wallet with no error
+anywhere.
+
+### `cxHdNeuter(pNode)`
+
+The watch-only form: same public key and chain code, no private key. This is the
+xpub half of a wallet. It still derives non-hardened children - and therefore
+every receive address on that branch - which is what makes an xpub both useful
+and a privacy liability if it leaks. It cannot derive a hardened child, because
+BIP-32 hashes the private key to make one; that is the property hardened
+derivation exists for.
+
+### `cxXprv(pNode)` / `cxXpub(pNode)`
+
+The Base58Check serializations. Mainnet only: a testnet or altcoin prefix is a
+different version number and nothing else, but CoinXT does not ship one it has
+not pinned to a vector.
+
+### `cxSeckeyTweakAdd` / `cxPubkeyTweakAdd` / `cxBip39Wordlist`
+
+The `.lcb` primitives the above is built from. Most callers want the handlers
+above instead; these are public because the script layer is a separate file and
+because a caller implementing a non-BIP-32 scheme on the same curve has a real
+use for a tweak. `cxBip39Wordlist()` returns the 2048 words as 8-byte
+space-padded slots (16384 bytes), which is what an autocomplete in a mnemonic
+entry field wants.
+
 ## Length accessors
 
-Thirteen zero-argument handlers returning the sizes the library actually reports.
+Fourteen zero-argument handlers returning the sizes the library actually reports.
 
 | Handler | Returns |
 |---|---|
@@ -339,6 +423,7 @@ Thirteen zero-argument handlers returning the sizes the library actually reports
 | `cxSignatureLen()` | 64 |
 | `cxRecoverableSignatureLen()` | 65 |
 | `cxEcdhLen()` | 65 |
+| `cxBip39WordlistLen()` | 16384 (2048 words x 8) |
 
 These are not decoration. **Do not hardcode 32 or 64 in your own code**; ask. A library is
 entitled to change a digest size across versions, and a hardcoded length is a buffer overflow
@@ -349,6 +434,18 @@ the digest rather than hide.
 Under the hood these are the one genuinely novel thing in the binding: they marshal a C
 `size_t` as a foreign `UIntSize` **return** type, which this extension family had previously
 proven only as a parameter. The 2026-08-08 engine pass confirmed it works.
+
+## One caller requirement, stated plainly
+
+**The script layer assumes `the itemDelimiter` is its default comma.** Twenty-one
+chunk expressions in `src/coinxt.livecodescript` move data as comma-separated
+lists, and they read whatever the engine's current delimiter is. If your app
+sets it to something else, restore it before calling any `cx*` handler that
+lives in the script layer (everything in the phase 3 and phase 4 sections
+above). You will not get an error otherwise - you will get a wrong answer, which
+on this surface means a wrong address. This is a known limitation with a known
+fix; see discipline 4 in the file's own header for why the fix is waiting on an
+engine question rather than already applied.
 
 ## Errors
 

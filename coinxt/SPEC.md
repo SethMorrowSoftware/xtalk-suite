@@ -164,16 +164,22 @@ Hashes:
   cnx_hmac_sha256(key, klen, msg, mlen, out32) / cnx_hmac_sha512(...out64)
   cnx_pbkdf2_hmac_sha512(pw, plen, salt, slen, iters, out, outlen) -> int
 
-HD (BIP-32) - the node is a fixed-size opaque byte blob (version||depth||fingerprint||
-              child||chaincode||key), so no handle table is needed across the ABI:
-  cnx_hdnode_from_seed(seed, slen, out_node) -> int
-  cnx_hdnode_derive(node, index, hardened, out_node) -> int         // one step; path split in script
-  cnx_hdnode_private_key(node, out32) -> int
-  cnx_hdnode_public_key(node, out33) -> int
-  cnx_hdnode_chaincode(node, out32) -> int
+HD (BIP-32) - AS BUILT, and smaller than this section originally sketched. Only the
+              two operations that ARE curve arithmetic cross the ABI; the node itself
+              never does, so there is no opaque blob format and no handle table:
+  cnx_seckey_tweak_add(sk, sklen, tweak, tlen, out32, outlen) -> int   // ki = IL + kpar mod n
+  cnx_pubkey_tweak_add(pub, plen, tweak, tlen, out33, outlen) -> int   // Ki = point(IL) + Kpar
+  // The HMAC-SHA512, the 78-byte serialization, the path parse and the node record
+  // are all script (src/coinxt.livecodescript). Upstream's bip32.c was deliberately
+  // NOT vendored: it is written against every curve trezor supports and would have
+  // pulled in curves.c, nist256p1, ed25519-donna and the Cardano variants for these
+  // two operations. See native/vendor/VENDOR.md.
 
-Mnemonic (BIP-39):
-  cnx_bip39_seed(mnemonic, mlen, passphrase, plen, out64) -> int    // PBKDF2-HMAC-SHA512, 2048 iters
+Mnemonic (BIP-39) - AS BUILT. cnx_bip39_seed was not needed: it is PBKDF2-HMAC-SHA512,
+              which the hash surface above already exports, so cxMnemonicToSeed composes
+              it. What the shim supplies instead is the normative wordlist as DATA:
+  cnx_bip39_wordlist(out, outlen) -> int      // 2048 fixed-width 8-byte slots, space padded
+  cnx_bip39_wordlist_len(void) -> size_t      // 16384
   // entropy<->words and the checksum word live in script (pure bytes + a SHA-256 call)
 ```
 
@@ -202,16 +208,30 @@ Hashes (thin over the shim; Data in, Data out):
   cxHash160 (RIPEMD160(SHA256(x))), cxHash256 (SHA256(SHA256(x))),
   cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512
 
-HD wallets (BIP-32):
+HD wallets (BIP-32) - AS BUILT. The node is an ARRAY read by name, and its fields are
+                      exactly what BIP-32 serializes in the order it serializes them
+                      (seckey, pubkey, chaincode, depth, index, parentfp), so cxXprv is
+                      a concatenation rather than a translation. That replaced the
+                      cxHdSeckey / cxHdPubkey / cxHdChainCode accessors sketched here.
   cxHdFromSeed(pSeed)                     -> node
-  cxHdDerivePath(pNode, "m/44'/0'/0'/0/0") -> node   (splits the path, loops cnx_hdnode_derive)
-  cxHdSeckey(pNode) / cxHdPubkey(pNode) / cxHdChainCode(pNode)
+  cxHdDeriveChild(pNode, pIndex)          -> node   (one step; pIndex is the full child number)
+  cxHdDerivePath(pNode, "m/44'/0'/0'/0/0") -> node   (parses the path, loops cxHdDeriveChild)
+  cxHdNeuter(pNode)                       -> node   (the watch-only form; no private key)
   cxXprv(pNode) / cxXpub(pNode)           -> Base58Check strings   (framed in script)
 
-Mnemonics (BIP-39):
+Mnemonics (BIP-39) - AS BUILT:
   cxMnemonicFromEntropy(pEntropy)         -> space-joined words   (checksum word computed in script)
+  cxMnemonicToEntropy(pWords)             -> entropy; throws on a bad checksum
   cxMnemonicToSeed(pWords, pPassphrase)   -> 64-byte seed
   cxMnemonicValidate(pWords)              -> boolean
+  cxMnemonicNormalize(pText)              -> trimmed, single-spaced   (NOT Unicode NFKD; see below)
+
+  A NON-ASCII PASSPHRASE IS THE CALLER'S TO NORMALIZE. BIP-39 specifies NFKD over the
+  mnemonic and the passphrase; for the English wordlist that is a no-op because every
+  word is ASCII, but a passphrase with accents or full-width characters must be
+  NFKD-normalized before cxMnemonicToSeed or the seed will not match another wallet.
+  cxMnemonicToSeed also does NOT verify the checksum, because BIP-39 defines the seed
+  for any string - call cxMnemonicValidate first on anything a human typed.
 
 Encodings (PURE SCRIPT, pinned by KAT):
   cxHexEncode / cxHexDecode

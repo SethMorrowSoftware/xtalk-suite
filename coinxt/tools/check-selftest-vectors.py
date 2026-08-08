@@ -303,6 +303,62 @@ def main(argv):
         elif not terse:
             print("  OK  kBech32Valid          is genuinely valid")
 
+        # ---- phase 4 --------------------------------------------------------
+        # Re-derived rather than trusted, for the reason the harness itself
+        # states: this is the one surface where a wrong constant produces
+        # something that still looks right, so a drifted literal here would turn
+        # a real regression into a green run.
+        ent12 = bytes.fromhex(k.get("kBip39Entropy12", ""))
+        ent24 = bytes.fromhex(k.get("kBip39Entropy24", ""))
+        want("kBip39Mnemonic", ref.bip39_mnemonic(ent12), "coin_reference")
+        want("kBip39Mnemonic24", ref.bip39_mnemonic(ent24), "coin_reference")
+        want("kBip39SeedNoPass", ref.bip39_seed(k.get("kBip39Mnemonic", "")).hex(),
+             "coin_reference")
+        master1 = ref.bip32_master(bytes.fromhex(k.get("kBip32Seed1", "")))
+        want("kBip32V1Xprv", ref.bip32_serialize(master1, True), "coin_reference")
+        want("kBip32V1Xpub", ref.bip32_serialize(master1, False), "coin_reference")
+        h0 = ref.bip32_path(master1, "m/0'")
+        want("kBip32V1H0Xprv", ref.bip32_serialize(h0, True), "coin_reference")
+        want("kBip32V1H0Xpub", ref.bip32_serialize(h0, False), "coin_reference")
+        want("kBip32V1DeepXprv",
+             ref.bip32_serialize(ref.bip32_path(master1, k.get("kBip32V1DeepPath", "m")), True),
+             "coin_reference")
+        want("kBip32V3Xprv",
+             ref.bip32_serialize(ref.bip32_master(bytes.fromhex(k.get("kBip32Seed3", ""))), True),
+             "coin_reference")
+        abandon = ref.bip32_master(bytes.fromhex(k.get("kBip39SeedNoPass", "")))
+        want("kAbandonXprv", ref.bip32_serialize(abandon, True), "coin_reference")
+        want("kAbandonP2pkh",
+             ref.p2pkh(ref.bip32_path(abandon, k.get("kAbandonBip44", "m"))["pubkey"]),
+             "coin_reference")
+        want("kAbandonP2wpkh",
+             ref.p2wpkh(ref.bip32_path(abandon, k.get("kAbandonBip84", "m"))["pubkey"]),
+             "coin_reference")
+        want("kAbandonBip84Xpub",
+             ref.bip32_serialize(ref.bip32_path(abandon, k.get("kAbandonBip84Account", "m")), False),
+             "coin_reference")
+        eth_node = ref.bip32_path(abandon, k.get("kAbandonEthPath", "m"))
+        want("kAbandonEth",
+             ref.eip55(ref.eth_address(b"\x04" + b"".join(
+                 x.to_bytes(32, "big") for x in ref._decompress(eth_node["pubkey"])))),
+             "coin_reference")
+        # And the NEGATIVE vector, same rule as kBase58Corrupt above.
+        try:
+            ref.bip39_entropy(k.get("kBip39Mnemonic12Bad", ""))
+            problems.append("kBip39Mnemonic12Bad has a VALID checksum, so the "
+                            "harness check that it is refused proves nothing")
+        except ValueError:
+            if not terse:
+                print("  OK  kBip39Mnemonic12Bad  genuinely fails its checksum")
+        # The harness asserts the passphrase reaches the KDF by pinning the same
+        # mnemonic twice; if the two seeds were equal that claim would be empty.
+        if k.get("kBip39Seed") == k.get("kBip39SeedNoPass"):
+            problems.append("the harness pins the same mnemonic with and without a "
+                            "passphrase, but its two seed constants are equal - the "
+                            "passphrase would not be being tested at all")
+        elif not terse:
+            print("  OK  the passphrase genuinely changes the seed")
+
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()
     if short != k.get("kBip39Seed", "")[:40]:

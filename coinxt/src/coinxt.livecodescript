@@ -1,7 +1,7 @@
 script "coinxt"
 
 -- coinxt.livecodescript - the CoinXT script layer (phase 3: encodings and
--- addresses).
+-- addresses; phase 4: BIP-39 mnemonics and BIP-32 HD derivation).
 --
 -- WHAT LIVES HERE AND WHY. Everything in this file is checksummed byte
 -- shuffling with no secret-dependent branch, so it belongs in script where it
@@ -28,6 +28,11 @@ script "coinxt"
 --     examples, the RLP yellow-paper examples and a Base58Check worked example.
 --     So the ANSWERS this file must produce are pinned by something
 --     independently correct, not by this file agreeing with itself.
+--     Phase 4 is pinned the same way, against the official BIP-39 english
+--     vectors, BIP-32 test vectors 1 to 3 (including vector 3, which exists
+--     solely because its master key has a leading zero byte), and the test
+--     mnemonic every wallet ships with walked down BIP-44, BIP-84 and Ethereum
+--     paths to their published addresses.
 --   * tools/check-script-vectors.py RUNS THIS ACTUAL FILE against those vectors.
 --     tools/lcs-interp.py interprets the LiveCodeScript subset used here, and
 --     the cx* hash handlers are supplied by the REAL native library, so what
@@ -64,6 +69,24 @@ script "coinxt"
 --      compares byteToNum values, which is exact whatever the caller's setting.
 --      This is the single most dangerous line of this whole file; do not
 --      "simplify" it to offset().
+--   4. THIS FILE ASSUMES `the itemDelimiter` IS ITS DEFAULT COMMA, and that is
+--      a REAL, UNVERIFIED DEPENDENCY rather than a note for tidiness. Twenty-one
+--      chunk expressions here move data as comma-separated lists (bech32's
+--      5-bit values, the 8-to-5 converters, the mnemonic word split, the path
+--      split), and every one of them reads whatever the ENGINE's current item
+--      delimiter is. An app that did `set the itemDelimiter to tab` before
+--      calling would not get an error; it would get a silently wrong answer,
+--      which on this surface means a wrong address.
+--      The obvious fix - `set the itemDelimiter to comma` at the top of each
+--      public handler - is only safe if it is a LOCAL property in OXT (set
+--      inside a handler, restored when that handler exits). In LiveCode it is
+--      documented as local; whether OXT matches has NOT been observed, and this
+--      file does not guess about engine behaviour, nor will it mutate a global
+--      the library does not own (see discipline 3 for why that line was drawn).
+--      So it is written down here, listed in the OXT pass runbook as a thing to
+--      settle, and stated in docs/api-reference.md as a caller requirement in
+--      the meantime. It predates phase 4 - phases 3 and 4 both rely on it - and
+--      fixing it is a deliberate change of its own once the engine has answered.
 --
 -- FAIL CLOSED, EVERYWHERE. Every decoder verifies its checksum and throws
 -- "CoinXT: <handler>: ..." on anything malformed. A corrupt address is never
@@ -988,3 +1011,558 @@ private function cxSlice pData, pFrom, pTo
    end if
    return byte pFrom to pTo of pData
 end cxSlice
+
+-- ==============================================================================
+-- PHASE 4 - HD WALLETS AND MNEMONICS (BIP-39, BIP-32, BIP-44).
+--
+-- Same split as everything above: the two operations that are curve arithmetic
+-- (ki = IL + kpar mod n, and Ki = point(IL) + Kpar) are cxSeckeyTweakAdd and
+-- cxPubkeyTweakAdd in the native module. Everything here is bit packing, a
+-- checksum, a path parse and a serialization - no modular arithmetic on a
+-- 256-bit number appears in this file, exactly as the header demands.
+--
+-- WHY THIS IS THE MOST INTEROPERABILITY-CRITICAL CODE IN COINXT. Every other
+-- surface fails loudly when it is wrong: a bad signature does not verify, a bad
+-- address fails its checksum. THIS one fails silently. A mnemonic that packs
+-- its 11-bit groups in the wrong order still produces 12 valid-looking English
+-- words and a seed that is perfectly self-consistent - and a wallet restored
+-- from it in any other software finds an empty account and no way back. That is
+-- why the official BIP-39 and BIP-32 vectors are re-derived end to end by
+-- tools/check-script-vectors.py, against the REAL native library, on every push.
+-- ==============================================================================
+
+-- BIP-39 fixes the PBKDF2 work factor at 2048 rounds of HMAC-SHA512. It is not
+-- a tuning knob: changing it changes the seed, and the wallet stops being a
+-- BIP-39 wallet.
+constant kCxBip39Rounds = 2048
+
+-- The salt is the ASCII string "mnemonic" with the passphrase appended. The
+-- passphrase is what BIP-39 calls the optional 25th word.
+constant kCxBip39SaltPrefix = "mnemonic"
+
+-- 2048 words, so every word carries exactly 11 bits.
+constant kCxBip39WordCount = 2048
+constant kCxBip39BitsPerWord = 11
+
+-- BIP-32's HMAC key for the master node. ASCII, and normative - "Bitcoin seed"
+-- is used verbatim by every BIP-32 wallet regardless of coin.
+constant kCxBip32MasterKey = "Bitcoin seed"
+
+-- Where the hardened half of the child-index space begins (2^31). An index at
+-- or above this derives from the PRIVATE key, which is what makes a hardened
+-- child underivable from an xpub.
+constant kCxHardenedBase = 2147483648
+
+-- The mainnet BIP-32 serialization version bytes, as integers: xprv is
+-- 0x0488ADE4 and xpub is 0x0488B21E. Those two numbers are what make the
+-- Base58Check text begin "xprv" and "xpub".
+constant kCxVersionXprv = 76066276
+constant kCxVersionXpub = 76067358
+
+-- ==============================================================================
+-- Bit plumbing. BIP-39 is a base conversion between 8-bit and 11-bit groups, and
+-- these two do it a bit at a time rather than with a bignum - see discipline 2
+-- in the header. Nothing here ever holds more than 11 bits, so no accumulator
+-- comes within thirty orders of magnitude of 2^53.
+-- ==============================================================================
+
+private function cxBitAt pData, pBitIndex
+   -- Bit pBitIndex (0-based, most significant bit of byte 1 first) of pData.
+   local tByteIndex, tBitInByte, tByte
+   put cxIntDiv(pBitIndex, 8) + 1 into tByteIndex
+   put cxIntMod(pBitIndex, 8) into tBitInByte
+   put byteToNum(byte tByteIndex of pData) into tByte
+   return cxIntMod(cxIntDiv(tByte, cxPow2(7 - tBitInByte)), 2)
+end cxBitAt
+
+private function cxBitsToBytes pBits
+   -- Pack a comma-separated list of 0/1 into bytes, most significant bit first,
+   -- zero-padding the final partial byte. The padding is not a fudge: BIP-39's
+   -- checksum is the FIRST few bits of a digest byte, so the zeros below a
+   -- 4-bit checksum are exactly the zeros the comparison expects.
+   local tOut, tAcc, tCount, tI, tBitCount
+   put "" into tOut
+   put 0 into tAcc
+   put 0 into tBitCount
+   put the number of items of pBits into tCount
+   repeat with tI = 1 to tCount
+      put tAcc * 2 + (item tI of pBits) into tAcc
+      add 1 to tBitCount
+      if tBitCount is 8 then
+         put numToByte(tAcc) after tOut
+         put 0 into tAcc
+         put 0 into tBitCount
+      end if
+   end repeat
+   if tBitCount > 0 then
+      repeat with tI = tBitCount to 7
+         put tAcc * 2 into tAcc
+      end repeat
+      put numToByte(tAcc) after tOut
+   end if
+   return tOut
+end cxBitsToBytes
+
+-- ==============================================================================
+-- The BIP-39 wordlist. It arrives from the native module as 2048 fixed-width
+-- 8-byte slots (see cxBip39Wordlist in src/coinxt.lcb), which is what makes
+-- index -> word one chunk expression and word -> index a binary search over a
+-- sorted table. It is fetched once per public handler and passed down, rather
+-- than cached in a script-local: 16 KB is cheap next to 2048 rounds of PBKDF2,
+-- and a cache would be one more piece of state to get wrong.
+-- ==============================================================================
+
+private function cxWordSlotLen pList
+   -- The slot width, derived from the blob rather than written down again.
+   return cxIntDiv(the number of bytes of pList, kCxBip39WordCount)
+end cxWordSlotLen
+
+private function cxWordAt pList, pIndex
+   -- Word at pIndex (0-based), trailing pad removed.
+   local tWidth, tStart, tSlot, tEnd
+   put cxWordSlotLen(pList) into tWidth
+   put pIndex * tWidth + 1 into tStart
+   put byte tStart to (tStart + tWidth - 1) of pList into tSlot
+   put tWidth into tEnd
+   repeat while tEnd > 0
+      if byteToNum(char tEnd of tSlot) is not 32 then
+         exit repeat
+      end if
+      subtract 1 from tEnd
+   end repeat
+   return char 1 to tEnd of tSlot
+end cxWordAt
+
+private function cxCompareBytes pA, pB
+   -- -1, 0 or 1 for pA before / equal to / after pB, comparing BYTE VALUES.
+   -- Discipline 3 again: `<` on strings honours `the caseSensitive`, which
+   -- defaults to FALSE, and a case-insensitive comparison would put the binary
+   -- search below into the wrong half of a list that is sorted by byte value.
+   local tI, tLenA, tLenB, tShort, tVa, tVb
+   put the number of chars of pA into tLenA
+   put the number of chars of pB into tLenB
+   put tLenA into tShort
+   if tLenB < tShort then
+      put tLenB into tShort
+   end if
+   repeat with tI = 1 to tShort
+      put byteToNum(char tI of pA) into tVa
+      put byteToNum(char tI of pB) into tVb
+      if tVa < tVb then
+         return -1
+      end if
+      if tVa > tVb then
+         return 1
+      end if
+   end repeat
+   if tLenA < tLenB then
+      return -1
+   end if
+   if tLenA > tLenB then
+      return 1
+   end if
+   return 0
+end cxCompareBytes
+
+private function cxWordIndex pList, pWord
+   -- The 0-based index of pWord, or -1 if it is not a BIP-39 word. Binary
+   -- search: the list is sorted by byte value (tools/coin-kat.py checks that,
+   -- so this is a verified precondition and not an assumption).
+   local tLow, tHigh, tMid, tCmp
+   put 0 into tLow
+   put kCxBip39WordCount - 1 into tHigh
+   repeat while tLow <= tHigh
+      put cxIntDiv(tLow + tHigh, 2) into tMid
+      put cxCompareBytes(pWord, cxWordAt(pList, tMid)) into tCmp
+      if tCmp is 0 then
+         return tMid
+      end if
+      if tCmp < 0 then
+         put tMid - 1 into tHigh
+      else
+         put tMid + 1 into tLow
+      end if
+   end repeat
+   return -1
+end cxWordIndex
+
+-- ==============================================================================
+-- BIP-39: entropy <-> mnemonic <-> seed.
+-- ==============================================================================
+
+-- Collapse a mnemonic to its canonical form: no leading or trailing whitespace,
+-- exactly one space between words.
+--
+-- THIS IS NOT COSMETIC. BIP-39 derives the seed from the mnemonic STRING, so a
+-- stray double space or a trailing newline from a paste would produce a
+-- different seed from every other wallet holding the same words - silently, and
+-- with no way to tell from the words themselves. Normalizing is what every
+-- interoperable implementation does, so cxMnemonicValidate, cxMnemonicToEntropy
+-- and cxMnemonicToSeed all run this first.
+--
+-- What it does NOT do is Unicode NFKD. For the English wordlist that is a
+-- no-op, because every word is ASCII. A NON-ASCII PASSPHRASE IS THE CALLER'S
+-- PROBLEM: normalize it to NFKD before calling cxMnemonicToSeed, or the seed
+-- will not match a wallet that did.
+function cxMnemonicNormalize pText
+   local tOut, tI, tCount, tChar, tCode, tPending
+   put "" into tOut
+   put false into tPending
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tChar
+      put byteToNum(tChar) into tCode
+      if tCode is 32 or tCode is 9 or tCode is 10 or tCode is 13 then
+         if tOut is not "" then
+            put true into tPending
+         end if
+      else
+         if tPending is true then
+            put " " after tOut
+            put false into tPending
+         end if
+         put tChar after tOut
+      end if
+   end repeat
+   return tOut
+end cxMnemonicNormalize
+
+private function cxSplitWords pMnemonic
+   -- The words of an already-normalized mnemonic, comma separated. Safe as a
+   -- comma list because every BIP-39 English word is lowercase a-z; a word
+   -- containing a comma could not be in the list and is rejected by
+   -- cxWordIndex before it can be misread.
+   local tOut, tI, tCount, tChar
+   put "" into tOut
+   put the number of chars of pMnemonic into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pMnemonic into tChar
+      if byteToNum(tChar) is 32 then
+         put "," after tOut
+      else
+         put tChar after tOut
+      end if
+   end repeat
+   return tOut
+end cxSplitWords
+
+-- The mnemonic for pEntropy, which must be 16, 20, 24, 28 or 32 bytes (128 to
+-- 256 bits in 32-bit steps) and gives 12, 15, 18, 21 or 24 words.
+--
+-- COINXT DOES NOT GENERATE THE ENTROPY. It is the caller's, from a source the
+-- caller trusts (SodiumXT's sxRandomBytes is the intended one), for the same
+-- reason cxNewSeckey takes bytes rather than making them: a wallet's entire
+-- security is this input, and a library that quietly supplied it would be
+-- asking to be trusted about the one thing nobody should take on faith.
+function cxMnemonicFromEntropy pEntropy
+   local tLen, tChecksumBits, tTotalBits, tWordCount, tSource, tList
+   local tI, tB, tValue, tOut, tBitIndex
+   put the number of bytes of pEntropy into tLen
+   if tLen is not 16 and tLen is not 20 and tLen is not 24 and tLen is not 28 and tLen is not 32 then
+      throw "CoinXT: cxMnemonicFromEntropy: entropy must be 16, 20, 24, 28 or 32 bytes."
+   end if
+   -- One checksum bit per 32 bits of entropy, taken from the FRONT of the
+   -- SHA-256 of the entropy. That is at most 8 bits, so appending the first
+   -- digest byte supplies every bit the packing below will read.
+   put cxIntDiv(tLen, 4) into tChecksumBits
+   put tLen * 8 + tChecksumBits into tTotalBits
+   put cxIntDiv(tTotalBits, kCxBip39BitsPerWord) into tWordCount
+   put pEntropy & (byte 1 of cxSha256(pEntropy)) into tSource
+   put cxBip39Wordlist() into tList
+   put "" into tOut
+   repeat with tI = 0 to (tWordCount - 1)
+      put 0 into tValue
+      repeat with tB = 0 to (kCxBip39BitsPerWord - 1)
+         put tI * kCxBip39BitsPerWord + tB into tBitIndex
+         put tValue * 2 + cxBitAt(tSource, tBitIndex) into tValue
+      end repeat
+      if tOut is not "" then
+         put " " after tOut
+      end if
+      put cxWordAt(tList, tValue) after tOut
+   end repeat
+   return tOut
+end cxMnemonicFromEntropy
+
+-- The entropy a mnemonic encodes, verifying its checksum. Throws on any word
+-- that is not in the list, on a word count BIP-39 does not define, and on a
+-- checksum mismatch - which is the whole point of the checksum, so a single
+-- mistyped word is caught here rather than becoming an empty wallet.
+function cxMnemonicToEntropy pMnemonic
+   local tWords, tCount, tList, tBits, tI, tIndex, tB
+   local tEntBytes, tChecksumBits, tPacked, tEntropy, tGot, tWant
+   put cxSplitWords(cxMnemonicNormalize(pMnemonic)) into tWords
+   put the number of items of tWords into tCount
+   if tCount is not 12 and tCount is not 15 and tCount is not 18 and tCount is not 21 and tCount is not 24 then
+      throw "CoinXT: cxMnemonicToEntropy: a mnemonic must be 12, 15, 18, 21 or 24 words."
+   end if
+   put cxBip39Wordlist() into tList
+   put "" into tBits
+   repeat with tI = 1 to tCount
+      put cxWordIndex(tList, item tI of tWords) into tIndex
+      if tIndex < 0 then
+         throw "CoinXT: cxMnemonicToEntropy: word" && tI && "is not in the BIP-39 English wordlist."
+      end if
+      -- Most significant bit of the 11 first, which is the order
+      -- cxMnemonicFromEntropy wrote them in.
+      repeat with tB = (kCxBip39BitsPerWord - 1) down to 0
+         if tBits is not "" then
+            put "," after tBits
+         end if
+         put cxIntMod(cxIntDiv(tIndex, cxPow2(tB)), 2) after tBits
+      end repeat
+   end repeat
+   -- 32 bits of entropy per 3 words, and one checksum bit per 32 bits of it.
+   put cxIntDiv(tCount * 4, 3) into tEntBytes
+   put cxIntDiv(tEntBytes, 4) into tChecksumBits
+   put cxBitsToBytes(tBits) into tPacked
+   put byte 1 to tEntBytes of tPacked into tEntropy
+   -- Compare the checksum bits as a NUMBER rather than as bytes, because when
+   -- there are fewer than 8 of them the byte around them is padding on both
+   -- sides and only the top tChecksumBits are meaningful.
+   put cxIntDiv(byteToNum(byte (tEntBytes + 1) of tPacked), cxPow2(8 - tChecksumBits)) into tGot
+   put cxIntDiv(byteToNum(byte 1 of cxSha256(tEntropy)), cxPow2(8 - tChecksumBits)) into tWant
+   if tGot is not tWant then
+      throw "CoinXT: cxMnemonicToEntropy: the checksum does not match, so at least one word is wrong or out of order."
+   end if
+   return tEntropy
+end cxMnemonicToEntropy
+
+-- True when pMnemonic is a well-formed BIP-39 mnemonic with a correct checksum.
+--
+-- Boolean, not a throw, because "is this what the user typed a valid mnemonic?"
+-- is a QUESTION a restore screen asks on every keystroke, and an exception is
+-- the wrong shape for an answer that is routinely no. The handlers that DO the
+-- work (cxMnemonicToEntropy) still throw, so a caller never acts on a bad
+-- mnemonic by accident.
+function cxMnemonicValidate pMnemonic
+   local tEntropy
+   try
+      put cxMnemonicToEntropy(pMnemonic) into tEntropy
+   catch tError
+      return false
+   end try
+   return true
+end cxMnemonicValidate
+
+-- The 64-byte BIP-39 seed: PBKDF2-HMAC-SHA512 over the mnemonic, salted with
+-- "mnemonic" plus the passphrase, 2048 rounds.
+--
+-- NOTE WHAT IS NOT CHECKED: this does NOT verify the checksum. That is BIP-39's
+-- design, not an omission - the seed is defined for any string, which is what
+-- lets other schemes reuse the KDF - but it means a mnemonic with a typo yields
+-- a perfectly good seed for the wrong wallet. Call cxMnemonicValidate first on
+-- anything a human typed.
+--
+-- The passphrase must be ASCII, or already NFKD-normalized; see
+-- cxMnemonicNormalize.
+function cxMnemonicToSeed pMnemonic, pPassphrase
+   return cxPbkdf2HmacSha512(cxMnemonicNormalize(pMnemonic), \
+         kCxBip39SaltPrefix & pPassphrase, kCxBip39Rounds, 64)
+end cxMnemonicToSeed
+
+-- ==============================================================================
+-- BIP-32: hierarchical deterministic derivation.
+--
+-- A node is an array, so a caller reads it by name rather than by position:
+--
+--   ["seckey"]     32 bytes, or empty for a watch-only (public) node
+--   ["pubkey"]     33 bytes, compressed, always present
+--   ["chaincode"]  32 bytes
+--   ["depth"]      0 for the master node
+--   ["index"]      this node's child number (0 for the master node)
+--   ["parentfp"]   4 bytes, the parent's fingerprint (zero for the master node)
+--
+-- Every field is exactly what BIP-32 serializes, in the order it serializes it,
+-- so cxXprv is a concatenation and not a translation.
+-- ==============================================================================
+
+private function cxUInt32ToBytes pValue
+   -- Four bytes, big endian, FIXED WIDTH. Deliberately not cxUIntToBytes: that
+   -- one is RLP's minimal-length encoding, and using it here would silently
+   -- drop the leading zeros of a small child index and corrupt every
+   -- serialization and every HMAC that covers one.
+   local tOut, tI, tRest
+   put "" into tOut
+   put pValue into tRest
+   repeat with tI = 1 to 4
+      put numToByte(cxIntMod(tRest, 256)) before tOut
+      put cxIntDiv(tRest, 256) into tRest
+   end repeat
+   return tOut
+end cxUInt32ToBytes
+
+private function cxFingerprint pPubkey
+   -- The first 4 bytes of hash160(compressed public key). BIP-32 uses it only
+   -- as a hint for locating a parent; it is NOT a checksum and collisions are
+   -- expected, so nothing in this file treats a match as proof of anything.
+   return byte 1 to 4 of cxHash160(pPubkey)
+end cxFingerprint
+
+-- The master node for a seed - normally the 64 bytes cxMnemonicToSeed returned,
+-- though BIP-32 allows 16 to 64.
+function cxHdFromSeed pSeed
+   local tLen, tI, tNode
+   put the number of bytes of pSeed into tLen
+   if tLen < 16 or tLen > 64 then
+      throw "CoinXT: cxHdFromSeed: a BIP-32 seed must be between 16 and 64 bytes."
+   end if
+   put cxHmacSha512(kCxBip32MasterKey, pSeed) into tI
+   put byte 1 to 32 of tI into tNode["seckey"]
+   put byte 33 to 64 of tI into tNode["chaincode"]
+   -- Throws if IL is zero or >= n, which is BIP-32's "this seed is invalid" and
+   -- happens with probability about 2^-127. Deriving the public key is what
+   -- performs the check, so it is not restated here.
+   put cxPublicKey(tNode["seckey"], true) into tNode["pubkey"]
+   put 0 into tNode["depth"]
+   put 0 into tNode["index"]
+   put cxUInt32ToBytes(0) into tNode["parentfp"]
+   return tNode
+end cxHdFromSeed
+
+-- The watch-only form of a node: same public key and chain code, no private
+-- key. This is the xpub half of a wallet, and everything it can still do
+-- (derive non-hardened children, and therefore receive addresses) is exactly
+-- what makes an xpub both useful and a privacy liability if it leaks.
+function cxHdNeuter pNode
+   local tNode
+   put pNode into tNode
+   put "" into tNode["seckey"]
+   return tNode
+end cxHdNeuter
+
+-- One derivation step. pIndex is the full child number, so a hardened child is
+-- kCxHardenedBase plus its number (cxHdDerivePath does that for you when it
+-- sees a ' marker).
+function cxHdDeriveChild pNode, pIndex
+   local tData, tI, tChild, tHasPrivate
+   if pIndex < 0 or pIndex > 4294967295 then
+      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."
+   end if
+   put (pNode["seckey"] is not "") into tHasPrivate
+   if pIndex >= kCxHardenedBase then
+      if tHasPrivate is false then
+         throw "CoinXT: cxHdDeriveChild: a hardened child cannot be derived from a public-only node, because BIP-32 hashes the private key to make one."
+      end if
+      -- The 0x00 pad makes the private key 33 bytes, the same width as the
+      -- compressed public key the non-hardened branch uses, so both hash the
+      -- same amount of data. BIP-32 is explicit about it.
+      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(pIndex) into tData
+   else
+      put pNode["pubkey"] & cxUInt32ToBytes(pIndex) into tData
+   end if
+   put cxHmacSha512(pNode["chaincode"], tData) into tI
+   put byte 33 to 64 of tI into tChild["chaincode"]
+   if tHasPrivate is true then
+      -- Throws when IL >= n or the child key is zero. BIP-32's remedy is to
+      -- use the next index; it is surfaced rather than retried here, because
+      -- silently returning a DIFFERENT child than the one asked for is how two
+      -- wallets end up disagreeing about what m/44'/0'/0'/0/0 means.
+      put cxSeckeyTweakAdd(pNode["seckey"], byte 1 to 32 of tI) into tChild["seckey"]
+      put cxPublicKey(tChild["seckey"], true) into tChild["pubkey"]
+   else
+      put "" into tChild["seckey"]
+      put cxPubkeyTweakAdd(pNode["pubkey"], byte 1 to 32 of tI) into tChild["pubkey"]
+   end if
+   put pNode["depth"] + 1 into tChild["depth"]
+   put pIndex into tChild["index"]
+   put cxFingerprint(pNode["pubkey"]) into tChild["parentfp"]
+   return tChild
+end cxHdDeriveChild
+
+-- Walk a path such as "m/44'/0'/0'/0/0" from pNode. A trailing ' or h marks a
+-- hardened level. "m" alone returns pNode unchanged.
+--
+-- The leading "m" is accepted but NOT checked against pNode being a master
+-- node, because it cannot be: a node does not record whether it is one, and
+-- BIP-32 paths are routinely written relative to an account node. What IS
+-- checked is that every level is a number in range and that the separators are
+-- what they claim to be.
+function cxHdDerivePath pNode, pPath
+   local tPath, tNode, tCount, tI, tPart, tLast, tHardened, tIndex, tJ, tCode, tPartLen
+   put pPath into tPath
+   replace "/" with comma in tPath
+   put pNode into tNode
+   put the number of items of tPath into tCount
+   if tCount < 1 then
+      throw "CoinXT: cxHdDerivePath: the path is empty."
+   end if
+   if item 1 of tPath is not "m" and item 1 of tPath is not "M" then
+      throw "CoinXT: cxHdDerivePath: a path must begin with m."
+   end if
+   repeat with tI = 2 to tCount
+      put item tI of tPath into tPart
+      if tPart is "" then
+         throw "CoinXT: cxHdDerivePath: the path has an empty level."
+      end if
+      put false into tHardened
+      put the number of chars of tPart into tPartLen
+      put char tPartLen of tPart into tLast
+      if tLast is "'" or tLast is "h" or tLast is "H" then
+         put true into tHardened
+         delete char tPartLen to tPartLen of tPart
+      end if
+      if tPart is "" then
+         throw "CoinXT: cxHdDerivePath: a hardened marker with no index before it."
+      end if
+      -- Digits only, checked by byte value: `is a number` would accept "1e3",
+      -- " 5" and "5.0", and a path level that quietly became 5000 or 5 would be
+      -- a different wallet with no error anywhere.
+      repeat with tJ = 1 to the number of chars of tPart
+         put byteToNum(char tJ of tPart) into tCode
+         if tCode < 48 or tCode > 57 then
+            throw "CoinXT: cxHdDerivePath: a path level must be digits, optionally followed by a hardened marker."
+         end if
+      end repeat
+      put tPart + 0 into tIndex
+      if tIndex >= kCxHardenedBase then
+         throw "CoinXT: cxHdDerivePath: a path level must be below 2^31; use the ' marker for a hardened level."
+      end if
+      if tHardened is true then
+         add kCxHardenedBase to tIndex
+      end if
+      put cxHdDeriveChild(tNode, tIndex) into tNode
+   end repeat
+   return tNode
+end cxHdDerivePath
+
+private function cxHdSerialize pNode, pVersion, pPrivate
+   -- The 78 bytes BIP-32 defines, in order: version, depth, parent
+   -- fingerprint, child number, chain code, then 33 key bytes - a private key
+   -- padded to 33 with a leading 0x00, or the compressed public key as is.
+   local tOut
+   put cxUInt32ToBytes(pVersion) into tOut
+   put numToByte(pNode["depth"]) after tOut
+   put pNode["parentfp"] after tOut
+   put cxUInt32ToBytes(pNode["index"]) after tOut
+   put pNode["chaincode"] after tOut
+   if pPrivate is true then
+      put numToByte(0) & pNode["seckey"] after tOut
+   else
+      put pNode["pubkey"] after tOut
+   end if
+   return tOut
+end cxHdSerialize
+
+-- The node as an "xprv..." string. Mainnet only for now; a testnet or altcoin
+-- prefix is a different version number and nothing else, but CoinXT does not
+-- ship one it has not pinned to a vector.
+function cxXprv pNode
+   if pNode["seckey"] is "" then
+      throw "CoinXT: cxXprv: this node has no private key, so it can only be serialized as an xpub."
+   end if
+   if pNode["depth"] > 255 then
+      throw "CoinXT: cxXprv: BIP-32 stores the depth in one byte, so it cannot exceed 255."
+   end if
+   return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXprv, true))
+end cxXprv
+
+-- The node as an "xpub..." string. Safe to hand out in the sense that it holds
+-- no private key, and unsafe in the sense that it reveals every address the
+-- wallet will ever use on that branch.
+function cxXpub pNode
+   if pNode["depth"] > 255 then
+      throw "CoinXT: cxXpub: BIP-32 stores the depth in one byte, so it cannot exceed 255."
+   end if
+   return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
+end cxXpub

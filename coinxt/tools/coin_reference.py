@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """coin_reference.py - the reference implementation of CoinXT's phase-3
-encodings, and the PUBLISHED vectors they are pinned to.
+encodings and phase-4 BIP-39/BIP-32 layers, and the PUBLISHED vectors they are
+pinned to.
 
 This is the oracle src/coinxt.livecodescript is checked against. It was written
 BEFORE the script and validated against the published vectors first, on purpose:
@@ -16,6 +17,9 @@ Used by tools/check-script-vectors.py (which runs the real script against these)
 and by tools/check-selftest-vectors.py (which re-derives the harness constants).
 """
 import hashlib
+import hmac
+import os
+import re
 
 # --------------------------------------------------------------------- base58
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -409,3 +413,168 @@ def _ripemd160_pure(msg: bytes) -> bytes:
 assert keccak256(b"").hex() == \
     "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470", "keccak model broken"
 assert _ripemd160_pure(b"abc").hex() == "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc", "ripemd model broken"
+
+
+# ============================================================================
+# Phase 4: BIP-39 and BIP-32.
+#
+# The secp256k1 arithmetic below is written out longhand rather than imported.
+# That is the point: the thing under test is a binding over trezor-crypto, so an
+# oracle that also called trezor-crypto would only prove trezor agrees with
+# itself. Textbook affine formulas over a 250-line-per-second prime field are
+# plenty fast for a few dozen derivations, and they are auditable by eye.
+# ============================================================================
+
+_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+_G = (0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
+      0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8)
+
+
+def _pt_add(p, q):
+    if p is None:
+        return q
+    if q is None:
+        return p
+    if p[0] == q[0] and (p[1] + q[1]) % _P == 0:
+        return None
+    if p == q:
+        lam = 3 * p[0] * p[0] * pow(2 * p[1], _P - 2, _P) % _P
+    else:
+        lam = (q[1] - p[1]) * pow(q[0] - p[0], _P - 2, _P) % _P
+    x = (lam * lam - p[0] - q[0]) % _P
+    return (x, (lam * (p[0] - x) - p[1]) % _P)
+
+
+def _pt_mul(k, p=None):
+    p, r = p or _G, None
+    while k:
+        if k & 1:
+            r = _pt_add(r, p)
+        p, k = _pt_add(p, p), k >> 1
+    return r
+
+
+def _compress(pt):
+    return bytes([2 + (pt[1] & 1)]) + pt[0].to_bytes(32, "big")
+
+
+def _decompress(b: bytes):
+    x = int.from_bytes(b[1:33], "big")
+    y = pow((x * x * x + 7) % _P, (_P + 1) // 4, _P)
+    return (x, y if y & 1 == b[0] - 2 else _P - y)
+
+
+def pubkey(sk: bytes) -> bytes:
+    """The compressed public key for a 32-byte private key."""
+    return _compress(_pt_mul(int.from_bytes(sk, "big")))
+
+
+# ------------------------------------------------------------------- BIP-39
+def _load_wordlist():
+    """Parsed straight out of the vendored upstream table, so the oracle and
+    the shim cannot drift apart on WHICH list they use. That the list is the
+    normative one is a separate claim, checked by its published SHA-256 in the
+    assert at the bottom of this file."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "native", "vendor", "bip39_english.c")
+    body = open(path).read().split(
+        "BIP39_WORDLIST_ENGLISH[BIP39_WORD_COUNT] = {", 1)[1].rsplit("};", 1)[0]
+    return re.findall(r'"([a-z]+)"', body)
+
+
+WORDLIST = _load_wordlist()
+
+# The SHA-256 of the canonical newline-joined english.txt, as published with
+# BIP-39. This is what makes "the normative list" a checked claim.
+WORDLIST_SHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+
+
+def bip39_mnemonic(entropy: bytes) -> str:
+    bits = "".join(f"{b:08b}" for b in entropy)
+    bits += "".join(f"{b:08b}" for b in sha256(entropy))[:len(entropy) * 8 // 32]
+    return " ".join(WORDLIST[int(bits[i:i + 11], 2)] for i in range(0, len(bits), 11))
+
+
+def bip39_entropy(mnemonic: str) -> bytes:
+    words = mnemonic.split()
+    bits = "".join(f"{WORDLIST.index(w):011b}" for w in words)
+    ent_len = len(words) * 4 // 3
+    ent = int(bits[:ent_len * 8], 2).to_bytes(ent_len, "big")
+    cs = len(words) // 3
+    if bits[ent_len * 8:] != "".join(f"{b:08b}" for b in sha256(ent))[:cs]:
+        raise ValueError("bad checksum")
+    return ent
+
+
+def bip39_seed(mnemonic: str, passphrase: str = "") -> bytes:
+    return hashlib.pbkdf2_hmac("sha512", " ".join(mnemonic.split()).encode(),
+                               ("mnemonic" + passphrase).encode(), 2048, 64)
+
+
+# ------------------------------------------------------------------- BIP-32
+XPRV, XPUB, HARDENED = 0x0488ADE4, 0x0488B21E, 0x80000000
+
+
+def bip32_master(seed: bytes) -> dict:
+    I = hmac.new(b"Bitcoin seed", seed, hashlib.sha512).digest()
+    return {"seckey": I[:32], "pubkey": pubkey(I[:32]), "chaincode": I[32:],
+            "depth": 0, "index": 0, "parentfp": b"\0\0\0\0"}
+
+
+def bip32_ckd(node: dict, i: int) -> dict:
+    if i >= HARDENED:
+        if not node["seckey"]:
+            raise ValueError("hardened from a public node")
+        data = b"\0" + node["seckey"] + i.to_bytes(4, "big")
+    else:
+        data = node["pubkey"] + i.to_bytes(4, "big")
+    I = hmac.new(node["chaincode"], data, hashlib.sha512).digest()
+    t = int.from_bytes(I[:32], "big")
+    if t == 0 or t >= _N:
+        raise ValueError("invalid tweak")
+    out = {"chaincode": I[32:], "depth": node["depth"] + 1, "index": i,
+           "parentfp": hash160(node["pubkey"])[:4]}
+    if node["seckey"]:
+        k = (t + int.from_bytes(node["seckey"], "big")) % _N
+        if k == 0:
+            raise ValueError("invalid child")
+        out["seckey"] = k.to_bytes(32, "big")
+        out["pubkey"] = pubkey(out["seckey"])
+    else:
+        p = _pt_add(_pt_mul(t), _decompress(node["pubkey"]))
+        if p is None:
+            raise ValueError("point at infinity")
+        out["seckey"], out["pubkey"] = b"", _compress(p)
+    return out
+
+
+def bip32_path(node: dict, path: str) -> dict:
+    parts = path.split("/")
+    if parts[0] not in ("m", "M"):
+        raise ValueError("path must start with m")
+    for part in parts[1:]:
+        hard = part[-1] in "'hH"
+        node = bip32_ckd(node, int(part[:-1] if hard else part) + (HARDENED if hard else 0))
+    return node
+
+
+def bip32_serialize(node: dict, private: bool) -> str:
+    ver = XPRV if private else XPUB
+    key = b"\0" + node["seckey"] if private else node["pubkey"]
+    return b58check_encode(ver.to_bytes(4, "big") + bytes([node["depth"]])
+                           + node["parentfp"] + node["index"].to_bytes(4, "big")
+                           + node["chaincode"] + key)
+
+
+# Phase-4 self-checks, same rule as the phase-3 ones above: an oracle that is
+# wrong makes every vector it pins wrong, so it proves itself against published
+# values at import.
+assert hashlib.sha256(("\n".join(WORDLIST) + "\n").encode()).hexdigest() == WORDLIST_SHA256, \
+    "the vendored BIP-39 wordlist is not the normative one"
+assert len(WORDLIST) == 2048 and WORDLIST == sorted(WORDLIST), "wordlist shape broken"
+assert _compress(_G).hex() == \
+    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", "curve model broken"
+assert bip32_serialize(bip32_master(bytes.fromhex("000102030405060708090a0b0c0d0e0f")), True) == \
+    "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6Ln" \
+    "F5kejMRNNU3TGtRBeJgk33yuGBxrMPHi", "bip32 model broken"

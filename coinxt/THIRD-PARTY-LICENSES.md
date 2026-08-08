@@ -46,7 +46,7 @@ no `NOTICE` file is required.
 
 | File(s) | License | Copyright |
 |---|---|---|
-| `ecdsa.*`, `bignum.*`, `secp256k1.*`, `rfc6979.*`, `hmac.*`, `hmac_drbg.*`, `pbkdf2.*`, `base58.*`, `bip32.h`, `rand.h`, `script.h`, `options.h`, `memzero.*`, `byte_order.h`, `ed25519-donna/ed25519.h` | MIT (trezor-crypto) | Tomas Dzetkulic, Pavol Rusnak, Jochen Hoenicke, Alex Beregszaszi, Andrew R. Kozlik and contributors |
+| `ecdsa.*`, `bignum.*`, `secp256k1.*`, `rfc6979.*`, `hmac.*`, `hmac_drbg.*`, `pbkdf2.*`, `base58.*`, `bip32.h`, `bip39.h`, `bip39_english.c`, `rand.h`, `script.h`, `options.h`, `memzero.*`, `byte_order.h`, `ed25519-donna/ed25519.h` | MIT (trezor-crypto) | Tomas Dzetkulic, Pavol Rusnak, Jochen Hoenicke, Alex Beregszaszi, Andrew R. Kozlik and contributors |
 | `hasher.*` | MIT (trezor-crypto) | Saleem Rashid |
 | `address.*` | MIT | Daira Hopwood |
 | `sha2.c`, `sha2.h` | **BSD-3-Clause** | Aaron D. Gifford (2000-2001), Pavol Rusnak (2013-2014) |

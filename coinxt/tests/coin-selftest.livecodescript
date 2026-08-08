@@ -149,6 +149,50 @@ constant kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27
 -- is the single most important rejection in the whole encoding surface.
 constant kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
 
+-- ---- HD wallets and mnemonics (phase 4) --------------------------------------
+-- Every value below is PUBLISHED. That matters more here than anywhere else in
+-- this file, because phase 4 is the only surface that can be wrong WITHOUT
+-- FAILING: a mis-packed mnemonic is still twelve English words and a
+-- mis-derived path is still a valid address. Nothing tells the user until the
+-- funds are somewhere they cannot reach.
+
+-- The all-zero entropy vector, and the 24-word all-ones one, from BIP-39's own
+-- english test set. kBip39Mnemonic above is the 12-word one.
+constant kBip39Entropy12 = "00000000000000000000000000000000"
+constant kBip39Entropy24 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+constant kBip39Mnemonic24 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote"
+-- The same 12 words with NO passphrase. kBip39Seed above is the same mnemonic
+-- with "TREZOR", so the pair also proves the passphrase reaches the KDF.
+constant kBip39SeedNoPass = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+-- The same mnemonic with one word replaced, so the checksum must reject it.
+constant kBip39Mnemonic12Bad = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+
+-- BIP-32 test vector 1: seed 000102...0f, and three levels of its published
+-- chain. The last one is five levels deep and mixes hardened with normal.
+constant kBip32Seed1 = "000102030405060708090a0b0c0d0e0f"
+constant kBip32V1Xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+constant kBip32V1Xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
+constant kBip32V1H0Xprv = "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"
+constant kBip32V1H0Xpub = "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw"
+constant kBip32V1DeepPath = "m/0'/1/2'/2/1000000000"
+constant kBip32V1DeepXprv = "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76"
+-- BIP-32 test vector 3 exists SOLELY because its master private key has a
+-- leading zero byte, the case a "strip leading zeros" bignum bug gets wrong.
+constant kBip32Seed3 = "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
+constant kBip32V3Xprv = "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6"
+
+-- The end-to-end claim: the test mnemonic every wallet ships with, walked down
+-- BIP-44 and BIP-84 paths to the addresses those wallets show.
+constant kAbandonXprv = "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu"
+constant kAbandonBip44 = "m/44'/0'/0'/0/0"
+constant kAbandonP2pkh = "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"
+constant kAbandonBip84 = "m/84'/0'/0'/0/0"
+constant kAbandonP2wpkh = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
+constant kAbandonBip84Account = "m/84'/0'/0'"
+constant kAbandonBip84Xpub = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V"
+constant kAbandonEthPath = "m/44'/60'/0'/0/0"
+constant kAbandonEth = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+
 -- ---- state -------------------------------------------------------------------
 local sTotal, sPassed, sFailed
 local sResultText       -- the accumulated PASS/FAIL/section lines
@@ -279,7 +323,7 @@ command stRun
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into sResultText
-   put "Phases 1 and 2: all 31 public cx* handlers." & return after sResultText
+   put "Phases 1-4: the .lcb module and the script layer, end to end." & return after sResultText
 
    stRunAbi
    stRunLengths
@@ -304,11 +348,15 @@ command stRun
    stRunAddresses
    stRunEip55
    stRunRlp
+   stRunBip39
+   stRunBip32
+   stRunBip44
 
    stSection "summary"
    stNote "Vectors are identical to tools/coin-kat.py, so this run and the"
    stNote "headless KAT run are the same claim at two different layers."
-   stNote "Nothing here covers HD wallets or addresses (phases 3-4)."
+   stNote "Phase 4 is the section to read first if anything failed: it is the"
+   stNote "only surface where a wrong answer still looks like a right one."
    put "true" into sDone
    stShow
 end stRun
@@ -945,3 +993,99 @@ function stRepeatByte pCode, pCount
    end repeat
    return byte 1 to pCount of tOut
 end stRepeatByte
+
+-- ==============================================================================
+-- Phase 4. The most consequential sections in this file: see the note above the
+-- phase-4 constants for why a wrong answer here does not announce itself.
+-- ==============================================================================
+
+command stRunBip39
+   local tEnt, tMnemonic
+   stSection "BIP-39 mnemonics"
+   try
+      put cxHexDecode(kBip39Entropy12) into tEnt
+      stAssert "12 words from all-zero entropy", cxMnemonicFromEntropy(tEnt) is kBip39Mnemonic
+      stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic)) is kBip39Entropy12
+      put cxHexDecode(kBip39Entropy24) into tEnt
+      stAssert "24 words from all-ones entropy", cxMnemonicFromEntropy(tEnt) is kBip39Mnemonic24
+      stAssert "and back to the entropy", cxHexEncode(cxMnemonicToEntropy(kBip39Mnemonic24)) is kBip39Entropy24
+      stAssert "cxMnemonicValidate accepts it", cxMnemonicValidate(kBip39Mnemonic) is true
+      -- The checksum is the whole reason a mnemonic is 12 words and not 11: it
+      -- is what catches a single mistyped word before it becomes a lost wallet.
+      stAssert "one wrong word fails the checksum", cxMnemonicValidate(kBip39Mnemonic12Bad) is false
+      stAssert "a word outside the list is refused", cxMnemonicValidate("zzzz" && kBip39Mnemonic) is false
+      -- Whitespace is normalized because BIP-39 derives the seed from the
+      -- STRING; a pasted trailing newline must not change the wallet.
+      put "  " & kBip39Mnemonic & "  " into tMnemonic
+      stAssert "surrounding whitespace is normalized away", cxMnemonicValidate(tMnemonic) is true
+      stAssert "the seed with no passphrase", cxHexEncode(cxMnemonicToSeed(kBip39Mnemonic, "")) is kBip39SeedNoPass
+      stAssert "the seed with the TREZOR passphrase", cxHexEncode(cxMnemonicToSeed(kBip39Mnemonic, "TREZOR")) is kBip39Seed
+      stAssert "a normalized mnemonic gives the same seed", cxHexEncode(cxMnemonicToSeed(tMnemonic, "")) is kBip39SeedNoPass
+      stAssert "an entropy length BIP-39 does not define is refused", stThrows("cxMnemonicFromEntropy", stRepeatByte(0, 17))
+      -- The wordlist crosses from the shim; if it were the wrong list or in the
+      -- wrong order, everything above would still be self-consistent.
+      stAssert "the wordlist is 2048 slots of 8 bytes", the number of bytes of cxBip39Wordlist() is 16384
+      stAssert "cxBip39WordlistLen agrees", cxBip39WordlistLen() is 16384
+      stAssert "the first word is abandon", byte 1 to 7 of cxBip39Wordlist() is "abandon"
+   catch tError
+      stSectionFailed "BIP-39", tError
+   end try
+end stRunBip39
+
+command stRunBip32
+   local tNode, tDeep, tWatch, tChild
+   stSection "BIP-32 derivation"
+   try
+      put cxHdFromSeed(cxHexDecode(kBip32Seed1)) into tNode
+      stAssert "vector 1 master xprv", cxXprv(tNode) is kBip32V1Xprv
+      stAssert "vector 1 master xpub", cxXpub(tNode) is kBip32V1Xpub
+      stAssert "the master node is at depth 0", tNode["depth"] is 0
+      put cxHdDerivePath(tNode, "m/0'") into tChild
+      stAssert "vector 1 m/0' xprv", cxXprv(tChild) is kBip32V1H0Xprv
+      stAssert "vector 1 m/0' xpub", cxXpub(tChild) is kBip32V1H0Xpub
+      stAssert "h is accepted as a hardened marker", cxXprv(cxHdDerivePath(tNode, "m/0h")) is kBip32V1H0Xprv
+      put cxHdDerivePath(tNode, kBip32V1DeepPath) into tDeep
+      stAssert "vector 1 five levels deep", cxXprv(tDeep) is kBip32V1DeepXprv
+      stAssert "and it is at depth 5", tDeep["depth"] is 5
+      -- Vector 3 is in the BIP for one reason: a leading zero in the master key.
+      stAssert "vector 3 (leading-zero master key)", cxXprv(cxHdFromSeed(cxHexDecode(kBip32Seed3))) is kBip32V3Xprv
+      -- A watch-only node is the whole point of an xpub, and its limits are the
+      -- whole point of hardened derivation.
+      put cxHdNeuter(tChild) into tWatch
+      stAssert "neuter leaves the source node's key alone", tChild["seckey"] is not ""
+      stAssert "a watch-only node has no private key", tWatch["seckey"] is ""
+      stAssert "and still derives the same normal child", cxXpub(cxHdDerivePath(tWatch, "m/1")) is cxXpub(cxHdDerivePath(tChild, "m/1"))
+      stAssert "but cannot make an xprv", stThrows("cxXprv", tWatch)
+      stAssert "and cannot derive a hardened child", stThrows2("cxHdDerivePath", tWatch, "m/0'")
+      -- A path that parses loosely is a path that silently derives the wrong
+      -- wallet, so each of these must throw rather than be interpreted.
+      stAssert "a path without a leading m is refused", stThrows2("cxHdDerivePath", tNode, "0/1")
+      stAssert "an empty level is refused", stThrows2("cxHdDerivePath", tNode, "m/")
+      stAssert "a non-digit level is refused", stThrows2("cxHdDerivePath", tNode, "m/1e3")
+      stAssert "a level at or above 2^31 is refused", stThrows2("cxHdDerivePath", tNode, "m/2147483648")
+      stAssert "a too-short seed is refused", stThrows("cxHdFromSeed", stRepeatByte(0, 15))
+   catch tError
+      stSectionFailed "BIP-32", tError
+   end try
+end stRunBip32
+
+command stRunBip44
+   local tMaster, tNode
+   stSection "BIP-44 / BIP-84 end to end"
+   try
+      -- The claim this section makes is the one that matters to a user: the
+      -- same twelve words that restore a wallet anywhere else restore THIS one
+      -- to the same addresses.
+      put cxHdFromSeed(cxMnemonicToSeed(kBip39Mnemonic, "")) into tMaster
+      stAssert "the test mnemonic's root xprv", cxXprv(tMaster) is kAbandonXprv
+      put cxHdDerivePath(tMaster, kAbandonBip44) into tNode
+      stAssert "m/44'/0'/0'/0/0 is the published P2PKH address", cxBtcAddressP2PKH(tNode["pubkey"]) is kAbandonP2pkh
+      put cxHdDerivePath(tMaster, kAbandonBip84) into tNode
+      stAssert "m/84'/0'/0'/0/0 is the BIP-84 vector", cxBtcAddressP2WPKH(tNode["pubkey"]) is kAbandonP2wpkh
+      stAssert "the BIP-84 account xpub", cxXpub(cxHdDerivePath(tMaster, kAbandonBip84Account)) is kAbandonBip84Xpub
+      put cxHdDerivePath(tMaster, kAbandonEthPath) into tNode
+      stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", cxEthAddressChecksum(cxEthAddress(tNode["pubkey"])) is kAbandonEth
+   catch tError
+      stSectionFailed "BIP-44", tError
+   end try
+end stRunBip44

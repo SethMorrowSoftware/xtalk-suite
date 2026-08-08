@@ -37,6 +37,16 @@ class Bytes(str):
     0..255, which is what byteToNum/numToByte imply."""
 
 
+def _copy(v):
+    """xTalk ARRAYS ARE VALUES, not references: `put tA into tB` copies, and a
+    later write through tB leaves tA alone. Python dicts are references, so
+    every place a value crosses a binding - assignment, argument, return -
+    copies. Without this, cxHdNeuter (`put pNode into tNode`, then blank the
+    private key) would silently blank the CALLER's node and the interpreter
+    would model a bug the engine does not have."""
+    return {k: _copy(x) for k, x in v.items()} if isinstance(v, dict) else v
+
+
 def _n(v):
     """Coerce to number the way xTalk does when arithmetic is applied."""
     if isinstance(v, bool):
@@ -122,7 +132,7 @@ class Interp:
         params, body = self.handlers[key]
         env = {}
         for idx, p in enumerate(params):
-            env[p.lower()] = args[idx] if idx < len(args) else ""
+            env[p.lower()] = _copy(args[idx]) if idx < len(args) else ""
         try:
             self._exec(body, env)
         except _Return as r:
@@ -183,6 +193,33 @@ class Interp:
                 if c is None or self.truth(self.eval_expr(c, env)):
                     self._exec(b, env)
                     break
+            return after
+
+        # --- try / catch. Only the two-part form the script layer uses; there
+        # is no `finally` here because nothing in the file has one, and
+        # inventing semantics for a construct we do not ship would be exactly
+        # the silent-mis-parse this interpreter refuses to do.
+        if low == "try":
+            inner, after = self._block(body, i, None, None)
+            tryb, catchb, var, depth, seen = [], [], None, 0, False
+            for ln in inner:
+                s = ln.strip().lower()
+                if re.match(r'^(if\b.*\bthen$|repeat\b|try\b)', s):
+                    depth += 1
+                elif re.match(r'^end\s+(if|repeat|try)\b', s):
+                    depth -= 1
+                mm = re.match(r'^catch\s+(\w+)$', ln.strip(), re.I)
+                if depth == 0 and mm and not seen:
+                    seen, var = True, mm.group(1).lower()
+                    continue
+                (catchb if seen else tryb).append(ln)
+            if not seen:
+                raise SyntaxError("try without catch")
+            try:
+                self._exec(tryb, env)
+            except Thrown as t:
+                env[var] = t.msg
+                self._exec(catchb, env)
             return after
 
         # --- repeat forms
@@ -246,7 +283,8 @@ class Interp:
             raise _Next()
         m = re.match(r'return\b\s*(.*)$', line, re.I)
         if m:
-            raise _Return(self.eval_expr(m.group(1), env) if m.group(1).strip() else "")
+            raise _Return(_copy(self.eval_expr(m.group(1), env))
+                          if m.group(1).strip() else "")
         m = re.match(r'throw\s+(.+)$', line, re.I)
         if m:
             raise Thrown(str(self.eval_expr(m.group(1), env)))
@@ -264,6 +302,13 @@ class Interp:
         if m:
             tgt = m.group(1).strip()
             self.assign(tgt, _n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env)), env)
+            return i + 1
+        m = re.match(r'replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(\w+)$', line, re.I)
+        if m:
+            tgt = m.group(3).strip()
+            old = str(_disp(self.eval_expr(m.group(1), env)))
+            new = str(_disp(self.eval_expr(m.group(2), env)))
+            self.assign(tgt, str(_disp(self.eval_expr(tgt, env))).replace(old, new), env)
             return i + 1
         m = re.match(r'delete\s+char\s+(.+?)\s+to\s+(.+?)\s+of\s+(.+)$', line, re.I)
         if m:
@@ -290,9 +335,9 @@ class Interp:
             name, key = m.group(1).lower(), str(self.eval_expr(m.group(2), env))
             if not isinstance(env.get(name), dict):
                 env[name] = {}
-            env[name][key] = value
+            env[name][key] = _copy(value)
             return
-        env[target.lower()] = value
+        env[target.lower()] = _copy(value)
 
     def truth(self, v):
         if isinstance(v, bool):
@@ -493,6 +538,10 @@ class _Expr:
             return low == "true"
         if low == "empty":
             return ""
+        # The named literals for characters that cannot be written inside a
+        # quoted string without ambiguity.
+        if low in ("comma", "space", "tab", "quote"):
+            return {"comma": ",", "space": " ", "tab": "\t", "quote": '"'}[low]
         self.ws()
         if self.i < len(self.s) and self.s[self.i] == "[":
             self.i += 1
@@ -527,6 +576,12 @@ class _Expr:
 
 
 def _disp(v):
+    if isinstance(v, dict):
+        # An array has no string value in xTalk. Rendering one as Python's
+        # `{'a': 1}` would let a chunk expression or a concatenation quietly
+        # produce nonsense, so this refuses instead - the same reason the rest
+        # of the interpreter raises on anything outside the modelled subset.
+        raise TypeError("an array has no string value; index it or use its keys")
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, float) and v == int(v):

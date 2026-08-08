@@ -89,7 +89,7 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | # | Unproven thing | Why it matters | The label that says so |
 |---|---|---|---|
 | 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual:** that covered 20 of the 35 public `dc*` handlers; `tests/datachannel-selftest.livecodescript` covers all 35 and has still not been run. | Labels updated in `datachannelxt/README.md`, `examples/README.md`, `docs/getting-started.md`, `tests/datachannel-selftest.livecodescript`, and `src/datachannel.lcb`. |
-| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual, and it GREW:** 12 of the then-16 public handlers were not called by name (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`); **phase 2 has since added 15 more curve handlers that have never been loaded at all** (ABI is now 3). One paste of `coinxt/tests/coin-selftest.livecodescript` covers all 31 - see 4.6. | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
+| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual, and it GREW:** 12 of the then-16 public handlers were not called by name (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`); **phase 2 has since added 15 more curve handlers that have never been loaded at all** (ABI is now 3). **Phases 3 and 4 have since added a whole script layer too** (ABI is now 4). One paste of `coinxt/tests/coin-selftest.livecodescript` covers the lot - see 4.6. | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
 | 3 | **The selftests grew after their passes; the new sections are static-only.** torrentxt, enetxt, and sodiumxt all had coverage added in the "test coverage" follow-up commit, which post-dates every recorded pass. | A green run from an older, smaller harness does not cover handlers added later. The extended sections are where new binding bugs would hide. | `torrentxt/tests/torrent-selftest.livecodescript` COVERAGE NOTE: the v9-v11 surface (`btDhtBep44SignBuf`, `btDhtPutSigned`, `btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, `btRp1*`) "proves the .lcb wrappers, once an engine runs it (verified statically until then)". `enetxt/tests/enet-selftest.livecodescript` COVERAGE NOTE: the isolated `enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth` section, "verified statically; it needs an OXT pass to become a runtime result". `sodiumxt/docs/api-reference.md`: "The recorded on-engine pass predates those additions, so the newer checks are verified statically and need an OXT pass to become a runtime result." |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
@@ -350,7 +350,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives **all 50** public `cx*` handlers: the 31 in the `.lcb` (hashes + curve) and the 19 in `src/coinxt.livecodescript` (encodings + addresses). Retires the 12 phase-1 handlers the 2026-08-08 pass never called, the 15 phase-2 curve handlers, and the whole phase-3 surface. Fully synchronous. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface: the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39, BIP-32, BIP-44). Retires the 12 phase-1 handlers the 2026-08-08 pass never called, the 15 phase-2 curve handlers, and the whole of phases 3 and 4. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
@@ -530,15 +530,37 @@ them; the `.lcb` header now records the answers instead of the questions.
 
 **What is left is coverage — and since 2026-08-08 there is a lot more of it.** That
 run called 4 of the then-16 public handlers, because coinxt had no self-building
-harness. It has one now, and **phase 2 (the secp256k1 curve) has since landed**, so
-the same single paste now carries 31 handlers instead of 16:
+harness. It has one now, and **phases 2, 3 and 4 have all since landed** - the
+secp256k1 curve, the encodings and addresses, and the HD wallet layer - so the same
+single paste now carries the entire public surface instead of 16 handlers:
 
 > **Run `coinxt/tests/coin-selftest.livecodescript`.** Same paste-and-reopen
 > procedure as every other member (section 3.1), same green/red UI, same
 > `Re-run` button. It drives **all 31** public `cx*` handlers — `cxCheckABI` by
 > name at last, all thirteen `*Len` accessors, every digest, both HMACs, PBKDF2,
-> and the whole curve surface — against the same published vectors
-> `tools/coin-kat.py` pins.
+> and the whole curve surface, then the script layer's encoders, addresses,
+> BIP-39 mnemonics and BIP-32 derivation — against the same published vectors
+> `tools/coin-kat.py` and `tools/check-script-vectors.py` pin.
+
+**One question to answer while you are in there, worth more than any single
+assertion:** is **`the itemDelimiter` a LOCAL property in OXT** - set inside a
+handler, restored when that handler exits? coinxt's script layer moves data as
+comma-separated lists in twenty-one places and currently ASSUMES the engine
+default, so an app that changed the delimiter would get a silently wrong address
+rather than an error. The fix is one line at the top of each public handler, but
+it is only safe if the property is local; applying it blind would mutate caller
+state instead. Try it: `set the itemDelimiter to tab`, then call
+`cxBtcAddressP2WPKH` on a known key, and see whether it still returns
+`bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4`. Record the answer in
+`coinxt/CLAUDE.md`.
+
+**Read the phase-4 sections first if anything fails.** BIP-39 and BIP-32 are the
+only part of coinxt where a wrong answer still looks like a right one: a
+mis-packed mnemonic is still twelve English words, and a mis-derived path is still
+a valid address. The harness ends with the test mnemonic every wallet ships with
+walking down `m/44'/0'/0'/0/0`, `m/84'/0'/0'/0/0` and `m/44'/60'/0'/0/0`; if those
+three lines are green, coinxt agrees with every other wallet in the world about
+what a seed phrase means.
 
 **This is now the highest-value coinxt run there has been**, because the phase-2
 half has never been loaded. Its native side is proven headless and cross-verified

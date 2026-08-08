@@ -30,12 +30,21 @@ Two tiers, so it is useful in both environments:
      yellow-paper examples and a Base58Check worked example.
 A missing compiler SKIPS tier 2 loudly; it never passes silently.
 
+IT IS SLOW, AND THAT IS THE PRICE, NOT A DEFECT. Tier 2 takes a couple of
+minutes, because it interprets the real file statement by statement and phase 4
+does a lot of statements: a 24-word mnemonic round trip alone is a binary search
+per word, and an xprv is base58 long division over 82 bytes. Profiling shows no
+hot spot to fix - the cost is spread evenly over the expression parser, which is
+what "runs the real text" means. Do not trade vectors away for seconds here; in
+a money library the vectors are the product.
+
 Usage:
   python3 tools/check-script-vectors.py            # per-check detail
   python3 tools/check-script-vectors.py --check    # terse
 """
 
 import ctypes
+import hashlib
 import importlib.util
 import os
 import re
@@ -169,6 +178,81 @@ def wire_hashes(lib):
 
     LCS.HASHES["cxpubkeydecompress"] = decompress
 
+    # ---- phase 4: what the HD layer calls into the shim for -----------------
+    lib.cnx_hmac_sha512.restype = ctypes.c_int
+    lib.cnx_hmac_sha512.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                    ctypes.c_char_p, ctypes.c_size_t,
+                                    ctypes.c_char_p]
+    lib.cnx_pbkdf2_hmac_sha512.restype = ctypes.c_int
+    lib.cnx_pbkdf2_hmac_sha512.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                           ctypes.c_char_p, ctypes.c_size_t,
+                                           ctypes.c_uint32, ctypes.c_char_p,
+                                           ctypes.c_size_t]
+    lib.cnx_pubkey_from_seckey.restype = ctypes.c_int
+    lib.cnx_pubkey_from_seckey.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                           ctypes.c_int, ctypes.c_char_p,
+                                           ctypes.c_size_t]
+    for fn in ("cnx_seckey_tweak_add", "cnx_pubkey_tweak_add"):
+        f = getattr(lib, fn)
+        f.restype = ctypes.c_int
+        f.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p,
+                      ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t]
+    lib.cnx_bip39_wordlist.restype = ctypes.c_int
+    lib.cnx_bip39_wordlist.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+    lib.cnx_bip39_wordlist_len.restype = ctypes.c_size_t
+
+    def hmac512(args):
+        key, msg = to_bytes(args[0]), to_bytes(args[1])
+        out = ctypes.create_string_buffer(64)
+        if lib.cnx_hmac_sha512(key, len(key), msg, len(msg), out) != 0:
+            raise RuntimeError("cnx_hmac_sha512 failed")
+        return to_str(out.raw[:64])
+
+    def pbkdf2(args):
+        pw, salt = to_bytes(args[0]), to_bytes(args[1])
+        rounds, outlen = int(LCS._n(args[2])), int(LCS._n(args[3]))
+        out = ctypes.create_string_buffer(outlen)
+        if lib.cnx_pbkdf2_hmac_sha512(pw, len(pw), salt, len(salt), rounds,
+                                      out, outlen) != 0:
+            raise RuntimeError("cnx_pbkdf2_hmac_sha512 failed")
+        return to_str(out.raw[:outlen])
+
+    def publickey(args):
+        sk = to_bytes(args[0])
+        compressed = str(LCS._disp(args[1])).lower() == "true" if len(args) > 1 else True
+        n = 33 if compressed else 65
+        out = ctypes.create_string_buffer(n)
+        rc = lib.cnx_pubkey_from_seckey(sk, len(sk), 1 if compressed else 0, out, n)
+        if rc != 0:
+            # The .lcb wrapper throws on a non-zero status; so must this, or
+            # the script's own error paths would never be exercised.
+            raise LCS.Thrown(f"CoinXT: cxPublicKey: status {rc}")
+        return to_str(out.raw[:n])
+
+    def tweak(fn, n):
+        def go(args):
+            a, t = to_bytes(args[0]), to_bytes(args[1])
+            out = ctypes.create_string_buffer(n)
+            rc = getattr(lib, fn)(a, len(a), t, len(t), out, n)
+            if rc != 0:
+                raise LCS.Thrown(f"CoinXT: {fn}: status {rc}")
+            return to_str(out.raw[:n])
+        return go
+
+    def wordlist(_args):
+        n = lib.cnx_bip39_wordlist_len()
+        out = ctypes.create_string_buffer(n)
+        if lib.cnx_bip39_wordlist(out, n) != 0:
+            raise RuntimeError("cnx_bip39_wordlist failed")
+        return to_str(out.raw[:n])
+
+    LCS.HASHES["cxhmacsha512"] = hmac512
+    LCS.HASHES["cxpbkdf2hmacsha512"] = pbkdf2
+    LCS.HASHES["cxpublickey"] = publickey
+    LCS.HASHES["cxseckeytweakadd"] = tweak("cnx_seckey_tweak_add", 32)
+    LCS.HASHES["cxpubkeytweakadd"] = tweak("cnx_pubkey_tweak_add", 33)
+    LCS.HASHES["cxbip39wordlist"] = wordlist
+
 
 def to_bytes(s):
     return bytes(ord(ch) & 0xFF for ch in str(LCS._disp(s)))
@@ -250,6 +334,71 @@ EIP55 = ["0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
          "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
          "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
          "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb"]
+
+# The entropy column of the official BIP-39 english vectors (trezor's
+# english.json). Only the entropy is written down: the mnemonic and the seed
+# come from REF, which derives them and self-checks the wordlist against the
+# SHA-256 BIP-39 publishes. Copying 14 mnemonics and 14 seeds by hand would add
+# 28 chances to make a transcription error and zero checking power.
+BIP39_ENTROPY = [
+    "00000000000000000000000000000000", "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+    "80808080808080808080808080808080", "ffffffffffffffffffffffffffffffff",
+    "000000000000000000000000000000000000000000000000",
+    "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+    "808080808080808080808080808080808080808080808080",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "8080808080808080808080808080808080808080808080808080808080808080",
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "9e885d952ad362caeb4efe34a8e91bd2", "c0ba5a8e914111210f2bd131f3d5e08d",
+    "23db8160a31d3e0dca3688ed941adbf3",
+    "066dca1a2bb7e8a1db2832148ce9933eea0f3ac9548d793112d9a95c9407efad",
+]
+
+# BIP-32's own test vectors 1, 2 and 3, written out in full because THESE are
+# the published artifact - the whole point is that CoinXT's serialization
+# matches the strings in the BIP, not that it matches our own model twice.
+# Vector 3 is in the BIP specifically because its master private key has a
+# leading zero byte, which is where "strip leading zeros" bugs surface.
+BIP32_VECTORS = [
+    ("000102030405060708090a0b0c0d0e0f", [
+        ("m",
+         "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
+         "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"),
+        ("m/0'",
+         "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7",
+         "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw"),
+        ("m/0'/1",
+         "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs",
+         "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ"),
+        ("m/0'/1/2'/2/1000000000",
+         "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76",
+         "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFJodrTHy"),
+    ]),
+    ("fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a2"
+     "9f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542", [
+        ("m",
+         "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U",
+         "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB"),
+    ]),
+    ("4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4ac"
+     "ba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be", [
+        ("m",
+         "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6",
+         "xpub661MyMwAqRbcEZVB4dScxMAdx6d4nFc9nvyvH3v4gJL378CSRZiYmhRoP7mBy6gSPSCYk6SzXPTf3ND1cZAceL7SfJ1Z3GC8vBgp2epUt13"),
+    ]),
+]
+
+# The published addresses for the "abandon ... about" test mnemonic - the most
+# widely cross-checked wallet in existence, and the closest thing to an
+# interoperability oracle that does not require a wallet to hand. The m/84'
+# entries are BIP-84's own test vectors.
+BIP44_ADDRESSES = [
+    ("m/44'/0'/0'/0/0", "p2pkh", "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"),
+    ("m/84'/0'/0'/0/0", "p2wpkh", "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"),
+    ("m/84'/0'/0'/0/1", "p2wpkh", "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g"),
+    ("m/84'/0'/0'/1/0", "p2wpkh", "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el"),
+    ("m/44'/60'/0'/0/0", "eth", "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"),
+]
 
 
 def check_vectors(c, ip):
@@ -355,6 +504,88 @@ def check_vectors(c, ip):
          throws("cxRlpDecode", bytes.fromhex("8100")), True)
     c.ck("rejects a leading zero in a long length",
          throws("cxRlpDecode", bytes.fromhex("b90040" + "00" * 64)), True)
+
+    # ---- phase 4 ------------------------------------------------------------
+    # These matter more than anything above them, because they are the only
+    # part of CoinXT that can be wrong WITHOUT FAILING. A mis-packed mnemonic
+    # is still twelve English words; a mis-derived path is still a valid
+    # address. Nothing tells the user until the funds are somewhere they
+    # cannot reach, so every one of these is a published vector.
+    c.note("\nBIP-39 (official Trezor english vectors)")
+    for h in BIP39_ENTROPY:
+        ent = bytes.fromhex(h)
+        want = REF.bip39_mnemonic(ent)
+        got = call("cxMnemonicFromEntropy", ent)
+        c.ck(f"{len(ent)}-byte entropy {h[:12]} -> {len(want.split())} words", got, want)
+        c.ck(f"  and back to entropy", to_bytes(call("cxMnemonicToEntropy", got)).hex(), h)
+        c.ck(f"  seed with the TREZOR passphrase",
+             to_bytes(call("cxMnemonicToSeed", got, "TREZOR")).hex(),
+             REF.bip39_seed(want, "TREZOR").hex())
+    twelve = REF.bip39_mnemonic(bytes(16))
+    c.ck("an empty passphrase gives the plain seed",
+         to_bytes(call("cxMnemonicToSeed", twelve, "")).hex(), REF.bip39_seed(twelve).hex())
+    c.ck("cxMnemonicValidate accepts a good mnemonic",
+         LCS._disp(call("cxMnemonicValidate", twelve)), "true")
+    c.ck("rejects a wrong checksum word",
+         LCS._disp(call("cxMnemonicValidate", " ".join(["abandon"] * 12))), "false")
+    c.ck("rejects a word outside the list",
+         LCS._disp(call("cxMnemonicValidate", " ".join(["zzzz"] * 11 + ["about"]))), "false")
+    c.ck("rejects a word count BIP-39 does not define",
+         LCS._disp(call("cxMnemonicValidate", " ".join(["abandon"] * 11))), "false")
+    c.ck("normalizes tabs, newlines and runs of spaces",
+         LCS._disp(call("cxMnemonicValidate", "\t " + twelve.replace(" ", "  ") + "\n")), "true")
+    c.ck("cxMnemonicFromEntropy refuses a length BIP-39 does not define",
+         throws("cxMnemonicFromEntropy", bytes(17)), True)
+    # The wordlist reaches the script through the shim, so check the script's
+    # own view of it rather than trusting that the C side got it right.
+    # cxBip39Wordlist is an .lcb handler, so it comes from the wired library
+    # rather than from the script; go to it the way the script's own calls do.
+    wl = to_bytes(LCS.HASHES["cxbip39wordlist"]([]))
+    c.ck("the wordlist the script sees is the normative one",
+         hashlib.sha256(("\n".join(wl[i:i + 8].decode().rstrip(" ")
+                                   for i in range(0, len(wl), 8)) + "\n").encode()).hexdigest(),
+         REF.WORDLIST_SHA256)
+
+    c.note("\nBIP-32 (official test vectors 1-3)")
+    for seed_hex, paths in BIP32_VECTORS:
+        master = call("cxHdFromSeed", bytes.fromhex(seed_hex))
+        for path, want_prv, want_pub in paths:
+            node = call("cxHdDerivePath", master, path)
+            c.ck(f"seed {seed_hex[:8]} {path} xprv", call("cxXprv", node), want_prv)
+            c.ck(f"seed {seed_hex[:8]} {path} xpub", call("cxXpub", node), want_pub)
+    # Vector 3 exists precisely because its master private key has a leading
+    # zero byte, which is where a "strip leading zeros" bignum bug shows up.
+    c.note("\nBIP-32 structure")
+    master = call("cxHdFromSeed", bytes.fromhex(BIP32_VECTORS[0][0]))
+    acct = call("cxHdDerivePath", master, "m/0'")
+    watch = call("cxHdNeuter", acct)
+    c.ck("cxHdNeuter leaves the source node's private key intact",
+         acct["seckey"] != "", True)
+    c.ck("a watch-only node derives the same non-hardened child",
+         call("cxXpub", call("cxHdDerivePath", watch, "m/1")),
+         call("cxXpub", call("cxHdDerivePath", acct, "m/1")))
+    c.ck("a watch-only node cannot serialize an xprv",
+         throws("cxXprv", watch), True)
+    c.ck("a watch-only node cannot derive a hardened child",
+         throws("cxHdDerivePath", watch, "m/0'"), True)
+    c.ck("h and H are accepted as hardened markers",
+         call("cxXprv", call("cxHdDerivePath", master, "m/0h")), call("cxXprv", acct))
+    for bad in ("0/1", "m/", "m/1'2", "m/ 1", "m/1e3", "m/2147483648", "m/1.0"):
+        c.ck(f"rejects the path {bad!r}", throws("cxHdDerivePath", master, bad), True)
+    c.ck("rejects a seed shorter than 16 bytes", throws("cxHdFromSeed", bytes(15)), True)
+    c.ck("rejects a seed longer than 64 bytes", throws("cxHdFromSeed", bytes(65)), True)
+
+    c.note("\nBIP-44 end to end (mnemonic -> seed -> path -> address)")
+    seed = call("cxMnemonicToSeed", twelve, "")
+    for path, kind, want in BIP44_ADDRESSES:
+        node = call("cxHdDerivePath", call("cxHdFromSeed", seed), path)
+        if kind == "p2pkh":
+            got = call("cxBtcAddressP2PKH", node["pubkey"])
+        elif kind == "p2wpkh":
+            got = call("cxBtcAddressP2WPKH", node["pubkey"])
+        else:
+            got = call("cxEthAddressChecksum", call("cxEthAddress", node["pubkey"]))
+        c.ck(f"{path} -> {kind}", got, want)
 
 
 def main(argv):
