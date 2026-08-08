@@ -71,6 +71,44 @@ def load_kat_table(name):
     return out
 
 
+def load_kat_curve():
+    """The secp256k1 constants coin-kat.py pins, read by IMPORTING it.
+
+    The hash tables above are scraped with a regex because they are flat dicts
+    of byte strings. The curve tables are lists of tuples, where a regex would
+    be both uglier and easier to get quietly wrong, so this leg evaluates the
+    file instead. That is safe here for the same reason the regex was chosen
+    over it before: coin-kat.py does all of its work inside main(), which is
+    guarded by __name__, so evaluating it builds nothing and needs no compiler.
+
+    It reads the SOURCE and execs it rather than going through importlib, and
+    that is not stylistic. importlib would consult __pycache__, and a cached
+    .pyc is only invalidated when the source's mtime OR size changes - so a
+    one-character edit made within the same second as the last run (exactly
+    what editing a hex constant looks like) can leave this gate reading the
+    PREVIOUS vectors and reporting OK. That was observed while mutation-testing
+    this file, not theorised. A gate whose whole job is to catch drift must not
+    have a stale-cache path, so it does not have one.
+    """
+    try:
+        with open(KAT, "r", encoding="utf-8") as handle:
+            source = handle.read()
+        # __file__ has to be present: coin-kat.py derives its own paths from it
+        # at module level, and __name__ has to be anything but "__main__" so its
+        # entry point stays guarded.
+        namespace = {"__name__": "coin_kat_vectors", "__file__": KAT}
+        exec(compile(source, KAT, "exec"), namespace)  # noqa: S102 - see above
+        pub = {sk: (c, u) for sk, c, u in namespace["PUBKEYS"]}
+        sig = {(sk, msg): s for sk, msg, s in namespace["RFC6979"]}
+        return {
+            "pub1_compressed": pub[1][0],
+            "pub1_uncompressed": pub[1][1],
+            "sig_satoshi": sig[(1, b"Satoshi Nakamoto")],
+        }
+    except (OSError, SyntaxError, NameError, AttributeError, KeyError, ValueError):
+        return None
+
+
 def sha3_256(data):
     return hashlib.sha3_256(data).hexdigest()
 
@@ -155,6 +193,48 @@ def main(argv):
             want(name, ripe.get(msg, ""), "coin-kat")
     else:
         problems.append("could not read RIPEMD160 out of tools/coin-kat.py")
+
+    # --- secp256k1 (phase 2) -------------------------------------------------
+    # Two tiers, the same shape this file already uses for RIPEMD-160.
+    #
+    # Tier 1 always runs: the harness constants must equal the ones coin-kat.py
+    # pins. That is precisely the drift this gate exists to catch, because the
+    # two files are meant to be the same claim at two layers, and only one of
+    # them is driven by CI on every push.
+    #
+    # Tier 2 runs when the independent `ecdsa` package is installed, and then
+    # RE-DERIVES the values rather than comparing two copies of them. When it is
+    # absent the gate says so instead of quietly passing on tier 1 alone.
+    curve = load_kat_curve()
+    if curve is None:
+        problems.append("could not read the secp256k1 tables out of tools/coin-kat.py")
+    else:
+        want("kPubOneCompressed", curve["pub1_compressed"], "coin-kat")
+        want("kPubOneUncompressed", curve["pub1_uncompressed"], "coin-kat")
+        want("kSigSatoshi", curve["sig_satoshi"], "coin-kat")
+
+    try:
+        from ecdsa import SECP256k1, SigningKey
+        from ecdsa.util import sigencode_string
+        order = SECP256k1.order
+        key = SigningKey.from_secret_exponent(1, curve=SECP256k1)
+        vk = key.get_verifying_key()
+        want("kPubOneCompressed", vk.to_string("compressed").hex(), "ecdsa")
+        want("kPubOneUncompressed", vk.to_string("uncompressed").hex(), "ecdsa")
+        raw = key.sign_digest_deterministic(
+            hashlib.sha256(b"Satoshi Nakamoto").digest(),
+            hashfunc=hashlib.sha256, sigencode=sigencode_string)
+        r = int.from_bytes(raw[:32], "big")
+        s = int.from_bytes(raw[32:], "big")
+        # Upstream always emits the low-s form; normalise before comparing so a
+        # mismatch means a wrong signature and not a different convention.
+        if s > order // 2:
+            s = order - s
+        want("kSigSatoshi", (r.to_bytes(32, "big") + s.to_bytes(32, "big")).hex(), "ecdsa")
+    except ImportError:
+        notes.append("secp256k1: the `ecdsa` package is not installed here, so the "
+                     "curve constants were checked against the table in coin-kat.py "
+                     "rather than re-derived independently (pip install ecdsa).")
 
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()

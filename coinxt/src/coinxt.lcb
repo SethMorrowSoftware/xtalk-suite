@@ -13,11 +13,34 @@ library org.openxtalk.library.coin
 --
 -- Phase 1 scope: the hash surface (Keccak-256, SHA3-256, SHA-256, SHA-512,
 -- RIPEMD-160, HMAC-SHA256/512, PBKDF2-HMAC-SHA512), their length accessors,
--- and the ABI guard. The curve (secp256k1), HD (BIP-32) and mnemonic (BIP-39)
--- wrappers land in later phases against the same shapes.
+-- and the ABI guard.
+-- Phase 2 scope (ABI 3): the secp256k1 curve - cxNewSeckey, cxSeckeyIsValid,
+-- cxPublicKey, cxPubkeyDecompress, cxSign, cxVerify, cxSignRecoverable,
+-- cxRecover, cxEcdh and their six length accessors. HD (BIP-32) and mnemonic
+-- (BIP-39) wrappers land in later phases against the same shapes.
 --
 -- ==========================================================================
--- STATUS: ENGINE PASS RECORDED 2026-08-08. This module was compiled, loaded
+-- PHASE 2 STATUS: THE NATIVE SIDE IS PROVEN; THE HANDLERS BELOW ARE NOT.
+-- Be precise about which of those two this file is. tools/coin-kat.py drives
+-- every phase-2 cnx_ entry point headless through ctypes and pins it to public
+-- vectors: CoinXT reproduces four published RFC 6979 secp256k1 signatures byte
+-- for byte, a CoinXT signature VERIFIES in the independent Python `ecdsa`
+-- library, a signature that library made verifies in CoinXT, and cxRecover's
+-- native side returns the signing key. That is the IMPLEMENTATION-PLAN phase-2
+-- bar, met at the C level.
+--
+-- What has NOT happened is an engine pass over the fifteen new PUBLIC handlers
+-- in this file. They are assembled from the exact parts the 2026-08-08 pass
+-- proved (sPrepare + sAlloc + a UIntSize length + sFinish), and every bind
+-- string, argument count, type mapping and return type below was diffed
+-- mechanically against native/coinxt.c, but "verified statically" is what they
+-- are until tests/coin-selftest.livecodescript runs them on a real engine.
+-- Two shapes here are genuinely new to this file and should be watched first in
+-- that run: a foreign handler taking a CInt FLAG (cxPublicKey's pCompressed),
+-- and a public handler returning Boolean rather than Data (cxVerify,
+-- cxSeckeyIsValid).
+--
+-- PHASE 1 STATUS: ENGINE PASS RECORDED 2026-08-08. This module was compiled, loaded
 -- and exercised on a real OXT engine by tests/suite-selftest.livecodescript
 -- (root of the suite), which ran green. Per IMPLEMENTATION-PLAN.md phase 1 is
 -- done when cxKeccak256 and friends return the PINNED vectors from a real
@@ -110,7 +133,7 @@ metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-cryp
 -- be refused with a legible error, not discovered at the first missing bind.
 -- Declared before first use - OXT resolves a constant by lexical position, and
 -- a forward reference silently evaluates to nothing.
-constant kABIVersion is 2
+constant kABIVersion is 3
 
 -- The largest PBKDF2 iteration count this binding will marshal. The shim takes
 -- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
@@ -176,6 +199,36 @@ private foreign handler _cnx_sha512_len() returns UIntSize binds to "c:coinxt>cn
 private foreign handler _cnx_ripemd160_len() returns UIntSize binds to "c:coinxt>cnx_ripemd160_len"
 private foreign handler _cnx_hmac_sha256_len() returns UIntSize binds to "c:coinxt>cnx_hmac_sha256_len"
 private foreign handler _cnx_hmac_sha512_len() returns UIntSize binds to "c:coinxt>cnx_hmac_sha512_len"
+
+-- --------------------------------------------------------------------------
+-- The secp256k1 curve surface (phase 2).
+--
+-- Every public key argument crosses as a POINTER PLUS ITS LENGTH, and the shim
+-- refuses any pair where the two disagree. That is not defensive padding: the
+-- upstream parser dispatches on the leading byte and reads 65 bytes whenever it
+-- sees 0x04, without ever being told the buffer size, so a 33-byte key whose
+-- first byte got flipped to 0x04 would be read 32 bytes past its end. The
+-- length is the only thing that can stop it, and it has to be carried here.
+--
+-- pCompressed is a C int (0/1), not a CBool: the family rule is that booleans
+-- cross as int, and this layer converts an LCB Boolean to 1 or 0 explicitly
+-- rather than trusting a bridged bool width.
+-- --------------------------------------------------------------------------
+private foreign handler _cnx_seckey_verify(in pSk as Pointer, in pSkLen as UIntSize) returns CInt binds to "c:coinxt>cnx_seckey_verify"
+private foreign handler _cnx_pubkey_from_seckey(in pSk as Pointer, in pSkLen as UIntSize, in pCompressed as CInt, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_pubkey_from_seckey"
+private foreign handler _cnx_pubkey_decompress(in pPub as Pointer, in pPubLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_pubkey_decompress"
+private foreign handler _cnx_ecdsa_sign(in pSk as Pointer, in pSkLen as UIntSize, in pDigest as Pointer, in pDigestLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_ecdsa_sign"
+private foreign handler _cnx_ecdsa_verify(in pPub as Pointer, in pPubLen as UIntSize, in pDigest as Pointer, in pDigestLen as UIntSize, in pSig as Pointer, in pSigLen as UIntSize) returns CInt binds to "c:coinxt>cnx_ecdsa_verify"
+private foreign handler _cnx_ecdsa_sign_recoverable(in pSk as Pointer, in pSkLen as UIntSize, in pDigest as Pointer, in pDigestLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_ecdsa_sign_recoverable"
+private foreign handler _cnx_ecdsa_recover(in pSig as Pointer, in pSigLen as UIntSize, in pDigest as Pointer, in pDigestLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_ecdsa_recover"
+private foreign handler _cnx_ecdh(in pSk as Pointer, in pSkLen as UIntSize, in pPub as Pointer, in pPubLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_ecdh"
+
+private foreign handler _cnx_seckey_len() returns UIntSize binds to "c:coinxt>cnx_seckey_len"
+private foreign handler _cnx_pubkey_len_compressed() returns UIntSize binds to "c:coinxt>cnx_pubkey_len_compressed"
+private foreign handler _cnx_pubkey_len_uncompressed() returns UIntSize binds to "c:coinxt>cnx_pubkey_len_uncompressed"
+private foreign handler _cnx_ecdsa_sig_len() returns UIntSize binds to "c:coinxt>cnx_ecdsa_sig_len"
+private foreign handler _cnx_recoverable_sig_len() returns UIntSize binds to "c:coinxt>cnx_recoverable_sig_len"
+private foreign handler _cnx_ecdh_len() returns UIntSize binds to "c:coinxt>cnx_ecdh_len"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -249,12 +302,12 @@ private handler sToData(in pPtr as Pointer, in pLen as Integer) returns Data
    return tResult
 end handler
 
--- Map a native status to a human sentence. The set is closed and tiny (the shim
--- defines exactly these three), and the code number is deliberately NOT
--- interpolated into the message: LCB number-to-String coercion inside a
--- concatenation is not something this layer can verify headlessly, and an
--- unrecognised status can only mean a library newer than this binding - which
--- cxCheckABI() / sPrepare() would already have refused.
+-- Map a native status to a human sentence. The set is closed (the shim defines
+-- exactly these), and the code number is deliberately NOT interpolated into the
+-- message: LCB number-to-String coercion inside a concatenation is not something
+-- this layer can verify headlessly, and an unrecognised status can only mean a
+-- library newer than this binding - which cxCheckABI() / sPrepare() would
+-- already have refused.
 private handler sStatusText(in pStatus as Integer) returns String
    if pStatus is -1 then
       return "a required buffer was missing (null)."
@@ -264,6 +317,21 @@ private handler sStatusText(in pStatus as Integer) returns String
    end if
    if pStatus is -3 then
       return "a length or count is out of the range the native primitive can represent."
+   end if
+   if pStatus is -4 then
+      return "the key is not a valid secp256k1 key."
+   end if
+   if pStatus is -5 then
+      return "the signature is malformed or does not verify."
+   end if
+   if pStatus is -6 then
+      return "the operating system entropy source is unavailable, so the side-channel blinding the curve code requires could not be drawn."
+   end if
+   if pStatus is -7 then
+      return "the digest is all zero, which is refused because such a signature can be forged for any key."
+   end if
+   if pStatus is -8 then
+      return "the native curve library failed unexpectedly."
    end if
    return "an unexpected native status (the loaded library does not match this binding)."
 end handler
@@ -505,6 +573,280 @@ public handler cxPbkdf2HmacSha512(in pPassword as Data, in pSalt as Data, in pIt
 end handler
 
 -- ==========================================================================
+-- The secp256k1 curve (phase 2). Keys, ECDSA, recoverable ECDSA, recovery, ECDH.
+--
+-- THE CUSTODY BOUNDARY, stated once and meant everywhere below. CoinXT is a
+-- calculator: it holds a private key for the microseconds of one call and keeps
+-- nothing. Storage, backup, and confirm-before-sign are the app's. Clear your
+-- own key variables (`put empty into tSeckey`) the moment you are done, and read
+-- the header note on what that does and does not buy you.
+--
+-- SIGN ONLY WHAT YOU BUILT. cxSign takes a 32-byte DIGEST, never a message and
+-- never a transaction. Constructing the right sighash (and showing the user what
+-- it means) is the app's job, because a signer that will sign any 32 bytes handed
+-- to it is a footgun aimed at whoever installed your app.
+-- ==========================================================================
+
+-- Validate 32 bytes of CALLER entropy as a secp256k1 private key and hand them
+-- back. There is no transformation: a valid key just IS a 32-byte integer in
+-- [1, n-1], and roughly one draw in 2^128 fails, so the honest API is "check it
+-- and give it back" rather than something that looks like generation.
+--
+-- The entropy is yours to supply and must be cryptographically random: compose
+-- SodiumXT's sxRandomBytes(32) or the OS. CoinXT deliberately has no key-making
+-- RNG of its own, so nothing here can quietly hand you a weak key.
+public handler cxNewSeckey(in pEntropy as Data) returns Data
+   variable tPtr as Pointer
+   variable tLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pEntropy) into tLen
+   put sDataPtr(pEntropy) into tPtr
+   unsafe
+      put _cnx_seckey_verify(tPtr, tLen) into tStatus
+   end unsafe
+   if tStatus is not 0 then
+      throw "CoinXT: cxNewSeckey:" && sStatusText(tStatus)
+   end if
+   return pEntropy
+end handler
+
+-- The same question asked without exceptions, for an IMPORTED key (a WIF, a
+-- pasted hex string) where "no" is an ordinary answer and not an error. Every
+-- way of failing to be a key - empty, wrong length, zero, >= the group order -
+-- answers false; anything else still throws, because it would mean the loaded
+-- library is not the one this binding was built against.
+public handler cxSeckeyIsValid(in pSeckey as Data) returns Boolean
+   variable tPtr as Pointer
+   variable tLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tLen
+   put sDataPtr(pSeckey) into tPtr
+   unsafe
+      put _cnx_seckey_verify(tPtr, tLen) into tStatus
+   end unsafe
+   if tStatus is 0 then
+      return true
+   end if
+   if tStatus is -1 or tStatus is -2 or tStatus is -4 then
+      return false
+   end if
+   throw "CoinXT: cxSeckeyIsValid:" && sStatusText(tStatus)
+end handler
+
+-- The public key for a private key. Compressed (33 bytes, 0x02/0x03 || X) is
+-- what modern Bitcoin uses everywhere; uncompressed (65 bytes, 0x04 || X || Y)
+-- is what an Ethereum address is built from (Keccak-256 of the 64 bytes AFTER
+-- the 0x04, last 20 bytes). Both sizes come from the shim, never from here.
+public handler cxPublicKey(in pSeckey as Data, in pCompressed as Boolean) returns Data
+   variable tLen as Integer
+   variable tLenCompressed as Integer
+   variable tLenUncompressed as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tStatus as Integer
+   variable tFlag as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   unsafe
+      put _cnx_pubkey_len_compressed() into tLenCompressed
+      put _cnx_pubkey_len_uncompressed() into tLenUncompressed
+   end unsafe
+   -- Resolved OUTSIDE the unsafe block on purpose: the foreign calls stay
+   -- straight-line, and the 0/1 the C int wants is produced explicitly here
+   -- rather than by trusting a bridged boolean width.
+   if pCompressed then
+      put tLenCompressed into tLen
+      put 1 into tFlag
+   else
+      put tLenUncompressed into tLen
+      put 0 into tFlag
+   end if
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_pubkey_from_seckey(tSkPtr, tSkLen, tFlag, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxPublicKey", tOut, tStatus, tLen)
+end handler
+
+-- Expand a compressed public key to its 65-byte form (solving the curve
+-- equation for Y). Feeding it an already-uncompressed key is legal and returns
+-- it unchanged, so a caller normalising mixed input does not have to branch.
+public handler cxPubkeyDecompress(in pPubkey as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tPubPtr as Pointer
+   variable tPubLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pPubkey) into tPubLen
+   put sDataPtr(pPubkey) into tPubPtr
+   unsafe
+      put _cnx_pubkey_len_uncompressed() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_pubkey_decompress(tPubPtr, tPubLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxPubkeyDecompress", tOut, tStatus, tLen)
+end handler
+
+-- ECDSA over a 32-byte digest, RFC 6979 deterministic. The same key and digest
+-- always produce the same 64 bytes (r || s), which is why the whole surface is
+-- KAT-pinnable; the native code still draws OS entropy for side-channel
+-- blinding, and that blinding provably cancels out of the result.
+--
+-- s is always the LOW of the two equivalent values, which Bitcoin requires for
+-- relay (BIP-62) and Ethereum requires for consensus. That is upstream's doing,
+-- not a normalisation added here.
+public handler cxSign(in pSeckey as Data, in pDigest as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tDigPtr as Pointer
+   variable tDigLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pDigest) into tDigLen
+   put sDataPtr(pDigest) into tDigPtr
+   unsafe
+      put _cnx_ecdsa_sig_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_ecdsa_sign(tSkPtr, tSkLen, tDigPtr, tDigLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxSign", tOut, tStatus, tLen)
+end handler
+
+-- Verify a 64-byte signature. This returns a BOOLEAN and throws for everything
+-- else, and the split is deliberate: "this signature does not verify" is the
+-- normal, expected answer that callers branch on, while a malformed public key
+-- or a 63-byte signature is a BUG in the calling code. A verify that threw on an
+-- invalid signature would be unusable; one that answered false to a malformed
+-- key would hide the bug behind a security-shaped result.
+public handler cxVerify(in pPubkey as Data, in pDigest as Data, in pSignature as Data) returns Boolean
+   variable tPubPtr as Pointer
+   variable tPubLen as Integer
+   variable tDigPtr as Pointer
+   variable tDigLen as Integer
+   variable tSigPtr as Pointer
+   variable tSigLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pPubkey) into tPubLen
+   put sDataPtr(pPubkey) into tPubPtr
+   put sDataLen(pDigest) into tDigLen
+   put sDataPtr(pDigest) into tDigPtr
+   put sDataLen(pSignature) into tSigLen
+   put sDataPtr(pSignature) into tSigPtr
+   unsafe
+      put _cnx_ecdsa_verify(tPubPtr, tPubLen, tDigPtr, tDigLen, tSigPtr, tSigLen) into tStatus
+   end unsafe
+   if tStatus is 0 then
+      return true
+   end if
+   if tStatus is -5 then
+      return false
+   end if
+   throw "CoinXT: cxVerify:" && sStatusText(tStatus)
+end handler
+
+-- The recoverable form: the same 64 bytes with a 1-byte recovery id appended
+-- (65 total). Ethereum's `v` is built from that id, and it is what lets a
+-- verifier recover the signer's key from the signature alone instead of being
+-- told which key to check. The id is 0..3.
+public handler cxSignRecoverable(in pSeckey as Data, in pDigest as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tDigPtr as Pointer
+   variable tDigLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pDigest) into tDigLen
+   put sDataPtr(pDigest) into tDigPtr
+   unsafe
+      put _cnx_recoverable_sig_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_ecdsa_sign_recoverable(tSkPtr, tSkLen, tDigPtr, tDigLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxSignRecoverable", tOut, tStatus, tLen)
+end handler
+
+-- ecrecover: the 65-byte uncompressed public key that produced this recoverable
+-- signature over this digest. Recovery ALWAYS produces some key for a
+-- well-formed signature, so this answering successfully proves nothing on its
+-- own; it is meaningful only when the recovered key is then compared against
+-- the key you expected. That comparison is the caller's, and skipping it is the
+-- classic ecrecover mistake.
+public handler cxRecover(in pSignature as Data, in pDigest as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSigPtr as Pointer
+   variable tSigLen as Integer
+   variable tDigPtr as Pointer
+   variable tDigLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSignature) into tSigLen
+   put sDataPtr(pSignature) into tSigPtr
+   put sDataLen(pDigest) into tDigLen
+   put sDataPtr(pDigest) into tDigPtr
+   unsafe
+      put _cnx_pubkey_len_uncompressed() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_ecdsa_recover(tSigPtr, tSigLen, tDigPtr, tDigLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxRecover", tOut, tStatus, tLen)
+end handler
+
+-- ECDH: the shared point between your private key and their public key, as the
+-- raw 65 bytes (0x04 || X || Y).
+--
+-- THIS IS NOT A SHARED KEY. Every protocol that uses ECDH runs a KDF over this
+-- point first, and they disagree about which one and about whether it covers X
+-- alone or the compressed form. Hashing it here would be CoinXT inventing a
+-- convention and calling it interoperability, so the point is returned as
+-- computed and the KDF is yours (cxSha256 of the 32 X bytes is a common one;
+-- match whatever the protocol on the other end specifies).
+public handler cxEcdh(in pSeckey as Data, in pPubkey as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tPubPtr as Pointer
+   variable tPubLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pPubkey) into tPubLen
+   put sDataPtr(pPubkey) into tPubPtr
+   unsafe
+      put _cnx_ecdh_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_ecdh(tSkPtr, tSkLen, tPubPtr, tPubLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxEcdh", tOut, tStatus, tLen)
+end handler
+
+-- ==========================================================================
 -- Length accessors. Every size an app needs to build a buffer comes FROM the
 -- shim; nothing in the CoinXT stack hardcodes 32 / 64 / 20. The ones that earn
 -- their keep in practice: cxSha256Len and cxRipemd160Len size a hash160 and a
@@ -574,6 +916,65 @@ public handler cxHmacSha512Len() returns Integer
    sPrepare()
    unsafe
       put _cnx_hmac_sha512_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- The curve sizes. cxSeckeyLen is how many entropy bytes to draw for
+-- cxNewSeckey; the two pubkey lengths tell an encoder which form it holds
+-- without inspecting the prefix byte; cxSignatureLen and
+-- cxRecoverableSignatureLen differ by exactly the one recovery byte.
+public handler cxSeckeyLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_seckey_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxPubkeyLenCompressed() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_pubkey_len_compressed() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxPubkeyLenUncompressed() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_pubkey_len_uncompressed() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxSignatureLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_ecdsa_sig_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+public handler cxRecoverableSignatureLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_recoverable_sig_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- The RAW ECDH point, not a key (see cxEcdh).
+public handler cxEcdhLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_ecdh_len() into tLen
    end unsafe
    return tLen
 end handler

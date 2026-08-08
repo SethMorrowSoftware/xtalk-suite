@@ -207,9 +207,24 @@ The single most expensive thing the family has learned. Change nothing here with
 
 ## Determinism and entropy
 
-- **No RNG in the shim.** trezor-crypto requires an integrator `random_buffer` / `random32`; wire it to
-  ABORT (nothing should call it once signing is RFC 6979 and keys come from the caller). A called RNG is
-  then a loud bug, not a silent weak key.
+- **No KEY MATERIAL from an ambient RNG** (this rule used to read "no RNG in the shim"; phase 2 proved
+  that version wrong, and the correction matters more than the original). trezor-crypto requires an
+  integrator `random_buffer` / `random32`, and the old instruction was to wire it to ABORT because
+  "nothing should call it once signing is RFC 6979 and keys come from the caller." **Nothing about
+  that is true.** `vendor/ecdsa.c` calls it on EVERY curve operation: `curve_to_jacobian()` randomizes
+  the projective Z coordinate on every scalar multiply, and `ecdsa_sign_digest()` draws a second value
+  to blind the modular inversion. Both are side-channel countermeasures, not nonce generation. So
+  abort-on-call kills the host process at the first `cxPublicKey`, and returning a constant either
+  hangs (`generate_k_random` loops while the value is zero or out of range) or silently deletes
+  upstream's countermeasure.
+  What survives of the rule is the part that protects the user: fresh private keys are still the
+  caller's (`cxNewSeckey` validates 32 caller-supplied bytes, composed from SodiumXT `sxRandomBytes`)
+  and nonces are still RFC 6979, so no key can be weak because of an RNG here. The blinding entropy
+  comes from the OS (`getrandom` / `BCryptGenRandom` / `arc4random_buf`), fails closed
+  (`CNX_ERR_ENTROPY` from a pre-flight, `abort()` only where the void upstream signature leaves no
+  other option), and an unknown platform is a COMPILE error rather than a weak fallback. The blinding
+  cancels out of the result algebraically, which is why signatures stay KAT-pinnable; `coin-kat.py`
+  proves that empirically by signing the same input 32 times and requiring one distinct answer.
 - **Fresh key material is the caller's.** `cxNewSeckey(pEntropy32)` validates 32 caller-supplied bytes
   (from SodiumXT `sxRandomBytes`, or OS entropy). Seeds and mnemonics are deterministic from there.
 - Because everything is a pure function of its inputs, the whole surface is pinned by `tools/coin-kat.py`.
@@ -385,8 +400,55 @@ seven `cx*Len` accessors, and `cxCheckABI()`. The decisions worth knowing before
   when `cxKeccak256` and friends return the pinned vectors from a real engine; the file header
   lists, in order, exactly what that pass must confirm.
 
-After that (phase 2): the secp256k1 curve surface (keypair, ECDSA, recoverable, recover, ECDH),
-with a signature that must verify in an independent library.
+**Phase 2, the secp256k1 curve - BUILT AND CROSS-VERIFIED; the .lcb wrappers need an engine pass.**
+ABI 2 -> 3. The shim exports `cnx_seckey_verify`, `cnx_pubkey_from_seckey`, `cnx_pubkey_decompress`,
+`cnx_ecdsa_sign`, `cnx_ecdsa_verify`, `cnx_ecdsa_sign_recoverable`, `cnx_ecdsa_recover`, `cnx_ecdh`
+and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.lcb` wraps each one.
+
+- **The phase-2 bar is met at the C level.** IMPLEMENTATION-PLAN says phase 2 is done when "a signature
+  CoinXT makes verifies in an independent library, and `cxRecover` returns the signing pubkey." Both
+  hold: `tools/coin-kat.py` reproduces four published RFC 6979 secp256k1 signatures byte for byte, a
+  CoinXT signature verifies in Python `ecdsa`, a signature `ecdsa` made verifies in CoinXT, and
+  recovery round-trips to the signer. The fifteen public `cx*` handlers are still
+  "verified statically; needs an OXT pass" - `tests/coin-selftest.livecodescript` drives all of them
+  and is what closes that.
+- **The phase-0 entropy decision was wrong and is corrected above.** That is the single most important
+  thing learned in this phase; read "Determinism and entropy" before touching the shim.
+- **The vendored set is a CLOSURE, found empirically** (compile, read the undefined symbols, add the
+  file that defines them, repeat) and it is larger than it looks like it should be: `hasher.c` plus
+  blake256/blake2b/groestl come in because `ecdsa.h` types its message-signing entry points against
+  `HasherType`, and `base58.c`/`address.c` because `ecdsa.c` carries address helpers we never call.
+  `secp256k1.table` (126 KB) is NOT needed, because `options.h` sets `USE_PRECOMPUTED_CP=0`. See
+  `native/vendor/VENDOR.md`; every file's git blob id was checked against the pinned commit's tree.
+- **The guard upstream cannot write for us.** `ecdsa_read_pubkey()` dispatches on the leading byte and
+  reads 65 bytes whenever it sees `0x04`, and is never told the buffer length - so a 33-byte key whose
+  first byte is `0x04` is read 32 bytes past its end. Every public key crosses the `cnx_` ABI as
+  pointer PLUS length and the shim refuses a pair that disagrees. There is a KAT for it and an
+  ASan case for it; do not "simplify" the length argument away.
+- **Two upstream return conventions are inverted from each other**, in the same header:
+  `ecdsa_sign_digest` and `ecdsa_recover_pub_from_sig` return 0 for success, while `ecdsa_read_pubkey`
+  and `ecdsa_uncompress_pubkey` return 1 for success and 0 for failure. Each call site in the shim says
+  which it is.
+- **Low-s is upstream's, not ours.** `ecdsa_sign_digest` unconditionally replaces s with `order - s`
+  when s is above the halfway point and flips the recovery bit with it, so signatures are canonical for
+  both Bitcoin relay policy and Ethereum consensus without CoinXT normalising anything.
+- **ECDH returns the RAW 65-byte point** (`0x04 || X || Y`), not the 32 bytes SPEC.md 5.1 sketched.
+  Truncating to X or hashing it would be CoinXT inventing a convention; the caller composes the KDF its
+  protocol specifies.
+- Verified: ASan + UBSan clean over the whole curve surface (`sh native/build.sh asan`),
+  `tools/coin-kat.py` green (four RFC 6979 vectors, G and 2G, decompression round-trip, 8 verification
+  rejections including the overread guard, ecrecover, ECDH both directions, 10 fail-closed guards,
+  32-way determinism, and the cross-library leg), every `.lcb` foreign declaration diffed mechanically
+  against the C (arity, per-argument type, return type: 30/30), and the bind set equal to the built
+  library's exported symbols (30/30).
+
+**Schnorr / BIP-340 is DEFERRED, and phase 0's open question is now answered.** The plan left "which
+upstream path provides it" open. The answer: not this one. trezor-crypto's plain-C tree has no BIP-340
+implementation - it reaches Schnorr only through `zkp_bip340.c`, which requires the bundled
+`secp256k1-zkp` library and its own build system, a vendoring an order of magnitude larger than
+everything above. Phase 2 therefore ships ECDSA, recoverable ECDSA, recovery and ECDH, and Schnorr
+moves to the Taproot phase where the `secp256k1-zkp` cost can be weighed against P2TR as a whole. That
+is a scope decision, recorded here rather than left as a silent omission.
 
 **Repo-prep - self-contained for the split (2026-07-07).** CoinXT no longer reaches outside its own
 directory for anything; it is ready to become the root of its own repository (the procedure and the
