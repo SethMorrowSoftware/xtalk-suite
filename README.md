@@ -110,10 +110,23 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all six at once: `tests/suite-selftest.livecodescript` is a single stack
-script that builds its own UI, probes for every member, runs each one's headline
-paths plus the cross-member compositions, and reports PASS / FAIL / SKIP in one
-list — a member you did not install skips, it never fails. See
+Or run all six at once. `tests/suite-selftest.livecodescript` is a single stack
+script that builds its own UI, probes for every member, and reports PASS / FAIL /
+SKIP in one list — a member you did not install skips, it never fails.
+
+It is not a sampler. It carries **every member's own deep self-test**, folded in
+whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
+offline), coinxt's 28 sections, torrentxt's full harness, and the synchronous
+halves of enetxt and datachannelxt — plus the cross-member compositions no
+per-member harness can have. One paste settles what used to take six runs.
+
+It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
+than copied from them, because a hand-copied test suite drifts and then reports
+green about code that moved. The gate set runs `--check`, so a stale copy fails
+the build. The only thing deliberately left out is the ENet and DataChannel
+**async loopbacks**: this harness already drives a real loopback on both
+transports for its cross-member sections, and two state machines in one process
+would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 `docs/OXT-PASS-RUNBOOK.md`.
 
 ## How they compose

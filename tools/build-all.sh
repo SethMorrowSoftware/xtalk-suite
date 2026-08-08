@@ -151,6 +151,27 @@ if [ -f tools/check-handler-calls.py ]; then
   python3 tools/check-handler-calls.py
 fi
 
+# --- suite-level: the unified self-test harness is BUILT, so it can go stale ---
+# tests/suite-selftest.livecodescript is assembled from every member's own
+# harness. If a member's tests change and nobody rebuilds, the file a maintainer
+# pastes into an engine is no longer the one the sources describe - and it will
+# still run, and still go green, about code that moved. Same failure and same
+# gate shape as onionxt's build-standalone.py.
+if [ -f tools/build-suite-selftest.py ]; then
+  echo "== suite: tools/build-suite-selftest.py --check =="
+  python3 tools/build-suite-selftest.py --check
+fi
+
+# --- suite-level: and the merge itself is structurally sound -----------------
+# No compiler can see this file headlessly, so these are the checks a compiler
+# would have made: no duplicate handlers, no undeclared constant (which
+# LiveCodeScript turns into the literal text of its own name rather than an
+# error), the core's entry points present, and the async cuts still cut.
+if [ -f tools/check-suite-selftest.py ]; then
+  echo "== suite: tools/check-suite-selftest.py =="
+  python3 tools/check-suite-selftest.py
+fi
+
 if [ "$GATES_ONLY" = 1 ]; then
   echo "All static gates passed."
   exit 0
