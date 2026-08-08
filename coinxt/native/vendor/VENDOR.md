@@ -3,7 +3,15 @@
 These files are copied verbatim (no local patches) from **trezor-firmware**, directory `crypto/`.
 
 - Upstream: https://github.com/trezor/trezor-firmware  (directory `crypto/`)
-- License: **MIT** (see `LICENSE` in this directory)
+- License: **MIT for trezor-crypto itself** (see `LICENSE` in this directory), but
+  **not for every file here**. Upstream vendors third-party implementations that keep
+  their own terms: `sha2.*` is BSD-3-Clause, `ripemd160.*` is public domain,
+  `blake256.*` is CC0, `blake2b.*` is CC0/OpenSSL/Apache-2.0 at our option (we elect
+  CC0), `sha3.*` is RHash's MIT, and `groestl.*` is MIT under a different copyright
+  holder. All permissive, none copyleft, but the BSD-3-Clause one binds BINARY
+  redistribution and coinxt commits built libraries. The per-file map and the full
+  texts are in [`../../THIRD-PARTY-LICENSES.md`](../../THIRD-PARTY-LICENSES.md);
+  every file also keeps its own header verbatim.
 - Pinned commit: `230cfe37e4c5fefb6ca117725d261a7b3646a995` (branch `main`, fetched 2026-07-02)
 
 ## Files (phase 1: the hash unit, complete)
@@ -75,7 +83,10 @@ though signing is deterministic; it is not the reason phase 0 assumed.
   with a diff and a reason, and hash the patched file in `MANIFEST.sha256`.
 - **Re-pin deliberately.** Bumping the upstream commit is its own change: update the SHA above, re-run
   `tools/coin-kat.py`, refresh `../MANIFEST.sha256`, and note anything that shifted.
-- The MIT `LICENSE` ships alongside these files (redistribution requirement).
+- The MIT `LICENSE` ships alongside these files (redistribution requirement), and it is **not
+  sufficient on its own**: `../../THIRD-PARTY-LICENSES.md` carries the texts for the files here that
+  are BSD-3-Clause, public domain, CC0 or separately-held MIT. Adding a vendored file means checking
+  its header for terms the MIT text does not cover, and adding it there if so.
 
 ## Integrity
 

@@ -62,9 +62,13 @@ expects: `.github/workflows/ci.yml` (dormant while nested, because GitHub only r
 
 1. Confirm CI ran and all eight gate steps passed on the first push.
 2. Remove this `MIGRATION.md` and the clearly-marked staging paragraph in `README.md`.
-3. **Decide the project license.** The MIT `LICENSE` in `native/vendor/` covers only the vendored
-   trezor-crypto files (a redistribution requirement); the repository itself ships no top-level license
-   yet. That choice is the owner's; MIT would match the vendored code and the family's habits.
+3. **Check the license files came across, all three of them.** `LICENSE` is CoinXT's own MIT.
+   `native/vendor/LICENSE` is trezor-crypto's MIT, which covers only the vendored files that are
+   actually trezor's. `THIRD-PARTY-LICENSES.md` covers the ones that are not: the vendored subset
+   also contains BSD-3-Clause (SHA-2), public-domain (RIPEMD-160), CC0 (BLAKE-256, BLAKE2b) and a
+   separately-held MIT (Groestl). That third file is a **redistribution requirement, not a
+   courtesy** - the BSD-3-Clause clause 2 binds binary distribution and this repository commits
+   built libraries - so a split that leaves it behind ships those binaries out of compliance.
 4. Protect `main` (PRs only) if that matches the family workflow; development stays on per-task
    branches with draft PRs, exactly as [CLAUDE.md](CLAUDE.md) prescribes.
 
@@ -85,8 +89,10 @@ expects: `.github/workflows/ci.yml` (dormant while nested, because GitHub only r
      `tools/install-release-binaries.py` knows coinxt's export surface;
    - the root `README.md` release matrix, `CLAUDE.md`, `docs/README.md`, and
      `docs/OXT-PASS-RUNBOOK.md` all describe coinxt as a member;
-   - the root `LICENSE` carries CoinXT's trezor-crypto (MIT) attribution, which must move WITH the
-     code rather than simply be deleted: it is a redistribution requirement, not a courtesy;
+   - the root `LICENSE` carries CoinXT's third-party attribution block (trezor-crypto's MIT plus the
+     six other licenses in the vendored subset), which must move WITH the code rather than simply be
+     deleted: it is a redistribution requirement, not a courtesy, and `coinxt/THIRD-PARTY-LICENSES.md`
+     is the per-file detail behind it;
    - `tests/suite-selftest.livecodescript` probes for CoinXT and runs its vectors.
 3. **Reconsider whether to split at all.** The suite `CLAUDE.md` states the monorepo is now the
    source of truth and the former standalone repositories are mirrors, so splitting CoinXT out runs

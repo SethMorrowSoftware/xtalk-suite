@@ -40,8 +40,22 @@ licenses, reproduced with their sources:
                   OpenSSL (DTLS)                system-provided, not bundled
   onionxt         (no bundled code — connects to a Tor daemon you run)
   coinxt          trezor-crypto                 MIT
+                  SHA-2 (Gifford)               BSD-3-Clause
+                  SHA-3/Keccak (RHash)          MIT
+                  RIPEMD-160 (Litzenberger)     public domain
+                  BLAKE-256 (Aumasson)          CC0-1.0
+                  BLAKE2b (Neves)               CC0-1.0 / OpenSSL / Apache-2.0
+                                                (coinxt elects CC0-1.0)
+                  Groestl (Projet RNRT SAPHIR)  MIT
+
+trezor-crypto is MIT as a project, but the subset coinxt vendors includes
+third-party implementations that keep their own terms — the six rows above it.
+They are all permissive and none is copyleft, but two carry real distribution
+requirements: the SHA-2 files are BSD-3-Clause, whose clause 2 binds a BINARY
+redistribution, and coinxt commits built libraries. The list is per-file in
+coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
 in the member's LICENSE file (sodiumxt), in a THIRD-PARTY-LICENSES.md next to
-the member's LICENSE (torrentxt, enetxt, datachannelxt), or alongside the
-vendored sources (coinxt/native/vendor/LICENSE).
+the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt), or alongside
+the vendored sources (coinxt/native/vendor/LICENSE, for the MIT parts).

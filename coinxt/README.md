@@ -51,6 +51,10 @@ CoinXT/
   SPEC.md                   what CoinXT is: the C/script split, the ABI contract, formats, security model
   IMPLEMENTATION-PLAN.md    the phased build order
   CLAUDE.md                 the operational guide + the FFI/C-ABI law (read before touching the shim)
+  LICENSE                   CoinXT's own MIT license
+  THIRD-PARTY-LICENSES.md   the vendored subset is NOT all MIT (BSD-3-Clause SHA-2, public-domain
+                            RIPEMD-160, CC0 BLAKE, separately-held MIT Groestl). Ships with the
+                            committed binaries because one of those binds binary redistribution
   MIGRATION.md              how to split CoinXT into its own repository (delete after the move)
   templates/
     CLAUDE.md               the portable xTalk/LiveCode/LCB lesson book (ALL the family's generic
