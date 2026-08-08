@@ -109,6 +109,17 @@ def load_kat_curve():
         return None
 
 
+def _load_reference():
+    """The phase-3 reference implementation, loaded the same source-exec way as
+    the KAT tables above and for the same reason: no bytecode cache path."""
+    import importlib.util
+    path = os.path.join(HERE, "coin_reference.py")
+    spec = importlib.util.spec_from_file_location("coin_reference_v", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def sha3_256(data):
     return hashlib.sha3_256(data).hexdigest()
 
@@ -244,6 +255,53 @@ def main(argv):
             notes.append("secp256k1: the `ecdsa` package is not installed here, so the "
                          "curve constants were checked against the table in coin-kat.py "
                          "rather than re-derived independently (pip install ecdsa).")
+
+    # --- phase 3: encodings and addresses ------------------------------------
+    # Re-derived from tools/coin_reference.py, which reproduces the published
+    # vectors independently. Two of these are worth stating plainly because they
+    # are what makes the harness self-evidently right rather than self-
+    # consistent: the P2WPKH and P2TR addresses of the private key 1 ARE
+    # BIP-173's and BIP-350's own example addresses, because hash160(G) is the
+    # witness program in the first and x-only G is the program in the second.
+    try:
+        ref = _load_reference()
+    except Exception as exc:                                  # pragma: no cover
+        ref = None
+        problems.append(f"could not load tools/coin_reference.py ({exc})")
+    if ref is not None:
+        g33 = bytes.fromhex(k.get("kPubOneCompressed", ""))
+        g65 = bytes.fromhex(k.get("kPubOneUncompressed", ""))
+        payload = bytes.fromhex(k.get("kBase58Payload", ""))
+        want("kBase58Address", ref.b58check_encode(payload), "coin_reference")
+        want("kP2pkhOfG", ref.p2pkh(g33), "coin_reference")
+        want("kP2wpkhOfG", ref.p2wpkh(g33), "coin_reference")
+        want("kP2trOfG", ref.p2tr(g65[1:33]), "coin_reference")
+        want("kEthOfG", ref.eip55(ref.eth_address(g65)), "coin_reference")
+        for name in ("kEip55A", "kEip55B"):
+            got = k.get(name, "")
+            want(name, ref.eip55(got.lower()), "coin_reference")
+        ver, prog = ref.segwit_decode("tb", k.get("kSegwitTestnet", ""))
+        want("kSegwitTestnetProgram",
+             bytes(prog).hex() if prog is not None else "(did not decode)",
+             "coin_reference")
+        # The two NEGATIVE vectors have to stay negative, or the checks that use
+        # them silently stop testing anything.
+        try:
+            ref.b58check_decode(k.get("kBase58Corrupt", ""))
+            problems.append("kBase58Corrupt has a VALID checksum, so the harness "
+                            "check that it is refused proves nothing")
+        except ValueError:
+            if not terse:
+                print("  OK  kBase58Corrupt        is genuinely corrupt")
+        if ref.segwit_decode("bc", k.get("kSegwitV0WithBech32m", "")) != (None, None):
+            problems.append("kSegwitV0WithBech32m decodes successfully, so the "
+                            "harness check that it is refused proves nothing")
+        elif not terse:
+            print("  OK  kSegwitV0WithBech32m  is genuinely invalid")
+        if ref.bech32_decode(k.get("kBech32Valid", ""))[0] is None:
+            problems.append("kBech32Valid does not actually decode")
+        elif not terse:
+            print("  OK  kBech32Valid          is genuinely valid")
 
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()

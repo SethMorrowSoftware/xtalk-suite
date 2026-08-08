@@ -77,6 +77,19 @@ run_gates() {
     echo "== $m: tools/check-selftest-vectors.py =="
     ( cd "$m" && python3 tools/check-selftest-vectors.py --check )
   fi
+
+  # The pure-SCRIPT encoding layer, actually executed. OXT cannot run a
+  # .livecodescript headlessly, so coinxt carries a small interpreter for the
+  # subset its encoders are written in and drives the real file against the
+  # published BIP-173 / BIP-350 / EIP-55 / RLP vectors. It is an approximation
+  # of the engine and does not replace the on-engine pass; what it catches is a
+  # wrong alphabet or an inverted checksum, which on this surface would produce
+  # a valid-looking WRONG address. Slow by nature (every bit of the bech32
+  # checksum is interpreted arithmetic), so it runs after the fast gates.
+  if [ -f "$m/tools/check-script-vectors.py" ]; then
+    echo "== $m: tools/check-script-vectors.py =="
+    ( cd "$m" && python3 tools/check-script-vectors.py --check )
+  fi
   # Generated-standalone freshness (onionxt): the committed standalones must
   # match what the generator would emit from the current sources.
   if [ -f "$m/tools/build-standalone.py" ]; then

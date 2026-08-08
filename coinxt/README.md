@@ -75,11 +75,13 @@ CoinXT/
     coinxt.lcb              the foreign-handler module (binds to all 30 cnx_* exports); the
                             phase-1 hash surface is engine-proven (2026-08-08), the phase-2
                             curve wrappers are verified statically
-    coinxt.livecodescript   the public cx* API + the script-side encodings (later phases)
+    coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP
+                            and the address builders. NOT part of the .lcb - it loads into the
+                            message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 31 public cx* handlers against the
-                            published vectors
+                            its own UI and drives ALL 50 public cx* handlers against the
+                            published vectors (31 from the .lcb, 19 from the script layer)
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
@@ -90,6 +92,11 @@ CoinXT/
                             elsewhere (--lib, e.g. a macOS lipo output)
     check-livecodescript.py the static gate for .lcb / .livecodescript (carried verbatim)
     check-docs-style.py     the house-style gate for .md (carried verbatim)
+    check-script-vectors.py runs src/coinxt.livecodescript against the published vectors, using
+    lcs-interp.py           a small interpreter for the LiveCodeScript subset the encoders use.
+    coin_reference.py       TEST TOOLING, not shipped: an independent implementation of the
+                            phase-3 encodings, validated against the published vectors first so
+                            it can serve as the oracle the script is checked against
   examples/                 (later phases)
     coinxt-demo.livecodescript    keygen, addresses, sign/verify, an HD wallet from a mnemonic
     coinxt-tests.livecodescript   a pure, offline self-test harness (sPass/sFail, KATs)
@@ -102,15 +109,18 @@ python3 tools/check-livecodescript.py         # static gate for the script layer
 python3 tools/check-docs-style.py             # house-style gate for the docs
 python3 tools/coin-kat.py --check             # builds the shim, runs the known-answer vectors
 python3 tools/check-selftest-vectors.py       # the self-test's vectors have not drifted
+python3 tools/check-script-vectors.py         # the SCRIPT encoders reproduce the published vectors
 python3 tools/check-binary-freshness.py       # the committed library still matches the shim
 sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd native && sha256sum -c MANIFEST.sha256 ) # vendored-source integrity
 ( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
-All eight run in CI (`.github/workflows/ci.yml`), and the same set runs in the monorepo's
-`suite-gates.yml` via `tools/build-all.sh --gates`. There is no headless way to compile or run
-`.livecodescript` / `.lcb` on OXT, so a script change additionally needs an on-engine pass; the honest
+All nine run in CI (`.github/workflows/ci.yml`), and the same set runs in the monorepo's
+`suite-gates.yml` via `tools/build-all.sh --gates`. OXT cannot COMPILE or LOAD a `.livecodescript`
+or a `.lcb` headlessly, so a script change still needs an on-engine pass for parser behaviour - but
+the phase-3 encoders' LOGIC is executed headlessly by `check-script-vectors.py`, so "never run" is
+no longer the state they ship in. The honest
 status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
 
 ## Status
@@ -145,8 +155,24 @@ closes that.
 Schnorr / BIP-340 is deferred to a Taproot phase: trezor-crypto's plain-C tree does not implement it,
 reaching Schnorr only through the bundled `secp256k1-zkp`.
 
-Next: encodings and addresses (phase 3, pure script), then HD wallets. Today CoinXT is a correct hash
-and signing library; it does not yet build an address or a transaction.
+**Phase 3, encodings and addresses, is BUILT** and adds 19 public handlers in
+`src/coinxt.livecodescript`: hex, Base58Check, bech32/bech32m, SegWit addresses, `cxHash160` /
+`cxHash256`, the four address builders (P2PKH, P2WPKH, P2TR, Ethereum + EIP-55) and RLP. No shim
+change. The private key 1 now maps all the way to `1BgGZ9tc...`, `bc1qw508d6...`, `bc1p0xlxvl...` and
+`0x7E5F4552...`, and the two SegWit answers are not CoinXT's expectations but **BIP-173's and
+BIP-350's own example addresses**.
+
+That layer is a SCRIPT, not part of the `.lcb`: load it into the message path
+(`start using stack "coinxt"`) the way OnionXT ships its `ox*` surface.
+
+**It has also been executed**, which is new for a pure-script layer in this family.
+`tools/check-script-vectors.py` runs the real file through a small LiveCodeScript interpreter
+(`tools/lcs-interp.py`) against the published BIP-173, BIP-350, EIP-55, RLP and Base58Check vectors,
+with the hashes coming from the real shim: 87 checks, in the gate set, on every push. That settles
+the LOGIC. Engine parser behaviour still needs the OXT pass.
+
+Next: HD wallets and mnemonics (phase 4). Today CoinXT hashes, signs, and turns a key into an
+address; it does not yet derive a wallet from a mnemonic or build a transaction.
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,

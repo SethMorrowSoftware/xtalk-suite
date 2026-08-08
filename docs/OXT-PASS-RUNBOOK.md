@@ -350,7 +350,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged (all four Linux/Windows libraries are committed; on macOS run `pack` first - 2.4; on **32-bit Linux** see the warning in 4.6) | Drives **all 31** public `cx*` handlers, retiring in one paste the 12 the 2026-08-08 pass never called **and the 15 phase-2 curve handlers that have never been loaded at all**. Fully synchronous: no I/O, no state, no teardown. Includes the SHA3-vs-Keccak aliasing check, the published RFC 6979 signature, the `ecrecover` round-trip, and the fail-closed guards. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives **all 50** public `cx*` handlers: the 31 in the `.lcb` (hashes + curve) and the 19 in `src/coinxt.livecodescript` (encodings + addresses). Retires the 12 phase-1 handlers the 2026-08-08 pass never called, the 15 phase-2 curve handlers, and the whole phase-3 surface. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
@@ -412,6 +412,36 @@ binary messages round-tripping byte for byte, the drain's arrays carrying the
 documented keys, and idempotent close / free / cleanup. It also pins the non-trickle
 signalling contract: a live local description carries `a=candidate`, and the
 offer/answer roles match the flow.
+
+**PHASE 3 IS A SECOND, SEPARATE LOAD - check this before you conclude anything.**
+The hash and curve handlers come from the `.lcb` extension. The encoders and address
+builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT and must be in
+the message path:
+
+```
+start using stack "coinxt"     -- or insert its script into the back
+```
+
+If every phase-3 section fails with `handler not found` while the earlier ones pass,
+that is the symptom of the script not being loaded - a setup problem, not a defect.
+Fix it and re-run before reporting anything.
+
+**What phase 3 adds to the run:** hex round-trips, the Base58Check worked example plus
+its corrupt-checksum and bad-character refusals and the leading-zero rule, bech32
+acceptance and five BIP-173 rejections, the addresses of the private key 1 at all four
+formats, EIP-55, and RLP encode/decode with a non-canonical refusal.
+
+**The address checks are stronger than they look.** `cxBtcAddressP2WPKH` of G must equal
+`bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4` and `cxBtcAddressP2TR` of x-only G must equal
+`bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0` - and those are not
+CoinXT's expectations. They are **BIP-173's and BIP-350's own example addresses**, because
+hash160(G) is the witness program in the first and x-only G is the program in the second.
+
+**Phase 3's LOGIC has already been executed headlessly**, unlike any previous pure-script
+layer in this family: `coinxt/tools/check-script-vectors.py` runs the real `.livecodescript`
+through a small interpreter against these same vectors on every push. So a failure here is
+much more likely to be a PARSER difference than an arithmetic one - which is exactly the
+thing only this run can settle. Record the exact failing line.
 
 **Copy back:** the full `stResults` text.
 
@@ -538,9 +568,9 @@ signer, ECDH agreeing from both sides, and six curve fail-closed guards.
 
 **Copy back:** the full `stResults` text.
 
-**What it deliberately does not prove:** anything about HD wallets or address
-encodings. Those are phases 3-4 and do not exist yet. It also does not prove
-Schnorr, which is deferred with Taproot.
+**What it deliberately does not prove:** anything about HD wallets or mnemonics.
+Those are phase 4 and do not exist yet. Nor Schnorr, deferred with Taproot. Nor
+Taproot key tweaking: `cxBtcAddressP2TR` encodes an output key it is GIVEN.
 
 **What flips:** the "PHASE 2 STATUS" block and the "STILL VERIFIED STATICALLY"
 paragraph in the `coinxt/src/coinxt.lcb` header, the matching sentences in

@@ -456,6 +456,47 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
   against the C (arity, per-argument type, return type: 30/30), and the bind set equal to the built
   library's exported symbols (30/30).
 
+**Phase 3, encodings and addresses - BUILT, and EXECUTED headlessly, which is new for a
+pure-script layer.** `src/coinxt.livecodescript` ships 19 public handlers: hex, Base58Check,
+bech32/bech32m, SegWit addresses, `cxHash160`/`cxHash256`, the four address builders and RLP.
+No shim change; the ABI is untouched at 3.
+
+- **The script is not part of the .lcb and does not load with it.** It goes in the message
+  path (`start using stack "coinxt"`), the way OnionXT ships its `ox*` surface, and
+  `tools/package-extension.py` now stages it beside the binaries. A user whose hashes work
+  and whose `cxBtcAddressP2PKH` says "handler not found" has loaded the extension and not the
+  script; say so in that order when triaging.
+- **A pure-script layer used to be unverifiable headlessly. It is not any more.**
+  `tools/lcs-interp.py` interprets the LiveCodeScript subset the encoders are written in, and
+  `tools/check-script-vectors.py` runs THE REAL FILE against the published BIP-173, BIP-350,
+  EIP-55, RLP and Base58Check vectors, with the hashes supplied by the real shim through
+  ctypes. 87 checks, in the gate set, on every push. This is an approximation of the engine
+  and settles LOGIC only: parser behaviour still needs the OXT pass, and nothing here is
+  promoted out of "verified statically". It found a real ambiguity while being built (a
+  `the number of items of X < 1` that let the count swallow the comparison), which is
+  precisely the kind of thing that would otherwise have burned an engine session.
+- **The three portability disciplines are in the file header and are not optional.** No `^`,
+  `div`, `mod`, `bitAnd`, `bitOr` or `bitXor` anywhere (all replaced by arithmetic helpers,
+  including a 31-bit `cxBitXor` the bech32 checksum needs); every accumulator masked each step
+  so nothing approaches 2^53; and alphabet lookup by BYTE VALUE rather than `offset()`.
+- **That last one is the most dangerous line in the file.** `offset()` and `is` honour `the
+  caseSensitive`, which defaults to FALSE, and in Base58 `a` and `A` are DIFFERENT DIGITS. A
+  case-insensitive lookup decodes a different number and hands back a valid-looking wrong
+  key. `cxCharIndex` compares `byteToNum` values instead, which is exact whatever the caller
+  has set. Do not "simplify" it.
+- **Base58 is a base conversion, not a bit repack**, so there is no bit-buffer trick: a 25-byte
+  payload is a 200-bit number no xTalk number holds exactly. `cxBase58Encode` does long
+  division over the byte array, and nothing in it exceeds 58 * 255.
+- **`cxBtcAddressP2TR` encodes an output key it is GIVEN.** It does not tweak. BIP-341's
+  `Q = P + int(tagged_hash(P || merkle_root))G` needs the BIP-340 surface deferred with
+  Taproot, and feeding it a raw internal key yields a valid-looking unspendable address. The
+  handler's comment says so; keep it saying so.
+- Verified: `tools/check-script-vectors.py` green (87 checks), the constants tier compared
+  against `tools/coin_reference.py` (which reproduces the published vectors independently),
+  the gate mutation-tested, `tools/check-selftest-vectors.py` re-deriving the harness's new
+  phase-3 constants AND asserting the two NEGATIVE vectors are genuinely negative, and
+  `tools/check-livecodescript.py` clean.
+
 **Schnorr / BIP-340 is DEFERRED, and phase 0's open question is now answered.** The plan left "which
 upstream path provides it" open. The answer: not this one. trezor-crypto's plain-C tree has no BIP-340
 implementation - it reaches Schnorr only through `zkp_bip340.c`, which requires the bundled

@@ -15,24 +15,39 @@ script "coinSelfTest"
 -- output against the same published vector tools/coin-kat.py pins, so a green run
 -- here and a green run there are the same claim at two different layers.
 --
--- COVERAGE NOTE (honest): every public cx* handler is driven here - all 31 of
--- them. Phase 1: cxCheckABI, the seven hash *Len accessors, cxKeccak256,
--- cxSha3_256, cxSha256, cxSha512, cxRipemd160, cxHmacSha256, cxHmacSha512,
--- cxPbkdf2HmacSha512. Phase 2: cxNewSeckey, cxSeckeyIsValid, cxPublicKey,
--- cxPubkeyDecompress, cxSign, cxVerify, cxSignRecoverable, cxRecover, cxEcdh
--- and their six length accessors. The vectors are Keccak-256 (Ethereum 0x01
--- padding), FIPS 180-4 SHA-2, the RIPEMD-160 specification vectors, NIST
--- SHA3-256, RFC 4231 HMAC cases 1 and 2, the BIP-39 abandon-about/TREZOR seed,
--- the secp256k1 generator G, and the published RFC 6979 signature of
--- sha256("Satoshi Nakamoto") under the private key 1.
+-- COVERAGE NOTE (honest): every public cx* handler is driven here, across all
+-- three built phases. Phase 1 (the .lcb): cxCheckABI, the seven hash *Len
+-- accessors, cxKeccak256, cxSha3_256, cxSha256, cxSha512, cxRipemd160,
+-- cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512. Phase 2 (the .lcb):
+-- cxNewSeckey, cxSeckeyIsValid, cxPublicKey, cxPubkeyDecompress, cxSign,
+-- cxVerify, cxSignRecoverable, cxRecover, cxEcdh and their six length
+-- accessors. Phase 3 (src/coinxt.livecodescript): the hex, Base58Check,
+-- bech32/bech32m and RLP encoders, cxHash160/cxHash256, and the four address
+-- builders. The vectors are Keccak-256 (Ethereum 0x01 padding), FIPS 180-4
+-- SHA-2, the RIPEMD-160 specification vectors, NIST SHA3-256, RFC 4231 HMAC
+-- cases 1 and 2, the BIP-39 abandon-about/TREZOR seed, the secp256k1 generator
+-- G, the published RFC 6979 signature of sha256("Satoshi Nakamoto") under the
+-- private key 1, and for phase 3 the BIP-173/BIP-350 addresses, the EIP-55
+-- examples and the RLP yellow-paper examples.
+--
+-- TWO DIFFERENT LOADS ARE BEING TESTED HERE, and it is worth knowing which is
+-- which when something fails. Phases 1 and 2 are the .lcb extension. Phase 3 is
+-- a SCRIPT that must be in the message path (`start using stack "coinxt"`), the
+-- way OnionXT ships its ox* surface. If every phase-3 section fails with
+-- "handler not found" while the earlier ones pass, the extension loaded and the
+-- script did not - that is a setup problem, not a defect.
 --
 -- THIS FILE HAS NOT ITSELF BEEN RUN ON AN ENGINE YET, so it is verified
 -- statically. Running it is what turns the 12 phase-1 handlers the 2026-08-08
--- suite pass could not reach, and all 15 phase-2 handlers, into runtime results.
+-- suite pass could not reach, all 15 phase-2 handlers, and the whole phase-3
+-- surface into runtime results. Phase 3's LOGIC has been executed headlessly by
+-- tools/check-script-vectors.py against these same vectors; what is still
+-- unobserved for it is engine PARSER behaviour, which only a real engine
+-- settles.
 --
--- WHAT IT DELIBERATELY DOES NOT PROVE: anything about HD wallets or address
--- encodings. Those are phases 3 and 4 and do not exist yet. A green run here
--- says the hash and curve surfaces are correct through the binding, nothing more.
+-- WHAT IT DELIBERATELY DOES NOT PROVE: anything about HD wallets or mnemonics.
+-- Those are phase 4 and do not exist yet. Nor Taproot key tweaking: cxBtcAddressP2TR
+-- encodes an output key it is GIVEN and does not derive one (see its comment).
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI, runs every
@@ -108,6 +123,31 @@ constant kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28
 -- to the one pinned in tools/coin-kat.py. Low-s, as both Bitcoin relay policy
 -- and Ethereum consensus require.
 constant kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
+
+-- ---- phase 3: encodings and addresses ----------------------------------------
+-- Every one of these is a PUBLISHED vector, identical to the values
+-- tools/coin_reference.py pins and tools/check-script-vectors.py runs the real
+-- script against. Two of them are worth pointing at, because they make this
+-- harness stronger than it looks: hash160 of the compressed generator G is
+-- 751e76e8...33bd6, which is EXACTLY the witness program in BIP-173's own
+-- example address, and the x-only G is the program in BIP-350's. So deriving an
+-- address from the private key 1 lands on a published answer at both witness
+-- versions - no CoinXT-invented expectations anywhere in this section.
+constant kBase58Payload = "00010966776006953D5567439E5E39F86A0D273BEE"
+constant kBase58Address = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM"
+constant kBase58Corrupt = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvN"
+constant kP2wpkhOfG = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+constant kP2trOfG = "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
+constant kP2pkhOfG = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"
+constant kEthOfG = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+constant kEip55A = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+constant kEip55B = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+constant kBech32Valid = "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
+constant kSegwitTestnet = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
+constant kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"
+-- BIP-350's invalid list: a version 0 address carrying a bech32m checksum. This
+-- is the single most important rejection in the whole encoding surface.
+constant kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
 
 -- ---- state -------------------------------------------------------------------
 local sTotal, sPassed, sFailed
@@ -258,6 +298,12 @@ command stRun
    stRunCurveRecover
    stRunCurveEcdh
    stRunCurveFailClosed
+   stRunHex
+   stRunBase58
+   stRunBech32
+   stRunAddresses
+   stRunEip55
+   stRunRlp
 
    stSection "summary"
    stNote "Vectors are identical to tools/coin-kat.py, so this run and the"
@@ -671,7 +717,177 @@ command stRunCurveFailClosed
    end try
 end stRunCurveFailClosed
 
+
+-- ---- phase 3: the pure-script encodings --------------------------------------
+-- These handlers live in src/coinxt.livecodescript, NOT in the .lcb module, so
+-- they only resolve once that script is in the message path (`start using stack
+-- "coinxt"`, the same way OnionXT ships its ox* surface). A "handler not found"
+-- in this whole block means the script layer was not loaded, which is a setup
+-- problem and not a phase-3 defect - check that first before reading further.
+
+command stRunHex
+   stSection "hex"
+   try
+      stAssert "cxHexEncode of 00ff10ab", cxHexEncode(cxHexDecode("00ff10ab")) is "00ff10ab"
+      stAssert "cxHexDecode accepts upper case", cxHexEncode(cxHexDecode("00FF10AB")) is "00ff10ab"
+      stAssert "cxHexEncode of the empty input", cxHexEncode(cxHexDecode("")) is ""
+      stAssert "an odd-length hex string is refused", stThrows("cxHexDecode", "abc")
+      stAssert "a non-hex character is refused", stThrows("cxHexDecode", "zz")
+   catch tError
+      stSectionFailed "hex", tError
+   end try
+end stRunHex
+
+command stRunBase58
+   local tPayload, tI, tPadded
+   stSection "Base58Check"
+   try
+      put cxHexDecode(kBase58Payload) into tPayload
+      stAssert "encodes the worked example", cxBase58CheckEncode(tPayload) is kBase58Address
+      stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(kBase58Address)) is stToLowerText(kBase58Payload)
+      -- The checksum is the entire point of the encoding: one flipped character
+      -- must be refused, never coerced into a nearby valid-looking payload.
+      stAssert "a corrupt checksum is refused", stThrows("cxBase58CheckDecode", kBase58Corrupt)
+      stAssert "a character outside the alphabet is refused", stThrows("cxBase58CheckDecode", "16UwLL9Risc3QfPqBUvKofHmBQ7wMtj0O")
+      -- Leading zero bytes must survive as leading "1"s, one for one. That is
+      -- what makes a mainnet P2PKH address start with a 1 at all.
+      put numToByte(0) & numToByte(0) & cxHexDecode("deadbeef") into tPadded
+      stAssert "two leading zero bytes give two leading ones", char 1 to 2 of cxBase58CheckEncode(tPadded) is "11"
+      stAssert "the round trip preserves them", cxHexEncode(cxBase58CheckDecode(cxBase58CheckEncode(tPadded))) is "0000deadbeef"
+   catch tError
+      stSectionFailed "Base58Check", tError
+   end try
+end stRunBase58
+
+command stRunBech32
+   local tDecoded
+   stSection "bech32 and bech32m"
+   try
+      put cxBech32DecodeValues(kBech32Valid) into tDecoded
+      stAssert "a published bech32 string decodes", tDecoded["hrp"] is "abcdef"
+      stAssert "and reports the bech32 encoding", tDecoded["spec"] is "bech32"
+      stAssert "a mixed-case string is refused", stThrows("cxBech32DecodeValues", "A1G7SGD8x")
+      stAssert "a string with no separator is refused", stThrows("cxBech32DecodeValues", "pzry9x0s0muk")
+      stAssert "an empty human-readable part is refused", stThrows("cxBech32DecodeValues", "1pzry9x0s0muk")
+      stAssert "a checksum computed over an uppercase HRP is refused", stThrows("cxBech32DecodeValues", "A1G7SGD8")
+      stAssert "a data character outside the charset is refused", stThrows("cxBech32DecodeValues", "x1b4n0q5v")
+   catch tError
+      stSectionFailed "bech32", tError
+   end try
+end stRunBech32
+
+command stRunAddresses
+   local tPubC, tPubU, tSeckey, tDecoded
+   stSection "addresses from the generator G"
+   try
+      put stRepeatByte(0, 31) & numToByte(1) into tSeckey
+      put cxPublicKey(tSeckey, true) into tPubC
+      put cxPublicKey(tSeckey, false) into tPubU
+      -- Each of these is a PUBLISHED answer, not a CoinXT expectation.
+      stAssert "cxBtcAddressP2PKH of G", cxBtcAddressP2PKH(tPubC) is kP2pkhOfG
+      stAssert "cxBtcAddressP2WPKH of G is the BIP-173 vector", cxBtcAddressP2WPKH(tPubC) is kP2wpkhOfG
+      stAssert "cxBtcAddressP2TR of x-only G is the BIP-350 vector", cxBtcAddressP2TR(byte 2 to 33 of tPubU) is kP2trOfG
+      stAssert "cxEthAddress of G (from the compressed key)", cxEthAddressChecksum(cxEthAddress(tPubC)) is kEthOfG
+      stAssert "cxEthAddress agrees from the uncompressed key", cxEthAddress(tPubU) is cxEthAddress(tPubC)
+      -- An uncompressed key in a v0 SegWit address makes funds unspendable by
+      -- every modern wallet, so it must be refused rather than encoded.
+      stAssert "P2WPKH refuses an uncompressed key", stThrows("cxBtcAddressP2WPKH", tPubU)
+      stAssert "P2TR refuses a 33-byte key", stThrows("cxBtcAddressP2TR", tPubC)
+      -- Round-trip through the SegWit decoder, including the network check.
+      put cxSegwitAddressDecode("bc", kP2wpkhOfG) into tDecoded
+      stAssert "the decoded witness version is 0", tDecoded["version"] is 0
+      stAssert "the decoded program is hash160 of G", cxHexEncode(tDecoded["program"]) is cxHexEncode(cxHash160(tPubC))
+      put cxSegwitAddressDecode("tb", kSegwitTestnet) into tDecoded
+      stAssert "a testnet v0 script address decodes", cxHexEncode(tDecoded["program"]) is kSegwitTestnetProgram
+      stAssert "a mainnet address is refused under the testnet HRP", stThrows2("cxSegwitAddressDecode", "tb", kP2wpkhOfG)
+      -- THE rule BIP-350 exists for.
+      stAssert "a version 0 address with a bech32m checksum is refused", stThrows2("cxSegwitAddressDecode", "bc", kSegwitV0WithBech32m)
+   catch tError
+      stSectionFailed "addresses", tError
+   end try
+end stRunAddresses
+
+command stRunEip55
+   stSection "EIP-55 checksummed Ethereum addresses"
+   try
+      stAssert "checksums the first specification example", cxEthAddressChecksum(stToLowerText(kEip55A)) is kEip55A
+      stAssert "checksums the second", cxEthAddressChecksum(stToLowerText(kEip55B)) is kEip55B
+      stAssert "recognises a correctly checksummed address", cxEthAddressIsChecksummed(kEip55A) is true
+      -- An all-lowercase address carries NO checksum, so reporting it as valid
+      -- would quietly retire the protection EIP-55 exists to give.
+      stAssert "an all-lowercase address is NOT reported as checksummed", cxEthAddressIsChecksummed(stToLowerText(kEip55A)) is false
+      stAssert "a wrong-length address is refused", stThrows("cxEthAddressChecksum", "0xdeadbeef")
+   catch tError
+      stSectionFailed "EIP-55", tError
+   end try
+end stRunEip55
+
+command stRunRlp
+   local tCatDog, tDecoded
+   stSection "RLP"
+   try
+      stAssert "encodes the string dog", cxHexEncode(cxRlpEncodeBytes(stText("dog"))) is "83646f67"
+      stAssert "encodes the empty string", cxHexEncode(cxRlpEncodeBytes("")) is "80"
+      stAssert "encodes a single byte below 0x80 as itself", cxHexEncode(cxRlpEncodeBytes(numToByte(15))) is "0f"
+      stAssert "encodes the empty list", cxHexEncode(cxRlpEncodeList("")) is "c0"
+      put cxRlpEncodeBytes(stText("cat")) & cxRlpEncodeBytes(stText("dog")) into tCatDog
+      stAssert "encodes the list of cat and dog", cxHexEncode(cxRlpEncodeList(tCatDog)) is "c88363617483646f67"
+      put cxRlpDecode(cxHexDecode("83646f67")) into tDecoded
+      stAssert "decodes a string item", tDecoded["kind"] is "bytes"
+      stAssert "and its payload", cxHexEncode(tDecoded["payload"]) is "646f67"
+      put cxRlpDecode(cxHexDecode("c88363617483646f67")) into tDecoded
+      stAssert "decodes a list item", tDecoded["kind"] is "list"
+      -- RLP's guarantee is one value, one encoding. A decoder that accepts a
+      -- second spelling breaks every hash computed over the result.
+      stAssert "a single byte wrapped in a length prefix is refused", stThrows("cxRlpDecode", cxHexDecode("8100"))
+   catch tError
+      stSectionFailed "RLP", tError
+   end try
+end stRunRlp
+
 -- ---- small helpers -----------------------------------------------------------
+-- Did calling pHandler with one argument throw? The encoders fail closed by
+-- throwing, and "it threw" is the assertion, so this keeps each check to one
+-- readable line instead of a nested try per case.
+function stThrows pHandler, pArg
+   local tThrew
+   put "false" into tThrew
+   try
+      do "get" && pHandler & "(pArg)"
+   catch tError
+      put "true" into tThrew
+   end try
+   return tThrew is "true"
+end stThrows
+
+-- The two-argument form (cxSegwitAddressDecode takes an HRP and an address).
+function stThrows2 pHandler, pArgA, pArgB
+   local tThrew
+   put "false" into tThrew
+   try
+      do "get" && pHandler & "(pArgA, pArgB)"
+   catch tError
+      put "true" into tThrew
+   end try
+   return tThrew is "true"
+end stThrows2
+
+-- ASCII lowercase, by byte value, so it does not depend on the caseSensitive.
+function stToLowerText pText
+   local tI, tCount, tCode, tOut
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         add 32 to tCode
+      end if
+      put numToChar(tCode) after tOut
+   end repeat
+   return tOut
+end stToLowerText
+
+
 -- Text to Data. Every cx* input is a Data; a bare literal would be text, and the
 -- engine would be free to re-encode it.
 function stText pString

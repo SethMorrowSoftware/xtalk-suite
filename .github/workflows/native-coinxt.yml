@@ -95,6 +95,16 @@ jobs:
           COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/coin-kat.py --check
 
+      # The phase-3 encoders are pure LiveCodeScript, which OXT cannot run
+      # headlessly, so they are executed here instead: tools/lcs-interp.py
+      # interprets the subset they use and drives the REAL file against the
+      # published BIP-173 / BIP-350 / EIP-55 / RLP vectors, with the hashes
+      # coming from the shim this job just built. Repeated from suite-gates.yml
+      # for the same reason the freshness check is: so this lane stands alone on
+      # a coinxt-only change.
+      - name: The script encoders reproduce the published vectors
+        run: python3 tools/check-script-vectors.py --check
+
       # Suite rule 5, mechanised: the committed src/code/ library must still
       # export exactly what the shim defines and answer the ABI the shim
       # declares. Runs in suite-gates.yml too; repeated here so this lane is

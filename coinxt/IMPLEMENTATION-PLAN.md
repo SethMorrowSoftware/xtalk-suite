@@ -39,8 +39,14 @@ native seam and the KAT harness come first, because everything downstream trusts
 > `tests/coin-selftest.livecodescript` drives all 31 public handlers and is what will close it. Two
 > phase-0 items are also now settled: the entropy decision was WRONG and is corrected (see CLAUDE.md,
 > "Determinism and entropy"), and Schnorr/BIP-340 is deferred to a Taproot phase because
-> trezor-crypto's plain-C tree does not implement it. **Phase 3 (encodings and addresses, pure script)
-> is now the member's critical path.**
+> trezor-crypto's plain-C tree does not implement it. **PHASE 3 IS ALSO BUILT.** `src/coinxt.livecodescript`
+> adds 19 public handlers (hex, Base58Check, bech32/bech32m, SegWit addresses, hash160/hash256,
+> the four address builders, RLP) with no shim change. Its logic is executed headlessly against the
+> published BIP-173 / BIP-350 / EIP-55 / RLP vectors by `tools/check-script-vectors.py`, which runs
+> the REAL file through a small LiveCodeScript interpreter - the first time a pure-script layer in
+> this family has been executed before an engine saw it. **Phase 4 (HD wallets and mnemonics) is now
+> the member's critical path**, and an engine pass over phases 2 and 3 is the outstanding
+> verification.
 
 ## The "done" bar (applies to every phase)
 
@@ -117,7 +123,7 @@ fifteen new public handlers stop being "verified statically".
 **Risk retired:** the core value proposition (correct, deterministic, recoverable signing on
 secp256k1).
 
-## Phase 3 - Encodings and addresses (pure script)
+## Phase 3 - Encodings and addresses (pure script)  (BUILT; needs an engine pass)
 
 - Livecodescript, no shim: `cxHexEncode/Decode`, `cxBase58CheckEncode/Decode`,
   `cxBech32Encode/Decode` (Bech32 and Bech32m), `cxRlpEncode/Decode`. Each fails closed on a bad
@@ -129,8 +135,19 @@ secp256k1).
   a known-pubkey -> known-eth-address vector.
 
 **Done when:** a pubkey maps to the correct mainnet BTC (all three types) and ETH addresses, and a
-corrupt address is rejected. **Risk retired:** the "silently wrong address = lost funds" class, moved
-into script where it is diffable and fully KAT-covered.
+corrupt address is rejected. **MET headlessly.** The private key 1 maps to `1BgGZ9tc...` (P2PKH),
+`bc1qw508d6...` (P2WPKH) and `bc1p0xlxvl...` (P2TR), and the last two are not CoinXT expectations at
+all - they are BIP-173's and BIP-350's OWN example addresses, because hash160(G) is the witness
+program in the first and x-only G is the program in the second. Corrupt inputs are rejected across
+the board: BIP-173's ten invalid strings, BIP-350's invalid addresses including a v0 address carrying
+a bech32m checksum, a corrupt Base58Check tail, and RLP's non-canonical forms.
+
+Still open for the phase: an **engine pass**. The encoders are pure LiveCodeScript, so
+`tools/check-script-vectors.py` runs the real file through `tools/lcs-interp.py` and settles its
+LOGIC (87 checks), but only OXT settles parser behaviour.
+**Risk retired:** the "silently wrong address = lost funds" class, moved into script where it is
+diffable and fully KAT-covered - and, unlike previous pure-script layers in this family, actually
+executed before shipping.
 
 ## Phase 4 - HD wallets and mnemonics
 
