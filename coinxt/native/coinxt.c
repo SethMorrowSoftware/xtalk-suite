@@ -25,6 +25,10 @@
 #include <stdint.h>
 #include <stdlib.h> /* abort(), for the entropy failure path below */
 
+#include "bip39.h"     /* vendored trezor-crypto: BIP39_WORD_COUNT and the
+                        * BIP39_WORDLIST_ENGLISH table (defined in
+                        * vendor/bip39_english.c). NOTE: bip39.c is deliberately
+                        * NOT vendored - see cnx_bip39_wordlist below.           */
 #include "ecdsa.h"     /* vendored trezor-crypto: the curve surface              */
 #include "hmac.h"      /* vendored trezor-crypto: hmac_sha256 / hmac_sha512      */
 #include "memzero.h"   /* vendored trezor-crypto: best-effort secret wiping      */
@@ -61,7 +65,7 @@ do not fall back to anything weaker (see the entropy section in coinxt.c)."
  * symbol kept its name and signature - but the rule is to bump on ANY ABI
  * change so cxCheckABI() can refuse a stale binary rather than fail at the
  * first missing bind. */
-#define CNX_ABI_VERSION 3
+#define CNX_ABI_VERSION 4
 
 #define CNX_OK 0
 #define CNX_ERR_NULL (-1)   /* a required buffer pointer was NULL */
@@ -516,6 +520,159 @@ int cnx_ecdh(const unsigned char *sk, size_t sklen, const unsigned char *pub,
   if (rc != 0) {
     memzero(out, outlen);
     return CNX_ERR_BADKEY; /* 1 = bad public key, 2 = bad private key */
+  }
+  return CNX_OK;
+}
+
+/* ---- BIP-32: the two curve steps derivation needs ---------------------------
+ * WHY THESE TWO AND NOT hdnode_* : upstream's bip32.c would give us the whole
+ * of BIP-32 for free, but it does NOT come alone. It is written against every
+ * curve trezor supports, so vendoring it drags in curves.c, nist256p1,
+ * ed25519-donna, curve25519 and the Cardano variants - a large closure, most of
+ * it code CoinXT will never call, all of it code CoinXT would then be shipping
+ * and licensing. What BIP-32 actually needs from the curve is exactly two
+ * operations that the ALREADY-vendored ecdsa.c/bignum.c provide:
+ *
+ *   CKDpriv:  ki = (IL + kpar) mod n            -> cnx_seckey_tweak_add
+ *   CKDpub:   Ki = point(IL) + Kpar             -> cnx_pubkey_tweak_add
+ *
+ * Everything else in BIP-32 - the HMAC-SHA512, the serialization, the path
+ * parse, the hardened/normal split - is byte shuffling with no secret-dependent
+ * branch, which by CLAUDE.md's C-vs-script rule belongs in script. So the shim
+ * exports the two curve steps and src/coinxt.livecodescript does the rest.
+ *
+ * Both functions REJECT A ZERO TWEAK, which upstream's own pubkey path accepts.
+ * That is deliberate and it is the safer direction: BIP-32 only declares a child
+ * invalid when parse256(IL) >= n or the result is zero/infinity, so IL == 0 is
+ * technically legal and yields a child key EQUAL TO ITS PARENT. It cannot arise
+ * in practice (it is one HMAC-SHA512 output in 2^256), it is a corner no vector
+ * exercises, and accepting it on one path while the other rejected it would make
+ * private and public derivation of the same child disagree about validity -
+ * which is an interoperability bug of exactly the kind this member exists to
+ * avoid. A caller that somehow meets it gets an error, and BIP-32's own remedy
+ * (move to the next index) is the same remedy it would have had anyway. */
+
+/* ki = (tweak + sk) mod n. The bn_add/bn_mod/bn_is_zero sequence is upstream's
+ * own, copied from hdnode_private_ckd_bip32 in trezor-crypto's bip32.c: bn_add
+ * leaves a partly-reduced value, so the bn_mod is REQUIRED before bn_write_be,
+ * and dropping it is how you get a silently wrong key. */
+int cnx_seckey_tweak_add(const unsigned char *sk, size_t sklen,
+                         const unsigned char *tweak, size_t tweaklen,
+                         unsigned char *out, size_t outlen) {
+  bignum256 a = {0}; /* the parent key   */
+  bignum256 b = {0}; /* the tweak, then the child key */
+  int rc = CNX_OK;
+  if (sk == NULL || tweak == NULL || out == NULL) return CNX_ERR_NULL;
+  if (sklen != 32 || tweaklen != 32 || outlen != 32) return CNX_ERR_BADLEN;
+  bn_read_be(sk, &a);
+  bn_read_be(tweak, &b);
+  if (bn_is_zero(&a) || !bn_is_less(&a, &secp256k1.order)) {
+    rc = CNX_ERR_BADKEY; /* the PARENT is not a valid private key */
+  } else if (bn_is_zero(&b) || !bn_is_less(&b, &secp256k1.order)) {
+    rc = CNX_ERR_BADKEY; /* IL == 0 or IL >= n: BIP-32 says try the next index */
+  } else {
+    bn_add(&b, &a);
+    bn_mod(&b, &secp256k1.order);
+    if (bn_is_zero(&b)) {
+      rc = CNX_ERR_BADKEY; /* ki == 0: BIP-32 says try the next index */
+    } else {
+      bn_write_be(&b, out);
+    }
+  }
+  if (rc != CNX_OK) memzero(out, outlen);
+  /* a and b ARE key material; do not leave either on the stack. */
+  memzero(&a, sizeof a);
+  memzero(&b, sizeof b);
+  return rc;
+}
+
+/* Ki = point(tweak) + Kpar, compressed. This one IS upstream's audited routine
+ * (ecdsa_tweak_pubkey), which reads EXACTLY 33 bytes and dispatches on the
+ * prefix byte - so the 33-byte length is agreed here first, for the same
+ * overread reason cnx_pubkey_ok exists. An uncompressed parent is refused
+ * rather than silently compressed: BIP-32 hashes the COMPRESSED parent key into
+ * the HMAC, so a caller holding 65 bytes has already diverged from the spec and
+ * should be told, not accommodated. */
+int cnx_pubkey_tweak_add(const unsigned char *pub, size_t publen,
+                         const unsigned char *tweak, size_t tweaklen,
+                         unsigned char *out, size_t outlen) {
+  bignum256 t = {0};
+  int zero = 0;
+  if (tweak == NULL || out == NULL) return CNX_ERR_NULL;
+  if (tweaklen != 32 || outlen != 33) return CNX_ERR_BADLEN;
+  if (publen != 33 || !cnx_pubkey_ok(pub, publen)) return CNX_ERR_BADKEY;
+  bn_read_be(tweak, &t);
+  zero = bn_is_zero(&t);
+  memzero(&t, sizeof t);
+  if (zero) return CNX_ERR_BADKEY; /* see the zero-tweak note above */
+  if (!cnx_entropy_ok()) return CNX_ERR_ENTROPY;
+  /* Every non-success code collapses to CNX_ERR_BADKEY: the caller's only
+   * actionable distinction is "this child is unusable, move to the next index",
+   * which is what BIP-32 tells it to do for the tweak/infinity case anyway. */
+  if (ecdsa_tweak_pubkey(&secp256k1, pub, tweak, out) !=
+      ECDSA_TWEAK_PUBKEY_SUCCESS) {
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  return CNX_OK;
+}
+
+/* ---- BIP-39: the normative English wordlist ---------------------------------
+ * The list is NORMATIVE DATA, not code: BIP-39 pins it by the SHA-256 of its
+ * canonical newline-joined form, 2f5eed53...b24dbda, and every wallet in the
+ * world indexes the same 2048 words in the same order. So it is vendored
+ * verbatim (vendor/bip39_english.c, blob-verified against the pinned commit)
+ * rather than transcribed into a script constant, where 2048 hand-copied words
+ * would be 16 KB of unreviewable diff and one typo away from a wallet that
+ * cannot restore its own seed. tools/coin-kat.py re-derives that SHA-256 from
+ * what this function returns, so the claim is checked and not asserted.
+ *
+ * Upstream's bip39.c is NOT vendored with it. Its mnemonic_from_data returns a
+ * `const char *` into a static buffer, which the C-ABI law in CLAUDE.md forbids
+ * bridging, and its mnemonic_to_seed is PBKDF2-HMAC-SHA512, which this shim
+ * already exports. What is left - 11-bit packing and a checksum - is script's
+ * job.
+ *
+ * THE LAYOUT IS FIXED WIDTH, 8 BYTES PER SLOT, SPACE PADDED, in list order:
+ *
+ *   slot i  =  out[i * 8 .. i * 8 + 7]      word i, then ' ' filler
+ *
+ * 8 is BIP39_MAX_WORD_LEN and the longest English word is exactly 8, so nothing
+ * is truncated. Fixed width is what makes the script side cheap and exact:
+ * index -> word is one chunk expression, and word -> index is a binary search
+ * over a sorted table rather than a 2048-step scan. A space-separated blob would
+ * have forced the script to split 15 KB on every lookup. */
+
+#define CNX_BIP39_SLOT 8
+
+size_t cnx_bip39_wordlist_len(void) {
+  return (size_t)BIP39_WORD_COUNT * (size_t)CNX_BIP39_SLOT;
+}
+
+int cnx_bip39_wordlist(unsigned char *out, size_t outlen) {
+  size_t i = 0;
+  if (out == NULL) return CNX_ERR_NULL;
+  if (outlen != cnx_bip39_wordlist_len()) return CNX_ERR_BADLEN;
+  for (i = 0; i < (size_t)BIP39_WORD_COUNT; i++) {
+    const char *word = BIP39_WORDLIST_ENGLISH[i];
+    unsigned char *slot = out + i * (size_t)CNX_BIP39_SLOT;
+    size_t j = 0;
+    while (j < (size_t)CNX_BIP39_SLOT && word[j] != '\0') {
+      slot[j] = (unsigned char)word[j];
+      j++;
+    }
+    /* If a future wordlist ever carried a word longer than the slot, the
+     * fixed-width contract above would break SILENTLY and every index past it
+     * would be wrong. Refuse instead. Unreachable for the pinned list, which
+     * tools/coin-kat.py checks by hash. */
+    if (word[j] != '\0') {
+      memzero(out, outlen);
+      return CNX_ERR_INTERNAL;
+    }
+    while (j < (size_t)CNX_BIP39_SLOT) {
+      slot[j] = (unsigned char)' ';
+      j++;
+    }
   }
   return CNX_OK;
 }

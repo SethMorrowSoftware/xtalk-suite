@@ -234,6 +234,13 @@ def assemble_staging(dry_run):
             actions.append((src, os.path.join(staging, rel_dst)))
 
     stage(os.path.join("src", "coinxt.lcb"), "coinxt.lcb")
+    # The phase-3 script layer. It is NOT part of the .lcb module: encodings and
+    # addresses are pure LiveCodeScript by design (CLAUDE.md, the C-vs-script
+    # split), and a user loads it into the message path - `start using stack
+    # "coinxt"` - the same way OnionXT ships its ox* surface. Leaving it out of
+    # the package would mean cxBtcAddressP2PKH and friends resolve to "handler
+    # not found" on a machine where the binary and the binding both loaded fine.
+    stage(os.path.join("src", "coinxt.livecodescript"), "coinxt.livecodescript")
     # The engine-side harness travels with the extension: the whole point of it
     # is that whoever installs this can verify the install in one paste.
     stage(os.path.join("tests", "coin-selftest.livecodescript"),

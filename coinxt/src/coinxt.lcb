@@ -16,11 +16,15 @@ library org.openxtalk.library.coin
 -- and the ABI guard.
 -- Phase 2 scope (ABI 3): the secp256k1 curve - cxNewSeckey, cxSeckeyIsValid,
 -- cxPublicKey, cxPubkeyDecompress, cxSign, cxVerify, cxSignRecoverable,
--- cxRecover, cxEcdh and their six length accessors. HD (BIP-32) and mnemonic
--- (BIP-39) wrappers land in later phases against the same shapes.
+-- cxRecover, cxEcdh and their six length accessors.
+-- Phase 4 scope (ABI 4): the two BIP-32 curve steps (cxSeckeyTweakAdd,
+-- cxPubkeyTweakAdd) and the BIP-39 wordlist (cxBip39Wordlist + its length).
+-- That is ALL of phase 4 that belongs here: the mnemonic packing, the path
+-- parse and the xprv/xpub framing are byte shuffling and live in
+-- src/coinxt.livecodescript, by the same C-vs-script rule as the encodings.
 --
 -- ==========================================================================
--- PHASE 2 STATUS: THE NATIVE SIDE IS PROVEN; THE HANDLERS BELOW ARE NOT.
+-- PHASE 2 AND 4 STATUS: THE NATIVE SIDE IS PROVEN; THE HANDLERS BELOW ARE NOT.
 -- Be precise about which of those two this file is. tools/coin-kat.py drives
 -- every phase-2 cnx_ entry point headless through ctypes and pins it to public
 -- vectors: CoinXT reproduces four published RFC 6979 secp256k1 signatures byte
@@ -29,7 +33,14 @@ library org.openxtalk.library.coin
 -- native side returns the signing key. That is the IMPLEMENTATION-PLAN phase-2
 -- bar, met at the C level.
 --
--- What has NOT happened is an engine pass over the fifteen new PUBLIC handlers
+-- The phase-4 additions stand in exactly the same place: tools/coin-kat.py
+-- walks BIP-32 test vector 1 through cnx_seckey_tweak_add and
+-- cnx_pubkey_tweak_add and requires the published private key at every level
+-- (with the public path agreeing with the private one), and it requires the
+-- wordlist to hash to the SHA-256 BIP-39 publishes. Native side proven; the
+-- wrappers below are not.
+--
+-- What has NOT happened is an engine pass over the eighteen new PUBLIC handlers
 -- in this file. They are assembled from the exact parts the 2026-08-08 pass
 -- proved (sPrepare + sAlloc + a UIntSize length + sFinish), and every bind
 -- string, argument count, type mapping and return type below was diffed
@@ -133,7 +144,7 @@ metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-cryp
 -- be refused with a legible error, not discovered at the first missing bind.
 -- Declared before first use - OXT resolves a constant by lexical position, and
 -- a forward reference silently evaluates to nothing.
-constant kABIVersion is 3
+constant kABIVersion is 4
 
 -- The largest PBKDF2 iteration count this binding will marshal. The shim takes
 -- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
@@ -229,6 +240,27 @@ private foreign handler _cnx_pubkey_len_uncompressed() returns UIntSize binds to
 private foreign handler _cnx_ecdsa_sig_len() returns UIntSize binds to "c:coinxt>cnx_ecdsa_sig_len"
 private foreign handler _cnx_recoverable_sig_len() returns UIntSize binds to "c:coinxt>cnx_recoverable_sig_len"
 private foreign handler _cnx_ecdh_len() returns UIntSize binds to "c:coinxt>cnx_ecdh_len"
+
+-- --------------------------------------------------------------------------
+-- Phase 4: the two curve steps BIP-32 needs, and the BIP-39 wordlist.
+--
+-- The shim exports only the parts of BIP-32 that ARE curve arithmetic -
+-- ki = (IL + kpar) mod n and Ki = point(IL) + Kpar. Everything else about HD
+-- derivation (the HMAC-SHA512, the serialization, the path parse) is byte
+-- shuffling and lives in src/coinxt.livecodescript, per the C-vs-script split
+-- in CLAUDE.md. See the long note above these two in native/coinxt.c for why
+-- upstream's whole bip32.c was not vendored instead.
+--
+-- The wordlist crosses as ONE 16384-byte Data: 2048 slots of 8 bytes, each a
+-- word left-aligned and space padded, in list order. It is normative data, so
+-- it is vendored verbatim rather than transcribed into a script constant; the
+-- fixed width is what lets the script index it with a chunk expression and
+-- binary-search it instead of splitting 15 KB on every lookup.
+-- --------------------------------------------------------------------------
+private foreign handler _cnx_seckey_tweak_add(in pSk as Pointer, in pSkLen as UIntSize, in pTweak as Pointer, in pTweakLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_seckey_tweak_add"
+private foreign handler _cnx_pubkey_tweak_add(in pPub as Pointer, in pPubLen as UIntSize, in pTweak as Pointer, in pTweakLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_pubkey_tweak_add"
+private foreign handler _cnx_bip39_wordlist(in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_bip39_wordlist"
+private foreign handler _cnx_bip39_wordlist_len() returns UIntSize binds to "c:coinxt>cnx_bip39_wordlist_len"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -847,6 +879,104 @@ public handler cxEcdh(in pSeckey as Data, in pPubkey as Data) returns Data
 end handler
 
 -- ==========================================================================
+-- Phase 4: the curve steps of BIP-32, and the BIP-39 wordlist.
+--
+-- These three are LOW-LEVEL and most callers should not touch them: the HD
+-- API a wallet wants (cxHdFromSeed, cxHdDerivePath, cxMnemonicToSeed and
+-- friends) is in src/coinxt.livecodescript and is built out of exactly these.
+-- They are public because that script layer is a separate file and can only
+-- reach the shim through the module's public surface, and because a caller
+-- implementing a non-BIP-32 scheme on the same curve has a legitimate use for
+-- a tweak. Nothing here parses a path or knows what a chain code is.
+-- ==========================================================================
+
+-- ki = (pTweak + pSeckey) mod n, the private half of one BIP-32 derivation
+-- step. pTweak is IL, the first 32 bytes of HMAC-SHA512(chain code, data).
+--
+-- Throws when the result is not a usable key - which BIP-32 defines as
+-- IL >= n or ki = 0, and to which its answer is "use the next child index",
+-- not "give up". A zero tweak throws for the same reason cxPubkeyTweakAdd
+-- rejects one: see the note in native/coinxt.c. The probability of ever
+-- meeting either is about 2^-128; handle it, do not design around it.
+public handler cxSeckeyTweakAdd(in pSeckey as Data, in pTweak as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tTweakPtr as Pointer
+   variable tTweakLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pTweak) into tTweakLen
+   put sDataPtr(pTweak) into tTweakPtr
+   unsafe
+      put _cnx_seckey_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_seckey_tweak_add(tSkPtr, tSkLen, tTweakPtr, tTweakLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxSeckeyTweakAdd", tOut, tStatus, tLen)
+end handler
+
+-- Ki = point(pTweak) + pPubkey, the public half of one BIP-32 derivation step,
+-- returned COMPRESSED. This is what lets a watch-only wallet derive receive
+-- addresses from an xpub with no private key present.
+--
+-- pPubkey must be the 33-byte compressed form. An uncompressed key throws
+-- rather than being compressed on your behalf: BIP-32 hashes the COMPRESSED
+-- parent into the HMAC, so a caller holding 65 bytes has already diverged from
+-- the spec and needs to know it. Hardened children have no public derivation
+-- at all (they hash the private key), which is a property of BIP-32, not a
+-- limitation here - cxHdDerivePath in the script layer says so by name.
+public handler cxPubkeyTweakAdd(in pPubkey as Data, in pTweak as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tPubPtr as Pointer
+   variable tPubLen as Integer
+   variable tTweakPtr as Pointer
+   variable tTweakLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pPubkey) into tPubLen
+   put sDataPtr(pPubkey) into tPubPtr
+   put sDataLen(pTweak) into tTweakLen
+   put sDataPtr(pTweak) into tTweakPtr
+   unsafe
+      put _cnx_pubkey_len_compressed() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_pubkey_tweak_add(tPubPtr, tPubLen, tTweakPtr, tTweakLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxPubkeyTweakAdd", tOut, tStatus, tLen)
+end handler
+
+-- The normative BIP-39 English wordlist as 2048 fixed-width 8-byte slots, each
+-- a word left-aligned and space padded, in list order. 16384 bytes.
+--
+-- Word i (0-based) is bytes i*8+1 through i*8+8; trim the trailing spaces. The
+-- list is sorted, so word -> index is a binary search. The script layer fetches
+-- this ONCE and caches it; there is no reason for an app to call it directly
+-- unless it is building its own mnemonic UI (an autocomplete, say).
+public handler cxBip39Wordlist() returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tStatus as Integer
+   sPrepare()
+   unsafe
+      put _cnx_bip39_wordlist_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_bip39_wordlist(tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxBip39Wordlist", tOut, tStatus, tLen)
+end handler
+
+-- ==========================================================================
 -- Length accessors. Every size an app needs to build a buffer comes FROM the
 -- shim; nothing in the CoinXT stack hardcodes 32 / 64 / 20. The ones that earn
 -- their keep in practice: cxSha256Len and cxRipemd160Len size a hash160 and a
@@ -975,6 +1105,18 @@ public handler cxEcdhLen() returns Integer
    sPrepare()
    unsafe
       put _cnx_ecdh_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- The size of the whole wordlist blob, 2048 * 8. Exposed for the same reason
+-- as every other accessor here: the script layer derives the slot width from
+-- this divided by 2048 rather than writing 8 down a second time.
+public handler cxBip39WordlistLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_bip39_wordlist_len() into tLen
    end unsafe
    return tLen
 end handler

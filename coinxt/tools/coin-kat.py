@@ -104,6 +104,27 @@ BIP39_SEED = ("c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553"
               "1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04")
 
 # ---------------------------------------------------------------------------
+# Phase 4: BIP-39's wordlist and BIP-32's derivation chain.
+# ---------------------------------------------------------------------------
+# BIP-39 identifies the English wordlist by the SHA-256 of its canonical
+# newline-joined form. It is the whole interoperability claim in 32 bytes.
+BIP39_WORDLIST_SHA256 = \
+    "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+
+# BIP-32 test vector 1: the seed, and the private key at each level of
+# m/0'/1/2'/2/1000000000 as the BIP publishes it. Walking this with the two
+# tweak exports is what proves they are a real CKDpriv/CKDpub pair rather than
+# merely self-consistent arithmetic.
+BIP32_SEED = "000102030405060708090a0b0c0d0e0f"
+BIP32_CHAIN = [
+    (0x80000000, "edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea"),
+    (1, "3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368"),
+    (0x80000002, "cbce0d719ecf7431d88e6a89fa1483e02e35092af60c042b1df2ff59fa424dca"),
+    (2, "0f479245fb19a38a1954c5c7c0ebab2f9bdfd96a17563ef28a6a4b1a2a764ef4"),
+    (1000000000, "471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8"),
+]
+
+# ---------------------------------------------------------------------------
 # Phase 2: secp256k1.
 # ---------------------------------------------------------------------------
 SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -385,8 +406,8 @@ def main(argv):
         lib = load(out_path)
 
         abi = lib.cnx_abi_version()
-        if abi != 3:
-            problems.append(f"abi_version = {abi}, expected 3")
+        if abi != 4:
+            problems.append(f"abi_version = {abi}, expected 4")
         elif not check:
             print(f"abi_version: {abi}")
 
@@ -671,6 +692,114 @@ def main(argv):
             problems.append(f"32 signings of the same input produced {len(repeats)} distinct signatures")
         if not check:
             print("  determinism OK (32 signings of one input agree despite blinding)")
+
+
+        # ---- phase 4: the two BIP-32 curve steps, and the BIP-39 wordlist ----
+        # These are the primitives src/coinxt.livecodescript builds HD wallets
+        # out of. The script layer's own end-to-end checks live in
+        # tools/check-script-vectors.py; what is pinned HERE is that the native
+        # half is right, independently of any script running.
+        lib.cnx_bip39_wordlist_len.restype = ctypes.c_size_t
+        wl_len = lib.cnx_bip39_wordlist_len()
+        if wl_len != 2048 * 8:
+            problems.append(f"cnx_bip39_wordlist_len() = {wl_len}, expected {2048 * 8}")
+        buf = ctypes.create_string_buffer(wl_len)
+        if lib.cnx_bip39_wordlist(buf, wl_len) != 0:
+            problems.append("cnx_bip39_wordlist failed")
+        words = [buf.raw[i:i + 8].decode().rstrip(" ") for i in range(0, wl_len, 8)]
+        # BIP-39 pins the list by the SHA-256 of its canonical newline-joined
+        # form. That single hash is the whole interoperability claim: a wallet
+        # restored anywhere else indexes THESE 2048 words in THIS order.
+        got = hashlib.sha256(("\n".join(words) + "\n").encode()).hexdigest()
+        if got != BIP39_WORDLIST_SHA256:
+            problems.append(f"the BIP-39 wordlist hashes to {got}, expected {BIP39_WORDLIST_SHA256}")
+        # The script binary-searches this table, so sortedness is a PRECONDITION
+        # and not a nicety - an unsorted list would make cxWordIndex miss words
+        # that are present, and a mnemonic would be rejected for no reason.
+        if words != sorted(words):
+            problems.append("the BIP-39 wordlist is not sorted by byte value")
+        if len(set(words)) != 2048:
+            problems.append("the BIP-39 wordlist has duplicates")
+        if max(len(w) for w in words) > 8:
+            problems.append("a BIP-39 word is longer than its 8-byte slot")
+        if lib.cnx_bip39_wordlist(buf, wl_len - 1) != -2:
+            problems.append("cnx_bip39_wordlist accepted a wrong output length")
+        if not check:
+            print(f"  BIP-39 wordlist OK (2048 words, sorted, hashes to the published {got[:12]}...)")
+
+        # BIP-32 test vector 1, walked with the two tweak exports. Reproducing
+        # the published chain end to end is what proves the pair is a correct
+        # CKDpriv/CKDpub and not merely self-consistent.
+        for fn in ("cnx_seckey_tweak_add", "cnx_pubkey_tweak_add"):
+            f = getattr(lib, fn)
+            f.restype = ctypes.c_int
+            f.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p,
+                          ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t]
+
+        def sk_tweak(sk_, t_):
+            o = ctypes.create_string_buffer(32)
+            return lib.cnx_seckey_tweak_add(sk_, 32, t_, 32, o, 32), o.raw[:32]
+
+        def pk_tweak(p_, t_):
+            o = ctypes.create_string_buffer(33)
+            return lib.cnx_pubkey_tweak_add(p_, 33, t_, 32, o, 33), o.raw[:33]
+
+        I = pyhmac.new(b"Bitcoin seed", bytes.fromhex(BIP32_SEED), hashlib.sha512).digest()
+        node_k, node_c = I[:32], I[32:]
+        for i, want_k in BIP32_CHAIN:
+            _, par33 = pubkey(lib, node_k, True)
+            data = (b"\x00" + node_k if i >= 0x80000000 else par33) + i.to_bytes(4, "big")
+            J = pyhmac.new(node_c, data, hashlib.sha512).digest()
+            rc2, child = sk_tweak(node_k, J[:32])
+            if rc2 != 0:
+                problems.append(f"cnx_seckey_tweak_add failed at index {i}: {rc2}")
+                break
+            if child.hex() != want_k:
+                problems.append(f"BIP-32 child at index {i} = {child.hex()}, expected {want_k}")
+            if i < 0x80000000:
+                # The public path must land on the same point. A hardened index
+                # has no public derivation at all, which is the property that
+                # makes an xpub safe to hand out above a hardened boundary.
+                rc3, P = pk_tweak(par33, J[:32])
+                _, want_P = pubkey(lib, child, True)
+                if rc3 != 0 or P != want_P:
+                    problems.append(f"cnx_pubkey_tweak_add disagrees with the private path at {i}")
+            node_k, node_c = child, J[32:]
+        if not check:
+            print(f"  BIP-32 vector 1 OK ({len(BIP32_CHAIN)} levels; CKDpub agrees with CKDpriv)")
+
+        order_be = SECP256K1_ORDER.to_bytes(32, "big")
+        _, g33 = pubkey(lib, (1).to_bytes(32, "big"), True)
+        tweak_guards = [
+            # A zero tweak is refused on BOTH paths on purpose: BIP-32 allows it
+            # in principle (the child would equal its parent) but accepting it on
+            # one path and refusing it on the other would make private and public
+            # derivation of the same child disagree about validity.
+            ("zero tweak, private", sk_tweak(bytes([1] * 32), bytes(32))[0], -4),
+            ("zero tweak, public", pk_tweak(g33, bytes(32))[0], -4),
+            ("tweak >= n, private", sk_tweak(bytes([1] * 32), order_be)[0], -4),
+            ("tweak >= n, public", pk_tweak(g33, order_be)[0], -4),
+            ("zero parent key", sk_tweak(bytes(32), bytes([1] * 32))[0], -4),
+            ("parent key >= n", sk_tweak(order_be, bytes([1] * 32))[0], -4),
+            # The overread guard again, on the new entry point: 33 bytes with an
+            # uncompressed prefix, and an uncompressed key where BIP-32 requires
+            # the compressed one.
+            ("33 bytes with an 0x04 prefix",
+             lib.cnx_pubkey_tweak_add(b"\x04" + g33[1:], 33, bytes([1] * 32), 32,
+                                      ctypes.create_string_buffer(33), 33), -4),
+            ("an uncompressed parent",
+             lib.cnx_pubkey_tweak_add(pubkey(lib, (1).to_bytes(32, "big"), False)[1], 65,
+                                      bytes([1] * 32), 32,
+                                      ctypes.create_string_buffer(33), 33), -4),
+            ("a 31-byte tweak",
+             lib.cnx_seckey_tweak_add(bytes([1] * 32), 32, bytes(31), 31,
+                                      ctypes.create_string_buffer(32), 32), -2),
+        ]
+        for name, rc2, want_rc in tweak_guards:
+            if rc2 != want_rc:
+                problems.append(f"tweak guard '{name}' returned {rc2}, expected {want_rc}")
+        if not check:
+            print(f"  tweak fail-closed guards x{len(tweak_guards)} OK")
 
         # ---- the independent second opinion, when it is installed
         # The published vectors above already stand on their own. This block is

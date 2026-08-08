@@ -23,7 +23,7 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
-| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the whole hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2) and the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH). **Not built:** address formats, HD wallets (BIP-32/39), transactions - spec'd in `coinxt/SPEC.md`. Schnorr/BIP-340 deferred with Taproot |
+| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2), the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH), and the encodings and addresses (hex, Base58Check, Bech32/Bech32m, RLP, P2PKH/P2WPKH/P2TR/ETH + EIP-55). and HD wallets (BIP-39 mnemonics, BIP-32/BIP-44 derivation, xprv/xpub). **Not built:** transactions. Schnorr/BIP-340 deferred with Taproot |
 
 They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachannel,...}`
 — so the engine resolves each binding automatically once its packaged extension
@@ -42,7 +42,7 @@ authority; this is the summary:
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, and a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08 |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. 15 of its 35 `dc*` handlers are still verified statically |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08. Mode B (launching tor) still unexercised |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass: the binding loads and returns the pinned hash vectors byte-exact from script. **Phase 2 (secp256k1) is built and cross-verified headless** - CoinXT reproduces published RFC 6979 vectors and its signatures verify in an independent library - but its 15 curve handlers have **not** had an engine pass yet. Addresses and HD wallets (phases 3-4) are still to build |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass. **Phases 2, 3 and 4 are built and verified headlessly** - the curve reproduces published RFC 6979 vectors and its signatures verify in an independent library; the pure-script encoders and the HD layer are RUN against BIP-173/BIP-350/EIP-55/RLP/BIP-39/BIP-32 vectors by `check-script-vectors.py`, which drives the real `.livecodescript` through a small interpreter, including the test mnemonic every wallet ships with walking down BIP-44/BIP-84/Ethereum paths to their published addresses. None of the three has had an engine pass yet; one paste of `coin-selftest.livecodescript` settles all of them. Transactions (phase 5, optional) still to build |
 
 **Where the suite stands after the 2026-08-08 pass.** On that date
 `tests/suite-selftest.livecodescript` ran green on a real OXT engine with all six
@@ -110,10 +110,23 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all six at once: `tests/suite-selftest.livecodescript` is a single stack
-script that builds its own UI, probes for every member, runs each one's headline
-paths plus the cross-member compositions, and reports PASS / FAIL / SKIP in one
-list — a member you did not install skips, it never fails. See
+Or run all six at once. `tests/suite-selftest.livecodescript` is a single stack
+script that builds its own UI, probes for every member, and reports PASS / FAIL /
+SKIP in one list — a member you did not install skips, it never fails.
+
+It is not a sampler. It carries **every member's own deep self-test**, folded in
+whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
+offline), coinxt's 28 sections, torrentxt's full harness, and the synchronous
+halves of enetxt and datachannelxt — plus the cross-member compositions no
+per-member harness can have. One paste settles what used to take six runs.
+
+It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
+than copied from them, because a hand-copied test suite drifts and then reports
+green about code that moved. The gate set runs `--check`, so a stale copy fails
+the build. The only thing deliberately left out is the ENet and DataChannel
+**async loopbacks**: this harness already drives a real loopback on both
+transports for its cross-member sections, and two state machines in one process
+would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 `docs/OXT-PASS-RUNBOOK.md`.
 
 ## How they compose

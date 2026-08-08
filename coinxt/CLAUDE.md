@@ -248,6 +248,13 @@ The single most expensive thing the family has learned. Change nothing here with
   / `line` / `word` on binary. Keep a base32/base58/bech32 bit-buffer small and masked each step so a
   long payload never builds a > 2^53 integer (precision loss). Route integer div/mod through helpers and
   avoid `^` in a compound expression (some OXT parsers reject it).
+- **`the itemDelimiter` is an UNVERIFIED DEPENDENCY of the script layer.** Comma-separated lists are
+  how that layer moves 5-bit groups, converter output, mnemonic words and path levels, and every
+  `item` expression reads the engine's CURRENT delimiter. A caller who changed it gets a silently
+  wrong address, not an error. The fix (`set the itemDelimiter to comma` at the top of each public
+  handler) is only safe if it is a LOCAL property in OXT; LiveCode documents it as one, OXT has not
+  been asked. Do not apply it blind - it is on the engine-pass list, and until then it is documented
+  in the file header (discipline 4) and in `docs/api-reference.md` as a caller requirement.
 - **Verify every checksum on decode and fail closed:** Base58Check's 4-byte double-SHA-256 tail,
   Bech32/Bech32m's polymod (constant 1 vs 0x2bc830a3, SegWit v0 vs v1+), EIP-55's mixed case. A corrupt
   address must be rejected, never coerced.
@@ -456,6 +463,47 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
   against the C (arity, per-argument type, return type: 30/30), and the bind set equal to the built
   library's exported symbols (30/30).
 
+**Phase 3, encodings and addresses - BUILT, and EXECUTED headlessly, which is new for a
+pure-script layer.** `src/coinxt.livecodescript` ships 19 public handlers: hex, Base58Check,
+bech32/bech32m, SegWit addresses, `cxHash160`/`cxHash256`, the four address builders and RLP.
+No shim change; the ABI is untouched at 3.
+
+- **The script is not part of the .lcb and does not load with it.** It goes in the message
+  path (`start using stack "coinxt"`), the way OnionXT ships its `ox*` surface, and
+  `tools/package-extension.py` now stages it beside the binaries. A user whose hashes work
+  and whose `cxBtcAddressP2PKH` says "handler not found" has loaded the extension and not the
+  script; say so in that order when triaging.
+- **A pure-script layer used to be unverifiable headlessly. It is not any more.**
+  `tools/lcs-interp.py` interprets the LiveCodeScript subset the encoders are written in, and
+  `tools/check-script-vectors.py` runs THE REAL FILE against the published BIP-173, BIP-350,
+  EIP-55, RLP and Base58Check vectors, with the hashes supplied by the real shim through
+  ctypes. 87 checks, in the gate set, on every push. This is an approximation of the engine
+  and settles LOGIC only: parser behaviour still needs the OXT pass, and nothing here is
+  promoted out of "verified statically". It found a real ambiguity while being built (a
+  `the number of items of X < 1` that let the count swallow the comparison), which is
+  precisely the kind of thing that would otherwise have burned an engine session.
+- **The three portability disciplines are in the file header and are not optional.** No `^`,
+  `div`, `mod`, `bitAnd`, `bitOr` or `bitXor` anywhere (all replaced by arithmetic helpers,
+  including a 31-bit `cxBitXor` the bech32 checksum needs); every accumulator masked each step
+  so nothing approaches 2^53; and alphabet lookup by BYTE VALUE rather than `offset()`.
+- **That last one is the most dangerous line in the file.** `offset()` and `is` honour `the
+  caseSensitive`, which defaults to FALSE, and in Base58 `a` and `A` are DIFFERENT DIGITS. A
+  case-insensitive lookup decodes a different number and hands back a valid-looking wrong
+  key. `cxCharIndex` compares `byteToNum` values instead, which is exact whatever the caller
+  has set. Do not "simplify" it.
+- **Base58 is a base conversion, not a bit repack**, so there is no bit-buffer trick: a 25-byte
+  payload is a 200-bit number no xTalk number holds exactly. `cxBase58Encode` does long
+  division over the byte array, and nothing in it exceeds 58 * 255.
+- **`cxBtcAddressP2TR` encodes an output key it is GIVEN.** It does not tweak. BIP-341's
+  `Q = P + int(tagged_hash(P || merkle_root))G` needs the BIP-340 surface deferred with
+  Taproot, and feeding it a raw internal key yields a valid-looking unspendable address. The
+  handler's comment says so; keep it saying so.
+- Verified: `tools/check-script-vectors.py` green (87 checks), the constants tier compared
+  against `tools/coin_reference.py` (which reproduces the published vectors independently),
+  the gate mutation-tested, `tools/check-selftest-vectors.py` re-deriving the harness's new
+  phase-3 constants AND asserting the two NEGATIVE vectors are genuinely negative, and
+  `tools/check-livecodescript.py` clean.
+
 **Schnorr / BIP-340 is DEFERRED, and phase 0's open question is now answered.** The plan left "which
 upstream path provides it" open. The answer: not this one. trezor-crypto's plain-C tree has no BIP-340
 implementation - it reaches Schnorr only through `zkp_bip340.c`, which requires the bundled
@@ -482,3 +530,121 @@ post-split checklist are in [MIGRATION.md](MIGRATION.md)):
 - `native/MANIFEST.sha256` pins every vendored trezor-crypto file. Refresh it in the same change as any
   vendor re-pin. The shipped per-platform binaries are pinned separately in `src/code/MANIFEST.sha256`,
   which is where every other suite member pins them, so one gate shape covers all six.
+
+**Phase 4, HD wallets and mnemonics - BUILT, and executed headlessly end to end.** ABI 3 -> 4.
+The shim gains four exports (34 now), `src/coinxt.lcb` wraps three of them, and
+`src/coinxt.livecodescript` gains eleven public handlers: `cxMnemonicNormalize`,
+`cxMnemonicFromEntropy`, `cxMnemonicToEntropy`, `cxMnemonicValidate`, `cxMnemonicToSeed`,
+`cxHdFromSeed`, `cxHdNeuter`, `cxHdDeriveChild`, `cxHdDerivePath`, `cxXprv` and `cxXpub`.
+
+- **The phase-4 bar is met headlessly.** IMPLEMENTATION-PLAN says phase 4 is done when "the official
+  BIP-39 mnemonic + a BIP-44 path reproduce the reference address, byte for byte." They do:
+  `tools/check-script-vectors.py` runs the REAL script against 14 official BIP-39 entropy vectors,
+  BIP-32 test vectors 1-3, and the "abandon ... about" mnemonic down `m/44'/0'/0'/0/0`,
+  `m/84'/0'/0'/0/0` and `m/44'/60'/0'/0/0` to the published Bitcoin and Ethereum addresses. 170
+  checks, up from 87. What is still owed is the ENGINE pass; `tests/coin-selftest.livecodescript`
+  drives all of it and is what closes phase 4 properly.
+- **The vendoring decision that mattered: `bip32.c` was NOT taken.** It would have given BIP-32 for
+  free, but it is written against every curve trezor supports, so it drags in `curves.c`,
+  `nist256p1`, `ed25519-donna` and the Cardano variants - a large closure, nearly all of it code
+  CoinXT would ship, license and never call. BIP-32 needs exactly TWO things from the curve, and the
+  already-vendored `ecdsa.c`/`bignum.c` have both: `cnx_seckey_tweak_add` (the `bn_add` / `bn_mod` /
+  `bn_is_zero` sequence lifted from upstream's own `hdnode_private_ckd_bip32` - `bn_add` leaves a
+  PARTLY reduced value, so dropping the `bn_mod` gives a silently wrong key) and
+  `cnx_pubkey_tweak_add` (upstream's `ecdsa_tweak_pubkey`, used as is). Everything else about HD
+  derivation is byte shuffling and lives in script, which is what the C-vs-script rule asks for.
+- **Both tweak entry points refuse a ZERO tweak, where upstream's public one accepts it.** BIP-32
+  only calls a child invalid when `parse256(IL) >= n` or the result is zero/infinity, so `IL == 0` is
+  technically legal and yields a child EQUAL TO ITS PARENT. Accepting it on one path and refusing it
+  on the other would make private and public derivation of the same child disagree about validity,
+  which is an interoperability bug of exactly the kind this member exists to prevent. It cannot arise
+  in practice (one HMAC-SHA512 output in 2^256) and BIP-32's own remedy - move to the next index - is
+  unchanged.
+- **The wordlist is vendored, not transcribed, and the claim is CHECKED.** `bip39_english.c` +
+  `bip39.h` come from the pinned commit (blob ids verified), and cross as one 16384-byte blob of 2048
+  fixed-width 8-byte slots (`cnx_bip39_wordlist`). Fixed width is what makes index -> word one chunk
+  expression and word -> index a binary search instead of a 2048-step scan. `tools/coin-kat.py` reads
+  the list back through the shim, joins it canonically and requires SHA-256
+  `2f5eed53...b24dbda` - the hash BIP-39 itself publishes - plus sorted and duplicate-free, because
+  the script binary-searches it. Hand-copying 2048 words would have been 16 KB of unreviewable diff
+  and one typo away from a wallet that cannot restore its own seed.
+- **`cxMnemonicNormalize` is not cosmetic.** BIP-39 derives the seed from the mnemonic STRING, so a
+  trailing newline from a paste would produce a different seed from every other wallet holding the
+  same words, silently. Normalizing to single spaces is what every interoperable implementation does,
+  so validate / to-entropy / to-seed all run it first. It does NOT do Unicode NFKD: for the English
+  list that is a no-op (all ASCII), and a non-ASCII PASSPHRASE is the caller's to normalize. Said so
+  in the file and in the docs.
+- **`cxMnemonicToSeed` deliberately does not verify the checksum**, because BIP-39 defines the seed
+  for any string. That is the spec's design, but it means a typo yields a perfectly good seed for the
+  wrong wallet, so the docs and the handler comment both say to call `cxMnemonicValidate` first on
+  anything a human typed.
+- **The interpreter grew value semantics for arrays, and it had to.** xTalk arrays are VALUES:
+  `put tA into tB` copies. Python dicts are references, so `tools/lcs-interp.py` now deep-copies at
+  every binding (assignment, argument, return). Without it `cxHdNeuter` would have appeared to blank
+  the CALLER's private key - the interpreter would have modelled a bug the engine does not have. It
+  also grew `try`/`catch`, `replace ... in`, and the `comma`/`space`/`tab`/`quote` literals, and
+  `_disp` now REFUSES to stringify an array rather than rendering a Python dict into a chunk
+  expression.
+- **A lesson about mutation testing itself.** A focused mutation probe reported "reversing BIP-39's
+  11-bit unpacking order is NOT CAUGHT". It was wrong: the probe only exercised the ENCODE direction,
+  while the mutation was in the decoder. The real gate catches it (the round trip throws on the
+  checksum and `cxMnemonicValidate` goes false, both asserted). When a mutation survives, suspect the
+  probe before the gate - but check, do not assume.
+- Verified: `tools/coin-kat.py` green including the wordlist hash, BIP-32 vector 1 walked with both
+  tweak exports, CKDpub agreeing with CKDpriv at every non-hardened level, and nine new fail-closed
+  guards; `sh native/build.sh asan` clean over the new entry points (the 16 KB wordlist write is
+  exactly the shape ASan is best at); `tools/check-script-vectors.py` green at 170 checks and
+  mutation-tested (nine phase-4 mutations, all caught); `tools/check-selftest-vectors.py` re-deriving
+  all 60 harness constants and mutation-tested (six, all caught); all four committed binaries rebuilt
+  at ABI 4 with 34 exports each and `tools/check-binary-freshness.py` clean.
+
+**The adversarial review of phase 3, and what it found (2026-08-08).** An independent review of the
+shipped script layer raised 19 claims; 13 survived verification, deduplicating to **five real
+defects**, and every one of them **FAILED OPEN** - a wrong answer that looked like a right one. All
+five are fixed, and each now has a vector that would have caught it. This is the most useful thing
+that has happened to this member, so the pattern matters more than the list:
+
+- **`cxEthAddressIsChecksummed` compared a value with itself.** It read
+  `cxEthAddressChecksum(pAddress) is cxEthAddressChecksum(cxToLower(tPlain))`, but
+  `cxEthAddressChecksum` lowercases its argument before it hashes or emits anything, so both sides
+  were the same string for every input. It answered **true to every mixed-case address**, including a
+  corrupted one - the exact failure EIP-55 exists to prevent. The fix compares the computed form
+  against the caller's UNTOUCHED text, by byte value (`is` could not have decided it either, since
+  the whole question is case).
+- **`cxConvert5To8` signalled failure in-band, as the string `"ERROR: ..."`**, and the decoder tested
+  `char 1 to 5 of tProgram is "ERROR"`. A bech32m v1 witness program may be any 2 to 40 bytes, so a
+  program beginning `45 52 52 4F 52` was read as a failure: **the library rejected an address its own
+  encoder had just produced.** An in-band sentinel over arbitrary bytes is always wrong - there is no
+  byte string that cannot occur. The status is now a separate key in an array.
+- **`cxBtcAddressP2PKH` validated nothing.** `hash160` hashes anything, so an empty string, a 20-byte
+  hash or a truncated key each produced a well-formed, checksummed, **permanently unspendable**
+  mainnet address. Nothing downstream can catch that: the address is valid, it is simply not yours.
+  P2WPKH and P2TR both checked; P2PKH was the one that did not. There is now a shared
+  `cxCheckPubkey` that checks length AND prefix, the same rule the shim's `cnx_pubkey_ok` applies.
+- **`cxBech32EncodeValues` accepted data values outside 0..31.** `char (n) of` a 32-character charset
+  returns EMPTY past the end, so an out-of-range value emitted **nothing** - a bech32 string one
+  character short, carrying a checksum over data it does not contain.
+- **`cxSegwitAddressEncode` failed open on a non-lowercase HRP**, emitting `BC1qqq...` - a MIXED-case
+  string BIP-173 forbids and this file's own decoder rejects. The 90-character cap is now enforced on
+  the encoder too, for the same reason: an encoder that can emit a string its own decoder refuses
+  will eventually be used to make one.
+
+Also changed, on the same principle though not observed to collide: the Base58Check checksum
+comparison used `is` on two hex strings, and `is` compares operands that both LOOK numeric as
+NUMBERS. Whether `00001e00` equals `00000001` then stops being a question about bytes and becomes one
+about how the engine parses exponents. It goes through `cxCompareBytes` now. **Discipline 3 already
+covered this** - a comparison whose answer depends on engine coercion does not belong on a checksum
+path - it just had not been applied here.
+
+**The lesson, and it is the reusable part: every one of these was invisible to a vector set that only
+ever fed the handlers WELL-FORMED INPUT.** 87 passing checks against BIP-173, BIP-350, EIP-55 and RLP
+did not touch a single one, because a positive vector cannot catch a check that is not being made.
+The five published EIP-55 vectors could not even detect a tautology, since a tautology returns true
+for a true positive too. When adding a handler here, add the vector for what it must REFUSE in the
+same change as the vector for what it must produce.
+
+**A note on method, learned twice in one session.** Two mutations were first reported as NOT CAUGHT
+and both times the PROBE was wrong, not the gate: one exercised only the encode direction while the
+mutation was in the decoder, and one reverted only half of a two-part defect so the bug never
+actually came back. When a mutation survives, reconstruct the original defect faithfully and check
+that it reproduces before concluding the gate has a hole.

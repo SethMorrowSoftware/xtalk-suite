@@ -3,30 +3,34 @@
 **The `cx*` handlers that exist today, and nothing else.**
 
 CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
-[../SPEC.md](../SPEC.md) describes the *whole designed* API, including address encodings, HD
-wallets, and transaction building. **Those do not exist yet.** This file is the opposite
-document: it lists only what is shipped, so you can tell at a glance what you can actually
-call. Hashes and the secp256k1 curve are shipped; everything that turns a key into an
-*address* or a *transaction* is not.
+[../SPEC.md](../SPEC.md) describes the *whole designed* API, including HD wallets and
+transaction building. **Those do not exist yet.** This file is the opposite document: it
+lists only what is shipped, so you can tell at a glance what you can actually call. Hashes,
+the secp256k1 curve, and the encodings and addresses are shipped; HD wallets, mnemonics and
+transaction building are not.
 
-> **Status.** **Thirty-one** public handlers exist.
+> **Status.** **Fifty** public handlers exist across two layers: **31** in the `.lcb`
+> extension (hashes and the curve) and **19** in `src/coinxt.livecodescript` (encodings and
+> addresses). The two load differently - see the phase-3 section.
 >
 > *Phase 1, the hash surface,* is complete and was closed by an engine pass on **2026-08-08**:
 > the binding loaded on a real OXT engine and returned its pinned vectors byte-exact.
 >
 > *Phase 2, the secp256k1 curve,* is built and its native side is cross-verified: CoinXT
 > reproduces four published RFC 6979 signatures byte for byte, a CoinXT signature verifies in
-> the independent Python `ecdsa` library, and recovery round-trips to the signer. **Its fifteen
-> script handlers have not yet run on an engine.** They are wrappers over the same proven
-> machinery the hash handlers use, and every declaration was diffed mechanically against the C,
-> but if you are the first to run them, treat a failure as a binding bug and report it rather
-> than assuming your inputs are wrong.
+> the independent Python `ecdsa` library, and recovery round-trips to the signer. Its fifteen
+> script handlers have **not yet run on an engine**.
+>
+> *Phase 3, encodings and addresses,* is built. It is pure LiveCodeScript, and its LOGIC has
+> been executed headlessly against the published BIP-173, BIP-350, EIP-55 and RLP vectors
+> (`tools/check-script-vectors.py` runs the real file through a small interpreter). What is
+> still unobserved is engine parser behaviour. If you are the first to run either phase on an
+> engine, treat a failure as a CoinXT bug and report it rather than assuming your inputs are
+> wrong.
 >
 > **Not shipped, despite appearing in SPEC.md:** `cxSchnorrSign`/`cxSchnorrVerify` and
 > `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340),
-> `cxHexEncode`/`cxHexDecode`, `cxBase58CheckEncode`/`Decode`, `cxBech32Encode`/`Decode`,
-> `cxRlpEncode`/`Decode`, `cxHash160`, `cxHash256`, `cxBtcAddressP2PKH`/`P2WPKH`/`P2TR`,
-> `cxEthAddress`, `cxEthAddressChecksum`, `cxHdFromSeed`, `cxHdDerivePath`, `cxXprv`/`cxXpub`,
+> `cxHdFromSeed`, `cxHdDerivePath`, `cxXprv`/`cxXpub`, `cxWifEncode`/`cxWifDecode`,
 > `cxMnemonicFromEntropy`/`ToSeed`/`Validate`. Calling any of them is a `handler not found`.
 
 ## Before anything else
@@ -59,7 +63,7 @@ extension is not installed or did not load.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
-  reports ABI 2, and throws if not, so a mismatched library cannot silently produce garbage.
+  reports ABI 3, and throws if not, so a mismatched library cannot silently produce garbage.
 - **An empty `Data` is legal input** for every digest and for both HMAC slots. It returns the
   documented empty-input digest rather than throwing. This was the binding's one genuinely
   open marshalling question and the 2026-08-08 engine pass settled it.
@@ -72,7 +76,7 @@ extension is not installed or did not load.
 cxCheckABI
 ```
 
-A command. Returns nothing. Throws if the loaded native library does not report ABI 2, with
+A command. Returns nothing. Throws if the loaded native library does not report ABI 3, with
 an error telling the user to reinstall the packaged extension. Silence is the pass.
 
 You rarely need to call it explicitly, because every other handler performs the same check
@@ -217,9 +221,192 @@ Returns the raw 65-byte shared point (`0x04` || X || Y).
 > get the point and supply the KDF your protocol specifies (`cxSha256` of the 32 X bytes is a
 > common one - match the other end, do not guess).
 
+## Encodings and addresses (phase 3)
+
+Everything in this section lives in **`src/coinxt.livecodescript`**, not in the
+`.lcb` extension, and that difference is load-bearing for you: it is a script, so
+it has to be in the message path before its handlers resolve.
+
+```
+start using stack "coinxt"     -- if you wrap the script in a stack
+-- or insert the script of the library into the back / a library stack
+```
+
+If every handler below reports `handler not found` while the hashes and the
+curve work, that is the symptom: the extension loaded, the script did not.
+
+These are pure byte work - no key material, no curve points, nothing secret -
+which is exactly why they are script and not C (see `../CLAUDE.md`, "The
+C-vs-script split"). Every decoder **verifies its checksum and throws** rather
+than returning a plausible wrong answer.
+
+### `cxHexEncode(pData)` / `cxHexDecode(pHex)`
+
+Lowercase hex out; upper, lower or mixed case accepted in. `cxHexDecode` throws
+on an odd length and on any non-hex character, rather than skipping it.
+
+### `cxHash160(pData)` / `cxHash256(pData)`
+
+`RIPEMD160(SHA256(x))` and `SHA256(SHA256(x))`. Named because Bitcoin names
+them, and because writing them out at each call site is how one of them ends up
+being SHA-256 twice.
+
+### `cxBase58CheckEncode(pPayload)` / `cxBase58CheckDecode(pText)`
+
+The payload followed by the first 4 bytes of `cxHash256(payload)` - how a
+mainnet address, a WIF key and an xprv are all framed. **The decoder verifies**:
+a corrupt string throws, it never returns the payload it happened to decode.
+Leading zero bytes survive as leading `1` characters, one for one, which is why
+a mainnet P2PKH address starts with a `1`.
+
+### `cxBech32EncodeValues(pHrp, pValues, pSpec)` / `cxBech32DecodeValues(pText)`
+
+The raw bech32 layer, below the addresses. `pValues` is a comma-separated list
+of 5-bit numbers and `pSpec` is `"bech32"` or `"bech32m"`. The decoder returns
+an array with `hrp`, `spec` and `values`, and **reports which encoding
+verified** rather than accepting either - that is what lets the address layer
+enforce the BIP-350 pairing. Most callers want the address handlers instead.
+
+### `cxSegwitAddressEncode(pHrp, pVersion, pProgram)` / `cxSegwitAddressDecode(pHrp, pAddress)`
+
+SegWit addresses. The encoding follows from the witness version, per BIP-350:
+**v0 uses bech32, v1-v16 use bech32m**. The decoder enforces that pairing, the
+2-to-40 byte program range, the exact 20-or-32 bytes v0 requires, the 90
+character cap, the mixed-case ban, and canonical padding. `cxSegwitAddressDecode`
+returns an array with `version` and `program`, and throws if the address is for a
+different network than the `pHrp` you asked for.
+
+### The address builders
+
+| Handler | Produces | Takes |
+|---|---|---|
+| `cxBtcAddressP2PKH(pPubkey)` | `1...` | a compressed or uncompressed key |
+| `cxBtcAddressP2WPKH(pPubkey)` | `bc1q...` | a **33-byte compressed** key only |
+| `cxBtcAddressP2TR(pOutputKey)` | `bc1p...` | a **32-byte x-only output key** |
+| `cxEthAddress(pPubkey)` | `0x...` lowercase | a compressed or uncompressed key |
+| `cxEthAddressChecksum(pAddress)` | `0x...` EIP-55 mixed case | any casing, with or without `0x` |
+| `cxEthAddressIsChecksummed(pAddress)` | Boolean | an address to verify |
+
+Three of those are refusals rather than conveniences, and each is a way people
+lose money:
+
+- **`cxBtcAddressP2WPKH` rejects an uncompressed key.** A v0 SegWit output built
+  from one is unspendable by every modern wallet.
+- **`cxBtcAddressP2TR` takes the TWEAKED output key**, not an internal key.
+  BIP-341 defines the output key as `Q = P + int(tagged_hash(P || merkle_root))G`,
+  and computing that needs the BIP-340 surface CoinXT has deferred with Taproot.
+  Handing it a raw internal key produces a valid-looking address nobody can spend
+  from. If you do not already know your key is tweaked, it is not.
+- **`cxEthAddressIsChecksummed` returns `false` for an all-lowercase address.**
+  Such an address carries no checksum at all, and reporting it as valid would
+  quietly retire the protection EIP-55 exists to give.
+
+### `cxRlpEncodeBytes(pData)` / `cxRlpEncodeList(pEncodedItems)` / `cxRlpDecode(pData)`
+
+Ethereum's Recursive Length Prefix - what stands between `cxSignRecoverable` and
+a broadcastable transaction. The API is built from pieces because xTalk has no
+nested-list literal: encode each field with `cxRlpEncodeBytes`, concatenate, and
+wrap with `cxRlpEncodeList`.
+
+```
+put cxRlpEncodeBytes(tNonce) & cxRlpEncodeBytes(tGasPrice) into tFields
+put cxRlpEncodeList(tFields) into tEncoded
+```
+
+`cxRlpDecode` returns one item as an array with `kind` (`"bytes"` or `"list"`),
+`payload` and `rest`; you walk a list by decoding its payload in a loop. It
+**rejects the non-canonical forms** - a single byte below `0x80` wrapped in a
+length prefix, a leading zero in a long length, a long form used for a short
+value - because RLP's guarantee is that one value has exactly one encoding, and
+a decoder that accepts two spellings breaks every hash computed over the result.
+
+## HD wallets and mnemonics (phase 4)
+
+BIP-39 mnemonics, BIP-32 derivation and the BIP-44 / BIP-84 paths a wallet
+walks. Like phase 3 these live in `src/coinxt.livecodescript`, not in the `.lcb`
+module; `start using stack "coinxt"` before calling them.
+
+**This is the part of CoinXT that can be wrong without failing.** A signature
+that is wrong does not verify and an address that is wrong fails its checksum,
+but a mis-derived wallet produces perfectly valid keys for the wrong account.
+Everything here is pinned to a published vector for that reason. Check your own
+integration the same way: derive `m/44'/0'/0'/0/0` from the test mnemonic
+`abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon
+abandon about` and confirm you get `1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA` before
+you point it at real funds.
+
+### `cxMnemonicFromEntropy(pEntropy)` / `cxMnemonicToEntropy(pMnemonic)`
+
+16, 20, 24, 28 or 32 bytes of entropy to 12, 15, 18, 21 or 24 words, and back.
+**CoinXT does not generate the entropy** - it is yours, from a source you trust
+(SodiumXT `sxRandomBytes`), for the same reason `cxNewSeckey` takes bytes rather
+than making them. `cxMnemonicToEntropy` verifies the checksum and throws if a
+word is wrong, missing or out of order.
+
+### `cxMnemonicValidate(pMnemonic)`
+
+True or false, not a throw, because a restore screen asks this on every
+keystroke and an exception is the wrong shape for an answer that is routinely
+no.
+
+### `cxMnemonicToSeed(pMnemonic, pPassphrase)`
+
+The 64-byte BIP-39 seed. **It does not verify the checksum** - BIP-39 defines
+the seed for any string, which is what lets other schemes reuse the KDF, but it
+means a typo yields a perfectly good seed for the wrong wallet. Call
+`cxMnemonicValidate` first on anything a human typed.
+
+Whitespace is normalized first (`cxMnemonicNormalize`: trim, and collapse runs
+to one space), because BIP-39 derives the seed from the mnemonic STRING and a
+trailing newline from a paste would otherwise give a different wallet from every
+other implementation. Unicode NFKD is **not** applied: for the English wordlist
+that is a no-op, but **a non-ASCII passphrase is yours to normalize** before
+calling, or your seed will not match a wallet that did.
+
+### `cxHdFromSeed(pSeed)` / `cxHdDeriveChild(pNode, pIndex)` / `cxHdDerivePath(pNode, pPath)`
+
+A node is an array with the fields BIP-32 serializes, in the order it serializes
+them: `seckey` (empty for a watch-only node), `pubkey` (33 bytes, compressed),
+`chaincode`, `depth`, `index`, `parentfp`.
+
+```
+put cxHdFromSeed(cxMnemonicToSeed(tMnemonic, "")) into tMaster
+put cxHdDerivePath(tMaster, "m/44'/0'/0'/0/0") into tAccount
+put cxBtcAddressP2PKH(tAccount["pubkey"]) into tAddress
+```
+
+A path level may carry `'`, `h` or `H` for hardened. The parse is strict on
+purpose: a level that is not plain digits throws rather than being coerced,
+because `m/1e3` quietly becoming 1000 is a different wallet with no error
+anywhere.
+
+### `cxHdNeuter(pNode)`
+
+The watch-only form: same public key and chain code, no private key. This is the
+xpub half of a wallet. It still derives non-hardened children - and therefore
+every receive address on that branch - which is what makes an xpub both useful
+and a privacy liability if it leaks. It cannot derive a hardened child, because
+BIP-32 hashes the private key to make one; that is the property hardened
+derivation exists for.
+
+### `cxXprv(pNode)` / `cxXpub(pNode)`
+
+The Base58Check serializations. Mainnet only: a testnet or altcoin prefix is a
+different version number and nothing else, but CoinXT does not ship one it has
+not pinned to a vector.
+
+### `cxSeckeyTweakAdd` / `cxPubkeyTweakAdd` / `cxBip39Wordlist`
+
+The `.lcb` primitives the above is built from. Most callers want the handlers
+above instead; these are public because the script layer is a separate file and
+because a caller implementing a non-BIP-32 scheme on the same curve has a real
+use for a tweak. `cxBip39Wordlist()` returns the 2048 words as 8-byte
+space-padded slots (16384 bytes), which is what an autocomplete in a mnemonic
+entry field wants.
+
 ## Length accessors
 
-Thirteen zero-argument handlers returning the sizes the library actually reports.
+Fourteen zero-argument handlers returning the sizes the library actually reports.
 
 | Handler | Returns |
 |---|---|
@@ -236,6 +423,7 @@ Thirteen zero-argument handlers returning the sizes the library actually reports
 | `cxSignatureLen()` | 64 |
 | `cxRecoverableSignatureLen()` | 65 |
 | `cxEcdhLen()` | 65 |
+| `cxBip39WordlistLen()` | 16384 (2048 words x 8) |
 
 These are not decoration. **Do not hardcode 32 or 64 in your own code**; ask. A library is
 entitled to change a digest size across versions, and a hardcoded length is a buffer overflow
@@ -246,6 +434,18 @@ the digest rather than hide.
 Under the hood these are the one genuinely novel thing in the binding: they marshal a C
 `size_t` as a foreign `UIntSize` **return** type, which this extension family had previously
 proven only as a parameter. The 2026-08-08 engine pass confirmed it works.
+
+## One caller requirement, stated plainly
+
+**The script layer assumes `the itemDelimiter` is its default comma.** Twenty-one
+chunk expressions in `src/coinxt.livecodescript` move data as comma-separated
+lists, and they read whatever the engine's current delimiter is. If your app
+sets it to something else, restore it before calling any `cx*` handler that
+lives in the script layer (everything in the phase 3 and phase 4 sections
+above). You will not get an error otherwise - you will get a wrong answer, which
+on this surface means a wrong address. This is a known limitation with a known
+fix; see discipline 4 in the file's own header for why the fix is waiting on an
+engine question rather than already applied.
 
 ## Errors
 

@@ -95,6 +95,16 @@ jobs:
           COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/coin-kat.py --check
 
+      # The phase-3 encoders are pure LiveCodeScript, which OXT cannot run
+      # headlessly, so they are executed here instead: tools/lcs-interp.py
+      # interprets the subset they use and drives the REAL file against the
+      # published BIP-173 / BIP-350 / EIP-55 / RLP vectors, with the hashes
+      # coming from the shim this job just built. Repeated from suite-gates.yml
+      # for the same reason the freshness check is: so this lane stands alone on
+      # a coinxt-only change.
+      - name: The script encoders reproduce the published vectors
+        run: python3 tools/check-script-vectors.py --check
+
       # Suite rule 5, mechanised: the committed src/code/ library must still
       # export exactly what the shim defines and answer the ABI the shim
       # declares. Runs in suite-gates.yml too; repeated here so this lane is
@@ -188,6 +198,12 @@ jobs:
             int (*verify)(const unsigned char *, size_t, const unsigned char *, size_t,
                           const unsigned char *, size_t);
             int (*pubkey)(const unsigned char *, size_t, int, unsigned char *, size_t);
+            int (*tweak)(const unsigned char *, size_t, const unsigned char *, size_t,
+                         unsigned char *, size_t);
+            int (*wordlist)(unsigned char *, size_t);
+            size_t (*wordlist_len)(void);
+            static unsigned char wl[2048 * 8];
+            unsigned char kid[32];
             if (argc < 2) return 2;
             so = dlopen(argv[1], RTLD_NOW);
             if (!so) { printf("dlopen failed: %s\n", dlerror()); return 1; }
@@ -197,11 +213,15 @@ jobs:
             *(void **)&sign = dlsym(so, "cnx_ecdsa_sign");
             *(void **)&verify = dlsym(so, "cnx_ecdsa_verify");
             *(void **)&pubkey = dlsym(so, "cnx_pubkey_from_seckey");
-            if (!abi || !keccak || !sha256 || !sign || !verify || !pubkey) {
+            *(void **)&tweak = dlsym(so, "cnx_seckey_tweak_add");
+            *(void **)&wordlist = dlsym(so, "cnx_bip39_wordlist");
+            *(void **)&wordlist_len = dlsym(so, "cnx_bip39_wordlist_len");
+            if (!abi || !keccak || !sha256 || !sign || !verify || !pubkey ||
+                !tweak || !wordlist || !wordlist_len) {
               printf("a required cnx_ symbol is missing\n"); return 1;
             }
             printf("  abi_version = %d\n", abi());
-            if (abi() != 3) { printf("FAIL: expected ABI 3\n"); return 1; }
+            if (abi() != 4) { printf("FAIL: expected ABI 4\n"); return 1; }
             if (keccak((const unsigned char *)"", 0, out) != 0 ||
                 !hexeq(out, 32,
                   "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) {
@@ -226,7 +246,27 @@ jobs:
             if (verify(pub, 33, dg, 32, sig, 64) != -5) {
               printf("FAIL: a tampered signature was not rejected\n"); return 1;
             }
-            printf("  committed library executed OK (ABI, keccak, G, RFC 6979, verify)\n");
+            /* Phase 4, the same rule: do not claim a shipped artifact works
+             * without running the part of it that is new. */
+            if (wordlist_len() != sizeof wl) {
+              printf("FAIL: cnx_bip39_wordlist_len\n"); return 1;
+            }
+            if (wordlist(wl, sizeof wl) != 0 || memcmp(wl, "abandon ", 8) != 0 ||
+                memcmp(wl + 2047 * 8, "zoo     ", 8) != 0) {
+              printf("FAIL: the BIP-39 wordlist did not come back intact\n"); return 1;
+            }
+            {
+              unsigned char tw[32];
+              memset(tw, 0, sizeof tw); tw[31] = 2;
+              if (tweak(sk, 32, tw, 32, kid, 32) != 0 || kid[31] != 3) {
+                printf("FAIL: cnx_seckey_tweak_add(1, 2) did not give 3\n"); return 1;
+              }
+              memset(tw, 0, sizeof tw);
+              if (tweak(sk, 32, tw, 32, kid, 32) != -4) {
+                printf("FAIL: a zero tweak was not refused\n"); return 1;
+              }
+            }
+            printf("  committed library executed OK (ABI 4, keccak, G, RFC 6979, verify, BIP-32/39)\n");
             dlclose(so);
             return 0;
           }

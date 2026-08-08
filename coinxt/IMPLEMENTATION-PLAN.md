@@ -39,8 +39,21 @@ native seam and the KAT harness come first, because everything downstream trusts
 > `tests/coin-selftest.livecodescript` drives all 31 public handlers and is what will close it. Two
 > phase-0 items are also now settled: the entropy decision was WRONG and is corrected (see CLAUDE.md,
 > "Determinism and entropy"), and Schnorr/BIP-340 is deferred to a Taproot phase because
-> trezor-crypto's plain-C tree does not implement it. **Phase 3 (encodings and addresses, pure script)
-> is now the member's critical path.**
+> trezor-crypto's plain-C tree does not implement it. **PHASE 3 IS ALSO BUILT.** `src/coinxt.livecodescript`
+> adds 19 public handlers (hex, Base58Check, bech32/bech32m, SegWit addresses, hash160/hash256,
+> the four address builders, RLP) with no shim change. Its logic is executed headlessly against the
+> published BIP-173 / BIP-350 / EIP-55 / RLP vectors by `tools/check-script-vectors.py`, which runs
+> the REAL file through a small LiveCodeScript interpreter - the first time a pure-script layer in
+> this family has been executed before an engine saw it. **PHASE 4 IS ALSO BUILT (ABI 4).** Its bar - "the official BIP-39
+> mnemonic + a BIP-44 path reproduce the reference address, byte for byte" - is MET headlessly: the
+> shim gained `cnx_seckey_tweak_add`, `cnx_pubkey_tweak_add` and the vendored BIP-39 wordlist
+> (`cnx_bip39_wordlist` + its length), the script layer gained eleven handlers, and
+> `tools/check-script-vectors.py` runs the real file against 14 official BIP-39 vectors, BIP-32 test
+> vectors 1-3 and the "abandon ... about" mnemonic down BIP-44/BIP-84/Ethereum paths to the published
+> addresses (170 checks, up from 87). **The outstanding verification for phases 2, 3 and 4 is now a
+> single engine pass**; `tests/coin-selftest.livecodescript` drives all of it in one paste. Phase 5
+> (transaction building) is the member's next critical path, and it is explicitly optional - the
+> primitive layer is shippable without it.
 
 ## The "done" bar (applies to every phase)
 
@@ -117,7 +130,7 @@ fifteen new public handlers stop being "verified statically".
 **Risk retired:** the core value proposition (correct, deterministic, recoverable signing on
 secp256k1).
 
-## Phase 3 - Encodings and addresses (pure script)
+## Phase 3 - Encodings and addresses (pure script)  (BUILT; needs an engine pass)
 
 - Livecodescript, no shim: `cxHexEncode/Decode`, `cxBase58CheckEncode/Decode`,
   `cxBech32Encode/Decode` (Bech32 and Bech32m), `cxRlpEncode/Decode`. Each fails closed on a bad
@@ -129,10 +142,21 @@ secp256k1).
   a known-pubkey -> known-eth-address vector.
 
 **Done when:** a pubkey maps to the correct mainnet BTC (all three types) and ETH addresses, and a
-corrupt address is rejected. **Risk retired:** the "silently wrong address = lost funds" class, moved
-into script where it is diffable and fully KAT-covered.
+corrupt address is rejected. **MET headlessly.** The private key 1 maps to `1BgGZ9tc...` (P2PKH),
+`bc1qw508d6...` (P2WPKH) and `bc1p0xlxvl...` (P2TR), and the last two are not CoinXT expectations at
+all - they are BIP-173's and BIP-350's OWN example addresses, because hash160(G) is the witness
+program in the first and x-only G is the program in the second. Corrupt inputs are rejected across
+the board: BIP-173's ten invalid strings, BIP-350's invalid addresses including a v0 address carrying
+a bech32m checksum, a corrupt Base58Check tail, and RLP's non-canonical forms.
 
-## Phase 4 - HD wallets and mnemonics
+Still open for the phase: an **engine pass**. The encoders are pure LiveCodeScript, so
+`tools/check-script-vectors.py` runs the real file through `tools/lcs-interp.py` and settles its
+LOGIC (87 checks), but only OXT settles parser behaviour.
+**Risk retired:** the "silently wrong address = lost funds" class, moved into script where it is
+diffable and fully KAT-covered - and, unlike previous pure-script layers in this family, actually
+executed before shipping.
+
+## Phase 4 - HD wallets and mnemonics  (BUILT; needs an engine pass)
 
 - Shim: `cnx_hdnode_from_seed`, `cnx_hdnode_derive` (one step), `cnx_hdnode_private_key` / `_public_key`
   / `_chaincode`, `cnx_bip39_seed`.
@@ -143,8 +167,26 @@ into script where it is diffable and fully KAT-covered.
 - KATs: the official BIP-32 and BIP-39 vectors, end to end (mnemonic -> seed -> node -> derived address).
 
 **Done when:** the official BIP-39 mnemonic + a BIP-44 path reproduce the reference address, byte for
-byte. **Risk retired:** wallet interoperability (a CoinXT wallet and any standard wallet agree on the
-same key from the same mnemonic).
+byte. **MET (2026-08-08)**, headless, on every push. **Risk retired:** wallet interoperability (a
+CoinXT wallet and any standard wallet agree on the same key from the same mnemonic).
+
+**As built, three things differ from the sketch above, each deliberately:**
+
+- **The shim exports two curve steps, not five `cnx_hdnode_*` functions.** `cnx_seckey_tweak_add`
+  (ki = IL + kpar mod n) and `cnx_pubkey_tweak_add` (Ki = point(IL) + Kpar) are the only parts of
+  BIP-32 that ARE curve arithmetic; the HMAC, the serialization and the path parse are byte shuffling
+  and live in script by the C-vs-script rule. This also avoided vendoring upstream's `bip32.c`, which
+  is written against every curve trezor supports and would have pulled in `curves.c`, `nist256p1`,
+  `ed25519-donna` and the Cardano variants.
+- **`cnx_bip39_seed` was not needed.** It is PBKDF2-HMAC-SHA512, which phase 1 already exports;
+  `cxMnemonicToSeed` composes it. What the shim DOES export is the wordlist
+  (`cnx_bip39_wordlist`), as 2048 fixed-width 8-byte slots, so the normative list is vendored
+  verbatim rather than transcribed into a script constant.
+- **The handler names settled slightly differently**: `cxHdDeriveChild` (one step) and `cxHdNeuter`
+  (the watch-only form) exist, and the node is an ARRAY read by name (`["seckey"]`, `["pubkey"]`,
+  `["chaincode"]`, `["depth"]`, `["index"]`, `["parentfp"]`) rather than `cxHdSeckey` / `cxHdPubkey`
+  / `cxHdChainCode` accessors - the fields are exactly what BIP-32 serializes, in order, so `cxXprv`
+  is a concatenation and not a translation.
 
 ## Phase 5 - Transaction building and signing (stretch)
 

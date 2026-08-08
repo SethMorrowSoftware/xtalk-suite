@@ -71,5 +71,15 @@ jobs:
           COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/check-selftest-vectors.py --check
 
+      # The pure-script encoders, actually executed. OXT cannot run a
+      # .livecodescript headlessly, so tools/lcs-interp.py interprets the subset
+      # they are written in and drives the REAL file against the published
+      # BIP-173 / BIP-350 / EIP-55 / RLP vectors, with the hashes supplied by the
+      # real shim. It approximates the engine and does not replace the on-engine
+      # pass; it catches the bug class that matters here, where a wrong alphabet
+      # or an inverted checksum yields a valid-looking WRONG address.
+      - name: The script encoders reproduce the published vectors
+        run: python3 tools/check-script-vectors.py --check
+
       - name: ASan + UBSan native self-test
         run: sh native/build.sh asan

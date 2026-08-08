@@ -41,10 +41,16 @@ ven="$here/vendor"
 #   blake256.c / blake2b.c / groestl.c
 #              are that table's other backends. Dropping them would mean
 #              editing a vendored file, which the vendor rules forbid.
+#   bip39_english.c
+#              is the phase-4 addition and is DATA, not code: the 2048-word
+#              normative BIP-39 English list. Its only dependency is bip39.h,
+#              which declares constants and prototypes and pulls in nothing -
+#              so bip39.c stays unvendored (see cnx_bip39_wordlist).
 # src/coinxt.map keeps every one of these names out of the shipped surface.
 vendor_src="$ven/sha3.c $ven/sha2.c $ven/ripemd160.c $ven/hmac.c $ven/pbkdf2.c $ven/memzero.c \
 $ven/ecdsa.c $ven/bignum.c $ven/secp256k1.c $ven/rfc6979.c $ven/hmac_drbg.c $ven/hasher.c \
-$ven/blake256.c $ven/blake2b.c $ven/groestl.c $ven/base58.c $ven/address.c"
+$ven/blake256.c $ven/blake2b.c $ven/groestl.c $ven/base58.c $ven/address.c \
+$ven/bip39_english.c"
 
 # Third-party headers are -isystem so their warnings do not pollute -Wall -Wextra.
 warn="-Wall -Wextra"
@@ -265,6 +271,12 @@ extern int cnx_ecdsa_recover(const unsigned char *, size_t, const unsigned char 
                              unsigned char *, size_t);
 extern int cnx_ecdh(const unsigned char *, size_t, const unsigned char *, size_t,
                     unsigned char *, size_t);
+extern int cnx_seckey_tweak_add(const unsigned char *, size_t, const unsigned char *, size_t,
+                                unsigned char *, size_t);
+extern int cnx_pubkey_tweak_add(const unsigned char *, size_t, const unsigned char *, size_t,
+                                unsigned char *, size_t);
+extern int cnx_bip39_wordlist(unsigned char *, size_t);
+extern size_t cnx_bip39_wordlist_len(void);
 /* Compare the first `n` bytes of a digest against its hex spelling. */
 static int eqn(const unsigned char *b, int n, const char *hexexp) {
   char h[129];
@@ -274,7 +286,7 @@ static int eqn(const unsigned char *b, int n, const char *hexexp) {
 static int eq(const unsigned char *b, const char *hexexp) { return eqn(b, 32, hexexp); }
 int main(void) {
   unsigned char o[64];
-  if (cnx_abi_version() != 3) { printf("ABI FAIL\n"); return 1; }
+  if (cnx_abi_version() != 4) { printf("ABI FAIL\n"); return 1; }
   cnx_keccak256((const unsigned char *)"", 0, o);
   if (!eq(o, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) { printf("keccak empty FAIL\n"); return 1; }
   cnx_keccak256(NULL, 0, o); /* NULL-with-zero guard path */
@@ -357,7 +369,39 @@ int main(void) {
     memset(digest, 0, sizeof digest);
     if (cnx_ecdsa_sign(sk, 32, digest, 32, sig, 64) != -7) { printf("zero-digest guard FAIL\n"); return 1; }
   }
-  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1)\n");
+  /* Phase 4. The wordlist is a 16 KB write into a caller buffer, which is
+   * exactly the shape ASan is best at: an off-by-one in the slot loop lands
+   * one byte past the block. The exact-length requirement is checked too, so
+   * a caller that sized it from a stale constant is refused rather than
+   * overflowed. */
+  {
+    static unsigned char wl[2048 * 8];
+    unsigned char sk[32], tw[32], child[32], par33[33], kid33[33];
+    size_t wlen = cnx_bip39_wordlist_len();
+    int i;
+    if (wlen != sizeof wl) { printf("wordlist len FAIL\n"); return 1; }
+    if (cnx_bip39_wordlist(wl, wlen) != 0) { printf("wordlist FAIL\n"); return 1; }
+    if (memcmp(wl, "abandon ", 8) != 0) { printf("wordlist[0] FAIL\n"); return 1; }
+    if (memcmp(wl + 2047 * 8, "zoo     ", 8) != 0) { printf("wordlist[2047] FAIL\n"); return 1; }
+    if (cnx_bip39_wordlist(wl, wlen - 1) != -2) { printf("wordlist len guard FAIL\n"); return 1; }
+    /* One BIP-32 step, both halves, and they must land on the same point. */
+    for (i = 0; i < 31; i++) { sk[i] = 0; tw[i] = 0; }
+    sk[31] = 1;
+    tw[31] = 2;
+    if (cnx_seckey_tweak_add(sk, 32, tw, 32, child, 32) != 0) { printf("seckey tweak FAIL\n"); return 1; }
+    if (child[31] != 3) { printf("seckey tweak value FAIL\n"); return 1; }
+    if (cnx_pubkey_from_seckey(sk, 32, 1, par33, 33) != 0) { printf("tweak parent FAIL\n"); return 1; }
+    if (cnx_pubkey_tweak_add(par33, 33, tw, 32, kid33, 33) != 0) { printf("pubkey tweak FAIL\n"); return 1; }
+    if (cnx_pubkey_from_seckey(child, 32, 1, par33, 33) != 0) { printf("tweak child pub FAIL\n"); return 1; }
+    if (memcmp(kid33, par33, 33) != 0) { printf("tweak paths disagree FAIL\n"); return 1; }
+    /* The overread guard on the new entry point: 33 bytes claiming 0x04. */
+    if (cnx_pubkey_from_seckey(sk, 32, 1, par33, 33) != 0) { printf("tweak parent 2 FAIL\n"); return 1; }
+    par33[0] = 0x04;
+    if (cnx_pubkey_tweak_add(par33, 33, tw, 32, kid33, 33) != -4) { printf("tweak overread guard FAIL\n"); return 1; }
+    for (i = 0; i < 32; i++) tw[i] = 0;
+    if (cnx_seckey_tweak_add(sk, 32, tw, 32, child, 32) != -4) { printf("zero tweak guard FAIL\n"); return 1; }
+  }
+  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39)\n");
   return 0;
 }
 EOF

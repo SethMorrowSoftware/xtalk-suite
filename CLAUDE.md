@@ -59,6 +59,66 @@ These are summarized in `README.md`; the operational point for editing is:
 6. **The honesty convention** — "verified statically; needs an OXT pass"
    (Tor: "+ live-Tor pass") for anything not observed on a real engine.
 
+## The unified self-test is GENERATED
+
+`tests/suite-selftest.livecodescript` is the one script a maintainer pastes into
+an OXT stack to exercise the whole suite, and it is **built, not written**:
+
+```sh
+python3 tools/build-suite-selftest.py            # rebuild after touching any harness
+python3 tools/build-suite-selftest.py --check    # in the gate set
+python3 tools/check-suite-selftest.py            # the checks a compiler would make
+```
+
+It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
+the UI, the probe, the runner, and the cross-member sections) plus **every
+member's own deep self-test**, folded in with each one's names prefixed. Edit the
+member harness, not the generated file.
+
+Three things about it are worth knowing before you touch it:
+
+- **The namespacing is TOTAL.** All five `.livecodescript` harnesses define
+  `stAssert`, `stRun`, `stBuild` and `sTotal`, so every name a member file
+  defines is prefixed - including its own scaffolding and its own counters. Not
+  because deduplicating would be hard, but because the scaffolding is not
+  actually identical (`stRepeatByte` has three implementations that disagree at
+  `pCount = 0`) and because a folded harness must behave here exactly as it does
+  standalone. The core reads each member's counters afterwards and merges them.
+- **Two things are deliberately NOT folded in**, and both are checked: the ENet
+  and DataChannel **async loopbacks** (the core already drives a real loopback on
+  both transports, and two state machines in one process race for the event
+  handlers), and TorrentXT's own `btStartSession` (one session per process, so
+  the fold rewrites it to reuse the core's). `check-suite-selftest.py` fails if
+  either regresses, and if `en1stCleanup`/`dc1stCleanup` ever become reachable -
+  they call `enDeinitialize`/`dcCleanup`, which would pull the transport out from
+  under the core's loopback.
+- **A missing declaration is SILENT, which is why there is a checker.** OXT
+  cannot compile a `.livecodescript` headlessly, and LiveCodeScript evaluates an
+  undeclared name as the literal text of its own name - so a fold that dropped
+  `constant kBip39Mnemonic` would not error, it would compare a digest against
+  the string `"cx1kBip39Mnemonic"` and report a tidy FAIL that reads like a real
+  library defect. That bug was real in the first version of the generator;
+  `check-suite-selftest.py` is what found it, and it is mutation-tested.
+
+Folding those harnesses in also surfaced a **latent bug in one copy of the static
+gate**. The family keeps a copy of `check-livecodescript.py` per member, and they
+have drifted: **sodiumxt's copy did not know `switch`/`end switch`**, so it read
+`end switch` as closing a HANDLER, reported two phantom problems in enetxt's and
+datachannelxt's event dispatchers, and would have hidden any real imbalance
+inside them. The other five copies already handled it, by two different
+implementations. Only sodiumxt's was changed; the drift itself is the standing
+cost of copy-per-member and is worth remembering the next time one of these
+checkers is edited - a fix applied to one copy is not applied to the suite.
+
+It stayed invisible because of how the two gate layers overlap. Each member's
+own checker reads that member's `src/`, `examples/` AND `tests/`, so enetxt's
+switch statements were always checked - by enetxt's checker, which handles them.
+Separately, the repo-root `tests/` directory is run through EVERY member's
+checker in turn. Until now that directory held only the suite harness, which had
+no `switch` in it, so sodiumxt's gap was never reached. Folding enetxt's and
+datachannelxt's switch-based event dispatchers into that file is what finally put
+a `switch` in front of the one checker that could not parse it.
+
 ## Docs: member vs. suite
 
 - **Member docs** live in `<member>/docs/` and describe that one extension

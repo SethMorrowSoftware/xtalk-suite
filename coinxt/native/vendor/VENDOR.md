@@ -61,6 +61,33 @@ because the obvious "cleanup" in every case is to edit a vendored file, which th
 None of these names reach the shipped surface: `src/coinxt.map` (and the generated `.def` on Windows)
 narrows the exports to the `cnx_*` entry points, which is checked in CI per object format.
 
+## Files (phase 4: the BIP-39 wordlist)
+
+| file | purpose |
+|---|---|
+| `bip39.h` | `BIP39_WORD_COUNT` (2048), `BIP39_MAX_WORD_LEN` (8) and the `extern` declaration of the table below. Includes only `stdbool/stddef/stdint` and `options.h`, so it drags in nothing |
+| `bip39_english.c` | the 2048-word normative English wordlist |
+
+**`bip39.c` is deliberately NOT vendored.** Its `mnemonic_from_data` returns a `const char *` into a
+static buffer, which the C-ABI rules forbid bridging into script, and its `mnemonic_to_seed` is
+PBKDF2-HMAC-SHA512, which the shim already exports. What is left of BIP-39 - 11-bit packing and a
+checksum - is byte shuffling with no secret-dependent branch and therefore belongs in
+`src/coinxt.livecodescript` by the C-vs-script rule. The wordlist crosses as data
+(`cnx_bip39_wordlist`), so the script gets the normative list without CoinXT transcribing 2048 words.
+
+The list is **checked, not asserted**: `tools/coin-kat.py` reads it back through the shim, joins it the
+canonical way and requires SHA-256 `2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda`,
+the hash BIP-39 itself publishes. It also requires the list to be sorted and duplicate-free, because
+the script binary-searches it.
+
+**BIP-32 is not here either, and that was a decision.** `bip32.c` would supply the whole of HD
+derivation, but it is written against every curve trezor supports, so vendoring it pulls in `curves.c`,
+`nist256p1`, `ed25519-donna` and the Cardano variants - a large closure, nearly all of it code CoinXT
+would ship, license and never call. BIP-32 needs exactly two things from the curve, and the
+already-vendored `ecdsa.c` / `bignum.c` provide both: `cnx_seckey_tweak_add` (the `bn_add` / `bn_mod`
+sequence copied from upstream's own `hdnode_private_ckd_bip32`) and `cnx_pubkey_tweak_add` (upstream's
+`ecdsa_tweak_pubkey`, used as is).
+
 ## Integrity, and how it was actually verified
 
 Every file above is byte-identical to upstream at the pinned commit. The phase-2 check is stronger than
