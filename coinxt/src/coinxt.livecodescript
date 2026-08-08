@@ -70,23 +70,28 @@ script "coinxt"
 --      This is the single most dangerous line of this whole file; do not
 --      "simplify" it to offset().
 --   4. THIS FILE ASSUMES `the itemDelimiter` IS ITS DEFAULT COMMA, and that is
---      a REAL, UNVERIFIED DEPENDENCY rather than a note for tidiness. Twenty-one
---      chunk expressions here move data as comma-separated lists (bech32's
---      5-bit values, the 8-to-5 converters, the mnemonic word split, the path
---      split), and every one of them reads whatever the ENGINE's current item
---      delimiter is. An app that did `set the itemDelimiter to tab` before
---      calling would not get an error; it would get a silently wrong answer,
---      which on this surface means a wrong address.
---      The obvious fix - `set the itemDelimiter to comma` at the top of each
---      public handler - is only safe if it is a LOCAL property in OXT (set
---      inside a handler, restored when that handler exits). In LiveCode it is
---      documented as local; whether OXT matches has NOT been observed, and this
---      file does not guess about engine behaviour, nor will it mutate a global
---      the library does not own (see discipline 3 for why that line was drawn).
---      So it is written down here, listed in the OXT pass runbook as a thing to
---      settle, and stated in docs/api-reference.md as a caller requirement in
---      the meantime. It predates phase 4 - phases 3 and 4 both rely on it - and
---      fixing it is a deliberate change of its own once the engine has answered.
+--      a REAL DEPENDENCY, not a note for tidiness. Twenty-six chunk expressions
+--      here read comma-separated lists (bech32's 5-bit values, the 8-to-5
+--      converters, the mnemonic word split, the path split), and every one of
+--      them reads whatever the ENGINE's current item delimiter is. An app that
+--      did `set the itemDelimiter to tab` and did not put it back would not get
+--      an error from this file; it would get a silently wrong answer, which on
+--      this surface means a wrong address.
+--
+--      THE FAMILY ALREADY SETTLED WHAT THIS PROPERTY IS, and this comment used
+--      to say otherwise. templates/CLAUDE.md rule 5 states it plainly:
+--      `itemDelimiter` / `lineDelimiter` are GLOBAL MUTABLE STATE - set them
+--      immediately before the parse that needs them and RESTORE them afterward,
+--      because other code assumes the defaults. OnionXT, which is the member
+--      with the most on-engine hours, does exactly that at six sites (see
+--      oxFieldAfter). So the remedy is NOT "set it at the top of every handler"
+--      - that would leave the caller's delimiter changed, which is the very
+--      thing the rule forbids - it is save, set, use, restore.
+--
+--      Applying that here is a deliberate change of its own, because a handler
+--      that throws must restore on the way out too, and this file throws by
+--      design on every malformed input. Until it is made, the dependency is
+--      stated in docs/api-reference.md as a caller requirement.
 --
 -- FAIL CLOSED, EVERYWHERE. Every decoder verifies its checksum and throws
 -- "CoinXT: <handler>: ..." on anything malformed. A corrupt address is never
@@ -506,7 +511,63 @@ end cxBech32Const
 
 -- Encode 5-bit values (a comma separated list) under a human-readable part.
 -- Most callers want cxSegwitAddressEncode instead; this is the layer beneath it.
+-- ==============================================================================
+-- THE ITEM-DELIMITER GUARDS.
+--
+-- Nine public handlers below read comma-separated lists (bech32's 5-bit values,
+-- the 8-to-5 converters, the mnemonic word split, the path split), and an
+-- `item` chunk reads whatever the ENGINE's delimiter currently is - which is
+-- GLOBAL MUTABLE STATE in this family (templates/CLAUDE.md rule 5). An app that
+-- did `set the itemDelimiter to tab` and did not put it back would get silently
+-- wrong answers from this library: measured, a hostile delimiter makes
+-- cxBtcAddressP2WPKH fail outright and cxMnemonicValidate answer FALSE to a
+-- perfectly good twelve-word backup. Neither is an error the caller can see.
+--
+-- The remedy is the family's own, and OnionXT has used it at six sites for
+-- years: SAVE, set, use, RESTORE. Not `set the itemDelimiter to comma` at the
+-- top of the handler - that leaves the caller's delimiter changed, which is the
+-- thing the rule exists to prevent.
+--
+-- It is done with a WRAPPER around each affected handler rather than by editing
+-- the handlers themselves. The bodies are vector-verified against published
+-- test vectors, and restructuring nine of them to thread a restore through
+-- every return and every throw is exactly the kind of edit that introduces the
+-- bug it was meant to prevent. The wrapper is eight identical lines; the logic
+-- underneath is untouched, and the `Inner` handlers are private so nothing
+-- outside this file can reach one without its guard.
+--
+-- The catch is not optional: this layer throws by design on malformed input, so
+-- without it a caller who catches a "bad checksum" error would find its own
+-- delimiter silently changed as a side effect.
+--
+-- FOUR OF THE NINE GUARDS ARE LOAD-BEARING; FIVE ARE BELT AND BRACES, and it is
+-- worth knowing which before you "clean one up". Only cxBech32EncodeValues,
+-- cxSegwitAddressDecode, cxMnemonicToEntropy and cxHdDerivePath read an `item`
+-- chunk in their OWN body. The other five reach one only through a handler that
+-- is itself guarded, so removing their guard changes nothing observable today -
+-- a mutation test confirms exactly that, and it is not a hole in the gate.
+-- They stay anyway. This is a money library, every defect the phase-3 review
+-- found was a check that was not being made, and a guard that is redundant today
+-- stops being redundant the moment somebody adds an `item` to one of these
+-- bodies. Uniformity also means a reader does not have to trace a call chain to
+-- know whether a public handler is safe to call.
+-- ==============================================================================
+
 function cxBech32EncodeValues pHrp, pValues, pSpec
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxBech32EncodeValuesInner(pHrp, pValues, pSpec) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxBech32EncodeValues
+
+private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
    local tPolymod, tI, tOut, tIndex, tCombined, tCount, tCode
    -- FAIL CLOSED ON THE INPUTS, because both of these used to fail OPEN and a
    -- bech32 string that is subtly wrong is far worse than one that is refused.
@@ -562,12 +623,26 @@ function cxBech32EncodeValues pHrp, pValues, pSpec
       throw "CoinXT: cxBech32EncodeValues: the result would exceed the 90-character bech32 limit."
    end if
    return tOut
-end cxBech32EncodeValues
+end cxBech32EncodeValuesInner
 
 -- Decode a bech32 or bech32m string. Returns an array with keys "hrp", "spec"
 -- and "values" (the data part as a comma separated list of 5-bit numbers, with
 -- the six checksum characters removed). Throws on anything malformed.
 function cxBech32DecodeValues pText
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxBech32DecodeValuesInner(pText) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxBech32DecodeValues
+
+private function cxBech32DecodeValuesInner pText
    local tResult, tPos, tI, tCount, tCode, tHrp, tData, tIndex, tLower, tSpec
    put the number of chars of pText into tCount
    if tCount > kCxBech32MaxLen then
@@ -631,7 +706,7 @@ function cxBech32DecodeValues pText
    -- Drop the six checksum values; the caller wants the payload.
    put cxDropLastItems(tResult["values"], 6) into tResult["values"]
    return tResult
-end cxBech32DecodeValues
+end cxBech32DecodeValuesInner
 
 private function cxDropLastItems pList, pHowMany
    local tCount, tI, tOut
@@ -774,6 +849,20 @@ end cxConvert5To8
 -- Build a SegWit address from a witness version (0..16) and its program bytes.
 -- The encoding follows from the version, which is the BIP-350 rule.
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxSegwitAddressEncodeInner(pHrp, pVersion, pProgram) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxSegwitAddressEncode
+
+private function cxSegwitAddressEncodeInner pHrp, pVersion, pProgram
    local tValues, tSpec, tLength
    if pVersion < 0 or pVersion > 16 then
       throw "CoinXT: cxSegwitAddressEncode: the witness version must be between 0 and 16."
@@ -792,13 +881,27 @@ function cxSegwitAddressEncode pHrp, pVersion, pProgram
    end if
    put pVersion & "," & cxConvert8To5(pProgram) into tValues
    return cxBech32EncodeValues(pHrp, tValues, tSpec)
-end cxSegwitAddressEncode
+end cxSegwitAddressEncodeInner
 
 -- Decode a SegWit address under an expected human-readable part. Returns an
 -- array with keys "version" and "program". Throws on every invalidity BIP-173
 -- and BIP-350 define, including the one that matters most: a version 0 address
 -- carrying a bech32m checksum, or a version 1+ address carrying a bech32 one.
 function cxSegwitAddressDecode pHrp, pAddress
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxSegwitAddressDecodeInner(pHrp, pAddress) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxSegwitAddressDecode
+
+private function cxSegwitAddressDecodeInner pHrp, pAddress
    local tDecoded, tResult, tVersion, tProgram, tValues, tLength, tConverted
    put cxBech32DecodeValues(pAddress) into tDecoded
    if tDecoded["hrp"] is not cxToLower(pHrp) then
@@ -833,7 +936,7 @@ function cxSegwitAddressDecode pHrp, pAddress
    put tVersion into tResult["version"]
    put tProgram into tResult["program"]
    return tResult
-end cxSegwitAddressDecode
+end cxSegwitAddressDecodeInner
 
 private function cxDropFirstItem pList
    local tCount, tI, tOut
@@ -889,9 +992,23 @@ end cxBtcAddressP2PKH
 -- MUST be compressed - an uncompressed key here produces an address whose funds
 -- are unspendable by every modern wallet, so it is refused rather than encoded.
 function cxBtcAddressP2WPKH pPubkey
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxBtcAddressP2WPKHInner(pPubkey) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxBtcAddressP2WPKH
+
+private function cxBtcAddressP2WPKHInner pPubkey
    get cxCheckPubkey(pPubkey, "cxBtcAddressP2WPKH", true)
    return cxSegwitAddressEncode(kCxHrpMainnet, 0, cxHash160(pPubkey))
-end cxBtcAddressP2WPKH
+end cxBtcAddressP2WPKHInner
 
 -- Pay to Taproot: a SegWit v1 "bc1p..." address over a 32-byte x-only OUTPUT
 -- key.
@@ -904,11 +1021,25 @@ end cxBtcAddressP2WPKH
 -- nobody can spend from, so if you do not already know your key is tweaked,
 -- it is not.
 function cxBtcAddressP2TR pOutputKey
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxBtcAddressP2TRInner(pOutputKey) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxBtcAddressP2TR
+
+private function cxBtcAddressP2TRInner pOutputKey
    if the number of bytes of pOutputKey is not 32 then
       throw "CoinXT: cxBtcAddressP2TR: a Taproot address requires a 32-byte x-only output key."
    end if
    return cxSegwitAddressEncode(kCxHrpMainnet, 1, pOutputKey)
-end cxBtcAddressP2TR
+end cxBtcAddressP2TRInner
 
 -- The lowercase Ethereum address for a public key: the last 20 bytes of
 -- Keccak-256 over the 64 bytes of the UNCOMPRESSED key, without its 0x04 prefix.
@@ -1392,6 +1523,20 @@ end cxMnemonicFromEntropy
 -- checksum mismatch - which is the whole point of the checksum, so a single
 -- mistyped word is caught here rather than becoming an empty wallet.
 function cxMnemonicToEntropy pMnemonic
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxMnemonicToEntropyInner(pMnemonic) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxMnemonicToEntropy
+
+private function cxMnemonicToEntropyInner pMnemonic
    local tWords, tCount, tList, tBits, tI, tIndex, tB
    local tEntBytes, tChecksumBits, tPacked, tEntropy, tGot, tWant
    put cxSplitWords(cxMnemonicNormalize(pMnemonic)) into tWords
@@ -1429,7 +1574,7 @@ function cxMnemonicToEntropy pMnemonic
       throw "CoinXT: cxMnemonicToEntropy: the checksum does not match, so at least one word is wrong or out of order."
    end if
    return tEntropy
-end cxMnemonicToEntropy
+end cxMnemonicToEntropyInner
 
 -- True when pMnemonic is a well-formed BIP-39 mnemonic with a correct checksum.
 --
@@ -1439,6 +1584,20 @@ end cxMnemonicToEntropy
 -- work (cxMnemonicToEntropy) still throw, so a caller never acts on a bad
 -- mnemonic by accident.
 function cxMnemonicValidate pMnemonic
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxMnemonicValidateInner(pMnemonic) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxMnemonicValidate
+
+private function cxMnemonicValidateInner pMnemonic
    local tEntropy
    try
       put cxMnemonicToEntropy(pMnemonic) into tEntropy
@@ -1446,7 +1605,7 @@ function cxMnemonicValidate pMnemonic
       return false
    end try
    return true
-end cxMnemonicValidate
+end cxMnemonicValidateInner
 
 -- The 64-byte BIP-39 seed: PBKDF2-HMAC-SHA512 over the mnemonic, salted with
 -- "mnemonic" plus the passphrase, 2048 rounds.
@@ -1582,6 +1741,20 @@ end cxHdDeriveChild
 -- checked is that every level is a number in range and that the separators are
 -- what they claim to be.
 function cxHdDerivePath pNode, pPath
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   try
+      put cxHdDerivePathInner(pNode, pPath) into tResult
+   catch tError
+      set the itemDelimiter to tSavedDelim
+      throw tError
+   end try
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end cxHdDerivePath
+
+private function cxHdDerivePathInner pNode, pPath
    local tPath, tNode, tCount, tI, tPart, tLast, tHardened, tIndex, tJ, tCode, tPartLen
    put pPath into tPath
    replace "/" with comma in tPath
@@ -1627,7 +1800,7 @@ function cxHdDerivePath pNode, pPath
       put cxHdDeriveChild(tNode, tIndex) into tNode
    end repeat
    return tNode
-end cxHdDerivePath
+end cxHdDerivePathInner
 
 private function cxHdSerialize pNode, pVersion, pPrivate
    -- The 78 bytes BIP-32 defines, in order: version, depth, parent

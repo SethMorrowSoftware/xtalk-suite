@@ -248,13 +248,27 @@ The single most expensive thing the family has learned. Change nothing here with
   / `line` / `word` on binary. Keep a base32/base58/bech32 bit-buffer small and masked each step so a
   long payload never builds a > 2^53 integer (precision loss). Route integer div/mod through helpers and
   avoid `^` in a compound expression (some OXT parsers reject it).
-- **`the itemDelimiter` is an UNVERIFIED DEPENDENCY of the script layer.** Comma-separated lists are
-  how that layer moves 5-bit groups, converter output, mnemonic words and path levels, and every
-  `item` expression reads the engine's CURRENT delimiter. A caller who changed it gets a silently
-  wrong address, not an error. The fix (`set the itemDelimiter to comma` at the top of each public
-  handler) is only safe if it is a LOCAL property in OXT; LiveCode documents it as one, OXT has not
-  been asked. Do not apply it blind - it is on the engine-pass list, and until then it is documented
-  in the file header (discipline 4) and in `docs/api-reference.md` as a caller requirement.
+- **`the itemDelimiter` is a REAL dependency of the script layer, and this repo already answered what
+  the property is.** Comma-separated lists are how that layer moves 5-bit groups, converter output,
+  mnemonic words and path levels, and every `item` expression reads the engine's CURRENT delimiter, so
+  a caller who changed it and did not restore gets a silently wrong address rather than an error.
+  This entry previously called the property's scope an open question for the engine pass. **It is not
+  open.** [templates/CLAUDE.md](templates/CLAUDE.md) rule 5 - carried into this member verbatim - says
+  `itemDelimiter` and `lineDelimiter` are GLOBAL MUTABLE STATE, to be set immediately before the parse
+  that needs them and RESTORED afterward, because other code assumes the defaults. OnionXT, the member
+  with the most on-engine hours, does exactly that at six sites (see `oxFieldAfter`). So the remedy is
+  save/set/use/restore - NOT `set the itemDelimiter to comma` at the top of a handler, which would
+  leave the caller's delimiter changed and is the very thing the rule forbids. Applying it here is a
+  change of its own, because this layer throws by design and a handler that throws must restore on the
+  way out too. **FIXED 2026-08-08**, and measured rather than assumed: modelling the property in
+  `tools/lcs-interp.py` showed a hostile delimiter made `cxBtcAddressP2WPKH` fail outright and
+  `cxMnemonicValidate` answer FALSE to a perfectly good twelve-word backup - a wrong answer, not an
+  error. Nine of the thirty public handlers were affected. Each now has a save/set/use/restore WRAPPER
+  around an untouched `Inner` body: restructuring nine vector-verified handlers to thread a restore
+  through every return and every throw is exactly the edit that introduces the bug it was meant to
+  prevent. The gate now requires every guarded handler to be indifferent to the delimiter AND to hand
+  the caller's setting back, including on the throw path. **The transferable lesson: read the carried
+  lesson book before filing an engine question. This one had been answered for years.**
 - **Verify every checksum on decode and fail closed:** Base58Check's 4-byte double-SHA-256 tail,
   Bech32/Bech32m's polymod (constant 1 vs 0x2bc830a3, SegWit v0 vs v1+), EIP-55's mixed case. A corrupt
   address must be rejected, never coerced.
