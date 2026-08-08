@@ -214,6 +214,16 @@ def assemble_staging(dry_run):
         build/package/code/<id>/coinxt.<ext>      every committed library
         build/package/tests/coin-selftest.livecodescript
         build/package/docs/api-reference.md
+        build/package/LICENSE                     CoinXT's own MIT
+        build/package/THIRD-PARTY-LICENSES.md     the vendored code's licenses
+
+    The two license files are not decoration and not optional. This staging area
+    is where the COMPILED libraries go, and those statically link a vendored
+    subset that is not all MIT: the SHA-2 files are BSD-3-Clause, whose clause 2
+    requires the notice be reproduced "in the documentation and/or other
+    materials provided with the distribution". A package that carries the binary
+    and not the notice is the distribution that breaks that, so both files ship
+    with it. (See ../THIRD-PARTY-LICENSES.md for the per-file map.)
     """
     staging = os.path.join(REPO_ROOT, "build", "package")
     actions = []
@@ -230,6 +240,11 @@ def assemble_staging(dry_run):
           os.path.join("tests", "coin-selftest.livecodescript"))
     stage(os.path.join("docs", "api-reference.md"),
           os.path.join("docs", "api-reference.md"))
+    # The licenses travel WITH the binaries, for the reason in the docstring:
+    # one of the vendored licenses binds binary redistribution specifically, and
+    # this staging area is the binary redistribution.
+    stage("LICENSE", "LICENSE")
+    stage("THIRD-PARTY-LICENSES.md", "THIRD-PARTY-LICENSES.md")
 
     if os.path.isdir(CODE_ROOT):
         for pid in VALID_PLATFORM_IDS:
@@ -242,6 +257,23 @@ def assemble_staging(dry_run):
     if not actions:
         print("  assemble: nothing to stage yet (no .lcb / no committed libs).")
         return
+
+    # Refuse to stage a binary without the notices that binary requires. The
+    # check is here rather than in a doc comment because the failure is silent:
+    # deleting a stage() line above still produces a package that installs and
+    # works perfectly, and the only thing missing is the legal text that has to
+    # accompany the compiled SHA-2 code. A build that is quietly out of
+    # compliance is exactly the shape of bug this project gates against.
+    staging_a_library = any(os.sep + "code" + os.sep in dst for _, dst in actions)
+    if staging_a_library:
+        missing = [name for name in ("LICENSE", "THIRD-PARTY-LICENSES.md")
+                   if not any(dst.endswith(os.sep + name) for _, dst in actions)]
+        if missing:
+            sys.exit("package-extension: refusing to stage a compiled library "
+                     "without %s. The vendored subset includes BSD-3-Clause code "
+                     "(sha2.c/h) whose licence binds BINARY redistribution, so the "
+                     "notice has to travel with the package. Restore the file(s) "
+                     "and the matching stage() call." % " and ".join(missing))
 
     staged_macos = False
     for src, dst in actions:
