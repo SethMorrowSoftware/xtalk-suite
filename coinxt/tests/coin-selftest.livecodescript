@@ -149,6 +149,25 @@ constant kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27
 -- is the single most important rejection in the whole encoding surface.
 constant kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
 
+-- ---- the fail-closed regression set ------------------------------------------
+-- One constant per defect an adversarial review found in the shipped script
+-- layer. Every one of them FAILED OPEN - a wrong answer that looked like a right
+-- one - and every one of them slipped past a vector set that only ever fed the
+-- handlers well-formed input. That is the lesson worth carrying: a positive
+-- vector cannot catch a check that is not being made.
+
+-- kEip55A with one letter's case corrupted, and with every letter's case
+-- flipped. cxEthAddressIsChecksummed used to answer true to both, because it
+-- compared a value against itself.
+constant kEip55Corrupt = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"
+constant kEip55Flipped = "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd"
+-- A REAL bech32m v1 address whose 32-byte witness program begins with the bytes
+-- 45 52 52 4F 52. The decoder used to signal its own failure with the string
+-- "ERROR" in place of the bytes, so it rejected this address as malformed - an
+-- address this very file's encoder produces.
+constant kSegwitErrorProgram = "4552524f52000102030405060708090a0b0c0d0e0f101112131415161718191a"
+constant kSegwitErrorAddress = "bc1pg4f9yn6jqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydqqwyhrw"
+
 -- ---- HD wallets and mnemonics (phase 4) --------------------------------------
 -- Every value below is PUBLISHED. That matters more here than anywhere else in
 -- this file, because phase 4 is the only surface that can be wrong WITHOUT
@@ -351,6 +370,7 @@ command stRun
    stRunBip39
    stRunBip32
    stRunBip44
+   stRunFailOpen
 
    stSection "summary"
    stNote "Vectors are identical to tools/coin-kat.py, so this run and the"
@@ -1089,3 +1109,47 @@ command stRunBip44
       stSectionFailed "BIP-44", tError
    end try
 end stRunBip44
+
+-- ==============================================================================
+-- The fail-closed regression set. Read the note above its constants: each of
+-- these is a case where the library used to give a WRONG ANSWER THAT LOOKED
+-- RIGHT, which is the only failure mode that matters on a surface that moves
+-- money. They are also the cases most likely to behave differently on a real
+-- engine than in the headless interpreter, because three of them turn on `is`
+-- and on `the caseSensitive`.
+-- ==============================================================================
+
+command stRunFailOpen
+   local tProgram, tDecoded, tKey
+   stSection "fail-closed regressions"
+   try
+      -- EIP-55 verification must depend on the CALLER'S casing. If these come
+      -- back true on the engine while they are false headlessly, the cause is
+      -- `the caseSensitive` reaching a comparison it should not - look at
+      -- cxCompareBytes first.
+      stAssert "a correctly checksummed address still verifies", cxEthAddressIsChecksummed(kEip55A) is true
+      stAssert "one corrupted letter is caught", cxEthAddressIsChecksummed(kEip55Corrupt) is false
+      stAssert "a fully case-flipped address is caught", cxEthAddressIsChecksummed(kEip55Flipped) is false
+      -- An in-band error sentinel over arbitrary bytes is always wrong.
+      put cxHexDecode(kSegwitErrorProgram) into tProgram
+      stAssert "an address whose program spells ERROR encodes", cxSegwitAddressEncode("bc", 1, tProgram) is kSegwitErrorAddress
+      put cxSegwitAddressDecode("bc", kSegwitErrorAddress) into tDecoded
+      stAssert "and decodes back to the same program", cxHexEncode(tDecoded["program"]) is kSegwitErrorProgram
+      stAssert "at witness version 1", tDecoded["version"] is 1
+      -- hash160 hashes anything, so an unchecked key gives a well-formed,
+      -- checksummed, permanently unspendable address.
+      stAssert "P2PKH refuses an empty key", stThrows("cxBtcAddressP2PKH", "")
+      stAssert "P2PKH refuses a 20-byte hash", stThrows("cxBtcAddressP2PKH", stRepeatByte(0, 20))
+      put numToByte(4) & stRepeatByte(0, 32) into tKey
+      stAssert "P2PKH refuses 33 bytes tagged 0x04", stThrows("cxBtcAddressP2PKH", tKey)
+      -- char (n) of a 32-character charset returns EMPTY past the end, so an
+      -- out-of-range value used to emit nothing and shorten the string.
+      stAssert "bech32 refuses a data value of 32", stThrows2("cxBech32EncodeValues", "bc", "0,32,1")
+      stAssert "bech32 refuses a negative data value", stThrows2("cxBech32EncodeValues", "bc", "0,-1")
+      -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
+      -- forbids and which this library's own decoder rejects.
+      stAssert "an uppercase HRP is refused", stThrows2("cxBech32EncodeValues", "BC", "0")
+   catch tError
+      stSectionFailed "fail-closed regressions", tError
+   end try
+end stRunFailOpen

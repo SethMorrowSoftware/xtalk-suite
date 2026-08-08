@@ -188,6 +188,37 @@ private function cxCharIndex pChar, pAlphabet
    return 0
 end cxCharIndex
 
+private function cxCompareBytes pA, pB
+   -- -1, 0 or 1 for pA before / equal to / after pB, comparing BYTE VALUES.
+   -- Discipline 3 again: `<` on strings honours `the caseSensitive`, which
+   -- defaults to FALSE, and a case-insensitive comparison would put the binary
+   -- search below into the wrong half of a list that is sorted by byte value.
+   local tI, tLenA, tLenB, tShort, tVa, tVb
+   put the number of chars of pA into tLenA
+   put the number of chars of pB into tLenB
+   put tLenA into tShort
+   if tLenB < tShort then
+      put tLenB into tShort
+   end if
+   repeat with tI = 1 to tShort
+      put byteToNum(char tI of pA) into tVa
+      put byteToNum(char tI of pB) into tVb
+      if tVa < tVb then
+         return -1
+      end if
+      if tVa > tVb then
+         return 1
+      end if
+   end repeat
+   if tLenA < tLenB then
+      return -1
+   end if
+   if tLenA > tLenB then
+      return 1
+   end if
+   return 0
+end cxCompareBytes
+
 -- ==============================================================================
 -- Hex. The one encoding with no checksum, so the only failure it can have is a
 -- malformed input, and it says so rather than skipping the bad character.
@@ -396,7 +427,16 @@ function cxBase58CheckDecode pText
    end if
    put byte 1 to (tCount - 4) of tRaw into tBody
    put byte (tCount - 3) to tCount of tRaw into tChecksum
-   if cxHexEncode(byte 1 to 4 of cxHash256(tBody)) is not cxHexEncode(tChecksum) then
+   -- BYTE COMPARISON, not `is`. Both operands here are 8-character hex strings,
+   -- and `is` compares two operands that both LOOK numeric as NUMBERS - so
+   -- whether "00001e00" and "00000001" are equal stops being a question about
+   -- bytes and becomes a question about how the engine parses exponents. That
+   -- has not been observed to collide on this surface, and it is not going to
+   -- be left to chance either: this is the one comparison standing between a
+   -- corrupt address and a caller's funds, and discipline 3 in the header
+   -- already says a comparison whose answer depends on engine coercion does not
+   -- belong on a checksum path.
+   if cxCompareBytes(cxHexEncode(byte 1 to 4 of cxHash256(tBody)), cxHexEncode(tChecksum)) is not 0 then
       throw "CoinXT: cxBase58CheckDecode: the checksum does not match, so the input is corrupt."
    end if
    return tBody
@@ -467,7 +507,42 @@ end cxBech32Const
 -- Encode 5-bit values (a comma separated list) under a human-readable part.
 -- Most callers want cxSegwitAddressEncode instead; this is the layer beneath it.
 function cxBech32EncodeValues pHrp, pValues, pSpec
-   local tPolymod, tI, tOut, tIndex, tCombined
+   local tPolymod, tI, tOut, tIndex, tCombined, tCount, tCode
+   -- FAIL CLOSED ON THE INPUTS, because both of these used to fail OPEN and a
+   -- bech32 string that is subtly wrong is far worse than one that is refused.
+   --
+   -- The HRP: BIP-173 requires 1 to 83 characters in the range 33..126, and a
+   -- bech32 string must be entirely one case. This handler lowercases nothing
+   -- and used to concatenate whatever it was given, so an uppercase "BC" gave
+   -- "BC1qqq...q42su7w" - a MIXED-case string that this file's own decoder
+   -- rejects and no conformant decoder accepts. Refusing an uppercase HRP is
+   -- the honest answer: a caller who wants the uppercase form should uppercase
+   -- the whole finished string, which is what BIP-173 actually defines.
+   put the number of chars of pHrp into tCount
+   if tCount < 1 or tCount > 83 then
+      throw "CoinXT: cxBech32EncodeValues: the human-readable part must be 1 to 83 characters."
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      if tCode < 33 or tCode > 126 then
+         throw "CoinXT: cxBech32EncodeValues: the human-readable part must be printable ASCII."
+      end if
+      if tCode >= 65 and tCode <= 90 then
+         throw "CoinXT: cxBech32EncodeValues: the human-readable part must be lowercase; uppercase the finished string instead."
+      end if
+   end repeat
+   -- The data values: each indexes a 32-character charset, and `char (n) of` a
+   -- short string returns EMPTY rather than failing. So a value of 32 used to
+   -- emit NOTHING for that position - a string one character short, carrying a
+   -- checksum computed over data it does not contain. It would decode to
+   -- something, and that something would not be what the caller encoded.
+   put the number of items of pValues into tCount
+   repeat with tI = 1 to tCount
+      put item tI of pValues into tIndex
+      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+   end repeat
    put cxBech32HrpExpand(pHrp) & "," & pValues & ",0,0,0,0,0,0" into tCombined
    put cxBitXor(cxBech32Polymod(tCombined), cxBech32Const(pSpec)) into tPolymod
    put pHrp & "1" into tOut
@@ -480,6 +555,12 @@ function cxBech32EncodeValues pHrp, pValues, pSpec
       put cxIntMod(cxIntDiv(tPolymod, cxPow2(5 * (5 - tI))), 32) into tIndex
       put char (tIndex + 1) of kCxBech32Charset after tOut
    end repeat
+   -- The same 90-character cap the decoder enforces. An encoder that can emit a
+   -- string its own decoder refuses is an encoder that will eventually be used
+   -- to make one.
+   if the number of chars of tOut > kCxBech32MaxLen then
+      throw "CoinXT: cxBech32EncodeValues: the result would exceed the 90-character bech32 limit."
+   end if
    return tOut
 end cxBech32EncodeValues
 
@@ -649,7 +730,7 @@ private function cxConvert5To8 pValues
    -- padding must be fewer than 5 bits and must be zero. A decoder that accepts
    -- non-zero padding accepts several distinct strings for the same program,
    -- and BIP-173 rejects that explicitly.
-   local tOut, tI, tCount, tValue, tBits, tByte
+   local tOut, tI, tCount, tValue, tBits, tByte, tResult
    put "" into tOut
    put 0 into tValue
    put 0 into tBits
@@ -664,13 +745,26 @@ private function cxConvert5To8 pValues
       end repeat
       put cxIntMod(tValue, cxPow2(tBits)) into tValue
    end repeat
+   -- THE STATUS IS OUT OF BAND, in a separate key, and it has to be. This
+   -- returned the strings "ERROR: ..." in place of the bytes once, and the
+   -- caller tested `char 1 to 5 of tProgram is "ERROR"` - which means a witness
+   -- program whose first five bytes happen to be 45 52 52 4F 52 was read as a
+   -- failure. That is a real address (bech32m v1 accepts any 2-to-40-byte
+   -- program), and this file's own encoder produces it, so the library rejected
+   -- an address it had just made. An in-band sentinel over arbitrary bytes is
+   -- always wrong; there is no byte string that cannot occur.
+   put tOut into tResult["bytes"]
    if tBits >= 5 then
-      return "ERROR: too many padding bits"
+      put false into tResult["ok"]
+      put "there are too many padding bits" into tResult["why"]
+   else if tValue is not 0 then
+      put false into tResult["ok"]
+      put "the padding bits are not zero" into tResult["why"]
+   else
+      put true into tResult["ok"]
+      put "" into tResult["why"]
    end if
-   if tValue is not 0 then
-      return "ERROR: non-zero padding"
-   end if
-   return tOut
+   return tResult
 end cxConvert5To8
 
 -- ==============================================================================
@@ -705,7 +799,7 @@ end cxSegwitAddressEncode
 -- and BIP-350 define, including the one that matters most: a version 0 address
 -- carrying a bech32m checksum, or a version 1+ address carrying a bech32 one.
 function cxSegwitAddressDecode pHrp, pAddress
-   local tDecoded, tResult, tVersion, tProgram, tValues, tLength
+   local tDecoded, tResult, tVersion, tProgram, tValues, tLength, tConverted
    put cxBech32DecodeValues(pAddress) into tDecoded
    if tDecoded["hrp"] is not cxToLower(pHrp) then
       throw "CoinXT: cxSegwitAddressDecode: the address is for a different network than the one requested."
@@ -724,10 +818,11 @@ function cxSegwitAddressDecode pHrp, pAddress
    if tVersion > 0 and tDecoded["spec"] is not "bech32m" then
       throw "CoinXT: cxSegwitAddressDecode: a version 1 or later address must use bech32m, not bech32."
    end if
-   put cxConvert5To8(cxDropFirstItem(tValues)) into tProgram
-   if char 1 to 5 of tProgram is "ERROR" then
-      throw "CoinXT: cxSegwitAddressDecode: the address has invalid padding, so it is not canonical."
+   put cxConvert5To8(cxDropFirstItem(tValues)) into tConverted
+   if tConverted["ok"] is false then
+      throw "CoinXT: cxSegwitAddressDecode: the address is not canonical because" && tConverted["why"] & "."
    end if
+   put tConverted["bytes"] into tProgram
    put the number of bytes of tProgram into tLength
    if tLength < 2 or tLength > 40 then
       throw "CoinXT: cxSegwitAddressDecode: the witness program must be between 2 and 40 bytes."
@@ -758,8 +853,35 @@ end cxDropFirstItem
 -- key) and produces the string a user pastes into a wallet.
 -- ==============================================================================
 
+private function cxCheckPubkey pPubkey, pName, pCompressedOnly
+   -- The length AND the prefix, together, exactly as the shim's cnx_pubkey_ok
+   -- does - and for a related reason. There the danger is an overread; here it
+   -- is worse in a quieter way: hash160 happily hashes ANY bytes, so without
+   -- this an empty string, a 20-byte hash or a truncated key each produce a
+   -- perfectly well-formed, checksummed mainnet address whose funds nobody can
+   -- ever spend. Nothing downstream can catch that - the address is valid, it
+   -- is simply not yours - so it has to be refused here.
+   local tCount, tFirst
+   put the number of bytes of pPubkey into tCount
+   if tCount is not 33 and (pCompressedOnly is true or tCount is not 65) then
+      if pCompressedOnly is true then
+         throw "CoinXT:" && pName & ": this address type requires a 33-byte COMPRESSED public key."
+      end if
+      throw "CoinXT:" && pName & ": a public key must be 33 bytes (compressed) or 65 bytes (uncompressed)."
+   end if
+   put byteToNum(byte 1 of pPubkey) into tFirst
+   if tCount is 33 and tFirst is not 2 and tFirst is not 3 then
+      throw "CoinXT:" && pName & ": a 33-byte public key must begin with 0x02 or 0x03."
+   end if
+   if tCount is 65 and tFirst is not 4 then
+      throw "CoinXT:" && pName & ": a 65-byte public key must begin with 0x04."
+   end if
+   return true
+end cxCheckPubkey
+
 -- Pay to public key hash: the original "1..." mainnet address.
 function cxBtcAddressP2PKH pPubkey
+   get cxCheckPubkey(pPubkey, "cxBtcAddressP2PKH", false)
    return cxBase58CheckEncode(numToByte(kCxVersionP2PKH) & cxHash160(pPubkey))
 end cxBtcAddressP2PKH
 
@@ -767,9 +889,7 @@ end cxBtcAddressP2PKH
 -- MUST be compressed - an uncompressed key here produces an address whose funds
 -- are unspendable by every modern wallet, so it is refused rather than encoded.
 function cxBtcAddressP2WPKH pPubkey
-   if the number of bytes of pPubkey is not 33 then
-      throw "CoinXT: cxBtcAddressP2WPKH: a SegWit v0 address requires a 33-byte COMPRESSED public key."
-   end if
+   get cxCheckPubkey(pPubkey, "cxBtcAddressP2WPKH", true)
    return cxSegwitAddressEncode(kCxHrpMainnet, 0, cxHash160(pPubkey))
 end cxBtcAddressP2WPKH
 
@@ -855,7 +975,20 @@ function cxEthAddressIsChecksummed pAddress
    if cxCaseKind(tPlain) is not "mixed" then
       return false
    end if
-   return cxEthAddressChecksum(pAddress) is cxEthAddressChecksum(cxToLower(tPlain))
+   -- COMPARE AGAINST THE CALLER'S ORIGINAL CASING, BY BYTE VALUE. Both halves
+   -- of that sentence are load-bearing, and this handler shipped once getting
+   -- both wrong - it read
+   --    cxEthAddressChecksum(pAddress) is cxEthAddressChecksum(cxToLower(tPlain))
+   -- which is a TAUTOLOGY: cxEthAddressChecksum lowercases its argument before
+   -- it hashes or emits anything, so its result is a function of the lowercase
+   -- form alone and both sides are the same string for every input. It answered
+   -- "true" to every mixed-case address, including a corrupted one, which is
+   -- precisely the failure EIP-55 exists to prevent.
+   -- The second half matters too: `is` honours `the caseSensitive` (default
+   -- FALSE), and this comparison is ENTIRELY about case, so `is` could not
+   -- decide it even against the right operand. cxCompareBytes is exact whatever
+   -- the caller has set - the same reasoning as discipline 3 in the header.
+   return cxCompareBytes(cxEthAddressChecksum(tPlain), "0x" & tPlain) is 0
 end cxEthAddressIsChecksummed
 
 -- ==============================================================================
@@ -1133,36 +1266,6 @@ private function cxWordAt pList, pIndex
    return char 1 to tEnd of tSlot
 end cxWordAt
 
-private function cxCompareBytes pA, pB
-   -- -1, 0 or 1 for pA before / equal to / after pB, comparing BYTE VALUES.
-   -- Discipline 3 again: `<` on strings honours `the caseSensitive`, which
-   -- defaults to FALSE, and a case-insensitive comparison would put the binary
-   -- search below into the wrong half of a list that is sorted by byte value.
-   local tI, tLenA, tLenB, tShort, tVa, tVb
-   put the number of chars of pA into tLenA
-   put the number of chars of pB into tLenB
-   put tLenA into tShort
-   if tLenB < tShort then
-      put tLenB into tShort
-   end if
-   repeat with tI = 1 to tShort
-      put byteToNum(char tI of pA) into tVa
-      put byteToNum(char tI of pB) into tVb
-      if tVa < tVb then
-         return -1
-      end if
-      if tVa > tVb then
-         return 1
-      end if
-   end repeat
-   if tLenA < tLenB then
-      return -1
-   end if
-   if tLenA > tLenB then
-      return 1
-   end if
-   return 0
-end cxCompareBytes
 
 private function cxWordIndex pList, pWord
    -- The 0-based index of pWord, or -1 if it is not a BIP-39 word. Binary

@@ -505,6 +505,65 @@ def check_vectors(c, ip):
     c.ck("rejects a leading zero in a long length",
          throws("cxRlpDecode", bytes.fromhex("b90040" + "00" * 64)), True)
 
+    # ---- the regression set ------------------------------------------------
+    # One vector per defect an adversarial review found in the code above, each
+    # of which the vectors that preceded it could not catch. They are grouped
+    # here rather than scattered because what they have in common is the point:
+    # every one of them FAILED OPEN - a wrong answer that looked like a right
+    # one - which is the only failure mode on this surface that matters.
+    c.note("\nfail-closed regressions (one per defect found by review)")
+
+    # EIP-55's whole purpose. The handler used to compare a value with itself
+    # (cxEthAddressChecksum lowercases before hashing, so both sides were the
+    # same string) and answered true to every mixed-case address. The four
+    # positive vectors above could not see it, because a true positive is what
+    # a tautology also returns.
+    for name, addr in (
+            ("one letter's case flipped", "0xfb6916095ca1df60bB79Ce92cE3Ea74c37c5d359"),
+            ("the last letter upper-cased", "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"),
+            ("every letter's case flipped", "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd")):
+        c.ck(f"a corrupted EIP-55 address is refused ({name})",
+             LCS._disp(call("cxEthAddressIsChecksummed", addr)), "false")
+
+    # An in-band error sentinel over arbitrary bytes is always wrong. This is a
+    # real bech32m v1 address whose 32-byte witness program begins with the
+    # bytes 45 52 52 4F 52, and the decoder used to read that as its own failure
+    # string and reject an address this file had just produced.
+    prog = b"ERROR" + bytes(range(27))
+    addr = call("cxSegwitAddressEncode", "bc", 1, prog)
+    c.ck("an address encodes when its program spells ERROR",
+         addr, REF.segwit_encode("bc", 1, prog))
+    got = ip.call("cxSegwitAddressDecode", ["bc", addr])
+    c.ck("  and decodes back to the same program",
+         (int(LCS._n(got["version"])), to_bytes(got["program"]).hex()), (1, prog.hex()))
+
+    # hash160 hashes anything, so without a length and prefix check every one of
+    # these produced a well-formed, checksummed, permanently unspendable address.
+    for name, key in (("an empty key", b""), ("a 20-byte hash", bytes(20)),
+                      ("33 bytes tagged 0x04", b"\x04" + bytes(32)),
+                      ("65 bytes tagged 0x02", b"\x02" + bytes(64)),
+                      ("a 34-byte key", b"\x02" + bytes(33))):
+        c.ck(f"cxBtcAddressP2PKH refuses {name}", throws("cxBtcAddressP2PKH", key), True)
+    c.ck("cxBtcAddressP2PKH still accepts an uncompressed key",
+         call("cxBtcAddressP2PKH", G65), REF.p2pkh(G65))
+
+    # `char (n) of` a 32-character charset returns EMPTY past the end, so an
+    # out-of-range value used to emit nothing at all: a string one character
+    # short, with a checksum over data that is not in it.
+    c.ck("cxBech32EncodeValues refuses a value of 32",
+         throws("cxBech32EncodeValues", "bc", "0,32,1", "bech32"), True)
+    c.ck("cxBech32EncodeValues refuses a negative value",
+         throws("cxBech32EncodeValues", "bc", "0,-1", "bech32"), True)
+    c.ck("cxBech32EncodeValues refuses a fractional value",
+         throws("cxBech32EncodeValues", "bc", "0,1.5", "bech32"), True)
+    # An uppercase HRP used to give a MIXED-case string, which BIP-173 forbids
+    # and which this file's own decoder rejects.
+    c.ck("an uppercase HRP is refused rather than mixed into the output",
+         throws("cxSegwitAddressEncode", "BC", 0, bytes(20)), True)
+    c.ck("an empty HRP is refused", throws("cxBech32EncodeValues", "", "0", "bech32"), True)
+    c.ck("a result over 90 characters is refused",
+         throws("cxBech32EncodeValues", "bc", ",".join(["0"] * 90), "bech32"), True)
+
     # ---- phase 4 ------------------------------------------------------------
     # These matter more than anything above them, because they are the only
     # part of CoinXT that can be wrong WITHOUT FAILING. A mis-packed mnemonic
@@ -621,6 +680,16 @@ def main(argv):
         print("check-script-vectors: FAILED")
         for p in c.problems:
             print(f"  - {p}")
+        return 1
+    # A FLOOR ON THE COUNT, so a refactor that quietly stops running most of the
+    # vectors cannot print OK. "All the checks passed" and "hardly any checks
+    # ran" look identical on the way out otherwise, and on this surface the
+    # second one is indistinguishable from a green build. Raise it when the set
+    # grows; it exists to catch collapse, not to track the exact number.
+    floor = 20 if cc is None else 150
+    if c.count < floor:
+        print(f"check-script-vectors: FAILED - only {c.count} checks ran, expected at "
+              f"least {floor}. Something stopped the vector set early.")
         return 1
     print(f"check-script-vectors: OK ({c.count} checks against the published vectors)")
     return 0

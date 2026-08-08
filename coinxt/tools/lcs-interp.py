@@ -18,6 +18,17 @@ anything outside that subset rather than guessing, because a silent mis-parse
 would be worse than no tool at all. If it disagrees with the engine, the engine
 is right and this file is the bug.
 
+ONE NAMED DIVERGENCE FROM THE ENGINE, because a general disclaimer is not much
+use when the specific gap is known. `is` is modelled here as CASE-SENSITIVE for
+strings (see _eq), while a real xTalk engine compares case-INSENSITIVELY unless
+`the caseSensitive` is true. This interpreter is therefore STRICTER than the
+engine on that one operator: a case bug it reports is real, but a case bug it
+misses could still be there, and code that relies on `is` being case-insensitive
+would pass here and behave differently on OXT. The shipped file does not rely on
+either behaviour - it routes every case-significant comparison through
+cxCharIndex, cxCaseKind or cxCompareBytes, which compare byte values and are
+exact under both - and that is precisely why it does not.
+
 It is deliberately literal and slow (cxBitXor alone is 31 interpreted iterations
 per call, and a bech32 checksum calls it hundreds of times). Speed is not the
 point; running the real text is.
@@ -302,6 +313,13 @@ class Interp:
         if m:
             tgt = m.group(1).strip()
             self.assign(tgt, _n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env)), env)
+            return i + 1
+        m = re.match(r'get\s+(.+)$', line, re.I)
+        if m:
+            # `get EXPR` evaluates EXPR and puts the value in `it`. The script
+            # layer uses it to call a validator for its THROW, discarding the
+            # return - so the evaluation is the whole point and `it` is not read.
+            env["it"] = self.eval_expr(m.group(1), env)
             return i + 1
         m = re.match(r'replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(\w+)$', line, re.I)
         if m:

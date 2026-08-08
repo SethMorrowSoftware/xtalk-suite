@@ -597,3 +597,54 @@ The shim gains four exports (34 now), `src/coinxt.lcb` wraps three of them, and
   mutation-tested (nine phase-4 mutations, all caught); `tools/check-selftest-vectors.py` re-deriving
   all 60 harness constants and mutation-tested (six, all caught); all four committed binaries rebuilt
   at ABI 4 with 34 exports each and `tools/check-binary-freshness.py` clean.
+
+**The adversarial review of phase 3, and what it found (2026-08-08).** An independent review of the
+shipped script layer raised 19 claims; 13 survived verification, deduplicating to **five real
+defects**, and every one of them **FAILED OPEN** - a wrong answer that looked like a right one. All
+five are fixed, and each now has a vector that would have caught it. This is the most useful thing
+that has happened to this member, so the pattern matters more than the list:
+
+- **`cxEthAddressIsChecksummed` compared a value with itself.** It read
+  `cxEthAddressChecksum(pAddress) is cxEthAddressChecksum(cxToLower(tPlain))`, but
+  `cxEthAddressChecksum` lowercases its argument before it hashes or emits anything, so both sides
+  were the same string for every input. It answered **true to every mixed-case address**, including a
+  corrupted one - the exact failure EIP-55 exists to prevent. The fix compares the computed form
+  against the caller's UNTOUCHED text, by byte value (`is` could not have decided it either, since
+  the whole question is case).
+- **`cxConvert5To8` signalled failure in-band, as the string `"ERROR: ..."`**, and the decoder tested
+  `char 1 to 5 of tProgram is "ERROR"`. A bech32m v1 witness program may be any 2 to 40 bytes, so a
+  program beginning `45 52 52 4F 52` was read as a failure: **the library rejected an address its own
+  encoder had just produced.** An in-band sentinel over arbitrary bytes is always wrong - there is no
+  byte string that cannot occur. The status is now a separate key in an array.
+- **`cxBtcAddressP2PKH` validated nothing.** `hash160` hashes anything, so an empty string, a 20-byte
+  hash or a truncated key each produced a well-formed, checksummed, **permanently unspendable**
+  mainnet address. Nothing downstream can catch that: the address is valid, it is simply not yours.
+  P2WPKH and P2TR both checked; P2PKH was the one that did not. There is now a shared
+  `cxCheckPubkey` that checks length AND prefix, the same rule the shim's `cnx_pubkey_ok` applies.
+- **`cxBech32EncodeValues` accepted data values outside 0..31.** `char (n) of` a 32-character charset
+  returns EMPTY past the end, so an out-of-range value emitted **nothing** - a bech32 string one
+  character short, carrying a checksum over data it does not contain.
+- **`cxSegwitAddressEncode` failed open on a non-lowercase HRP**, emitting `BC1qqq...` - a MIXED-case
+  string BIP-173 forbids and this file's own decoder rejects. The 90-character cap is now enforced on
+  the encoder too, for the same reason: an encoder that can emit a string its own decoder refuses
+  will eventually be used to make one.
+
+Also changed, on the same principle though not observed to collide: the Base58Check checksum
+comparison used `is` on two hex strings, and `is` compares operands that both LOOK numeric as
+NUMBERS. Whether `00001e00` equals `00000001` then stops being a question about bytes and becomes one
+about how the engine parses exponents. It goes through `cxCompareBytes` now. **Discipline 3 already
+covered this** - a comparison whose answer depends on engine coercion does not belong on a checksum
+path - it just had not been applied here.
+
+**The lesson, and it is the reusable part: every one of these was invisible to a vector set that only
+ever fed the handlers WELL-FORMED INPUT.** 87 passing checks against BIP-173, BIP-350, EIP-55 and RLP
+did not touch a single one, because a positive vector cannot catch a check that is not being made.
+The five published EIP-55 vectors could not even detect a tautology, since a tautology returns true
+for a true positive too. When adding a handler here, add the vector for what it must REFUSE in the
+same change as the vector for what it must produce.
+
+**A note on method, learned twice in one session.** Two mutations were first reported as NOT CAUGHT
+and both times the PROBE was wrong, not the gate: one exercised only the encode direction while the
+mutation was in the decoder, and one reverted only half of a two-part defect so the bug never
+actually came back. When a mutation survives, reconstruct the original defect faithfully and check
+that it reproduces before concluding the gate has a hole.
