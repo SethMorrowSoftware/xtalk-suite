@@ -13,9 +13,18 @@ script "dataChannelSelfTest"
 -- dcCreateChannelEx, dcSetBufferedLowThreshold, dcLocalDescriptionType,
 -- dcChannelProtocol, dcSetLocalDescription - and it pins the non-trickle
 -- signaling contract (a live local description carries "a=candidate", and the
--- offer/answer roles match the flow). The harness itself is verified
--- statically; running it on a real engine is what turns any of this into a
--- runtime result, and no such pass is recorded for this member yet.
+-- offer/answer roles match the flow). THIS harness has not itself been run on
+-- an engine yet, so its checks are verified statically. What IS recorded: on
+-- 2026-08-08 the suite selftest (tests/suite-selftest.livecodescript at the
+-- repository root) ran green on a real OXT engine and drove 20 of the 35
+-- public dc* handlers, including a live loopback that negotiated, opened both
+-- ends, round-tripped a payload byte-for-byte, refused 60001 bytes with -4,
+-- and tore down through dcCleanup. So the binding and the transfer spine are
+-- observed; the handlers this file adds on top of that set - dcCreateChannelEx,
+-- dcSetBufferedLowThreshold, dcLocalDescriptionType, dcChannelProtocol,
+-- dcSetLocalDescription, dcGatheringState, dcSelectedCandidatePair, dcSendText,
+-- dcBufferedAmount and the rest - are what running THIS file would turn into a
+-- runtime result.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,

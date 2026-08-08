@@ -6,9 +6,12 @@ machine and no signaling infrastructure. If you want the headline act — two
 machines chatting across the internet with no server — that is section 6.
 
 > **Honesty note (the suite convention):** the native pipeline is proven by the
-> C++ smoke test under sanitizers, but the script layer this guide walks — the
-> `.lcb` binding and the example stacks — is **verified statically; needs an
-> OXT pass**. Treat the step-by-step behaviour described here as the designed
+> C++ smoke test under sanitizers, and on **2026-08-08** the `.lcb` binding was
+> observed loading and working on a real OXT engine — the suite selftest ran
+> green, negotiating a live loopback and round-tripping a payload byte-for-byte.
+> The example stacks this guide walks through have **not** themselves been run
+> on an engine, and 15 of the 35 public `dc*` handlers are still **verified
+> statically**. Treat the step-by-step flow described here as designed
 > behaviour until a pass with `tests/datachannel-selftest.livecodescript` is
 > recorded.
 

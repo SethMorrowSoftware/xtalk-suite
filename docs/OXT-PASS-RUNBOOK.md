@@ -7,7 +7,28 @@ is waiting on this session, and only on this session. OXT is a GUI runtime with 
 headless way to compile or run `.lcb` / `.livecodescript`, so CI can prove the native
 shims and the pure-compute vectors but can never prove that a binding **loads**, that
 a foreign declaration **marshals**, or that a handler **returns what the docs say**.
-That is the gap tonight closes.
+That is the gap this session closes.
+
+> ## The 2026-08-08 pass: what it closed
+>
+> **`tests/suite-selftest.livecodescript` ran green on a real engine with all six
+> members installed — zero failures.** That was the suite's first runtime evidence.
+> It closed inventory **item 1** (datachannelxt had no engine evidence at all; it now
+> has a live loopback that negotiated, opened, and round-tripped byte-for-byte) and
+> inventory **item 2** (coinxt's binding had never been loaded; it now loads and
+> returns the pinned vectors byte-exact, closing coinxt phase 1). Both of the design
+> bets coinxt was carrying came back good: **`UIntSize` works as a foreign RETURN
+> type**, and **`MCDataGetBytePtr` marshals an empty `Data`** through a plain
+> `Pointer`. Neither documented fallback was needed. It also promoted the
+> cross-member compositions from "verified statically" to observed.
+>
+> **What it did NOT close, and why this runbook is still live.** The suite selftest is
+> a *sampler* — roughly a dozen handlers per member, chosen as the headline paths and
+> the cross-member seams. The deeper per-member harnesses were not run, so inventory
+> **item 3** (coverage added after the earlier passes) is only partly retired, and
+> items **4**, **5**, and **6** are untouched: they need a tor daemon or a second
+> machine, and this run used neither. Sections 2-7 below still apply as written; work
+> section 4 member by member and record only what your run actually exercised.
 
 This runbook is ordered for **shortest feedback first**: the cheapest thing that can
 disqualify an evening runs before the thing that takes an hour to set up.
@@ -67,15 +88,20 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 
 | # | Unproven thing | Why it matters | The label that says so |
 |---|---|---|---|
-| 1 | **datachannelxt has never had an engine pass at all.** Not the `.lcb`, not one example. | The whole WebRTC member is unwitnessed above the shim. It is the only member with *zero* recorded engine evidence, so it has the highest chance of a real defect and the highest value per minute spent. | `datachannelxt/README.md`: "No OXT engine run has been recorded for this member yet (contrast enetxt's 2026-08-07 selftest pass)". Same note in `datachannelxt/examples/README.md` and `datachannelxt/docs/getting-started.md`. |
-| 2 | **coinxt's binding is brand new and has never been loaded.** | `coinxt/src/coinxt.lcb` is the entire FFI seam for a library that will handle money. It also carries the suite's first **`UIntSize` as a foreign RETURN type**, which is reasoned, not observed. | `coinxt/src/coinxt.lcb` header: "STATUS: VERIFIED STATICALLY; NEEDS AN OXT PASS", with a numbered list of exactly what the pass must confirm. Also `coinxt/CLAUDE.md` ("Phase 1, the `.lcb` foreign module - WRITTEN; verified statically, needs an OXT pass") and the status blockquote in `coinxt/IMPLEMENTATION-PLAN.md`. |
+| 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual:** that covered 20 of the 35 public `dc*` handlers; `tests/datachannel-selftest.livecodescript` covers all 35 and has still not been run. | Labels updated in `datachannelxt/README.md`, `examples/README.md`, `docs/getting-started.md`, `tests/datachannel-selftest.livecodescript`, and `src/datachannel.lcb`. |
+| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual:** 12 of the 16 public handlers were not called by name (`cxCheckABI`, the six `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`). | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
 | 3 | **The selftests grew after their passes; the new sections are static-only.** torrentxt, enetxt, and sodiumxt all had coverage added in the "test coverage" follow-up commit, which post-dates every recorded pass. | A green run from an older, smaller harness does not cover handlers added later. The extended sections are where new binding bugs would hide. | `torrentxt/tests/torrent-selftest.livecodescript` COVERAGE NOTE: the v9-v11 surface (`btDhtBep44SignBuf`, `btDhtPutSigned`, `btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, `btRp1*`) "proves the .lcb wrappers, once an engine runs it (verified statically until then)". `enetxt/tests/enet-selftest.livecodescript` COVERAGE NOTE: the isolated `enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth` section, "verified statically; it needs an OXT pass to become a runtime result". `sodiumxt/docs/api-reference.md`: "The recorded on-engine pass predates those additions, so the newer checks are verified statically and need an OXT pass to become a runtime result." |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
 | 6 | **Two-machine behaviour, for every member that has it.** enetxt's LAN chat, torrentxt's rp1 chat and Channels, datachannelxt's DHT chat. | Loopback proves the binding; only a second machine proves the transport. | `enetxt/CLAUDE.md`: "Still un-exercised: the LAN chat demo between two real machines." `torrentxt/examples/README.md`: rp1 chat "needs a live peer to show anything, so it is a two-machine test by nature." |
 
-If the evening is short, **items 1 and 2 are the whole evening.** They are the only
-two places where an entire member is unwitnessed.
+Items 1 and 2 used to be "the whole evening" — the only two places where an entire
+member was unwitnessed. **Both are now closed.** For a short session today, the
+highest value is item 3: run the deeper per-member harnesses
+(`tests/datachannel-selftest.livecodescript` first, since it has the largest
+uncovered surface, then `torrent-selftest`, then `enet-selftest`, then
+`sxSelfTest()`). Items 4, 5 and 6 need a tor daemon or a second machine and should
+be planned as their own sessions.
 
 ---
 
@@ -89,15 +115,23 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 | Member | Committed platforms | If your platform is missing |
 |---|---|---|
 | sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` | n/a |
-| torrentxt | four; `universal-mac/` holds only a `README.md` (**no macOS dylib**) | build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
-| enetxt | `x86_64-linux` only | the root CI builds all five and uploads them as **workflow artifacts** (`native-enetxt.yml`); download yours, or build locally, then `enetxt/tools/package-extension.py` |
-| datachannelxt | `x86_64-linux` only | same shape: `native-datachannelxt.yml` artifacts, or a local build + `datachannelxt/tools/package-extension.py` |
+| torrentxt | four (Linux x64/x86, Windows x64/x86); `universal-mac/` holds only a `README.md` (**no macOS dylib**) | build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
+| enetxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `enetxt/tools/package-extension.py` |
+| datachannelxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `datachannelxt/tools/package-extension.py` |
 | onionxt | n/a, pure LiveCodeScript | n/a |
-| coinxt | `x86_64-linux` only + `MANIFEST.sha256` | build it: `cd coinxt && sh native/build.sh pack` puts it straight into `src/code/`; see 2.4 |
+| coinxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build it: `cd coinxt && sh native/build.sh pack` puts it straight into `src/code/`; see 2.4 |
 
-**On x86_64 Linux every member's library is already in the repo.** On macOS or
-Windows, expect to fetch or build the enetxt and datachannelxt libraries before you
-can touch item 1 of the inventory, and to run coinxt's one-line `pack`.
+**On Linux (x64 or x86) and on Windows (x64 or x86), every member's library is
+already in the repo** — the 2026-08-08 release run committed all four platforms for
+all five native members, which is what made that day's suite pass possible on a
+stock checkout.
+
+**macOS is the one gap left.** Only sodiumxt ships a real `universal-mac` dylib; the
+other four need a manual `lipo` build (and, for torrentxt, codesigning and
+notarization). CI deliberately builds no macOS lane — `macos-15` runners are
+arm64-only, so an automated lane would emit a thin dylib and silently regress
+sodiumxt's genuine two-architecture binary into one that fails on every Intel Mac.
+So on a Mac, expect to build before you can run any member but sodiumxt.
 
 ### 2.2 The dependency graph (this is the install order)
 
@@ -635,7 +669,8 @@ previously seen failure mode.
 
 ## 7. The tick sheet
 
-Copy this into your notes and fill it in as you go.
+Copy this into your notes and fill it in as you go. Lines marked `[x] 2026-08-08`
+are already done and recorded — leave them as history and fill in the rest.
 
 ```
 Environment: OXT version ______  OS/arch ______  date ______
@@ -650,15 +685,23 @@ PREREQ
 [ ] tor running with ControlPort 9051 + CookieAuthentication 1?  log line seen? ___
 
 BREADTH
-[ ] tests/suite-selftest.livecodescript      pass / fail / skips: ______
+[x] tests/suite-selftest.livecodescript      2026-08-08: GREEN, zero failures,
+                                             all six members present (no skips)
 
-DEPTH (per-member selftests)
+DEPTH (per-member selftests)  <- this block is now the open work
 [ ] sodiumxt   sxSelfTest()                   ___ passed ___ failed
 [ ] enetxt     enet-selftest                  ___ passed ___ failed
+               (the isolated teardown section is the part still unproven)
 [ ] datachannelxt  datachannel-selftest       ___ passed ___ failed   <- highest value
+               (15 of 35 dc* handlers untouched by the suite pass)
 [ ] torrentxt  torrent-selftest               ___ passed ___ failed
+               (~70 checks; the suite pass covered 11 handlers)
 [ ] onionxt    oxSelfTest()                   ___ passed ___ failed ___ skipped
-[ ] coinxt     .lcb items 1-5 in order        1:___ 2:___ 3:___ 4:___ 5:___
+[x] coinxt     .lcb items 1-5 in order        2026-08-08: 1:PASS 2:PASS(via sPrepare)
+                                             3:PASS UIntSize return works
+                                             4:PASS empty Data marshals
+                                             5:PASS vectors byte-exact
+                                             -> PHASE 1 CLOSED
 
 DEMOS
 [ ] datachannel-loopback

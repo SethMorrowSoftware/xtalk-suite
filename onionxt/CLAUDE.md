@@ -369,6 +369,16 @@ file-sharing spike) and `examples/onionxt-demo-standalone.livecodescript` (the f
 onionxt + onion-httpd + onionxt-tests + the demo so the About-tab self-test runs with nothing else loaded).
 It concatenates the parts and refuses to build on a name collision.
 
+Also confirmed on-engine 2026-08-08, by the suite selftest (`tests/suite-selftest.livecodescript` at
+the repository root, green): the **daemon-free compute paths**, run alongside all five other members.
+`oxVersion` reports; `oxPublicKeyFromAddress` recovers a 32-byte ed25519 key and its base32 decode is
+byte-exact against the expected key; `oxIsValidAddress` rejects an empty address, a short one, a
+version-0 one, and one carrying a non-base32 character; and `oxTransportInfo` returns a populated array
+naming the transport. The **capability advertisement is honest at runtime**, which matters because it is
+what apps branch on: with SodiumXT present, SAFECOOKIE auth and deterministic `.onion` keys
+(`sxSignSeedToExpandedKey`) both advertise TRUE, and offline `.onion` checksums still advertise FALSE -
+docs/08 gap #2, observed rather than assumed.
+
 Still `VERIFY:` (not yet exercised):
 
 8. `the processId` / `open process` for the optional Mode B tor launch (the default is assume-running).

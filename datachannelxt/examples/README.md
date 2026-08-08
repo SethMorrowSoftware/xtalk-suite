@@ -11,10 +11,13 @@ paste it into a stack script to verify an installed extension end to end
 (synchronous surface, a live loopback, message round-trips, teardown).
 
 > **Honesty note (the suite convention):** these example stacks are **verified
-> statically; needs an OXT pass** — the native pipeline beneath them is
-> smoke-test-proven, but no OXT engine run has been recorded for this member's
-> script layer yet. Running the self-test above on a real engine (and recording
-> the result) is the missing pass.
+> statically; needs an OXT pass** — no example stack has itself been run on an
+> engine. The layer beneath them is no longer unwitnessed, though: the native
+> pipeline is smoke-test-proven, and on **2026-08-08** the suite selftest
+> (`tests/suite-selftest.livecodescript`) ran green on a real OXT engine,
+> including a live datachannelxt loopback that negotiated, opened, and
+> round-tripped a payload byte-for-byte. So the handlers these demos call are
+> observed to work; the demos' own UI and flow are not yet.
 
 Every demo follows the family rules: self-building idempotent UI, a poll
 interval treated as a latency knob, `dcCleanup()` on `closeStack`.

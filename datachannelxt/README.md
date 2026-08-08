@@ -82,12 +82,22 @@ ICE, DTLS, SCTP — and you chat between two panes. If that works, the whole
 pipeline works; real signaling is the only thing left to add.
 
 > **Honesty note (the suite convention):** the native pipeline (shim +
-> libdatachannel) is proven by the C++ smoke test under ASan/UBSan and TSan,
-> but the script layer these walkthroughs describe — the `.lcb` binding and
-> the example stacks — is **verified statically; needs an OXT pass**. No OXT
-> engine run has been recorded for this member yet (contrast enetxt's
-> 2026-08-07 selftest pass); `tests/datachannel-selftest.livecodescript` is
-> the harness to run when one is.
+> libdatachannel) is proven by the C++ smoke test under ASan/UBSan and TSan.
+> The script layer now has its **first recorded engine evidence**: on
+> **2026-08-08** `tests/suite-selftest.livecodescript` ran green on a real OXT
+> engine, and its datachannelxt section drove `dcInit`, a stale-handle no-op,
+> peer and channel creation, a **live in-process loopback that negotiated and
+> opened both ends**, the incoming channel's label, `dcSendData` round-tripping
+> a payload byte-for-byte, the 60000-byte refusal (`-4`), a payload at the
+> SCTP-negotiated cap, and `dcCleanup`. So the binding loads and the
+> negotiate → open → transfer → teardown spine is observed, not designed.
+>
+> That section covers 20 of the 35 public `dc*` handlers. The rest —
+> `dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`,
+> `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`,
+> `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends —
+> remain **verified statically**. `tests/datachannel-selftest.livecodescript`
+> is the harness that covers all 35, and it has not yet been run on an engine.
 
 ## Then try the flagship (two machines, no server)
 

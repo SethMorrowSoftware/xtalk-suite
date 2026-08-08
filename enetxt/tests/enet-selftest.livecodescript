@@ -13,8 +13,13 @@ script "enetSelfTest"
 -- in their own isolated section (a client host pointed at a dead port, so an
 -- abrupt teardown cannot perturb the graceful loopback below), and
 -- enHostStatus is asserted BOTH stale (empty) and live (peerCount, address).
--- The harness itself is verified statically; it needs an OXT pass to become a
--- runtime result.
+-- That isolated section is the part added AFTER the 2026-08-07 engine pass, so
+-- it is still verified statically and needs an OXT pass to become a runtime
+-- result. The 2026-08-08 suite pass did NOT cover it either: the suite selftest
+-- exercises the graceful path only (initialize, host create, connect, send,
+-- poll, disconnect, destroy, deinitialize), so enDisconnectNow, enResetPeer,
+-- enSetPeerTimeout, enSetHostBandwidth and the live-vs-stale enHostStatus
+-- assertions remain the reason to run THIS file on an engine.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,

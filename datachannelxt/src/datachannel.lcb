@@ -36,9 +36,15 @@ library org.openxtalk.library.datachannel
 -- The examples show both trickle (ship each candidate) and copy/paste (wait
 -- for gathering complete, ship one blob) styles.
 --
--- Runtime behaviour needs an OXT pass to confirm (OXT cannot compile/run .lcb
--- headlessly); the static gate tools/check-livecodescript.py is run on every
--- edit. If `textDecode`/byte-chunk operators fail to resolve in a given OXT
+-- This module was first LOADED AND EXERCISED on a real OXT engine on
+-- 2026-08-08 (the suite selftest ran green): the foreign declarations below
+-- marshal correctly, a live loopback negotiated and opened, and payload
+-- round-tripped byte-for-byte. Handlers outside that run - dcCreateChannelEx,
+-- dcSetBufferedLowThreshold, dcLocalDescriptionType, dcChannelProtocol,
+-- dcSetLocalDescription, dcGatheringState, dcSelectedCandidatePair, dcSendText,
+-- dcBufferedAmount - still need tests/datachannel-selftest.livecodescript on an
+-- engine; the static gate tools/check-livecodescript.py is run on every edit.
+-- If `textDecode`/byte-chunk operators fail to resolve in a given OXT
 -- build, add `use com.livecode.byte` alongside the foreign import below.
 
 use com.livecode.foreign
