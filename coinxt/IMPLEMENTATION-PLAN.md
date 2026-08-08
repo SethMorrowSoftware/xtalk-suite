@@ -4,20 +4,32 @@ The phased build order for CoinXT (see [SPEC.md](SPEC.md) for WHAT, [CLAUDE.md](
 rules). Each phase has a concrete "done when" bar and states the risk it retires. Build in order: the
 native seam and the KAT harness come first, because everything downstream trusts them.
 
-> Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); the phase-1 NATIVE hash
-> surface done and verified; the phase-1 `.lcb` binding written and awaiting the engine pass** (see the
-> as-built notes in
-> [CLAUDE.md](CLAUDE.md)): the vendored SHA-3 / SHA-2 / RIPEMD-160 / HMAC / PBKDF2 units, the `cnx_`
-> shim (ABI 2) with Keccak-256, SHA3-256, SHA-256, SHA-512, RIPEMD-160, HMAC-SHA256/512 and
-> PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and the headless KAT harness are in and green.
-> `src/coinxt.lcb` (`library org.openxtalk.library.coin`) now binds all 16 `cnx_` exports and wraps the
-> whole hash surface as `cx*` handlers, with `cxCheckABI()` on ABI 2; it passes the static gate and its
-> foreign declarations were diffed mechanically against the shim, but OXT cannot compile or load a
-> `.lcb` headlessly, so it is **verified statically and needs an OXT pass**. Phase 1 closes when
-> `cxKeccak256` and friends return the pinned vectors from a real engine (the bar below, unchanged);
-> everything from the curve surface on is still to build. Unlike OnionXT
-> (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1 onward,
-> and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI change.
+> Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); PHASE 1 CLOSED
+> 2026-08-08 by an engine pass.** (See the as-built notes in [CLAUDE.md](CLAUDE.md).) The vendored
+> SHA-3 / SHA-2 / RIPEMD-160 / HMAC / PBKDF2 units, the `cnx_` shim (ABI 2) with Keccak-256, SHA3-256,
+> SHA-256, SHA-512, RIPEMD-160, HMAC-SHA256/512 and PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and
+> the headless KAT harness are in and green. `src/coinxt.lcb`
+> (`library org.openxtalk.library.coin`) binds all 16 `cnx_` exports and wraps the whole hash surface as
+> `cx*` handlers, with `cxCheckABI()` on ABI 2.
+>
+> **The phase-1 bar was "`cxKeccak256` and friends return the pinned vectors from a real engine", and on
+> 2026-08-08 they did.** `tests/suite-selftest.livecodescript` ran green on a real OXT engine: the
+> module loaded and its binds resolved, keccak256 of `""` and of `"abc"` matched their published
+> vectors, sha256(`"abc"`) matched FIPS 180-4, ripemd160(`"abc"`) matched its specification vector, and
+> `cxSha3_256` was proven distinct from `cxKeccak256`. Two design bets paid off in the same run: the
+> novel **`UIntSize` foreign RETURN type works** (the digests are byte-exact, and their buffers are
+> sized from it), and **`MCDataGetBytePtr` marshals an empty `Data`** through a plain `Pointer` (hashing
+> `""` returned a digest instead of throwing). Neither documented fallback - `CUInt`, `optional Pointer`
+> - was needed.
+>
+> Still verified statically within phase 1: 12 of the 16 public handlers were not called by name
+> (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`,
+> `cxPbkdf2HmacSha512`). They are assembled from parts the pass proved, and `tools/coin-kat.py` drives
+> all of them headless, so this is a coverage gap, not a risk to the phase. **Everything from the curve
+> surface on (phase 2 forward) is still to build** - that is now the member's critical path. Unlike
+> OnionXT (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1
+> onward, and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI
+> change.
 
 ## The "done" bar (applies to every phase)
 

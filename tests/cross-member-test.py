@@ -13,6 +13,13 @@ libsodium and libtorrent derive the same ed25519 public key from one seed?" is a
 question about two C libraries, and two C libraries are exactly what this
 container has.
 
+STATUS 2026-08-08: the engine pass has now happened, and the suite selftest
+reported all four of these invariants green THROUGH THE SCRIPT LAYER as well.
+That does not retire this file - it promotes it. This remains the only check of
+the four that runs headlessly on every push, so it is the regression net: if a
+future shim change breaks one of these invariants, CI says so here in seconds
+rather than waiting for the next human at an engine.
+
 So this file takes the cross-member claims that do NOT depend on the script
 layer and settles them where they can actually be settled: ctypes against the
 built .so files. What remains for the engine pass is then honestly narrowed - it

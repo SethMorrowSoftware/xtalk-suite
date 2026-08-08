@@ -80,6 +80,20 @@ It checks smart/curly quotes, em/en dashes, block balance, constants-before-use,
 shadow trap, the `put ... into ... after` malformation, and (for `.lcb`) a missing
 `use com.livecode.foreign` and `textEncode`/`textDecode` used inside a module.
 
+**The OXT self-test's vectors must not drift** (no compiler needed, so it runs on every push):
+```sh
+python3 tools/check-selftest-vectors.py
+```
+`tests/coin-selftest.livecodescript` carries its expected digests as hand-copied literals. This
+re-derives all 21 of them - against `hashlib` / `hmac` where Python has an independent implementation,
+against the published table in `coin-kat.py` for Keccak-256 (Python has no Keccak) and for RIPEMD-160
+when OpenSSL 3 has moved it out of reach, saying so rather than skipping quietly. It also re-checks the
+two structural claims the harness makes beyond its fixed digests: that PBKDF2's short output prefixes
+its long one, and that the SHA3-256 and Keccak-256 constants genuinely differ. It is mutation-tested:
+a flipped hex digit, an aliased Keccak constant, a changed BIP-39 salt, a truncated digest, a swapped
+HMAC tag, and an altered input string with its digest left alone are each caught. A drifted expectation
+turns a real regression into a green run, which in a money library is the worst failure mode there is.
+
 **The C shim builds under sanitizers** (from phase 1):
 ```sh
 cc -Wall -Wextra -fsanitize=address,undefined -isystem <trezor-crypto-dir> \
@@ -316,7 +330,17 @@ so `cxCheckABI()` can refuse a stale binary instead of failing at the first miss
   final block. The harness was mutation-tested: dropping the HMAC key, removing the zero-iteration
   guard, and aliasing a digest each make it fail with a non-zero exit.
 
-**Phase 1, the `.lcb` foreign module - WRITTEN; verified statically, needs an OXT pass.**
+**Phase 1, the `.lcb` foreign module - DONE; engine pass recorded 2026-08-08.**
+`tests/suite-selftest.livecodescript` ran green on a real OXT engine: the module loaded, its binds
+resolved, and keccak256(`""`/`"abc"`), sha256(`"abc"`), ripemd160(`"abc"`) came back byte-exact with
+`cxSha3_256` distinct from `cxKeccak256`. That closes phase 1 (see IMPLEMENTATION-PLAN.md). Twelve of
+the sixteen public handlers were not called by name in that run - `cxCheckABI` (proven transitively:
+`sPrepare()` is its entire body and every wrapper calls it), the seven `*Len` accessors, `cxSha512`,
+`cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512` - so those stay "verified statically" as
+individual handlers even though the seam beneath them is now observed. **The reason that gap existed is
+closed:** CoinXT was the only member with no self-building harness, which is why the suite pass could
+reach just 4 handlers. `tests/coin-selftest.livecodescript` now drives all 16 in one paste, so the next
+engine session retires the remaining 12 in a single run.
 `src/coinxt.lcb` is the whole FFI seam: `library org.openxtalk.library.coin`, one
 `private foreign handler` per `cnx_` export (all 16, checked name-for-name against the built
 library's exported symbols), and a `public cx*` wrapper for each: `cxKeccak256`, `cxSha3_256`,
@@ -326,10 +350,13 @@ seven `cx*Len` accessors, and `cxCheckABI()`. The decisions worth knowing before
 - **Sizes are `UIntSize`, everywhere, including as a RETURN type.** Our ABI carries every length as
   C `size_t`, so every length parameter marshals as `UIntSize` (the family rule: a 4-byte int into
   an 8-byte size slot corrupts the heap), and so do the `cnx_*_len()` returns. The one exception is
-  the PBKDF2 iteration count, which is a C `uint32_t` and therefore `CUInt`. `UIntSize` is proven
+  the PBKDF2 iteration count, which is a C `uint32_t` and therefore `CUInt`. `UIntSize` was proven
   in this family as a parameter (`MCMemoryAllocate`, in the on-engine-verified `sodium.lcb`); as a
-  *return* type it is reasoned, not observed, and it is item 3 on the engine-pass list in the file
-  header. The fallback if the engine rejects it is `CUInt`.
+  *return* type it was reasoned rather than observed until the 2026-08-08 engine pass, which
+  **settled it: it works.** Every digest that run checked was byte-exact, and each one's buffer was
+  sized from a `cnx_*_len()` declared `returns UIntSize` - a mismarshalled length would have
+  allocated wrong and broken the digest. The `CUInt` fallback is not needed; do not "simplify" these
+  declarations to it.
 - **No `-needed` retry path.** SodiumXT's shim returns bytes-written-or-`-needed`, so its LCB layer
   guesses a capacity and retries. Ours returns a status and writes a FIXED size the shim itself
   reports (or exactly the PBKDF2 output length asked for), so this layer asks for the size,

@@ -68,6 +68,15 @@ run_gates() {
     echo "== $m: tools/coin-kat.py --check =="
     ( cd "$m" && python3 tools/coin-kat.py --check )
   fi
+  # The OXT self-test's vectors are hand-copied literals in a .livecodescript,
+  # so they can drift from the shim and from the published answers. A drifted
+  # expectation turns a real regression into a green run, which in a money
+  # library is the worst possible failure mode - so re-derive them on every
+  # push. Needs no compiler, unlike coin-kat.py above.
+  if [ -f "$m/tools/check-selftest-vectors.py" ]; then
+    echo "== $m: tools/check-selftest-vectors.py =="
+    ( cd "$m" && python3 tools/check-selftest-vectors.py --check )
+  fi
   # Generated-standalone freshness (onionxt): the committed standalones must
   # match what the generator would emit from the current sources.
   if [ -f "$m/tools/build-standalone.py" ]; then

@@ -35,8 +35,28 @@ jobs:
       - name: Vendored-source integrity (trezor-crypto subset)
         run: cd native && sha256sum -c MANIFEST.sha256
 
+      # These two run in the monorepo's suite-gates but were missing here, so a
+      # developer working on CoinXT in isolation - the whole reason this file is
+      # retained - was NOT getting them. The freshness check is the automated
+      # half of suite rule 5: a shim that gained, lost, or renamed an export, or
+      # bumped its ABI, without its committed library being refreshed in the same
+      # change, is a load failure on a user's machine rather than a build failure
+      # here.
+      - name: Committed library still matches the shim (suite rule 5)
+        run: python3 tools/check-binary-freshness.py
+
+      - name: Committed binaries match src/code/MANIFEST.sha256
+        run: cd src/code && sha256sum -c MANIFEST.sha256
+
       - name: Known-answer vectors (build the shim, drive it via ctypes)
         run: python3 tools/coin-kat.py --check
+
+      # The OXT self-test carries its expected digests as hand-copied literals,
+      # so they can drift from the shim and from the published answers. A
+      # drifted expectation turns a real regression into a green run. Needs no
+      # compiler, unlike the KAT step above.
+      - name: The OXT self-test's vectors have not drifted
+        run: python3 tools/check-selftest-vectors.py --check
 
       - name: ASan + UBSan native self-test
         run: sh native/build.sh asan

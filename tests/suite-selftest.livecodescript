@@ -18,12 +18,23 @@ script "xTalkSuiteSelfTest"
 --      enetxt and datachannelxt are supposed to share. Those compositions are
 --      the suite's actual product; nothing tests them today.
 --
--- HONESTY (root CLAUDE.md rule 6). This harness is VERIFIED STATICALLY ONLY.
--- OXT is a GUI runtime with no headless way to compile or run a
--- .livecodescript, so nothing below has ever been observed executing. It needs
--- exactly this OXT pass to mean anything; until a human runs it, every claim in
--- it is a claim about what the code READS as, not about what it DOES. No result
--- is asserted here or anywhere else on its behalf.
+-- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN. On 2026-08-08 it was
+-- executed on a real OXT engine with all six members installed and reported
+-- GREEN - every section above passed, zero failures. That run is the suite's
+-- first runtime evidence, and what it bought is recorded per member (see each
+-- member's README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md section 4).
+--
+-- What that does NOT mean: this harness is a SAMPLER, not a full per-member
+-- selftest. It drives roughly a dozen handlers per member, chosen because they
+-- are the headline paths and the cross-member seams. Each member also carries a
+-- deeper harness (tests/<member>-selftest.livecodescript, sxSelfTest(),
+-- oxSelfTest()) covering its whole public surface, and those still need their
+-- own engine runs. A green result here is not a claim about handlers it never
+-- called - do not read one into it.
+--
+-- Re-run this on any new engine, OS, or set of committed binaries: it is the
+-- cheapest end-to-end check the suite has, and the 2026-08-08 result is
+-- evidence about that machine, not a permanent property of the code.
 --
 -- WITH ONE NARROWING, and it is worth knowing before you run this. The
 -- cross-member sections below ask questions that are mostly NOT script
@@ -286,7 +297,7 @@ command stRun
    put empty into sSealBox
 
    put "xTalk Suite end-to-end self-test" & return into sResultText
-   put "Verified statically only; this run is the OXT pass." & return after sResultText
+   put "First green engine pass recorded 2026-08-08; this run re-confirms it here." & return after sResultText
 
    -- EVERY synchronous section is contained. A section that throws - a
    -- mis-declared foreign handler, an unexpected native error, an API that has
@@ -1292,8 +1303,9 @@ command stFinish
    end try
 
    stSection "summary"
-   stNote "This harness is verified statically. The numbers above are the"
-   stNote "first runtime evidence any of it produces - please paste them back."
+   stNote "This is a sampler, not a full per-member selftest: it drives the"
+   stNote "headline paths and the cross-member seams. Each member has a deeper"
+   stNote "harness that still needs its own engine run. Paste these numbers back."
    put empty into sRunning
    stShow
 end stFinish

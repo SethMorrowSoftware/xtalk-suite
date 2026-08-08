@@ -17,38 +17,43 @@ library org.openxtalk.library.coin
 -- wrappers land in later phases against the same shapes.
 --
 -- ==========================================================================
--- STATUS: VERIFIED STATICALLY; NEEDS AN OXT PASS. OXT is a GUI runtime and
--- there is no headless way to compile or run a .lcb, so nothing below has been
--- observed running. The native side underneath it IS proven headless (ASan +
--- UBSan self-test, and tools/coin-kat.py drives every one of these symbols
--- through ctypes against public vectors). Per IMPLEMENTATION-PLAN.md, phase 1
--- is done when cxKeccak256 and friends return the PINNED vectors from a real
--- engine. What the engine pass must confirm, in order:
---   1. the module compiles and loads, and the `c:coinxt>` binds resolve (a
---      renamed or missing export is a silent bind failure at load);
---   2. cxCheckABI() returns cleanly against the shipped binary (ABI 2);
---   3. UIntSize as a foreign RETURN type (the *_len accessors return C size_t).
---      UIntSize is proven in this family as a PARAMETER (MCMemoryAllocate, in
---      the on-engine-verified sodium.lcb); as a return type it is reasoned, not
---      observed. If the engine rejects it, the fallback is CUInt (correct in
---      practice for these small values on every mainstream ABI, but not
---      type-exact), and this comment must be updated with what was seen;
---   4. MCDataGetBytePtr on an EMPTY Data. The C side is safe either way: the
---      shim accepts a NULL pointer when the length is 0 and substitutes a valid
---      one-byte source, so no hash internal can dereference NULL. What is NOT
---      settled is the MARSHALLING. If the engine imports a null byte pointer as
---      `nothing`, a plain `Pointer` slot rejects it (the family rule below), and
---      hashing "" would throw instead of returning a digest - which is the FIRST
---      thing a harness tries. The precedent says it works: sodium.lcb pushes an
---      empty Data through the identical MCDataGetBytePtr -> plain-`Pointer`
---      path, and its on-engine harness pins an empty case. But that is
---      SodiumXT's engine result, not ours. If it fails here, the fix is
---      `optional Pointer` on the IN-buffer parameters below (the family-
---      sanctioned way to marshal a null pointer; sodium.lcb already does it for
---      its unkeyed-hash key) - the shim needs no change, it handles NULL + 0
---      by construction;
---   5. the vectors themselves: cxKeccak256("") = c5d2...a470 and the rest of
---      tools/coin-kat.py, from script, byte for byte.
+-- STATUS: ENGINE PASS RECORDED 2026-08-08. This module was compiled, loaded
+-- and exercised on a real OXT engine by tests/suite-selftest.livecodescript
+-- (root of the suite), which ran green. Per IMPLEMENTATION-PLAN.md phase 1 is
+-- done when cxKeccak256 and friends return the PINNED vectors from a real
+-- engine, so THAT BAR IS MET AND PHASE 1 IS CLOSED. All five of the questions
+-- this block used to pose were answered, and every one of them landed on the
+-- side the code already assumed - no fallback below had to be taken:
+--   1. COMPILES, LOADS, BINDS RESOLVE. Confirmed: the digests came back, which
+--      they could not have done through a silent bind failure at load.
+--   2. THE ABI GUARD HOLDS against the shipped binary (ABI 2). Confirmed
+--      transitively, which is airtight here: every public cx* handler opens
+--      with sPrepare(), and sPrepare() is the ENTIRE body of cxCheckABI(). Four
+--      handlers returned without throwing, so _cnx_abi_version() marshalled and
+--      matched. cxCheckABI() has still not been called BY NAME.
+--   3. UIntSize AS A FOREIGN RETURN TYPE: WORKS. This was the genuinely novel
+--      one - UIntSize was proven in this family only as a PARAMETER. Every hash
+--      wrapper below sizes its output buffer from a _cnx_*_len() declared
+--      `returns UIntSize`, so a mismarshalled length would have allocated the
+--      wrong buffer and broken the digest. The digests are byte-exact,
+--      therefore the length is exact. The CUInt fallback is NOT needed; leave
+--      these declarations alone.
+--   4. MCDataGetBytePtr ON AN EMPTY Data: WORKS. cxKeccak256("") returned
+--      c5d2...a470 rather than throwing, so the engine marshals an empty Data
+--      through the plain `Pointer` slot. The `optional Pointer` fallback is NOT
+--      needed. (This is now OUR engine result, not an inherited SodiumXT one.)
+--   5. THE VECTORS, byte for byte from script: keccak256 of "" and of "abc",
+--      sha256("abc") against FIPS 180-4, ripemd160("abc"), and cxSha3_256
+--      proven DISTINCT from cxKeccak256 (the aliasing trap this surface exists
+--      to avoid). All exact.
+--
+-- STILL VERIFIED STATICALLY: 12 of the 16 public handlers were not called by
+-- name in that run - cxCheckABI (see 2), the seven *Len accessors, cxSha512,
+-- cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512. They are built from the same
+-- proven parts (sPrepare + sAlloc + a UIntSize length + sFinish), and
+-- tools/coin-kat.py drives all of them headless through ctypes against public
+-- vectors, but neither of those is an engine result for the handler itself.
+-- Calling them from script is a small, worthwhile follow-up.
 --
 -- The conventions below are the family FFI law (CLAUDE.md, "FFI / C-ABI
 -- conventions"), each one paid for once already:

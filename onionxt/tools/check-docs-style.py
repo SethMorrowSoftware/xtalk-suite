@@ -2,12 +2,19 @@
 """
 check-docs-style.py - the house-style gate for prose (Markdown).
 
-House style (CLAUDE.md, README): no em/en dashes and no smart/curly quotes
-anywhere, even in docs. The curly quotes fail OXT compilation if they ever leak
-into a script; the dashes are a style rule the whole family follows. The script
-gate tools/check-livecodescript.py enforces this for .lcb / .livecodescript; this
-tool enforces the same banned-character set for .md, portably (no locale- or
-grep-PCRE-dependent Unicode escapes).
+House style: no em/en dashes and no smart/curly quotes anywhere, even in docs.
+The curly quotes fail OXT compilation if they ever leak into a script; the dashes
+are a prose rule. The script gate tools/check-livecodescript.py enforces this for
+.lcb / .livecodescript; this tool enforces the same banned-character set for .md,
+portably (no locale- or grep-PCRE-dependent Unicode escapes).
+
+SCOPE, precisely: the no-dash rule is PER MEMBER, not suite-wide. Three members
+declare it in their own CLAUDE.md and ship this gate to enforce it: sodiumxt,
+onionxt, and coinxt. torrentxt, enetxt and datachannelxt deliberately do NOT
+declare it and use em-dashes freely in their prose, as do the suite-level docs at
+the repository root - that is their choice, not debt, and this gate is not run
+against them. Do not "fix" their dashes; do not copy this file into a member that
+has not declared the rule.
 
 Run with no arguments to check every .md under the repo, or pass explicit paths.
 Exits non-zero if any banned character is found.

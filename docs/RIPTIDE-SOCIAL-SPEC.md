@@ -525,7 +525,10 @@ exists in a shipping surface. Provenance:
 
 **Correction to the ONIONXT integration plan.** That plan (correctly, at its
 writing) treats the `ox*` surface as "presumed, must be confirmed against the
-real ABI." The real OnionXT repo is further along: phases 1–7 are built in pure
+real ABI." OnionXT itself is further along than that plan assumed. (This
+sentence used to say "the real OnionXT repo", from when OnionXT was a separate
+repository; it is now the `onionxt/` member of this monorepo, which is the
+source of truth.) Phases 1-7 are built in pure
 LiveCodeScript and have had an **on-engine pass against a live tor daemon**
 (SOCKS dial, SAFECOOKIE control auth, v3 onion publish, an inbound HTTP request
 viewed in Tor Browser, bootstrap). Every `ox*` name this spec uses is confirmed

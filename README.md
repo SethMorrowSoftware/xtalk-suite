@@ -37,12 +37,24 @@ authority; this is the summary:
 
 | Extension | Native shim | Committed binaries | Maturity |
 |---|---|---|---|
-| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member |
-| torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI, runtime-proven |
-| enetxt | yes | x86_64-linux committed; the root CI builds and tests all 5 platforms and publishes them as artifacts | Phase 1 complete; OXT selftest passed 2026-08-07 |
-| datachannelxt | yes | x86_64-linux | Phases 1-2 (data channels); script layer needs an OXT pass |
-| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | x86_64-linux + `MANIFEST.sha256` (`native/build.sh pack` builds the rest) | Designed and statically reasoned; the phase-1 hash surface built, KAT-verified, and bound in `src/coinxt.lcb` (needs an OXT pass) |
+| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member. Headline paths observed again on-engine 2026-08-08; `sxSelfTest()` has not been re-run since its later additions |
+| torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the ~70-check member selftest has not been run |
+| enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, and a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08 |
+| datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. 15 of its 35 `dc*` handlers are still verified statically |
+| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08. Mode B (launching tor) still unexercised |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass: the binding loads and returns the pinned hash vectors byte-exact from script. Phases 2+ (secp256k1, addresses, HD wallets) are designed in `coinxt/SPEC.md` and still to build |
+
+**Where the suite stands after the 2026-08-08 pass.** On that date
+`tests/suite-selftest.livecodescript` ran green on a real OXT engine with all six
+members installed — the suite's first end-to-end runtime evidence. It proved the
+compositions that are the actual product: one SodiumXT seed derives the *same*
+ed25519 identity in libsodium and libtorrent, libtorrent's DHT secret key **is**
+SodiumXT's expanded key, TorrentXT accepts a SodiumXT signature over a BEP44 item
+and **refuses** one minted for another sequence number, and a single
+SodiumXT-sealed payload crosses **both** live transports byte-for-byte under the
+60000-byte budget they share. Two things remain broadly open: **macOS binaries**
+for four of the five native members, and the **deeper per-member selftests**,
+which the suite harness deliberately does not replace.
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
@@ -50,7 +62,9 @@ on a real engine is labelled **"verified statically; needs an OXT pass"** (Tor
 paths: "+ live-Tor pass"). No member claims a runtime behaviour it has not
 measured. `docs/OXT-PASS-RUNBOOK.md` is the runbook for closing that gap: what is
 still unproven and where each label lives, the install order, the run order, and
-what to record.
+what to record. The convention cuts both ways — a label is removed only for what
+a run actually exercised, so the 2026-08-08 pass promoted the handlers it called
+and left the ones it did not still labelled, member by member.
 
 ## The shared engineering rules
 

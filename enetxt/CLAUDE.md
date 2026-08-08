@@ -11,8 +11,16 @@ code in this repository.
 > The OXT runtime pass happened 2026-08-07: `tests/enet-selftest.livecodescript`
 > runs green in OXT — all tests pass. That retires the `MCStringEncode`
 > first-runtime-use flag from the pre-pass audit (the selftest's `enSendText`
-> legs exercise that bind). Still un-exercised: the LAN chat demo between two
-> real machines.
+> legs exercise that bind). A second engine pass on 2026-08-08 (the suite
+> selftest, green) added the cross-member evidence: enetxt carried a
+> SodiumXT-sealed ciphertext over a live loopback and delivered it
+> byte-for-byte, `enSend` **refused** 60001 bytes with `-4` rather than
+> truncating, accepted a payload at exactly the 60000-byte budget, and ENet
+> reassembled all 60000 bytes into ONE message — the fragmentation contract,
+> observed rather than reasoned. Still un-exercised: the isolated teardown
+> section added after the 2026-08-07 pass (`enDisconnectNow`, `enResetPeer`,
+> `enSetPeerTimeout`, `enSetHostBandwidth`, live-vs-stale `enHostStatus`), and
+> the LAN chat demo between two real machines.
 
 ## The rules that carry over unchanged
 
