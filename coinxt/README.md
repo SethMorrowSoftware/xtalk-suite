@@ -61,6 +61,9 @@ CoinXT/
     MANIFEST.sha256         integrity pins: the vendored sources now; release binaries and the
                             wordlist join in later phases
     vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE
+  docs/
+    api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
+                            the whole designed API including phases not yet built)
   src/
     coinxt.lcb              the foreign-handler module (binds to cnx_*); phase 1 shipped and
                             engine-proven 2026-08-08

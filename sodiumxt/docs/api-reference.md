@@ -192,7 +192,7 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   diagnostics/preset accessors. The recorded `sxSelfTest()` pass predates those additions.
   The 2026-08-08 suite pass (`tests/suite-selftest.livecodescript`, green on a real engine)
   closed part of that gap from the outside: **seed-derived keypairs are now a runtime
-  result** — `sxSignKeypairFromSeed` was observed deterministic across two calls, and
+  result** - `sxSignKeypairFromSeed` was observed deterministic across two calls, and
   `sxSignSeedToExpandedKey` returned the 64-byte expanded key and was proven, on-engine, to
   equal the DHT secret key libtorrent derives from the same seed. The attached-signature
   form, keyed hashing, and the diagnostics/preset accessors were **not** in that run and

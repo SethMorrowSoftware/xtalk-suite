@@ -23,6 +23,13 @@ jobs:
           python-version: "3.x"
       - run: python tools/check-livecodescript.py
 
+      # The house style in CLAUDE.md ("No em-dashes in committed prose or docs")
+      # and CONTRIBUTING.md was followed perfectly but enforced by nothing, so a
+      # single edit could silently break it - and one did. Same gate onionxt and
+      # coinxt already run; sodiumxt declares the same rule, so it runs it too.
+      - name: House-style gate for docs (.md)
+        run: python tools/check-docs-style.py
+
   # Integrity gate for the committed native blobs: every src/code/<id>/sodiumxt.*
   # must be listed in src/code/MANIFEST.sha256 and match its recorded SHA256. This
   # catches a committed binary that was swapped or corrupted without the manifest
