@@ -495,10 +495,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      # Unpack OUTSIDE the working tree. The bundle is a second copy of every
+      # library, so a staging directory inside the checkout is one `git add -A`
+      # away from being committed alongside the real update - which is exactly
+      # what run 3 did, landing 54.5 MB of duplicates under `incoming/`. The
+      # installer takes the bundle path as an argument, so there is no reason
+      # for it to live in the repository at all.
       - uses: actions/download-artifact@v4
         with:
           name: release-binaries
-          path: incoming
+          path: ${{ runner.temp }}/release-bundle
 
       # The SAME verifier the local path uses - not a reimplementation. It checks
       # each library's filename against the member, its object format and
@@ -508,7 +514,7 @@ jobs:
       # anything at all if any file fails, so a bad artifact cannot land a
       # partial update.
       - name: Verify, then install into each extension
-        run: python3 tools/install-release-binaries.py incoming
+        run: python3 tools/install-release-binaries.py "$RUNNER_TEMP/release-bundle"
 
       # Proof the tree is still coherent AFTER the write: the MANIFEST.sha256
       # files the installer just refreshed, coinxt's binary-freshness gate
@@ -533,6 +539,20 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Every committed binary already matched this build; nothing to do."
             exit 0
+          fi
+          # `git add -A` is deliberately broad, so bound what it is allowed to
+          # have caught. The installer writes in exactly one shape - a library
+          # under <member>/src/code/<platform-id>/ or the MANIFEST.sha256 beside
+          # it - and anything else staged here is something this job dragged in
+          # rather than produced. Refusing is the whole point: run 3 committed a
+          # 54.5 MB second copy of the bundle and the push succeeded, because
+          # nothing between `git add -A` and `git push` ever looked at the list.
+          stray=$(git diff --cached --name-only \
+                  | grep -Ev '^[a-z]+xt/src/code/([^/]+/[^/]+|MANIFEST\.sha256)$' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::staged paths outside <member>/src/code/ - refusing to commit:" >&2
+            echo "$stray" >&2
+            exit 1
           fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
           git diff --cached --stat
