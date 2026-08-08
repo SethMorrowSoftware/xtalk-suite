@@ -10,7 +10,7 @@ reaches outside it. This file is the procedure for the split and the checklist f
 ## Before you split
 
 Run the gates from `coinxt/` (the directory is lowercase; only the eventual repository name is
-capitalised) and confirm all seven are green. They are the same steps `.github/workflows/ci.yml`
+capitalised) and confirm all eight are green. They are the same steps `.github/workflows/ci.yml`
 runs, and the same ones the suite's `tools/build-all.sh --gates` runs today:
 
 ```sh
@@ -20,7 +20,8 @@ python3 tools/coin-kat.py --check             # builds the shim, runs the known-
 python3 tools/check-selftest-vectors.py       # the OXT self-test's vectors have not drifted
 python3 tools/check-binary-freshness.py       # the committed library still matches the shim
 sh native/build.sh asan                       # ASan + UBSan native self-test
-( cd native && sha256sum -c MANIFEST.sha256 ) # vendored-source integrity
+( cd native && sha256sum -c MANIFEST.sha256 )   # vendored-source integrity
+( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
 ## The split (pick ONE)
@@ -59,7 +60,7 @@ expects: `.github/workflows/ci.yml` (dormant while nested, because GitHub only r
 
 ## After the split: the new CoinXT repository
 
-1. Confirm CI ran and all seven gate steps passed on the first push.
+1. Confirm CI ran and all eight gate steps passed on the first push.
 2. Remove this `MIGRATION.md` and the clearly-marked staging paragraph in `README.md`.
 3. **Decide the project license.** The MIT `LICENSE` in `native/vendor/` covers only the vendored
    trezor-crypto files (a redistribution requirement); the repository itself ships no top-level license

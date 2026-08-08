@@ -230,15 +230,18 @@ onionxt reads it, so no password ever crosses your hands. In the app, match the 
 system tor is SOCKS `9050` / control `9051`; Tor Browser is SOCKS `9150` / control
 `9151` **only if you enabled it**.
 
-### 2.4 coinxt: doable on Linux x86_64, a build away everywhere else
+### 2.4 coinxt: nothing to build on Linux or Windows; macOS is a build away
 
-coinxt now ships **`coinxt/src/code/x86_64-linux/coinxt.so`**, pinned in
-`coinxt/src/code/MANIFEST.sha256`. That is the exact file the engine dlopen()s when
-`coinxt/src/coinxt.lcb` binds `c:coinxt>`, so **on Linux x86_64 there is nothing to
-build**: coinxt installs like any other member and the run below is just a run.
+coinxt ships **four committed libraries** - `x86_64-linux`, `x86-linux`,
+`x86_64-win32`, `x86-win32` - each pinned in `coinxt/src/code/MANIFEST.sha256`. Those
+are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
+`c:coinxt>`, so **on Linux and Windows, 32- or 64-bit, there is nothing to build**:
+coinxt installs like any other member and the run below is just a run.
 
-On any other platform, build it first - one command, and it puts the file where the
-engine expects it:
+**macOS is the only gap**, and it is the same gap four of the five native members
+have: CI builds no macOS lane on purpose (the runners are arm64-only, so an
+automated lane would emit a thin dylib). Build it first - one command, and it puts
+the file where the engine expects it:
 
 ```
 cd coinxt && sh native/build.sh pack
@@ -262,10 +265,24 @@ an engine old enough to be a problem here has a bigger problem already. The buil
 byte-reproducible: rebuilding on the same toolchain reproduces the committed file
 exactly, so `pack` does not dirty the manifest gate.
 
-There is still **no `tools/package-extension.py`** for coinxt, so wrapping the `.lcb`
-plus the binary into an installable extension is the one manual step left. That is the
-only remaining cost, and it is now the same cost as any hand-packaged member - not the
-highest on this list.
+coinxt now has **`tools/package-extension.py`** too, which used to be the one manual
+step left here. It deliberately does not build - `pack` owns that, and a second
+implementation of the one step that must not drift would be worse than the gap - but it
+does the three things `pack` leaves undone:
+
+```
+python3 tools/package-extension.py --assemble          # stage build/package/ for the IDE
+python3 tools/package-extension.py --refresh-manifest  # record a newly packed platform
+python3 tools/package-extension.py --lib <path> --platform-id universal-mac
+```
+
+The `--lib` form is the one that matters on a Mac: it installs a library built
+elsewhere (your `lipo` output, or a CI artifact) and **refuses it** if it does not
+export all 16 `cnx_*` entry points, because a partial library binds at load and then
+fails at first use. It refreshes the manifest in the same action, since installing a
+library without recording it just moves the failure to the integrity gate. It never
+invents a signing identity: a macOS dylib still wants codesigning and the package still
+wants notarizing before public release.
 
 ---
 
@@ -318,10 +335,10 @@ Ordered by (value of the result) divided by (setup cost):
 |---|---|---|---|
 | 1 | `sodiumxt/examples/sodium-tests.livecodescript` (`put sxSelfTest()`) | sodiumxt only | No I/O at all, no network, runs in a second. Everything else composes sodiumxt, so a failure here invalidates results further down. |
 | 2 | `enetxt/tests/enet-selftest.livecodescript` | enetxt only | Loopback UDP on 127.0.0.1, no daemon, no second machine. Also the fastest way to discover a machine that blocks loopback UDP, which would also sink datachannelxt (see trap 5.5). |
-| 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. First engine evidence this member has ever had. |
+| 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 6 | coinxt: no harness stack; drive `coinxt/src/coinxt.lcb` by hand | coinxt packaged (the Linux x86_64 library is committed; elsewhere run `pack` first - 2.4) | Follow the numbered engine-pass list in the `.lcb` header, in order. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged (all four Linux/Windows libraries are committed; on macOS run `pack` first - 2.4) | Drives **all 16** public `cx*` handlers, so it retires in one paste the 12 the 2026-08-08 pass never called. Fully synchronous: no I/O, no state, no teardown. Includes the SHA3-vs-Keccak aliasing check and the fail-closed guards. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 

@@ -77,6 +77,9 @@ CoinXT/
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
                             drift from the shim or the published answers (no compiler needed)
     check-binary-freshness.py  does the committed library still match the shim?
+    package-extension.py    stage the installable extension (--assemble), record a newly
+                            packed platform (--refresh-manifest), or install a library built
+                            elsewhere (--lib, e.g. a macOS lipo output)
     check-livecodescript.py the static gate for .lcb / .livecodescript (carried verbatim)
     check-docs-style.py     the house-style gate for .md (carried verbatim)
   examples/                 (later phases)
@@ -91,11 +94,14 @@ python3 tools/check-livecodescript.py         # static gate for the script layer
 python3 tools/check-docs-style.py             # house-style gate for the docs
 python3 tools/coin-kat.py --check             # builds the shim, runs the known-answer vectors
 python3 tools/check-selftest-vectors.py       # the self-test's vectors have not drifted
+python3 tools/check-binary-freshness.py       # the committed library still matches the shim
 sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd native && sha256sum -c MANIFEST.sha256 ) # vendored-source integrity
+( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
-All six run in CI (`.github/workflows/ci.yml`). There is no headless way to compile or run
+All eight run in CI (`.github/workflows/ci.yml`), and the same set runs in the monorepo's
+`suite-gates.yml` via `tools/build-all.sh --gates`. There is no headless way to compile or run
 `.livecodescript` / `.lcb` on OXT, so a script change additionally needs an on-engine pass; the honest
 status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
 
