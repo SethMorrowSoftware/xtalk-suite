@@ -98,18 +98,21 @@ These are summarized in `README.md`; the operational point for editing is:
   upload each built library as an **artifact** and never commit one: they fire on
   every push, so a commit step there would land binaries nobody asked for on
   somebody else's change. `release-binaries.yml` is the manual assembly step over
-  the top: one `workflow_dispatch` builds every member for every platform (24
-  jobs), asserts each artifact, then installs each library into its member's
+  the top: one `workflow_dispatch` builds every member for every platform it can (20
+  jobs: five members x four platforms), asserts each artifact, then installs each library into its member's
   `src/code/<platform-id>/`, refreshes the manifests, runs the whole gate set,
   and commits (`commit_mode`: `branch` / `pr` / `none`). That still satisfies
   rule 5, whose point is that a committed binary traces to a human decision - the
   decision is the person pressing "Run workflow". The verification is the same
   code either way, because the job runs `tools/install-release-binaries.py`
-  rather than reimplementing it. Two things it cannot make: torrentxt's macOS dylib (it
-  must be universal, self-contained, and codesigned/notarized — credentials CI
-  does not hold), and any claim that an unexecuted artifact works, which is why
-  the coinxt Windows lane's output is driven through the published vectors on a
-  Windows runner before it is bundled. The per-member `.github/workflows/` files are kept
+  rather than reimplementing it. It builds NO macOS lanes: `macos-15` runners are
+  arm64-only, so they would emit a thin dylib into `universal-mac` and regress
+  sodiumxt's genuine two-architecture binary into one that fails on every Intel
+  Mac. macOS stays a manual `lipo` build (plus codesigning/notarization for
+  torrentxt, which needs credentials CI does not hold), and the installer
+  refuses a thin Mach-O. Nor does it claim an unexecuted artifact works, which
+  is why the coinxt Windows lane's output is driven through the published
+  vectors on a Windows runner before it is bundled. The per-member `.github/workflows/` files are kept
   for when a member is worked on in isolation, but **GitHub Actions runs only
   the root workflows in a monorepo**, so they do not fire here.
 

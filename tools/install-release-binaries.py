@@ -27,11 +27,13 @@ the repository half-updated:
   * the FILENAME matches the member. The engine resolves an LCB `c:<name>>` bind
     to a file of exactly that name, so `libcoinxt.so` or `coinxt-1.0.so` is not
     a cosmetic difference - it is a library that will not load.
-  * the OBJECT FORMAT matches the platform directory. This is the check that
-    catches the failure this repo has already had to design against: a cross
-    build that reports the build machine's arch and files an x86 library under
-    x86_64-linux. ELF class/machine, PE magic, and Mach-O (including fat) are
-    read from the file header rather than trusted from the path.
+  * the OBJECT FORMAT and ARCHITECTURE match the platform directory, read from
+    the ELF/PE/Mach-O header rather than trusted from the path. This catches the
+    failure this repo has already had to design against - a cross build that
+    reports the build machine's arch and files an x86 library under
+    x86_64-linux - and the macOS version of it: a THIN dylib under
+    `universal-mac` is REFUSED, because it loads for whoever built it and fails
+    only for users on the other architecture.
   * for coinxt, the EXPORT SURFACE is exactly the cnx_* entry points. That check
     fails OPEN if it is skipped (a wrong export mechanism yields a WORKING
     library with 77 symbols), so it is asserted here too, not only in CI.
@@ -149,8 +151,7 @@ def main(argv):
                     f"{member}/{platform_id}/{want}: it is a {got_kind} library "
                     f"in a {kind} directory")
                 continue
-            # The arch half, where the header can tell us. universal-mac is
-            # allowed to be either (a thin dylib is a real, if narrower, build).
+            # The arch half, from the header rather than the path.
             if kind in ("linux", "win32"):
                 want_arch = platform_id.rsplit("-", 1)[0]
                 if got_arch != want_arch:
@@ -160,8 +161,22 @@ def main(argv):
                         f"machine's arch would look exactly like this")
                     continue
             elif got_arch == "thin":
-                skipped.append(f"{member}/{platform_id}: a THIN Mach-O, not universal "
-                               f"- it will not load on the other slice")
+                # A REFUSAL, not a note. `universal-mac` is a promise about the
+                # file, and a thin dylib breaks it in the worst way available:
+                # it loads perfectly on the machine that built it and fails only
+                # for users on the other architecture. This is not hypothetical -
+                # macos-15 runners are arm64-only, so the obvious CI lane builds
+                # exactly this, and committing one would have replaced
+                # sodiumxt's genuine 2-architecture dylib with an arm64-only
+                # file. release-binaries.yml has no macOS lanes for that reason;
+                # this check is what stops a hand-assembled bundle doing it too.
+                # Build each slice and `lipo -create` them.
+                problems.append(
+                    f"{member}/{platform_id}/{want}: a THIN Mach-O, but "
+                    f"{platform_id} promises a universal binary - it would load "
+                    f"for whoever built it and fail for everyone on the other "
+                    f"architecture. lipo the two slices together first")
+                continue
 
             if member == "coinxt" and kind == "linux":
                 exports = coinxt_exports(src)
