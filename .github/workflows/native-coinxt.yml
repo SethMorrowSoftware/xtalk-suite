@@ -74,6 +74,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc
 
+      # The independent implementation the curve vectors are checked against.
+      # coin-kat.py SKIPS that leg without it, which exits 0 and reads almost
+      # like a pass, so COINXT_REQUIRE_CROSSCHECK below makes the skip fail.
+      - name: Install the independent crypto implementation
+        run: pip install ecdsa
+
       # The shim's own knob, not hand-rolled flags: build.sh compiles the shim
       # AND the vendored trezor-crypto units under -fsanitize=address,undefined
       # and runs the self-test executable it builds.
@@ -85,6 +91,8 @@ jobs:
       # BIP-39, the Ethereum keccak256 answers), including the Keccak-vs-SHA3
       # aliasing guard.
       - name: Known-answer vectors
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/coin-kat.py --check
 
       # Suite rule 5, mechanised: the committed src/code/ library must still
@@ -134,6 +142,98 @@ jobs:
           printf '#!/bin/sh\nexec gcc -m32 "$@"\n' > "$HOME/bin/cc"
           chmod +x "$HOME/bin/cc"
           echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # RUN the library that is actually committed, BEFORE the build below
+      # overwrites it. Everything else in this job asks whether an artifact is
+      # well-FORMED - right exports, right class, right path. This asks the only
+      # question that matters to someone installing it: does it compute the
+      # right answers?
+      #
+      # It needs a C driver rather than the Python KAT harness because a 64-bit
+      # interpreter cannot ctypes.CDLL a 32-bit shared object, which is exactly
+      # why this artifact has been the least-verified thing coinxt ships. The
+      # driver is built by the lane's own cc, so on the x86 lane it is a 32-bit
+      # process dlopen()ing a 32-bit library.
+      #
+      # The vectors are deliberately the load-bearing ones and no more: the ABI
+      # number the binding checks, a published Keccak-256 answer (the hash
+      # surface), and the published RFC 6979 signature plus its verification
+      # (the curve surface, and the one that would catch a miscompiled bignum).
+      - name: Execute the COMMITTED library's vectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="src/code/${{ matrix.platform_id }}/coinxt.so"
+          if [ ! -f "$lib" ]; then
+            echo "no committed library for ${{ matrix.platform_id }}; nothing to execute"
+            exit 0
+          fi
+          cat > /tmp/drive.c <<'DRIVER'
+          #include <dlfcn.h>
+          #include <stdio.h>
+          #include <string.h>
+          #include <stddef.h>
+          static int hexeq(const unsigned char *b, int n, const char *want) {
+            char h[160]; int i;
+            for (i = 0; i < n; i++) sprintf(h + 2 * i, "%02x", b[i]);
+            return strcmp(h, want) == 0;
+          }
+          int main(int argc, char **argv) {
+            void *so; int rc; unsigned char out[65], sk[32], dg[32], sig[64], pub[33];
+            int (*abi)(void);
+            int (*keccak)(const unsigned char *, size_t, unsigned char *);
+            int (*sha256)(const unsigned char *, size_t, unsigned char *);
+            int (*sign)(const unsigned char *, size_t, const unsigned char *, size_t,
+                        unsigned char *, size_t);
+            int (*verify)(const unsigned char *, size_t, const unsigned char *, size_t,
+                          const unsigned char *, size_t);
+            int (*pubkey)(const unsigned char *, size_t, int, unsigned char *, size_t);
+            if (argc < 2) return 2;
+            so = dlopen(argv[1], RTLD_NOW);
+            if (!so) { printf("dlopen failed: %s\n", dlerror()); return 1; }
+            *(void **)&abi = dlsym(so, "cnx_abi_version");
+            *(void **)&keccak = dlsym(so, "cnx_keccak256");
+            *(void **)&sha256 = dlsym(so, "cnx_sha256");
+            *(void **)&sign = dlsym(so, "cnx_ecdsa_sign");
+            *(void **)&verify = dlsym(so, "cnx_ecdsa_verify");
+            *(void **)&pubkey = dlsym(so, "cnx_pubkey_from_seckey");
+            if (!abi || !keccak || !sha256 || !sign || !verify || !pubkey) {
+              printf("a required cnx_ symbol is missing\n"); return 1;
+            }
+            printf("  abi_version = %d\n", abi());
+            if (abi() != 3) { printf("FAIL: expected ABI 3\n"); return 1; }
+            if (keccak((const unsigned char *)"", 0, out) != 0 ||
+                !hexeq(out, 32,
+                  "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) {
+              printf("FAIL: keccak256(\"\") vector\n"); return 1;
+            }
+            memset(sk, 0, sizeof sk); sk[31] = 1;
+            if (pubkey(sk, 32, 1, pub, 33) != 0 || !hexeq(pub, 33,
+                  "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")) {
+              printf("FAIL: private key 1 did not give the generator G\n"); return 1;
+            }
+            sha256((const unsigned char *)"Satoshi Nakamoto", 16, dg);
+            rc = sign(sk, 32, dg, 32, sig, 64);
+            if (rc != 0 || !hexeq(sig, 64,
+                  "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d8"
+                  "2442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5")) {
+              printf("FAIL: RFC 6979 signature vector (rc=%d)\n", rc); return 1;
+            }
+            if (verify(pub, 33, dg, 32, sig, 64) != 0) {
+              printf("FAIL: the signature did not verify under its own key\n"); return 1;
+            }
+            sig[5] ^= 1;
+            if (verify(pub, 33, dg, 32, sig, 64) != -5) {
+              printf("FAIL: a tampered signature was not rejected\n"); return 1;
+            }
+            printf("  committed library executed OK (ABI, keccak, G, RFC 6979, verify)\n");
+            dlclose(so);
+            return 0;
+          }
+          DRIVER
+          cc -O1 -o /tmp/drive /tmp/drive.c -ldl
+          file /tmp/drive "$lib"
+          /tmp/drive "$(pwd)/$lib"
 
       # The platform id is passed EXPLICITLY. build.sh derives it from `uname`
       # when you do not, and uname describes the machine, not the output - the

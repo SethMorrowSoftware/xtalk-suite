@@ -10,8 +10,11 @@ House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in 
 `.livecodescript`. Comment the *why*, densely. Public API `cxPascalCase`; C ABI `cnx_snake_case`.
 
 > This is a design spec, not an implementation; the as-built status is tracked in
-> [CLAUDE.md](CLAUDE.md)'s as-built notes (the phase-1 Keccak/SHA3 slice is built and verified; the
-> rest is still design). It is the source of
+> [CLAUDE.md](CLAUDE.md)'s as-built notes (phase 1, the whole hash surface, is built and has had an
+> engine pass; phase 2, the secp256k1 curve, is built and cross-verified against an independent
+> library, with its script wrappers awaiting an engine pass; phases 3 to 6 are still design). Where
+> the as-built code and this document disagree, the code and CLAUDE.md win, and the disagreement is
+> marked inline below rather than quietly reconciled. It is the source of
 > truth for WHAT CoinXT is and the contract each layer must meet; the phased HOW is in
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and the hard-won FFI/LCB rules are in
 > [CLAUDE.md](CLAUDE.md).
@@ -104,10 +107,17 @@ bindings). The shim is intentionally tiny; these are its shapes.
 - **Every function returns an `int` status**: `0` = ok, negative = a stable error code
   (`CNX_ERR_BADLEN`, `CNX_ERR_BADKEY`, `CNX_ERR_BADSIG`, `CNX_ERR_RANGE`, `CNX_ERR_INTERNAL`, ...). No
   human strings cross the ABI; the livecodescript layer maps codes to messages.
-- **Byte buffers cross as `Pointer` + `CInt` length.** An LCB `Data` does NOT auto-bridge to `void*`. An
-  **in** buffer passes `MCDataGetBytePtr` + length; an **out** buffer is an engine `MCMemoryAllocate`
-  block passed as a real `Pointer`, and the shim writes into it and reports bytes written (or a negative
-  required size, `-needed`, so the LCB layer can re-allocate and retry).
+- **Byte buffers cross as `Pointer` + a `UIntSize` length.** An LCB `Data` does NOT auto-bridge to
+  `void*`. An **in** buffer passes `MCDataGetBytePtr` + length; an **out** buffer is an engine
+  `MCMemoryAllocate` block passed as a real `Pointer`.
+  > **As built, correcting this section's original text.** This bullet used to say `CInt` length and to
+  > describe a `-needed` re-allocate-and-retry protocol. Both were wrong for CoinXT and are corrected
+  > here rather than left to mislead. Lengths are C `size_t`, so they marshal as `UIntSize` (a 4-byte
+  > int into an 8-byte slot corrupts the heap - the very rule stated three bullets down). And there is
+  > no `-needed` path: that is SodiumXT's protocol, whose shim returns bytes-written-or-negative-size.
+  > A `cnx_` entry point returns a STATUS and writes a fixed size it reports itself (`cnx_*_len`), or
+  > exactly the output length the caller asked for, so the binding allocates exactly that and copies
+  > exactly that back. There is no retry path to get wrong.
 - **Never RETURN a bridged C string.** Fill a caller buffer; return length. A returned static/owned
   pointer is `free()`-on-static on the first call.
 - **Sizes are `size_t` -> `UIntSize`, not `CUInt`.** A 4-byte int into an 8-byte slot corrupts the heap.
@@ -136,7 +146,12 @@ Curve (secp256k1):
   cnx_ecdsa_verify(pub, hash32, sig64) -> int
   cnx_ecdsa_sign_recoverable(sk32, hash32, out_sig65) -> int        // Ethereum: 64 + recid
   cnx_ecdsa_recover(sig65, hash32, out_pub65) -> int                // ecrecover
-  cnx_ecdh(sk32, pub, out32) -> int
+  cnx_ecdh(sk32, pub, out65) -> int      // AS BUILT: the raw point 0x04||X||Y,
+                                         // not 32 bytes. Sketched here as out32
+                                         // assuming the X coordinate; the shim
+                                         // reports what upstream writes rather
+                                         // than truncating for the caller, who
+                                         // must apply their protocol's KDF.
   cnx_schnorr_sign(sk32, msg32, aux32, out_sig64) -> int            // BIP-340
   cnx_schnorr_verify(xonly_pub32, msg32, sig64) -> int
   cnx_xonly_from_seckey(sk32, out32, out_parity) -> int             // BIP-340 / Taproot

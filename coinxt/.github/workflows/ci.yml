@@ -26,6 +26,15 @@ jobs:
         with:
           python-version: "3.x"
 
+      # The independent implementation the secp256k1 vectors are checked
+      # against. Both coin-kat.py and check-selftest-vectors.py treat it as
+      # optional and SKIP without it - right for a contributor's machine, wrong
+      # for CI, where a skip exits 0 exactly like a pass. The
+      # COINXT_REQUIRE_CROSSCHECK below turns that skip into a failure, so
+      # removing this step cannot silently downgrade either gate.
+      - name: Install the independent crypto implementation
+        run: pip install ecdsa
+
       - name: Static gate for the script layer (.lcb / .livecodescript)
         run: python3 tools/check-livecodescript.py
 
@@ -49,6 +58,8 @@ jobs:
         run: cd src/code && sha256sum -c MANIFEST.sha256
 
       - name: Known-answer vectors (build the shim, drive it via ctypes)
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/coin-kat.py --check
 
       # The OXT self-test carries its expected digests as hand-copied literals,
@@ -56,6 +67,8 @@ jobs:
       # drifted expectation turns a real regression into a green run. Needs no
       # compiler, unlike the KAT step above.
       - name: The OXT self-test's vectors have not drifted
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/check-selftest-vectors.py --check
 
       - name: ASan + UBSan native self-test

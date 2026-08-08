@@ -671,9 +671,10 @@ command stOnionSection
 end stOnionSection
 
 -- ---- per-member: CoinXT ------------------------------------------------------
--- Hash vectors only: the published known answers this repo already pins in
--- coinxt/tools/coin-kat.py, re-run through the SCRIPT layer so a green result
--- means the cx* wrappers reach the same audited C the KAT harness tests.
+-- Published known answers this repo already pins in coinxt/tools/coin-kat.py,
+-- re-run through the SCRIPT layer so a green result means the cx* wrappers
+-- reach the same audited C the KAT harness tests. Hashes here, then the
+-- secp256k1 sample in stCoinCurveSection below.
 command stCoinSection
    local tDigest, tHex
 
@@ -710,7 +711,68 @@ command stCoinSection
    stAssert "cxSha3_256 is NOT aliased to cxKeccak256", \
          stHex(tDigest) is not \
          "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+
+   stCoinCurveSection
 end stCoinSection
+
+-- CoinXT phase 2: a SAMPLE of the secp256k1 surface, not a substitute for
+-- coinxt/tests/coin-selftest.livecodescript, which drives all 31 public
+-- handlers. Four checks earn their place in a sampler because the phase-2
+-- wrappers have never been loaded on an engine and two of their shapes are new
+-- to that binding:
+--   * cxPublicKey passes an LCB Boolean through a C int FLAG. Nothing in phase 1
+--     crossed the FFI as a boolean. If it fails to marshal, the compressed and
+--     uncompressed calls return the same length instead of 33 and 65.
+--   * cxVerify RETURNS Boolean, where every phase-1 handler returned Data.
+-- The whole section is wrapped so that an older CoinXT install (phase-1 .lcb, or
+-- an ABI-2 library) reports one clear failure rather than aborting the run.
+command stCoinCurveSection
+   local tSeckey, tPubC, tPubU, tDigest, tSig, tBad, tRecovered, tByte
+
+   stSection "CoinXT: secp256k1 through the binding (phase 2)"
+   try
+      -- The private key 1, whose public key is the curve's own generator G, so
+      -- this vector needs no table. Built with numToByte because this harness
+      -- has no hex decoder and must not borrow another member's.
+      put stRepeatByte(0, 31) & numToByte(1) into tSeckey
+      put cxPublicKey(tSeckey, true) into tPubC
+      put cxPublicKey(tSeckey, false) into tPubU
+      stAssert "cxPublicKey (compressed) is the generator G", \
+            stHex(tPubC) is \
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      -- If the C int flag did not marshal, these two would be equal.
+      stAssert "the compressed and uncompressed keys differ in length", \
+            the number of bytes of tPubC is 33 and \
+            the number of bytes of tPubU is 65
+
+      -- The most-republished RFC 6979 vector for secp256k1 + SHA-256. The digest
+      -- is built with cxSha256, which this same section already checked against
+      -- FIPS 180-4, so a failure here cannot be a hashing failure.
+      put cxSha256(textEncode("Satoshi Nakamoto", "UTF-8")) into tDigest
+      put cxSign(tSeckey, tDigest) into tSig
+      stAssert "cxSign reproduces the published RFC 6979 signature", \
+            stHex(tSig) is \
+            "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d8" & \
+            "2442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
+
+      -- cxVerify returns Boolean, not Data. Both answers are asserted, because a
+      -- binding that returned something falsy for everything would still pass a
+      -- test that only checked the rejection.
+      stAssert "cxVerify accepts a good signature", \
+            cxVerify(tPubC, tDigest, tSig) is true
+      put (byteToNum(byte 6 of tSig) + 1) mod 256 into tByte
+      put byte 1 to 5 of tSig & numToByte(tByte) & byte 7 to 64 of tSig into tBad
+      stAssert "cxVerify rejects a tampered signature", \
+            cxVerify(tPubC, tDigest, tBad) is false
+
+      -- ecrecover: the signature alone must yield the signer's key back.
+      put cxRecover(cxSignRecoverable(tSeckey, tDigest), tDigest) into tRecovered
+      stAssert "cxRecover returns the signing public key", \
+            stHex(tRecovered) is stHex(tPubU)
+   catch tError
+      stSectionFailed "CoinXT secp256k1", tError
+   end try
+end stCoinCurveSection
 
 -- ==============================================================================
 -- THE CROSS-MEMBER SECTIONS - the reason this file exists.

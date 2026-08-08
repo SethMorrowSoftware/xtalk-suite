@@ -25,11 +25,22 @@ native seam and the KAT harness come first, because everything downstream trusts
 > Still verified statically within phase 1: 12 of the 16 public handlers were not called by name
 > (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`,
 > `cxPbkdf2HmacSha512`). They are assembled from parts the pass proved, and `tools/coin-kat.py` drives
-> all of them headless, so this is a coverage gap, not a risk to the phase. **Everything from the curve
-> surface on (phase 2 forward) is still to build** - that is now the member's critical path. Unlike
+> all of them headless, so this is a coverage gap, not a risk to the phase. Unlike
 > OnionXT (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1
 > onward, and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI
 > change.
+>
+> **PHASE 2 IS BUILT AND ITS BAR IS MET AT THE C LEVEL (ABI 3).** The bar below is "a signature CoinXT
+> makes verifies in an independent library, and `cxRecover` returns the signing pubkey." Both hold, and
+> `tools/coin-kat.py` checks them on every push: CoinXT reproduces four published RFC 6979 secp256k1
+> signatures byte for byte, its signature verifies in Python `ecdsa`, a signature that library made
+> verifies in CoinXT, and recovery round-trips to the signer. ASan + UBSan are clean over the whole
+> curve surface. **What is NOT yet done is an engine pass over the fifteen new `cx*` handlers**;
+> `tests/coin-selftest.livecodescript` drives all 31 public handlers and is what will close it. Two
+> phase-0 items are also now settled: the entropy decision was WRONG and is corrected (see CLAUDE.md,
+> "Determinism and entropy"), and Schnorr/BIP-340 is deferred to a Taproot phase because
+> trezor-crypto's plain-C tree does not implement it. **Phase 3 (encodings and addresses, pure script)
+> is now the member's critical path.**
 
 ## The "done" bar (applies to every phase)
 
@@ -82,20 +93,29 @@ written down and agreed. **Risk retired:** building the wrong thing, or a licens
 **Done when:** `cxKeccak256` and friends return the pinned vectors from a real engine, ASan/UBSan clean.
 **Risk retired:** the whole FFI plumbing (the family's single most expensive area) and the build.
 
-## Phase 2 - Keys and signatures
+## Phase 2 - Keys and signatures  (DONE at the C level; `cx*` handlers await an engine pass)
 
 - Export and wrap `cnx_seckey_verify`, `cnx_pubkey_from_seckey`, `cnx_pubkey_decompress`,
-  `cnx_ecdsa_sign` / `_verify`, `cnx_ecdsa_sign_recoverable` / `cnx_ecdsa_recover`, `cnx_ecdh`, and (if
-  in scope) `cnx_schnorr_sign` / `_verify` + `cnx_xonly_from_seckey`.
-- `cx*` API: `cxNewSeckey` (validates caller entropy), `cxPublicKey`, `cxSign` / `cxVerify`,
-  `cxSignRecoverable` / `cxRecover`, `cxEcdh`, Schnorr.
-- Secret hygiene: seckey buffers `memzero`ed in the shim; the `cx*` layer documents clearing key
-  variables. KATs: RFC 6979 deterministic signature, `ecrecover` round-trip, low-`s` canonicalization,
-  BIP-340 vector.
+  `cnx_ecdsa_sign` / `_verify`, `cnx_ecdsa_sign_recoverable` / `cnx_ecdsa_recover`, `cnx_ecdh`. **All
+  eight shipped**, with six length accessors.
+- `cx*` API: `cxNewSeckey` (validates caller entropy), `cxSeckeyIsValid`, `cxPublicKey`,
+  `cxPubkeyDecompress`, `cxSign` / `cxVerify`, `cxSignRecoverable` / `cxRecover`, `cxEcdh`. **All
+  shipped**; `cxVerify` and `cxSeckeyIsValid` return Boolean, everything else returns Data.
+- **Schnorr / BIP-340 is deferred**, which also answers the phase-0 sourcing question left open:
+  trezor-crypto's plain-C tree has no BIP-340: it reaches Schnorr only via `zkp_bip340.c` on the
+  bundled `secp256k1-zkp`, a far larger vendoring. It moves to the Taproot phase, where that cost can
+  be weighed against P2TR as a whole rather than paid for one primitive.
+- Secret hygiene: seckey scratch `memzero`ed in the shim; the `cx*` layer documents clearing key
+  variables. KATs: four published RFC 6979 deterministic signatures, the `ecrecover` round-trip, low-`s`
+  asserted on every vector (upstream enforces it), ECDH from both sides, and the public-key overread
+  guard. The BIP-340 vector moves with Schnorr.
 
 **Done when:** a signature CoinXT makes verifies in an independent library, and `cxRecover` returns the
-signing pubkey. **Risk retired:** the core value proposition (correct, deterministic, recoverable
-signing on secp256k1).
+signing pubkey. **MET (2026-08-08)**, headless, on every push: see the status note at the top of this
+file. Still open for the phase: running `tests/coin-selftest.livecodescript` on a real engine so the
+fifteen new public handlers stop being "verified statically".
+**Risk retired:** the core value proposition (correct, deterministic, recoverable signing on
+secp256k1).
 
 ## Phase 3 - Encodings and addresses (pure script)
 

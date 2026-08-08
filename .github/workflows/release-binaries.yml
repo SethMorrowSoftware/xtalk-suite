@@ -427,8 +427,16 @@ jobs:
         with:
           name: bundle-coinxt-x86_64-win32
           path: dll
+      # With `ecdsa` present this lane does more than replay a table: the
+      # signatures the SHIPPED DLL produces are verified in an independent
+      # library, on Windows, before the artifact is bundled. Without it that leg
+      # would skip and still exit 0, so it is required rather than optional.
+      - name: Install the independent crypto implementation
+        run: pip install ecdsa
       - name: Drive the DLL through the published vectors
         shell: bash
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 coinxt/tools/coin-kat.py --check --lib dll/coinxt.dll
 
   bundle:

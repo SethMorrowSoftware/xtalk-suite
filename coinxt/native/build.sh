@@ -29,11 +29,38 @@ root=$(CDPATH= cd -- "$here/.." && pwd)             # .../CoinXT
 ven="$here/vendor"
 
 # The vendored trezor-crypto translation units this phase needs.
-vendor_src="$ven/sha3.c $ven/sha2.c $ven/ripemd160.c $ven/hmac.c $ven/pbkdf2.c $ven/memzero.c"
+#
+# The curve half of this list is a CLOSURE, not a wish list: it was found by
+# compiling the set, reading the undefined symbols, adding the file that
+# defines them, and repeating until the only unresolved name left was
+# random_buffer - which is ours to define, on purpose (see coinxt.c). Two
+# entries look gratuitous and are not:
+#   hasher.c   ecdsa.h types its message-signing entry points against
+#              HasherType, so ecdsa.o references the dispatch table even
+#              though CoinXT only ever signs a digest;
+#   blake256.c / blake2b.c / groestl.c
+#              are that table's other backends. Dropping them would mean
+#              editing a vendored file, which the vendor rules forbid.
+# src/coinxt.map keeps every one of these names out of the shipped surface.
+vendor_src="$ven/sha3.c $ven/sha2.c $ven/ripemd160.c $ven/hmac.c $ven/pbkdf2.c $ven/memzero.c \
+$ven/ecdsa.c $ven/bignum.c $ven/secp256k1.c $ven/rfc6979.c $ven/hmac_drbg.c $ven/hasher.c \
+$ven/blake256.c $ven/blake2b.c $ven/groestl.c $ven/base58.c $ven/address.c"
 
 # Third-party headers are -isystem so their warnings do not pollute -Wall -Wextra.
 warn="-Wall -Wextra"
 inc="-isystem $ven"
+
+# Platform libraries the shim itself needs. Windows draws blinding entropy from
+# BCryptGenRandom, which lives in bcrypt.dll; Linux uses getrandom(2) and macOS
+# arc4random_buf, both in libc, so neither needs a flag. Deciding this from the
+# OUTPUT (the extension being built) and not from `uname` matters for the same
+# reason the platform id does: a mingw cross build on Linux still needs -lbcrypt.
+platform_libs() {
+  case "$1" in
+    dll) echo "-lbcrypt" ;;
+    *)   echo "" ;;
+  esac
+}
 
 case "${1:-lib}" in
   lib)
@@ -44,7 +71,8 @@ case "${1:-lib}" in
       MINGW*|MSYS*|CYGWIN*) ext=dll ;;
     esac
     out="$here/libcoinxt.$ext"
-    cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src -o "$out"
+    cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src -o "$out" \
+       $(platform_libs "$ext")
     echo "built $out"
     ;;
   pack)
@@ -189,7 +217,7 @@ case "${1:-lib}" in
         ;;
     esac
 
-    $CC_TOOL -shared $objs $ldflags -o "$staged"
+    $CC_TOOL -shared $objs $ldflags -o "$staged" $(platform_libs "$ext")
     # Debug info and local symbols are dead weight in a committed binary and
     # make the artifact differ run to run; --strip-unneeded keeps exactly the
     # dynamic symbols the engine needs to bind. macOS strip needs -x (a plain
@@ -224,6 +252,19 @@ extern int cnx_hmac_sha256(const unsigned char *, size_t, const unsigned char *,
 extern int cnx_hmac_sha512(const unsigned char *, size_t, const unsigned char *, size_t, unsigned char *);
 extern int cnx_pbkdf2_hmac_sha512(const unsigned char *, size_t, const unsigned char *, size_t,
                                   uint32_t, unsigned char *, size_t);
+extern int cnx_seckey_verify(const unsigned char *, size_t);
+extern int cnx_pubkey_from_seckey(const unsigned char *, size_t, int, unsigned char *, size_t);
+extern int cnx_pubkey_decompress(const unsigned char *, size_t, unsigned char *, size_t);
+extern int cnx_ecdsa_sign(const unsigned char *, size_t, const unsigned char *, size_t,
+                          unsigned char *, size_t);
+extern int cnx_ecdsa_verify(const unsigned char *, size_t, const unsigned char *, size_t,
+                            const unsigned char *, size_t);
+extern int cnx_ecdsa_sign_recoverable(const unsigned char *, size_t, const unsigned char *, size_t,
+                                      unsigned char *, size_t);
+extern int cnx_ecdsa_recover(const unsigned char *, size_t, const unsigned char *, size_t,
+                             unsigned char *, size_t);
+extern int cnx_ecdh(const unsigned char *, size_t, const unsigned char *, size_t,
+                    unsigned char *, size_t);
 /* Compare the first `n` bytes of a digest against its hex spelling. */
 static int eqn(const unsigned char *b, int n, const char *hexexp) {
   char h[129];
@@ -233,7 +274,7 @@ static int eqn(const unsigned char *b, int n, const char *hexexp) {
 static int eq(const unsigned char *b, const char *hexexp) { return eqn(b, 32, hexexp); }
 int main(void) {
   unsigned char o[64];
-  if (cnx_abi_version() != 2) { printf("ABI FAIL\n"); return 1; }
+  if (cnx_abi_version() != 3) { printf("ABI FAIL\n"); return 1; }
   cnx_keccak256((const unsigned char *)"", 0, o);
   if (!eq(o, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) { printf("keccak empty FAIL\n"); return 1; }
   cnx_keccak256(NULL, 0, o); /* NULL-with-zero guard path */
@@ -258,7 +299,65 @@ int main(void) {
   if (cnx_pbkdf2_hmac_sha512((const unsigned char *)"pw", 2, (const unsigned char *)"salt", 4, 1, o, 0) != -2) { printf("pbkdf2 zero-outlen guard FAIL\n"); return 1; }
   if (cnx_sha256((const unsigned char *)"x", 1, NULL) != -1) { printf("null-out guard FAIL\n"); return 1; }
   if (cnx_sha256(NULL, 1, o) != -1) { printf("null-in-with-length guard FAIL\n"); return 1; }
-  printf("cnx_selftest: OK (ASan/UBSan clean)\n");
+
+  /* ---- the secp256k1 surface (phase 2) ------------------------------------
+   * The vectors live in tools/coin-kat.py; what THIS test adds is running the
+   * curve code under ASan + UBSan, where the vendored bignum and point
+   * arithmetic would report an overread or an undefined shift. So it drives
+   * every entry point at least once with real inputs, and re-states only the
+   * one vector that needs no table (private key 1 is the generator G). */
+  {
+    unsigned char sk[32], pub33[33], pub65[65], got65[65], sig[64], rsig[65], sh1[65], sh2[65];
+    unsigned char digest[32], bpub[33], bsk[32];
+    int i;
+    for (i = 0; i < 31; i++) sk[i] = 0;
+    sk[31] = 1;                                  /* the private key 1 -> G */
+    if (cnx_seckey_verify(sk, 32) != 0) { printf("seckey_verify FAIL\n"); return 1; }
+    if (cnx_pubkey_from_seckey(sk, 32, 1, pub33, 33) != 0) { printf("pubkey33 FAIL\n"); return 1; }
+    if (!eqn(pub33, 33, "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")) {
+      printf("pubkey33 is not G FAIL\n"); return 1;
+    }
+    if (cnx_pubkey_from_seckey(sk, 32, 0, pub65, 65) != 0) { printf("pubkey65 FAIL\n"); return 1; }
+    if (cnx_pubkey_decompress(pub33, 33, got65, 65) != 0 || memcmp(got65, pub65, 65) != 0) {
+      printf("decompress FAIL\n"); return 1;
+    }
+    /* Sign and verify a real digest, then prove verification rejects. */
+    cnx_sha256((const unsigned char *)"abc", 3, digest);
+    if (cnx_ecdsa_sign(sk, 32, digest, 32, sig, 64) != 0) { printf("sign FAIL\n"); return 1; }
+    if (cnx_ecdsa_verify(pub33, 33, digest, 32, sig, 64) != 0) { printf("verify FAIL\n"); return 1; }
+    if (cnx_ecdsa_verify(pub65, 65, digest, 32, sig, 64) != 0) { printf("verify65 FAIL\n"); return 1; }
+    sig[5] ^= 0x01;
+    if (cnx_ecdsa_verify(pub33, 33, digest, 32, sig, 64) != -5) { printf("tamper FAIL\n"); return 1; }
+    sig[5] ^= 0x01;
+    /* Recoverable sign must round-trip back to the signing key. */
+    if (cnx_ecdsa_sign_recoverable(sk, 32, digest, 32, rsig, 65) != 0) { printf("signrec FAIL\n"); return 1; }
+    if (memcmp(rsig, sig, 64) != 0) { printf("signrec differs from sign FAIL\n"); return 1; }
+    if (cnx_ecdsa_recover(rsig, 65, digest, 32, got65, 65) != 0) { printf("recover FAIL\n"); return 1; }
+    if (memcmp(got65, pub65, 65) != 0) { printf("recover != signer FAIL\n"); return 1; }
+    /* ECDH must agree from both sides. */
+    for (i = 0; i < 31; i++) bsk[i] = 0;
+    bsk[31] = 2;
+    if (cnx_pubkey_from_seckey(bsk, 32, 1, bpub, 33) != 0) { printf("bpub FAIL\n"); return 1; }
+    if (cnx_ecdh(sk, 32, bpub, 33, sh1, 65) != 0) { printf("ecdh a FAIL\n"); return 1; }
+    if (cnx_ecdh(bsk, 32, pub33, 33, sh2, 65) != 0) { printf("ecdh b FAIL\n"); return 1; }
+    if (memcmp(sh1, sh2, 65) != 0) { printf("ecdh disagreement FAIL\n"); return 1; }
+    /* Fail-closed. The 0x04-prefix case is the pubkey OVERREAD guard: without
+     * it upstream would read 65 bytes out of this 33-byte buffer, which is
+     * exactly what ASan is here to catch if the guard ever regresses. */
+    {
+      unsigned char lying[33];
+      memcpy(lying, pub33, 33);
+      lying[0] = 0x04;
+      if (cnx_ecdsa_verify(lying, 33, digest, 32, sig, 64) != -4) { printf("overread guard FAIL\n"); return 1; }
+    }
+    memset(sk, 0, sizeof sk);
+    if (cnx_seckey_verify(sk, 32) != -4) { printf("zero seckey guard FAIL\n"); return 1; }
+    if (cnx_ecdsa_sign(sk, 32, digest, 32, sig, 64) != -4) { printf("sign-with-zero-key guard FAIL\n"); return 1; }
+    sk[31] = 1;
+    memset(digest, 0, sizeof digest);
+    if (cnx_ecdsa_sign(sk, 32, digest, 32, sig, 64) != -7) { printf("zero-digest guard FAIL\n"); return 1; }
+  }
+  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1)\n");
   return 0;
 }
 EOF

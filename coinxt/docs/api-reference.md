@@ -3,17 +3,27 @@
 **The `cx*` handlers that exist today, and nothing else.**
 
 CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
-[../SPEC.md](../SPEC.md) describes the *whole designed* API, including the secp256k1 curve
-surface, address encodings, and HD wallets. **Most of that does not exist yet.** This file is
-the opposite document: it lists only what is shipped, so you can tell at a glance what you can
-actually call.
+[../SPEC.md](../SPEC.md) describes the *whole designed* API, including address encodings, HD
+wallets, and transaction building. **Those do not exist yet.** This file is the opposite
+document: it lists only what is shipped, so you can tell at a glance what you can actually
+call. Hashes and the secp256k1 curve are shipped; everything that turns a key into an
+*address* or a *transaction* is not.
 
-> **Status.** Phase 1, the hash surface, is complete and was closed by an engine pass on
-> **2026-08-08**: the binding loaded on a real OXT engine and returned its pinned vectors
-> byte-exact. Sixteen public handlers exist. Everything below is real.
+> **Status.** **Thirty-one** public handlers exist.
 >
-> **Not shipped, despite appearing in SPEC.md:** `cxNewSeckey`, `cxPublicKey`, `cxSign`,
-> `cxVerify`, `cxSignRecoverable`, `cxRecover`, `cxEcdh`, `cxSchnorrSign`/`cxSchnorrVerify`,
+> *Phase 1, the hash surface,* is complete and was closed by an engine pass on **2026-08-08**:
+> the binding loaded on a real OXT engine and returned its pinned vectors byte-exact.
+>
+> *Phase 2, the secp256k1 curve,* is built and its native side is cross-verified: CoinXT
+> reproduces four published RFC 6979 signatures byte for byte, a CoinXT signature verifies in
+> the independent Python `ecdsa` library, and recovery round-trips to the signer. **Its fifteen
+> script handlers have not yet run on an engine.** They are wrappers over the same proven
+> machinery the hash handlers use, and every declaration was diffed mechanically against the C,
+> but if you are the first to run them, treat a failure as a binding bug and report it rather
+> than assuming your inputs are wrong.
+>
+> **Not shipped, despite appearing in SPEC.md:** `cxSchnorrSign`/`cxSchnorrVerify` and
+> `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340),
 > `cxHexEncode`/`cxHexDecode`, `cxBase58CheckEncode`/`Decode`, `cxBech32Encode`/`Decode`,
 > `cxRlpEncode`/`Decode`, `cxHash160`, `cxHash256`, `cxBtcAddressP2PKH`/`P2WPKH`/`P2TR`,
 > `cxEthAddress`, `cxEthAddressChecksum`, `cxHdFromSeed`, `cxHdDerivePath`, `cxXprv`/`cxXpub`,
@@ -143,9 +153,73 @@ closed rather than quietly doing something useless:
 PBKDF2 output is prefix-consistent: asking for 20 bytes returns exactly the first 20 bytes of
 the 64-byte answer. That is a property of the construction, and the self-test pins it.
 
+## The secp256k1 curve
+
+Everything in this section is phase 2. **CoinXT is a calculator, not a wallet:** it holds a
+private key for the microseconds of one call and keeps nothing. Storage, backup, and
+confirm-before-sign are your application's job.
+
+### `cxNewSeckey(pEntropy)` / `cxSeckeyIsValid(pSeckey)`
+
+`cxNewSeckey` validates 32 bytes of **your** entropy as a private key and returns them
+unchanged. There is no transformation, because a secp256k1 private key just *is* a 32-byte
+integer in `[1, n-1]`; roughly one draw in 2^128 fails, so the honest API checks and hands back
+rather than pretending to generate. **The entropy must be cryptographically random** - compose
+SodiumXT's `sxRandomBytes(32)` or the OS. CoinXT deliberately has no key-making RNG of its own,
+so nothing here can quietly hand you a weak key. It throws if the bytes are not a valid key.
+
+`cxSeckeyIsValid` asks the same question and returns a **Boolean** instead of throwing, for an
+imported key (a pasted hex string, a decoded WIF) where "no" is an ordinary answer. Empty, wrong
+length, zero, and `>= n` all answer `false`.
+
+### `cxPublicKey(pSeckey, pCompressed)` / `cxPubkeyDecompress(pPubkey)`
+
+`cxPublicKey` returns 33 bytes (`0x02`/`0x03` || X) when `pCompressed` is true, and 65 bytes
+(`0x04` || X || Y) when it is false. Compressed is what modern Bitcoin uses; the uncompressed
+form is what an Ethereum address is built from (Keccak-256 of the 64 bytes *after* the `0x04`,
+last 20 bytes). `cxPubkeyDecompress` expands a compressed key to 65 bytes, and passing it an
+already-uncompressed key returns it unchanged, so code normalising mixed input need not branch.
+
+### `cxSign(pSeckey, pDigest)` / `cxVerify(pPubkey, pDigest, pSignature)`
+
+`cxSign` takes a **32-byte digest** and returns a 64-byte signature (r || s). It is RFC 6979
+deterministic: the same key and digest always give the same bytes. `s` is always the low of the
+two equivalent values, which Bitcoin relay policy (BIP-62) and Ethereum consensus both require.
+
+> **Sign only what you built.** `cxSign` will sign any 32 bytes you hand it. Constructing the
+> correct sighash or transaction preimage, and showing the user what it means, is your job.
+> CoinXT does not know what it is signing, and a blind signer is a footgun aimed at whoever
+> installed your app.
+
+`cxVerify` returns a **Boolean**, and the split is deliberate: `false` means the signature does
+not verify, which is a normal answer you branch on, while a malformed public key or a 63-byte
+signature **throws**, because that is a bug in your code. A verify that threw on an invalid
+signature would be unusable; one that answered `false` to a malformed key would hide the bug
+behind a security-shaped result.
+
+### `cxSignRecoverable(pSeckey, pDigest)` / `cxRecover(pSignature, pDigest)`
+
+`cxSignRecoverable` returns 65 bytes: the same signature with a 1-byte recovery id (0..3)
+appended. Ethereum's `v` is built from that id. `cxRecover` takes those 65 bytes plus the digest
+and returns the 65-byte public key that produced them.
+
+> **Recovery succeeding proves nothing on its own.** A well-formed signature recovers *some*
+> key for any recovery id. It is meaningful only when you compare the recovered key against the
+> key you expected. Skipping that comparison is the classic `ecrecover` mistake.
+
+### `cxEcdh(pSeckey, pPubkey)`
+
+Returns the raw 65-byte shared point (`0x04` || X || Y).
+
+> **This is not a shared key.** Every protocol that uses ECDH runs a KDF over this point first,
+> and they disagree about which one and about whether it covers X alone or the compressed form.
+> Hashing it here would be CoinXT inventing a convention and calling it interoperability, so you
+> get the point and supply the KDF your protocol specifies (`cxSha256` of the 32 X bytes is a
+> common one - match the other end, do not guess).
+
 ## Length accessors
 
-Seven zero-argument handlers returning the digest size the library actually reports.
+Thirteen zero-argument handlers returning the sizes the library actually reports.
 
 | Handler | Returns |
 |---|---|
@@ -156,6 +230,12 @@ Seven zero-argument handlers returning the digest size the library actually repo
 | `cxRipemd160Len()` | 20 |
 | `cxHmacSha256Len()` | 32 |
 | `cxHmacSha512Len()` | 64 |
+| `cxSeckeyLen()` | 32 |
+| `cxPubkeyLenCompressed()` | 33 |
+| `cxPubkeyLenUncompressed()` | 65 |
+| `cxSignatureLen()` | 64 |
+| `cxRecoverableSignatureLen()` | 65 |
+| `cxEcdhLen()` | 65 |
 
 These are not decoration. **Do not hardcode 32 or 64 in your own code**; ask. A library is
 entitled to change a digest size across versions, and a hardcoded length is a buffer overflow
@@ -177,6 +257,11 @@ Every failure is a thrown string starting `"CoinXT:"`. The forms you can encount
 | `CoinXT: <handler>: a required buffer was missing (null).` | A required buffer did not marshal. |
 | `CoinXT: <handler>: a buffer had the wrong length.` | A fixed-size buffer was the wrong size. |
 | `CoinXT: <handler>: a length or count is out of the range ...` | A length the native primitive cannot represent. |
+| `CoinXT: <handler>: the key is not a valid secp256k1 key.` | A private key outside `[1, n-1]`, or a public key that is malformed, off-curve, or whose length disagrees with its prefix byte. |
+| `CoinXT: <handler>: the signature is malformed or does not verify.` | From `cxRecover`, an unusable signature or a recovery id above 3. (From `cxVerify` this is not an error at all: it returns `false`.) |
+| `CoinXT: <handler>: the operating system entropy source is unavailable ...` | The curve code could not draw its side-channel blinding. Nothing was signed. |
+| `CoinXT: <handler>: the digest is all zero ...` | Refused: a signature over an all-zero digest can be forged for any key. |
+| `CoinXT: <handler>: the native curve library failed unexpectedly.` | Upstream failed in a way that maps to nothing above. |
 | `CoinXT: <handler>: an unexpected native status ...` | The loaded library does not match this binding. |
 | `CoinXT: cxPbkdf2HmacSha512: the output length must be at least 1 byte ...` | `pOutLen` below 1. |
 | `CoinXT: cxPbkdf2HmacSha512: the iteration count must be at least 1 ...` | `pIterations` below 1. |

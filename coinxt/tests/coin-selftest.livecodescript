@@ -15,18 +15,24 @@ script "coinSelfTest"
 -- output against the same published vector tools/coin-kat.py pins, so a green run
 -- here and a green run there are the same claim at two different layers.
 --
--- COVERAGE NOTE (honest): every public cx* handler is driven here -
--- cxCheckABI, the seven *Len accessors, cxKeccak256, cxSha3_256, cxSha256,
--- cxSha512, cxRipemd160, cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512. The
--- vectors are Keccak-256 (Ethereum 0x01 padding), FIPS 180-4 SHA-2, the
--- RIPEMD-160 specification vectors, NIST SHA3-256, RFC 4231 HMAC cases 1 and 2,
--- and the BIP-39 abandon-about/TREZOR seed. THIS FILE HAS NOT ITSELF BEEN RUN ON
--- AN ENGINE YET, so it is verified statically; running it is what turns the 12
--- handlers the suite pass did not call into a runtime result.
+-- COVERAGE NOTE (honest): every public cx* handler is driven here - all 31 of
+-- them. Phase 1: cxCheckABI, the seven hash *Len accessors, cxKeccak256,
+-- cxSha3_256, cxSha256, cxSha512, cxRipemd160, cxHmacSha256, cxHmacSha512,
+-- cxPbkdf2HmacSha512. Phase 2: cxNewSeckey, cxSeckeyIsValid, cxPublicKey,
+-- cxPubkeyDecompress, cxSign, cxVerify, cxSignRecoverable, cxRecover, cxEcdh
+-- and their six length accessors. The vectors are Keccak-256 (Ethereum 0x01
+-- padding), FIPS 180-4 SHA-2, the RIPEMD-160 specification vectors, NIST
+-- SHA3-256, RFC 4231 HMAC cases 1 and 2, the BIP-39 abandon-about/TREZOR seed,
+-- the secp256k1 generator G, and the published RFC 6979 signature of
+-- sha256("Satoshi Nakamoto") under the private key 1.
 --
--- WHAT IT DELIBERATELY DOES NOT PROVE: anything about the curve, HD wallets, or
--- address encodings. Those are phases 2 to 4 and do not exist yet. A green run
--- here says the phase-1 hash surface is correct through the binding, nothing more.
+-- THIS FILE HAS NOT ITSELF BEEN RUN ON AN ENGINE YET, so it is verified
+-- statically. Running it is what turns the 12 phase-1 handlers the 2026-08-08
+-- suite pass could not reach, and all 15 phase-2 handlers, into runtime results.
+--
+-- WHAT IT DELIBERATELY DOES NOT PROVE: anything about HD wallets or address
+-- encodings. Those are phases 3 and 4 and do not exist yet. A green run here
+-- says the hash and curve surfaces are correct through the binding, nothing more.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI, runs every
@@ -89,6 +95,19 @@ constant kBip39Salt = "mnemonicTREZOR"
 constant kBip39Seed = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
 
 constant kFox = "The quick brown fox jumps over the lazy dog"
+
+-- ---- secp256k1 (phase 2) -----------------------------------------------------
+-- The private key 1 is the curve's generator G, so its public key needs no
+-- vector table: it IS the published definition of secp256k1. That is why the
+-- curve sections below use it rather than a random-looking test key.
+constant kPubOneCompressed = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+constant kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+
+-- The RFC 6979 deterministic signature of sha256("Satoshi Nakamoto") under that
+-- same key: the most-republished vector for secp256k1 + SHA-256, and identical
+-- to the one pinned in tools/coin-kat.py. Low-s, as both Bitcoin relay policy
+-- and Ethereum consensus require.
+constant kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
 
 -- ---- state -------------------------------------------------------------------
 local sTotal, sPassed, sFailed
@@ -220,7 +239,7 @@ command stRun
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into sResultText
-   put "Phase 1 hash surface: all 16 public cx* handlers." & return after sResultText
+   put "Phases 1 and 2: all 31 public cx* handlers." & return after sResultText
 
    stRunAbi
    stRunLengths
@@ -233,11 +252,17 @@ command stRun
    stRunEmptyInputs
    stRunIndependence
    stRunFailClosed
+   stRunCurveKeys
+   stRunCurveSign
+   stRunCurveVerify
+   stRunCurveRecover
+   stRunCurveEcdh
+   stRunCurveFailClosed
 
    stSection "summary"
    stNote "Vectors are identical to tools/coin-kat.py, so this run and the"
    stNote "headless KAT run are the same claim at two different layers."
-   stNote "Nothing here covers the curve, HD wallets, or addresses (phases 2-4)."
+   stNote "Nothing here covers HD wallets or addresses (phases 3-4)."
    put "true" into sDone
    stShow
 end stRun
@@ -275,6 +300,13 @@ command stRunLengths
       stAssert "cxRipemd160Len() is 20", cxRipemd160Len() is 20
       stAssert "cxHmacSha256Len() is 32", cxHmacSha256Len() is 32
       stAssert "cxHmacSha512Len() is 64", cxHmacSha512Len() is 64
+      stAssert "cxSeckeyLen() is 32", cxSeckeyLen() is 32
+      stAssert "cxPubkeyLenCompressed() is 33", cxPubkeyLenCompressed() is 33
+      stAssert "cxPubkeyLenUncompressed() is 65", cxPubkeyLenUncompressed() is 65
+      stAssert "cxSignatureLen() is 64", cxSignatureLen() is 64
+      stAssert "cxRecoverableSignatureLen() is 65", cxRecoverableSignatureLen() is 65
+      stAssert "cxEcdhLen() is 65", cxEcdhLen() is 65
+      stAssert "a recoverable signature is one byte longer than a plain one", cxRecoverableSignatureLen() is cxSignatureLen() + 1
       stAssert "keccak digest length matches its accessor", the number of bytes of cxKeccak256(stText("abc")) is cxKeccak256Len()
       stAssert "sha512 digest length matches its accessor", the number of bytes of cxSha512(stText("abc")) is cxSha512Len()
       stAssert "ripemd digest length matches its accessor", the number of bytes of cxRipemd160(stText("abc")) is cxRipemd160Len()
@@ -454,6 +486,191 @@ command stRunFailClosed
    end try
 end stRunFailClosed
 
+-- ---- the secp256k1 curve (phase 2) -------------------------------------------
+-- These sections are the reason phase 2 needs an engine pass at all. The shim
+-- itself is already proven headless by tools/coin-kat.py against the same
+-- vectors; what only an engine can answer is whether the BINDING carries them.
+-- Two shapes below are new to coinxt.lcb and are the ones to watch if this run
+-- goes red: cxPublicKey passes a boolean through a C int flag, and cxVerify and
+-- cxSeckeyIsValid RETURN Boolean where every phase-1 handler returned Data.
+
+command stRunCurveKeys
+   local tSk, tPubC, tPubU
+   stSection "secp256k1 keys"
+   try
+      put stSeckeyOne() into tSk
+      -- cxNewSeckey validates caller entropy and hands it back unchanged. The
+      -- private key 1 is the generator G, which is why no vector table is
+      -- needed here: this public key is the curve's own definition.
+      stAssert "cxNewSeckey accepts a valid key", stHex(cxNewSeckey(tSk)) is stHex(tSk)
+      stAssert "cxSeckeyIsValid says true for a valid key", cxSeckeyIsValid(tSk) is true
+      put cxPublicKey(tSk, true) into tPubC
+      put cxPublicKey(tSk, false) into tPubU
+      stAssert "cxPublicKey compressed is G", stHex(tPubC) is kPubOneCompressed
+      stAssert "cxPublicKey uncompressed is G", stHex(tPubU) is kPubOneUncompressed
+      -- The boolean flag is the new marshalling shape (an LCB Boolean into a C
+      -- int). If it were dropped, both calls would return the same length.
+      stAssert "the compressed key is 33 bytes", the number of bytes of tPubC is 33
+      stAssert "the uncompressed key is 65 bytes", the number of bytes of tPubU is 65
+      stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stHex(cxPubkeyDecompress(tPubC)) is stHex(tPubU)
+      stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stHex(cxPubkeyDecompress(tPubU)) is stHex(tPubU)
+   catch tError
+      stSectionFailed "secp256k1 keys", tError
+   end try
+end stRunCurveKeys
+
+command stRunCurveSign
+   local tSk, tDigest, tSig, tAgain
+   stSection "ECDSA signing (RFC 6979, published vector)"
+   try
+      put stSeckeyOne() into tSk
+      -- The digest is built with cxSha256, which this same run already checked
+      -- against FIPS 180-4, so a failure here cannot be a hashing failure.
+      put cxSha256(stText("Satoshi Nakamoto")) into tDigest
+      put cxSign(tSk, tDigest) into tSig
+      stAssert "cxSign reproduces the published RFC 6979 signature", stHex(tSig) is kSigSatoshi
+      stAssert "the signature is 64 bytes", the number of bytes of tSig is cxSignatureLen()
+      -- Determinism is the property the whole vector table rests on. The native
+      -- code draws fresh OS entropy for side-channel blinding on every call;
+      -- that blinding cancels, and this is the check that says so from script.
+      put cxSign(tSk, tDigest) into tAgain
+      stAssert "signing twice gives the same signature", stHex(tAgain) is stHex(tSig)
+   catch tError
+      stSectionFailed "ECDSA signing", tError
+   end try
+end stRunCurveSign
+
+command stRunCurveVerify
+   local tSk, tDigest, tSig, tPubC, tPubU, tBad, tOtherPub
+   stSection "ECDSA verification (true, and false)"
+   try
+      put stSeckeyOne() into tSk
+      put cxSha256(stText("Satoshi Nakamoto")) into tDigest
+      put cxSign(tSk, tDigest) into tSig
+      put cxPublicKey(tSk, true) into tPubC
+      put cxPublicKey(tSk, false) into tPubU
+      -- cxVerify RETURNS Boolean rather than throwing, which is the second new
+      -- shape in this file. A binding that mismarshalled it would most likely
+      -- throw or return empty, so assert the true case explicitly.
+      stAssert "cxVerify accepts a good signature (compressed key)", cxVerify(tPubC, tDigest, tSig) is true
+      stAssert "cxVerify accepts a good signature (uncompressed key)", cxVerify(tPubU, tDigest, tSig) is true
+      put stFlipByte(tSig, 6) into tBad
+      stAssert "cxVerify rejects a tampered signature", cxVerify(tPubC, tDigest, tBad) is false
+      stAssert "cxVerify rejects a wrong digest", cxVerify(tPubC, cxSha256(stText("not the message")), tSig) is false
+      put cxPublicKey(stSeckeyTwo(), true) into tOtherPub
+      stAssert "cxVerify rejects the wrong public key", cxVerify(tOtherPub, tDigest, tSig) is false
+   catch tError
+      stSectionFailed "ECDSA verification", tError
+   end try
+end stRunCurveVerify
+
+command stRunCurveRecover
+   local tSk, tDigest, tSig, tRec, tPubU
+   stSection "recoverable signing and ecrecover"
+   try
+      put stSeckeyOne() into tSk
+      put cxSha256(stText("Satoshi Nakamoto")) into tDigest
+      put cxSignRecoverable(tSk, tDigest) into tSig
+      put cxPublicKey(tSk, false) into tPubU
+      stAssert "a recoverable signature is 65 bytes", the number of bytes of tSig is cxRecoverableSignatureLen()
+      stAssert "its first 64 bytes are the plain signature", stHex(byte 1 to 64 of tSig) is kSigSatoshi
+      stAssert "the recovery id is 0..3", byteToNum(byte 65 of tSig) >= 0 and byteToNum(byte 65 of tSig) <= 3
+      put cxRecover(tSig, tDigest) into tRec
+      -- The whole point of recovery: get the signer back from the signature
+      -- alone. Recovery ALSO succeeds for a wrong id and returns some other
+      -- key, so comparing against the expected key is the real check.
+      stAssert "cxRecover returns the signing public key", stHex(tRec) is stHex(tPubU)
+      stAssert "and that key is the published G", stHex(tRec) is kPubOneUncompressed
+   catch tError
+      stSectionFailed "ecrecover", tError
+   end try
+end stRunCurveRecover
+
+command stRunCurveEcdh
+   local tA, tB, tPubA, tPubB, tShared1, tShared2
+   stSection "ECDH"
+   try
+      put stSeckeyOne() into tA
+      put stSeckeyTwo() into tB
+      put cxPublicKey(tA, true) into tPubA
+      put cxPublicKey(tB, true) into tPubB
+      put cxEcdh(tA, tPubB) into tShared1
+      put cxEcdh(tB, tPubA) into tShared2
+      stAssert "both sides derive the same point", stHex(tShared1) is stHex(tShared2)
+      stAssert "the shared point is 65 bytes", the number of bytes of tShared1 is cxEcdhLen()
+      stAssert "the shared point is in uncompressed form", byteToNum(byte 1 of tShared1) is 4
+      -- 1 * (2G) == 2G, so with these two keys the shared point is just the
+      -- public key of the other side. That makes this leg checkable against a
+      -- value already pinned above rather than against a new magic constant.
+      stAssert "1 * 2G is 2G", stHex(tShared1) is stHex(cxPublicKey(tB, false))
+   catch tError
+      stSectionFailed "ECDH", tError
+   end try
+end stRunCurveEcdh
+
+command stRunCurveFailClosed
+   local tThrew, tSk, tDigest
+   stSection "the curve fails closed"
+   try
+      put stSeckeyOne() into tSk
+      put cxSha256(stText("abc")) into tDigest
+
+      -- A key of zero is not on the curve. cxSeckeyIsValid answers false (an
+      -- ordinary answer for an imported key), while cxNewSeckey THROWS (fresh
+      -- entropy that fails validation is a bug in the caller's RNG, not a
+      -- routine outcome). Both halves of that split are checked.
+      stAssert "cxSeckeyIsValid says false for an all-zero key", cxSeckeyIsValid(stRepeatByte(0, 32)) is false
+      stAssert "cxSeckeyIsValid says false for a short key", cxSeckeyIsValid(stRepeatByte(1, 31)) is false
+
+      put "false" into tThrew
+      try
+         get cxNewSeckey(stRepeatByte(0, 32))
+      catch tInner
+         put "true" into tThrew
+      end try
+      stAssert "cxNewSeckey refuses an all-zero key", tThrew is "true"
+
+      put "false" into tThrew
+      try
+         get cxNewSeckey(stRepeatByte(7, 31))
+      catch tInner2
+         put "true" into tThrew
+      end try
+      stAssert "cxNewSeckey refuses 31 bytes of entropy", tThrew is "true"
+
+      put "false" into tThrew
+      try
+         get cxSign(stRepeatByte(0, 32), tDigest)
+      catch tInner3
+         put "true" into tThrew
+      end try
+      stAssert "cxSign refuses an invalid private key", tThrew is "true"
+
+      -- An all-zero digest is refused because a signature over it can be forged
+      -- for ANY public key.
+      put "false" into tThrew
+      try
+         get cxSign(tSk, stRepeatByte(0, 32))
+      catch tInner4
+         put "true" into tThrew
+      end try
+      stAssert "cxSign refuses an all-zero digest", tThrew is "true"
+
+      -- A malformed public key must THROW, not answer false: it is a bug in the
+      -- caller, and hiding it behind a security-shaped `false` is how a broken
+      -- verify path goes unnoticed.
+      put "false" into tThrew
+      try
+         get cxVerify(stRepeatByte(9, 20), tDigest, cxSign(tSk, tDigest))
+      catch tInner5
+         put "true" into tThrew
+      end try
+      stAssert "cxVerify throws on a malformed public key (it does not answer false)", tThrew is "true"
+   catch tError
+      stSectionFailed "the curve fails closed", tError
+   end try
+end stRunCurveFailClosed
+
 -- ---- small helpers -----------------------------------------------------------
 -- Text to Data. Every cx* input is a Data; a bare literal would be text, and the
 -- engine would be free to re-encode it.
@@ -476,6 +693,30 @@ function stHex pData
    end repeat
    return tOut
 end stHex
+
+-- The private key 1: 31 zero bytes then a 1. Built rather than written as a hex
+-- literal because this file has no hex DECODER (cxHexDecode is a phase-3
+-- script-layer encoding that does not exist yet), and a harness must not depend
+-- on the layer it is testing for its own inputs.
+function stSeckeyOne
+   return stRepeatByte(0, 31) & numToByte(1)
+end stSeckeyOne
+
+-- The private key 2, whose public key is 2G.
+function stSeckeyTwo
+   return stRepeatByte(0, 31) & numToByte(2)
+end stSeckeyTwo
+
+-- Return pData with byte pIndex changed to a different value, for the "must be
+-- rejected" checks. Addition mod 256 rather than bitXor: the family gotcha list
+-- warns that bitAnd/bitOr/bitXor are OPERATORS, not functions, and this file
+-- avoids the whole question.
+function stFlipByte pData, pIndex
+   local tByte
+   put (byteToNum(byte pIndex of pData) + 1) mod 256 into tByte
+   return byte 1 to (pIndex - 1) of pData & numToByte(tByte) & \
+      byte (pIndex + 1) to (the number of bytes of pData) of pData
+end stFlipByte
 
 -- pCount copies of byte pCode, built without string-escape folklore.
 function stRepeatByte pCode, pCount

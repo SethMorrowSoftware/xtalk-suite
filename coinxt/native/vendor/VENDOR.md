@@ -3,7 +3,15 @@
 These files are copied verbatim (no local patches) from **trezor-firmware**, directory `crypto/`.
 
 - Upstream: https://github.com/trezor/trezor-firmware  (directory `crypto/`)
-- License: **MIT** (see `LICENSE` in this directory)
+- License: **MIT for trezor-crypto itself** (see `LICENSE` in this directory), but
+  **not for every file here**. Upstream vendors third-party implementations that keep
+  their own terms: `sha2.*` is BSD-3-Clause, `ripemd160.*` is public domain,
+  `blake256.*` is CC0, `blake2b.*` is CC0/OpenSSL/Apache-2.0 at our option (we elect
+  CC0), `sha3.*` is RHash's MIT, and `groestl.*` is MIT under a different copyright
+  holder. All permissive, none copyleft, but the BSD-3-Clause one binds BINARY
+  redistribution and coinxt commits built libraries. The per-file map and the full
+  texts are in [`../../THIRD-PARTY-LICENSES.md`](../../THIRD-PARTY-LICENSES.md);
+  every file also keeps its own header verbatim.
 - Pinned commit: `230cfe37e4c5fefb6ca117725d261a7b3646a995` (branch `main`, fetched 2026-07-02)
 
 ## Files (phase 1: the hash unit, complete)
@@ -19,11 +27,55 @@ These files are copied verbatim (no local patches) from **trezor-firmware**, dir
 | `byte_order.h` | endianness macros used by `sha3.c` and `sha2.c` |
 | `options.h` | trezor-crypto compile-time config (USE_KECCAK=1, USE_RFC6979=1, ...) |
 
-Every file above is byte-identical to upstream at the pinned commit (verified by re-fetching each blob
-and comparing SHA-256, not just by trusting the local copy).
+## Files (phase 2: the secp256k1 curve, complete)
 
-Later phases add `secp256k1` + `ecdsa.c` + `bignum.c` (curve), `bip32.c` / `bip39.c` (HD + mnemonic),
-and `base58.c` / `segwit_addr.c` if we decide to keep any encoding native rather than in script.
+This set is a **closure, not a wish list**. It was found by compiling, reading the undefined symbols,
+adding the file that defines them, and repeating until the only unresolved name left was
+`random_buffer` (which is ours to define, on purpose: see `../coinxt.c`).
+
+| file | purpose |
+|---|---|
+| `ecdsa.h` / `ecdsa.c` | the curve surface: keys, ECDSA sign/verify over a digest, recovery, ECDH |
+| `bignum.h` / `bignum.c` | the 256-bit modular arithmetic everything above is built from |
+| `secp256k1.h` / `secp256k1.c` | the curve parameters (with `USE_PRECOMPUTED_CP=0`, so `secp256k1.table` is NOT needed and not vendored) |
+| `rfc6979.h` / `rfc6979.c` | deterministic nonce generation, so a signature is a pure function of key and digest |
+| `hmac_drbg.h` / `hmac_drbg.c` | the DRBG RFC 6979 is specified in terms of |
+| `hasher.h` / `hasher.c` | the hash-dispatch table `ecdsa.h` types its message-signing entry points against |
+| `blake256.*`, `blake2b.*`, `blake2_common.h`, `groestl.*` | the other backends in that table |
+| `base58.h` / `base58.c`, `address.h` / `address.c` | referenced by `ecdsa.c`'s address helpers |
+| `script.h`, `bip32.h`, `rand.h`, `ed25519-donna/ed25519.h` | headers only; no `.c` of theirs is needed |
+
+Four of those entries look gratuitous, and each is load-bearing for a reason worth writing down,
+because the obvious "cleanup" in every case is to edit a vendored file, which the rules below forbid:
+
+- **`hasher.c` and its blake/groestl backends.** `ecdsa.h` declares `ecdsa_sign()` and `ecdsa_verify()`
+  in terms of `HasherType`, so `ecdsa.o` references the dispatch table even though CoinXT only ever
+  signs a **digest** and never calls those entry points. The table pulls in its backends.
+- **`base58.c` / `address.c`.** `ecdsa.c` also contains address and WIF helpers CoinXT never calls
+  (those encodings live in script, by design), and their references have to resolve at link time.
+- **`script.h`.** `bignum.c` includes it and then uses **nothing** from it; the header is vendored only
+  so `bignum.c` compiles as written.
+- **`bip32.h` and `ed25519-donna/ed25519.h`.** `secp256k1.h` needs `curve_info` from `bip32.h`, which
+  unconditionally includes the ed25519 header for its typedefs. No ed25519 code is linked.
+
+None of these names reach the shipped surface: `src/coinxt.map` (and the generated `.def` on Windows)
+narrows the exports to the `cnx_*` entry points, which is checked in CI per object format.
+
+## Integrity, and how it was actually verified
+
+Every file above is byte-identical to upstream at the pinned commit. The phase-2 check is stronger than
+phase 1's re-fetch-and-compare: the sources were taken from a real `git fetch` of the pinned commit, so
+each one arrived in a git object whose content hash git verified on receipt, and each installed file's
+blob id was then re-derived locally and compared against the id the commit's tree lists. The 15
+phase-1 files were re-verified the same way in the same run and were unchanged.
+
+Later phases add `bip32.c` / `bip39.c` (HD + mnemonic) and `segwit_addr.c` if we ever decide to keep an
+encoding native rather than in script.
+
+**Not vendored, deliberately: `rand.c`.** trezor-crypto expects the integrator to supply
+`random_buffer()`, and upstream's file is a placeholder PRNG. CoinXT defines its own in `../coinxt.c`
+over the OS entropy source, and fails closed. See that file for why the curve needs entropy at all even
+though signing is deterministic; it is not the reason phase 0 assumed.
 
 ## Rules (CLAUDE.md)
 
@@ -31,7 +83,10 @@ and `base58.c` / `segwit_addr.c` if we decide to keep any encoding native rather
   with a diff and a reason, and hash the patched file in `MANIFEST.sha256`.
 - **Re-pin deliberately.** Bumping the upstream commit is its own change: update the SHA above, re-run
   `tools/coin-kat.py`, refresh `../MANIFEST.sha256`, and note anything that shifted.
-- The MIT `LICENSE` ships alongside these files (redistribution requirement).
+- The MIT `LICENSE` ships alongside these files (redistribution requirement), and it is **not
+  sufficient on its own**: `../../THIRD-PARTY-LICENSES.md` carries the texts for the files here that
+  are BSD-3-Clause, public domain, CC0 or separately-held MIT. Adding a vendored file means checking
+  its header for terms the MIT text does not cover, and adding it there if so.
 
 ## Integrity
 
