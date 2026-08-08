@@ -23,7 +23,7 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
-| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives, designed: secp256k1, ECDSA/recoverable/Schnorr, HD wallets (BIP-32/39), address formats (the Keccak/SHA3 hash slice is built and KAT-verified; the rest is spec'd in `coinxt/SPEC.md`, not yet built) |
+| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the whole hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2) and the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH). **Not built:** address formats, HD wallets (BIP-32/39), transactions - spec'd in `coinxt/SPEC.md`. Schnorr/BIP-340 deferred with Taproot |
 
 They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachannel,...}`
 — so the engine resolves each binding automatically once its packaged extension
@@ -42,7 +42,7 @@ authority; this is the summary:
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, and a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08 |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. 15 of its 35 `dc*` handlers are still verified statically |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08. Mode B (launching tor) still unexercised |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass: the binding loads and returns the pinned hash vectors byte-exact from script. Phases 2+ (secp256k1, addresses, HD wallets) are designed in `coinxt/SPEC.md` and still to build |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass: the binding loads and returns the pinned hash vectors byte-exact from script. **Phase 2 (secp256k1) is built and cross-verified headless** - CoinXT reproduces published RFC 6979 vectors and its signatures verify in an independent library - but its 15 curve handlers have **not** had an engine pass yet. Addresses and HD wallets (phases 3-4) are still to build |
 
 **Where the suite stands after the 2026-08-08 pass.** On that date
 `tests/suite-selftest.livecodescript` ran green on a real OXT engine with all six

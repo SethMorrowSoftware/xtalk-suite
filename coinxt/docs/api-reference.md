@@ -3,10 +3,11 @@
 **The `cx*` handlers that exist today, and nothing else.**
 
 CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
-[../SPEC.md](../SPEC.md) describes the *whole designed* API, including the secp256k1 curve
-surface, address encodings, and HD wallets. **Most of that does not exist yet.** This file is
-the opposite document: it lists only what is shipped, so you can tell at a glance what you can
-actually call.
+[../SPEC.md](../SPEC.md) describes the *whole designed* API, including address encodings, HD
+wallets, and transaction building. **Those do not exist yet.** This file is the opposite
+document: it lists only what is shipped, so you can tell at a glance what you can actually
+call. Hashes and the secp256k1 curve are shipped; everything that turns a key into an
+*address* or a *transaction* is not.
 
 > **Status.** **Thirty-one** public handlers exist.
 >

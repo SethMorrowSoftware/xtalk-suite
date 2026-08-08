@@ -74,6 +74,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc
 
+      # The independent implementation the curve vectors are checked against.
+      # coin-kat.py SKIPS that leg without it, which exits 0 and reads almost
+      # like a pass, so COINXT_REQUIRE_CROSSCHECK below makes the skip fail.
+      - name: Install the independent crypto implementation
+        run: pip install ecdsa
+
       # The shim's own knob, not hand-rolled flags: build.sh compiles the shim
       # AND the vendored trezor-crypto units under -fsanitize=address,undefined
       # and runs the self-test executable it builds.
@@ -85,6 +91,8 @@ jobs:
       # BIP-39, the Ethereum keccak256 answers), including the Keccak-vs-SHA3
       # aliasing guard.
       - name: Known-answer vectors
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 tools/coin-kat.py --check
 
       # Suite rule 5, mechanised: the committed src/code/ library must still

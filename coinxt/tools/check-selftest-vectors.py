@@ -232,9 +232,18 @@ def main(argv):
             s = order - s
         want("kSigSatoshi", (r.to_bytes(32, "big") + s.to_bytes(32, "big")).hex(), "ecdsa")
     except ImportError:
-        notes.append("secp256k1: the `ecdsa` package is not installed here, so the "
-                     "curve constants were checked against the table in coin-kat.py "
-                     "rather than re-derived independently (pip install ecdsa).")
+        # Same split as coin-kat.py: a skip is fine for a contributor without an
+        # optional package, and wrong for CI, where it is indistinguishable from
+        # a pass. CI sets COINXT_REQUIRE_CROSSCHECK so the independent
+        # re-derivation cannot quietly stop happening.
+        if os.environ.get("COINXT_REQUIRE_CROSSCHECK"):
+            problems.append("COINXT_REQUIRE_CROSSCHECK is set but the `ecdsa` package "
+                            "is not installed, so the curve constants could not be "
+                            "re-derived independently (pip install ecdsa)")
+        else:
+            notes.append("secp256k1: the `ecdsa` package is not installed here, so the "
+                         "curve constants were checked against the table in coin-kat.py "
+                         "rather than re-derived independently (pip install ecdsa).")
 
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()

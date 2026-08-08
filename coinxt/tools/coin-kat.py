@@ -683,6 +683,16 @@ def main(argv):
             have_ecdsa = True
         except ImportError:
             have_ecdsa = False
+        # A skip is right for a contributor who has not installed an optional
+        # package. It is WRONG for CI, where "the cross-library check silently
+        # did not run" and "the cross-library check passed" print almost the
+        # same thing and exit 0 either way. So CI sets COINXT_REQUIRE_CROSSCHECK
+        # and the skip becomes a failure there: if a future edit drops the pip
+        # install, that shows up as a red run instead of a quieter green one.
+        if not have_ecdsa and os.environ.get("COINXT_REQUIRE_CROSSCHECK"):
+            problems.append("COINXT_REQUIRE_CROSSCHECK is set but the `ecdsa` package "
+                            "is not installed, so the cross-library check could not "
+                            "run (pip install ecdsa)")
         if have_ecdsa:
             key = SigningKey.from_string(sk, curve=SECP256k1)
             if not key.get_verifying_key().verify_digest(

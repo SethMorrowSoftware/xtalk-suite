@@ -31,5 +31,18 @@ jobs:
         with:
           python-version: "3.x"
 
+      # coinxt's curve vectors are cross-checked against an INDEPENDENT
+      # implementation, which is the project rule ("cross-checked against an
+      # independent implementation before pinning") enforced continuously
+      # rather than once. Both tools treat `ecdsa` as optional and SKIP without
+      # it, which is right for a contributor and wrong here: a skip and a pass
+      # both exit 0. COINXT_REQUIRE_CROSSCHECK turns the skip into a failure, so
+      # deleting this install can never quietly downgrade the gate to the weaker
+      # same-repo comparison.
+      - name: Install the independent crypto implementation coinxt checks against
+        run: pip install ecdsa
+
       - name: Run every member's static gates, golden tests, KATs, and manifests
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
         run: bash tools/build-all.sh --gates

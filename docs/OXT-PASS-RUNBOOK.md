@@ -89,7 +89,7 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | # | Unproven thing | Why it matters | The label that says so |
 |---|---|---|---|
 | 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual:** that covered 20 of the 35 public `dc*` handlers; `tests/datachannel-selftest.livecodescript` covers all 35 and has still not been run. | Labels updated in `datachannelxt/README.md`, `examples/README.md`, `docs/getting-started.md`, `tests/datachannel-selftest.livecodescript`, and `src/datachannel.lcb`. |
-| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual:** 12 of the 16 public handlers were not called by name (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`). | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
+| 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual, and it GREW:** 12 of the then-16 public handlers were not called by name (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`); **phase 2 has since added 15 more curve handlers that have never been loaded at all** (ABI is now 3). One paste of `coinxt/tests/coin-selftest.livecodescript` covers all 31 - see 4.6. | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
 | 3 | **The selftests grew after their passes; the new sections are static-only.** torrentxt, enetxt, and sodiumxt all had coverage added in the "test coverage" follow-up commit, which post-dates every recorded pass. | A green run from an older, smaller harness does not cover handlers added later. The extended sections are where new binding bugs would hide. | `torrentxt/tests/torrent-selftest.livecodescript` COVERAGE NOTE: the v9-v11 surface (`btDhtBep44SignBuf`, `btDhtPutSigned`, `btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, `btRp1*`) "proves the .lcb wrappers, once an engine runs it (verified statically until then)". `enetxt/tests/enet-selftest.livecodescript` COVERAGE NOTE: the isolated `enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth` section, "verified statically; it needs an OXT pass to become a runtime result". `sodiumxt/docs/api-reference.md`: "The recorded on-engine pass predates those additions, so the newer checks are verified statically and need an OXT pass to become a runtime result." |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
@@ -238,6 +238,14 @@ are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
 `c:coinxt>`, so **on Linux and Windows, 32- or 64-bit, there is nothing to build**:
 coinxt installs like any other member and the run below is just a run.
 
+> **One exception as of the phase-2 change (ABI 3).** `x86_64-linux`,
+> `x86_64-win32` and `x86-win32` were rebuilt with the curve surface. **`x86-linux`
+> was not** - the environment that built the others has no 32-bit libc - so until
+> `release-binaries.yml` has run for that lane, a 32-bit Linux engine will get
+> "ABI mismatch - reinstall CoinXT" from `cxCheckABI` and nothing will run. That is
+> the stale-binary guard doing its job. Check `coinxt/tools/check-binary-freshness.py`
+> if unsure: it names any committed library that no longer matches the shim.
+
 **macOS is the only gap**, and it is the same gap four of the five native members
 have: CI builds no macOS lane on purpose (the runners are arm64-only, so an
 automated lane would emit a thin dylib). Build it first - one command, and it puts
@@ -338,7 +346,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged (all four Linux/Windows libraries are committed; on macOS run `pack` first - 2.4) | Drives **all 16** public `cx*` handlers, so it retires in one paste the 12 the 2026-08-08 pass never called. Fully synchronous: no I/O, no state, no teardown. Includes the SHA3-vs-Keccak aliasing check and the fail-closed guards. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged (all four Linux/Windows libraries are committed; on macOS run `pack` first - 2.4; on **32-bit Linux** see the warning in 4.6) | Drives **all 31** public `cx*` handlers, retiring in one paste the 12 the 2026-08-08 pass never called **and the 15 phase-2 curve handlers that have never been loaded at all**. Fully synchronous: no I/O, no state, no teardown. Includes the SHA3-vs-Keccak aliasing check, the published RFC 6979 signature, the `ecrecover` round-trip, and the fail-closed guards. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
@@ -486,32 +494,65 @@ binds resolve, the ABI guard holds, **`UIntSize` works as a foreign RETURN type*
 documented fallback — `CUInt`, `optional Pointer` — is needed. Do not re-litigate
 them; the `.lcb` header now records the answers instead of the questions.
 
-**What is left is coverage.** That run called 4 of the 16 public handlers, because
-coinxt had no self-building harness to drive the rest. It has one now:
+**What is left is coverage — and since 2026-08-08 there is a lot more of it.** That
+run called 4 of the then-16 public handlers, because coinxt had no self-building
+harness. It has one now, and **phase 2 (the secp256k1 curve) has since landed**, so
+the same single paste now carries 31 handlers instead of 16:
 
 > **Run `coinxt/tests/coin-selftest.livecodescript`.** Same paste-and-reopen
 > procedure as every other member (section 3.1), same green/red UI, same
-> `Re-run` button. It drives **all 16** public `cx*` handlers — `cxCheckABI` by
-> name at last, all seven `*Len` accessors, every digest, both HMACs, and
-> PBKDF2 — against the same published vectors `tools/coin-kat.py` pins.
+> `Re-run` button. It drives **all 31** public `cx*` handlers — `cxCheckABI` by
+> name at last, all thirteen `*Len` accessors, every digest, both HMACs, PBKDF2,
+> and the whole curve surface — against the same published vectors
+> `tools/coin-kat.py` pins.
+
+**This is now the highest-value coinxt run there has been**, because the phase-2
+half has never been loaded. Its native side is proven headless and cross-verified
+against an independent library, but the fifteen `cx*` wrappers over it have not
+executed once. **Two marshalling shapes in that half are new to this binding, and
+are where a failure would most likely come from:**
+
+- **a foreign handler taking a C `int` FLAG** — `cxPublicKey(tSeckey, true/false)`.
+  If the flag does not marshal, the giveaway is that both calls return the same
+  length instead of 33 and 65. Phase 1 had no boolean crossing the FFI at all.
+- **public handlers returning `Boolean` rather than `Data`** — `cxVerify` and
+  `cxSeckeyIsValid`. Every phase-1 handler returned `Data`, so this is untested
+  ground; a mismarshal would most likely throw or return empty rather than
+  `true`/`false`.
 
 **A pass looks like:** `stSummary` green, zero failures. Sections in order: the ABI
-guard, the seven length accessors, Keccak-256, SHA3-256 **and the aliasing trap**
-(SHA3 and Keccak differ by a padding byte alone, so a crossed wire is a plausible
-wrong answer and on Ethereum a wrong address), SHA-2, RIPEMD-160, RFC 4231 HMAC
-cases 1 and 2, the BIP-39 seed vector, empty-input marshalling across every digest,
-digest independence, and the two fail-closed guards (zero iterations, zero-length
-output).
+guard (**ABI 3** now, not 2), the thirteen length accessors, Keccak-256, SHA3-256
+**and the aliasing trap** (SHA3 and Keccak differ by a padding byte alone, so a
+crossed wire is a plausible wrong answer and on Ethereum a wrong address), SHA-2,
+RIPEMD-160, RFC 4231 HMAC cases 1 and 2, the BIP-39 seed vector, empty-input
+marshalling across every digest, digest independence, the two hash fail-closed
+guards — then the curve: keys (private key 1 must give the generator **G**), RFC 6979
+signing (the published `sha256("Satoshi Nakamoto")` signature, byte for byte, and
+signing twice must agree), verification (**true** for good, **false** for tampered /
+wrong key / wrong digest), recoverable signing and `cxRecover` round-tripping to the
+signer, ECDH agreeing from both sides, and six curve fail-closed guards.
 
 **Copy back:** the full `stResults` text.
 
-**What it deliberately does not prove:** anything about the curve, HD wallets, or
-address encodings. Those are phases 2-4 and do not exist yet.
+**What it deliberately does not prove:** anything about HD wallets or address
+encodings. Those are phases 3-4 and do not exist yet. It also does not prove
+Schnorr, which is deferred with Taproot.
 
-**What flips:** the "STILL VERIFIED STATICALLY" paragraph in the `coinxt/src/coinxt.lcb`
-header, the matching sentence in `coinxt/CLAUDE.md`, and the residual noted in
-`coinxt/IMPLEMENTATION-PLAN.md` — all three name the same 12 handlers, so a green run
-retires all three at once.
+**What flips:** the "PHASE 2 STATUS" block and the "STILL VERIFIED STATICALLY"
+paragraph in the `coinxt/src/coinxt.lcb` header, the matching sentences in
+`coinxt/CLAUDE.md` (both the phase-1 residual and the phase-2 as-built note), the
+residuals in `coinxt/IMPLEMENTATION-PLAN.md`, the Status section of
+`coinxt/README.md`, the api-reference status blockquote, and the coinxt row in the
+root `README.md`. A green run retires the phase-1 residual (12 handlers) and the
+phase-2 one (15 handlers) at once, and closes phase 2 outright.
+
+> **Before you run it, check which library you are on.** If your machine is
+> **32-bit Linux (`x86-linux`)**, confirm `coinxt/src/code/x86-linux/coinxt.so`
+> has been refreshed for ABI 3 — at the time this section was written it had not
+> been, because the environment that built the other three could not build it.
+> The symptom is unmissable and harmless: `cxCheckABI` throws "ABI mismatch —
+> reinstall CoinXT" and nothing else runs. It is fail-closed working as designed,
+> not a phase-2 defect. 64-bit Linux and both Windows builds are current.
 
 > The harness's expected values are hand-copied literals, so
 > `coinxt/tools/check-selftest-vectors.py` re-derives every one of them on every push

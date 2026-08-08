@@ -7,7 +7,8 @@ CoinXT gives an xTalk app the primitives a wallet or a dapp client is built from
 a thin C ABI and a livecodescript API. One wrap covers both chains:
 
 - **secp256k1** keypairs, ECDSA (RFC 6979 deterministic), **recoverable** signatures and public-key
-  recovery (Ethereum's `v` / `ecrecover`), ECDH, and Schnorr / BIP-340 (Taproot).
+  recovery (Ethereum's `v` / `ecrecover`), and ECDH - all built (see Status). Schnorr / BIP-340
+  (Taproot) is designed but deferred, because trezor-crypto's plain-C tree does not implement it.
 - **Hashes** both chains need: SHA-256/512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST padding),
   RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
@@ -60,17 +61,20 @@ CoinXT/
     build.sh                builds the shared library, and the ASan + UBSan self-test
     MANIFEST.sha256         integrity pins: the vendored sources now; release binaries and the
                             wordlist join in later phases
-    vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE
+    vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE.
+                            The curve half is a CLOSURE, not a pick-list: see VENDOR.md for
+                            why hasher.c, blake, groestl, base58.c and address.c are in it
   docs/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to cnx_*); phase 1 shipped and
-                            engine-proven 2026-08-08
+    coinxt.lcb              the foreign-handler module (binds to all 30 cnx_* exports); the
+                            phase-1 hash surface is engine-proven (2026-08-08), the phase-2
+                            curve wrappers are verified statically
     coinxt.livecodescript   the public cx* API + the script-side encodings (later phases)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 16 public cx* handlers against the
+                            its own UI and drives ALL 31 public cx* handlers against the
                             published vectors
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
@@ -118,10 +122,27 @@ hashing `""` returns a digest instead of throwing. Neither documented fallback w
 
 That run called 4 of the 16 public handlers, because CoinXT had no self-building harness to drive the
 rest. It has one now: paste `tests/coin-selftest.livecodescript` into a stack script and it exercises
-all 16, including the SHA3-vs-Keccak aliasing trap and the fail-closed guards.
+all of them, including the SHA3-vs-Keccak aliasing trap and the fail-closed guards.
 
-Next: the secp256k1 curve surface (phase 2), then encodings/addresses and HD wallets. Those are the
-product; today CoinXT is a correct, engine-proven hash library and nothing more.
+**Phase 2, the secp256k1 curve, is BUILT and its native side is cross-verified** (ABI 3; 31 public
+`cx*` handlers now). `cxNewSeckey`, `cxSeckeyIsValid`, `cxPublicKey`, `cxPubkeyDecompress`, `cxSign`,
+`cxVerify`, `cxSignRecoverable`, `cxRecover` and `cxEcdh` exist, with six length accessors. The
+phase's bar was "a signature CoinXT makes verifies in an independent library, and `cxRecover` returns
+the signing pubkey", and both hold on every push: CoinXT reproduces four published RFC 6979 secp256k1
+signatures byte for byte, its signature verifies in the independent Python `ecdsa` library, a
+signature that library made verifies in CoinXT, and recovery round-trips to the signer.
+
+**The fifteen new `cx*` handlers have not yet run on an engine**, so they are "verified statically" in
+the honesty convention: the shim beneath them is proven headless and every foreign declaration was
+diffed mechanically against the C, but the binding itself has not been exercised. Running
+`tests/coin-selftest.livecodescript`, which now drives all 31 public handlers in one paste, is what
+closes that.
+
+Schnorr / BIP-340 is deferred to a Taproot phase: trezor-crypto's plain-C tree does not implement it,
+reaching Schnorr only through the bundled `secp256k1-zkp`.
+
+Next: encodings and addresses (phase 3, pure script), then HD wallets. Today CoinXT is a correct hash
+and signing library; it does not yet build an address or a transaction.
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,
