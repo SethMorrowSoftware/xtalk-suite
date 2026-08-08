@@ -39,18 +39,24 @@
 #                        `python3 tools/install-release-binaries.py <dir>`
 #                        yourself.
 #
-# WHAT IT CANNOT PRODUCE, honestly. Two gaps that no workflow can close by
-# itself, both already documented where they bite:
+# NO macOS LANES AT ALL, and this is a correctness decision rather than a
+# convenience one. GitHub's macos-15 runners are arm64-only, so a plain build
+# there produces a THIN arm64 dylib - and the engine's directory for macOS is
+# `universal-mac`, which promises the opposite. Committing that would have
+# actively REGRESSED the suite: sodiumxt/src/code/universal-mac/sodiumxt.dylib
+# is today a genuine fat binary carrying two architectures, and a release run
+# would have replaced it with an arm64-only file that fails to load on every
+# Intel Mac, silently and only for users. torrentxt has documented its own
+# version of this trap for a while (see
+# torrentxt/src/code/universal-mac/README.md); it turns out to apply to every
+# member, not just that one.
 #
-#   * torrentxt universal-mac. CI builds macOS against Homebrew on the host
-#     arch, which yields a THIN, Homebrew-linked dylib that will not load on a
-#     Mac without those exact formulae. The shipped one must be universal,
-#     self-contained, and codesigned + notarized, which needs Apple Developer
-#     credentials CI does not hold. See torrentxt/src/code/universal-mac/README.md
-#     and torrentxt/docs/building.md. The lane is omitted rather than shipping
-#     something undistributable that LOOKS like a release artifact.
-#   * coinxt universal-mac is built here but has never been EXECUTED by anyone
-#     (see the job comment); it is labelled in the bundle accordingly.
+# Shipping macOS properly needs work this workflow does not do: build each slice
+# and `lipo` them into one fat library, and for torrentxt additionally codesign
+# and notarize with Apple Developer credentials CI does not hold. Until that
+# exists, the macOS libraries stay a deliberate manual build - and
+# tools/install-release-binaries.py REFUSES a thin Mach-O under universal-mac,
+# so a hand-assembled bundle cannot make this mistake either.
 name: release binaries
 
 on:
@@ -95,7 +101,7 @@ jobs:
         # the combinations that already match it, which is the intended cross
         # product with per-platform settings hung off it.
         member: [sodiumxt, torrentxt, enetxt, datachannelxt]
-        platform_id: [x86_64-linux, x86-linux, universal-mac, x86_64-win32, x86-win32]
+        platform_id: [x86_64-linux, x86-linux, x86_64-win32, x86-win32]
         include:
           - platform_id: x86_64-linux
             os: ubuntu-24.04
@@ -105,10 +111,6 @@ jobs:
             os: ubuntu-24.04
             acquire: linux32
             cmake_args: "-DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32"
-          - platform_id: universal-mac
-            os: macos-15
-            acquire: mac
-            cmake_args: ""
           - platform_id: x86_64-win32
             os: windows-2025
             acquire: none
@@ -117,11 +119,6 @@ jobs:
             os: windows-2025
             acquire: none
             cmake_args: "-A Win32"
-        exclude:
-          # See the header: a Homebrew-linked thin dylib is not distributable,
-          # and the real one needs credentials CI does not hold.
-          - member: torrentxt
-            platform_id: universal-mac
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -139,12 +136,6 @@ jobs:
       - name: Acquire 32-bit toolchain (Linux x86)
         if: matrix.acquire == 'linux32'
         run: sudo apt-get update && sudo apt-get install -y g++-multilib gcc-multilib cmake ninja-build
-
-      # Only the members that need a system library on macOS pull one; the rest
-      # vendor or FetchContent their dependency and this is a no-op.
-      - name: Acquire macOS dependencies
-        if: matrix.acquire == 'mac' && matrix.member == 'torrentxt'
-        run: brew install libtorrent-rasterbar || true
 
       - name: Configure
         shell: bash
@@ -189,11 +180,11 @@ jobs:
   # table, via a generated .def - MinGW auto-exports all 77 globals otherwise,
   # and a version script is silently IGNORED for PE, which fails OPEN).
   #
-  # HONESTY: the Windows and macOS libraries this job builds have their export
-  # surface asserted but have never been EXECUTED. The kat-windows job below
-  # runs the published vectors against the real DLL on a real Windows runner,
-  # so the x86_64-win32 artifact IS execution-proven. The macOS one is not - no
-  # macOS execution check exists yet - and the bundle says so.
+  # EXECUTION, not just a well-formed export table: the kat-windows job below
+  # drives the published vectors through the real cross-built DLL on a real
+  # Windows runner, so the x86_64-win32 artifact is execution-proven rather than
+  # merely correct-looking. Every platform this job emits is covered that way or
+  # is native Linux, which build-all already exercises.
   coinxt:
     name: coinxt ${{ matrix.platform_id }}
     strategy:
@@ -212,9 +203,6 @@ jobs:
           - platform_id: x86-win32
             os: ubuntu-24.04
             acquire: mingw32
-          - platform_id: universal-mac
-            os: macos-15
-            acquire: mac
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -230,7 +218,6 @@ jobs:
             linux32) sudo apt-get update && sudo apt-get install -y gcc-multilib ;;
             mingw64) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 ;;
             mingw32) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 ;;
-            mac)     : ;;
           esac
 
       # build.sh takes CC/NM/STRIP from the environment precisely so a cross
@@ -250,13 +237,6 @@ jobs:
               export CC=x86_64-w64-mingw32-gcc NM=x86_64-w64-mingw32-nm STRIP=x86_64-w64-mingw32-strip ;;
             mingw32)
               export CC=i686-w64-mingw32-gcc NM=i686-w64-mingw32-nm STRIP=i686-w64-mingw32-strip ;;
-            mac)
-              # One command, both slices: clang lipos a multi-arch link itself.
-              mkdir -p "$HOME/bin"
-              printf '#!/bin/sh\nexec clang -arch x86_64 -arch arm64 "$@"\n' > "$HOME/bin/cc"
-              chmod +x "$HOME/bin/cc"
-              export PATH="$HOME/bin:$PATH"
-              ;;
           esac
           sh native/build.sh pack ${{ matrix.platform_id }}
 
@@ -276,9 +256,6 @@ jobs:
               leaked=$($tc-objdump -p "$d/coinxt.dll" \
                        | awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&/^$/{exit} f{print $NF}' \
                        | grep -v '^cnx_' || true) ;;
-            universal-mac)
-              lipo -info "$d/coinxt.dylib"
-              leaked=$(nm -gU "$d/coinxt.dylib" | awk '{print $NF}' | sed 's/^_//' | grep -v '^cnx_' || true) ;;
           esac
           if [ -n "$leaked" ]; then
             echo "coinxt exports symbols outside the cnx_ surface:" >&2

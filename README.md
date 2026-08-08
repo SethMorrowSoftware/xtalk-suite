@@ -145,7 +145,7 @@ monorepo**):
 
 - **`release-binaries.yml`** — the assembly step, run by hand
   (`workflow_dispatch`). One dispatch builds every member for every platform it
-  can be built for (24 build jobs), asserts each artifact, runs coinxt's
+  can be built for (20 build jobs: five members x four platforms), asserts each artifact, runs coinxt's
   published vectors against the real cross-built DLL on a Windows runner,
   publishes one bundle, and then **installs each library into its own member's
   `src/code/<platform-id>/`, refreshes the manifests, and commits**. It calls
@@ -156,10 +156,12 @@ monorepo**):
   the result before anything is pushed. `commit_mode` picks `branch` (the
   default), `pr`, or `none` (bundle only, land it yourself). Rule 5 still holds,
   because its point is that a committed binary traces to a human decision: here
-  the decision is pressing "Run workflow". The one thing it cannot produce is
-  torrentxt's macOS dylib, which must be universal, self-contained, and
-  codesigned/notarized with credentials CI does not hold
-  (`torrentxt/src/code/universal-mac/README.md`).
+  the decision is pressing "Run workflow". It builds **no macOS lanes**: `macos-15` runners are arm64-only, so they
+  would emit a thin dylib into `universal-mac` and overwrite sodiumxt's genuine
+  two-architecture binary with one that fails on every Intel Mac. macOS stays a
+  deliberate manual `lipo` build (and, for torrentxt, a codesigned and notarized
+  one), and the installer refuses a thin Mach-O so a hand-built bundle cannot
+  make that mistake either.
 
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.
