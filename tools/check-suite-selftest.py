@@ -153,7 +153,22 @@ def main(argv):
                             f"would tear down the transport the core's own loopback is "
                             f"using. It must stay unreachable.")
 
-    # ---- 8. nothing from a member's own window survived --------------------
+    # ---- 8. coinxt is probed as TWO pieces ----------------------------------
+    # It is the only member that ships an extension AND a separate script layer,
+    # and ten of its folded sections call the script. Probing only the extension
+    # makes a missing `start using stack "coinxt"` look like ten library defects
+    # instead of one setup step - the most expensive possible way to spend an
+    # engine session. Both probes, and a guard that SKIPS rather than runs.
+    if "sHaveCoinScript" not in src:
+        problems.append("the harness does not probe coinxt's SCRIPT layer separately; a "
+                        "missing `start using stack \"coinxt\"` would report as ten FAILs "
+                        "rather than one skip")
+    elif "sHaveCoin and sHaveCoinScript" not in src:
+        problems.append("coinxt's deep harness is not guarded on BOTH sHaveCoin and "
+                        "sHaveCoinScript, so it would run its script-layer sections "
+                        "against handlers that are not loaded")
+
+    # ---- 9. nothing from a member's own window survived --------------------
     for bad in ("bt1stPaint", "cx1stShow", "en1stShow", "dc1stShow"):
         m = re.search(r'^command ' + bad + r'\b(.*?)^end ' + bad, src, re.S | re.M)
         if m and m.group(1).strip():

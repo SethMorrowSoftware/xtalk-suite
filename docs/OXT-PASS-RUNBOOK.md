@@ -350,7 +350,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed (any absent one SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, and the synchronous halves of enetxt and datachannelxt) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
+| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed, **plus two `start using` lines** — see the setup note directly below this table (any absent one SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, and the synchronous halves of enetxt and datachannelxt) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
 | 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface: the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39, BIP-32, BIP-44). Retires the 12 phase-1 handlers the 2026-08-08 pass never called, the 15 phase-2 curve handlers, and the whole of phases 3 and 4. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
@@ -518,6 +518,36 @@ diagnostics / preset accessors.
 - `sodiumxt/docs/api-reference.md`, "See also": "The recorded on-engine pass predates
   those additions, so the newer checks are verified statically and need an OXT pass to
   become a runtime result."
+
+### Setup: two `start using` lines the harness cannot do for you
+
+Two members ship a **pure-script layer** that is not part of any installed
+extension, and the harness calls into both. Put these in the message path before
+you run it — from the message box, or as `start using` lines in a stack you keep
+open:
+
+```
+start using stack "coinxt"     -- src/coinxt.livecodescript: encoders, addresses, the whole HD layer
+start using stack "onionxt"    -- src/onionxt.livecodescript: the entire ox* surface
+```
+
+**coinxt is the one that will catch you out**, because it ships in *two* pieces:
+installing `org.openxtalk.library.coin` gives you the hashes and the curve, but
+the encoders, the addresses and BIP-39/32/44 are that separate script. Install
+the extension and skip the `start using` and you get **ten sections reporting
+FAIL "handler not found"** — which reads exactly like a broken library and is
+actually one missing line.
+
+The harness now probes the two pieces **separately** and prints them on their own
+lines, so the top of the report tells you which one is missing:
+
+```
+      CoinXT (extension): present
+      CoinXT (script layer): MISSING - start using stack "coinxt"
+```
+
+and the deep harness **SKIPs with that reason** rather than failing. If you see
+that skip, add the line and re-run; nothing else is wrong.
 
 ### 4.6 coinxt (inventory item 2 — CLOSED 2026-08-08; this is now the residual)
 

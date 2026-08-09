@@ -130,6 +130,7 @@ local sRunning             -- "true" while the async phases are still live
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
+local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -312,6 +313,7 @@ command stRun
    put empty into sPhaseEn
    put empty into sPhaseDc
    put 0 into sSession
+   put false into sHaveCoinScript
    put empty into sSealKey
    put empty into sSealPlain
    put empty into sSealBox
@@ -476,7 +478,26 @@ command stProbe
    catch tError
       put false into sHaveCoin
    end try
-   stProbeLine "CoinXT", sHaveCoin, "org.openxtalk.library.coin"
+   stProbeLine "CoinXT (extension)", sHaveCoin, "org.openxtalk.library.coin"
+
+   -- COINXT IS THE ONLY MEMBER THAT SHIPS IN TWO PIECES, and probing one of
+   -- them is how an engine session gets wasted. The hash and curve surfaces are
+   -- the .lcb extension; the encoders, addresses and the whole HD layer are
+   -- src/coinxt.livecodescript, a SEPARATE script that has to be in the message
+   -- path. Install the extension without `start using` and the probe above says
+   -- "present", the deep harness runs, and ten of its sections report FAIL
+   -- "handler not found" - which reads exactly like a broken library and is
+   -- actually a setup step. So the script layer gets its own probe and its own
+   -- line, and the deep harness SKIPS rather than failing when it is absent.
+   -- cxHexEncode is the cheapest handler that exists only in the script.
+   put false into sHaveCoinScript
+   try
+      put (cxHexEncode(numToByte(222) & numToByte(173)) is "dead") into sHaveCoinScript
+   catch tError
+      put false into sHaveCoinScript
+   end try
+   stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
+         "start using stack " & quote & "coinxt" & quote
 end stProbe
 
 command stProbeLine pName, pPresent, pHint
@@ -1601,9 +1622,15 @@ command stRunMemberHarnesses
       stSkip "OnionXT deep self-test", "install org.openxtalk.library.onion"
    end if
 
-   if sHaveCoin then
+   -- BOTH pieces, because ten of the folded sections call the script layer and
+   -- would report FAIL rather than SKIP without it (see stProbe).
+   if sHaveCoin and sHaveCoinScript then
       cx1stRun
       stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal
+   else if sHaveCoin then
+      stSkip "CoinXT deep self-test", "the extension is loaded but its SCRIPT layer is not:" && \
+            "start using stack " & quote & "coinxt" & quote & \
+            " - 10 of its 27 sections need it"
    else
       stSkip "CoinXT deep self-test", "install org.openxtalk.library.coin"
    end if
