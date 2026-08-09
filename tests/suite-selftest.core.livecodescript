@@ -170,6 +170,26 @@ local sDcBigSize, sDcBigWant
 
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
+-- Every FOLDED member's script locals and constants are hoisted to here, above
+-- the first handler, by tools/build-suite-selftest.py.
+--
+-- They cannot live down in each member's own section, which is where they
+-- started and where they look like they belong. OXT resolves a script-level
+-- name BY LEXICAL POSITION, so a declaration below a handler is not in scope
+-- for it - and stRunMemberHarnesses, up here in the core, reads every member's
+-- counters (cx1sPassed and friends) to merge them. With the declarations left
+-- in place the read was ~1000 lines ABOVE them, so `cx1sPassed` was an
+-- undeclared name, LiveCodeScript evaluated it to the literal text
+-- "cx1sPassed", and `add "cx1sPassed" to sPassed` killed the whole run with
+-- "add: error in source expression" on a real engine.
+--
+-- Nothing about the member harnesses was wrong: each one declares its locals
+-- above its own handlers, which is the house pattern in all six. Only the FOLD
+-- broke the invariant, by putting one file's declarations after another file's
+-- readers. check-suite-selftest.py now fails if any declaration lands below the
+-- first handler.
+-- GENERATED MEMBER DECLARATIONS GO HERE --
+
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
    stBuild
@@ -1713,12 +1733,52 @@ end stMergeReturned
 -- THIS script, since the whole thing compiles as one unit.
 command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
    stSection pMember & ": its own full self-test"
-   add pPassed to sPassed
-   add pFailed to sFailed
-   add pTotal to sTotal
-   stAssert pMember & " deep self-test had zero failures", pFailed is 0
-   stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
-         "checks, folded into the totals above"
+   -- VALIDATE BEFORE ADDING, and the reason is an engine failure this cost.
+   -- These three lines used to be a bare `add pPassed to sPassed`, on the
+   -- reasoning that the counters are script locals of THIS file that the
+   -- member's own stRun sets to 0 on its first line, so they cannot be
+   -- anything but numbers. When one of them was not, LiveCode threw
+   --     add: error in source expression
+   -- and, because that is an uncaught engine error rather than a failed
+   -- assertion, it killed the WHOLE RUN: no summary, no totals, no report from
+   -- the members after it, and - the part that actually costs an engine
+   -- session - NO INDICATION OF WHICH MEMBER IT WAS. Six harnesses had run and
+   -- the operator was left with one line naming a handler.
+   --
+   -- stMergeReturned, ten lines up, has validated its counts since the day it
+   -- was written, because THOSE come from parsing a report and a parse can
+   -- obviously fail. This path skipped the check because its values come from
+   -- script locals, which felt safer. Feeling safer is not the same as being
+   -- checked, and the two paths merge into the same totals: they should be
+   -- equally suspicious of what they are handed.
+   --
+   -- A non-numeric counter is now a reported FAILURE that names the member and
+   -- prints what it actually got, and the run CONTINUES to the members after
+   -- it. `empty` is the diagnostic case worth knowing: it means that member's
+   -- stRun did not reach its own counter init, so look for a throw at the very
+   -- top of it rather than anywhere in the checks.
+   -- Built as a value rather than a continued condition on purpose: this file
+   -- is read by all six members' copies of check-livecodescript.py, and three
+   -- of them do not join line continuations before counting block openers, so
+   -- an `if ... \` reads to them as a handler-level statement and every `end if`
+   -- after it looks unbalanced. Keeping the opener on one physical line costs
+   -- nothing and keeps the file parsable by the strictest reader of it.
+   put (pPassed is a number and pFailed is a number and pTotal is a number) into tOk
+   if tOk is false then
+      stAssert pMember & " deep self-test reported numeric counters", false
+      stNote "Got passed=[" & pPassed & "] failed=[" & pFailed & \
+            "] total=[" & pTotal & "]"
+      stNote "An EMPTY counter means that member's stRun threw before its own"
+      stNote "first line (it sets all three to 0 there), so suspect the top of"
+      stNote "its stRun, not its checks. Its report is below verbatim; count by eye."
+   else
+      add pPassed to sPassed
+      add pFailed to sFailed
+      add pTotal to sTotal
+      stAssert pMember & " deep self-test had zero failures", pFailed is 0
+      stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
+            "checks, folded into the totals above"
+   end if
    stNote "---- " & pMember & " report ----"
    put pReport & return after sResultText
 end stMergeCounted

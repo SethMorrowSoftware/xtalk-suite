@@ -129,6 +129,32 @@ copies now refuse it, `.livecodescript` only - written once and inserted into
 all six in one pass, per the drift lesson directly above, and each copy tested
 against the bug, all three legal forms, and a `.lcb`.
 
+**The second engine error was the generator's, and it is the more instructive
+one: DECLARED is not IN SCOPE.** `add pPassed to sPassed` died with
+`add: error in source expression`, from `stMergeCounted`. Nothing was wrong with
+any member harness. Each one declares its locals above its own handlers, which
+is the house pattern in all six - but the FOLD placed coinxt's section about a
+thousand lines BELOW the core's `stRunMemberHarnesses`, and that is the handler
+that reads `cx1sPassed` to merge the totals. **OXT resolves a script-level name
+by lexical position**, a rule this repo already had written down for `constant`
+and which turns out to hold for `local` too, so the read saw an undeclared name.
+LiveCodeScript does not error on one: it evaluates it to the literal text of its
+own name, so the engine tried `add "cx1sPassed" to sPassed`. The generator now
+hoists every folded declaration above the first handler, through a second marker
+in the core; **106 declarations were below it**, so the counters were merely the
+first to do arithmetic on one.
+
+Two things about the gates here are worth carrying. `check-suite-selftest.py`
+already proved every folded name was DECLARED - that check passed throughout,
+because declared and in-scope are different questions and only the first is
+visible to a grep. And `stMergeCounted` did the `add` on trust while
+`stMergeReturned`, ten lines above it, had validated its counts since the day it
+was written, on the reasoning that a parse can fail but a script local cannot.
+The asymmetry is the bug: an uncaught engine error takes the WHOLE run, so six
+harnesses' worth of results were lost to one line that could not name the member
+it came from. Both paths validate now, and a bad counter is a reported failure
+that prints what it got.
+
 **The meta-lesson is the expensive one: shipped is not run.** The suite harness
 carried a comment asserting both spellings were fine, reasoning that
 datachannelxt shipped the parenthesised form so the engine must accept it. But

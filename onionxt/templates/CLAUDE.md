@@ -125,7 +125,16 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    `line` = lf). CRLF protocols: `set the lineDelimiter to crlf` right where you parse, then restore.
 6. **The empty string `is in` every string** (and is a prefix/suffix of every string). Guard any
    trim/scan loop with an explicit non-empty check, or it never terminates / over-matches.
-7. **Constants must be literal and declared before first use** (see section 3).
+7. **Constants must be literal and declared before first use** (see section 3). **The same
+   lexical-position rule applies to script-level `local`s**, and it fails far more quietly:
+   an out-of-scope name is not an error, LiveCodeScript evaluates it to the LITERAL TEXT of
+   its own name. So a handler above the declaration reads the string `"sPassed"`, everything
+   keeps running, and the first arithmetic on it dies somewhere else entirely
+   (`add: error in source expression`). Declare every script-level name ABOVE every handler,
+   and be careful when CONCATENATING two files: each may be correct alone and wrong joined,
+   because file A's handlers now sit above file B's declarations. Cost an OXT session in
+   2026-08-09, in a generated harness where 106 declarations had landed below the first
+   handler. A checker that proves a name is DECLARED does not prove it is IN SCOPE.
 8. **Commands report via `the result`; functions return a value.** Pick ONE API shape per operation and
    hold it: a command that must both signal success/failure and yield a handle returns the handle through
    `the result` on success and an error STRING on failure (so callers test `the result is an integer`);
