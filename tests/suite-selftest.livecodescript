@@ -101,10 +101,23 @@ script "xTalkSuiteSelfTest"
 -- syntax, byte-exact compares only under `set the caseSensitive to true`, all
 -- declarations at handler top, and teardown calls written bare in statement
 -- position, which is enetxt's own shipped teardown idiom (enet-lan-chat line
--- 220, enet-selftest line 371). datachannelxt spells the same thing
--- `dcCleanup()`; BOTH forms are attested in shipped members, so this is a style
--- match, not a claim about what the engine can compile - nothing here has been
--- run, so this file asserts no engine behaviour it has not observed.
+-- 220, enet-selftest line 371).
+--
+-- That last one is NOT a style choice, and this comment used to say it was.
+-- It read: "datachannelxt spells the same thing dcCleanup(); BOTH forms are
+-- attested in shipped members, so this is a style match, not a claim about what
+-- the engine can compile." The reasoning was that a shipped member used it, so
+-- it must work - but shipped is not run, and datachannelxt's own harness had
+-- never been run on an engine. An OXT pass then failed on exactly that line.
+-- A ZERO-ARGUMENT call in STATEMENT position must be BARE: a statement starting
+-- with an identifier is parsed as a COMMAND, so `dcCleanup()` hands the command
+-- the expression `()`, and `()` is not an expression. In EXPRESSION position
+-- (`dcCleanup() is 0`, below) the parenthesised form is correct and required,
+-- and a one-argument statement call like `dcFreePeer(sPeerA)` is fine because
+-- `(sPeerA)` IS an expression - which is why the broken spelling looks exactly
+-- like the working one beside it. Every member's check-livecodescript.py now
+-- refuses it, .livecodescript only: LiveCode BUILDER does allow `sPrepare()` as
+-- a statement, and the .lcb files rely on that on engine-verified paths.
 
 -- ---- tunables ----------------------------------------------------------------
 -- A port of our own so this harness and enet-selftest can both be open.
@@ -1508,9 +1521,11 @@ command stCleanup
          enHostDestroy sEnClient
       end if
       -- Bare statement form, matching enetxt's own teardown (enet-selftest line
-      -- 371, enet-lan-chat line 220). Not an engine constraint: datachannelxt
-      -- ships the parenthesised `dcCleanup()` in the same position. Either form
-      -- is house-attested; this harness has run neither.
+      -- 371, enet-lan-chat line 220). This IS an engine constraint, contrary to
+      -- what this comment claimed before an OXT pass proved otherwise: a
+      -- zero-argument call in statement position must be bare, because the
+      -- parenthesised spelling passes `()` to a command and `()` is not an
+      -- expression. See the note in the file header.
       enDeinitialize
    catch tError
       -- enetxt absent or already released; nothing to free
@@ -4446,5 +4461,9 @@ command dc1stCleanup
    end if
    put empty into dc1sPeerA
    put empty into dc1sPeerB
-   dcCleanup()
+   -- BARE, not dcCleanup(). A zero-argument call in STATEMENT position parses
+   -- as a command taking `()` as its argument, and `()` is not an expression,
+   -- so it is a compile error. In EXPRESSION position (the two dc1stAssert lines
+   -- above) the parenthesised form is correct and required.
+   dcCleanup
 end dc1stCleanup

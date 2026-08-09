@@ -307,7 +307,9 @@ command wxStart
    end if
    -- the DTLS certificate is generated lazily on first use; warming it now
    -- shaves it off the first connect
-   dcInit()
+   -- BARE: see the note on dcCleanup below. A zero-argument call written
+   -- dcInit() in statement position does not compile.
+   dcInit
    btStartSession
    put the result into sSession
    if sSession is 0 or sSession is empty then
@@ -362,7 +364,10 @@ command wxStop
    -- dcCleanup frees every peer/channel and joins the native threads - the one
    -- contract every DataChannelXT app must honour before quitting
    if sHaveDc is "true" then
-      dcCleanup()
+      -- BARE, not dcCleanup(). `()` is not an expression, so a zero-argument
+      -- call in statement position fails to compile; enetxt's shipped
+      -- teardown (enDeinitialize) is the same idiom.
+      dcCleanup
    end if
    if sSession is not empty and sSession is not 0 then
       btStopSession sSession

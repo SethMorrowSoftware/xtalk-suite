@@ -111,6 +111,33 @@ implementations. Only sodiumxt's was changed; the drift itself is the standing
 cost of copy-per-member and is worth remembering the next time one of these
 checkers is edited - a fix applied to one copy is not applied to the suite.
 
+**The first engine pass of the folded harness found what no gate could
+(2026-08-09), and it was one line: `dcCleanup()`.** A zero-argument call in
+STATEMENT position must be written BARE - a statement starting with an
+identifier is parsed as a COMMAND, so the parenthesised spelling hands it the
+expression `()`, which is not an expression. A `.livecodescript` compiles as one
+unit, so that single line took the whole 4400-line paste with it. What makes it
+worth recording rather than just fixing is why it was invisible: the
+ONE-argument spelling `dcFreePeer(sPeerA)` is correct (`(sPeerA)` IS an
+expression), so the broken line is visually identical to the working one beside
+it - `datachannel-loopback` had `dcStopPolling` and `dcCleanup()` on consecutive
+lines; in EXPRESSION position (`dcCleanup() is 0`) the parens are REQUIRED, same
+characters, opposite verdict; and LiveCode **Builder** allows `sPrepare()` as a
+statement, which `sodium.lcb` and `coinxt.lcb` do ~90 times on engine-verified
+paths, so "we do this everywhere" was true and irrelevant. All six checker
+copies now refuse it, `.livecodescript` only - written once and inserted into
+all six in one pass, per the drift lesson directly above, and each copy tested
+against the bug, all three legal forms, and a `.lcb`.
+
+**The meta-lesson is the expensive one: shipped is not run.** The suite harness
+carried a comment asserting both spellings were fine, reasoning that
+datachannelxt shipped the parenthesised form so the engine must accept it. But
+datachannelxt's own harness had never been run on an engine, so the attestation
+was circular - and the comment even said "this harness has run neither", which
+should have been the tell. An unexecuted line is not evidence, in either
+direction. The honesty convention already covers this; it just has to be applied
+to the code we are citing as precedent, not only to the code we are writing.
+
 **"Current" and "structurally sound" are not "complete", and only the first two had
 a gate.** `--check` proves the pasteable file is what the sources produce;
 `check-suite-selftest.py` proves the merge holds together. Neither one looks at

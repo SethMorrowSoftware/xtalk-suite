@@ -303,12 +303,56 @@ def check_put_prepositions(path, stripped_lines, problems):
                 "(`put X into Y` to replace, or `put X after Y` to append)"))
 
 
+def check_zero_arg_statement_calls(path, text):
+    """A zero-argument call written `foo()` in STATEMENT position.
+
+    LiveCodeScript has no "call a function and discard the result" statement.
+    A line that starts with an identifier is parsed as a COMMAND, and whatever
+    follows is its argument list - so `dcCleanup()` asks the engine to pass the
+    expression `()` to the command `dcCleanup`, and `()` is not an expression.
+    It is a compile error, and because a .livecodescript compiles as one unit it
+    takes the WHOLE FILE with it, usually reported at some unrelated line.
+
+    Three things make this worth a gate rather than a lesson in a header:
+
+      - The one-argument spelling `dcFreePeer(sPeerA)` is FINE, because `(sPeerA)`
+        IS an expression. So the broken form looks exactly like the working one
+        that sits next to it, and reading the file does not distinguish them.
+      - In EXPRESSION position `dcCleanup() is 0` is correct and required. Same
+        eight characters, opposite verdicts, decided by what is to the left.
+      - This is LiveCodeScript only. LiveCode BUILDER allows `sPrepare()` as a
+        statement, and both sodium.lcb and coinxt.lcb use it hundreds of times
+        on paths that have run green on a real engine. Flagging .lcb here would
+        be ~90 false positives and would get the whole rule switched off.
+
+    Found the hard way: the suite self-test failed on an engine at
+    `dcCleanup()`, folded in from datachannelxt's harness. Three of the four
+    sites had a working bare call within a few lines of them.
+    """
+    if path.endswith(".lcb"):
+        return []
+    out, continued = [], False
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        line = raw.split("--", 1)[0] if '"' not in raw.split("--", 1)[0] else raw
+        stripped = line.strip()
+        # A continuation line is part of the PREVIOUS statement, so an
+        # identifier + () there is an ordinary call inside an expression.
+        was_continued, continued = continued, stripped.endswith("\\")
+        if was_continued or not stripped:
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\(\)$", stripped)
+        if m:
+            out.append((lineno, m.group(1)))
+    return out
+
+
 def check_file(path, problems):
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
     raw_lines = text.splitlines()
     code = strip_block_comments(text)
     stripped_lines = [strip_line(l) for l in code.splitlines()]
+    raw_text = "\n".join(raw_lines)
     is_script = path.endswith(".livecodescript")
 
     check_banned_chars(path, raw_lines, problems)
@@ -316,6 +360,8 @@ def check_file(path, problems):
     check_constants_before_use(path, stripped_lines, problems)
     check_shadow_trap(path, stripped_lines, problems)
     check_put_prepositions(path, stripped_lines, problems)
+    for lineno, name in check_zero_arg_statement_calls(path, raw_text):
+        problems.append(Problem(path, lineno, "a zero-argument call written %s() in statement position does not compile in LiveCodeScript (the engine parses `()` as the command's argument, and `()` is not an expression). Write it bare: %s" % (name, name)))
     if not is_script:
         check_lcb_imports(path, stripped_lines, problems)
 

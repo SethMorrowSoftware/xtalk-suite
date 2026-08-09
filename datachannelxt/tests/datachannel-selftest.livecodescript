@@ -377,5 +377,9 @@ command stCleanup
    end if
    put empty into sPeerA
    put empty into sPeerB
-   dcCleanup()
+   -- BARE, not dcCleanup(). A zero-argument call in STATEMENT position parses
+   -- as a command taking `()` as its argument, and `()` is not an expression,
+   -- so it is a compile error. In EXPRESSION position (the two stAssert lines
+   -- above) the parenthesised form is correct and required.
+   dcCleanup
 end stCleanup
