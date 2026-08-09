@@ -657,6 +657,45 @@ The five published EIP-55 vectors could not even detect a tautology, since a tau
 for a true positive too. When adding a handler here, add the vector for what it must REFUSE in the
 same change as the vector for what it must produce.
 
+**Five public handlers were never called by any harness, and two gates were overstating
+their own coverage (2026-08-09).** Prompted by nothing more than the question "does the
+suite selftest include all the tests?", the answer was measured instead of asserted, and
+it was no. `tools/check-suite-coverage.py` (suite root) found **five `cx*` handlers that
+no harness had ever invoked**: `cxHash256`, `cxMnemonicNormalize`, `cxHdDeriveChild`, and
+both ABI-4 tweak exports `cxSeckeyTweakAdd` / `cxPubkeyTweakAdd`. All five are pure,
+deterministic and trivially vector-pinnable, so this was not a hard gap - it was an
+unasked question. Each was reachable only INDIRECTLY, and that is what made it dangerous:
+
+- `cxMnemonicNormalize` runs first inside validate / to-entropy / to-seed, so a defect in
+  it would have made all three wrong TOGETHER and consistent with each other. Every round
+  trip in the vector set would still have closed.
+- `cxHdDeriveChild` is the single CKD step `cxHdDerivePath` loops over. Testing only the
+  path walker cannot separate "the step is right" from "the loop and the step are wrong in
+  the same direction", so the new check pins the single step to BIP-32's own published
+  m/0' xprv first, and only then asserts the two agree.
+- The tweak pair is the homomorphism BIP-32 non-hardened derivation rests on. If private
+  and public tweaking ever disagreed, an xpub watch-only wallet would generate addresses
+  its own xprv cannot spend. `1 + 1 = 2` pins both to the curve's second point (2G) rather
+  than to each other, and the zero-tweak refusal is now asserted on BOTH paths, because
+  refusing on one and accepting on the other is exactly the interop bug this member exists
+  to prevent.
+
+All five are now driven headlessly too (`check-script-vectors.py`, 198 -> 211 checks; the
+tweaks were already in `coin-kat.py`), so the assertions added to
+`tests/coin-selftest.livecodescript` are executed before an engine ever sees them.
+
+**The gate hole is the more transferable part.** `check-selftest-vectors.py` re-derives an
+explicit `want(...)` list and then printed `"66 harness constant(s) re-derived"` - a count
+of the constants it had PARSED, not the ones it had CHECKED. The two constants added in
+this very change (`kHash256Abc`, `kPubTwoCompressed`) sailed straight through it and the
+gate still said 66. A gate that overstates its coverage is worse than no gate, because it
+answers a question nobody asks twice. It now fails on any `k*` that is neither re-derived
+nor listed in `inputs` with a reason, fails on a stale `inputs` entry, and reports the
+honest split (`49 of 66 re-derived, 17 are inputs`). Fixing it immediately surfaced two
+more: `kSegwitErrorProgram` was never checked to still SPELL "ERROR" (edit those five
+bytes and the fail-open regression quietly stops reproducing the bug while still passing),
+and the two EIP-55 negatives were never checked to be case-variants of the positive.
+
 **A note on method, learned twice in one session.** Two mutations were first reported as NOT CAUGHT
 and both times the PROBE was wrong, not the gate: one exercised only the encode direction while the
 mutation was in the decoder, and one reverted only half of a two-part defect so the bug never

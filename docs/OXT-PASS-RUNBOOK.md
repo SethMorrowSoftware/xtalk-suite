@@ -339,6 +339,39 @@ what you still have to install.
 Do **not** treat a green suite selftest as a substitute for the per-member harnesses.
 It is breadth; the per-member selftests are depth.
 
+**How complete is it, exactly.** Not a judgement call any more - `tools/check-suite-coverage.py`
+measures it, and the gate set runs it on every push, so the number below is current
+rather than remembered:
+
+| member | public handlers the harness calls | not reachable offline |
+|---|---|---|
+| sodiumxt | 60 / 60 | - |
+| onionxt | 27 / 45 | 18 |
+| coinxt | 65 / 65 | - |
+| torrentxt | 85 / 85 | - |
+| enetxt | 23 / 23 | - |
+| datachannelxt | 31 / 31 | - |
+| **total** | **291 / 309** | **18** |
+
+The eighteen are onionxt's, all of them, and they are the only handlers in the suite
+with a written excuse: eleven are **engine socket callbacks** (the engine calls them
+with a socket id no harness can mint) and seven need a **live tor daemon**. Both lists
+are in `tools/check-suite-coverage.py` with a per-handler reason, and the gate fails if
+a new handler lands without either a check or an entry there. So "what does this not
+touch" has an answer you can read, instead of being the thing nobody re-asks after
+seeing a big line count.
+
+Two things that number does *not* claim. It counts handlers **reached**, not handlers
+tested well - depth is the member vector gates' job. And onionxt's seven live-daemon
+handlers are exactly what rows 5 and 7 below exist for, so a green step 0 does not
+retire them.
+
+**You can download the harness instead of cloning.** Every `suite gates` CI run
+uploads a `suite-selftest` artifact containing `tests/suite-selftest.livecodescript`,
+the coverage report above, and this runbook. The committed file is always the built
+one (the gate set runs `build-suite-selftest.py --check`, which fails on a stale copy),
+so the artifact and the repository can never disagree.
+
 **Step 1 - the per-member selftests, in this order.**
 
 Ordered by (value of the result) divided by (setup cost):
@@ -757,6 +790,15 @@ whole message path, and `oxSelfTest()` proves teardown is idempotent by actually
 calling `oxDisconnectControl` / `oxShutdown`. **If a live demo session has an open
 control connection, streams, or published services, running the selftest closes them.**
 Run it in a fresh session, or expect it to tear down whatever is open.
+
+It also **resets the configuration**: the new "configuration setters" section walks
+`oxSetSocksPort` / `oxSetControlPort` / `oxSetControlPassword` and clears them back to
+their defaults on the way out, so a non-default port you set by hand before running it
+is gone afterwards. Set your ports *after* the selftest, not before. The three dispatch
+setters are deliberately restored rather than cleared — to owner `me`, status
+`onStatus`, no peer callback — which is exactly the configuration
+`examples/onionxt-demo.livecodescript` establishes in `preOpenStack`, so running the
+selftest from the demo's About tab leaves the demo working.
 
 ### 5.7 Give the DHT a few seconds
 

@@ -186,6 +186,13 @@ on testPwHash
    sxSection "Argon2id (pwhash)"
    -- deterministic known-answer: pass "password", salt = 16 x 'A', ops 2, mem 1 MiB
    put sxUtf8("AAAAAAAAAAAAAAAA") into tSalt
+   -- The accessor is what a caller sizes its salt from, so tie it to the salt
+   -- this vector actually uses rather than checking it in isolation: if the two
+   -- ever disagreed, the KAT below would still pass while every caller that
+   -- trusted sxPwSaltBytes built a salt libsodium rejects.
+   sxCheck (sxPwSaltBytes() is 16), "sxPwSaltBytes reports the Argon2id salt length"
+   sxCheck (the number of bytes of tSalt is sxPwSaltBytes()), \
+      "the vector's salt is exactly that length"
    put sxPwHash(sxUtf8("password"), tSalt, 32, "2", "1048576") into tKey
    sxCheck (sxHexOf(tKey) is \
       "7216b4357104ed7f8a4e900e9cc7a63a0786855abe0b59340053ee43f841228a"), \

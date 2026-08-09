@@ -1904,6 +1904,13 @@ on sx1testPwHash
    sx1sxSection "Argon2id (pwhash)"
    -- deterministic known-answer: pass "password", salt = 16 x 'A', ops 2, mem 1 MiB
    put sx1sxUtf8("AAAAAAAAAAAAAAAA") into sx1tSalt
+   -- The accessor is what a caller sizes its salt from, so tie it to the salt
+   -- this vector actually uses rather than checking it in isolation: if the two
+   -- ever disagreed, the KAT below would still pass while every caller that
+   -- trusted sxPwSaltBytes built a salt libsodium rejects.
+   sx1sxCheck (sxPwSaltBytes() is 16), "sxPwSaltBytes reports the Argon2id salt length"
+   sx1sxCheck (the number of bytes of sx1tSalt is sxPwSaltBytes()), \
+      "the vector's salt is exactly that length"
    put sxPwHash(sx1sxUtf8("password"), sx1tSalt, 32, "2", "1048576") into sx1tKey
    sx1sxCheck (sx1sxHexOf(sx1tKey) is \
       "7216b4357104ed7f8a4e900e9cc7a63a0786855abe0b59340053ee43f841228a"), \
@@ -2334,6 +2341,7 @@ function ox1oxSelfTest
    ox1testAddressRoundTrip
    ox1testAddressNegativePaths
    ox1testSodiumComposition
+   ox1testConfigurationSetters
 
    local ox1tSummary
    put ox1sPass & " passed, " & ox1sFail & " failed" into ox1tSummary
@@ -2542,6 +2550,61 @@ private command ox1testSodiumComposition
    end if
 end ox1testSodiumComposition
 
+private command ox1testConfigurationSetters
+   ox1oxSection "configuration setters (offline: callable and inert)"
+   local ox1tWasReady, ox1tWasAuthed, ox1tProgress
+   put oxIsReady() into ox1tWasReady
+   put oxIsControlAuthenticated() into ox1tWasAuthed
+   put oxBootstrapProgress() into ox1tProgress
+
+   -- Loopback-locked by design: the PORT is settable, the host never is.
+   oxSetSocksPort 19050
+   oxSetControlPort 19051
+   ox1oxCheck true, "oxSetSocksPort and oxSetControlPort accept a port"
+   oxSetControlPassword "not-a-real-password"
+   ox1oxCheck true, "oxSetControlPassword accepts a password"
+   oxSetStatusCallback "onStatus"
+   oxSetPeerCallback "onPeer"
+   ox1oxCheck true, "the status and peer callback names are settable"
+   oxSetCallbackOwner the long id of me
+   ox1oxCheck true, "oxSetCallbackOwner accepts an object long id"
+
+   -- Configuration must not touch the connection state machine. If any of
+   -- these moved, a setter is writing over more than its own local.
+   ox1oxCheck (oxIsReady() is ox1tWasReady), "setting configuration does not change oxIsReady"
+   ox1oxCheck (oxIsControlAuthenticated() is ox1tWasAuthed), \
+      "setting configuration does not authenticate anything"
+   ox1oxCheck (oxBootstrapProgress() is ox1tProgress), \
+      "setting configuration does not move bootstrap progress"
+
+   -- Idempotent, like every other entry point here.
+   oxSetSocksPort 19050
+   ox1oxCheck (oxIsReady() is ox1tWasReady), "setting the same port twice is harmless"
+
+   -- Hand the session back. Empty restores the documented default for the two
+   -- ports and the password, so those simply clear.
+   oxSetSocksPort empty
+   oxSetControlPort empty
+   oxSetControlPassword empty
+   ox1oxCheck (oxIsReady() is ox1tWasReady), "clearing the ports and password is harmless too"
+
+   -- The three DISPATCH setters do not clear, and the reason is a real bug this
+   -- section would otherwise have introduced. tools/build-standalone.py bundles
+   -- this file into examples/onionxt-demo-standalone.livecodescript, where the
+   -- About tab runs ox1oxSelfTest inside the running demo - and that demo sets its
+   -- callback owner and status handler ONCE, in preOpenStack. Clearing them here
+   -- would leave a demo that had already opened with no status dispatch at all,
+   -- silently, until it was reopened: a test that breaks the app it is bundled
+   -- into. So restore the exact configuration the demo establishes - owner is
+   -- this stack, status is onStatus, and NO peer callback, because oxhServe
+   -- installs oxhPeer itself when it publishes and a stale "onPeer" here would
+   -- shadow it until then.
+   oxSetCallbackOwner the long id of me
+   oxSetStatusCallback "onStatus"
+   oxSetPeerCallback empty
+   ox1oxCheck (oxIsReady() is ox1tWasReady), "restoring the dispatch configuration is harmless too"
+end ox1testConfigurationSetters
+
 private function ox1testHex pData
    -- binaryDecode is a function that fills its output var; `get` discards the count.
    local ox1tHex
@@ -2599,7 +2662,9 @@ constant cx1kBip39Seed = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa37
 constant cx1kFox = "The quick brown fox jumps over the lazy dog"
 constant cx1kPubOneCompressed = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 constant cx1kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+constant cx1kPubTwoCompressed = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
 constant cx1kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
+constant cx1kHash256Abc = "4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358"
 constant cx1kBase58Payload = "00010966776006953D5567439E5E39F86A0D273BEE"
 constant cx1kBase58Address = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM"
 constant cx1kBase58Corrupt = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvN"
@@ -2929,7 +2994,7 @@ command cx1stRunFailClosed
 end cx1stRunFailClosed
 
 command cx1stRunCurveKeys
-   local cx1tSk, cx1tPubC, cx1tPubU
+   local cx1tSk, cx1tPubC, cx1tPubU, cx1tTweaked
    cx1stSection "secp256k1 keys"
    try
       put cx1stSeckeyOne() into cx1tSk
@@ -2948,6 +3013,24 @@ command cx1stRunCurveKeys
       cx1stAssert "the uncompressed key is 65 bytes", the number of bytes of cx1tPubU is 65
       cx1stAssert "cxPubkeyDecompress rebuilds the uncompressed key", cx1stHex(cxPubkeyDecompress(cx1tPubC)) is cx1stHex(cx1tPubU)
       cx1stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", cx1stHex(cxPubkeyDecompress(cx1tPubU)) is cx1stHex(cx1tPubU)
+      -- The two ABI-4 tweak entry points. BIP-32 non-hardened derivation is
+      -- built on the claim that tweaking the PRIVATE key and tweaking the
+      -- PUBLIC key land on the same point; if they ever disagreed, an xpub
+      -- watch-only wallet would generate addresses the xprv cannot spend, and
+      -- nothing above this line would notice. 1 + 1 = 2 pins both to the
+      -- curve's own second point rather than only to each other.
+      put cxSeckeyTweakAdd(cx1tSk, cx1tSk) into cx1tTweaked
+      cx1stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", cx1stHex(cx1tTweaked) is cx1stHex(cx1stRepeatByte(0, 31) & numToByte(2))
+      cx1stAssert "and its public key is 2G", cx1stHex(cxPublicKey(cx1tTweaked, true)) is cx1kPubTwoCompressed
+      cx1stAssert "cxPubkeyTweakAdd of G by 1 is also 2G", cx1stHex(cxPubkeyTweakAdd(cx1tPubC, cx1tSk)) is cx1kPubTwoCompressed
+      cx1stAssert "so private and public tweaking agree", cx1stHex(cxPubkeyTweakAdd(cx1tPubC, cx1tSk)) is cx1stHex(cxPublicKey(cxSeckeyTweakAdd(cx1tSk, cx1tSk), true))
+      -- Both refuse a ZERO tweak, where upstream's public entry point accepts
+      -- it. Accepting on one path and refusing on the other is the
+      -- interoperability bug this member exists to prevent, so the symmetry is
+      -- asserted rather than assumed.
+      cx1stAssert "a zero tweak is refused on the private path", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(0, 32))
+      cx1stAssert "a zero tweak is refused on the public path", cx1stThrows2("cxPubkeyTweakAdd", cx1tPubC, cx1stRepeatByte(0, 32))
+      cx1stAssert "a wrong-length tweak is refused", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(1, 31))
    catch tError
       cx1stSectionFailed "secp256k1 keys", tError
    end try
@@ -3123,6 +3206,12 @@ command cx1stRunBase58
    cx1stSection "Base58Check"
    try
       put cxHexDecode(cx1kBase58Payload) into cx1tPayload
+      -- hash256 first, on its own. It is the checksum function this encoding is
+      -- defined in terms of, and an encoder/decoder pair that agreed with each
+      -- other while both used the wrong hash would pass every round-trip below.
+      cx1stAssert "cxHash256 of abc is the published double-SHA-256", cx1stHex(cxHash256(cx1stText("abc"))) is cx1kHash256Abc
+      cx1stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(cx1stText("")) is 32
+      cx1stAssert "and it is genuinely SHA-256 applied twice", cx1stHex(cxHash256(cx1stText("abc"))) is cx1stHex(cxSha256(cxSha256(cx1stText("abc"))))
       cx1stAssert "encodes the worked example", cxBase58CheckEncode(cx1tPayload) is cx1kBase58Address
       cx1stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(cx1kBase58Address)) is cx1stToLowerText(cx1kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
@@ -3322,6 +3411,17 @@ command cx1stRunBip39
       -- STRING; a pasted trailing newline must not change the wallet.
       put "  " & cx1kBip39Mnemonic & "  " into cx1tMnemonic
       cx1stAssert "surrounding whitespace is normalized away", cxMnemonicValidate(cx1tMnemonic) is true
+      -- cxMnemonicNormalize on its own, because it is public API and because
+      -- every other BIP-39 handler runs it first: if it were wrong, validate
+      -- and to-seed would be wrong together and agree with each other.
+      cx1stAssert "cxMnemonicNormalize strips the padding", cxMnemonicNormalize(cx1tMnemonic) is cx1kBip39Mnemonic
+      cx1stAssert "an already-clean mnemonic is returned unchanged", cxMnemonicNormalize(cx1kBip39Mnemonic) is cx1kBip39Mnemonic
+      cx1stAssert "it is idempotent", cxMnemonicNormalize(cxMnemonicNormalize(cx1tMnemonic)) is cx1kBip39Mnemonic
+      -- Tabs, newlines and runs of spaces are what a pasted backup actually
+      -- contains, and BIP-39 derives the seed from the STRING, so collapsing
+      -- them is the difference between restoring a wallet and missing it.
+      cx1stAssert "tabs and newlines collapse to single spaces", cxMnemonicNormalize("abandon" & tab & "abandon" & return & "  abandon ") is "abandon abandon abandon"
+      cx1stAssert "an empty string normalizes to empty", cxMnemonicNormalize("   ") is ""
       cx1stAssert "the seed with no passphrase", cxHexEncode(cxMnemonicToSeed(cx1kBip39Mnemonic, "")) is cx1kBip39SeedNoPass
       cx1stAssert "the seed with the TREZOR passphrase", cxHexEncode(cxMnemonicToSeed(cx1kBip39Mnemonic, "TREZOR")) is cx1kBip39Seed
       cx1stAssert "a normalized mnemonic gives the same seed", cxHexEncode(cxMnemonicToSeed(cx1tMnemonic, "")) is cx1kBip39SeedNoPass
@@ -3337,7 +3437,7 @@ command cx1stRunBip39
 end cx1stRunBip39
 
 command cx1stRunBip32
-   local cx1tNode, cx1tDeep, cx1tWatch, cx1tChild
+   local cx1tNode, cx1tDeep, cx1tWatch, cx1tChild, cx1tStep
    cx1stSection "BIP-32 derivation"
    try
       put cxHdFromSeed(cxHexDecode(cx1kBip32Seed1)) into cx1tNode
@@ -3348,6 +3448,19 @@ command cx1stRunBip32
       cx1stAssert "vector 1 m/0' xprv", cxXprv(cx1tChild) is cx1kBip32V1H0Xprv
       cx1stAssert "vector 1 m/0' xpub", cxXpub(cx1tChild) is cx1kBip32V1H0Xpub
       cx1stAssert "h is accepted as a hardened marker", cxXprv(cxHdDerivePath(cx1tNode, "m/0h")) is cx1kBip32V1H0Xprv
+      -- cxHdDeriveChild is the single CKD step cxHdDerivePath is a loop over,
+      -- and it is public API in its own right. Pin it to the SAME published
+      -- vector rather than only to the path walker: a shared defect in the
+      -- step would make the two agree while both were wrong, so the first
+      -- assertion here is against BIP-32's own number and the second is the
+      -- agreement check on top of it.
+      cx1stAssert "cxHdDeriveChild reaches m/0' as one hardened step", cxXprv(cxHdDeriveChild(cx1tNode, 2147483648)) is cx1kBip32V1H0Xprv
+      cx1stAssert "and a normal step agrees with the path walker", cxXprv(cxHdDeriveChild(cx1tChild, 1)) is cxXprv(cxHdDerivePath(cx1tNode, "m/0'/1"))
+      cx1stAssert "index 0 is not treated as hardened", cxXprv(cxHdDeriveChild(cx1tNode, 0)) is cxXprv(cxHdDerivePath(cx1tNode, "m/0"))
+      put cxHdDeriveChild(cx1tChild, 1) into cx1tStep
+      cx1stAssert "each step advances the depth by one", cx1tStep["depth"] is 2
+      cx1stAssert "a child index at or above 2^32 is refused", cx1stThrows2("cxHdDeriveChild", cx1tNode, 4294967296)
+      cx1stAssert "a negative child index is refused", cx1stThrows2("cxHdDeriveChild", cx1tNode, -1)
       put cxHdDerivePath(cx1tNode, cx1kBip32V1DeepPath) into cx1tDeep
       cx1stAssert "vector 1 five levels deep", cxXprv(cx1tDeep) is cx1kBip32V1DeepXprv
       cx1stAssert "and it is at depth 5", cx1tDeep["depth"] is 5
@@ -3879,6 +3992,12 @@ command en1stRun
    en1stAssert "enHostDestroy(0) is a no-op 0", enHostDestroy(0) is 0
    en1stAssert "enConnect on stale host is 0", enConnect(0, "127.0.0.1", 1, 1, 0) is 0
    en1stAssert "enFlush(0) errors", enFlush(0) < 0
+   -- enBroadcast is the server-fanout primitive, so a stale host is the case
+   -- that matters most: a broadcast that quietly "succeeded" against a
+   -- destroyed host is a server believing it told every client something it
+   -- never sent. It takes the same stale-handle path as enSend.
+   en1stAssert "enBroadcast(0) errors", enBroadcast(0, 0, en1stTinyData(), 0) < 0
+   en1stAssert "enBroadcastText(0) errors", enBroadcastText(0, 0, "x", 0) < 0
 
    en1stSection "tuning + abrupt teardown (isolated: nothing listens on 27099)"
    -- These four binds have no place in the graceful loopback below: a second

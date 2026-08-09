@@ -117,6 +117,10 @@ constant kFox = "The quick brown fox jumps over the lazy dog"
 -- curve sections below use it rather than a random-looking test key.
 constant kPubOneCompressed = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 constant kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+-- 2G, for the same reason: it is the curve's own second point, so the two tweak
+-- entry points can be pinned to a published answer rather than only to each
+-- other. 1 + 1 = 2 is the smallest case of the homomorphism BIP-32 rests on.
+constant kPubTwoCompressed = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
 
 -- The RFC 6979 deterministic signature of sha256("Satoshi Nakamoto") under that
 -- same key: the most-republished vector for secp256k1 + SHA-256, and identical
@@ -133,6 +137,11 @@ constant kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab
 -- example address, and the x-only G is the program in BIP-350's. So deriving an
 -- address from the private key 1 lands on a published answer at both witness
 -- versions - no CoinXT-invented expectations anywhere in this section.
+-- SHA-256(SHA-256("abc")). hash256 is the function Base58Check's four-byte tail
+-- IS, so pinning it directly turns "the address round-trips" into "the address
+-- round-trips AND the checksum is the one Bitcoin specifies", which a
+-- self-consistent encoder/decoder pair cannot tell you on its own.
+constant kHash256Abc = "4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358"
 constant kBase58Payload = "00010966776006953D5567439E5E39F86A0D273BEE"
 constant kBase58Address = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM"
 constant kBase58Corrupt = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvN"
@@ -609,7 +618,7 @@ end stRunFailClosed
 -- cxSeckeyIsValid RETURN Boolean where every phase-1 handler returned Data.
 
 command stRunCurveKeys
-   local tSk, tPubC, tPubU
+   local tSk, tPubC, tPubU, tTweaked
    stSection "secp256k1 keys"
    try
       put stSeckeyOne() into tSk
@@ -628,6 +637,24 @@ command stRunCurveKeys
       stAssert "the uncompressed key is 65 bytes", the number of bytes of tPubU is 65
       stAssert "cxPubkeyDecompress rebuilds the uncompressed key", stHex(cxPubkeyDecompress(tPubC)) is stHex(tPubU)
       stAssert "cxPubkeyDecompress of an uncompressed key is a no-op", stHex(cxPubkeyDecompress(tPubU)) is stHex(tPubU)
+      -- The two ABI-4 tweak entry points. BIP-32 non-hardened derivation is
+      -- built on the claim that tweaking the PRIVATE key and tweaking the
+      -- PUBLIC key land on the same point; if they ever disagreed, an xpub
+      -- watch-only wallet would generate addresses the xprv cannot spend, and
+      -- nothing above this line would notice. 1 + 1 = 2 pins both to the
+      -- curve's own second point rather than only to each other.
+      put cxSeckeyTweakAdd(tSk, tSk) into tTweaked
+      stAssert "cxSeckeyTweakAdd of 1 by 1 is the scalar 2", stHex(tTweaked) is stHex(stRepeatByte(0, 31) & numToByte(2))
+      stAssert "and its public key is 2G", stHex(cxPublicKey(tTweaked, true)) is kPubTwoCompressed
+      stAssert "cxPubkeyTweakAdd of G by 1 is also 2G", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is kPubTwoCompressed
+      stAssert "so private and public tweaking agree", stHex(cxPubkeyTweakAdd(tPubC, tSk)) is stHex(cxPublicKey(cxSeckeyTweakAdd(tSk, tSk), true))
+      -- Both refuse a ZERO tweak, where upstream's public entry point accepts
+      -- it. Accepting on one path and refusing on the other is the
+      -- interoperability bug this member exists to prevent, so the symmetry is
+      -- asserted rather than assumed.
+      stAssert "a zero tweak is refused on the private path", stThrows2("cxSeckeyTweakAdd", tSk, stRepeatByte(0, 32))
+      stAssert "a zero tweak is refused on the public path", stThrows2("cxPubkeyTweakAdd", tPubC, stRepeatByte(0, 32))
+      stAssert "a wrong-length tweak is refused", stThrows2("cxSeckeyTweakAdd", tSk, stRepeatByte(1, 31))
    catch tError
       stSectionFailed "secp256k1 keys", tError
    end try
@@ -811,6 +838,12 @@ command stRunBase58
    stSection "Base58Check"
    try
       put cxHexDecode(kBase58Payload) into tPayload
+      -- hash256 first, on its own. It is the checksum function this encoding is
+      -- defined in terms of, and an encoder/decoder pair that agreed with each
+      -- other while both used the wrong hash would pass every round-trip below.
+      stAssert "cxHash256 of abc is the published double-SHA-256", stHex(cxHash256(stText("abc"))) is kHash256Abc
+      stAssert "cxHash256 is 32 bytes", the number of bytes of cxHash256(stText("")) is 32
+      stAssert "and it is genuinely SHA-256 applied twice", stHex(cxHash256(stText("abc"))) is stHex(cxSha256(cxSha256(stText("abc"))))
       stAssert "encodes the worked example", cxBase58CheckEncode(tPayload) is kBase58Address
       stAssert "decodes it back", cxHexEncode(cxBase58CheckDecode(kBase58Address)) is stToLowerText(kBase58Payload)
       -- The checksum is the entire point of the encoding: one flipped character
@@ -1038,6 +1071,17 @@ command stRunBip39
       -- STRING; a pasted trailing newline must not change the wallet.
       put "  " & kBip39Mnemonic & "  " into tMnemonic
       stAssert "surrounding whitespace is normalized away", cxMnemonicValidate(tMnemonic) is true
+      -- cxMnemonicNormalize on its own, because it is public API and because
+      -- every other BIP-39 handler runs it first: if it were wrong, validate
+      -- and to-seed would be wrong together and agree with each other.
+      stAssert "cxMnemonicNormalize strips the padding", cxMnemonicNormalize(tMnemonic) is kBip39Mnemonic
+      stAssert "an already-clean mnemonic is returned unchanged", cxMnemonicNormalize(kBip39Mnemonic) is kBip39Mnemonic
+      stAssert "it is idempotent", cxMnemonicNormalize(cxMnemonicNormalize(tMnemonic)) is kBip39Mnemonic
+      -- Tabs, newlines and runs of spaces are what a pasted backup actually
+      -- contains, and BIP-39 derives the seed from the STRING, so collapsing
+      -- them is the difference between restoring a wallet and missing it.
+      stAssert "tabs and newlines collapse to single spaces", cxMnemonicNormalize("abandon" & tab & "abandon" & return & "  abandon ") is "abandon abandon abandon"
+      stAssert "an empty string normalizes to empty", cxMnemonicNormalize("   ") is ""
       stAssert "the seed with no passphrase", cxHexEncode(cxMnemonicToSeed(kBip39Mnemonic, "")) is kBip39SeedNoPass
       stAssert "the seed with the TREZOR passphrase", cxHexEncode(cxMnemonicToSeed(kBip39Mnemonic, "TREZOR")) is kBip39Seed
       stAssert "a normalized mnemonic gives the same seed", cxHexEncode(cxMnemonicToSeed(tMnemonic, "")) is kBip39SeedNoPass
@@ -1053,7 +1097,7 @@ command stRunBip39
 end stRunBip39
 
 command stRunBip32
-   local tNode, tDeep, tWatch, tChild
+   local tNode, tDeep, tWatch, tChild, tStep
    stSection "BIP-32 derivation"
    try
       put cxHdFromSeed(cxHexDecode(kBip32Seed1)) into tNode
@@ -1064,6 +1108,19 @@ command stRunBip32
       stAssert "vector 1 m/0' xprv", cxXprv(tChild) is kBip32V1H0Xprv
       stAssert "vector 1 m/0' xpub", cxXpub(tChild) is kBip32V1H0Xpub
       stAssert "h is accepted as a hardened marker", cxXprv(cxHdDerivePath(tNode, "m/0h")) is kBip32V1H0Xprv
+      -- cxHdDeriveChild is the single CKD step cxHdDerivePath is a loop over,
+      -- and it is public API in its own right. Pin it to the SAME published
+      -- vector rather than only to the path walker: a shared defect in the
+      -- step would make the two agree while both were wrong, so the first
+      -- assertion here is against BIP-32's own number and the second is the
+      -- agreement check on top of it.
+      stAssert "cxHdDeriveChild reaches m/0' as one hardened step", cxXprv(cxHdDeriveChild(tNode, 2147483648)) is kBip32V1H0Xprv
+      stAssert "and a normal step agrees with the path walker", cxXprv(cxHdDeriveChild(tChild, 1)) is cxXprv(cxHdDerivePath(tNode, "m/0'/1"))
+      stAssert "index 0 is not treated as hardened", cxXprv(cxHdDeriveChild(tNode, 0)) is cxXprv(cxHdDerivePath(tNode, "m/0"))
+      put cxHdDeriveChild(tChild, 1) into tStep
+      stAssert "each step advances the depth by one", tStep["depth"] is 2
+      stAssert "a child index at or above 2^32 is refused", stThrows2("cxHdDeriveChild", tNode, 4294967296)
+      stAssert "a negative child index is refused", stThrows2("cxHdDeriveChild", tNode, -1)
       put cxHdDerivePath(tNode, kBip32V1DeepPath) into tDeep
       stAssert "vector 1 five levels deep", cxXprv(tDeep) is kBip32V1DeepXprv
       stAssert "and it is at depth 5", tDeep["depth"] is 5

@@ -146,7 +146,10 @@ def main(argv):
         print("check-selftest-vectors: no constants parsed - has the harness changed shape?")
         return 1
 
+    checked = set()
+
     def want(name, expected, source):
+        checked.add(name)
         got = k.get(name)
         if got is None:
             problems.append(f"{name} is missing from the harness")
@@ -179,6 +182,10 @@ def main(argv):
     want("kBip39Seed",
          hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 64).hex(),
          "hashlib.pbkdf2")
+
+    want("kHash256Abc",
+         hashlib.sha256(hashlib.sha256(b"abc").digest()).hexdigest(),
+         "hashlib")
 
     # --- Keccak-256: Python has no Keccak, so the KAT table is the reference --
     keccak = load_kat_table("KECCAK256")
@@ -271,6 +278,11 @@ def main(argv):
     if ref is not None:
         g33 = bytes.fromhex(k.get("kPubOneCompressed", ""))
         g65 = bytes.fromhex(k.get("kPubOneUncompressed", ""))
+        # 2G. The harness uses it to prove that tweaking the private key and
+        # tweaking the public key land on the same point, so it has to be the
+        # curve's real second point and not whatever CoinXT happens to emit.
+        want("kPubTwoCompressed", ref.pubkey((2).to_bytes(32, "big")).hex(),
+             "coin_reference")
         payload = bytes.fromhex(k.get("kBase58Payload", ""))
         want("kBase58Address", ref.b58check_encode(payload), "coin_reference")
         want("kP2pkhOfG", ref.p2pkh(g33), "coin_reference")
@@ -302,6 +314,40 @@ def main(argv):
             problems.append("kBech32Valid does not actually decode")
         elif not terse:
             print("  OK  kBech32Valid          is genuinely valid")
+
+        # The fail-open regression pair. kSegwitErrorProgram exists for ONE
+        # reason: its first five bytes spell "ERROR", which is what the old
+        # in-band sentinel mistook for a failure. Edit those bytes to anything
+        # else and the harness still passes - against a program that no longer
+        # reproduces the bug. That is the regression quietly retiring itself,
+        # so the property is asserted rather than left to the literal.
+        checked.add("kSegwitErrorProgram")
+        errprog = bytes.fromhex(k.get("kSegwitErrorProgram", ""))
+        if errprog[:5] != b"ERROR":
+            problems.append("kSegwitErrorProgram no longer begins with the bytes "
+                            "'ERROR', so the in-band-sentinel regression it exists "
+                            "for is no longer being reproduced")
+        elif not terse:
+            print("  OK  kSegwitErrorProgram   still spells ERROR")
+        want("kSegwitErrorAddress", ref.segwit_encode("bc", 1, errprog),
+             "coin_reference")
+
+        # The two EIP-55 negatives must differ from kEip55A only in CASE (so the
+        # bytes are the same address) and must not themselves be correctly
+        # checksummed - otherwise "one corrupted letter is caught" is checking a
+        # different address, not a corrupted one.
+        for name in ("kEip55Corrupt", "kEip55Flipped"):
+            checked.add(name)
+            got = k.get(name, "")
+            if got.lower() != k.get("kEip55A", "").lower():
+                problems.append(f"{name} is not a case-variant of kEip55A, so the "
+                                f"harness is testing a different address rather "
+                                f"than a corrupted checksum")
+            elif got == ref.eip55(got.lower()):
+                problems.append(f"{name} IS correctly checksummed, so the harness "
+                                f"check that it is rejected proves nothing")
+            elif not terse:
+                print(f"  OK  {name:16s} is a genuinely bad checksum")
 
         # ---- phase 4 --------------------------------------------------------
         # Re-derived rather than trusted, for the reason the harness itself
@@ -374,6 +420,47 @@ def main(argv):
     elif not terse:
         print("  OK  SHA3-256 and Keccak-256 constants genuinely differ")
 
+    # --- COMPLETENESS. Everything above is an explicit list, and an explicit
+    # list silently stops covering the file the moment someone adds a constant
+    # to it. That is not hypothetical: kHash256Abc and kPubTwoCompressed were
+    # both added to the harness and both sailed through this gate, which then
+    # printed "66 harness constants re-derived" - a number that was counting the
+    # constants it had PARSED, not the ones it had checked. A gate that
+    # overstates its own coverage is worse than one that has none, because it
+    # answers the question nobody re-asks. So: every k* constant must be either
+    # re-derived above or listed here with the reason it cannot be.
+    inputs = {
+        "kFox": "an input string",
+        "kBip39Salt": "an input to PBKDF2",
+        "kBip39Entropy12": "an input; the mnemonic derived from it is checked",
+        "kBip39Entropy24": "an input; the mnemonic derived from it is checked",
+        "kBip32Seed1": "an input; the nodes derived from it are checked",
+        "kBip32Seed3": "an input; the xprv derived from it is checked",
+        "kBase58Payload": "an input; the address encoded from it is checked",
+        "kBip32V1DeepPath": "a derivation path, i.e. an input",
+        "kAbandonBip44": "a derivation path, i.e. an input",
+        "kAbandonBip84": "a derivation path, i.e. an input",
+        "kAbandonBip84Account": "a derivation path, i.e. an input",
+        "kAbandonEthPath": "a derivation path, i.e. an input",
+        "kBip39Mnemonic12Bad": "a negative vector, checked below as genuinely bad",
+        "kBase58Corrupt": "a negative vector, checked as genuinely corrupt",
+        "kSegwitV0WithBech32m": "a negative vector, checked as genuinely invalid",
+        "kBech32Valid": "a positive vector, checked as genuinely decodable",
+        "kSegwitTestnet": "an input; the program decoded from it is checked",
+    }
+    uncovered = sorted(set(k) - checked - set(inputs))
+    if uncovered:
+        problems.append(
+            "these harness constants are neither re-derived nor listed as inputs, "
+            "so nothing here would notice if one drifted:\n      "
+            + "\n      ".join(uncovered)
+            + "\n      Add a want(...) for each, or add it to `inputs` with the "
+              "reason it cannot be derived.")
+    stale = sorted(set(inputs) - set(k))
+    if stale:
+        problems.append("these names are listed as inputs but no longer exist in "
+                        "the harness: " + ", ".join(stale))
+
     for note in notes:
         print(f"  note: {note}")
 
@@ -383,7 +470,8 @@ def main(argv):
             print(f"  - {problem}")
         return 1
 
-    print(f"check-selftest-vectors: OK ({len(k)} harness constant(s) re-derived)")
+    print(f"check-selftest-vectors: OK ({len(checked)} of {len(k)} harness "
+          f"constant(s) re-derived, {len(inputs)} are inputs)")
     return 0
 
 
