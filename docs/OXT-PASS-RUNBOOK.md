@@ -162,8 +162,12 @@ Install in this order:
 4. **datachannelxt** (`org.openxtalk.library.datachannel`).
 5. **onionxt** (`org.openxtalk.library.onion`). Not a packaged extension: copy
    `onionxt/src/onionxt.livecodescript` and `onionxt/src/onion-httpd.livecodescript`
-   into your app and `start using` them, or build a paste-and-run standalone with
-   `onionxt/tools/build-standalone.py` (see `onionxt/docs/10-usage-guide.md`).
+   into your app and `start using` them, or paste one of the two **already-built**
+   standalones - `onionxt/examples/onion-httpd/standalone.livecodescript` and
+   `onionxt/examples/onionxt-demo-standalone.livecodescript`. Both are committed and
+   gated current, so there is nothing to run here:
+   `onionxt/tools/build-standalone.py` is for whoever EDITS a part, not for the
+   tester (see `onionxt/docs/10-usage-guide.md`).
 6. **coinxt**: see 2.4.
 
 Packaged members install through `Tools > Extension Manager` like any OXT extension;
@@ -371,6 +375,39 @@ uploads a `suite-selftest` artifact containing `tests/suite-selftest.livecodescr
 the coverage report above, and this runbook. The committed file is always the built
 one (the gate set runs `build-suite-selftest.py --check`, which fails on a stale copy),
 so the artifact and the repository can never disagree.
+
+#### You never need Python on the OXT machine
+
+The harness is **generated where Python lives and committed** — on a dev machine or in
+CI, never on the engine box. `tools/build-suite-selftest.py` is a build-time tool for
+whoever edits a member harness; the tester's input is a finished 210 KB
+`.livecodescript`. The same is true of the two onionxt standalones. So the answer to
+"can the generation be automated, or is it a separate step?" is: **it is already
+automated, and it already happens somewhere else.** All three generated files are
+committed, and `--check` in the gate set is what guarantees the committed copy is the
+one the sources produce.
+
+Three ways to get it onto the engine, cheapest last:
+
+1. `git pull` — the file is right there in `tests/`.
+2. Download the `suite-selftest` CI artifact (needs a GitHub login).
+3. **Let OXT fetch it itself.** The repository is public, so the raw URL needs no
+   auth and no tooling at all. In the message box:
+
+   ```
+   set the script of stack "SuiteSelfTest" to \
+      URL "https://raw.githubusercontent.com/SethMorrowSoftware/xtalk-suite/main/tests/suite-selftest.livecodescript"
+   ```
+
+   then close and reopen that stack per 3.1. Verified from outside the engine: that URL
+   returns HTTP 200, `text/plain`, and bytes **identical** to the committed file.
+
+   Two honest caveats on option 3. Whether `put URL "https://..."` works is an
+   **engine** question this repo cannot settle headlessly — it is the standard libURL
+   idiom and the IDE loads libURL, but GitHub requires TLS 1.2+, so an older SSL build
+   fails here rather than anywhere interesting. If it does, fall back to 1 or 2; that is
+   a fetch problem, not a harness problem. And `main` moves: pin the commit sha in place
+   of `main` in that URL if you need the exact file a previous run used.
 
 **Step 1 - the per-member selftests, in this order.**
 
