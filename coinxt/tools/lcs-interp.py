@@ -314,6 +314,10 @@ class Interp:
             tgt = m.group(1).strip()
             self.assign(tgt, _n(self.eval_expr(tgt, env)) * _n(self.eval_expr(m.group(2), env)), env)
             return i + 1
+        m = re.match(r'set\s+the\s+itemDelimiter\s+to\s+(.+)$', line, re.I)
+        if m:
+            ITEM_DELIMITER[0] = str(_disp(self.eval_expr(m.group(1), env)))
+            return i + 1
         m = re.match(r'get\s+(.+)$', line, re.I)
         if m:
             # `get EXPR` evaluates EXPR and puts the value in `it`. The script
@@ -521,6 +525,8 @@ class _Expr:
             return float(txt) if "." in txt else int(txt)
         # `the number of X of Y`
         if self.kw("the"):
+            if self.kw("itemdelimiter"):
+                return ITEM_DELIMITER[0]
             if self.kw("number"):
                 assert self.kw("of")
                 unit = self.kw("bytes", "chars", "characters", "items", "lines")
@@ -532,7 +538,7 @@ class _Expr:
                 if unit in ("bytes", "chars", "characters"):
                     return len(s)
                 if unit == "items":
-                    return 0 if s == "" else len(s.split(","))
+                    return 0 if s == "" else len(s.split(ITEM_DELIMITER[0]))
                 return 0 if s == "" else len(s.split("\n"))
             raise SyntaxError(f"unsupported `the` expression in {self.s!r}")
         # chunk expressions: byte/char/item N [to M] of EXPR
@@ -624,10 +630,11 @@ def _eq(a, b):
 def _chunk(unit, a, b, target):
     s = str(_disp(target))
     if unit.startswith("item"):
-        parts = s.split(",") if s != "" else []
+        d = ITEM_DELIMITER[0]
+        parts = s.split(d) if s != "" else []
         if b is None:
             return parts[a - 1] if 1 <= a <= len(parts) else ""
-        return ",".join(parts[a - 1:b])
+        return d.join(parts[a - 1:b])
     if b is None:
         return s[a - 1] if 1 <= a <= len(s) else ""
     if a < 1:
@@ -636,6 +643,30 @@ def _chunk(unit, a, b, target):
 
 
 HASHES = {}
+
+# ---------------------------------------------------------------------------
+# `the itemDelimiter`, modelled rather than hardcoded.
+#
+# This used to be a hidden assumption: item chunks split on "," unconditionally,
+# so a script's dependence on the engine default was INVISIBLE here. An
+# adversarial review flagged exactly that, and it matters because the property is
+# GLOBAL MUTABLE STATE in this engine family (templates/CLAUDE.md rule 5) - an
+# app may set it and not restore it, and any script that reads `item` afterwards
+# then silently parses something else.
+#
+# Modelling it lets a gate run the published vectors under a HOSTILE delimiter
+# and see what the engine would really do. Without this, no fix for that exposure
+# could be verified headlessly, only asserted.
+# ---------------------------------------------------------------------------
+ITEM_DELIMITER = [","]
+
+
+def set_item_delimiter(ch):
+    """Set the modelled delimiter. Returns the previous value, so a caller can
+    restore it the way the family's own rule requires."""
+    was = ITEM_DELIMITER[0]
+    ITEM_DELIMITER[0] = ch
+    return was
 
 
 def _builtin_or_handler(ip, name, args):

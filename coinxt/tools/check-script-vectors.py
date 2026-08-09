@@ -634,6 +634,54 @@ def check_vectors(c, ip):
     c.ck("rejects a seed shorter than 16 bytes", throws("cxHdFromSeed", bytes(15)), True)
     c.ck("rejects a seed longer than 64 bytes", throws("cxHdFromSeed", bytes(65)), True)
 
+    # ---- the itemDelimiter guard ------------------------------------------
+    # `item` reads the engine's CURRENT delimiter, and that is GLOBAL MUTABLE
+    # STATE (templates/CLAUDE.md rule 5), so an app that set it and did not
+    # restore it would get silently wrong answers here. Measured before the
+    # guards went in: a hostile delimiter made cxBtcAddressP2WPKH fail outright
+    # and cxMnemonicValidate answer FALSE to a perfectly good twelve-word
+    # backup. Every guarded handler must now be indifferent to it, AND must hand
+    # the caller's setting back untouched - including when it throws.
+    c.note("\nindifference to a hostile itemDelimiter")
+    hostile = "\t"
+    guarded = [
+        ("cxBech32EncodeValues", ("bc", "0,1,2", "bech32")),
+        ("cxSegwitAddressEncode", ("bc", 0, bytes(20))),
+        ("cxBtcAddressP2WPKH", (G33,)),
+        ("cxBtcAddressP2TR", (G65[1:33],)),
+        ("cxBtcAddressP2PKH", (G33,)),
+        ("cxMnemonicToEntropy", (twelve,)),
+        ("cxMnemonicValidate", (twelve,)),
+    ]
+    for name, args in guarded:
+        want = call(name, *args)
+        LCS.ITEM_DELIMITER[0] = hostile
+        try:
+            got = call(name, *args)
+        finally:
+            LCS.ITEM_DELIMITER[0] = ","
+        c.ck(f"{name} is indifferent to the delimiter", got, want)
+    # The decoders take their own shapes; check one of each, and the restore.
+    addr = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+    want_v = int(LCS._n(ip.call("cxSegwitAddressDecode", ["bc", addr])["version"]))
+    LCS.ITEM_DELIMITER[0] = hostile
+    try:
+        got_v = int(LCS._n(ip.call("cxSegwitAddressDecode", ["bc", addr])["version"]))
+        left_ok = LCS.ITEM_DELIMITER[0] == hostile
+        # ... and that a THROW does not leak a changed delimiter either.
+        try:
+            ip.call("cxSegwitAddressDecode", ["bc", addr[:-1] + "5"])
+            threw = False
+        except LCS.Thrown:
+            threw = True
+        left_after_throw = LCS.ITEM_DELIMITER[0] == hostile
+    finally:
+        LCS.ITEM_DELIMITER[0] = ","
+    c.ck("cxSegwitAddressDecode is indifferent to the delimiter", got_v, want_v)
+    c.ck("  and hands the caller's delimiter back", left_ok, True)
+    c.ck("  a corrupt address still throws", threw, True)
+    c.ck("  and the throw path restores it too", left_after_throw, True)
+
     c.note("\nBIP-44 end to end (mnemonic -> seed -> path -> address)")
     seed = call("cxMnemonicToSeed", twelve, "")
     for path, kind, want in BIP44_ADDRESSES:

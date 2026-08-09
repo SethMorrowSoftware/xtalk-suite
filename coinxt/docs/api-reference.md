@@ -435,17 +435,18 @@ Under the hood these are the one genuinely novel thing in the binding: they mars
 `size_t` as a foreign `UIntSize` **return** type, which this extension family had previously
 proven only as a parameter. The 2026-08-08 engine pass confirmed it works.
 
-## One caller requirement, stated plainly
+## A note on `the itemDelimiter`
 
-**The script layer assumes `the itemDelimiter` is its default comma.** Twenty-one
-chunk expressions in `src/coinxt.livecodescript` move data as comma-separated
-lists, and they read whatever the engine's current delimiter is. If your app
-sets it to something else, restore it before calling any `cx*` handler that
-lives in the script layer (everything in the phase 3 and phase 4 sections
-above). You will not get an error otherwise - you will get a wrong answer, which
-on this surface means a wrong address. This is a known limitation with a known
-fix; see discipline 4 in the file's own header for why the fix is waiting on an
-engine question rather than already applied.
+The script layer moves data as comma-separated lists internally, and an `item`
+chunk reads whatever the engine's delimiter currently is. That property is
+global mutable state, so an app that sets it and does not restore it would once
+have got silently wrong answers here.
+
+**You no longer have to think about this.** The nine handlers that read item
+chunks save the delimiter, set it to comma for the duration, and hand your
+setting back before returning - including when they throw. Call them with the
+delimiter set to anything you like; they are indifferent to it and they will not
+change it on you. The vector gate checks both halves of that on every push.
 
 ## Errors
 

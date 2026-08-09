@@ -543,17 +543,18 @@ single paste now carries the entire public surface instead of 16 handlers:
 > BIP-39 mnemonics and BIP-32 derivation — against the same published vectors
 > `tools/coin-kat.py` and `tools/check-script-vectors.py` pin.
 
-**One question to answer while you are in there, worth more than any single
-assertion:** is **`the itemDelimiter` a LOCAL property in OXT** - set inside a
-handler, restored when that handler exits? coinxt's script layer moves data as
-comma-separated lists in twenty-one places and currently ASSUMES the engine
-default, so an app that changed the delimiter would get a silently wrong address
-rather than an error. The fix is one line at the top of each public handler, but
-it is only safe if the property is local; applying it blind would mutate caller
-state instead. Try it: `set the itemDelimiter to tab`, then call
-`cxBtcAddressP2WPKH` on a known key, and see whether it still returns
-`bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4`. Record the answer in
-`coinxt/CLAUDE.md`.
+**A question this runbook used to ask here has been WITHDRAWN, and why is worth
+one paragraph.** It asked you to determine whether `the itemDelimiter` is a
+local property in OXT, because coinxt's script layer depends on the default in
+26 places. That was a waste of an engine slot: the family's own portable lesson
+book — `coinxt/templates/CLAUDE.md` rule 5, carried into that member verbatim —
+already records that `itemDelimiter` and `lineDelimiter` are **global mutable
+state**, to be set immediately before a parse and restored afterward. OnionXT
+has been doing exactly that at six sites for as long as it has existed. Do not
+spend engine time on it; the remedy is known (save, set, use, restore) and the
+work is ordinary editing. **Before adding a question to this runbook, grep the
+carried lesson books — an engine session is the most expensive way to learn
+something already written down.**
 
 **Read the phase-4 sections first if anything fails.** BIP-39 and BIP-32 are the
 only part of coinxt where a wrong answer still looks like a right one: a
