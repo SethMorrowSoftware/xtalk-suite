@@ -130,7 +130,23 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    hold it: a command that must both signal success/failure and yield a handle returns the handle through
    `the result` on success and an error STRING on failure (so callers test `the result is an integer`);
    a pure query is a function that returns its value. Do not mix.
-9. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
+9. **A ZERO-ARGUMENT call in STATEMENT position must be written BARE.** `dcCleanup` yes,
+   `dcCleanup()` no. A statement that starts with an identifier is parsed as a COMMAND and what
+   follows is its argument list, so the parenthesised spelling hands the command the expression
+   `()` - and `()` is not an expression. It is a compile error, and since a whole
+   `.livecodescript` compiles as one unit it takes the ENTIRE FILE with it (see 9 in section 3),
+   usually reported at some unrelated line. Three traps around it, all of them real:
+   - **One argument is FINE.** `dcFreePeer(sPeerA)` compiles, because `(sPeerA)` IS an
+     expression. So the broken line looks identical in shape to the working line beside it -
+     one shipped example had `dcStopPolling` and `dcCleanup()` on CONSECUTIVE lines.
+   - **In EXPRESSION position the parens are REQUIRED.** `if dcCleanup() is 0 then` is correct.
+     Same characters, opposite verdict, decided entirely by what is to the left.
+   - **LiveCode BUILDER allows it.** `sPrepare()` as a bare statement is valid `.lcb` and appears
+     ~90 times across two engine-verified modules in this family. `.lcb` and `.livecodescript`
+     are different languages; do not carry the idiom across.
+   Cost an OXT session in 2026-08-09. Every member's `check-livecodescript.py` now refuses it,
+   `.livecodescript` only.
+10. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
    name sockets by their `host:port` string (with a numeric or `|`-suffix for multiples). Store the EXACT
    id the engine hands you and use it verbatim in `read` / `write` / `close`; never reconstruct it.
 

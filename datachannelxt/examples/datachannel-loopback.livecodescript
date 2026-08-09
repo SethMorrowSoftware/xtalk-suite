@@ -34,7 +34,10 @@ end openStack
 
 on closeStack
    dcStopPolling
-   dcCleanup()
+   -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position
+   -- parses as a command whose argument is `()`, and `()` is not an
+   -- expression. dcStopPolling on the line above is the same idiom.
+   dcCleanup
 end closeStack
 
 -- ---------------------------------------------------------------- the UI --

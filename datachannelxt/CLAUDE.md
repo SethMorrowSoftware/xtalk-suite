@@ -268,6 +268,47 @@ the direct channel. Its load-bearing decisions:
    first and no-oping by phase. Arming chains per user action (Host/Join/
    Reconnect) stacks duplicates that double every poll and republish.
 
+## The engine finding that cost an OXT session (2026-08-09)
+
+**`dcCleanup()` does not compile.** Pasted into a real engine, the suite self-test
+died on that line, and because a `.livecodescript` compiles as ONE unit it took
+the whole file with it.
+
+The rule: **a zero-argument call in STATEMENT position must be written BARE.** A
+statement that starts with an identifier is parsed as a COMMAND, and what follows
+is its argument - so `dcCleanup()` hands the command the expression `()`, and
+`()` is not an expression.
+
+Three things made this survive review for as long as it did, and they are the
+reusable part:
+
+1. **The one-argument spelling is FINE.** `dcFreePeer(sPeerA)` works, because
+   `(sPeerA)` genuinely is an expression. So the broken line looks exactly like
+   the working line next to it. `datachannel-loopback.livecodescript` had
+   `dcStopPolling` (correct, bare) and `dcCleanup()` (broken) on CONSECUTIVE
+   LINES.
+2. **In EXPRESSION position the parens are required.** `dcCleanup() is 0` in an
+   assertion is correct. Same eight characters, opposite verdicts, decided
+   entirely by what is to the left of them.
+3. **LiveCode BUILDER allows it.** `sPrepare()` as a statement appears ~90 times
+   across `sodium.lcb` and `coinxt.lcb` on paths that have run green on an
+   engine. So "we do this everywhere" was true and irrelevant: `.lcb` and
+   `.livecodescript` are different languages.
+
+This member was the only one with the bug, at four sites (`datachannel-loopback`
+37, `datachannel-dht-chat` 310 and 365, `datachannel-selftest` 380) - and
+enetxt's harness header had already written the lesson down ("zero-argument
+calls BARE in statement position"). All six copies of
+`check-livecodescript.py` now refuse it, `.livecodescript` only, and each copy
+was tested against the bug, against all three working forms, and against a
+`.lcb`.
+
+**The meta-lesson, which is worse than the bug.** The suite harness carried a
+comment asserting that both spellings were fine, reasoning that datachannelxt
+shipped the parenthesised form so it must work. Shipped is not run: this
+member's own harness had never been run on an engine, so the "attestation" was
+circular. Do not promote an unexecuted line to evidence, in either direction.
+
 ## Git / workflow
 
 - Develop on the per-task branch; commit there; draft PR if none exists.
