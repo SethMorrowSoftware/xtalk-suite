@@ -175,6 +175,46 @@ def main(argv):
             problems.append(f"{bad} should be a no-op stub (the core owns the UI) "
                             f"but has a body")
 
+    # ---- 10. EVERY declaration is above EVERY handler -----------------------
+    # OXT resolves a script-level name by LEXICAL POSITION, so a `local` below a
+    # handler is not in scope for it - and LiveCodeScript does not error on an
+    # unresolved name, it evaluates it to the literal text of its own name. So
+    # the failure is silent until something does arithmetic on it.
+    #
+    # Check 2 above already proves every name a folded harness uses is DECLARED.
+    # That is not the same as declared IN SCOPE, and the difference cost an
+    # engine run: each member's declarations were emitted inside that member's
+    # own section, which is where they sit in the member's own file and looks
+    # right - but the fold puts coinxt's section ~1000 lines BELOW the core's
+    # stRunMemberHarnesses, which reads cx1sPassed to merge the totals. The
+    # engine read the string "cx1sPassed" and died on
+    # `add "cx1sPassed" to sPassed` with "add: error in source expression".
+    #
+    # The generator now hoists every folded declaration above the first handler.
+    # This is the invariant that makes that stay true, and it is deliberately
+    # blunt: position, not reachability. Anything subtler would need to know
+    # which handler reads what, which is how the first version got it wrong.
+    first_handler = None
+    for i, line in enumerate(src.split("\n"), start=1):
+        if re.match(r'^(?:private\s+)?(?:command|function|on)\s+\w+', line):
+            first_handler = i
+            break
+    if first_handler is None:
+        problems.append("no handlers found at all - the generated file is not "
+                        "what this checker thinks it is")
+    else:
+        late = [(i, line.strip())
+                for i, line in enumerate(src.split("\n"), start=1)
+                if i > first_handler and re.match(r'^(?:local|constant)\s', line)]
+        if late:
+            problems.append(
+                f"{len(late)} script-level declaration(s) appear BELOW the first "
+                f"handler (line {first_handler}), so any handler above them reads "
+                f"an undeclared name - which LiveCodeScript silently evaluates to "
+                f"the literal text of that name:\n      "
+                + "\n      ".join(f"line {i}: {t}" for i, t in late[:6])
+                + ("\n      ..." if len(late) > 6 else ""))
+
     if problems:
         print("check-suite-selftest: FAILED")
         for p in problems:

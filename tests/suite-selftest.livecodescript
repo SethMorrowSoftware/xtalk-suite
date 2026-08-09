@@ -170,6 +170,142 @@ local sDcBigSize, sDcBigWant
 
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
+-- Every FOLDED member's script locals and constants are hoisted to here, above
+-- the first handler, by tools/build-suite-selftest.py.
+--
+-- They cannot live down in each member's own section, which is where they
+-- started and where they look like they belong. OXT resolves a script-level
+-- name BY LEXICAL POSITION, so a declaration below a handler is not in scope
+-- for it - and stRunMemberHarnesses, up here in the core, reads every member's
+-- counters (cx1sPassed and friends) to merge them. With the declarations left
+-- in place the read was ~1000 lines ABOVE them, so `cx1sPassed` was an
+-- undeclared name, LiveCodeScript evaluated it to the literal text
+-- "cx1sPassed", and `add "cx1sPassed" to sPassed` killed the whole run with
+-- "add: error in source expression" on a real engine.
+--
+-- Nothing about the member harnesses was wrong: each one declares its locals
+-- above its own handlers, which is the house pattern in all six. Only the FOLD
+-- broke the invariant, by putting one file's declarations after another file's
+-- readers. check-suite-selftest.py now fails if any declaration lands below the
+-- first handler.
+-- ---- SodiumXT: the full sx* self-test ----
+local sx1sLog
+local sx1sPass
+local sx1sFail
+
+-- ---- OnionXT: the full ox* self-test ----
+constant ox1kTestAddrTorProject = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
+constant ox1kTestAddrDuckDuckGo = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion"
+local ox1sLog
+local ox1sPass
+local ox1sFail
+
+-- ---- CoinXT: the full cx* self-test ----
+constant cx1kKeccakEmpty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+constant cx1kKeccakAbc = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
+constant cx1kSha3Empty = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
+constant cx1kSha3Abc = "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
+constant cx1kSha3Fox = "69070dda01975c8c120c3aada1b282394e7f032fa9cf32f4cb2259a0897dfc04"
+constant cx1kSha256Empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+constant cx1kSha256Abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+constant cx1kSha512Empty = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+constant cx1kSha512Abc = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+constant cx1kRipeEmpty = "9c1185a5c5e9fc54612808977ee8f548b2258d31"
+constant cx1kRipeA = "0bdc9d2d256b3ee9daae347be6f4dc835a467ffe"
+constant cx1kRipeAbc = "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
+constant cx1kRipeMsgDigest = "5d0689ef49d2fae572b881b123a85ffa21595f36"
+constant cx1kHmac1Sha256 = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+constant cx1kHmac1Sha512 = "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+constant cx1kHmac2Sha256 = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+constant cx1kHmac2Sha512 = "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
+constant cx1kBip39Mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+constant cx1kBip39Salt = "mnemonicTREZOR"
+constant cx1kBip39Seed = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+constant cx1kFox = "The quick brown fox jumps over the lazy dog"
+constant cx1kPubOneCompressed = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+constant cx1kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+constant cx1kPubTwoCompressed = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+constant cx1kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
+constant cx1kHash256Abc = "4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358"
+constant cx1kBase58Payload = "00010966776006953D5567439E5E39F86A0D273BEE"
+constant cx1kBase58Address = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM"
+constant cx1kBase58Corrupt = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvN"
+constant cx1kP2wpkhOfG = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+constant cx1kP2trOfG = "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
+constant cx1kP2pkhOfG = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"
+constant cx1kEthOfG = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+constant cx1kEip55A = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+constant cx1kEip55B = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+constant cx1kBech32Valid = "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
+constant cx1kSegwitTestnet = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
+constant cx1kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"
+constant cx1kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
+constant cx1kEip55Corrupt = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"
+constant cx1kEip55Flipped = "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd"
+constant cx1kSegwitErrorProgram = "4552524f52000102030405060708090a0b0c0d0e0f101112131415161718191a"
+constant cx1kSegwitErrorAddress = "bc1pg4f9yn6jqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydqqwyhrw"
+constant cx1kBip39Entropy12 = "00000000000000000000000000000000"
+constant cx1kBip39Entropy24 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+constant cx1kBip39Mnemonic24 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote"
+constant cx1kBip39SeedNoPass = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+constant cx1kBip39Mnemonic12Bad = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+constant cx1kBip32Seed1 = "000102030405060708090a0b0c0d0e0f"
+constant cx1kBip32V1Xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+constant cx1kBip32V1Xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
+constant cx1kBip32V1H0Xprv = "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"
+constant cx1kBip32V1H0Xpub = "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw"
+constant cx1kBip32V1DeepPath = "m/0'/1/2'/2/1000000000"
+constant cx1kBip32V1DeepXprv = "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76"
+constant cx1kBip32Seed3 = "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
+constant cx1kBip32V3Xprv = "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6"
+constant cx1kAbandonXprv = "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu"
+constant cx1kAbandonBip44 = "m/44'/0'/0'/0/0"
+constant cx1kAbandonP2pkh = "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"
+constant cx1kAbandonBip84 = "m/84'/0'/0'/0/0"
+constant cx1kAbandonP2wpkh = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
+constant cx1kAbandonBip84Account = "m/84'/0'/0'"
+constant cx1kAbandonBip84Xpub = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V"
+constant cx1kAbandonEthPath = "m/44'/60'/0'/0/0"
+constant cx1kAbandonEth = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+local cx1sTotal, cx1sPassed, cx1sFailed
+local cx1sResultText       -- the accumulated PASS/FAIL/section lines
+local cx1sDone             -- "true" once the run has finished (drives the colour)
+
+-- ---- TorrentXT: the full bt* self-test ----
+local bt1sSession          -- the live session handle (0 = none)
+local bt1sTorrent          -- a torrent we create + seed, for torrent-scoped checks
+local bt1sTorrent2         -- a second torrent from the extended-add check
+local bt1sTotal, bt1sPassed, bt1sFailed
+local bt1sResultText       -- the accumulated PASS/FAIL/section lines
+local bt1sTempDir          -- parent dir we seed from
+local bt1sContentDir       -- the content folder inside it
+
+-- ---- ENetXT: the synchronous half of the en* self-test ----
+local en1sTotal, en1sPassed, en1sFailed
+local en1sResultText       -- the accumulated PASS/FAIL/section lines
+local en1sServer, en1sClient  -- the two loopback hosts
+local en1sClientPeer       -- client side: handle from enConnect
+local en1sServerPeer       -- server side: handle born in its enetConnect event
+local en1sGotEcho          -- "true" once the client received the echo
+local en1sGotUnseq         -- "true" once the client received the channel-1 line
+local en1sGotBinary        -- the binary payload the server received (a Data)
+local en1sSentBinary       -- what the client sent (kept for byte-exact compare)
+local en1sSawServerDisc    -- "true" once the server drained enetDisconnect
+local en1sDeadline         -- the async phase's drop-dead time (ms clock)
+local en1sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
+
+-- ---- DataChannelXT: the synchronous half of the dc* self-test ----
+local dc1sTotal, dc1sPassed, dc1sFailed
+local dc1sResultText       -- the accumulated PASS/FAIL/section lines
+local dc1sPeerA, dc1sPeerB    -- the loopback peers
+local dc1sChanA, dc1sChanB    -- A's channel; B's (learned from dcChannelIncoming)
+local dc1sAOpen, dc1sBOpen    -- "true" once each side's channel open arrived
+local dc1sGotText          -- the text B received
+local dc1sGotBytes         -- the binary payload A received back (a Data)
+local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact compare)
+local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
+local dc1sPhase            -- "", "opening", "messaging", "done"
+
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
    stBuild
@@ -1713,12 +1849,52 @@ end stMergeReturned
 -- THIS script, since the whole thing compiles as one unit.
 command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
    stSection pMember & ": its own full self-test"
-   add pPassed to sPassed
-   add pFailed to sFailed
-   add pTotal to sTotal
-   stAssert pMember & " deep self-test had zero failures", pFailed is 0
-   stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
-         "checks, folded into the totals above"
+   -- VALIDATE BEFORE ADDING, and the reason is an engine failure this cost.
+   -- These three lines used to be a bare `add pPassed to sPassed`, on the
+   -- reasoning that the counters are script locals of THIS file that the
+   -- member's own stRun sets to 0 on its first line, so they cannot be
+   -- anything but numbers. When one of them was not, LiveCode threw
+   --     add: error in source expression
+   -- and, because that is an uncaught engine error rather than a failed
+   -- assertion, it killed the WHOLE RUN: no summary, no totals, no report from
+   -- the members after it, and - the part that actually costs an engine
+   -- session - NO INDICATION OF WHICH MEMBER IT WAS. Six harnesses had run and
+   -- the operator was left with one line naming a handler.
+   --
+   -- stMergeReturned, ten lines up, has validated its counts since the day it
+   -- was written, because THOSE come from parsing a report and a parse can
+   -- obviously fail. This path skipped the check because its values come from
+   -- script locals, which felt safer. Feeling safer is not the same as being
+   -- checked, and the two paths merge into the same totals: they should be
+   -- equally suspicious of what they are handed.
+   --
+   -- A non-numeric counter is now a reported FAILURE that names the member and
+   -- prints what it actually got, and the run CONTINUES to the members after
+   -- it. `empty` is the diagnostic case worth knowing: it means that member's
+   -- stRun did not reach its own counter init, so look for a throw at the very
+   -- top of it rather than anywhere in the checks.
+   -- Built as a value rather than a continued condition on purpose: this file
+   -- is read by all six members' copies of check-livecodescript.py, and three
+   -- of them do not join line continuations before counting block openers, so
+   -- an `if ... \` reads to them as a handler-level statement and every `end if`
+   -- after it looks unbalanced. Keeping the opener on one physical line costs
+   -- nothing and keeps the file parsable by the strictest reader of it.
+   put (pPassed is a number and pFailed is a number and pTotal is a number) into tOk
+   if tOk is false then
+      stAssert pMember & " deep self-test reported numeric counters", false
+      stNote "Got passed=[" & pPassed & "] failed=[" & pFailed & \
+            "] total=[" & pTotal & "]"
+      stNote "An EMPTY counter means that member's stRun threw before its own"
+      stNote "first line (it sets all three to 0 there), so suspect the top of"
+      stNote "its stRun, not its checks. Its report is below verbatim; count by eye."
+   else
+      add pPassed to sPassed
+      add pFailed to sFailed
+      add pTotal to sTotal
+      stAssert pMember & " deep self-test had zero failures", pFailed is 0
+      stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
+            "checks, folded into the totals above"
+   end if
    stNote "---- " & pMember & " report ----"
    put pReport & return after sResultText
 end stMergeCounted
@@ -1751,10 +1927,6 @@ end stMergeCounted
 -- prefixed `sx1` so this harness cannot collide with, or be
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
-
-local sx1sLog
-local sx1sPass
-local sx1sFail
 
 function sx1sxSelfTest
    put "SodiumXT self-test" & return into sx1sLog
@@ -2337,12 +2509,6 @@ end sx1testDiagnostics
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-constant ox1kTestAddrTorProject = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
-constant ox1kTestAddrDuckDuckGo = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion"
-local ox1sLog
-local ox1sPass
-local ox1sFail
-
 function ox1oxSelfTest
    put empty into ox1sLog
    put 0 into ox1sPass
@@ -2653,76 +2819,6 @@ end ox1testZeroSeed
 -- prefixed `cx1` so this harness cannot collide with, or be
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
-
-constant cx1kKeccakEmpty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
-constant cx1kKeccakAbc = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
-constant cx1kSha3Empty = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
-constant cx1kSha3Abc = "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
-constant cx1kSha3Fox = "69070dda01975c8c120c3aada1b282394e7f032fa9cf32f4cb2259a0897dfc04"
-constant cx1kSha256Empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-constant cx1kSha256Abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-constant cx1kSha512Empty = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
-constant cx1kSha512Abc = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
-constant cx1kRipeEmpty = "9c1185a5c5e9fc54612808977ee8f548b2258d31"
-constant cx1kRipeA = "0bdc9d2d256b3ee9daae347be6f4dc835a467ffe"
-constant cx1kRipeAbc = "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
-constant cx1kRipeMsgDigest = "5d0689ef49d2fae572b881b123a85ffa21595f36"
-constant cx1kHmac1Sha256 = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
-constant cx1kHmac1Sha512 = "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
-constant cx1kHmac2Sha256 = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
-constant cx1kHmac2Sha512 = "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
-constant cx1kBip39Mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-constant cx1kBip39Salt = "mnemonicTREZOR"
-constant cx1kBip39Seed = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
-constant cx1kFox = "The quick brown fox jumps over the lazy dog"
-constant cx1kPubOneCompressed = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-constant cx1kPubOneUncompressed = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
-constant cx1kPubTwoCompressed = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
-constant cx1kSigSatoshi = "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
-constant cx1kHash256Abc = "4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358"
-constant cx1kBase58Payload = "00010966776006953D5567439E5E39F86A0D273BEE"
-constant cx1kBase58Address = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM"
-constant cx1kBase58Corrupt = "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvN"
-constant cx1kP2wpkhOfG = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
-constant cx1kP2trOfG = "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
-constant cx1kP2pkhOfG = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"
-constant cx1kEthOfG = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
-constant cx1kEip55A = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
-constant cx1kEip55B = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
-constant cx1kBech32Valid = "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
-constant cx1kSegwitTestnet = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
-constant cx1kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"
-constant cx1kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
-constant cx1kEip55Corrupt = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"
-constant cx1kEip55Flipped = "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd"
-constant cx1kSegwitErrorProgram = "4552524f52000102030405060708090a0b0c0d0e0f101112131415161718191a"
-constant cx1kSegwitErrorAddress = "bc1pg4f9yn6jqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydqqwyhrw"
-constant cx1kBip39Entropy12 = "00000000000000000000000000000000"
-constant cx1kBip39Entropy24 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-constant cx1kBip39Mnemonic24 = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote"
-constant cx1kBip39SeedNoPass = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
-constant cx1kBip39Mnemonic12Bad = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
-constant cx1kBip32Seed1 = "000102030405060708090a0b0c0d0e0f"
-constant cx1kBip32V1Xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
-constant cx1kBip32V1Xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
-constant cx1kBip32V1H0Xprv = "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"
-constant cx1kBip32V1H0Xpub = "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw"
-constant cx1kBip32V1DeepPath = "m/0'/1/2'/2/1000000000"
-constant cx1kBip32V1DeepXprv = "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76"
-constant cx1kBip32Seed3 = "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
-constant cx1kBip32V3Xprv = "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6"
-constant cx1kAbandonXprv = "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu"
-constant cx1kAbandonBip44 = "m/44'/0'/0'/0/0"
-constant cx1kAbandonP2pkh = "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"
-constant cx1kAbandonBip84 = "m/84'/0'/0'/0/0"
-constant cx1kAbandonP2wpkh = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
-constant cx1kAbandonBip84Account = "m/84'/0'/0'"
-constant cx1kAbandonBip84Xpub = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V"
-constant cx1kAbandonEthPath = "m/44'/60'/0'/0/0"
-constant cx1kAbandonEth = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
-local cx1sTotal, cx1sPassed, cx1sFailed
-local cx1sResultText       -- the accumulated PASS/FAIL/section lines
-local cx1sDone             -- "true" once the run has finished (drives the colour)
 
 command cx1stAssert pName, pPass
    add 1 to cx1sTotal
@@ -3571,14 +3667,6 @@ end cx1stRunFailOpen
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-local bt1sSession          -- the live session handle (0 = none)
-local bt1sTorrent          -- a torrent we create + seed, for torrent-scoped checks
-local bt1sTorrent2         -- a second torrent from the extended-add check
-local bt1sTotal, bt1sPassed, bt1sFailed
-local bt1sResultText       -- the accumulated PASS/FAIL/section lines
-local bt1sTempDir          -- parent dir we seed from
-local bt1sContentDir       -- the content folder inside it
-
 command bt1stAssert pName, pPass
    add 1 to bt1sTotal
    if pPass then
@@ -3943,19 +4031,6 @@ end bt1stCleanup
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-local en1sTotal, en1sPassed, en1sFailed
-local en1sResultText       -- the accumulated PASS/FAIL/section lines
-local en1sServer, en1sClient  -- the two loopback hosts
-local en1sClientPeer       -- client side: handle from enConnect
-local en1sServerPeer       -- server side: handle born in its enetConnect event
-local en1sGotEcho          -- "true" once the client received the echo
-local en1sGotUnseq         -- "true" once the client received the channel-1 line
-local en1sGotBinary        -- the binary payload the server received (a Data)
-local en1sSentBinary       -- what the client sent (kept for byte-exact compare)
-local en1sSawServerDisc    -- "true" once the server drained enetDisconnect
-local en1sDeadline         -- the async phase's drop-dead time (ms clock)
-local en1sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
-
 command en1stAssert pName, pPass
    add 1 to en1sTotal
    if pPass then
@@ -4221,17 +4296,6 @@ end en1stRepeatByte
 -- prefixed `dc1` so this harness cannot collide with, or be
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
-
-local dc1sTotal, dc1sPassed, dc1sFailed
-local dc1sResultText       -- the accumulated PASS/FAIL/section lines
-local dc1sPeerA, dc1sPeerB    -- the loopback peers
-local dc1sChanA, dc1sChanB    -- A's channel; B's (learned from dcChannelIncoming)
-local dc1sAOpen, dc1sBOpen    -- "true" once each side's channel open arrived
-local dc1sGotText          -- the text B received
-local dc1sGotBytes         -- the binary payload A received back (a Data)
-local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact compare)
-local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
-local dc1sPhase            -- "", "opening", "messaging", "done"
 
 command dc1stAssert pName, pPass
    add 1 to dc1sTotal

@@ -11,6 +11,22 @@ BUILT from the member harnesses, and `--check` (in the gate set) fails if the
 committed file is not what the sources currently produce. Same pattern, and the
 same reason, as onionxt/tools/build-standalone.py.
 
+TWO MARKERS, AND WHY THE SECOND ONE EXISTS. The core carries
+`-- GENERATED MEMBER DECLARATIONS GO HERE --` (above every handler) and
+`-- GENERATED MEMBER HARNESSES GO HERE --` (at the bottom), and each member's
+fold is split between them. That split is not tidiness. OXT resolves a
+script-level name BY LEXICAL POSITION, and LiveCodeScript does not error on an
+unresolved one - it evaluates it to the LITERAL TEXT of its own name. The first
+version emitted each member's declarations inside that member's own section,
+which is exactly where they sit in the member's own file. Correct there,
+catastrophic here: the fold puts coinxt's section ~1000 lines BELOW the core's
+stRunMemberHarnesses, and that handler reads cx1sPassed to merge the totals, so
+the engine read the string "cx1sPassed" and the run died on
+`add "cx1sPassed" to sPassed`. 106 declarations were below the first handler;
+the counters were just the first to do arithmetic on one. Two files that are
+each correct alone can be wrong concatenated, because file A's handlers now sit
+above file B's declarations - which is the whole hazard of this tool.
+
 WHAT IT PRODUCES. A single script-only stack script:
 
     tests/suite-selftest.core.livecodescript   the hand-maintained part: the UI,
@@ -333,7 +349,18 @@ def fold(member):
         raise SystemExit(f"build-suite-selftest: {member.key}: no local/constant "
                          f"declarations found in the preamble - the parse is wrong, "
                          f"and folding it in would silently break every constant.")
-    body = "\n".join(decls) + "\n\n" + "\n\n".join(kept)
+    # The declarations are returned SEPARATELY and hoisted above every handler
+    # in the file (see the marker in the core). Leaving them here, in the
+    # member's own section, is what they look like they want - each member file
+    # declares its locals above its own handlers - but the fold puts one
+    # member's section BELOW the core's handlers, and the core reads every
+    # member's counters to merge them. OXT resolves a script-level name by
+    # lexical position, so that read saw an undeclared name, LiveCodeScript
+    # evaluated it to the literal text of its own name, and the run died on
+    # `add "cx1sPassed" to sPassed`. Same silent-name failure the preamble check
+    # below guards against, arriving by placement instead of by omission.
+    decl_block = (f"-- ---- {member.title} ----\n" + "\n".join(decls))
+    body = "\n\n".join(kept)
     header = (
         f"-- {'=' * 74}\n"
         f"-- {member.title}\n"
@@ -347,7 +374,7 @@ def fold(member):
         f"-- perturbed by, any other member's copy of the same scaffolding.\n"
         f"-- {'=' * 74}\n"
     )
-    return header + "\n" + body
+    return decl_block, header + "\n" + body
 
 
 def wrap(text, width):
@@ -368,8 +395,13 @@ def generate():
     marker = "-- GENERATED MEMBER HARNESSES GO HERE --"
     if marker not in core:
         raise SystemExit(f"build-suite-selftest: {CORE} has no '{marker}' line")
+    decl_marker = "-- GENERATED MEMBER DECLARATIONS GO HERE --"
+    if decl_marker not in core:
+        raise SystemExit(f"build-suite-selftest: {CORE} has no '{decl_marker}' line")
 
-    folded = "\n\n\n".join(fold(m) for m in MEMBERS)
+    parts = [fold(m) for m in MEMBERS]
+    declarations = "\n\n".join(p[0] for p in parts)
+    folded = "\n\n\n".join(p[1] for p in parts)
     banner = (
         "-- " + "=" * 74 + "\n"
         "-- EVERYTHING BELOW THIS LINE IS GENERATED. Do not edit it here.\n"
@@ -386,7 +418,9 @@ def generate():
         "-- The gate set runs --check, so a stale file fails the build.\n"
         "-- " + "=" * 74 + "\n"
     )
-    return core.replace(marker, banner + "\n" + folded)
+    return (core
+            .replace(decl_marker, declarations)
+            .replace(marker, banner + "\n" + folded))
 
 
 def main(argv):
