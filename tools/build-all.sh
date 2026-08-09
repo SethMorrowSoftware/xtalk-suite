@@ -172,6 +172,16 @@ if [ -f tools/check-suite-selftest.py ]; then
   python3 tools/check-suite-selftest.py
 fi
 
+# --- suite-level: and it actually reaches the suite --------------------------
+# The two gates above prove the pasteable harness is CURRENT and STRUCTURALLY
+# SOUND. Neither one looks at whether it covers anything: a member could ship a
+# new public handler, never test it, and both would stay green about a harness
+# that does not touch the new code. This is the gate that asks.
+if [ -f tools/check-suite-coverage.py ]; then
+  echo "== suite: tools/check-suite-coverage.py =="
+  python3 tools/check-suite-coverage.py --check
+fi
+
 if [ "$GATES_ONLY" = 1 ]; then
   echo "All static gates passed."
   exit 0

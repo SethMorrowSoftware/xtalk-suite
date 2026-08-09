@@ -2564,6 +2564,7 @@ function oxSelfTest
    testAddressRoundTrip
    testAddressNegativePaths
    testSodiumComposition
+   testConfigurationSetters
 
    local tSummary
    put sPass & " passed, " & sFail & " failed" into tSummary
@@ -2826,6 +2827,84 @@ private command testSodiumComposition
       put sLog & "  --   (skipped: sxHmacSha256 needs SodiumXT ABI >= 6)" & return into sLog
    end if
 end testSodiumComposition
+
+-- ==========================================================================
+-- Section 9: the configuration setters.
+--
+-- WHAT THIS PROVES, AND WHAT IT DOES NOT. Each of these is a one-line
+-- assignment into a script local, and every reader of those locals
+-- (effectiveSocksPort, effectiveControlPort, the AUTHENTICATE path, oxDispatch)
+-- is private and needs a live daemon to reach. So this section cannot show that
+-- a set port is the port Tor is dialled on - that is a live-Tor claim and it
+-- stays one.
+--
+-- What it CAN show, offline, is the part that actually breaks: that the handler
+-- is there under the name the docs give, that it accepts its argument without
+-- throwing, that setting configuration does not disturb the connection state
+-- machine, and that empty restores the built-in default. Before this section
+-- existed, a setter could have been renamed or deleted and every gate in the
+-- repo would still have been green.
+--
+-- The restore at the end is not tidiness. Control state is a script-local
+-- singleton shared by the whole message path (see section 2), so a harness that
+-- left sSocksPort pointing at a junk port would break the NEXT thing this
+-- session did - including the live-Tor pass this file is meant to precede.
+-- ==========================================================================
+
+private command testConfigurationSetters
+   oxSection "configuration setters (offline: callable and inert)"
+   local tWasReady, tWasAuthed, tProgress
+   put oxIsReady() into tWasReady
+   put oxIsControlAuthenticated() into tWasAuthed
+   put oxBootstrapProgress() into tProgress
+
+   -- Loopback-locked by design: the PORT is settable, the host never is.
+   oxSetSocksPort 19050
+   oxSetControlPort 19051
+   oxCheck true, "oxSetSocksPort and oxSetControlPort accept a port"
+   oxSetControlPassword "not-a-real-password"
+   oxCheck true, "oxSetControlPassword accepts a password"
+   oxSetStatusCallback "onStatus"
+   oxSetPeerCallback "onPeer"
+   oxCheck true, "the status and peer callback names are settable"
+   oxSetCallbackOwner the long id of me
+   oxCheck true, "oxSetCallbackOwner accepts an object long id"
+
+   -- Configuration must not touch the connection state machine. If any of
+   -- these moved, a setter is writing over more than its own local.
+   oxCheck (oxIsReady() is tWasReady), "setting configuration does not change oxIsReady"
+   oxCheck (oxIsControlAuthenticated() is tWasAuthed), \
+      "setting configuration does not authenticate anything"
+   oxCheck (oxBootstrapProgress() is tProgress), \
+      "setting configuration does not move bootstrap progress"
+
+   -- Idempotent, like every other entry point here.
+   oxSetSocksPort 19050
+   oxCheck (oxIsReady() is tWasReady), "setting the same port twice is harmless"
+
+   -- Hand the session back. Empty restores the documented default for the two
+   -- ports and the password, so those simply clear.
+   oxSetSocksPort empty
+   oxSetControlPort empty
+   oxSetControlPassword empty
+   oxCheck (oxIsReady() is tWasReady), "clearing the ports and password is harmless too"
+
+   -- The three DISPATCH setters do not clear, and the reason is a real bug this
+   -- section would otherwise have introduced. tools/build-standalone.py bundles
+   -- this file into examples/onionxt-demo-standalone.livecodescript, where the
+   -- About tab runs oxSelfTest inside the running demo - and that demo sets its
+   -- callback owner and status handler ONCE, in preOpenStack. Clearing them here
+   -- would leave a demo that had already opened with no status dispatch at all,
+   -- silently, until it was reopened: a test that breaks the app it is bundled
+   -- into. So restore the exact configuration the demo establishes - owner is
+   -- this stack, status is onStatus, and NO peer callback, because oxhServe
+   -- installs oxhPeer itself when it publishes and a stale "onPeer" here would
+   -- shadow it until then.
+   oxSetCallbackOwner the long id of me
+   oxSetStatusCallback "onStatus"
+   oxSetPeerCallback empty
+   oxCheck (oxIsReady() is tWasReady), "restoring the dispatch configuration is harmless too"
+end testConfigurationSetters
 
 -- ==========================================================================
 -- Small local helpers (test glue only).

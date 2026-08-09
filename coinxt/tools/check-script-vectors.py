@@ -634,6 +634,49 @@ def check_vectors(c, ip):
     c.ck("rejects a seed shorter than 16 bytes", throws("cxHdFromSeed", bytes(15)), True)
     c.ck("rejects a seed longer than 64 bytes", throws("cxHdFromSeed", bytes(65)), True)
 
+    # cxHdDeriveChild is the single CKD step the path walker loops over, and it
+    # is public API in its own right. Everything above reaches it only THROUGH
+    # cxHdDerivePath, so a defect in argument handling at the public entry
+    # point - a hardened index misread, a bad bound - would not show up.
+    c.note("\nBIP-32 single-step derivation (cxHdDeriveChild)")
+    _, want_h0_prv, _ = BIP32_VECTORS[0][1][1]
+    c.ck("one hardened step reaches the published m/0' xprv",
+         call("cxXprv", call("cxHdDeriveChild", master, 2147483648)), want_h0_prv)
+    c.ck("a normal step agrees with the path walker",
+         call("cxXprv", call("cxHdDeriveChild", acct, 1)),
+         call("cxXprv", call("cxHdDerivePath", master, "m/0'/1")))
+    c.ck("index 0 is not treated as hardened",
+         call("cxXprv", call("cxHdDeriveChild", master, 0)),
+         call("cxXprv", call("cxHdDerivePath", master, "m/0")))
+    c.ck("each step advances the depth by one",
+         int(LCS._n(call("cxHdDeriveChild", acct, 1)["depth"])), 2)
+    c.ck("rejects an index at or above 2^32",
+         throws("cxHdDeriveChild", master, 4294967296), True)
+    c.ck("rejects a negative index", throws("cxHdDeriveChild", master, -1), True)
+    c.ck("a watch-only node cannot take a hardened step",
+         throws("cxHdDeriveChild", watch, 2147483648), True)
+
+    # cxMnemonicNormalize on its own. Every other BIP-39 handler runs it first,
+    # so if it were wrong they would all be wrong TOGETHER and would agree with
+    # each other - the round trips above would still close.
+    c.note("\nBIP-39 normalization (cxMnemonicNormalize)")
+    c.ck("strips surrounding whitespace",
+         call("cxMnemonicNormalize", "  " + twelve + "  "), twelve)
+    c.ck("an already-clean mnemonic is unchanged",
+         call("cxMnemonicNormalize", twelve), twelve)
+    c.ck("it is idempotent",
+         call("cxMnemonicNormalize", call("cxMnemonicNormalize", "  " + twelve + " ")),
+         twelve)
+    c.ck("tabs, newlines and runs of spaces collapse to single spaces",
+         call("cxMnemonicNormalize", "abandon\tabandon\n  abandon "),
+         "abandon abandon abandon")
+    c.ck("whitespace only normalizes to empty",
+         call("cxMnemonicNormalize", "   "), "")
+    c.ck("a normalized mnemonic gives the same seed as the clean one",
+         to_bytes(call("cxMnemonicToSeed",
+                       call("cxMnemonicNormalize", "\n" + twelve + "\t"), "")).hex(),
+         REF.bip39_seed(twelve).hex())
+
     # ---- the itemDelimiter guard ------------------------------------------
     # `item` reads the engine's CURRENT delimiter, and that is GLOBAL MUTABLE
     # STATE (templates/CLAUDE.md rule 5), so an app that set it and did not
@@ -734,7 +777,7 @@ def main(argv):
     # ran" look identical on the way out otherwise, and on this surface the
     # second one is indistinguishable from a green build. Raise it when the set
     # grows; it exists to catch collapse, not to track the exact number.
-    floor = 20 if cc is None else 150
+    floor = 20 if cc is None else 200
     if c.count < floor:
         print(f"check-script-vectors: FAILED - only {c.count} checks ran, expected at "
               f"least {floor}. Something stopped the vector set early.")

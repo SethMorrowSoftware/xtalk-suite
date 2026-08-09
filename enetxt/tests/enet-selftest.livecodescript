@@ -183,6 +183,12 @@ command stRun
    stAssert "enHostDestroy(0) is a no-op 0", enHostDestroy(0) is 0
    stAssert "enConnect on stale host is 0", enConnect(0, "127.0.0.1", 1, 1, 0) is 0
    stAssert "enFlush(0) errors", enFlush(0) < 0
+   -- enBroadcast is the server-fanout primitive, so a stale host is the case
+   -- that matters most: a broadcast that quietly "succeeded" against a
+   -- destroyed host is a server believing it told every client something it
+   -- never sent. It takes the same stale-handle path as enSend.
+   stAssert "enBroadcast(0) errors", enBroadcast(0, 0, stTinyData(), 0) < 0
+   stAssert "enBroadcastText(0) errors", enBroadcastText(0, 0, "x", 0) < 0
 
    stSection "tuning + abrupt teardown (isolated: nothing listens on 27099)"
    -- These four binds have no place in the graceful loopback below: a second

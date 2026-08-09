@@ -46,3 +46,32 @@ jobs:
         env:
           COINXT_REQUIRE_CROSSCHECK: "1"
         run: bash tools/build-all.sh --gates
+
+      # The pasteable harness, as a download.
+      #
+      # It is NOT built here - build-all.sh --gates above ran
+      # `build-suite-selftest.py --check`, which fails if the committed file is
+      # not what the sources produce. So the file in the tree is already the
+      # right one, and this step just makes it reachable without a clone: open
+      # the run, download, paste into a stack script. Generating it here instead
+      # would be strictly worse, because then the artifact and the repository
+      # could differ and only the artifact would be current.
+      #
+      # The coverage report rides along because the honest question about a
+      # self-test is not "did it pass" but "what did it not touch", and the
+      # answer should be one click from the harness itself rather than something
+      # you have to know to go and run.
+      - name: Write the coverage report next to the harness
+        run: |
+          python3 tools/check-suite-coverage.py > suite-selftest-coverage.txt
+          cat suite-selftest-coverage.txt
+
+      - name: Upload the pasteable suite self-test
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-selftest
+          path: |
+            tests/suite-selftest.livecodescript
+            suite-selftest-coverage.txt
+            docs/OXT-PASS-RUNBOOK.md
+          if-no-files-found: error

@@ -379,6 +379,44 @@ what apps branch on: with SodiumXT present, SAFECOOKIE auth and deterministic `.
 (`sxSignSeedToExpandedKey`) both advertise TRUE, and offline `.onion` checksums still advertise FALSE -
 docs/08 gap #2, observed rather than assumed.
 
+**OnionXT is the only member with untested public handlers, and the reasons are now
+written down rather than assumed (2026-08-09).** `tools/check-suite-coverage.py` (suite
+root) measures how much of each member's public surface the pasteable suite harness
+actually calls. Every other member is at 100%; OnionXT is at 27/45, and that is not
+laziness - eighteen of its handlers genuinely cannot run in an offline paste-into-a-stack
+harness, split into two kinds that the gate now names individually:
+
+- **Eleven engine socket callbacks** (`oxCtlOpened`, `oxCtlLine`, `oxCtlDeadline`,
+  `oxSocksOpened`, `oxSocksMethod`, `oxSocksReplyHead`/`Len`/`Done`, `oxStreamData`,
+  `oxStreamDeadline`, `oxPeerAccepted`). The ENGINE calls these, with a socket id it
+  minted. A harness cannot mint one, and driving them with a synthetic id would not
+  exercise the real path - it would corrupt the state of whatever socket shared the id.
+- **Seven that need a live tor daemon** (`oxLaunchTor`, `oxStopTor`, `oxPublishService`,
+  `oxTransportDial`/`Listen`/`Send`/`Recv`). This is the second half of this member's
+  standing honesty convention, "verified statically; needs an OXT pass + a live-Tor pass",
+  made machine-readable.
+
+**Six that were in neither category got a section.** The `oxSet*` configuration setters
+had no coverage at all, so a rename or a deletion would have been invisible to every gate
+in the repo. `testConfigurationSetters` now proves what is provable offline - the handler
+exists under its documented name, accepts its argument, is idempotent, and does not
+disturb `oxIsReady` / `oxIsControlAuthenticated` / `oxBootstrapProgress` - and says
+plainly in its own header that whether a set port is the port Tor is DIALLED on stays a
+live-Tor claim, because every reader of those locals (`effectiveSocksPort` and friends) is
+private.
+
+**Writing it surfaced a bug the test itself would have caused, which is the part worth
+remembering.** The first version restored every setter to `empty` on the way out. That is
+correct for the ports and the password, and wrong for the three dispatch setters:
+`tools/build-standalone.py` folds this file into `examples/onionxt-demo-standalone.livecodescript`,
+whose About tab runs `oxSelfTest` inside the running demo - and the demo sets its callback
+owner and status handler ONCE, in `preOpenStack`. Clearing them would have left an
+already-open demo with no status dispatch at all, silently, until it was reopened. A test
+that breaks the app it ships inside is worse than the gap it closed. The dispatch setters
+are therefore RESTORED to exactly the demo's own configuration (owner `me`, status
+`onStatus`, no peer callback - `oxhServe` installs `oxhPeer` when it publishes), and the
+runbook's trap 5.6 now warns that the ports really do reset.
+
 Still `VERIFY:` (not yet exercised):
 
 8. `the processId` / `open process` for the optional Mode B tor launch (the default is assume-running).

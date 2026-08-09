@@ -68,6 +68,7 @@ an OXT stack to exercise the whole suite, and it is **built, not written**:
 python3 tools/build-suite-selftest.py            # rebuild after touching any harness
 python3 tools/build-suite-selftest.py --check    # in the gate set
 python3 tools/check-suite-selftest.py            # the checks a compiler would make
+python3 tools/check-suite-coverage.py            # does it actually reach the suite?
 ```
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
@@ -109,6 +110,32 @@ inside them. The other five copies already handled it, by two different
 implementations. Only sodiumxt's was changed; the drift itself is the standing
 cost of copy-per-member and is worth remembering the next time one of these
 checkers is edited - a fix applied to one copy is not applied to the suite.
+
+**"Current" and "structurally sound" are not "complete", and only the first two had
+a gate.** `--check` proves the pasteable file is what the sources produce;
+`check-suite-selftest.py` proves the merge holds together. Neither one looks at
+whether the harness *reaches* anything, so a member could ship a public handler,
+never test it, and both stay green about a file that does not touch the new code.
+That gap is invisible from the inside: the harness is ~4400 lines and runs ~580
+checks, and nobody re-asks "is this thorough?" after a number that size. When it was
+first measured, **31 public handlers had never been called** - including coinxt's
+`cxHdDeriveChild` (the single CKD step the whole HD layer loops over) and both ABI-4
+tweak exports, which are what make an xpub watch-only wallet agree with its xprv.
+Thirteen were closed by adding checks to the member harnesses; the other eighteen are
+all onionxt's and now carry a written per-handler reason in
+`tools/check-suite-coverage.py` - eleven **engine socket callbacks** (the engine
+supplies a socket id no harness can mint) and seven that need a **live tor daemon**.
+The gate fails on a new unexercised handler AND on a stale excuse, so a renamed
+handler cannot leave a permanent exemption behind it. It is a floor, not a ceiling:
+"called by name" is not "tested well", and depth stays the member vector gates' job.
+
+The same shape of hole was in **coinxt's own constant gate**, found while fixing this
+one: `check-selftest-vectors.py` re-derived an explicit list and then printed
+"66 harness constants re-derived" - a count of the constants it had PARSED, not the
+ones it had CHECKED. Two constants added in this very change sailed through it. A gate
+that overstates its coverage is worse than no gate, because it answers the question
+nobody asks twice. It now fails on any `k*` constant that is neither re-derived nor
+listed as an input with a reason, and reports the honest split.
 
 It stayed invisible because of how the two gate layers overlap. Each member's
 own checker reads that member's `src/`, `examples/` AND `tests/`, so enetxt's
@@ -152,7 +179,12 @@ a `switch` in front of the one checker that could not parse it.
   not pollute the suite's `-Wall -Wextra`.
 - CI lives at the repository root, in two layers. `suite-gates.yml` runs every
   member's compiler-free gates on every push (the set `build-all.sh --gates`
-  runs). `native-<member>.yml` runs that member's full 5-platform native matrix
+  runs), and then uploads a **`suite-selftest` artifact** - the pasteable harness,
+  the coverage report, and the runbook - so the person doing an engine pass can
+  download the file instead of cloning. It does NOT generate the harness there:
+  `--check` already failed the build if the committed copy were stale, so the tree
+  copy is the built copy, and generating it in CI would let the artifact and the
+  repository drift with only the artifact current. `native-<member>.yml` runs that member's full 5-platform native matrix
   and its sanitizer lanes, scoped by `paths:` so only the touched member
   builds, on pull requests, pushes to `main`, and on demand. The native lanes
   upload each built library as an **artifact** and never commit one: they fire on

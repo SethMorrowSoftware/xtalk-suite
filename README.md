@@ -129,6 +129,26 @@ transports for its cross-member sections, and two state machines in one process
 would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 `docs/OXT-PASS-RUNBOOK.md`.
 
+**How much of the suite it actually reaches is measured, not asserted.**
+`tools/check-suite-coverage.py` runs in the gate set and holds it at
+**291 of 309 public handlers**:
+
+| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt |
+|---|---|---|---|---|---|
+| 60/60 | 27/45 | 65/65 | 85/85 | 23/23 | 31/31 |
+
+The eighteen it does not reach are all onionxt's, and each carries a written
+reason in that tool: eleven are **engine socket callbacks** (the engine supplies
+a socket id no harness can mint) and seven need a **live tor daemon**. The gate
+fails both on a new public handler that nothing exercises and on a stale excuse
+left behind by a rename, so the shortfall can only ever be a decision somebody
+wrote down. It counts handlers *reached*, not handlers tested well — depth is
+each member's own vector gate.
+
+**You do not have to clone it.** Every `suite gates` run uploads a
+`suite-selftest` artifact with the pasteable script, that coverage report, and
+the runbook.
+
 ## How they compose
 
 The members are deliberately non-overlapping, so real apps mix them:
