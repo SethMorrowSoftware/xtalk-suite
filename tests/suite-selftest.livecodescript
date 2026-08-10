@@ -3936,13 +3936,28 @@ command bt1stRun
    bt1stSection "session + ABI"
    -- btStartSession is the one handler that can throw (on ABI skew); a clean
    -- start IS the ABI check passing.
-   local bt1tStartOk
+   local bt1tStartOk, bt1tNewSession
    put false into bt1tStartOk
+   -- RELEASE A SESSION THIS HARNESS ITSELF LEFT BEHIND, before asking for one.
+   -- TorrentXT allows exactly ONE session per process, the latch is in the C
+   -- shim, and the only key is the integer handle - nothing exported can free a
+   -- session you can no longer name. So a run that died before its teardown
+   -- orphans it for the whole engine launch. Safe to repeat and safe when
+   -- TorrentXT is absent: btStopSession on a stale handle is a documented
+   -- no-op, and the try covers the absent case.
    -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly ONE
    -- session per process, and the suite core opens one during its probe. Reuse
    -- it rather than fighting for a second - starting one here would fail, this
    -- harness would take its cannot-start branch, and the whole torrent surface
    -- would report as skipped while looking perfectly green.
+   --
+   -- THE RELEASE IS SWALLOWED BY THIS REWRITE ON PURPOSE. The standalone
+   -- harness releases any session IT left behind before asking for one, which
+   -- is correct there and actively harmful here: bt1sSession is an ALIAS for
+   -- the core's handle, so on a second run in one process the folded copy would
+   -- btStopSession the session the cross-member BEP44 sections are still using.
+   -- It was folded in once, caught by reading the generated file, and the
+   -- rewrite's span was widened to cover it. The core does that job for both.
    if sSession > 0 then
       put sSession into bt1sSession
       put true into bt1tStartOk
@@ -3956,7 +3971,12 @@ command bt1stRun
    end if
    bt1stAssert "btStartSession did not throw (ABI matches)", bt1tStartOk
    if bt1sSession is 0 or bt1sSession is empty then
-      bt1stNote "Could not start a session - is another TorrentXT stack open?"
+      -- NAME BOTH CAUSES. The shim cannot tell them apart and neither can this
+      -- harness, so asserting the one it cannot know sent operators hunting for
+      -- a window that was not open. See OXT-PASS-RUNBOOK trap 5.1.1.
+      bt1stNote "Could not start a session. Either another TorrentXT stack owns it"
+      bt1stNote "(close that stack and re-run), or an earlier run in THIS engine"
+      bt1stNote "launch lost its handle - quit and relaunch OXT."
       bt1stNote (btLastError())
       bt1stPaint
       exit bt1stRun

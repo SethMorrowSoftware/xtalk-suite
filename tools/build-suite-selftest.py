@@ -154,16 +154,40 @@ MEMBERS = [
             # written as @CORESESSION@ because a literal `sSession` here would be
             # renamed to the member's own local along with everything else.
             ("""   try
-      put btStartSession() into sSession
+      if sSession is not empty and sSession > 0 then
+         btStopSession sSession
+      end if
+   catch tErr
+      -- TorrentXT absent, or already released; nothing to free.
+   end try
+   put 0 into sSession
+   -- START INTO A TEMPORARY. This used to be `put btStartSession() into
+   -- sSession`, which on a REFUSAL wrote 0 over a still-live handle in the same
+   -- statement - destroying the only key to the very session it had just been
+   -- refused, and guaranteeing that every later run in this launch would be
+   -- refused too. Commit to sSession only on success.
+   try
+      put btStartSession() into tNewSession
       put true into tStartOk
    catch tErr
-      put 0 into sSession
-   end try""",
+      put 0 into tNewSession
+   end try
+   if tNewSession is not empty and tNewSession > 0 then
+      put tNewSession into sSession
+   end if""",
              """   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly ONE
    -- session per process, and the suite core opens one during its probe. Reuse
    -- it rather than fighting for a second - starting one here would fail, this
    -- harness would take its cannot-start branch, and the whole torrent surface
    -- would report as skipped while looking perfectly green.
+   --
+   -- THE RELEASE IS SWALLOWED BY THIS REWRITE ON PURPOSE. The standalone
+   -- harness releases any session IT left behind before asking for one, which
+   -- is correct there and actively harmful here: bt1sSession is an ALIAS for
+   -- the core's handle, so on a second run in one process the folded copy would
+   -- btStopSession the session the cross-member BEP44 sections are still using.
+   -- It was folded in once, caught by reading the generated file, and the
+   -- rewrite's span was widened to cover it. The core does that job for both.
    if @CORESESSION@ > 0 then
       put @CORESESSION@ into sSession
       put true into tStartOk
