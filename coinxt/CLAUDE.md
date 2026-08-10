@@ -753,3 +753,39 @@ and both times the PROBE was wrong, not the gate: one exercised only the encode 
 mutation was in the decoder, and one reverted only half of a two-part defect so the bug never
 actually came back. When a mutation survives, reconstruct the original defect faithfully and check
 that it reproduces before concluding the gate has a hole.
+
+**THE SECOND FULL ENGINE PASS (2026-08-10): 205 of 206, and the one red line was a fail-open the
+gate was already testing for.** The whole deep harness ran on a real engine inside the folded suite
+selftest - every phase, every handler, the only red line in the entire suite - and the failure was
+`cxHdDerivePath(tNode, "m/")` returning the node UNCHANGED where it owed a throw.
+
+- **The mechanism: the engine ignores ONE trailing delimiter when it counts chunks.** After
+  `replace "/" with comma`, the path "m/" is the string "m,", which is ONE item to the engine (as
+  "a,," is two). So `the number of items` came back 1, the level loop ran zero times, and the
+  empty-level check - which lives INSIDE the loop - was unreachable for exactly the input it named.
+  The fix refuses a trailing "/" before the replace, while the separator is still visible; "m/0'/"
+  is pinned too, so the refusal holds at depth and not just at the root.
+- **Why the headless gate missed it, and this is the transferable part: the gate HAD the vector.**
+  `check-script-vectors.py` has tested `throws("cxHdDerivePath", master, "m/")` since phase 4
+  landed, and it passed - because `lcs-interp.py` counted items with a bare Python `split()`, which
+  sees TWO items in "m,". The model disagreed with the engine about a counting rule, so the
+  negative vector tested the model, not the script: the check it proved fires is a check the engine
+  never runs. A negative vector is only as good as the semantics under it. The interpreter now
+  strips one trailing delimiter before counting AND before item retrieval (`_split_chunks`), the
+  same rule for lines.
+- **The discipline that made the fix trustworthy: reproduce, then fix.** The interpreter was
+  corrected FIRST, and the unmodified parser was run through the gate: it failed on exactly
+  `rejects the path 'm/'` and nothing else - the engine's finding, reproduced headlessly. Only then
+  was the parser touched, and the gate went green at 213 checks (two new negatives: "m/0'/", "/").
+  A fix landed together with the model correction would have proven only that the two changes agree
+  with each other.
+- The lesson is appended to both copies of `templates/CLAUDE.md` (coinxt's and onionxt's, kept
+  byte-identical), the harness gained "a trailing separator is refused", and the audit of every
+  other `the number of items` site in the script layer found no second exposure: all the other
+  counted strings are internally built lists that never end with the delimiter, which both the
+  engine run and the gates confirm.
+
+The fix itself is verified statically and by the corrected interpreter; it needs the next OXT pass
+(the two named checks above, both green). Everything else the 2026-08-10 pass touched came back on
+the side the code assumed, including both phase-2 marshalling bets: the C `int` flag marshals (33
+vs 65 came back distinct) and `Boolean` returns work (`cxVerify` answered both true and false).

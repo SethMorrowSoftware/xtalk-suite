@@ -406,3 +406,12 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
   CAUSE:   confirmed on-engine: it streams whatever bytes are available, chunk by chunk, as they
            arrive; it does NOT block until the peer closes.
   FIX:     treat it as a streaming read and reassemble/frame by length or delimiter yourself.
+- SYMPTOM: a validator that must refuse a string ENDING with the delimiter accepts it instead - a
+           fail-open, because the per-chunk check inside the loop never runs for the empty last chunk.
+  CAUSE:   confirmed on-engine (2026-08-10): the engine ignores ONE trailing delimiter when it counts
+           chunks - "m," is one item ("a,," is two), "a\n" is one line - so a split-then-iterate never
+           sees a trailing empty. A headless model that counts with a bare split() sees one MORE chunk
+           than the engine and reports the very check that never runs as passing.
+  FIX:     refuse a trailing separator explicitly, BEFORE splitting, while it is still visible; and
+           make any interpreter/model of chunk counting copy the engine's rule, not the language the
+           model is written in.

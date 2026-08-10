@@ -1138,6 +1138,11 @@ command stRunBip32
       -- wallet, so each of these must throw rather than be interpreted.
       stAssert "a path without a leading m is refused", stThrows2("cxHdDerivePath", tNode, "0/1")
       stAssert "an empty level is refused", stThrows2("cxHdDerivePath", tNode, "m/")
+      -- "m/" and "m/0'/" are the trailing-separator cases the 2026-08-10
+      -- engine pass caught failing OPEN: a trailing delimiter is invisible
+      -- to `the number of items`, so the walker returned the node unchanged
+      -- instead of throwing. The second spelling pins the fix at depth too.
+      stAssert "a trailing separator is refused", stThrows2("cxHdDerivePath", tNode, "m/0'/")
       stAssert "a non-digit level is refused", stThrows2("cxHdDerivePath", tNode, "m/1e3")
       stAssert "a level at or above 2^31 is refused", stThrows2("cxHdDerivePath", tNode, "m/2147483648")
       stAssert "a too-short seed is refused", stThrows("cxHdFromSeed", stRepeatByte(0, 15))

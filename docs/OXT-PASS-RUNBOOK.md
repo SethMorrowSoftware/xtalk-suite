@@ -30,6 +30,36 @@ That is the gap this session closes.
 > machine, and this run used neither. Sections 2-7 below still apply as written; work
 > section 4 member by member and record only what your run actually exercised.
 
+> ## The 2026-08-10 pass: the deep harnesses, and one red line
+>
+> **The folded suite harness ran with every member's own deep self-test included —
+> 454 member-harness checks plus the core sampler — and exactly ONE check failed.**
+> sodiumxt 68/68, onionxt 40/40, torrentxt 96/96, enetxt (sync half) 21/21,
+> datachannelxt (sync half) 23/23, coinxt **205/206**, every cross-member seam and
+> both live loopbacks green. That largely retires inventory item 3, and for coinxt
+> it retires the phase-1/2 handler residual and answers both phase-2 marshalling
+> bets on the side the code assumed (the C `int` flag marshals — 33 vs 65 came back
+> distinct — and `Boolean` returns work: `cxVerify` answered both true and false).
+>
+> **The red line was a real fail-open, and no gate could have seen it.**
+> `cxHdDerivePath(tNode, "m/")` returned the node unchanged instead of throwing:
+> the engine ignores ONE trailing delimiter when counting items, so after
+> `replace "/" with comma` the path "m/" counts as a single item and the level
+> loop — where the empty-level check lives — never runs. The headless gate had
+> that exact negative vector and passed it, because `lcs-interp.py` counted items
+> with a bare Python `split()`, which sees two. The interpreter now models the
+> engine's rule, the gate reproduced the engine's failure headlessly before the
+> parser was touched, and the parser now refuses a trailing separator outright.
+> The fix is verified statically and by the corrected interpreter; **it needs the
+> next OXT pass** (paste `coinxt/tests/coin-selftest.livecodescript` and look for
+> "an empty level is refused" and "a trailing separator is refused", both green).
+>
+> **The first paste of the night hit trap 5.1.1 exactly as written** — a live
+> TorrentXT session from an earlier run made the probe SKIP TorrentXT and held UDP
+> 27196 out from under the enet loopback. Quitting and relaunching OXT cleared
+> both, and the second paste ran the full suite. The trap's remedy is confirmed:
+> restart OXT before every paste.
+
 This runbook is ordered for **shortest feedback first**: the cheapest thing that can
 disqualify an evening runs before the thing that takes an hour to set up.
 
