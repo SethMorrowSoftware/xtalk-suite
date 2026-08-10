@@ -88,6 +88,33 @@ class Checker:
             print(text)
 
 
+# --------------------------------------------------------------------- tier 0
+def check_interp_model(c):
+    """Pin the interpreter's chunk semantics to the engine-observed facts.
+
+    The engine ignores ONE trailing delimiter when it counts chunks, and the
+    2026-08-10 engine pass proved what happens when the model disagrees: the
+    "m/" negative vector passed against an interpreter in which the check
+    fires, while the engine never ran it. Now that cxHdDerivePath refuses a
+    trailing separator outright, no script vector would notice the model
+    regressing back to a bare split() - so the rule is pinned HERE, directly,
+    against the facts the engine showed.
+    """
+    c.note("tier 0: the interpreter's chunk model (engine-observed 2026-08-10)")
+    ip = LCS.Interp("")
+
+    def ev(expr, **env):
+        return LCS._Expr(ip, dict(env)).parse(expr)
+
+    c.ck('one trailing delimiter is invisible: "m," is ONE item',
+         ev('the number of items of "m,"'), 1)
+    c.ck('only one is: "a,," is two items', ev('the number of items of "a,,"'), 2)
+    c.ck('"," is one (empty) item', ev('the number of items of ","'), 1)
+    c.ck("the empty string has zero items", ev('the number of items of ""'), 0)
+    c.ck('there is no empty second item of "m,"', ev('item 2 of "m,"'), "")
+    c.ck("lines follow the same rule", ev("the number of lines of t", t="a\n"), 1)
+
+
 # --------------------------------------------------------------------- tier 1
 def check_constants(c, text):
     """The tables that are transcribed by hand, compared against the reference.
@@ -629,7 +656,10 @@ def check_vectors(c, ip):
          throws("cxHdDerivePath", watch, "m/0'"), True)
     c.ck("h and H are accepted as hardened markers",
          call("cxXprv", call("cxHdDerivePath", master, "m/0h")), call("cxXprv", acct))
-    for bad in ("0/1", "m/", "m/1'2", "m/ 1", "m/1e3", "m/2147483648", "m/1.0"):
+    # "m/" and "m/0'/" are the trailing-separator fail-open the 2026-08-10
+    # engine pass caught: they only test anything now that lcs-interp counts
+    # items the way the engine does (one trailing delimiter is invisible).
+    for bad in ("0/1", "m/", "m/0'/", "/", "m/1'2", "m/ 1", "m/1e3", "m/2147483648", "m/1.0"):
         c.ck(f"rejects the path {bad!r}", throws("cxHdDerivePath", master, bad), True)
     c.ck("rejects a seed shorter than 16 bytes", throws("cxHdFromSeed", bytes(15)), True)
     c.ck("rejects a seed longer than 64 bytes", throws("cxHdFromSeed", bytes(65)), True)
@@ -746,6 +776,7 @@ def main(argv):
         return 1
     text = open(SCRIPT, encoding="utf-8").read()
 
+    check_interp_model(c)
     check_constants(c, text)
 
     cc = find_cc()

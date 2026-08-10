@@ -3809,6 +3809,11 @@ command cx1stRunBip32
       -- wallet, so each of these must throw rather than be interpreted.
       cx1stAssert "a path without a leading m is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "0/1")
       cx1stAssert "an empty level is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/")
+      -- "m/" and "m/0'/" are the trailing-separator cases the 2026-08-10
+      -- engine pass caught failing OPEN: a trailing delimiter is invisible
+      -- to `the number of items`, so the walker returned the node unchanged
+      -- instead of throwing. The second spelling pins the fix at depth too.
+      cx1stAssert "a trailing separator is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/0'/")
       cx1stAssert "a non-digit level is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/1e3")
       cx1stAssert "a level at or above 2^31 is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/2147483648")
       cx1stAssert "a too-short seed is refused", cx1stThrows("cxHdFromSeed", cx1stRepeatByte(0, 15))

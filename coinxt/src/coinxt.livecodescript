@@ -1871,8 +1871,18 @@ function cxHdDerivePath pNode, pPath
 end cxHdDerivePath
 
 private function cxHdDerivePathInner pNode, pPath
-   local tPath, tNode, tCount, tI, tPart, tLast, tHardened, tIndex, tJ, tCode, tPartLen
+   local tPath, tNode, tCount, tI, tPart, tLast, tHardened, tIndex, tJ, tCode, tPartLen, tPathLen
    put pPath into tPath
+   -- A trailing separator must be refused HERE, while the "/" is still
+   -- visible: the engine ignores one trailing delimiter when it counts
+   -- items, so after the replace below "m/" counts as ONE item, the level
+   -- loop never runs, and the empty-level check inside it can never fire.
+   -- The 2026-08-10 engine pass caught exactly that failing OPEN: "m/"
+   -- walked zero levels and handed back the node unchanged.
+   put the number of chars of tPath into tPathLen
+   if tPathLen > 0 and char tPathLen of tPath is "/" then
+      throw "CoinXT: cxHdDerivePath: the path has an empty level."
+   end if
    replace "/" with comma in tPath
    put pNode into tNode
    put the number of items of tPath into tCount

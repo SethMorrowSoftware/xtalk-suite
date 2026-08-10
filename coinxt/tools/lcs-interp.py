@@ -538,8 +538,8 @@ class _Expr:
                 if unit in ("bytes", "chars", "characters"):
                     return len(s)
                 if unit == "items":
-                    return 0 if s == "" else len(s.split(ITEM_DELIMITER[0]))
-                return 0 if s == "" else len(s.split("\n"))
+                    return len(_split_chunks(s, ITEM_DELIMITER[0]))
+                return len(_split_chunks(s, "\n"))
             raise SyntaxError(f"unsupported `the` expression in {self.s!r}")
         # chunk expressions: byte/char/item N [to M] of EXPR
         unit = self.kw("byte", "bytes", "char", "chars", "character", "item", "items")
@@ -627,11 +627,28 @@ def _eq(a, b):
         return sa == sb
 
 
+def _split_chunks(s, d):
+    # The engine ignores ONE trailing delimiter when it chunks a string:
+    # "m," is ONE item, "a,," is two, "," is one (empty) item. Modelling this
+    # with a bare Python split() over-counts by one whenever the string ends
+    # with the delimiter, and that mismatch is exactly how cxHdDerivePath's
+    # "m/" fail-open stayed invisible to this gate while failing on the real
+    # engine (pass of 2026-08-10): the gate's own negative vector exercised
+    # the check against a model in which the check fires, and the engine
+    # never ran it. Items were engine-observed; lines follow the same
+    # documented chunk rule.
+    if s == "":
+        return []
+    if s.endswith(d):
+        s = s[:-len(d)]
+    return s.split(d)
+
+
 def _chunk(unit, a, b, target):
     s = str(_disp(target))
     if unit.startswith("item"):
         d = ITEM_DELIMITER[0]
-        parts = s.split(d) if s != "" else []
+        parts = _split_chunks(s, d)
         if b is None:
             return parts[a - 1] if 1 <= a <= len(parts) else ""
         return d.join(parts[a - 1:b])
