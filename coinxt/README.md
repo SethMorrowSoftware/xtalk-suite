@@ -72,16 +72,16 @@ CoinXT/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to all 30 cnx_* exports); the
-                            phase-1 hash surface is engine-proven (2026-08-08), the phase-2
-                            curve wrappers are verified statically
+    coinxt.lcb              the foreign-handler module (binds to all 30 cnx_* exports);
+                            engine-proven end to end: phase 1 closed 2026-08-08, phases 2-4
+                            closed 2026-08-10 (the folded harness, 207/207 on the re-run)
     coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP
                             and the address builders. NOT part of the .lcb - it loads into the
                             message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 50 public cx* handlers against the
-                            published vectors (31 from the .lcb, 19 from the script layer)
+                            its own UI and drives ALL 65 public cx* handlers against the
+                            published vectors (35 from the .lcb, 30 from the script layer)
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
@@ -146,11 +146,12 @@ the signing pubkey", and both hold on every push: CoinXT reproduces four publish
 signatures byte for byte, its signature verifies in the independent Python `ecdsa` library, a
 signature that library made verifies in CoinXT, and recovery round-trips to the signer.
 
-**The fifteen new `cx*` handlers have not yet run on an engine**, so they are "verified statically" in
-the honesty convention: the shim beneath them is proven headless and every foreign declaration was
-diffed mechanically against the C, but the binding itself has not been exercised. Running
-`tests/coin-selftest.livecodescript`, which drives the whole surface in one paste, is what closes
-that.
+**The fifteen curve handlers ran on-engine on 2026-08-10** (the member harness, folded into the suite
+selftest at the repository root), and both marshalling shapes that were new to this binding answered
+on the side the code assumed: the C `int` flag marshals (the compressed and uncompressed `cxPublicKey`
+calls returned 33 and 65 bytes, distinct), and `Boolean` returns work (`cxVerify` answered true for a
+good signature and false for a tampered one). Private key 1 gave the generator G, the published
+RFC 6979 signature reproduced byte for byte, and `cxRecover` returned the signing key.
 
 Schnorr / BIP-340 is deferred to a Taproot phase: trezor-crypto's plain-C tree does not implement it,
 reaching Schnorr only through the bundled `secp256k1-zkp`.
@@ -169,7 +170,10 @@ That layer is a SCRIPT, not part of the `.lcb`: load it into the message path
 `tools/check-script-vectors.py` runs the real file through a small LiveCodeScript interpreter
 (`tools/lcs-interp.py`) against the published BIP-173, BIP-350, EIP-55, RLP and Base58Check vectors,
 with the hashes coming from the real shim, in the gate set, on every push. That settles the LOGIC.
-Engine parser behaviour still needs the OXT pass.
+Engine parser behaviour got its OXT pass on 2026-08-10 - and earned its keep: the one red line of
+that run was a parser-counting difference no gate had modelled (`cxHdDerivePath` of `"m/"` returned
+the node unchanged, because the engine counts one trailing delimiter out of existence), fixed,
+re-modelled in the interpreter, and confirmed green in the same-day re-run.
 
 **Phase 4, HD wallets and mnemonics, is BUILT** (ABI 4) and adds eleven more script handlers:
 `cxMnemonicFromEntropy` / `cxMnemonicToEntropy` / `cxMnemonicValidate` / `cxMnemonicToSeed` /
@@ -188,8 +192,11 @@ strings, and the test mnemonic every wallet ships with walks down `m/44'/0'/0'/0
 `bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu` and `0x9858EfFD232B4033E47d90003D41EC34EcaEda94`. The
 vector gate is now 170 checks.
 
-**One engine pass now settles phases 2, 3 and 4** - `tests/coin-selftest.livecodescript` drives all
-of them in a single paste. Until then they are "verified statically" in the honesty convention.
+**That engine pass has happened: phases 2, 3 and 4 are CLOSED, 2026-08-10.** The member harness ran
+folded into the suite selftest - 205/206 on the first pass (the trailing-separator fail-open above),
+then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
+65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) have now executed on a real
+engine against the published vectors - the suite coverage gate counts exactly that, 65/65.
 
 Next: transaction building and signing (phase 5), which is explicitly optional - the primitive layer
 is useful and shippable without it. Today CoinXT hashes, signs, derives a wallet from a mnemonic and
