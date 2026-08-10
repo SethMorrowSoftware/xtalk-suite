@@ -35,6 +35,16 @@ script "xTalkSuiteSelfTest"
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
 --
+-- AND IT CARRIES THE TWO PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- layer (encoders, addresses, the HD wallet walk) and onionxt's entire ox*
+-- surface are LiveCodeScript, and they used to be a separate setup step -
+-- `start using stack` x2 before pasting. Embedded, that step is gone, and so
+-- is the failure mode it carried: the 2026-08-10 re-run pasted a fresh
+-- harness into an engine whose in-memory coinxt stack predated a parser fix,
+-- and got two red lines that read as "the fix does not work" and meant "the
+-- fix was not loaded". This file and the libraries in it are generated from
+-- one tree; they cannot skew against each other.
+--
 -- So one paste now settles what used to take six runs. Two things are still
 -- honestly outside it, and they are named where they are cut rather than left
 -- for you to discover: the ENet and DataChannel ASYNC loopbacks stay in their
@@ -171,7 +181,8 @@ local sDcBigSize, sDcBigWant
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
 -- Every FOLDED member's script locals and constants are hoisted to here, above
--- the first handler, by tools/build-suite-selftest.py.
+-- the first handler, by tools/build-suite-selftest.py - and so are the two
+-- EMBEDDED script layers' (coinxt's and onionxt's), for the same reason.
 --
 -- They cannot live down in each member's own section, which is where they
 -- started and where they look like they belong. OXT resolves a script-level
@@ -575,8 +586,13 @@ command stProbe
    end try
    stProbeLine "DataChannelXT", sHaveDc, "org.openxtalk.library.datachannel"
 
-   -- OnionXT is pure LiveCodeScript, not a compiled extension: it has to be in
-   -- the MESSAGE PATH, not installed.
+   -- OnionXT is pure LiveCodeScript, not a compiled extension - and its whole
+   -- ox* surface is EMBEDDED in this paste by tools/build-suite-selftest.py,
+   -- so there is no `start using stack "onionxt"` setup step any more. The
+   -- probe stays: it costs one call, and a FAIL here no longer means "not
+   -- loaded" (an embedded handler cannot be absent from a script that
+   -- compiled) - it means the generated file itself is damaged, which is
+   -- exactly the line you want to see before trusting 40 onion checks.
    put false into sHaveOnion
    try
       put oxVersion() into tVersion
@@ -584,7 +600,7 @@ command stProbe
    catch tError
       put false into sHaveOnion
    end try
-   stProbeLine "OnionXT", sHaveOnion, "start using stack " & quote & "onionxt" & quote
+   stProbeLine "OnionXT", sHaveOnion, "embedded in this paste; a FAIL means the paste is damaged"
 
    -- CoinXT's hash surface is the phase-1 half of its binding; the probe is one
    -- of its published vectors, so a present CoinXT is a WORKING CoinXT.
@@ -597,16 +613,18 @@ command stProbe
    end try
    stProbeLine "CoinXT (extension)", sHaveCoin, "org.openxtalk.library.coin"
 
-   -- COINXT IS THE ONLY MEMBER THAT SHIPS IN TWO PIECES, and probing one of
-   -- them is how an engine session gets wasted. The hash and curve surfaces are
-   -- the .lcb extension; the encoders, addresses and the whole HD layer are
-   -- src/coinxt.livecodescript, a SEPARATE script that has to be in the message
-   -- path. Install the extension without `start using` and the probe above says
-   -- "present", the deep harness runs, and ten of its sections report FAIL
-   -- "handler not found" - which reads exactly like a broken library and is
-   -- actually a setup step. So the script layer gets its own probe and its own
-   -- line, and the deep harness SKIPS rather than failing when it is absent.
-   -- cxHexEncode is the cheapest handler that exists only in the script.
+   -- COINXT IS THE ONLY MEMBER THAT SHIPS IN TWO PIECES: the hash and curve
+   -- surfaces are the .lcb extension, probed above; the encoders, addresses
+   -- and the whole HD layer are src/coinxt.livecodescript - which is EMBEDDED
+   -- in this paste by tools/build-suite-selftest.py, so the old failure mode
+   -- (extension installed, `start using stack "coinxt"` forgotten, ten
+   -- sections of "handler not found" that read like a broken library) cannot
+   -- happen any more, and neither can its subtler cousin, which cost the
+   -- 2026-08-10 re-run: a STALE script layer left loaded from an earlier
+   -- session, failing checks whose fix was already merged. The probe stays as
+   -- the same tripwire as OnionXT's: cxHexEncode here is a real vector, so a
+   -- FAIL means the generated file is damaged, not that a setup step was
+   -- missed. The deep harness still guards on both flags.
    put false into sHaveCoinScript
    try
       put (cxHexEncode(numToByte(222) & numToByte(173)) is "dead") into sHaveCoinScript
@@ -614,7 +632,7 @@ command stProbe
       put false into sHaveCoinScript
    end try
    stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
-         "start using stack " & quote & "coinxt" & quote
+         "embedded in this paste; a FAIL means the paste is damaged"
 end stProbe
 
 command stProbeLine pName, pPresent, pHint

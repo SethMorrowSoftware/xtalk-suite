@@ -197,7 +197,8 @@ Install in this order:
    `onionxt/examples/onionxt-demo-standalone.livecodescript`. Both are committed and
    gated current, so there is nothing to run here:
    `onionxt/tools/build-standalone.py` is for whoever EDITS a part, not for the
-   tester (see `onionxt/docs/10-usage-guide.md`).
+   tester (see `onionxt/docs/10-usage-guide.md`). (If all you are running is the
+   SUITE harness, skip this step: it embeds the whole ox* surface itself.)
 6. **coinxt**: see 2.4.
 
 Packaged members install through `Tools > Extension Manager` like any OXT extension;
@@ -450,7 +451,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | **The single highest-value run of the night.** Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. The 2026-08-08 suite pass gave this member its first engine evidence and covered 20 of its 35 `dc*` handlers; this stack is the only thing that covers the other 15 (`dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`, `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends). |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed, **plus two `start using` lines** — see the setup note directly below this table (any absent one SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, and the synchronous halves of enetxt and datachannelxt) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
+| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed — and nothing else: the coinxt and onionxt script layers are **embedded in the paste** (any absent member SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, and the synchronous halves of enetxt and datachannelxt) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
 | 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface: the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39, BIP-32, BIP-44). Retires the 12 phase-1 handlers the 2026-08-08 pass never called, the 15 phase-2 curve handlers, and the whole of phases 3 and 4. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
@@ -514,10 +515,12 @@ documented keys, and idempotent close / free / cleanup. It also pins the non-tri
 signalling contract: a live local description carries `a=candidate`, and the
 offer/answer roles match the flow.
 
-**PHASE 3 IS A SECOND, SEPARATE LOAD - check this before you conclude anything.**
+**PHASE 3 IS A SECOND, SEPARATE LOAD — when running coinxt's harness STANDALONE.**
 The hash and curve handlers come from the `.lcb` extension. The encoders and address
-builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT and must be in
-the message path:
+builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT. The SUITE
+harness carries that script embedded (see "Setup the suite harness NO LONGER needs"
+below), but a standalone paste of `coin-selftest` does not, so there it must be in
+the message path first:
 
 ```
 start using stack "coinxt"     -- or insert its script into the back
@@ -619,35 +622,42 @@ diagnostics / preset accessors.
   those additions, so the newer checks are verified statically and need an OXT pass to
   become a runtime result."
 
-### Setup: two `start using` lines the harness cannot do for you
+### Setup the suite harness NO LONGER needs: the two `start using` lines
 
 Two members ship a **pure-script layer** that is not part of any installed
-extension, and the harness calls into both. Put these in the message path before
-you run it — from the message box, or as `start using` lines in a stack you keep
-open:
+extension — `coinxt/src/coinxt.livecodescript` (encoders, addresses, the whole
+HD layer) and `onionxt/src/onionxt.livecodescript` (the entire ox* surface).
+The suite harness used to require both in the message path before pasting;
+**since the embed, it does not**. `tools/build-suite-selftest.py` folds both
+libraries into `tests/suite-selftest.livecodescript` verbatim, so the one paste
+carries the code its tests call, and `--check` pins the pair to one tree.
+
+That closes both failure modes the old setup step carried, and the second one
+cost a real pass:
+
+- **Forgot the line entirely**: ten coinxt sections reporting FAIL
+  "handler not found", which reads exactly like a broken library and was one
+  missing line.
+- **A STALE layer left loaded** (2026-08-10): a freshly built harness pasted
+  into an engine whose in-memory coinxt stack predated a parser fix reported
+  the exact two failures that fix had closed — red lines that read as "the fix
+  does not work" and meant "the fix was not loaded". With the layer embedded,
+  the harness and the library cannot skew; a `start using` copy that is also
+  loaded is simply shadowed for the harness's own calls (same-script wins).
+
+The probes for the two layers remain, as tripwires rather than setup checks: a
+`FAIL` on either line now means the generated paste itself is damaged, not that
+a step was missed.
+
+**The `start using` lines are still required for a member's STANDALONE
+harness.** `coinxt/tests/coin-selftest.livecodescript` and onionxt's own
+examples are pasted without the suite's embeds, so running one of those alone
+still needs its layer in the message path:
 
 ```
-start using stack "coinxt"     -- src/coinxt.livecodescript: encoders, addresses, the whole HD layer
-start using stack "onionxt"    -- src/onionxt.livecodescript: the entire ox* surface
+start using stack "coinxt"     -- before coin-selftest standalone
+start using stack "onionxt"    -- before onionxt's standalone examples
 ```
-
-**coinxt is the one that will catch you out**, because it ships in *two* pieces:
-installing `org.openxtalk.library.coin` gives you the hashes and the curve, but
-the encoders, the addresses and BIP-39/32/44 are that separate script. Install
-the extension and skip the `start using` and you get **ten sections reporting
-FAIL "handler not found"** — which reads exactly like a broken library and is
-actually one missing line.
-
-The harness now probes the two pieces **separately** and prints them on their own
-lines, so the top of the report tells you which one is missing:
-
-```
-      CoinXT (extension): present
-      CoinXT (script layer): MISSING - start using stack "coinxt"
-```
-
-and the deep harness **SKIPs with that reason** rather than failing. If you see
-that skip, add the line and re-run; nothing else is wrong.
 
 ### 4.6 coinxt (inventory item 2 — CLOSED 2026-08-08; this is now the residual)
 

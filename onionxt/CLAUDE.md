@@ -446,6 +446,10 @@ troubleshooting):
   had (or is clearly flagged as needing) an on-engine pass against a real tor daemon. A transport
   change is "done" once a two-instance onion round-trip (instance A publishes a service, instance B
   dials it through SOCKS, a sealed payload makes the trip and back) works on the engine.
+- In the suite monorepo, `src/onionxt.livecodescript` is also EMBEDDED verbatim in the generated
+  `tests/suite-selftest.livecodescript` (one paste carries the whole ox* surface, no `start using`
+  step). An edit to it therefore additionally requires `python3 tools/build-suite-selftest.py` at the
+  suite root; the gate set's `--check` fails the build otherwise.
 - A change that adds or touches a C shim bumps its ABI version and `checkABI()` in the same change, and
   if it bundles a native binary, refreshes the committed binary and a `MANIFEST.sha256` in the same
   change (the SodiumXT model).

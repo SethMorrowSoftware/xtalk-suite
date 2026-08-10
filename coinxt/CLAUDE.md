@@ -313,6 +313,11 @@ future feature ever needs C-side state, use SodiumXT's generation-tagged handle-
 - A script change is "done" once the static gates pass and it has had (or is clearly flagged as needing)
   an on-engine pass. A shim change is "done" once it builds clean under ASan + UBSan, the KATs pass, and
   the ABI + `cxCheckABI()` are bumped in the SAME change.
+- In the suite monorepo, `src/coinxt.livecodescript` is also EMBEDDED verbatim in the generated
+  `tests/suite-selftest.livecodescript` (one paste carries the library its tests call, so a stale
+  in-memory copy cannot masquerade as a failing fix - that happened, 2026-08-10). A script-layer edit
+  therefore additionally requires `python3 tools/build-suite-selftest.py` at the suite root; the gate
+  set's `--check` fails the build otherwise.
 - A change that ships a native binary refreshes the committed per-platform binary AND a
   `MANIFEST.sha256` in the same change (the SodiumXT model). Vendored trezor-crypto files are third-party
   code: record the upstream commit and any local patch in `VENDOR.md`; hash the sources and the wordlist

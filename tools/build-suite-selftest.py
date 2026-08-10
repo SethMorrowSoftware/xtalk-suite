@@ -77,6 +77,35 @@ harness is edited such that a marker moves, this build FAILS rather than quietly
 dropping a section - a silently shorter test suite is the failure mode this whole
 file exists to prevent.
 
+THE TWO SCRIPT LAYERS ARE EMBEDDED, VERBATIM, AND THAT IS A DIFFERENT OPERATION
+FROM FOLDING. coinxt and onionxt each ship part (coinxt) or all (onionxt) of
+their public API as pure LiveCodeScript - src/coinxt.livecodescript and
+src/onionxt.livecodescript - which used to be the runbook's "two `start using`
+lines the harness cannot do for you". That setup step cost a real engine pass:
+on 2026-08-10 a maintainer re-pasted a freshly built harness into an engine
+whose in-memory coinxt stack predated a parser fix, and the run reported the
+EXACT two failures the fix had closed - red lines that read as "the fix does
+not work" and actually meant "the fix was not loaded". A harness that carries
+its own copy of the code it tests cannot skew against it: the generator builds
+both from one tree, and --check pins the pair to the sources.
+
+Unlike the member harnesses, the layers are NOT prefixed. The whole point is
+that the folded tests call cxHdDerivePath and oxIsValidAddress by their real
+names; a renamed copy would be a second implementation nobody ships. That makes
+name collisions the embed's one hazard - a library handler colliding with the
+core, the other library, or a folded name is a compile error at paste time, on
+an engine, which is the most expensive place to learn it - so this build fails
+on ANY duplicate handler or script-level declaration in the assembled output.
+
+Each embedded span (and its hoisted declarations) sits between sentinel lines
+(EMBED_BEGIN/EMBED_END below). check-suite-coverage.py CUTS those spans before
+it scans for calls, and that is load-bearing, not cosmetic: the library's own
+body mentions nearly every library handler (cxMnemonicToSeed calls
+cxMnemonicNormalize, the dispatchers name every callback), so an uncut scan
+would score coinxt and onionxt at permanent 100% coverage - every future
+handler "exercised" by its own definition, and that gate structurally dead for
+the two members that need it most.
+
 Usage:
   python3 tools/build-suite-selftest.py            # write the generated file
   python3 tools/build-suite-selftest.py --check    # fail if it is out of date
@@ -219,6 +248,48 @@ MEMBERS = [
         cut_before='   stSection "loopback: create + negotiate (async)"',
     ),
 ]
+
+
+class Layer:
+    def __init__(self, key, path, title, note):
+        self.key = key
+        self.path = os.path.join(ROOT, path)
+        self.title = title
+        self.note = note
+
+
+# The pure-script API layers, embedded VERBATIM (no prefixing - the folded
+# tests must reach these handlers by their real names). onionxt also ships
+# src/onion-httpd.livecodescript; it is NOT here because it is an app over the
+# ox* surface, not part of it - check-suite-coverage.py measures the ox* API
+# against src/onionxt.livecodescript only, and embedding an app nobody's test
+# calls would be dead weight in every paste.
+SCRIPT_LAYERS = [
+    Layer(
+        "coinxt", "coinxt/src/coinxt.livecodescript",
+        "CoinXT script layer (the real library, embedded)",
+        "Encoders, addresses and the whole HD layer - the half of coinxt's API "
+        "that is pure script. Embedded so one paste carries the code its tests "
+        "test; no `start using stack` step, and no way to run new tests against "
+        "a stale library.",
+    ),
+    Layer(
+        "onionxt", "onionxt/src/onionxt.livecodescript",
+        "OnionXT script layer (the real library, embedded)",
+        "The entire ox* surface - OnionXT is pure LiveCodeScript over engine "
+        "sockets. Embedded for the same reason as coinxt's layer; its engine "
+        "socket callbacks (socketError and friends) ride along, which is "
+        "correct - the engine delivers them to the object that opened the "
+        "socket, and in this paste that is this stack.",
+    ),
+]
+
+# Sentinels around every embedded span. check-suite-coverage.py cuts these
+# spans out before scanning for calls (a library calling itself is not a test),
+# so the format is a CONTRACT between the two tools - change it in both or the
+# coverage gate fails loudly (it refuses a harness with no spans to cut).
+EMBED_BEGIN = "-- >>> GENERATED EMBED: {name} >>> --"
+EMBED_END = "-- <<< GENERATED EMBED: {name} <<< --"
 
 
 def strip_comments(text):
@@ -401,6 +472,107 @@ def fold(member):
     return decl_block, header + "\n" + body
 
 
+def embed(layer):
+    """One script layer, verbatim: (hoisted declarations, body), both wrapped
+    in EMBED sentinels.
+
+    Verbatim means every handler keeps its name and its text. What does move:
+    the `script "name"` line goes (the core supplies this file's), and the
+    script-level declarations hoist to the core's declaration marker like every
+    folded member's do - same reason, the lexical-position scope rule; the
+    library's own handlers sit BELOW the core's in the assembly, but nothing
+    guarantees a future edit keeps every reader below every declaration, and
+    check-suite-selftest.py's position invariant is deliberately blunt.
+    Inter-handler comment banners are dropped with the rest of the preamble,
+    exactly as fold() does; the source file stays the readable copy.
+    """
+    src = open(layer.path, encoding="utf-8").read()
+    lines = src.split("\n")
+    if lines and re.match(r'^script\s+"', lines[0]):
+        src = "\n".join(lines[1:])
+
+    preamble, blocks = split_handlers(src)
+    decls = [ln for ln in preamble if re.match(r'^\s*(?:local|constant)\s', ln)]
+    if not decls:
+        raise SystemExit(f"build-suite-selftest: {layer.key}: no script-level "
+                         f"declarations found in its layer - the parse is wrong, "
+                         f"and embedding it would silently break every constant.")
+    # A layer that parses to almost nothing is a parse failure, not a small
+    # library: both real layers define 70+ handlers. Mirrors check 4 in
+    # check-suite-selftest.py, but at build time, where the fix is cheap.
+    if len(blocks) < 30:
+        raise SystemExit(f"build-suite-selftest: {layer.key}: only {len(blocks)} "
+                         f"handlers parsed from {os.path.relpath(layer.path, ROOT)} "
+                         f"- the split dropped most of the file; embedding this "
+                         f"would paste a fragment that cannot compile.")
+
+    decl_name = f"{layer.key} script layer declarations"
+    body_name = f"{layer.key} script layer"
+    decl_block = (EMBED_BEGIN.format(name=decl_name) + "\n"
+                  + f"-- ---- {layer.title} ----\n"
+                  + "\n".join(decls) + "\n"
+                  + EMBED_END.format(name=decl_name))
+    header = (
+        f"-- {'=' * 74}\n"
+        f"-- {layer.title}\n"
+        f"--\n"
+        + "\n".join(f"-- {ln}" for ln in wrap(layer.note, 74)) + "\n"
+        f"--\n"
+        f"-- GENERATED from {os.path.relpath(layer.path, ROOT)} by\n"
+        f"-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and\n"
+        f"-- rebuild. Names are NOT prefixed: this is the library itself, and the\n"
+        f"-- folded tests above must reach it by its real names.\n"
+        f"-- {'=' * 74}\n"
+    )
+    body = (EMBED_BEGIN.format(name=body_name) + "\n"
+            + header + "\n"
+            + "\n\n".join(b for _, _, b in blocks) + "\n"
+            + EMBED_END.format(name=body_name))
+    return decl_block, body
+
+
+def assert_no_duplicate_definitions(text):
+    """Refuse an assembly that defines any name twice.
+
+    A duplicate HANDLER is a compile error the maintainer meets at paste time,
+    on an engine. A duplicate SCRIPT-LEVEL declaration is worse: it is not
+    obviously an error at all, so two units silently SHARE one variable and
+    perturb each other's state - the exact isolation the prefixing exists to
+    guarantee. Neither can arise from the members' own files (each compiles
+    standalone); only this assembly can create one, so this build refuses it
+    rather than shipping it. check-suite-selftest.py re-checks the committed
+    file; this catches it where the fix is cheapest.
+    """
+    bare = strip_comments(text)
+    handlers = re.findall(r'^(?:private\s+)?(?:command|function|on)\s+(\w+)',
+                          bare, re.M)
+    seen, dup_h = set(), set()
+    for n in handlers:
+        (dup_h if n.lower() in seen else seen).add(n.lower())
+    decls = []
+    for line in re.findall(r'^(?:local|constant)\s+([^\n]+)$', bare, re.M):
+        for part in line.split(","):
+            part = part.split("=")[0].strip()
+            if re.fullmatch(r'\w+', part):
+                decls.append(part)
+    seen, dup_d = set(), set()
+    for n in decls:
+        (dup_d if n.lower() in seen else seen).add(n.lower())
+    if dup_h or dup_d:
+        msg = ["build-suite-selftest: the assembled harness defines a name twice; "
+               "refusing to write it."]
+        if dup_h:
+            msg.append("  duplicate handlers (a compile error at paste time): "
+                       + ", ".join(sorted(dup_h)))
+        if dup_d:
+            msg.append("  duplicate script-level declarations (two units would "
+                       "silently share one variable): " + ", ".join(sorted(dup_d)))
+        msg.append("  If an embedded layer gained a name the core or another unit "
+                   "already uses, rename it at its source - the embed is verbatim "
+                   "by design and cannot rename for you.")
+        raise SystemExit("\n".join(msg))
+
+
 def wrap(text, width):
     words, line, out = text.split(), "", []
     for w in words:
@@ -424,8 +596,27 @@ def generate():
         raise SystemExit(f"build-suite-selftest: {CORE} has no '{decl_marker}' line")
 
     parts = [fold(m) for m in MEMBERS]
-    declarations = "\n\n".join(p[0] for p in parts)
+    embeds = [embed(l) for l in SCRIPT_LAYERS]
+    declarations = ("\n\n".join(p[0] for p in parts)
+                    + "\n\n" + "\n\n".join(e[0] for e in embeds))
     folded = "\n\n\n".join(p[1] for p in parts)
+    embed_banner = (
+        "-- " + "=" * 74 + "\n"
+        "-- THE TWO PURE-SCRIPT LIBRARIES THEMSELVES, embedded by\n"
+        "-- tools/build-suite-selftest.py so that one paste carries the code its\n"
+        "-- tests test. These used to be a separate setup step (`start using\n"
+        "-- stack` x2), and that step cost an engine pass on 2026-08-10: a fresh\n"
+        "-- harness ran against a stale in-memory coinxt stack and reported the\n"
+        "-- two failures its parser fix had already closed. Embedded, the harness\n"
+        "-- and the library are built from one tree and cannot skew.\n"
+        "--\n"
+        "-- NOT renamed, unlike the folded tests below: this is the real library,\n"
+        "-- and the tests must call it by its real names. If you also have these\n"
+        "-- loaded via `start using`, calls from THIS script resolve to the copies\n"
+        "-- here (same-script wins), so the run still tests the embedded tree.\n"
+        "-- " + "=" * 74 + "\n"
+    )
+    embedded = "\n\n\n".join(e[1] for e in embeds)
     banner = (
         "-- " + "=" * 74 + "\n"
         "-- EVERYTHING BELOW THIS LINE IS GENERATED. Do not edit it here.\n"
@@ -442,9 +633,12 @@ def generate():
         "-- The gate set runs --check, so a stale file fails the build.\n"
         "-- " + "=" * 74 + "\n"
     )
-    return (core
+    text = (core
             .replace(decl_marker, declarations)
-            .replace(marker, banner + "\n" + folded))
+            .replace(marker, embed_banner + "\n" + embedded + "\n\n\n"
+                     + banner + "\n" + folded))
+    assert_no_duplicate_definitions(text)
+    return text
 
 
 def main(argv):
@@ -467,7 +661,8 @@ def main(argv):
                               text, re.M))
     print(f"build-suite-selftest: wrote tests/suite-selftest.livecodescript "
           f"({len(text.splitlines())} lines, {handlers} handlers, "
-          f"{len(MEMBERS)} member harnesses folded in)")
+          f"{len(MEMBERS)} member harnesses folded in, "
+          f"{len(SCRIPT_LAYERS)} script layers embedded)")
     return 0
 
 
