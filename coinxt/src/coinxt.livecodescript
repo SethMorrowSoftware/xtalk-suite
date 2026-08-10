@@ -252,13 +252,42 @@ function cxHexDecode pHex
       throw "CoinXT: cxHexDecode: a hex string must have an even number of characters."
    end if
    put "" into tOut
-   repeat with tI = 1 to tCount step 2
+   -- WALK THE PAIRS WITH `repeat while` AND AN EXPLICIT `add 2`, NOT WITH
+   -- `repeat with tI = 1 to tCount step 2`. This is the one line the first real
+   -- OXT pass of the suite harness (2026-08-09) killed, and it is worth the
+   -- paragraph because reading it tells you nothing.
+   --
+   -- The engine did not honour the increment: tI walked 1, 2, 3, ... so the
+   -- final pass read `char (tCount + 1) of tText`, which is EMPTY. Empty is
+   -- genuinely not a hex digit, so cxHexValue answered -1 and this handler's
+   -- own fail-closed check threw "the input contains a character that is not a
+   -- hex digit" - over a perfectly good lowercase literal. That is the worst
+   -- shape a defect can take here: the library accused the CALLER'S DATA of
+   -- being corrupt, in the exact words it uses for a real corruption, so the
+   -- symptom pointed at the vector set rather than at the loop. Six harness
+   -- sections (hex, Base58Check, RLP, BIP-39, BIP-32, the fail-open
+   -- regressions) died on it; every section that never calls cxHexDecode
+   -- passed, which is what identified this handler.
+   --
+   -- `step` was the only construct in this file with no other user anywhere in
+   -- the six-member suite, and that is precisely why it was the one that broke:
+   -- nothing else had ever put it in front of an engine. Every construct below
+   -- ran green in that same session - cxEthAddressChecksum drives cxHexValue
+   -- over `char tI of` eighty times per call, and `repeat while` with `add N
+   -- to` is how cxBase58Encode and cxConvert8To5 loop. The even-length guard
+   -- above is what makes `char (tI + 1)` safe here: tCount is even, so the last
+   -- pair starts at tCount - 1 and never reads past the end.
+   --
+   -- Do not "tidy" this back into a step loop.
+   put 1 into tI
+   repeat while tI <= tCount
       put cxHexValue(char tI of tText) into tHi
       put cxHexValue(char (tI + 1) of tText) into tLo
       if tHi < 0 or tLo < 0 then
          throw "CoinXT: cxHexDecode: the input contains a character that is not a hex digit."
       end if
       put numToByte(tHi * 16 + tLo) after tOut
+      add 2 to tI
    end repeat
    return tOut
 end cxHexDecode

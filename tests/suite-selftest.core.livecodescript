@@ -345,6 +345,30 @@ command stRun
    put "true" into sRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
+   -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
+   -- `put 0 into sSession`, and that is how an engine pass loses the whole
+   -- TorrentXT surface for the rest of the launch. The one-session latch lives
+   -- in the C shim, the ONLY key that opens it is the integer handle
+   -- btStartSession returned, and TorrentXT exports nothing that enumerates
+   -- sessions or frees one you can no longer name (live_session_count() is a
+   -- C++ test hook, not part of the FFI). So dropping the handle while the
+   -- session is live orphans it permanently: btStartSession answers 0 for the
+   -- rest of the process and the probe below blames a stack the operator does
+   -- not have open.
+   --
+   -- The Re-run button already went through stCleanup, which stops it. This
+   -- path is the one that did not: openStack re-entry, which the runbook's own
+   -- trap 5.2 escape hatch (`send "openStack" to this stack`) performs on a
+   -- stack that may already have run. Guarded because TorrentXT may simply be
+   -- absent, and safe to repeat because btStopSession on a stale handle is a
+   -- documented no-op.
+   try
+      if sSession is not empty and sSession > 0 then
+         btStopSession sSession
+      end if
+   catch tError
+      -- TorrentXT absent, or the session was already released; nothing to free.
+   end try
    put 0 into sSession
    put false into sHaveCoinScript
    put empty into sSealKey
@@ -393,7 +417,22 @@ command stRun
    -- above already opened it, and the folded torrent harness reuses it. The
    -- async cross-member loopbacks start below and must not be racing while
    -- these run.
-   stRunMemberHarnesses
+   -- CONTAINED like every other section, and for one extra reason. This call
+   -- was the single synchronous statement in stRun without a try around it,
+   -- on the reasoning that each folded harness contains its own sections. Four
+   -- of the six have unguarded prologues (bt1stRun clears the error and reads
+   -- btLastError before its try begins), and stMergeCounted/stMergeReturned
+   -- only validate counters they were actually handed. A throw here therefore
+   -- skipped everything below - including `send "stPump"`, which is what
+   -- eventually reaches stFinish and stTeardown - so the run ended with the
+   -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
+   -- no summary printed. The session is the one that does not come back: see
+   -- the note above `put 0 into sSession`.
+   try
+      stRunMemberHarnesses
+   catch tError
+      stSectionFailed "deep per-member self-tests", tError
+   end try
    try
       stCrossIdentitySection
    catch tError
@@ -460,8 +499,30 @@ command stProbe
       if sSession > 0 then
          put true into sHaveTorrent
       else
+         -- NAME BOTH CAUSES, because the shim cannot tell them apart and
+         -- neither can we. btx_session_new refuses a second session with one
+         -- message however the first was opened, and there is no exported
+         -- live-count or owner query. This note used to assert the cause it
+         -- could not know ("close the other TorrentXT stack"), which sends the
+         -- operator hunting for a window that is not open. The other cause is
+         -- real and this harness has produced it: an earlier run in THIS engine
+         -- process that lost its handle, either by dying before stTeardown or
+         -- by having its stack script recompiled, which clears every script
+         -- local while the C-side session keeps running.
+         --
+         -- No recovery is attempted, and that is deliberate. A handle is
+         -- (generation << 16) | slot, so the first one a process mints is
+         -- exactly 65536 and a search would find it in one guess - and if the
+         -- owner is a real client stack, btStopSession pauses it, flushes its
+         -- resume data and joins its threads out from under an app still
+         -- holding torrent handles. This harness advertises itself as
+         -- non-destructive; guessing at another process-wide singleton is not
+         -- a thing a self-test may do.
          put "TorrentXT is installed but a session is already live in this " \
-               & "process - close the other TorrentXT stack" into sTorrentNote
+               & "process. Either another TorrentXT stack owns it (close that " \
+               & "stack and re-run), or an earlier run here lost its handle - " \
+               & "quit and relaunch OXT. See OXT-PASS-RUNBOOK 5.1.1." \
+               into sTorrentNote
       end if
    catch tError
       put 0 into sSession
@@ -1692,30 +1753,142 @@ command stRunMemberHarnesses
    end if
 end stRunMemberHarnesses
 
--- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT). Their
--- convention is a trailing "N passed, M failed" line, so the counts are parsed
--- back out rather than guessed at - and if the parse ever fails, that is a
--- reported FAILURE, not a silent zero.
+-- Strip the punctuation a report hangs off its words, so "PASSED:" and
+-- "passed," both read as the bare word "passed" and "68," reads as 68. Only the
+-- EDGES are touched: a word's own characters are left alone, so "self-test"
+-- stays "self-test" and goes on disqualifying its line rather than quietly
+-- turning into something the summary test would accept.
+function stTrimEdges pWord
+   local tOut, tPunct
+
+   put ":,.;()[]" into tPunct
+   put pWord into tOut
+   -- The `tOut is not empty` guard is load-bearing, not defensive noise: in
+   -- xTalk EVERY string contains empty, so the moment tOut runs out,
+   -- `tPunct contains char 1 of tOut` is TRUE forever and the loop never ends.
+   repeat while tOut is not empty and tPunct contains char 1 of tOut
+      delete char 1 of tOut
+   end repeat
+   repeat while tOut is not empty and tPunct contains the last char of tOut
+      delete the last char of tOut
+   end repeat
+   return tOut
+end stTrimEdges
+
+-- Given ONE line, return "<passed> <failed>" if that line is a summary, or
+-- empty if it is not. This is the whole rule; see stMergeReturned below for why
+-- it is shaped this way.
+--
+-- A line qualifies only when EVERY word on it is either a number or the word
+-- "passed"/"failed" (case and edge punctuation ignored), with exactly one of
+-- each keyword, "passed" before "failed", and exactly two numbers. That shape
+-- test - rather than "the line mentions both words" - is what makes an
+-- individual check's LABEL unable to masquerade as a summary: a label always
+-- carries at least one other word (SodiumXT's "  ok   a failed call surfaces an
+-- error" has "ok", "a", "call"), and one other word is enough to disqualify it.
+function stSummaryCounts pLine
+   local tI, tN, tWord, tPassAt, tFailAt, tNums
+
+   put the number of words of pLine into tN
+   put 0 into tPassAt
+   put 0 into tFailAt
+   put empty into tNums
+   repeat with tI = 1 to tN
+      put stTrimEdges(word tI of pLine) into tWord
+      if tWord is a number then
+         put tWord & space after tNums
+      else if toLower(tWord) is "passed" and tPassAt is 0 then
+         put tI into tPassAt
+      else if toLower(tWord) is "failed" and tFailAt is 0 then
+         put tI into tFailAt
+      else
+         -- Any other word - or a SECOND "passed"/"failed" - means this line is
+         -- prose. Nothing is guessed from it.
+         return empty
+      end if
+   end repeat
+   if tPassAt is 0 or tFailAt is 0 or tPassAt > tFailAt then
+      return empty
+   end if
+   if the number of words of tNums is not 2 then
+      return empty
+   end if
+   -- Keyword order was just checked, and both shipped spellings put the pass
+   -- count with the "passed" keyword, so the two numbers are in the order the
+   -- two keywords are: first number = passed, second = failed. Requiring the
+   -- keyword order is what makes that one-line rule safe rather than lucky.
+   return word 1 to 2 of tNums
+end stSummaryCounts
+
+-- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT). The
+-- counts are parsed back out of the report rather than guessed at, and if the
+-- parse ever fails that is a reported FAILURE, not a silent zero.
+--
+-- THE RULE, in one sentence: the summary is the ONE line of the report that is
+-- nothing but two numbers and the words "passed" and "failed" (in that order,
+-- case and edge punctuation ignored), and its first number is the pass count
+-- and its second the fail count.
+--
+-- WHY IT IS NOT THE OBVIOUS THING, and this is the whole reason the handler was
+-- rewritten. It used to take word 1 as the pass count and the LAST word as the
+-- fail count, under a comment claiming that covered both members' spellings. It
+-- covered NEITHER, and the 2026-08-09 engine pass duly reported both members as
+-- unreadable while both reports were perfect. The two shipped spellings are
+-- mirror images of each other, and both are exactly four words:
+--
+--   SodiumXT, the LAST line of its report:    PASSED: 68   FAILED: 0
+--   OnionXT,  the FIRST line of its report:   40 passed, 0 failed
+--
+-- SodiumXT is keyword-first, so its word 1 is "PASSED:", which is not a number.
+-- OnionXT is number-first, so its last word is "failed", which is not a number.
+-- The old code needed BOTH ends to be numeric, which is true of neither shape,
+-- so each format defeated it at the opposite end - and the validation then did
+-- exactly the job it was built for and refused to guess. Two lesser bugs rode
+-- along: the loop scanned top-to-bottom keeping the LAST match, which is right
+-- for SodiumXT's trailing summary and wrong for OnionXT's leading one; and its
+-- only test for a summary line was "contains passed and contains failed", which
+-- any check label mentioning both words would satisfy.
+--
+-- The shape rule above fixes all three at once, and position stops mattering:
+-- first line or last, there is exactly ONE line in either report that can
+-- qualify. Requiring exactly one is what keeps this LOUD - zero matches and two
+-- matches are both reported failures that print the report for a human to read,
+-- never a silent zero folded into the suite totals.
 command stMergeReturned pMember, pReport
-   local tLine, tI, tCount, tPassed, tFailed, tFound
+   local tLine, tI, tCount, tPair, tMatches, tPassed, tFailed, tOk
+
    stSection pMember & ": its own full self-test"
-   put false into tFound
-   put 0 into tPassed
-   put 0 into tFailed
+   put 0 into tMatches
+   put empty into tPassed
+   put empty into tFailed
    put the number of lines of pReport into tCount
    repeat with tI = 1 to tCount
       put line tI of pReport into tLine
-      if tLine contains "passed" and tLine contains "failed" then
-         put word 1 of tLine into tPassed
-         -- Both members spell it "<n> passed, <m> failed" or
-         -- "PASSED: <n>   FAILED: <m>"; take the last number on the line for
-         -- the failure count so either spelling works.
-         put word (the number of words of tLine) of tLine into tFailed
-         put true into tFound
+      put stSummaryCounts(tLine) into tPair
+      if tPair is not empty then
+         add 1 to tMatches
+         put word 1 of tPair into tPassed
+         put word 2 of tPair into tFailed
       end if
    end repeat
-   if tFound is false or tPassed is not a number or tFailed is not a number then
+   -- Built as a value rather than a continued condition, for the same reason
+   -- stMergeCounted below does it: three of the six copies of
+   -- check-livecodescript.py do not join line continuations before counting
+   -- block openers, so an `if ... \` reads to them as a handler-level statement
+   -- and every `end if` after it looks unbalanced.
+   --
+   -- The two numeric tests are redundant with stSummaryCounts, which already
+   -- refuses to return anything but two numbers. They stay because the lesson
+   -- recorded on stMergeCounted below was that "it cannot be anything but a
+   -- number" is a feeling, not a check, and these values are added into the
+   -- suite totals: an `add` on a non-number is an UNCAUGHT engine error that
+   -- takes the whole run, while a failed assertion costs one line of report.
+   put (tMatches is 1 and tPassed is a number and tFailed is a number) into tOk
+   if tOk is false then
       stAssert pMember & " deep self-test reported a summary this harness could read", false
+      stNote "Looked for the one line that is nothing but two counts and the words"
+      stNote "passed/failed (either order of word and number);" && tMatches && \
+            "line(s) in its report matched."
       stNote "Its report is below verbatim; read the counts by eye."
    else
       add tPassed to sPassed

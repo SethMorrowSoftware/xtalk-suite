@@ -775,11 +775,73 @@ from step 0 calls `btStartSession` and holds THE session until its window closes
 already taken, its torrent sections SKIP with a note rather than failing), so the damage
 runs one way only: leave step 0 open and step 4 has nothing to start.
 
+#### 5.1.1 RESTART OXT BEFORE EVERY PASTE. A lost session handle never comes back.
+
+**Read this before your second paste of the night.** It cost the 2026-08-09 pass the
+entire TorrentXT surface (85 checks) *and* both cross-member BEP44 sections, which is
+more coverage than any other single failure in that run.
+
+The one-session latch lives in the C shim. The only key that opens it is the integer
+handle `btStartSession` returned, and **TorrentXT exports nothing that enumerates
+sessions or releases one you can no longer name** (`live_session_count()` is a C++
+test hook in `torrent_shim.h`, deliberately not part of the FFI). The harness keeps
+that handle in a script local. So anything that destroys the script local while the
+session is still live orphans the session **for the rest of that engine launch**:
+
+- **Re-pasting or editing the stack script.** Recompiling a script clears its script
+  locals; the C-side session is untouched and keeps running. This is the common one,
+  because "install the fix and run it again" is the entire loop of an engine pass.
+- **A run that died before its teardown.** Teardown happens at the *end* of the async
+  pump. An uncaught error earlier skips it and leaves the session up.
+- **`send "openStack" to this stack`** (the trap 5.2 escape hatch) on a stack that has
+  already run. It re-enters the runner without going through the Re-run button's
+  cleanup.
+
+The next run then reports:
+
+```
+      TorrentXT: ABSENT - TorrentXT is installed but a session is already live
+      in this process ...
+```
+
+and there is no other stack to close, because the thing holding the session is your
+own last run. **The only remedy is to quit and relaunch OXT.** Nothing you can type
+releases it, and nothing you can type distinguishes it from a genuinely foreign owner:
+the shim answers both cases with the same refusal. **Do not go hunting for a handle to
+stop.** A session handle is `(generation << 16) | slot`, so the first one a process
+mints is exactly `65536` and a search would find it on the first guess - and if the
+owner turns out to be a real client stack, `btStopSession` pauses it, flushes its
+resume data and joins its threads out from under an app that is still holding torrent
+handles.
+
+So run the torrent-bearing harnesses this way:
+
+1. **Quit and relaunch OXT before every paste** of
+   `tests/suite-selftest.livecodescript` or `torrent-selftest.livecodescript`.
+   Treat "I edited the script" as "I have to restart the engine". Every other member
+   tolerates a re-paste: ENet and DataChannel rebuild their hosts each pass and the
+   four pure members hold no process state at all. TorrentXT is the only one where a
+   re-paste costs you a whole subsystem.
+2. **Within one launch, re-run only with the harness's own Re-run button**, or by
+   closing and reopening the stack window. Both paths run `stCleanup`, which stops the
+   session and takes a fresh one. `send "openStack"` and a fresh paste do not.
+3. **If a run dies mid-way with an error dialog, click Re-run BEFORE you touch the
+   script.** That releases the session. Once you have recompiled, the handle is gone
+   and only a relaunch will do.
+
+The cost of getting this wrong is larger than it looks, so it is worth stating plainly:
+TorrentXT is the only member whose absence *also* silently removes coverage belonging
+to other members. A run that skips it skips `CROSS: one seed, one identity` and
+`CROSS: SodiumXT signs a BEP44 item TorrentXT accepts` with it, and those two sections
+are the reason the suite harness exists.
+
 ### 5.2 A stack must be CLOSED and REOPENED
 
 Pasting the script is not running it. `openStack` is what builds the UI and starts the
 run, and it does not fire on paste. If nothing happens after you paste, you skipped
-step 4 of section 3.1. Escape hatch: `send "openStack" to this stack`.
+step 4 of section 3.1. Escape hatch: `send "openStack" to this stack` - but **not** for
+a torrent-bearing harness that has already run once in this engine launch; see trap
+5.1.1, where that shortcut is one of the three ways to lose the session for good.
 
 ### 5.3 Tor Browser exposes no control port
 
