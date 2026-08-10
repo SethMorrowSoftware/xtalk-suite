@@ -155,7 +155,23 @@ on-engine pass. Keep both gates green in CI on every push / PR.
      are different languages; do not carry the idiom across.
    Cost an OXT session in 2026-08-09. Every member's `check-livecodescript.py` now refuses it,
    `.livecodescript` only.
-10. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
+10. **`throw` from INSIDE a `catch` block does not reach the caller.** The handler falls
+   through to whatever follows the `try` and returns its result variable, which is
+   usually EMPTY - so a guard that catches, cleans up, and re-throws silently converts
+   "this input is invalid" into "here is an empty answer". Capture the error into a
+   local, close the try, and throw AFTER `end try`:
+   `put false into tFailed` / `catch tError` -> `put true into tFailed` +
+   `put tError into tFailure` / after `end try`: `if tFailed then throw tFailure`.
+   **`return` inside a catch is FINE** and is engine-proven (onionxt's
+   `oxSodiumHasSha3`); do not over-generalise this into "avoid catch". Cost a
+   money-library fail-open on 2026-08-09: nine itemDelimiter guards did it, and one of
+   them was a mnemonic validator whose Inner reaches `return false` only via its catch,
+   so an invalid seed phrase was reported VALID.
+11. **`repeat with i = A to B step N` does not honour the increment.** i walks one at a
+   time. Use `repeat while` with an explicit `add N to i`. Found the same day, in the
+   only `step` loop in the whole family - and it made a hex decoder reject valid input
+   with its own "not a hex digit" error, i.e. the library blaming the caller's data.
+12. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
    name sockets by their `host:port` string (with a numeric or `|`-suffix for multiples). Store the EXACT
    id the engine hands you and use it verbatim in `read` / `write` / `close`; never reconstruct it.
 

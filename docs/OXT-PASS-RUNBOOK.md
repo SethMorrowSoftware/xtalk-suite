@@ -792,10 +792,16 @@ session is still live orphans the session **for the rest of that engine launch**
   locals; the C-side session is untouched and keeps running. This is the common one,
   because "install the fix and run it again" is the entire loop of an engine pass.
 - **A run that died before its teardown.** Teardown happens at the *end* of the async
-  pump. An uncaught error earlier skips it and leaves the session up.
-- **`send "openStack" to this stack`** (the trap 5.2 escape hatch) on a stack that has
-  already run. It re-enters the runner without going through the Re-run button's
-  cleanup.
+  pump. An uncaught error earlier skips it and leaves the session up. Narrowed by the
+  same change: every synchronous section, every folded member harness and `stProbe`
+  itself are now individually contained, so a throw costs one FAIL line rather than
+  the run. `stPump` is still uncontained, so an ASYNC-phase throw can still skip
+  teardown - that leaks one run, not the launch, because the next `stRun` releases it.
+- ~~**`send "openStack" to this stack`**~~ **CLOSED.** This was a third loss path
+  until the same change that added this trap: `stRun` now releases the session
+  (`btStopSession`) before it clears the handle, so openStack re-entry is safe.
+  Listed here because it is exactly the kind of stale warning that trains an
+  operator to restart after every green run, which is its own tax.
 
 The next run then reports:
 
@@ -805,8 +811,9 @@ The next run then reports:
 ```
 
 and there is no other stack to close, because the thing holding the session is your
-own last run. **The only remedy is to quit and relaunch OXT.** Nothing you can type
-releases it, and nothing you can type distinguishes it from a genuinely foreign owner:
+own last run. **Once the handle is gone, the only remedy is to quit and relaunch
+OXT** - nothing you can type releases it *then*, and nothing distinguishes it from a
+genuinely foreign owner:
 the shim answers both cases with the same refusal. **Do not go hunting for a handle to
 stop.** A session handle is `(generation << 16) | slot`, so the first one a process
 mints is exactly `65536` and a search would find it on the first guess - and if the
@@ -839,9 +846,10 @@ are the reason the suite harness exists.
 
 Pasting the script is not running it. `openStack` is what builds the UI and starts the
 run, and it does not fire on paste. If nothing happens after you paste, you skipped
-step 4 of section 3.1. Escape hatch: `send "openStack" to this stack` - but **not** for
-a torrent-bearing harness that has already run once in this engine launch; see trap
-5.1.1, where that shortcut is one of the three ways to lose the session for good.
+step 4 of section 3.1. Escape hatch: `send "openStack" to this stack`. This used to be
+unsafe for a torrent-bearing harness that had already run once in the launch; `stRun`
+now releases the session before clearing its handle, so it is fine. See trap 5.1.1 for
+the one loss path that remains, which is recompiling the script.
 
 ### 5.3 Tor Browser exposes no control port
 

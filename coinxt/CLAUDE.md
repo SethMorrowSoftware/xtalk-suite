@@ -696,6 +696,58 @@ more: `kSegwitErrorProgram` was never checked to still SPELL "ERROR" (edit those
 bytes and the fail-open regression quietly stops reproducing the bug while still passing),
 and the two EIP-55 negatives were never checked to be case-variants of the positive.
 
+**THE FIRST ENGINE PASS OF THE SCRIPT LAYER (2026-08-09), and the fail-open it found.**
+Two defects, both in constructs that existed at exactly ONE place in the entire
+six-member suite, which is precisely why neither had ever met an engine.
+
+**1. `repeat with tI = 1 to tCount step 2` did not honour its increment.** In
+`cxHexDecode`, `tI` walked one at a time, so the last pass read `char (tCount + 1)`,
+got EMPTY, and the handler's own fail-closed check threw
+`"the input contains a character that is not a hex digit"` over VALID lowercase hex.
+Six harness sections died. The shape is what makes it expensive: the library accused
+the CALLER'S DATA of being corrupt, in the exact words it reserves for real
+corruption, so the symptom pointed at the vector set rather than at the loop. Now
+`repeat while` plus an explicit `add 2`, the form `cxBase58Encode` and
+`cxConvert8To5` already used.
+
+**2. `throw` from INSIDE a `catch` block does not reach the caller, and this one was
+a FAIL-OPEN in the handler whose whole job is catching typos.** The nine
+itemDelimiter guards - added in this same session to fix a real exposure - each did
+`catch tError / set the itemDelimiter / throw tError`. The engine discards that
+throw; the handler falls through to `return tResult` with `tResult` never assigned
+and returns EMPTY where it owed an error. Nine "is refused" assertions came back
+false. Far worse, and invisible in that run because the section died earlier:
+`cxMnemonicValidateInner` reaches `return false` ONLY through its own catch, so with
+the error swallowed **`cxMnemonicValidate` answered TRUE for a mistyped twelve-word
+backup**. Fixed by capturing the error, closing the `try`, and throwing after
+`end try`.
+
+**The control that narrows it, and it matters:** `return` inside a catch is FINE and
+engine-proven. onionxt's `oxSodiumHasSha3` reaches `false` only that way (sxSha3_256
+does not exist, docs/08 gap #2), it feeds `oxTransportInfo`'s `offlineAddress`, and
+the suite harness asserts that IS false - which PASSED in the same run. Had `return`
+been discarded the handler would have returned empty, and `empty is false` is false,
+so the line would have gone red. Only `throw` is affected. Do not over-generalise
+this into "avoid catch".
+
+**Three method lessons, each of which cost a wrong answer before it was learned:**
+
+- **Two confident root causes were WRONG before the right one.** First `byteToNum(char
+  ...)` - refuted, because `cxEthAddressChecksum` uses exactly that and EIP-55 passed
+  5/5 in the same run. Then `stThrows`'s `do` - refuted, because
+  `stThrows("cxEthAddressChecksum", ...)` goes through the identical `do` path against
+  a script-layer handler and passed. The partition that actually held was 9/9 guarded
+  FAILED, every unguarded handler PASSED. **A hypothesis that does not predict exactly
+  the observed set, and nothing else, is not the cause.**
+- **Fixing one thing made the next run WORSE, and that was predictable.** Unblocking
+  `cxHexDecode` makes 132 previously-dead assertions execute for the first time, eight
+  of them negatives against guarded handlers. Shipping the hex fix alone would have
+  taken the engine from 9 red lines to 17. When a blocker is removed, count what it
+  was hiding before promising an improvement.
+- **The gates now refuse both constructs**, in all six copies of
+  `check-livecodescript.py`, `.livecodescript` only, mutation-tested 6/6 including
+  that `return`-in-catch is NOT flagged.
+
 **A note on method, learned twice in one session.** Two mutations were first reported as NOT CAUGHT
 and both times the PROBE was wrong, not the gate: one exercised only the encode direction while the
 mutation was in the decoder, and one reverted only half of a two-part defect so the bug never

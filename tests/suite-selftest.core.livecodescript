@@ -384,7 +384,19 @@ command stRun
    -- this, one throw inside openStack leaves the maintainer with an error dialog,
    -- an empty window, no summary, and (worse) a live libtorrent session that
    -- blocks the next run. Each catch reports which section died and why.
-   stProbe
+   -- stProbe is contained for the same reason as every section below, and one
+   -- sharper one: it is the statement that TAKES the session. A throw anywhere
+   -- after btStartSession returned - a later probe's scaffolding, a report line
+   -- - would strand a live session AND skip the `send "stPump"` at the bottom
+   -- of this handler, which is the only route to stFinish and stTeardown. Each
+   -- per-member probe inside already carries its own try, so this catches only
+   -- the scaffolding between them, and every sHave* flag a half-finished probe
+   -- leaves behind is read from inside a try, so a stale one costs a FAIL line.
+   try
+      stProbe
+   catch tError
+      stSectionFailed "extension probe", tError
+   end try
    try
       stSodiumSection
    catch tError
@@ -418,7 +430,8 @@ command stRun
    -- async cross-member loopbacks start below and must not be racing while
    -- these run.
    -- CONTAINED like every other section, and for one extra reason. This call
-   -- was the single synchronous statement in stRun without a try around it,
+   -- used to be uncontained (it was not the ONLY bare statement here - stProbe,
+   -- stCancelPump and stShow are bare too; that earlier claim was wrong),
    -- on the reasoning that each folded harness contains its own sections. Four
    -- of the six have unguarded prologues (bt1stRun clears the error and reads
    -- btLastError before its try begins), and stMergeCounted/stMergeReturned
@@ -428,6 +441,16 @@ command stRun
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
    -- the note above `put 0 into sSession`.
+   -- The OUTER try is a BACKSTOP ONLY. Each of the six members inside is
+   -- contained individually, and that is the part that matters: with only this
+   -- outer one, a throw in member three left members four, five and six never
+   -- run, never merged and not even SKIPPED, while the run still printed a
+   -- tidy summary silently short by a hundred and fifty checks. That is the
+   -- same wrong-answer-that-looks-right shape CLAUDE.md already records for
+   -- stMergeCounted, reintroduced one level up - and strictly worse than the
+   -- uncontained version it replaced, because a dead run is at least
+   -- unmistakable. Per-member containment costs one FAIL line and keeps the
+   -- other five intact; this catch only fires for the scaffolding between them.
    try
       stRunMemberHarnesses
    catch tError
@@ -1707,13 +1730,21 @@ command stRunMemberHarnesses
    -- rewriting one to look like the other would be editing a proven harness to
    -- suit this file, which is backwards.
    if sHaveSodium then
-      stMergeReturned "SodiumXT", sx1sxSelfTest()
+      try
+         stMergeReturned "SodiumXT", sx1sxSelfTest()
+      catch tError
+         stSectionFailed "SodiumXT deep self-test", tError
+      end try
    else
       stSkip "SodiumXT deep self-test", "install org.openxtalk.library.sodium"
    end if
 
    if sHaveOnion then
-      stMergeReturned "OnionXT", ox1oxSelfTest()
+      try
+         stMergeReturned "OnionXT", ox1oxSelfTest()
+      catch tError
+         stSectionFailed "OnionXT deep self-test", tError
+      end try
    else
       stSkip "OnionXT deep self-test", "install org.openxtalk.library.onion"
    end if
@@ -1721,8 +1752,12 @@ command stRunMemberHarnesses
    -- BOTH pieces, because ten of the folded sections call the script layer and
    -- would report FAIL rather than SKIP without it (see stProbe).
    if sHaveCoin and sHaveCoinScript then
-      cx1stRun
-      stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal
+      try
+         cx1stRun
+         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal
+      catch tError
+         stSectionFailed "CoinXT deep self-test", tError
+      end try
    else if sHaveCoin then
       stSkip "CoinXT deep self-test", "the extension is loaded but its SCRIPT layer is not:" && \
             "start using stack " & quote & "coinxt" & quote & \
@@ -1732,22 +1767,34 @@ command stRunMemberHarnesses
    end if
 
    if sHaveTorrent then
-      bt1stRun
-      stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal
+      try
+         bt1stRun
+         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal
+      catch tError
+         stSectionFailed "TorrentXT deep self-test", tError
+      end try
    else
       stSkip "TorrentXT deep self-test", sTorrentNote
    end if
 
    if sHaveEnet then
-      en1stRun
-      stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal
+      try
+         en1stRun
+         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal
+      catch tError
+         stSectionFailed "ENetXT deep self-test", tError
+      end try
    else
       stSkip "ENetXT deep self-test", "install org.openxtalk.library.enet"
    end if
 
    if sHaveDc then
-      dc1stRun
-      stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal
+      try
+         dc1stRun
+         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal
+      catch tError
+         stSectionFailed "DataChannelXT deep self-test", tError
+      end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
    end if
