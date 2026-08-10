@@ -77,6 +77,26 @@ def main(argv):
         problems.append("duplicate handler names (the script will not compile): "
                         + ", ".join(sorted(dups)))
 
+    # ---- 1b. no duplicate script-level declarations -------------------------
+    # Worse than a duplicate handler, because it is not obviously an error at
+    # all: two units silently SHARE one variable and perturb each other's
+    # state - exactly the isolation the fold's prefixing exists to guarantee,
+    # and a hazard the embedded (unprefixed) script layers reintroduce. The
+    # generator refuses to write such a file; this re-checks the committed one.
+    decl_names = []
+    for line in re.findall(r'^(?:local|constant)\s+([^\n]+)$', bare, re.M):
+        for part in line.split(","):
+            part = part.split("=")[0].strip()
+            if re.fullmatch(r'\w+', part):
+                decl_names.append(part)
+    seen, dup_decls = set(), set()
+    for n in decl_names:
+        (dup_decls if n.lower() in seen else seen).add(n.lower())
+    if dup_decls:
+        problems.append("duplicate script-level declarations (two units would "
+                        "silently share one variable): "
+                        + ", ".join(sorted(dup_decls)))
+
     # ---- 2. every script-level name a folded harness uses is declared -------
     # This is the silent one. Collect the script-level declarations, then look
     # for prefixed s*/k* names used anywhere that were never declared.
@@ -223,6 +243,66 @@ def main(argv):
                 f"the literal text of that name:\n      "
                 + "\n      ".join(f"line {i}: {t}" for i, t in late[:6])
                 + ("\n      ..." if len(late) > 6 else ""))
+
+    # ---- 11. the embedded script layers are present, balanced, and whole ----
+    # tools/build-suite-selftest.py embeds coinxt's and onionxt's pure-script
+    # libraries between sentinel lines. Their absence would mean the harness
+    # again tests whatever stale copy happens to be loaded in the engine - the
+    # failure mode the embed exists to close - and unbalanced sentinels would
+    # break check-suite-coverage.py's cut, which is what keeps the libraries'
+    # own bodies from counting as coverage of themselves.
+    begin_re = re.compile(r'^-- >>> GENERATED EMBED: (.+) >>> --$')
+    end_re = re.compile(r'^-- <<< GENERATED EMBED: (.+) <<< --$')
+    span_lines, stack, seen_spans = {}, [], set()
+    for i, line in enumerate(src.split("\n"), start=1):
+        m = begin_re.match(line)
+        if m:
+            stack.append(m.group(1))
+            seen_spans.add(m.group(1))
+            span_lines.setdefault(m.group(1), [])
+            continue
+        m = end_re.match(line)
+        if m:
+            if not stack or stack[-1] != m.group(1):
+                problems.append(f"line {i}: embed sentinel end '{m.group(1)}' has "
+                                f"no matching begin")
+            else:
+                stack.pop()
+            continue
+        if stack:
+            span_lines[stack[-1]].append(line)
+    for name in stack:
+        problems.append(f"embed sentinel begin '{name}' never ends")
+    for want in ("coinxt script layer", "onionxt script layer"):
+        if want not in seen_spans:
+            problems.append(f"no embedded span '{want}' - the harness no longer "
+                            f"carries that library, so its folded tests run "
+                            f"against whatever stale copy the engine has loaded")
+        elif len(span_lines.get(want, [])) < 500:
+            problems.append(f"embedded span '{want}' is only "
+                            f"{len(span_lines.get(want, []))} lines - a fragment, "
+                            f"not the library")
+
+    # ---- 12. the embedded layers' script-level names are declared -----------
+    # Check 2 protects the FOLDED harnesses by their prefixes; the embedded
+    # libraries are unprefixed, so their s*/k* names need the same proof: a
+    # declaration the generator's hoist missed would not error, it would
+    # evaluate to the literal text of its own name inside a LIBRARY handler -
+    # a wrong address or a dead socket state machine, not a red test line.
+    embedded_bare = strip_comments("\n".join(
+        "\n".join(lines) for lines in span_lines.values()))
+    embedded_used = set(re.findall(r'\b([sk][A-Z]\w*)\b', embedded_bare))
+    handler_names_exact = set(defs)
+    undeclared_embed = sorted(
+        n for n in embedded_used
+        if n not in declared and n not in handler_names_exact)
+    if undeclared_embed:
+        problems.append(
+            "embedded-layer script-level names used but never declared (the "
+            "generator's declaration hoist missed them): "
+            + ", ".join(undeclared_embed[:12])
+            + (f" (+{len(undeclared_embed) - 12} more)"
+               if len(undeclared_embed) > 12 else ""))
 
     if problems:
         print("check-suite-selftest: FAILED")

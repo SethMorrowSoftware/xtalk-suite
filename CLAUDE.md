@@ -73,10 +73,32 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test**, folded in with each one's names prefixed. Edit the
-member harness, not the generated file.
+member's own deep self-test**, folded in with each one's names prefixed, plus —
+since 2026-08-10 — **the two pure-script LIBRARIES themselves**,
+`coinxt/src/coinxt.livecodescript` and `onionxt/src/onionxt.livecodescript`,
+embedded VERBATIM (no prefixing: the tests must call them by their real names).
+The embed exists because the old "two `start using` lines" setup step cost a
+real engine pass: a fresh harness ran against a stale in-memory coinxt stack
+and reported exactly the failures whose fix was already merged. One paste now
+carries the code its tests test, and `--check` pins both to one tree — which
+also means **a script-layer edit is not done until the harness is rebuilt**,
+exactly like a member-harness edit. Edit the member file, not the generated one.
 
-Three things about it are worth knowing before you touch it:
+Four things about it are worth knowing before you touch it:
+
+- **The embedded libraries sit between sentinel lines, and the coverage gate
+  depends on them.** A library's body names nearly its whole own API
+  (`cxMnemonicToSeed` calls `cxMnemonicNormalize`; the socket dispatchers name
+  every callback), and none of those mentions is a test. So
+  `check-suite-coverage.py` CUTS the `GENERATED EMBED` spans before it scans
+  for calls — measured uncut, it reported a fake 309/309 with the 18
+  live-daemon/engine-event exemptions silently absorbed — and it FAILS, rather
+  than falling back, on a harness with no spans to cut. The sentinel format is
+  a contract between the generator and that gate; change both together. The
+  generator also refuses to write an assembly where any handler or
+  script-level declaration is defined twice, because the embedded layers are
+  unprefixed and a script-level duplicate would make two units silently share
+  one variable.
 
 - **The namespacing is TOTAL.** All five `.livecodescript` harnesses define
   `stAssert`, `stRun`, `stBuild` and `sTotal`, so every name a member file

@@ -38,6 +38,19 @@ member vector gate's job (coinxt/tools/check-script-vectors.py and friends);
 this one exists so that a handler cannot be missed ENTIRELY without somebody
 writing down why.
 
+THE EMBEDDED SCRIPT LAYERS ARE CUT OUT FIRST, AND THE GATE FAILS IF IT CANNOT
+FIND THEM. tools/build-suite-selftest.py embeds coinxt's and onionxt's pure-
+script libraries into the harness verbatim, between sentinel lines, so that one
+paste carries the code its tests test. A library's body names nearly its whole
+own API - cxMnemonicToSeed calls cxMnemonicNormalize, the socket dispatchers
+name every callback - and none of those mentions is a TEST. Scanned uncut, the
+harness scores both members at a permanent 100% (measured: 309/309, the 18
+live-daemon/engine-event exemptions silently absorbed), and every future
+handler arrives pre-"exercised" by its own definition. So the spans between the
+sentinels are removed before the scan, and their ABSENCE is an error rather
+than a fallback: a harness with no spans to cut means the embed contract
+changed under this gate, and scanning it whole would fail open.
+
 Usage:
   python3 tools/check-suite-coverage.py            # print the table
   python3 tools/check-suite-coverage.py --check    # same, terse, for the gates
@@ -97,6 +110,46 @@ UNTESTABLE = {
 }
 
 
+# The sentinel format is a CONTRACT with tools/build-suite-selftest.py (its
+# EMBED_BEGIN/EMBED_END); change it there and here together. REQUIRED_EMBEDS
+# guards the dangerous direction only - spans DISAPPEARING, which would fail
+# open as inflated coverage. A new span appearing (a third member growing a
+# script layer) is cut automatically without being listed here.
+EMBED_BEGIN_RE = re.compile(r'^-- >>> GENERATED EMBED: (.+) >>> --$')
+EMBED_END_RE = re.compile(r'^-- <<< GENERATED EMBED: (.+) <<< --$')
+REQUIRED_EMBEDS = {"coinxt script layer", "onionxt script layer"}
+
+
+def cut_embedded_spans(text):
+    """Drop every generated-embed span. Returns (kept, names_seen, problems).
+
+    Strict about pairing: an unmatched begin means the cut would swallow the
+    rest of the file, and an unmatched end means an embedded span leaked into
+    the scan - both are reported rather than guessed around.
+    """
+    kept, names, stack, problems = [], set(), [], []
+    for i, line in enumerate(text.split("\n"), start=1):
+        m = EMBED_BEGIN_RE.match(line)
+        if m:
+            stack.append((m.group(1), i))
+            names.add(m.group(1))
+            continue
+        m = EMBED_END_RE.match(line)
+        if m:
+            if not stack or stack[-1][0] != m.group(1):
+                problems.append(f"line {i}: embed end '{m.group(1)}' has no "
+                                f"matching begin")
+            else:
+                stack.pop()
+            continue
+        if not stack:
+            kept.append(line)
+    for name, i in stack:
+        problems.append(f"line {i}: embed begin '{name}' never ends, so the cut "
+                        f"would swallow everything after it")
+    return "\n".join(kept), names, problems
+
+
 def strip_comments(text):
     """Comment-free view. A handler named only in a comment is not exercised."""
     out = []
@@ -143,7 +196,25 @@ def main(argv):
         print("check-suite-coverage: tests/suite-selftest.livecodescript is missing "
               "- run tools/build-suite-selftest.py")
         return 1
-    harness = strip_comments(open(HARNESS, encoding="utf-8").read())
+    raw = open(HARNESS, encoding="utf-8").read()
+    cut, embeds_seen, cut_problems = cut_embedded_spans(raw)
+    if cut_problems:
+        print("check-suite-coverage: FAILED (the embedded-span sentinels are "
+              "damaged; cannot scan honestly)")
+        for p in cut_problems:
+            print(f"  - {p}")
+        return 1
+    missing_embeds = REQUIRED_EMBEDS - embeds_seen
+    if missing_embeds:
+        print("check-suite-coverage: FAILED")
+        print("  - the harness has no embedded span(s) for: "
+              + ", ".join(sorted(missing_embeds)))
+        print("    Scanning it whole would count each library's own body as "
+              "coverage of itself and this gate would never fail again for "
+              "that member. The embed contract with tools/build-suite-selftest.py "
+              "changed; update both sides together.")
+        return 1
+    harness = strip_comments(cut)
 
     problems = []
     rows = []

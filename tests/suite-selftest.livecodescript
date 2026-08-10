@@ -35,6 +35,16 @@ script "xTalkSuiteSelfTest"
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
 --
+-- AND IT CARRIES THE TWO PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- layer (encoders, addresses, the HD wallet walk) and onionxt's entire ox*
+-- surface are LiveCodeScript, and they used to be a separate setup step -
+-- `start using stack` x2 before pasting. Embedded, that step is gone, and so
+-- is the failure mode it carried: the 2026-08-10 re-run pasted a fresh
+-- harness into an engine whose in-memory coinxt stack predated a parser fix,
+-- and got two red lines that read as "the fix does not work" and meant "the
+-- fix was not loaded". This file and the libraries in it are generated from
+-- one tree; they cannot skew against each other.
+--
 -- So one paste now settles what used to take six runs. Two things are still
 -- honestly outside it, and they are named where they are cut rather than left
 -- for you to discover: the ENet and DataChannel ASYNC loopbacks stay in their
@@ -171,7 +181,8 @@ local sDcBigSize, sDcBigWant
 local sDeadline            -- the async phases' drop-dead time (ms clock)
 
 -- Every FOLDED member's script locals and constants are hoisted to here, above
--- the first handler, by tools/build-suite-selftest.py.
+-- the first handler, by tools/build-suite-selftest.py - and so are the two
+-- EMBEDDED script layers' (coinxt's and onionxt's), for the same reason.
 --
 -- They cannot live down in each member's own section, which is where they
 -- started and where they look like they belong. OXT resolves a script-level
@@ -305,6 +316,64 @@ local dc1sGotBytes         -- the binary payload A received back (a Data)
 local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact compare)
 local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
 local dc1sPhase            -- "", "opening", "messaging", "done"
+
+-- >>> GENERATED EMBED: coinxt script layer declarations >>> --
+-- ---- CoinXT script layer (the real library, embedded) ----
+constant kCxBase58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+constant kCxBech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+constant kCxHexDigits = "0123456789abcdef"
+constant kCxBech32mConst = 734539939
+constant kCxBech32MaxLen = 90
+constant kCxVersionP2PKH = 0
+constant kCxHrpMainnet = "bc"
+constant kCxBip39Rounds = 2048
+constant kCxBip39SaltPrefix = "mnemonic"
+constant kCxBip39WordCount = 2048
+constant kCxBip39BitsPerWord = 11
+constant kCxBip32MasterKey = "Bitcoin seed"
+constant kCxHardenedBase = 2147483648
+constant kCxVersionXprv = 76066276
+constant kCxVersionXpub = 76067358
+-- <<< GENERATED EMBED: coinxt script layer declarations <<< --
+
+-- >>> GENERATED EMBED: onionxt script layer declarations >>> --
+-- ---- OnionXT script layer (the real library, embedded) ----
+constant kOxHost = "127.0.0.1"
+constant kOxSocksPortDefault = 9050
+constant kOxControlPortDefault = 9051
+constant kOxVersion = "1.0.0"
+constant kOxHandshakeTimeout = 20000     -- milliseconds
+constant kOxStatusThrottle = 250         -- milliseconds
+constant kOxBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+constant kOxChecksumPrefix = ".onion checksum"
+constant kOxSafeCookieServerKey = "Tor safe cookie authentication server-to-controller hash"
+constant kOxSafeCookieClientKey = "Tor safe cookie authentication controller-to-server hash"
+local sSocksPort
+local sControlPort
+local sControlSocket        -- engine id of the open control socket, or empty
+local sControlState         -- disconnected|connecting|protocolinfo|authenticating|authenticated|failed
+local sControlMethods       -- offered auth methods (comma list) from PROTOCOLINFO
+local sControlCookieFile     -- cookie-file path from PROTOCOLINFO (unescaped)
+local sControlPassword       -- app-set password for HASHEDPASSWORD auth
+local sControlCookieBytes    -- the 32 raw cookie bytes (SAFECOOKIE flow)
+local sControlClientNonce    -- our SAFECOOKIE client nonce (raw bytes)
+local sControlTorVersion     -- tor version string from GETINFO version
+local sBootstrap             -- 0..100 bootstrap percent from STATUS_CLIENT
+local sCtlInFlight           -- label of the in-flight command, or empty
+local sCtlReplyLines         -- accumulated reply text (newline-joined)
+local sCtlInData             -- true while inside a 250+ CmdData block
+local sCtlData               -- accumulated CmdData block text
+local sCtlQueue              -- pending commands: lines of "label" & TAB & "command"
+local sStatusCallback
+local sPeerCallback
+local sCallbackOwner         -- long id of the object whose script has the callbacks
+local sLastStatusTick        -- `the milliseconds` of the last coalesced update
+local sStreams               -- keyed by integer stream handle (nested array)
+local sSockToStream          -- keyed by socket id string -> stream handle
+local sServices              -- keyed by integer service handle (nested array)
+local sLocalToService        -- keyed by local port -> service handle
+local sNextHandle            -- monotonic handle allocator (0 is never valid)
+-- <<< GENERATED EMBED: onionxt script layer declarations <<< --
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -691,8 +760,13 @@ command stProbe
    end try
    stProbeLine "DataChannelXT", sHaveDc, "org.openxtalk.library.datachannel"
 
-   -- OnionXT is pure LiveCodeScript, not a compiled extension: it has to be in
-   -- the MESSAGE PATH, not installed.
+   -- OnionXT is pure LiveCodeScript, not a compiled extension - and its whole
+   -- ox* surface is EMBEDDED in this paste by tools/build-suite-selftest.py,
+   -- so there is no `start using stack "onionxt"` setup step any more. The
+   -- probe stays: it costs one call, and a FAIL here no longer means "not
+   -- loaded" (an embedded handler cannot be absent from a script that
+   -- compiled) - it means the generated file itself is damaged, which is
+   -- exactly the line you want to see before trusting 40 onion checks.
    put false into sHaveOnion
    try
       put oxVersion() into tVersion
@@ -700,7 +774,7 @@ command stProbe
    catch tError
       put false into sHaveOnion
    end try
-   stProbeLine "OnionXT", sHaveOnion, "start using stack " & quote & "onionxt" & quote
+   stProbeLine "OnionXT", sHaveOnion, "embedded in this paste; a FAIL means the paste is damaged"
 
    -- CoinXT's hash surface is the phase-1 half of its binding; the probe is one
    -- of its published vectors, so a present CoinXT is a WORKING CoinXT.
@@ -713,16 +787,18 @@ command stProbe
    end try
    stProbeLine "CoinXT (extension)", sHaveCoin, "org.openxtalk.library.coin"
 
-   -- COINXT IS THE ONLY MEMBER THAT SHIPS IN TWO PIECES, and probing one of
-   -- them is how an engine session gets wasted. The hash and curve surfaces are
-   -- the .lcb extension; the encoders, addresses and the whole HD layer are
-   -- src/coinxt.livecodescript, a SEPARATE script that has to be in the message
-   -- path. Install the extension without `start using` and the probe above says
-   -- "present", the deep harness runs, and ten of its sections report FAIL
-   -- "handler not found" - which reads exactly like a broken library and is
-   -- actually a setup step. So the script layer gets its own probe and its own
-   -- line, and the deep harness SKIPS rather than failing when it is absent.
-   -- cxHexEncode is the cheapest handler that exists only in the script.
+   -- COINXT IS THE ONLY MEMBER THAT SHIPS IN TWO PIECES: the hash and curve
+   -- surfaces are the .lcb extension, probed above; the encoders, addresses
+   -- and the whole HD layer are src/coinxt.livecodescript - which is EMBEDDED
+   -- in this paste by tools/build-suite-selftest.py, so the old failure mode
+   -- (extension installed, `start using stack "coinxt"` forgotten, ten
+   -- sections of "handler not found" that read like a broken library) cannot
+   -- happen any more, and neither can its subtler cousin, which cost the
+   -- 2026-08-10 re-run: a STALE script layer left loaded from an earlier
+   -- session, failing checks whose fix was already merged. The probe stays as
+   -- the same tripwire as OnionXT's: cxHexEncode here is a real vector, so a
+   -- FAIL means the generated file is damaged, not that a setup step was
+   -- missed. The deep harness still guards on both flags.
    put false into sHaveCoinScript
    try
       put (cxHexEncode(numToByte(222) & numToByte(173)) is "dead") into sHaveCoinScript
@@ -730,7 +806,7 @@ command stProbe
       put false into sHaveCoinScript
    end try
    stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
-         "start using stack " & quote & "coinxt" & quote
+         "embedded in this paste; a FAIL means the paste is damaged"
 end stProbe
 
 command stProbeLine pName, pPresent, pHint
@@ -2118,6 +2194,3327 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
    stNote "---- " & pMember & " report ----"
    put pReport & return after sResultText
 end stMergeCounted
+
+
+-- ==========================================================================
+-- THE TWO PURE-SCRIPT LIBRARIES THEMSELVES, embedded by
+-- tools/build-suite-selftest.py so that one paste carries the code its
+-- tests test. These used to be a separate setup step (`start using
+-- stack` x2), and that step cost an engine pass on 2026-08-10: a fresh
+-- harness ran against a stale in-memory coinxt stack and reported the
+-- two failures its parser fix had already closed. Embedded, the harness
+-- and the library are built from one tree and cannot skew.
+--
+-- NOT renamed, unlike the folded tests below: this is the real library,
+-- and the tests must call it by its real names. If you also have these
+-- loaded via `start using`, calls from THIS script resolve to the copies
+-- here (same-script wins), so the run still tests the embedded tree.
+-- ==========================================================================
+
+-- >>> GENERATED EMBED: coinxt script layer >>> --
+-- ==========================================================================
+-- CoinXT script layer (the real library, embedded)
+--
+-- Encoders, addresses and the whole HD layer - the half of coinxt's API that
+-- is pure script. Embedded so one paste carries the code its tests test; no
+-- `start using stack` step, and no way to run new tests against a stale
+-- library.
+--
+-- GENERATED from coinxt/src/coinxt.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild. Names are NOT prefixed: this is the library itself, and the
+-- folded tests above must reach it by its real names.
+-- ==========================================================================
+
+private function cxIntDiv pA, pB
+   -- Integer division, floor, for the NON-NEGATIVE operands every caller here
+   -- uses. trunc() rather than `div` (see the header).
+   return trunc(pA / pB)
+end cxIntDiv
+
+private function cxIntMod pA, pB
+   -- pA modulo pB, without the `mod` operator.
+   return pA - pB * cxIntDiv(pA, pB)
+end cxIntMod
+
+private function cxPow2 pN
+   -- 2 to the pN as an exact integer, without `^`. pN stays small here (0..30
+   -- for the bech32 checksum, 0..8 for bit packing), so this is a few multiplies
+   -- and never leaves exact-integer range.
+   local tResult, tI
+   put 1 into tResult
+   repeat with tI = 1 to pN
+      multiply tResult by 2
+   end repeat
+   return tResult
+end cxPow2
+
+private function cxBitXor pA, pB
+   -- Bitwise exclusive-or over the low 31 bits, built from arithmetic because
+   -- bitXor is an operator in this dialect and its portability across xTalk
+   -- parsers is exactly the kind of thing this family has been bitten by.
+   -- The bech32 checksum is a 30-bit value, so 31 bits is sufficient headroom
+   -- and keeps every intermediate far below 2^53.
+   local tResult, tBit, tI, tDigitA, tDigitB
+   put 0 into tResult
+   put 1 into tBit
+   repeat with tI = 1 to 31
+      put cxIntMod(cxIntDiv(pA, tBit), 2) into tDigitA
+      put cxIntMod(cxIntDiv(pB, tBit), 2) into tDigitB
+      if tDigitA is not tDigitB then
+         add tBit to tResult
+      end if
+      multiply tBit by 2
+   end repeat
+   return tResult
+end cxBitXor
+
+private function cxCharIndex pChar, pAlphabet
+   -- The 1-based position of pChar in pAlphabet, or 0 if absent, comparing BYTE
+   -- VALUES so the answer does not depend on `the caseSensitive` (see discipline
+   -- 3 in the header - this is the Base58 a-versus-A trap). Linear over a 58
+   -- character alphabet, which is nothing next to the hashing these encoders
+   -- already do.
+   local tI, tCount, tWanted
+   put byteToNum(pChar) into tWanted
+   put the number of chars of pAlphabet into tCount
+   repeat with tI = 1 to tCount
+      if byteToNum(char tI of pAlphabet) is tWanted then
+         return tI
+      end if
+   end repeat
+   return 0
+end cxCharIndex
+
+private function cxCompareBytes pA, pB
+   -- -1, 0 or 1 for pA before / equal to / after pB, comparing BYTE VALUES.
+   -- Discipline 3 again: `<` on strings honours `the caseSensitive`, which
+   -- defaults to FALSE, and a case-insensitive comparison would put the binary
+   -- search below into the wrong half of a list that is sorted by byte value.
+   local tI, tLenA, tLenB, tShort, tVa, tVb
+   put the number of chars of pA into tLenA
+   put the number of chars of pB into tLenB
+   put tLenA into tShort
+   if tLenB < tShort then
+      put tLenB into tShort
+   end if
+   repeat with tI = 1 to tShort
+      put byteToNum(char tI of pA) into tVa
+      put byteToNum(char tI of pB) into tVb
+      if tVa < tVb then
+         return -1
+      end if
+      if tVa > tVb then
+         return 1
+      end if
+   end repeat
+   if tLenA < tLenB then
+      return -1
+   end if
+   if tLenA > tLenB then
+      return 1
+   end if
+   return 0
+end cxCompareBytes
+
+function cxHexEncode pData
+   local tOut, tI, tCount, tByte
+   put "" into tOut
+   put the number of bytes of pData into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(byte tI of pData) into tByte
+      put char (cxIntDiv(tByte, 16) + 1) of kCxHexDigits after tOut
+      put char (cxIntMod(tByte, 16) + 1) of kCxHexDigits after tOut
+   end repeat
+   return tOut
+end cxHexEncode
+
+function cxHexDecode pHex
+   local tOut, tI, tCount, tHi, tLo, tText
+   put pHex into tText
+   put the number of chars of tText into tCount
+   if cxIntMod(tCount, 2) is not 0 then
+      throw "CoinXT: cxHexDecode: a hex string must have an even number of characters."
+   end if
+   put "" into tOut
+   -- WALK THE PAIRS WITH `repeat while` AND AN EXPLICIT `add 2`, NOT WITH
+   -- `repeat with tI = 1 to tCount step 2`. This is the one line the first real
+   -- OXT pass of the suite harness (2026-08-09) killed, and it is worth the
+   -- paragraph because reading it tells you nothing.
+   --
+   -- The engine did not honour the increment: tI walked 1, 2, 3, ... so the
+   -- final pass read `char (tCount + 1) of tText`, which is EMPTY. Empty is
+   -- genuinely not a hex digit, so cxHexValue answered -1 and this handler's
+   -- own fail-closed check threw "the input contains a character that is not a
+   -- hex digit" - over a perfectly good lowercase literal. That is the worst
+   -- shape a defect can take here: the library accused the CALLER'S DATA of
+   -- being corrupt, in the exact words it uses for a real corruption, so the
+   -- symptom pointed at the vector set rather than at the loop. Six harness
+   -- sections (hex, Base58Check, RLP, BIP-39, BIP-32, the fail-open
+   -- regressions) died on it; every section that never calls cxHexDecode
+   -- passed, which is what identified this handler.
+   --
+   -- `step` was the only construct in this file with no other user anywhere in
+   -- the six-member suite, and that is precisely why it was the one that broke:
+   -- nothing else had ever put it in front of an engine. Every construct below
+   -- ran green in that same session - cxEthAddressChecksum drives cxHexValue
+   -- over `char tI of` eighty times per call, and `repeat while` with `add N
+   -- to` is how cxBase58Encode and cxConvert8To5 loop. The even-length guard
+   -- above is what makes `char (tI + 1)` safe here: tCount is even, so the last
+   -- pair starts at tCount - 1 and never reads past the end.
+   --
+   -- Do not "tidy" this back into a step loop.
+   put 1 into tI
+   repeat while tI <= tCount
+      put cxHexValue(char tI of tText) into tHi
+      put cxHexValue(char (tI + 1) of tText) into tLo
+      if tHi < 0 or tLo < 0 then
+         throw "CoinXT: cxHexDecode: the input contains a character that is not a hex digit."
+      end if
+      put numToByte(tHi * 16 + tLo) after tOut
+      add 2 to tI
+   end repeat
+   return tOut
+end cxHexDecode
+
+private function cxHexValue pChar
+   -- 0..15, or -1 when pChar is not a hex digit. Case-insensitive BY VALUE: the
+   -- upper and lower alphabets are checked explicitly rather than by folding
+   -- case, so this does not depend on `the caseSensitive` either.
+   local tCode
+   put byteToNum(pChar) into tCode
+   if tCode >= 48 and tCode <= 57 then
+      return tCode - 48
+   end if
+   if tCode >= 97 and tCode <= 102 then
+      return tCode - 87
+   end if
+   if tCode >= 65 and tCode <= 70 then
+      return tCode - 55
+   end if
+   return -1
+end cxHexValue
+
+function cxHash160 pData
+   return cxRipemd160(cxSha256(pData))
+end cxHash160
+
+function cxHash256 pData
+   return cxSha256(cxSha256(pData))
+end cxHash256
+
+private function cxBase58Encode pData
+   -- Long division: repeatedly divide the big-endian byte array by 58, emitting
+   -- the remainder as a digit, until the array is zero. Leading zero BYTES are
+   -- not part of the number, so they are re-attached afterwards as leading "1"s,
+   -- one for one, which is what makes a 0x00 version byte show up as the "1"
+   -- every mainnet P2PKH address starts with.
+   local tDigits, tOut, tI, tCount, tCarry, tValue, tQuotient, tStart, tZeros
+   put the number of bytes of pData into tCount
+   if tCount is 0 then
+      return ""
+   end if
+   -- Copy the bytes into a numeric list we can divide in place.
+   put empty into tDigits
+   repeat with tI = 1 to tCount
+      put byteToNum(byte tI of pData) into tDigits[tI]
+   end repeat
+   -- Count the leading zero bytes before they are consumed by the division.
+   put 0 into tZeros
+   repeat with tI = 1 to tCount
+      if tDigits[tI] is not 0 then
+         exit repeat
+      end if
+      add 1 to tZeros
+   end repeat
+   put "" into tOut
+   put 1 into tStart
+   repeat while tStart <= tCount
+      put 0 into tCarry
+      repeat with tI = tStart to tCount
+         put tCarry * 256 + tDigits[tI] into tValue
+         put cxIntDiv(tValue, 58) into tQuotient
+         put tQuotient into tDigits[tI]
+         put tValue - tQuotient * 58 into tCarry
+      end repeat
+      -- tCarry is now the next base58 digit, least significant first.
+      put char (tCarry + 1) of kCxBase58Alphabet before tOut
+      -- Skip over any leading zeros the division produced, so the next pass is
+      -- shorter and the loop terminates.
+      repeat while tStart <= tCount and tDigits[tStart] is 0
+         add 1 to tStart
+      end repeat
+   end repeat
+   repeat with tI = 1 to tZeros
+      put char 1 of kCxBase58Alphabet before tOut
+   end repeat
+   return tOut
+end cxBase58Encode
+
+private function cxBase58Decode pText
+   -- The inverse: multiply the byte array by 58 and add each digit. Returns
+   -- empty on any character outside the alphabet, so the caller can fail closed.
+   local tBytes, tI, tJ, tCount, tIndex, tCarry, tValue, tOut, tZeros, tLen
+   put the number of chars of pText into tCount
+   if tCount is 0 then
+      return ""
+   end if
+   put 1 into tLen
+   put 0 into tBytes[1]
+   repeat with tI = 1 to tCount
+      put cxCharIndex(char tI of pText, kCxBase58Alphabet) into tIndex
+      if tIndex is 0 then
+         return empty
+      end if
+      put tIndex - 1 into tCarry
+      repeat with tJ = tLen down to 1
+         put tBytes[tJ] * 58 + tCarry into tValue
+         put cxIntMod(tValue, 256) into tBytes[tJ]
+         put cxIntDiv(tValue, 256) into tCarry
+      end repeat
+      repeat while tCarry > 0
+         add 1 to tLen
+         repeat with tJ = tLen down to 2
+            put tBytes[tJ - 1] into tBytes[tJ]
+         end repeat
+         put cxIntMod(tCarry, 256) into tBytes[1]
+         put cxIntDiv(tCarry, 256) into tCarry
+      end repeat
+   end repeat
+   -- Leading "1" characters are leading zero bytes, one for one.
+   put 0 into tZeros
+   repeat with tI = 1 to tCount
+      if cxCharIndex(char tI of pText, kCxBase58Alphabet) is not 1 then
+         exit repeat
+      end if
+      add 1 to tZeros
+   end repeat
+   put "" into tOut
+   repeat with tI = 1 to tZeros
+      put numToByte(0) after tOut
+   end repeat
+   -- Drop the single zero byte the accumulator starts with when the value is
+   -- itself zero-length, but keep a genuine zero payload.
+   repeat with tI = 1 to tLen
+      if tI is 1 and tBytes[1] is 0 and tLen > 1 then
+         next repeat
+      end if
+      put numToByte(tBytes[tI]) after tOut
+   end repeat
+   return tOut
+end cxBase58Decode
+
+function cxBase58CheckEncode pPayload
+   local tChecksum
+   put cxHash256(pPayload) into tChecksum
+   return cxBase58Encode(pPayload & byte 1 to 4 of tChecksum)
+end cxBase58CheckEncode
+
+function cxBase58CheckDecode pText
+   local tRaw, tBody, tChecksum, tCount
+   put cxBase58Decode(pText) into tRaw
+   if tRaw is empty then
+      throw "CoinXT: cxBase58CheckDecode: the input contains a character that is not in the Base58 alphabet."
+   end if
+   put the number of bytes of tRaw into tCount
+   if tCount < 5 then
+      throw "CoinXT: cxBase58CheckDecode: the input is too short to carry a 4-byte checksum."
+   end if
+   put byte 1 to (tCount - 4) of tRaw into tBody
+   put byte (tCount - 3) to tCount of tRaw into tChecksum
+   -- BYTE COMPARISON, not `is`. Both operands here are 8-character hex strings,
+   -- and `is` compares two operands that both LOOK numeric as NUMBERS - so
+   -- whether "00001e00" and "00000001" are equal stops being a question about
+   -- bytes and becomes a question about how the engine parses exponents. That
+   -- has not been observed to collide on this surface, and it is not going to
+   -- be left to chance either: this is the one comparison standing between a
+   -- corrupt address and a caller's funds, and discipline 3 in the header
+   -- already says a comparison whose answer depends on engine coercion does not
+   -- belong on a checksum path.
+   if cxCompareBytes(cxHexEncode(byte 1 to 4 of cxHash256(tBody)), cxHexEncode(tChecksum)) is not 0 then
+      throw "CoinXT: cxBase58CheckDecode: the checksum does not match, so the input is corrupt."
+   end if
+   return tBody
+end cxBase58CheckDecode
+
+private function cxBech32Polymod pValues
+   -- BIP-173's checksum over a list of 5-bit values (pValues is a comma
+   -- separated list of numbers). The generator constants are the BIP's, gated
+   -- against the reference by tools/check-script-vectors.py.
+   local tChk, tI, tCount, tTop, tValue, tGen
+   put "996825010,642813549,513874426,1027748829,705979059" into tGen
+   put 1 into tChk
+   put the number of items of pValues into tCount
+   repeat with tI = 1 to tCount
+      put cxIntDiv(tChk, 33554432) into tTop
+      put cxBitXor(cxIntMod(tChk, 33554432) * 32, item tI of pValues) into tChk
+      repeat with tValue = 1 to 5
+         if cxIntMod(cxIntDiv(tTop, cxPow2(tValue - 1)), 2) is 1 then
+            put cxBitXor(tChk, item tValue of tGen) into tChk
+         end if
+      end repeat
+   end repeat
+   return tChk
+end cxBech32Polymod
+
+private function cxBech32HrpExpand pHrp
+   -- The HRP contributes its high bits, then a zero, then its low bits.
+   local tOut, tI, tCount, tCode
+   put the number of chars of pHrp into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      if tOut is not "" then
+         put "," after tOut
+      end if
+      put cxIntDiv(tCode, 32) after tOut
+   end repeat
+   put ",0" after tOut
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      put "," & cxIntMod(tCode, 32) after tOut
+   end repeat
+   return tOut
+end cxBech32HrpExpand
+
+private function cxBech32Const pSpec
+   -- "bech32" is 1; "bech32m" is the BIP-350 constant. Any other spelling is a
+   -- programming error and is refused rather than defaulted.
+   if pSpec is "bech32" then
+      return 1
+   end if
+   if pSpec is "bech32m" then
+      return kCxBech32mConst
+   end if
+   throw "CoinXT: the encoding must be either bech32 or bech32m."
+end cxBech32Const
+
+function cxBech32EncodeValues pHrp, pValues, pSpec
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBech32EncodeValuesInner(pHrp, pValues, pSpec) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBech32EncodeValues
+
+private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
+   local tPolymod, tI, tOut, tIndex, tCombined, tCount, tCode
+   -- FAIL CLOSED ON THE INPUTS, because both of these used to fail OPEN and a
+   -- bech32 string that is subtly wrong is far worse than one that is refused.
+   --
+   -- The HRP: BIP-173 requires 1 to 83 characters in the range 33..126, and a
+   -- bech32 string must be entirely one case. This handler lowercases nothing
+   -- and used to concatenate whatever it was given, so an uppercase "BC" gave
+   -- "BC1qqq...q42su7w" - a MIXED-case string that this file's own decoder
+   -- rejects and no conformant decoder accepts. Refusing an uppercase HRP is
+   -- the honest answer: a caller who wants the uppercase form should uppercase
+   -- the whole finished string, which is what BIP-173 actually defines.
+   put the number of chars of pHrp into tCount
+   if tCount < 1 or tCount > 83 then
+      throw "CoinXT: cxBech32EncodeValues: the human-readable part must be 1 to 83 characters."
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      if tCode < 33 or tCode > 126 then
+         throw "CoinXT: cxBech32EncodeValues: the human-readable part must be printable ASCII."
+      end if
+      if tCode >= 65 and tCode <= 90 then
+         throw "CoinXT: cxBech32EncodeValues: the human-readable part must be lowercase; uppercase the finished string instead."
+      end if
+   end repeat
+   -- The data values: each indexes a 32-character charset, and `char (n) of` a
+   -- short string returns EMPTY rather than failing. So a value of 32 used to
+   -- emit NOTHING for that position - a string one character short, carrying a
+   -- checksum computed over data it does not contain. It would decode to
+   -- something, and that something would not be what the caller encoded.
+   put the number of items of pValues into tCount
+   repeat with tI = 1 to tCount
+      put item tI of pValues into tIndex
+      if tIndex < 0 or tIndex > 31 or tIndex is not trunc(tIndex) then
+         throw "CoinXT: cxBech32EncodeValues: every data value must be a whole number between 0 and 31."
+      end if
+   end repeat
+   put cxBech32HrpExpand(pHrp) & "," & pValues & ",0,0,0,0,0,0" into tCombined
+   put cxBitXor(cxBech32Polymod(tCombined), cxBech32Const(pSpec)) into tPolymod
+   put pHrp & "1" into tOut
+   put the number of items of pValues into tI
+   repeat with tI = 1 to the number of items of pValues
+      put item tI of pValues into tIndex
+      put char (tIndex + 1) of kCxBech32Charset after tOut
+   end repeat
+   repeat with tI = 0 to 5
+      put cxIntMod(cxIntDiv(tPolymod, cxPow2(5 * (5 - tI))), 32) into tIndex
+      put char (tIndex + 1) of kCxBech32Charset after tOut
+   end repeat
+   -- The same 90-character cap the decoder enforces. An encoder that can emit a
+   -- string its own decoder refuses is an encoder that will eventually be used
+   -- to make one.
+   if the number of chars of tOut > kCxBech32MaxLen then
+      throw "CoinXT: cxBech32EncodeValues: the result would exceed the 90-character bech32 limit."
+   end if
+   return tOut
+end cxBech32EncodeValuesInner
+
+function cxBech32DecodeValues pText
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBech32DecodeValuesInner(pText) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBech32DecodeValues
+
+private function cxBech32DecodeValuesInner pText
+   local tResult, tPos, tI, tCount, tCode, tHrp, tData, tIndex, tLower, tSpec
+   put the number of chars of pText into tCount
+   if tCount > kCxBech32MaxLen then
+      throw "CoinXT: cxBech32DecodeValues: the string is longer than the 90 characters bech32 allows."
+   end if
+   -- Every character must be printable ASCII, and the string must not MIX case:
+   -- a mixed-case bech32 string is invalid by specification, because the
+   -- checksum is defined over one case only.
+   put cxCaseKind(pText) into tLower
+   if tLower is "mixed" then
+      throw "CoinXT: cxBech32DecodeValues: the string mixes upper and lower case, which bech32 does not allow."
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode < 33 or tCode > 126 then
+         throw "CoinXT: cxBech32DecodeValues: the string contains a character outside the printable ASCII range."
+      end if
+   end repeat
+   put cxToLower(pText) into tData
+   -- The separator is the LAST "1", because "1" is not in the data charset but
+   -- may appear inside the human-readable part.
+   put 0 into tPos
+   repeat with tI = tCount down to 1
+      if byteToNum(char tI of tData) is 49 then
+         put tI into tPos
+         exit repeat
+      end if
+   end repeat
+   if tPos < 2 then
+      throw "CoinXT: cxBech32DecodeValues: the string has no human-readable part before its separator."
+   end if
+   if tPos + 6 > tCount then
+      throw "CoinXT: cxBech32DecodeValues: the string is too short to carry a 6-character checksum."
+   end if
+   put char 1 to (tPos - 1) of tData into tHrp
+   put "" into tResult["values"]
+   repeat with tI = (tPos + 1) to tCount
+      put cxCharIndex(char tI of tData, kCxBech32Charset) into tIndex
+      if tIndex is 0 then
+         throw "CoinXT: cxBech32DecodeValues: the data part contains a character that is not in the bech32 charset."
+      end if
+      if tResult["values"] is not "" then
+         put "," after tResult["values"]
+      end if
+      put (tIndex - 1) after tResult["values"]
+   end repeat
+   -- Try both constants and report WHICH verified, so the SegWit layer above can
+   -- enforce the version-to-encoding pairing instead of guessing.
+   put "" into tSpec
+   if cxBech32Polymod(cxBech32HrpExpand(tHrp) & "," & tResult["values"]) is 1 then
+      put "bech32" into tSpec
+   end if
+   if cxBech32Polymod(cxBech32HrpExpand(tHrp) & "," & tResult["values"]) is kCxBech32mConst then
+      put "bech32m" into tSpec
+   end if
+   if tSpec is "" then
+      throw "CoinXT: cxBech32DecodeValues: the checksum does not match, so the string is corrupt."
+   end if
+   put tHrp into tResult["hrp"]
+   put tSpec into tResult["spec"]
+   -- Drop the six checksum values; the caller wants the payload.
+   put cxDropLastItems(tResult["values"], 6) into tResult["values"]
+   return tResult
+end cxBech32DecodeValuesInner
+
+private function cxDropLastItems pList, pHowMany
+   local tCount, tI, tOut
+   put the number of items of pList into tCount
+   put "" into tOut
+   repeat with tI = 1 to (tCount - pHowMany)
+      if tOut is not "" then
+         put "," after tOut
+      end if
+      put item tI of pList after tOut
+   end repeat
+   return tOut
+end cxDropLastItems
+
+private function cxCaseKind pText
+   -- "upper", "lower", "mixed" or "none", decided by BYTE VALUE so it does not
+   -- depend on the caller's caseSensitive setting.
+   local tI, tCount, tCode, tHasUpper, tHasLower
+   put false into tHasUpper
+   put false into tHasLower
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         put true into tHasUpper
+      end if
+      if tCode >= 97 and tCode <= 122 then
+         put true into tHasLower
+      end if
+   end repeat
+   if tHasUpper and tHasLower then
+      return "mixed"
+   end if
+   if tHasUpper then
+      return "upper"
+   end if
+   if tHasLower then
+      return "lower"
+   end if
+   return "none"
+end cxCaseKind
+
+private function cxToLower pText
+   -- ASCII lowercase by byte value (see cxCaseKind).
+   local tI, tCount, tCode, tOut
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         add 32 to tCode
+      end if
+      put numToChar(tCode) after tOut
+   end repeat
+   return tOut
+end cxToLower
+
+private function cxConvert8To5 pData
+   local tOut, tI, tCount, tValue, tBits, tIndex
+   put "" into tOut
+   put 0 into tValue
+   put 0 into tBits
+   put the number of bytes of pData into tCount
+   repeat with tI = 1 to tCount
+      put tValue * 256 + byteToNum(byte tI of pData) into tValue
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         put cxIntMod(cxIntDiv(tValue, cxPow2(tBits)), 32) into tIndex
+         if tOut is not "" then
+            put "," after tOut
+         end if
+         put tIndex after tOut
+      end repeat
+      put cxIntMod(tValue, cxPow2(tBits)) into tValue
+   end repeat
+   if tBits > 0 then
+      -- Pad the final group with zero bits, as SegWit encoding requires.
+      put cxIntMod(tValue * cxPow2(5 - tBits), 32) into tIndex
+      if tOut is not "" then
+         put "," after tOut
+      end if
+      put tIndex after tOut
+   end if
+   return tOut
+end cxConvert8To5
+
+private function cxConvert5To8 pValues
+   -- The inverse, and it is STRICTER than the forward direction on purpose: the
+   -- padding must be fewer than 5 bits and must be zero. A decoder that accepts
+   -- non-zero padding accepts several distinct strings for the same program,
+   -- and BIP-173 rejects that explicitly.
+   local tOut, tI, tCount, tValue, tBits, tByte, tResult
+   put "" into tOut
+   put 0 into tValue
+   put 0 into tBits
+   put the number of items of pValues into tCount
+   repeat with tI = 1 to tCount
+      put tValue * 32 + item tI of pValues into tValue
+      add 5 to tBits
+      repeat while tBits >= 8
+         subtract 8 from tBits
+         put cxIntMod(cxIntDiv(tValue, cxPow2(tBits)), 256) into tByte
+         put numToByte(tByte) after tOut
+      end repeat
+      put cxIntMod(tValue, cxPow2(tBits)) into tValue
+   end repeat
+   -- THE STATUS IS OUT OF BAND, in a separate key, and it has to be. This
+   -- returned the strings "ERROR: ..." in place of the bytes once, and the
+   -- caller tested `char 1 to 5 of tProgram is "ERROR"` - which means a witness
+   -- program whose first five bytes happen to be 45 52 52 4F 52 was read as a
+   -- failure. That is a real address (bech32m v1 accepts any 2-to-40-byte
+   -- program), and this file's own encoder produces it, so the library rejected
+   -- an address it had just made. An in-band sentinel over arbitrary bytes is
+   -- always wrong; there is no byte string that cannot occur.
+   put tOut into tResult["bytes"]
+   if tBits >= 5 then
+      put false into tResult["ok"]
+      put "there are too many padding bits" into tResult["why"]
+   else if tValue is not 0 then
+      put false into tResult["ok"]
+      put "the padding bits are not zero" into tResult["why"]
+   else
+      put true into tResult["ok"]
+      put "" into tResult["why"]
+   end if
+   return tResult
+end cxConvert5To8
+
+function cxSegwitAddressEncode pHrp, pVersion, pProgram
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxSegwitAddressEncodeInner(pHrp, pVersion, pProgram) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxSegwitAddressEncode
+
+private function cxSegwitAddressEncodeInner pHrp, pVersion, pProgram
+   local tValues, tSpec, tLength
+   if pVersion < 0 or pVersion > 16 then
+      throw "CoinXT: cxSegwitAddressEncode: the witness version must be between 0 and 16."
+   end if
+   put the number of bytes of pProgram into tLength
+   if tLength < 2 or tLength > 40 then
+      throw "CoinXT: cxSegwitAddressEncode: a witness program must be between 2 and 40 bytes."
+   end if
+   if pVersion is 0 and tLength is not 20 and tLength is not 32 then
+      throw "CoinXT: cxSegwitAddressEncode: a version 0 witness program must be exactly 20 or 32 bytes."
+   end if
+   if pVersion is 0 then
+      put "bech32" into tSpec
+   else
+      put "bech32m" into tSpec
+   end if
+   put pVersion & "," & cxConvert8To5(pProgram) into tValues
+   return cxBech32EncodeValues(pHrp, tValues, tSpec)
+end cxSegwitAddressEncodeInner
+
+function cxSegwitAddressDecode pHrp, pAddress
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxSegwitAddressDecodeInner(pHrp, pAddress) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxSegwitAddressDecode
+
+private function cxSegwitAddressDecodeInner pHrp, pAddress
+   local tDecoded, tResult, tVersion, tProgram, tValues, tLength, tConverted
+   put cxBech32DecodeValues(pAddress) into tDecoded
+   if tDecoded["hrp"] is not cxToLower(pHrp) then
+      throw "CoinXT: cxSegwitAddressDecode: the address is for a different network than the one requested."
+   end if
+   put tDecoded["values"] into tValues
+   if (the number of items of tValues) < 1 then
+      throw "CoinXT: cxSegwitAddressDecode: the address carries no witness version."
+   end if
+   put item 1 of tValues into tVersion
+   if tVersion > 16 then
+      throw "CoinXT: cxSegwitAddressDecode: the witness version is greater than 16."
+   end if
+   if tVersion is 0 and tDecoded["spec"] is not "bech32" then
+      throw "CoinXT: cxSegwitAddressDecode: a version 0 address must use bech32, not bech32m."
+   end if
+   if tVersion > 0 and tDecoded["spec"] is not "bech32m" then
+      throw "CoinXT: cxSegwitAddressDecode: a version 1 or later address must use bech32m, not bech32."
+   end if
+   put cxConvert5To8(cxDropFirstItem(tValues)) into tConverted
+   if tConverted["ok"] is false then
+      throw "CoinXT: cxSegwitAddressDecode: the address is not canonical because" && tConverted["why"] & "."
+   end if
+   put tConverted["bytes"] into tProgram
+   put the number of bytes of tProgram into tLength
+   if tLength < 2 or tLength > 40 then
+      throw "CoinXT: cxSegwitAddressDecode: the witness program must be between 2 and 40 bytes."
+   end if
+   if tVersion is 0 and tLength is not 20 and tLength is not 32 then
+      throw "CoinXT: cxSegwitAddressDecode: a version 0 witness program must be exactly 20 or 32 bytes."
+   end if
+   put tVersion into tResult["version"]
+   put tProgram into tResult["program"]
+   return tResult
+end cxSegwitAddressDecodeInner
+
+private function cxDropFirstItem pList
+   local tCount, tI, tOut
+   put the number of items of pList into tCount
+   put "" into tOut
+   repeat with tI = 2 to tCount
+      if tOut is not "" then
+         put "," after tOut
+      end if
+      put item tI of pList after tOut
+   end repeat
+   return tOut
+end cxDropFirstItem
+
+private function cxCheckPubkey pPubkey, pName, pCompressedOnly
+   -- The length AND the prefix, together, exactly as the shim's cnx_pubkey_ok
+   -- does - and for a related reason. There the danger is an overread; here it
+   -- is worse in a quieter way: hash160 happily hashes ANY bytes, so without
+   -- this an empty string, a 20-byte hash or a truncated key each produce a
+   -- perfectly well-formed, checksummed mainnet address whose funds nobody can
+   -- ever spend. Nothing downstream can catch that - the address is valid, it
+   -- is simply not yours - so it has to be refused here.
+   local tCount, tFirst
+   put the number of bytes of pPubkey into tCount
+   if tCount is not 33 and (pCompressedOnly is true or tCount is not 65) then
+      if pCompressedOnly is true then
+         throw "CoinXT:" && pName & ": this address type requires a 33-byte COMPRESSED public key."
+      end if
+      throw "CoinXT:" && pName & ": a public key must be 33 bytes (compressed) or 65 bytes (uncompressed)."
+   end if
+   put byteToNum(byte 1 of pPubkey) into tFirst
+   if tCount is 33 and tFirst is not 2 and tFirst is not 3 then
+      throw "CoinXT:" && pName & ": a 33-byte public key must begin with 0x02 or 0x03."
+   end if
+   if tCount is 65 and tFirst is not 4 then
+      throw "CoinXT:" && pName & ": a 65-byte public key must begin with 0x04."
+   end if
+   return true
+end cxCheckPubkey
+
+function cxBtcAddressP2PKH pPubkey
+   get cxCheckPubkey(pPubkey, "cxBtcAddressP2PKH", false)
+   return cxBase58CheckEncode(numToByte(kCxVersionP2PKH) & cxHash160(pPubkey))
+end cxBtcAddressP2PKH
+
+function cxBtcAddressP2WPKH pPubkey
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcAddressP2WPKHInner(pPubkey) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcAddressP2WPKH
+
+private function cxBtcAddressP2WPKHInner pPubkey
+   get cxCheckPubkey(pPubkey, "cxBtcAddressP2WPKH", true)
+   return cxSegwitAddressEncode(kCxHrpMainnet, 0, cxHash160(pPubkey))
+end cxBtcAddressP2WPKHInner
+
+function cxBtcAddressP2TR pOutputKey
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcAddressP2TRInner(pOutputKey) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcAddressP2TR
+
+private function cxBtcAddressP2TRInner pOutputKey
+   if the number of bytes of pOutputKey is not 32 then
+      throw "CoinXT: cxBtcAddressP2TR: a Taproot address requires a 32-byte x-only output key."
+   end if
+   return cxSegwitAddressEncode(kCxHrpMainnet, 1, pOutputKey)
+end cxBtcAddressP2TRInner
+
+function cxEthAddress pPubkey
+   local tKey, tHash, tCount
+   put the number of bytes of pPubkey into tCount
+   if tCount is 33 then
+      put cxPubkeyDecompress(pPubkey) into tKey
+   else
+      put pPubkey into tKey
+   end if
+   if the number of bytes of tKey is not 65 then
+      throw "CoinXT: cxEthAddress: a public key must be 33 bytes (compressed) or 65 bytes (uncompressed)."
+   end if
+   put cxKeccak256(byte 2 to 65 of tKey) into tHash
+   return "0x" & cxHexEncode(byte 13 to 32 of tHash)
+end cxEthAddress
+
+function cxEthAddressChecksum pAddress
+   local tPlain, tHash, tOut, tI, tCode, tNibble, tHex
+   put pAddress into tPlain
+   if char 1 to 2 of tPlain is "0x" then
+      delete char 1 to 2 of tPlain
+   end if
+   if the number of chars of tPlain is not 40 then
+      throw "CoinXT: cxEthAddressChecksum: an Ethereum address must be 40 hex characters."
+   end if
+   put cxToLower(tPlain) into tPlain
+   repeat with tI = 1 to 40
+      if cxHexValue(char tI of tPlain) < 0 then
+         throw "CoinXT: cxEthAddressChecksum: the address contains a character that is not a hex digit."
+      end if
+   end repeat
+   -- The hash is over the ASCII of the lowercase address, NOT over its bytes.
+   put cxHexEncode(cxKeccak256(textEncode(tPlain, "UTF-8"))) into tHex
+   put "0x" into tOut
+   repeat with tI = 1 to 40
+      put cxHexValue(char tI of tHex) into tNibble
+      put byteToNum(char tI of tPlain) into tCode
+      if tNibble >= 8 and tCode >= 97 and tCode <= 102 then
+         put numToChar(tCode - 32) after tOut
+      else
+         put numToChar(tCode) after tOut
+      end if
+   end repeat
+   return tOut
+end cxEthAddressChecksum
+
+function cxEthAddressIsChecksummed pAddress
+   local tPlain
+   put pAddress into tPlain
+   if char 1 to 2 of tPlain is "0x" then
+      delete char 1 to 2 of tPlain
+   end if
+   if cxCaseKind(tPlain) is not "mixed" then
+      return false
+   end if
+   -- COMPARE AGAINST THE CALLER'S ORIGINAL CASING, BY BYTE VALUE. Both halves
+   -- of that sentence are load-bearing, and this handler shipped once getting
+   -- both wrong - it read
+   --    cxEthAddressChecksum(pAddress) is cxEthAddressChecksum(cxToLower(tPlain))
+   -- which is a TAUTOLOGY: cxEthAddressChecksum lowercases its argument before
+   -- it hashes or emits anything, so its result is a function of the lowercase
+   -- form alone and both sides are the same string for every input. It answered
+   -- "true" to every mixed-case address, including a corrupted one, which is
+   -- precisely the failure EIP-55 exists to prevent.
+   -- The second half matters too: `is` honours `the caseSensitive` (default
+   -- FALSE), and this comparison is ENTIRELY about case, so `is` could not
+   -- decide it even against the right operand. cxCompareBytes is exact whatever
+   -- the caller has set - the same reasoning as discipline 3 in the header.
+   return cxCompareBytes(cxEthAddressChecksum(tPlain), "0x" & tPlain) is 0
+end cxEthAddressIsChecksummed
+
+function cxRlpEncodeBytes pData
+   local tCount
+   put the number of bytes of pData into tCount
+   if tCount is 1 and byteToNum(byte 1 of pData) < 128 then
+      -- A single byte below 0x80 is its own encoding: it carries no prefix.
+      return pData
+   end if
+   return cxRlpLengthPrefix(tCount, 128) & pData
+end cxRlpEncodeBytes
+
+function cxRlpEncodeList pEncodedItems
+   return cxRlpLengthPrefix(the number of bytes of pEncodedItems, 192) & pEncodedItems
+end cxRlpEncodeList
+
+private function cxRlpLengthPrefix pLength, pOffset
+   -- Short form below 56 bytes; otherwise a big-endian length whose OWN length
+   -- goes in the prefix.
+   local tBig, tOut
+   if pLength < 56 then
+      return numToByte(pOffset + pLength)
+   end if
+   put cxUIntToBytes(pLength) into tBig
+   put numToByte(pOffset + 55 + the number of bytes of tBig) into tOut
+   return tOut & tBig
+end cxRlpLengthPrefix
+
+private function cxUIntToBytes pValue
+   -- Big-endian, no leading zero byte. Used for RLP length prefixes only, which
+   -- stay far inside exact-integer range.
+   local tOut, tRest
+   put "" into tOut
+   put pValue into tRest
+   repeat while tRest > 0
+      put numToByte(cxIntMod(tRest, 256)) before tOut
+      put cxIntDiv(tRest, 256) into tRest
+   end repeat
+   if tOut is "" then
+      put numToByte(0) into tOut
+   end if
+   return tOut
+end cxUIntToBytes
+
+function cxRlpDecode pData
+   local tResult, tPrefix, tCount, tLength, tLengthLength, tI, tHeader
+   put the number of bytes of pData into tCount
+   if tCount is 0 then
+      throw "CoinXT: cxRlpDecode: there is nothing to decode."
+   end if
+   put byteToNum(byte 1 of pData) into tPrefix
+   if tPrefix < 128 then
+      put "bytes" into tResult["kind"]
+      put byte 1 of pData into tResult["payload"]
+      put byte 2 to tCount of pData into tResult["rest"]
+      return tResult
+   end if
+   if tPrefix < 184 then
+      put tPrefix - 128 into tLength
+      if tCount < 1 + tLength then
+         throw "CoinXT: cxRlpDecode: the item claims more bytes than the input holds."
+      end if
+      if tLength is 1 and byteToNum(byte 2 of pData) < 128 then
+         throw "CoinXT: cxRlpDecode: a single byte below 0x80 must be encoded as itself, not with a length prefix."
+      end if
+      put "bytes" into tResult["kind"]
+      put cxSlice(pData, 2, 1 + tLength) into tResult["payload"]
+      put byte (2 + tLength) to tCount of pData into tResult["rest"]
+      return tResult
+   end if
+   if tPrefix < 192 then
+      put tPrefix - 183 into tLengthLength
+      put cxRlpLongLength(pData, tLengthLength, tCount) into tLength
+      put 1 + tLengthLength into tHeader
+      if tCount < tHeader + tLength then
+         throw "CoinXT: cxRlpDecode: the item claims more bytes than the input holds."
+      end if
+      put "bytes" into tResult["kind"]
+      put cxSlice(pData, tHeader + 1, tHeader + tLength) into tResult["payload"]
+      put byte (tHeader + tLength + 1) to tCount of pData into tResult["rest"]
+      return tResult
+   end if
+   if tPrefix < 248 then
+      put tPrefix - 192 into tLength
+      if tCount < 1 + tLength then
+         throw "CoinXT: cxRlpDecode: the list claims more bytes than the input holds."
+      end if
+      put "list" into tResult["kind"]
+      put cxSlice(pData, 2, 1 + tLength) into tResult["payload"]
+      put byte (2 + tLength) to tCount of pData into tResult["rest"]
+      return tResult
+   end if
+   put tPrefix - 247 into tLengthLength
+   put cxRlpLongLength(pData, tLengthLength, tCount) into tLength
+   put 1 + tLengthLength into tHeader
+   if tCount < tHeader + tLength then
+      throw "CoinXT: cxRlpDecode: the list claims more bytes than the input holds."
+   end if
+   put "list" into tResult["kind"]
+   put cxSlice(pData, tHeader + 1, tHeader + tLength) into tResult["payload"]
+   put byte (tHeader + tLength + 1) to tCount of pData into tResult["rest"]
+   return tResult
+end cxRlpDecode
+
+private function cxRlpLongLength pData, pLengthLength, pCount
+   -- The big-endian length that follows a long-form prefix, with both
+   -- canonicality rules enforced: no leading zero byte, and the value must
+   -- actually have needed the long form.
+   local tI, tLength
+   if pCount < 1 + pLengthLength then
+      throw "CoinXT: cxRlpDecode: the length prefix is truncated."
+   end if
+   if byteToNum(byte 2 of pData) is 0 then
+      throw "CoinXT: cxRlpDecode: the length has a leading zero byte, which is not canonical."
+   end if
+   put 0 into tLength
+   repeat with tI = 1 to pLengthLength
+      put tLength * 256 + byteToNum(byte (1 + tI) of pData) into tLength
+   end repeat
+   if tLength < 56 then
+      throw "CoinXT: cxRlpDecode: a length below 56 must use the short form, so this is not canonical."
+   end if
+   return tLength
+end cxRlpLongLength
+
+private function cxSlice pData, pFrom, pTo
+   -- byte x to y of, with the empty case made explicit: an empty RLP string has
+   -- pFrom greater than pTo, and relying on the engine's behaviour there is the
+   -- kind of assumption this family writes down rather than trusts.
+   if pFrom > pTo then
+      return ""
+   end if
+   return byte pFrom to pTo of pData
+end cxSlice
+
+private function cxBitAt pData, pBitIndex
+   -- Bit pBitIndex (0-based, most significant bit of byte 1 first) of pData.
+   local tByteIndex, tBitInByte, tByte
+   put cxIntDiv(pBitIndex, 8) + 1 into tByteIndex
+   put cxIntMod(pBitIndex, 8) into tBitInByte
+   put byteToNum(byte tByteIndex of pData) into tByte
+   return cxIntMod(cxIntDiv(tByte, cxPow2(7 - tBitInByte)), 2)
+end cxBitAt
+
+private function cxBitsToBytes pBits
+   -- Pack a comma-separated list of 0/1 into bytes, most significant bit first,
+   -- zero-padding the final partial byte. The padding is not a fudge: BIP-39's
+   -- checksum is the FIRST few bits of a digest byte, so the zeros below a
+   -- 4-bit checksum are exactly the zeros the comparison expects.
+   local tOut, tAcc, tCount, tI, tBitCount
+   put "" into tOut
+   put 0 into tAcc
+   put 0 into tBitCount
+   put the number of items of pBits into tCount
+   repeat with tI = 1 to tCount
+      put tAcc * 2 + (item tI of pBits) into tAcc
+      add 1 to tBitCount
+      if tBitCount is 8 then
+         put numToByte(tAcc) after tOut
+         put 0 into tAcc
+         put 0 into tBitCount
+      end if
+   end repeat
+   if tBitCount > 0 then
+      repeat with tI = tBitCount to 7
+         put tAcc * 2 into tAcc
+      end repeat
+      put numToByte(tAcc) after tOut
+   end if
+   return tOut
+end cxBitsToBytes
+
+private function cxWordSlotLen pList
+   -- The slot width, derived from the blob rather than written down again.
+   return cxIntDiv(the number of bytes of pList, kCxBip39WordCount)
+end cxWordSlotLen
+
+private function cxWordAt pList, pIndex
+   -- Word at pIndex (0-based), trailing pad removed.
+   local tWidth, tStart, tSlot, tEnd
+   put cxWordSlotLen(pList) into tWidth
+   put pIndex * tWidth + 1 into tStart
+   put byte tStart to (tStart + tWidth - 1) of pList into tSlot
+   put tWidth into tEnd
+   repeat while tEnd > 0
+      if byteToNum(char tEnd of tSlot) is not 32 then
+         exit repeat
+      end if
+      subtract 1 from tEnd
+   end repeat
+   return char 1 to tEnd of tSlot
+end cxWordAt
+
+private function cxWordIndex pList, pWord
+   -- The 0-based index of pWord, or -1 if it is not a BIP-39 word. Binary
+   -- search: the list is sorted by byte value (tools/coin-kat.py checks that,
+   -- so this is a verified precondition and not an assumption).
+   local tLow, tHigh, tMid, tCmp
+   put 0 into tLow
+   put kCxBip39WordCount - 1 into tHigh
+   repeat while tLow <= tHigh
+      put cxIntDiv(tLow + tHigh, 2) into tMid
+      put cxCompareBytes(pWord, cxWordAt(pList, tMid)) into tCmp
+      if tCmp is 0 then
+         return tMid
+      end if
+      if tCmp < 0 then
+         put tMid - 1 into tHigh
+      else
+         put tMid + 1 into tLow
+      end if
+   end repeat
+   return -1
+end cxWordIndex
+
+function cxMnemonicNormalize pText
+   local tOut, tI, tCount, tChar, tCode, tPending
+   put "" into tOut
+   put false into tPending
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tChar
+      put byteToNum(tChar) into tCode
+      if tCode is 32 or tCode is 9 or tCode is 10 or tCode is 13 then
+         if tOut is not "" then
+            put true into tPending
+         end if
+      else
+         if tPending is true then
+            put " " after tOut
+            put false into tPending
+         end if
+         put tChar after tOut
+      end if
+   end repeat
+   return tOut
+end cxMnemonicNormalize
+
+private function cxSplitWords pMnemonic
+   -- The words of an already-normalized mnemonic, comma separated. Safe as a
+   -- comma list because every BIP-39 English word is lowercase a-z; a word
+   -- containing a comma could not be in the list and is rejected by
+   -- cxWordIndex before it can be misread.
+   local tOut, tI, tCount, tChar
+   put "" into tOut
+   put the number of chars of pMnemonic into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pMnemonic into tChar
+      if byteToNum(tChar) is 32 then
+         put "," after tOut
+      else
+         put tChar after tOut
+      end if
+   end repeat
+   return tOut
+end cxSplitWords
+
+function cxMnemonicFromEntropy pEntropy
+   local tLen, tChecksumBits, tTotalBits, tWordCount, tSource, tList
+   local tI, tB, tValue, tOut, tBitIndex
+   put the number of bytes of pEntropy into tLen
+   if tLen is not 16 and tLen is not 20 and tLen is not 24 and tLen is not 28 and tLen is not 32 then
+      throw "CoinXT: cxMnemonicFromEntropy: entropy must be 16, 20, 24, 28 or 32 bytes."
+   end if
+   -- One checksum bit per 32 bits of entropy, taken from the FRONT of the
+   -- SHA-256 of the entropy. That is at most 8 bits, so appending the first
+   -- digest byte supplies every bit the packing below will read.
+   put cxIntDiv(tLen, 4) into tChecksumBits
+   put tLen * 8 + tChecksumBits into tTotalBits
+   put cxIntDiv(tTotalBits, kCxBip39BitsPerWord) into tWordCount
+   put pEntropy & (byte 1 of cxSha256(pEntropy)) into tSource
+   put cxBip39Wordlist() into tList
+   put "" into tOut
+   repeat with tI = 0 to (tWordCount - 1)
+      put 0 into tValue
+      repeat with tB = 0 to (kCxBip39BitsPerWord - 1)
+         put tI * kCxBip39BitsPerWord + tB into tBitIndex
+         put tValue * 2 + cxBitAt(tSource, tBitIndex) into tValue
+      end repeat
+      if tOut is not "" then
+         put " " after tOut
+      end if
+      put cxWordAt(tList, tValue) after tOut
+   end repeat
+   return tOut
+end cxMnemonicFromEntropy
+
+function cxMnemonicToEntropy pMnemonic
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxMnemonicToEntropyInner(pMnemonic) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxMnemonicToEntropy
+
+private function cxMnemonicToEntropyInner pMnemonic
+   local tWords, tCount, tList, tBits, tI, tIndex, tB
+   local tEntBytes, tChecksumBits, tPacked, tEntropy, tGot, tWant
+   put cxSplitWords(cxMnemonicNormalize(pMnemonic)) into tWords
+   put the number of items of tWords into tCount
+   if tCount is not 12 and tCount is not 15 and tCount is not 18 and tCount is not 21 and tCount is not 24 then
+      throw "CoinXT: cxMnemonicToEntropy: a mnemonic must be 12, 15, 18, 21 or 24 words."
+   end if
+   put cxBip39Wordlist() into tList
+   put "" into tBits
+   repeat with tI = 1 to tCount
+      put cxWordIndex(tList, item tI of tWords) into tIndex
+      if tIndex < 0 then
+         throw "CoinXT: cxMnemonicToEntropy: word" && tI && "is not in the BIP-39 English wordlist."
+      end if
+      -- Most significant bit of the 11 first, which is the order
+      -- cxMnemonicFromEntropy wrote them in.
+      repeat with tB = (kCxBip39BitsPerWord - 1) down to 0
+         if tBits is not "" then
+            put "," after tBits
+         end if
+         put cxIntMod(cxIntDiv(tIndex, cxPow2(tB)), 2) after tBits
+      end repeat
+   end repeat
+   -- 32 bits of entropy per 3 words, and one checksum bit per 32 bits of it.
+   put cxIntDiv(tCount * 4, 3) into tEntBytes
+   put cxIntDiv(tEntBytes, 4) into tChecksumBits
+   put cxBitsToBytes(tBits) into tPacked
+   put byte 1 to tEntBytes of tPacked into tEntropy
+   -- Compare the checksum bits as a NUMBER rather than as bytes, because when
+   -- there are fewer than 8 of them the byte around them is padding on both
+   -- sides and only the top tChecksumBits are meaningful.
+   put cxIntDiv(byteToNum(byte (tEntBytes + 1) of tPacked), cxPow2(8 - tChecksumBits)) into tGot
+   put cxIntDiv(byteToNum(byte 1 of cxSha256(tEntropy)), cxPow2(8 - tChecksumBits)) into tWant
+   if tGot is not tWant then
+      throw "CoinXT: cxMnemonicToEntropy: the checksum does not match, so at least one word is wrong or out of order."
+   end if
+   return tEntropy
+end cxMnemonicToEntropyInner
+
+function cxMnemonicValidate pMnemonic
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxMnemonicValidateInner(pMnemonic) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxMnemonicValidate
+
+private function cxMnemonicValidateInner pMnemonic
+   local tEntropy
+   try
+      put cxMnemonicToEntropy(pMnemonic) into tEntropy
+   catch tError
+      return false
+   end try
+   return true
+end cxMnemonicValidateInner
+
+function cxMnemonicToSeed pMnemonic, pPassphrase
+   return cxPbkdf2HmacSha512(cxMnemonicNormalize(pMnemonic), \
+         kCxBip39SaltPrefix & pPassphrase, kCxBip39Rounds, 64)
+end cxMnemonicToSeed
+
+private function cxUInt32ToBytes pValue
+   -- Four bytes, big endian, FIXED WIDTH. Deliberately not cxUIntToBytes: that
+   -- one is RLP's minimal-length encoding, and using it here would silently
+   -- drop the leading zeros of a small child index and corrupt every
+   -- serialization and every HMAC that covers one.
+   local tOut, tI, tRest
+   put "" into tOut
+   put pValue into tRest
+   repeat with tI = 1 to 4
+      put numToByte(cxIntMod(tRest, 256)) before tOut
+      put cxIntDiv(tRest, 256) into tRest
+   end repeat
+   return tOut
+end cxUInt32ToBytes
+
+private function cxFingerprint pPubkey
+   -- The first 4 bytes of hash160(compressed public key). BIP-32 uses it only
+   -- as a hint for locating a parent; it is NOT a checksum and collisions are
+   -- expected, so nothing in this file treats a match as proof of anything.
+   return byte 1 to 4 of cxHash160(pPubkey)
+end cxFingerprint
+
+function cxHdFromSeed pSeed
+   local tLen, tI, tNode
+   put the number of bytes of pSeed into tLen
+   if tLen < 16 or tLen > 64 then
+      throw "CoinXT: cxHdFromSeed: a BIP-32 seed must be between 16 and 64 bytes."
+   end if
+   put cxHmacSha512(kCxBip32MasterKey, pSeed) into tI
+   put byte 1 to 32 of tI into tNode["seckey"]
+   put byte 33 to 64 of tI into tNode["chaincode"]
+   -- Throws if IL is zero or >= n, which is BIP-32's "this seed is invalid" and
+   -- happens with probability about 2^-127. Deriving the public key is what
+   -- performs the check, so it is not restated here.
+   put cxPublicKey(tNode["seckey"], true) into tNode["pubkey"]
+   put 0 into tNode["depth"]
+   put 0 into tNode["index"]
+   put cxUInt32ToBytes(0) into tNode["parentfp"]
+   return tNode
+end cxHdFromSeed
+
+function cxHdNeuter pNode
+   local tNode
+   put pNode into tNode
+   put "" into tNode["seckey"]
+   return tNode
+end cxHdNeuter
+
+function cxHdDeriveChild pNode, pIndex
+   local tData, tI, tChild, tHasPrivate
+   if pIndex < 0 or pIndex > 4294967295 then
+      throw "CoinXT: cxHdDeriveChild: a child index must be between 0 and 2^32-1."
+   end if
+   put (pNode["seckey"] is not "") into tHasPrivate
+   if pIndex >= kCxHardenedBase then
+      if tHasPrivate is false then
+         throw "CoinXT: cxHdDeriveChild: a hardened child cannot be derived from a public-only node, because BIP-32 hashes the private key to make one."
+      end if
+      -- The 0x00 pad makes the private key 33 bytes, the same width as the
+      -- compressed public key the non-hardened branch uses, so both hash the
+      -- same amount of data. BIP-32 is explicit about it.
+      put numToByte(0) & pNode["seckey"] & cxUInt32ToBytes(pIndex) into tData
+   else
+      put pNode["pubkey"] & cxUInt32ToBytes(pIndex) into tData
+   end if
+   put cxHmacSha512(pNode["chaincode"], tData) into tI
+   put byte 33 to 64 of tI into tChild["chaincode"]
+   if tHasPrivate is true then
+      -- Throws when IL >= n or the child key is zero. BIP-32's remedy is to
+      -- use the next index; it is surfaced rather than retried here, because
+      -- silently returning a DIFFERENT child than the one asked for is how two
+      -- wallets end up disagreeing about what m/44'/0'/0'/0/0 means.
+      put cxSeckeyTweakAdd(pNode["seckey"], byte 1 to 32 of tI) into tChild["seckey"]
+      put cxPublicKey(tChild["seckey"], true) into tChild["pubkey"]
+   else
+      put "" into tChild["seckey"]
+      put cxPubkeyTweakAdd(pNode["pubkey"], byte 1 to 32 of tI) into tChild["pubkey"]
+   end if
+   put pNode["depth"] + 1 into tChild["depth"]
+   put pIndex into tChild["index"]
+   put cxFingerprint(pNode["pubkey"]) into tChild["parentfp"]
+   return tChild
+end cxHdDeriveChild
+
+function cxHdDerivePath pNode, pPath
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxHdDerivePathInner(pNode, pPath) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxHdDerivePath
+
+private function cxHdDerivePathInner pNode, pPath
+   local tPath, tNode, tCount, tI, tPart, tLast, tHardened, tIndex, tJ, tCode, tPartLen, tPathLen
+   put pPath into tPath
+   -- A trailing separator must be refused HERE, while the "/" is still
+   -- visible: the engine ignores one trailing delimiter when it counts
+   -- items, so after the replace below "m/" counts as ONE item, the level
+   -- loop never runs, and the empty-level check inside it can never fire.
+   -- The 2026-08-10 engine pass caught exactly that failing OPEN: "m/"
+   -- walked zero levels and handed back the node unchanged.
+   put the number of chars of tPath into tPathLen
+   if tPathLen > 0 and char tPathLen of tPath is "/" then
+      throw "CoinXT: cxHdDerivePath: the path has an empty level."
+   end if
+   replace "/" with comma in tPath
+   put pNode into tNode
+   put the number of items of tPath into tCount
+   if tCount < 1 then
+      throw "CoinXT: cxHdDerivePath: the path is empty."
+   end if
+   if item 1 of tPath is not "m" and item 1 of tPath is not "M" then
+      throw "CoinXT: cxHdDerivePath: a path must begin with m."
+   end if
+   repeat with tI = 2 to tCount
+      put item tI of tPath into tPart
+      if tPart is "" then
+         throw "CoinXT: cxHdDerivePath: the path has an empty level."
+      end if
+      put false into tHardened
+      put the number of chars of tPart into tPartLen
+      put char tPartLen of tPart into tLast
+      if tLast is "'" or tLast is "h" or tLast is "H" then
+         put true into tHardened
+         delete char tPartLen to tPartLen of tPart
+      end if
+      if tPart is "" then
+         throw "CoinXT: cxHdDerivePath: a hardened marker with no index before it."
+      end if
+      -- Digits only, checked by byte value: `is a number` would accept "1e3",
+      -- " 5" and "5.0", and a path level that quietly became 5000 or 5 would be
+      -- a different wallet with no error anywhere.
+      repeat with tJ = 1 to the number of chars of tPart
+         put byteToNum(char tJ of tPart) into tCode
+         if tCode < 48 or tCode > 57 then
+            throw "CoinXT: cxHdDerivePath: a path level must be digits, optionally followed by a hardened marker."
+         end if
+      end repeat
+      put tPart + 0 into tIndex
+      if tIndex >= kCxHardenedBase then
+         throw "CoinXT: cxHdDerivePath: a path level must be below 2^31; use the ' marker for a hardened level."
+      end if
+      if tHardened is true then
+         add kCxHardenedBase to tIndex
+      end if
+      put cxHdDeriveChild(tNode, tIndex) into tNode
+   end repeat
+   return tNode
+end cxHdDerivePathInner
+
+private function cxHdSerialize pNode, pVersion, pPrivate
+   -- The 78 bytes BIP-32 defines, in order: version, depth, parent
+   -- fingerprint, child number, chain code, then 33 key bytes - a private key
+   -- padded to 33 with a leading 0x00, or the compressed public key as is.
+   local tOut
+   put cxUInt32ToBytes(pVersion) into tOut
+   put numToByte(pNode["depth"]) after tOut
+   put pNode["parentfp"] after tOut
+   put cxUInt32ToBytes(pNode["index"]) after tOut
+   put pNode["chaincode"] after tOut
+   if pPrivate is true then
+      put numToByte(0) & pNode["seckey"] after tOut
+   else
+      put pNode["pubkey"] after tOut
+   end if
+   return tOut
+end cxHdSerialize
+
+function cxXprv pNode
+   if pNode["seckey"] is "" then
+      throw "CoinXT: cxXprv: this node has no private key, so it can only be serialized as an xpub."
+   end if
+   if pNode["depth"] > 255 then
+      throw "CoinXT: cxXprv: BIP-32 stores the depth in one byte, so it cannot exceed 255."
+   end if
+   return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXprv, true))
+end cxXprv
+
+function cxXpub pNode
+   if pNode["depth"] > 255 then
+      throw "CoinXT: cxXpub: BIP-32 stores the depth in one byte, so it cannot exceed 255."
+   end if
+   return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
+end cxXpub
+-- <<< GENERATED EMBED: coinxt script layer <<< --
+
+
+-- >>> GENERATED EMBED: onionxt script layer >>> --
+-- ==========================================================================
+-- OnionXT script layer (the real library, embedded)
+--
+-- The entire ox* surface - OnionXT is pure LiveCodeScript over engine
+-- sockets. Embedded for the same reason as coinxt's layer; its engine socket
+-- callbacks (socketError and friends) ride along, which is correct - the
+-- engine delivers them to the object that opened the socket, and in this
+-- paste that is this stack.
+--
+-- GENERATED from onionxt/src/onionxt.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild. Names are NOT prefixed: this is the library itself, and the
+-- folded tests above must reach it by its real names.
+-- ==========================================================================
+
+command oxSetSocksPort pPort
+   -- Loopback-locked: only the port is settable, never the host (CLAUDE.md
+   -- socket gotcha 6). Take effect on the next oxDial.
+   put pPort into sSocksPort
+end oxSetSocksPort
+
+command oxSetControlPort pPort
+   put pPort into sControlPort
+end oxSetControlPort
+
+command oxSetControlPassword pPassword
+   -- Only used if the daemon offers HASHEDPASSWORD auth (docs/03 step 2).
+   put pPassword into sControlPassword
+end oxSetControlPassword
+
+command oxSetCallbackOwner pObjectLongId
+   -- The object whose script holds the app callbacks. If unset, callbacks
+   -- dispatch to the topStack; setting this explicitly (as the demo does) removes
+   -- any ambiguity about which stack. Confirmed on-engine: with an explicit owner,
+   -- onStatus / onPeer / onStreamData all resolve and fire.
+   put pObjectLongId into sCallbackOwner
+end oxSetCallbackOwner
+
+command oxSetStatusCallback pHandlerName
+   put pHandlerName into sStatusCallback
+end oxSetStatusCallback
+
+command oxSetPeerCallback pHandlerName
+   put pHandlerName into sPeerCallback
+end oxSetPeerCallback
+
+function oxVersion
+   -- The library version, plus the tor version once the control connection has
+   -- answered GETINFO version (docs/05).
+   if sControlTorVersion is empty then
+      return kOxVersion
+   end if
+   return kOxVersion & " (tor " & sControlTorVersion & ")"
+end oxVersion
+
+command oxConnectControl
+   -- Idempotent-ish: refuse a second concurrent connect rather than leak a
+   -- socket. Disconnect first to reconnect.
+   if sControlSocket is not empty then
+      return "OnionXT: control connection already open (oxDisconnectControl first)"
+   end if
+   local tSocketID
+   -- A named connection (|oxctl) so the id is stable and distinct from streams.
+   put kOxHost & ":" & effectiveControlPort() & "|oxctl" into tSocketID
+   put tSocketID into sControlSocket
+   put "connecting" into sControlState
+   put empty into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlQueue
+   -- Bound the connect/handshake so a stalled daemon fails cleanly.
+   set the socketTimeoutInterval to kOxHandshakeTimeout
+   open socket to tSocketID with message "oxCtlOpened"
+   -- A watchdog independent of the (repeating) socketTimeout: if we are not
+   -- authenticated within the deadline, tear the connection down.
+   send ("oxCtlDeadline " & quote & tSocketID & quote) to me in kOxHandshakeTimeout milliseconds
+   return empty
+end oxConnectControl
+
+command oxDisconnectControl
+   -- Idempotent close of the control socket and reset of all control state.
+   if sControlSocket is not empty then
+      oxSafeCloseSocket sControlSocket
+   end if
+   put empty into sControlSocket
+   put "disconnected" into sControlState
+   put empty into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlQueue
+   put empty into sControlCookieBytes
+   put empty into sControlClientNonce
+end oxDisconnectControl
+
+function oxIsControlAuthenticated
+   return (sControlState is "authenticated")
+end oxIsControlAuthenticated
+
+function oxBootstrapProgress
+   if sBootstrap is empty then
+      return 0
+   end if
+   return sBootstrap
+end oxBootstrapProgress
+
+function oxIsReady
+   -- Ready to carry traffic once bootstrapped to 100 and the control port is
+   -- authenticated. A published service's own reachability is reported
+   -- separately via the "serviceReady" status (HS_DESC UPLOADED).
+   return (sBootstrap is 100) and (sControlState is "authenticated")
+end oxIsReady
+
+command oxCtlOpened pSocketID
+   -- The control TCP connection is up. Start the single persistent line reader
+   -- and kick the auth dance with PROTOCOLINFO (allowed pre-auth).
+   if pSocketID is not sControlSocket then
+      exit oxCtlOpened          -- a stale socket; ignore
+   end if
+   put "protocolinfo" into sControlState
+   oxStatusUpdate "control", "connected"
+   -- One outstanding CRLF read at a time; re-armed at the end of oxCtlLine.
+   read from socket pSocketID until crlf with message "oxCtlLine"
+   oxCtlSend "PROTOCOLINFO 1", "protocolinfo"
+end oxCtlOpened
+
+private command oxCtlSend pCommand, pLabel
+   -- Send a control command, or queue it if one is already in flight so replies
+   -- always match commands (docs/03: keep a single in-flight command queue).
+   if sControlSocket is empty then
+      exit oxCtlSend
+   end if
+   if sCtlInFlight is not empty then
+      put pLabel & tab & pCommand & return after sCtlQueue
+      exit oxCtlSend
+   end if
+   put pLabel into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlData
+   -- Commands are ASCII text; textEncode gives the exact wire bytes, then the
+   -- CRLF terminator (docs/03 line framing).
+   write textEncode(pCommand & oxCrlf(), "UTF-8") to socket sControlSocket
+end oxCtlSend
+
+private command oxCtlDrainQueue
+   -- Send the next queued command, if any. Called when a reply completes.
+   if sCtlQueue is empty then
+      exit oxCtlDrainQueue
+   end if
+   local tLine, tLabel, tCommand, tSaved
+   put line 1 of sCtlQueue into tLine
+   delete line 1 of sCtlQueue
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to tab
+   put item 1 of tLine into tLabel
+   put item 2 to -1 of tLine into tCommand
+   set the itemDelimiter to tSaved
+   oxCtlSend tCommand, tLabel
+end oxCtlDrainQueue
+
+command oxCtlLine pSocketID, pData
+   -- The persistent control-port line reader. Demultiplexes unsolicited 650
+   -- events from command replies, reassembles multi-line replies, and honours
+   -- the 250-/250+/'.'/250 space framing (docs/03).
+   if pSocketID is not sControlSocket then
+      exit oxCtlLine            -- a stale socket; ignore
+   end if
+   local tLine
+   -- Control replies are ASCII; decode as text, then strip the line terminator.
+   -- Confirmed on-engine: `read until crlf` returns the trailing CRLF and
+   -- oxStripLineEnd removes it, so auth / GETINFO / events all parse correctly.
+   put textDecode(pData, "UTF-8") into tLine
+   put oxStripLineEnd(tLine) into tLine
+
+   if sCtlInData then
+      -- Inside a 250+ CmdData block: a lone "." ends it; other lines are data
+      -- with any doubled leading dot un-stuffed (docs/03, RFC 2821 dot-stuffing).
+      if tLine is "." then
+         put false into sCtlInData
+      else
+         if char 1 to 2 of tLine is ".." then
+            delete char 1 of tLine
+         end if
+         put tLine & return after sCtlData
+      end if
+      oxCtlRearm pSocketID
+      exit oxCtlLine
+   end if
+
+   if the length of tLine < 3 then
+      oxCtlRearm pSocketID      -- malformed / empty; skip
+      exit oxCtlLine
+   end if
+
+   local tCode, tSep
+   put char 1 to 3 of tLine into tCode
+   put char 4 of tLine into tSep
+
+   if tCode is "650" then
+      -- An asynchronous event. Route it to the event handler, never to the
+      -- pending-command continuation.
+      oxHandleEvent tLine
+      oxCtlRearm pSocketID
+      exit oxCtlLine
+   end if
+
+   -- A command-reply line. Accumulate it and act on the frame control byte.
+   put tLine & return after sCtlReplyLines
+   if tSep is "+" then
+      put true into sCtlInData
+   else if tSep is space or tSep is empty then
+      -- Space (or a 3-char line) terminates the reply.
+      oxCtlReplyComplete
+      put empty into sCtlInFlight
+      put empty into sCtlReplyLines
+      oxCtlDrainQueue
+   end if
+   -- "-" continuation: just keep reading.
+   oxCtlRearm pSocketID
+end oxCtlLine
+
+private command oxCtlRearm pSocketID
+   -- Keep exactly one read outstanding, but only while the socket is still ours.
+   if pSocketID is sControlSocket then
+      read from socket pSocketID until crlf with message "oxCtlLine"
+   end if
+end oxCtlRearm
+
+private command oxCtlReplyComplete
+   -- Dispatch the just-completed reply to the continuation for the in-flight
+   -- command. if/else-if, not switch (the static gate rejects `end switch`).
+   -- tReplyOp, NOT tOp: a t-prefixed "tOp" lowercases to `top`, a reserved OXT
+   -- property, and the engine would parse it as the keyword, not this variable
+   -- (the prefixed-token-shadow trap, CLAUDE.md gotcha 2).
+   local tLabel, tReplyOp, tArg, tSaved
+   put sCtlInFlight into tLabel
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to ":"
+   put item 1 of tLabel into tReplyOp
+   put item 2 to -1 of tLabel into tArg
+   set the itemDelimiter to tSaved
+
+   if tReplyOp is "protocolinfo" then
+      oxParseProtocolInfo sCtlReplyLines
+      oxChooseAuthAndStart
+   else if tReplyOp is "authchallenge" then
+      oxHandleAuthChallenge sCtlReplyLines
+   else if tReplyOp is "authenticate" then
+      oxHandleAuthResult sCtlReplyLines
+   else if tReplyOp is "setevents" then
+      -- 250 OK expected; nothing to do on success.
+   else if tReplyOp is "getinfo-version" then
+      oxParseTorVersion sCtlReplyLines
+   else if tReplyOp is "getinfo-bootstrap" then
+      oxParseBootstrapPhase sCtlReplyLines
+   else if tReplyOp is "add_onion" then
+      oxHandleAddOnionReply tArg, sCtlReplyLines
+   else if tReplyOp is "del_onion" then
+      -- 250 OK on success, 552 if unknown; the removal already forgot local
+      -- state, so nothing further is required here.
+   end if
+end oxCtlReplyComplete
+
+private command oxParseProtocolInfo pReply
+   -- Extract the offered auth methods and (for cookie auth) the cookie-file path
+   -- from the PROTOCOLINFO reply (docs/03 step 1).
+   put empty into sControlMethods
+   put empty into sControlCookieFile
+   local tLine
+   repeat for each line tLine in pReply
+      if "AUTH METHODS=" is in tLine then
+         -- METHODS=<comma list> [COOKIEFILE="<quoted, C-escaped path>"]
+         put oxFieldAfter(tLine, "METHODS=") into sControlMethods
+         if "COOKIEFILE=" is in tLine then
+            put oxCUnescape(oxQuotedValueAfter(tLine, "COOKIEFILE=")) into sControlCookieFile
+         end if
+      end if
+   end repeat
+end oxParseProtocolInfo
+
+private command oxChooseAuthAndStart
+   -- Priority SAFECOOKIE > COOKIE > NULL > HASHEDPASSWORD (docs/03), but degrade
+   -- past any method whose prerequisite is missing rather than fail: SAFECOOKIE
+   -- needs SodiumXT HMAC-SHA256 and randomness (docs/08), COOKIE needs the
+   -- readable cookie file, HASHEDPASSWORD needs an app-set password.
+   put "authenticating" into sControlState
+
+   if oxMethodOffered("SAFECOOKIE") and oxSodiumHasHmac() and oxSodiumHasRandom() then
+      if oxLoadCookie() then
+         oxStartSafeCookie
+         exit oxChooseAuthAndStart
+      end if
+   end if
+   if oxMethodOffered("COOKIE") then
+      if oxLoadCookie() then
+         local tHex
+         put oxBytesToHex(sControlCookieBytes) into tHex
+         oxCtlSend "AUTHENTICATE " & tHex, "authenticate"
+         exit oxChooseAuthAndStart
+      end if
+   end if
+   if oxMethodOffered("NULL") then
+      oxCtlSend "AUTHENTICATE", "authenticate"
+      exit oxChooseAuthAndStart
+   end if
+   if oxMethodOffered("HASHEDPASSWORD") and sControlPassword is not empty then
+      -- Quote the password; escape backslash and double-quote (docs/03).
+      oxCtlSend "AUTHENTICATE " & quote & oxQuoteEscape(sControlPassword) & quote, "authenticate"
+      exit oxChooseAuthAndStart
+   end if
+
+   put "failed" into sControlState
+   oxStatusUpdate "control", "authfailed: no usable auth method (offered " & sControlMethods & ")"
+   oxDisconnectControl
+end oxChooseAuthAndStart
+
+private command oxStartSafeCookie
+   -- SAFECOOKIE step A: send a 32-byte client nonce as hex (docs/03 step 2).
+   put oxRandomBytes(32) into sControlClientNonce
+   oxCtlSend "AUTHCHALLENGE SAFECOOKIE " & oxBytesToHex(sControlClientNonce), "authchallenge"
+end oxStartSafeCookie
+
+private command oxHandleAuthChallenge pReply
+   -- SAFECOOKIE step B/C/D. The reply is a SINGLE final line:
+   -- 250 AUTHCHALLENGE SERVERHASH=<hex> SERVERNONCE=<hex> (docs/03; the reply is
+   -- space-separated, not a 250- continuation).
+   local tLine, tServerHashHex, tServerNonceHex
+   put line 1 of pReply into tLine
+   if char 1 to 3 of tLine is not "250" then
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: AUTHCHALLENGE rejected (" & tLine & ")"
+      oxDisconnectControl
+      exit oxHandleAuthChallenge
+   end if
+   put oxFieldAfter(tLine, "SERVERHASH=") into tServerHashHex
+   put oxFieldAfter(tLine, "SERVERNONCE=") into tServerNonceHex
+
+   local tServerNonce, tMessage, tExpected, tOk
+   put oxHexToBytes(tServerNonceHex) into tServerNonce
+   -- HMAC message = CookieBytes || ClientNonce || ServerNonce (docs/03).
+   put sControlCookieBytes & sControlClientNonce & tServerNonce into tMessage
+   put oxHmac(kOxSafeCookieServerKey, tMessage) into tExpected
+   -- Verify the server hash in constant time; a mismatch means the far end does
+   -- not hold the cookie (not the real Tor), so abort and do NOT authenticate.
+   put oxConstantTimeEqual(tExpected, oxHexToBytes(tServerHashHex)) into tOk
+   if not tOk then
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: SAFECOOKIE server hash mismatch (not the real Tor?)"
+      oxDisconnectControl
+      exit oxHandleAuthChallenge
+   end if
+   -- Step D: authenticate with the controller-to-server hash.
+   local tClientHash
+   put oxHmac(kOxSafeCookieClientKey, tMessage) into tClientHash
+   oxCtlSend "AUTHENTICATE " & oxBytesToHex(tClientHash), "authenticate"
+end oxHandleAuthChallenge
+
+private command oxHandleAuthResult pReply
+   -- 250 OK => authenticated; anything else (515 bad auth, 514 required) fails
+   -- closed (docs/03; there is no unauthenticated fallback, CLAUDE.md rule 4).
+   local tLine
+   put line 1 of pReply into tLine
+   if char 1 to 3 of tLine is "250" then
+      put "authenticated" into sControlState
+      oxStatusUpdate "control", "authenticated"
+      -- Subscribe to the events we care about and learn the tor version.
+      oxCtlSend "SETEVENTS STATUS_CLIENT HS_DESC CIRC STREAM", "setevents"
+      oxCtlSend "GETINFO version", "getinfo-version"
+      -- Query the CURRENT bootstrap phase once. STATUS_CLIENT BOOTSTRAP events
+      -- only fire WHILE tor is bootstrapping, so a daemon already at 100% when we
+      -- connect emits none and the UI would sit at 0. This one GETINFO seeds it.
+      oxCtlSend "GETINFO status/bootstrap-phase", "getinfo-bootstrap"
+   else
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: " & tLine
+      oxDisconnectControl
+   end if
+end oxHandleAuthResult
+
+private command oxParseTorVersion pReply
+   -- 250-version=<x> then 250 OK (docs/03). Pull the version value.
+   local tLine
+   repeat for each line tLine in pReply
+      if "version=" is in tLine then
+         put oxFieldAfter(tLine, "version=") into sControlTorVersion
+      end if
+   end repeat
+end oxParseTorVersion
+
+private command oxParseBootstrapPhase pReply
+   -- Reply to GETINFO status/bootstrap-phase, carrying the CURRENT bootstrap state
+   -- (unlike the STATUS_CLIENT event, which only fires while bootstrapping). Line:
+   --   250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="..."
+   -- Parse PROGRESS= the same way as the live event so the UI is seeded on connect.
+   local tLine, tProgress
+   repeat for each line tLine in pReply
+      if "PROGRESS=" is in tLine then
+         put oxFieldAfter(tLine, "PROGRESS=") into tProgress
+         if tProgress is not empty and tProgress is an integer then
+            put tProgress into sBootstrap
+            oxStatusUpdate "bootstrap", tProgress
+            if tProgress is 100 then
+               oxStatusUpdate "ready", empty
+            end if
+         end if
+      end if
+   end repeat
+end oxParseBootstrapPhase
+
+command oxCtlDeadline pSocketID
+   -- Handshake watchdog: if this control socket never reached authenticated,
+   -- tear it down with a clean error (docs/07: a stalled bootstrap must not hang).
+   if pSocketID is not sControlSocket then
+      exit oxCtlDeadline
+   end if
+   if sControlState is not "authenticated" then
+      oxStatusUpdate "control", "error: control authentication timed out"
+      oxDisconnectControl
+   end if
+end oxCtlDeadline
+
+private command oxHandleEvent pLine
+   local tType
+   put word 2 of pLine into tType
+   if tType is "STATUS_CLIENT" then
+      if "BOOTSTRAP" is in pLine then
+         local tProgress
+         put oxFieldAfter(pLine, "PROGRESS=") into tProgress
+         if tProgress is not empty and tProgress is an integer then
+            put tProgress into sBootstrap
+            oxStatusUpdate "bootstrap", tProgress
+            if tProgress is 100 then
+               oxStatusUpdate "ready", empty
+            end if
+         end if
+      end if
+   else if tType is "HS_DESC" then
+      -- Positional: HS_DESC <Action> <HSAddress> ... . Our service is reachable
+      -- once we see UPLOADED for its address (docs/03 step 5).
+      local tAction, tAddress
+      put word 3 of pLine into tAction
+      put word 4 of pLine into tAddress
+      if tAction is "UPLOADED" then
+         oxMarkServiceReady tAddress
+         oxStatusUpdate "serviceReady", tAddress
+      end if
+   else
+      -- CIRC / STREAM and anything else are diagnostic; surface raw for advanced
+      -- apps that opted into an "event" status, otherwise ignored.
+      oxStatusUpdate "event", pLine
+   end if
+end oxHandleEvent
+
+private command oxMarkServiceReady pAddress
+   local tKey, tCore
+   -- The event carries the ServiceID (no ".onion"); match either spelling.
+   put pAddress into tCore
+   if tCore ends with ".onion" then
+      put char 1 to -7 of tCore into tCore
+   end if
+   repeat for each key tKey in sServices
+      if sServices[tKey]["serviceID"] is tCore then
+         put true into sServices[tKey]["ready"]
+      end if
+   end repeat
+end oxMarkServiceReady
+
+private command oxStatusUpdate pKind, pInfo
+   -- Deliver a status update to the app, coalescing the high-frequency bootstrap
+   -- stream to <= ~4 Hz (CLAUDE.md). Terminal/rare kinds are always delivered.
+   if pKind is "bootstrap" and pInfo is not 100 then
+      local tNow
+      put the milliseconds into tNow
+      if sLastStatusTick is not empty and (tNow - sLastStatusTick) < kOxStatusThrottle then
+         exit oxStatusUpdate   -- coalesce: drop this intermediate tick
+      end if
+      put tNow into sLastStatusTick
+   end if
+   oxDispatch sStatusCallback, pKind, pInfo, empty
+end oxStatusUpdate
+
+command oxDial pHost, pPort
+   -- Reports a stream handle through `the result` immediately; the SOCKS
+   -- handshake completes asynchronously and the stream's callback receives
+   -- "open" or "error" (CLAUDE.md async model).
+   if pHost is empty then
+      return "OnionXT: oxDial needs a host (a .onion or clearnet name)"
+   end if
+   if pPort is not an integer or pPort < 1 or pPort > 65535 then
+      return "OnionXT: oxDial needs a port in 1..65535"
+   end if
+   local tHandle, tConnName, tSocketID
+   put oxAllocHandle() into tHandle
+   -- A NON-numeric connection name so several streams to 127.0.0.1:9050 get
+   -- distinct socket ids, and so they never collide with the numeric names the
+   -- accept loop assigns (the id separator is a vertical bar, docs LiveCode ref).
+   put "oxs" & tHandle into tConnName
+   put kOxHost & ":" & effectiveSocksPort() & "|" & tConnName into tSocketID
+   put tSocketID into sStreams[tHandle]["socketID"]
+   put "connecting" into sStreams[tHandle]["state"]
+   put pHost into sStreams[tHandle]["host"]
+   put pPort into sStreams[tHandle]["port"]
+   put "dial" into sStreams[tHandle]["kind"]
+   put empty into sStreams[tHandle]["callback"]
+   put tHandle into sSockToStream[tSocketID]
+   set the socketTimeoutInterval to kOxHandshakeTimeout
+   open socket to tSocketID with message "oxSocksOpened"
+   send ("oxStreamDeadline " & tHandle) to me in kOxHandshakeTimeout milliseconds
+   return tHandle
+end oxDial
+
+command oxSetStreamCallback pStream, pHandlerName
+   if sStreams[pStream]["socketID"] is empty then
+      return "OnionXT: unknown stream handle " & pStream
+   end if
+   put pHandlerName into sStreams[pStream]["callback"]
+   return empty
+end oxSetStreamCallback
+
+command oxWrite pStream, pData
+   -- Write app bytes (already sealed by the app via SodiumXT) to the
+   -- tunnel. OnionXT does not encrypt (docs/02).
+   if sStreams[pStream]["state"] is not "connected" then
+      return "OnionXT: stream " & pStream & " is not open"
+   end if
+   write pData to socket sStreams[pStream]["socketID"]
+   return empty
+end oxWrite
+
+command oxCloseStream pStream
+   -- Idempotent close of the stream socket; forget the handle. A stale handle is
+   -- a clean no-op.
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxCloseStream
+   end if
+   oxSafeCloseSocket sStreams[pStream]["socketID"]
+   delete variable sSockToStream[sStreams[pStream]["socketID"]]
+   delete variable sStreams[pStream]
+end oxCloseStream
+
+function oxStreamState pStream
+   if sStreams[pStream]["socketID"] is empty then
+      return "unknown"
+   end if
+   return sStreams[pStream]["state"]
+end oxStreamState
+
+command oxSocksOpened pSocketID
+   -- TCP up: send the method-negotiation greeting 05 01 00 (VER=5, 1 method,
+   -- method 00 = no auth) and read the 2-byte method selection (docs/02 step 1).
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksOpened        -- stale
+   end if
+   put "greeting" into sStreams[tHandle]["state"]
+   write numToByte(5) & numToByte(1) & numToByte(0) to socket pSocketID
+   read from socket pSocketID for 2 with message "oxSocksMethod"
+end oxSocksOpened
+
+command oxSocksMethod pSocketID, pData
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksMethod
+   end if
+   if the number of bytes of pData < 2 then
+      oxStreamFail tHandle, "SOCKS greeting reply truncated"
+      exit oxSocksMethod
+   end if
+   local tVer, tMethod
+   put byteToNum(byte 1 of pData) into tVer
+   put byteToNum(byte 2 of pData) into tMethod
+   if tVer is not 5 then
+      oxStreamFail tHandle, "SOCKS server is not version 5"
+      exit oxSocksMethod
+   end if
+   if tMethod is not 0 then
+      -- 0xFF = no acceptable methods; anything non-zero we do not offer. Fail
+      -- closed; on loopback no auth is needed and its absence is a misconfig to
+      -- surface, not paper over (docs/02).
+      oxStreamFail tHandle, "SOCKS server demands an auth method OnionXT does not offer (0x" & oxByteHex(tMethod) & ")"
+      exit oxSocksMethod
+   end if
+   -- Method OK: send the CONNECT request with ATYP=3 (domain name) so TOR
+   -- resolves pHost. This is the anonymity-critical choice (docs/02 step 2).
+   put "connect" into sStreams[tHandle]["state"]
+   local tHost, tHostBytes, tPort, tRequest
+   put sStreams[tHandle]["host"] into tHost
+   put textEncode(tHost, "UTF-8") into tHostBytes
+   if the number of bytes of tHostBytes > 255 then
+      oxStreamFail tHandle, "SOCKS host name exceeds 255 bytes"
+      exit oxSocksMethod
+   end if
+   put sStreams[tHandle]["port"] into tPort
+   -- 05 01 00 03 <len> <host bytes> <port-hi> <port-lo>. The port is 2 bytes
+   -- big-endian; build it by hand so the wire bytes are self-evident (do not use
+   -- binaryEncode "S", which is host order, docs LiveCode ref).
+   put numToByte(5) & numToByte(1) & numToByte(0) & numToByte(3) into tRequest
+   put numToByte(the number of bytes of tHostBytes) after tRequest
+   put tHostBytes after tRequest
+   put numToByte(tPort div 256) & numToByte(tPort mod 256) after tRequest
+   write tRequest to socket pSocketID
+   -- Read the fixed 4-byte reply head (VER REP RSV ATYP); the BND.ADDR that
+   -- follows is variable and framed by ATYP (docs/02 step 3).
+   put "replyhead" into sStreams[tHandle]["state"]
+   read from socket pSocketID for 4 with message "oxSocksReplyHead"
+end oxSocksMethod
+
+command oxSocksReplyHead pSocketID, pData
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyHead
+   end if
+   if the number of bytes of pData < 4 then
+      oxStreamFail tHandle, "SOCKS reply head truncated"
+      exit oxSocksReplyHead
+   end if
+   local tVer, tRep, tAtyp
+   put byteToNum(byte 1 of pData) into tVer
+   put byteToNum(byte 2 of pData) into tRep
+   put byteToNum(byte 4 of pData) into tAtyp
+   if tRep is not 0 then
+      -- Any non-zero REP is failure. Map it (incl. Tor's onion 0xF0..0xF7) to a
+      -- human message and tear down (docs/02 REP table; CLAUDE.md rule 4).
+      oxStreamFail tHandle, oxSocksRepMessage(tRep)
+      exit oxSocksReplyHead
+   end if
+   put tAtyp into sStreams[tHandle]["atyp"]
+   -- Consume BND.ADDR + 2-byte BND.PORT. Length depends on ATYP: 01 -> 4, 04 ->
+   -- 16, 03 -> one length byte then that many. We do not use BND.ADDR; we just
+   -- frame past it so the socket is left at the start of the tunnel payload.
+   if tAtyp is 1 then
+      put "replyrest" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 6 with message "oxSocksReplyDone"     -- 4 + 2
+   else if tAtyp is 4 then
+      put "replyrest" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 18 with message "oxSocksReplyDone"    -- 16 + 2
+   else if tAtyp is 3 then
+      put "replylen" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 1 with message "oxSocksReplyLen"
+   else
+      oxStreamFail tHandle, "SOCKS reply has an unknown address type (" & tAtyp & ")"
+   end if
+end oxSocksReplyHead
+
+command oxSocksReplyLen pSocketID, pData
+   -- ATYP=3 domain BND.ADDR: one length byte, then that many, then 2 port bytes.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyLen
+   end if
+   if the number of bytes of pData < 1 then
+      oxStreamFail tHandle, "SOCKS reply address length truncated"
+      exit oxSocksReplyLen
+   end if
+   local tLen
+   put byteToNum(byte 1 of pData) + 2 into tLen     -- address bytes + 2 port bytes
+   put "replyrest" into sStreams[tHandle]["state"]
+   read from socket pSocketID for tLen with message "oxSocksReplyDone"
+end oxSocksReplyLen
+
+command oxSocksReplyDone pSocketID, pData
+   -- The SOCKS reply is fully consumed and REP was 0: the socket is now a
+   -- transparent tunnel. Hand it up and start the streaming inbound reader.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyDone
+   end if
+   put "connected" into sStreams[tHandle]["state"]
+   oxInvokeStreamCallback tHandle, "open", empty
+   -- Begin the persistent read; each inbound chunk is delivered as "data".
+   -- Confirmed on-engine: the no-quantifier `read ... with message` streams
+   -- available bytes as they arrive (a dialed SOCKS tunnel and an inbound onion
+   -- HTTP request both deliver chunk by chunk); it does not block to EOF.
+   read from socket pSocketID with message "oxStreamData"
+end oxSocksReplyDone
+
+command oxStreamData pSocketID, pData
+   -- Inbound bytes on a live stream (dialed OR inbound-accepted; both are unified
+   -- through the stream tables). Deliver the chunk and re-arm the read.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxStreamData          -- stale / already torn down
+   end if
+   if the number of bytes of pData > 0 then
+      oxInvokeStreamCallback tHandle, "data", pData
+   end if
+   -- Re-arm only if the stream is still live (the callback may have closed it).
+   if sSockToStream[pSocketID] is not empty then
+      read from socket pSocketID with message "oxStreamData"
+   end if
+end oxStreamData
+
+command oxStreamDeadline pStream
+   -- Handshake watchdog for a dialed stream: if it never reached "connected",
+   -- tear it down (docs/02: a silent stall is the worst failure).
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxStreamDeadline
+   end if
+   local tState
+   put sStreams[pStream]["state"] into tState
+   if tState is not "connected" and tState is not "closed" then
+      oxStreamFail pStream, "SOCKS handshake timed out"
+   end if
+end oxStreamDeadline
+
+private command oxStreamFail pStream, pError
+   -- Fail closed: report the error to the app, then close and forget the stream.
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxStreamFail
+   end if
+   put "failed" into sStreams[pStream]["state"]
+   oxInvokeStreamCallback pStream, "error", pError
+   oxSafeCloseSocket sStreams[pStream]["socketID"]
+   delete variable sSockToStream[sStreams[pStream]["socketID"]]
+   delete variable sStreams[pStream]
+end oxStreamFail
+
+private function oxSocksRepMessage pRep
+   -- Map a SOCKS REP code to a clear message. Standard RFC 1928 0x00..0x08 plus
+   -- Tor's onion extensions 0xF0..0xF7 (docs/02; the extended band only appears
+   -- when the SocksPort has ExtendedErrors set, so 0x01/0x04 must map sensibly
+   -- too, since without that flag Tor collapses onion failures onto them).
+   if pRep is 1 then
+      return "general SOCKS server failure"
+   else if pRep is 2 then
+      return "connection not allowed by ruleset"
+   else if pRep is 3 then
+      return "network unreachable"
+   else if pRep is 4 then
+      return "host unreachable"
+   else if pRep is 5 then
+      return "connection refused"
+   else if pRep is 6 then
+      return "TTL expired"
+   else if pRep is 7 then
+      return "command not supported"
+   else if pRep is 8 then
+      return "address type not supported"
+   else if pRep is 240 then
+      return "onion service not found (wrong or offline .onion address)"
+   else if pRep is 241 then
+      return "onion service descriptor is invalid"
+   else if pRep is 242 then
+      return "onion service introduction failed"
+   else if pRep is 243 then
+      return "onion service rendezvous failed"
+   else if pRep is 244 then
+      return "onion service missing client authorization"
+   else if pRep is 245 then
+      return "onion service wrong client authorization"
+   else if pRep is 246 then
+      return "onion service invalid address (malformed .onion)"
+   else if pRep is 247 then
+      return "onion service introduction timed out"
+   end if
+   return "SOCKS request failed (REP 0x" & oxByteHex(pRep) & ")"
+end oxSocksRepMessage
+
+command oxCreateService pVirtualPort, pLocalPort
+   -- Ephemeral service, Tor generates the key. Reports a service handle through
+   -- `the result`; the .onion address arrives asynchronously (status "service"
+   -- and oxServiceAddress) once ADD_ONION replies.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   local tHandle
+   put oxStartService(pVirtualPort, pLocalPort) into tHandle
+   if tHandle is not an integer then
+      return tHandle          -- listener did not bind; surfaced verbatim
+   end if
+   -- Flags=Detach keeps the service published even if the control connection
+   -- drops (a transient socketClosed/socketError, or a reconnect): without it, an
+   -- ADD_ONION service dies with its control connection while its descriptor
+   -- lingers in the DHT for ~3h, so a later visit hits "unable to find hidden
+   -- service identity key" at rendezvous. oxRemoveService / oxShutdown DEL_ONION
+   -- it explicitly; a hard crash leaves it until DEL_ONION or a tor restart.
+   oxCtlSend "ADD_ONION NEW:ED25519-V3 Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxCreateService
+
+command oxCreateServiceFromSeed pSeed, pVirtualPort, pLocalPort
+   -- Deterministic, reproducible address: derive the ed25519 identity from pSeed
+   -- and pass Tor the 64-byte ED25519-V3 expanded key (docs/04). The expansion is
+   -- SodiumXT's sxSignSeedToExpandedKey (docs/08 gap #1, SHIPPED in ABI 6); we
+   -- compose it and fail with a clear message if it is absent, never hand-roll
+   -- SHA-512. Same seed -> same .onion on every run.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   if the number of bytes of pSeed is not 32 then
+      return "OnionXT: oxCreateServiceFromSeed needs a 32-byte seed"
+   end if
+   local tExpanded
+   put oxExpandedKeyFromSeed(pSeed) into tExpanded
+   if the number of bytes of tExpanded is not 64 then
+      return tExpanded          -- a capability error, surfaced verbatim
+   end if
+   -- Tor's ADD_ONION ED25519-V3: wants STANDARD RFC 4648 base64 (the +/ alphabet
+   -- with = padding). The engine's base64Encode emits exactly that; do NOT use
+   -- SodiumXT's sxBin2Base64, which is url-safe and unpadded and tor rejects.
+   -- Strip any line-wrap whitespace the encoder may insert (docs/04 base64 note).
+   local tBlob
+   put oxStripWhitespace(base64Encode(tExpanded)) into tBlob
+   local tHandle
+   put oxStartService(pVirtualPort, pLocalPort) into tHandle
+   if tHandle is not an integer then
+      return tHandle          -- listener did not bind; surfaced verbatim
+   end if
+   -- Flags=Detach: keep the service alive across a control-connection drop (see
+   -- oxCreateService); DEL_ONION on teardown still removes it.
+   oxCtlSend "ADD_ONION ED25519-V3:" & tBlob & " Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxCreateServiceFromSeed
+
+command oxPublishService pVirtualPort, pLocalPort
+   -- Publish an onion whose virtual port Tor forwards to a loopback port that
+   -- SOMETHING ELSE is already accepting on (LiveCode's built-in HTTPD Library, or
+   -- any local server). Unlike oxCreateService, OnionXT does NOT start its own
+   -- accept loop: the external server owns the socket, parses the request, and
+   -- replies. Teardown DEL_ONIONs the service but leaves that socket alone. Reports
+   -- a service handle through `the result`; the .onion address arrives
+   -- asynchronously (status "service", oxServiceAddress) once ADD_ONION replies.
+   --
+   -- SECURITY (the caller's responsibility): `accept connections on port` usually
+   -- binds ALL interfaces, so the external server's local port may be reachable
+   -- from the LAN, bypassing Tor. The external server MUST enforce loopback itself
+   -- (reject any non-127.0.0.1 peer before responding), exactly as OnionXT's own
+   -- oxPeerAccepted does. Bind the server to loopback if it supports it.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   local tHandle
+   put oxAllocHandle() into tHandle
+   put pVirtualPort into sServices[tHandle]["virtualPort"]
+   put pLocalPort into sServices[tHandle]["localPort"]
+   put empty into sServices[tHandle]["serviceID"]
+   put empty into sServices[tHandle]["address"]
+   put empty into sServices[tHandle]["privateKey"]
+   put false into sServices[tHandle]["ready"]
+   -- Mark it external so oxRemoveService DEL_ONIONs it but does not close the
+   -- socket (which OnionXT never opened; the external server owns it).
+   put true into sServices[tHandle]["external"]
+   -- No accept loop here (contrast oxStartService). Flags=Detach as in
+   -- oxCreateService, so a control-connection blip does not un-publish it.
+   oxCtlSend "ADD_ONION NEW:ED25519-V3 Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxPublishService
+
+private function oxCheckServiceArgs pVirtualPort, pLocalPort
+   if sControlState is not "authenticated" then
+      return "OnionXT: connect and authenticate the control port first (oxConnectControl)"
+   end if
+   if pVirtualPort is not an integer or pVirtualPort < 1 or pVirtualPort > 65535 then
+      return "OnionXT: virtual port must be 1..65535"
+   end if
+   if pLocalPort is not an integer or pLocalPort < 1 or pLocalPort > 65535 then
+      return "OnionXT: local port must be 1..65535"
+   end if
+   return empty
+end oxCheckServiceArgs
+
+private function oxStartService pVirtualPort, pLocalPort
+   -- Allocate the handle and START the loopback listener before ADD_ONION so a
+   -- forwarded connection is never refused (docs/03 step 4, ordering gotcha).
+   local tHandle, tPrior
+   put sLocalToService[pLocalPort] into tPrior
+   if tPrior is not empty and sServices[tPrior]["localPort"] is not empty then
+      -- Fail closed: a second service on an in-use local port would overwrite
+      -- the port-to-service mapping, and removing either service would then
+      -- close (or orphan) the shared listener out from under the other, so Tor
+      -- keeps forwarding to a dead port - which looks exactly like a broken
+      -- onion. One local port, one service; pick another local port.
+      -- (Verified statically; needs an OXT pass.)
+      return "OnionXT: local port " & pLocalPort & " already forwards for another service (one service per local port; pick another local port)"
+   end if
+   if tPrior is not empty then
+      -- The mapping is stale (its service is gone); reclaim it and rebind below.
+      delete variable sLocalToService[pLocalPort]
+   end if
+   put oxAllocHandle() into tHandle
+   put pVirtualPort into sServices[tHandle]["virtualPort"]
+   put pLocalPort into sServices[tHandle]["localPort"]
+   put empty into sServices[tHandle]["serviceID"]
+   put empty into sServices[tHandle]["address"]
+   put empty into sServices[tHandle]["privateKey"]
+   put false into sServices[tHandle]["ready"]
+   if sLocalToService[pLocalPort] is empty then
+      -- Bind loopback only. The classic `accept connections on port` has no
+      -- bind-address argument (may listen on all interfaces), so oxPeerAccepted
+      -- enforces loopback by rejecting any non-loopback peer before reading.
+      -- Confirmed on-engine: Tor-forwarded onion connections are accepted here.
+      accept connections on port pLocalPort with message "oxPeerAccepted"
+      if the result is not empty then
+         -- The listener did not bind (most often the local port is already in use
+         -- by a prior run or another app). Fail closed: with no listener, Tor
+         -- forwards inbound onion traffic to a dead port and the visitor gets an
+         -- empty response, which looks exactly like a broken onion.
+         delete variable sServices[tHandle]
+         return "OnionXT: cannot listen on 127.0.0.1:" & pLocalPort & " (" & the result & ")"
+      end if
+      put true into sServices[tHandle]["listening"]
+   end if
+   put tHandle into sLocalToService[pLocalPort]
+   return tHandle
+end oxStartService
+
+private command oxHandleAddOnionReply pHandle, pReply
+   -- Parse ServiceID (and PrivateKey unless discarded) from the ADD_ONION reply
+   -- (docs/03 step 3). On failure, fail closed and tear the half-built service.
+   local tLine
+   if char 1 to 3 of (line 1 of pReply) is not "250" and "ServiceID=" is not in pReply then
+      oxRemoveService pHandle
+      oxStatusUpdate "control", "error: ADD_ONION failed (" & (line 1 of pReply) & ")"
+      exit oxHandleAddOnionReply
+   end if
+   repeat for each line tLine in pReply
+      if "ServiceID=" is in tLine then
+         put oxFieldAfter(tLine, "ServiceID=") into sServices[pHandle]["serviceID"]
+      else if "PrivateKey=" is in tLine then
+         put oxFieldAfter(tLine, "PrivateKey=") into sServices[pHandle]["privateKey"]
+      end if
+   end repeat
+   if sServices[pHandle]["serviceID"] is not empty then
+      put sServices[pHandle]["serviceID"] & ".onion" into sServices[pHandle]["address"]
+      oxStatusUpdate "service", sServices[pHandle]["address"]
+   end if
+end oxHandleAddOnionReply
+
+command oxRemoveService pService
+   -- DEL_ONION and stop the listener. Idempotent: a stale handle is a no-op.
+   if sServices[pService]["localPort"] is empty then
+      exit oxRemoveService
+   end if
+   local tServiceID, tLocalPort
+   put sServices[pService]["serviceID"] into tServiceID
+   put sServices[pService]["localPort"] into tLocalPort
+   if tServiceID is not empty and sControlState is "authenticated" then
+      oxCtlSend "DEL_ONION " & tServiceID, "del_onion:" & pService
+   end if
+   -- Stop accepting on the loopback port, but ONLY if WE own the listener
+   -- (oxCreateService / oxCreateServiceFromSeed). A publish-only service
+   -- (oxPublishService) forwards to a socket an external server owns; leave it
+   -- alone, or we would close it out from under that server.
+   if sServices[pService]["external"] is not true then
+      if sLocalToService[tLocalPort] is pService then
+         oxSafeCloseSocket tLocalPort
+         delete variable sLocalToService[tLocalPort]
+      end if
+   end if
+   delete variable sServices[pService]
+end oxRemoveService
+
+function oxServiceAddress pService
+   return sServices[pService]["address"]
+end oxServiceAddress
+
+function oxServiceIsReady pService
+   return (sServices[pService]["ready"] is true)
+end oxServiceIsReady
+
+command oxPeerAccepted pSocketID
+   -- Tor forwarded an inbound onion connection to our loopback listener. Enforce
+   -- loopback (security-critical: reject any non-loopback peer before reading a
+   -- byte), wrap the accepted socket as an inbound stream, and hand it to the app.
+   -- Emit a diagnostic notice with the RAW accepted id so a misparse is visible.
+   oxStatusUpdate "notice", "accepted connection id=[" & pSocketID & "]"
+   local tPeerHost
+   put oxHostOfSocket(pSocketID) into tPeerHost
+   if not oxHostIsLoopback(tPeerHost) then
+      -- Not a Tor-forwarded loopback connection: refuse it (docs LiveCode ref;
+      -- the listener may be bound to all interfaces).
+      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & "]"
+      oxSafeCloseSocket pSocketID
+      exit oxPeerAccepted
+   end if
+   local tHandle
+   put oxAllocHandle() into tHandle
+   put pSocketID into sStreams[tHandle]["socketID"]
+   put "connected" into sStreams[tHandle]["state"]
+   put "inbound" into sStreams[tHandle]["kind"]
+   put empty into sStreams[tHandle]["callback"]
+   put tHandle into sSockToStream[pSocketID]
+   -- Hand the stream to the app FIRST so it can register a stream callback (the
+   -- dispatch is synchronous), THEN arm the read so no inbound chunk is delivered
+   -- before there is a callback to receive it.
+   oxDispatch sPeerCallback, tHandle, oxGuessService(pSocketID), tPeerHost
+   if sSockToStream[pSocketID] is not empty then
+      read from socket pSocketID with message "oxStreamData"
+   end if
+end oxPeerAccepted
+
+private function oxGuessService pSocketID
+   -- Best-effort service association for the peer callback. The accept callback
+   -- carries the PEER address, not our local port, so we cannot always know which
+   -- service was reached (VERIFY the accepted-socket id format on-engine). If a
+   -- single service is live, return it; otherwise return empty and let the app
+   -- key on distinct local ports.
+   local tKeys, tCount, tKey
+   put the keys of sServices into tKeys
+   put the number of lines of tKeys into tCount
+   if tCount is 1 then
+      return line 1 of tKeys
+   end if
+   return empty
+end oxGuessService
+
+private function oxHostIsLoopback pHost
+   -- Accept a Tor-forwarded (loopback) peer no matter how the engine spells the
+   -- local address in the accepted-socket id: "127.0.0.1", any "127.x" in the
+   -- 127.0.0.0/8 block, IPv6 "::1" / "[::1]", the name "localhost", or empty
+   -- (some engines report no host for a local accept). Reject anything else, so a
+   -- listener that bound to all interfaces cannot be reached by a routable peer.
+   local tHost
+   put pHost into tHost
+   if tHost is empty then
+      return true
+   end if
+   if tHost is kOxHost then
+      return true
+   end if
+   if tHost begins with "127." then
+      return true
+   end if
+   if tHost is "::1" or tHost is "[::1]" then
+      return true
+   end if
+   if tHost is "localhost" then
+      return true
+   end if
+   return false
+end oxHostIsLoopback
+
+function oxPublicKeyFromAddress pOnionAddress
+   -- Strip ".onion", base32-decode 56 chars -> 35 bytes, return the first 32 (the
+   -- ed25519 public key). No crypto needed. Empty on a structural error.
+   local tCore, tRaw
+   put oxNormalizeAddress(pOnionAddress) into tCore
+   if the number of chars of tCore is not 56 then
+      return empty
+   end if
+   put oxBase32Decode(tCore) into tRaw
+   if the number of bytes of tRaw is not 35 then
+      return empty
+   end if
+   if byteToNum(byte 35 of tRaw) is not 3 then
+      return empty            -- not a version-3 address
+   end if
+   return byte 1 to 32 of tRaw
+end oxPublicKeyFromAddress
+
+function oxAddressFromPublicKey pEd25519Pub
+   -- base32( pubkey || checksum || 0x03 ) & ".onion" (docs/04). The checksum is
+   -- SHA3-256(".onion checksum" || pubkey || 0x03)[:2], composed from SodiumXT;
+   -- absent that primitive, return a clear error rather than a wrong address.
+   if the number of bytes of pEd25519Pub is not 32 then
+      return "OnionXT: oxAddressFromPublicKey needs a 32-byte ed25519 public key"
+   end if
+   local tChecksum
+   put oxOnionChecksum(pEd25519Pub) into tChecksum
+   if the number of bytes of tChecksum is not 2 then
+      return tChecksum         -- capability error, surfaced verbatim
+   end if
+   return oxBase32Encode(pEd25519Pub & tChecksum & numToByte(3)) & ".onion"
+end oxAddressFromPublicKey
+
+function oxIsValidAddress pOnionAddress
+   -- Structural checks always (length, alphabet, version byte); checksum
+   -- verification too when SodiumXT SHA3-256 is available (docs/04, docs/08).
+   local tCore, tRaw
+   put oxNormalizeAddress(pOnionAddress) into tCore
+   if the number of chars of tCore is not 56 then
+      return false
+   end if
+   local tI, tCh
+   repeat with tI = 1 to 56
+      put char tI of tCore into tCh
+      if offset(tCh, kOxBase32Alphabet) is 0 then
+         return false
+      end if
+   end repeat
+   put oxBase32Decode(tCore) into tRaw
+   if the number of bytes of tRaw is not 35 then
+      return false
+   end if
+   if byteToNum(byte 35 of tRaw) is not 3 then
+      return false
+   end if
+   -- Checksum verification when we can compute it; otherwise structural-only
+   -- (the real authentication is Tor's connect-time descriptor-signature check).
+   local tChecksum
+   put oxOnionChecksum(byte 1 to 32 of tRaw) into tChecksum
+   if the number of bytes of tChecksum is not 2 then
+      return true             -- no SHA3-256 available; accept the structure
+   end if
+   return oxConstantTimeEqual(tChecksum, byte 33 to 34 of tRaw)
+end oxIsValidAddress
+
+private function oxNormalizeAddress pOnionAddress
+   -- Trim, lowercase, and strip a trailing ".onion".
+   local tCore
+   put oxTrim(pOnionAddress) into tCore
+   put toLower(tCore) into tCore
+   if tCore ends with ".onion" then
+      put char 1 to -7 of tCore into tCore
+   end if
+   return tCore
+end oxNormalizeAddress
+
+private function oxPow2 pN
+   -- 2 to the pN, as an exact integer, WITHOUT the ^ operator (some xTalk
+   -- parsers reject `^` in a div/mod expression). pN is small in base32 (0..12),
+   -- so this is a few multiplies and stays well within exact-integer range.
+   local tR, tI
+   put 1 into tR
+   repeat with tI = 1 to pN
+      multiply tR by 2
+   end repeat
+   return tR
+end oxPow2
+
+private function oxIntDiv pA, pB
+   -- Integer division (floor, for the non-negative operands base32 uses) WITHOUT
+   -- the `div` operator, to sidestep any xTalk parser that mishandles div/mod/^
+   -- inside a compound expression. Operands here are small (base32 bit math).
+   return trunc(pA / pB)
+end oxIntDiv
+
+private function oxIntMod pA, pB
+   -- pA modulo pB WITHOUT the `mod` operator (see oxIntDiv).
+   return pA - pB * oxIntDiv(pA, pB)
+end oxIntMod
+
+private function oxBase32Encode pData
+   -- RFC 4648 base32, lowercase, no padding. Pure bit-packing: accumulate input
+   -- bytes MSB-first into a small buffer and emit 5-bit groups. The buffer is
+   -- masked to its pending bits each iteration so it never grows past ~13 bits
+   -- (staying in exact-integer range; a 280-bit accumulator would lose precision).
+   local tOut, tBits, tValue, tI, tN, tIndex
+   put "" into tOut
+   put 0 into tBits
+   put 0 into tValue
+   put the number of bytes of pData into tN
+   repeat with tI = 1 to tN
+      put tValue * 256 + byteToNum(byte tI of pData) into tValue
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         put oxIntMod(oxIntDiv(tValue, oxPow2(tBits)), 32) into tIndex
+         put char (tIndex + 1) of kOxBase32Alphabet after tOut
+      end repeat
+      put oxIntMod(tValue, oxPow2(tBits)) into tValue        -- keep only the pending bits
+   end repeat
+   if tBits > 0 then
+      -- Left-align the final partial group and emit it (canonical no-pad tail).
+      put oxIntMod(tValue * oxPow2(5 - tBits), 32) into tIndex
+      put char (tIndex + 1) of kOxBase32Alphabet after tOut
+   end if
+   return tOut
+end oxBase32Encode
+
+private function oxBase32Decode pText
+   -- Inverse of oxBase32Encode. Accumulate 5 bits per input char and emit a byte
+   -- whenever 8 bits are available; leftover (< 5) bits of the final group are
+   -- discarded (canonical). Returns empty on any character outside the alphabet.
+   local tOut, tBits, tValue, tI, tN, tCh, tIndex, tByteOut
+   put "" into tOut
+   put 0 into tBits
+   put 0 into tValue
+   put the number of chars of pText into tN
+   repeat with tI = 1 to tN
+      put char tI of pText into tCh
+      put offset(tCh, kOxBase32Alphabet) into tIndex     -- 1..32, or 0 if absent
+      if tIndex is 0 then
+         return empty
+      end if
+      put tValue * 32 + (tIndex - 1) into tValue
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put oxIntMod(oxIntDiv(tValue, oxPow2(tBits)), 256) into tByteOut
+         put numToByte(tByteOut) after tOut
+         put oxIntMod(tValue, oxPow2(tBits)) into tValue
+      end if
+   end repeat
+   return tOut
+end oxBase32Decode
+
+private function oxOnionChecksum pEd25519Pub
+   -- SHA3-256(".onion checksum" || pubkey || 0x03)[:2] (docs/04). H = SHA3-256 is
+   -- a SodiumXT primitive (docs/08); compose it and report a capability error if
+   -- it is absent, never hand-roll a hash (CLAUDE.md rule 1).
+   local tPreimage, tHash
+   put textEncode(kOxChecksumPrefix, "UTF-8") & pEd25519Pub & numToByte(3) into tPreimage
+   put oxSha3_256(tPreimage) into tHash
+   -- A valid SHA3-256 is exactly 32 bytes; any other length is the capability
+   -- error string from oxSha3_256, surfaced verbatim (robust against comparing a
+   -- string prefix against binary data).
+   if the number of bytes of tHash is not 32 then
+      return tHash
+   end if
+   return byte 1 to 2 of tHash
+end oxOnionChecksum
+
+private function oxExpandedKeyFromSeed pSeed
+   -- Compose SodiumXT's ABI-6 helper (docs/08 gap #1, now SHIPPED): a 32-byte seed
+   -- becomes the 64-byte Tor ED25519-V3 expanded secret key (SHA-512(seed) with the
+   -- ed25519 scalar clamp, all done inside SodiumXT so OnionXT hand-rolls nothing).
+   -- This is exactly the key ADD_ONION ED25519-V3:<key> wants (docs/04), and its
+   -- public key equals sxSignKeypairFromSeed(pSeed)'s, so the .onion address and the
+   -- app's signing identity stay consistent. Requires SodiumXT ABI >= 6.
+   local tExpanded
+   try
+      put sxSignSeedToExpandedKey(pSeed) into tExpanded
+   catch tError
+      return "OnionXT: oxCreateServiceFromSeed needs SodiumXT sxSignSeedToExpandedKey (requires SodiumXT ABI >= 6; see docs/08)"
+   end try
+   if the number of bytes of tExpanded is not 64 then
+      return "OnionXT: sxSignSeedToExpandedKey returned " & the number of bytes of tExpanded & " bytes, expected 64"
+   end if
+   return tExpanded
+end oxExpandedKeyFromSeed
+
+function oxTransportInfo
+   -- Advertise the transport and which optional SodiumXT-backed capabilities are
+   -- available, so a caller can negotiate transports and fall back visibly
+   -- rather than silently (docs/06). Returns a LiveCode array.
+   local tInfo
+   put "ox" into tInfo["transport"]
+   put kOxVersion into tInfo["version"]
+   put (oxSodiumHasHmac() and oxSodiumHasRandom()) into tInfo["safeCookieAuth"]
+   put oxSodiumHasExpansion() into tInfo["deterministicOnion"]
+   put oxSodiumHasSha3() into tInfo["offlineAddress"]
+   return tInfo
+end oxTransportInfo
+
+command oxTransportDial pAddress, pPort
+   -- Dial a rendezvous address. Accepts a full <56>.onion, or a 32-byte ed25519
+   -- public key / 64-hex string, which it maps to an address first (docs/06).
+   local tPort, tHost
+   if pPort is empty then
+      put 80 into tPort
+   else
+      put pPort into tPort
+   end if
+   put pAddress into tHost
+   if not (tHost ends with ".onion") then
+      local tPub
+      if the number of chars of tHost is 64 then
+         put oxHexToBytes(tHost) into tPub
+      else
+         put tHost into tPub
+      end if
+      if the number of bytes of tPub is 32 then
+         put oxAddressFromPublicKey(tPub) into tHost
+         if tHost begins with "OnionXT:" then
+            return tHost
+         end if
+      end if
+   end if
+   oxDial tHost, tPort
+   return the result
+end oxTransportDial
+
+command oxTransportListen pSeed, pVirtualPort, pLocalPort
+   -- Publish a reproducible rendezvous point from a seed (docs/06).
+   oxCreateServiceFromSeed pSeed, pVirtualPort, pLocalPort
+   return the result
+end oxTransportListen
+
+command oxTransportSend pStream, pData
+   oxWrite pStream, pData
+   return the result
+end oxTransportSend
+
+command oxTransportRecv pStream, pHandlerName
+   -- Register where inbound bytes are delivered (the stream callback).
+   oxSetStreamCallback pStream, pHandlerName
+   return the result
+end oxTransportRecv
+
+command oxShutdown
+   -- Idempotent: close every stream, remove every service, disconnect control.
+   -- Safe to call twice.
+   local tKey, tKeys
+   put the keys of sStreams into tKeys
+   repeat for each line tKey in tKeys
+      oxCloseStream tKey
+   end repeat
+   put the keys of sServices into tKeys
+   repeat for each line tKey in tKeys
+      oxRemoveService tKey
+   end repeat
+   oxDisconnectControl
+end oxShutdown
+
+on socketError pSocketID, pError
+   -- The engine's socket-failure message. If the socket closes because of an
+   -- error, this arrives instead of socketClosed. Look up the owner and fail
+   -- closed (docs LiveCode ref). A message for an unknown id is a clean no-op.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      oxStreamFail tHandle, "socket error: " & pError
+      exit socketError
+   end if
+   if pSocketID is sControlSocket then
+      oxStatusUpdate "control", "error: " & pError
+      oxDisconnectControl
+   end if
+end socketError
+
+on socketClosed pSocketID
+   -- The remote side closed cleanly. Deliver "closed" to a stream's app callback
+   -- and forget it; for the control socket, mark disconnected.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      oxInvokeStreamCallback tHandle, "closed", empty
+      delete variable sSockToStream[pSocketID]
+      delete variable sStreams[tHandle]
+      exit socketClosed
+   end if
+   if pSocketID is sControlSocket then
+      oxStatusUpdate "control", "disconnected"
+      oxDisconnectControl
+   end if
+end socketClosed
+
+on socketTimeout pSocketID
+   -- socketTimeout REPEATS every interval while a read/write is pending (docs
+   -- LiveCode ref), so it is only fatal during a handshake; on a connected stream
+   -- it is just an idle read and must be ignored. Tear down only handshakes.
+   local tHandle, tState
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      put sStreams[tHandle]["state"] into tState
+      if tState is not "connected" then
+         oxStreamFail tHandle, "SOCKS handshake timed out"
+      end if
+      exit socketTimeout
+   end if
+   -- Control socket: only fatal before authentication completes.
+   if pSocketID is sControlSocket and sControlState is not "authenticated" then
+      oxStatusUpdate "control", "error: control handshake timed out"
+      oxDisconnectControl
+   end if
+end socketTimeout
+
+command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
+   -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
+   -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
+   -- empty on a clean launch attempt, or an error string. The caller then polls
+   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   if pTorPath is empty or pDataDir is empty then
+      return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
+   end if
+   local tSocks, tControl, tTorrc, tRcPath
+   if pSocksPort is empty then
+      put kOxSocksPortDefault into tSocks
+   else
+      put pSocksPort into tSocks
+   end if
+   if pControlPort is empty then
+      put kOxControlPortDefault into tControl
+   else
+      put pControlPort into tControl
+   end if
+   put "SocksPort " & tSocks & oxCrlf() after tTorrc
+   put "ControlPort " & tControl & oxCrlf() after tTorrc
+   put "CookieAuthentication 1" & oxCrlf() after tTorrc
+   put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
+   -- Tie tor's lifetime to this process where the platform supports it.
+   put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   put pDataDir & "/onionxt-torrc" into tRcPath
+   put tTorrc into url ("binfile:" & tRcPath)
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
+   -- open process is platform-specific; launch tor detached with -f <torrc>.
+   -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
+   -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
+   -- and "Files/Tor/tor.exe" and the launch fails - and a data directory under
+   -- "Application Support" or a user folder with a space in the name is the
+   -- normal case on Windows and macOS, not an edge case. The same applies to
+   -- the torrc path, which is derived from pDataDir.
+   -- VERIFY: process launch and teardown on your target OXT build.
+   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   return empty
+end oxLaunchTor
+
+command oxStopTor
+   -- Ask tor to shut down over the control port, then disconnect. If Mode B was
+   -- not used this simply disconnects control (idempotent).
+   if sControlState is "authenticated" then
+      oxCtlSend "SIGNAL SHUTDOWN", "signal"
+   end if
+   oxDisconnectControl
+end oxStopTor
+
+private function oxSha3_256 pData
+   -- Deferred gap (docs/08 #2): libsodium has no SHA-3, so SodiumXT does not ship
+   -- sxSha3_256. Compose it if it ever lands; else a clear error. The checksum is a
+   -- nicety, not a security dependency (tor authenticates the onion at connect
+   -- time), so callers degrade to structural-only address checks.
+   local tOut
+   try
+      put sxSha3_256(pData) into tOut
+   catch tError
+      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, deferred gap, docs/08)"
+   end try
+   return tOut
+end oxSha3_256
+
+private function oxHmac pKeyString, pMessage
+   -- HMAC-SHA256 (SodiumXT ABI >= 6). The ASCII key string crosses as its bytes.
+   local tOut
+   try
+      put sxHmacSha256(textEncode(pKeyString, "UTF-8"), pMessage) into tOut
+   catch tError
+      return "OnionXT: SAFECOOKIE auth needs SodiumXT HMAC-SHA256 (sxHmacSha256, SodiumXT ABI >= 6, docs/08)"
+   end try
+   return tOut
+end oxHmac
+
+private function oxRandomBytes pCount
+   local tOut
+   try
+      put sxRandomBytes(pCount) into tOut
+   catch tError
+      return empty
+   end try
+   return tOut
+end oxRandomBytes
+
+private function oxConstantTimeEqual pA, pB
+   -- Prefer SodiumXT's constant-time compare; fall back to a plain compare only
+   -- when it is unavailable (acceptable on a loopback control port).
+   local tOut
+   try
+      put sxMemEqual(pA, pB) into tOut
+      return (tOut is true)
+   catch tError
+      return (pA is pB)
+   end try
+end oxConstantTimeEqual
+
+private function oxSodiumHasHmac
+   -- True if SodiumXT (ABI >= 6) provides HMAC-SHA256. A benign 1-byte probe.
+   local tOut
+   try
+      put sxHmacSha256(numToByte(0), numToByte(0)) into tOut
+      return (the number of bytes of tOut is 32)
+   catch tError
+      return false
+   end try
+end oxSodiumHasHmac
+
+private function oxSodiumHasRandom
+   local tOut
+   try
+      put sxRandomBytes(1) into tOut
+      return (the number of bytes of tOut is 1)
+   catch tError
+      return false
+   end try
+end oxSodiumHasRandom
+
+private function oxSodiumHasSha3
+   -- Deferred gap: expected false until SodiumXT ships SHA3-256 (docs/08 #2).
+   try
+      get sxSha3_256(empty)
+      return true
+   catch tError
+      return false
+   end try
+end oxSodiumHasSha3
+
+private function oxSodiumHasExpansion
+   -- True if SodiumXT (ABI >= 6) provides the seed -> expanded-key helper.
+   local tOut
+   try
+      put sxSignSeedToExpandedKey(oxZeroBytes(32)) into tOut
+      return (the number of bytes of tOut is 64)
+   catch tError
+      return false
+   end try
+end oxSodiumHasExpansion
+
+private function oxLoadCookie
+   -- Read the 32 raw cookie bytes from the authoritative PROTOCOLINFO path
+   -- (docs/03). binfile is binary-safe. Returns true on a plausible 32-byte read.
+   if sControlCookieFile is empty then
+      return false
+   end if
+   local tBytes
+   put url ("binfile:" & sControlCookieFile) into tBytes
+   if the number of bytes of tBytes is not 32 then
+      return false
+   end if
+   put tBytes into sControlCookieBytes
+   return true
+end oxLoadCookie
+
+private function effectiveSocksPort
+   if sSocksPort is empty then
+      return kOxSocksPortDefault
+   end if
+   return sSocksPort
+end effectiveSocksPort
+
+private function effectiveControlPort
+   if sControlPort is empty then
+      return kOxControlPortDefault
+   end if
+   return sControlPort
+end effectiveControlPort
+
+private function oxAllocHandle
+   -- Monotonic; 0 is never a valid handle so a zero/empty is always a clean miss.
+   if sNextHandle is empty then
+      put 0 into sNextHandle
+   end if
+   add 1 to sNextHandle
+   return sNextHandle
+end oxAllocHandle
+
+private command oxSafeCloseSocket pSocketID
+   -- Idempotent close: only close ids the engine still lists as open, so closing
+   -- a stale/unknown id is a clean no-op (VERIFY the engine tolerates it anyway).
+   if pSocketID is empty then
+      exit oxSafeCloseSocket
+   end if
+   if pSocketID is among the lines of the openSockets then
+      close socket pSocketID
+   end if
+end oxSafeCloseSocket
+
+private command oxInvokeStreamCallback pStream, pEvent, pData
+   oxDispatch sStreams[pStream]["callback"], pStream, pEvent, pData
+end oxInvokeStreamCallback
+
+private command oxDispatch pHandlerName, pArg1, pArg2, pArg3
+   -- Deliver to the app; a missing handler is a clean no-op so an app wires only
+   -- the callbacks it uses. Guard the call so a throwing app handler cannot break
+   -- the state machine.
+   if pHandlerName is empty then
+      exit oxDispatch
+   end if
+   local tTarget
+   put oxCallbackTarget() into tTarget      -- a local, not a function call inline
+   try
+      dispatch pHandlerName to tTarget with pArg1, pArg2, pArg3
+   catch tIgnore
+      -- Swallow app-side callback errors; the transport must keep running.
+   end try
+end oxDispatch
+
+private function oxCallbackTarget
+   -- The object the app callbacks live in. Explicitly set is authoritative;
+   -- otherwise the topStack is the best default (VERIFY it is the app's stack).
+   if sCallbackOwner is not empty then
+      return sCallbackOwner
+   end if
+   return the topStack
+end oxCallbackTarget
+
+private function oxCrlf
+   -- The wire line terminator as explicit bytes-to-be (U+000D U+000A), so the
+   -- byte value never depends on how the engine defines the `crlf` constant.
+   return numToChar(13) & numToChar(10)
+end oxCrlf
+
+private function oxStripLineEnd pLine
+   -- Strip a trailing LF and/or CR from a decoded reply line, in either order.
+   -- A plain function (returns the trimmed line) rather than a @-by-reference
+   -- command, to avoid the less-common reference-parameter construct.
+   repeat while pLine is not empty and (the last char of pLine is numToChar(10) or the last char of pLine is numToChar(13))
+      delete the last char of pLine
+   end repeat
+   return pLine
+end oxStripLineEnd
+
+private function oxFieldAfter pText, pMarker
+   -- The whitespace-delimited token immediately following pMarker in pText, or
+   -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
+   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   local tPos, tRest, tSaved, tOut
+   put offset(pMarker, pText) into tPos
+   if tPos is 0 then
+      return empty
+   end if
+   put char (tPos + the number of chars of pMarker) to -1 of pText into tRest
+   -- Stop at the first space (values here are single tokens; quoted values use
+   -- oxQuotedValueAfter instead).
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to space
+   put item 1 of tRest into tOut
+   set the itemDelimiter to tSaved
+   return tOut
+end oxFieldAfter
+
+private function oxQuotedValueAfter pText, pMarker
+   -- The C-quoted string value following pMarker (e.g. COOKIEFILE="..."). Returns
+   -- the raw (still-escaped) inside of the quotes; the caller un-escapes.
+   local tPos, tRest, tOut, tI, tCh, tEsc
+   put offset(pMarker, pText) into tPos
+   if tPos is 0 then
+      return empty
+   end if
+   put char (tPos + the number of chars of pMarker) to -1 of pText into tRest
+   if char 1 of tRest is not quote then
+      -- Unquoted value: take up to the next space (save/restore itemDelimiter).
+      -- tOut is already declared at the handler top; only tSaved is new here.
+      local tSaved
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to space
+      put item 1 of tRest into tOut
+      set the itemDelimiter to tSaved
+      return tOut
+   end if
+   -- Walk from just after the opening quote to the matching unescaped quote.
+   put empty into tOut
+   put false into tEsc
+   repeat with tI = 2 to the number of chars of tRest
+      put char tI of tRest into tCh
+      if tEsc then
+         put tCh after tOut
+         put false into tEsc
+      else if tCh is "\" then
+         put tCh after tOut
+         put true into tEsc
+      else if tCh is quote then
+         exit repeat
+      else
+         put tCh after tOut
+      end if
+   end repeat
+   return tOut
+end oxQuotedValueAfter
+
+private function oxCUnescape pStr
+   -- Undo Tor's C-style string escapes (docs/03): \n \t \r, octal \0..\377, and
+   -- backslash-before-any-other-char is that literal char.
+   local tOut, tI, tN, tCh, tNext, tOct
+   put empty into tOut
+   put the number of chars of pStr into tN
+   put 1 into tI
+   repeat while tI <= tN
+      put char tI of pStr into tCh
+      if tCh is "\" and tI < tN then
+         put char (tI + 1) of pStr into tNext
+         if tNext is "n" then
+            put numToChar(10) after tOut
+            add 2 to tI
+         else if tNext is "t" then
+            put numToChar(9) after tOut
+            add 2 to tI
+         else if tNext is "r" then
+            put numToChar(13) after tOut
+            add 2 to tI
+         else if tNext is in "01234567" then
+            -- Up to 3 octal digits.
+            put empty into tOct
+            add 1 to tI
+            repeat while tI <= tN and (the number of chars of tOct) < 3 and (char tI of pStr) is in "01234567"
+               put char tI of pStr after tOct
+               add 1 to tI
+            end repeat
+            put numToChar(oxOctalToNum(tOct)) after tOut
+         else
+            put tNext after tOut
+            add 2 to tI
+         end if
+      else
+         put tCh after tOut
+         add 1 to tI
+      end if
+   end repeat
+   return tOut
+end oxCUnescape
+
+private function oxOctalToNum pOct
+   local tVal, tI
+   put 0 into tVal
+   repeat with tI = 1 to the number of chars of pOct
+      put tVal * 8 + (charToNum(char tI of pOct) - 48) into tVal
+   end repeat
+   return tVal
+end oxOctalToNum
+
+private function oxQuoteEscape pStr
+   -- Escape backslash and double-quote for a control-port QuotedString.
+   local tOut
+   put pStr into tOut
+   replace "\" with "\\" in tOut
+   replace quote with ("\" & quote) in tOut
+   return tOut
+end oxQuoteEscape
+
+private function oxBytesToHex pData
+   -- Lowercase hex (high nibble first). H* unpacks the whole run. binaryDecode is
+   -- a FUNCTION (it returns the count decoded and fills the output variable, which
+   -- must already exist), so it must be called as a function; `get` discards the
+   -- count into `it` while tHex is filled.
+   local tHex
+   get binaryDecode("H*", pData, tHex)
+   return tHex
+end oxBytesToHex
+
+private function oxHexToBytes pHex
+   return binaryEncode("H*", pHex)
+end oxHexToBytes
+
+private function oxByteHex pNum
+   -- Two-digit hex for one byte value (for error messages).
+   return oxBytesToHex(numToByte(pNum))
+end oxByteHex
+
+private function oxHostOfSocket pSocketID
+   -- The host part of an engine socket id "host:port" or "host:port|name".
+   local tSaved, tOut
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to ":"
+   put item 1 of pSocketID into tOut
+   set the itemDelimiter to tSaved
+   return tOut
+end oxHostOfSocket
+
+private function oxMethodOffered pMethod
+   -- sControlMethods is a comma list; force comma before testing membership.
+   local tSaved, tResult
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put (pMethod is among the items of sControlMethods) into tResult
+   set the itemDelimiter to tSaved
+   return tResult
+end oxMethodOffered
+
+private function oxStripWhitespace pStr
+   local tOut
+   put pStr into tOut
+   replace numToChar(10) with empty in tOut
+   replace numToChar(13) with empty in tOut
+   replace space with empty in tOut
+   replace tab with empty in tOut
+   return tOut
+end oxStripWhitespace
+
+private function oxTrim pStr
+   -- The `tOut is not empty` guard is essential: the empty string is "in" every
+   -- string, so without it an all-whitespace or empty input would loop forever
+   -- (the first/last char of empty is empty, which `is in` any charset).
+   local tOut, tWhite
+   put pStr into tOut
+   put space & tab & numToChar(10) & numToChar(13) into tWhite
+   repeat while tOut is not empty and (the first char of tOut) is in tWhite
+      delete the first char of tOut
+   end repeat
+   repeat while tOut is not empty and (the last char of tOut) is in tWhite
+      delete the last char of tOut
+   end repeat
+   return tOut
+end oxTrim
+
+private function oxZeroBytes pCount
+   local tOut, tI
+   put empty into tOut
+   repeat with tI = 1 to pCount
+      put numToByte(0) after tOut
+   end repeat
+   return tOut
+end oxZeroBytes
+
+private function oxProcessId
+   -- Best-effort current process id for __OwningControllerProcess (Mode B).
+   -- VERIFY the available accessor on your OXT build; empty is tolerated by tor.
+   return the processId
+end oxProcessId
+-- <<< GENERATED EMBED: onionxt script layer <<< --
 
 
 -- ==========================================================================
