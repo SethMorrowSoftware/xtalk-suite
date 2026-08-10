@@ -144,7 +144,16 @@ def main(argv):
     # teardown would pull the transport out from under them mid-run. Wiring one
     # of these up is the obvious-looking "fix" for a leak that does not exist -
     # the sync halves destroy everything they create - so it is checked.
-    for h, what in (("en1stCleanup", "enDeinitialize"), ("dc1stCleanup", "dcCleanup")):
+    # bt1stCleanup joined the list after an adversarial review noticed the
+    # asymmetry, and it is the one of the three that would fail QUIETLY. It
+    # calls btStopSession on bt1sSession, which the fold has made an alias for
+    # the CORE's handle. Freeing it mid-run does not throw; it just makes every
+    # later torrent call answer negative - and stCrossBep44Section's sharpest
+    # check is `btDhtPutSigned(..., tWrongHex) < 0`, which a freed handle also
+    # satisfies. That fail-closed assertion would go green while proving nothing
+    # about signature verification.
+    for h, what in (("en1stCleanup", "enDeinitialize"), ("dc1stCleanup", "dcCleanup"),
+                    ("bt1stCleanup", "btStopSession on the core's own session handle")):
         callers = [ln.strip() for ln in src.split("\n")
                    if re.match(r'^\s*' + h + r'\b', ln)
                    and not re.match(r'^\s*(command|end)\b', ln.strip())]

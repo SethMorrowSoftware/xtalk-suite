@@ -252,13 +252,42 @@ function cxHexDecode pHex
       throw "CoinXT: cxHexDecode: a hex string must have an even number of characters."
    end if
    put "" into tOut
-   repeat with tI = 1 to tCount step 2
+   -- WALK THE PAIRS WITH `repeat while` AND AN EXPLICIT `add 2`, NOT WITH
+   -- `repeat with tI = 1 to tCount step 2`. This is the one line the first real
+   -- OXT pass of the suite harness (2026-08-09) killed, and it is worth the
+   -- paragraph because reading it tells you nothing.
+   --
+   -- The engine did not honour the increment: tI walked 1, 2, 3, ... so the
+   -- final pass read `char (tCount + 1) of tText`, which is EMPTY. Empty is
+   -- genuinely not a hex digit, so cxHexValue answered -1 and this handler's
+   -- own fail-closed check threw "the input contains a character that is not a
+   -- hex digit" - over a perfectly good lowercase literal. That is the worst
+   -- shape a defect can take here: the library accused the CALLER'S DATA of
+   -- being corrupt, in the exact words it uses for a real corruption, so the
+   -- symptom pointed at the vector set rather than at the loop. Six harness
+   -- sections (hex, Base58Check, RLP, BIP-39, BIP-32, the fail-open
+   -- regressions) died on it; every section that never calls cxHexDecode
+   -- passed, which is what identified this handler.
+   --
+   -- `step` was the only construct in this file with no other user anywhere in
+   -- the six-member suite, and that is precisely why it was the one that broke:
+   -- nothing else had ever put it in front of an engine. Every construct below
+   -- ran green in that same session - cxEthAddressChecksum drives cxHexValue
+   -- over `char tI of` eighty times per call, and `repeat while` with `add N
+   -- to` is how cxBase58Encode and cxConvert8To5 loop. The even-length guard
+   -- above is what makes `char (tI + 1)` safe here: tCount is even, so the last
+   -- pair starts at tCount - 1 and never reads past the end.
+   --
+   -- Do not "tidy" this back into a step loop.
+   put 1 into tI
+   repeat while tI <= tCount
       put cxHexValue(char tI of tText) into tHi
       put cxHexValue(char (tI + 1) of tText) into tLo
       if tHi < 0 or tLo < 0 then
          throw "CoinXT: cxHexDecode: the input contains a character that is not a hex digit."
       end if
       put numToByte(tHi * 16 + tLo) after tOut
+      add 2 to tI
    end repeat
    return tOut
 end cxHexDecode
@@ -540,6 +569,39 @@ end cxBech32Const
 -- without it a caller who catches a "bad checksum" error would find its own
 -- delimiter silently changed as a side effect.
 --
+-- BUT THE THROW MUST HAPPEN AFTER `end try`, NOT INSIDE THE CATCH BLOCK, and
+-- that is not a style preference. These guards shipped re-throwing from inside
+-- the catch, and the first real OXT pass (2026-08-09) showed the engine does
+-- not deliver such an error to the caller. What was OBSERVED is exactly that
+-- much: the Inner raised, and nothing reached the caller of the wrapper. That
+-- the engine DISCARDS a throw issued inside a catch, and that the handler then
+-- fell through to `return tResult` with tResult never assigned - returning
+-- EMPTY where it owed an error - is the only reading consistent with the run,
+-- but it was INFERRED, not watched. So the fix avoids the construct rather
+-- than relying on the diagnosis, and the harness now measures the rule
+-- directly.
+--
+-- THE CONTROL THAT NARROWS IT, and it is worth knowing because the next person
+-- will wonder whether `catch` is broken generally: it is NOT. `return` from
+-- inside a catch WORKS on this engine. onionxt's oxSodiumHasSha3 reaches false
+-- only through `return false` in a catch (sxSha3_256 does not exist, docs/08
+-- gap #2); that value becomes oxTransportInfo's "offlineAddress"; and the suite
+-- harness asserts it IS false - which passed in the same run. Had the return
+-- been discarded the handler would have returned empty, and `empty is false` is
+-- false, so that line would have gone red. Only `throw` in a catch is affected.
+-- This matters directly: cxMnemonicValidateInner reaches `return false` through
+-- its own catch, and that path is only now reachable.
+--
+-- WHAT IT COST. Nine "is refused" assertions came back false, one per guarded
+-- handler, while every unguarded handler refused correctly. Worse than the red
+-- lines: cxMnemonicToEntropy returned empty instead of throwing, so
+-- cxMnemonicValidateInner's catch never fired and cxMnemonicValidate answered
+-- TRUE for a mistyped twelve-word backup. A fail-open in the one handler whose
+-- entire job is to catch a typo before it becomes a lost wallet.
+--
+-- `throw` inside `catch` occurred at exactly these nine places in the whole
+-- six-member suite and nowhere else, which is why it had never met an engine.
+--
 -- FOUR OF THE NINE GUARDS ARE LOAD-BEARING; FIVE ARE BELT AND BRACES, and it is
 -- worth knowing which before you "clean one up". Only cxBech32EncodeValues,
 -- cxSegwitAddressDecode, cxMnemonicToEntropy and cxHdDerivePath read an `item`
@@ -554,16 +616,22 @@ end cxBech32Const
 -- ==============================================================================
 
 function cxBech32EncodeValues pHrp, pValues, pSpec
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxBech32EncodeValuesInner(pHrp, pValues, pSpec) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxBech32EncodeValues
 
@@ -629,16 +697,22 @@ end cxBech32EncodeValuesInner
 -- and "values" (the data part as a comma separated list of 5-bit numbers, with
 -- the six checksum characters removed). Throws on anything malformed.
 function cxBech32DecodeValues pText
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxBech32DecodeValuesInner(pText) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxBech32DecodeValues
 
@@ -849,16 +923,22 @@ end cxConvert5To8
 -- Build a SegWit address from a witness version (0..16) and its program bytes.
 -- The encoding follows from the version, which is the BIP-350 rule.
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxSegwitAddressEncodeInner(pHrp, pVersion, pProgram) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxSegwitAddressEncode
 
@@ -888,16 +968,22 @@ end cxSegwitAddressEncodeInner
 -- and BIP-350 define, including the one that matters most: a version 0 address
 -- carrying a bech32m checksum, or a version 1+ address carrying a bech32 one.
 function cxSegwitAddressDecode pHrp, pAddress
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxSegwitAddressDecodeInner(pHrp, pAddress) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxSegwitAddressDecode
 
@@ -992,16 +1078,22 @@ end cxBtcAddressP2PKH
 -- MUST be compressed - an uncompressed key here produces an address whose funds
 -- are unspendable by every modern wallet, so it is refused rather than encoded.
 function cxBtcAddressP2WPKH pPubkey
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxBtcAddressP2WPKHInner(pPubkey) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxBtcAddressP2WPKH
 
@@ -1021,16 +1113,22 @@ end cxBtcAddressP2WPKHInner
 -- nobody can spend from, so if you do not already know your key is tweaked,
 -- it is not.
 function cxBtcAddressP2TR pOutputKey
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxBtcAddressP2TRInner(pOutputKey) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxBtcAddressP2TR
 
@@ -1523,16 +1621,22 @@ end cxMnemonicFromEntropy
 -- checksum mismatch - which is the whole point of the checksum, so a single
 -- mistyped word is caught here rather than becoming an empty wallet.
 function cxMnemonicToEntropy pMnemonic
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxMnemonicToEntropyInner(pMnemonic) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxMnemonicToEntropy
 
@@ -1584,16 +1688,22 @@ end cxMnemonicToEntropyInner
 -- work (cxMnemonicToEntropy) still throw, so a caller never acts on a bad
 -- mnemonic by accident.
 function cxMnemonicValidate pMnemonic
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxMnemonicValidateInner(pMnemonic) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxMnemonicValidate
 
@@ -1741,16 +1851,22 @@ end cxHdDeriveChild
 -- checked is that every level is a number in range and that the separators are
 -- what they claim to be.
 function cxHdDerivePath pNode, pPath
-   local tSavedDelim, tResult
+   local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   put false into tFailed
    try
       put cxHdDerivePathInner(pNode, pPath) into tResult
    catch tError
-      set the itemDelimiter to tSavedDelim
-      throw tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
    end try
    set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
    return tResult
 end cxHdDerivePath
 

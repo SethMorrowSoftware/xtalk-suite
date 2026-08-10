@@ -346,6 +346,56 @@ def check_zero_arg_statement_calls(path, text):
     return out
 
 
+def check_engine_hostile_constructs(path, text):
+    """Two constructs that COMPILE, RUN, and silently do the wrong thing on OXT.
+
+    Both were found the same way: by an operator at an engine, after every gate
+    in the repo had gone green. Both had exactly ONE occurrence in the whole
+    six-member suite, which is why neither had ever been in front of an engine -
+    and that rarity is the point. A construct nobody else uses is a construct
+    nobody else has proved.
+
+    1. `repeat with i = A to B step N`. The increment was not honoured: i walked
+       one at a time. In cxHexDecode that made the last pass read one character
+       past the pairs, get empty, and throw "not a hex digit" over VALID input -
+       the library accusing the caller's data of being corrupt, in the exact
+       words it reserves for real corruption. Use `repeat while` with an
+       explicit `add N to i`, which is what every other loop in the family does.
+
+    2. `throw` from INSIDE a `catch` block. The error does not reach the caller;
+       the handler falls through and returns whatever its result variable holds,
+       which is usually empty. Nine itemDelimiter guards did this, and one of
+       them was cxMnemonicValidate, whose Inner reaches `return false` only via
+       its own catch - so a mistyped seed phrase was reported VALID. Capture the
+       error in a local, close the try, then throw after `end try`.
+       NOTE `return` inside a catch is FINE and engine-proven (onionxt's
+       oxSodiumHasSha3 does it on a path this same run exercised); only `throw`
+       is affected, so this checks only `throw`.
+
+    LiveCodeScript only. LiveCode Builder is a different language and its .lcb
+    files are not scanned here.
+    """
+    if path.endswith(".lcb"):
+        return []
+    out, in_catch, depth = [], False, 0
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        line = raw.split("--", 1)[0].strip() if '"' not in raw.split("--", 1)[0] else raw.strip()
+        low = line.lower()
+        if re.match(r"^repeat\s+with\s+\w+\s*=.*\bstep\b", low):
+            out.append((lineno, "step"))
+        if re.match(r"^try\b", low):
+            depth += 1
+        elif re.match(r"^catch\b", low) and depth > 0:
+            in_catch = True
+        elif re.match(r"^end\s+try\b", low):
+            depth -= 1
+            if depth <= 0:
+                in_catch, depth = False, max(depth, 0)
+        elif in_catch and re.match(r"^throw\b", low):
+            out.append((lineno, "throw-in-catch"))
+    return out
+
+
 def check_file(path, problems):
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
@@ -360,6 +410,8 @@ def check_file(path, problems):
     check_constants_before_use(path, stripped_lines, problems)
     check_shadow_trap(path, stripped_lines, problems)
     check_put_prepositions(path, stripped_lines, problems)
+    for lineno, kind in check_engine_hostile_constructs(path, raw_text):
+        problems.append(Problem(path, lineno, "%s" % ("a `repeat with ... step N` loop does not honour its increment on OXT; use `repeat while` with an explicit `add N to` (see cxHexDecode)" if kind == "step" else "a `throw` inside a `catch` block does not reach the caller on OXT; capture the error, close the try, and throw after `end try` (see the guards in coinxt.livecodescript)")))
     for lineno, name in check_zero_arg_statement_calls(path, raw_text):
         problems.append(Problem(path, lineno, "a zero-argument call written %s() in statement position does not compile in LiveCodeScript (the engine parses `()` as the command's argument, and `()` is not an expression). Write it bare: %s" % (name, name)))
     if not is_script:
