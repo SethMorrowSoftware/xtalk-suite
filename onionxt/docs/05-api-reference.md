@@ -66,7 +66,7 @@ not know the app's framing).
 
 | Handler | Kind | Purpose |
 |---|---|---|
-| `oxAddressFromPublicKey pEd25519Pub` | function | Encode a 32-byte ed25519 public key as a `<56>.onion` address (checksum needs SHA3-256, doc 08 gap #2, still deferred; returns a capability error until it lands). |
+| `oxAddressFromPublicKey pEd25519Pub` | function | Encode a 32-byte ed25519 public key as a `<56>.onion` address. The checksum composes SodiumXT ABI 7's `sxSha3_256` (doc 08 gap #2, shipped 2026-08-11); against an older SodiumXT it still returns the clear capability error. |
 | `oxPublicKeyFromAddress pOnionAddress` | function | Decode a `.onion` back to its 32-byte ed25519 public key. base32-decode + strip checksum/version. |
 | `oxIsValidAddress pOnionAddress` | function | Structural + (when SHA3-256 is available) checksum validation of a pasted address. |
 

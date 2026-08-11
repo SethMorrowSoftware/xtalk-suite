@@ -49,12 +49,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # clear error), and the entry gets DELETED the day the handler ships - at which
 # point this gate becomes the proof that the composition now resolves.
 KNOWN_MISSING = {
-    "sxSha3_256":
-        "SodiumXT deferred gap #2 (onionxt/docs/08): libsodium has no SHA-3, so "
-        "SodiumXT does not expose it. onionxt's oxSha3_256 calls it inside a "
-        "try/catch and degrades to a clear capability error, which is why the "
-        "offline .onion checksum is structural-only today. Delete this entry "
-        "when sodiumxt ships sxSha3_256.",
+    # Empty since 2026-08-11: sxSha3_256 (the one former entry, onionxt's
+    # deferred gap #2) shipped in SodiumXT ABI 7, so this gate now PROVES that
+    # composition resolves instead of tolerating it. The mechanism stays for
+    # the next deliberate gap: an entry here is a standing admission, not a
+    # way to quiet the gate.
 }
 
 # The family prefixes. Order matters: oxh must be tried before ox so an oxh*

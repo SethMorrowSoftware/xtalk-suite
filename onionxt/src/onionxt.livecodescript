@@ -1576,10 +1576,12 @@ end oxStopTor
 -- ==========================================================================
 
 private function oxSha3_256 pData
-   -- Deferred gap (docs/08 #2): libsodium has no SHA-3, so SodiumXT does not ship
-   -- sxSha3_256. Compose it if it ever lands; else a clear error. The checksum is a
-   -- nicety, not a security dependency (tor authenticates the onion at connect
-   -- time), so callers degrade to structural-only address checks.
+   -- Composed since SodiumXT ABI 7 (docs/08 gap #2, closed 2026-08-11):
+   -- sxSha3_256 is the vendored FIPS-202 primitive SodiumXT ships precisely
+   -- for this checksum. Against an older installed SodiumXT the absent handler
+   -- still raises here and degrades to the clear capability error below. The
+   -- checksum is a nicety, not a security dependency (tor authenticates the
+   -- onion at connect time), so callers degrade to structural-only checks.
    local tOut
    try
       put sxSha3_256(pData) into tOut

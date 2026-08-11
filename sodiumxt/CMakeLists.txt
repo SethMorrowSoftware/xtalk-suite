@@ -138,7 +138,10 @@ endfunction()
 # The shim: ONE shared library, bare token "sodiumxt", hidden visibility so
 # only the SXT_API-tagged sxt_* symbols are exported.
 # ---------------------------------------------------------------------------
-add_library(sodiumxt SHARED src/sodium_shim.c)
+# src/vendor: the trezor-crypto/RHash SHA3-256 (the one primitive libsodium
+# does not provide; ABI 7). Compiled into the same single shared library; the
+# hidden default visibility keeps every vendored symbol internal.
+add_library(sodiumxt SHARED src/sodium_shim.c src/vendor/sha3.c src/vendor/memzero.c)
 if(SODIUMXT_USE_EXTPROJ)
     add_dependencies(sodiumxt libsodium_ext)
 endif()
@@ -224,7 +227,8 @@ endif()
 # ---------------------------------------------------------------------------
 if(SODIUMXT_BUILD_TESTS)
     enable_testing()
-    add_executable(sodium_smoke_test tests/sodium_smoke_test.c src/sodium_shim.c)
+    add_executable(sodium_smoke_test tests/sodium_smoke_test.c src/sodium_shim.c
+                   src/vendor/sha3.c src/vendor/memzero.c)
     if(SODIUMXT_USE_EXTPROJ)
         add_dependencies(sodium_smoke_test libsodium_ext)
     endif()

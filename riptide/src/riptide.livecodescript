@@ -21,12 +21,15 @@ script "RiptideSocial"
 --     signature verification, caps enforced on BOTH sides
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
---   SodiumXT  HARD  the trust root; without it this library refuses to work
---   coinxt    soft  cxSha3_256 powers the OFFLINE .onion self-computation
---                   (sodiumxt has no SHA3; onionxt's oxAddressFromPublicKey
---                   is a registered known-missing gap for the same reason).
---                   Absent: rsOnionFromPublicKey returns empty with a clear
---                   error; the VERIFY direction below still works.
+--   SodiumXT  HARD  the trust root; without it this library refuses to work.
+--                   At ABI 7 it also serves sxSha3_256, the preferred SHA3
+--                   provider for the OFFLINE .onion self-computation (shipped
+--                   2026-08-11, closing onionxt docs/08 gap #2).
+--   coinxt    soft  cxSha3_256 is the FALLBACK SHA3 provider (the same
+--                   vendored FIPS-202 code; what this app composed before
+--                   sodiumxt shipped it). With neither ABI 7 nor coinxt,
+--                   rsOnionFromPublicKey returns empty with a clear error;
+--                   the VERIFY direction below still works.
 --   onionxt   soft  oxPublicKeyFromAddress verifies a CLAIMED onion against
 --                   a handle offline (structural decode, no daemon needed)
 --   torrentxt / enetxt / datachannelxt: probed and reported for the app's
@@ -138,6 +141,11 @@ function rsProbeCapabilities
    catch tIgnore
       put false into tCaps["hasCoin"]
    end try
+   -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
+   -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
+   -- self-computation actually needs. A real call, not a version sniff.
+   put (the number of bytes in rsSha3(textEncode("probe", "ASCII")) is 32) \
+         into tCaps["hasSha3"]
    put tCaps into sRsCaps
    put true into sRsProbed
    return sRsCaps
@@ -309,30 +317,48 @@ function rsHandleFromSeed pSeed
    return tKeys["handle"]
 end rsHandleFromSeed
 
+-- SHA3-256 with two providers, preferred order fixed: sodiumxt ABI 7's
+-- sxSha3_256 (shipped 2026-08-11 precisely for this checksum; the trust root
+-- should serve its own hash), then coinxt's cxSha3_256 (the same vendored
+-- FIPS-202 code; the provider this app composed before sodiumxt shipped it).
+-- Empty when neither is installed. Both produce identical bytes, so nothing
+-- downstream cares which answered - the golden vectors pin the output, not
+-- the provider.
+private function rsSha3 pData
+   local tHash, tErr
+   try
+      put sxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   try
+      put cxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   return empty
+end rsSha3
+
 -- The OFFLINE .onion self-computation: base32(pubkey || checksum || 0x03)
 -- where checksum = SHA3-256(".onion checksum" || pubkey || 0x03)[1..2].
--- SHA3-256 comes from coinxt (cxSha3_256): sodiumxt has none, which is why
--- onionxt's own oxAddressFromPublicKey is a registered known-missing gap.
--- Without coinxt this returns empty with that exact story in rsLastError();
--- the VERIFY direction (rsVerifyOnionClaim) does not need SHA3 at all.
+-- SHA3-256 comes from sodiumxt ABI 7 (sxSha3_256) or coinxt (cxSha3_256);
+-- without either this returns empty with that story in rsLastError(). The
+-- VERIFY direction (rsVerifyOnionClaim) does not need SHA3 at all.
 function rsOnionFromPublicKey pPub
-   local tHash, tErr
+   local tHash
    if the number of bytes in pPub is not 32 then
       rsSetError "rsOnionFromPublicKey: the public key must be 32 bytes"
       return empty
    end if
-   try
-      put cxSha3_256(textEncode(kRsChecksumPrefix, "UTF-8") & pPub & \
-            numToByte(3)) into tHash
-   catch tErr
+   put rsSha3(textEncode(kRsChecksumPrefix, "UTF-8") & pPub & \
+         numToByte(3)) into tHash
+   if tHash is empty then
       rsSetError "rsOnionFromPublicKey: the offline .onion checksum needs" && \
-            "coinxt (cxSha3_256); install org.openxtalk.library.coinxt or" && \
-            "read the address from oxServiceAddress after publishing"
-      return empty
-   end try
-   if the number of bytes in tHash is not 32 then
-      rsSetError "rsOnionFromPublicKey: cxSha3_256 returned" && \
-            the number of bytes in tHash && "bytes, expected 32"
+            "SHA3-256 from sodiumxt ABI 7 (sxSha3_256) or coinxt" && \
+            "(cxSha3_256); install either, or read the address from" && \
+            "oxServiceAddress after publishing"
       return empty
    end if
    return rsBase32Encode(pPub & (byte 1 to 2 of tHash) & numToByte(3)) & \

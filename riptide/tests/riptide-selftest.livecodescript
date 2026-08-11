@@ -137,14 +137,15 @@ private command rstSectionCapabilities pCaps
    rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
    rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
          "probe reports canCrypto as a boolean"
-   rstCheck (the number of lines in the keys of pCaps is 6), \
-         "probe reports all six extensions"
+   rstCheck (the number of lines in the keys of pCaps is 7), \
+         "probe reports six extensions plus the derived hasSha3"
    put "      canCrypto=" & pCaps["canCrypto"] & \
          " hasTorrent=" & pCaps["hasTorrent"] & \
          " hasOnion=" & pCaps["hasOnion"] & return after sLog
    put "      hasDataChannel=" & pCaps["hasDataChannel"] & \
          " hasEnet=" & pCaps["hasEnet"] & \
-         " hasCoin=" & pCaps["hasCoin"] & return after sLog
+         " hasCoin=" & pCaps["hasCoin"] & \
+         " hasSha3=" & pCaps["hasSha3"] & return after sLog
 end rstSectionCapabilities
 
 private command rstSectionKdfTree
@@ -199,7 +200,7 @@ private command rstSectionOnion pCaps
    local tPub, tOut
    rstSection "identity -> onion (offline)"
    put rstBin(kRsGoldHandle) into tPub
-   if pCaps["hasCoin"] is true then
+   if pCaps["hasSha3"] is true then
       rstCheck (rsOnionFromPublicKey(tPub) is kRsGoldOnion), \
             "the golden handle yields the golden onion"
       rstCheck (rsOnionFromHandle(kRsGoldHandle) is kRsGoldOnion), \
@@ -208,10 +209,11 @@ private command rstSectionOnion pCaps
             "a 31-byte public key is refused"
    else
       put rsOnionFromPublicKey(tPub) into tOut
-      rstCheck (tOut is empty), "without coinxt the self-computation refuses"
-      rstCheck (rsLastError() contains "coinxt"), \
-            "and the refusal names the missing extension"
-      rstSkip "offline onion self-computation: coinxt is not installed"
+      rstCheck (tOut is empty), \
+            "without a SHA3 provider the self-computation refuses"
+      rstCheck (rsLastError() contains "sxSha3_256"), \
+            "and the refusal names both providers"
+      rstSkip "offline onion self-computation: no SHA3 provider installed"
    end if
    if pCaps["hasOnion"] is true then
       rstCheck (rsVerifyOnionClaim(kRsGoldOnion, kRsGoldHandle) is true), \

@@ -67,14 +67,17 @@ pass.
   DECIMAL STRING, and its semantics are BLAKE2b with the id as LE64 salt
   and the context as the personal field (pinned against the sodiumxt C
   KAT at oracle import).
-- **The onion self-computation rides coinxt.** sodiumxt has no SHA-3
-  (`sxSha3_256` is a registered KNOWN_MISSING gap), so
-  `rsOnionFromPublicKey` uses `cxSha3_256` and fails closed without
-  coinxt. The verify direction (`rsVerifyOnionClaim`, via
-  `oxPublicKeyFromAddress`) is the security-relevant one and needs no
-  SHA-3. Do not "fix" this by calling `oxAddressFromPublicKey`: it
-  returns a capability error string, not an address, until sodiumxt
-  ships SHA-3.
+- **The onion self-computation has two SHA3 providers, sx first.**
+  Building phase 1 surfaced the gap (sodiumxt had no SHA-3; riptide
+  composed coinxt's `cxSha3_256`), and closing it properly meant shipping
+  `sxSha3_256` in SodiumXT ABI 7 (2026-08-11) rather than leaving the
+  trust root without its own hash. `rsSha3` tries `sxSha3_256` then
+  `cxSha3_256`; both are the same vendored FIPS-202 code, and the golden
+  vectors pin the output, not the provider. The verify direction
+  (`rsVerifyOnionClaim`, via `oxPublicKeyFromAddress`) needs no SHA-3.
+  onionxt's `oxAddressFromPublicKey` now works against SodiumXT ABI 7+,
+  but riptide keeps its own assembly (probe-gated, dual-provider) so the
+  app degrades one provider at a time instead of all at once.
 - **The handle equals btDhtKeypair's publicKey** for the same seed
   (tests/cross-member-test.py pins sodiumxt and libtorrent to one
   derivation), which is why phase 1 derives it via

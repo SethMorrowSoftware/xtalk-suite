@@ -118,7 +118,7 @@ on testEncoding
 end testEncoding
 
 on testHashing
-   sxSection "hashing (BLAKE2b)"
+   sxSection "hashing (BLAKE2b + SHA3-256)"
    -- published BLAKE2b-256 known-answer vector for "abc"
    sxCheck (sxHexOf(sxHash(sxUtf8("abc"), 32)) is \
       "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"), \
@@ -127,6 +127,18 @@ on testHashing
    sxCheck (sxHash(sxUtf8("abc"), 32) is not \
       sxHashKeyed(sxUtf8("abc"), sxRandomBytes(32), 32)), \
       "keyed hash differs from unkeyed"
+   -- SHA3-256 (ABI 7, the vendored FIPS 202 primitive for the offline v3
+   -- onion checksum). The abc vector pins the DOMAIN PADDING: Keccak-256 of
+   -- "abc" starts 4e03657a, SHA3-256 starts 3a985da7 - a wrong variant
+   -- cannot pass. Same vectors as sodium_smoke_test.c test_sha3.
+   sxCheck (sxHexOf(sxSha3_256(sxUtf8("abc"))) is \
+      "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"), \
+      "SHA3-256(abc) matches the FIPS 202 vector"
+   sxCheck (sxHexOf(sxSha3_256(sxUtf8(""))) is \
+      "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"), \
+      "SHA3-256 of empty input matches the FIPS 202 vector"
+   sxCheck (sxSha3_256(sxUtf8("abc")) is not sxHash(sxUtf8("abc"), 32)), \
+      "SHA3-256 and BLAKE2b-256 are different functions"
 end testHashing
 
 on testMemEqual

@@ -57,20 +57,24 @@ another one.
 
 | Extension | Need | Phase-1 role |
 |---|---|---|
-| SodiumXT | required | the trust root: KDF, sealing, signing, hashing |
-| coinxt | optional | `cxSha3_256` powers the OFFLINE `.onion` self-computation |
+| SodiumXT | required | the trust root: KDF, sealing, signing, hashing; at ABI 7 also the preferred SHA3 provider |
+| coinxt | optional | `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation |
 | onionxt | optional | `oxPublicKeyFromAddress` verifies a claimed onion offline |
 | torrentxt, enetxt, datachannelxt | later phases | probed and reported only |
 
 A note on the onion address, because it is the one place the composition
-is subtle: sodiumxt has no SHA-3, so onionxt's own `oxAddressFromPublicKey`
-is a registered known-missing gap (`onionxt/docs/08`, gap 2) and returns a
-capability error today. Riptide closes the gap by composition instead:
-coinxt ships `cxSha3_256`, so `rsOnionFromPublicKey` computes your own
-`.onion` offline when coinxt is installed, and degrades to a clear error
-when it is not (the address is still available from `oxServiceAddress`
-after publishing, via tor itself). The security-relevant VERIFY direction,
-`rsVerifyOnionClaim`, needs no SHA-3 at all and works with onionxt alone.
+was subtle: libsodium has no SHA-3, so onionxt's `oxAddressFromPublicKey`
+spent its first months as a registered known-missing gap
+(`onionxt/docs/08`, gap 2), and riptide originally closed it by composing
+coinxt's `cxSha3_256`. Building riptide phase 1 made offline address
+emission a real need, and that is what got `sxSha3_256` shipped in
+SodiumXT ABI 7 (2026-08-11) - the gap is now closed upstream, onionxt's
+own address functions work, and `rsOnionFromPublicKey` prefers
+`sxSha3_256` with `cxSha3_256` kept as the fallback. Without either
+provider it still degrades to a clear error (the address remains
+available from `oxServiceAddress` after publishing, via tor itself). The
+security-relevant VERIFY direction, `rsVerifyOnionClaim`, needs no SHA-3
+at all and works with onionxt alone.
 
 ## What phase 2+ adds (not yet written)
 

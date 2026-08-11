@@ -86,12 +86,13 @@ unpadded* base64 that tor rejects. (SHA-512(seed) known-answer for seed = `0x42`
 
 ## The checksum and base32
 
-- The address **checksum** needs SHA3-256, which SodiumXT does not expose (libsodium has no SHA-3;
-  doc 08 gap #2, the only remaining DEFERRED gap). But the checksum is only needed to *emit* a correct
-  address and to *validate* a pasted one; both are deferred by getting your own address from
-  `ADD_ONION`'s `ServiceID` (Tor computes it) and by trusting the connect-time descriptor-signature
-  check rather than a local checksum verify. `oxAddressFromPublicKey` / `oxIsValidAddress` return a
-  clear capability error / do structural-only validation until `sxSha3_256` lands.
+- The address **checksum** needs SHA3-256, which libsodium does not provide - SodiumXT ABI 7 now
+  ships it as `sxSha3_256` from a vendored FIPS-202 implementation (doc 08 gap #2, SHIPPED
+  2026-08-11), so `oxAddressFromPublicKey` emits real addresses and `oxIsValidAddress` verifies
+  checksums when the installed SodiumXT is ABI 7+. Against an older SodiumXT the old posture still
+  holds: get your own address from `ADD_ONION`'s `ServiceID` (Tor computes it), trust the
+  connect-time descriptor-signature check rather than a local checksum verify, and the two handlers
+  return a clear capability error / do structural-only validation.
 - **base32** here is RFC 4648 lowercase without padding. It is pure byte manipulation; implement it in
   script (or a thin LCB helper if the on-engine pass shows it is a hot path). No crypto, no upstream
   dependency.
@@ -111,6 +112,6 @@ attacker who phishes the address still cannot connect) at the cost of a key-dist
 |-----------------------------|-----------------------------------------------------------|
 | ed25519 identity keypair    | SodiumXT `sxSignKeypair` / `sxSignKeypairFromSeed`        |
 | seed -> expanded onion key  | SodiumXT `sxSignSeedToExpandedKey` (ABI 6) -> `ADD_ONION ED25519-V3:` |
-| pubkey <-> `.onion` address | OnionXT base32 (+ SHA3-256 checksum, doc 08 gap #2, deferred) |
+| pubkey <-> `.onion` address | OnionXT base32 (+ SHA3-256 checksum via SodiumXT ABI 7, doc 08 gap #2, shipped) |
 | address authenticates key   | Tor's descriptor-signature check at connect time         |
 | private rendezvous          | v3 client authorization (SodiumXT x25519), optional      |

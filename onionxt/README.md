@@ -70,7 +70,7 @@ onionxt/                    (the OnionXT member of the xtalk-suite monorepo)
     05-api-reference.md     the public ox* surface
     06-transport-integration.md OnionXT as a pluggable transport for a higher-layer protocol
     07-tor-lifecycle.md     assume-running vs launch-a-bundled-binary; bootstrap UX
-    08-capabilities-required.md upstream gaps (ed25519 expansion + HMAC shipped in SodiumXT ABI 6; SHA3-256 deferred)
+    08-capabilities-required.md upstream gaps (ed25519 expansion + HMAC shipped in SodiumXT ABI 6; SHA3-256 shipped in ABI 7)
     09-open-questions.md    the honest to-do list
     10-usage-guide.md       from-zero guide for any OXT app that uses OnionXT
   tools/
@@ -185,8 +185,9 @@ mistyped address. A plain "connection refused" on the SOCKS port itself means to
 
 Those paths compose **SodiumXT ABI >= 6** (`sxSignSeedToExpandedKey`, `sxHmacSha256`): load SodiumXT into
 the message path alongside OnionXT. Plain dialing, Tor-generated onions, and COOKIE / NULL / password
-auth need no SodiumXT. (The offline address checksum needs SHA3-256, still deferred; tor authenticates
-the onion at connect time regardless, see [docs/08](docs/08-capabilities-required.md).)
+auth need no SodiumXT. (The offline address checksum composes SodiumXT ABI 7's `sxSha3_256`; against
+an older SodiumXT it degrades to a clear capability error, and tor authenticates the onion at connect
+time regardless, see [docs/08](docs/08-capabilities-required.md).)
 
 ## House style
 

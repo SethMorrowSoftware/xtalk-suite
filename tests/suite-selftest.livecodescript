@@ -5140,10 +5140,12 @@ command oxStopTor
 end oxStopTor
 
 private function oxSha3_256 pData
-   -- Deferred gap (docs/08 #2): libsodium has no SHA-3, so SodiumXT does not ship
-   -- sxSha3_256. Compose it if it ever lands; else a clear error. The checksum is a
-   -- nicety, not a security dependency (tor authenticates the onion at connect
-   -- time), so callers degrade to structural-only address checks.
+   -- Composed since SodiumXT ABI 7 (docs/08 gap #2, closed 2026-08-11):
+   -- sxSha3_256 is the vendored FIPS-202 primitive SodiumXT ships precisely
+   -- for this checksum. Against an older installed SodiumXT the absent handler
+   -- still raises here and degrades to the clear capability error below. The
+   -- checksum is a nicety, not a security dependency (tor authenticates the
+   -- onion at connect time), so callers degrade to structural-only checks.
    local tOut
    try
       put sxSha3_256(pData) into tOut
@@ -5644,7 +5646,7 @@ on sx1testEncoding
 end sx1testEncoding
 
 on sx1testHashing
-   sx1sxSection "hashing (BLAKE2b)"
+   sx1sxSection "hashing (BLAKE2b + SHA3-256)"
    -- published BLAKE2b-256 known-answer vector for "abc"
    sx1sxCheck (sx1sxHexOf(sxHash(sx1sxUtf8("abc"), 32)) is \
       "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"), \
@@ -5653,6 +5655,18 @@ on sx1testHashing
    sx1sxCheck (sxHash(sx1sxUtf8("abc"), 32) is not \
       sxHashKeyed(sx1sxUtf8("abc"), sxRandomBytes(32), 32)), \
       "keyed hash differs from unkeyed"
+   -- SHA3-256 (ABI 7, the vendored FIPS 202 primitive for the offline v3
+   -- onion checksum). The abc vector pins the DOMAIN PADDING: Keccak-256 of
+   -- "abc" starts 4e03657a, SHA3-256 starts 3a985da7 - a wrong variant
+   -- cannot pass. Same vectors as sodium_smoke_test.c test_sha3.
+   sx1sxCheck (sx1sxHexOf(sxSha3_256(sx1sxUtf8("abc"))) is \
+      "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"), \
+      "SHA3-256(abc) matches the FIPS 202 vector"
+   sx1sxCheck (sx1sxHexOf(sxSha3_256(sx1sxUtf8(""))) is \
+      "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"), \
+      "SHA3-256 of empty input matches the FIPS 202 vector"
+   sx1sxCheck (sxSha3_256(sx1sxUtf8("abc")) is not sxHash(sx1sxUtf8("abc"), 32)), \
+      "SHA3-256 and BLAKE2b-256 are different functions"
 end sx1testHashing
 
 on sx1testMemEqual

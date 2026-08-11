@@ -25,7 +25,7 @@ pure compute plus probed extension calls; nothing touches the network.
 |---|---|
 | `rsVersion()` | version string |
 | `rsLastError()` | the last recorded failure reason |
-| `rsProbeCapabilities()` | array: `canCrypto` (SodiumXT, a real round-trip probe), `hasTorrent`, `hasOnion`, `hasDataChannel`, `hasEnet`, `hasCoin` - probed once, cached |
+| `rsProbeCapabilities()` | array: `canCrypto` (SodiumXT, a real round-trip probe), `hasTorrent`, `hasOnion`, `hasDataChannel`, `hasEnet`, `hasCoin`, plus the derived `hasSha3` (either provider answered a real call) - probed once, cached |
 | `rsHeadSalt()` | `"riptide-head"`, the fixed BEP44 salt of a feed head |
 | `rsZeroTarget()` | the 40-zeros "none" target |
 
@@ -52,7 +52,7 @@ ever entering torrentxt.
 
 | Handler | Returns |
 |---|---|
-| `rsOnionFromPublicKey(pPub)` | the `.onion` of a 32-byte ed25519 key. Needs coinxt (`cxSha3_256`); empty with a clear reason without it |
+| `rsOnionFromPublicKey(pPub)` | the `.onion` of a 32-byte ed25519 key. Needs SHA3-256 from sodiumxt ABI 7 (`sxSha3_256`, preferred) or coinxt (`cxSha3_256`, fallback); empty with a clear reason without either |
 | `rsOnionFromHandle(pHandleHex)` | convenience over the above |
 | `rsVerifyOnionClaim(pOnionAddr, pHandleHex)` | true only if the address structurally decodes (onionxt's offline `oxPublicKeyFromAddress`) AND its embedded key equals the handle, compared constant-time. This is the security-relevant direction and needs no SHA-3 |
 

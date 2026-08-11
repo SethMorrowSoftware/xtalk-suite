@@ -1068,6 +1068,82 @@ static void test_phase6(void)
     remove(fpath);
 }
 
+/* --- ABI 7: SHA3-256 ------------------------------------------------------ */
+
+static int sha3_hex_equals(const char *msg, int msglen, const char *expected_hex)
+{
+    unsigned char dig[32];
+    char hex[2 * 32 + 1];
+    if (sxt_sha3_256(dig, (int)sizeof(dig),
+                     (const unsigned char *)msg, msglen) != 32) {
+        return 0;
+    }
+    if (sxt_bin2hex(hex, (int)sizeof(hex), dig, 32) != 64) {
+        return 0;
+    }
+    return strcmp(hex, expected_hex) == 0;
+}
+
+static void test_sha3(void)
+{
+    unsigned char dig[32];
+    unsigned char small[8];
+    /* The v3 onion checksum preimage for torproject.org's PUBLISHED onion
+     * (the same address onionxt's tools/onion-kat.py pins):
+     * ".onion checksum" || pubkey(32) || 0x03. The address itself carries the
+     * checksum's first two bytes, so this vector is self-attesting: a wrong
+     * SHA-3 here could not have produced a working published address. */
+    static const unsigned char onion_pub[32] = {
+        0xd1, 0xb3, 0x8b, 0x83, 0xa8, 0x3b, 0x3e, 0xd9,
+        0x18, 0xc5, 0xbb, 0x69, 0xdd, 0x44, 0x4a, 0xd5,
+        0x6b, 0xc8, 0xd5, 0x83, 0x5a, 0x91, 0x4d, 0xe7,
+        0x34, 0x47, 0x47, 0x4e, 0x5f, 0x02, 0x59, 0x1b
+    };
+    unsigned char preimage[15 + 32 + 1];
+
+    printf("SHA3-256 (ABI 7: FIPS 202 KATs + the onion checksum + firewall):\n");
+
+    CHECK(sxt_sha3_256_bytes() == 32, "sxt_sha3_256_bytes is 32");
+
+    /* NIST FIPS 202 / CAVP known-answer vectors. These pin the DOMAIN PADDING:
+     * Keccak-256 (0x01) of "abc" starts 4e03657a..., SHA3-256 (0x06) starts
+     * 3a985da7... - a wrong variant cannot pass. */
+    CHECK(sha3_hex_equals("", 0,
+            "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"),
+          "SHA3-256(\"\") matches the FIPS 202 vector");
+    CHECK(sha3_hex_equals("abc", 3,
+            "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"),
+          "SHA3-256(\"abc\") matches the FIPS 202 vector");
+    CHECK(sha3_hex_equals("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56,
+            "41c0dba2a9d6240849100376a8235e2c82e1b9998a999e21db32dd97496d3376"),
+          "SHA3-256(448-bit message) matches the FIPS 202 vector");
+
+    /* The consumer story, end to end: SHA3-256(".onion checksum" || pub || 3)
+     * must open with the two checksum bytes the published address carries
+     * (0xdd 0xd9 for this one). */
+    memcpy(preimage, ".onion checksum", 15);
+    memcpy(preimage + 15, onion_pub, 32);
+    preimage[47] = 0x03;
+    CHECK(sxt_sha3_256(dig, (int)sizeof(dig), preimage, 48) == 32,
+          "onion checksum preimage hashes");
+    CHECK(dig[0] == 0xdd && dig[1] == 0xd9,
+          "the checksum bytes match the published torproject onion");
+
+    /* Firewall. */
+    CHECK(sxt_sha3_256(dig, (int)sizeof(dig), (const unsigned char *)"x", -1)
+              == SXT_ERR_BADARG,
+          "negative input length -> BADARG");
+    CHECK(sxt_sha3_256(small, (int)sizeof(small), (const unsigned char *)"x", 1)
+              == -32,
+          "too-small digest buffer -> -needed (32)");
+    CHECK(sxt_sha3_256(NULL, 64, (const unsigned char *)"x", 1) == SXT_ERR_BADARG,
+          "null output buffer -> BADARG");
+    CHECK(sxt_sha3_256(dig, (int)sizeof(dig), NULL, 1) == SXT_ERR_BADARG,
+          "null input with a positive length -> BADARG");
+    CHECK(sxt_sha3_256(dig, (int)sizeof(dig), NULL, 0) == 32,
+          "an empty input is legal (and NULL with length 0 is tolerated)");
+}
+
 int main(void)
 {
     printf("SodiumXT smoke test\n");
@@ -1094,6 +1170,7 @@ int main(void)
     test_onion_primitives();
     test_pad();
     test_phase6();
+    test_sha3();
 
     printf("-------------------\n");
     if (g_failures == 0) {

@@ -60,6 +60,7 @@ BLAKE2b. The default digest length is 32 bytes; the valid range is 16..64.
 | `sxBase642Bin(pB64)` | `Data` | Decode URL-safe base64 back to bytes; throws on malformed input. |
 | `sxMemEqual(pA, pB)` | `Boolean` | Constant-time equality. The only sanctioned way to compare a MAC, tag, hash, or any secret. |
 | `sxHmacSha256(pKey, pMessage)` | `Data` | HMAC-SHA256 (32 bytes) over an arbitrary-length key and message. A standard keyed MAC (e.g. for the Tor control-port SAFECOOKIE challenge-response). Compare a resulting MAC with `sxMemEqual`, never `is`. |
+| `sxSha3_256(pData)` | `Data` | SHA3-256 (32 bytes, NIST FIPS 202; ABI 7). The one primitive served by vendored code (RHash via trezor-crypto, `src/vendor/`) because libsodium has no SHA-3; it exists for the v3 `.onion` address checksum, so an address is computable offline from an ed25519 public key (onionxt `oxAddressFromPublicKey` composes it). NOT Ethereum's Keccak-256 - coinxt exports both and documents the footgun. Empty input is legal. |
 
 ### Multipart hash (data assembled incrementally)
 
