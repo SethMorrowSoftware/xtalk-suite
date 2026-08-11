@@ -1968,3 +1968,514 @@ function cxXpub pNode
    end if
    return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
 end cxXpub
+
+
+-- ==============================================================================
+-- Phase 5 - transaction building and signing.
+--
+-- STATUS: verified statically and against tools/coin_reference.py (which
+-- reproduces the BIP-143 native-P2WPKH worked example, the EIP-155 spec
+-- example and a self-consistent EIP-1559 typed transaction); NEEDS AN OXT
+-- PASS + independent-decoder acceptance before any "broadcastable" claim.
+--
+-- This is still the SCRIPT layer, so it composes the primitives and NEVER
+-- touches a private key or a curve point: signing is the app calling cxSign /
+-- cxSignRecoverable on a 32-byte digest THIS layer produced. A blind signer is
+-- a footgun (coinxt/CLAUDE.md rule 3), so the app confirms the decoded human
+-- intent before it signs.
+--
+-- THE STRUCTURED-INPUT CONVENTION mirrors the RLP layer's: xTalk has no nested
+-- list literal, so a transaction's repeated fields cross as COMMA-SEPARATED
+-- LISTS OF HEX (one item per input or per output), exactly like the comma list
+-- of 5-bit values cxBech32EncodeValues already takes. Every handler that reads
+-- one saves, sets and restores the itemDelimiter.
+--
+-- INTEGER WIDTHS. Bitcoin counts (version, sequence, locktime, vout) and
+-- satoshi amounts stay inside exact-integer range (21e6 BTC is 2.1e15 sat, well
+-- under 2^53) and cross as integers. Ethereum wei-scale fields (value,
+-- gasPrice, the 1559 fee caps) routinely exceed 2^53, so they cross as MINIMAL
+-- big-endian HEX and are RLP-encoded as byte strings; only the small counters
+-- (nonce, gas, chainId, recid) cross as integers.
+
+-- Fixed-width little-endian encoder. Bitcoin serialization is little-endian
+-- throughout, which nothing in phases 1-4 needed (their integers were all
+-- big-endian). pWidth bytes, least significant first; pValue must be
+-- non-negative and fit in pWidth bytes.
+private function cxUIntToBytesLE pValue, pWidth
+   local tOut, tRest, tI
+   if pValue < 0 then
+      throw "CoinXT: cxUIntToBytesLE: the value must not be negative."
+   end if
+   put "" into tOut
+   put pValue into tRest
+   repeat with tI = 1 to pWidth
+      put numToByte(cxIntMod(tRest, 256)) after tOut
+      put cxIntDiv(tRest, 256) into tRest
+   end repeat
+   if tRest is not 0 then
+      throw "CoinXT: cxUIntToBytesLE: the value does not fit in the requested width."
+   end if
+   return tOut
+end cxUIntToBytesLE
+
+-- Bitcoin CompactSize (varint): 1, 3, 5 or 9 bytes by magnitude.
+function cxVarInt pN
+   if pN < 0 then
+      throw "CoinXT: cxVarInt: the count must not be negative."
+   end if
+   if pN < 253 then
+      return numToByte(pN)
+   end if
+   if pN <= 65535 then
+      return numToByte(253) & cxUIntToBytesLE(pN, 2)
+   end if
+   if pN <= 4294967295 then
+      return numToByte(254) & cxUIntToBytesLE(pN, 4)
+   end if
+   return numToByte(255) & cxUIntToBytesLE(pN, 8)
+end cxVarInt
+
+-- Strip leading zero BYTES, so a hex uint field becomes its canonical minimal
+-- big-endian form before RLP. RLP requires one encoding per value; a leading
+-- zero byte would be a second spelling and break every hash over it.
+private function cxStripLeadingZeroBytes pData
+   local tCount, tStart
+   put the number of bytes of pData into tCount
+   put 1 into tStart
+   repeat while tStart <= tCount and byteToNum(byte tStart of pData) is 0
+      add 1 to tStart
+   end repeat
+   if tStart > tCount then
+      return ""
+   end if
+   return byte tStart to tCount of pData
+end cxStripLeadingZeroBytes
+
+-- RLP of a non-negative integer given as minimal-or-padded big-endian hex:
+-- strip leading zero bytes to canonical form, then encode as a byte string
+-- (zero becomes the empty string, RLP 0x80).
+private function cxRlpUintFromHex pHex
+   return cxRlpEncodeBytes(cxStripLeadingZeroBytes(cxHexDecode(pHex)))
+end cxRlpUintFromHex
+
+-- Compact 64-byte r||s (the cxSign shape) to a DER-encoded signature, which is
+-- what a Bitcoin scriptSig carries. cxSign already enforces low-s, so no
+-- normalization is needed here; this is pure structure. The SIGHASH type byte
+-- is the caller's to append.
+function cxDerEncode pCompactSig
+   local tR, tS, tBody
+   if the number of bytes of pCompactSig is not 64 then
+      throw "CoinXT: cxDerEncode: a compact signature is 64 bytes (r || s)."
+   end if
+   put cxDerInteger(byte 1 to 32 of pCompactSig) into tR
+   put cxDerInteger(byte 33 to 64 of pCompactSig) into tS
+   put tR & tS into tBody
+   return numToByte(48) & numToByte(the number of bytes of tBody) & tBody
+end cxDerEncode
+
+private function cxDerInteger pValue
+   local tTrimmed, tLen
+   put cxStripLeadingZeroBytes(pValue) into tTrimmed
+   if tTrimmed is "" then
+      put numToByte(0) into tTrimmed
+   end if
+   -- DER integers are signed: a leading byte >= 0x80 needs a 0x00 sign pad so
+   -- the value is not read as negative.
+   if byteToNum(byte 1 of tTrimmed) >= 128 then
+      put numToByte(0) & tTrimmed into tTrimmed
+   end if
+   put the number of bytes of tTrimmed into tLen
+   return numToByte(2) & numToByte(tLen) & tTrimmed
+end cxDerInteger
+
+-- A 36-byte outpoint from a display-order (big-endian) txid hex and a vout. The
+-- txid serializes little-endian (byte-reversed), then the 4-byte LE index.
+function cxBtcOutpoint pTxidHex, pVout
+   local tTxid
+   put cxHexDecode(pTxidHex) into tTxid
+   if the number of bytes of tTxid is not 32 then
+      throw "CoinXT: cxBtcOutpoint: a txid is 32 bytes (64 hex chars)."
+   end if
+   return cxReverseBytes(tTxid) & cxUIntToBytesLE(pVout, 4)
+end cxBtcOutpoint
+
+private function cxReverseBytes pData
+   local tOut, tI, tCount
+   put the number of bytes of pData into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put byte tI of pData before tOut
+   end repeat
+   return tOut
+end cxReverseBytes
+
+-- A serialized transaction output: 8-byte LE amount, then the scriptPubKey with
+-- its CompactSize length. pScriptHex is the scriptPubKey as hex.
+function cxBtcOutput pAmountSat, pScriptHex
+   local tScript
+   put cxHexDecode(pScriptHex) into tScript
+   return cxUIntToBytesLE(pAmountSat, 8) & cxVarInt(the number of bytes of tScript) & tScript
+end cxBtcOutput
+
+-- The pre-SegWit SIGHASH_ALL preimage digest for input pIndex. pOutpoints and
+-- pSequences are parallel comma lists (36-byte outpoint hex; a sequence
+-- integer each); pOutputs is a comma list of serialized-output hex (from
+-- cxBtcOutput). pScriptCodeHex is the BARE scriptPubKey of the input being
+-- signed (this layer adds its length prefix); every other input's script slot
+-- is empty. Returns a 32-byte digest to hand to cxSign.
+function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashLegacyInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashLegacy
+
+private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashLegacy: the input index is out of range (it is 1-based)."
+   end if
+   put cxHexDecode(pScriptCodeHex) into tScript
+   put cxUIntToBytesLE(pVersion, 4) & cxVarInt(tCount) into tBuf
+   repeat with tI = 1 to tCount
+      put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
+      if tI is pIndex then
+         put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
+      else
+         put tBuf & cxVarInt(0) into tBuf
+      end if
+      put tBuf & cxUIntToBytesLE(item tI of pSequences, 4) into tBuf
+   end repeat
+   put the number of items of pOutputs into tOutCount
+   put "" into tOutBytes
+   repeat with tI = 1 to tOutCount
+      put tOutBytes & cxHexDecode(item tI of pOutputs) into tOutBytes
+   end repeat
+   put tBuf & cxVarInt(tOutCount) & tOutBytes into tBuf
+   put tBuf & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
+   return cxHash256(tBuf)
+end cxBtcSighashLegacyInner
+
+-- The BIP-143 (SegWit) preimage digest for input pIndex. Same parallel lists as
+-- the legacy form (pOutpoints, pSequences, pOutputs), plus the input's amount in
+-- satoshi (BIP-143 commits to it). pScriptCodeHex is the BARE scriptCode (for
+-- P2WPKH the app passes the 25-byte P2PKH script 76a914{hash}88ac; this layer
+-- adds the length prefix). pOutputs is REQUIRED: hashOutputs is the commitment
+-- that binds the signature to WHERE the coins go, so a preimage without it would
+-- authorize a payment to anywhere (the review caught exactly this).
+function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashSegwit
+
+private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
+   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
+   end if
+   if pOutputs is "" then
+      throw "CoinXT: cxBtcSighashSegwit: the outputs list is required (BIP-143 commits to hashOutputs)."
+   end if
+   put "" into tPrevouts
+   put "" into tSequencesRaw
+   repeat with tI = 1 to tCount
+      put tPrevouts & cxHexDecode(item tI of pOutpoints) into tPrevouts
+      put tSequencesRaw & cxUIntToBytesLE(item tI of pSequences, 4) into tSequencesRaw
+   end repeat
+   put the number of items of pOutputs into tOutCount
+   put "" into tOutputsRaw
+   repeat with tI = 1 to tOutCount
+      put tOutputsRaw & cxHexDecode(item tI of pOutputs) into tOutputsRaw
+   end repeat
+   put cxHexDecode(pScriptCodeHex) into tScript
+   put cxUIntToBytesLE(pVersion, 4) into tBuf
+   put tBuf & cxHash256(tPrevouts) & cxHash256(tSequencesRaw) into tBuf
+   put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+   put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
+   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   put tBuf & cxHash256(tOutputsRaw) & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
+   return cxHash256(tBuf)
+end cxBtcSighashSegwitInner
+
+-- A serialized SegWit witness stack for one input: the CompactSize item count,
+-- then each item as CompactSize-length + bytes. pItems is a comma list of item
+-- hex (empty string for an input with no witness).
+function cxBtcWitness pItems
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcWitnessInner(pItems) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcWitness
+
+private function cxBtcWitnessInner pItems
+   local tCount, tI, tOut, tItem
+   if pItems is "" then
+      return cxVarInt(0)
+   end if
+   put the number of items of pItems into tCount
+   put cxVarInt(tCount) into tOut
+   repeat with tI = 1 to tCount
+      put cxHexDecode(item tI of pItems) into tItem
+      put tOut & cxVarInt(the number of bytes of tItem) & tItem into tOut
+   end repeat
+   return tOut
+end cxBtcWitnessInner
+
+-- Serialize a full transaction. pOutpoints / pScriptSigs / pSequences /
+-- pWitnesses are parallel comma lists (outpoint hex; scriptSig hex, "" for
+-- none; sequence integer; a pre-serialized witness stack hex from cxBtcWitness,
+-- "" for none). pOutputs is a comma list of serialized-output hex. If any
+-- witness is non-empty the BIP-141 marker+flag and witness section are emitted.
+-- Returns the raw transaction as Data.
+function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcTxEncodeInner(pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcTxEncode
+
+private function cxBtcTxEncodeInner pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tCount, tI, tBuf, tHasWitness, tSig, tWitBytes
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 then
+      throw "CoinXT: cxBtcTxEncode: a transaction needs at least one input."
+   end if
+   if the number of items of pScriptSigs is not tCount or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the input lists must be parallel."
+   end if
+   -- The witness list, when present, must be parallel too: a short list would
+   -- silently emit an EMPTY witness stack for the trailing inputs (a well-formed
+   -- but consensus-invalid tx), a long one would drop the extras. Either is a
+   -- fail-open, so require exactly one witness slot per input (each may be "").
+   if pWitnesses is not "" and the number of items of pWitnesses is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the witness list must have one entry per input (empty entries allowed)."
+   end if
+   put false into tHasWitness
+   if pWitnesses is not "" then
+      repeat with tI = 1 to the number of items of pWitnesses
+         if item tI of pWitnesses is not "" then
+            put true into tHasWitness
+         end if
+      end repeat
+   end if
+   put cxBtcTxBody(pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, tHasWitness) into tBuf
+   if tHasWitness then
+      repeat with tI = 1 to tCount
+         put item tI of pWitnesses into tWitBytes
+         if tWitBytes is "" then
+            put tBuf & cxVarInt(0) into tBuf
+         else
+            put tBuf & cxHexDecode(tWitBytes) into tBuf
+         end if
+      end repeat
+      -- The witness section sits before nLockTime, so append the locktime last.
+      put tBuf & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   end if
+   return tBuf
+end cxBtcTxEncodeInner
+
+-- The transaction body WITHOUT the witness section and (when pWithMarker)
+-- without the trailing locktime, since a SegWit serialization inserts the
+-- witnesses between the outputs and the locktime. This is also exactly the
+-- preimage a txid hashes (marker off, locktime included), so cxBtcTxid reuses
+-- it. Assumes the itemDelimiter is already comma (its callers set it).
+private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, pWithMarker
+   local tCount, tI, tBuf, tSig, tOutBytes
+   put the number of items of pOutpoints into tCount
+   put cxUIntToBytesLE(pVersion, 4) into tBuf
+   if pWithMarker then
+      put tBuf & numToByte(0) & numToByte(1) into tBuf
+   end if
+   put tBuf & cxVarInt(tCount) into tBuf
+   repeat with tI = 1 to tCount
+      put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
+      if item tI of pScriptSigs is "" then
+         put tBuf & cxVarInt(0) into tBuf
+      else
+         put cxHexDecode(item tI of pScriptSigs) into tSig
+         put tBuf & cxVarInt(the number of bytes of tSig) & tSig into tBuf
+      end if
+      put tBuf & cxUIntToBytesLE(item tI of pSequences, 4) into tBuf
+   end repeat
+   put "" into tOutBytes
+   repeat with tI = 1 to the number of items of pOutputs
+      put tOutBytes & cxHexDecode(item tI of pOutputs) into tOutBytes
+   end repeat
+   put tBuf & cxVarInt(the number of items of pOutputs) & tOutBytes into tBuf
+   if not pWithMarker then
+      put tBuf & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   end if
+   return tBuf
+end cxBtcTxBody
+
+-- The transaction id as display-order (big-endian) hex: hash256 of the
+-- non-witness serialization (BIP-141), byte-reversed for display. Same input
+-- lists as cxBtcTxEncode minus the witnesses.
+function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxHexEncode(cxReverseBytes(cxHash256(cxBtcTxBody(pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, false)))) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcTxid
+
+-- ---- Ethereum ----------------------------------------------------------------
+--
+-- Wei-scale fields (pGasPriceHex, pValueHex, pMaxPriorityHex, pMaxFeeHex) cross
+-- as minimal-or-padded big-endian HEX; the small counters (pNonce, pGas,
+-- pChainId, pRecid) cross as integers. pToHex is the 20-byte recipient as hex
+-- ("" for a contract creation); pDataHex is the calldata as hex.
+
+-- The EIP-155 legacy signing digest: keccak(rlp([nonce, gasPrice, gas, to,
+-- value, data, chainId, 0, 0])). Hand the result to cxSignRecoverable.
+function cxEthLegacySighash pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId
+   local tBody
+   put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pChainId)) into tBody
+   put tBody & cxRlpEncodeBytes("") & cxRlpEncodeBytes("") into tBody
+   return cxKeccak256(cxRlpEncodeList(tBody))
+end cxEthLegacySighash
+
+-- Assemble the signed EIP-155 legacy transaction from the recovery id and the
+-- compact (r, s) cxSignRecoverable produced (pass its first 32 bytes as pRHex
+-- and next 32 as pSHex, or the whole 64 via cxDerEncode's inputs). v is
+-- pRecid + 2*pChainId + 35. Returns an array: ["raw"] the signed tx hex,
+-- ["txhash"] the keccak transaction hash hex.
+function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
+   local tBody, tRaw, tResult, tV
+   put pRecid + 2 * pChainId + 35 into tV
+   put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(tV)) into tBody
+   put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
+   put cxRlpEncodeList(tBody) into tRaw
+   put cxHexEncode(tRaw) into tResult["raw"]
+   put cxHexEncode(cxKeccak256(tRaw)) into tResult["txhash"]
+   return tResult
+end cxEthLegacyEncode
+
+-- The EIP-1559 (type 0x02) signing digest: keccak(0x02 || rlp([chainId, nonce,
+-- maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList])).
+-- The access list is the empty list in this build.
+function cxEth1559Sighash pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex
+   local tBody
+   put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
+   return cxKeccak256(numToByte(2) & cxRlpEncodeList(tBody))
+end cxEth1559Sighash
+
+private function cxEth1559Body pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex
+   local tBody
+   put cxRlpUintFromHex(cxHexOfInt(pChainId)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pMaxPriorityHex) into tBody
+   put tBody & cxRlpUintFromHex(pMaxFeeHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   -- The access list is an empty RLP list.
+   put tBody & cxRlpEncodeList("") into tBody
+   return tBody
+end cxEth1559Body
+
+-- Assemble the signed EIP-1559 transaction. pRecid is the y-parity (0 or 1), the
+-- 1559 signature's v; pRHex / pSHex are the compact r and s. Returns an array:
+-- ["raw"] the 0x02-prefixed tx hex, ["txhash"] the keccak transaction hash hex.
+function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex, pRecid, pRHex, pSHex
+   local tBody, tRaw, tResult
+   put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pRecid)) into tBody
+   put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
+   put numToByte(2) & cxRlpEncodeList(tBody) into tRaw
+   put cxHexEncode(tRaw) into tResult["raw"]
+   put cxHexEncode(cxKeccak256(tRaw)) into tResult["txhash"]
+   return tResult
+end cxEth1559Encode
+
+-- A small non-negative integer to big-endian hex (an even number of hex chars),
+-- for feeding an integer counter through the hex-uint RLP path. Stays inside
+-- exact-integer range by construction (its callers pass nonce/gas/chainId/v).
+private function cxHexOfInt pValue
+   local tHex
+   if pValue < 0 then
+      throw "CoinXT: cxHexOfInt: the value must not be negative."
+   end if
+   if pValue is 0 then
+      return ""
+   end if
+   put cxHexEncode(cxUIntToBytes(pValue)) into tHex
+   return tHex
+end cxHexOfInt

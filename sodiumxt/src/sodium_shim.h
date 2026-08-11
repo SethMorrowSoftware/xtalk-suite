@@ -13,9 +13,10 @@
  * multipart, and whole-file) + hex/base64 + constant-time compare; secretbox
  * and AEAD; Argon2id (pwhash / pwhash_str) and the KDF; streaming AEAD
  * (secretstream) and the C-side file helpers; X25519 boxes and sealed boxes;
- * ed25519 signatures; key exchange; padding; and (ABI 6) an ed25519
- * seed-to-expanded-key helper and HMAC-SHA256 for onion-service support. The
- * ABI is versioned by SXT_ABI_VERSION below; bump it on any signature change.
+ * ed25519 signatures; key exchange; padding; (ABI 6) an ed25519
+ * seed-to-expanded-key helper and HMAC-SHA256 for onion-service support; and
+ * (ABI 7) SHA3-256 for the offline v3 onion-address checksum. The ABI is
+ * versioned by SXT_ABI_VERSION below; bump it on any signature change.
  */
 #ifndef SODIUMXT_SODIUM_SHIM_H
 #define SODIUMXT_SODIUM_SHIM_H
@@ -45,7 +46,7 @@ extern "C" {
  * clear "reinstall the extension" error on skew, instead of corrupting memory
  * on first use against a mismatched native library.
  */
-#define SXT_ABI_VERSION 6
+#define SXT_ABI_VERSION 7
 
 /*
  * The largest single in-memory out-buffer we will service. The return value of
@@ -566,6 +567,29 @@ SXT_API int SXT_CALL sxt_hmac_sha256_bytes(void);
 SXT_API int SXT_CALL sxt_hmac_sha256(unsigned char *out, int cap,
                                      const unsigned char *key, int keylen,
                                      const unsigned char *msg, int msglen);
+
+/* --- ABI 7: SHA3-256 (FIPS 202) ------------------------------------------- */
+
+/* SHA3-256 digest length (32). */
+SXT_API int SXT_CALL sxt_sha3_256_bytes(void);
+
+/*
+ * SHA3-256 (NIST FIPS 202) of in[0..inlen). libsodium's stable API has no
+ * SHA-3, so this is the ONE entry point served by vendored code rather than by
+ * libsodium: RHash's MIT implementation via trezor-crypto, copied verbatim
+ * into src/vendor/ (byte-identical to the copy the sibling coinxt already
+ * bundles; provenance in src/vendor/VENDOR.md). It exists for one consumer
+ * story: the 2-byte checksum inside a v3 .onion address, which is what lets an
+ * address be computed OFFLINE from an ed25519 public key (onionxt's
+ * oxAddressFromPublicKey - its docs/08 deferred gap #2 - and riptide's
+ * identity-to-onion mapping). This is SHA3-256 with the FIPS 0x06 domain
+ * padding, NOT Ethereum's Keccak-256 (0x01): coinxt exports both and documents
+ * the footgun; sodiumxt deliberately ships only the FIPS form. Empty input is
+ * legal (inlen 0). Writes sxt_sha3_256_bytes() bytes and returns that count,
+ * or -needed, or a hard error.
+ */
+SXT_API int SXT_CALL sxt_sha3_256(unsigned char *out, int cap,
+                                  const unsigned char *in, int inlen);
 
 #ifdef __cplusplus
 }

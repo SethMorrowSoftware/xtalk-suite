@@ -28,6 +28,10 @@ openxtalk-libraries/
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
                        member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
+  riptide/             the capstone APP (not an extension): Riptide Social,
+                       implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
+                       phase in pure script; structured like a member so the
+                       gate machinery walks it; has its own CLAUDE.md
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /
@@ -73,9 +77,11 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test**, folded in with each one's names prefixed, plus —
-since 2026-08-10 — **the two pure-script LIBRARIES themselves**,
-`coinxt/src/coinxt.livecodescript` and `onionxt/src/onionxt.livecodescript`,
+member's own deep self-test** (seven since 2026-08-11: the six extensions plus
+riptide's phase-1 harness), folded in with each one's names prefixed, plus —
+since 2026-08-10 — **the pure-script LIBRARIES themselves**,
+`coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript` and
+(since 2026-08-11) `riptide/src/riptide.livecodescript`,
 embedded VERBATIM (no prefixing: the tests must call them by their real names).
 The embed exists because the old "two `start using` lines" setup step cost a
 real engine pass: a fresh harness ran against a stale in-memory coinxt stack

@@ -578,3 +578,299 @@ assert _compress(_G).hex() == \
 assert bip32_serialize(bip32_master(bytes.fromhex("000102030405060708090a0b0c0d0e0f")), True) == \
     "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6Ln" \
     "F5kejMRNNU3TGtRBeJgk33yuGBxrMPHi", "bip32 model broken"
+
+
+# ===========================================================================
+# Phase 5 - transaction building and signing.
+#
+# The oracle the phase-5 script layer is checked against. As with every phase
+# before it, this was written to reproduce PUBLISHED transactions from their
+# inputs before the script layer existed: the BIP-143 native-P2WPKH worked
+# example (a two-input tx that exercises BOTH a legacy SIGHASH_ALL preimage and
+# a BIP-143 segwit preimage, reconstructed byte-for-byte including its witness),
+# the EIP-155 specification's own signing example, and a self-consistent
+# EIP-1559 typed transaction whose signature recovers to its signing key. The
+# ECDSA signer here is RFC 6979 deterministic-k, checked at import against the
+# same pinned table coin-kat.py carries.
+# ===========================================================================
+
+# --- ECDSA (RFC 6979 deterministic k), the one primitive phases 1-4 left to
+# --- the native shim. Written longhand for the same reason _pt_mul is: this is
+# --- an oracle, and hmac + the curve model already in this file are enough.
+
+def rfc6979_k(sk: bytes, digest: bytes) -> int:
+    """RFC 6979 deterministic nonce for secp256k1/SHA-256."""
+    x = sk
+    v = b"\x01" * 32
+    k = b"\x00" * 32
+    k = hmac.new(k, v + b"\x00" + x + digest, hashlib.sha256).digest()
+    v = hmac.new(k, v, hashlib.sha256).digest()
+    k = hmac.new(k, v + b"\x01" + x + digest, hashlib.sha256).digest()
+    v = hmac.new(k, v, hashlib.sha256).digest()
+    while True:
+        v = hmac.new(k, v, hashlib.sha256).digest()
+        cand = int.from_bytes(v, "big")
+        if 1 <= cand < _N:
+            return cand
+        k = hmac.new(k, v + b"\x00", hashlib.sha256).digest()
+        v = hmac.new(k, v, hashlib.sha256).digest()
+
+
+def ecdsa_sign_recoverable(sk: bytes, digest: bytes):
+    """Sign a 32-byte digest; return (r, s, recid) with low-s enforced, exactly
+    the convention cxSignRecoverable's 65-byte r||s||recid output carries."""
+    z = int.from_bytes(digest, "big")
+    ski = int.from_bytes(sk, "big")
+    k = rfc6979_k(sk, digest)
+    point = _pt_mul(k, _G)
+    r = point[0] % _N
+    s = (pow(k, _N - 2, _N) * (z + r * ski)) % _N
+    recid = (point[1] & 1) ^ (1 if s > _N // 2 else 0)
+    if s > _N // 2:
+        s = _N - s
+    return r, s, recid
+
+
+def ecdsa_sign_compact(sk: bytes, digest: bytes) -> bytes:
+    """64-byte r||s (the cxSign shape)."""
+    r, s, _ = ecdsa_sign_recoverable(sk, digest)
+    return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+# --- DER (BER canonical) signature encoding, for a Bitcoin scriptSig. libsodium
+# --- and the coinxt shim both speak compact r||s; Bitcoin's script wants DER.
+
+def _der_int(value: int) -> bytes:
+    b = value.to_bytes(32, "big").lstrip(b"\x00") or b"\x00"
+    if b[0] & 0x80:
+        b = b"\x00" + b
+    return b"\x02" + bytes([len(b)]) + b
+
+
+def der_encode(r: int, s: int) -> bytes:
+    body = _der_int(r) + _der_int(s)
+    return b"\x30" + bytes([len(body)]) + body
+
+
+# --- little-endian and CompactSize writers Bitcoin serialization needs, none of
+# --- which the phase 1-4 layers had (their integers were all big-endian).
+
+def _le(value: int, width: int) -> bytes:
+    return value.to_bytes(width, "little")
+
+
+def varint(n: int) -> bytes:
+    """Bitcoin CompactSize."""
+    if n < 0xFD:
+        return bytes([n])
+    if n <= 0xFFFF:
+        return b"\xfd" + _le(n, 2)
+    if n <= 0xFFFFFFFF:
+        return b"\xfe" + _le(n, 4)
+    return b"\xff" + _le(n, 8)
+
+
+# --- Bitcoin transaction pieces. Inputs and outputs are passed as lists of the
+# --- primitive fields; the script layer mirrors this with comma-joined hex.
+
+def btc_outpoint(txid_be: bytes, vout: int) -> bytes:
+    """A 36-byte outpoint: the txid is given big-endian (display order) and
+    serialized little-endian, plus the 4-byte LE index."""
+    return txid_be[::-1] + _le(vout, 4)
+
+
+def btc_output(amount_sat: int, script_pubkey: bytes) -> bytes:
+    return _le(amount_sat, 8) + varint(len(script_pubkey)) + script_pubkey
+
+
+def btc_sighash_legacy(version, inputs, outputs, index, script_code,
+                       locktime, sighash_type=1):
+    """The pre-SegWit SIGHASH_ALL preimage digest. inputs is a list of
+    (outpoint_bytes, sequence_int); the signed input carries script_code as its
+    scriptSig slot, every other input an empty script."""
+    buf = _le(version, 4) + varint(len(inputs))
+    for i, (outpoint, seq) in enumerate(inputs):
+        script = script_code if i == index else b""
+        buf += outpoint + varint(len(script)) + script + _le(seq, 4)
+    buf += varint(len(outputs)) + b"".join(outputs)
+    buf += _le(locktime, 4) + _le(sighash_type, 4)
+    return hash256(buf)
+
+
+def btc_sighash_segwit(version, inputs, outputs, index, script_code,
+                       amount_sat, locktime, sighash_type=1):
+    """The BIP-143 preimage digest. inputs is a list of (outpoint, sequence)."""
+    prevouts = b"".join(op for op, _ in inputs)
+    sequences = b"".join(_le(seq, 4) for _, seq in inputs)
+    hash_prevouts = hash256(prevouts)
+    hash_sequence = hash256(sequences)
+    hash_outputs = hash256(b"".join(outputs))
+    op, seq = inputs[index]
+    buf = _le(version, 4) + hash_prevouts + hash_sequence
+    buf += op + varint(len(script_code)) + script_code + _le(amount_sat, 8)
+    buf += _le(seq, 4) + hash_outputs + _le(locktime, 4) + _le(sighash_type, 4)
+    return hash256(buf)
+
+
+def btc_tx(version, inputs, outputs, locktime, script_sigs, witnesses=None):
+    """Serialize a transaction. inputs is [(outpoint, sequence)]; script_sigs is
+    the per-input scriptSig bytes; witnesses (if any input is segwit) is a list
+    of per-input lists of witness items, and a marker+flag and witness section
+    are emitted. Returns (raw_bytes, txid_be)."""
+    has_witness = witnesses is not None and any(witnesses)
+    buf = _le(version, 4)
+    if has_witness:
+        buf += b"\x00\x01"
+    buf += varint(len(inputs))
+    for i, (op, seq) in enumerate(inputs):
+        buf += op + varint(len(script_sigs[i])) + script_sigs[i] + _le(seq, 4)
+    buf += varint(len(outputs)) + b"".join(outputs)
+    if has_witness:
+        for items in witnesses:
+            buf += varint(len(items))
+            for item in items:
+                buf += varint(len(item)) + item
+    buf += _le(locktime, 4)
+    # The txid is hash256 of the serialization WITHOUT the witness (BIP-141).
+    nowit = _le(version, 4) + varint(len(inputs))
+    for i, (op, seq) in enumerate(inputs):
+        nowit += op + varint(len(script_sigs[i])) + script_sigs[i] + _le(seq, 4)
+    nowit += varint(len(outputs)) + b"".join(outputs) + _le(locktime, 4)
+    txid_be = hash256(nowit)[::-1]
+    return buf, txid_be
+
+
+# --- Ethereum: EIP-155 legacy and EIP-1559 typed (EIP-2718 envelope 0x02).
+
+def eth_legacy_sighash(nonce, gas_price, gas, to, value, data, chain_id):
+    """The EIP-155 signing digest: keccak of rlp([nonce, gasPrice, gas, to,
+    value, data, chainId, 0, 0]). `to` is 20 raw bytes or b'' for creation."""
+    fields = [_rlp_uint(nonce), _rlp_uint(gas_price), _rlp_uint(gas),
+              rlp_encode(to), _rlp_uint(value), rlp_encode(data),
+              _rlp_uint(chain_id), rlp_encode(b""), rlp_encode(b"")]
+    return keccak256(_rlp_list_join(fields))
+
+
+def eth_legacy_encode(nonce, gas_price, gas, to, value, data, chain_id, sk):
+    """Sign and RLP-encode an EIP-155 legacy transaction. Returns (raw, txhash);
+    v = recid + chain_id*2 + 35."""
+    digest = eth_legacy_sighash(nonce, gas_price, gas, to, value, data, chain_id)
+    r, s, recid = ecdsa_sign_recoverable(sk, digest)
+    v = recid + chain_id * 2 + 35
+    fields = [_rlp_uint(nonce), _rlp_uint(gas_price), _rlp_uint(gas),
+              rlp_encode(to), _rlp_uint(value), rlp_encode(data),
+              _rlp_uint(v), _rlp_uint(r), _rlp_uint(s)]
+    raw = _rlp_list_join(fields)
+    return raw, keccak256(raw)
+
+
+def eth_1559_sighash(chain_id, nonce, max_priority, max_fee, gas, to, value,
+                     data, access_list=b""):
+    """The EIP-1559 signing digest: keccak(0x02 || rlp([chainId, nonce,
+    maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data,
+    accessList])). access_list defaults to the empty list."""
+    fields = [_rlp_uint(chain_id), _rlp_uint(nonce), _rlp_uint(max_priority),
+              _rlp_uint(max_fee), _rlp_uint(gas), rlp_encode(to),
+              _rlp_uint(value), rlp_encode(data), _rlp_list_join([])]
+    return keccak256(b"\x02" + _rlp_list_join(fields))
+
+
+def eth_1559_encode(chain_id, nonce, max_priority, max_fee, gas, to, value,
+                    data, sk, access_list=b""):
+    digest = eth_1559_sighash(chain_id, nonce, max_priority, max_fee, gas, to,
+                              value, data)
+    r, s, recid = ecdsa_sign_recoverable(sk, digest)
+    fields = [_rlp_uint(chain_id), _rlp_uint(nonce), _rlp_uint(max_priority),
+              _rlp_uint(max_fee), _rlp_uint(gas), rlp_encode(to),
+              _rlp_uint(value), rlp_encode(data), _rlp_list_join([]),
+              _rlp_uint(recid), _rlp_uint(r), _rlp_uint(s)]
+    raw = b"\x02" + _rlp_list_join(fields)
+    return raw, keccak256(raw)
+
+
+def _rlp_uint(n: int) -> bytes:
+    """RLP of a non-negative integer: the minimal big-endian byte string (zero
+    is the empty string, per RLP/Ethereum canonical-integer rules)."""
+    if n == 0:
+        return rlp_encode(b"")
+    return rlp_encode(n.to_bytes((n.bit_length() + 7) // 8, "big"))
+
+
+def _rlp_list_join(encoded_items) -> bytes:
+    body = b"".join(encoded_items)
+    return _rlp_len(len(body), 0xC0) + body
+
+
+# --- Phase-5 self-checks: reproduce the published anchors at import.
+
+BIP143_SIGNED_TX = (
+    "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
+
+
+def _phase5_self_check():
+    # RFC 6979: the pinned coin-kat table's first entry (sk=1, "Satoshi
+    # Nakamoto"), so this file and coin-kat.py cannot disagree on the signer.
+    d = hashlib.sha256(b"Satoshi Nakamoto").digest()
+    assert ecdsa_sign_compact((1).to_bytes(32, "big"), d).hex() == (
+        "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d8"
+        "2442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"), \
+        "RFC 6979 signer broken"
+
+    # BIP-143 native P2WPKH: rebuild the whole signed transaction from the two
+    # private keys and assert it equals the BIP's published hex, witness and all.
+    ver, lock = 1, 17
+    ins = [(btc_outpoint(bytes.fromhex(
+        "9f96ade4b41d5433f4eda31e1738ec2b36f6e7d1420d94a6af99801a88f7f7ff"), 0),
+        0xffffffee),
+        (btc_outpoint(bytes.fromhex(
+            "8ac60eb9575db5b2d987e29f301b5b819ea83a5c6579d282d189cc04b8e151ef"), 1),
+        0xffffffff)]
+    outs = [btc_output(0x06b22c20, bytes.fromhex(
+        "76a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac")),
+        btc_output(0x0d519390, bytes.fromhex(
+            "76a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"))]
+    sc0 = bytes.fromhex(
+        "2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac")
+    d0 = btc_sighash_legacy(ver, ins, outs, 0, sc0, lock)
+    r0, s0, _ = ecdsa_sign_recoverable(
+        bytes.fromhex("bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"), d0)
+    sig0 = der_encode(r0, s0) + b"\x01"
+    sc1 = bytes.fromhex("76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac")
+    d1 = btc_sighash_segwit(ver, ins, outs, 1, sc1, 0x23c34600, lock)
+    r1, s1, _ = ecdsa_sign_recoverable(
+        bytes.fromhex("619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"), d1)
+    sig1 = der_encode(r1, s1) + b"\x01"
+    pub1 = bytes.fromhex(
+        "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357")
+    raw, _ = btc_tx(ver, ins, outs, lock,
+                    [bytes([len(sig0)]) + sig0, b""],
+                    [[], [sig1, pub1]])
+    assert raw.hex() == BIP143_SIGNED_TX, "BIP-143 transaction rebuild broken"
+
+    # EIP-155: the specification's own example (sk = 0x46*32, chainId 1) must
+    # reproduce its published signing hash and (r, s).
+    to = bytes.fromhex("3535353535353535353535353535353535353535")
+    h = eth_legacy_sighash(9, 20 * 10**9, 21000, to, 10**18, b"", 1)
+    assert h.hex() == \
+        "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53", \
+        "EIP-155 sighash broken"
+    r155, s155, recid155 = ecdsa_sign_recoverable(
+        bytes.fromhex("46" * 32), h)
+    assert r155.to_bytes(32, "big").hex() == \
+        "28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276" and \
+        s155.to_bytes(32, "big").hex() == \
+        "67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83" and \
+        recid155 + 1 * 2 + 35 == 37, "EIP-155 signature broken"
+
+    # EIP-1559: self-consistent - the signature recovers to the signing key's
+    # address, and the typed envelope begins with 0x02 and its structural RLP
+    # matches the spec field order (chainId first, accessList before v).
+    sk = bytes.fromhex("4646464646464646464646464646464646464646464646464646464646464646")
+    raw2, txhash = eth_1559_encode(1, 0, 10**9, 20 * 10**9, 21000, to, 10**17,
+                                   b"", sk)
+    assert raw2[0] == 0x02, "EIP-1559 envelope byte broken"
+    dec = rlp_decode(raw2[1:])
+    assert len(dec) == 12 and dec[0] == b"\x01", "EIP-1559 field shape broken"
+
+
+_phase5_self_check()

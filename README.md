@@ -23,7 +23,7 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
-| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2), the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH), and the encodings and addresses (hex, Base58Check, Bech32/Bech32m, RLP, P2PKH/P2WPKH/P2TR/ETH + EIP-55), and HD wallets (BIP-39 mnemonics, BIP-32/BIP-44 derivation, xprv/xpub). **Not built:** transactions. Schnorr/BIP-340 deferred with Taproot |
+| **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2), the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH), the encodings and addresses (hex, Base58Check, Bech32/Bech32m, RLP, P2PKH/P2WPKH/P2TR/ETH + EIP-55), HD wallets (BIP-39 mnemonics, BIP-32/BIP-44 derivation, xprv/xpub), and (phase 5) transactions (Bitcoin legacy + BIP-143 SegWit, Ethereum EIP-155 + EIP-1559) — model-verified, engine pass pending. Schnorr/BIP-340 deferred with Taproot |
 
 They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachannel,...}`
 — so the engine resolves each binding automatically once its packaged extension
@@ -42,7 +42,7 @@ authority; this is the summary:
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). Only the live `enHostStatus` pair in its own async loopback stays static |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have now been called on-engine (2026-08-10, folded sync half); only the member harness's own async live halves stay static |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (40 checks) ran green on-engine 2026-08-10, folded. Mode B (launching tor) still unexercised |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All four phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. Transactions (phase 5, optional) still to build |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All four phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. **Phase 5 (transactions) is BUILT** (2026-08-11): Bitcoin legacy + BIP-143 SegWit and Ethereum EIP-155 + EIP-1559, model-verified against the BIP-143/EIP-155 published examples, with its own engine pass still pending |
 
 **Where the suite stands after the 2026-08-08 and 2026-08-10 passes.** On
 2026-08-08 `tests/suite-selftest.livecodescript` ran green on a real OXT engine
@@ -123,9 +123,11 @@ SKIP in one list — a member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
-offline), coinxt's 28 sections, torrentxt's full harness, and the synchronous
-halves of enetxt and datachannelxt — plus the cross-member compositions no
-per-member harness can have. One paste settles what used to take six runs.
+offline), coinxt's sections (encodings, addresses, HD, and the phase-5
+transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
+and datachannelxt, and riptide's phase-1 harness — plus the cross-member
+compositions no per-member harness can have. One paste settles what used to
+take seven runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
 than copied from them, because a hand-copied test suite drifts and then reports
@@ -138,11 +140,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**291 of 309 public handlers**:
+**331 of 349 public handlers**:
 
-| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt |
-|---|---|---|---|---|---|
-| 60/60 | 27/45 | 65/65 | 85/85 | 23/23 | 31/31 |
+| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
+|---|---|---|---|---|---|---|
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 26/26 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -169,9 +171,11 @@ The members are deliberately non-overlapping, so real apps mix them:
   60000-byte packet budget is the seam: when a payload stops being a message,
   it becomes a torrent.
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
-  social app on all six; `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that
-  produced them; `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
-  integration.
+  social app on all six, and `riptide/` is that app being built — phase 1
+  (the identity foundation and the feed wire formats, offline-verifiable and
+  golden-pinned) is in the tree; `docs/NEXT-EXTENSIONS-PLAN.md` is the
+  roadmap that produced the members; `docs/ONIONXT-INTEGRATION-PLAN.md` is
+  the anonymity-transport integration.
 
 ## Development
 

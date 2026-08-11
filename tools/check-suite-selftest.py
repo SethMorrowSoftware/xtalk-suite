@@ -33,12 +33,13 @@ GEN = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 
 # The prefixes tools/build-suite-selftest.py assigns, and the member each names.
 PREFIXES = {"sx1": "sodiumxt", "ox1": "onionxt", "cx1": "coinxt",
-            "bt1": "torrentxt", "en1": "enetxt", "dc1": "datachannelxt"}
+            "bt1": "torrentxt", "en1": "enetxt", "dc1": "datachannelxt",
+            "rs1": "riptide"}
 
 # What the core calls into each folded harness. If the generator ever renames or
 # drops one of these, the suite harness compiles and then does nothing.
 ENTRY_POINTS = ["sx1sxSelfTest", "ox1oxSelfTest", "cx1stRun", "bt1stRun",
-                "en1stRun", "dc1stRun"]
+                "en1stRun", "dc1stRun", "rs1rsSelfTest"]
 COUNTED = ["cx1", "bt1", "en1", "dc1"]
 
 
@@ -273,7 +274,8 @@ def main(argv):
             span_lines[stack[-1]].append(line)
     for name in stack:
         problems.append(f"embed sentinel begin '{name}' never ends")
-    for want in ("coinxt script layer", "onionxt script layer"):
+    for want in ("coinxt script layer", "onionxt script layer",
+                 "riptide script layer"):
         if want not in seen_spans:
             problems.append(f"no embedded span '{want}' - the harness no longer "
                             f"carries that library, so its folded tests run "

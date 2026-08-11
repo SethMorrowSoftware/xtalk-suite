@@ -10,10 +10,11 @@ House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in 
 `.livecodescript`. Comment the *why*, densely. Public API `cxPascalCase`; C ABI `cnx_snake_case`.
 
 > This is a design spec, not an implementation; the as-built status is tracked in
-> [CLAUDE.md](CLAUDE.md)'s as-built notes (phase 1, the whole hash surface, is built and has had an
-> engine pass; phase 2, the secp256k1 curve, is built and cross-verified against an independent
-> library, with its script wrappers awaiting an engine pass; phases 3 to 6 are still design). Where
-> the as-built code and this document disagree, the code and CLAUDE.md win, and the disagreement is
+> [CLAUDE.md](CLAUDE.md)'s as-built notes (phases 1-4 - hashes, the secp256k1 curve, encodings and
+> addresses, HD wallets - are built and engine-passed; phase 5, transaction building, is built and
+> model-verified with its engine pass pending; phase 6, packaging/demo, is partly done; Schnorr/
+> Taproot is deferred). Where the as-built code and this document disagree, the code and CLAUDE.md
+> win, and the disagreement is
 > marked inline below rather than quietly reconciled. It is the source of
 > truth for WHAT CoinXT is and the contract each layer must meet; the phased HOW is in
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and the hard-won FFI/LCB rules are in
@@ -233,16 +234,25 @@ Mnemonics (BIP-39) - AS BUILT:
   cxMnemonicToSeed also does NOT verify the checksum, because BIP-39 defines the seed
   for any string - call cxMnemonicValidate first on anything a human typed.
 
-Encodings (PURE SCRIPT, pinned by KAT):
+Encodings (PURE SCRIPT, pinned by KAT) -- AS SHIPPED (this block was updated to the
+built signatures; the original design sketch differed, see api-reference.md):
   cxHexEncode / cxHexDecode
-  cxBase58CheckEncode(pVersion, pPayload) / cxBase58CheckDecode(pString)   (fails closed on bad checksum)
-  cxBech32Encode(pHrp, pWitVer, pProgram) / cxBech32Decode(pString)        (Bech32 and Bech32m)
-  cxRlpEncode(pList) / cxRlpDecode(pBytes)                                 [Ethereum tx]
+  cxBase58CheckEncode(pPayload) / cxBase58CheckDecode(pText)               (the caller prepends the
+                                                                           version byte; fails closed)
+  cxBech32EncodeValues(pHrp, pValues, pSpec) / cxBech32DecodeValues(pText) (Bech32 and Bech32m, 5-bit
+                                                                           value lists), plus the
+                                                                           address-level
+                                                                           cxSegwitAddressEncode(pHrp,
+                                                                           pVersion, pProgram) /
+                                                                           cxSegwitAddressDecode(pHrp,
+                                                                           pAddress)
+  cxRlpEncodeBytes(pData) / cxRlpEncodeList(pEncodedItems) / cxRlpDecode(pData)   [built piecewise; xTalk
+                                                                           has no nested-list literal]
 
-Addresses (compose the above):
-  cxBtcAddressP2PKH(pPubkey, pMainnet)    -> Base58Check(0x00 || hash160(pubkey))
-  cxBtcAddressP2WPKH(pPubkey, pMainnet)   -> Bech32("bc", 0, hash160(pubkey))
-  cxBtcAddressP2TR(pXonly, pMainnet)      -> Bech32m("bc", 1, xonly)
+Addresses (compose the above) -- one argument each, mainnet:
+  cxBtcAddressP2PKH(pPubkey)              -> Base58Check(0x00 || hash160(pubkey))
+  cxBtcAddressP2WPKH(pPubkey)             -> Bech32("bc", 0, hash160(pubkey))
+  cxBtcAddressP2TR(pOutputKey)            -> Bech32m("bc", 1, output-key); does NOT tweak
   cxEthAddress(pPubkey)                   -> "0x" + EIP-55( keccak256(pub65[2..65])[13..32] )
   cxEthAddressChecksum(pAddress)          -> EIP-55 mixed-case form; verify on input
 ```

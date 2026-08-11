@@ -41,7 +41,7 @@
 --   * out parameters are passed by reference: command form `sxBoxKeypair tPk, tSk`,
 --     or inside a function call `put sxSecretStreamInitPush(tKey, tHeader) into h`.
 -- The native C layer is independently tested (KATs + ASan/UBSan);
--- the current C ABI is SXT_ABI_VERSION 6 (kSXTABIVersion below must match).
+-- the current C ABI is SXT_ABI_VERSION 7 (kSXTABIVersion below must match).
 -- ==========================================================================
 
 library org.openxtalk.library.sodium
@@ -59,7 +59,7 @@ metadata summary    is "Modern cryptography for xTalk via libsodium (authenticat
 --   kSXTABIVersion == SXT_ABI_VERSION ; kSXTErrBase == SXT_ERR_BASE.
 -- Declared before first use (OXT resolves a constant by lexical position; a
 -- forward reference silently evaluates to nothing).
-constant kSXTABIVersion is 6
+constant kSXTABIVersion is 7
 constant kSXTErrBase is -2000000000
 
 -- The engine MCStringEncoding enum value for UTF-8 (libfoundation: ASCII=0,
@@ -194,6 +194,8 @@ foreign handler _sxt_sign_expandedkeybytes() returns CInt binds to "c:sodiumxt>s
 foreign handler _sxt_sign_seed_to_expanded_key(in pOut as Pointer, in pCap as CInt, in pSeed as Pointer, in pSeedLen as CInt) returns CInt binds to "c:sodiumxt>sxt_sign_seed_to_expanded_key"
 foreign handler _sxt_hmac_sha256_bytes() returns CInt binds to "c:sodiumxt>sxt_hmac_sha256_bytes"
 foreign handler _sxt_hmac_sha256(in pOut as Pointer, in pCap as CInt, in pKey as Pointer, in pKeyLen as CInt, in pMsg as Pointer, in pMsgLen as CInt) returns CInt binds to "c:sodiumxt>sxt_hmac_sha256"
+foreign handler _sxt_sha3_256_bytes() returns CInt binds to "c:sodiumxt>sxt_sha3_256_bytes"
+foreign handler _sxt_sha3_256(in pOut as Pointer, in pCap as CInt, in pIn as Pointer, in pInLen as CInt) returns CInt binds to "c:sodiumxt>sxt_sha3_256"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -1565,6 +1567,33 @@ public handler sxHmacSha256(in pKey as Data, in pMessage as Data) returns Data
       put _sxt_hmac_sha256(tOut, tBytes, tKeyPtr, tKeyLen, tMsgPtr, tMsgLen) into tWritten
    end unsafe
    return sFinish("sxHmacSha256", tOut, tWritten)
+end handler
+
+-- SHA3-256 (NIST FIPS 202) of pData; 32 bytes. libsodium's stable API has no
+-- SHA-3, so this one primitive is served by the vendored RHash implementation
+-- (src/vendor, ABI 7) - it exists for the 2-byte checksum inside a v3 .onion
+-- address, so an address is computable OFFLINE from an ed25519 public key
+-- (onionxt's oxAddressFromPublicKey composes this; docs/08 gap #2, now
+-- closed). This is SHA3-256 with FIPS 0x06 padding, NOT Ethereum's Keccak-256:
+-- the sibling coinxt exports both and documents the footgun; anything citing
+-- FIPS 202 or "SHA-3" means this one. Empty input is legal.
+public handler sxSha3_256(in pData as Data) returns Data
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   unsafe
+      put _sxt_sha3_256_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_sha3_256(tOut, tBytes, tInPtr, tInLen) into tWritten
+   end unsafe
+   return sFinish("sxSha3_256", tOut, tWritten)
 end handler
 
 end library

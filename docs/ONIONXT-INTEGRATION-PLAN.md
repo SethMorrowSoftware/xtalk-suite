@@ -23,8 +23,9 @@
 Adopt **Model C** (full onion transport). This plan is build-ready demo-script work only — no changes to the
 compiled TorrentXT or OnionXT extensions. See section 9.
 
-The whole plan is gated on one external precondition: **confirming the real OnionXT ABI** (§9.1). Until that
-happens, treat the `ox*` surface as a design contract, not a fact.
+The ABI precondition this plan was originally gated on is now met: OnionXT is the in-repo `onionxt/` member and
+its `ox*` surface is engine-verified (`onionxt/docs/05-api-reference.md`). What remains is the BEHAVIOURAL Model C
+run - torrentxt's Tor path against a live daemon - runbook item 5.
 
 ---
 
@@ -1384,11 +1385,12 @@ confused with a swarm transfer — making the §7.3 no-silent-mixing guard visib
 
 ### 9.1 Zero changes to any compiled extension — but the OnionXT ABI is unverified
 
-**Model C is entirely demo-script work.** Every native capability it needs is presumed to already ship in the three
-extensions at their current ABIs. **Critical caveat: OnionXT is not in this repository (zero `ox*` references), so
-the entire `ox*` surface below is a design contract, not a verified fact. Confirming the real OnionXT ABI — handler
-names, signatures, sync/async semantics, the inbound-peer model, the writable signal, concurrent-service support,
-and the control-port auth model — is the gating precondition for Phase 1** (see the VERIFY register, §12.3).
+**Model C is entirely demo-script work.** Every native capability it needs already ships in the three
+extensions at their current ABIs. **Update (consolidation): OnionXT is now the in-repo `onionxt/` member, with
+its full `ox*` surface in `onionxt/src/onionxt.livecodescript` and an on-engine pass against a live tor daemon
+recorded in `onionxt/CLAUDE.md`. The caveat below is retired: the `ox*` surface is no longer a "design contract"
+to be confirmed later - check any handler against `onionxt/docs/05-api-reference.md`. What genuinely remains open
+is the BEHAVIOURAL Model C run (torrentxt's Tor path against a daemon), tracked as runbook item 5, not the ABI.**
 
 - **TorrentXT (`bt*`) — untouched.** The clearnet path is unchanged and remains the default. The onion path does
   **not** call libtorrent for the anonymous bytes, so no `btx_*` symbol is added/modified and `BTX_ABI_VERSION`
@@ -1450,8 +1452,8 @@ Each gate is an **observable two-machine (except Phase 0) on-engine outcome**. `
 the pure-compute KATs (§12) are the *static* gate; the listed outcome is the *human OXT pass* and is the only thing
 that closes the phase.
 
-**Phase 0 — Probe, plumbing & ABI confirmation (single machine OK).**
-First **confirm the real OnionXT ABI** against §9.1 (this unblocks everything). Then add the `sTorSend` toggle to
+**Phase 0 — Probe & plumbing (single machine OK).**
+The OnionXT ABI is already confirmed (the in-repo `onionxt/` member, engine-passed; §9.1 is retired). Add the `sTorSend` toggle to
 both UIs; `qsHasOnion`/`chHasOnion` (`oxVersion` + `sCanEncrypt`); dual-port config via
 `oxSetSocksPort`/`oxSetControlPort`; `oxConnectControl` (9051 then 9151); status wiring
 (`oxSetStatusCallback` → `qsOnionStatus`/`chOnionStatus`) rendering `oxBootstrapProgress()` into the pill; run the

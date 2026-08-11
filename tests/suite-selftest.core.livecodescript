@@ -158,6 +158,7 @@ local sRunning             -- "true" while the async phases are still live
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
+local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -386,6 +387,7 @@ command stRun
    end try
    put 0 into sSession
    put false into sHaveCoinScript
+   put false into sHaveRiptideScript
    put empty into sSealKey
    put empty into sSealPlain
    put empty into sSealBox
@@ -456,7 +458,7 @@ command stRun
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
    -- the note above `put 0 into sSession`.
-   -- The OUTER try is a BACKSTOP ONLY. Each of the six members inside is
+   -- The OUTER try is a BACKSTOP ONLY. Each of the seven harnesses inside is
    -- contained individually, and that is the part that matters: with only this
    -- outer one, a throw in member three left members four, five and six never
    -- run, never merged and not even SKIPPED, while the run still printed a
@@ -636,6 +638,17 @@ command stProbe
       put false into sHaveCoinScript
    end try
    stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
+         "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- Riptide's script layer rides the same embed mechanism, so the same
+   -- tripwire: rsZeroTarget is a real vector (40 zeros), not a version sniff.
+   put false into sHaveRiptideScript
+   try
+      put (the number of chars in rsZeroTarget() is 40) into sHaveRiptideScript
+   catch tError
+      put false into sHaveRiptideScript
+   end try
+   stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
 end stProbe
 
@@ -1030,18 +1043,18 @@ command stCrossIdentitySection
             tExpandedHex is tKp["secretKey"]
    end if
 
-   -- The third leg of the claim, stated but NOT faked: that same public key IS a
-   -- v3 .onion address, but RENDERING one needs SHA3-256 for the address
-   -- checksum, and SodiumXT does not expose SHA3 because libsodium has none
-   -- (onionxt/docs/08 gap #2). OnionXT reports that gap honestly through
-   -- oxTransportInfo, asserted in the capability section below. CoinXT now ships
-   -- cxSha3_256, so the closer exists in the suite - but wiring it into
-   -- OnionXT's oxSha3_256 fallback is a code change in OnionXT, and a test may
-   -- not pretend a composition into existence by re-implementing it here.
-   stNote "the onion-address leg needs SHA3-256 (docs/08 gap #2) - not faked here"
-   if sHaveCoin then
-      stNote "CoinXT ships cxSha3_256; wiring it into oxSha3_256 would close it"
-   end if
+   -- The third leg of the claim: that same public key IS a v3 .onion address.
+   -- RENDERING one needs SHA3-256 for the address checksum. That was ononxt/
+   -- docs/08 gap #2, and it CLOSED on 2026-08-11: SodiumXT ABI 7 ships
+   -- sxSha3_256 and OnionXT's oxSha3_256 composes it, so oxAddressFromPublicKey
+   -- now emits a real address against an ABI-7 SodiumXT. OnionXT's own harness
+   -- renders and round-trips it (ox1's address section); this cross-section
+   -- still does not re-render it here, because the identity being proven is the
+   -- KEY (handle == the ed25519 key an onion would encode), and re-implementing
+   -- the checksum would be the test faking a composition rather than observing
+   -- it. The capability section below asserts oxTransportInfo now advertises the
+   -- offline address as AVAILABLE whenever SHA3 is.
+   stNote "the onion-address leg (SHA3-256 checksum) is now closed: SodiumXT ABI 7"
 end stCrossIdentitySection
 
 -- SIGN A BEP44 ITEM WITH SODIUMXT. btDhtBep44SignBuf exists precisely so a
@@ -1100,7 +1113,7 @@ end stCrossBep44Section
 -- HMAC, entropy, seed expansion, and SHA3 and reports what it can actually do.
 -- So the honest cross-member assertion is that its answers track reality.
 command stCrossOnionSection
-   local tInfo
+   local tInfo, tHasSha3, tErr
 
    stSection "CROSS: OnionXT advertises its real SodiumXT-backed capabilities"
    if not sHaveOnion then
@@ -1119,11 +1132,28 @@ command stCrossOnionSection
       stAssert "capabilities are advertised as absent without SodiumXT", \
             tInfo["safeCookieAuth"] is false
    end if
-   -- The DECLARED gap, asserted as a gap. If this ever flips to true the suite
-   -- gained offline .onion address rendering, and onionxt/docs/08 gap #2 plus
-   -- the note in the identity section above both need rewriting.
-   stAssert "offline .onion checksums are still advertised as UNAVAILABLE", \
-         tInfo["offlineAddress"] is false
+   -- offlineAddress tracks whether SHA3-256 is reachable, which is exactly what
+   -- OnionXT's oxSha3_256 probes: it composes SodiumXT's sxSha3_256 (ABI 7,
+   -- onionxt/docs/08 gap #2, closed 2026-08-11). So the honest assertion is that
+   -- the advertisement TRACKS REALITY, not that it holds a fixed answer: probe
+   -- SHA3 the same way OnionXT does and require the flag to agree. It is true on
+   -- an ABI-7 SodiumXT and false on an older one or with SodiumXT absent.
+   put false into tHasSha3
+   if sHaveSodium then
+      try
+         put (the number of bytes of sxSha3_256(textEncode("probe", "ASCII")) is 32) \
+               into tHasSha3
+      catch tErr
+         put false into tHasSha3
+      end try
+   end if
+   stAssert "oxTransportInfo's offlineAddress tracks whether SHA3-256 is available", \
+         tInfo["offlineAddress"] is tHasSha3
+   if tHasSha3 then
+      stNote "SHA3-256 is present: offline .onion address rendering is AVAILABLE"
+   else
+      stNote "SHA3-256 absent (SodiumXT pre-ABI-7 or absent): offline address deferred"
+   end if
    stNote "that FALSE is docs/08 gap #2: libsodium ships no SHA3-256"
 end stCrossOnionSection
 
@@ -1819,6 +1849,22 @@ command stRunMemberHarnesses
       end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   end if
+
+   -- Riptide is an APP layer over the extensions above, so it runs LAST: by
+   -- here every extension it probes has already shown its own colours. Its
+   -- harness handles a missing optional extension itself (sections SKIP), and
+   -- refuses cleanly without SodiumXT, so the only gate here is the embedded
+   -- layer being present at all.
+   if sHaveRiptideScript then
+      try
+         stMergeReturned "Riptide Social (phase 1)", rs1rsSelfTest()
+      catch tError
+         stSectionFailed "Riptide deep self-test", tError
+      end try
+   else
+      stSkip "Riptide deep self-test", \
+            "the riptide script layer is not present; the paste is damaged"
    end if
 end stRunMemberHarnesses
 

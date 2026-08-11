@@ -20,6 +20,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The ONE primitive libsodium does not provide (its stable API has no SHA-3):
+ * SHA3-256 from the vendored trezor-crypto/RHash implementation (src/vendor/,
+ * verbatim; provenance in src/vendor/VENDOR.md). Quoted include, so no extra
+ * include path is needed and libsodium's headers stay the only -isystem. */
+#include "vendor/sha3.h"
+
 #if defined(_MSC_VER)
 #  define SXT_THREAD_LOCAL __declspec(thread)
 #else
@@ -2325,5 +2331,51 @@ SXT_API int SXT_CALL sxt_hmac_sha256(unsigned char *out, int cap,
                                   (unsigned long long)msglen);
     crypto_auth_hmacsha256_final(&st, out);
     sodium_memzero(&st, sizeof st);
+    return outbytes;
+}
+
+/* --- ABI 7: SHA3-256 (FIPS 202) ------------------------------------------- */
+
+SXT_API int SXT_CALL sxt_sha3_256_bytes(void)
+{
+    return (int)SHA3_256_DIGEST_LENGTH;
+}
+
+SXT_API int SXT_CALL sxt_sha3_256(unsigned char *out, int cap,
+                                  const unsigned char *in, int inlen)
+{
+    const int outbytes = (int)SHA3_256_DIGEST_LENGTH;
+
+    clear_error();
+    /* ensure_init() is not a crypto dependency here (the vendored code needs no
+     * libsodium state), but every entry point runs it so a dead CSPRNG is
+     * reported at the first call, whichever call that is - the uniform contract
+     * the header promises. */
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (inlen < 0) {
+        set_error("sxt_sha3_256: negative length");
+        return SXT_ERR_BADARG;
+    }
+    if (inlen >= SXT_MAX_BUFFER) {
+        set_error("sxt_sha3_256: input too large for one buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_sha3_256: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (inlen > 0 && in == NULL) {
+        set_error("sxt_sha3_256: null input");
+        return SXT_ERR_BADARG;
+    }
+    /* One-shot FIPS-202 SHA3-256 (0x06 domain padding - NOT Keccak-256). Pass a
+     * valid non-NULL pointer even for an empty input (the hmac discipline
+     * above) so the vendored code never sees (NULL, 0). */
+    sha3_256((inlen > 0 ? in : (const unsigned char *)""), (size_t)inlen, out);
     return outbytes;
 }

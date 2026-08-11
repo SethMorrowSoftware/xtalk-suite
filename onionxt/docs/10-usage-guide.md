@@ -171,12 +171,13 @@ published identity key, derive it from a 32-byte seed (composes SodiumXT; see se
 oxCreateServiceFromSeed tSeed, 80, 8080      -- same seed -> same .onion, always
 ```
 
-And convert between an address and its ed25519 public key (base32 is pure; the checksum needs SodiumXT
-SHA3-256, so `oxAddressFromPublicKey` returns a clear error if that primitive is absent):
+And convert between an address and its ed25519 public key (base32 is pure; the checksum composes
+SodiumXT ABI 7's `sxSha3_256`, so `oxAddressFromPublicKey` returns a clear error against an older
+SodiumXT):
 
 ```
 put oxPublicKeyFromAddress("....onion") into tPubKey   -- 32 bytes, no crypto needed
-put oxAddressFromPublicKey(tPubKey) into tAddress       -- needs sxSha3_256
+put oxAddressFromPublicKey(tPubKey) into tAddress       -- needs sxSha3_256 (SodiumXT ABI 7)
 if oxIsValidAddress(tPasted) then ...                   -- structural, + checksum if available
 ```
 
@@ -203,7 +204,7 @@ primitive is missing (see docs/08); check availability with:
 put oxTransportInfo() into tInfo            -- an array of capability flags
 -- tInfo["safeCookieAuth"]     needs sxHmacSha256 + sxRandomBytes  (SodiumXT ABI >= 6)
 -- tInfo["deterministicOnion"] needs sxSignSeedToExpandedKey       (SodiumXT ABI >= 6)
--- tInfo["offlineAddress"]     needs sxSha3_256                    (deferred; libsodium has no SHA-3)
+-- tInfo["offlineAddress"]     needs sxSha3_256                    (SodiumXT ABI >= 7)
 ```
 
 When a primitive is absent, OnionXT falls back where it safely can (SAFECOOKIE -> COOKIE control auth,

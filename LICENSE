@@ -30,6 +30,9 @@ link (or, for OnionXT, the daemon they talk to) remain under their own
 licenses, reproduced with their sources:
 
   sodiumxt        libsodium                     ISC
+                  SHA-3 (RHash, via             MIT
+                  trezor-crypto; the same
+                  files coinxt vendors)
   torrentxt       libtorrent-rasterbar          BSD-3-Clause
                   Boost                         Boost Software License 1.0
   enetxt          ENet 1.3.18                   MIT

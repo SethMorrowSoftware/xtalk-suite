@@ -45,9 +45,9 @@ docs and code in the same change that closes them.
    key) needs no SodiumXT. RESOLVED.
 10. **SodiumXT HMAC-SHA256** for SAFECOOKIE auth - **SHIPPED** (SodiumXT ABI 6, `sxHmacSha256`);
     OnionXT implements SAFECOOKIE directly, with COOKIE/NULL/HASHEDPASSWORD as fallbacks. RESOLVED.
-    **SodiumXT SHA3-256** for the offline address checksum stays **DEFERRED** (libsodium has no SHA-3;
-    a nicety, not a security dependency - tor authenticates the onion at connect time). This is the
-    only remaining upstream gap.
+    **SodiumXT SHA3-256** for the offline address checksum - **SHIPPED** (SodiumXT ABI 7,
+    `sxSha3_256`, vendored FIPS-202, 2026-08-11; see docs/08 gap #2). No upstream gap remains; against
+    a pre-ABI-7 SodiumXT the address layer degrades to structural-only checks as before.
 
 ## Testing and conformance
 

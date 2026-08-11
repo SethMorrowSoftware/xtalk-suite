@@ -118,7 +118,9 @@ run_gates() {
 }
 
 # --- static gates for every member (always run) ---
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt; do
+# riptide is not an extension but carries the same gate shape (script checker,
+# golden glob, vector gate, docs style), so it rides the same loop.
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 
@@ -133,7 +135,7 @@ shopt -s nullglob
 ROOT_SCRIPTS=(tests/*.livecodescript tests/*.lcb)
 shopt -u nullglob
 if [ ${#ROOT_SCRIPTS[@]} -gt 0 ]; then
-  for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt; do
+  for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide; do
     [ -f "$m/tools/check-livecodescript.py" ] || continue
     echo "== suite: tests/ under $m's static gate =="
     python3 "$m/tools/check-livecodescript.py" "${ROOT_SCRIPTS[@]}"

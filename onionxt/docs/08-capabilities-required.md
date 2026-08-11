@@ -5,12 +5,15 @@ I/O. This is the honest list of the narrow crypto primitives it wants. The famil
 crypto primitive is an **upstream SodiumXT feature request landed first**, never a hand-rolled hash in
 OnionXT.
 
-**Status as of SodiumXT ABI 6:** gaps #1 (ed25519 seed -> expanded key, `sxSignSeedToExpandedKey`) and
-#3 (HMAC-SHA256, `sxHmacSha256`) are **SHIPPED and composed** - deterministic-from-seed onions and
-SAFECOOKIE control auth now work. Gap #2 (SHA3-256, offline address checksum) stays **DEFERRED** by
-design (libsodium has no SHA-3, and the checksum is a nicety, not a security dependency). OnionXT
-therefore requires **SodiumXT ABI >= 6** for the deterministic-onion and SAFECOOKIE paths; the SOCKS
-dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth need no SodiumXT at all.
+**Status as of SodiumXT ABI 7:** all three gaps are now **SHIPPED and composed**. Gaps #1 (ed25519
+seed -> expanded key, `sxSignSeedToExpandedKey`) and #3 (HMAC-SHA256, `sxHmacSha256`) shipped in ABI 6
+- deterministic-from-seed onions and SAFECOOKIE control auth work. Gap #2 (SHA3-256, offline address
+checksum) shipped in **ABI 7** (`sxSha3_256`, 2026-08-11), so `oxAddressFromPublicKey` now emits a real
+address and `oxIsValidAddress` verifies checksums offline. OnionXT therefore requires **SodiumXT ABI
+>= 6** for the deterministic-onion and SAFECOOKIE paths and **ABI >= 7** for offline address
+emission/validation; the SOCKS dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth
+need no SodiumXT at all, and against a pre-ABI-7 SodiumXT the address layer degrades to structural-only
+checks (no upstream gap remains).
 
 ## SodiumXT gaps
 
@@ -28,26 +31,32 @@ dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth need no Sod
   yields exactly that, and its public key matches `sxSignKeypairFromSeed(pSeed)`, so the `.onion`
   address and the app's signing identity stay consistent.
 
-### 2. SHA3-256 (for the v3 onion address checksum) - DEFERRED (the only remaining gap)
+### 2. SHA3-256 (for the v3 onion address checksum) - SHIPPED (SodiumXT ABI 7)
 
-**Status: DEFERRED.** libsodium has no SHA-3/Keccak, so SodiumXT does not ship `sxSha3_256`, and this
-stays deferred by design. It is only needed to EMIT or offline-VALIDATE an address checksum, which is a
-nicety, not a security dependency: address recovery (base32-decode -> ed25519 pubkey) and connect-time
-authentication (tor verifies the descriptor signature against the key in the address) both work without
-it. `oxAddressFromPublicKey` / `oxIsValidAddress` compose `sxSha3_256` if it ever lands and otherwise
-return a clear capability error / do structural-only validation. Revisit only if offline address
-emit/validate becomes a real need (it would mean bundling non-libsodium crypto into SodiumXT).
+**Status: SHIPPED (2026-08-11).** SodiumXT ABI 7 provides `sxSha3_256(pData as Data) returns Data`
+(32 bytes, NIST FIPS 202). libsodium's stable API has no SHA-3, so SodiumXT serves this one
+primitive from a vendored implementation (RHash's MIT SHA3 via trezor-crypto, byte-identical to the
+copy coinxt already bundles; provenance in `sodiumxt/src/vendor/VENDOR.md`) - option (a) below, taken
+once the riptide capstone made offline address emission a real need rather than a nicety. OnionXT's
+`oxSha3_256` composes it unchanged: `oxAddressFromPublicKey` now emits real addresses and
+`oxIsValidAddress` verifies checksums when the installed SodiumXT is ABI 7+, and both still degrade
+exactly as before (capability error / structural-only) against an older SodiumXT. The FIPS 202
+vectors and the torproject.org onion-checksum composition vector are pinned in
+`sodiumxt/tests/sodium_smoke_test.c` (ASan/UBSan) and `sodiumxt/examples/sodium-tests.livecodescript`;
+the address round-trip and tamper checks in `examples/onionxt-tests.livecodescript` that used to skip
+now run wherever `oxTransportInfo()["offlineAddress"]` reports true. Verified statically and in the C
+KATs; the composed script path needs an OXT pass.
 
 - **Needed by:** `oxAddressFromPublicKey` (to emit a correct 2-byte checksum) and `oxIsValidAddress`
   (to validate a pasted address offline). The checksum is `SHA3-256(".onion checksum" || PUBKEY ||
   VERSION)[:2]`.
-- **Options:**
-  a. Add `sxSha3_256` to SodiumXT. Note libsodium's stable API does not include SHA-3/Keccak; it would
-     come from libsodium's optional/experimental surface or a tiny vetted Keccak added to the shim.
-     This is a larger ask than the SHA-512 helper.
+- **The options considered while it was deferred**, kept for the record:
+  a. Add `sxSha3_256` to SodiumXT from a tiny vetted implementation (what shipped; the suite already
+     trusted the identical vendored code in coinxt).
   b. Defer: get your own address from `ADD_ONION`'s `ServiceID` (Tor computes the checksum), and rely
      on Tor's connect-time descriptor-signature check to authenticate a peer's address rather than a
-     local checksum verify. base32 decode still recovers the peer's public key without SHA3.
+     local checksum verify. base32 decode still recovers the peer's public key without SHA3. (This
+     remains the behaviour against a pre-ABI-7 SodiumXT.)
 - **Recommendation:** defer (b) for v1; the checksum is a nicety, not a security dependency (the
   descriptor signature is the real authentication). Add (a) only if offline address emission/validation
   becomes a real need.

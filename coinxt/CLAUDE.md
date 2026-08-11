@@ -800,3 +800,46 @@ trailing separator is refused" - and the whole coinxt harness at 207/207. Everyt
 first 2026-08-10 pass touched came back on the side the code assumed, including both phase-2
 marshalling bets: the C `int` flag marshals (33 vs 65 came back distinct) and `Boolean` returns
 work (`cxVerify` answered both true and false).
+
+**Phase 5, transaction building and signing - BUILT and model-verified 2026-08-11; its own engine
+pass is the one bar left.** ABI untouched (no shim change: this is pure script over the existing
+primitives). `src/coinxt.livecodescript` gains 13 public handlers, so the surface is 78 (35 `.lcb` +
+43 script): `cxVarInt`, `cxDerEncode`, `cxBtcOutpoint`, `cxBtcOutput`, `cxBtcSighashLegacy`,
+`cxBtcSighashSegwit`, `cxBtcWitness`, `cxBtcTxEncode`, `cxBtcTxid`, `cxEthLegacySighash`,
+`cxEthLegacyEncode`, `cxEth1559Sighash`, `cxEth1559Encode`.
+
+- **The KAT is the strongest one this member has.** The Bitcoin case IS the BIP-143 native-P2WPKH
+  worked example: a two-input transaction where input 0 is a legacy P2PK spend (SIGHASH_ALL preimage)
+  and input 1 is P2WPKH (BIP-143 preimage), so ONE fixture exercises both sighash algorithms, DER
+  encoding, witness serialization and the txid. `tools/coin_reference.py` rebuilds the whole signed
+  transaction - witness and all - byte for byte from just the two private keys, and asserts it equals
+  the BIP's published hex at import. Ethereum adds the EIP-155 specification's own example (its
+  published signing hash and r/s) and a self-consistent EIP-1559 typed transaction.
+- **The signer moved into the oracle, and it is anchored, not invented.** `coin_reference.py` had
+  point math but no ECDSA signing; phase 5 adds RFC 6979 deterministic-k signing, checked at import
+  against the SAME pinned vector `coin-kat.py` carries (sk=1, "Satoshi Nakamoto"), so the two files
+  cannot disagree about what a signature is. It also adds DER encoding, the sighash builders, varint,
+  little-endian writers and the RLP-uint-from-hex path the wei-scale fields need.
+- **The integer-width split is the load-bearing design decision.** Bitcoin counters and satoshi
+  amounts stay inside exact-integer range (21e6 BTC is 2.1e15 sat, well under 2^53) and cross as
+  integers; Ethereum wei-scale fields (value, gasPrice, the 1559 fee caps) routinely exceed 2^53 and
+  cross as minimal big-endian HEX, RLP-encoded as byte strings. Passing an ETH value as an integer
+  would silently lose precision above 2^53 - a wrong amount that looks right, the exact failure this
+  member exists to prevent. The docs and the file header both say which fields are which.
+- **The structured-input convention is the RLP layer's, extended.** A transaction's repeated fields
+  (inputs, outputs, witness items) cross as comma-separated lists of hex, one item per input/output,
+  and every handler that reads one uses the save/set/use/restore itemDelimiter wrapper - including on
+  the throw path, the discipline the nine phase-3/4 guards already follow. `scriptCode` is passed
+  BARE and this layer adds its length prefix (the double-prefix bug the oracle self-check caught while
+  it was being written: BIP-143's `1976a914...88ac` already carries its `0x19`).
+- **This layer produces the digest; the app signs it.** `cxSign` (Bitcoin) / `cxSignRecoverable`
+  (Ethereum, for the recovery id) are the app's calls on a digest THIS layer built, and CLAUDE.md
+  rule 3 stands: confirm the decoded human intent before signing. A blind signer is a footgun.
+- Verified: `tools/check-selftest-vectors.py` re-derives all 22 phase-5 harness constants from the
+  oracle (65 of 98 re-derived, 33 inputs) and is mutation-tested (a corrupted derived tx, a corrupted
+  input, and a wrong pubkey each caught); `tools/check-script-vectors.py` still green at 219 checks
+  (the enlarged library parses and its phase-3/4 vectors are unaffected); the suite coverage gate rose
+  to 331/349 with every phase-5 handler exercised; the suite selftest is regenerated (coinxt fold now
+  43 handlers). **NOT yet run on an engine**, and the "broadcastable" claim additionally needs an
+  independent decoder or a testnet node - both recorded as the remaining bars, in the api-reference
+  status block and the plan.
