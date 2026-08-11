@@ -28,6 +28,10 @@ openxtalk-libraries/
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
                        member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
+  riptide/             the capstone APP (not an extension): Riptide Social,
+                       implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
+                       phase in pure script; structured like a member so the
+                       gate machinery walks it; has its own CLAUDE.md
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /

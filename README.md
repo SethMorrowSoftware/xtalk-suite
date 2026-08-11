@@ -169,9 +169,11 @@ The members are deliberately non-overlapping, so real apps mix them:
   60000-byte packet budget is the seam: when a payload stops being a message,
   it becomes a torrent.
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
-  social app on all six; `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that
-  produced them; `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
-  integration.
+  social app on all six, and `riptide/` is that app being built — phase 1
+  (the identity foundation and the feed wire formats, offline-verifiable and
+  golden-pinned) is in the tree; `docs/NEXT-EXTENSIONS-PLAN.md` is the
+  roadmap that produced the members; `docs/ONIONXT-INTEGRATION-PLAN.md` is
+  the anonymity-transport integration.
 
 ## Development
 
