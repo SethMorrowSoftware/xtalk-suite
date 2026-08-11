@@ -283,6 +283,38 @@ constant cx1kAbandonBip84Account = "m/84'/0'/0'"
 constant cx1kAbandonBip84Xpub = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V"
 constant cx1kAbandonEthPath = "m/44'/60'/0'/0/0"
 constant cx1kAbandonEth = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+constant cx1kTxSeckey0 = "bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"
+constant cx1kTxSeckey1 = "619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"
+constant cx1kTxPubkey1 = "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
+constant cx1kTxid0 = "9f96ade4b41d5433f4eda31e1738ec2b36f6e7d1420d94a6af99801a88f7f7ff"
+constant cx1kTxid1 = "8ac60eb9575db5b2d987e29f301b5b819ea83a5c6579d282d189cc04b8e151ef"
+constant cx1kTxScriptCode0 = "2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac"
+constant cx1kTxScriptCode1 = "76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac"
+constant cx1kTxOutScript0 = "76a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac"
+constant cx1kTxOutScript1 = "76a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"
+constant cx1kTxOutpoint0 = "fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000"
+constant cx1kTxOutpoint1 = "ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000"
+constant cx1kTxOut0 = "202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac"
+constant cx1kTxOut1 = "9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"
+constant cx1kTxLegacySighash = "63cec688ee06a91e913875356dd4dea2f8e0f2a2659885372da2a37e32c7532e"
+constant cx1kTxSegwitSighash = "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
+constant cx1kTxScriptSig0 = "4830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01"
+constant cx1kTxWitness1 = "0247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
+constant cx1kTxSignedRaw = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
+constant cx1kTxTxid = "e8151a2af31c368a35053ddd4bdb285a8595c769a3ad83e0fa02314a602d4609"
+constant cx1kEthSeckey = "4646464646464646464646464646464646464646464646464646464646464646"
+constant cx1kEthTo = "3535353535353535353535353535353535353535"
+constant cx1kEthGasPrice = "04a817c800"
+constant cx1kEthValue = "0de0b6b3a7640000"
+constant cx1kEthLegacySighash = "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53"
+constant cx1kEthLegacyRaw = "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83"
+constant cx1kEthLegacyTxhash = "33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788"
+constant cx1kEth1559MaxPrio = "3b9aca00"
+constant cx1kEth1559MaxFee = "04a817c800"
+constant cx1kEth1559Value = "016345785d8a0000"
+constant cx1kEth1559Sighash = "bf4c3dfa4164868c98534322ecbbce3c022d6d0dee3580b1504da0a28fff9199"
+constant cx1kEth1559Raw = "02f8730180843b9aca008504a817c80082520894353535353535353535353535353535353535353588016345785d8a000080c001a0180a63d9ea767ab51941f4cb5d3f4f1113ae08861b4a660eb72770967ddc8987a04a41c8877f4e53a06c3a7d6f2787f113d9700bd112168f6714ff3b8957f1b123"
+constant cx1kEth1559Txhash = "1d723f02967119095427907564da7762bd6d3a5d8edb1291db53b97191749e7f"
 local cx1sTotal, cx1sPassed, cx1sFailed
 local cx1sResultText       -- the accumulated PASS/FAIL/section lines
 local cx1sDone             -- "true" once the run has finished (drives the colour)
@@ -3814,6 +3846,407 @@ function cxXpub pNode
    end if
    return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
 end cxXpub
+
+private function cxUIntToBytesLE pValue, pWidth
+   local tOut, tRest, tI
+   if pValue < 0 then
+      throw "CoinXT: cxUIntToBytesLE: the value must not be negative."
+   end if
+   put "" into tOut
+   put pValue into tRest
+   repeat with tI = 1 to pWidth
+      put numToByte(cxIntMod(tRest, 256)) after tOut
+      put cxIntDiv(tRest, 256) into tRest
+   end repeat
+   if tRest is not 0 then
+      throw "CoinXT: cxUIntToBytesLE: the value does not fit in the requested width."
+   end if
+   return tOut
+end cxUIntToBytesLE
+
+function cxVarInt pN
+   if pN < 0 then
+      throw "CoinXT: cxVarInt: the count must not be negative."
+   end if
+   if pN < 253 then
+      return numToByte(pN)
+   end if
+   if pN <= 65535 then
+      return numToByte(253) & cxUIntToBytesLE(pN, 2)
+   end if
+   if pN <= 4294967295 then
+      return numToByte(254) & cxUIntToBytesLE(pN, 4)
+   end if
+   return numToByte(255) & cxUIntToBytesLE(pN, 8)
+end cxVarInt
+
+private function cxStripLeadingZeroBytes pData
+   local tCount, tStart
+   put the number of bytes of pData into tCount
+   put 1 into tStart
+   repeat while tStart <= tCount and byteToNum(byte tStart of pData) is 0
+      add 1 to tStart
+   end repeat
+   if tStart > tCount then
+      return ""
+   end if
+   return byte tStart to tCount of pData
+end cxStripLeadingZeroBytes
+
+private function cxRlpUintFromHex pHex
+   return cxRlpEncodeBytes(cxStripLeadingZeroBytes(cxHexDecode(pHex)))
+end cxRlpUintFromHex
+
+function cxDerEncode pCompactSig
+   local tR, tS, tBody
+   if the number of bytes of pCompactSig is not 64 then
+      throw "CoinXT: cxDerEncode: a compact signature is 64 bytes (r || s)."
+   end if
+   put cxDerInteger(byte 1 to 32 of pCompactSig) into tR
+   put cxDerInteger(byte 33 to 64 of pCompactSig) into tS
+   put tR & tS into tBody
+   return numToByte(48) & numToByte(the number of bytes of tBody) & tBody
+end cxDerEncode
+
+private function cxDerInteger pValue
+   local tTrimmed, tLen
+   put cxStripLeadingZeroBytes(pValue) into tTrimmed
+   if tTrimmed is "" then
+      put numToByte(0) into tTrimmed
+   end if
+   -- DER integers are signed: a leading byte >= 0x80 needs a 0x00 sign pad so
+   -- the value is not read as negative.
+   if byteToNum(byte 1 of tTrimmed) >= 128 then
+      put numToByte(0) & tTrimmed into tTrimmed
+   end if
+   put the number of bytes of tTrimmed into tLen
+   return numToByte(2) & numToByte(tLen) & tTrimmed
+end cxDerInteger
+
+function cxBtcOutpoint pTxidHex, pVout
+   local tTxid
+   put cxHexDecode(pTxidHex) into tTxid
+   if the number of bytes of tTxid is not 32 then
+      throw "CoinXT: cxBtcOutpoint: a txid is 32 bytes (64 hex chars)."
+   end if
+   return cxReverseBytes(tTxid) & cxUIntToBytesLE(pVout, 4)
+end cxBtcOutpoint
+
+private function cxReverseBytes pData
+   local tOut, tI, tCount
+   put the number of bytes of pData into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put byte tI of pData before tOut
+   end repeat
+   return tOut
+end cxReverseBytes
+
+function cxBtcOutput pAmountSat, pScriptHex
+   local tScript
+   put cxHexDecode(pScriptHex) into tScript
+   return cxUIntToBytesLE(pAmountSat, 8) & cxVarInt(the number of bytes of tScript) & tScript
+end cxBtcOutput
+
+function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashLegacyInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashLegacy
+
+private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashLegacy: the input index is out of range (it is 1-based)."
+   end if
+   put cxHexDecode(pScriptCodeHex) into tScript
+   put cxUIntToBytesLE(pVersion, 4) & cxVarInt(tCount) into tBuf
+   repeat with tI = 1 to tCount
+      put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
+      if tI is pIndex then
+         put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
+      else
+         put tBuf & cxVarInt(0) into tBuf
+      end if
+      put tBuf & cxUIntToBytesLE(item tI of pSequences, 4) into tBuf
+   end repeat
+   put the number of items of pOutputs into tOutCount
+   put "" into tOutBytes
+   repeat with tI = 1 to tOutCount
+      put tOutBytes & cxHexDecode(item tI of pOutputs) into tOutBytes
+   end repeat
+   put tBuf & cxVarInt(tOutCount) & tOutBytes into tBuf
+   put tBuf & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
+   return cxHash256(tBuf)
+end cxBtcSighashLegacyInner
+
+function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashSegwit
+
+private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+   local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
+   end if
+   put "" into tPrevouts
+   put "" into tSequencesRaw
+   repeat with tI = 1 to tCount
+      put tPrevouts & cxHexDecode(item tI of pOutpoints) into tPrevouts
+      put tSequencesRaw & cxUIntToBytesLE(item tI of pSequences, 4) into tSequencesRaw
+   end repeat
+   put the number of items of pOutputs into tOutCount
+   put "" into tOutputsRaw
+   repeat with tI = 1 to the number of items of pOutputs
+      put tOutputsRaw & cxHexDecode(item tI of pOutputs) into tOutputsRaw
+   end repeat
+   put cxHexDecode(pScriptCodeHex) into tScript
+   put cxUIntToBytesLE(pVersion, 4) into tBuf
+   put tBuf & cxHash256(tPrevouts) & cxHash256(tSequencesRaw) into tBuf
+   put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+   put tBuf & cxVarInt(the number of bytes of tScript) & tScript into tBuf
+   put tBuf & cxUIntToBytesLE(pAmountSat, 8) & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   put tBuf & cxHash256(tOutputsRaw) & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
+   return cxHash256(tBuf)
+end cxBtcSighashSegwitInner
+
+function cxBtcWitness pItems
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcWitnessInner(pItems) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcWitness
+
+private function cxBtcWitnessInner pItems
+   local tCount, tI, tOut, tItem
+   if pItems is "" then
+      return cxVarInt(0)
+   end if
+   put the number of items of pItems into tCount
+   put cxVarInt(tCount) into tOut
+   repeat with tI = 1 to tCount
+      put cxHexDecode(item tI of pItems) into tItem
+      put tOut & cxVarInt(the number of bytes of tItem) & tItem into tOut
+   end repeat
+   return tOut
+end cxBtcWitnessInner
+
+function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcTxEncodeInner(pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcTxEncode
+
+private function cxBtcTxEncodeInner pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tCount, tI, tBuf, tHasWitness, tSig, tWitBytes
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 then
+      throw "CoinXT: cxBtcTxEncode: a transaction needs at least one input."
+   end if
+   if the number of items of pScriptSigs is not tCount or the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the input lists must be parallel."
+   end if
+   put false into tHasWitness
+   if pWitnesses is not "" then
+      repeat with tI = 1 to the number of items of pWitnesses
+         if item tI of pWitnesses is not "" then
+            put true into tHasWitness
+         end if
+      end repeat
+   end if
+   put cxBtcTxBody(pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, tHasWitness) into tBuf
+   if tHasWitness then
+      repeat with tI = 1 to tCount
+         put item tI of pWitnesses into tWitBytes
+         if tWitBytes is "" then
+            put tBuf & cxVarInt(0) into tBuf
+         else
+            put tBuf & cxHexDecode(tWitBytes) into tBuf
+         end if
+      end repeat
+      -- The witness section sits before nLockTime, so append the locktime last.
+      put tBuf & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   end if
+   return tBuf
+end cxBtcTxEncodeInner
+
+private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, pWithMarker
+   local tCount, tI, tBuf, tSig, tOutBytes
+   put the number of items of pOutpoints into tCount
+   put cxUIntToBytesLE(pVersion, 4) into tBuf
+   if pWithMarker then
+      put tBuf & numToByte(0) & numToByte(1) into tBuf
+   end if
+   put tBuf & cxVarInt(tCount) into tBuf
+   repeat with tI = 1 to tCount
+      put tBuf & cxHexDecode(item tI of pOutpoints) into tBuf
+      if item tI of pScriptSigs is "" then
+         put tBuf & cxVarInt(0) into tBuf
+      else
+         put cxHexDecode(item tI of pScriptSigs) into tSig
+         put tBuf & cxVarInt(the number of bytes of tSig) & tSig into tBuf
+      end if
+      put tBuf & cxUIntToBytesLE(item tI of pSequences, 4) into tBuf
+   end repeat
+   put "" into tOutBytes
+   repeat with tI = 1 to the number of items of pOutputs
+      put tOutBytes & cxHexDecode(item tI of pOutputs) into tOutBytes
+   end repeat
+   put tBuf & cxVarInt(the number of items of pOutputs) & tOutBytes into tBuf
+   if not pWithMarker then
+      put tBuf & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   end if
+   return tBuf
+end cxBtcTxBody
+
+function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxHexEncode(cxReverseBytes(cxHash256(cxBtcTxBody(pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime, false)))) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcTxid
+
+function cxEthLegacySighash pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId
+   local tBody
+   put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pChainId)) into tBody
+   put tBody & cxRlpEncodeBytes("") & cxRlpEncodeBytes("") into tBody
+   return cxKeccak256(cxRlpEncodeList(tBody))
+end cxEthLegacySighash
+
+function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
+   local tBody, tRaw, tResult, tV
+   put pRecid + 2 * pChainId + 35 into tV
+   put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pGasPriceHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(tV)) into tBody
+   put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
+   put cxRlpEncodeList(tBody) into tRaw
+   put cxHexEncode(tRaw) into tResult["raw"]
+   put cxHexEncode(cxKeccak256(tRaw)) into tResult["txhash"]
+   return tResult
+end cxEthLegacyEncode
+
+function cxEth1559Sighash pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex
+   local tBody
+   put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
+   return cxKeccak256(numToByte(2) & cxRlpEncodeList(tBody))
+end cxEth1559Sighash
+
+private function cxEth1559Body pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex
+   local tBody
+   put cxRlpUintFromHex(cxHexOfInt(pChainId)) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
+   put tBody & cxRlpUintFromHex(pMaxPriorityHex) into tBody
+   put tBody & cxRlpUintFromHex(pMaxFeeHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pGas)) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pToHex)) into tBody
+   put tBody & cxRlpUintFromHex(pValueHex) into tBody
+   put tBody & cxRlpEncodeBytes(cxHexDecode(pDataHex)) into tBody
+   -- The access list is an empty RLP list.
+   put tBody & cxRlpEncodeList("") into tBody
+   return tBody
+end cxEth1559Body
+
+function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex, pRecid, pRHex, pSHex
+   local tBody, tRaw, tResult
+   put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
+   put tBody & cxRlpUintFromHex(cxHexOfInt(pRecid)) into tBody
+   put tBody & cxRlpUintFromHex(pRHex) & cxRlpUintFromHex(pSHex) into tBody
+   put numToByte(2) & cxRlpEncodeList(tBody) into tRaw
+   put cxHexEncode(tRaw) into tResult["raw"]
+   put cxHexEncode(cxKeccak256(tRaw)) into tResult["txhash"]
+   return tResult
+end cxEth1559Encode
+
+private function cxHexOfInt pValue
+   local tHex
+   if pValue < 0 then
+      throw "CoinXT: cxHexOfInt: the value must not be negative."
+   end if
+   if pValue is 0 then
+      return ""
+   end if
+   put cxHexEncode(cxUIntToBytes(pValue)) into tHex
+   return tHex
+end cxHexOfInt
 -- <<< GENERATED EMBED: coinxt script layer <<< --
 
 
@@ -7380,6 +7813,7 @@ command cx1stRun
    cx1stRunBip39
    cx1stRunBip32
    cx1stRunBip44
+   cx1stRunTransactions
    cx1stRunFailOpen
 
    cx1stSection "summary"
@@ -8113,6 +8547,89 @@ command cx1stRunBip44
       cx1stSectionFailed "BIP-44", tError
    end try
 end cx1stRunBip44
+
+command cx1stRunTransactions
+   local cx1tOutpoints, cx1tSequences, cx1tOutputs, cx1tD0, cx1tD1, cx1tSig0, cx1tDer0, cx1tScriptSig0
+   local cx1tSig1, cx1tDer1, cx1tPub1, cx1tWit1, cx1tScriptSigs, cx1tWitnesses, cx1tRaw
+   local cx1tRecov, cx1tRecid, cx1tRHex, cx1tSHex, cx1tEth
+   cx1stSection "phase 5: transactions (BIP-143, EIP-155, EIP-1559)"
+   try
+      -- --- Bitcoin: the BIP-143 native-P2WPKH worked example, rebuilt whole.
+      -- The pieces first, so a mismatch localizes.
+      cx1stAssert "input 0 outpoint serializes (txid reversed + LE vout)", \
+            cxHexEncode(cxBtcOutpoint(cx1kTxid0, 0)) is cx1kTxOutpoint0
+      cx1stAssert "input 1 outpoint serializes", \
+            cxHexEncode(cxBtcOutpoint(cx1kTxid1, 1)) is cx1kTxOutpoint1
+      cx1stAssert "output 0 serializes (LE amount + script)", \
+            cxHexEncode(cxBtcOutput(112340000, cx1kTxOutScript0)) is cx1kTxOut0
+      cx1stAssert "output 1 serializes", \
+            cxHexEncode(cxBtcOutput(223450000, cx1kTxOutScript1)) is cx1kTxOut1
+      put cx1kTxOutpoint0 & comma & cx1kTxOutpoint1 into cx1tOutpoints
+      put "4294967278,4294967295" into cx1tSequences
+      put cx1kTxOut0 & comma & cx1kTxOut1 into cx1tOutputs
+      -- The two sighashes: input 0 legacy SIGHASH_ALL, input 1 BIP-143.
+      put cxBtcSighashLegacy(1, cx1tOutpoints, cx1tSequences, 1, cx1kTxScriptCode0, cx1tOutputs, 17, 1) into cx1tD0
+      cx1stAssert "input 0 legacy sighash matches", cxHexEncode(cx1tD0) is cx1kTxLegacySighash
+      put cxBtcSighashSegwit(1, cx1tOutpoints, cx1tSequences, 2, cx1kTxScriptCode1, 600000000, 17, 1) into cx1tD1
+      cx1stAssert "input 1 BIP-143 sighash matches the BIP", cxHexEncode(cx1tD1) is cx1kTxSegwitSighash
+      -- Sign each (RFC 6979, so deterministic), DER-encode, append SIGHASH_ALL.
+      put cxSign(cxHexDecode(cx1kTxSeckey0), cx1tD0) into cx1tSig0
+      put cxDerEncode(cx1tSig0) & numToByte(1) into cx1tDer0
+      put numToByte(the number of bytes of cx1tDer0) & cx1tDer0 into cx1tScriptSig0
+      cx1stAssert "input 0 scriptSig (push + DER sig + hashtype)", \
+            cxHexEncode(cx1tScriptSig0) is cx1kTxScriptSig0
+      put cxSign(cxHexDecode(cx1kTxSeckey1), cx1tD1) into cx1tSig1
+      put cxDerEncode(cx1tSig1) & numToByte(1) into cx1tDer1
+      put cxPublicKey(cxHexDecode(cx1kTxSeckey1), true) into cx1tPub1
+      cx1stAssert "input 1's pubkey is the BIP's compressed key", \
+            cxHexEncode(cx1tPub1) is cx1kTxPubkey1
+      put cxBtcWitness(cxHexEncode(cx1tDer1) & comma & cxHexEncode(cx1tPub1)) into cx1tWit1
+      cx1stAssert "input 1 witness stack (count + sig + pubkey)", \
+            cxHexEncode(cx1tWit1) is cx1kTxWitness1
+      -- Assemble: input 0 has the scriptSig and no witness, input 1 the reverse.
+      put cxHexEncode(cx1tScriptSig0) & comma into cx1tScriptSigs
+      put comma & cxHexEncode(cx1tWit1) into cx1tWitnesses
+      put cxBtcTxEncode(1, cx1tOutpoints, cx1tScriptSigs, cx1tSequences, cx1tWitnesses, cx1tOutputs, 17) into cx1tRaw
+      cx1stAssert "the whole signed transaction matches BIP-143 byte for byte", \
+            cxHexEncode(cx1tRaw) is cx1kTxSignedRaw
+      cx1stAssert "the txid (non-witness serialization, reversed)", \
+            cxBtcTxid(1, cx1tOutpoints, cx1tScriptSigs, cx1tSequences, cx1tOutputs, 17) is cx1kTxTxid
+      -- varint boundaries.
+      cx1stAssert "varint 252 is one byte", cxHexEncode(cxVarInt(252)) is "fc"
+      cx1stAssert "varint 253 is fd + LE u16", cxHexEncode(cxVarInt(253)) is "fdfd00"
+      cx1stAssert "varint 65536 is fe + LE u32", cxHexEncode(cxVarInt(65536)) is "fe00000100"
+
+      -- --- Ethereum EIP-155 legacy: the specification's own example.
+      cx1stAssert "the EIP-155 signing hash matches the spec", \
+            cxHexEncode(cxEthLegacySighash(9, cx1kEthGasPrice, 21000, cx1kEthTo, cx1kEthValue, "", 1)) is cx1kEthLegacySighash
+      put cxSignRecoverable(cxHexDecode(cx1kEthSeckey), cxHexDecode(cx1kEthLegacySighash)) into cx1tRecov
+      put byteToNum(byte 65 of cx1tRecov) into cx1tRecid
+      put cxHexEncode(byte 1 to 32 of cx1tRecov) into cx1tRHex
+      put cxHexEncode(byte 33 to 64 of cx1tRecov) into cx1tSHex
+      put cxEthLegacyEncode(9, cx1kEthGasPrice, 21000, cx1kEthTo, cx1kEthValue, "", 1, cx1tRecid, cx1tRHex, cx1tSHex) into cx1tEth
+      cx1stAssert "the signed EIP-155 transaction matches the spec (v=37)", \
+            cx1tEth["raw"] is cx1kEthLegacyRaw
+      cx1stAssert "the EIP-155 transaction hash", cx1tEth["txhash"] is cx1kEthLegacyTxhash
+
+      -- --- Ethereum EIP-1559 typed (0x02): self-consistent, deterministic.
+      cx1stAssert "the EIP-1559 signing hash", \
+            cxHexEncode(cxEth1559Sighash(1, 0, cx1kEth1559MaxPrio, cx1kEth1559MaxFee, 21000, cx1kEthTo, cx1kEth1559Value, "")) is cx1kEth1559Sighash
+      put cxSignRecoverable(cxHexDecode(cx1kEthSeckey), cxHexDecode(cx1kEth1559Sighash)) into cx1tRecov
+      put byteToNum(byte 65 of cx1tRecov) into cx1tRecid
+      put cxHexEncode(byte 1 to 32 of cx1tRecov) into cx1tRHex
+      put cxHexEncode(byte 33 to 64 of cx1tRecov) into cx1tSHex
+      put cxEth1559Encode(1, 0, cx1kEth1559MaxPrio, cx1kEth1559MaxFee, 21000, cx1kEthTo, cx1kEth1559Value, "", cx1tRecid, cx1tRHex, cx1tSHex) into cx1tEth
+      cx1stAssert "the signed EIP-1559 transaction (0x02 envelope)", \
+            cx1tEth["raw"] is cx1kEth1559Raw
+      cx1stAssert "the EIP-1559 transaction hash", cx1tEth["txhash"] is cx1kEth1559Txhash
+
+      -- Fail closed: a compact signature must be exactly 64 bytes.
+      cx1stAssert "cxDerEncode refuses a short signature", \
+            cx1stThrows("cxDerEncode", byte 1 to 40 of cx1tSig1)
+   catch tError
+      cx1stSectionFailed "transactions", tError
+   end try
+end cx1stRunTransactions
 
 command cx1stRunFailOpen
    local cx1tProgram, cx1tDecoded, cx1tKey

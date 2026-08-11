@@ -221,6 +221,47 @@ constant kAbandonBip84Xpub = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4R
 constant kAbandonEthPath = "m/44'/60'/0'/0/0"
 constant kAbandonEth = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
 
+-- Phase 5. Transaction building and signing. The Bitcoin case IS the BIP-143
+-- native-P2WPKH worked example: a two-input transaction that exercises BOTH a
+-- legacy SIGHASH_ALL preimage (input 0, a P2PK spend) and a BIP-143 segwit
+-- preimage (input 1, P2WPKH), reproduced byte-for-byte including its witness.
+-- The Ethereum cases are the EIP-155 specification's own example and a
+-- self-consistent EIP-1559 typed transaction. All the "expected" constants are
+-- re-derived from tools/coin_reference.py by check-selftest-vectors.py; the
+-- inputs are the published fixtures.
+constant kTxSeckey0 = "bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"
+constant kTxSeckey1 = "619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"
+constant kTxPubkey1 = "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
+constant kTxid0 = "9f96ade4b41d5433f4eda31e1738ec2b36f6e7d1420d94a6af99801a88f7f7ff"
+constant kTxid1 = "8ac60eb9575db5b2d987e29f301b5b819ea83a5c6579d282d189cc04b8e151ef"
+constant kTxScriptCode0 = "2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac"
+constant kTxScriptCode1 = "76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac"
+constant kTxOutScript0 = "76a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac"
+constant kTxOutScript1 = "76a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"
+constant kTxOutpoint0 = "fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000"
+constant kTxOutpoint1 = "ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000"
+constant kTxOut0 = "202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac"
+constant kTxOut1 = "9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"
+constant kTxLegacySighash = "63cec688ee06a91e913875356dd4dea2f8e0f2a2659885372da2a37e32c7532e"
+constant kTxSegwitSighash = "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
+constant kTxScriptSig0 = "4830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01"
+constant kTxWitness1 = "0247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
+constant kTxSignedRaw = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
+constant kTxTxid = "e8151a2af31c368a35053ddd4bdb285a8595c769a3ad83e0fa02314a602d4609"
+constant kEthSeckey = "4646464646464646464646464646464646464646464646464646464646464646"
+constant kEthTo = "3535353535353535353535353535353535353535"
+constant kEthGasPrice = "04a817c800"
+constant kEthValue = "0de0b6b3a7640000"
+constant kEthLegacySighash = "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53"
+constant kEthLegacyRaw = "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83"
+constant kEthLegacyTxhash = "33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788"
+constant kEth1559MaxPrio = "3b9aca00"
+constant kEth1559MaxFee = "04a817c800"
+constant kEth1559Value = "016345785d8a0000"
+constant kEth1559Sighash = "bf4c3dfa4164868c98534322ecbbce3c022d6d0dee3580b1504da0a28fff9199"
+constant kEth1559Raw = "02f8730180843b9aca008504a817c80082520894353535353535353535353535353535353535353588016345785d8a000080c001a0180a63d9ea767ab51941f4cb5d3f4f1113ae08861b4a660eb72770967ddc8987a04a41c8877f4e53a06c3a7d6f2787f113d9700bd112168f6714ff3b8957f1b123"
+constant kEth1559Txhash = "1d723f02967119095427907564da7762bd6d3a5d8edb1291db53b97191749e7f"
+
 -- ---- state -------------------------------------------------------------------
 local sTotal, sPassed, sFailed
 local sResultText       -- the accumulated PASS/FAIL/section lines
@@ -379,6 +420,7 @@ command stRun
    stRunBip39
    stRunBip32
    stRunBip44
+   stRunTransactions
    stRunFailOpen
 
    stSection "summary"
@@ -1171,6 +1213,89 @@ command stRunBip44
       stSectionFailed "BIP-44", tError
    end try
 end stRunBip44
+
+command stRunTransactions
+   local tOutpoints, tSequences, tOutputs, tD0, tD1, tSig0, tDer0, tScriptSig0
+   local tSig1, tDer1, tPub1, tWit1, tScriptSigs, tWitnesses, tRaw
+   local tRecov, tRecid, tRHex, tSHex, tEth
+   stSection "phase 5: transactions (BIP-143, EIP-155, EIP-1559)"
+   try
+      -- --- Bitcoin: the BIP-143 native-P2WPKH worked example, rebuilt whole.
+      -- The pieces first, so a mismatch localizes.
+      stAssert "input 0 outpoint serializes (txid reversed + LE vout)", \
+            cxHexEncode(cxBtcOutpoint(kTxid0, 0)) is kTxOutpoint0
+      stAssert "input 1 outpoint serializes", \
+            cxHexEncode(cxBtcOutpoint(kTxid1, 1)) is kTxOutpoint1
+      stAssert "output 0 serializes (LE amount + script)", \
+            cxHexEncode(cxBtcOutput(112340000, kTxOutScript0)) is kTxOut0
+      stAssert "output 1 serializes", \
+            cxHexEncode(cxBtcOutput(223450000, kTxOutScript1)) is kTxOut1
+      put kTxOutpoint0 & comma & kTxOutpoint1 into tOutpoints
+      put "4294967278,4294967295" into tSequences
+      put kTxOut0 & comma & kTxOut1 into tOutputs
+      -- The two sighashes: input 0 legacy SIGHASH_ALL, input 1 BIP-143.
+      put cxBtcSighashLegacy(1, tOutpoints, tSequences, 1, kTxScriptCode0, tOutputs, 17, 1) into tD0
+      stAssert "input 0 legacy sighash matches", cxHexEncode(tD0) is kTxLegacySighash
+      put cxBtcSighashSegwit(1, tOutpoints, tSequences, 2, kTxScriptCode1, 600000000, 17, 1) into tD1
+      stAssert "input 1 BIP-143 sighash matches the BIP", cxHexEncode(tD1) is kTxSegwitSighash
+      -- Sign each (RFC 6979, so deterministic), DER-encode, append SIGHASH_ALL.
+      put cxSign(cxHexDecode(kTxSeckey0), tD0) into tSig0
+      put cxDerEncode(tSig0) & numToByte(1) into tDer0
+      put numToByte(the number of bytes of tDer0) & tDer0 into tScriptSig0
+      stAssert "input 0 scriptSig (push + DER sig + hashtype)", \
+            cxHexEncode(tScriptSig0) is kTxScriptSig0
+      put cxSign(cxHexDecode(kTxSeckey1), tD1) into tSig1
+      put cxDerEncode(tSig1) & numToByte(1) into tDer1
+      put cxPublicKey(cxHexDecode(kTxSeckey1), true) into tPub1
+      stAssert "input 1's pubkey is the BIP's compressed key", \
+            cxHexEncode(tPub1) is kTxPubkey1
+      put cxBtcWitness(cxHexEncode(tDer1) & comma & cxHexEncode(tPub1)) into tWit1
+      stAssert "input 1 witness stack (count + sig + pubkey)", \
+            cxHexEncode(tWit1) is kTxWitness1
+      -- Assemble: input 0 has the scriptSig and no witness, input 1 the reverse.
+      put cxHexEncode(tScriptSig0) & comma into tScriptSigs
+      put comma & cxHexEncode(tWit1) into tWitnesses
+      put cxBtcTxEncode(1, tOutpoints, tScriptSigs, tSequences, tWitnesses, tOutputs, 17) into tRaw
+      stAssert "the whole signed transaction matches BIP-143 byte for byte", \
+            cxHexEncode(tRaw) is kTxSignedRaw
+      stAssert "the txid (non-witness serialization, reversed)", \
+            cxBtcTxid(1, tOutpoints, tScriptSigs, tSequences, tOutputs, 17) is kTxTxid
+      -- varint boundaries.
+      stAssert "varint 252 is one byte", cxHexEncode(cxVarInt(252)) is "fc"
+      stAssert "varint 253 is fd + LE u16", cxHexEncode(cxVarInt(253)) is "fdfd00"
+      stAssert "varint 65536 is fe + LE u32", cxHexEncode(cxVarInt(65536)) is "fe00000100"
+
+      -- --- Ethereum EIP-155 legacy: the specification's own example.
+      stAssert "the EIP-155 signing hash matches the spec", \
+            cxHexEncode(cxEthLegacySighash(9, kEthGasPrice, 21000, kEthTo, kEthValue, "", 1)) is kEthLegacySighash
+      put cxSignRecoverable(cxHexDecode(kEthSeckey), cxHexDecode(kEthLegacySighash)) into tRecov
+      put byteToNum(byte 65 of tRecov) into tRecid
+      put cxHexEncode(byte 1 to 32 of tRecov) into tRHex
+      put cxHexEncode(byte 33 to 64 of tRecov) into tSHex
+      put cxEthLegacyEncode(9, kEthGasPrice, 21000, kEthTo, kEthValue, "", 1, tRecid, tRHex, tSHex) into tEth
+      stAssert "the signed EIP-155 transaction matches the spec (v=37)", \
+            tEth["raw"] is kEthLegacyRaw
+      stAssert "the EIP-155 transaction hash", tEth["txhash"] is kEthLegacyTxhash
+
+      -- --- Ethereum EIP-1559 typed (0x02): self-consistent, deterministic.
+      stAssert "the EIP-1559 signing hash", \
+            cxHexEncode(cxEth1559Sighash(1, 0, kEth1559MaxPrio, kEth1559MaxFee, 21000, kEthTo, kEth1559Value, "")) is kEth1559Sighash
+      put cxSignRecoverable(cxHexDecode(kEthSeckey), cxHexDecode(kEth1559Sighash)) into tRecov
+      put byteToNum(byte 65 of tRecov) into tRecid
+      put cxHexEncode(byte 1 to 32 of tRecov) into tRHex
+      put cxHexEncode(byte 33 to 64 of tRecov) into tSHex
+      put cxEth1559Encode(1, 0, kEth1559MaxPrio, kEth1559MaxFee, 21000, kEthTo, kEth1559Value, "", tRecid, tRHex, tSHex) into tEth
+      stAssert "the signed EIP-1559 transaction (0x02 envelope)", \
+            tEth["raw"] is kEth1559Raw
+      stAssert "the EIP-1559 transaction hash", tEth["txhash"] is kEth1559Txhash
+
+      -- Fail closed: a compact signature must be exactly 64 bytes.
+      stAssert "cxDerEncode refuses a short signature", \
+            stThrows("cxDerEncode", byte 1 to 40 of tSig1)
+   catch tError
+      stSectionFailed "transactions", tError
+   end try
+end stRunTransactions
 
 -- ==============================================================================
 -- The fail-closed regression set. Read the note above its constants: each of

@@ -3,16 +3,23 @@
 **The `cx*` handlers that exist today, and nothing else.**
 
 CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
-[../SPEC.md](../SPEC.md) describes the *whole designed* API, including HD wallets and
-transaction building. **Those do not exist yet.** This file is the opposite document: it
-lists only what is shipped, so you can tell at a glance what you can actually call. Hashes,
-the secp256k1 curve, and the encodings and addresses are shipped; HD wallets, mnemonics and
-transaction building are not.
+[../SPEC.md](../SPEC.md) describes the *whole designed* API. This file is the opposite
+document: it lists only what is shipped, so you can tell at a glance what you can actually
+call. Hashes, the secp256k1 curve, the encodings and addresses, HD wallets and mnemonics,
+and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF are not.
 
-> **Status.** **Sixty-five** public handlers exist across two layers: **35** in the `.lcb`
-> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **30** in
-> `src/coinxt.livecodescript` (encodings, addresses, mnemonics and HD derivation). The two
-> load differently - see the phase-3 section.
+> **Status.** **Seventy-eight** public handlers exist across two layers: **35** in the `.lcb`
+> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **43** in
+> `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation and the
+> phase-5 transaction builders). The two load differently - see the phase-3 section.
+>
+> **Phase 5 (transaction building) is verified statically and against the reference model,
+> but has NOT had its own engine pass yet.** The Bitcoin path reproduces the BIP-143
+> native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the Ethereum
+> paths reproduce the EIP-155 specification example and a self-consistent EIP-1559 typed
+> transaction; the harness that asserts all this on a real engine is folded into the suite
+> selftest but has not yet been run there. No transaction CoinXT assembles should be called
+> broadcastable until it is accepted by an independent decoder or a testnet node.
 >
 > **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
 > engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
@@ -401,6 +408,67 @@ use for a tweak. `cxBip39Wordlist()` returns the 2048 words as 8-byte
 space-padded slots (16384 bytes), which is what an autocomplete in a mnemonic
 entry field wants.
 
+## Transactions (phase 5)
+
+Thirteen handlers that assemble and sign Bitcoin and Ethereum transactions by
+composing the primitives above. **This layer produces the digest; the app
+signs it** (`cxSign` for Bitcoin, `cxSignRecoverable` for Ethereum) and confirms
+the decoded human intent first - a blind signer is a footgun. Repeated fields
+(a transaction's inputs and outputs) cross as **comma-separated lists of hex**,
+one item per input or output, the same convention the RLP and bech32 layers use.
+
+> **Verified statically and against `tools/coin_reference.py`; needs an OXT
+> pass.** The reference model reproduces the BIP-143 native-P2WPKH worked
+> example, the EIP-155 spec example and a self-consistent EIP-1559 transaction;
+> nothing here is broadcastable until an independent decoder or a testnet node
+> accepts it.
+
+**Byte helpers.**
+
+- `cxVarInt(pN)` - Bitcoin CompactSize (1/3/5/9 bytes) as `Data`.
+- `cxDerEncode(pCompactSig)` - a 64-byte compact `r || s` (the `cxSign` shape)
+  to a DER signature. The `SIGHASH` type byte is the caller's to append.
+
+**Bitcoin.** Amounts and counters are integers (a satoshi amount stays inside
+exact-integer range); a `scriptCode` is passed BARE and this layer adds its
+length prefix.
+
+- `cxBtcOutpoint(pTxidHex, pVout)` - a 36-byte outpoint from a display-order
+  txid and an index (txid byte-reversed, LE index).
+- `cxBtcOutput(pAmountSat, pScriptHex)` - a serialized output (LE amount +
+  CompactSize script length + script).
+- `cxBtcSighashLegacy(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex,
+  pOutputs, pLocktime, pSighashType)` - the pre-SegWit SIGHASH_ALL preimage
+  digest for 1-based input `pIndex`.
+- `cxBtcSighashSegwit(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex,
+  pAmountSat, pLocktime, pSighashType)` - the BIP-143 preimage digest (commits
+  to the input amount).
+- `cxBtcWitness(pItems)` - a serialized witness stack from a comma list of item
+  hex (`""` for an input with no witness).
+- `cxBtcTxEncode(pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses,
+  pOutputs, pLocktime)` - the raw transaction; emits the BIP-141 marker+flag and
+  witness section when any witness is non-empty.
+- `cxBtcTxid(pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime)`
+  - the display-order txid (hash256 of the non-witness serialization, reversed).
+
+**Ethereum.** Wei-scale fields (`pGasPriceHex`, `pValueHex`, the 1559 fee caps)
+cross as minimal big-endian **hex** because they exceed exact-integer range; the
+counters (`pNonce`, `pGas`, `pChainId`, `pRecid`) are integers. `pToHex` is the
+20-byte recipient (`""` for a contract creation); `pRHex`/`pSHex` are the
+compact `r`/`s` from `cxSignRecoverable`.
+
+- `cxEthLegacySighash(pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex,
+  pChainId)` - the EIP-155 signing digest.
+- `cxEthLegacyEncode(pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex,
+  pChainId, pRecid, pRHex, pSHex)` - the signed legacy transaction; returns an
+  array `["raw"]`, `["txhash"]` (both hex). `v = pRecid + 2*pChainId + 35`.
+- `cxEth1559Sighash(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex,
+  pValueHex, pDataHex)` - the EIP-1559 (type 0x02) signing digest, empty access
+  list.
+- `cxEth1559Encode(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex,
+  pValueHex, pDataHex, pRecid, pRHex, pSHex)` - the signed typed transaction;
+  returns `["raw"]`, `["txhash"]`.
+
 ## Length accessors
 
 Fourteen zero-argument handlers returning the sizes the library actually reports.
@@ -489,8 +557,9 @@ backup, and confirm-before-sign belong to the app.
 - `tools/coin-kat.py` drives every symbol headless through ctypes against public vectors. It
   needs a C compiler; it builds the shim from source and cannot be fooled by a stale artifact.
 - `tests/coin-selftest.livecodescript` is the engine-side harness. Paste it into a stack
-  script and it builds its own UI and exercises all 16 handlers above, including the aliasing
-  trap and the fail-closed guards.
+  script and it builds its own UI and exercises every public handler above, including the
+  aliasing trap, the fail-closed guards and (phase 5) the BIP-143 / EIP-155 / EIP-1559
+  transaction KATs.
 - `tools/check-selftest-vectors.py` re-derives the harness's expected digests on every push so
   they cannot drift, using Python's own implementations where an independent one exists.
 

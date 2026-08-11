@@ -405,6 +405,68 @@ def main(argv):
         elif not terse:
             print("  OK  the passphrase genuinely changes the seed")
 
+    # --- phase 5: transactions -----------------------------------------------
+    if ref is not None:
+        ver, lock = 1, 17
+        ins = [(ref.btc_outpoint(bytes.fromhex(k.get("kTxid0", "")), 0), 0xffffffee),
+               (ref.btc_outpoint(bytes.fromhex(k.get("kTxid1", "")), 1), 0xffffffff)]
+        o0 = ref.btc_output(112340000, bytes.fromhex(k.get("kTxOutScript0", "")))
+        o1 = ref.btc_output(223450000, bytes.fromhex(k.get("kTxOutScript1", "")))
+        outs = [o0, o1]
+        want("kTxOutpoint0", ins[0][0].hex(), "coin_reference")
+        want("kTxOutpoint1", ins[1][0].hex(), "coin_reference")
+        want("kTxOut0", o0.hex(), "coin_reference")
+        want("kTxOut1", o1.hex(), "coin_reference")
+        d0 = ref.btc_sighash_legacy(ver, ins, outs, 0,
+                                    bytes.fromhex(k.get("kTxScriptCode0", "")), lock)
+        d1 = ref.btc_sighash_segwit(ver, ins, outs, 1,
+                                    bytes.fromhex(k.get("kTxScriptCode1", "")),
+                                    600000000, lock)
+        want("kTxLegacySighash", d0.hex(), "coin_reference")
+        want("kTxSegwitSighash", d1.hex(), "coin_reference")
+        r0, s0, _ = ref.ecdsa_sign_recoverable(bytes.fromhex(k.get("kTxSeckey0", "")), d0)
+        der0 = ref.der_encode(r0, s0) + b"\x01"
+        want("kTxScriptSig0", (bytes([len(der0)]) + der0).hex(), "coin_reference")
+        r1, s1, _ = ref.ecdsa_sign_recoverable(bytes.fromhex(k.get("kTxSeckey1", "")), d1)
+        der1 = ref.der_encode(r1, s1) + b"\x01"
+        pub1 = bytes.fromhex(k.get("kTxPubkey1", ""))
+        want("kTxWitness1",
+             (b"\x02" + bytes([len(der1)]) + der1 + bytes([len(pub1)]) + pub1).hex(),
+             "coin_reference")
+        raw, txid = ref.btc_tx(ver, ins, outs, lock,
+                               [bytes([len(der0)]) + der0, b""], [[], [der1, pub1]])
+        want("kTxSignedRaw", raw.hex(), "coin_reference")
+        want("kTxTxid", txid.hex(), "coin_reference")
+        # cxPublicKey(kTxSeckey1) must be the BIP's published compressed key, so
+        # the harness's pubkey cross-check is against a real value, not itself.
+        if ref.pubkey(bytes.fromhex(k.get("kTxSeckey1", ""))).hex() != k.get("kTxPubkey1"):
+            problems.append("kTxPubkey1 is not the compressed public key of "
+                            "kTxSeckey1 - the harness's derive-and-compare is empty")
+        elif not terse:
+            print("  OK  kTxPubkey1 is genuinely the pubkey of kTxSeckey1")
+
+        to = bytes.fromhex(k.get("kEthTo", ""))
+        gp = bytes.fromhex(k.get("kEthGasPrice", ""))
+        val = bytes.fromhex(k.get("kEthValue", ""))
+        h155 = ref.eth_legacy_sighash(9, int.from_bytes(gp, "big"), 21000, to,
+                                      int.from_bytes(val, "big"), b"", 1)
+        want("kEthLegacySighash", h155.hex(), "coin_reference")
+        raw155, txh155 = ref.eth_legacy_encode(9, int.from_bytes(gp, "big"), 21000,
+                                               to, int.from_bytes(val, "big"), b"", 1,
+                                               bytes.fromhex(k.get("kEthSeckey", "")))
+        want("kEthLegacyRaw", raw155.hex(), "coin_reference")
+        want("kEthLegacyTxhash", txh155.hex(), "coin_reference")
+
+        mp = int.from_bytes(bytes.fromhex(k.get("kEth1559MaxPrio", "")), "big")
+        mf = int.from_bytes(bytes.fromhex(k.get("kEth1559MaxFee", "")), "big")
+        v1559 = int.from_bytes(bytes.fromhex(k.get("kEth1559Value", "")), "big")
+        h1559 = ref.eth_1559_sighash(1, 0, mp, mf, 21000, to, v1559, b"")
+        want("kEth1559Sighash", h1559.hex(), "coin_reference")
+        raw1559, txh1559 = ref.eth_1559_encode(1, 0, mp, mf, 21000, to, v1559, b"",
+                                               bytes.fromhex(k.get("kEthSeckey", "")))
+        want("kEth1559Raw", raw1559.hex(), "coin_reference")
+        want("kEth1559Txhash", txh1559.hex(), "coin_reference")
+
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()
     if short != k.get("kBip39Seed", "")[:40]:
@@ -447,6 +509,23 @@ def main(argv):
         "kSegwitV0WithBech32m": "a negative vector, checked as genuinely invalid",
         "kBech32Valid": "a positive vector, checked as genuinely decodable",
         "kSegwitTestnet": "an input; the program decoded from it is checked",
+        # phase 5 inputs (published fixtures the derived vectors are built from)
+        "kTxSeckey0": "a published test private key (BIP-143 input 0)",
+        "kTxSeckey1": "a published test private key (BIP-143 input 1)",
+        "kTxPubkey1": "the BIP's published pubkey; checked to be kTxSeckey1's",
+        "kTxid0": "a published outpoint txid (BIP-143 input 0)",
+        "kTxid1": "a published outpoint txid (BIP-143 input 1)",
+        "kTxScriptCode0": "the published P2PK scriptCode (BIP-143 input 0)",
+        "kTxScriptCode1": "the published P2WPKH scriptCode (BIP-143 input 1)",
+        "kTxOutScript0": "a published output scriptPubKey (BIP-143)",
+        "kTxOutScript1": "a published output scriptPubKey (BIP-143)",
+        "kEthSeckey": "the EIP-155 spec example private key (0x46 * 32)",
+        "kEthTo": "the EIP-155 spec example recipient address",
+        "kEthGasPrice": "the EIP-155 spec example gas price (hex)",
+        "kEthValue": "the EIP-155 spec example value (hex)",
+        "kEth1559MaxPrio": "a chosen EIP-1559 max priority fee (hex)",
+        "kEth1559MaxFee": "a chosen EIP-1559 max fee (hex)",
+        "kEth1559Value": "a chosen EIP-1559 value (hex)",
     }
     uncovered = sorted(set(k) - checked - set(inputs))
     if uncovered:

@@ -198,9 +198,17 @@ then **207/207** on the same-day re-run with the fix and the script layer embedd
 65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) have now executed on a real
 engine against the published vectors - the suite coverage gate counts exactly that, 65/65.
 
-Next: transaction building and signing (phase 5), which is explicitly optional - the primitive layer
-is useful and shippable without it. Today CoinXT hashes, signs, derives a wallet from a mnemonic and
-turns a key into an address; it does not yet build a broadcastable transaction.
+**Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers, so
+the surface is now **78** public handlers (35 in the `.lcb`, 43 in the script layer). It composes the
+primitives into Bitcoin (legacy SIGHASH_ALL + BIP-143 SegWit) and Ethereum (EIP-155 legacy + EIP-1559
+typed) sighashes, signing and serialization. The reference model `tools/coin_reference.py` reproduces
+the BIP-143 native-P2WPKH worked example byte for byte (a two-input transaction that exercises both
+sighash algorithms and its witness), the EIP-155 specification example, and a self-consistent EIP-1559
+transaction; `tools/check-selftest-vectors.py` re-derives every phase-5 harness constant from it. This
+phase has **not** had its own engine pass yet: the harness is folded into the suite selftest and needs
+a run there, and no transaction should be called broadcastable until an independent decoder or testnet
+node accepts it. Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no
+BIP-340).
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,
