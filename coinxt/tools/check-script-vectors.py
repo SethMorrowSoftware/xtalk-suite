@@ -428,6 +428,79 @@ BIP44_ADDRESSES = [
 ]
 
 
+def _even_hex(n):
+    """A non-negative integer as minimal big-endian hex, padded to whole bytes -
+    the shape a wei-scale field crosses to the script as (cxHexDecode wants an
+    even length; cxStripLeadingZeroBytes then makes it canonical for RLP)."""
+    h = format(n, "x")
+    return ("0" + h) if len(h) % 2 else h
+
+
+def _phase5_fixture():
+    """Everything the phase-5 executing checks consume, derived once from the
+    oracle. The ECDSA signatures are RFC 6979 deterministic, so the oracle's
+    exact (r, s) can be fed straight to the encoders here - what is under test is
+    the SCRIPT's DER / sighash / varint / witness / RLP / transaction
+    serialization over genuine crypto, not a signer in the interpreter."""
+    ver, lock = 1, 17
+    txid0 = "9f96ade4b41d5433f4eda31e1738ec2b36f6e7d1420d94a6af99801a88f7f7ff"
+    txid1 = "8ac60eb9575db5b2d987e29f301b5b819ea83a5c6579d282d189cc04b8e151ef"
+    op0 = REF.btc_outpoint(bytes.fromhex(txid0), 0)
+    op1 = REF.btc_outpoint(bytes.fromhex(txid1), 1)
+    seq0, seq1 = 0xffffffee, 0xffffffff
+    spk0 = "76a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac"
+    spk1 = "76a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac"
+    out0 = REF.btc_output(0x06b22c20, bytes.fromhex(spk0))
+    out1 = REF.btc_output(0x0d519390, bytes.fromhex(spk1))
+    sc0 = "2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac"
+    sc1 = "76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac"
+    ins, outs = [(op0, seq0), (op1, seq1)], [out0, out1]
+    d0 = REF.btc_sighash_legacy(ver, ins, outs, 0, bytes.fromhex(sc0), lock)
+    d1 = REF.btc_sighash_segwit(ver, ins, outs, 1, bytes.fromhex(sc1), 0x23c34600, lock)
+    r0, s0, _ = REF.ecdsa_sign_recoverable(
+        bytes.fromhex("bbc27228ddcb9209d7fd6f36b02f7dfa6252af40bb2f1cbc7a557da8027ff866"), d0)
+    r1, s1, _ = REF.ecdsa_sign_recoverable(
+        bytes.fromhex("619c335025c7f4012e556c2a58b2506e30b8511b53ade95ea316fd8c3286feb9"), d1)
+    sig0 = REF.der_encode(r0, s0) + b"\x01"
+    sig1 = REF.der_encode(r1, s1) + b"\x01"
+    pub1 = "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
+    wit1 = (REF.varint(2) + REF.varint(len(sig1)) + sig1
+            + REF.varint(len(pub1) // 2) + bytes.fromhex(pub1))
+    scriptsig0 = (bytes([len(sig0)]) + sig0).hex()
+    raw, txid = REF.btc_tx(ver, ins, outs, lock,
+                           [bytes([len(sig0)]) + sig0, b""],
+                           [[], [sig1, bytes.fromhex(pub1)]])
+    assert raw.hex() == REF.BIP143_SIGNED_TX, "fixture drifted from the oracle"
+    to, sk46 = "3535353535353535353535353535353535353535", bytes.fromhex("46" * 32)
+    h155 = REF.eth_legacy_sighash(9, 20 * 10**9, 21000, bytes.fromhex(to), 10**18, b"", 1)
+    r155, s155, recid155 = REF.ecdsa_sign_recoverable(sk46, h155)
+    raw155, txhash155 = REF.eth_legacy_encode(9, 20 * 10**9, 21000, bytes.fromhex(to),
+                                              10**18, b"", 1, sk46)
+    h1559 = REF.eth_1559_sighash(1, 0, 10**9, 20 * 10**9, 21000, bytes.fromhex(to), 10**17, b"")
+    r1559, s1559, recid1559 = REF.ecdsa_sign_recoverable(sk46, h1559)
+    raw1559, txhash1559 = REF.eth_1559_encode(1, 0, 10**9, 20 * 10**9, 21000,
+                                              bytes.fromhex(to), 10**17, b"", sk46)
+    return {
+        "txid0": txid0, "op0": op0, "spk0": spk0,
+        "outpoints": op0.hex() + "," + op1.hex(), "sequences": f"{seq0},{seq1}",
+        "outputs": out0.hex() + "," + out1.hex(), "sc0": sc0, "sc1": sc1,
+        "d0": d0, "d1": d1, "rs0": (r0, s0),
+        "compact0": r0.to_bytes(32, "big") + s0.to_bytes(32, "big"),
+        "witness1": sig1.hex() + "," + pub1, "wit1": wit1,
+        # scriptSigs = [scriptsig0, ""] and witnesses = ["", wit1]: the
+        # trailing-empty and leading-empty shapes the reference tx needs.
+        "scriptsigs": scriptsig0 + ",", "witnesses": "," + wit1.hex(), "txid": txid,
+        "ethTo": to, "ethGasPrice": _even_hex(20 * 10**9), "ethValue": _even_hex(10**18),
+        "h155": h155, "recid155": recid155,
+        "r155hex": r155.to_bytes(32, "big").hex(), "s155hex": s155.to_bytes(32, "big").hex(),
+        "raw155": raw155, "txhash155": txhash155,
+        "m1559prio": _even_hex(10**9), "m1559fee": _even_hex(20 * 10**9),
+        "v1559": _even_hex(10**17), "h1559": h1559, "recid1559": recid1559,
+        "r1559hex": r1559.to_bytes(32, "big").hex(), "s1559hex": s1559.to_bytes(32, "big").hex(),
+        "raw1559": raw1559, "txhash1559": txhash1559,
+    }
+
+
 def check_vectors(c, ip):
     def call(fn, *args):
         return ip.call(fn, [to_str(a) if isinstance(a, (bytes, bytearray)) else a
@@ -767,6 +840,100 @@ def check_vectors(c, ip):
             got = call("cxEthAddressChecksum", call("cxEthAddress", node["pubkey"]))
         c.ck(f"{path} -> {kind}", got, want)
 
+    # ---- phase 5: transactions ---------------------------------------------
+    # These EXECUTE the transaction layer, which is the whole point of running it
+    # here: phase 5 is pure script over the phase 1-4 primitives, so a defect in
+    # its serialization is invisible until something runs it - and until this set
+    # existed, nothing did (the oracle rebuilds the tx, but never through the
+    # script). The signatures fed to the encoders are the oracle's own RFC 6979
+    # deterministic (r, s), so no signer is needed in the interpreter.
+    #
+    # THIS SET EARNED ITS KEEP THE DAY IT WAS WRITTEN. The whole-transaction check
+    # failed on the first run and it was a real, would-be-red engine defect: the
+    # BIP-143 tx has a trailing EMPTY scriptSig (input 1 is segwit, its sig is in
+    # the witness), and the engine ignores ONE trailing delimiter when it counts
+    # items - so cxBtcTxEncode's strict "items == tCount" guard read the list as
+    # short and REFUSED to assemble the reference transaction outright. Fixed by
+    # reading every list by index and bounding the guard to "too long only"; the
+    # regression vector is the whole-transaction check below.
+    c.note("\nphase 5: Bitcoin transaction pieces")
+    F = _phase5_fixture()
+    for n in (0, 1, 252, 253, 65535, 65536, 4294967295, 4294967296):
+        c.ck(f"cxVarInt({n})", to_bytes(call("cxVarInt", n)).hex(), REF.varint(n).hex())
+    c.ck("cxVarInt refuses a negative count", throws("cxVarInt", -1), True)
+    c.ck("cxBtcOutpoint (txid reversed + LE vout)",
+         to_bytes(call("cxBtcOutpoint", F["txid0"], 0)).hex(), F["op0"].hex())
+    c.ck("cxBtcOutpoint refuses a 31-byte txid", throws("cxBtcOutpoint", "00" * 31, 0), True)
+    c.ck("cxBtcOutput (LE amount + script)",
+         to_bytes(call("cxBtcOutput", 0x06b22c20, F["spk0"])).hex(),
+         REF.btc_output(0x06b22c20, bytes.fromhex(F["spk0"])).hex())
+
+    c.note("\nphase 5: BIP-143 native-P2WPKH sighashes")
+    c.ck("cxBtcSighashLegacy (input 0, SIGHASH_ALL)",
+         to_bytes(call("cxBtcSighashLegacy", 1, F["outpoints"], F["sequences"], 1,
+                       F["sc0"], F["outputs"], 17, 1)).hex(), F["d0"].hex())
+    c.ck("cxBtcSighashSegwit (input 1, BIP-143)",
+         to_bytes(call("cxBtcSighashSegwit", 1, F["outpoints"], F["sequences"], 2,
+                       F["sc1"], 0x23c34600, F["outputs"], 17, 1)).hex(), F["d1"].hex())
+    # The CRITICAL fail-open the review caught: a BIP-143 preimage without
+    # hashOutputs signs a payment to anywhere. An empty outputs list is refused.
+    c.ck("cxBtcSighashSegwit refuses an empty outputs list",
+         throws("cxBtcSighashSegwit", 1, F["outpoints"], F["sequences"], 2,
+                F["sc1"], 0x23c34600, "", 17, 1), True)
+    c.ck("cxBtcSighashLegacy refuses an out-of-range input index",
+         throws("cxBtcSighashLegacy", 1, F["outpoints"], F["sequences"], 3,
+                F["sc0"], F["outputs"], 17, 1), True)
+    c.ck("cxBtcSighashSegwit refuses non-parallel outpoint/sequence lists",
+         throws("cxBtcSighashSegwit", 1, F["outpoints"], "4294967295", 1,
+                F["sc1"], 0x23c34600, F["outputs"], 17, 1), True)
+
+    c.note("\nphase 5: DER, witness, whole transaction")
+    c.ck("cxDerEncode (input 0 signature)",
+         to_bytes(call("cxDerEncode", F["compact0"])).hex(), REF.der_encode(*F["rs0"]).hex())
+    c.ck("cxDerEncode refuses a signature that is not 64 bytes",
+         throws("cxDerEncode", "\x00" * 63), True)
+    c.ck("cxBtcWitness (count + sig + pubkey)",
+         to_bytes(call("cxBtcWitness", F["witness1"])).hex(), F["wit1"].hex())
+    c.ck("cxBtcWitness of an empty stack is a single 00",
+         to_bytes(call("cxBtcWitness", "")).hex(), REF.varint(0).hex())
+    # THE REGRESSION VECTOR. F["scriptsigs"] is "<sig0>," - a trailing empty item
+    # for input 1's absent scriptSig - which the engine counts as ONE item. The
+    # old strict guard refused this exact reference transaction; this asserts it
+    # now assembles byte for byte. One vector per defect, per the review rule.
+    c.ck("cxBtcTxEncode assembles the BIP-143 tx (trailing-empty scriptSig)",
+         to_bytes(call("cxBtcTxEncode", 1, F["outpoints"], F["scriptsigs"], F["sequences"],
+                       F["witnesses"], F["outputs"], 17)).hex(), REF.BIP143_SIGNED_TX)
+    c.ck("cxBtcTxid (non-witness serialization, reversed)",
+         call("cxBtcTxid", 1, F["outpoints"], F["scriptsigs"], F["sequences"],
+              F["outputs"], 17), F["txid"].hex())
+    c.ck("cxBtcTxEncode refuses zero inputs",
+         throws("cxBtcTxEncode", 1, "", "", "", "", F["outputs"], 17), True)
+    c.ck("cxBtcTxEncode refuses a non-parallel sequence list",
+         throws("cxBtcTxEncode", 1, F["outpoints"], F["scriptsigs"], "4294967295",
+                F["witnesses"], F["outputs"], 17), True)
+    # A witness list may not carry MORE entries than inputs (the extras would be
+    # dropped). A SHORT one cannot be rejected: [wit, ""] and [wit] are the same
+    # string under the chunk rule, so a missing trailing witness reads as empty.
+    c.ck("cxBtcTxEncode refuses a witness list longer than the input count",
+         throws("cxBtcTxEncode", 1, F["outpoints"], F["scriptsigs"], F["sequences"],
+                F["witnesses"] + "," + F["wit1"].hex(), F["outputs"], 17), True)
+
+    c.note("\nphase 5: Ethereum EIP-155 and EIP-1559")
+    c.ck("cxEthLegacySighash matches the EIP-155 example",
+         to_bytes(call("cxEthLegacySighash", 9, F["ethGasPrice"], 21000, F["ethTo"],
+                       F["ethValue"], "", 1)).hex(), F["h155"].hex())
+    res155 = call("cxEthLegacyEncode", 9, F["ethGasPrice"], 21000, F["ethTo"], F["ethValue"],
+                  "", 1, F["recid155"], F["r155hex"], F["s155hex"])
+    c.ck("cxEthLegacyEncode raw (v = 37)", res155["raw"], F["raw155"].hex())
+    c.ck("cxEthLegacyEncode txhash", res155["txhash"], F["txhash155"].hex())
+    c.ck("cxEth1559Sighash matches the typed-tx digest",
+         to_bytes(call("cxEth1559Sighash", 1, 0, F["m1559prio"], F["m1559fee"], 21000,
+                       F["ethTo"], F["v1559"], "")).hex(), F["h1559"].hex())
+    res1559 = call("cxEth1559Encode", 1, 0, F["m1559prio"], F["m1559fee"], 21000, F["ethTo"],
+                   F["v1559"], "", F["recid1559"], F["r1559hex"], F["s1559hex"])
+    c.ck("cxEth1559Encode raw (0x02 envelope)", res1559["raw"], F["raw1559"].hex())
+    c.ck("cxEth1559Encode txhash", res1559["txhash"], F["txhash1559"].hex())
+
 
 def main(argv):
     terse = "--check" in argv[1:]
@@ -808,7 +975,7 @@ def main(argv):
     # ran" look identical on the way out otherwise, and on this surface the
     # second one is indistinguishable from a green build. Raise it when the set
     # grows; it exists to catch collapse, not to track the exact number.
-    floor = 20 if cc is None else 200
+    floor = 20 if cc is None else 240
     if c.count < floor:
         print(f"check-script-vectors: FAILED - only {c.count} checks ran, expected at "
               f"least {floor}. Something stopped the vector set early.")

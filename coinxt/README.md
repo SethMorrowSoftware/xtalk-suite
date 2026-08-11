@@ -197,7 +197,7 @@ folded into the suite selftest - 205/206 on the first pass (the trailing-separat
 then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
 65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) had by then executed on a real
 engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for **78** total; the 13
-transaction handlers are model-verified but have not yet had their own engine pass.
+transaction handlers are model-verified and executed headlessly but have not yet had their own engine pass.
 
 **Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers, so
 the surface is now **78** public handlers (35 in the `.lcb`, 43 in the script layer). It composes the
@@ -205,11 +205,15 @@ primitives into Bitcoin (legacy SIGHASH_ALL + BIP-143 SegWit) and Ethereum (EIP-
 typed) sighashes, signing and serialization. The reference model `tools/coin_reference.py` reproduces
 the BIP-143 native-P2WPKH worked example byte for byte (a two-input transaction that exercises both
 sighash algorithms and its witness), the EIP-155 specification example, and a self-consistent EIP-1559
-transaction; `tools/check-selftest-vectors.py` re-derives every phase-5 harness constant from it. This
-phase has **not** had its own engine pass yet: the harness is folded into the suite selftest and needs
-a run there, and no transaction should be called broadcastable until an independent decoder or testnet
-node accepts it. Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no
-BIP-340).
+transaction; `tools/check-selftest-vectors.py` re-derives every phase-5 harness constant from it. Since
+2026-08-11 all thirteen handlers are also **executed headlessly**: `tools/check-script-vectors.py` drives
+them through the real `.livecodescript` against those vectors (251 checks, the encoders fed the oracle's
+own deterministic signatures), the same net phases 3-4 carry. It caught a defect the static gates could
+not - `cxBtcTxEncode` refused to assemble the reference transaction because its trailing-empty scriptSig
+collapses under the engine's one-trailing-delimiter chunk rule (fixed and pinned). This phase has **not**
+had its own on-engine pass yet: the harness is folded into the suite selftest and needs a run there, and
+no transaction should be called broadcastable until an independent decoder or testnet node accepts it.
+Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,

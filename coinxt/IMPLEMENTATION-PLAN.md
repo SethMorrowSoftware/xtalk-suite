@@ -196,7 +196,7 @@ agree on the same key from the same mnemonic).
   / `cxHdChainCode` accessors - the fields are exactly what BIP-32 serializes, in order, so `cxXprv`
   is a concatenation and not a translation.
 
-## Phase 5 - Transaction building and signing (stretch) - BUILT 2026-08-11, needs its engine pass
+## Phase 5 - Transaction building and signing (stretch) - BUILT + EXECUTED headlessly 2026-08-11, needs its engine pass
 
 - Bitcoin: legacy and SegWit (BIP-143) sighash construction and signing in script (compose `cxSign` +
   the encoders), producing a raw transaction. SHIPPED: `cxBtcSighashLegacy`, `cxBtcSighashSegwit`,
@@ -210,11 +210,16 @@ agree on the same key from the same mnemonic).
   and its witness), plus the EIP-155 spec example and a self-consistent EIP-1559 transaction.
 
 **Done when:** a raw transaction CoinXT built and signed is accepted as valid by an independent decoder /
-testnet node. **Status:** verified statically and against `tools/coin_reference.py`, with the harness
-folded into the suite selftest; the on-engine pass and the independent-decoder / testnet acceptance are
-the two remaining bars, so nothing here is called broadcastable yet. **Risk retired at the model level:**
-the jump from "signs a digest" to "assembles a real transaction." Explicitly optional: the primitive
-layer (phases 1-4) is useful and shippable without this.
+testnet node. **Status:** EXECUTED headlessly and verified against `tools/coin_reference.py` -
+`tools/check-script-vectors.py` now drives all thirteen handlers THROUGH the script against the BIP-143 /
+EIP-155 / EIP-1559 vectors (251 checks, the encoders fed the oracle's own deterministic signatures), the
+same net phases 3-4 carry. It paid for itself immediately, catching a would-be-red engine defect the
+static gates could not see: `cxBtcTxEncode` refused to assemble the reference transaction because its
+trailing-empty scriptSig collapses under the engine's one-trailing-delimiter chunk rule (fixed and
+pinned). The harness is folded into the suite selftest; the on-engine pass and the independent-decoder /
+testnet acceptance are the two remaining bars, so nothing here is called broadcastable yet. **Risk retired
+at the model level:** the jump from "signs a digest" to "assembles a real transaction." Explicitly
+optional: the primitive layer (phases 1-4) is useful and shippable without this.
 
 ## Phase 6 - Packaging, examples, release
 

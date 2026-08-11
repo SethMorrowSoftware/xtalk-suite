@@ -2294,19 +2294,31 @@ private function cxBtcTxEncodeInner pVersion, pOutpoints, pScriptSigs, pSequence
    if tCount is 0 then
       throw "CoinXT: cxBtcTxEncode: a transaction needs at least one input."
    end if
-   if the number of items of pScriptSigs is not tCount or the number of items of pSequences is not tCount then
-      throw "CoinXT: cxBtcTxEncode: the input lists must be parallel."
+   -- Every list is read BY INDEX below (item 1..tCount), so a missing entry
+   -- reads as empty: for a scriptSig that means "no scriptSig", for a witness
+   -- "no witness" - the correct meaning, not an error. That read-by-index is
+   -- FORCED by the engine's chunk rule, and getting it wrong was a real bug the
+   -- headless gate caught before the engine did: the engine ignores ONE trailing
+   -- delimiter when it counts items, so a list whose LAST input is empty
+   -- ("<sig>," for [sig, ""], the common legacy-then-segwit shape) counts as
+   -- tCount-1 and is INDISTINGUISHABLE from a genuinely short list. A strict
+   -- "items == tCount" check therefore REFUSED the BIP-143 reference transaction
+   -- outright. The count can only catch a list that is too LONG (extra entries
+   -- serialization would silently drop); a short one is read as trailing empties.
+   -- Sequences are the exception and stay strict: an input always carries one and
+   -- it is never empty, so that list is a reliable one-per-input cross-check.
+   if the number of items of pSequences is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the sequence list must have one entry per input."
    end if
-   -- The witness list, when present, must be parallel too: a short list would
-   -- silently emit an EMPTY witness stack for the trailing inputs (a well-formed
-   -- but consensus-invalid tx), a long one would drop the extras. Either is a
-   -- fail-open, so require exactly one witness slot per input (each may be "").
-   if pWitnesses is not "" and the number of items of pWitnesses is not tCount then
-      throw "CoinXT: cxBtcTxEncode: the witness list must have one entry per input (empty entries allowed)."
+   if the number of items of pScriptSigs > tCount then
+      throw "CoinXT: cxBtcTxEncode: the scriptSig list has more entries than there are inputs."
+   end if
+   if pWitnesses is not "" and the number of items of pWitnesses > tCount then
+      throw "CoinXT: cxBtcTxEncode: the witness list has more entries than there are inputs."
    end if
    put false into tHasWitness
    if pWitnesses is not "" then
-      repeat with tI = 1 to the number of items of pWitnesses
+      repeat with tI = 1 to tCount
          if item tI of pWitnesses is not "" then
             put true into tHasWitness
          end if
