@@ -563,7 +563,8 @@ The shim gains four exports (34 now), `src/coinxt.lcb` wraps three of them, and
   `tools/check-script-vectors.py` runs the REAL script against 14 official BIP-39 entropy vectors,
   BIP-32 test vectors 1-3, and the "abandon ... about" mnemonic down `m/44'/0'/0'/0/0`,
   `m/84'/0'/0'/0/0` and `m/44'/60'/0'/0/0` to the published Bitcoin and Ethereum addresses. 170
-  checks, up from 87 (219 now, with the trailing-separator negatives). The ENGINE pass followed on
+  checks, up from 87 (219 after the trailing-separator negatives; 251 now that phase 5 executes too).
+  The ENGINE pass followed on
   2026-08-10: the folded harness walked the same paths to the same published addresses on a real
   engine, and the phase closed at 207/207 on the re-run - after the engine surfaced the one real
   defect, the `"m/"` fail-open recorded at the end of this file.
@@ -801,12 +802,12 @@ first 2026-08-10 pass touched came back on the side the code assumed, including 
 marshalling bets: the C `int` flag marshals (33 vs 65 came back distinct) and `Boolean` returns
 work (`cxVerify` answered both true and false).
 
-**Phase 5, transaction building and signing - BUILT and model-verified 2026-08-11; its own engine
-pass is the one bar left.** ABI untouched (no shim change: this is pure script over the existing
-primitives). `src/coinxt.livecodescript` gains 13 public handlers, so the surface is 78 (35 `.lcb` +
-43 script): `cxVarInt`, `cxDerEncode`, `cxBtcOutpoint`, `cxBtcOutput`, `cxBtcSighashLegacy`,
-`cxBtcSighashSegwit`, `cxBtcWitness`, `cxBtcTxEncode`, `cxBtcTxid`, `cxEthLegacySighash`,
-`cxEthLegacyEncode`, `cxEth1559Sighash`, `cxEth1559Encode`.
+**Phase 5, transaction building and signing - BUILT, EXECUTED headlessly, and model-verified
+2026-08-11; its own on-engine pass is the one bar left.** ABI untouched (no shim change: this is pure
+script over the existing primitives). `src/coinxt.livecodescript` gains 13 public handlers, so the
+surface is 78 (35 `.lcb` + 43 script): `cxVarInt`, `cxDerEncode`, `cxBtcOutpoint`, `cxBtcOutput`,
+`cxBtcSighashLegacy`, `cxBtcSighashSegwit`, `cxBtcWitness`, `cxBtcTxEncode`, `cxBtcTxid`,
+`cxEthLegacySighash`, `cxEthLegacyEncode`, `cxEth1559Sighash`, `cxEth1559Encode`.
 
 - **The KAT is the strongest one this member has.** The Bitcoin case IS the BIP-143 native-P2WPKH
   worked example: a two-input transaction where input 0 is a legacy P2PK spend (SIGHASH_ALL preimage)
@@ -835,11 +836,33 @@ primitives). `src/coinxt.livecodescript` gains 13 public handlers, so the surfac
 - **This layer produces the digest; the app signs it.** `cxSign` (Bitcoin) / `cxSignRecoverable`
   (Ethereum, for the recovery id) are the app's calls on a digest THIS layer built, and CLAUDE.md
   rule 3 stands: confirm the decoded human intent before signing. A blind signer is a footgun.
+- **The transaction layer is now EXECUTED headlessly, and it caught a would-be-red engine line the
+  day it was wired up (2026-08-11).** Phase 5 shipped oracle-verified: `coin_reference.py` rebuilds the
+  BIP-143 worked example byte for byte, but nothing ran it THROUGH THE SCRIPT - the exact gap phase 3
+  and phase 4 had closed with `tools/check-script-vectors.py` and phase 5 had not. Closing it (32 new
+  executing vectors, 219 -> 251 checks, every one of the 13 handlers driven against the real shim; the
+  signatures fed to the encoders are the oracle's own RFC 6979 deterministic (r, s), so no signer is
+  needed in the interpreter) failed on the FIRST run, on the flagship transaction. **`cxBtcTxEncode`
+  refused to assemble the BIP-143 reference tx at all.** The cause is the trailing-delimiter chunk rule
+  this member already learned once (the "m/" fail-open, 2026-08-10): the tx has a trailing EMPTY
+  scriptSig (input 1 is segwit, its sig lives in the witness), so the scriptSig list is "<sig0>," -
+  which the engine counts as ONE item, not two, because it ignores one trailing delimiter. The strict
+  `the number of items of pScriptSigs is not tCount` guard therefore read the list as short and threw
+  "the input lists must be parallel" over a perfectly good transaction. This slipped every offline gate
+  before because the oracle re-derives the tx from the CORRECT model and the harness assertion had
+  never run on an engine - "shipped is not run", again. The fix reads every list BY INDEX (a missing
+  entry is an empty scriptSig / empty witness, its correct meaning) and bounds the count guard to "too
+  long only", because a short list is INDISTINGUISHABLE from a legit trailing-empty one under the chunk
+  rule; sequences stay strict (never empty). It reproduced-then-fixed and is mutation-tested: restoring
+  the strict guard makes the whole-transaction vector throw again, exactly as the engine would have.
+  The harness's witness-length negative was inverted to match (a too-LONG list is the detectable error;
+  a too-short one cannot be rejected).
 - Verified: `tools/check-selftest-vectors.py` re-derives all 22 phase-5 harness constants from the
   oracle (65 of 98 re-derived, 33 inputs) and is mutation-tested (a corrupted derived tx, a corrupted
-  input, and a wrong pubkey each caught); `tools/check-script-vectors.py` still green at 219 checks
-  (the enlarged library parses and its phase-3/4 vectors are unaffected); the suite coverage gate rose
-  to 331/349 with every phase-5 handler exercised; the suite selftest is regenerated (coinxt fold now
-  43 handlers). **NOT yet run on an engine**, and the "broadcastable" claim additionally needs an
-  independent decoder or a testnet node - both recorded as the remaining bars, in the api-reference
-  status block and the plan.
+  input, and a wrong pubkey each caught); `tools/check-script-vectors.py` green at 251 checks with the
+  phase-5 handlers now EXECUTED (was 219, and the phase-3/4 vectors are unaffected); the suite coverage
+  gate holds at 331/349 with every phase-5 handler exercised; the suite selftest is regenerated (coinxt
+  fold 43 handlers). **STILL NOT run on an engine** (headless execution settles logic, not parser
+  behaviour, exactly as for phase 3/4), and the "broadcastable" claim additionally needs an independent
+  decoder or a testnet node - both recorded as the remaining bars, in the api-reference status block
+  and the plan.

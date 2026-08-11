@@ -1302,15 +1302,19 @@ command stRunTransactions
          put true into tThrew
       end try
       stAssert "cxBtcSighashSegwit refuses an empty outputs list (hashOutputs is mandatory)", tThrew
-      -- Fail closed: a witness list must have one slot per input, or a short
-      -- list would silently emit an empty witness for the trailing inputs.
+      -- Fail closed: a witness list may not carry MORE entries than there are
+      -- inputs (the extras would be silently dropped). A SHORT list cannot be
+      -- rejected here - the engine ignores one trailing delimiter, so [wit, ""]
+      -- and [wit] are the same string, and a missing trailing witness reads as
+      -- an empty stack, which is its correct meaning. tWitnesses already has one
+      -- entry per input; a third makes it over-long for this two-input tx.
       put false into tThrew
       try
-         get cxBtcTxEncode(1, tOutpoints, tScriptSigs, tSequences, cxHexEncode(tWit1), tOutputs, 17)
+         get cxBtcTxEncode(1, tOutpoints, tScriptSigs, tSequences, tWitnesses & comma & cxHexEncode(tWit1), tOutputs, 17)
       catch tErr2
          put true into tThrew
       end try
-      stAssert "cxBtcTxEncode refuses a witness list of the wrong length", tThrew
+      stAssert "cxBtcTxEncode refuses a witness list longer than the input count", tThrew
    catch tError
       stSectionFailed "transactions", tError
    end try

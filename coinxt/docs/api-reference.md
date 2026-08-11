@@ -13,13 +13,20 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation and the
 > phase-5 transaction builders). The two load differently - see the phase-3 section.
 >
-> **Phase 5 (transaction building) is verified statically and against the reference model,
-> but has NOT had its own engine pass yet.** The Bitcoin path reproduces the BIP-143
+> **Phase 5 (transaction building) is EXECUTED headlessly and verified against the reference
+> model, but has NOT had its own on-engine pass yet.** The Bitcoin path reproduces the BIP-143
 > native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the Ethereum
 > paths reproduce the EIP-155 specification example and a self-consistent EIP-1559 typed
-> transaction; the harness that asserts all this on a real engine is folded into the suite
-> selftest but has not yet been run there. No transaction CoinXT assembles should be called
-> broadcastable until it is accepted by an independent decoder or a testnet node.
+> transaction. Since 2026-08-11 all thirteen handlers are also driven THROUGH THE SCRIPT by
+> `tools/check-script-vectors.py` (251 checks) against those same vectors, with the encoders
+> fed the oracle's own deterministic signatures - the same headless-execution net phases 3 and
+> 4 carry. That net immediately caught a defect no static gate could: `cxBtcTxEncode` refused
+> to assemble the reference transaction outright, because its trailing empty scriptSig (input 1
+> is segwit) collapses under the engine's one-trailing-delimiter chunk rule and tripped a strict
+> parallel-list guard; it is fixed and pinned. The harness that asserts all this on a real
+> engine is folded into the suite selftest but has not yet been run there, and headless
+> execution settles logic, not parser behaviour. No transaction CoinXT assembles should be
+> called broadcastable until it is accepted by an independent decoder or a testnet node.
 >
 > **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
 > engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
@@ -417,11 +424,23 @@ the decoded human intent first - a blind signer is a footgun. Repeated fields
 (a transaction's inputs and outputs) cross as **comma-separated lists of hex**,
 one item per input or output, the same convention the RLP and bech32 layers use.
 
-> **Verified statically and against `tools/coin_reference.py`; needs an OXT
-> pass.** The reference model reproduces the BIP-143 native-P2WPKH worked
-> example, the EIP-155 spec example and a self-consistent EIP-1559 transaction;
-> nothing here is broadcastable until an independent decoder or a testnet node
-> accepts it.
+> **Executed headlessly and verified against `tools/coin_reference.py`; needs an
+> OXT pass.** The reference model reproduces the BIP-143 native-P2WPKH worked
+> example, the EIP-155 spec example and a self-consistent EIP-1559 transaction,
+> and `tools/check-script-vectors.py` drives all thirteen handlers THROUGH THE
+> script against those vectors (the encoders fed the oracle's own deterministic
+> signatures). Nothing here is broadcastable until an independent decoder or a
+> testnet node accepts it.
+
+> **A note on the list convention, learned by running it.** A repeated field
+> whose LAST entry is empty (e.g. `scriptSigs` = `[sig, ""]` for a legacy input
+> followed by a segwit one) serializes to `"<sig>,"`, and the engine counts that
+> as ONE item, not two, because it ignores one trailing delimiter. So
+> `cxBtcTxEncode` reads every list BY INDEX (a missing entry is an empty
+> scriptSig / witness, which is its correct meaning) and validates only that a
+> list is not LONGER than the input count; a shorter list is indistinguishable
+> from trailing empties and is read as such. `pSequences` is the exception and
+> must have exactly one entry per input (a sequence is never empty).
 
 **Byte helpers.**
 
