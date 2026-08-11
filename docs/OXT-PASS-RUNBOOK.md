@@ -400,6 +400,28 @@ put oxSelfTest()     -- onionxt/examples/onionxt-tests.livecodescript
 
 ### 3.2 Order of play
 
+**Step -1 - check WHICH SodiumXT binary your platform has before you repackage.**
+
+Do this first if you are about to reinstall the extension, because it is the one
+pre-flight mistake that can cost the whole session rather than one line. The `.lcb`
+and the native library ship in the same package and `sPrepare()` compares their ABI
+numbers on **every** `sx*` call, so a package built from a tree whose binary for YOUR
+platform is stale throws
+`"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the first call
+onward. That is not a degraded run: it takes the entire SodiumXT section, the whole of
+riptide (hard SodiumXT dependency), and onionxt's SAFECOOKIE / deterministic-onion /
+offline-address paths with it, and the failure text points at your install rather than
+at the real cause.
+
+As of 2026-08-11 the committed binaries are at **ABI 7 for `x86_64-linux` and
+`x86_64-win32`**, and still at **ABI 6 for `x86-linux`, `x86-win32` and
+`universal-mac`** (the currency table with the reasons lives in
+`sodiumxt/CLAUDE.md`). On an ABI-7 row: repackage normally and the SHA3 / offline
+onion-address checks run. On an ABI-6 row: **do not repackage SodiumXT** - keep the
+older package, where `sxSha3_256` simply does not exist and every composing member
+degrades the way it was written to, which the harness now tracks rather than
+hard-asserts. Either way the run is useful; mixing the two is what is not.
+
 **Step 0 - the one-run entry point (do this first, always).**
 
 `tests/suite-selftest.livecodescript` is the suite-wide stack: it probes each
