@@ -80,8 +80,8 @@ CoinXT/
                             message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 65 public cx* handlers against the
-                            published vectors (35 from the .lcb, 30 from the script layer)
+                            its own UI and drives ALL 78 public cx* handlers against the
+                            published vectors (35 from the .lcb, 43 from the script layer)
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
@@ -195,8 +195,9 @@ vector gate is now 170 checks.
 **That engine pass has happened: phases 2, 3 and 4 are CLOSED, 2026-08-10.** The member harness ran
 folded into the suite selftest - 205/206 on the first pass (the trailing-separator fail-open above),
 then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
-65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) have now executed on a real
-engine against the published vectors - the suite coverage gate counts exactly that, 65/65.
+65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) had by then executed on a real
+engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for **78** total; the 13
+transaction handlers are model-verified but have not yet had their own engine pass.
 
 **Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers, so
 the surface is now **78** public handlers (35 in the `.lcb`, 43 in the script layer). It composes the
@@ -215,12 +216,13 @@ design and the running as-built log. Every deterministic path is pinned to a pub
 and the "done" bar for a signing feature is that a CoinXT signature verifies in a mainstream external
 library, not just in CoinXT.
 
-CoinXT is an independent library: it does not depend on OnionXT (the two compose at the documentation
+CoinXT is a self-contained member: it does not depend on OnionXT (the two compose at the documentation
 level only), and everything it needs (the static gates, the CI workflow, the portable engine-lesson
-book, the vendored sources and their manifest) lives inside this directory. It is currently staged
-inside the xtalk-suite monorepo and is ready to be split into its own repository; the exact procedure
-and the post-split checklist are in [MIGRATION.md](MIGRATION.md). (Remove this paragraph after the
-move.)
+book, the vendored sources and their manifest) lives inside this directory. The **xtalk-suite monorepo
+is now the source of truth** (see the root `CLAUDE.md`): development happens here and the former
+standalone repositories are mirrors. CoinXT remains structured so it *could* be split out again if
+ever needed - the procedure is retained in [MIGRATION.md](MIGRATION.md) as history - but that is not
+the current plan.
 
 ## A note on handling money
 

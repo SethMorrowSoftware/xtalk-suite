@@ -209,8 +209,12 @@ end rsSealMasterSeed
 -- never silently mis-decrypt.
 function rsOpenMasterSeed pFileBytes, pPassphrase
    local tSalt, tSealed, tKey, tSeed, tHeader, tErr
-   if the number of bytes in pFileBytes < 65 then
-      rsSetError "rsOpenMasterSeed: too short to be a RIPTKEY1 file"
+   -- A RIPTKEY1 file is EXACTLY 97 bytes: 9 (magic "RIPTKEY1E") + 16 (salt) +
+   -- 72 (sxSecretBox of a 32-byte seed = nonce 24 + ct 32 + mac 16). Refuse a
+   -- wrong length up front rather than leaning on the Poly1305 tag to catch a
+   -- truncated file (it does catch it - this is just an honest, explicit gate).
+   if the number of bytes in pFileBytes is not 97 then
+      rsSetError "rsOpenMasterSeed: not a 97-byte RIPTKEY1 file"
       return empty
    end if
    put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
@@ -465,6 +469,14 @@ function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProf
       rsSetError "rsBuildHead: seq must be a non-negative integer"
       return empty
    end if
+   -- The seq field is a u64 on the wire, but xTalk numbers are doubles, so only
+   -- values below 2^53 round-trip exactly. Refuse anything at or above that
+   -- rather than serialize a seq that re-parses to a different number (a BEP44
+   -- monotonic-counter field silently changing value is a correctness bug).
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBuildHead: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
    put textEncode(pDisplayName, "UTF-8") into tNameBytes
    if the number of bytes in tNameBytes > kRsMaxDisplayName then
       rsSetError "rsBuildHead: the display name is over" && \
@@ -506,7 +518,7 @@ end rsBuildHead
 -- malformed returns empty - a truncated or padded record is refused, never
 -- partially believed.
 function rsParseHead pBytes
-   local tLen, tPos, tNameLen, tOnionLen, tHead, tField
+   local tLen, tPos, tNameLen, tOnionLen, tHead, tField, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 13 then
       rsSetError "rsParseHead: truncated head record"
@@ -527,8 +539,16 @@ function rsParseHead pBytes
       rsSetError "rsParseHead: truncated head record"
       return empty
    end if
-   put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
-         into tHead["displayName"]
+   -- textDecode can throw on malformed UTF-8, and pBytes is attacker-supplied,
+   -- so a bad display name must be a clean refusal - not a thrown error out of a
+   -- parser the header promises never throws.
+   try
+      put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
+            into tHead["displayName"]
+   catch tErr
+      rsSetError "rsParseHead: the display name is not valid UTF-8"
+      return empty
+   end try
    add tNameLen to tPos
    put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
          into tField
@@ -604,6 +624,10 @@ end rsBuildPostChunked
 
 private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
+      rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
+      return empty
+   end if
    if pTimestamp is not an integer or pTimestamp < 0 then
       rsSetError "rsPostBody: the timestamp must be a non-negative integer"
       return empty
@@ -689,7 +713,7 @@ end rsSignPost
 -- author's public key, which the caller trusts from elsewhere; call
 -- rsVerifyPost for that.
 function rsParsePost pBytes
-   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList
+   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 4 + 8 + 40 + 1 + 1 + 64 then
       rsSetError "rsParsePost: truncated post record"
@@ -720,8 +744,15 @@ function rsParsePost pBytes
          rsSetError "rsParsePost: text length runs past the record"
          return empty
       end if
-      put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
-            "UTF-8") into tPost["text"]
+      -- Attacker-supplied bytes; malformed UTF-8 is a clean refusal, not a throw
+      -- (the header promises this parser never throws).
+      try
+         put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
+               "UTF-8") into tPost["text"]
+      catch tErr
+         rsSetError "rsParsePost: the post text is not valid UTF-8"
+         return empty
+      end try
       add tTextLen to tPos
    else if tKind is "C" then
       put byteToNum(byte (tPos + 1) of pBytes) into tCount
@@ -822,12 +853,20 @@ end rsBencodeBytes
 -- private: hex, big-endian integers, base32
 --------------------------------------------------------------------------
 
+-- Strict LOWERCASE hex of an exact length. The check is by BYTE VALUE, not
+-- `is in`: `is in` honours the caseSensitive (default FALSE), so "A" is in
+-- "abcdef" would be true and an uppercase target would parse as valid - a
+-- non-canonical record accepted (the malleability the strict parse exists to
+-- refuse; the coinxt discipline-3 lesson). Digits 0-9 are bytes 48..57, lower
+-- a-f are bytes 97..102; nothing else passes, whatever the caller set.
 private function rsIsHexOfLen pValue, pLen
-   local tI, tChar
+   local tI, tN
    if the number of chars in pValue is not pLen then return false
    repeat with tI = 1 to pLen
-      put char tI of pValue into tChar
-      if tChar is not in "0123456789abcdef" then return false
+      put byteToNum(byte tI of pValue) into tN
+      if not ((tN >= 48 and tN <= 57) or (tN >= 97 and tN <= 102)) then
+         return false
+      end if
    end repeat
    return true
 end rsIsHexOfLen

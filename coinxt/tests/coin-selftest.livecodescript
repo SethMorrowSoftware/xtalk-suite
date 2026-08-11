@@ -1217,7 +1217,7 @@ end stRunBip44
 command stRunTransactions
    local tOutpoints, tSequences, tOutputs, tD0, tD1, tSig0, tDer0, tScriptSig0
    local tSig1, tDer1, tPub1, tWit1, tScriptSigs, tWitnesses, tRaw
-   local tRecov, tRecid, tRHex, tSHex, tEth
+   local tRecov, tRecid, tRHex, tSHex, tEth, tThrew, tErr2
    stSection "phase 5: transactions (BIP-143, EIP-155, EIP-1559)"
    try
       -- --- Bitcoin: the BIP-143 native-P2WPKH worked example, rebuilt whole.
@@ -1236,7 +1236,7 @@ command stRunTransactions
       -- The two sighashes: input 0 legacy SIGHASH_ALL, input 1 BIP-143.
       put cxBtcSighashLegacy(1, tOutpoints, tSequences, 1, kTxScriptCode0, tOutputs, 17, 1) into tD0
       stAssert "input 0 legacy sighash matches", cxHexEncode(tD0) is kTxLegacySighash
-      put cxBtcSighashSegwit(1, tOutpoints, tSequences, 2, kTxScriptCode1, 600000000, 17, 1) into tD1
+      put cxBtcSighashSegwit(1, tOutpoints, tSequences, 2, kTxScriptCode1, 600000000, tOutputs, 17, 1) into tD1
       stAssert "input 1 BIP-143 sighash matches the BIP", cxHexEncode(tD1) is kTxSegwitSighash
       -- Sign each (RFC 6979, so deterministic), DER-encode, append SIGHASH_ALL.
       put cxSign(cxHexDecode(kTxSeckey0), tD0) into tSig0
@@ -1292,6 +1292,25 @@ command stRunTransactions
       -- Fail closed: a compact signature must be exactly 64 bytes.
       stAssert "cxDerEncode refuses a short signature", \
             stThrows("cxDerEncode", byte 1 to 40 of tSig1)
+      -- Fail closed: the BIP-143 sighash MUST commit to the outputs. An empty
+      -- outputs list is refused - a preimage without hashOutputs would sign a
+      -- payment to anywhere (the review's CRITICAL finding, guarded here).
+      put false into tThrew
+      try
+         get cxBtcSighashSegwit(1, tOutpoints, tSequences, 2, kTxScriptCode1, 600000000, "", 17, 1)
+      catch tErr2
+         put true into tThrew
+      end try
+      stAssert "cxBtcSighashSegwit refuses an empty outputs list (hashOutputs is mandatory)", tThrew
+      -- Fail closed: a witness list must have one slot per input, or a short
+      -- list would silently emit an empty witness for the trailing inputs.
+      put false into tThrew
+      try
+         get cxBtcTxEncode(1, tOutpoints, tScriptSigs, tSequences, cxHexEncode(tWit1), tOutputs, 17)
+      catch tErr2
+         put true into tThrew
+      end try
+      stAssert "cxBtcTxEncode refuses a witness list of the wrong length", tThrew
    catch tError
       stSectionFailed "transactions", tError
    end try

@@ -67,7 +67,7 @@ extension is not installed or did not load.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
-  reports ABI 3, and throws if not, so a mismatched library cannot silently produce garbage.
+  reports ABI 4, and throws if not, so a mismatched library cannot silently produce garbage.
 - **An empty `Data` is legal input** for every digest and for both HMAC slots. It returns the
   documented empty-input digest rather than throwing. This was the binding's one genuinely
   open marshalling question and the 2026-08-08 engine pass settled it.
@@ -80,7 +80,7 @@ extension is not installed or did not load.
 cxCheckABI
 ```
 
-A command. Returns nothing. Throws if the loaded native library does not report ABI 3, with
+A command. Returns nothing. Throws if the loaded native library does not report ABI 4, with
 an error telling the user to reinstall the packaged extension. Silence is the pass.
 
 You rarely need to call it explicitly, because every other handler performs the same check
@@ -441,8 +441,9 @@ length prefix.
   pOutputs, pLocktime, pSighashType)` - the pre-SegWit SIGHASH_ALL preimage
   digest for 1-based input `pIndex`.
 - `cxBtcSighashSegwit(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex,
-  pAmountSat, pLocktime, pSighashType)` - the BIP-143 preimage digest (commits
-  to the input amount).
+  pAmountSat, pOutputs, pLocktime, pSighashType)` - the BIP-143 preimage digest
+  (commits to the input amount AND to `hashOutputs` - `pOutputs` is required, it
+  is the commitment that binds the signature to where the coins go).
 - `cxBtcWitness(pItems)` - a serialized witness stack from a comma list of item
   hex (`""` for an input with no witness).
 - `cxBtcTxEncode(pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses,

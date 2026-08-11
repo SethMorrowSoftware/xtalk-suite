@@ -123,9 +123,11 @@ SKIP in one list — a member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
-offline), coinxt's 28 sections, torrentxt's full harness, and the synchronous
-halves of enetxt and datachannelxt — plus the cross-member compositions no
-per-member harness can have. One paste settles what used to take six runs.
+offline), coinxt's sections (encodings, addresses, HD, and the phase-5
+transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
+and datachannelxt, and riptide's phase-1 harness — plus the cross-member
+compositions no per-member harness can have. One paste settles what used to
+take seven runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
 than copied from them, because a hand-copied test suite drifts and then reports
@@ -138,11 +140,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**291 of 309 public handlers**:
+**331 of 349 public handlers**:
 
-| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt |
-|---|---|---|---|---|---|
-| 60/60 | 27/45 | 65/65 | 85/85 | 23/23 | 31/31 |
+| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
+|---|---|---|---|---|---|---|
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 26/26 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies

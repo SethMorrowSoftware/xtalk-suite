@@ -1043,18 +1043,18 @@ command stCrossIdentitySection
             tExpandedHex is tKp["secretKey"]
    end if
 
-   -- The third leg of the claim, stated but NOT faked: that same public key IS a
-   -- v3 .onion address, but RENDERING one needs SHA3-256 for the address
-   -- checksum, and SodiumXT does not expose SHA3 because libsodium has none
-   -- (onionxt/docs/08 gap #2). OnionXT reports that gap honestly through
-   -- oxTransportInfo, asserted in the capability section below. CoinXT now ships
-   -- cxSha3_256, so the closer exists in the suite - but wiring it into
-   -- OnionXT's oxSha3_256 fallback is a code change in OnionXT, and a test may
-   -- not pretend a composition into existence by re-implementing it here.
-   stNote "the onion-address leg needs SHA3-256 (docs/08 gap #2) - not faked here"
-   if sHaveCoin then
-      stNote "CoinXT ships cxSha3_256; wiring it into oxSha3_256 would close it"
-   end if
+   -- The third leg of the claim: that same public key IS a v3 .onion address.
+   -- RENDERING one needs SHA3-256 for the address checksum. That was ononxt/
+   -- docs/08 gap #2, and it CLOSED on 2026-08-11: SodiumXT ABI 7 ships
+   -- sxSha3_256 and OnionXT's oxSha3_256 composes it, so oxAddressFromPublicKey
+   -- now emits a real address against an ABI-7 SodiumXT. OnionXT's own harness
+   -- renders and round-trips it (ox1's address section); this cross-section
+   -- still does not re-render it here, because the identity being proven is the
+   -- KEY (handle == the ed25519 key an onion would encode), and re-implementing
+   -- the checksum would be the test faking a composition rather than observing
+   -- it. The capability section below asserts oxTransportInfo now advertises the
+   -- offline address as AVAILABLE whenever SHA3 is.
+   stNote "the onion-address leg (SHA3-256 checksum) is now closed: SodiumXT ABI 7"
 end stCrossIdentitySection
 
 -- SIGN A BEP44 ITEM WITH SODIUMXT. btDhtBep44SignBuf exists precisely so a
@@ -1113,7 +1113,7 @@ end stCrossBep44Section
 -- HMAC, entropy, seed expansion, and SHA3 and reports what it can actually do.
 -- So the honest cross-member assertion is that its answers track reality.
 command stCrossOnionSection
-   local tInfo
+   local tInfo, tHasSha3, tErr
 
    stSection "CROSS: OnionXT advertises its real SodiumXT-backed capabilities"
    if not sHaveOnion then
@@ -1132,11 +1132,28 @@ command stCrossOnionSection
       stAssert "capabilities are advertised as absent without SodiumXT", \
             tInfo["safeCookieAuth"] is false
    end if
-   -- The DECLARED gap, asserted as a gap. If this ever flips to true the suite
-   -- gained offline .onion address rendering, and onionxt/docs/08 gap #2 plus
-   -- the note in the identity section above both need rewriting.
-   stAssert "offline .onion checksums are still advertised as UNAVAILABLE", \
-         tInfo["offlineAddress"] is false
+   -- offlineAddress tracks whether SHA3-256 is reachable, which is exactly what
+   -- OnionXT's oxSha3_256 probes: it composes SodiumXT's sxSha3_256 (ABI 7,
+   -- onionxt/docs/08 gap #2, closed 2026-08-11). So the honest assertion is that
+   -- the advertisement TRACKS REALITY, not that it holds a fixed answer: probe
+   -- SHA3 the same way OnionXT does and require the flag to agree. It is true on
+   -- an ABI-7 SodiumXT and false on an older one or with SodiumXT absent.
+   put false into tHasSha3
+   if sHaveSodium then
+      try
+         put (the number of bytes of sxSha3_256(textEncode("probe", "ASCII")) is 32) \
+               into tHasSha3
+      catch tErr
+         put false into tHasSha3
+      end try
+   end if
+   stAssert "oxTransportInfo's offlineAddress tracks whether SHA3-256 is available", \
+         tInfo["offlineAddress"] is tHasSha3
+   if tHasSha3 then
+      stNote "SHA3-256 is present: offline .onion address rendering is AVAILABLE"
+   else
+      stNote "SHA3-256 absent (SodiumXT pre-ABI-7 or absent): offline address deferred"
+   end if
    stNote "that FALSE is docs/08 gap #2: libsodium ships no SHA3-256"
 end stCrossOnionSection
 

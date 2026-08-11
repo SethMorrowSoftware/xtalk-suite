@@ -1309,18 +1309,18 @@ command stCrossIdentitySection
             tExpandedHex is tKp["secretKey"]
    end if
 
-   -- The third leg of the claim, stated but NOT faked: that same public key IS a
-   -- v3 .onion address, but RENDERING one needs SHA3-256 for the address
-   -- checksum, and SodiumXT does not expose SHA3 because libsodium has none
-   -- (onionxt/docs/08 gap #2). OnionXT reports that gap honestly through
-   -- oxTransportInfo, asserted in the capability section below. CoinXT now ships
-   -- cxSha3_256, so the closer exists in the suite - but wiring it into
-   -- OnionXT's oxSha3_256 fallback is a code change in OnionXT, and a test may
-   -- not pretend a composition into existence by re-implementing it here.
-   stNote "the onion-address leg needs SHA3-256 (docs/08 gap #2) - not faked here"
-   if sHaveCoin then
-      stNote "CoinXT ships cxSha3_256; wiring it into oxSha3_256 would close it"
-   end if
+   -- The third leg of the claim: that same public key IS a v3 .onion address.
+   -- RENDERING one needs SHA3-256 for the address checksum. That was ononxt/
+   -- docs/08 gap #2, and it CLOSED on 2026-08-11: SodiumXT ABI 7 ships
+   -- sxSha3_256 and OnionXT's oxSha3_256 composes it, so oxAddressFromPublicKey
+   -- now emits a real address against an ABI-7 SodiumXT. OnionXT's own harness
+   -- renders and round-trips it (ox1's address section); this cross-section
+   -- still does not re-render it here, because the identity being proven is the
+   -- KEY (handle == the ed25519 key an onion would encode), and re-implementing
+   -- the checksum would be the test faking a composition rather than observing
+   -- it. The capability section below asserts oxTransportInfo now advertises the
+   -- offline address as AVAILABLE whenever SHA3 is.
+   stNote "the onion-address leg (SHA3-256 checksum) is now closed: SodiumXT ABI 7"
 end stCrossIdentitySection
 
 -- SIGN A BEP44 ITEM WITH SODIUMXT. btDhtBep44SignBuf exists precisely so a
@@ -1379,7 +1379,7 @@ end stCrossBep44Section
 -- HMAC, entropy, seed expansion, and SHA3 and reports what it can actually do.
 -- So the honest cross-member assertion is that its answers track reality.
 command stCrossOnionSection
-   local tInfo
+   local tInfo, tHasSha3, tErr
 
    stSection "CROSS: OnionXT advertises its real SodiumXT-backed capabilities"
    if not sHaveOnion then
@@ -1398,11 +1398,28 @@ command stCrossOnionSection
       stAssert "capabilities are advertised as absent without SodiumXT", \
             tInfo["safeCookieAuth"] is false
    end if
-   -- The DECLARED gap, asserted as a gap. If this ever flips to true the suite
-   -- gained offline .onion address rendering, and onionxt/docs/08 gap #2 plus
-   -- the note in the identity section above both need rewriting.
-   stAssert "offline .onion checksums are still advertised as UNAVAILABLE", \
-         tInfo["offlineAddress"] is false
+   -- offlineAddress tracks whether SHA3-256 is reachable, which is exactly what
+   -- OnionXT's oxSha3_256 probes: it composes SodiumXT's sxSha3_256 (ABI 7,
+   -- onionxt/docs/08 gap #2, closed 2026-08-11). So the honest assertion is that
+   -- the advertisement TRACKS REALITY, not that it holds a fixed answer: probe
+   -- SHA3 the same way OnionXT does and require the flag to agree. It is true on
+   -- an ABI-7 SodiumXT and false on an older one or with SodiumXT absent.
+   put false into tHasSha3
+   if sHaveSodium then
+      try
+         put (the number of bytes of sxSha3_256(textEncode("probe", "ASCII")) is 32) \
+               into tHasSha3
+      catch tErr
+         put false into tHasSha3
+      end try
+   end if
+   stAssert "oxTransportInfo's offlineAddress tracks whether SHA3-256 is available", \
+         tInfo["offlineAddress"] is tHasSha3
+   if tHasSha3 then
+      stNote "SHA3-256 is present: offline .onion address rendering is AVAILABLE"
+   else
+      stNote "SHA3-256 absent (SodiumXT pre-ABI-7 or absent): offline address deferred"
+   end if
    stNote "that FALSE is docs/08 gap #2: libsodium ships no SHA3-256"
 end stCrossOnionSection
 
@@ -3996,13 +4013,13 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
    return cxHash256(tBuf)
 end cxBtcSighashLegacyInner
 
-function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    put false into tFailed
    try
-      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType) into tResult
+      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType) into tResult
    catch tError
       put true into tFailed
       put tError into tFailure
@@ -4014,7 +4031,7 @@ function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCod
    return tResult
 end cxBtcSighashSegwit
 
-private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
@@ -4022,6 +4039,9 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    end if
    if pIndex < 1 or pIndex > tCount then
       throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
+   end if
+   if pOutputs is "" then
+      throw "CoinXT: cxBtcSighashSegwit: the outputs list is required (BIP-143 commits to hashOutputs)."
    end if
    put "" into tPrevouts
    put "" into tSequencesRaw
@@ -4031,7 +4051,7 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    end repeat
    put the number of items of pOutputs into tOutCount
    put "" into tOutputsRaw
-   repeat with tI = 1 to the number of items of pOutputs
+   repeat with tI = 1 to tOutCount
       put tOutputsRaw & cxHexDecode(item tI of pOutputs) into tOutputsRaw
    end repeat
    put cxHexDecode(pScriptCodeHex) into tScript
@@ -4102,6 +4122,13 @@ private function cxBtcTxEncodeInner pVersion, pOutpoints, pScriptSigs, pSequence
    end if
    if the number of items of pScriptSigs is not tCount or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcTxEncode: the input lists must be parallel."
+   end if
+   -- The witness list, when present, must be parallel too: a short list would
+   -- silently emit an EMPTY witness stack for the trailing inputs (a well-formed
+   -- but consensus-invalid tx), a long one would drop the extras. Either is a
+   -- fail-open, so require exactly one witness slot per input (each may be "").
+   if pWitnesses is not "" and the number of items of pWitnesses is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the witness list must have one entry per input (empty entries allowed)."
    end if
    put false into tHasWitness
    if pWitnesses is not "" then
@@ -6169,8 +6196,12 @@ end rsSealMasterSeed
 
 function rsOpenMasterSeed pFileBytes, pPassphrase
    local tSalt, tSealed, tKey, tSeed, tHeader, tErr
-   if the number of bytes in pFileBytes < 65 then
-      rsSetError "rsOpenMasterSeed: too short to be a RIPTKEY1 file"
+   -- A RIPTKEY1 file is EXACTLY 97 bytes: 9 (magic "RIPTKEY1E") + 16 (salt) +
+   -- 72 (sxSecretBox of a 32-byte seed = nonce 24 + ct 32 + mac 16). Refuse a
+   -- wrong length up front rather than leaning on the Poly1305 tag to catch a
+   -- truncated file (it does catch it - this is just an honest, explicit gate).
+   if the number of bytes in pFileBytes is not 97 then
+      rsSetError "rsOpenMasterSeed: not a 97-byte RIPTKEY1 file"
       return empty
    end if
    put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
@@ -6377,6 +6408,14 @@ function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProf
       rsSetError "rsBuildHead: seq must be a non-negative integer"
       return empty
    end if
+   -- The seq field is a u64 on the wire, but xTalk numbers are doubles, so only
+   -- values below 2^53 round-trip exactly. Refuse anything at or above that
+   -- rather than serialize a seq that re-parses to a different number (a BEP44
+   -- monotonic-counter field silently changing value is a correctness bug).
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBuildHead: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
    put textEncode(pDisplayName, "UTF-8") into tNameBytes
    if the number of bytes in tNameBytes > kRsMaxDisplayName then
       rsSetError "rsBuildHead: the display name is over" && \
@@ -6415,7 +6454,7 @@ function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProf
 end rsBuildHead
 
 function rsParseHead pBytes
-   local tLen, tPos, tNameLen, tOnionLen, tHead, tField
+   local tLen, tPos, tNameLen, tOnionLen, tHead, tField, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 13 then
       rsSetError "rsParseHead: truncated head record"
@@ -6436,8 +6475,16 @@ function rsParseHead pBytes
       rsSetError "rsParseHead: truncated head record"
       return empty
    end if
-   put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
-         into tHead["displayName"]
+   -- textDecode can throw on malformed UTF-8, and pBytes is attacker-supplied,
+   -- so a bad display name must be a clean refusal - not a thrown error out of a
+   -- parser the header promises never throws.
+   try
+      put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
+            into tHead["displayName"]
+   catch tErr
+      rsSetError "rsParseHead: the display name is not valid UTF-8"
+      return empty
+   end try
    add tNameLen to tPos
    put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
          into tField
@@ -6505,6 +6552,10 @@ end rsBuildPostChunked
 
 private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
+      rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
+      return empty
+   end if
    if pTimestamp is not an integer or pTimestamp < 0 then
       rsSetError "rsPostBody: the timestamp must be a non-negative integer"
       return empty
@@ -6586,7 +6637,7 @@ private function rsSignPost pBody, pIdentitySeed
 end rsSignPost
 
 function rsParsePost pBytes
-   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList
+   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 4 + 8 + 40 + 1 + 1 + 64 then
       rsSetError "rsParsePost: truncated post record"
@@ -6617,8 +6668,15 @@ function rsParsePost pBytes
          rsSetError "rsParsePost: text length runs past the record"
          return empty
       end if
-      put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
-            "UTF-8") into tPost["text"]
+      -- Attacker-supplied bytes; malformed UTF-8 is a clean refusal, not a throw
+      -- (the header promises this parser never throws).
+      try
+         put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
+               "UTF-8") into tPost["text"]
+      catch tErr
+         rsSetError "rsParsePost: the post text is not valid UTF-8"
+         return empty
+      end try
       add tTextLen to tPos
    else if tKind is "C" then
       put byteToNum(byte (tPos + 1) of pBytes) into tCount
@@ -6706,11 +6764,13 @@ function rsBencodeBytes pData
 end rsBencodeBytes
 
 private function rsIsHexOfLen pValue, pLen
-   local tI, tChar
+   local tI, tN
    if the number of chars in pValue is not pLen then return false
    repeat with tI = 1 to pLen
-      put char tI of pValue into tChar
-      if tChar is not in "0123456789abcdef" then return false
+      put byteToNum(byte tI of pValue) into tN
+      if not ((tN >= 48 and tN <= 57) or (tN >= 97 and tN <= 102)) then
+         return false
+      end if
    end repeat
    return true
 end rsIsHexOfLen
@@ -8551,7 +8611,7 @@ end cx1stRunBip44
 command cx1stRunTransactions
    local cx1tOutpoints, cx1tSequences, cx1tOutputs, cx1tD0, cx1tD1, cx1tSig0, cx1tDer0, cx1tScriptSig0
    local cx1tSig1, cx1tDer1, cx1tPub1, cx1tWit1, cx1tScriptSigs, cx1tWitnesses, cx1tRaw
-   local cx1tRecov, cx1tRecid, cx1tRHex, cx1tSHex, cx1tEth
+   local cx1tRecov, cx1tRecid, cx1tRHex, cx1tSHex, cx1tEth, cx1tThrew, cx1tErr2
    cx1stSection "phase 5: transactions (BIP-143, EIP-155, EIP-1559)"
    try
       -- --- Bitcoin: the BIP-143 native-P2WPKH worked example, rebuilt whole.
@@ -8570,7 +8630,7 @@ command cx1stRunTransactions
       -- The two sighashes: input 0 legacy SIGHASH_ALL, input 1 BIP-143.
       put cxBtcSighashLegacy(1, cx1tOutpoints, cx1tSequences, 1, cx1kTxScriptCode0, cx1tOutputs, 17, 1) into cx1tD0
       cx1stAssert "input 0 legacy sighash matches", cxHexEncode(cx1tD0) is cx1kTxLegacySighash
-      put cxBtcSighashSegwit(1, cx1tOutpoints, cx1tSequences, 2, cx1kTxScriptCode1, 600000000, 17, 1) into cx1tD1
+      put cxBtcSighashSegwit(1, cx1tOutpoints, cx1tSequences, 2, cx1kTxScriptCode1, 600000000, cx1tOutputs, 17, 1) into cx1tD1
       cx1stAssert "input 1 BIP-143 sighash matches the BIP", cxHexEncode(cx1tD1) is cx1kTxSegwitSighash
       -- Sign each (RFC 6979, so deterministic), DER-encode, append SIGHASH_ALL.
       put cxSign(cxHexDecode(cx1kTxSeckey0), cx1tD0) into cx1tSig0
@@ -8626,6 +8686,25 @@ command cx1stRunTransactions
       -- Fail closed: a compact signature must be exactly 64 bytes.
       cx1stAssert "cxDerEncode refuses a short signature", \
             cx1stThrows("cxDerEncode", byte 1 to 40 of cx1tSig1)
+      -- Fail closed: the BIP-143 sighash MUST commit to the outputs. An empty
+      -- outputs list is refused - a preimage without hashOutputs would sign a
+      -- payment to anywhere (the review's CRITICAL finding, guarded here).
+      put false into cx1tThrew
+      try
+         get cxBtcSighashSegwit(1, cx1tOutpoints, cx1tSequences, 2, cx1kTxScriptCode1, 600000000, "", 17, 1)
+      catch cx1tErr2
+         put true into cx1tThrew
+      end try
+      cx1stAssert "cxBtcSighashSegwit refuses an empty outputs list (hashOutputs is mandatory)", cx1tThrew
+      -- Fail closed: a witness list must have one slot per input, or a short
+      -- list would silently emit an empty witness for the trailing inputs.
+      put false into cx1tThrew
+      try
+         get cxBtcTxEncode(1, cx1tOutpoints, cx1tScriptSigs, cx1tSequences, cxHexEncode(cx1tWit1), cx1tOutputs, 17)
+      catch cx1tErr2
+         put true into cx1tThrew
+      end try
+      cx1stAssert "cxBtcTxEncode refuses a witness list of the wrong length", cx1tThrew
    catch tError
       cx1stSectionFailed "transactions", tError
    end try
@@ -9797,7 +9876,7 @@ private command rs1rstSectionKeyFile
 end rs1rstSectionKeyFile
 
 private command rs1rstSectionHead
-   local rs1tHead, rs1tParsed, rs1tRebuilt
+   local rs1tHead, rs1tParsed, rs1tRebuilt, rs1tUpper
    rs1rstSection "RSH1 - the feed head"
    put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
          rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
@@ -9827,6 +9906,15 @@ private command rs1rstSectionHead
          "a truncated head is refused"
    rs1rstCheck (rsParseHead(rs1tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- A non-canonical (uppercase) hex target must be refused, not silently
+   -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
+   -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase
+   -- target. `is in` would accept it (caseSensitive default false); the
+   -- byte-value check refuses it.
+   put rs1tHead into rs1tUpper
+   put numToByte(65) into byte 61 of rs1tUpper
+   rs1rstCheck (rsParseHead(rs1tUpper) is empty), \
+         "an uppercase (non-canonical) hex target is refused"
    rs1rstCheck (rsBuildHead(1, \
          "0123456789012345678901234567890123456789012345678901234567890123x", \
          empty, empty, empty, empty) is empty), \

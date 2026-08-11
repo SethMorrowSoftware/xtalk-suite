@@ -2172,16 +2172,19 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
 end cxBtcSighashLegacyInner
 
 -- The BIP-143 (SegWit) preimage digest for input pIndex. Same parallel lists as
--- the legacy form, plus the input's amount in satoshi (BIP-143 commits to it).
--- pScriptCodeHex is the BARE scriptCode (for P2WPKH the app passes the
--- 25-byte P2PKH script 76a914{hash}88ac; this layer adds the length prefix).
-function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+-- the legacy form (pOutpoints, pSequences, pOutputs), plus the input's amount in
+-- satoshi (BIP-143 commits to it). pScriptCodeHex is the BARE scriptCode (for
+-- P2WPKH the app passes the 25-byte P2PKH script 76a914{hash}88ac; this layer
+-- adds the length prefix). pOutputs is REQUIRED: hashOutputs is the commitment
+-- that binds the signature to WHERE the coins go, so a preimage without it would
+-- authorize a payment to anywhere (the review caught exactly this).
+function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
    put false into tFailed
    try
-      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType) into tResult
+      put cxBtcSighashSegwitInner(pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType) into tResult
    catch tError
       put true into tFailed
       put tError into tFailure
@@ -2193,7 +2196,7 @@ function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCod
    return tResult
 end cxBtcSighashSegwit
 
-private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pLocktime, pSighashType
+private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
@@ -2201,6 +2204,9 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    end if
    if pIndex < 1 or pIndex > tCount then
       throw "CoinXT: cxBtcSighashSegwit: the input index is out of range (it is 1-based)."
+   end if
+   if pOutputs is "" then
+      throw "CoinXT: cxBtcSighashSegwit: the outputs list is required (BIP-143 commits to hashOutputs)."
    end if
    put "" into tPrevouts
    put "" into tSequencesRaw
@@ -2210,7 +2216,7 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    end repeat
    put the number of items of pOutputs into tOutCount
    put "" into tOutputsRaw
-   repeat with tI = 1 to the number of items of pOutputs
+   repeat with tI = 1 to tOutCount
       put tOutputsRaw & cxHexDecode(item tI of pOutputs) into tOutputsRaw
    end repeat
    put cxHexDecode(pScriptCodeHex) into tScript
@@ -2290,6 +2296,13 @@ private function cxBtcTxEncodeInner pVersion, pOutpoints, pScriptSigs, pSequence
    end if
    if the number of items of pScriptSigs is not tCount or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcTxEncode: the input lists must be parallel."
+   end if
+   -- The witness list, when present, must be parallel too: a short list would
+   -- silently emit an EMPTY witness stack for the trailing inputs (a well-formed
+   -- but consensus-invalid tx), a long one would drop the extras. Either is a
+   -- fail-open, so require exactly one witness slot per input (each may be "").
+   if pWitnesses is not "" and the number of items of pWitnesses is not tCount then
+      throw "CoinXT: cxBtcTxEncode: the witness list must have one entry per input (empty entries allowed)."
    end if
    put false into tHasWitness
    if pWitnesses is not "" then

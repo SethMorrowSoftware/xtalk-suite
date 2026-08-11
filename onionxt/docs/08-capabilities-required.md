@@ -5,12 +5,15 @@ I/O. This is the honest list of the narrow crypto primitives it wants. The famil
 crypto primitive is an **upstream SodiumXT feature request landed first**, never a hand-rolled hash in
 OnionXT.
 
-**Status as of SodiumXT ABI 6:** gaps #1 (ed25519 seed -> expanded key, `sxSignSeedToExpandedKey`) and
-#3 (HMAC-SHA256, `sxHmacSha256`) are **SHIPPED and composed** - deterministic-from-seed onions and
-SAFECOOKIE control auth now work. Gap #2 (SHA3-256, offline address checksum) stays **DEFERRED** by
-design (libsodium has no SHA-3, and the checksum is a nicety, not a security dependency). OnionXT
-therefore requires **SodiumXT ABI >= 6** for the deterministic-onion and SAFECOOKIE paths; the SOCKS
-dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth need no SodiumXT at all.
+**Status as of SodiumXT ABI 7:** all three gaps are now **SHIPPED and composed**. Gaps #1 (ed25519
+seed -> expanded key, `sxSignSeedToExpandedKey`) and #3 (HMAC-SHA256, `sxHmacSha256`) shipped in ABI 6
+- deterministic-from-seed onions and SAFECOOKIE control auth work. Gap #2 (SHA3-256, offline address
+checksum) shipped in **ABI 7** (`sxSha3_256`, 2026-08-11), so `oxAddressFromPublicKey` now emits a real
+address and `oxIsValidAddress` verifies checksums offline. OnionXT therefore requires **SodiumXT ABI
+>= 6** for the deterministic-onion and SAFECOOKIE paths and **ABI >= 7** for offline address
+emission/validation; the SOCKS dial path, Tor-generated onions, and COOKIE/NULL/HASHEDPASSWORD auth
+need no SodiumXT at all, and against a pre-ABI-7 SodiumXT the address layer degrades to structural-only
+checks (no upstream gap remains).
 
 ## SodiumXT gaps
 

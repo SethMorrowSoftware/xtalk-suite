@@ -283,7 +283,7 @@ private command rstSectionKeyFile
 end rstSectionKeyFile
 
 private command rstSectionHead
-   local tHead, tParsed, tRebuilt
+   local tHead, tParsed, tRebuilt, tUpper
    rstSection "RSH1 - the feed head"
    put rsBuildHead(kRsGoldHeadSeq, kRsGoldHeadName, kRsGoldPost2Target, \
          kRsGoldPrekeyTarget, kRsGoldOnion, kRsGoldProfileTarget) into tHead
@@ -313,6 +313,15 @@ private command rstSectionHead
          "a truncated head is refused"
    rstCheck (rsParseHead(tHead & numToByte(0)) is empty), \
          "trailing bytes are refused"
+   -- A non-canonical (uppercase) hex target must be refused, not silently
+   -- accepted: byte 61 is the first char of the prekey target ("ab"*20), so
+   -- turning that 'a' (97) into 'A' (65) is a valid-length but non-lowercase
+   -- target. `is in` would accept it (caseSensitive default false); the
+   -- byte-value check refuses it.
+   put tHead into tUpper
+   put numToByte(65) into byte 61 of tUpper
+   rstCheck (rsParseHead(tUpper) is empty), \
+         "an uppercase (non-canonical) hex target is refused"
    rstCheck (rsBuildHead(1, \
          "0123456789012345678901234567890123456789012345678901234567890123x", \
          empty, empty, empty, empty) is empty), \

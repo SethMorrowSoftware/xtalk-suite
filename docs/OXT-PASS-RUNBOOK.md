@@ -112,8 +112,8 @@ Every member is three layers, and they have very different evidence behind them:
 | **The `.lcb` binding and every `.livecodescript`** | **an engine, and nothing else** | **No.** This is tonight. |
 
 `tools/check-handler-calls.py` is worth knowing about before you start: it already
-proved that every `sx*` / `bt*` / `en*` / `dc*` / `ox*` / `oxh*` / `cx*` call in the
-suite resolves to a handler that exists. So a failure tonight is very unlikely to be a
+proved that every `sx*` / `bt*` / `en*` / `dc*` / `ox*` / `oxh*` / `cx*` / `rs*` call
+in the suite resolves to a handler that exists. So a failure tonight is very unlikely to be a
 typo in a handler name; expect marshalling, ordering, and environment instead.
 
 ### 1.2 The honest inventory
@@ -150,14 +150,26 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
 | 6 | **Two-machine behaviour, for every member that has it.** enetxt's LAN chat, torrentxt's rp1 chat and Channels, datachannelxt's DHT chat. | Loopback proves the binding; only a second machine proves the transport. | `enetxt/CLAUDE.md`: "Still un-exercised: the LAN chat demo between two real machines." `torrentxt/examples/README.md`: rp1 chat "needs a live peer to show anything, so it is a two-machine test by nature." |
 
-Items 1, 2 and 3 are **all closed**: every member's deep self-test has now run on a
-real engine via the folded suite harness, and the residuals that remain (the enet
-and datachannel member harnesses' own async loopback halves) are small, named in
-each harness's coverage note, and closable by one standalone paste each. What is
-left of this runbook is environmental: items **4 and 5 need a live tor daemon**
-(one evening with `ControlPort 9051` covers both), and item **6 needs a second
-machine**. Plan those as their own sessions; there is no longer a high-value
-offline run outstanding.
+Items 1, 2 and 3 are **all closed**: every member's deep self-test had run on a
+real engine via the folded suite harness (as of the 2026-08-10 passes), and the
+residuals that remain (the enet and datachannel member harnesses' own async
+loopback halves) are small, named in each harness's coverage note, and closable by
+one standalone paste each.
+
+**But offline work since then added THREE new surfaces that HAVE NOT had an engine
+pass, and all three are high-value offline runs — a single Step-0 paste on an
+ABI-7 engine exercises every one of them:**
+
+| # | New offline surface (added 2026-08-11) | What a green run proves | Needs |
+|---|---|---|---|
+| 7 | **riptide phase 1** (`rs1rsSelfTest`, the 7th folded member) | the `RIPTKEY1` Argon2id-sealed seed, the KDF subkey tree, handle <-> `.onion` both ways, the `RSH1`/`RSP1` wire formats with strict parse and the tamper-evident post chain | engine + **SodiumXT** (hard); coinxt/onionxt optional |
+| 8 | **coinxt phase 5 transactions** (`stRunTransactions`) | the BIP-143 native-P2WPKH signed tx byte-for-byte (both sighash algorithms + witness + txid), the EIP-155 spec tx, and the EIP-1559 typed tx | engine only (deterministic signing, no network) |
+| 9 | **onion offline-address emission** (`oxAddressFromPublicKey` / `oxIsValidAddress`) | now that SodiumXT ABI 7 ships `sxSha3_256`, the checksum works: a 32-byte key renders a real `<56>.onion`, and a tampered address is refused | engine + **SodiumXT ABI 7** (no daemon) |
+
+So the ordering is: **Step 0 first (it now proves items 7, 8, 9 as a side effect
+of one paste)**, then the environmental sessions. Items **4 and 5 need a live tor
+daemon** (one evening with `ControlPort 9051` covers both), and item **6 needs a
+second machine**. Plan those as their own sessions.
 
 ---
 
@@ -406,13 +418,14 @@ rather than remembered:
 
 | member | public handlers the harness calls | not reachable offline |
 |---|---|---|
-| sodiumxt | 60 / 60 | - |
+| sodiumxt | 61 / 61 | - |
 | onionxt | 27 / 45 | 18 |
-| coinxt | 65 / 65 | - |
+| coinxt | 78 / 78 | - |
 | torrentxt | 85 / 85 | - |
 | enetxt | 23 / 23 | - |
 | datachannelxt | 31 / 31 | - |
-| **total** | **291 / 309** | **18** |
+| riptide | 26 / 26 | - |
+| **total** | **331 / 349** | **18** |
 
 The eighteen are onionxt's, all of them, and they are the only handlers in the suite
 with a written excuse: eleven are **engine socket callbacks** (the engine calls them
@@ -437,7 +450,7 @@ so the artifact and the repository can never disagree.
 
 The harness is **generated where Python lives and committed** — on a dev machine or in
 CI, never on the engine box. `tools/build-suite-selftest.py` is a build-time tool for
-whoever edits a member harness; the tester's input is a finished 210 KB
+whoever edits a member harness; the tester's input is a finished ~430 KB
 `.livecodescript`. The same is true of the two onionxt standalones. So the answer to
 "can the generation be automated, or is it a separate step?" is: **it is already
 automated, and it already happens somewhere else.** All three generated files are
@@ -478,7 +491,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
 | 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed — and nothing else: the coinxt, onionxt AND riptide script layers are **embedded in the paste** (any absent member SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and — since 2026-08-11 — riptide's phase-1 harness, run last, against its embedded library) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface: the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39, BIP-32, BIP-44). All of it ran green folded into the suite harness 2026-08-10 (207/207 on the re-run), so a standalone paste is now a diagnostic, not a coverage need. Fully synchronous. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) is NEW and has not had an engine pass**. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
@@ -650,13 +663,15 @@ diagnostics / preset accessors.
 
 ### Setup the suite harness NO LONGER needs: the two `start using` lines
 
-Two members ship a **pure-script layer** that is not part of any installed
+Three layers ship as a **pure-script library** that is not part of any installed
 extension — `coinxt/src/coinxt.livecodescript` (encoders, addresses, the whole
-HD layer) and `onionxt/src/onionxt.livecodescript` (the entire ox* surface).
-The suite harness used to require both in the message path before pasting;
-**since the embed, it does not**. `tools/build-suite-selftest.py` folds both
-libraries into `tests/suite-selftest.livecodescript` verbatim, so the one paste
-carries the code its tests call, and `--check` pins the pair to one tree.
+HD layer, and the phase-5 transaction builders), `onionxt/src/onionxt.livecodescript`
+(the entire ox* surface), and (since 2026-08-11) `riptide/src/riptide.livecodescript`
+(the rs* capstone app layer). The suite harness used to require the first two in the
+message path before pasting; **since the embed, it does not**.
+`tools/build-suite-selftest.py` folds all three libraries into
+`tests/suite-selftest.livecodescript` verbatim, so the one paste carries the code
+its tests call, and `--check` pins the set to one tree.
 
 That closes both failure modes the old setup step carried, and the second one
 cost a real pass:
@@ -671,9 +686,9 @@ cost a real pass:
   the harness and the library cannot skew; a `start using` copy that is also
   loaded is simply shadowed for the harness's own calls (same-script wins).
 
-The probes for the two layers remain, as tripwires rather than setup checks: a
-`FAIL` on either line now means the generated paste itself is damaged, not that
-a step was missed.
+The probes for the three layers remain, as tripwires rather than setup checks: a
+`FAIL` on one now means the generated paste itself is damaged, not that a step
+was missed.
 
 **The `start using` lines are still required for a member's STANDALONE
 harness.** `coinxt/tests/coin-selftest.livecodescript` and onionxt's own
@@ -703,7 +718,8 @@ single paste now carries the entire public surface instead of 16 handlers:
 
 > **Run `coinxt/tests/coin-selftest.livecodescript`.** Same paste-and-reopen
 > procedure as every other member (section 3.1), same green/red UI, same
-> `Re-run` button. It drives **all 31** public `cx*` handlers — `cxCheckABI` by
+> `Re-run` button. It drives **all 78** public `cx*` handlers (this "31" and the
+> phase-2 framing below predate phases 3-5) — `cxCheckABI` by
 > name at last, all thirteen `*Len` accessors, every digest, both HMACs, PBKDF2,
 > and the whole curve surface, then the script layer's encoders, addresses,
 > BIP-39 mnemonics and BIP-32 derivation — against the same published vectors
@@ -757,9 +773,14 @@ signer, ECDH agreeing from both sides, and six curve fail-closed guards.
 
 **Copy back:** the full `stResults` text.
 
-**What it deliberately does not prove:** anything about HD wallets or mnemonics.
-Those are phase 4 and do not exist yet. Nor Schnorr, deferred with Taproot. Nor
-Taproot key tweaking: `cxBtcAddressP2TR` encodes an output key it is GIVEN.
+**Note (this 4.6 text predates phases 3-5).** Phases 3 (encodings/addresses), 4
+(HD wallets/mnemonics) and 5 (transactions) all shipped after this section was
+written, and `coin-selftest` now drives all **78** handlers, not just the curve.
+Expect green sections for hex/Base58Check/Bech32/RLP/addresses, BIP-39/32/44,
+and the phase-5 `stRunTransactions` KATs (BIP-143 / EIP-155 / EIP-1559) - the
+last of which is NEW offline surface (runbook inventory item 8) having its first
+engine pass. The only genuinely-absent surface is Schnorr/BIP-340, deferred with
+Taproot; `cxBtcAddressP2TR` encodes an output key it is GIVEN and does not tweak.
 
 **What flips:** the "PHASE 2 STATUS" block and the "STILL VERIFIED STATICALLY"
 paragraph in the `coinxt/src/coinxt.lcb` header, the matching sentences in
@@ -1069,7 +1090,13 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
 [x] torrentxt  torrent-selftest               2026-08-10: 96/0 (folded, twice;
                shares the core's single session by design)
 [x] onionxt    oxSelfTest()                   2026-08-10: 40/0, 3 sha3 skips by
-                                             design (docs/08 gap #2)
+                                             design (docs/08 gap #2). NOTE: gap #2
+                                             is now SHIPPED (SodiumXT ABI 7), so on
+                                             an ABI-7 engine those 3 are no longer
+                                             skips - the offline-address checks run
+[ ] onionxt    offline .onion address        NEW (item 9): oxAddressFromPublicKey
+                                             emits a real address, oxIsValidAddress
+                                             refuses a tampered one. Needs ABI 7.
 [x] coinxt     .lcb items 1-5 in order        2026-08-08: 1:PASS 2:PASS(via sPrepare)
                                              3:PASS UIntSize return works
                                              4:PASS empty Data marshals
@@ -1079,6 +1106,13 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                                              on the re-run (the red line was the
                                              "m/" fail-open, fixed same day)
                                              -> PHASES 2-4 CLOSED
+[ ] coinxt     coin-selftest phase 5         NEW (item 8): the stRunTransactions
+                                             section (BIP-143 / EIP-155 / EIP-1559
+                                             KATs). Deterministic, offline. Not yet
+                                             run on an engine.
+[ ] riptide    rsSelfTest()                  NEW (item 7): identity + feed wire
+                                             formats. Offline; needs SodiumXT
+                                             (coinxt/onionxt optional). Not yet run.
 
 DEMOS
 [ ] datachannel-loopback
