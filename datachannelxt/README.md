@@ -92,12 +92,15 @@ pipeline works; real signaling is the only thing left to add.
 > SCTP-negotiated cap, and `dcCleanup`. So the binding loads and the
 > negotiate → open → transfer → teardown spine is observed, not designed.
 >
-> That section covers 20 of the 35 public `dc*` handlers. The rest —
+> On **2026-08-10** the member harness's synchronous half ran green on a real
+> engine too (23 checks, twice in one day), folded into the suite selftest,
+> which now calls **every one of the 31 public `dc*` handlers** by name —
 > `dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`,
-> `dcChannelProtocol`, `dcSetLocalDescription`, `dcGatheringState`,
-> `dcSelectedCandidatePair`, `dcSendText`, `dcBufferedAmount` and friends —
-> remain **verified statically**. `tests/datachannel-selftest.livecodescript`
-> is the harness that covers all 35, and it has not yet been run on an engine.
+> `dcChannelProtocol`, `dcSetLocalDescription` and friends included. What
+> remains **verified statically** is the member harness's own async loopback:
+> the LIVE halves of `dcSendText`, `dcBufferedAmount`, `dcGatheringState`,
+> `dcSelectedCandidatePair` and the non-trickle signaling pins. Running
+> `tests/datachannel-selftest.livecodescript` standalone is what covers those.
 
 ## Then try the flagship (two machines, no server)
 

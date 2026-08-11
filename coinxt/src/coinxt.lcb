@@ -24,8 +24,9 @@ library org.openxtalk.library.coin
 -- src/coinxt.livecodescript, by the same C-vs-script rule as the encodings.
 --
 -- ==========================================================================
--- PHASE 2 AND 4 STATUS: THE NATIVE SIDE IS PROVEN; THE HANDLERS BELOW ARE NOT.
--- Be precise about which of those two this file is. tools/coin-kat.py drives
+-- PHASE 2 AND 4 STATUS: CLOSED ON-ENGINE 2026-08-10 (see below for what the
+-- native side already proved, and the last paragraph for what the engine run
+-- added). tools/coin-kat.py drives
 -- every phase-2 cnx_ entry point headless through ctypes and pins it to public
 -- vectors: CoinXT reproduces four published RFC 6979 secp256k1 signatures byte
 -- for byte, a CoinXT signature VERIFIES in the independent Python `ecdsa`
@@ -40,16 +41,17 @@ library org.openxtalk.library.coin
 -- wordlist to hash to the SHA-256 BIP-39 publishes. Native side proven; the
 -- wrappers below are not.
 --
--- What has NOT happened is an engine pass over the eighteen new PUBLIC handlers
--- in this file. They are assembled from the exact parts the 2026-08-08 pass
--- proved (sPrepare + sAlloc + a UIntSize length + sFinish), and every bind
--- string, argument count, type mapping and return type below was diffed
--- mechanically against native/coinxt.c, but "verified statically" is what they
--- are until tests/coin-selftest.livecodescript runs them on a real engine.
--- Two shapes here are genuinely new to this file and should be watched first in
--- that run: a foreign handler taking a CInt FLAG (cxPublicKey's pCompressed),
--- and a public handler returning Boolean rather than Data (cxVerify,
--- cxSeckeyIsValid).
+-- The engine pass over the eighteen PUBLIC handlers happened on 2026-08-10:
+-- tests/coin-selftest.livecodescript ran folded into the suite harness
+-- (tests/suite-selftest.livecodescript at the repository root), every handler
+-- in this file was called by its real name, and the same-day re-run came back
+-- 207/207 green (the one defect the first run found was a script-layer path
+-- parse, not a handler here - see CLAUDE.md, "the trailing-separator
+-- fail-open"). The two shapes this block said to watch first were both
+-- answered on the side the code assumed: the CInt FLAG marshals (cxPublicKey's
+-- compressed and uncompressed calls returned 33 and 65 bytes, distinct), and
+-- Boolean returns work (cxVerify answered true for a good signature and false
+-- for a tampered one, and cxSeckeyIsValid answered both ways too).
 --
 -- PHASE 1 STATUS: ENGINE PASS RECORDED 2026-08-08. This module was compiled, loaded
 -- and exercised on a real OXT engine by tests/suite-selftest.livecodescript
@@ -64,7 +66,8 @@ library org.openxtalk.library.coin
 --      transitively, which is airtight here: every public cx* handler opens
 --      with sPrepare(), and sPrepare() is the ENTIRE body of cxCheckABI(). Four
 --      handlers returned without throwing, so _cnx_abi_version() marshalled and
---      matched. cxCheckABI() has still not been called BY NAME.
+--      matched. (cxCheckABI() was finally called BY NAME on 2026-08-10, by the
+--      folded harness, and passed against the shipped binary.)
 --   3. UIntSize AS A FOREIGN RETURN TYPE: WORKS. This was the genuinely novel
 --      one - UIntSize was proven in this family only as a PARAMETER. Every hash
 --      wrapper below sizes its output buffer from a _cnx_*_len() declared

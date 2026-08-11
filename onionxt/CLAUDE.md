@@ -379,6 +379,12 @@ what apps branch on: with SodiumXT present, SAFECOOKIE auth and deterministic `.
 (`sxSignSeedToExpandedKey`) both advertise TRUE, and offline `.onion` checksums still advertise FALSE -
 docs/08 gap #2, observed rather than assumed.
 
+And on 2026-08-10, the WHOLE of `oxSelfTest()` ran on-engine, twice in one day, folded into that same
+suite harness: 40 checks green, zero failures, including the configuration-setters section described
+below, the fail-closed argument validation, the unknown-handle misses, and the idempotent teardown.
+Since the embed (same day), the harness carries `src/onionxt.livecodescript` itself in the paste, so
+those runs exercised this member's real shipped code, not a copy.
+
 **OnionXT is the only member with untested public handlers, and the reasons are now
 written down rather than assumed (2026-08-09).** `tools/check-suite-coverage.py` (suite
 root) measures how much of each member's public surface the pasteable suite harness

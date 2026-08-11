@@ -37,24 +37,29 @@ authority; this is the summary:
 
 | Extension | Native shim | Committed binaries | Maturity |
 |---|---|---|---|
-| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member. Headline paths observed again on-engine 2026-08-08; `sxSelfTest()` has not been re-run since its later additions |
-| torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the ~70-check member selftest has not been run |
-| enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, and a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08 |
-| datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. 15 of its 35 `dc*` handlers are still verified statically |
-| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08. Mode B (launching tor) still unexercised |
-| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **Phase 1 closed 2026-08-08** by an engine pass. **Phases 2, 3 and 4 are built and verified headlessly** - the curve reproduces published RFC 6979 vectors and its signatures verify in an independent library; the pure-script encoders and the HD layer are RUN against BIP-173/BIP-350/EIP-55/RLP/BIP-39/BIP-32 vectors by `check-script-vectors.py`, which drives the real `.livecodescript` through a small interpreter, including the test mnemonic every wallet ships with walking down BIP-44/BIP-84/Ethereum paths to their published addresses. None of the three has had an engine pass yet; one paste of the suite harness (`tests/suite-selftest.livecodescript`, which now folds coinxt's own 28 sections in) settles all of them. Transactions (phase 5, optional) still to build |
+| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member. The full `sxSelfTest()` — 68 checks, every post-pass addition included — ran green on-engine 2026-08-10, folded into the suite harness, on top of the 2026-08-08 headline-path pass |
+| torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the full 96-check member selftest ran green on-engine 2026-08-10 (folded), the v9-v11 surface included. Two-machine rp1/DHT behaviour still open |
+| enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). Only the live `enHostStatus` pair in its own async loopback stays static |
+| datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have now been called on-engine (2026-08-10, folded sync half); only the member harness's own async live halves stay static |
+| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (40 checks) ran green on-engine 2026-08-10, folded. Mode B (launching tor) still unexercised |
+| coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All four phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. Transactions (phase 5, optional) still to build |
 
-**Where the suite stands after the 2026-08-08 pass.** On that date
-`tests/suite-selftest.livecodescript` ran green on a real OXT engine with all six
-members installed — the suite's first end-to-end runtime evidence. It proved the
-compositions that are the actual product: one SodiumXT seed derives the *same*
-ed25519 identity in libsodium and libtorrent, libtorrent's DHT secret key **is**
-SodiumXT's expanded key, TorrentXT accepts a SodiumXT signature over a BEP44 item
-and **refuses** one minted for another sequence number, and a single
+**Where the suite stands after the 2026-08-08 and 2026-08-10 passes.** On
+2026-08-08 `tests/suite-selftest.livecodescript` ran green on a real OXT engine
+with all six members installed — the suite's first end-to-end runtime evidence.
+It proved the compositions that are the actual product: one SodiumXT seed derives
+the *same* ed25519 identity in libsodium and libtorrent, libtorrent's DHT secret
+key **is** SodiumXT's expanded key, TorrentXT accepts a SodiumXT signature over a
+BEP44 item and **refuses** one minted for another sequence number, and a single
 SodiumXT-sealed payload crosses **both** live transports byte-for-byte under the
-60000-byte budget they share. Two things remain broadly open: **macOS binaries**
-for four of the five native members, and the **deeper per-member selftests**,
-which the suite harness deliberately does not replace.
+60000-byte budget they share. On 2026-08-10 the harness ran again in its current,
+self-contained form — every member's own deep self-test folded in, the coinxt and
+onionxt script layers embedded in the paste — and reported **zero failures across
+455 member-harness checks plus the whole core**, re-confirming the compositions
+and retiring the deeper per-member selftests as an open item. What remains
+broadly open: **macOS binaries** for four of the five native members, and the
+**live-Tor and two-machine work** (runbook items 4-6), which no single-machine
+offline paste can reach.
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
@@ -63,8 +68,10 @@ paths: "+ live-Tor pass"). No member claims a runtime behaviour it has not
 measured. `docs/OXT-PASS-RUNBOOK.md` is the runbook for closing that gap: what is
 still unproven and where each label lives, the install order, the run order, and
 what to record. The convention cuts both ways — a label is removed only for what
-a run actually exercised, so the 2026-08-08 pass promoted the handlers it called
-and left the ones it did not still labelled, member by member.
+a run actually exercised, so each recorded pass (2026-08-08, 2026-08-10) promoted
+the handlers it called and left the ones it did not still labelled, member by
+member — which is why the enet and datachannel async-loopback halves are still
+labelled today, inside an otherwise green suite.
 
 ## The shared engineering rules
 

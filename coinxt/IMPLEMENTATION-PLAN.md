@@ -22,10 +22,10 @@ native seam and the KAT harness come first, because everything downstream trusts
 > `""` returned a digest instead of throwing). Neither documented fallback - `CUInt`, `optional Pointer`
 > - was needed.
 >
-> Still verified statically within phase 1: 12 of the 16 public handlers were not called by name
-> (`cxCheckABI`, the seven `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`,
-> `cxPbkdf2HmacSha512`). They are assembled from parts the pass proved, and `tools/coin-kat.py` drives
-> all of them headless, so this is a coverage gap, not a risk to the phase. Unlike
+> The phase-1 residual - 12 of the 16 public handlers not called by name (`cxCheckABI`, the seven
+> `*Len` accessors, `cxSha512`, `cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512`) - was CLOSED
+> on 2026-08-10: the member harness, folded into the suite selftest, calls every public handler by
+> name, and it ran green on a real engine (207/207 on the same-day re-run). Unlike
 > OnionXT (pure script), CoinXT HAS a C shim, so the FFI/C-ABI section of CLAUDE.md is law from phase 1
 > onward, and every shim change builds under ASan + UBSan and bumps the ABI + `cxCheckABI()` on any ABI
 > change.
@@ -35,8 +35,9 @@ native seam and the KAT harness come first, because everything downstream trusts
 > `tools/coin-kat.py` checks them on every push: CoinXT reproduces four published RFC 6979 secp256k1
 > signatures byte for byte, its signature verifies in Python `ecdsa`, a signature that library made
 > verifies in CoinXT, and recovery round-trips to the signer. ASan + UBSan are clean over the whole
-> curve surface. **What is NOT yet done is an engine pass over the fifteen new `cx*` handlers**;
-> `tests/coin-selftest.livecodescript` drives all 31 public handlers and is what will close it. Two
+> curve surface. **The engine pass over the fifteen curve `cx*` handlers happened 2026-08-10** (the
+> folded harness; both new marshalling shapes - the CInt flag and the Boolean returns - answered on
+> the side the code assumed), which closes the phase outright. Two
 > phase-0 items are also now settled: the entropy decision was WRONG and is corrected (see CLAUDE.md,
 > "Determinism and entropy"), and Schnorr/BIP-340 is deferred to a Taproot phase because
 > trezor-crypto's plain-C tree does not implement it. **PHASE 3 IS ALSO BUILT.** `src/coinxt.livecodescript`
@@ -50,8 +51,10 @@ native seam and the KAT harness come first, because everything downstream trusts
 > (`cnx_bip39_wordlist` + its length), the script layer gained eleven handlers, and
 > `tools/check-script-vectors.py` runs the real file against 14 official BIP-39 vectors, BIP-32 test
 > vectors 1-3 and the "abandon ... about" mnemonic down BIP-44/BIP-84/Ethereum paths to the published
-> addresses (170 checks, up from 87). **The outstanding verification for phases 2, 3 and 4 is now a
-> single engine pass**; `tests/coin-selftest.livecodescript` drives all of it in one paste. Phase 5
+> addresses (170 checks, up from 87). **That single engine pass has happened: phases 2, 3 and 4 all
+> CLOSED 2026-08-10** - 205/206 on the first folded run (the one red line was the trailing-separator
+> fail-open in `cxHdDerivePath`, fixed and re-modelled in the interpreter the same day), then 207/207
+> on the re-run with the fixed layer embedded in the paste. Phase 5
 > (transaction building) is the member's next critical path, and it is explicitly optional - the
 > primitive layer is shippable without it.
 
@@ -106,7 +109,7 @@ written down and agreed. **Risk retired:** building the wrong thing, or a licens
 **Done when:** `cxKeccak256` and friends return the pinned vectors from a real engine, ASan/UBSan clean.
 **Risk retired:** the whole FFI plumbing (the family's single most expensive area) and the build.
 
-## Phase 2 - Keys and signatures  (DONE at the C level; `cx*` handlers await an engine pass)
+## Phase 2 - Keys and signatures  (CLOSED 2026-08-10 by an engine pass)
 
 - Export and wrap `cnx_seckey_verify`, `cnx_pubkey_from_seckey`, `cnx_pubkey_decompress`,
   `cnx_ecdsa_sign` / `_verify`, `cnx_ecdsa_sign_recoverable` / `cnx_ecdsa_recover`, `cnx_ecdh`. **All
@@ -125,12 +128,12 @@ written down and agreed. **Risk retired:** building the wrong thing, or a licens
 
 **Done when:** a signature CoinXT makes verifies in an independent library, and `cxRecover` returns the
 signing pubkey. **MET (2026-08-08)**, headless, on every push: see the status note at the top of this
-file. Still open for the phase: running `tests/coin-selftest.livecodescript` on a real engine so the
-fifteen new public handlers stop being "verified statically".
+file. The engine half followed on **2026-08-10**: the folded harness ran all fifteen curve handlers
+green on a real engine, so nothing in this phase is "verified statically" any more.
 **Risk retired:** the core value proposition (correct, deterministic, recoverable signing on
 secp256k1).
 
-## Phase 3 - Encodings and addresses (pure script)  (BUILT; needs an engine pass)
+## Phase 3 - Encodings and addresses (pure script)  (CLOSED 2026-08-10 by an engine pass)
 
 - Livecodescript, no shim: `cxHexEncode/Decode`, `cxBase58CheckEncode/Decode`,
   `cxBech32Encode/Decode` (Bech32 and Bech32m), `cxRlpEncode/Decode`. Each fails closed on a bad
@@ -149,14 +152,15 @@ program in the first and x-only G is the program in the second. Corrupt inputs a
 the board: BIP-173's ten invalid strings, BIP-350's invalid addresses including a v0 address carrying
 a bech32m checksum, a corrupt Base58Check tail, and RLP's non-canonical forms.
 
-Still open for the phase: an **engine pass**. The encoders are pure LiveCodeScript, so
-`tools/check-script-vectors.py` runs the real file through `tools/lcs-interp.py` and settles its
-LOGIC (87 checks), but only OXT settles parser behaviour.
+The **engine pass** happened 2026-08-10, and it is what settled parser behaviour: the encoders all
+ran green folded into the suite harness, and the one parser difference the day surfaced was in
+phase 4's path walker, not here (`tools/check-script-vectors.py` still settles the LOGIC headlessly
+on every push; the interpreter now models the engine's trailing-delimiter counting rule too).
 **Risk retired:** the "silently wrong address = lost funds" class, moved into script where it is
 diffable and fully KAT-covered - and, unlike previous pure-script layers in this family, actually
 executed before shipping.
 
-## Phase 4 - HD wallets and mnemonics  (BUILT; needs an engine pass)
+## Phase 4 - HD wallets and mnemonics  (CLOSED 2026-08-10 by an engine pass)
 
 - Shim: `cnx_hdnode_from_seed`, `cnx_hdnode_derive` (one step), `cnx_hdnode_private_key` / `_public_key`
   / `_chaincode`, `cnx_bip39_seed`.
@@ -167,8 +171,12 @@ executed before shipping.
 - KATs: the official BIP-32 and BIP-39 vectors, end to end (mnemonic -> seed -> node -> derived address).
 
 **Done when:** the official BIP-39 mnemonic + a BIP-44 path reproduce the reference address, byte for
-byte. **MET (2026-08-08)**, headless, on every push. **Risk retired:** wallet interoperability (a
-CoinXT wallet and any standard wallet agree on the same key from the same mnemonic).
+byte. **MET (2026-08-08)**, headless, on every push - and on **2026-08-10** on a real engine: the
+folded harness walked the test mnemonic down `m/44'/0'/0'/0/0`, `m/84'/0'/0'/0/0` and
+`m/44'/60'/0'/0/0` to the published addresses, green. The engine also found this phase's one real
+defect first (the `"m/"` trailing-separator fail-open in the path parse), fixed and confirmed green
+the same day. **Risk retired:** wallet interoperability (a CoinXT wallet and any standard wallet
+agree on the same key from the same mnemonic).
 
 **As built, three things differ from the sketch above, each deliberately:**
 

@@ -377,11 +377,10 @@ resolved, and keccak256(`""`/`"abc"`), sha256(`"abc"`), ripemd160(`"abc"`) came 
 `cxSha3_256` distinct from `cxKeccak256`. That closes phase 1 (see IMPLEMENTATION-PLAN.md). Twelve of
 the sixteen public handlers were not called by name in that run - `cxCheckABI` (proven transitively:
 `sPrepare()` is its entire body and every wrapper calls it), the seven `*Len` accessors, `cxSha512`,
-`cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512` - so those stay "verified statically" as
-individual handlers even though the seam beneath them is now observed. **The reason that gap existed is
-closed:** CoinXT was the only member with no self-building harness, which is why the suite pass could
-reach just 4 handlers. `tests/coin-selftest.livecodescript` now drives all 16 in one paste, so the next
-engine session retires the remaining 12 in a single run.
+`cxHmacSha256`, `cxHmacSha512`, `cxPbkdf2HmacSha512` - and that residual was RETIRED on 2026-08-10:
+`tests/coin-selftest.livecodescript`, folded into the suite harness, called every public handler by
+name (including `cxCheckABI` at last) and ran green on a real engine, 207/207 on the same-day re-run.
+Nothing in phase 1 is "verified statically" any more.
 `src/coinxt.lcb` is the whole FFI seam: `library org.openxtalk.library.coin`, one
 `private foreign handler` per `cnx_` export (all 16, checked name-for-name against the built
 library's exported symbols), and a `public cx*` wrapper for each: `cxKeccak256`, `cxSha3_256`,
@@ -426,7 +425,7 @@ seven `cx*Len` accessors, and `cxCheckABI()`. The decisions worth knowing before
   when `cxKeccak256` and friends return the pinned vectors from a real engine; the file header
   lists, in order, exactly what that pass must confirm.
 
-**Phase 2, the secp256k1 curve - BUILT AND CROSS-VERIFIED; the .lcb wrappers need an engine pass.**
+**Phase 2, the secp256k1 curve - BUILT, CROSS-VERIFIED, and engine-passed 2026-08-10.**
 ABI 2 -> 3. The shim exports `cnx_seckey_verify`, `cnx_pubkey_from_seckey`, `cnx_pubkey_decompress`,
 `cnx_ecdsa_sign`, `cnx_ecdsa_verify`, `cnx_ecdsa_sign_recoverable`, `cnx_ecdsa_recover`, `cnx_ecdh`
 and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.lcb` wraps each one.
@@ -435,9 +434,9 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
   CoinXT makes verifies in an independent library, and `cxRecover` returns the signing pubkey." Both
   hold: `tools/coin-kat.py` reproduces four published RFC 6979 secp256k1 signatures byte for byte, a
   CoinXT signature verifies in Python `ecdsa`, a signature `ecdsa` made verifies in CoinXT, and
-  recovery round-trips to the signer. The fifteen public `cx*` handlers are still
-  "verified statically; needs an OXT pass" - `tests/coin-selftest.livecodescript` drives all of them
-  and is what closes that.
+  recovery round-trips to the signer. The fifteen public `cx*` handlers ran on-engine on 2026-08-10
+  (the folded harness), green: the CInt flag marshalled (33 vs 65 bytes, distinct), the Boolean
+  returns answered both ways, and `cxRecover` returned the signing key. The phase is closed.
 - **The phase-0 entropy decision was wrong and is corrected above.** That is the single most important
   thing learned in this phase; read "Determinism and entropy" before touching the shim.
 - **The vendored set is a CLOSURE, found empirically** (compile, read the undefined symbols, add the
@@ -482,10 +481,10 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
   against the C (arity, per-argument type, return type: 30/30), and the bind set equal to the built
   library's exported symbols (30/30).
 
-**Phase 3, encodings and addresses - BUILT, and EXECUTED headlessly, which is new for a
-pure-script layer.** `src/coinxt.livecodescript` ships 19 public handlers: hex, Base58Check,
-bech32/bech32m, SegWit addresses, `cxHash160`/`cxHash256`, the four address builders and RLP.
-No shim change; the ABI is untouched at 3.
+**Phase 3, encodings and addresses - BUILT, EXECUTED headlessly (new for a pure-script
+layer), and engine-passed 2026-08-10.** `src/coinxt.livecodescript` ships 19 public handlers
+from this phase: hex, Base58Check, bech32/bech32m, SegWit addresses, `cxHash160`/`cxHash256`,
+the four address builders and RLP. No shim change; the ABI is untouched at 3.
 
 - **The script is not part of the .lcb and does not load with it.** It goes in the message
   path (`start using stack "coinxt"`), the way OnionXT ships its `ox*` surface, and
@@ -497,8 +496,10 @@ No shim change; the ABI is untouched at 3.
   `tools/check-script-vectors.py` runs THE REAL FILE against the published BIP-173, BIP-350,
   EIP-55, RLP and Base58Check vectors, with the hashes supplied by the real shim through
   ctypes. 87 checks, in the gate set, on every push. This is an approximation of the engine
-  and settles LOGIC only: parser behaviour still needs the OXT pass, and nothing here is
-  promoted out of "verified statically". It found a real ambiguity while being built (a
+  and settles LOGIC only; parser behaviour got its OXT pass on 2026-08-10, when the whole
+  layer ran green folded into the suite harness (and the day's one parser difference - the
+  trailing-delimiter counting rule, below - was in phase 4's path walker, not the encoders).
+  It found a real ambiguity while being built (a
   `the number of items of X < 1` that let the count swallow the comparison), which is
   precisely the kind of thing that would otherwise have burned an engine session.
 - **The three portability disciplines are in the file header and are not optional.** No `^`,
@@ -550,7 +551,8 @@ post-split checklist are in [MIGRATION.md](MIGRATION.md)):
   vendor re-pin. The shipped per-platform binaries are pinned separately in `src/code/MANIFEST.sha256`,
   which is where every other suite member pins them, so one gate shape covers all six.
 
-**Phase 4, HD wallets and mnemonics - BUILT, and executed headlessly end to end.** ABI 3 -> 4.
+**Phase 4, HD wallets and mnemonics - BUILT, executed headlessly end to end, and
+engine-passed 2026-08-10.** ABI 3 -> 4.
 The shim gains four exports (34 now), `src/coinxt.lcb` wraps three of them, and
 `src/coinxt.livecodescript` gains eleven public handlers: `cxMnemonicNormalize`,
 `cxMnemonicFromEntropy`, `cxMnemonicToEntropy`, `cxMnemonicValidate`, `cxMnemonicToSeed`,
@@ -561,8 +563,10 @@ The shim gains four exports (34 now), `src/coinxt.lcb` wraps three of them, and
   `tools/check-script-vectors.py` runs the REAL script against 14 official BIP-39 entropy vectors,
   BIP-32 test vectors 1-3, and the "abandon ... about" mnemonic down `m/44'/0'/0'/0/0`,
   `m/84'/0'/0'/0/0` and `m/44'/60'/0'/0/0` to the published Bitcoin and Ethereum addresses. 170
-  checks, up from 87. What is still owed is the ENGINE pass; `tests/coin-selftest.livecodescript`
-  drives all of it and is what closes phase 4 properly.
+  checks, up from 87 (219 now, with the trailing-separator negatives). The ENGINE pass followed on
+  2026-08-10: the folded harness walked the same paths to the same published addresses on a real
+  engine, and the phase closed at 207/207 on the re-run - after the engine surfaced the one real
+  defect, the `"m/"` fail-open recorded at the end of this file.
 - **The vendoring decision that mattered: `bip32.c` was NOT taken.** It would have given BIP-32 for
   free, but it is written against every curve trezor supports, so it drags in `curves.c`,
   `nist256p1`, `ed25519-donna` and the Cardano variants - a large closure, nearly all of it code
@@ -790,7 +794,9 @@ selftest - every phase, every handler, the only red line in the entire suite - a
   counted strings are internally built lists that never end with the delimiter, which both the
   engine run and the gates confirm.
 
-The fix itself is verified statically and by the corrected interpreter; it needs the next OXT pass
-(the two named checks above, both green). Everything else the 2026-08-10 pass touched came back on
-the side the code assumed, including both phase-2 marshalling bets: the C `int` flag marshals (33
-vs 65 came back distinct) and `Boolean` returns work (`cxVerify` answered both true and false).
+The fix is now CONFIRMED ON-ENGINE: the same-day re-run (2026-08-10, the suite harness with the
+script layer embedded) reported both named checks green - "an empty level is refused" and "a
+trailing separator is refused" - and the whole coinxt harness at 207/207. Everything else the
+first 2026-08-10 pass touched came back on the side the code assumed, including both phase-2
+marshalling bets: the C `int` flag marshals (33 vs 65 came back distinct) and `Boolean` returns
+work (`cxVerify` answered both true and false).

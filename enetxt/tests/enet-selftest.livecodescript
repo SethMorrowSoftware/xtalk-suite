@@ -13,13 +13,14 @@ script "enetSelfTest"
 -- in their own isolated section (a client host pointed at a dead port, so an
 -- abrupt teardown cannot perturb the graceful loopback below), and
 -- enHostStatus is asserted BOTH stale (empty) and live (peerCount, address).
--- That isolated section is the part added AFTER the 2026-08-07 engine pass, so
--- it is still verified statically and needs an OXT pass to become a runtime
--- result. The 2026-08-08 suite pass did NOT cover it either: the suite selftest
--- exercises the graceful path only (initialize, host create, connect, send,
--- poll, disconnect, destroy, deinitialize), so enDisconnectNow, enResetPeer,
--- enSetPeerTimeout, enSetHostBandwidth and the live-vs-stale enHostStatus
--- assertions remain the reason to run THIS file on an engine.
+-- The isolated section became a RUNTIME RESULT on 2026-08-10: this file's
+-- synchronous half ran green on a real engine (21 checks, twice in one day),
+-- folded into the suite selftest at the repository root, and all four abrupt
+-- teardown handlers returned 0 against a live client host. What that fold
+-- deliberately does NOT carry is this file's own async loopback (the suite
+-- core drives its own on 27196), so the LIVE enHostStatus assertions in the
+-- loopback below are the one part still verified statically - they are the
+-- remaining reason to run THIS file standalone on an engine.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,

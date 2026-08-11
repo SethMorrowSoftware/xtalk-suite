@@ -8,23 +8,25 @@ script "dataChannelSelfTest"
 -- round-trips) actually runs - the one layer CI cannot reach, since OXT has
 -- no headless way to compile or run .lcb.
 --
--- COVERAGE NOTE (honest): the harness now drives every public dc* handler,
--- including the ones that used to appear only in the stale-handle section -
--- dcCreateChannelEx, dcSetBufferedLowThreshold, dcLocalDescriptionType,
--- dcChannelProtocol, dcSetLocalDescription - and it pins the non-trickle
--- signaling contract (a live local description carries "a=candidate", and the
--- offer/answer roles match the flow). THIS harness has not itself been run on
--- an engine yet, so its checks are verified statically. What IS recorded: on
--- 2026-08-08 the suite selftest (tests/suite-selftest.livecodescript at the
--- repository root) ran green on a real OXT engine and drove 20 of the 35
--- public dc* handlers, including a live loopback that negotiated, opened both
--- ends, round-tripped a payload byte-for-byte, refused 60001 bytes with -4,
--- and tore down through dcCleanup. So the binding and the transfer spine are
--- observed; the handlers this file adds on top of that set - dcCreateChannelEx,
--- dcSetBufferedLowThreshold, dcLocalDescriptionType, dcChannelProtocol,
--- dcSetLocalDescription, dcGatheringState, dcSelectedCandidatePair, dcSendText,
--- dcBufferedAmount and the rest - are what running THIS file would turn into a
--- runtime result.
+-- COVERAGE NOTE (honest): the harness now drives every public dc* handler
+-- (31 of them), including the ones that used to appear only in the
+-- stale-handle section - dcCreateChannelEx, dcSetBufferedLowThreshold,
+-- dcLocalDescriptionType, dcChannelProtocol, dcSetLocalDescription - and it
+-- pins the non-trickle signaling contract (a live local description carries
+-- "a=candidate", and the offer/answer roles match the flow). What is recorded:
+-- on 2026-08-08 the suite selftest (tests/suite-selftest.livecodescript at
+-- the repository root) ran green on a real OXT engine with a live loopback
+-- that negotiated, opened both ends, round-tripped a payload byte-for-byte,
+-- refused 60001 bytes with -4, and tore down through dcCleanup; and on
+-- 2026-08-10 THIS file's synchronous half ran green folded into that same
+-- harness (23 checks, twice in one day), which calls every one of the 31
+-- public handlers by name and pins the whole stale-handle surface as harmless
+-- no-ops. So the binding, the transfer spine, and the synchronous contracts
+-- are observed. Still verified statically: this file's own async loopback
+-- (the fold excludes it; the suite core drives its own) - the LIVE halves of
+-- dcSendText, dcBufferedAmount, dcGatheringState, dcSelectedCandidatePair and
+-- the a=candidate/role pins are what running THIS file standalone would turn
+-- into a runtime result.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,

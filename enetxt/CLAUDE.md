@@ -17,10 +17,15 @@ code in this repository.
 > byte-for-byte, `enSend` **refused** 60001 bytes with `-4` rather than
 > truncating, accepted a payload at exactly the 60000-byte budget, and ENet
 > reassembled all 60000 bytes into ONE message — the fragmentation contract,
-> observed rather than reasoned. Still un-exercised: the isolated teardown
-> section added after the 2026-08-07 pass (`enDisconnectNow`, `enResetPeer`,
-> `enSetPeerTimeout`, `enSetHostBandwidth`, live-vs-stale `enHostStatus`), and
-> the LAN chat demo between two real machines.
+> observed rather than reasoned. A third pass on 2026-08-10 (the suite selftest
+> with this member's synchronous half folded in, 21 checks green, twice in one
+> day) retired the isolated teardown section added after the 2026-08-07 pass:
+> `enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout` and `enSetHostBandwidth`
+> all returned 0 against a live client host on a real engine. Still
+> un-exercised: the LIVE `enHostStatus` assertions inside this member's own
+> async loopback (the fold excludes that half; run
+> `tests/enet-selftest.livecodescript` standalone to close it), and the LAN
+> chat demo between two real machines.
 
 ## The rules that carry over unchanged
 

@@ -18,11 +18,15 @@ script "xTalkSuiteSelfTest"
 --      enetxt and datachannelxt are supposed to share. Those compositions are
 --      the suite's actual product; nothing tests them today.
 --
--- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN. On 2026-08-08 it was
--- executed on a real OXT engine with all six members installed and reported
--- GREEN - every section above passed, zero failures. That run is the suite's
--- first runtime evidence, and what it bought is recorded per member (see each
--- member's README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md section 4).
+-- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN, IN THIS FORM. On
+-- 2026-08-08 it ran on a real OXT engine with all six members installed and
+-- reported GREEN - the suite's first runtime evidence. On 2026-08-10 it ran
+-- again, as the file is TODAY - every member's deep self-test folded in and
+-- both script libraries embedded in the paste - and reported ZERO failures:
+-- 455 member-harness checks (sodiumxt 68, onionxt 40, coinxt 207, torrentxt
+-- 96, enetxt sync 21, datachannelxt sync 23) plus every core and cross-member
+-- section. What each run bought is recorded per member (see each member's
+-- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
@@ -59,8 +63,8 @@ script "xTalkSuiteSelfTest"
 -- code that moved.
 --
 -- Re-run this on any new engine, OS, or set of committed binaries: it is the
--- cheapest end-to-end check the suite has, and the 2026-08-08 result is
--- evidence about that machine, not a permanent property of the code.
+-- cheapest end-to-end check the suite has, and the recorded results are
+-- evidence about those machines, not a permanent property of the code.
 --
 -- WITH ONE NARROWING, and it is worth knowing before you run this. The
 -- cross-member sections below ask questions that are mostly NOT script

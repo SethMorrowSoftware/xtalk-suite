@@ -9,29 +9,26 @@ lists only what is shipped, so you can tell at a glance what you can actually ca
 the secp256k1 curve, and the encodings and addresses are shipped; HD wallets, mnemonics and
 transaction building are not.
 
-> **Status.** **Fifty** public handlers exist across two layers: **31** in the `.lcb`
-> extension (hashes and the curve) and **19** in `src/coinxt.livecodescript` (encodings and
-> addresses). The two load differently - see the phase-3 section.
+> **Status.** **Sixty-five** public handlers exist across two layers: **35** in the `.lcb`
+> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **30** in
+> `src/coinxt.livecodescript` (encodings, addresses, mnemonics and HD derivation). The two
+> load differently - see the phase-3 section.
 >
-> *Phase 1, the hash surface,* is complete and was closed by an engine pass on **2026-08-08**:
-> the binding loaded on a real OXT engine and returned its pinned vectors byte-exact.
->
-> *Phase 2, the secp256k1 curve,* is built and its native side is cross-verified: CoinXT
-> reproduces four published RFC 6979 signatures byte for byte, a CoinXT signature verifies in
-> the independent Python `ecdsa` library, and recovery round-trips to the signer. Its fifteen
-> script handlers have **not yet run on an engine**.
->
-> *Phase 3, encodings and addresses,* is built. It is pure LiveCodeScript, and its LOGIC has
-> been executed headlessly against the published BIP-173, BIP-350, EIP-55 and RLP vectors
-> (`tools/check-script-vectors.py` runs the real file through a small interpreter). What is
-> still unobserved is engine parser behaviour. If you are the first to run either phase on an
-> engine, treat a failure as a CoinXT bug and report it rather than assuming your inputs are
-> wrong.
+> **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
+> engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
+> *Phases 2, 3 and 4* were closed on **2026-08-10**: the member harness ran folded into the
+> suite selftest (`tests/suite-selftest.livecodescript` at the repository root), 205/206 on the
+> first pass and **207/207** on the same-day re-run. The one red line was a genuine engine
+> parser difference no gate had modelled - `cxHdDerivePath` of `"m/"` returned its node
+> unchanged because the engine counts one trailing delimiter out of existence - fixed the same
+> day, and the refusal observed green in the re-run. The native side remains cross-verified on
+> every push: CoinXT reproduces four published RFC 6979 signatures byte for byte, a CoinXT
+> signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
+> the signer.
 >
 > **Not shipped, despite appearing in SPEC.md:** `cxSchnorrSign`/`cxSchnorrVerify` and
 > `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340),
-> `cxHdFromSeed`, `cxHdDerivePath`, `cxXprv`/`cxXpub`, `cxWifEncode`/`cxWifDecode`,
-> `cxMnemonicFromEntropy`/`ToSeed`/`Validate`. Calling any of them is a `handler not found`.
+> and `cxWifEncode`/`cxWifDecode`. Calling any of them is a `handler not found`.
 
 ## Before anything else
 
