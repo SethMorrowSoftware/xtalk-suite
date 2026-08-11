@@ -30,7 +30,10 @@ plus the pure-compute half of phase 2):
     strict parse, and author-signature verification, with the
     tamper-evident post chain
 - **`tests/riptide-selftest.livecodescript`**, the offline harness: call
-  `rsSelfTest()` on an engine with the extensions installed.
+  `rsSelfTest()` on an engine with the extensions installed. It is also
+  folded into the suite-wide paste (`tests/suite-selftest.livecodescript`
+  at the repository root) along with the library itself, so one paste
+  exercises riptide with the rest of the suite.
 - **`tests/riptide_golden_test.py`** and **`tools/riptide_reference.py`**:
   the pure-Python oracle and the golden test that pins every vector.
   The oracle anchors to vectors from OUTSIDE this directory: the sodiumxt

@@ -247,6 +247,16 @@ MEMBERS = [
         "peer connection below. Run datachannelxt's own harness for that.",
         cut_before='   stSection "loopback: create + negotiate (async)"',
     ),
+    Member(
+        "riptide", "riptide/tests/riptide-selftest.livecodescript", "rs1",
+        "rsSelfTest", "Riptide Social (phase 1): the rs* self-test",
+        "The capstone app's offline harness: the KDF subkey tree, identity to "
+        "handle to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings and "
+        "the post chain - all against the same golden vectors the Python "
+        "oracle pins. Fully offline; sections needing coinxt or onionxt SKIP "
+        "when those are absent, and the whole crypto set skips without "
+        "SodiumXT.",
+    ),
 ]
 
 
@@ -281,6 +291,14 @@ SCRIPT_LAYERS = [
         "socket callbacks (socketError and friends) ride along, which is "
         "correct - the engine delivers them to the object that opened the "
         "socket, and in this paste that is this stack.",
+    ),
+    Layer(
+        "riptide", "riptide/src/riptide.livecodescript",
+        "Riptide script layer (the real library, embedded)",
+        "The rs* surface of the capstone app - pure script over the installed "
+        "extensions, phase 1 (identity + the feed wire formats). Embedded so "
+        "the folded riptide harness tests the code it ships with, same as the "
+        "coinxt and onionxt layers.",
     ),
 ]
 

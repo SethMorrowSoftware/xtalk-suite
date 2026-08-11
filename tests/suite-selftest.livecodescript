@@ -158,6 +158,7 @@ local sRunning             -- "true" while the async phases are still live
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
+local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -321,6 +322,39 @@ local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact com
 local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
 local dc1sPhase            -- "", "opening", "messaging", "done"
 
+-- ---- Riptide Social (phase 1): the rs* self-test ----
+constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
+constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"
+constant rs1kRsGoldRoomSalt = "golden-salt"
+constant rs1kRsGoldPost1Text = "hello, riptide"
+constant rs1kRsGoldPost2Text = "second post"
+constant rs1kRsGoldTs1 = "1754870400"
+constant rs1kRsGoldTs2 = "1754870460"
+constant rs1kRsGoldHeadSeq = "7"
+constant rs1kRsGoldHeadName = "Riptide"
+constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
+constant rs1kRsGoldProfileTarget = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+constant rs1kRsGoldMediaTarget = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+constant rs1kRsGoldIdSeedHex = "9c7b6be59e0884a1923505cf1390a1d01b5b7a258c582d9518e722c07bd8650c"
+constant rs1kRsGoldDmSeedHex = "4dca52e87fa8919a5699fd35f79d6e4a417bdf0cf3e16d5c549aac6cd8c2b391"
+constant rs1kRsGoldLanKeyHex = "fb9441aca42ca2212b3b16ea0b615d70e6d8c5ab3f6ac9a90a5e648fd58ac85f"
+constant rs1kRsGoldAnon0Hex = "6940ca2dc794eb4c533feb196481c0547b1257d3837925affe35dae97682c68a"
+constant rs1kRsGoldHandle = "5a546e4fef5d1b76f94dc1b2eded75c44bffc900af7461a26d8427453a92f22d"
+constant rs1kRsGoldZeroSeedPub = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+constant rs1kRsGoldConfPub = "672e8e0b259627f15c772ec0d61f15cd786ce2bc7244549255f9d6cfaac300b2"
+constant rs1kRsGoldOnion = "ljkg4t7plunxn6knygzo33lvyrf77siav52gditnqqtukous6iwwe6yd.onion"
+constant rs1kRsGoldInboxId = "3cf4170b3e7253387f351af14eb1071224d0140e"
+constant rs1kRsGoldRoomId = "3a57d3ad644536e20a4486d31bde5ecb3902d3a5"
+constant rs1kRsGoldPost1Hex = "5253503100000000689932803030303030303030303030303030303030303030303030303030303030303030303030303030303044000e68656c6c6f2c20726970746964650084b56e15631b88e780a74e22241c00efc34b63e50fd645ba651bb27dc41cac5953396ae8f848ef9b81711b08baa5b764fc5746bfd02122f36ac5a17f87a88f01"
+constant rs1kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
+constant rs1kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
+constant rs1kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
+constant rs1kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
+local rs1sLog
+local rs1sPass
+local rs1sFail
+local rs1sSkip
+
 -- >>> GENERATED EMBED: coinxt script layer declarations >>> --
 -- ---- CoinXT script layer (the real library, embedded) ----
 constant kCxBase58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -378,6 +412,33 @@ local sServices              -- keyed by integer service handle (nested array)
 local sLocalToService        -- keyed by local port -> service handle
 local sNextHandle            -- monotonic handle allocator (0 is never valid)
 -- <<< GENERATED EMBED: onionxt script layer declarations <<< --
+
+-- >>> GENERATED EMBED: riptide script layer declarations >>> --
+-- ---- Riptide script layer (the real library, embedded) ----
+constant kRsVersion = "0.1.0"
+constant kRsKeyMagic = "RIPTKEY1"
+constant kRsHeadMagic = "RSH1"
+constant kRsPostMagic = "RSP1"
+constant kRsHeadSalt = "riptide-head"
+constant kRsKdfContextText = "riptide"
+constant kRsInboxSuffix = "riptide-inbox"
+constant kRsZeroTarget = "0000000000000000000000000000000000000000"
+constant kRsSubkeyIdentity = "1"
+constant kRsSubkeyDm = "2"
+constant kRsSubkeyLan = "3"
+constant kRsSubkeyAnonBase = 100
+constant kRsMaxDisplayName = 64
+constant kRsMaxMedia = 8
+constant kRsMaxChunks = 16
+constant kRsMaxRecord = 1000
+constant kRsOnionAddrLen = 62
+constant kRsArgonOps = "2"
+constant kRsBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+constant kRsChecksumPrefix = ".onion checksum"
+local sRsLastError
+local sRsProbed
+local sRsCaps
+-- <<< GENERATED EMBED: riptide script layer declarations <<< --
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -560,6 +621,7 @@ command stRun
    end try
    put 0 into sSession
    put false into sHaveCoinScript
+   put false into sHaveRiptideScript
    put empty into sSealKey
    put empty into sSealPlain
    put empty into sSealBox
@@ -630,7 +692,7 @@ command stRun
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
    -- the note above `put 0 into sSession`.
-   -- The OUTER try is a BACKSTOP ONLY. Each of the six members inside is
+   -- The OUTER try is a BACKSTOP ONLY. Each of the seven harnesses inside is
    -- contained individually, and that is the part that matters: with only this
    -- outer one, a throw in member three left members four, five and six never
    -- run, never merged and not even SKIPPED, while the run still printed a
@@ -810,6 +872,17 @@ command stProbe
       put false into sHaveCoinScript
    end try
    stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
+         "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- Riptide's script layer rides the same embed mechanism, so the same
+   -- tripwire: rsZeroTarget is a real vector (40 zeros), not a version sniff.
+   put false into sHaveRiptideScript
+   try
+      put (the number of chars in rsZeroTarget() is 40) into sHaveRiptideScript
+   catch tError
+      put false into sHaveRiptideScript
+   end try
+   stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
 end stProbe
 
@@ -1993,6 +2066,22 @@ command stRunMemberHarnesses
       end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   end if
+
+   -- Riptide is an APP layer over the extensions above, so it runs LAST: by
+   -- here every extension it probes has already shown its own colours. Its
+   -- harness handles a missing optional extension itself (sections SKIP), and
+   -- refuses cleanly without SodiumXT, so the only gate here is the embedded
+   -- layer being present at all.
+   if sHaveRiptideScript then
+      try
+         stMergeReturned "Riptide Social (phase 1)", rs1rsSelfTest()
+      catch tError
+         stSectionFailed "Riptide deep self-test", tError
+      end try
+   else
+      stSkip "Riptide deep self-test", \
+            "the riptide script layer is not present; the paste is damaged"
    end if
 end stRunMemberHarnesses
 
@@ -5523,6 +5612,773 @@ end oxProcessId
 -- <<< GENERATED EMBED: onionxt script layer <<< --
 
 
+-- >>> GENERATED EMBED: riptide script layer >>> --
+-- ==========================================================================
+-- Riptide script layer (the real library, embedded)
+--
+-- The rs* surface of the capstone app - pure script over the installed
+-- extensions, phase 1 (identity + the feed wire formats). Embedded so the
+-- folded riptide harness tests the code it ships with, same as the coinxt
+-- and onionxt layers.
+--
+-- GENERATED from riptide/src/riptide.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild. Names are NOT prefixed: this is the library itself, and the
+-- folded tests above must reach it by its real names.
+-- ==========================================================================
+
+function rsVersion
+   return "Riptide" && kRsVersion && "(phase 1: identity + feed framing)"
+end rsVersion
+
+function rsLastError
+   return sRsLastError
+end rsLastError
+
+private command rsSetError pMessage
+   put pMessage into sRsLastError
+end rsSetError
+
+function rsProbeCapabilities
+   local tCaps, tKey, tBox, tOpened, tIgnore
+   if sRsProbed is true then return sRsCaps
+   put false into tCaps["canCrypto"]
+   put false into tCaps["hasTorrent"]
+   put false into tCaps["hasOnion"]
+   put false into tCaps["hasDataChannel"]
+   put false into tCaps["hasEnet"]
+   put false into tCaps["hasCoin"]
+   try
+      put sxRandomBytes(32) into tKey
+      put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
+      put sxSecretBoxOpen(tBox, tKey) into tOpened
+      put (textDecode(tOpened, "ASCII") is "probe") into tCaps["canCrypto"]
+   catch tIgnore
+      put false into tCaps["canCrypto"]
+   end try
+   try
+      put btLastError() into tIgnore
+      put true into tCaps["hasTorrent"]
+   catch tIgnore
+      put false into tCaps["hasTorrent"]
+   end try
+   try
+      put (oxVersion() is not empty) into tCaps["hasOnion"]
+   catch tIgnore
+      put false into tCaps["hasOnion"]
+   end try
+   try
+      put (dcLibraryVersion() is not empty) into tCaps["hasDataChannel"]
+   catch tIgnore
+      put false into tCaps["hasDataChannel"]
+   end try
+   try
+      put (enLibraryVersion() is not empty) into tCaps["hasEnet"]
+   catch tIgnore
+      put false into tCaps["hasEnet"]
+   end try
+   try
+      put (cxSha3_256Len() is 32) into tCaps["hasCoin"]
+   catch tIgnore
+      put false into tCaps["hasCoin"]
+   end try
+   -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
+   -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
+   -- self-computation actually needs. A real call, not a version sniff.
+   put (the number of bytes in rsSha3(textEncode("probe", "ASCII")) is 32) \
+         into tCaps["hasSha3"]
+   put tCaps into sRsCaps
+   put true into sRsProbed
+   return sRsCaps
+end rsProbeCapabilities
+
+function rsHeadSalt
+   return kRsHeadSalt
+end rsHeadSalt
+
+function rsZeroTarget
+   return kRsZeroTarget
+end rsZeroTarget
+
+function rsGenerateMasterSeed
+   local tSeed, tErr
+   try
+      put sxRandomBytes(32) into tSeed
+   catch tErr
+      rsSetError "rsGenerateMasterSeed: SodiumXT is required:" && tErr
+      return empty
+   end try
+   return tSeed
+end rsGenerateMasterSeed
+
+function rsSealMasterSeed pSeed, pPassphrase
+   local tSalt, tKey, tOut, tErr
+   if the number of bytes in pSeed is not 32 then
+      rsSetError "rsSealMasterSeed: the master seed must be 32 bytes"
+      return empty
+   end if
+   if pPassphrase is empty then
+      rsSetError "rsSealMasterSeed: an empty passphrase is refused"
+      return empty
+   end if
+   try
+      put sxRandomBytes(16) into tSalt
+      put sxPwHash(textEncode(pPassphrase, "UTF-8"), tSalt, 32, \
+            kRsArgonOps, sxPwMemInteractive()) into tKey
+      put textEncode(kRsKeyMagic & "E", "ASCII") & tSalt & \
+            sxSecretBox(pSeed, tKey) into tOut
+   catch tErr
+      rsSetError "rsSealMasterSeed:" && tErr
+      return empty
+   end try
+   return tOut
+end rsSealMasterSeed
+
+function rsOpenMasterSeed pFileBytes, pPassphrase
+   local tSalt, tSealed, tKey, tSeed, tHeader, tErr
+   if the number of bytes in pFileBytes < 65 then
+      rsSetError "rsOpenMasterSeed: too short to be a RIPTKEY1 file"
+      return empty
+   end if
+   put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
+   if tHeader is not (kRsKeyMagic & "E") then
+      rsSetError "rsOpenMasterSeed: not a RIPTKEY1 sealed key file"
+      return empty
+   end if
+   put byte 10 to 25 of pFileBytes into tSalt
+   put byte 26 to -1 of pFileBytes into tSealed
+   try
+      put sxPwHash(textEncode(pPassphrase, "UTF-8"), tSalt, 32, \
+            kRsArgonOps, sxPwMemInteractive()) into tKey
+      put sxSecretBoxOpen(tSealed, tKey) into tSeed
+   catch tErr
+      rsSetError "rsOpenMasterSeed: wrong passphrase or corrupted key file"
+      return empty
+   end try
+   if the number of bytes in tSeed is not 32 then
+      rsSetError "rsOpenMasterSeed: the sealed payload is not a 32-byte seed"
+      return empty
+   end if
+   return tSeed
+end rsOpenMasterSeed
+
+private function rsKdfContext
+   return textEncode(kRsKdfContextText, "ASCII") & numToByte(0)
+end rsKdfContext
+
+private function rsSubkey pMaster, pSubkeyId
+   local tOut, tErr
+   if the number of bytes in pMaster is not 32 then
+      rsSetError "rsSubkey: the master seed must be 32 bytes"
+      return empty
+   end if
+   try
+      put sxKdfDerive(pMaster, pSubkeyId, rsKdfContext(), 32) into tOut
+   catch tErr
+      rsSetError "rsSubkey:" && tErr
+      return empty
+   end try
+   return tOut
+end rsSubkey
+
+function rsIdentitySeed pMaster
+   return rsSubkey(pMaster, kRsSubkeyIdentity)
+end rsIdentitySeed
+
+function rsDmSeed pMaster
+   return rsSubkey(pMaster, kRsSubkeyDm)
+end rsDmSeed
+
+function rsLanKey pMaster
+   return rsSubkey(pMaster, kRsSubkeyLan)
+end rsLanKey
+
+function rsAnonSeed pMaster, pIndex
+   local tId
+   if pIndex is not an integer or pIndex < 0 then
+      rsSetError "rsAnonSeed: the persona index must be a non-negative integer"
+      return empty
+   end if
+   put kRsSubkeyAnonBase + pIndex into tId
+   return rsSubkey(pMaster, tId)
+end rsAnonSeed
+
+function rsIdentityKeys pSeed
+   local tPub, tSecret, tKeys, tErr
+   if the number of bytes in pSeed is not 32 then
+      rsSetError "rsIdentityKeys: the identity seed must be 32 bytes"
+      return empty
+   end if
+   try
+      sxSignKeypairFromSeed pSeed, tPub, tSecret
+   catch tErr
+      rsSetError "rsIdentityKeys:" && tErr
+      return empty
+   end try
+   put tPub into tKeys["publicKey"]
+   put tSecret into tKeys["secretKey"]
+   put rsBinToHexString(tPub) into tKeys["handle"]
+   if tKeys["handle"] is empty then return empty
+   return tKeys
+end rsIdentityKeys
+
+function rsHandleFromSeed pSeed
+   local tKeys
+   put rsIdentityKeys(pSeed) into tKeys
+   if tKeys is empty then return empty
+   return tKeys["handle"]
+end rsHandleFromSeed
+
+private function rsSha3 pData
+   local tHash, tErr
+   try
+      put sxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   try
+      put cxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   return empty
+end rsSha3
+
+function rsOnionFromPublicKey pPub
+   local tHash
+   if the number of bytes in pPub is not 32 then
+      rsSetError "rsOnionFromPublicKey: the public key must be 32 bytes"
+      return empty
+   end if
+   put rsSha3(textEncode(kRsChecksumPrefix, "UTF-8") & pPub & \
+         numToByte(3)) into tHash
+   if tHash is empty then
+      rsSetError "rsOnionFromPublicKey: the offline .onion checksum needs" && \
+            "SHA3-256 from sodiumxt ABI 7 (sxSha3_256) or coinxt" && \
+            "(cxSha3_256); install either, or read the address from" && \
+            "oxServiceAddress after publishing"
+      return empty
+   end if
+   return rsBase32Encode(pPub & (byte 1 to 2 of tHash) & numToByte(3)) & \
+         ".onion"
+end rsOnionFromPublicKey
+
+function rsOnionFromHandle pHandleHex
+   local tPub
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsOnionFromHandle: the handle must be 64 hex chars"
+      return empty
+   end if
+   return rsOnionFromPublicKey(tPub)
+end rsOnionFromHandle
+
+function rsVerifyOnionClaim pOnionAddr, pHandleHex
+   local tClaimed, tExpected, tErr
+   try
+      put oxPublicKeyFromAddress(pOnionAddr) into tClaimed
+   catch tErr
+      rsSetError "rsVerifyOnionClaim: needs onionxt (oxPublicKeyFromAddress)"
+      return false
+   end try
+   if the number of bytes in tClaimed is not 32 then
+      rsSetError "rsVerifyOnionClaim: not a structurally valid onion address"
+      return false
+   end if
+   put rsHexToBin(pHandleHex) into tExpected
+   if the number of bytes in tExpected is not 32 then
+      rsSetError "rsVerifyOnionClaim: the handle must be 64 hex chars"
+      return false
+   end if
+   try
+      return sxMemEqual(tClaimed, tExpected)
+   catch tErr
+      rsSetError "rsVerifyOnionClaim:" && tErr
+      return false
+   end try
+end rsVerifyOnionClaim
+
+function rsInboxId pHandleHex
+   local tPub, tOut, tErr
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsInboxId: the handle must be 64 hex chars"
+      return empty
+   end if
+   try
+      put sxHash(tPub & textEncode(kRsInboxSuffix, "ASCII"), 20) into tOut
+   catch tErr
+      rsSetError "rsInboxId:" && tErr
+      return empty
+   end try
+   return rsBinToHexString(tOut)
+end rsInboxId
+
+function rsRoomId pPkAHex, pPkBHex, pSessionSalt
+   local tA, tB, tCat, tOut, tErr
+   put toLower(pPkAHex) into tA
+   put toLower(pPkBHex) into tB
+   if not rsIsHexOfLen(tA, 64) or not rsIsHexOfLen(tB, 64) then
+      rsSetError "rsRoomId: both public keys must be 64 hex chars"
+      return empty
+   end if
+   if tA <= tB then
+      put rsHexToBin(tA) & rsHexToBin(tB) into tCat
+   else
+      put rsHexToBin(tB) & rsHexToBin(tA) into tCat
+   end if
+   try
+      put sxHash(tCat & pSessionSalt, 20) into tOut
+   catch tErr
+      rsSetError "rsRoomId:" && tErr
+      return empty
+   end try
+   return rsBinToHexString(tOut)
+end rsRoomId
+
+function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProfileMeta
+   local tNameBytes, tOnion, tOnionChars, tLatest, tPrekeyT, tProfile, tOut
+   if pSeq is not an integer or pSeq < 0 then
+      rsSetError "rsBuildHead: seq must be a non-negative integer"
+      return empty
+   end if
+   put textEncode(pDisplayName, "UTF-8") into tNameBytes
+   if the number of bytes in tNameBytes > kRsMaxDisplayName then
+      rsSetError "rsBuildHead: the display name is over" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsNormalizeTarget(pLatestPost) into tLatest
+   put rsNormalizeTarget(pPrekey) into tPrekeyT
+   put rsNormalizeTarget(pProfileMeta) into tProfile
+   if tLatest is empty or tPrekeyT is empty or tProfile is empty then
+      rsSetError "rsBuildHead: a target must be empty or 40 hex chars"
+      return empty
+   end if
+   put toLower(pOnionAddr) into tOnion
+   put the number of chars in tOnion into tOnionChars
+   if tOnion is not empty and tOnionChars is not kRsOnionAddrLen then
+      rsSetError "rsBuildHead: an onion address must be" && \
+            kRsOnionAddrLen && "chars"
+      return empty
+   end if
+   put textEncode(kRsHeadMagic, "ASCII") into tOut
+   put rsBEu64(pSeq) after tOut
+   put numToByte(the number of bytes in tNameBytes) after tOut
+   put tNameBytes after tOut
+   put textEncode(tLatest, "ASCII") after tOut
+   put textEncode(tPrekeyT, "ASCII") after tOut
+   put numToByte(the number of chars in tOnion) after tOut
+   put textEncode(tOnion, "ASCII") after tOut
+   put textEncode(tProfile, "ASCII") after tOut
+   if the number of bytes in tOut > kRsMaxRecord then
+      rsSetError "rsBuildHead: the head record is over" && kRsMaxRecord && \
+            "bytes"
+      return empty
+   end if
+   return tOut
+end rsBuildHead
+
+function rsParseHead pBytes
+   local tLen, tPos, tNameLen, tOnionLen, tHead, tField
+   put the number of bytes in pBytes into tLen
+   if tLen < 13 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsHeadMagic then
+      rsSetError "rsParseHead: bad magic, not an RSH1 record"
+      return empty
+   end if
+   put rsReadBEu64(byte 5 to 12 of pBytes) into tHead["seq"]
+   put byteToNum(byte 13 of pBytes) into tNameLen
+   if tNameLen > kRsMaxDisplayName then
+      rsSetError "rsParseHead: display name length over cap"
+      return empty
+   end if
+   put 13 into tPos
+   if tLen < tPos + tNameLen + 40 + 40 + 1 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
+         into tHead["displayName"]
+   add tNameLen to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed latest-post target"
+      return empty
+   end if
+   put tField into tHead["latestPostTarget"]
+   add 40 to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed prekey target"
+      return empty
+   end if
+   put tField into tHead["prekeyTarget"]
+   add 40 to tPos
+   put byteToNum(byte (tPos + 1) of pBytes) into tOnionLen
+   add 1 to tPos
+   if tOnionLen is not 0 and tOnionLen is not kRsOnionAddrLen then
+      rsSetError "rsParseHead: bad onion address length"
+      return empty
+   end if
+   if tLen < tPos + tOnionLen + 40 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   if tOnionLen is 0 then
+      put empty into tHead["onionAddr"]
+   else
+      put textDecode(byte (tPos + 1) to (tPos + tOnionLen) of pBytes, \
+            "ASCII") into tHead["onionAddr"]
+   end if
+   add tOnionLen to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed profile-meta target"
+      return empty
+   end if
+   put tField into tHead["profileMetaTarget"]
+   add 40 to tPos
+   if tLen is not tPos then
+      rsSetError "rsParseHead: trailing bytes after the head record"
+      return empty
+   end if
+   return tHead
+end rsParseHead
+
+function rsBuildPost pTimestamp, pPrevTarget, pTextContent, pMediaList, pIdentitySeed
+   local tBody
+   put rsPostBody(pTimestamp, pPrevTarget, "D", pTextContent, empty, \
+         pMediaList) into tBody
+   if tBody is empty then return empty
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPost
+
+function rsBuildPostChunked pTimestamp, pPrevTarget, pChunkTargets, pMediaList, pIdentitySeed
+   local tBody
+   put rsPostBody(pTimestamp, pPrevTarget, "C", empty, pChunkTargets, \
+         pMediaList) into tBody
+   if tBody is empty then return empty
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPostChunked
+
+private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
+   local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsPostBody: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   put rsNormalizeTarget(pPrevTarget) into tPrev
+   if tPrev is empty then
+      rsSetError "rsPostBody: the previous-post target must be empty or 40 hex"
+      return empty
+   end if
+   put textEncode(kRsPostMagic, "ASCII") into tOut
+   put rsBEu64(pTimestamp) after tOut
+   put textEncode(tPrev, "ASCII") after tOut
+   put textEncode(pKind, "ASCII") after tOut
+   if pKind is "D" then
+      put textEncode(pTextContent, "UTF-8") into tTextBytes
+      if the number of bytes in tTextBytes > 65535 then
+         rsSetError "rsPostBody: the text is over the u16 length field"
+         return empty
+      end if
+      put rsBEu16(the number of bytes in tTextBytes) after tOut
+      put tTextBytes after tOut
+   else
+      set the itemDelimiter to comma
+      put the number of items in pChunkTargets into tChunkCount
+      if tChunkCount < 1 or tChunkCount > kRsMaxChunks then
+         rsSetError "rsPostBody: chunk count must be 1 to" && kRsMaxChunks
+         return empty
+      end if
+      put numToByte(tChunkCount) after tOut
+      repeat for each item tItem in pChunkTargets
+         put rsNormalizeTarget(tItem) into tNorm
+         if tNorm is kRsZeroTarget or tNorm is empty then
+            rsSetError "rsPostBody: a chunk target must be 40 non-zero hex"
+            return empty
+         end if
+         put textEncode(tNorm, "ASCII") after tOut
+      end repeat
+   end if
+   set the itemDelimiter to comma
+   if pMediaList is empty then
+      put 0 into tMediaCount
+   else
+      put the number of items in pMediaList into tMediaCount
+   end if
+   if tMediaCount > kRsMaxMedia then
+      rsSetError "rsPostBody: media count over" && kRsMaxMedia
+      return empty
+   end if
+   put numToByte(tMediaCount) after tOut
+   if tMediaCount > 0 then
+      repeat for each item tItem in pMediaList
+         put rsNormalizeTarget(tItem) into tNorm
+         if tNorm is kRsZeroTarget or tNorm is empty then
+            rsSetError "rsPostBody: a media info-hash must be 40 non-zero hex"
+            return empty
+         end if
+         put textEncode(tNorm, "ASCII") after tOut
+      end repeat
+   end if
+   if the number of bytes in tOut + 64 > kRsMaxRecord then
+      rsSetError "rsPostBody: the post record is over" && kRsMaxRecord && \
+            "bytes; move the text to chunks or drop media"
+      return empty
+   end if
+   return tOut
+end rsPostBody
+
+private function rsSignPost pBody, pIdentitySeed
+   local tKeys, tSig, tErr
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(pBody, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsSignPost:" && tErr
+      return empty
+   end try
+   return pBody & tSig
+end rsSignPost
+
+function rsParsePost pBytes
+   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList
+   put the number of bytes in pBytes into tLen
+   if tLen < 4 + 8 + 40 + 1 + 1 + 64 then
+      rsSetError "rsParsePost: truncated post record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsPostMagic then
+      rsSetError "rsParsePost: bad magic, not an RSP1 record"
+      return empty
+   end if
+   put rsReadBEu64(byte 5 to 12 of pBytes) into tPost["timestamp"]
+   put textDecode(byte 13 to 52 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParsePost: malformed previous-post target"
+      return empty
+   end if
+   put tField into tPost["prevPostTarget"]
+   put textDecode(byte 53 of pBytes, "ASCII") into tKind
+   put tKind into tPost["kind"]
+   put 53 into tPos
+   if tKind is "D" then
+      if tLen < tPos + 2 + 1 + 64 then
+         rsSetError "rsParsePost: truncated post record"
+         return empty
+      end if
+      put rsReadBEu16(byte (tPos + 1) to (tPos + 2) of pBytes) into tTextLen
+      add 2 to tPos
+      if tLen < tPos + tTextLen + 1 + 64 then
+         rsSetError "rsParsePost: text length runs past the record"
+         return empty
+      end if
+      put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
+            "UTF-8") into tPost["text"]
+      add tTextLen to tPos
+   else if tKind is "C" then
+      put byteToNum(byte (tPos + 1) of pBytes) into tCount
+      add 1 to tPos
+      if tCount < 1 or tCount > kRsMaxChunks then
+         rsSetError "rsParsePost: chunk count out of range"
+         return empty
+      end if
+      if tLen < tPos + tCount * 40 + 1 + 64 then
+         rsSetError "rsParsePost: truncated chunk list"
+         return empty
+      end if
+      put empty into tList
+      repeat with tI = 1 to tCount
+         put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+               into tField
+         if not rsIsHexOfLen(tField, 40) then
+            rsSetError "rsParsePost: malformed chunk target"
+            return empty
+         end if
+         if tList is empty then
+            put tField into tList
+         else
+            put comma & tField after tList
+         end if
+         add 40 to tPos
+      end repeat
+      put tList into tPost["chunkTargets"]
+   else
+      rsSetError "rsParsePost: unknown post kind"
+      return empty
+   end if
+   put byteToNum(byte (tPos + 1) of pBytes) into tCount
+   add 1 to tPos
+   if tCount > kRsMaxMedia then
+      rsSetError "rsParsePost: media count out of range"
+      return empty
+   end if
+   if tLen is not tPos + tCount * 40 + 64 then
+      rsSetError "rsParsePost: record length does not match its fields"
+      return empty
+   end if
+   put empty into tList
+   repeat with tI = 1 to tCount
+      put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+            into tField
+      if not rsIsHexOfLen(tField, 40) then
+         rsSetError "rsParsePost: malformed media info-hash"
+         return empty
+      end if
+      if tList is empty then
+         put tField into tList
+      else
+         put comma & tField after tList
+      end if
+      add 40 to tPos
+   end repeat
+   put tList into tPost["mediaTargets"]
+   return tPost
+end rsParsePost
+
+function rsVerifyPost pBytes, pHandleHex
+   local tPub, tParsed, tLen, tErr
+   put rsParsePost(pBytes) into tParsed
+   if tParsed is empty then return false
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsVerifyPost: the handle must be 64 hex chars"
+      return false
+   end if
+   put the number of bytes in pBytes into tLen
+   try
+      return sxSignVerifyDetached(byte (tLen - 63) to tLen of pBytes, \
+            byte 1 to (tLen - 64) of pBytes, tPub)
+   catch tErr
+      rsSetError "rsVerifyPost:" && tErr
+      return false
+   end try
+end rsVerifyPost
+
+function rsBencodeBytes pData
+   local tLen
+   put the number of bytes in pData into tLen
+   return textEncode(tLen & ":", "ASCII") & pData
+end rsBencodeBytes
+
+private function rsIsHexOfLen pValue, pLen
+   local tI, tChar
+   if the number of chars in pValue is not pLen then return false
+   repeat with tI = 1 to pLen
+      put char tI of pValue into tChar
+      if tChar is not in "0123456789abcdef" then return false
+   end repeat
+   return true
+end rsIsHexOfLen
+
+private function rsNormalizeTarget pTarget
+   local tT
+   if pTarget is empty then return kRsZeroTarget
+   put toLower(pTarget) into tT
+   if not rsIsHexOfLen(tT, 40) then return empty
+   return tT
+end rsNormalizeTarget
+
+private function rsHexToBin pHex
+   local tOut, tErr
+   try
+      put sxHex2Bin(textEncode(toLower(pHex), "ASCII")) into tOut
+   catch tErr
+      rsSetError "rsHexToBin: malformed hex"
+      return empty
+   end try
+   return tOut
+end rsHexToBin
+
+private function rsBinToHexString pData
+   local tOut, tErr
+   try
+      put textDecode(sxBin2Hex(pData), "ASCII") into tOut
+   catch tErr
+      rsSetError "rsBinToHexString:" && tErr
+      return empty
+   end try
+   return tOut
+end rsBinToHexString
+
+private function rsBEu16 pNum
+   return binaryEncode("n", pNum)
+end rsBEu16
+
+private function rsBEu64 pNum
+   return binaryEncode("NN", pNum div 4294967296, pNum mod 4294967296)
+end rsBEu64
+
+private function rsReadBEu16 pBytes
+   return byteToNum(byte 1 of pBytes) * 256 + byteToNum(byte 2 of pBytes)
+end rsReadBEu16
+
+private function rsReadBEu32 pBytes
+   local tA, tB, tC, tD
+   put byteToNum(byte 1 of pBytes) into tA
+   put byteToNum(byte 2 of pBytes) into tB
+   put byteToNum(byte 3 of pBytes) into tC
+   put byteToNum(byte 4 of pBytes) into tD
+   return ((tA * 256 + tB) * 256 + tC) * 256 + tD
+end rsReadBEu32
+
+private function rsReadBEu64 pBytes
+   return rsReadBEu32(byte 1 to 4 of pBytes) * 4294967296 + \
+         rsReadBEu32(byte 5 to 8 of pBytes)
+end rsReadBEu64
+
+private function rsPow2 pN
+   local tOut, tI
+   put 1 into tOut
+   repeat pN times
+      put tOut * 2 into tOut
+   end repeat
+   return tOut
+end rsPow2
+
+private function rsIntDiv pA, pB
+   return trunc(pA / pB)
+end rsIntDiv
+
+private function rsIntMod pA, pB
+   return pA - pB * trunc(pA / pB)
+end rsIntMod
+
+private function rsBase32Encode pData
+   local tAcc, tBits, tOut, tI, tIndex
+   put 0 into tAcc
+   put 0 into tBits
+   put empty into tOut
+   repeat with tI = 1 to the number of bytes in pData
+      put tAcc * 256 + byteToNum(byte tI of pData) into tAcc
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         put rsIntMod(rsIntDiv(tAcc, rsPow2(tBits)), 32) into tIndex
+         put char (tIndex + 1) of kRsBase32Alphabet after tOut
+         put rsIntMod(tAcc, rsPow2(tBits)) into tAcc
+      end repeat
+   end repeat
+   if tBits > 0 then
+      put rsIntMod(tAcc * rsPow2(5 - tBits), 32) into tIndex
+      put char (tIndex + 1) of kRsBase32Alphabet after tOut
+   end if
+   return tOut
+end rsBase32Encode
+-- <<< GENERATED EMBED: riptide script layer <<< --
+
+
 -- ==========================================================================
 -- EVERYTHING BELOW THIS LINE IS GENERATED. Do not edit it here.
 --
@@ -8191,3 +9047,354 @@ command dc1stCleanup
    -- above) the parenthesised form is correct and required.
    dcCleanup
 end dc1stCleanup
+
+
+-- ==========================================================================
+-- Riptide Social (phase 1): the rs* self-test
+--
+-- The capstone app's offline harness: the KDF subkey tree, identity to
+-- handle to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings and the
+-- post chain - all against the same golden vectors the Python oracle pins.
+-- Fully offline; sections needing coinxt or onionxt SKIP when those are
+-- absent, and the whole crypto set skips without SodiumXT.
+--
+-- GENERATED from riptide/tests/riptide-selftest.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild, or the next build will overwrite you. Every name below is
+-- prefixed `rs1` so this harness cannot collide with, or be
+-- perturbed by, any other member's copy of the same scaffolding.
+-- ==========================================================================
+
+function rs1rsSelfTest
+   local rs1tCaps
+   put empty into rs1sLog
+   put 0 into rs1sPass
+   put 0 into rs1sFail
+   put 0 into rs1sSkip
+   put rsProbeCapabilities() into rs1tCaps
+   rs1rstSectionCapabilities rs1tCaps
+   if rs1tCaps["canCrypto"] is true then
+      rs1rstSectionKdfTree
+      rs1rstSectionHandles
+      rs1rstSectionOnion rs1tCaps
+      rs1rstSectionRendezvous
+      rs1rstSectionKeyFile
+      rs1rstSectionHead
+      rs1rstSectionPosts
+      rs1rstSectionHelpers
+   else
+      rs1rstSkip "every crypto section: SodiumXT is not installed"
+   end if
+   -- The first line is EXACTLY two counts + passed/failed and nothing else:
+   -- the suite core's stSummaryCounts treats any other word as prose, so the
+   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
+   return rs1sPass && "passed," && rs1sFail && "failed" & return & \
+         rs1sSkip && "skipped (optional dependencies; see the log)" & return & \
+         "----------------------------------------" & return & rs1sLog
+end rs1rsSelfTest
+
+private command rs1rstCheck pCondition, pLabel
+   if pCondition is true then
+      add 1 to rs1sPass
+      put "  ok  " && pLabel & return after rs1sLog
+   else
+      add 1 to rs1sFail
+      put "  FAIL" && pLabel & return after rs1sLog
+   end if
+end rs1rstCheck
+
+private command rs1rstSection pTitle
+   put return & "--" && pTitle & return after rs1sLog
+end rs1rstSection
+
+private command rs1rstSkip pLabel
+   add 1 to rs1sSkip
+   put "  skip" && pLabel & return after rs1sLog
+end rs1rstSkip
+
+private function rs1rstBin pHex
+   return sxHex2Bin(textEncode(pHex, "ASCII"))
+end rs1rstBin
+
+private function rs1rstHex pData
+   return textDecode(sxBin2Hex(pData), "ASCII")
+end rs1rstHex
+
+private function rs1rstFlipByte pData, pIndex
+   local rs1tOut, rs1tByte
+   put byteToNum(byte pIndex of pData) into rs1tByte
+   put pData into rs1tOut
+   if rs1tByte is 255 then
+      put numToByte(0) into byte pIndex of rs1tOut
+   else
+      put numToByte(rs1tByte + 1) into byte pIndex of rs1tOut
+   end if
+   return rs1tOut
+end rs1rstFlipByte
+
+private command rs1rstSectionCapabilities pCaps
+   rs1rstSection "capabilities + version"
+   rs1rstCheck (rsVersion() contains "Riptide"), "rsVersion names the library"
+   rs1rstCheck (pCaps["canCrypto"] is true or pCaps["canCrypto"] is false), \
+         "probe reports canCrypto as a boolean"
+   rs1rstCheck (the number of lines in the keys of pCaps is 7), \
+         "probe reports six extensions plus the derived hasSha3"
+   put "      canCrypto=" & pCaps["canCrypto"] & \
+         " hasTorrent=" & pCaps["hasTorrent"] & \
+         " hasOnion=" & pCaps["hasOnion"] & return after rs1sLog
+   put "      hasDataChannel=" & pCaps["hasDataChannel"] & \
+         " hasEnet=" & pCaps["hasEnet"] & \
+         " hasCoin=" & pCaps["hasCoin"] & \
+         " hasSha3=" & pCaps["hasSha3"] & return after rs1sLog
+end rs1rstSectionCapabilities
+
+private command rs1rstSectionKdfTree
+   local rs1tMaster, rs1tOut
+   rs1rstSection "the KDF subkey tree"
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tMaster
+   put rsIdentitySeed(rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1rstHex(rs1tOut) is rs1kRsGoldIdSeedHex), "identity seed matches golden"
+   put rsDmSeed(rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1rstHex(rs1tOut) is rs1kRsGoldDmSeedHex), "DM seed matches golden"
+   put rsLanKey(rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1rstHex(rs1tOut) is rs1kRsGoldLanKeyHex), "LAN key matches golden"
+   put rsAnonSeed(rs1tMaster, 0) into rs1tOut
+   rs1rstCheck (rs1rstHex(rs1tOut) is rs1kRsGoldAnon0Hex), "anon persona 0 matches golden"
+   rs1rstCheck (rsIdentitySeed(rs1tMaster) is not rsDmSeed(rs1tMaster)), \
+         "identity and DM subkeys differ"
+   rs1rstCheck (rsAnonSeed(rs1tMaster, 0) is not rsAnonSeed(rs1tMaster, 1)), \
+         "anon personas 0 and 1 differ"
+   put rsIdentitySeed(byte 1 to 31 of rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is empty), "a 31-byte master is refused"
+   rs1rstCheck (rsLastError() is not empty), "and the refusal is explained"
+   put rsAnonSeed(rs1tMaster, -1) into rs1tOut
+   rs1rstCheck (rs1tOut is empty), "a negative persona index is refused"
+end rs1rstSectionKdfTree
+
+private command rs1rstSectionHandles
+   local rs1tSeed, rs1tKeys, rs1tOut
+   rs1rstSection "identity seed -> handle"
+   put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
+   rs1rstCheck (rsHandleFromSeed(rs1tSeed) is rs1kRsGoldHandle), \
+         "the golden identity seed yields the golden handle"
+   put rsIdentityKeys(rs1tSeed) into rs1tKeys
+   rs1rstCheck (the number of bytes in rs1tKeys["publicKey"] is 32), \
+         "public key is 32 bytes"
+   rs1rstCheck (the number of bytes in rs1tKeys["secretKey"] is 64), \
+         "secret key is 64 bytes (seed || pub)"
+   rs1rstCheck (rs1tKeys["handle"] is rs1kRsGoldHandle), \
+         "rsIdentityKeys agrees with rsHandleFromSeed"
+   rs1rstCheck (rsHandleFromSeed(rs1rstBin(rs1kRsGoldConfSeedHex)) is \
+         rs1kRsGoldConfPub), "the cross-project conformance seed checks out"
+   put numToByte(0) into rs1tOut
+   repeat 4 times
+      put rs1tOut & rs1tOut into rs1tOut
+   end repeat
+   rs1rstCheck (rsHandleFromSeed(byte 1 to 16 of rs1tOut & byte 1 to 16 of rs1tOut) \
+         is rs1kRsGoldZeroSeedPub), "the zero seed matches the sodium C KAT"
+   rs1rstCheck (rsHandleFromSeed(byte 1 to 31 of rs1tSeed) is empty), \
+         "a 31-byte identity seed is refused"
+end rs1rstSectionHandles
+
+private command rs1rstSectionOnion pCaps
+   local rs1tPub, rs1tOut
+   rs1rstSection "identity -> onion (offline)"
+   put rs1rstBin(rs1kRsGoldHandle) into rs1tPub
+   if pCaps["hasSha3"] is true then
+      rs1rstCheck (rsOnionFromPublicKey(rs1tPub) is rs1kRsGoldOnion), \
+            "the golden handle yields the golden onion"
+      rs1rstCheck (rsOnionFromHandle(rs1kRsGoldHandle) is rs1kRsGoldOnion), \
+            "rsOnionFromHandle agrees"
+      rs1rstCheck (rsOnionFromPublicKey(byte 1 to 31 of rs1tPub) is empty), \
+            "a 31-byte public key is refused"
+   else
+      put rsOnionFromPublicKey(rs1tPub) into rs1tOut
+      rs1rstCheck (rs1tOut is empty), \
+            "without a SHA3 provider the self-computation refuses"
+      rs1rstCheck (rsLastError() contains "sxSha3_256"), \
+            "and the refusal names both providers"
+      rs1rstSkip "offline onion self-computation: no SHA3 provider installed"
+   end if
+   if pCaps["hasOnion"] is true then
+      rs1rstCheck (rsVerifyOnionClaim(rs1kRsGoldOnion, rs1kRsGoldHandle) is true), \
+            "the golden onion verifies against the golden handle"
+      rs1rstCheck (rsVerifyOnionClaim(rs1kRsGoldOnion, rs1kRsGoldConfPub) is \
+            false), "the golden onion refuses a different handle"
+      rs1rstCheck (rsVerifyOnionClaim("not-an-onion", rs1kRsGoldHandle) is \
+            false), "a malformed onion address refuses"
+   else
+      rs1rstSkip "onion claim verification: onionxt is not installed"
+   end if
+end rs1rstSectionOnion
+
+private command rs1rstSectionRendezvous
+   rs1rstSection "rendezvous derivations"
+   rs1rstCheck (rsInboxId(rs1kRsGoldHandle) is rs1kRsGoldInboxId), \
+         "inbox id matches golden"
+   rs1rstCheck (rsRoomId(rs1kRsGoldHandle, rs1kRsGoldConfPub, \
+         textEncode(rs1kRsGoldRoomSalt, "ASCII")) is rs1kRsGoldRoomId), \
+         "room id matches golden"
+   rs1rstCheck (rsRoomId(rs1kRsGoldConfPub, rs1kRsGoldHandle, \
+         textEncode(rs1kRsGoldRoomSalt, "ASCII")) is rs1kRsGoldRoomId), \
+         "room id is symmetric in its peers"
+   rs1rstCheck (rsInboxId("zz") is empty), "a malformed handle is refused"
+   rs1rstCheck (rsRoomId("zz", rs1kRsGoldConfPub, empty) is empty), \
+         "a malformed peer key is refused"
+end rs1rstSectionRendezvous
+
+private command rs1rstSectionKeyFile
+   local rs1tSeed, rs1tSealed, rs1tOpened, rs1tGenA, rs1tGenB
+   rs1rstSection "the RIPTKEY1 sealed key file"
+   put rsGenerateMasterSeed() into rs1tGenA
+   put rsGenerateMasterSeed() into rs1tGenB
+   rs1rstCheck (the number of bytes in rs1tGenA is 32), \
+         "a generated master seed is 32 bytes"
+   rs1rstCheck (rs1rstHex(rs1tGenA) is not rs1rstHex(rs1tGenB)), \
+         "two generated seeds differ (the CSPRNG is live)"
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tSeed
+   put rsSealMasterSeed(rs1tSeed, "correct horse") into rs1tSealed
+   rs1rstCheck (rs1tSealed is not empty), "sealing succeeds"
+   rs1rstCheck (textDecode(byte 1 to 9 of rs1tSealed, "ASCII") is "RIPTKEY1E"), \
+         "the file leads with the magic and mode"
+   rs1rstCheck (the number of bytes in rs1tSealed is 97), \
+         "the sealed file is exactly 97 bytes"
+   put rsOpenMasterSeed(rs1tSealed, "correct horse") into rs1tOpened
+   rs1rstCheck (rs1rstHex(rs1tOpened) is rs1kRsGoldMasterHex), \
+         "the right passphrase recovers the seed"
+   put rsOpenMasterSeed(rs1tSealed, "wrong horse") into rs1tOpened
+   rs1rstCheck (rs1tOpened is empty), "a wrong passphrase is refused"
+   rs1rstCheck (rsLastError() contains "passphrase"), \
+         "and the refusal says why"
+   put rsOpenMasterSeed(rs1rstFlipByte(rs1tSealed, 40), "correct horse") \
+         into rs1tOpened
+   rs1rstCheck (rs1tOpened is empty), "a tampered file is refused"
+   put rsOpenMasterSeed(byte 1 to 60 of rs1tSealed, "correct horse") \
+         into rs1tOpened
+   rs1rstCheck (rs1tOpened is empty), "a truncated file is refused"
+   rs1rstCheck (rsSealMasterSeed(rs1tSeed, empty) is empty), \
+         "an empty passphrase is refused at seal time"
+   rs1rstCheck (rsSealMasterSeed(byte 1 to 16 of rs1tSeed, "x") is empty), \
+         "a 16-byte seed is refused at seal time"
+   rs1rstCheck (rsSealMasterSeed(rs1tSeed, "a") is not rsSealMasterSeed(rs1tSeed, \
+         "a")), "two seals of one seed differ (fresh salt and nonce)"
+end rs1rstSectionKeyFile
+
+private command rs1rstSectionHead
+   local rs1tHead, rs1tParsed, rs1tRebuilt
+   rs1rstSection "RSH1 - the feed head"
+   put rsBuildHead(rs1kRsGoldHeadSeq, rs1kRsGoldHeadName, rs1kRsGoldPost2Target, \
+         rs1kRsGoldPrekeyTarget, rs1kRsGoldOnion, rs1kRsGoldProfileTarget) into rs1tHead
+   rs1rstCheck (rs1rstHex(rs1tHead) is rs1kRsGoldHeadHex), "head bytes match golden"
+   put rsParseHead(rs1tHead) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), "the golden head parses"
+   rs1rstCheck (rs1tParsed["seq"] is 7), "seq round-trips"
+   rs1rstCheck (rs1tParsed["displayName"] is rs1kRsGoldHeadName), \
+         "display name round-trips"
+   rs1rstCheck (rs1tParsed["latestPostTarget"] is rs1kRsGoldPost2Target), \
+         "latest-post target round-trips"
+   rs1rstCheck (rs1tParsed["prekeyTarget"] is rs1kRsGoldPrekeyTarget), \
+         "prekey target round-trips"
+   rs1rstCheck (rs1tParsed["onionAddr"] is rs1kRsGoldOnion), \
+         "onion address round-trips"
+   rs1rstCheck (rs1tParsed["profileMetaTarget"] is rs1kRsGoldProfileTarget), \
+         "profile-meta target round-trips"
+   put rsBuildHead(0, "n", empty, empty, empty, empty) into rs1tRebuilt
+   put rsParseHead(rs1tRebuilt) into rs1tParsed
+   rs1rstCheck (rs1tParsed["latestPostTarget"] is rsZeroTarget()), \
+         "an empty target normalizes to the zero target"
+   rs1rstCheck (rs1tParsed["onionAddr"] is empty), \
+         "an empty onion address round-trips as empty"
+   rs1rstCheck (rsParseHead(rs1rstFlipByte(rs1tHead, 2)) is empty), \
+         "a wrong magic is refused"
+   rs1rstCheck (rsParseHead(byte 1 to 30 of rs1tHead) is empty), \
+         "a truncated head is refused"
+   rs1rstCheck (rsParseHead(rs1tHead & numToByte(0)) is empty), \
+         "trailing bytes are refused"
+   rs1rstCheck (rsBuildHead(1, \
+         "0123456789012345678901234567890123456789012345678901234567890123x", \
+         empty, empty, empty, empty) is empty), \
+         "a 65-byte display name is refused"
+   rs1rstCheck (rsBuildHead(1, "n", "zz", empty, empty, empty) is empty), \
+         "a malformed target is refused"
+   rs1rstCheck (rsBuildHead(1, "n", empty, empty, "short.onion", empty) is \
+         empty), "a short onion address is refused"
+   rs1rstCheck (rsBuildHead(-1, "n", empty, empty, empty, empty) is empty), \
+         "a negative seq is refused"
+end rs1rstSectionHead
+
+private command rs1rstSectionPosts
+   local rs1tSeed, rs1tPost1, rs1tPost2, rs1tParsed, rs1tChunked, rs1tMangled
+   rs1rstSection "RSP1 - posts and the chain"
+   put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
+   put rsBuildPost(rs1kRsGoldTs1, empty, rs1kRsGoldPost1Text, empty, rs1tSeed) \
+         into rs1tPost1
+   rs1rstCheck (rs1rstHex(rs1tPost1) is rs1kRsGoldPost1Hex), \
+         "post 1 bytes match golden (deterministic signature)"
+   rs1rstCheck (rs1rstHex(sha1Digest(rsBencodeBytes(rs1tPost1))) is \
+         rs1kRsGoldPost1Target), "post 1's DHT target re-derives via SHA-1"
+   put rsBuildPost(rs1kRsGoldTs2, rs1kRsGoldPost1Target, rs1kRsGoldPost2Text, \
+         rs1kRsGoldMediaTarget, rs1tSeed) into rs1tPost2
+   rs1rstCheck (rs1rstHex(rs1tPost2) is rs1kRsGoldPost2Hex), "post 2 bytes match golden"
+   rs1rstCheck (rs1rstHex(sha1Digest(rsBencodeBytes(rs1tPost2))) is \
+         rs1kRsGoldPost2Target), "post 2's DHT target re-derives via SHA-1"
+   put rsParsePost(rs1tPost2) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), "post 2 parses"
+   rs1rstCheck (rs1tParsed["timestamp"] is 1754870460), "timestamp round-trips"
+   rs1rstCheck (rs1tParsed["prevPostTarget"] is rs1kRsGoldPost1Target), \
+         "the chain link names post 1"
+   rs1rstCheck (rs1tParsed["kind"] is "D"), "kind round-trips"
+   rs1rstCheck (rs1tParsed["text"] is rs1kRsGoldPost2Text), "text round-trips"
+   rs1rstCheck (rs1tParsed["mediaTargets"] is rs1kRsGoldMediaTarget), \
+         "media info-hash round-trips"
+   rs1rstCheck (rsVerifyPost(rs1tPost1, rs1kRsGoldHandle) is true), \
+         "post 1 verifies under the golden handle"
+   rs1rstCheck (rsVerifyPost(rs1tPost2, rs1kRsGoldHandle) is true), \
+         "post 2 verifies under the golden handle"
+   rs1rstCheck (rsVerifyPost(rs1tPost2, rs1kRsGoldConfPub) is false), \
+         "post 2 refuses a different author"
+   put rs1rstFlipByte(rs1tPost2, 60) into rs1tMangled
+   rs1rstCheck (rsVerifyPost(rs1tMangled, rs1kRsGoldHandle) is false), \
+         "one flipped text byte breaks the signature"
+   put rs1rstFlipByte(rs1tPost2, 1) into rs1tMangled
+   rs1rstCheck (rsVerifyPost(rs1tMangled, rs1kRsGoldHandle) is false), \
+         "a wrong magic is refused before any crypto"
+   rs1rstCheck (rsVerifyPost(byte 1 to 100 of rs1tPost2, rs1kRsGoldHandle) is \
+         false), "a truncated post is refused"
+   put rsBuildPostChunked(rs1kRsGoldTs2, rs1kRsGoldPost2Target, \
+         rs1kRsGoldPrekeyTarget & comma & rs1kRsGoldProfileTarget, empty, rs1tSeed) \
+         into rs1tChunked
+   rs1rstCheck (rs1tChunked is not empty), "a chunked post builds"
+   put rsParsePost(rs1tChunked) into rs1tParsed
+   rs1rstCheck (rs1tParsed["kind"] is "C"), "chunked kind round-trips"
+   rs1rstCheck (rs1tParsed["chunkTargets"] is \
+         (rs1kRsGoldPrekeyTarget & comma & rs1kRsGoldProfileTarget)), \
+         "the chunk list round-trips in order"
+   rs1rstCheck (rsVerifyPost(rs1tChunked, rs1kRsGoldHandle) is true), \
+         "the chunked post verifies"
+   rs1rstCheck (rsBuildPostChunked(1, empty, empty, empty, rs1tSeed) is empty), \
+         "an empty chunk list is refused"
+   rs1rstCheck (rsBuildPost(1, empty, "x", \
+         rs1kRsGoldMediaTarget & comma & rs1kRsGoldMediaTarget & comma & \
+         rs1kRsGoldMediaTarget & comma & rs1kRsGoldMediaTarget & comma & \
+         rs1kRsGoldMediaTarget & comma & rs1kRsGoldMediaTarget & comma & \
+         rs1kRsGoldMediaTarget & comma & rs1kRsGoldMediaTarget & comma & \
+         rs1kRsGoldMediaTarget, rs1tSeed) is empty), \
+         "nine media attachments are refused"
+   rs1rstCheck (rsBuildPost(-5, empty, "x", empty, rs1tSeed) is empty), \
+         "a negative timestamp is refused"
+end rs1rstSectionPosts
+
+private command rs1rstSectionHelpers
+   local rs1tValue
+   rs1rstSection "helpers"
+   rs1rstCheck (textDecode(rsBencodeBytes(empty), "ASCII") is "0:"), \
+         "bencode of empty is 0:"
+   rs1rstCheck (textDecode(rsBencodeBytes(textEncode("hi", "ASCII")), \
+         "ASCII") is "2:hi"), "bencode of a short string"
+   put rsBencodeBytes(rs1rstBin(rs1kRsGoldHeadHex)) into rs1tValue
+   rs1rstCheck (textDecode(byte 1 to 4 of rs1tValue, "ASCII") is "203:"), \
+         "the golden head bencodes at 203 bytes"
+   rs1rstCheck (rsHeadSalt() is "riptide-head"), "the head salt is published"
+   rs1rstCheck (the number of chars in rsZeroTarget() is 40), \
+         "the zero target is 40 chars"
+end rs1rstSectionHelpers

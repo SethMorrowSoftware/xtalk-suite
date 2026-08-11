@@ -100,7 +100,13 @@ pass.
   gate, `tests/*golden*.py` glob, vector gate, docs style) and runs
   riptide's script checker over the root `tests/` scripts.
 - `tools/check-handler-calls.py` carries the `rs` prefix.
-- The suite selftest generator does NOT fold riptide in yet (its
-  MEMBERS/PREFIXES/COUNTED lists and the coverage gate are unchanged).
-  When the harness stabilizes, fold it with a `Member(...)` entry plus
-  the check-suite-selftest.py list updates, per that generator's header.
+- The suite selftest FOLDS riptide in (since 2026-08-11): the harness as
+  the seventh `Member` (prefix `rs1`, entry `rsSelfTest`, run LAST, merged
+  via `stMergeReturned` - which is why the report's first line must stay
+  exactly "N passed, M failed" with the skip count on its own line), and
+  the library as the third embedded script layer. `check-suite-selftest.py`
+  and `check-suite-coverage.py` both know riptide, so a new public `rs*`
+  handler the harness does not call FAILS the coverage gate - close the
+  gap in tests/riptide-selftest.livecodescript and regenerate. A
+  script-layer or harness edit here is not done until
+  `python3 tools/build-suite-selftest.py` has rebuilt the suite paste.

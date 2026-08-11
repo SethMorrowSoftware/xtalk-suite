@@ -158,6 +158,7 @@ local sRunning             -- "true" while the async phases are still live
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
+local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -386,6 +387,7 @@ command stRun
    end try
    put 0 into sSession
    put false into sHaveCoinScript
+   put false into sHaveRiptideScript
    put empty into sSealKey
    put empty into sSealPlain
    put empty into sSealBox
@@ -456,7 +458,7 @@ command stRun
    -- libtorrent session, the ENet hosts and the WebRTC peers all still live and
    -- no summary printed. The session is the one that does not come back: see
    -- the note above `put 0 into sSession`.
-   -- The OUTER try is a BACKSTOP ONLY. Each of the six members inside is
+   -- The OUTER try is a BACKSTOP ONLY. Each of the seven harnesses inside is
    -- contained individually, and that is the part that matters: with only this
    -- outer one, a throw in member three left members four, five and six never
    -- run, never merged and not even SKIPPED, while the run still printed a
@@ -636,6 +638,17 @@ command stProbe
       put false into sHaveCoinScript
    end try
    stProbeLine "CoinXT (script layer)", sHaveCoinScript, \
+         "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- Riptide's script layer rides the same embed mechanism, so the same
+   -- tripwire: rsZeroTarget is a real vector (40 zeros), not a version sniff.
+   put false into sHaveRiptideScript
+   try
+      put (the number of chars in rsZeroTarget() is 40) into sHaveRiptideScript
+   catch tError
+      put false into sHaveRiptideScript
+   end try
+   stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
 end stProbe
 
@@ -1819,6 +1832,22 @@ command stRunMemberHarnesses
       end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   end if
+
+   -- Riptide is an APP layer over the extensions above, so it runs LAST: by
+   -- here every extension it probes has already shown its own colours. Its
+   -- harness handles a missing optional extension itself (sections SKIP), and
+   -- refuses cleanly without SodiumXT, so the only gate here is the embedded
+   -- layer being present at all.
+   if sHaveRiptideScript then
+      try
+         stMergeReturned "Riptide Social (phase 1)", rs1rsSelfTest()
+      catch tError
+         stSectionFailed "Riptide deep self-test", tError
+      end try
+   else
+      stSkip "Riptide deep self-test", \
+            "the riptide script layer is not present; the paste is damaged"
    end if
 end stRunMemberHarnesses
 

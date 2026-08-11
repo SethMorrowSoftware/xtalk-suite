@@ -79,8 +79,11 @@ function rsSelfTest
    else
       rstSkip "every crypto section: SodiumXT is not installed"
    end if
-   return sPass && "passed," && sFail && "failed," && sSkip && \
-         "skipped" & return & \
+   -- The first line is EXACTLY two counts + passed/failed and nothing else:
+   -- the suite core's stSummaryCounts treats any other word as prose, so the
+   -- skip count gets its own line (the sodiumxt/onionxt returned-report shape).
+   return sPass && "passed," && sFail && "failed" & return & \
+         sSkip && "skipped (optional dependencies; see the log)" & return & \
          "----------------------------------------" & return & sLog
 end rsSelfTest
 
@@ -243,8 +246,14 @@ private command rstSectionRendezvous
 end rstSectionRendezvous
 
 private command rstSectionKeyFile
-   local tSeed, tSealed, tOpened
+   local tSeed, tSealed, tOpened, tGenA, tGenB
    rstSection "the RIPTKEY1 sealed key file"
+   put rsGenerateMasterSeed() into tGenA
+   put rsGenerateMasterSeed() into tGenB
+   rstCheck (the number of bytes in tGenA is 32), \
+         "a generated master seed is 32 bytes"
+   rstCheck (rstHex(tGenA) is not rstHex(tGenB)), \
+         "two generated seeds differ (the CSPRNG is live)"
    put rstBin(kRsGoldMasterHex) into tSeed
    put rsSealMasterSeed(tSeed, "correct horse") into tSealed
    rstCheck (tSealed is not empty), "sealing succeeds"

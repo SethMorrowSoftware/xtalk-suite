@@ -74,6 +74,9 @@ MEMBERS = [
     ("enetxt", "en", ["enetxt/src/*.lcb", "enetxt/src/*.livecodescript"]),
     ("datachannelxt", "dc", ["datachannelxt/src/*.lcb",
                              "datachannelxt/src/*.livecodescript"]),
+    # riptide is the capstone APP, not an extension, but its rs* surface is a
+    # public API its folded harness must reach, so it rides the same ratchet.
+    ("riptide", "rs", ["riptide/src/riptide.livecodescript"]),
 ]
 
 # The handlers an offline harness genuinely cannot reach, and why. Keep the
