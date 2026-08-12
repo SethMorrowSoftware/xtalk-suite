@@ -6,18 +6,16 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
-## Status: phase 2 (of 7) in the tree; phase 1 engine-passed
+## Status: phase 2 (of 7) in the tree; single-engine harness passed
 
-> **Honesty convention.** **Phase 1 is ENGINE-PASSED as of 2026-08-12**
-> (Windows x64, folded into the suite harness): 89/89, 0 skipped, every
-> extension probe true including hasSha3. The **phase-2 live feed layer**
-> (head publish through the external-signing seam, content-addressed post
-> publish, the async lookups, and the ingest verifiers) is verified
-> statically and against the pure-Python oracle; it **needs an OXT
-> pass**, and phase 2's done-criterion - a SECOND machine walks the chain
-> and verifies every authorSig - additionally needs two machines on a
-> real DHT. rp1 DMs and onion streams are later phases; no claim is made
-> about them at all.
+> **Honesty convention.** **Phases 1 and 2 are ENGINE-PASSED as of
+> 2026-08-12**, folded into the suite harness: 133/133, 0 skipped, every
+> extension probe true including hasSha3. The phase-2 run covered head publish
+> through the external-signing seam, content-addressed post publish, accepted
+> async lookups, and the ingest verifiers. Phase 2's propagation done-criterion
+> - a SECOND machine walks the chain and verifies every authorSig - still needs
+> two machines on a real DHT. rp1 DMs and onion streams are later phases; no
+> claim is made about them at all.
 
 What ships today, per the spec's phased roadmap (section 10.3, phases 1
 and 2):
@@ -105,5 +103,5 @@ In spec order: media torrents (create, seed, co-seed, sequential
 playback), then DMs (the inbox rendezvous swarm, sealed intros, pairwise
 secretstream over rp1), live dataChannel sessions, LAN device sync, and
 the anonymous persona. Each phase lands with its own engine pass before
-its labels flip - phase 2's own pass (and its two-machine propagation
-half) is still open, per the status note above.
+its labels flip. Phase 2's single-engine pass is complete; only its two-machine
+propagation half remains open, per the status note above.

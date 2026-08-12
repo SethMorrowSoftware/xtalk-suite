@@ -20,8 +20,9 @@ call.
 Currently at **phase 2** of the spec's seven: phase 1 (identity + the
 pure-compute feed layer) is engine-passed; the phase-2 LIVE feed layer
 (BEP44 head/post publish, async lookups, ingest verifiers) is in the tree,
-verified statically, awaiting its own engine pass. The remaining transport
-phases land later, each behind its own pass.
+and its single-engine harness is also engine-passed. Its two-machine
+propagation criterion remains open. The remaining transport phases land later,
+each behind its own pass.
 
 ## The rules that bind this directory
 
@@ -58,17 +59,14 @@ phases land later, each behind its own pass.
 8. **The honesty convention.** "Verified statically; needs an OXT pass"
    until a recorded run says otherwise; anonymity claims additionally
    need a live-Tor pass. Flip labels only on a recorded engine result,
-   members first, root README last (the runbook's rule). **Phase 1 had
-   that pass on 2026-08-12** (Windows x64, folded into the suite
-   harness): 89/89, 0 skipped, every probe true including hasSha3 - the
-   sealed key file, the KDF tree, identity -> handle -> onion, the
-   RSH1/RSP1 wire formats and the post chain all ran green on a real
-   engine. **The phase-2 live feed layer is back at "verified
-   statically"**, and its full done-criterion (a second machine walks the
-   chain and verifies every authorSig) needs TWO machines on a real DHT -
-   the one-machine engine pass proves the puts, the lookups being
-   accepted, and the ingest verifiers on synthetic events, not
-   propagation.
+   members first, root README last (the runbook's rule). **Phases 1 and 2 had
+   that pass on 2026-08-12**, folded into the suite harness: 133/133, 0
+   skipped, every probe true including hasSha3. The sealed key file, KDF tree,
+   identity -> handle -> onion, RSH1/RSP1 formats, post chain, phase-2 puts,
+   accepted lookups, and synthetic ingest verifiers all ran green on a real
+   engine. The full phase-2 done-criterion (a second machine walks the chain
+   and verifies every authorSig) still needs TWO machines on a real DHT; the
+   one-machine pass does not prove propagation.
 
 ## Things learned building phase 1 (do not relearn)
 

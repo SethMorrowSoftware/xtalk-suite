@@ -4,14 +4,11 @@ script "RiptideSocial"
 -- pure-LiveCodeScript library over the installed suite extensions
 -- (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-4).
 --
--- STATUS (honesty convention): phase 1 (identity + the feed framings) had
--- its OXT pass on 2026-08-12 (Windows x64, via the folded suite harness:
--- 89/89, hasSha3 true). The phase-2 LIVE layer below (rsPublishHead /
--- rsRequestHead / rsPublishPost / rsPublishImmutable / rsRequestImmutable /
--- rsIngestHead / rsIngestPost and their pure helpers) is verified statically
--- and against tools/riptide_reference.py's golden vectors; needs an OXT
--- pass, and the propagation half of phase 2 ("a second machine walks the
--- chain") additionally needs two machines on a real DHT.
+-- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
+-- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
+-- The phase-2 run covered the pure helpers, synthetic ingest verifiers, and
+-- real-session puts and accepted lookup requests. Its propagation half ("a
+-- second machine walks the chain") still needs two machines on a real DHT.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,

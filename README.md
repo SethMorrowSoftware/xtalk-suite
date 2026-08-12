@@ -37,11 +37,11 @@ authority; this is the summary:
 
 | Extension | Native shim | Committed binaries | Maturity |
 |---|---|---|---|
-| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member. The full `sxSelfTest()` — 68 checks, every post-pass addition included — ran green on-engine 2026-08-10, folded into the suite harness, on top of the 2026-08-08 headline-path pass |
+| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86, universal-mac) + `MANIFEST.sha256` | The most complete member. The full `sxSelfTest()` — now 71 checks, every post-pass addition included — ran green on-engine 2026-08-12, folded into the suite harness, on top of the 2026-08-08 headline-path pass |
 | torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the full 96-check member selftest ran green on-engine 2026-08-10 (folded), the v9-v11 surface included. Two-machine rp1/DHT behaviour still open |
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). Only the live `enHostStatus` pair in its own async loopback stays static |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have now been called on-engine (2026-08-10, folded sync half); only the member harness's own async live halves stay static |
-| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (40 checks) ran green on-engine 2026-08-10, folded. Mode B (launching tor) still unexercised |
+| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (now 43 checks) ran green on-engine 2026-08-12, folded. Mode B (launching tor) still unexercised |
 | coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All five phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. **Phase 5 (transactions) is ENGINE-PASSED (2026-08-12, Windows x64, 230/230)**: Bitcoin legacy + BIP-143 SegWit and Ethereum EIP-155 + EIP-1559, model-verified against the BIP-143/EIP-155 published examples, driven through the real `.livecodescript` by `check-script-vectors.py` (251 checks) — which caught and fixed a would-be-red engine defect (`cxBtcTxEncode` refused the reference tx over a trailing-empty scriptSig) — and then confirmed on a real engine, the BIP-143 signed tx byte for byte. Broadcastable still needs an independent decoder / testnet |
 
 **Where the suite stands after the 2026-08-08 and 2026-08-10 passes.** On
@@ -60,6 +60,14 @@ and retiring the deeper per-member selftests as an open item. What remains
 broadly open: **macOS binaries** for four of the five native members, and the
 **live-Tor and two-machine work** (runbook items 4-6), which no single-machine
 offline paste can reach.
+
+The 2026-08-12 re-run then exercised all seven folded harnesses at their current
+sizes — **617 member-harness checks, zero failures** (SodiumXT 71, OnionXT 43,
+CoinXT 230, TorrentXT 96, ENetXT 21, DataChannelXT 23, Riptide 133). In
+particular, Riptide's phase-2 live feed layer passed its canonical BEP44 buffer,
+real-session publish/request, and synthetic ingest-verifier sections. This
+closes the single-engine half of runbook item 10; cross-machine DHT propagation
+remains part of item 6.
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
@@ -121,9 +129,10 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all six at once. `tests/suite-selftest.livecodescript` is a single stack
-script that builds its own UI, probes for every member, and reports PASS / FAIL /
-SKIP in one list — a member you did not install skips, it never fails.
+Or run all six suite members plus the Riptide app layer at once.
+`tests/suite-selftest.livecodescript` is a single stack script that builds its
+own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — a
+member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
@@ -144,11 +153,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**331 of 349 public handlers**:
+**340 of 358 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 26/26 |
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 35/35 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -177,9 +186,9 @@ The members are deliberately non-overlapping, so real apps mix them:
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
   social app on all six, and `riptide/` is that app being built — phase 1
   (the identity foundation and the feed wire formats, offline-verifiable,
-  golden-pinned, and engine-passed 2026-08-12 at 89/89) and phase 2 (the
-  live feed layer: signed BEP44 heads, content-addressed posts, verified
-  ingest — verified statically, needs an OXT pass) are in the tree;
+  golden-pinned, and engine-passed 2026-08-12) and phase 2 (the live feed
+  layer: signed BEP44 heads, content-addressed posts, verified ingest — also
+  engine-passed 2026-08-12, as part of the combined 133/133 harness) are in the tree;
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
