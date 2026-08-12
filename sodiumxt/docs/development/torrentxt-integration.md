@@ -74,8 +74,8 @@ for coexistence:
   ships it: `src/code/<arch>-<platform>/sodiumxt.{so,dll,dylib}` (the committed
   binaries under `sodiumxt/src/code/`, all five platforms, pinned by
   `MANIFEST.sha256`).
-- Add `src/sodium.lcb` to TorrentXT's extension (or depend on the installed
-  SodiumXT extension so `org.openxtalk.library.sodium` resolves).
+- Add `sodiumxt/src/sodium.lcb` to TorrentXT's extension (or depend on the
+  installed SodiumXT extension so `org.openxtalk.library.sodium` resolves).
 - TorrentXT's helpers then `textEncode` the passphrase and call `sx*`. Compare any
   secrets with `sxMemEqual`, never `is`.
 
@@ -98,8 +98,8 @@ for coexistence:
 - Exact call sites and data shapes for the two crypto uses.
 - Whether encrypted data crosses the wire between peers (protocol-version impact).
 - Where TorrentXT wants the cost knob (interactive vs sensitive) surfaced to users.
-- Whether TorrentXT already vendors any native libs under `src/code/`, to match
-  its packaging convention.
+- Whether TorrentXT already vendors any native libs under `torrentxt/src/code/`,
+  to match its packaging convention.
 
 ## Effort
 

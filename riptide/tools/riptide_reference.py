@@ -463,8 +463,8 @@ def golden_vectors():
     post2_target = immutable_target(post2)
     head = build_head(7, "Riptide", post2_target, prekey_t, onion, profile_t)
     head_v = bencode_bytes(head)
-    head_sig = ed25519_sign(bep44_signbuf(HEAD_SALT.encode("ascii"), 7, head_v),
-                            id_seed)
+    head_buf = bep44_signbuf(HEAD_SALT.encode("ascii"), 7, head_v)
+    head_sig = ed25519_sign(head_buf, id_seed)
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -483,6 +483,7 @@ def golden_vectors():
         "post2Target": post2_target,
         "head": head.hex(),
         "headValue": head_v.hex(),
+        "headBuf": head_buf.hex(),
         "headSig": head_sig.hex(),
     }
 

@@ -24,9 +24,21 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > is segwit) collapses under the engine's one-trailing-delimiter chunk rule and tripped a strict
 > parallel-list guard; it was fixed and pinned, and the 2026-08-12 engine run (Windows x64,
 > 230/230 in the folded suite harness) confirmed it: the whole signed transaction matched
-> BIP-143 byte for byte on a real engine, with both new refusals firing as designed. The one
-> remaining bar is external: no transaction CoinXT assembles should be called broadcastable
-> until it is accepted by an independent decoder or a testnet node.
+> BIP-143 byte for byte on a real engine, with both new refusals firing as designed.
+>
+> **The independent-decoder bar is now MET (2026-08-12).** A FRESH native-P2WPKH transaction
+> - new key, new amount, a prevout and destination this repo has never pinned - was built
+> end to end by `src/coinxt.livecodescript` (its sighash, DER, varint, witness and
+> serialization, driven through `tools/lcs-interp.py`) and handed to **python-bitcointx 1.1.5**
+> (the maintained python-bitcoinlib fork, a full consensus-shaped script interpreter over
+> libsecp256k1). It deserialized the script's bytes, ran `VerifyScript` under
+> `SCRIPT_VERIFY_WITNESS`, and confirmed the signature against its own independently-computed
+> BIP-143 sighash; a flipped signature byte and a +1-satoshi wrong amount were both rejected,
+> so the verdict is not vacuous. `tools/verify-independent-decoder.py` is that acceptance run
+> (not a CI gate - it needs the pip packages python-bitcointx + coincurve, so it SKIPS loudly
+> without them). **The last bar is a live testnet broadcast**; until then "broadcastable" stays
+> unclaimed, but a transaction CoinXT builds is now known to be accepted by code we did not
+> write.
 >
 > **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
 > engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.

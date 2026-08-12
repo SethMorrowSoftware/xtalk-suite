@@ -18,15 +18,20 @@ script "xTalkSuiteSelfTest"
 --      enetxt and datachannelxt are supposed to share. Those compositions are
 --      the suite's actual product; nothing tests them today.
 --
--- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN, IN THIS FORM. On
--- 2026-08-08 it ran on a real OXT engine with all six members installed and
--- reported GREEN - the suite's first runtime evidence. On 2026-08-10 it ran
--- again, as the file is TODAY - every member's deep self-test folded in and
--- both script libraries embedded in the paste - and reported ZERO failures:
--- 455 member-harness checks (sodiumxt 68, onionxt 40, coinxt 207, torrentxt
--- 96, enetxt sync 21, datachannelxt sync 23) plus every core and cross-member
--- section. What each run bought is recorded per member (see each member's
+-- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN. On 2026-08-08 it
+-- ran on a real OXT engine with all six members installed and reported GREEN
+-- - the suite's first runtime evidence. On 2026-08-10 it ran again - every
+-- member's deep self-test folded in, both then-embedded script libraries in
+-- the paste - and reported ZERO failures: 455 member-harness checks
+-- (sodiumxt 68, onionxt 40, coinxt 207, torrentxt 96, enetxt sync 21,
+-- datachannelxt sync 23) plus every core and cross-member section. On
+-- 2026-08-12 it ran on Windows x64 (SodiumXT ABI 7, all SEVEN members
+-- folded, three libraries embedded) and again reported ZERO failures -
+-- riptide phase 1 at 89/89, coinxt phase 5 at 230/230, the offline-onion
+-- legs 43/43. What each run bought is recorded per member (each member's
 -- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- Riptide's phase-2 LIVE-FEED sections were added AFTER that run and are
+-- back at "verified statically; needs an OXT pass" (runbook item 10).
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
@@ -34,22 +39,26 @@ script "xTalkSuiteSelfTest"
 --
 --   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
 --   onionxt         oxSelfTest()       8 groups, all offline
---   coinxt          its 28 sections    all four phases, ~300 checks
+--   coinxt          its 28 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
+--   riptide         rsSelfTest()      run LAST: identity, wire formats, and
+--                                     the phase-2 live feed layer, which
+--                                     also shares this file's session
 --
--- AND IT CARRIES THE TWO PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
--- layer (encoders, addresses, the HD wallet walk) and onionxt's entire ox*
--- surface are LiveCodeScript, and they used to be a separate setup step -
--- `start using stack` x2 before pasting. Embedded, that step is gone, and so
--- is the failure mode it carried: the 2026-08-10 re-run pasted a fresh
--- harness into an engine whose in-memory coinxt stack predated a parser fix,
--- and got two red lines that read as "the fix does not work" and meant "the
--- fix was not loaded". This file and the libraries in it are generated from
--- one tree; they cannot skew against each other.
+-- AND IT CARRIES THE THREE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
+-- surface, and riptide's rs* layer are LiveCodeScript, and the first two
+-- used to be a separate setup step - `start using stack` x2 before pasting.
+-- Embedded, that step is gone, and so is the failure mode it carried: the
+-- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
+-- coinxt stack predated a parser fix, and got two red lines that read as
+-- "the fix does not work" and meant "the fix was not loaded". This file and
+-- the libraries in it are generated from one tree; they cannot skew against
+-- each other.
 --
--- So one paste now settles what used to take six runs. Two things are still
+-- So one paste now settles what used to take seven runs. Two things are still
 -- honestly outside it, and they are named where they are cut rather than left
 -- for you to discover: the ENet and DataChannel ASYNC loopbacks stay in their
 -- own harnesses, because this file already drives a real loopback on both
@@ -354,7 +363,7 @@ local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact com
 local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
 local dc1sPhase            -- "", "opening", "messaging", "done"
 
--- ---- Riptide Social (phase 1): the rs* self-test ----
+-- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
 constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"
 constant rs1kRsGoldRoomSalt = "golden-salt"
@@ -382,10 +391,13 @@ constant rs1kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant rs1kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
 constant rs1kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
 constant rs1kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
+constant rs1kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
+constant rs1kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
 local rs1sLog
 local rs1sPass
 local rs1sFail
 local rs1sSkip
+local rs1sRsTestSession
 
 -- >>> GENERATED EMBED: coinxt script layer declarations >>> --
 -- ---- CoinXT script layer (the real library, embedded) ----
@@ -447,7 +459,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.1.0"
+constant kRsVersion = "0.2.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -463,6 +475,7 @@ constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
 constant kRsMaxRecord = 1000
+constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
 constant kRsBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
@@ -2124,7 +2137,7 @@ command stRunMemberHarnesses
    -- layer being present at all.
    if sHaveRiptideScript then
       try
-         stMergeReturned "Riptide Social (phase 1)", rs1rsSelfTest()
+         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest()
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -6100,7 +6113,7 @@ end oxProcessId
 -- ==========================================================================
 
 function rsVersion
-   return "Riptide" && kRsVersion && "(phase 1: identity + feed framing)"
+   return "Riptide" && kRsVersion && "(phase 2: identity + the live feed)"
 end rsVersion
 
 function rsLastError
@@ -6774,6 +6787,300 @@ function rsBencodeBytes pData
    put the number of bytes in pData into tLen
    return textEncode(tLen & ":", "ASCII") & pData
 end rsBencodeBytes
+
+private function rsBencodedByteStringLen pValue
+   local tI, tN, tLen, tDigits
+   put 0 into tLen
+   put 0 into tDigits
+   repeat with tI = 1 to the number of bytes in pValue
+      put byteToNum(byte tI of pValue) into tN
+      if tN is 58 then
+         if tDigits is 0 then return -1
+         if the number of bytes in pValue - tI is not tLen then return -1
+         return tLen
+      end if
+      if tN < 48 or tN > 57 then return -1
+      if tDigits > 0 and tLen is 0 then return -1
+      put tLen * 10 + (tN - 48) into tLen
+      add 1 to tDigits
+      if tDigits > 4 then return -1
+   end repeat
+   return -1
+end rsBencodedByteStringLen
+
+function rsBep44SignBuf pSalt, pSeq, pValue
+   local tSaltBytes, tRawLen, tOut
+   if pSeq is not an integer or pSeq < 0 then
+      rsSetError "rsBep44SignBuf: seq must be a non-negative integer"
+      return empty
+   end if
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBep44SignBuf: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
+   put textEncode(pSalt, "UTF-8") into tSaltBytes
+   if the number of bytes in tSaltBytes > kRsMaxSalt then
+      rsSetError "rsBep44SignBuf: the salt is over" && kRsMaxSalt && \
+            "bytes (the BEP44 cap)"
+      return empty
+   end if
+   put rsBencodedByteStringLen(pValue) into tRawLen
+   if tRawLen < 1 or tRawLen > kRsMaxRecord then
+      rsSetError "rsBep44SignBuf: the value must be a bencoded byte string" && \
+            "of 1 to" && kRsMaxRecord && "raw bytes"
+      return empty
+   end if
+   put empty into tOut
+   if tSaltBytes is not empty then
+      put textEncode("4:salt" & the number of bytes in tSaltBytes & ":", \
+            "ASCII") & tSaltBytes into tOut
+   end if
+   put textEncode("3:seqi" & pSeq & "e1:v", "ASCII") after tOut
+   put pValue after tOut
+   return tOut
+end rsBep44SignBuf
+
+function rsImmutableTarget pValue
+   local tLen
+   put the number of bytes in pValue into tLen
+   if tLen < 1 or tLen > kRsMaxRecord then
+      rsSetError "rsImmutableTarget: a BEP44 immutable value is 1 to" && \
+            kRsMaxRecord && "bytes"
+      return empty
+   end if
+   return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
+end rsImmutableTarget
+
+function rsIngestHead pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestHead: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case, so a case-mangled salt could pass this line; it then
+   -- fails the signature below, because the buffer is rebuilt from the
+   -- CANONICAL salt. The crypto backstops the string compare.
+   if pEvent["salt"] is not kRsHeadSalt then
+      rsSetError "rsIngestHead: the event is not a riptide-head item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: the event seq is not a sane integer"
+      return empty
+   end if
+   put rsParseHead(pEvent["value"]) into tHead
+   if tHead is empty then return empty
+   if tHead["seq"] is not tSeq then
+      -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
+      -- a disagreement means this record was not published by this layer
+      -- (or was reassembled); refuse rather than guess which counter to
+      -- believe - the app's replay protection reads the one true seq.
+      rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
+            "disagree"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestHead: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsHeadSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestHead:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestHead: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   return tHead
+end rsIngestHead
+
+function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
+   local tExpected, tEventTarget, tValue, tComputed
+   put rsNormalizeTarget(pExpectedTarget) into tExpected
+   if tExpected is empty or tExpected is kRsZeroTarget then
+      rsSetError "rsIngestPost: the expected target must be 40 non-zero" && \
+            "hex chars"
+      return empty
+   end if
+   put toLower(pEvent["target"]) into tEventTarget
+   if tEventTarget is not tExpected then
+      rsSetError "rsIngestPost: the event names a different target"
+      return empty
+   end if
+   put pEvent["value"] into tValue
+   put rsImmutableTarget(tValue) into tComputed
+   if tComputed is empty then return empty
+   if tComputed is not tExpected then
+      rsSetError "rsIngestPost: the value does not hash to its own target"
+      return empty
+   end if
+   if rsVerifyPost(tValue, pAuthorHandleHex) is not true then
+      return empty
+   end if
+   return rsParsePost(tValue)
+end rsIngestPost
+
+private function rsValidSession pSession
+   return pSession is an integer and pSession > 0
+end rsValidSession
+
+function rsPublishHead pSession, pHeadBytes, pIdentitySeed
+   local tHead, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   put rsParseHead(pHeadBytes) into tHead
+   if tHead is empty then
+      rsSetError "rsPublishHead: not a valid RSH1 head:" && rsLastError()
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   put rsBencodeBytes(pHeadBytes) into tValue
+   put rsBep44SignBuf(kRsHeadSalt, tHead["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishHead:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsHeadSalt, \
+            tHead["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishHead: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishHead: btDhtPutSigned refused (" & tCode & ")" && tWhy
+      return false
+   end if
+   return true
+end rsPublishHead
+
+function rsPublishImmutable pSession, pValue
+   local tExpected, tTarget, tWhy, tErr
+   put rsImmutableTarget(pValue) into tExpected
+   if tExpected is empty then return empty
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return empty
+   end if
+   try
+      put btDhtPutImmutable(pSession, pValue) into tTarget
+   catch tErr
+      rsSetError "rsPublishImmutable: needs torrentxt" && \
+            "(btDhtPutImmutable):" && tErr
+      return empty
+   end try
+   if tTarget is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishImmutable: btDhtPutImmutable failed;" && tWhy
+      return empty
+   end if
+   if toLower(tTarget) is not tExpected then
+      rsSetError "rsPublishImmutable: libtorrent's target" && tTarget && \
+            "disagrees with the recomputed" && tExpected
+      return empty
+   end if
+   return tExpected
+end rsPublishImmutable
+
+function rsPublishPost pSession, pPostBytes
+   local tParsed
+   put rsParsePost(pPostBytes) into tParsed
+   if tParsed is empty then
+      rsSetError "rsPublishPost: not a valid RSP1 record:" && rsLastError()
+      return empty
+   end if
+   return rsPublishImmutable(pSession, pPostBytes)
+end rsPublishPost
+
+function rsRequestHead pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestHead: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsHeadSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestHead: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestHead: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestHead
+
+function rsRequestImmutable pSession, pTarget
+   local tT, tCode, tErr
+   put rsNormalizeTarget(pTarget) into tT
+   if tT is empty or tT is kRsZeroTarget then
+      rsSetError "rsRequestImmutable: the target must be 40 non-zero hex" && \
+            "chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return false
+   end if
+   try
+      btDhtGetImmutable pSession, tT
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestImmutable: needs torrentxt (btDhtGetImmutable):" \
+            && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestImmutable: btDhtGetImmutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestImmutable
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN
@@ -9662,13 +9969,15 @@ end dc1stCleanup
 
 
 -- ==========================================================================
--- Riptide Social (phase 1): the rs* self-test
+-- Riptide Social (phases 1-2): the rs* self-test
 --
--- The capstone app's offline harness: the KDF subkey tree, identity to
--- handle to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings and the
--- post chain - all against the same golden vectors the Python oracle pins.
--- Fully offline; sections needing coinxt or onionxt SKIP when those are
--- absent, and the whole crypto set skips without SodiumXT.
+-- The capstone app's harness: the KDF subkey tree, identity to handle to
+-- onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post chain, and
+-- the phase-2 live feed layer (BEP44 buffers, ingest verifiers, and real
+-- puts and lookups against the suite's session) - all against the same
+-- golden vectors the Python oracle pins. No network is awaited; sections
+-- needing coinxt, onionxt or torrentxt SKIP when those are absent, and the
+-- whole crypto set skips without SodiumXT.
 --
 -- GENERATED from riptide/tests/riptide-selftest.livecodescript by
 -- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
@@ -9694,6 +10003,9 @@ function rs1rsSelfTest
       rs1rstSectionHead
       rs1rstSectionPosts
       rs1rstSectionHelpers
+      rs1rstSectionBep44
+      rs1rstSectionIngest
+      rs1rstSectionLiveFeed rs1tCaps
    else
       rs1rstSkip "every crypto section: SodiumXT is not installed"
    end if
@@ -10019,3 +10331,207 @@ private command rs1rstSectionHelpers
    rs1rstCheck (the number of chars in rsZeroTarget() is 40), \
          "the zero target is 40 chars"
 end rs1rstSectionHelpers
+
+private command rs1rstSectionBep44
+   local rs1tValue, rs1tBuf, rs1tSalt
+   rs1rstSection "phase 2 - the canonical BEP44 buffer + content addresses"
+   -- the exact bytes the golden head's BEP44 signature covers, from the
+   -- pure-script assembly (byte-identical to btDhtBep44SignBuf; the folded
+   -- suite harness cross-checks the two implementations directly)
+   put rsBencodeBytes(rs1rstBin(rs1kRsGoldHeadHex)) into rs1tValue
+   put rsBep44SignBuf(rsHeadSalt(), 7, rs1tValue) into rs1tBuf
+   rs1rstCheck (rs1rstHex(rs1tBuf) is rs1kRsGoldHeadBufHex), \
+         "the golden head's signing buffer matches golden"
+   -- the cross-project anchor torrentxt/tests/bep44_golden_test.py pins
+   put rsBep44SignBuf("rp-prekeys", 1, textEncode("2:hi", "ASCII")) into rs1tBuf
+   rs1rstCheck (textDecode(rs1tBuf, "ASCII") is \
+         "4:salt10:rp-prekeys3:seqi1e1:v2:hi"), \
+         "the salted anchor vector matches bep44_golden_test.py"
+   put rsBep44SignBuf(empty, 7, textEncode("2:hi", "ASCII")) into rs1tBuf
+   rs1rstCheck (textDecode(rs1tBuf, "ASCII") is "3:seqi7e1:v2:hi"), \
+         "an empty salt omits the salt segment"
+   rs1rstCheck (rsBep44SignBuf(rsHeadSalt(), -1, \
+         textEncode("2:hi", "ASCII")) is empty), "a negative seq is refused"
+   rs1rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740992, \
+         textEncode("2:hi", "ASCII")) is empty), \
+         "a seq at 2^53 is refused (it would not round-trip)"
+   rs1rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
+         textEncode("hi", "ASCII")) is empty), \
+         "a non-bencoded value is refused"
+   rs1rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
+         textEncode("3:hi", "ASCII")) is empty), \
+         "a value whose length prefix lies is refused"
+   put empty into rs1tSalt
+   repeat 65 times
+      put "x" after rs1tSalt
+   end repeat
+   rs1rstCheck (rsBep44SignBuf(rs1tSalt, 1, textEncode("2:hi", "ASCII")) is \
+         empty), "a 65-byte salt is refused (the BEP44 cap)"
+   -- the content address, through the library this time (the sha1Digest
+   -- re-derivations in the posts section prove the same bytes engine-side)
+   rs1rstCheck (rsImmutableTarget(rs1rstBin(rs1kRsGoldPost1Hex)) is \
+         rs1kRsGoldPost1Target), "rsImmutableTarget re-derives post 1's target"
+   rs1rstCheck (rsImmutableTarget(rs1rstBin(rs1kRsGoldPost2Hex)) is \
+         rs1kRsGoldPost2Target), "rsImmutableTarget re-derives post 2's target"
+   rs1rstCheck (rsImmutableTarget(empty) is empty), \
+         "an empty immutable value is refused"
+end rs1rstSectionBep44
+
+private command rs1rstSectionIngest
+   local rs1tEvent, rs1tBad, rs1tPostEvent, rs1tHead, rs1tPost, rs1tSig
+   rs1rstSection "phase 2 - ingest verifiers (synthetic drained events)"
+   -- a synthetic dhtMutableItem event, key-for-key what btPoll drains for
+   -- the golden head. The oracle pre-derived the BEP44 signature, so this
+   -- is fully deterministic - nothing is signed at run time.
+   put rs1kRsGoldHandle into rs1tEvent["publicKey"]
+   put rsHeadSalt() into rs1tEvent["salt"]
+   put 7 into rs1tEvent["seq"]
+   put rs1rstBin(rs1kRsGoldHeadHex) into rs1tEvent["value"]
+   put rs1kRsGoldHeadSigHex into rs1tEvent["signature"]
+   put rsIngestHead(rs1tEvent, rs1kRsGoldHandle) into rs1tHead
+   rs1rstCheck (rs1tHead is not empty), "the golden head event ingests"
+   rs1rstCheck (rs1tHead["displayName"] is rs1kRsGoldHeadName), \
+         "and hands back the parsed head"
+   rs1rstCheck (rs1tHead["latestPostTarget"] is rs1kRsGoldPost2Target), \
+         "naming post 2 as latest"
+   rs1rstCheck (rsIngestHead(rs1tEvent, rs1kRsGoldConfPub) is empty), \
+         "an event for another handle is refused"
+   put rs1tEvent into rs1tBad
+   put "riptide-lies" into rs1tBad["salt"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a wrong salt is refused"
+   put rs1tEvent into rs1tBad
+   put 8 into rs1tBad["seq"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a seq disagreeing with the head's embedded seq is refused"
+   put rs1tEvent into rs1tBad
+   put rs1rstFlipByte(rs1tBad["value"], 2) into rs1tBad["value"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a value that is not an RSH1 record is refused"
+   put rs1tEvent into rs1tBad
+   -- byte 20 is the last display-name char: the record still PARSES, so
+   -- this refusal is the signature's, not the parser's
+   put rs1rstFlipByte(rs1tBad["value"], 20) into rs1tBad["value"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a tampered-but-parseable value fails the BEP44 signature"
+   put rs1tEvent into rs1tBad
+   put rs1tBad["signature"] into rs1tSig
+   if char 1 of rs1tSig is "6" then
+      put "7" into char 1 of rs1tSig
+   else
+      put "6" into char 1 of rs1tSig
+   end if
+   put rs1tSig into rs1tBad["signature"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a forged signature is refused"
+   put rs1tEvent into rs1tBad
+   put char 1 to 127 of rs1tBad["signature"] into rs1tBad["signature"]
+   rs1rstCheck (rsIngestHead(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a truncated signature is refused"
+   -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
+   -- post 2's prev names post 1, post 1's prev is the zero target - the end
+   put rs1kRsGoldPost2Target into rs1tPostEvent["target"]
+   put rs1rstBin(rs1kRsGoldPost2Hex) into rs1tPostEvent["value"]
+   put rsIngestPost(rs1tPostEvent, rs1tHead["latestPostTarget"], rs1kRsGoldHandle) \
+         into rs1tPost
+   rs1rstCheck (rs1tPost is not empty), "the head's latest target ingests post 2"
+   rs1rstCheck (rs1tPost["text"] is rs1kRsGoldPost2Text), "with its text intact"
+   put rs1kRsGoldPost1Target into rs1tPostEvent["target"]
+   put rs1rstBin(rs1kRsGoldPost1Hex) into rs1tPostEvent["value"]
+   put rsIngestPost(rs1tPostEvent, rs1tPost["prevPostTarget"], rs1kRsGoldHandle) \
+         into rs1tPost
+   rs1rstCheck (rs1tPost is not empty), "walking the chain link ingests post 1"
+   rs1rstCheck (rs1tPost["prevPostTarget"] is rsZeroTarget()), \
+         "whose prev is the zero target - the chain ends"
+   rs1rstCheck (rsIngestPost(rs1tPostEvent, rs1kRsGoldPost2Target, rs1kRsGoldHandle) \
+         is empty), "an event answering a different target is refused"
+   put rs1rstFlipByte(rs1rstBin(rs1kRsGoldPost1Hex), 60) into rs1tPostEvent["value"]
+   rs1rstCheck (rsIngestPost(rs1tPostEvent, rs1kRsGoldPost1Target, rs1kRsGoldHandle) \
+         is empty), "a value that does not hash to its target is refused"
+   put rs1rstBin(rs1kRsGoldPost1Hex) into rs1tPostEvent["value"]
+   rs1rstCheck (rsIngestPost(rs1tPostEvent, rs1kRsGoldPost1Target, rs1kRsGoldConfPub) \
+         is empty), "a different claimed author is refused"
+   rs1rstCheck (rsIngestPost(rs1tPostEvent, rsZeroTarget(), rs1kRsGoldHandle) is \
+         empty), "ingesting against the zero target is refused"
+end rs1rstSectionIngest
+
+private function rs1rstAcquireSession
+   local rs1tNew, rs1tErr
+   if rs1sRsTestSession is not empty and rs1sRsTestSession > 0 then
+      return rs1sRsTestSession
+   end if
+   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly
+   -- ONE session per process and the suite core already opened it during
+   -- its probe. Alias the core's handle instead of asking for a second -
+   -- the ask would be refused, and this member's live-feed section would
+   -- SKIP while looking perfectly green.
+   if sSession > 0 then
+      put sSession into rs1tNew
+   else
+      try
+         put btStartSession() into rs1tNew
+      catch rs1tErr
+         put 0 into rs1tNew
+      end try
+   end if
+   if rs1tNew is not empty and rs1tNew > 0 then
+      put rs1tNew into rs1sRsTestSession
+   end if
+   if rs1sRsTestSession is empty or rs1sRsTestSession <= 0 then return 0
+   return rs1sRsTestSession
+end rs1rstAcquireSession
+
+private command rs1rstSectionLiveFeed pCaps
+   local rs1tSession, rs1tSeed, rs1tTarget
+   rs1rstSection "phase 2 - the live layer against a real session"
+   -- The refusal paths run EVERYWHERE: every input is validated before the
+   -- session handle is touched, so proving them needs no torrentxt at all.
+   put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
+   rs1rstCheck (rsPublishHead(0, rs1rstBin(rs1kRsGoldHeadHex), rs1tSeed) is false), \
+         "rsPublishHead refuses a dead session handle"
+   rs1rstCheck (rsLastError() contains "session"), "and says why"
+   rs1rstCheck (rsPublishHead(0, textEncode("junk", "ASCII"), rs1tSeed) is \
+         false), "rsPublishHead refuses a non-RSH1 record first"
+   rs1rstCheck (rsLastError() contains "RSH1"), "and names the parse"
+   rs1rstCheck (rsPublishPost(0, textEncode("junk", "ASCII")) is empty), \
+         "rsPublishPost refuses a non-RSP1 record"
+   rs1rstCheck (rsPublishImmutable(0, rs1rstBin(rs1kRsGoldPost1Hex)) is empty), \
+         "rsPublishImmutable refuses a dead session handle"
+   rs1rstCheck (rsRequestHead(0, rs1kRsGoldHandle) is false), \
+         "rsRequestHead refuses a dead session handle"
+   rs1rstCheck (rsRequestHead(0, "zz") is false), \
+         "rsRequestHead refuses a malformed handle"
+   rs1rstCheck (rsRequestImmutable(0, rsZeroTarget()) is false), \
+         "rsRequestImmutable refuses the zero target"
+   rs1rstCheck (rsRequestImmutable(0, rs1kRsGoldPost1Target) is false), \
+         "rsRequestImmutable refuses a dead session handle"
+   if pCaps["hasTorrent"] is not true then
+      rs1rstSkip "live feed puts and lookups: torrentxt is not installed"
+      exit rs1rstSectionLiveFeed
+   end if
+   put rs1rstAcquireSession() into rs1tSession
+   if rs1tSession is 0 then
+      rs1rstSkip "live feed puts and lookups: could not start a torrent session"
+      exit rs1rstSectionLiveFeed
+   end if
+   -- The stores answer synchronously (the async dhtPut confirm is not
+   -- waited on), so nothing here needs a network. The target comparisons
+   -- are REAL cross-implementation checks: libtorrent's SHA-1 over its own
+   -- bencoding against the oracle's pinned bytes.
+   put rsPublishImmutable(rs1tSession, rs1rstBin(rs1kRsGoldPost1Hex)) into rs1tTarget
+   rs1rstCheck (rs1tTarget is rs1kRsGoldPost1Target), \
+         "rsPublishImmutable stores post 1 at the golden target"
+   put rsPublishPost(rs1tSession, rs1rstBin(rs1kRsGoldPost2Hex)) into rs1tTarget
+   rs1rstCheck (rs1tTarget is rs1kRsGoldPost2Target), \
+         "rsPublishPost stores post 2 at the golden target"
+   -- The whole external-signing seam in one boolean: script-assembled
+   -- canonical buffer, SodiumXT signature, and libtorrent VERIFIES it
+   -- before queueing - true means two independent ed25519 implementations
+   -- and two independent BEP44 buffer assemblies agreed byte-for-byte.
+   rs1rstCheck (rsPublishHead(rs1tSession, rs1rstBin(rs1kRsGoldHeadHex), rs1tSeed) is \
+         true), "rsPublishHead's signature satisfies libtorrent's verifier"
+   rs1rstCheck (rsRequestHead(rs1tSession, rs1kRsGoldHandle) is true), \
+         "rsRequestHead's lookup is accepted (async; value not awaited)"
+   rs1rstCheck (rsRequestImmutable(rs1tSession, rs1kRsGoldPost1Target) is true), \
+         "rsRequestImmutable's lookup is accepted (async; value not awaited)"
+end rs1rstSectionLiveFeed

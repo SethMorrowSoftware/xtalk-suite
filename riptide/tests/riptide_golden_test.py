@@ -156,6 +156,13 @@ check("head size fits BEP44", len(head) <= 1000, True)
 
 head_v = ref["bencode_bytes"](head)
 check("head value prefix", head_v[:4], b"203:")
+# the exact canonical buffer the head's BEP44 signature covers - pinned as an
+# assembly rule (prefix + the already-pinned head bytes) so the salt segment,
+# the seq encoding, and the value framing are each held to fixed bytes; the
+# script layer's rsBep44SignBuf pins the same bytes as kRsGoldHeadBufHex
+check("head buf",
+      ref["bep44_signbuf"](b"riptide-head", 7, head_v),
+      b"4:salt12:riptide-head3:seqi7e1:v203:" + bytes.fromhex(HEAD_HEX))
 check("head sig",
       ref["ed25519_sign"](
           ref["bep44_signbuf"](b"riptide-head", 7, head_v), ID_SEED).hex(),

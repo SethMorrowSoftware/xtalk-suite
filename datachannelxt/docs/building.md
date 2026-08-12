@@ -77,10 +77,15 @@ suppressed.
 | `x86-win32` | as above with `x86-windows-static` + `-A Win32` (the .def matters here) |
 | `universal-mac` | CI proves the HOST arch (arm64, Homebrew OpenSSL); the shipped universal (arm64;x86_64), codesigned + notarized dylib is a separate release build with Apple credentials — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` and a static OpenSSL for it |
 
-CI (`.github/workflows/build.yml`) builds all five on every push, runs ctest,
-and — on pushes to `main` only — commits the SELF-CONTAINED artifacts into
-`src/code/<arch>-<platform>/` (the macOS lane's Homebrew-linked dylib is
-deliberately never committed; see the workflow's header comment).
+In the xtalk-suite monorepo, CI is the root `.github/workflows/native-datachannelxt.yml`
+(the member's own `build.yml` is kept for isolated development but is inert
+here — GitHub runs only root workflows). It builds the matrix on every
+datachannelxt touch, runs ctest and the sanitizer lanes, and uploads each
+library as an ARTIFACT; it never commits one. Committed binaries under
+`src/code/<arch>-<platform>/` trace to a human decision — a maintainer
+installing an artifact, or the suite's manual `release-binaries.yml` assembly
+(the macOS lane's Homebrew-linked dylib is deliberately never shipped either
+way; see the workflow's header comment).
 
 ## Packaging into the extension tree
 

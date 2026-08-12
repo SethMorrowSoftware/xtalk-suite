@@ -117,6 +117,26 @@ run_gates() {
   fi
 }
 
+# --- suite-level: the copied tools have not drifted, and the checker works ---
+# Each member carries its own copy of check-livecodescript.py (and, where it
+# has docs gates, check-docs-style.py) so it stays self-contained standalone.
+# The copies are UNIFIED and byte-identical; the drift gate fails the build the
+# moment a fix lands in one copy and not the others (the exact failure that
+# once left sodiumxt's copy unable to parse `switch` while its siblings could).
+# The fixture tests then prove every rule in every member's copy actually
+# fires - and does NOT fire on the neighbouring legal form - so "the checker
+# refuses X" stays a tested claim rather than an attested one. Both run BEFORE
+# the member loop: a drifted or broken checker makes every downstream green
+# meaningless.
+if [ -f tools/check-checker-drift.py ]; then
+  echo "== suite: tools/check-checker-drift.py =="
+  python3 tools/check-checker-drift.py
+fi
+if [ -f tools/test-checker.py ]; then
+  echo "== suite: tools/test-checker.py =="
+  python3 tools/test-checker.py
+fi
+
 # --- static gates for every member (always run) ---
 # riptide is not an extension but carries the same gate shape (script checker,
 # golden glob, vector gate, docs style), so it rides the same loop.
@@ -125,21 +145,17 @@ for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide; do
 done
 
 # --- suite-level: the scripts that live at the ROOT, not inside a member ---
-# tests/suite-selftest.livecodescript drives all six members from one stack, so
-# it belongs to no member and no member's run_gates would ever see it. It is
-# written to satisfy EVERY member's copy of check-livecodescript.py (the copies
-# have diverged - the older lineage does not model `switch` as a block), and
-# that is a claim, so the gate enforces it rather than trusting it: each
-# member's checker runs over the root scripts in turn.
+# tests/suite-selftest.livecodescript drives all the members from one stack, so
+# it belongs to no member and no member's run_gates would ever see it. One
+# member's checker covers it: the copies are byte-identical and the drift gate
+# above already failed the build if they were not (this block used to run all
+# seven copies in turn, back when the lineages disagreed about `switch`).
 shopt -s nullglob
 ROOT_SCRIPTS=(tests/*.livecodescript tests/*.lcb)
 shopt -u nullglob
 if [ ${#ROOT_SCRIPTS[@]} -gt 0 ]; then
-  for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide; do
-    [ -f "$m/tools/check-livecodescript.py" ] || continue
-    echo "== suite: tests/ under $m's static gate =="
-    python3 "$m/tools/check-livecodescript.py" "${ROOT_SCRIPTS[@]}"
-  done
+  echo "== suite: tests/ under the unified static gate (sodiumxt's copy) =="
+  python3 sodiumxt/tools/check-livecodescript.py "${ROOT_SCRIPTS[@]}"
 fi
 
 # --- suite-level: every handler CALLED across members must actually EXIST ---

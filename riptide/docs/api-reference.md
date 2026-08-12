@@ -1,12 +1,17 @@
-# Riptide phase-1 API reference
+# Riptide API reference (phases 1-2)
 
-The public surface of `src/riptide.livecodescript`. Everything here is
-pure compute plus probed extension calls; nothing touches the network.
+The public surface of `src/riptide.livecodescript`: the phase-1 identity
+and wire-format layer (pure compute plus probed extension calls), and the
+phase-2 live feed layer (BEP44 puts and lookups through a torrent session
+the app owns).
 
-> Verified against `tools/riptide_reference.py`'s golden vectors and
-> ENGINE-PASSED 2026-08-12 (Windows x64, folded into the suite harness):
-> 89/89, 0 skipped, hasSha3 true, so the whole phase-1 surface below has
-> run green on a real engine.
+> **Phase 1** was ENGINE-PASSED 2026-08-12 (Windows x64, folded into the
+> suite harness): 89/89, 0 skipped, hasSha3 true, so that whole surface
+> has run green on a real engine. **The phase-2 live layer** ("The live
+> feed layer" section below) is verified statically and against
+> `tools/riptide_reference.py`'s golden vectors; it needs an OXT pass,
+> and the propagation half of phase 2 (a second machine walks the chain)
+> additionally needs two machines on a real DHT.
 
 ## Conventions
 
@@ -81,3 +86,61 @@ Byte-exact layouts are documented at the top of
 `src/riptide.livecodescript` and pinned by `tests/riptide_golden_test.py`.
 The magic is the version: `RSH1`, `RSP1`, and `RIPTKEY1` change by
 minting a successor, never by silent fix.
+
+## The live feed layer (phase 2)
+
+The session handle in every `pSession` parameter is the app's: TorrentXT
+allows one session per process, the app starts it (`btStartSession`) and
+polls it (`btPoll`), and this library never starts, stops, or polls one.
+Every input is validated before the handle is touched, so the refusal
+paths work - and are tested - without torrentxt installed.
+
+### Pure helpers
+
+| Handler | Returns |
+|---|---|
+| `rsBep44SignBuf(pSalt, pSeq, pValue)` | the canonical BEP44 signing buffer `[4:salt<n>:<salt>] 3:seqi<seq>e 1:v <value>`, rebuilt in pure script (byte-identical to torrentxt's `btDhtBep44SignBuf`). `pValue` must be a strictly well-formed bencoded byte string of 1..1000 raw bytes; salt max 64 bytes; seq a non-negative integer below 2^53 |
+| `rsImmutableTarget(pValue)` | the 40-hex DHT target of an immutable item: SHA-1 of the bencoded value (what `btDhtPutImmutable` returns for the same bytes) |
+
+### Publishing (your own feed)
+
+| Handler | Returns |
+|---|---|
+| `rsPublishHead(pSession, pHeadBytes, pIdentitySeed)` | true when the head was accepted. The external-signing seam: the head's own embedded `seq` becomes the BEP44 seq (one counter, one source of truth), the canonical buffer is signed by `sxSignDetached`, and `btDhtPutSigned` re-verifies that signature against the handle before queueing - the identity secret never enters libtorrent |
+| `rsPublishPost(pSession, pPostBytes)` | the post's 40-hex target, after a strict `RSP1` parse refuses malformed records before the network hears about them |
+| `rsPublishImmutable(pSession, pValue)` | the 40-hex target of any immutable value (a text chunk, a profile-meta blob); the returned target is recomputed locally and a disagreement is refused loudly |
+
+### Fetching and ingesting (a followee's feed)
+
+Fetches are asynchronous: true means the lookup was accepted, and the
+value arrives later through the app's poll loop as a `dhtMutableItem` /
+`dhtImmutableItem` event, which the app hands to the matching ingest
+verifier. Nothing is believed on arrival: ingest re-verifies the BEP44
+signature (heads), the content address (posts), and the author signature
+(posts) in SodiumXT, so trust never rests on the transport.
+
+| Handler | Returns |
+|---|---|
+| `rsRequestHead(pSession, pHandleHex)` | true when the mutable lookup (handle + salt `"riptide-head"`) was accepted |
+| `rsRequestImmutable(pSession, pTarget)` | true when the immutable lookup was accepted; the zero target is refused |
+| `rsIngestHead(pEvent, pExpectedHandleHex)` | the parsed head array, only if the event is for that handle and salt, the value is a strict `RSH1` record, the embedded and BEP44 seqs agree, and the BEP44 signature verifies under the handle |
+| `rsIngestPost(pEvent, pExpectedTarget, pAuthorHandleHex)` | the parsed post array, only if the event answers the expected target, the value's recomputed SHA-1 IS that target, and the author's signature verifies |
+
+### The chain walk
+
+The tamper-evident feed walk is these calls in the app's event loop, no
+more:
+
+```
+-- ask for the head, then on its dhtMutableItem event:
+put rsIngestHead(tEvent, tHandle) into tHead
+put tHead["latestPostTarget"] into tNext
+-- then, until tNext is rsZeroTarget():
+--   rsRequestImmutable sSession, tNext ... on its dhtImmutableItem event:
+put rsIngestPost(tEvent, tNext, tHandle) into tPost
+put tPost["prevPostTarget"] into tNext
+```
+
+Content addressing carries the integrity: each post names its
+predecessor's SHA-1, so one altered byte anywhere breaks the walk (or the
+author signature) at that link.

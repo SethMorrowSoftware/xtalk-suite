@@ -1,14 +1,17 @@
 script "RiptideSocial"
--- riptide.livecodescript - Riptide Social, phase 1: the identity foundation
--- and the pure-compute feed layer, as a pure-LiveCodeScript library over the
--- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-4).
+-- riptide.livecodescript - Riptide Social, phases 1-2: the identity
+-- foundation, the pure-compute feed layer, and the live feed layer, as a
+-- pure-LiveCodeScript library over the installed suite extensions
+-- (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-4).
 --
--- STATUS (honesty convention): every handler in this file is verified
--- statically and against tools/riptide_reference.py's golden vectors via the
--- offline harness in tests/riptide-selftest.livecodescript; NONE of it has
--- run on a real OXT engine yet. Needs an OXT pass. Nothing here touches the
--- network: transport wiring (DHT puts, rp1, onion streams) is phase 2+ and
--- deliberately absent, so this layer stays testable offline.
+-- STATUS (honesty convention): phase 1 (identity + the feed framings) had
+-- its OXT pass on 2026-08-12 (Windows x64, via the folded suite harness:
+-- 89/89, hasSha3 true). The phase-2 LIVE layer below (rsPublishHead /
+-- rsRequestHead / rsPublishPost / rsPublishImmutable / rsRequestImmutable /
+-- rsIngestHead / rsIngestPost and their pure helpers) is verified statically
+-- and against tools/riptide_reference.py's golden vectors; needs an OXT
+-- pass, and the propagation half of phase 2 ("a second machine walks the
+-- chain") additionally needs two machines on a real DHT.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -19,6 +22,14 @@ script "RiptideSocial"
 --   - the rendezvous derivations: inboxId and roomId
 --   - the RSH1 feed-head and RSP1 post-record framings, build + parse +
 --     signature verification, caps enforced on BOTH sides
+--   - the LIVE feed layer (phase 2): head publish through the external-
+--     signing seam (btDhtBep44SignBuf semantics rebuilt in script, signed by
+--     sxSignDetached, stored by btDhtPutSigned - the identity secret never
+--     enters libtorrent), post publish as content-addressed immutable items,
+--     the async fetch requests, and the INGEST verifiers the app's poll loop
+--     feeds each dhtMutableItem / dhtImmutableItem event through. The
+--     library NEVER starts, stops, or polls a session: the app owns the one
+--     session per process and its event loop, and passes the handle in.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -32,8 +43,13 @@ script "RiptideSocial"
 --                   the VERIFY direction below still works.
 --   onionxt   soft  oxPublicKeyFromAddress verifies a CLAIMED onion against
 --                   a handle offline (structural decode, no daemon needed)
---   torrentxt / enetxt / datachannelxt: probed and reported for the app's
---                   capability matrix; nothing in phase 1 calls them.
+--   torrentxt soft  the phase-2 live feed layer drives btDhtPutSigned /
+--                   btDhtGetMutable / btDhtPutImmutable / btDhtGetImmutable
+--                   through a session the APP owns. Absent torrentxt (or a
+--                   dead handle), every live handler refuses with a clear
+--                   story; the pure-compute layer is untouched.
+--   enetxt / datachannelxt: probed and reported for the app's capability
+--                   matrix; nothing in phases 1-2 calls them.
 --
 -- ERROR CONVENTION: functions return empty (or false) on failure and record
 -- the reason; rsLastError() returns it. sx* failures throw, so every foreign
@@ -52,8 +68,13 @@ script "RiptideSocial"
 --     authorSig(64): ed25519 detached over every byte before it
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
+--   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
+--     the record ("<len>:<bytes>"); the canonical signing buffer is
+--     [4:salt<n>:<salt>] 3:seqi<seq>e 1:v <bencoded v> (BEP44, the exact
+--     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
+--     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.1.0"
+constant kRsVersion = "0.2.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -69,6 +90,7 @@ constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
 constant kRsMaxRecord = 1000
+constant kRsMaxSalt = 64
 constant kRsOnionAddrLen = 62
 constant kRsArgonOps = "2"
 constant kRsBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
@@ -83,7 +105,7 @@ local sRsCaps
 --------------------------------------------------------------------------
 
 function rsVersion
-   return "Riptide" && kRsVersion && "(phase 1: identity + feed framing)"
+   return "Riptide" && kRsVersion && "(phase 2: identity + the live feed)"
 end rsVersion
 
 function rsLastError
@@ -848,6 +870,381 @@ function rsBencodeBytes pData
    put the number of bytes in pData into tLen
    return textEncode(tLen & ":", "ASCII") & pData
 end rsBencodeBytes
+
+--------------------------------------------------------------------------
+-- phase 2 - the live feed layer, pure half (spec section 4)
+--
+-- Everything in this half is deterministic compute: the canonical BEP44
+-- signing buffer, the content address of an immutable item, and the two
+-- INGEST verifiers the app's poll loop feeds drained events through. None
+-- of it touches a session, which is what keeps it testable offline and
+-- lets ingest run its refusals even where torrentxt is not installed.
+--------------------------------------------------------------------------
+
+-- Strictly parse a bencoded byte string "<len>:<bytes>" and return len, or
+-- -1 on anything else: a non-digit prefix, a missing colon, a non-canonical
+-- leading zero, or a declared length that does not match the bytes that
+-- follow. The live layer only ever stores this one bencode shape, so
+-- anything else handed to rsBep44SignBuf is a caller bug to refuse loudly.
+private function rsBencodedByteStringLen pValue
+   local tI, tN, tLen, tDigits
+   put 0 into tLen
+   put 0 into tDigits
+   repeat with tI = 1 to the number of bytes in pValue
+      put byteToNum(byte tI of pValue) into tN
+      if tN is 58 then
+         if tDigits is 0 then return -1
+         if the number of bytes in pValue - tI is not tLen then return -1
+         return tLen
+      end if
+      if tN < 48 or tN > 57 then return -1
+      if tDigits > 0 and tLen is 0 then return -1
+      put tLen * 10 + (tN - 48) into tLen
+      add 1 to tDigits
+      if tDigits > 4 then return -1
+   end repeat
+   return -1
+end rsBencodedByteStringLen
+
+-- The canonical BEP44 signing buffer, rebuilt in pure script:
+-- [4:salt<n>:<salt>] 3:seqi<seq>e 1:v <bencoded v>. Byte-identical to
+-- torrentxt's btDhtBep44SignBuf (the folded suite harness cross-checks the
+-- two implementations, and libtorrent's own verifier accepting the result
+-- is the deeper proof) - built here rather than borrowed so rsIngestHead
+-- can verify a head's signature even in a paste with no torrentxt at all.
+function rsBep44SignBuf pSalt, pSeq, pValue
+   local tSaltBytes, tRawLen, tOut
+   if pSeq is not an integer or pSeq < 0 then
+      rsSetError "rsBep44SignBuf: seq must be a non-negative integer"
+      return empty
+   end if
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBep44SignBuf: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
+   put textEncode(pSalt, "UTF-8") into tSaltBytes
+   if the number of bytes in tSaltBytes > kRsMaxSalt then
+      rsSetError "rsBep44SignBuf: the salt is over" && kRsMaxSalt && \
+            "bytes (the BEP44 cap)"
+      return empty
+   end if
+   put rsBencodedByteStringLen(pValue) into tRawLen
+   if tRawLen < 1 or tRawLen > kRsMaxRecord then
+      rsSetError "rsBep44SignBuf: the value must be a bencoded byte string" && \
+            "of 1 to" && kRsMaxRecord && "raw bytes"
+      return empty
+   end if
+   put empty into tOut
+   if tSaltBytes is not empty then
+      put textEncode("4:salt" & the number of bytes in tSaltBytes & ":", \
+            "ASCII") & tSaltBytes into tOut
+   end if
+   put textEncode("3:seqi" & pSeq & "e1:v", "ASCII") after tOut
+   put pValue after tOut
+   return tOut
+end rsBep44SignBuf
+
+-- The 40-hex DHT target of an immutable item: SHA-1 of the BENCODED value
+-- (BEP44). What btDhtPutImmutable returns for the same bytes; recomputable
+-- offline, which is what makes the post chain walkable without trust.
+function rsImmutableTarget pValue
+   local tLen
+   put the number of bytes in pValue into tLen
+   if tLen < 1 or tLen > kRsMaxRecord then
+      rsSetError "rsImmutableTarget: a BEP44 immutable value is 1 to" && \
+            kRsMaxRecord && "bytes"
+      return empty
+   end if
+   return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
+end rsImmutableTarget
+
+-- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
+-- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
+-- value, signature); pExpectedHandleHex is the handle the app trusts (the
+-- key it asked rsRequestHead about). Refuses: an event for another key or
+-- salt, an insane seq, a value that is not a strict RSH1 record, a record
+-- whose embedded seq disagrees with the BEP44 seq, and - the point - a
+-- BEP44 signature that does not verify under the handle. libtorrent already
+-- verified that signature once on receipt; re-verifying here in SodiumXT
+-- costs one call and means the app's trust does not rest on the transport.
+-- Returns the parsed head array (rsParseHead's shape), or empty.
+function rsIngestHead pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestHead: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case, so a case-mangled salt could pass this line; it then
+   -- fails the signature below, because the buffer is rebuilt from the
+   -- CANONICAL salt. The crypto backstops the string compare.
+   if pEvent["salt"] is not kRsHeadSalt then
+      rsSetError "rsIngestHead: the event is not a riptide-head item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: the event seq is not a sane integer"
+      return empty
+   end if
+   put rsParseHead(pEvent["value"]) into tHead
+   if tHead is empty then return empty
+   if tHead["seq"] is not tSeq then
+      -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
+      -- a disagreement means this record was not published by this layer
+      -- (or was reassembled); refuse rather than guess which counter to
+      -- believe - the app's replay protection reads the one true seq.
+      rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
+            "disagree"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestHead: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsHeadSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestHead:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestHead: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   return tHead
+end rsIngestHead
+
+-- Verify and unpack a drained dhtImmutableItem EVENT as one post in a
+-- followee's chain. pExpectedTarget is the target the app asked for (the
+-- head's latestPostTarget, or the previous post's prevPostTarget);
+-- pAuthorHandleHex the author being walked. Three gates, in order: the
+-- event answers the target the app is waiting on; the value's recomputed
+-- SHA-1 IS that target (content addressing - a lying node is refused, and
+-- everything downstream is then over exactly the named bytes); and the
+-- author's ed25519 signature verifies. Returns rsParsePost's array, or
+-- empty. The chain walk is these calls in a loop: request the head's
+-- latest target, ingest, follow prevPostTarget until the zero target.
+function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
+   local tExpected, tEventTarget, tValue, tComputed
+   put rsNormalizeTarget(pExpectedTarget) into tExpected
+   if tExpected is empty or tExpected is kRsZeroTarget then
+      rsSetError "rsIngestPost: the expected target must be 40 non-zero" && \
+            "hex chars"
+      return empty
+   end if
+   put toLower(pEvent["target"]) into tEventTarget
+   if tEventTarget is not tExpected then
+      rsSetError "rsIngestPost: the event names a different target"
+      return empty
+   end if
+   put pEvent["value"] into tValue
+   put rsImmutableTarget(tValue) into tComputed
+   if tComputed is empty then return empty
+   if tComputed is not tExpected then
+      rsSetError "rsIngestPost: the value does not hash to its own target"
+      return empty
+   end if
+   if rsVerifyPost(tValue, pAuthorHandleHex) is not true then
+      return empty
+   end if
+   return rsParsePost(tValue)
+end rsIngestPost
+
+--------------------------------------------------------------------------
+-- phase 2 - the live feed layer, session half (spec section 4)
+--
+-- Thin compositions over a torrent session the APP owns (TorrentXT allows
+-- one per process; this library never starts, stops, or polls one). Every
+-- input is validated BEFORE the session handle is touched, so the refusal
+-- paths run - and are tested - with no torrentxt installed at all. The
+-- fetches are asynchronous: they return true when the lookup is accepted,
+-- and the value arrives later as a dhtMutableItem / dhtImmutableItem event
+-- for rsIngestHead / rsIngestPost.
+--------------------------------------------------------------------------
+
+private function rsValidSession pSession
+   return pSession is an integer and pSession > 0
+end rsValidSession
+
+-- Publish an RSH1 head under the identity key, through the external-signing
+-- seam: the canonical buffer is assembled here, signed by SodiumXT, and
+-- handed to btDhtPutSigned, which VERIFIES the signature against the public
+-- key before anything touches the network - so the identity secret never
+-- crosses into libtorrent, and a true return means libtorrent's own ed25519
+-- agreed with SodiumXT's. The BEP44 seq is the head's embedded seq: one
+-- counter, one source of truth (rsParseHead), never two arguments to skew.
+function rsPublishHead pSession, pHeadBytes, pIdentitySeed
+   local tHead, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   put rsParseHead(pHeadBytes) into tHead
+   if tHead is empty then
+      rsSetError "rsPublishHead: not a valid RSH1 head:" && rsLastError()
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   put rsBencodeBytes(pHeadBytes) into tValue
+   put rsBep44SignBuf(kRsHeadSalt, tHead["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishHead:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsHeadSalt, \
+            tHead["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishHead: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishHead: btDhtPutSigned refused (" & tCode & ")" && tWhy
+      return false
+   end if
+   return true
+end rsPublishHead
+
+-- Store any immutable value (a chunk, a profile-meta blob) and return its
+-- 40-hex target. The target is recomputed here and compared against what
+-- libtorrent returned: two independent SHA-1s over one bencoded value
+-- disagreeing means one side is not hashing what it claims, and a feed
+-- layer that shrugged at that would be publishing unfindable posts.
+function rsPublishImmutable pSession, pValue
+   local tExpected, tTarget, tWhy, tErr
+   put rsImmutableTarget(pValue) into tExpected
+   if tExpected is empty then return empty
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return empty
+   end if
+   try
+      put btDhtPutImmutable(pSession, pValue) into tTarget
+   catch tErr
+      rsSetError "rsPublishImmutable: needs torrentxt" && \
+            "(btDhtPutImmutable):" && tErr
+      return empty
+   end try
+   if tTarget is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishImmutable: btDhtPutImmutable failed;" && tWhy
+      return empty
+   end if
+   if toLower(tTarget) is not tExpected then
+      rsSetError "rsPublishImmutable: libtorrent's target" && tTarget && \
+            "disagrees with the recomputed" && tExpected
+      return empty
+   end if
+   return tExpected
+end rsPublishImmutable
+
+-- Publish one RSP1 post. The strict parse runs first, so a malformed or
+-- truncated record is refused before the network hears about it; the store
+-- itself is rsPublishImmutable, because a post IS just a content-addressed
+-- immutable item. Returns the post's 40-hex target (what the next post's
+-- prevPostTarget and the head's latestPostTarget name), or empty.
+function rsPublishPost pSession, pPostBytes
+   local tParsed
+   put rsParsePost(pPostBytes) into tParsed
+   if tParsed is empty then
+      rsSetError "rsPublishPost: not a valid RSP1 record:" && rsLastError()
+      return empty
+   end if
+   return rsPublishImmutable(pSession, pPostBytes)
+end rsPublishPost
+
+-- Ask the DHT for a followee's current head. Asynchronous: true means the
+-- lookup was accepted; the value arrives as a dhtMutableItem event, which
+-- the app hands to rsIngestHead.
+function rsRequestHead pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestHead: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsHeadSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestHead: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestHead: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestHead
+
+-- Ask the DHT for one immutable item (a post, a chunk, a profile blob) by
+-- its target. Asynchronous: the value arrives as a dhtImmutableItem event,
+-- which the app hands to rsIngestPost (posts) or checks against
+-- rsImmutableTarget itself (raw blobs). The zero target means "none" in
+-- every record, so asking for it is always a caller bug.
+function rsRequestImmutable pSession, pTarget
+   local tT, tCode, tErr
+   put rsNormalizeTarget(pTarget) into tT
+   if tT is empty or tT is kRsZeroTarget then
+      rsSetError "rsRequestImmutable: the target must be 40 non-zero hex" && \
+            "chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return false
+   end if
+   try
+      btDhtGetImmutable pSession, tT
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestImmutable: needs torrentxt (btDhtGetImmutable):" \
+            && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestImmutable: btDhtGetImmutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestImmutable
 
 --------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32
