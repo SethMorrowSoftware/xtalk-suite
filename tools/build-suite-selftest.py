@@ -249,13 +249,49 @@ MEMBERS = [
     ),
     Member(
         "riptide", "riptide/tests/riptide-selftest.livecodescript", "rs1",
-        "rsSelfTest", "Riptide Social (phase 1): the rs* self-test",
-        "The capstone app's offline harness: the KDF subkey tree, identity to "
-        "handle to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings and "
-        "the post chain - all against the same golden vectors the Python "
-        "oracle pins. Fully offline; sections needing coinxt or onionxt SKIP "
-        "when those are absent, and the whole crypto set skips without "
+        "rsSelfTest", "Riptide Social (phases 1-2): the rs* self-test",
+        "The capstone app's harness: the KDF subkey tree, identity to handle "
+        "to onion, the RIPTKEY1 key file, the RSH1/RSP1 framings, the post "
+        "chain, and the phase-2 live feed layer (BEP44 buffers, ingest "
+        "verifiers, and real puts and lookups against the suite's session) - "
+        "all against the same golden vectors the Python oracle pins. No "
+        "network is awaited; sections needing coinxt, onionxt or torrentxt "
+        "SKIP when those are absent, and the whole crypto set skips without "
         "SodiumXT.",
+        rewrites=(
+            # Same one-session-per-process constraint the torrent member's
+            # rewrite handles: the core opened THE session during its probe,
+            # so the folded copy must alias it - a second btStartSession here
+            # would be refused and the live-feed section would SKIP while
+            # looking perfectly green. The standalone start (into a
+            # temporary, committed only on success) stays as the fallback for
+            # the no-core-session case.
+            ("""   try
+      put btStartSession() into tNew
+   catch tErr
+      put 0 into tNew
+   end try
+   if tNew is not empty and tNew > 0 then
+      put tNew into sRsTestSession
+   end if""",
+             """   -- GENERATED (tools/build-suite-selftest.py): TorrentXT allows exactly
+   -- ONE session per process and the suite core already opened it during
+   -- its probe. Alias the core's handle instead of asking for a second -
+   -- the ask would be refused, and this member's live-feed section would
+   -- SKIP while looking perfectly green.
+   if @CORESESSION@ > 0 then
+      put @CORESESSION@ into tNew
+   else
+      try
+         put btStartSession() into tNew
+      catch tErr
+         put 0 into tNew
+      end try
+   end if
+   if tNew is not empty and tNew > 0 then
+      put tNew into sRsTestSession
+   end if"""),
+        ),
     ),
 ]
 

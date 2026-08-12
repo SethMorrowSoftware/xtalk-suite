@@ -6,18 +6,21 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
-## Status: phase 1 (of 7), offline-verifiable core
+## Status: phase 2 (of 7) in the tree; phase 1 engine-passed
 
-> **Honesty convention.** Everything here is verified statically and
-> against the pure-Python oracle, and **phase 1 is ENGINE-PASSED as of
-> 2026-08-12** (Windows x64, folded into the suite harness): 89/89,
-> 0 skipped, every extension probe true including hasSha3. Networked
-> behaviour (DHT puts, rp1 DMs, onion streams) is not written yet, so no
-> networked claim is being made at all; phase 2+ starts back at
-> "verified statically; needs an OXT pass".
+> **Honesty convention.** **Phase 1 is ENGINE-PASSED as of 2026-08-12**
+> (Windows x64, folded into the suite harness): 89/89, 0 skipped, every
+> extension probe true including hasSha3. The **phase-2 live feed layer**
+> (head publish through the external-signing seam, content-addressed post
+> publish, the async lookups, and the ingest verifiers) is verified
+> statically and against the pure-Python oracle; it **needs an OXT
+> pass**, and phase 2's done-criterion - a SECOND machine walks the chain
+> and verifies every authorSig - additionally needs two machines on a
+> real DHT. rp1 DMs and onion streams are later phases; no claim is made
+> about them at all.
 
-What ships today, per the spec's phased roadmap (section 10.3, phase 1,
-plus the pure-compute half of phase 2):
+What ships today, per the spec's phased roadmap (section 10.3, phases 1
+and 2):
 
 - **`src/riptide.livecodescript`**, a pure-script library:
   - the master seed and the `RIPTKEY1` sealed key file (Argon2id +
@@ -31,11 +34,25 @@ plus the pure-compute half of phase 2):
   - the `RSH1` feed-head and `RSP1` post-record wire formats: build,
     strict parse, and author-signature verification, with the
     tamper-evident post chain
-- **`tests/riptide-selftest.livecodescript`**, the offline harness: call
+  - **the phase-2 live feed layer**: `rsPublishHead` signs the canonical
+    BEP44 buffer with SodiumXT and stores it with `btDhtPutSigned` (the
+    identity secret never enters libtorrent, and libtorrent re-verifies
+    the signature before queueing); `rsPublishPost` / `rsPublishImmutable`
+    store content-addressed items whose returned target is recomputed and
+    compared; `rsRequestHead` / `rsRequestImmutable` issue the async
+    lookups; and `rsIngestHead` / `rsIngestPost` verify each drained
+    `dhtMutableItem` / `dhtImmutableItem` event (BEP44 signature under
+    the followed handle, content address, author signature) before the
+    app believes a byte of it. The library never starts, stops, or polls
+    a session - the app owns the one session per process.
+- **`tests/riptide-selftest.livecodescript`**, the harness: call
   `rsSelfTest()` on an engine with the extensions installed. It is also
   folded into the suite-wide paste (`tests/suite-selftest.livecodescript`
   at the repository root) along with the library itself, so one paste
-  exercises riptide with the rest of the suite.
+  exercises riptide with the rest of the suite. No network is awaited:
+  the live-feed section drives real puts and lookups against a local
+  session (skipping honestly without torrentxt); everything else is
+  fully offline.
 - **`tests/riptide_golden_test.py`** and **`tools/riptide_reference.py`**:
   the pure-Python oracle and the golden test that pins every vector.
   The oracle anchors to vectors from OUTSIDE this directory: the sodiumxt
@@ -60,12 +77,13 @@ Riptide probes, never assumes (`rsProbeCapabilities()`); a missing
 extension disables exactly its feature, with a clear message, and never
 another one.
 
-| Extension | Need | Phase-1 role |
+| Extension | Need | Role today (phases 1-2) |
 |---|---|---|
 | SodiumXT | required | the trust root: KDF, sealing, signing, hashing; at ABI 7 also the preferred SHA3 provider |
 | coinxt | optional | `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation |
 | onionxt | optional | `oxPublicKeyFromAddress` verifies a claimed onion offline |
-| torrentxt, enetxt, datachannelxt | later phases | probed and reported only |
+| torrentxt | optional | the phase-2 live feed layer: BEP44 puts and lookups through a session the app owns; every live handler refuses cleanly without it |
+| enetxt, datachannelxt | later phases | probed and reported only |
 
 A note on the onion address, because it is the one place the composition
 was subtle: libsodium has no SHA-3, so onionxt's `oxAddressFromPublicKey`
@@ -81,10 +99,11 @@ available from `oxServiceAddress` after publishing, via tor itself). The
 security-relevant VERIFY direction, `rsVerifyOnionClaim`, needs no SHA-3
 at all and works with onionxt alone.
 
-## What phase 2+ adds (not yet written)
+## What phase 3+ adds (not yet written)
 
-Transport wiring, in spec order: the signed feed head on the DHT
-(`btDhtBep44SignBuf` + `sxSignDetached` + `btDhtPutSigned`, so the
-identity key never enters libtorrent), post publishing and chain walking
-against a live DHT, media torrents, then DMs over rp1 + secretstream.
-Each phase lands with its own engine pass before its labels flip.
+In spec order: media torrents (create, seed, co-seed, sequential
+playback), then DMs (the inbox rendezvous swarm, sealed intros, pairwise
+secretstream over rp1), live dataChannel sessions, LAN device sync, and
+the anonymous persona. Each phase lands with its own engine pass before
+its labels flip - phase 2's own pass (and its two-machine propagation
+half) is still open, per the status note above.

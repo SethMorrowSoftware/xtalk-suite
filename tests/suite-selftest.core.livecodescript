@@ -18,15 +18,20 @@ script "xTalkSuiteSelfTest"
 --      enetxt and datachannelxt are supposed to share. Those compositions are
 --      the suite's actual product; nothing tests them today.
 --
--- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN, IN THIS FORM. On
--- 2026-08-08 it ran on a real OXT engine with all six members installed and
--- reported GREEN - the suite's first runtime evidence. On 2026-08-10 it ran
--- again, as the file is TODAY - every member's deep self-test folded in and
--- both script libraries embedded in the paste - and reported ZERO failures:
--- 455 member-harness checks (sodiumxt 68, onionxt 40, coinxt 207, torrentxt
--- 96, enetxt sync 21, datachannelxt sync 23) plus every core and cross-member
--- section. What each run bought is recorded per member (see each member's
+-- HONESTY (root CLAUDE.md rule 6). THIS HARNESS HAS RUN. On 2026-08-08 it
+-- ran on a real OXT engine with all six members installed and reported GREEN
+-- - the suite's first runtime evidence. On 2026-08-10 it ran again - every
+-- member's deep self-test folded in, both then-embedded script libraries in
+-- the paste - and reported ZERO failures: 455 member-harness checks
+-- (sodiumxt 68, onionxt 40, coinxt 207, torrentxt 96, enetxt sync 21,
+-- datachannelxt sync 23) plus every core and cross-member section. On
+-- 2026-08-12 it ran on Windows x64 (SodiumXT ABI 7, all SEVEN members
+-- folded, three libraries embedded) and again reported ZERO failures -
+-- riptide phase 1 at 89/89, coinxt phase 5 at 230/230, the offline-onion
+-- legs 43/43. What each run bought is recorded per member (each member's
 -- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
+-- Riptide's phase-2 LIVE-FEED sections were added AFTER that run and are
+-- back at "verified statically; needs an OXT pass" (runbook item 10).
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
@@ -34,22 +39,26 @@ script "xTalkSuiteSelfTest"
 --
 --   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
 --   onionxt         oxSelfTest()       8 groups, all offline
---   coinxt          its 28 sections    all four phases, ~300 checks
+--   coinxt          its 28 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
+--   riptide         rsSelfTest()      run LAST: identity, wire formats, and
+--                                     the phase-2 live feed layer, which
+--                                     also shares this file's session
 --
--- AND IT CARRIES THE TWO PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
--- layer (encoders, addresses, the HD wallet walk) and onionxt's entire ox*
--- surface are LiveCodeScript, and they used to be a separate setup step -
--- `start using stack` x2 before pasting. Embedded, that step is gone, and so
--- is the failure mode it carried: the 2026-08-10 re-run pasted a fresh
--- harness into an engine whose in-memory coinxt stack predated a parser fix,
--- and got two red lines that read as "the fix does not work" and meant "the
--- fix was not loaded". This file and the libraries in it are generated from
--- one tree; they cannot skew against each other.
+-- AND IT CARRIES THE THREE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
+-- surface, and riptide's rs* layer are LiveCodeScript, and the first two
+-- used to be a separate setup step - `start using stack` x2 before pasting.
+-- Embedded, that step is gone, and so is the failure mode it carried: the
+-- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
+-- coinxt stack predated a parser fix, and got two red lines that read as
+-- "the fix does not work" and meant "the fix was not loaded". This file and
+-- the libraries in it are generated from one tree; they cannot skew against
+-- each other.
 --
--- So one paste now settles what used to take six runs. Two things are still
+-- So one paste now settles what used to take seven runs. Two things are still
 -- honestly outside it, and they are named where they are cut rather than left
 -- for you to discover: the ENet and DataChannel ASYNC loopbacks stay in their
 -- own harnesses, because this file already drives a real loopback on both
@@ -1858,7 +1867,7 @@ command stRunMemberHarnesses
    -- layer being present at all.
    if sHaveRiptideScript then
       try
-         stMergeReturned "Riptide Social (phase 1)", rs1rsSelfTest()
+         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest()
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try

@@ -129,6 +129,15 @@ def main(argv):
                              k["kRsGoldProfileTarget"])
     want("kRsGoldHeadHex", head.hex())
 
+    # the phase-2 live layer: the canonical BEP44 buffer the head's put signs
+    # (salt "riptide-head", the head's own seq, the bencoded head as v) and
+    # the ed25519 signature over it under the identity seed
+    head_buf = ref["bep44_signbuf"](ref["HEAD_SALT"].encode("ascii"),
+                                    int(k["kRsGoldHeadSeq"]),
+                                    ref["bencode_bytes"](head))
+    want("kRsGoldHeadBufHex", head_buf.hex())
+    want("kRsGoldHeadSigHex", ref["ed25519_sign"](head_buf, id_seed).hex())
+
     # structural claims, not just digests: the records really chain, and the
     # head really names the newest post
     if post2[12:52] != post1_target.encode("ascii"):

@@ -1,17 +1,22 @@
 script "RiptideSelfTest"
--- riptide-selftest.livecodescript - the offline self-test for the Riptide
--- phase-1 library (src/riptide.livecodescript).
+-- riptide-selftest.livecodescript - the self-test for the Riptide phase 1-2
+-- library (src/riptide.livecodescript).
 --
 -- HOW TO RUN: install the suite extensions (SodiumXT is required; coinxt and
--- onionxt light up two extra sections), put the riptide library in use (or
--- paste src/riptide.livecodescript into a stack script and this file into a
--- button), then call rsSelfTest() and read the report. Offline by design:
--- nothing here touches the network, a daemon, or a session - that is what
--- keeps it runnable anywhere, any time (the onionxt-tests convention).
+-- onionxt light up two extra sections, torrentxt the live-feed one), put the
+-- riptide library in use (or paste src/riptide.livecodescript into a stack
+-- script and this file into a button), then call rsSelfTest() and read the
+-- report. No NETWORK is ever waited on: the phase 1-2 pure layers run fully
+-- offline (the onionxt-tests convention), and the live-feed section drives
+-- BEP44 puts and lookups against a LOCAL torrent session - stores return
+-- their verdict synchronously, lookups are fire-and-forget - skipping
+-- honestly when torrentxt is absent or a session cannot start.
 --
--- STATUS (honesty convention): verified statically and against the oracle
+-- STATUS (honesty convention): the phase-1 sections had their OXT pass on
+-- 2026-08-12 (Windows x64, 89/89 via the folded suite harness). The phase-2
+-- sections below are verified statically and against the oracle
 -- (tools/riptide_reference.py, via tools/check-selftest-vectors.py, which
--- re-derives every golden constant below); needs an OXT pass.
+-- re-derives every golden constant below); they need an OXT pass.
 --
 -- The golden constants are copied from `python3 tools/riptide_reference.py`
 -- and are the SAME bytes tests/riptide_golden_test.py pins in Python, so the
@@ -49,11 +54,14 @@ constant kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
 constant kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
 constant kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
+constant kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
+constant kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
 
 local sLog
 local sPass
 local sFail
 local sSkip
+local sRsTestSession
 
 --------------------------------------------------------------------------
 -- entry point
@@ -76,6 +84,9 @@ function rsSelfTest
       rstSectionHead
       rstSectionPosts
       rstSectionHelpers
+      rstSectionBep44
+      rstSectionIngest
+      rstSectionLiveFeed tCaps
    else
       rstSkip "every crypto section: SodiumXT is not installed"
    end if
@@ -410,3 +421,207 @@ private command rstSectionHelpers
    rstCheck (the number of chars in rsZeroTarget() is 40), \
          "the zero target is 40 chars"
 end rstSectionHelpers
+
+private command rstSectionBep44
+   local tValue, tBuf, tSalt
+   rstSection "phase 2 - the canonical BEP44 buffer + content addresses"
+   -- the exact bytes the golden head's BEP44 signature covers, from the
+   -- pure-script assembly (byte-identical to btDhtBep44SignBuf; the folded
+   -- suite harness cross-checks the two implementations directly)
+   put rsBencodeBytes(rstBin(kRsGoldHeadHex)) into tValue
+   put rsBep44SignBuf(rsHeadSalt(), 7, tValue) into tBuf
+   rstCheck (rstHex(tBuf) is kRsGoldHeadBufHex), \
+         "the golden head's signing buffer matches golden"
+   -- the cross-project anchor torrentxt/tests/bep44_golden_test.py pins
+   put rsBep44SignBuf("rp-prekeys", 1, textEncode("2:hi", "ASCII")) into tBuf
+   rstCheck (textDecode(tBuf, "ASCII") is \
+         "4:salt10:rp-prekeys3:seqi1e1:v2:hi"), \
+         "the salted anchor vector matches bep44_golden_test.py"
+   put rsBep44SignBuf(empty, 7, textEncode("2:hi", "ASCII")) into tBuf
+   rstCheck (textDecode(tBuf, "ASCII") is "3:seqi7e1:v2:hi"), \
+         "an empty salt omits the salt segment"
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), -1, \
+         textEncode("2:hi", "ASCII")) is empty), "a negative seq is refused"
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), 9007199254740992, \
+         textEncode("2:hi", "ASCII")) is empty), \
+         "a seq at 2^53 is refused (it would not round-trip)"
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
+         textEncode("hi", "ASCII")) is empty), \
+         "a non-bencoded value is refused"
+   rstCheck (rsBep44SignBuf(rsHeadSalt(), 7, \
+         textEncode("3:hi", "ASCII")) is empty), \
+         "a value whose length prefix lies is refused"
+   put empty into tSalt
+   repeat 65 times
+      put "x" after tSalt
+   end repeat
+   rstCheck (rsBep44SignBuf(tSalt, 1, textEncode("2:hi", "ASCII")) is \
+         empty), "a 65-byte salt is refused (the BEP44 cap)"
+   -- the content address, through the library this time (the sha1Digest
+   -- re-derivations in the posts section prove the same bytes engine-side)
+   rstCheck (rsImmutableTarget(rstBin(kRsGoldPost1Hex)) is \
+         kRsGoldPost1Target), "rsImmutableTarget re-derives post 1's target"
+   rstCheck (rsImmutableTarget(rstBin(kRsGoldPost2Hex)) is \
+         kRsGoldPost2Target), "rsImmutableTarget re-derives post 2's target"
+   rstCheck (rsImmutableTarget(empty) is empty), \
+         "an empty immutable value is refused"
+end rstSectionBep44
+
+private command rstSectionIngest
+   local tEvent, tBad, tPostEvent, tHead, tPost, tSig
+   rstSection "phase 2 - ingest verifiers (synthetic drained events)"
+   -- a synthetic dhtMutableItem event, key-for-key what btPoll drains for
+   -- the golden head. The oracle pre-derived the BEP44 signature, so this
+   -- is fully deterministic - nothing is signed at run time.
+   put kRsGoldHandle into tEvent["publicKey"]
+   put rsHeadSalt() into tEvent["salt"]
+   put 7 into tEvent["seq"]
+   put rstBin(kRsGoldHeadHex) into tEvent["value"]
+   put kRsGoldHeadSigHex into tEvent["signature"]
+   put rsIngestHead(tEvent, kRsGoldHandle) into tHead
+   rstCheck (tHead is not empty), "the golden head event ingests"
+   rstCheck (tHead["displayName"] is kRsGoldHeadName), \
+         "and hands back the parsed head"
+   rstCheck (tHead["latestPostTarget"] is kRsGoldPost2Target), \
+         "naming post 2 as latest"
+   rstCheck (rsIngestHead(tEvent, kRsGoldConfPub) is empty), \
+         "an event for another handle is refused"
+   put tEvent into tBad
+   put "riptide-lies" into tBad["salt"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a wrong salt is refused"
+   put tEvent into tBad
+   put 8 into tBad["seq"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a seq disagreeing with the head's embedded seq is refused"
+   put tEvent into tBad
+   put rstFlipByte(tBad["value"], 2) into tBad["value"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a value that is not an RSH1 record is refused"
+   put tEvent into tBad
+   -- byte 20 is the last display-name char: the record still PARSES, so
+   -- this refusal is the signature's, not the parser's
+   put rstFlipByte(tBad["value"], 20) into tBad["value"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a tampered-but-parseable value fails the BEP44 signature"
+   put tEvent into tBad
+   put tBad["signature"] into tSig
+   if char 1 of tSig is "6" then
+      put "7" into char 1 of tSig
+   else
+      put "6" into char 1 of tSig
+   end if
+   put tSig into tBad["signature"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a forged signature is refused"
+   put tEvent into tBad
+   put char 1 to 127 of tBad["signature"] into tBad["signature"]
+   rstCheck (rsIngestHead(tBad, kRsGoldHandle) is empty), \
+         "a truncated signature is refused"
+   -- the post walk, on synthetic dhtImmutableItem events: head names post 2,
+   -- post 2's prev names post 1, post 1's prev is the zero target - the end
+   put kRsGoldPost2Target into tPostEvent["target"]
+   put rstBin(kRsGoldPost2Hex) into tPostEvent["value"]
+   put rsIngestPost(tPostEvent, tHead["latestPostTarget"], kRsGoldHandle) \
+         into tPost
+   rstCheck (tPost is not empty), "the head's latest target ingests post 2"
+   rstCheck (tPost["text"] is kRsGoldPost2Text), "with its text intact"
+   put kRsGoldPost1Target into tPostEvent["target"]
+   put rstBin(kRsGoldPost1Hex) into tPostEvent["value"]
+   put rsIngestPost(tPostEvent, tPost["prevPostTarget"], kRsGoldHandle) \
+         into tPost
+   rstCheck (tPost is not empty), "walking the chain link ingests post 1"
+   rstCheck (tPost["prevPostTarget"] is rsZeroTarget()), \
+         "whose prev is the zero target - the chain ends"
+   rstCheck (rsIngestPost(tPostEvent, kRsGoldPost2Target, kRsGoldHandle) \
+         is empty), "an event answering a different target is refused"
+   put rstFlipByte(rstBin(kRsGoldPost1Hex), 60) into tPostEvent["value"]
+   rstCheck (rsIngestPost(tPostEvent, kRsGoldPost1Target, kRsGoldHandle) \
+         is empty), "a value that does not hash to its target is refused"
+   put rstBin(kRsGoldPost1Hex) into tPostEvent["value"]
+   rstCheck (rsIngestPost(tPostEvent, kRsGoldPost1Target, kRsGoldConfPub) \
+         is empty), "a different claimed author is refused"
+   rstCheck (rsIngestPost(tPostEvent, rsZeroTarget(), kRsGoldHandle) is \
+         empty), "ingesting against the zero target is refused"
+end rstSectionIngest
+
+-- Acquire the ONE torrent session the live-layer checks share. TorrentXT
+-- allows a single session per process, so: reuse the handle a previous run
+-- of this harness left live (a re-run in the same engine), else START INTO
+-- A TEMPORARY and commit only on success - the torrent-selftest lesson: a
+-- refusal must never overwrite a still-live handle with 0, which would
+-- orphan the only session this process can ever have. The session is
+-- deliberately left running at the end: stopping it would tear the
+-- transport out from under any host still using it (the suite fold's
+-- bt1stCleanup rule, applied from birth).
+private function rstAcquireSession
+   local tNew, tErr
+   if sRsTestSession is not empty and sRsTestSession > 0 then
+      return sRsTestSession
+   end if
+   try
+      put btStartSession() into tNew
+   catch tErr
+      put 0 into tNew
+   end try
+   if tNew is not empty and tNew > 0 then
+      put tNew into sRsTestSession
+   end if
+   if sRsTestSession is empty or sRsTestSession <= 0 then return 0
+   return sRsTestSession
+end rstAcquireSession
+
+private command rstSectionLiveFeed pCaps
+   local tSession, tSeed, tTarget
+   rstSection "phase 2 - the live layer against a real session"
+   -- The refusal paths run EVERYWHERE: every input is validated before the
+   -- session handle is touched, so proving them needs no torrentxt at all.
+   put rstBin(kRsGoldIdSeedHex) into tSeed
+   rstCheck (rsPublishHead(0, rstBin(kRsGoldHeadHex), tSeed) is false), \
+         "rsPublishHead refuses a dead session handle"
+   rstCheck (rsLastError() contains "session"), "and says why"
+   rstCheck (rsPublishHead(0, textEncode("junk", "ASCII"), tSeed) is \
+         false), "rsPublishHead refuses a non-RSH1 record first"
+   rstCheck (rsLastError() contains "RSH1"), "and names the parse"
+   rstCheck (rsPublishPost(0, textEncode("junk", "ASCII")) is empty), \
+         "rsPublishPost refuses a non-RSP1 record"
+   rstCheck (rsPublishImmutable(0, rstBin(kRsGoldPost1Hex)) is empty), \
+         "rsPublishImmutable refuses a dead session handle"
+   rstCheck (rsRequestHead(0, kRsGoldHandle) is false), \
+         "rsRequestHead refuses a dead session handle"
+   rstCheck (rsRequestHead(0, "zz") is false), \
+         "rsRequestHead refuses a malformed handle"
+   rstCheck (rsRequestImmutable(0, rsZeroTarget()) is false), \
+         "rsRequestImmutable refuses the zero target"
+   rstCheck (rsRequestImmutable(0, kRsGoldPost1Target) is false), \
+         "rsRequestImmutable refuses a dead session handle"
+   if pCaps["hasTorrent"] is not true then
+      rstSkip "live feed puts and lookups: torrentxt is not installed"
+      exit rstSectionLiveFeed
+   end if
+   put rstAcquireSession() into tSession
+   if tSession is 0 then
+      rstSkip "live feed puts and lookups: could not start a torrent session"
+      exit rstSectionLiveFeed
+   end if
+   -- The stores answer synchronously (the async dhtPut confirm is not
+   -- waited on), so nothing here needs a network. The target comparisons
+   -- are REAL cross-implementation checks: libtorrent's SHA-1 over its own
+   -- bencoding against the oracle's pinned bytes.
+   put rsPublishImmutable(tSession, rstBin(kRsGoldPost1Hex)) into tTarget
+   rstCheck (tTarget is kRsGoldPost1Target), \
+         "rsPublishImmutable stores post 1 at the golden target"
+   put rsPublishPost(tSession, rstBin(kRsGoldPost2Hex)) into tTarget
+   rstCheck (tTarget is kRsGoldPost2Target), \
+         "rsPublishPost stores post 2 at the golden target"
+   -- The whole external-signing seam in one boolean: script-assembled
+   -- canonical buffer, SodiumXT signature, and libtorrent VERIFIES it
+   -- before queueing - true means two independent ed25519 implementations
+   -- and two independent BEP44 buffer assemblies agreed byte-for-byte.
+   rstCheck (rsPublishHead(tSession, rstBin(kRsGoldHeadHex), tSeed) is \
+         true), "rsPublishHead's signature satisfies libtorrent's verifier"
+   rstCheck (rsRequestHead(tSession, kRsGoldHandle) is true), \
+         "rsRequestHead's lookup is accepted (async; value not awaited)"
+   rstCheck (rsRequestImmutable(tSession, kRsGoldPost1Target) is true), \
+         "rsRequestImmutable's lookup is accepted (async; value not awaited)"
+end rstSectionLiveFeed

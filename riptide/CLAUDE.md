@@ -17,9 +17,11 @@ it is an APP, not an extension: nothing here is compiled, nothing here
 adds native surface, and `rs*` never becomes a library other members may
 call.
 
-Currently at **phase 1** of the spec's seven (identity + the pure-compute
-feed layer). The transport phases land later, each behind its own engine
-pass.
+Currently at **phase 2** of the spec's seven: phase 1 (identity + the
+pure-compute feed layer) is engine-passed; the phase-2 LIVE feed layer
+(BEP44 head/post publish, async lookups, ingest verifiers) is in the tree,
+verified statically, awaiting its own engine pass. The remaining transport
+phases land later, each behind its own pass.
 
 ## The rules that bind this directory
 
@@ -61,7 +63,12 @@ pass.
    harness): 89/89, 0 skipped, every probe true including hasSha3 - the
    sealed key file, the KDF tree, identity -> handle -> onion, the
    RSH1/RSP1 wire formats and the post chain all ran green on a real
-   engine. Phase 2+ starts back at "verified statically".
+   engine. **The phase-2 live feed layer is back at "verified
+   statically"**, and its full done-criterion (a second machine walks the
+   chain and verifies every authorSig) needs TWO machines on a real DHT -
+   the one-machine engine pass proves the puts, the lookups being
+   accepted, and the ingest verifiers on synthetic events, not
+   propagation.
 
 ## Things learned building phase 1 (do not relearn)
 
@@ -97,6 +104,38 @@ pass.
   (the BTXO pattern); u64 splits via `div`/`mod 4294967296`. The base32
   encoder masks its accumulator to the pending bits each step (the
   onionxt discipline) so nothing outgrows exact double precision.
+
+## Things decided building phase 2 (do not re-litigate)
+
+- **The library never owns a session.** TorrentXT allows one per process
+  and the APP's dispatcher polls it, so every live handler takes
+  `pSession` and validates every OTHER input first - which is what lets
+  the refusal paths run (and be tested) with no torrentxt installed.
+- **One seq, one source of truth.** `rsPublishHead` reads the BEP44 seq
+  out of the head's own bytes (`rsParseHead`) rather than taking a second
+  argument that could skew, and `rsIngestHead` refuses an event whose
+  BEP44 seq disagrees with the embedded one.
+- **The canonical BEP44 buffer is rebuilt in pure script**
+  (`rsBep44SignBuf`) rather than borrowed from `btDhtBep44SignBuf`, so
+  ingest verification works with no torrentxt; the suite harness
+  cross-checks the two implementations and `btDhtPutSigned` accepting the
+  script-assembled buffer's signature is the deeper proof (libtorrent
+  re-verifies before queueing).
+- **Ingest trusts arithmetic, not the transport.** libtorrent already
+  verifies a mutable item's signature on receipt; `rsIngestHead` verifies
+  it AGAIN in SodiumXT, and `rsIngestPost` recomputes the content address
+  before believing a byte. Where a string compare could fold case (`is`
+  on the salt), the rebuilt-canonical-buffer signature check backstops it
+  fail-closed.
+- **`rsPublishImmutable` compares libtorrent's returned target against
+  its own recomputation** and refuses a mismatch loudly - two SHA-1s over
+  one bencoded value disagreeing means someone is not hashing what they
+  claim, and shrugging would publish unfindable posts.
+- **The harness's session acquisition mirrors torrent-selftest's**: start
+  into a temporary, commit only on success, never stop it at the end, and
+  `tools/build-suite-selftest.py` carries a riptide rewrite that aliases
+  the folded copy to the core's session (the bt1 pattern; a second
+  btStartSession would be refused and the live section would SKIP green).
 
 ## Suite integration status
 
