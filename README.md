@@ -129,9 +129,10 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all six at once. `tests/suite-selftest.livecodescript` is a single stack
-script that builds its own UI, probes for every member, and reports PASS / FAIL /
-SKIP in one list — a member you did not install skips, it never fails.
+Or run all six suite members plus the Riptide app layer at once.
+`tests/suite-selftest.livecodescript` is a single stack script that builds its
+own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — a
+member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
@@ -152,11 +153,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**331 of 349 public handlers**:
+**340 of 358 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 26/26 |
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 35/35 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies

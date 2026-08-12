@@ -515,12 +515,12 @@ Ordered by (value of the result) divided by (setup cost):
 
 | Order | Stack | Needs | Why here |
 |---|---|---|---|
+| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all five packaged extensions installed; the coinxt, onionxt, and Riptide script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all seven member harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and Riptide phases 1-2 against the suite's session. If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The two deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3. |
 | 1 | `sodiumxt/examples/sodium-tests.livecodescript` (`put sxSelfTest()`) | sodiumxt only | No I/O at all, no network, runs in a second. Everything else composes sodiumxt, so a failure here invalidates results further down. |
 | 2 | `enetxt/tests/enet-selftest.livecodescript` | enetxt only | Loopback UDP on 127.0.0.1, no daemon, no second machine. Also the fastest way to discover a machine that blocks loopback UDP, which would also sink datachannelxt (see trap 5.5). |
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, and the a=candidate / offer-answer-role pins. |
-| 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
+| 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | 96 checks in the current harness. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed — and nothing else: the coinxt, onionxt AND riptide script layers are **embedded in the paste** (any absent member SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and — since 2026-08-11 — riptide's harness (phases 1-2: identity, wire formats, and the live feed layer driving the suite's own session), run last, against its embedded library) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
 | 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) closed 2026-08-12 at 230/230** - after the headless-execution net (`check-script-vectors.py`, 251 checks) caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on that very run. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
@@ -1149,12 +1149,11 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                                              caught + fixed the trailing-empty-
                                              scriptSig defect first.
                                              -> PHASE 5 CLOSED
-[x] riptide    rsSelfTest()                  2026-08-12 (Windows x64): 89/89,
-                                             0 skipped, every probe true incl
-                                             hasSha3 - sealed key file, KDF tree,
-                                             handle <-> onion, RSH1/RSP1 + chain
-                                             -> ITEM 7 / PHASE 1 CLOSED
-[x] riptide    rsSelfTest() phase 2          2026-08-12: 133/133 combined; the live
+[x] riptide    rsSelfTest() phases 1-2       2026-08-12: 133/133 combined, 0 skipped;
+                                             phase 1's first 89 checks cover the
+                                             sealed key file, KDF tree, handle <->
+                                             onion, RSH1/RSP1, and post chain;
+                                             -> ITEM 7 / PHASE 1 CLOSED. The live
                                              feed sections: BEP44 buffer vs
                                              btDhtBep44SignBuf, golden targets
                                              from real puts, btDhtPutSigned
