@@ -48,16 +48,15 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 | platform id | ABI | note |
 |---|---|---|
 | `x86_64-linux` | **7** | rebuilt with `sxt_sha3_256` (2026-08-11) |
-| `x86_64-win32` | **7** | rebuilt 2026-08-11, see the cross-build note below |
-| `x86-linux` | 6 | STALE: no 32-bit libc and no zig in the build environment |
-| `x86-win32` | 6 | STALE: rebuildable with `i686-w64-mingw32`, not yet done |
-| `universal-mac` | 6 | STALE: needs macOS + `lipo`; this member documents mac as a manual build |
+| `x86_64-win32` | **7** | mingw64 cross-build 2026-08-11 (engine-proven on Windows x64 2026-08-12), then refreshed by release run 31551536144 |
+| `x86-linux` | **7** | refreshed by `release-binaries.yml` run 31551536144 (2026-08-12) |
+| `x86-win32` | **7** | refreshed by the same release run |
+| `universal-mac` | 6 | STALE: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
 
-Until a stale row is refreshed, the honest options on that platform are (a) do not
-repackage, and run the older ABI-6 package end to end, where `sxSha3_256` simply does not
-exist and the composing members degrade the way they were written to, or (b) rebuild it.
-`release-binaries.yml` is the designed path for (b) on the two Windows and the 32-bit Linux
-rows; macOS stays manual.
+Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
+the older ABI-6 package end to end, where `sxSha3_256` simply does not exist and the
+composing members degrade the way they were written to, or (b) do the manual `lipo` build.
+Everywhere else the tree now packages clean at ABI 7.
 
 **The `x86_64-win32` binary is a mingw64 cross-build, and that is a toolchain CHANGE worth
 knowing.** The CMake path for Windows links the libsodium that **vcpkg** provides under
@@ -73,9 +72,13 @@ names only `KERNEL32` / `ADVAPI32` / `msvcrt`, so there is no libgcc or winpthre
 to ship alongside it. Nothing from the static libsodium archive is re-exported (0 leaked
 `sodium_*` / `crypto_*` / `randombytes_*`), which is what `--exclude-libs,ALL` plus the
 explicit `__declspec(dllexport)` on `SXT_API` is there to guarantee.
-**It has NOT been executed** (no Windows host and no wine here), so it is
-"verified statically; needs a Windows engine pass" - and the very next engine session is
-that pass. If it fails to load, suspect the toolchain swap first.
+**EXECUTED 2026-08-12: the mingw64 DLL loaded on a real Windows x64 engine and the full
+harness ran green** - 71/71 SodiumXT checks including the FIPS 202 SHA3-256 vectors and the
+Argon2id known-answer vector, plus every composing member (riptide 89/89 hard-depends on
+it). So a mingw64 cross-build is a PROVEN fallback path for this member when no MSVC is
+available. The committed row has since been refreshed by `release-binaries.yml` run
+31551536144 with its own build, verified by `tools/install-release-binaries.py` and the
+full gate set; the mingw episode stands as the record that the fallback works.
 
 The C ABI is **engine-agnostic**: if we ever swap libsodium for monocypher (single-file,
 smaller), the same `sxt_*` surface is reproduced and the LCB layer is untouched.

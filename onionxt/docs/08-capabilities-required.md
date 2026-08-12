@@ -44,8 +44,11 @@ exactly as before (capability error / structural-only) against an older SodiumXT
 vectors and the torproject.org onion-checksum composition vector are pinned in
 `sodiumxt/tests/sodium_smoke_test.c` (ASan/UBSan) and `sodiumxt/examples/sodium-tests.livecodescript`;
 the address round-trip and tamper checks in `examples/onionxt-tests.livecodescript` that used to skip
-now run wherever `oxTransportInfo()["offlineAddress"]` reports true. Verified statically and in the C
-KATs; the composed script path needs an OXT pass.
+now run wherever `oxTransportInfo()["offlineAddress"]` reports true. **The composed script path is
+CONFIRMED ON-ENGINE (2026-08-12, Windows x64, SodiumXT ABI 7 installed):** `oxAddressFromPublicKey`
+re-encoded torproject.org's and DuckDuckGo's real onion addresses byte-exactly from their recovered
+public keys, a tampered address failed checksum validation, and `oxTransportInfo()["offlineAddress"]`
+advertised true - the full 43/43 member harness green.
 
 - **Needed by:** `oxAddressFromPublicKey` (to emit a correct 2-byte checksum) and `oxIsValidAddress`
   (to validate a pasted address offline). The checksum is `SHA3-256(".onion checksum" || PUBKEY ||

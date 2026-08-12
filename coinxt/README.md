@@ -196,8 +196,9 @@ vector gate is now 170 checks.
 folded into the suite selftest - 205/206 on the first pass (the trailing-separator fail-open above),
 then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
 65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) had by then executed on a real
-engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for **78** total; the 13
-transaction handlers are model-verified and executed headlessly but have not yet had their own engine pass.
+engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for **78** total, and the
+2026-08-12 engine pass (230/230, Windows x64) closed them too: every public handler has now run green
+on a real engine.
 
 **Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers, so
 the surface is now **78** public handlers (35 in the `.lcb`, 43 in the script layer). It composes the
@@ -210,9 +211,10 @@ transaction; `tools/check-selftest-vectors.py` re-derives every phase-5 harness 
 them through the real `.livecodescript` against those vectors (251 checks, the encoders fed the oracle's
 own deterministic signatures), the same net phases 3-4 carry. It caught a defect the static gates could
 not - `cxBtcTxEncode` refused to assemble the reference transaction because its trailing-empty scriptSig
-collapses under the engine's one-trailing-delimiter chunk rule (fixed and pinned). This phase has **not**
-had its own on-engine pass yet: the harness is folded into the suite selftest and needs a run there, and
-no transaction should be called broadcastable until an independent decoder or testnet node accepts it.
+collapses under the engine's one-trailing-delimiter chunk rule (fixed and pinned). The **on-engine pass
+landed 2026-08-12** (Windows x64): the folded suite harness ran the whole coinxt surface at 230/230,
+the BIP-143 signed transaction byte for byte included. The one open bar is external: no transaction
+should be called broadcastable until an independent decoder or testnet node accepts it.
 Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the

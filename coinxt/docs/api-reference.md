@@ -13,20 +13,20 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation and the
 > phase-5 transaction builders). The two load differently - see the phase-3 section.
 >
-> **Phase 5 (transaction building) is EXECUTED headlessly and verified against the reference
-> model, but has NOT had its own on-engine pass yet.** The Bitcoin path reproduces the BIP-143
-> native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the Ethereum
-> paths reproduce the EIP-155 specification example and a self-consistent EIP-1559 typed
-> transaction. Since 2026-08-11 all thirteen handlers are also driven THROUGH THE SCRIPT by
-> `tools/check-script-vectors.py` (251 checks) against those same vectors, with the encoders
+> **Phase 5 (transaction building) is ENGINE-PASSED (2026-08-12).** The Bitcoin path reproduces
+> the BIP-143 native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the
+> Ethereum paths reproduce the EIP-155 specification example and a self-consistent EIP-1559
+> typed transaction. Since 2026-08-11 all thirteen handlers are also driven THROUGH THE SCRIPT
+> by `tools/check-script-vectors.py` (251 checks) against those same vectors, with the encoders
 > fed the oracle's own deterministic signatures - the same headless-execution net phases 3 and
 > 4 carry. That net immediately caught a defect no static gate could: `cxBtcTxEncode` refused
 > to assemble the reference transaction outright, because its trailing empty scriptSig (input 1
 > is segwit) collapses under the engine's one-trailing-delimiter chunk rule and tripped a strict
-> parallel-list guard; it is fixed and pinned. The harness that asserts all this on a real
-> engine is folded into the suite selftest but has not yet been run there, and headless
-> execution settles logic, not parser behaviour. No transaction CoinXT assembles should be
-> called broadcastable until it is accepted by an independent decoder or a testnet node.
+> parallel-list guard; it was fixed and pinned, and the 2026-08-12 engine run (Windows x64,
+> 230/230 in the folded suite harness) confirmed it: the whole signed transaction matched
+> BIP-143 byte for byte on a real engine, with both new refusals firing as designed. The one
+> remaining bar is external: no transaction CoinXT assembles should be called broadcastable
+> until it is accepted by an independent decoder or a testnet node.
 >
 > **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
 > engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
@@ -35,7 +35,9 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > first pass and **207/207** on the same-day re-run. The one red line was a genuine engine
 > parser difference no gate had modelled - `cxHdDerivePath` of `"m/"` returned its node
 > unchanged because the engine counts one trailing delimiter out of existence - fixed the same
-> day, and the refusal observed green in the re-run. The native side remains cross-verified on
+> day, and the refusal observed green in the re-run. *Phase 5* was closed on **2026-08-12**
+> (Windows x64): the folded harness ran the whole surface at **230/230**, transactions included.
+> The native side remains cross-verified on
 > every push: CoinXT reproduces four published RFC 6979 signatures byte for byte, a CoinXT
 > signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
 > the signer.
@@ -424,13 +426,14 @@ the decoded human intent first - a blind signer is a footgun. Repeated fields
 (a transaction's inputs and outputs) cross as **comma-separated lists of hex**,
 one item per input or output, the same convention the RLP and bech32 layers use.
 
-> **Executed headlessly and verified against `tools/coin_reference.py`; needs an
-> OXT pass.** The reference model reproduces the BIP-143 native-P2WPKH worked
-> example, the EIP-155 spec example and a self-consistent EIP-1559 transaction,
-> and `tools/check-script-vectors.py` drives all thirteen handlers THROUGH THE
-> script against those vectors (the encoders fed the oracle's own deterministic
-> signatures). Nothing here is broadcastable until an independent decoder or a
-> testnet node accepts it.
+> **Engine-passed 2026-08-12 (230/230, Windows x64), executed headlessly on every
+> push, and verified against `tools/coin_reference.py`.** The reference model
+> reproduces the BIP-143 native-P2WPKH worked example, the EIP-155 spec example
+> and a self-consistent EIP-1559 transaction; `tools/check-script-vectors.py`
+> drives all thirteen handlers THROUGH THE script against those vectors (the
+> encoders fed the oracle's own deterministic signatures); and the engine run
+> reproduced the BIP-143 signed transaction byte for byte. Nothing here is
+> broadcastable until an independent decoder or a testnet node accepts it.
 
 > **A note on the list convention, learned by running it.** A repeated field
 > whose LAST entry is empty (e.g. `scriptSigs` = `[sig, ""]` for a legacy input

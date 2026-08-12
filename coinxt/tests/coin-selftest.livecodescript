@@ -392,7 +392,7 @@ command stRun
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into sResultText
-   put "Phases 1-4: the .lcb module and the script layer, end to end." & return after sResultText
+   put "Phases 1-5: the .lcb module and the script layer, end to end." & return after sResultText
 
    stRunAbi
    stRunLengths

@@ -53,11 +53,15 @@ pass.
    (the onionxt/coinxt lineage; it walks this whole directory). The
    repo-wide `tools/check-handler-calls.py` knows the `rs` prefix, so
    every `rs*` call site is checked for existence and arity too.
-8. **The honesty convention.** Nothing in this directory has run on an
-   engine yet. "Verified statically; needs an OXT pass" until a recorded
-   run says otherwise; anonymity claims additionally need a live-Tor
-   pass. Flip labels only on a recorded engine result, members first,
-   root README last (the runbook's rule).
+8. **The honesty convention.** "Verified statically; needs an OXT pass"
+   until a recorded run says otherwise; anonymity claims additionally
+   need a live-Tor pass. Flip labels only on a recorded engine result,
+   members first, root README last (the runbook's rule). **Phase 1 had
+   that pass on 2026-08-12** (Windows x64, folded into the suite
+   harness): 89/89, 0 skipped, every probe true including hasSha3 - the
+   sealed key file, the KDF tree, identity -> handle -> onion, the
+   RSH1/RSP1 wire formats and the post chain all ran green on a real
+   engine. Phase 2+ starts back at "verified statically".
 
 ## Things learned building phase 1 (do not relearn)
 

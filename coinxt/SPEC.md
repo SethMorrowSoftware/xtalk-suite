@@ -12,7 +12,8 @@ House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in 
 > This is a design spec, not an implementation; the as-built status is tracked in
 > [CLAUDE.md](CLAUDE.md)'s as-built notes (phases 1-4 - hashes, the secp256k1 curve, encodings and
 > addresses, HD wallets - are built and engine-passed; phase 5, transaction building, is built,
-> executed headlessly and model-verified with its on-engine pass pending; phase 6, packaging/demo, is partly done; Schnorr/
+> executed headlessly, model-verified and engine-passed 2026-08-12, with independent-decoder /
+> testnet acceptance the one open bar; phase 6, packaging/demo, is partly done; Schnorr/
 > Taproot is deferred). Where the as-built code and this document disagree, the code and CLAUDE.md
 > win, and the disagreement is
 > marked inline below rather than quietly reconciled. It is the source of

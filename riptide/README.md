@@ -8,11 +8,13 @@ is knowing their key, and reaching them is verifying them.
 
 ## Status: phase 1 (of 7), offline-verifiable core
 
-> **Honesty convention.** Everything in this directory is verified
-> statically and against the pure-Python oracle; NONE of it has run on a
-> real OXT engine yet. Needs an OXT pass. Networked behaviour (DHT puts,
-> rp1 DMs, onion streams) is not written yet, so no networked claim is
-> being made at all.
+> **Honesty convention.** Everything here is verified statically and
+> against the pure-Python oracle, and **phase 1 is ENGINE-PASSED as of
+> 2026-08-12** (Windows x64, folded into the suite harness): 89/89,
+> 0 skipped, every extension probe true including hasSha3. Networked
+> behaviour (DHT puts, rp1 DMs, onion streams) is not written yet, so no
+> networked claim is being made at all; phase 2+ starts back at
+> "verified statically; needs an OXT pass".
 
 What ships today, per the spec's phased roadmap (section 10.3, phase 1,
 plus the pure-compute half of phase 2):
