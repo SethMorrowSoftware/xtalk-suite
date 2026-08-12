@@ -35,6 +35,48 @@ platform-ids `x86_64-linux` / `x86-linux` / `x86_64-win32` / `x86-win32` / `univ
 extension makes the engine resolve the `c:sodiumxt>` binding via `the revLibraryMapping`
 automatically: no loose library, no `sudo`, no `/usr/lib`, no `LD_LIBRARY_PATH`, no rename.
 
+**The committed binaries are NOT all at the same ABI, and that asymmetry is a live
+footgun, so it is written down here rather than left to be discovered.** The `.lcb` and the
+native library ship together in one package, and `sPrepare()` compares
+`_sxt_abi_version()` against `kSXTABIVersion` on EVERY `sx*` call. So a package whose
+`.lcb` says 7 and whose binary says 6 does not degrade gracefully: it throws
+`"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the FIRST call, which
+takes out the whole SodiumXT section AND every member that composes it (riptide entirely,
+onionxt's SAFECOOKIE / deterministic-onion / offline-address paths). Repackaging from a
+tree whose binary for YOUR platform is stale is exactly how that mixed package gets built.
+
+| platform id | ABI | note |
+|---|---|---|
+| `x86_64-linux` | **7** | rebuilt with `sxt_sha3_256` (2026-08-11) |
+| `x86_64-win32` | **7** | rebuilt 2026-08-11, see the cross-build note below |
+| `x86-linux` | 6 | STALE: no 32-bit libc and no zig in the build environment |
+| `x86-win32` | 6 | STALE: rebuildable with `i686-w64-mingw32`, not yet done |
+| `universal-mac` | 6 | STALE: needs macOS + `lipo`; this member documents mac as a manual build |
+
+Until a stale row is refreshed, the honest options on that platform are (a) do not
+repackage, and run the older ABI-6 package end to end, where `sxSha3_256` simply does not
+exist and the composing members degrade the way they were written to, or (b) rebuild it.
+`release-binaries.yml` is the designed path for (b) on the two Windows and the 32-bit Linux
+rows; macOS stays manual.
+
+**The `x86_64-win32` binary is a mingw64 cross-build, and that is a toolchain CHANGE worth
+knowing.** The CMake path for Windows links the libsodium that **vcpkg** provides under
+MSVC, and the previously committed DLL was built that way. The 2026-08-11 rebuild had no
+MSVC available, so libsodium 1.0.20 was cross-configured with
+`--host=x86_64-w64-mingw32 --enable-static --disable-shared` (from the tarball already
+cached in `build/`, sha256 re-verified against the pinned value) and the shim was linked
+against it with `-DSODIUM_STATIC`. Three things were checked rather than assumed, because a
+crypto binary nobody can execute here deserves more than "it compiled": the export table is
+**byte-identical to the known-good ABI-7 Linux build (107/107 `sxt_*` names, no more and no
+fewer)**; `sxt_abi_version` disassembles to `mov $0x7,%eax ; ret`; and the import table
+names only `KERNEL32` / `ADVAPI32` / `msvcrt`, so there is no libgcc or winpthread runtime
+to ship alongside it. Nothing from the static libsodium archive is re-exported (0 leaked
+`sodium_*` / `crypto_*` / `randombytes_*`), which is what `--exclude-libs,ALL` plus the
+explicit `__declspec(dllexport)` on `SXT_API` is there to guarantee.
+**It has NOT been executed** (no Windows host and no wine here), so it is
+"verified statically; needs a Windows engine pass" - and the very next engine session is
+that pass. If it fails to load, suspect the toolchain swap first.
+
 The C ABI is **engine-agnostic**: if we ever swap libsodium for monocypher (single-file,
 smaller), the same `sxt_*` surface is reproduced and the LCB layer is untouched.
 
