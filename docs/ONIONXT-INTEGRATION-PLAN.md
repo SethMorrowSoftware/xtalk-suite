@@ -1304,7 +1304,7 @@ clearnet feature keeps working.
   and local-Tor caveats in plain language next to the toggle.
 - **Never let the badge outrun the transport.** "Anonymous" in any label must be backed by the 7.3 invariant for
   that specific payload; if a guard cannot confirm it, the label does not appear.
-- **Static-gate first, then a human on-engine pass.** Run `tools/check-livecodescript.py` and reason about the frame
+- **Static-gate first, then a human on-engine pass.** Run the touched member's `tools/check-livecodescript.py` and reason about the frame
   layout on paper. The live behavior — bootstrap, `oxDial` round-trips, descriptor timing, each 7.3 guard actually
   refusing the clearnet path, the fail-closed paths — **must be confirmed by a human on a real engine with a running
   local Tor daemon.** Label every anonymity claim "verified statically; needs an OXT + live-Tor pass."
@@ -1448,7 +1448,7 @@ Recorded so nobody mistakes them for Model-C work; **none are needed and none wi
 
 ## 10. Phased roadmap & gates
 
-Each gate is an **observable two-machine (except Phase 0) on-engine outcome**. `tools/check-livecodescript.py` and
+Each gate is an **observable two-machine (except Phase 0) on-engine outcome**. Each member's `tools/check-livecodescript.py` and
 the pure-compute KATs (§12) are the *static* gate; the listed outcome is the *human OXT pass* and is the only thing
 that closes the phase.
 
@@ -1556,7 +1556,7 @@ No headless OXT exists, so the discipline is **static gate first, KATs second, t
 
 ### 12.1 Static gate (every script edit)
 
-`python3 tools/check-livecodescript.py` must pass on both demos: smart/curly-quote zero, handler/`unsafe`/control
+`python3 torrentxt/tools/check-livecodescript.py` must pass on both demos (they are torrentxt's): smart/curly-quote zero, handler/`unsafe`/control
 balance, constants-before-use, and the reserved-token-shadow check. **This has not yet been run on any of the new
 names** — the many new `s*/t*/p*/k*` identifiers (`sTxTotal`, `sRxState`, `sChanServicePort`, `pReq`, `pEnc`, etc.)
 must be cleared mechanically for the `tExt`==`text` class before "done" is claimed (M11). Also confirm every onion

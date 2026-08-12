@@ -58,7 +58,7 @@ rest is roadmap, provenance, and open decisions.
 2. **OXT compiler footguns.** ASCII quotes only; `k`/`p`/`s`/`t` prefixes;
    constants literal and declared before first use; all `local`s at the top of
    a handler; `unsafe … end unsafe` around foreign calls in any `.lcb` helper.
-   The static gate `tools/check-livecodescript.py` runs on every script edit.
+   The static gate `riptide/tools/check-livecodescript.py` runs on every script edit.
 3. **Fail-closed capability probes.** Every optional dependency is probed
    **once** at startup into a script-local boolean, mirroring the existing
    `sCanEncrypt` pattern in the torrent demos. A missing extension disables

@@ -1,7 +1,9 @@
 # Examples
 
-Formatted like the sibling family's example stacks (SodiumXT's `sodium-demo.livecodescript` /
-`sodium-tests.livecodescript`, TorrentXT's `examples/`).
+Formatted like the sibling family's example stacks (SodiumXT's
+`sodiumxt/examples/sodium-demo.livecodescript` /
+`sodiumxt/examples/sodium-tests.livecodescript`, and TorrentXT's
+`torrentxt/examples/`).
 
 | File | What it shows |
 |---|---|

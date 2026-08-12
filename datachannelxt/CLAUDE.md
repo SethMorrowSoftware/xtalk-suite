@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in
-this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in the
+dataChannelXT member of the xtalk-suite monorepo (`datachannelxt/`).
 
 > Read `docs/architecture.md` for the design and `docs/api-reference.md` for the
 > surface. This file is the operational as-built record and the hard-won-lesson

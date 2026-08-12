@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with
-code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in
+the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 
 > **Phase 1 complete (the full binding).** The plan is the suite's
 > `docs/NEXT-EXTENSIONS-PLAN.md` Part III ("ENet — real-time, step 1");

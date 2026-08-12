@@ -53,13 +53,20 @@ These are summarized in `README.md`; the operational point for editing is:
 4. **Generation-tagged integer handles**, validated before use — a stale handle
    is a harmless no-op.
 5. **The static gate is law for script.** Every member carries
-   `tools/check-livecodescript.py` (ASCII quotes only; `k`/`p`/`s`/`t`
-   prefixes; literal constants before first use; declarations at handler top;
-   `unsafe` around foreign calls). A `.lcb`/`.livecodescript` change is not
-   "done" until that gate passes; a shim change is not "done" until the
-   member's smoke test passes under ASan/UBSan; a native-library change is not
-   "done" until the member's committed `src/code/<arch>-<platform>/` binary is
-   refreshed in the same change.
+   `tools/check-livecodescript.py` (ASCII only; the `k`/`p`/`s`/`t`
+   token-shadow trap; literal constants before first use, both dialects;
+   declarations at handler top in `.lcb` - measured, NOT enforced for
+   `.livecodescript`, where mid-handler `local` is legal and stands in
+   engine-passed code; `unsafe` around foreign calls; block balance including
+   `switch`; the zero-arg-statement-call and throw-in-catch refusals; and the
+   per-dialect antipattern sets). The copies are UNIFIED and byte-identical:
+   `tools/check-checker-drift.py` fails the build if any copy differs, and
+   `tools/test-checker.py` fixture-tests every rule in every copy. A
+   `.lcb`/`.livecodescript` change is not "done" until that gate passes; a
+   shim change is not "done" until the member's smoke test passes under
+   ASan/UBSan; a native-library change is not "done" until the member's
+   committed `src/code/<arch>-<platform>/` binary is refreshed in the same
+   change.
 6. **The honesty convention** — "verified statically; needs an OXT pass"
    (Tor: "+ live-Tor pass") for anything not observed on a real engine.
 
@@ -131,13 +138,20 @@ Four things about it are worth knowing before you touch it:
 
 Folding those harnesses in also surfaced a **latent bug in one copy of the static
 gate**. The family keeps a copy of `check-livecodescript.py` per member, and they
-have drifted: **sodiumxt's copy did not know `switch`/`end switch`**, so it read
+had drifted: **sodiumxt's copy did not know `switch`/`end switch`**, so it read
 `end switch` as closing a HANDLER, reported two phantom problems in enetxt's and
 datachannelxt's event dispatchers, and would have hidden any real imbalance
 inside them. The other five copies already handled it, by two different
-implementations. Only sodiumxt's was changed; the drift itself is the standing
-cost of copy-per-member and is worth remembering the next time one of these
-checkers is edited - a fix applied to one copy is not applied to the suite.
+implementations - measured later, the "drift" was in fact TWO independent
+checkers (one lineage in sodiumxt/onionxt/coinxt/riptide, another in
+torrentxt/enetxt/datachannelxt), each with real checks the other lacked. **The
+copies are UNIFIED now (2026-08-12)**: one implementation carrying the union of
+both lineages' checks, byte-identical in all seven members, with
+`tools/check-checker-drift.py` failing the build on any divergence and
+`tools/test-checker.py` fixture-testing every rule in every copy - so "a fix
+applied to one copy is not applied to the suite" is no longer a state the tree
+can quietly be in. The self-containment survives: each member still ships its
+own copy; the gate just proves the copies are the same tool.
 
 **The first engine pass of the folded harness found what no gate could
 (2026-08-09), and it was one line: `dcCleanup()`.** A zero-argument call in
@@ -152,10 +166,12 @@ it - `datachannel-loopback` had `dcStopPolling` and `dcCleanup()` on consecutive
 lines; in EXPRESSION position (`dcCleanup() is 0`) the parens are REQUIRED, same
 characters, opposite verdict; and LiveCode **Builder** allows `sPrepare()` as a
 statement, which `sodium.lcb` and `coinxt.lcb` do ~90 times on engine-verified
-paths, so "we do this everywhere" was true and irrelevant. All six checker
-copies now refuse it, `.livecodescript` only - written once and inserted into
-all six in one pass, per the drift lesson directly above, and each copy tested
-against the bug, all three legal forms, and a `.lcb`.
+paths, so "we do this everywhere" was true and irrelevant. All checker copies
+refuse it, `.livecodescript` only - and the "each copy tested against the bug,
+all three legal forms, and a `.lcb`" attestation this paragraph used to make is
+no longer an attestation: those fixtures are COMMITTED in
+`tools/test-checker.py` and run against every copy in the gate set, which is
+what the shipped-is-not-run lesson below says an attestation must become.
 
 **The second engine error was the generator's, and it is the more instructive
 one: DECLARED is not IN SCOPE.** `add pPassed to sPassed` died with
@@ -218,14 +234,15 @@ that overstates its coverage is worse than no gate, because it answers the quest
 nobody asks twice. It now fails on any `k*` constant that is neither re-derived nor
 listed as an input with a reason, and reports the honest split.
 
-It stayed invisible because of how the two gate layers overlap. Each member's
-own checker reads that member's `src/`, `examples/` AND `tests/`, so enetxt's
-switch statements were always checked - by enetxt's checker, which handles them.
-Separately, the repo-root `tests/` directory is run through EVERY member's
-checker in turn. Until now that directory held only the suite harness, which had
-no `switch` in it, so sodiumxt's gap was never reached. Folding enetxt's and
-datachannelxt's switch-based event dispatchers into that file is what finally put
-a `switch` in front of the one checker that could not parse it.
+It stayed invisible because of how the two gate layers overlapped. Each member's
+own checker reads that member's tree, so enetxt's switch statements were always
+checked - by enetxt's checker, which handled them. Separately, the repo-root
+`tests/` directory used to run through EVERY member's checker in turn; it held
+only the suite harness, which had no `switch` in it, so sodiumxt's gap was never
+reached until the fold put enetxt's and datachannelxt's switch-based dispatchers
+in front of the one checker that could not parse them. (Since the unification,
+that seven-way cross-run is one run: the copies are byte-identical, the drift
+gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
 
 ## Docs: member vs. suite
 

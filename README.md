@@ -89,10 +89,14 @@ specific to it.
    bulk bytes stay engine ⇄ disk; only small status records and events cross.
 4. **Handles are generation-tagged integers**, validated before use, so a stale
    handle is a harmless no-op, never a crash.
-5. **The OXT compiler footguns** (ASCII quotes only; `k`/`p`/`s`/`t` prefixes;
-   literal constants declared before first use; declarations at the top of a
-   handler; `unsafe … end unsafe` around foreign calls) are enforced by
-   `tools/check-livecodescript.py`, which every member carries.
+5. **The OXT compiler footguns** (ASCII only; `k`/`p`/`s`/`t` prefixes and the
+   token-shadow trap; literal constants declared before first use;
+   declarations at the top of an `.lcb` handler; `unsafe … end unsafe` around
+   foreign calls; block balance, the zero-arg-statement-call refusal, and
+   more) are enforced by `tools/check-livecodescript.py`, which every member
+   carries as one byte-identical, fixture-tested copy (the suite gates
+   `tools/check-checker-drift.py` and `tools/test-checker.py` keep it that
+   way).
 
 ## Install
 
@@ -125,9 +129,9 @@ It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, and riptide's phase-1 harness — plus the cross-member
-compositions no per-member harness can have. One paste settles what used to
-take seven runs.
+and datachannelxt, and riptide's harness (phases 1-2, including the live feed
+layer against the suite's own session) — plus the cross-member compositions no
+per-member harness can have. One paste settles what used to take seven runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
 than copied from them, because a hand-copied test suite drifts and then reports
@@ -173,9 +177,12 @@ The members are deliberately non-overlapping, so real apps mix them:
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
   social app on all six, and `riptide/` is that app being built — phase 1
   (the identity foundation and the feed wire formats, offline-verifiable,
-  golden-pinned, and engine-passed 2026-08-12 at 89/89) is in the tree; `docs/NEXT-EXTENSIONS-PLAN.md` is the
-  roadmap that produced the members; `docs/ONIONXT-INTEGRATION-PLAN.md` is
-  the anonymity-transport integration.
+  golden-pinned, and engine-passed 2026-08-12 at 89/89) and phase 2 (the
+  live feed layer: signed BEP44 heads, content-addressed posts, verified
+  ingest — verified statically, needs an OXT pass) are in the tree;
+  `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
+  `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
+  integration.
 
 ## Development
 
