@@ -871,6 +871,21 @@ untouched (no shim change: this is pure script over the existing primitives).
   ("cxBtcSighashSegwit refuses an empty outputs list", "cxBtcTxEncode refuses a witness list longer
   than the input count") firing as designed, and the EIP-155 / EIP-1559 transactions and hashes exact.
   So the headless-gate finding is now engine-confirmed from both sides: the defect it caught would have
-  been red here, and the fix it shipped is green here. The one bar left is external: the
-  "broadcastable" claim still needs an independent decoder or a testnet node, recorded in the
-  api-reference status block and the plan.
+  been red here, and the fix it shipped is green here.
+
+- **THE INDEPENDENT-DECODER BAR IS MET (2026-08-12), and it is the strongest correctness statement
+  this member can make short of a testnet broadcast.** `tools/verify-independent-decoder.py` builds a
+  FRESH native-P2WPKH transaction - a key, amount, prevout and destination the repo has never pinned,
+  so reproducing the BIP-143 example is not enough to pass - end to end through the SHIPPED
+  `src/coinxt.livecodescript` (sighash, DER, varint, witness, serialization, via `lcs-interp.py`), and
+  hands the resulting bytes to **python-bitcointx** (the maintained python-bitcoinlib fork, a full
+  consensus-shaped script interpreter over libsecp256k1). It deserializes them, runs `VerifyScript`
+  under `SCRIPT_VERIFY_WITNESS`, and checks the signature against its OWN BIP-143 sighash; a flipped
+  signature byte and a +1-satoshi wrong amount are both rejected, so the verdict is not vacuous. This
+  is the first time code we did not write has accepted a transaction CoinXT built. It is an ACCEPTANCE
+  run, NOT a CI gate: python-bitcointx + coincurve are pip packages the suite does not vendor, so the
+  tool SKIPS loudly without them (`--require` turns the skip into a failure on a machine that has
+  them). The rationale for keeping it out of `build-all.sh` is the same one the runbook applies to a
+  testnet node: an external dependency the gate set cannot assume. **The one bar left is a live
+  testnet broadcast**; "broadcastable" stays unclaimed until then, but "an independent decoder accepts
+  our bytes" is now true.

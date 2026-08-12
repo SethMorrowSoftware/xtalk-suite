@@ -219,8 +219,13 @@ oracle's own deterministic signatures), the same net phases 3-4 carry. That net 
 immediately, catching a would-be-red engine defect the static gates could not see: `cxBtcTxEncode`
 refused to assemble the reference transaction because its trailing-empty scriptSig collapses under the
 engine's one-trailing-delimiter chunk rule (fixed, pinned, and confirmed green in the engine run). The
-independent-decoder / testnet acceptance is the one remaining bar, so nothing here is called
-broadcastable yet. **Risk retired:** the jump from "signs a digest" to "assembles a real transaction."
+**independent-decoder half of the done-criterion is now MET (2026-08-12)**: `tools/verify-independent-decoder.py`
+builds a FRESH native-P2WPKH transaction through the shipped script and python-bitcointx (a full
+consensus-shaped verifier) accepts it - `VerifyScript` under `SCRIPT_VERIFY_WITNESS`, its own BIP-143
+sighash matching the script's, with a flipped-signature and wrong-amount negative control each rejected.
+It is an acceptance run, not a CI gate (the pip verifier is not vendored; it SKIPS loudly without it).
+**A live testnet broadcast is the one bar left**, so nothing here is called broadcastable yet.
+**Risk retired:** the jump from "signs a digest" to "assembles a real transaction."
 Explicitly optional: the primitive layer (phases 1-4) is useful and shippable without this.
 
 ## Phase 6 - Packaging, examples, release
