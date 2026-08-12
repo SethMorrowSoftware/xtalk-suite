@@ -28,10 +28,13 @@ script "xTalkSuiteSelfTest"
 -- 2026-08-12 it ran on Windows x64 (SodiumXT ABI 7, all SEVEN members
 -- folded, three libraries embedded) and again reported ZERO failures -
 -- riptide phase 1 at 89/89, coinxt phase 5 at 230/230, the offline-onion
--- legs 43/43. What each run bought is recorded per member (each member's
+-- legs 43/43. A later 2026-08-12 run of the current harness was green across
+-- all 617 folded checks: sodiumxt 71, onionxt 43, coinxt 230, torrentxt 96,
+-- enetxt sync 21, datachannelxt sync 23, and riptide phases 1-2 at 133.
+-- What each run bought is recorded per member (each member's
 -- README / CLAUDE.md and docs/OXT-PASS-RUNBOOK.md, the pass blockquotes).
--- Riptide's phase-2 LIVE-FEED sections were added AFTER that run and are
--- back at "verified statically; needs an OXT pass" (runbook item 10).
+-- Riptide's phase-2 single-engine work is therefore closed; only its
+-- two-machine propagation criterion remains under runbook item 6.
 --
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's

@@ -167,16 +167,16 @@ engine:**
 | 8 | **coinxt phase 5 transactions** (`stRunTransactions`) | the BIP-143 native-P2WPKH signed tx byte-for-byte (both sighash algorithms + witness + txid), the EIP-155 spec tx, and the EIP-1559 typed tx. Also EXECUTED headlessly (`check-script-vectors.py`, 251 checks) - which caught and fixed a would-be-red line: `cxBtcTxEncode` refused the reference tx because its trailing-empty scriptSig collapses under the engine's trailing-delimiter chunk rule | **CLOSED 2026-08-12**: coinxt 230/230, the signed tx byte-for-byte on engine, both new refusals firing |
 | 9 | **onion offline-address emission** (`oxAddressFromPublicKey` / `oxIsValidAddress`) | now that SodiumXT ABI 7 ships `sxSha3_256`, the checksum works: a 32-byte key renders a real `<56>.onion`, and a tampered address is refused | **CLOSED 2026-08-12**: real onions re-encoded byte-exactly, tamper refused, `offlineAddress` true (43/43) |
 
-**And one surface added after that run, so it is OPEN:**
+**One surface was added after that run and has now received its engine pass:**
 
 | # | New surface | What a green run proves | Status |
 |---|---|---|---|
-| 10 | **riptide phase 2, the live feed layer** (inside `rs1rsSelfTest`, no extra step: the folded live-feed section drives the suite's own session) | the pure-script BEP44 buffer matches `btDhtBep44SignBuf` byte-for-byte; `rsPublishImmutable`/`rsPublishPost` return the oracle's pinned targets (libtorrent's SHA-1 agrees); `btDhtPutSigned` ACCEPTS `rsPublishHead`'s SodiumXT signature over the script-assembled buffer; the lookups are accepted; and the ingest verifiers pass/refuse their synthetic golden events. NOT covered by one machine: propagation - phase 2's done-criterion (a second machine walks the chain) is item 6's session | **OPEN - needs an OXT pass** (verified statically + oracle-pinned) |
+| 10 | **riptide phase 2, the live feed layer** (inside `rs1rsSelfTest`, no extra step: the folded live-feed section drives the suite's own session) | the pure-script BEP44 buffer matches `btDhtBep44SignBuf` byte-for-byte; `rsPublishImmutable`/`rsPublishPost` return the oracle's pinned targets (libtorrent's SHA-1 agrees); `btDhtPutSigned` ACCEPTS `rsPublishHead`'s SodiumXT signature over the script-assembled buffer; the lookups are accepted; and the ingest verifiers pass/refuse their synthetic golden events. NOT covered by one machine: propagation - phase 2's done-criterion (a second machine walks the chain) is item 6's session | **CLOSED 2026-08-12**: riptide 133/133, 0 skipped; canonical buffer, real-session puts/requests, and ingest verifiers all green |
 
-So what remains beyond item 10 is entirely environmental: items **4 and 5 need
-a live tor daemon** (one evening with `ControlPort 9051` covers both), and item
-**6 needs a second machine** (riptide phase 2's propagation half now rides that
-same session). Plan those as their own sessions.
+What remains is entirely environmental: items **4 and 5 need a live tor daemon**
+(one evening with `ControlPort 9051` covers both), and item **6 needs a second
+machine** (including riptide phase 2's propagation half). Plan those as their
+own sessions.
 
 ---
 
@@ -1108,9 +1108,12 @@ BREADTH
                                              embedded script layers; the re-run
                                              was 455 member checks + the core,
                                              ZERO failures (coinxt 207/207)
+                                             2026-08-12: GREEN, 617 folded
+                                             member checks, ZERO failures;
+                                             riptide phase 2 was 133/133
 
 DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
-[x] sodiumxt   sxSelfTest()                   2026-08-10: 68/0 (folded, twice)
+[x] sodiumxt   sxSelfTest()                   2026-08-12: 71/0 (latest folded run)
 [x] enetxt     enet-selftest (sync half)      2026-08-10: 21/0 (folded, twice);
                the async loopback ran standalone 2026-08-07; still open: its
                LIVE enHostStatus pair, added after that pass  <- one paste closes it
@@ -1151,13 +1154,13 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                                              hasSha3 - sealed key file, KDF tree,
                                              handle <-> onion, RSH1/RSP1 + chain
                                              -> ITEM 7 / PHASE 1 CLOSED
-[ ] riptide    rsSelfTest() phase 2          (date/platform: ______) the live
+[x] riptide    rsSelfTest() phase 2          2026-08-12: 133/133 combined; the live
                                              feed sections: BEP44 buffer vs
                                              btDhtBep44SignBuf, golden targets
                                              from real puts, btDhtPutSigned
                                              accepting the script-built buffer's
                                              signature, ingest verifiers
-                                             -> closes ITEM 10; propagation
+                                             -> ITEM 10 CLOSED; propagation
                                              (second machine) rides item 6
 
 DEMOS

@@ -12,11 +12,11 @@ script "RiptideSelfTest"
 -- their verdict synchronously, lookups are fire-and-forget - skipping
 -- honestly when torrentxt is absent or a session cannot start.
 --
--- STATUS (honesty convention): the phase-1 sections had their OXT pass on
--- 2026-08-12 (Windows x64, 89/89 via the folded suite harness). The phase-2
--- sections below are verified statically and against the oracle
+-- STATUS (honesty convention): the phase-1 and phase-2 sections had their OXT
+-- pass on 2026-08-12 (133/133 via the folded suite harness, no skips). The
+-- oracle still independently pins the phase-2 vectors
 -- (tools/riptide_reference.py, via tools/check-selftest-vectors.py, which
--- re-derives every golden constant below); they need an OXT pass.
+-- re-derives every golden constant below).
 --
 -- The golden constants are copied from `python3 tools/riptide_reference.py`
 -- and are the SAME bytes tests/riptide_golden_test.py pins in Python, so the

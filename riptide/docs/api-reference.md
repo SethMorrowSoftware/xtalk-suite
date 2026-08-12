@@ -5,13 +5,11 @@ and wire-format layer (pure compute plus probed extension calls), and the
 phase-2 live feed layer (BEP44 puts and lookups through a torrent session
 the app owns).
 
-> **Phase 1** was ENGINE-PASSED 2026-08-12 (Windows x64, folded into the
-> suite harness): 89/89, 0 skipped, hasSha3 true, so that whole surface
-> has run green on a real engine. **The phase-2 live layer** ("The live
-> feed layer" section below) is verified statically and against
-> `tools/riptide_reference.py`'s golden vectors; it needs an OXT pass,
-> and the propagation half of phase 2 (a second machine walks the chain)
-> additionally needs two machines on a real DHT.
+> **Phases 1 and 2** were ENGINE-PASSED 2026-08-12, folded into the suite
+> harness: 133/133, 0 skipped, hasSha3 true. The phase-2 live layer below ran
+> its real-session puts and accepted lookups plus its synthetic ingest
+> verifier paths. The propagation half of phase 2 (a second machine walks the
+> chain) additionally needs two machines on a real DHT.
 
 ## Conventions
 
