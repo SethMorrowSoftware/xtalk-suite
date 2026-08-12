@@ -1153,8 +1153,8 @@ command stCrossOnionSection
       stNote "SHA3-256 is present: offline .onion address rendering is AVAILABLE"
    else
       stNote "SHA3-256 absent (SodiumXT pre-ABI-7 or absent): offline address deferred"
+      stNote "that FALSE was docs/08 gap #2; SodiumXT ABI 7+ closes it (reinstall)"
    end if
-   stNote "that FALSE is docs/08 gap #2: libsodium ships no SHA3-256"
 end stCrossOnionSection
 
 -- Build the one sealed payload BOTH transports will carry. Sealing once and

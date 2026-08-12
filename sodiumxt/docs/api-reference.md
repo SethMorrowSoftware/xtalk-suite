@@ -194,7 +194,9 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   the complete `sxSelfTest()` ran green on a real engine - 68 checks, zero failures, twice
   in one day - folded into the suite harness (`tests/suite-selftest.livecodescript` at the
   repository root), which carries this member's own self-test verbatim. That retires the
-  old caveat that the recorded pass predated the newer sections. The 2026-08-08 suite pass
+  old caveat that the recorded pass predated the newer sections. The ABI-7 additions
+  (`sxSha3_256` and its FIPS 202 vectors, 71 checks total) had their pass on **2026-08-12**,
+  on Windows x64 - so nothing in this file is "verified statically" any more. The 2026-08-08 suite pass
   had already proven the cross-member half from the outside: `sxSignSeedToExpandedKey`'s
   64-byte expanded key equals, on-engine, the DHT secret key libtorrent derives from the
   same seed.

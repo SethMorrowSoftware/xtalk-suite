@@ -156,18 +156,18 @@ residuals that remain (the enet and datachannel member harnesses' own async
 loopback halves) are small, named in each harness's coverage note, and closable by
 one standalone paste each.
 
-**But offline work since then added THREE new surfaces that HAVE NOT had an engine
-pass, and all three are high-value offline runs — a single Step-0 paste on an
-ABI-7 engine exercises every one of them:**
+**Offline work then added THREE new surfaces, and the 2026-08-12 Step-0 paste
+(Windows x64, SodiumXT ABI 7 installed) closed all three in one run — the run
+also proved the mingw64-built sodiumxt DLL loads and passes on a real Windows
+engine:**
 
-| # | New offline surface (added 2026-08-11) | What a green run proves | Needs |
+| # | New offline surface (added 2026-08-11) | What a green run proves | Status |
 |---|---|---|---|
-| 7 | **riptide phase 1** (`rs1rsSelfTest`, the 7th folded member) | the `RIPTKEY1` Argon2id-sealed seed, the KDF subkey tree, handle <-> `.onion` both ways, the `RSH1`/`RSP1` wire formats with strict parse and the tamper-evident post chain | engine + **SodiumXT** (hard); coinxt/onionxt optional |
-| 8 | **coinxt phase 5 transactions** (`stRunTransactions`) | the BIP-143 native-P2WPKH signed tx byte-for-byte (both sighash algorithms + witness + txid), the EIP-155 spec tx, and the EIP-1559 typed tx. **Now also EXECUTED headlessly** (`check-script-vectors.py`, 251 checks) - which already caught and fixed a would-be-red line: `cxBtcTxEncode` refused the reference tx because its trailing-empty scriptSig collapses under the engine's trailing-delimiter chunk rule. So this item should now pass first try; watch that assertion specifically | engine only (deterministic signing, no network) |
-| 9 | **onion offline-address emission** (`oxAddressFromPublicKey` / `oxIsValidAddress`) | now that SodiumXT ABI 7 ships `sxSha3_256`, the checksum works: a 32-byte key renders a real `<56>.onion`, and a tampered address is refused | engine + **SodiumXT ABI 7** (no daemon) |
+| 7 | **riptide phase 1** (`rs1rsSelfTest`, the 7th folded member) | the `RIPTKEY1` Argon2id-sealed seed, the KDF subkey tree, handle <-> `.onion` both ways, the `RSH1`/`RSP1` wire formats with strict parse and the tamper-evident post chain | **CLOSED 2026-08-12** (Windows x64): 89/89, 0 skipped, hasSha3 true |
+| 8 | **coinxt phase 5 transactions** (`stRunTransactions`) | the BIP-143 native-P2WPKH signed tx byte-for-byte (both sighash algorithms + witness + txid), the EIP-155 spec tx, and the EIP-1559 typed tx. Also EXECUTED headlessly (`check-script-vectors.py`, 251 checks) - which caught and fixed a would-be-red line: `cxBtcTxEncode` refused the reference tx because its trailing-empty scriptSig collapses under the engine's trailing-delimiter chunk rule | **CLOSED 2026-08-12**: coinxt 230/230, the signed tx byte-for-byte on engine, both new refusals firing |
+| 9 | **onion offline-address emission** (`oxAddressFromPublicKey` / `oxIsValidAddress`) | now that SodiumXT ABI 7 ships `sxSha3_256`, the checksum works: a 32-byte key renders a real `<56>.onion`, and a tampered address is refused | **CLOSED 2026-08-12**: real onions re-encoded byte-exactly, tamper refused, `offlineAddress` true (43/43) |
 
-So the ordering is: **Step 0 first (it now proves items 7, 8, 9 as a side effect
-of one paste)**, then the environmental sessions. Items **4 and 5 need a live tor
+So what remains is entirely environmental: items **4 and 5 need a live tor
 daemon** (one evening with `ControlPort 9051` covers both), and item **6 needs a
 second machine**. Plan those as their own sessions.
 
@@ -413,14 +413,15 @@ riptide (hard SodiumXT dependency), and onionxt's SAFECOOKIE / deterministic-oni
 offline-address paths with it, and the failure text points at your install rather than
 at the real cause.
 
-As of 2026-08-11 the committed binaries are at **ABI 7 for `x86_64-linux` and
-`x86_64-win32`**, and still at **ABI 6 for `x86-linux`, `x86-win32` and
-`universal-mac`** (the currency table with the reasons lives in
-`sodiumxt/CLAUDE.md`). On an ABI-7 row: repackage normally and the SHA3 / offline
-onion-address checks run. On an ABI-6 row: **do not repackage SodiumXT** - keep the
-older package, where `sxSha3_256` simply does not exist and every composing member
-degrades the way it was written to, which the harness now tracks rather than
-hard-asserts. Either way the run is useful; mixing the two is what is not.
+As of 2026-08-12 (release run 31551536144) the committed binaries are at **ABI 7
+everywhere except `universal-mac`**, which stays at **ABI 6** until the manual
+`lipo` build (the currency table with the reasons lives in `sodiumxt/CLAUDE.md`).
+On an ABI-7 row: repackage normally and the SHA3 / offline onion-address checks
+run - the 2026-08-12 Windows x64 pass did exactly this, green. On the mac row:
+**do not repackage SodiumXT** - keep the older package, where `sxSha3_256` simply
+does not exist and every composing member degrades the way it was written to,
+which the harness tracks rather than hard-asserts. Either way the run is useful;
+mixing the two is what is not.
 
 **Step 0 - the one-run entry point (do this first, always).**
 
@@ -513,7 +514,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | About 70 checks. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
 | 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six members installed — and nothing else: the coinxt, onionxt AND riptide script layers are **embedded in the paste** (any absent member SKIPs) | **The whole suite in one paste.** It now carries every member's OWN deep self-test folded in (sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and — since 2026-08-11 — riptide's phase-1 harness, run last, against its embedded library) on top of the cross-member sections. If this is green, rows 1-6 below are largely redundant; run them individually only to chase something this one reported. The two exceptions it does NOT cover are the ENet and DataChannel **async loopbacks**, which stay in rows 3 and 5. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) has not had an engine pass but is now EXECUTED headlessly** (`check-script-vectors.py`, 251 checks), which caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on the engine. Fully synchronous. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) closed 2026-08-12 at 230/230** - after the headless-execution net (`check-script-vectors.py`, 251 checks) caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on that very run. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
@@ -1116,9 +1117,12 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                                              is now SHIPPED (SodiumXT ABI 7), so on
                                              an ABI-7 engine those 3 are no longer
                                              skips - the offline-address checks run
-[ ] onionxt    offline .onion address        NEW (item 9): oxAddressFromPublicKey
-                                             emits a real address, oxIsValidAddress
-                                             refuses a tampered one. Needs ABI 7.
+[x] onionxt    offline .onion address        2026-08-12 (Windows x64, ABI 7):
+                                             43/0 - the ex-skips ran; torproject
+                                             + DuckDuckGo onions re-encoded
+                                             byte-exactly, tamper refused,
+                                             offlineAddress advertised true
+                                             -> ITEM 9 CLOSED
 [x] coinxt     .lcb items 1-5 in order        2026-08-08: 1:PASS 2:PASS(via sPrepare)
                                              3:PASS UIntSize return works
                                              4:PASS empty Data marshals
@@ -1128,16 +1132,18 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                                              on the re-run (the red line was the
                                              "m/" fail-open, fixed same day)
                                              -> PHASES 2-4 CLOSED
-[ ] coinxt     coin-selftest phase 5         NEW (item 8): the stRunTransactions
-                                             section (BIP-143 / EIP-155 / EIP-1559
-                                             KATs). Deterministic, offline. Now
-                                             EXECUTED headlessly (251 checks); it
-                                             already caught + fixed a would-be-red
-                                             trailing-empty-scriptSig defect. Not
-                                             yet run on an engine.
-[ ] riptide    rsSelfTest()                  NEW (item 7): identity + feed wire
-                                             formats. Offline; needs SodiumXT
-                                             (coinxt/onionxt optional). Not yet run.
+[x] coinxt     coin-selftest phase 5         2026-08-12 (Windows x64): 230/230,
+                                             the BIP-143 signed tx byte-for-byte
+                                             on engine, both new refusals firing.
+                                             The headless net (251 checks) had
+                                             caught + fixed the trailing-empty-
+                                             scriptSig defect first.
+                                             -> PHASE 5 CLOSED
+[x] riptide    rsSelfTest()                  2026-08-12 (Windows x64): 89/89,
+                                             0 skipped, every probe true incl
+                                             hasSha3 - sealed key file, KDF tree,
+                                             handle <-> onion, RSH1/RSP1 + chain
+                                             -> ITEM 7 / PHASE 1 CLOSED
 
 DEMOS
 [ ] datachannel-loopback

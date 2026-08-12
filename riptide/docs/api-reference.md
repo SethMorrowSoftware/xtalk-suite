@@ -3,8 +3,10 @@
 The public surface of `src/riptide.livecodescript`. Everything here is
 pure compute plus probed extension calls; nothing touches the network.
 
-> Verified statically and against `tools/riptide_reference.py`'s golden
-> vectors; needs an OXT pass.
+> Verified against `tools/riptide_reference.py`'s golden vectors and
+> ENGINE-PASSED 2026-08-12 (Windows x64, folded into the suite harness):
+> 89/89, 0 skipped, hasSha3 true, so the whole phase-1 surface below has
+> run green on a real engine.
 
 ## Conventions
 

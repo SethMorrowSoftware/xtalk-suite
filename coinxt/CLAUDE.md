@@ -473,7 +473,8 @@ and six length accessors (30 `cnx_*` exports now, up from 16), and `src/coinxt.l
   (`native-coinxt.yml`, "Execute the COMMITTED library's vectors"), which no
   committed library had before. `release-binaries.yml` will overwrite it with a
   gcc-multilib build whenever it next runs, and that step re-verifies it the same
-  way; nothing here depends on Zig staying in the picture.
+  way; nothing here depends on Zig staying in the picture. (It happened: release
+  run 31551536144, 2026-08-12, replaced the Zig build and re-verified it.)
 - Verified: ASan + UBSan clean over the whole curve surface (`sh native/build.sh asan`),
   `tools/coin-kat.py` green (four RFC 6979 vectors, G and 2G, decompression round-trip, 8 verification
   rejections including the overread guard, ecrecover, ECDH both directions, 10 fail-closed guards,
@@ -802,12 +803,13 @@ first 2026-08-10 pass touched came back on the side the code assumed, including 
 marshalling bets: the C `int` flag marshals (33 vs 65 came back distinct) and `Boolean` returns
 work (`cxVerify` answered both true and false).
 
-**Phase 5, transaction building and signing - BUILT, EXECUTED headlessly, and model-verified
-2026-08-11; its own on-engine pass is the one bar left.** ABI untouched (no shim change: this is pure
-script over the existing primitives). `src/coinxt.livecodescript` gains 13 public handlers, so the
-surface is 78 (35 `.lcb` + 43 script): `cxVarInt`, `cxDerEncode`, `cxBtcOutpoint`, `cxBtcOutput`,
-`cxBtcSighashLegacy`, `cxBtcSighashSegwit`, `cxBtcWitness`, `cxBtcTxEncode`, `cxBtcTxid`,
-`cxEthLegacySighash`, `cxEthLegacyEncode`, `cxEth1559Sighash`, `cxEth1559Encode`.
+**Phase 5, transaction building and signing - BUILT 2026-08-11, EXECUTED headlessly, and
+ENGINE-PASSED 2026-08-12; independent-decoder / testnet acceptance is the one bar left.** ABI
+untouched (no shim change: this is pure script over the existing primitives).
+`src/coinxt.livecodescript` gains 13 public handlers, so the surface is 78 (35 `.lcb` + 43 script):
+`cxVarInt`, `cxDerEncode`, `cxBtcOutpoint`, `cxBtcOutput`, `cxBtcSighashLegacy`,
+`cxBtcSighashSegwit`, `cxBtcWitness`, `cxBtcTxEncode`, `cxBtcTxid`, `cxEthLegacySighash`,
+`cxEthLegacyEncode`, `cxEth1559Sighash`, `cxEth1559Encode`.
 
 - **The KAT is the strongest one this member has.** The Bitcoin case IS the BIP-143 native-P2WPKH
   worked example: a two-input transaction where input 0 is a legacy P2PK spend (SIGHASH_ALL preimage)
@@ -862,7 +864,13 @@ surface is 78 (35 `.lcb` + 43 script): `cxVarInt`, `cxDerEncode`, `cxBtcOutpoint
   input, and a wrong pubkey each caught); `tools/check-script-vectors.py` green at 251 checks with the
   phase-5 handlers now EXECUTED (was 219, and the phase-3/4 vectors are unaffected); the suite coverage
   gate holds at 331/349 with every phase-5 handler exercised; the suite selftest is regenerated (coinxt
-  fold 43 handlers). **STILL NOT run on an engine** (headless execution settles logic, not parser
-  behaviour, exactly as for phase 3/4), and the "broadcastable" claim additionally needs an independent
-  decoder or a testnet node - both recorded as the remaining bars, in the api-reference status block
-  and the plan.
+  fold 43 handlers).
+- **THE ENGINE PASS LANDED 2026-08-12 (Windows x64): 230/230, phase 5 included.** The folded harness
+  ran the whole coinxt section green on a real engine - "the whole signed transaction matches BIP-143
+  byte for byte" on the very path the trailing-empty-scriptSig fix repaired, both new negatives
+  ("cxBtcSighashSegwit refuses an empty outputs list", "cxBtcTxEncode refuses a witness list longer
+  than the input count") firing as designed, and the EIP-155 / EIP-1559 transactions and hashes exact.
+  So the headless-gate finding is now engine-confirmed from both sides: the defect it caught would have
+  been red here, and the fix it shipped is green here. The one bar left is external: the
+  "broadcastable" claim still needs an independent decoder or a testnet node, recorded in the
+  api-reference status block and the plan.

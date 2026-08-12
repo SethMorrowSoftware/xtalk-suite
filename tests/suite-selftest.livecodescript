@@ -1419,8 +1419,8 @@ command stCrossOnionSection
       stNote "SHA3-256 is present: offline .onion address rendering is AVAILABLE"
    else
       stNote "SHA3-256 absent (SodiumXT pre-ABI-7 or absent): offline address deferred"
+      stNote "that FALSE was docs/08 gap #2; SodiumXT ABI 7+ closes it (reinstall)"
    end if
-   stNote "that FALSE is docs/08 gap #2: libsodium ships no SHA3-256"
 end stCrossOnionSection
 
 -- Build the one sealed payload BOTH transports will carry. Sealing once and
@@ -7857,7 +7857,7 @@ command cx1stRun
    set the caseSensitive to true
 
    put "CoinXT API self-test" & return into cx1sResultText
-   put "Phases 1-4: the .lcb module and the script layer, end to end." & return after cx1sResultText
+   put "Phases 1-5: the .lcb module and the script layer, end to end." & return after cx1sResultText
 
    cx1stRunAbi
    cx1stRunLengths
