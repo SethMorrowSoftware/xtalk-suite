@@ -136,6 +136,10 @@ if [ -f tools/test-checker.py ]; then
   echo "== suite: tools/test-checker.py =="
   python3 tools/test-checker.py
 fi
+if [ -f tools/check-ui-kit-drift.py ]; then
+  echo "== suite: tools/check-ui-kit-drift.py =="
+  python3 tools/check-ui-kit-drift.py
+fi
 
 # --- static gates for every member (always run) ---
 # riptide is not an extension but carries the same gate shape (script checker,

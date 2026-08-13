@@ -26,6 +26,11 @@ script "coinXTDemo"
 -- and disables itself with a clear message when SodiumXT is absent. Import
 -- (typing a mnemonic) works without it.
 --
+-- THE LOOK is the suite UI kit, carried verbatim below between the marker
+-- lines (master: tools/ui-kit.livecodescript at the suite root;
+-- tools/check-ui-kit-drift.py holds every copy byte-identical). Change the
+-- look in the master and re-carry it; never patch the block here.
+--
 -- CUSTODY, said plainly (CLAUDE.md rule 2, and read docs/getting-started.md):
 -- this is a DEMO, not a wallet. The mnemonic sits in a visible field, keys
 -- live briefly in engine variables, and OXT script memory is not locked or
@@ -50,6 +55,116 @@ constant kBtcVersion is 2
 constant kBtcSequence is "4294967293"
 constant kBtcLocktime is 0
 constant kGweiWei is 1000000000
+
+-- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg is "237,239,243"
+constant kUiAccent is "44,90,160"
+constant kUiAccentText is "255,255,255"
+constant kUiOk is "20,120,40"
+constant kUiWarn is "160,90,10"
+constant kUiBad is "170,30,30"
+constant kUiMuted is "90,96,110"
+constant kUiMono is "Courier"
+
+-- The window chrome every adopter shares: stack size, ground color, the
+-- title band, and the one status line under it (write it with uiStatus).
+command uiChrome pTitle, pWidth, pHeight
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & ",30", 15
+   set the opaque of field "uiTitle" to true
+   set the backgroundColor of field "uiTitle" to kUiAccent
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   uiLabel "uiStatus", empty, "16,34," & (pWidth - 16) & ",52", 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiMuted
+   end if
+end uiStatus
+
+-- A numbered bold section header.
+command uiSection pName, pText, pRect
+   uiLabel pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+end uiSection
+
+-- A static caption (idempotent, borderless, transparent).
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the textSize of field pName to pSize
+   put pText into field pName
+end uiLabel
+
+-- A one-line entry field, mono because hex, addresses and paths are what
+-- this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the textSize of field pName to 11
+   set the textFont of field pName to kUiMono
+end uiInput
+
+-- A read-only output/list area: mono, scrolling.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to kUiMono
+end uiArea
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiLabel "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v1 END ====
 
 -- ---- probe state -------------------------------------------------------------
 local sHaveCoin       -- "true" once the .lcb extension answered
@@ -91,136 +206,76 @@ on mouseUp
    end switch
 end mouseUp
 
--- ---- self-building UI (idempotent) -------------------------------------------
+-- ---- self-building UI (idempotent; the kit owns the look) --------------------
 command cdBuild
-   if there is a field "cdStatus" then
+   if there is a field "uiTitle" then
       exit cdBuild
    end if
    lock screen
-   set the width of this stack to 780
-   set the height of this stack to 940
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "CoinXT - Demo (mnemonic to signed transaction)"
-
-   cdMakeLabel "cdTitle", "  CoinXT - from a mnemonic to a signed transaction", "0,0,780,30", 15
-   set the opaque of field "cdTitle" to true
-   set the backgroundColor of field "cdTitle" to "44,90,160"
-   set the foregroundColor of field "cdTitle" to "255,255,255"
-   set the textStyle of field "cdTitle" to "bold"
-   cdMakeLabel "cdStatus", "Probing...", "16,34,764,52", 11
+   uiChrome "CoinXT - from a mnemonic to a signed transaction", 780, 940
 
    -- 1. wallet
-   cdMakeLabel "cdSec1", "1. Wallet: mnemonic in, addresses out", "16,58,764,76", 13
-   set the textStyle of field "cdSec1" to "bold"
-   cdMakeInput "cdMnemonic", "16,80,600,124"
+   uiSection "cdSec1", "1. Wallet: mnemonic in, addresses out", "16,58,764,76"
+   uiInput "cdMnemonic", "16,80,600,124"
    put kTestMnemonic into field "cdMnemonic"
-   cdMakeButton "cdGenerate", "Generate new", "612,80,764,104"
-   cdMakeButton "cdDerive", "Derive", "612,108,764,132"
-   cdMakeLabel "cdPassLabel", "Passphrase (optional):", "16,128,180,146", 11
-   cdMakeInput "cdPassphrase", "184,128,420,148"
-   cdMakeArea "cdWalletOut", "16,152,764,258"
+   uiButton "cdGenerate", "Generate new", "612,80,764,104"
+   uiButton "cdDerive", "Derive", "612,108,764,132"
+   uiLabel "cdPassLabel", "Passphrase (optional):", "16,128,180,146", 11
+   uiInput "cdPassphrase", "184,128,420,148"
+   uiArea "cdWalletOut", "16,152,764,258"
 
    -- 2. sign + verify
-   cdMakeLabel "cdSec2", "2. Sign and verify a message (the BIP-84 key)", "16,264,764,282", 13
-   set the textStyle of field "cdSec2" to "bold"
-   cdMakeInput "cdMessage", "16,286,600,308"
+   uiSection "cdSec2", "2. Sign and verify a message (the BIP-84 key)", "16,264,764,282"
+   uiInput "cdMessage", "16,286,600,308"
    put "hello coinxt" into field "cdMessage"
-   cdMakeButton "cdSign", "Sign + verify", "612,286,764,310"
-   cdMakeArea "cdSignOut", "16,314,764,392"
+   uiButton "cdSign", "Sign + verify", "612,286,764,310"
+   uiArea "cdSignOut", "16,314,764,392"
 
    -- 3. bitcoin transaction
-   cdMakeLabel "cdSec3", "3. Bitcoin: build + sign a native-P2WPKH spend (synthetic prevout)", "16,398,764,416", 13
-   set the textStyle of field "cdSec3" to "bold"
-   cdMakeLabel "cdBtcL1", "prev txid / vout / input sat:", "16,420,196,438", 11
-   cdMakeInput "cdBtcPrev", "200,420,560,440"
+   uiSection "cdSec3", "3. Bitcoin: build + sign a native-P2WPKH spend (synthetic prevout)", "16,398,764,416"
+   uiLabel "cdBtcL1", "prev txid / vout / input sat:", "16,420,196,438", 11
+   uiInput "cdBtcPrev", "200,420,560,440"
    put "2222222222222222222222222222222222222222222222222222222222222222" into field "cdBtcPrev"
-   cdMakeInput "cdBtcVout", "566,420,610,440"
+   uiInput "cdBtcVout", "566,420,610,440"
    put "0" into field "cdBtcVout"
-   cdMakeInput "cdBtcIn", "616,420,700,440"
+   uiInput "cdBtcIn", "616,420,700,440"
    put "100000" into field "cdBtcIn"
-   cdMakeLabel "cdBtcL2", "pay to (bech32) / amount sat:", "16,444,196,462", 11
-   cdMakeInput "cdBtcDest", "200,444,610,464"
-   cdMakeInput "cdBtcOut", "616,444,700,464"
+   uiLabel "cdBtcL2", "pay to (bech32) / amount sat:", "16,444,196,462", 11
+   uiInput "cdBtcDest", "200,444,610,464"
+   uiInput "cdBtcOut", "616,444,700,464"
    put "99000" into field "cdBtcOut"
-   cdMakeButton "cdBtcBuild", "Build + sign", "706,432,764,456"
-   cdMakeArea "cdBtcOutArea", "16,470,764,600"
+   uiButton "cdBtcBuild", "Build + sign", "706,432,764,456"
+   uiArea "cdBtcOutArea", "16,470,764,600"
 
    -- 4. ethereum transaction
-   cdMakeLabel "cdSec4", "4. Ethereum: build + sign an EIP-1559 transaction", "16,606,764,624", 13
-   set the textStyle of field "cdSec4" to "bold"
-   cdMakeLabel "cdEthL1", "nonce / prio gwei / max gwei / gas:", "16,628,236,646", 11
-   cdMakeInput "cdEthNonce", "240,628,290,648"
+   uiSection "cdSec4", "4. Ethereum: build + sign an EIP-1559 transaction", "16,606,764,624"
+   uiLabel "cdEthL1", "nonce / prio gwei / max gwei / gas:", "16,628,236,646", 11
+   uiInput "cdEthNonce", "240,628,290,648"
    put "0" into field "cdEthNonce"
-   cdMakeInput "cdEthPrio", "296,628,346,648"
+   uiInput "cdEthPrio", "296,628,346,648"
    put "2" into field "cdEthPrio"
-   cdMakeInput "cdEthMax", "352,628,402,648"
+   uiInput "cdEthMax", "352,628,402,648"
    put "30" into field "cdEthMax"
-   cdMakeInput "cdEthGas", "408,628,470,648"
+   uiInput "cdEthGas", "408,628,470,648"
    put "21000" into field "cdEthGas"
-   cdMakeLabel "cdEthL2", "to (0x...) / value (WEI, hex) / chain id:", "16,652,236,670", 11
-   cdMakeInput "cdEthTo", "240,652,560,672"
-   cdMakeInput "cdEthValue", "566,652,700,672"
+   uiLabel "cdEthL2", "to (0x...) / value (WEI, hex) / chain id:", "16,652,236,670", 11
+   uiInput "cdEthTo", "240,652,560,672"
+   uiInput "cdEthValue", "566,652,700,672"
    put "2386f26fc10000" into field "cdEthValue"
-   cdMakeInput "cdEthChain", "706,652,764,672"
+   uiInput "cdEthChain", "706,652,764,672"
    put "1" into field "cdEthChain"
-   cdMakeButton "cdEthBuild", "Build + sign", "706,676,764,700"
-   cdMakeArea "cdEthOutArea", "16,704,764,834"
+   uiButton "cdEthBuild", "Build + sign", "706,676,764,700"
+   uiArea "cdEthOutArea", "16,704,764,834"
 
-   cdMakeLabel "cdCustody", \
+   uiFooter \
          "This is a demo, not a wallet: the mnemonic is on screen, keys pass" \
          & " through unlocked engine memory, and nothing here is custody." \
          & " Never type a mnemonic that guards real funds. The default Bitcoin" \
          & " prevout is synthetic, so its signed transaction cannot broadcast." \
          & " Review every decoded line before you sign anything, anywhere.", \
-         "16,842,764,930", 11
-   set the textStyle of field "cdCustody" to "italic"
+         "16,842,764,930"
    unlock screen
 end cdBuild
-
-command cdMakeLabel pName, pText, pRect, pSize
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the borderWidth of field pName to 0
-   set the opaque of field pName to false
-   set the textSize of field pName to pSize
-   put pText into field pName
-end cdMakeLabel
-
-command cdMakeInput pName, pRect
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to false
-   set the textSize of field pName to 11
-   set the textFont of field pName to "Courier"
-end cdMakeInput
-
-command cdMakeArea pName, pRect
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the vScrollbar of field pName to true
-   set the textSize of field pName to 10
-   set the textFont of field pName to "Courier"
-end cdMakeArea
-
-command cdMakeButton pName, pLabel, pRect
-   if there is no button pName then
-      create button
-      set the name of the last button to pName
-   end if
-   set the rect of button pName to pRect
-   set the label of button pName to pLabel
-end cdMakeButton
 
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command cdProbe
@@ -251,15 +306,14 @@ command cdProbe
    end try
    put empty into tStatus
    if sHaveCoin is not "true" then
-      put "CoinXT extension NOT loaded: install org.openxtalk.library.coin first." into tStatus
+      uiStatus "CoinXT extension NOT loaded: install org.openxtalk.library.coin first.", "bad"
    else if sHaveScript is not "true" then
-      put "CoinXT script layer NOT in the message path: start using stack" && quote & "coinxt" & quote & "." into tStatus
+      uiStatus "CoinXT script layer NOT in the message path: start using stack" && quote & "coinxt" & quote & ".", "bad"
    else if sHaveSodium is not "true" then
-      put "Ready (SodiumXT absent: Generate is disabled; Import + Derive work)." into tStatus
+      uiStatus "Ready (SodiumXT absent: Generate is disabled; Import + Derive work).", "warn"
    else
-      put "Ready: CoinXT extension + script layer + SodiumXT entropy all present." into tStatus
+      uiStatus "Ready: CoinXT extension + script layer + SodiumXT entropy all present.", "ok"
    end if
-   put tStatus into field "cdStatus"
 end cdProbe
 
 -- ---- 1. wallet ---------------------------------------------------------------
