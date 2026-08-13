@@ -536,6 +536,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 13 | `datachannelxt/examples/datachannel-dht-chat.livecodescript` | datachannelxt **and** torrentxt; **two machines** |
 | 14 | `torrentxt/examples/torrent-dht-channels.livecodescript` and `torrent-rp1-chat.livecodescript` | torrentxt; **two machines** |
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
+| 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
 
 Items 8, 13, and 14 are genuine two-machine tests. If you only have one machine
 tonight, run them anyway to the point where the UI builds and the session starts, and
@@ -573,62 +574,35 @@ Alongside each result, record: **OXT version, OS and architecture, the date, and
 which extensions were loaded.** A result with no environment attached cannot be
 turned into a claim.
 
-### 4.2 datachannelxt (inventory item 1)
+### 4.2 datachannelxt (inventory item 1 - CLOSED; this is now the async residual)
 
-**A pass looks like:** `stSummary` green, zero failures. The run covers the whole
-synchronous surface (including `dcCreateChannelEx`, `dcSetBufferedLowThreshold`,
-`dcLocalDescriptionType`, `dcChannelProtocol`, `dcSetLocalDescription`), stale handles
-behaving as harmless no-ops, a **live loopback** that actually connects, text and
-binary messages round-tripping byte for byte, the drain's arrays carrying the
-documented keys, and idempotent close / free / cleanup. It also pins the non-trickle
-signalling contract: a live local description carries `a=candidate`, and the
-offer/answer roles match the flow.
+The first-engine-evidence flips this section used to enumerate were applied
+after the 2026-08-08 and 2026-08-10 passes (the README honesty notes, the
+COVERAGE NOTE, the root release row - all carry dated results now). What a
+STANDALONE run of `tests/datachannel-selftest.livecodescript` settles today is
+the async loopback's live halves, the one part the folded suite deliberately
+excludes.
 
-**PHASE 3 IS A SECOND, SEPARATE LOAD — when running coinxt's harness STANDALONE.**
-The hash and curve handlers come from the `.lcb` extension. The encoders and address
-builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT. The SUITE
-harness carries that script embedded (see "Setup the suite harness NO LONGER needs"
-below), but a standalone paste of `coin-selftest` does not, so there it must be in
-the message path first:
-
-```
-start using stack "coinxt"     -- or insert its script into the back
-```
-
-If every phase-3 section fails with `handler not found` while the earlier ones pass,
-that is the symptom of the script not being loaded - a setup problem, not a defect.
-Fix it and re-run before reporting anything.
-
-**What phase 3 adds to the run:** hex round-trips, the Base58Check worked example plus
-its corrupt-checksum and bad-character refusals and the leading-zero rule, bech32
-acceptance and five BIP-173 rejections, the addresses of the private key 1 at all four
-formats, EIP-55, and RLP encode/decode with a non-canonical refusal.
-
-**The address checks are stronger than they look.** `cxBtcAddressP2WPKH` of G must equal
-`bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4` and `cxBtcAddressP2TR` of x-only G must equal
-`bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0` - and those are not
-CoinXT's expectations. They are **BIP-173's and BIP-350's own example addresses**, because
-hash160(G) is the witness program in the first and x-only G is the program in the second.
-
-**Phase 3's LOGIC has already been executed headlessly**, unlike any previous pure-script
-layer in this family: `coinxt/tools/check-script-vectors.py` runs the real `.livecodescript`
-through a small interpreter against these same vectors on every push. So a failure here is
-much more likely to be a PARSER difference than an arithmetic one - which is exactly the
-thing only this run can settle. Record the exact failing line.
+**A pass looks like:** `stSummary` green, zero failures - and specifically the
+live halves: `dcSendText` on an open channel, `dcBufferedAmount` on a live
+channel, `dcGatheringState` reporting complete (2) on both peers, a populated
+`dcSelectedCandidatePair`, the `dcBufferedLow` EVENT after the cap-sized send
+(the channel is armed at 4096; the payload is far above it), the a=candidate /
+offer-answer-role pins, and clean teardown. The synchronous surface also runs
+(it is the same file), but those checks are re-confirmation, not news.
 
 **Copy back:** the full `stResults` text.
 
-**What flips:** this is the member's *first ever* engine evidence, so a green run flips
-its whole script layer from designed to observed. Update these labels:
+**What flips:**
 
-- `datachannelxt/README.md`, the "Honesty note" block ("No OXT engine run has been
-  recorded for this member yet") - replace with the dated result.
-- `datachannelxt/examples/README.md`, the same honesty note.
-- `datachannelxt/docs/getting-started.md`, the honesty note in the intro.
 - `datachannelxt/tests/datachannel-selftest.livecodescript`, the COVERAGE NOTE
-  sentence "no such pass is recorded for this member yet".
-- Root `README.md`, the release-status row: "Phases 1-2 (data channels); script layer
-  needs an OXT pass".
+  sentence beginning "Still verified statically: this file's own async
+  loopback" - replace with the dated result.
+- `datachannelxt/README.md`, the "What remains **verified statically**"
+  sentence naming the same live halves.
+- This runbook's tick-sheet row for datachannelxt, and the root `README.md`
+  release row's "only the member harness's own async live halves stay static"
+  clause.
 
 Leave `datachannelxt/CLAUDE.md`'s *rule* about not claiming unobserved behaviour
 alone - that is policy, not a status label.
@@ -671,13 +645,11 @@ record those as passed.
 
 **Copy back:** the full `stResults` text.
 
-**What flips:**
-
-- `torrentxt/tests/torrent-selftest.livecodescript`, the COVERAGE NOTE clause "this
-  file proves the .lcb wrappers, once an engine runs it (verified statically until
-  then)".
-- `torrentxt/README.md`, the status paragraph that says runtime behaviour "is marked
-  'verified statically; needs an OXT pass' and confirmed by a human in the IDE".
+**What flips:** nothing is left to flip for a green re-run - the labels this
+section used to enumerate were applied after the 2026-08-10 pass (the harness
+COVERAGE NOTE and the README status paragraph both carry the dated result).
+Record the run in the tick sheet; a FAILURE, of course, still gets the full
+section-6 treatment.
 
 ### 4.5 sodiumxt (inventory item 3)
 
@@ -688,11 +660,9 @@ diagnostics / preset accessors.
 
 **Copy back:** the whole message-box report.
 
-**What flips:**
-
-- `sodiumxt/docs/api-reference.md`, "See also": "The recorded on-engine pass predates
-  those additions, so the newer checks are verified statically and need an OXT pass to
-  become a runtime result."
+**What flips:** nothing for a green re-run - the api-reference caveat this
+section used to name was retired after the 2026-08-10 pass, and the 2026-08-12
+ABI-7 run (71 checks) is recorded there too. Record the run in the tick sheet.
 
 ### Setup the suite harness NO LONGER needs: the two `start using` lines
 
@@ -734,6 +704,32 @@ start using stack "onionxt"    -- before onionxt's standalone examples
 ```
 
 ### 4.6 coinxt (inventory item 2 — CLOSED 2026-08-08; this is now the residual)
+
+**PHASE 3+ IS A SECOND, SEPARATE LOAD — when running coinxt's harness STANDALONE.**
+The hash and curve handlers come from the `.lcb` extension. The encoders and address
+builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT. The SUITE
+harness carries that script embedded (see "Setup the suite harness NO LONGER needs"
+above), but a standalone paste of `coin-selftest` does not, so there it must be in
+the message path first:
+
+```
+start using stack "coinxt"     -- or insert its script into the back
+```
+
+If every phase-3+ section fails with `handler not found` while the earlier ones pass,
+that is the symptom of the script not being loaded - a setup problem, not a defect.
+Fix it and re-run before reporting anything.
+
+**The address checks are stronger than they look.** `cxBtcAddressP2WPKH` of G must equal
+`bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4` and `cxBtcAddressP2TR` of x-only G must equal
+`bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0` - and those are not
+CoinXT's expectations. They are **BIP-173's and BIP-350's own example addresses**, because
+hash160(G) is the witness program in the first and x-only G is the program in the second.
+And the script layer's LOGIC is executed headlessly on every push
+(`coinxt/tools/check-script-vectors.py` runs the real `.livecodescript` through a small
+interpreter), so a failure here is much more likely to be a PARSER difference than an
+arithmetic one - which is exactly the thing only an engine run can settle. Record the
+exact failing line.
 
 **The five numbered questions in the `.lcb` header are answered.** The 2026-08-08
 pass confirmed all of them, each on the side the code assumed: the module loads and
@@ -1179,6 +1175,7 @@ DEMOS
 [ ] datachannel-dht-chat     (needs torrentxt + two machines)
 [ ] torrent-dht-channels / torrent-rp1-chat   (two machines)
 [ ] onionxt Mode B: oxLaunchTor               processId: ______  bootstrapped: ___
+[ ] coinxt-demo (phase 6: mnemonic -> decoded, signed BTC+ETH tx)
 
 FOLLOW-UP
 [ ] result text saved for every run above
