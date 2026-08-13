@@ -22,13 +22,13 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > with this member's synchronous half folded in, 21 checks green, twice in one
 > day) retired the isolated teardown section added after the 2026-08-07 pass:
 > `enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout` and `enSetHostBandwidth`
-> all returned 0 against a live client host on a real engine. Still
-> un-exercised: the live status assertions inside this member's own async
-> loopback — the `enHostStatus` pair (while connected and, since 2026-08-13,
-> after the disconnect) and the `enPeerStatus` statistics half (rtt,
-> packetLoss, the packet/byte counters, also added 2026-08-13) — because the
-> fold excludes that half; run `tests/enet-selftest.livecodescript`
-> standalone to close them. And the LAN chat demo between two real machines.
+> all returned 0 against a live client host on a real engine. A fourth pass
+> on 2026-08-13 closed the async loopback itself: the member selftest ran
+> STANDALONE, green end to end — the live `enHostStatus` pair (while
+> connected, and counting zero peers after the disconnect) and the
+> `enPeerStatus` statistics half (rtt, packetLoss, the packet/byte
+> counters), added that same day, are all runtime results now. Still
+> un-exercised: the LAN chat demo between two real machines.
 
 ## The rules that carry over unchanged
 

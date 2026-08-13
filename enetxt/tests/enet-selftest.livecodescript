@@ -16,13 +16,14 @@ script "enetSelfTest"
 -- The isolated section became a RUNTIME RESULT on 2026-08-10: this file's
 -- synchronous half ran green on a real engine (21 checks, twice in one day),
 -- folded into the suite selftest at the repository root, and all four abrupt
--- teardown handlers returned 0 against a live client host. What that fold
--- deliberately does NOT carry is this file's own async loopback (the suite
--- core drives its own on 27196), so the loopback's LIVE status assertions -
--- enHostStatus while connected and again after the disconnect, plus the
--- enPeerStatus statistics half (rtt, packetLoss, the packet/byte counters) -
--- are the one part still verified statically - they are the remaining
--- reason to run THIS file standalone on an engine.
+-- teardown handlers returned 0 against a live client host. And the async
+-- loopback closed too: on 2026-08-13 THIS file ran STANDALONE on a real
+-- engine, green end to end - the live enHostStatus pair (connected, then
+-- zero peers after the disconnect), the enPeerStatus statistics (rtt,
+-- packetLoss, the packet/byte counters), the echo/broadcast/binary round
+-- trips, and the graceful close. Nothing in this file is verified
+-- statically any more; the member's one remaining un-exercised surface is
+-- the LAN chat demo between two real machines (suite runbook, item 6).
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
