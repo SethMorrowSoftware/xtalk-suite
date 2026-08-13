@@ -99,7 +99,8 @@ pipeline works; real signaling is the only thing left to add.
 > `dcChannelProtocol`, `dcSetLocalDescription` and friends included. What
 > remains **verified statically** is the member harness's own async loopback:
 > the LIVE halves of `dcSendText`, `dcBufferedAmount`, `dcGatheringState`,
-> `dcSelectedCandidatePair` and the non-trickle signaling pins. Running
+> `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send,
+> and the non-trickle signaling pins. Running
 > `tests/datachannel-selftest.livecodescript` standalone is what covers those.
 
 ## Then try the flagship (two machines, no server)
@@ -117,7 +118,10 @@ message when missing); `docs/getting-started.md` section 6 has the tour.
 
 DataChannelXT ships as a standard OXT extension: the LCB module plus the
 per-platform native library bundled under `src/code/<arch>-<platform>/`
-(`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`).
+(the five-id layout: `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
+`universal-mac`). Four are committed and pinned in `src/code/MANIFEST.sha256`;
+`universal-mac` is not — CI deliberately builds no macOS lane, so it stays a
+manual build (`docs/building.md`).
 Installing the packaged extension makes the engine resolve the
 `c:datachannelxt>` binding automatically — no loose library, no `sudo`, no
 `LD_LIBRARY_PATH`. See `docs/getting-started.md`.

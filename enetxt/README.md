@@ -67,9 +67,13 @@ complete two-machine demo.
 enetxt ships as a standard OXT extension: the LCB module plus the
 per-platform native library bundled under `src/code/<arch>-<platform>/`
 (the five-id layout: `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
-`universal-mac`). **Currently committed: `x86_64-linux` only** — the other
-platform binaries are pending the root-CI matrix port (build them from source
-with `docs/building.md` in the meantime). Installing the packaged extension
+`universal-mac`). **Currently committed: four platforms** — `x86_64-linux`,
+`x86-linux`, `x86_64-win32`, and `x86-win32`, pinned in
+`src/code/MANIFEST.sha256` (the 2026-08-08 release run landed all four, and
+the root workflow `native-enetxt.yml` builds the full matrix on every touch).
+Only `universal-mac` is absent: CI deliberately builds no macOS lane
+(arm64-only runners would emit a thin dylib), so it stays a manual build —
+`docs/building.md`. Installing the packaged extension
 makes the engine resolve the `c:enetxt>` binding automatically. See
 `docs/getting-started.md`.
 
@@ -103,7 +107,12 @@ cmake --build build --parallel && ctest --test-dir build --output-on-failure
 
 See `CLAUDE.md` for the engineering rules and `docs/building.md` for the
 sanitizer lane. Binding-side runtime behaviour is confirmed in OXT: the
-selftest (`tests/enet-selftest.livecodescript`) ran green on 2026-08-07.
+selftest (`tests/enet-selftest.livecodescript`) ran green on 2026-08-07, the
+2026-08-08 suite pass re-confirmed the live loopback plus the 60000-byte
+fragmentation contract, and the folded synchronous half ran green twice on
+2026-08-10 (21 checks). Still standalone-only: the async loopback's live
+status assertions (`enHostStatus` while connected and after the disconnect,
+the `enPeerStatus` statistics) — run the selftest standalone to close them.
 
 ## License
 

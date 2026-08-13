@@ -387,6 +387,11 @@ below, the fail-closed argument validation, the unknown-handle misses, and the i
 Since the embed (same day), the harness carries `src/onionxt.livecodescript` itself in the paste, so
 those runs exercised this member's real shipped code, not a copy.
 
+On 2026-08-12 (Windows x64, SodiumXT ABI 7 installed) `oxSelfTest()` ran again, now 43 checks, zero
+failures: SodiumXT shipping `sxSha3_256` turned the three offline-address skips into real checks -
+the torproject and DuckDuckGo onions re-encoded byte-exactly, a tampered address was refused, and
+`offlineAddress` advertised true, closing docs/08 gap #2 on an ABI-7 engine.
+
 **OnionXT is the only member with untested public handlers, and the reasons are now
 written down rather than assumed (2026-08-09).** `tools/check-suite-coverage.py` (suite
 root) measures how much of each member's public surface the pasteable suite harness

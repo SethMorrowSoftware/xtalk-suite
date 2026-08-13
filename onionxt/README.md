@@ -108,8 +108,9 @@ dialing through the SOCKS proxy, connecting and authenticating on the control po
 publishing a v3 onion service, and answering an inbound HTTP request so a published onion renders as a
 web page in Tor Browser (once the loopback forward port is one the OS allows binding, see
 [Troubleshooting](#troubleshooting)). The pure-compute paths (base32, the v3 address, the ed25519 seed
-derivation) are pinned by known-answer vectors in `tools/onion-kat.py`; a few advanced behaviours stay
-flagged `VERIFY:` in the source until each is separately exercised. In the xtalk-suite monorepo the
+derivation) are pinned by known-answer vectors in `tools/onion-kat.py`; exactly one behaviour stays
+flagged `VERIFY:` in the source: the optional Mode B tor launch (`oxLaunchTor` / `oxStopTor`),
+unexercised until a run against a real tor binary. In the xtalk-suite monorepo the
 suite CI runs the static gate on every push; the house-style gate, the KAT self-check, and the
 standalone-freshness check live in this member's own workflow (inert here; run when OnionXT is worked
 on in isolation) and in `tools/build-all.sh --gates`.

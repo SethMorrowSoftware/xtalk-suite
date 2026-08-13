@@ -7,7 +7,8 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > `docs/NEXT-EXTENSIONS-PLAN.md` Part III ("ENet — real-time, step 1");
 > milestones 0–3 are built: the full `enx_` ABI (v2), the LCB layer
 > (`org.openxtalk.library.enet`, public `en*`), helpers, the LAN chat demo,
-> the OXT selftest, all static gates, CI, and the committed linux binary.
+> the OXT selftest, all static gates, CI, and the four committed
+> Linux/Windows binaries (macOS stays a manual build).
 > The OXT runtime pass happened 2026-08-07: `tests/enet-selftest.livecodescript`
 > runs green in OXT — all tests pass. That retires the `MCStringEncode`
 > first-runtime-use flag from the pre-pass audit (the selftest's `enSendText`
@@ -22,10 +23,12 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > day) retired the isolated teardown section added after the 2026-08-07 pass:
 > `enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout` and `enSetHostBandwidth`
 > all returned 0 against a live client host on a real engine. Still
-> un-exercised: the LIVE `enHostStatus` assertions inside this member's own
-> async loopback (the fold excludes that half; run
-> `tests/enet-selftest.livecodescript` standalone to close it), and the LAN
-> chat demo between two real machines.
+> un-exercised: the live status assertions inside this member's own async
+> loopback — the `enHostStatus` pair (while connected and, since 2026-08-13,
+> after the disconnect) and the `enPeerStatus` statistics half (rtt,
+> packetLoss, the packet/byte counters, also added 2026-08-13) — because the
+> fold excludes that half; run `tests/enet-selftest.livecodescript`
+> standalone to close them. And the LAN chat demo between two real machines.
 
 ## The rules that carry over unchanged
 

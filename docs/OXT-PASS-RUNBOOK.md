@@ -518,7 +518,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all five packaged extensions installed; the coinxt, onionxt, and Riptide script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all seven member harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and Riptide phases 1-2 against the suite's session. If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The two deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3. |
 | 1 | `sodiumxt/examples/sodium-tests.livecodescript` (`put sxSelfTest()`) | sodiumxt only | No I/O at all, no network, runs in a second. Everything else composes sodiumxt, so a failure here invalidates results further down. |
 | 2 | `enetxt/tests/enet-selftest.livecodescript` | enetxt only | Loopback UDP on 127.0.0.1, no daemon, no second machine. Also the fastest way to discover a machine that blocks loopback UDP, which would also sink datachannelxt (see trap 5.5). |
-| 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, and the a=candidate / offer-answer-role pins. |
+| 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send, and the a=candidate / offer-answer-role pins. |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | 96 checks in the current harness. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
 | 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) closed 2026-08-12 at 230/230** - after the headless-execution net (`check-script-vectors.py`, 251 checks) caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on that very run. Fully synchronous. See 4.6. |
@@ -635,27 +635,30 @@ alone - that is policy, not a status label.
 
 ### 4.3 enetxt (inventory item 3)
 
-**A pass looks like:** green summary, and specifically the **isolated teardown
-section** (`enDisconnectNow`, `enResetPeer`, `enSetPeerTimeout`, `enSetHostBandwidth`
-against a client host pointed at a dead port) plus `enHostStatus` asserted both stale
-(empty) and live (peerCount, address). Those are the sections added after the
-2026-08-07 pass.
+**A pass looks like:** green summary, and specifically the loopback's **live
+status assertions** - `enHostStatus` asserted stale (empty), live (peerCount,
+address), and again AFTER the disconnect (zero peers), plus the `enPeerStatus`
+statistics half (rtt >= 0, packetLoss within 0..1, the packet/byte counters
+populated). Those are the only parts of this member the folded suite runs have
+not already turned into runtime results.
 
 **Copy back:** the full `stResults` text, so the new sections are visibly green.
 
 **What flips:**
 
-- `enetxt/tests/enet-selftest.livecodescript`, the COVERAGE NOTE line "The harness
-  itself is verified statically; it needs an OXT pass to become a runtime result."
-- `enetxt/CLAUDE.md`, the Phase-1 blockquote: add the new date and note that the
-  extended coverage is now included, alongside the existing 2026-08-07 record.
+- `enetxt/tests/enet-selftest.livecodescript`, the COVERAGE NOTE sentence naming
+  "the loopback's LIVE status assertions" as the one part still verified
+  statically.
+- `enetxt/CLAUDE.md`, the Phase-1 blockquote's "Still un-exercised" sentence,
+  and the matching sentence at the end of `enetxt/README.md`'s Development
+  section.
 
 If you also run the LAN chat between two machines, that retires the last line of that
 same blockquote: "Still un-exercised: the LAN chat demo between two real machines."
 
 ### 4.4 torrentxt (inventory item 3)
 
-**A pass looks like:** green summary across roughly 70 checks, and specifically the
+**A pass looks like:** green summary across its 96 checks, and specifically the
 **signed-puts section**: `btDhtBep44SignBuf` determinism, `btDhtPutSigned`,
 `btDhtGetPeers`, `btAddInfohash`, `btMapPort` / `btUnmapPort` handling "no mapper"
 cleanly, and `btRp1Enable` / `btRp1SetToken` / `btRp1Send` / `btRp1Poll` handling "no
@@ -1116,10 +1119,14 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
 [x] sodiumxt   sxSelfTest()                   2026-08-12: 71/0 (latest folded run)
 [x] enetxt     enet-selftest (sync half)      2026-08-10: 21/0 (folded, twice);
                the async loopback ran standalone 2026-08-07; still open: its
-               LIVE enHostStatus pair, added after that pass  <- one paste closes it
+               live status assertions (the enHostStatus pair + the enPeerStatus
+               statistics and post-disconnect count, added 2026-08-13)
+               <- one paste closes it
 [x] datachannelxt  datachannel-selftest (sync)  2026-08-10: 23/0 (folded, twice);
                still open: its own async-loopback halves (live dcSendText,
-               dcBufferedAmount, gathering/candidate-pair)  <- one paste closes it
+               dcBufferedAmount, gathering/candidate-pair, and the dcBufferedLow
+               event after a cap-sized send, added 2026-08-13)
+               <- one paste closes it
 [x] torrentxt  torrent-selftest               2026-08-10: 96/0 (folded, twice;
                shares the core's single session by design)
 [x] onionxt    oxSelfTest()                   2026-08-10: 40/0, 3 sha3 skips by
