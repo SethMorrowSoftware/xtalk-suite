@@ -42,7 +42,7 @@ SET_RE = re.compile(
     r'^\s*set\s+the\s+(width|height)\s+of\s+this\s+stack\s+to\s+'
     r'([0-9]+|k[A-Za-z0-9_]+)\s*$')
 CHROME_RE = re.compile(
-    r'^\s*uiChrome\s+"[^"]*"\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*$')
+    r'^\s*uiChrome\s+"[^"]*"\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*(?:,\s*[0-9]+\s*)?$')
 CONST_RE = re.compile(
     r'^\s*constant\s+(k[A-Za-z0-9_]+)\s*=\s*([0-9]+)\s*(?:--.*)?$')
 

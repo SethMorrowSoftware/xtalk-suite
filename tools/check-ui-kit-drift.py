@@ -37,9 +37,9 @@ ADOPTERS = [
     os.path.join("tests", "suite-closing-pass.livecodescript"),
 ]
 
-BEGIN = ("-- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: "
+BEGIN = ("-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: "
          "tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====")
-END = "-- ==== SUITE UI KIT v1 END ===="
+END = "-- ==== SUITE UI KIT v2 END ===="
 
 
 def extract(path):
@@ -65,12 +65,23 @@ def main():
         return 1
 
     # every stack that CARRIES the marker must be registered - member examples
-    # and the suite-level stacks in root tests/ alike
+    # (subdirectories included), app sources, and the suite-level stacks in
+    # root tests/ alike. Generated files (the onionxt standalones, the folded
+    # suite harness) inherit their source part's block and are checked at the
+    # SOURCE, so a generated carrier is skipped rather than registered - its
+    # freshness gate (build-standalone.py --check / build-suite-selftest.py
+    # --check) already pins it to the checked source.
     carriers = []
-    for pattern in ("*/examples/*.livecodescript", "tests/*.livecodescript"):
+    for pattern in ("*/examples/*.livecodescript",
+                    "*/examples/*/*.livecodescript",
+                    "*/src/*.livecodescript",
+                    "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
-            if BEGIN in open(path, encoding="utf-8").read():
+            text = open(path, encoding="utf-8").read()
+            if "GENERATED - do not edit" in text[:4000]:
+                continue
+            if BEGIN in text:
                 carriers.append(rel)
     for rel in carriers:
         if rel not in ADOPTERS:
