@@ -63,9 +63,10 @@ def main():
         print("check-ui-kit-drift: FAILED - %s" % err)
         return 1
 
-    # every example stack that CARRIES the marker must be registered
+    # every stack that CARRIES the marker must be registered - member examples
+    # and the suite-level stacks in root tests/ alike
     carriers = []
-    for pattern in ("*/examples/*.livecodescript",):
+    for pattern in ("*/examples/*.livecodescript", "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
             if BEGIN in open(path, encoding="utf-8").read():
