@@ -70,6 +70,15 @@ These are summarized in `README.md`; the operational point for editing is:
 6. **The honesty convention** — "verified statically; needs an OXT pass"
    (Tor: "+ live-Tor pass") for anything not observed on a real engine.
 
+**Demo UI is ONE carried kit (2026-08-13).** `tools/ui-kit.livecodescript` is
+the master for the family demo look — the chrome, the semantic status line,
+mono data areas, the honesty footer. Adopting demo stacks embed the block
+verbatim between its marker lines (each demo stays a single paste-and-run
+file), and `tools/check-ui-kit-drift.py`, in the gate set, holds every copy
+byte-identical to the master and refuses unregistered adopters — the
+checker-unification model applied to the UI. A look change edits the master
+and re-carries; it is never patched inside an adopter.
+
 ## The unified self-test is GENERATED
 
 `tests/suite-selftest.livecodescript` is the one script a maintainer pastes into
