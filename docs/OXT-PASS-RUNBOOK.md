@@ -539,10 +539,14 @@ Ordered by (value of the result) divided by (setup cost):
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
 | 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
 | 17 | `riptide/examples/riptide-social.livecodescript` - the phase-1/2 flagship: identity, publish over the real DHT, and the verified chain walk. **RAN ON TWO MACHINES 2026-08-13** - identities both sides, feeds both directions - closing phase 2's done-criterion. A re-run needs no label work | sodiumxt + torrentxt + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
+| 18 | `tests/suite-closing-pass.livecodescript` - ONE stack for the remaining legs, so the closing sessions are a checklist, not an expedition. Six sections, each printing PASS lines: **A** datachannel local async (item 3's still-static live halves, single machine), **B** enet two-machine chat (closes item 8), **C** torrent seed/leech with a hash-verified payload plus resume saved to disk and re-added across an OXT restart, **D** rp1 chat over a DHT rendezvous (with C, closes item 14's legs), **E** datachannel chat signaled over the real DHT (closes item 13's shape), **F** Mode B `oxLaunchTor` plus a live onion echo - listen, dial your own onion through the Tor network, exact bytes both ways (closes item 15 and the seven live-Tor coverage exemptions' `oxTransport*` half) | sodiumxt + torrentxt + enetxt + datachannelxt packaged; onionxt in the message path for F; takes THE torrent session (trap 5.1); **install on both machines** for B/C/D/E |
 
-Items 8, 13, and 14 are genuine two-machine tests. If you only have one machine
-tonight, run them anyway to the point where the UI builds and the session starts, and
-record exactly that: "UI built, session started, no second peer available."
+Items 8, 13, and 14 are genuine two-machine tests; item 18 packages their
+remaining legs (and items 3 and 15) into one paste-on-both-machines stack, so
+prefer it when the goal is closing labels rather than exercising a specific
+demo's own UI. If you only have one machine tonight, run them anyway to the
+point where the UI builds and the session starts, and record exactly that:
+"UI built, session started, no second peer available."
 That is still a real result and it is honest.
 
 ---
@@ -1182,6 +1186,13 @@ DEMOS
                     through the real DHT; every rendered post ingest-verified
                     -> PHASE 2's DONE-CRITERION MET (the riptide leg of item
                     6). Environments not captured; maintainer's dated account
+[ ] suite-closing-pass (row 18; ONE stack for the legs still open above)
+      A dc local async      (single machine)               PASS lines: ______
+      B enet chat           (two machines)                 PASS lines: ______
+      C seed/leech + resume (two machines; restart? _____) PASS lines: ______
+      D rp1 chat            (two machines)                 PASS lines: ______
+      E dc chat via DHT     (two machines; pair: ________) PASS lines: ______
+      F Mode B + onion echo (single machine + tor binary)  PASS lines: ______
 
 FOLLOW-UP
 [ ] result text saved for every run above

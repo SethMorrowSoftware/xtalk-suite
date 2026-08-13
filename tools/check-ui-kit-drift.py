@@ -34,6 +34,7 @@ MASTER = os.path.join("tools", "ui-kit.livecodescript")
 ADOPTERS = [
     os.path.join("coinxt", "examples", "coinxt-demo.livecodescript"),
     os.path.join("riptide", "examples", "riptide-social.livecodescript"),
+    os.path.join("tests", "suite-closing-pass.livecodescript"),
 ]
 
 BEGIN = ("-- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: "
