@@ -608,25 +608,17 @@ offer-answer-role pins, and clean teardown. The synchronous surface also runs
 Leave `datachannelxt/CLAUDE.md`'s *rule* about not claiming unobserved behaviour
 alone - that is policy, not a status label.
 
-### 4.3 enetxt (inventory item 3)
+### 4.3 enetxt (inventory item 3 - CLOSED; the standalone async ran 2026-08-13)
 
-**A pass looks like:** green summary, and specifically the loopback's **live
-status assertions** - `enHostStatus` asserted stale (empty), live (peerCount,
-address), and again AFTER the disconnect (zero peers), plus the `enPeerStatus`
-statistics half (rtt >= 0, packetLoss within 0..1, the packet/byte counters
-populated). Those are the only parts of this member the folded suite runs have
-not already turned into runtime results.
-
-**Copy back:** the full `stResults` text, so the new sections are visibly green.
-
-**What flips:**
-
-- `enetxt/tests/enet-selftest.livecodescript`, the COVERAGE NOTE sentence naming
-  "the loopback's LIVE status assertions" as the one part still verified
-  statically.
-- `enetxt/CLAUDE.md`, the Phase-1 blockquote's "Still un-exercised" sentence,
-  and the matching sentence at the end of `enetxt/README.md`'s Development
-  section.
+The standalone run this section existed for has happened: on 2026-08-13
+`tests/enet-selftest.livecodescript` ran green END TO END on a real engine -
+the live `enHostStatus` pair (connected, then zero peers after the
+disconnect), the `enPeerStatus` statistics (rtt >= 0, packetLoss within
+0..1, populated packet/byte counters), and the full echo/broadcast/binary
+loopback with a graceful close. Nothing in that file is verified statically
+any more, and the labels were flipped the same day. A green RE-run needs no
+label work - record it in the tick sheet. The member's one remaining
+un-exercised surface is the LAN chat between two real machines (item 6).
 
 If you also run the LAN chat between two machines, that retires the last line of that
 same blockquote: "Still un-exercised: the LAN chat demo between two real machines."
@@ -1111,14 +1103,21 @@ BREADTH
                                              2026-08-12: GREEN, 617 folded
                                              member checks, ZERO failures;
                                              riptide phase 2 was 133/133
+                                             2026-08-13: GREEN, the
+                                             REGENERATED harness (the widened
+                                             enet/dc standalone async halves
+                                             behind it), 617 folded checks,
+                                             zero failures (platform not
+                                             recorded in the pasted results)
 
 DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
 [x] sodiumxt   sxSelfTest()                   2026-08-12: 71/0 (latest folded run)
-[x] enetxt     enet-selftest (sync half)      2026-08-10: 21/0 (folded, twice);
-               the async loopback ran standalone 2026-08-07; still open: its
-               live status assertions (the enHostStatus pair + the enPeerStatus
-               statistics and post-disconnect count, added 2026-08-13)
-               <- one paste closes it
+[x] enetxt     enet-selftest                  2026-08-10: 21/0 (folded, twice);
+               async loopback standalone 2026-08-07; and CLOSED 2026-08-13:
+               the standalone ran green end to end WITH the live status
+               assertions (enHostStatus pair, enPeerStatus rtt/packetLoss/
+               counters, zero peers after disconnect). Nothing static
+               remains in this file; two-machine LAN chat rides item 6
 [x] datachannelxt  datachannel-selftest (sync)  2026-08-10: 23/0 (folded, twice);
                still open: its own async-loopback halves (live dcSendText,
                dcBufferedAmount, gathering/candidate-pair, and the dcBufferedLow

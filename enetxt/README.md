@@ -110,9 +110,10 @@ sanitizer lane. Binding-side runtime behaviour is confirmed in OXT: the
 selftest (`tests/enet-selftest.livecodescript`) ran green on 2026-08-07, the
 2026-08-08 suite pass re-confirmed the live loopback plus the 60000-byte
 fragmentation contract, and the folded synchronous half ran green twice on
-2026-08-10 (21 checks). Still standalone-only: the async loopback's live
-status assertions (`enHostStatus` while connected and after the disconnect,
-the `enPeerStatus` statistics) — run the selftest standalone to close them.
+2026-08-10 (21 checks), and the full standalone selftest — async loopback,
+live host/peer status and the statistics assertions included — ran green on
+2026-08-13. Nothing in the selftest is verified statically any more; the
+member's one remaining un-exercised surface is the two-machine LAN chat.
 
 ## License
 

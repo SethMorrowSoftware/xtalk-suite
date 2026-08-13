@@ -415,3 +415,13 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
   FIX:     refuse a trailing separator explicitly, BEFORE splitting, while it is still visible; and
            make any interpreter/model of chunk counting copy the engine's rule, not the language the
            model is written in.
+- SYMPTOM: constants written `constant kFoo is 1` in a `.livecodescript` fail to compile on the
+  engine, in a file every static gate passed.
+  CAUSE:   `is` is the LiveCode BUILDER constant spelling; LiveCode SCRIPT declares
+           `constant kFoo = 1`. Editing the two dialects side by side makes the slip natural (it
+           has happened repeatedly), and the checker's constants-before-use rule only RECOGNIZED
+           the correct spelling per dialect - so the wrong form was not flagged, it was invisible
+           to the rule that should have caught its consequences: a fail-open in the gate itself.
+  FIX:     write `=` in `.livecodescript` and `is` in `.lcb`. All checker copies now refuse the
+           wrong dialect's spelling in BOTH directions (fixture-tested in tools/test-checker.py),
+           so the slip is a gate failure instead of an engine discovery.
