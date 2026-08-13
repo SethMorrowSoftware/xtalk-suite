@@ -288,7 +288,7 @@ command raProbe
    else if sCaps["hasTorrent"] is not true then
       uiStatus "Offline mode (TorrentXT absent): identity works; publish and fetch are disabled.", "warn"
    else if sCaps["hasSha3"] is not true then
-      uiStatus "Ready (no SHA3 provider: the .onion spelling of your identity stays hidden).", "warn"
+      uiStatus "Ready, minus the .onion spelling: no SHA3 provider is loaded (SodiumXT ABI 7 serves sxSha3_256; CoinXT's cxSha3_256 is the fallback).", "warn"
    else
       uiStatus "Ready: SodiumXT + TorrentXT + SHA3 all present.", "ok"
    end if
