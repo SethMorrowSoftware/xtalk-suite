@@ -24,9 +24,10 @@ script "dataChannelSelfTest"
 -- no-ops. So the binding, the transfer spine, and the synchronous contracts
 -- are observed. Still verified statically: this file's own async loopback
 -- (the fold excludes it; the suite core drives its own) - the LIVE halves of
--- dcSendText, dcBufferedAmount, dcGatheringState, dcSelectedCandidatePair and
--- the a=candidate/role pins are what running THIS file standalone would turn
--- into a runtime result.
+-- dcSendText, dcBufferedAmount, dcGatheringState, dcSelectedCandidatePair,
+-- the dcBufferedLow EVENT after a cap-sized send, and the a=candidate/role
+-- pins are what running THIS file standalone would turn into a runtime
+-- result.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
@@ -51,6 +52,8 @@ local sAOpen, sBOpen    -- "true" once each side's channel open arrived
 local sGotText          -- the text B received
 local sGotBytes         -- the binary payload A received back (a Data)
 local sSentBytes        -- the binary payload B sent (kept for byte-exact compare)
+local sGotBufferedLow   -- "true" once A's channel reported dcBufferedLow
+local sBigLen           -- the cap-sized payload length for the buffered-low leg
 local sDeadline         -- the async phase's drop-dead time (ms clock)
 local sPhase            -- "", "opening", "messaging", "done"
 
@@ -223,6 +226,8 @@ command stRun
    put empty into sGotText
    put empty into sGotBytes
    put empty into sSentBytes
+   put empty into sGotBufferedLow
+   put empty into sBigLen
    put "opening" into sPhase
    put the milliseconds + 20000 into sDeadline
    stShow
@@ -265,6 +270,14 @@ command stPump
             put tEvent["text"] into sGotText
          else
             put tEvent["payload"] into sGotBytes
+         end if
+      else if tEvent["name"] is "dcBufferedLow" then
+         -- only A's channel is armed (threshold 4096, above); an event
+         -- naming any other channel would be a contract violation, so the
+         -- flag is set only for the armed one and the assertion below
+         -- would time out loudly on a misdelivered event.
+         if tEvent["channel"] is sChanA then
+            put "true" into sGotBufferedLow
          end if
       end if
    end repeat
@@ -327,6 +340,31 @@ command stPump
          stAssert "dcChannelProtocol round-trips", dcChannelProtocol(tExChan) is "oxt-proto"
          stAssert "dcChannelLabel round-trips", dcChannelLabel(tExChan) is "extra"
          dcFreeChannel tExChan
+         -- the LIVE half of the gathering-state getter (the stale half is
+         -- pinned at -1 above). The a=candidate assertion already proved
+         -- candidates were gathered, and with no ICE servers configured
+         -- gathering has nothing left to wait for, so by the time the
+         -- binary round-trip has completed both peers must report
+         -- kGatheringComplete (2).
+         stAssert "gathering state is complete (2) on both peers", \
+               dcGatheringState(sPeerA) is 2 and dcGatheringState(sPeerB) is 2
+         -- the dcBufferedLow EVENT - the live half of the threshold setter
+         -- asserted above. A's channel is armed at 4096, so one payload at
+         -- the negotiated cap (60000 under the suite budget) must push the
+         -- send buffer past the threshold, and the drain back under it
+         -- fires the event. Waited on with the same deadline as the rest
+         -- of the async phase, so a machine that never fires it fails
+         -- loudly instead of hanging.
+         put dcChannelMaxMessage(sChanA) into sBigLen
+         put empty into sGotBytes
+         stAssert "cap-sized send returns 0", \
+               dcSendData(sChanA, stRepeatByte(66, sBigLen)) is 0
+         put "bufferedlow-wait" into sPhase
+      end if
+   else if sPhase is "bufferedlow-wait" then
+      if sGotBufferedLow is "true" and the number of bytes in sGotBytes is sBigLen then
+         stAssert "dcBufferedLow fired once the cap-sized send drained", true
+         stAssert "the cap-sized payload arrived whole", true
          stFinish
          exit stPump
       end if
@@ -385,3 +423,15 @@ command stCleanup
    -- above) the parenthesised form is correct and required.
    dcCleanup
 end stCleanup
+
+-- pCount copies of byte pCode (the cap-sized buffered-low payload). Built by
+-- doubling - O(log n) concatenations, not 60000 - and with numToByte, since
+-- string literals have no escape syntax.
+function stRepeatByte pCode, pCount
+   local tOut
+   put numToByte(pCode) into tOut
+   repeat while the number of bytes in tOut < pCount
+      put tOut & tOut into tOut
+   end repeat
+   return byte 1 to pCount of tOut
+end stRepeatByte
