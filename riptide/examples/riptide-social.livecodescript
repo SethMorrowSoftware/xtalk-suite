@@ -55,6 +55,9 @@ constant kPollMs = 250
 constant kDhtWaitMs = 25000
 constant kWalkMax = 12
 constant kNameMax = 64
+-- bumped on any layout change so an existing stack rebuilds (the kit builders
+-- re-rect existing controls by name, so no deletion pass is needed)
+constant kRaUiVersion = "ra-ui-720p-1"
 
 -- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -227,39 +230,41 @@ end mouseUp
 
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
 command raBuild
-   if there is a field "uiTitle" then
+   if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild
    end if
    lock screen
-   uiChrome "Riptide Social - identity + public feed (phases 1-2)", 780, 940
+   -- two columns inside the family's 720p budget (1200 x 640, the
+   -- check-stack-size.py cap): identity + my feed left, the reading pane right
+   uiChrome "Riptide Social - identity + public feed (phases 1-2)", 1200, 640
 
    -- 1. identity
-   uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,764,76"
+   uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
    uiLabel "raIdL1", "key file:", "16,80,90,98", 11
-   uiInput "raKeyFile", "94,80,560,100"
+   uiInput "raKeyFile", "94,80,440,100"
    put raKeyPath() into field "raKeyFile"
-   uiButton "raCreate", "Create", "612,80,764,104"
+   uiButton "raCreate", "Create", "446,80,592,104"
    uiLabel "raIdL2", "passphrase:", "16,104,90,122", 11
-   uiInput "raPassphrase", "94,104,560,124"
-   uiButton "raUnlock", "Unlock", "612,108,684,132"
-   uiButton "raLock", "Lock", "692,108,764,132"
-   uiArea "raIdOut", "16,130,764,240"
+   uiInput "raPassphrase", "94,104,440,124"
+   uiButton "raUnlock", "Unlock", "446,108,516,132"
+   uiButton "raLock", "Lock", "524,108,592,132"
+   uiArea "raIdOut", "16,130,592,240"
 
    -- 2. my feed
-   uiSection "raSec2", "2. My feed: post, then the signed head republishes", "16,246,764,264"
+   uiSection "raSec2", "2. My feed: post, then the signed head republishes", "16,246,592,264"
    uiLabel "raNameL", "display name:", "16,268,110,286", 11
    uiInput "raName", "114,268,340,288"
    put "riptide user" into field "raName"
-   uiInput "raCompose", "16,292,600,340"
-   uiButton "raPost", "Post", "612,292,764,316"
-   uiArea "raMyFeed", "16,346,764,480"
+   uiInput "raCompose", "16,292,440,340"
+   uiButton "raPost", "Post", "446,292,592,316"
+   uiArea "raMyFeed", "16,346,592,562"
 
    -- 3. follow
-   uiSection "raSec3", "3. Follow: fetch a head, walk the chain, verify every signature", "16,486,764,504"
-   uiLabel "raHandleL", "author handle (64 hex):", "16,508,180,526", 11
-   uiInput "raHandle", "184,508,600,528"
-   uiButton "raFetch", "Fetch feed", "612,508,764,532"
-   uiArea "raTheirFeed", "16,538,764,830"
+   uiSection "raSec3", "3. Follow: fetch a head, walk the chain, verify every signature", "608,58,1184,76"
+   uiLabel "raHandleL", "author handle (64 hex):", "608,80,772,98", 11
+   uiInput "raHandle", "776,80,1050,100"
+   uiButton "raFetch", "Fetch feed", "1056,80,1184,104"
+   uiArea "raTheirFeed", "608,110,1184,562"
 
    uiFooter \
          "Phases 1-2 only: public feeds are public, the DHT keeps records" \
@@ -269,7 +274,8 @@ command raBuild
          & " A one-machine run does not prove propagation - phase 2 is done" \
          & " when a SECOND machine walks this chain and verifies every" \
          & " authorSig.", \
-         "16,838,764,926"
+         "16,572,1184,632"
+   set the uUiVersion of this stack to kRaUiVersion
    unlock screen
 end raBuild
 

@@ -9,7 +9,7 @@
 -- failing the build on any divergence. A demo stays a single paste-and-run
 -- file (the suite rule), and the suite still has one style.
 --
--- THE STYLE, in five rules (the part a human should know before laying out
+-- THE STYLE, in six rules (the part a human should know before laying out
 -- a new demo):
 --   1. Geometry is the CALLER's: explicit rects, a 16px edge margin, 24px
 --      button rows, 4-8px gutters. The kit owns the look, not the layout.
@@ -24,6 +24,10 @@
 --   5. Adopters place the block ABOVE their first use of a kUi* constant
 --      (OXT resolves constants by lexical position) and keep it byte-exact:
 --      a look change is made HERE and re-carried, never patched in place.
+--   6. The whole window fits a 720p display: at most 1200 x 640
+--      (tools/check-stack-size.py enforces the literals - 720 minus the
+--      OS taskbar and title bar is ~640). A tall stack goes two-column;
+--      it never grows past the bottom of the smallest screen in the room.
 --
 -- ADOPTION: copy everything between the BEGIN and END marker lines
 -- (inclusive) into the adopting stack script, then add the file to the
