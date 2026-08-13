@@ -36,9 +36,15 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > BIP-143 sighash; a flipped signature byte and a +1-satoshi wrong amount were both rejected,
 > so the verdict is not vacuous. `tools/verify-independent-decoder.py` is that acceptance run
 > (not a CI gate - it needs the pip packages python-bitcointx + coincurve, so it SKIPS loudly
-> without them). **The last bar is a live testnet broadcast**; until then "broadcastable" stays
-> unclaimed, but a transaction CoinXT builds is now known to be accepted by code we did not
-> write.
+> without them). **Extended 2026-08-13 to all four shipped families**: a fresh legacy P2PKH
+> spend passes the same consensus evaluation (python-bitcointx's own legacy sighash included,
+> with a tampered-output negative control), and fresh EIP-155 and EIP-1559 transactions
+> (chain id 137, wei values above 2^53) are accepted by **eth-account** - the recovery
+> library web3.py itself uses - which recovers the exact sender from the script-built bytes,
+> an independent RLP decode confirming every field; 31 checks, a negative control firing in
+> every family. **The last bar is a live testnet broadcast**; until then "broadcastable" stays
+> unclaimed, but transactions CoinXT builds are now known to be accepted by code we did not
+> write, in every family it ships.
 >
 > **Every phase has now run on a real engine.** *Phase 1, the hash surface,* was closed by an
 > engine pass on **2026-08-08**: the binding loaded and returned its pinned vectors byte-exact.
@@ -444,8 +450,10 @@ one item per input or output, the same convention the RLP and bech32 layers use.
 > and a self-consistent EIP-1559 transaction; `tools/check-script-vectors.py`
 > drives all thirteen handlers THROUGH THE script against those vectors (the
 > encoders fed the oracle's own deterministic signatures); and the engine run
-> reproduced the BIP-143 signed transaction byte for byte. Nothing here is
-> broadcastable until an independent decoder or a testnet node accepts it.
+> reproduced the BIP-143 signed transaction byte for byte. An independent
+> decoder now accepts fresh transactions in all four families (see the status
+> block at the top); nothing here is called broadcastable until a testnet
+> node accepts one too.
 
 > **A note on the list convention, learned by running it.** A repeated field
 > whose LAST entry is empty (e.g. `scriptSigs` = `[sig, ""]` for a legacy input

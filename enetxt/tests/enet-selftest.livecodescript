@@ -18,9 +18,11 @@ script "enetSelfTest"
 -- folded into the suite selftest at the repository root, and all four abrupt
 -- teardown handlers returned 0 against a live client host. What that fold
 -- deliberately does NOT carry is this file's own async loopback (the suite
--- core drives its own on 27196), so the LIVE enHostStatus assertions in the
--- loopback below are the one part still verified statically - they are the
--- remaining reason to run THIS file standalone on an engine.
+-- core drives its own on 27196), so the loopback's LIVE status assertions -
+-- enHostStatus while connected and again after the disconnect, plus the
+-- enPeerStatus statistics half (rtt, packetLoss, the packet/byte counters) -
+-- are the one part still verified statically - they are the remaining
+-- reason to run THIS file standalone on an engine.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
@@ -266,6 +268,17 @@ command stPump
          put enPeerStatus(sClientPeer) into tPS
          stAssert "peer state is connected (5)", tPS["state"] is 5
          stAssert "peer status names the server port", tPS["address"] is "127.0.0.1:27098"
+         -- the statistics half of the record: by echo time the client has
+         -- sent at least the hello, so the counters must be populated. Exact
+         -- values are timing-dependent (rtt starts at ENet's default until
+         -- an ack updates it, loss on loopback is normally 0), so these pin
+         -- presence and documented range, not a number a fast loopback
+         -- would make flaky.
+         stAssert "live peer rtt is a number >= 0", tPS["rtt"] >= 0
+         stAssert "live peer packetLoss within 0..1", \
+               tPS["packetLoss"] >= 0 and tPS["packetLoss"] <= 1
+         stAssert "live peer counted its sends", \
+               tPS["packetsSent"] > 0 and tPS["bytesSent"] > 0
          -- enHostStatus on a LIVE host (the stale-handle case is asserted
          -- above; this is the half that proves the record actually populates).
          put enHostStatus(sServer) into tHS
@@ -351,10 +364,15 @@ command stHandleClient pEvent
 end stHandleClient
 
 command stFinish
-   local tPS
+   local tPS, tHS
    stSection "retirement + teardown"
    put enPeerStatus(sClientPeer) into tPS
    stAssert "client peer retired after disconnect", the number of lines of the keys of tPS is 0
+   -- the AFTER-disconnect half of the live enHostStatus pair: the host
+   -- outlives its one peer, so the record must still populate and count zero
+   -- (a host that still counted the departed peer would leak the slot).
+   put enHostStatus(sServer) into tHS
+   stAssert "live enHostStatus counts zero peers after disconnect", tHS["peerCount"] is 0
    stAssert "enHostDestroy(server) is 0", enHostDestroy(sServer) is 0
    stAssert "double destroy is a no-op 0", enHostDestroy(sServer) is 0
    stAssert "enHostDestroy(client) is 0", enHostDestroy(sClient) is 0

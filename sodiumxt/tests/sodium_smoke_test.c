@@ -1144,6 +1144,151 @@ static void test_sha3(void)
           "an empty input is legal (and NULL with length 0 is tolerated)");
 }
 
+/*
+ * The handle tables are BOUNDED (64 secretstream slots, 32 multipart-hash
+ * slots; see sodium_shim.c) and until this section nothing exercised either
+ * boundary: the "table full" refusal, the reclaim obligation that makes a
+ * bounded table safe in a long-lived engine session (every free must actually
+ * return its slot), or the 14-bit generation wrap a hot slot crosses after
+ * 16383 free cycles. Capacity is measured by filling to refusal rather than
+ * assumed, so silently resizing a table without updating the documentation
+ * fails here instead of nowhere.
+ */
+static void test_handle_table_stress(void)
+{
+    unsigned char key[32];
+    unsigned char header[64];
+    int hashes[32];
+    int streams[64];
+    int i, h, h2, count, refusal, ok;
+
+    printf("handle-table stress (exhaustion, refusal, reclaim, generation wrap):\n");
+    memset(key, 0x42, sizeof(key));
+
+    /* --- hash table: fill to refusal; the boundary must be exact and clean --- */
+    count = 0;
+    refusal = 0;
+    for (;;) {
+        h = sxt_hash_init(NULL, 0, 32);
+        if (h <= 0) {
+            refusal = h;
+            break;
+        }
+        if (count < (int)(sizeof(hashes) / sizeof(hashes[0]))) {
+            hashes[count] = h;
+        }
+        count++;
+        if (count > 4096) {
+            break;               /* runaway guard: the table is supposed to bound us */
+        }
+    }
+    CHECK(count == 32, "the hash table holds exactly the documented 32 states");
+    CHECK(refusal == SXT_ERR_BADHANDLE, "the 33rd init is refused cleanly (BADHANDLE)");
+    CHECK(last_error_len() > 0, "the hash-table refusal sets a last-error message");
+    sxt_hash_free(hashes[0]);
+    h = sxt_hash_init(NULL, 0, 32);
+    CHECK(h > 0, "one free returns exactly one usable hash slot");
+    hashes[0] = h;
+    for (i = 0; i < 32; i++) {
+        sxt_hash_free(hashes[i]);
+    }
+
+    /* --- reclaim + generation wrap: 40000 init/use/free rounds on an empty
+     * table always land in slot 0 (first-free scan), so slot 0's generation
+     * wraps (0x3FFF = 16383) partway through and the tail of the loop proves a
+     * post-wrap slot still allocates AND its handle still validates. --- */
+    ok = 1;
+    for (i = 0; i < 40000 && ok; i++) {
+        h = sxt_hash_init(NULL, 0, 32);
+        if (h <= 0 || sxt_hash_update(h, key, 32) != SXT_OK) {
+            ok = 0;
+        }
+        sxt_hash_free(h);
+    }
+    CHECK(ok, "40000 hash init/use/free rounds reclaim their slots (incl. past the generation wrap)");
+
+    /* a recycled slot must invalidate the handle that used to name it */
+    h = sxt_hash_init(NULL, 0, 32);
+    sxt_hash_free(h);
+    h2 = sxt_hash_init(NULL, 0, 32);
+    CHECK(h2 != h, "a recycled hash slot issues a DIFFERENT handle");
+    CHECK(sxt_hash_update(h, key, 32) == SXT_ERR_BADHANDLE,
+          "the pre-recycle hash handle stays dead after the slot is reused");
+    sxt_hash_free(h2);
+
+    /* full capacity must survive all of the above: fill to 32 once more */
+    ok = 1;
+    for (i = 0; i < 32; i++) {
+        hashes[i] = sxt_hash_init(NULL, 0, 32);
+        if (hashes[i] <= 0) {
+            ok = 0;
+        }
+    }
+    CHECK(ok, "all 32 hash slots are usable again after the stress");
+    for (i = 0; i < 32; i++) {
+        sxt_hash_free(hashes[i]);
+    }
+
+    /* --- stream table: the same contract at its own boundary (64 slots) --- */
+    count = 0;
+    refusal = 0;
+    for (;;) {
+        h = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+        if (h <= 0) {
+            refusal = h;
+            break;
+        }
+        if (count < (int)(sizeof(streams) / sizeof(streams[0]))) {
+            streams[count] = h;
+        }
+        count++;
+        if (count > 4096) {
+            break;
+        }
+    }
+    CHECK(count == 64, "the stream table holds exactly the documented 64 states");
+    CHECK(refusal == SXT_ERR_BADARG, "the 65th init_push is refused cleanly (BADARG)");
+    CHECK(last_error_len() > 0, "the stream-table refusal sets a last-error message");
+    sxt_free_stream(streams[0]);
+    h = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+    CHECK(h > 0, "one free returns exactly one usable stream slot");
+    streams[0] = h;
+    for (i = 0; i < 64; i++) {
+        sxt_free_stream(streams[i]);
+    }
+
+    /* reclaim + wrap, rekey as the cheap liveness probe on each handle */
+    ok = 1;
+    for (i = 0; i < 40000 && ok; i++) {
+        h = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+        if (h <= 0 || sxt_secretstream_rekey(h) != SXT_OK) {
+            ok = 0;
+        }
+        sxt_free_stream(h);
+    }
+    CHECK(ok, "40000 stream init/rekey/free rounds reclaim their slots (incl. past the generation wrap)");
+
+    h = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+    sxt_free_stream(h);
+    h2 = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+    CHECK(h2 != h, "a recycled stream slot issues a DIFFERENT handle");
+    CHECK(sxt_secretstream_rekey(h) == SXT_ERR_BADHANDLE,
+          "the pre-recycle stream handle stays dead after the slot is reused");
+    sxt_free_stream(h2);
+
+    ok = 1;
+    for (i = 0; i < 64; i++) {
+        streams[i] = sxt_secretstream_init_push(header, (int)sizeof(header), key, 32);
+        if (streams[i] <= 0) {
+            ok = 0;
+        }
+    }
+    CHECK(ok, "all 64 stream slots are usable again after the stress");
+    for (i = 0; i < 64; i++) {
+        sxt_free_stream(streams[i]);
+    }
+}
+
 int main(void)
 {
     printf("SodiumXT smoke test\n");
@@ -1171,6 +1316,7 @@ int main(void)
     test_pad();
     test_phase6();
     test_sha3();
+    test_handle_table_stress();
 
     printf("-------------------\n");
     if (g_failures == 0) {

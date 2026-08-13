@@ -363,6 +363,8 @@ local dc1sAOpen, dc1sBOpen    -- "true" once each side's channel open arrived
 local dc1sGotText          -- the text B received
 local dc1sGotBytes         -- the binary payload A received back (a Data)
 local dc1sSentBytes        -- the binary payload B sent (kept for byte-exact compare)
+local dc1sGotBufferedLow   -- "true" once A's channel reported dcBufferedLow
+local dc1sBigLen           -- the cap-sized payload length for the buffered-low leg
 local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
 local dc1sPhase            -- "", "opening", "messaging", "done"
 
@@ -9584,6 +9586,17 @@ command en1stPump
          put enPeerStatus(en1sClientPeer) into en1tPS
          en1stAssert "peer state is connected (5)", en1tPS["state"] is 5
          en1stAssert "peer status names the server port", en1tPS["address"] is "127.0.0.1:27098"
+         -- the statistics half of the record: by echo time the client has
+         -- sent at least the hello, so the counters must be populated. Exact
+         -- values are timing-dependent (rtt starts at ENet's default until
+         -- an ack updates it, loss on loopback is normally 0), so these pin
+         -- presence and documented range, not a number a fast loopback
+         -- would make flaky.
+         en1stAssert "live peer rtt is a number >= 0", en1tPS["rtt"] >= 0
+         en1stAssert "live peer packetLoss within 0..1", \
+               en1tPS["packetLoss"] >= 0 and en1tPS["packetLoss"] <= 1
+         en1stAssert "live peer counted its sends", \
+               en1tPS["packetsSent"] > 0 and en1tPS["bytesSent"] > 0
          -- enHostStatus on a LIVE host (the stale-handle case is asserted
          -- above; this is the half that proves the record actually populates).
          put enHostStatus(en1sServer) into en1tHS
@@ -9669,10 +9682,15 @@ command en1stHandleClient pEvent
 end en1stHandleClient
 
 command en1stFinish
-   local en1tPS
+   local en1tPS, en1tHS
    en1stSection "retirement + teardown"
    put enPeerStatus(en1sClientPeer) into en1tPS
    en1stAssert "client peer retired after disconnect", the number of lines of the keys of en1tPS is 0
+   -- the AFTER-disconnect half of the live enHostStatus pair: the host
+   -- outlives its one peer, so the record must still populate and count zero
+   -- (a host that still counted the departed peer would leak the slot).
+   put enHostStatus(en1sServer) into en1tHS
+   en1stAssert "live enHostStatus counts zero peers after disconnect", en1tHS["peerCount"] is 0
    en1stAssert "enHostDestroy(server) is 0", enHostDestroy(en1sServer) is 0
    en1stAssert "double destroy is a no-op 0", enHostDestroy(en1sServer) is 0
    en1stAssert "enHostDestroy(client) is 0", enHostDestroy(en1sClient) is 0
@@ -9850,6 +9868,14 @@ command dc1stPump
          else
             put dc1tEvent["payload"] into dc1sGotBytes
          end if
+      else if dc1tEvent["name"] is "dcBufferedLow" then
+         -- only A's channel is armed (threshold 4096, above); an event
+         -- naming any other channel would be a contract violation, so the
+         -- flag is set only for the armed one and the assertion below
+         -- would time out loudly on a misdelivered event.
+         if dc1tEvent["channel"] is dc1sChanA then
+            put "true" into dc1sGotBufferedLow
+         end if
       end if
    end repeat
 
@@ -9911,6 +9937,31 @@ command dc1stPump
          dc1stAssert "dcChannelProtocol round-trips", dcChannelProtocol(dc1tExChan) is "oxt-proto"
          dc1stAssert "dcChannelLabel round-trips", dcChannelLabel(dc1tExChan) is "extra"
          dcFreeChannel dc1tExChan
+         -- the LIVE half of the gathering-state getter (the stale half is
+         -- pinned at -1 above). The a=candidate assertion already proved
+         -- candidates were gathered, and with no ICE servers configured
+         -- gathering has nothing left to wait for, so by the time the
+         -- binary round-trip has completed both peers must report
+         -- kGatheringComplete (2).
+         dc1stAssert "gathering state is complete (2) on both peers", \
+               dcGatheringState(dc1sPeerA) is 2 and dcGatheringState(dc1sPeerB) is 2
+         -- the dcBufferedLow EVENT - the live half of the threshold setter
+         -- asserted above. A's channel is armed at 4096, so one payload at
+         -- the negotiated cap (60000 under the suite budget) must push the
+         -- send buffer past the threshold, and the drain back under it
+         -- fires the event. Waited on with the same deadline as the rest
+         -- of the async phase, so a machine that never fires it fails
+         -- loudly instead of hanging.
+         put dcChannelMaxMessage(dc1sChanA) into dc1sBigLen
+         put empty into dc1sGotBytes
+         dc1stAssert "cap-sized send returns 0", \
+               dcSendData(dc1sChanA, dc1stRepeatByte(66, dc1sBigLen)) is 0
+         put "bufferedlow-wait" into dc1sPhase
+      end if
+   else if dc1sPhase is "bufferedlow-wait" then
+      if dc1sGotBufferedLow is "true" and the number of bytes in dc1sGotBytes is dc1sBigLen then
+         dc1stAssert "dcBufferedLow fired once the cap-sized send drained", true
+         dc1stAssert "the cap-sized payload arrived whole", true
          dc1stFinish
          exit dc1stPump
       end if
@@ -9969,6 +10020,15 @@ command dc1stCleanup
    -- above) the parenthesised form is correct and required.
    dcCleanup
 end dc1stCleanup
+
+function dc1stRepeatByte pCode, pCount
+   local dc1tOut
+   put numToByte(pCode) into dc1tOut
+   repeat while the number of bytes in dc1tOut < pCount
+      put dc1tOut & dc1tOut into dc1tOut
+   end repeat
+   return byte 1 to pCount of dc1tOut
+end dc1stRepeatByte
 
 
 -- ==========================================================================
