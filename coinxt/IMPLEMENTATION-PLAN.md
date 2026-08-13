@@ -253,9 +253,16 @@ Explicitly optional: the primitive layer (phases 1-4) is useful and shippable wi
   suite runbook).
 - A demo stack and a pure offline self-test harness, formatted like OnionXT's
   (`onionxt-demo` / `onionxt-tests` split): show key gen, address derivation, sign/verify, an HD wallet
-  from a mnemonic, and (if phase 5) a signed transaction.
+  from a mnemonic, and (if phase 5) a signed transaction. **The harness half was filled long ago by
+  `tests/coin-selftest.livecodescript` (engine-passed 230/230); the demo half SHIPPED 2026-08-13 as
+  `examples/coinxt-demo.livecodescript`** - mnemonic (generate via SodiumXT or import), the BIP-84/44
+  and Ethereum addresses, sign/verify, and a decoded, signed native-P2WPKH and EIP-1559 transaction,
+  each shown as human intent beside the bytes. Verified statically; its engine pass is a runbook demo
+  row.
 - Docs: a from-zero usage guide and the honesty caveats (custody is the app's, not hardware-grade
-  isolation, sign only what you constructed).
+  isolation, sign only what you constructed). **SHIPPED 2026-08-13 as `docs/getting-started.md`**,
+  the caveats included: never sign opaque bytes, wei stays hex, backups on paper, network and fee
+  values are app inputs, no node or broadcast in CoinXT.
 
 **Done when:** a fresh checkout builds the shim, the KATs and gates pass in CI, and the demo runs the
 full path on a real engine. **Risk retired:** "works on my machine" and binary/ABI drift.
