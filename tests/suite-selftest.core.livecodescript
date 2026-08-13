@@ -250,7 +250,7 @@ command stBuild
    end if
    lock screen
    set the width of this stack to 760
-   set the height of this stack to 680
+   set the height of this stack to 640
    set the backgroundColor of this card to "237,239,243"
    set the title of this stack to "xTalk Suite - End-to-End Self-Test"
    stMakeLabel "stTitle", "  xTalk Suite - End-to-End Self-Test", "0,0,760,30", 15
@@ -262,7 +262,7 @@ command stBuild
    set the textStyle of field "stSummary" to "bold"
    stMakeButton "stCopy", "Copy results", "560,38,660,64"
    stMakeButton "stRerun", "Re-run", "666,38,744,64"
-   stMakeList "stResults", "16,72,744,664"
+   stMakeList "stResults", "16,72,744,624"
    set the textFont of field "stResults" to "Courier"
    set the textSize of field "stResults" to 11
    unlock screen

@@ -55,6 +55,9 @@ constant kBtcVersion = 2
 constant kBtcSequence = "4294967293"
 constant kBtcLocktime = 0
 constant kGweiWei = 1000000000
+-- bumped on any layout change so an existing stack rebuilds (the kit builders
+-- re-rect existing controls by name, so no deletion pass is needed)
+constant kCdUiVersion = "cd-ui-720p-1"
 
 -- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -208,64 +211,66 @@ end mouseUp
 
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
 command cdBuild
-   if there is a field "uiTitle" then
+   if the uUiVersion of this stack is kCdUiVersion then
       exit cdBuild
    end if
    lock screen
-   uiChrome "CoinXT - from a mnemonic to a signed transaction", 780, 940
+   -- two columns inside the family's 720p budget (1200 x 640, the
+   -- check-stack-size.py cap): wallet + sign/verify left, transactions right
+   uiChrome "CoinXT - from a mnemonic to a signed transaction", 1200, 640
 
    -- 1. wallet
-   uiSection "cdSec1", "1. Wallet: mnemonic in, addresses out", "16,58,764,76"
-   uiInput "cdMnemonic", "16,80,600,124"
+   uiSection "cdSec1", "1. Wallet: mnemonic in, addresses out", "16,58,592,76"
+   uiInput "cdMnemonic", "16,80,440,124"
    put kTestMnemonic into field "cdMnemonic"
-   uiButton "cdGenerate", "Generate new", "612,80,764,104"
-   uiButton "cdDerive", "Derive", "612,108,764,132"
+   uiButton "cdGenerate", "Generate new", "446,80,592,104"
+   uiButton "cdDerive", "Derive", "446,108,592,132"
    uiLabel "cdPassLabel", "Passphrase (optional):", "16,128,180,146", 11
-   uiInput "cdPassphrase", "184,128,420,148"
-   uiArea "cdWalletOut", "16,152,764,258"
+   uiInput "cdPassphrase", "184,128,440,148"
+   uiArea "cdWalletOut", "16,152,592,330"
 
    -- 2. sign + verify
-   uiSection "cdSec2", "2. Sign and verify a message (the BIP-84 key)", "16,264,764,282"
-   uiInput "cdMessage", "16,286,600,308"
+   uiSection "cdSec2", "2. Sign and verify a message (the BIP-84 key)", "16,336,592,354"
+   uiInput "cdMessage", "16,358,440,380"
    put "hello coinxt" into field "cdMessage"
-   uiButton "cdSign", "Sign + verify", "612,286,764,310"
-   uiArea "cdSignOut", "16,314,764,392"
+   uiButton "cdSign", "Sign + verify", "446,358,592,382"
+   uiArea "cdSignOut", "16,388,592,562"
 
    -- 3. bitcoin transaction
-   uiSection "cdSec3", "3. Bitcoin: build + sign a native-P2WPKH spend (synthetic prevout)", "16,398,764,416"
-   uiLabel "cdBtcL1", "prev txid / vout / input sat:", "16,420,196,438", 11
-   uiInput "cdBtcPrev", "200,420,560,440"
+   uiSection "cdSec3", "3. Bitcoin: build + sign a native-P2WPKH spend (synthetic prevout)", "608,58,1184,76"
+   uiLabel "cdBtcL1", "prev txid / vout / input sat:", "608,80,1184,98", 11
+   uiInput "cdBtcPrev", "608,102,968,122"
    put "2222222222222222222222222222222222222222222222222222222222222222" into field "cdBtcPrev"
-   uiInput "cdBtcVout", "566,420,610,440"
+   uiInput "cdBtcVout", "974,102,1018,122"
    put "0" into field "cdBtcVout"
-   uiInput "cdBtcIn", "616,420,700,440"
+   uiInput "cdBtcIn", "1024,102,1108,122"
    put "100000" into field "cdBtcIn"
-   uiLabel "cdBtcL2", "pay to (bech32) / amount sat:", "16,444,196,462", 11
-   uiInput "cdBtcDest", "200,444,610,464"
-   uiInput "cdBtcOut", "616,444,700,464"
+   uiLabel "cdBtcL2", "pay to (bech32) / amount sat:", "608,126,1184,144", 11
+   uiInput "cdBtcDest", "608,148,1018,168"
+   uiInput "cdBtcOut", "1024,148,1108,168"
    put "99000" into field "cdBtcOut"
-   uiButton "cdBtcBuild", "Build + sign", "706,432,764,456"
-   uiArea "cdBtcOutArea", "16,470,764,600"
+   uiButton "cdBtcBuild", "Build + sign", "1114,148,1184,172"
+   uiArea "cdBtcOutArea", "608,178,1184,330"
 
    -- 4. ethereum transaction
-   uiSection "cdSec4", "4. Ethereum: build + sign an EIP-1559 transaction", "16,606,764,624"
-   uiLabel "cdEthL1", "nonce / prio gwei / max gwei / gas:", "16,628,236,646", 11
-   uiInput "cdEthNonce", "240,628,290,648"
+   uiSection "cdSec4", "4. Ethereum: build + sign an EIP-1559 transaction", "608,336,1184,354"
+   uiLabel "cdEthL1", "nonce / prio gwei / max gwei / gas:", "608,358,1184,376", 11
+   uiInput "cdEthNonce", "608,380,658,400"
    put "0" into field "cdEthNonce"
-   uiInput "cdEthPrio", "296,628,346,648"
+   uiInput "cdEthPrio", "664,380,714,400"
    put "2" into field "cdEthPrio"
-   uiInput "cdEthMax", "352,628,402,648"
+   uiInput "cdEthMax", "720,380,770,400"
    put "30" into field "cdEthMax"
-   uiInput "cdEthGas", "408,628,470,648"
+   uiInput "cdEthGas", "776,380,838,400"
    put "21000" into field "cdEthGas"
-   uiLabel "cdEthL2", "to (0x...) / value (WEI, hex) / chain id:", "16,652,236,670", 11
-   uiInput "cdEthTo", "240,652,560,672"
-   uiInput "cdEthValue", "566,652,700,672"
+   uiLabel "cdEthL2", "to (0x...) / value (WEI, hex) / chain id:", "608,404,1184,422", 11
+   uiInput "cdEthTo", "608,426,928,446"
+   uiInput "cdEthValue", "934,426,1068,446"
    put "2386f26fc10000" into field "cdEthValue"
-   uiInput "cdEthChain", "706,652,764,672"
+   uiInput "cdEthChain", "1074,426,1132,446"
    put "1" into field "cdEthChain"
-   uiButton "cdEthBuild", "Build + sign", "706,676,764,700"
-   uiArea "cdEthOutArea", "16,704,764,834"
+   uiButton "cdEthBuild", "Build + sign", "1092,450,1184,474"
+   uiArea "cdEthOutArea", "608,480,1184,562"
 
    uiFooter \
          "This is a demo, not a wallet: the mnemonic is on screen, keys pass" \
@@ -273,7 +278,8 @@ command cdBuild
          & " Never type a mnemonic that guards real funds. The default Bitcoin" \
          & " prevout is synthetic, so its signed transaction cannot broadcast." \
          & " Review every decoded line before you sign anything, anywhere.", \
-         "16,842,764,930"
+         "16,572,1184,632"
+   set the uUiVersion of this stack to kCdUiVersion
    unlock screen
 end cdBuild
 

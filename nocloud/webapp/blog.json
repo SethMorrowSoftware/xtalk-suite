@@ -1,0 +1,81 @@
+{
+  "blog": "The Folder Papers",
+  "tagline": "Short notes from a website that lives in a folder on somebody's actual computer.",
+  "posts": [
+    {
+      "slug": "hello-from-a-folder",
+      "title": "Hello from a folder",
+      "date": "2026-07-01",
+      "minutes": 3,
+      "teaser": "This blog has no host, no CMS, and no cloud. It is a JSON file next to the page you are reading, served by a file-sharing app.",
+      "body": [
+        { "p": "Every website you have ever visited lived on a computer. Usually that computer belongs to a hosting company, sits in a warehouse, and costs somebody a monthly bill. This one is different: the page you are reading right now is being served out of an ordinary folder by No Cloud Quick Share, a little peer-to-peer file-sharing app, from the machine of whoever sent you the link." },
+        { "p": "There is no build step and no database behind this blog. The posts are entries in a blog.json file sitting next to index.html; the page fetches it and renders. Editing a post means editing a text file - or, if the sharer turned on the LAN editor, opening the folder with /_edit on the end and typing into a browser." },
+        { "h": "Why bother?" },
+        { "ul": [
+          "Zero infrastructure: if you can share a folder, you can publish.",
+          "The same folder works over Tor (both ends hidden) or a plain web link.",
+          "When you close the app, the site is gone. Publishing becomes a verb, not a subscription."
+        ] },
+        { "p": "The rest of this demo pushes the idea further: a gallery, a streaming cinema, a record shelf, even a small shop - all static files, one folder, no cloud in sight." }
+      ]
+    },
+    {
+      "slug": "how-seeking-works",
+      "title": "How the video seeks: HTTP Range in one page",
+      "date": "2026-07-02",
+      "minutes": 4,
+      "teaser": "Scrub the film in the Theater and the browser fetches just the bytes it needs. Here is the whole trick, headers and all.",
+      "body": [
+        { "p": "Open the Theater tab, start the film, and drag the playhead near the end. The whole file does not download first - playback lands almost instantly. The mechanism is one HTTP header and it is delightfully simple." },
+        { "h": "The request" },
+        { "p": "When you seek, the browser asks the server for a slice of the file instead of the whole thing:" },
+        { "code": "GET assets/film.mp4 HTTP/1.1\nRange: bytes=1800000-" },
+        { "h": "The response" },
+        { "p": "A server that supports ranges answers 206 Partial Content and says exactly which bytes it is sending:" },
+        { "code": "HTTP/1.1 206 Partial Content\nContent-Range: bytes 1800000-2213556/2213557\nAccept-Ranges: bytes" },
+        { "p": "That is the entire trick. The MP4 was also written with its index (the moov atom) at the front, so the browser learns where every frame lives from the first few kilobytes and can convert a timestamp into a byte offset before asking." },
+        { "p": "The server behind this page streams those slices a bounded chunk at a time - the file is never read whole into memory, so a multi-gigabyte film costs the sharer almost nothing to serve. The audio player on the Music page and even the .wav chime use exactly the same machinery." }
+      ]
+    },
+    {
+      "slug": "storefront-without-a-backend",
+      "title": "A storefront with (almost) no backend",
+      "date": "2026-07-03",
+      "minutes": 4,
+      "teaser": "The shop tab has a cart, a checkout, and instant delivery - out of a static folder. Where is the line between static and server?",
+      "body": [
+        { "p": "The Store tab looks like it needs a platform: product pages, a cart, checkout, delivery. It has all four, and yet the folder serving it contains only files. It is worth pulling apart where each piece actually lives." },
+        { "ul": [
+          "The catalog is store.json - a static file, fetched like any image.",
+          "The cart is your browser's localStorage - it never leaves your machine.",
+          "Delivery is the server's one clever move: any file URL with ?dl on the end is sent as a download (Content-Disposition: attachment) instead of opening in the tab."
+        ] },
+        { "p": "So checkout is honest: this demo shop charges zero and hands you real files, because the things being sold sit in the same folder as the shop itself. The receipt you see is generated in your browser." },
+        { "h": "And when you outgrow static?" },
+        { "p": "The host is not only static. This very demo calls a live route, GET /_qs/info, answered by the app's own script. A real order endpoint is one handler away:" },
+        { "code": "qsHttpRoute \"POST\", \"/api/order\", \"myOrderHandler\"\n-- in the stack script:\non myOrderHandler pConn, pRequest\n   qsHttpReply pConn, 200, \"application/json\", \"{\\\"ok\\\":true}\"\nend myOrderHandler" },
+        { "p": "That is the whole progression: static files for everything that can be a file, one tiny dynamic route for the moment money or state enters the picture. No cloud required at any step." }
+      ]
+    },
+    {
+      "slug": "tor-or-web-link",
+      "title": "Tor page or web link: picking a front door",
+      "date": "2026-07-05",
+      "minutes": 3,
+      "teaser": "The same folder can answer as a .onion or as a plain http link. What actually changes - and what does not.",
+      "body": [
+        { "p": "This folder has two possible front doors. Share it as a web link and visitors get http://your-ip:port/token/ - fast, works in any browser, but the address literally contains your IP. Share it as a Tor page and visitors get a .onion address: slower, needs Tor Browser, and neither side ever learns where the other one is." },
+        { "h": "What changes" },
+        { "ul": [
+          "Anonymity: over Tor, your visitors cannot see your IP and you cannot see theirs. Over a web link, both are visible.",
+          "Secure context: browsers treat a .onion as secure, so service workers and similar APIs light up (the About tab proves it live). Plain http does not qualify.",
+          "Reachability: a web link needs your router to cooperate; a Tor page dials out, so it works from behind almost any NAT."
+        ] },
+        { "h": "What does not change" },
+        { "p": "Everything else. Same folder, same files, same server code, same relative URLs - this app never hard-codes a path from the site root, which is the one rule that lets it sit at a .onion root and under a /token/ prefix without a rebuild." },
+        { "p": "Neither door encrypts the files themselves; that is a separate, optional passphrase feature of the app, and the honest details live in the project's what-it-hides document. Pick the door that matches your threat model, and remember the site exists only while the sharing window stays open - which is, depending on your point of view, either a limitation or the best privacy feature of all." }
+      ]
+    }
+  ]
+}

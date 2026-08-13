@@ -175,6 +175,8 @@ local sAOpenA, sAOpenB, sAGotText, sAGotBytes, sABigLen, sAGotLow, sAPhase
 local sEnHost          -- the one host this machine runs (server or client)
 local sEnRole          -- "host" or "join"
 local sEnPeer          -- the connected peer handle
+local sEnConnected     -- "true" once enetConnect arrived (a late enetDisconnect
+                       -- with this empty is a FAILED connect, not a goodbye)
 local sEnSent, sEnGotText, sEnGotEcho
 -- C: torrent seed/leech
 local sShareTorrent, sLeechTorrent, sLeechHash, sLeechDone
@@ -286,52 +288,54 @@ command cpBuild
       exit cpBuild
    end if
    lock screen
-   uiChrome "Suite closing pass - the remaining runbook legs", 780, 1010
+   -- two columns inside the family's 720p budget (1200 x 640, the
+   -- check-stack-size.py cap): A/B/C left, D/E/F right
+   uiChrome "Suite closing pass - the remaining runbook legs", 1200, 640
 
-   uiSection "cpSecA", "A. DataChannel local async (single machine; the last static harness halves)", "16,58,764,76"
+   uiSection "cpSecA", "A. DataChannel local async (single machine; the last static harness halves)", "16,58,592,76"
    uiButton "cpARun", "Run A", "16,80,120,104"
-   uiArea "cpAOut", "130,80,764,168"
+   uiArea "cpAOut", "130,80,592,168"
 
-   uiSection "cpSecB", "B. ENet chat, two machines (host on one, join from the other)", "16,174,764,192"
-   uiLabel "cpBL1", "host ip:", "16,196,70,214", 11
-   uiInput "cpBAddr", "74,196,260,216"
-   uiButton "cpBHost", "Host", "270,196,340,220"
-   uiButton "cpBJoin", "Join", "346,196,416,220"
-   uiArea "cpBOut", "424,196,764,290"
+   uiSection "cpSecB", "B. ENet chat, two machines (host on one, join from the other)", "16,174,592,192"
+   uiLabel "cpBL1", "host ip[:port]:", "16,196,110,214", 11
+   uiInput "cpBAddr", "114,196,300,216"
+   uiButton "cpBHost", "Host", "306,196,376,220"
+   uiButton "cpBJoin", "Join", "382,196,452,220"
+   uiArea "cpBOut", "16,226,592,320"
 
-   uiSection "cpSecC", "C. Torrent seed/leech + resume-from-disk (share on one, fetch on the other)", "16,296,764,314"
-   uiButton "cpCShare", "Share", "16,318,120,342"
-   uiButton "cpCFetch", "Fetch", "16,348,120,372"
-   uiButton "cpCSaveDrop", "Save+drop", "16,378,120,402"
-   uiButton "cpCResume", "Resume", "16,408,120,432"
-   uiLabel "cpCL1", "code (infohash + payload hash):", "130,318,360,336", 11
-   uiInput "cpCCode", "130,338,764,360"
-   uiArea "cpCOut", "130,366,764,446"
+   uiSection "cpSecC", "C. Torrent seed/leech + resume-from-disk (share on one, fetch on the other)", "16,326,592,344"
+   uiButton "cpCShare", "Share", "16,348,120,372"
+   uiButton "cpCFetch", "Fetch", "16,378,120,402"
+   uiButton "cpCSaveDrop", "Save+drop", "16,408,120,432"
+   uiButton "cpCResume", "Resume", "16,438,120,462"
+   uiLabel "cpCL1", "code (infohash + payload hash):", "130,348,420,366", 11
+   uiInput "cpCCode", "130,368,592,390"
+   uiArea "cpCOut", "130,396,592,500"
 
-   uiSection "cpSecD", "D. rp1 chat, two machines (same room word on both; needs the session)", "16,452,764,470"
-   uiLabel "cpDL1", "room:", "16,474,60,492", 11
-   uiInput "cpDRoom", "64,474,260,494"
+   uiSection "cpSecD", "D. rp1 chat, two machines (same room word on both; needs the session)", "608,58,1184,76"
+   uiLabel "cpDL1", "room:", "608,80,652,98", 11
+   uiInput "cpDRoom", "656,80,830,100"
    put "closing-pass" into field "cpDRoom"
-   uiButton "cpDJoin", "Join room", "270,474,370,498"
-   uiButton "cpDSend", "Send", "376,474,446,498"
-   uiArea "cpDOut", "454,474,764,560"
+   uiButton "cpDJoin", "Join room", "836,80,936,104"
+   uiButton "cpDSend", "Send", "942,80,1012,104"
+   uiArea "cpDOut", "608,110,1184,180"
 
-   uiSection "cpSecE", "E. DataChannel chat SIGNALED OVER THE DHT (host mints the code; join pastes it)", "16,566,764,584"
-   uiLabel "cpEL1", "room code (64 hex):", "16,588,150,606", 11
-   uiInput "cpECode", "154,588,560,608"
-   uiButton "cpEHost", "Host", "566,588,636,612"
-   uiButton "cpEJoin", "Join", "642,588,712,612"
-   uiArea "cpEOut", "16,616,764,710"
+   uiSection "cpSecE", "E. DataChannel chat SIGNALED OVER THE DHT (host mints the code; join pastes it)", "608,186,1184,204"
+   uiLabel "cpEL1", "room code (64 hex):", "608,208,752,226", 11
+   uiInput "cpECode", "756,208,1050,228"
+   uiButton "cpEHost", "Host", "1056,208,1116,232"
+   uiButton "cpEJoin", "Join", "1122,208,1184,232"
+   uiArea "cpEOut", "608,238,1184,330"
 
-   uiSection "cpSecF", "F. Tor, single machine: Mode B launch + a live onion echo (needs onionxt in use)", "16,716,764,734"
-   uiLabel "cpFL1", "tor binary:", "16,738,90,756", 11
-   uiInput "cpFTorPath", "94,738,560,758"
-   uiButton "cpFLaunch", "Launch", "566,738,660,762"
-   uiButton "cpFStop", "Stop tor", "666,738,764,762"
-   uiLabel "cpFL2", "data dir:", "16,762,90,780", 11
-   uiInput "cpFDataDir", "94,762,560,782"
-   uiButton "cpFEcho", "Onion echo", "566,768,764,792"
-   uiArea "cpFOut", "16,788,764,900"
+   uiSection "cpSecF", "F. Tor, single machine: Mode B launch + a live onion echo (needs onionxt in use)", "608,336,1184,354"
+   uiLabel "cpFL1", "tor binary:", "608,358,688,376", 11
+   uiInput "cpFTorPath", "692,358,1050,378"
+   uiButton "cpFLaunch", "Launch", "1056,358,1120,382"
+   uiButton "cpFStop", "Stop tor", "1126,358,1184,382"
+   uiLabel "cpFL2", "data dir:", "608,382,688,400", 11
+   uiInput "cpFDataDir", "692,384,1050,404"
+   uiButton "cpFEcho", "Onion echo", "1056,388,1184,412"
+   uiArea "cpFOut", "608,416,1184,560"
 
    uiFooter \
          "One torrent session per process: close other torrent stacks, and" \
@@ -340,7 +344,7 @@ command cpBuild
          & " bootstrap before C, D and E find anything (watch the status" \
          & " line). Every PASS line here is a runbook record - copy each" \
          & " section's text back.", \
-         "16,908,764,1000"
+         "16,570,1184,632"
    put cpTempDir() & "/closing-tor" into field "cpFDataDir"
    unlock screen
 end cpBuild
@@ -621,8 +625,12 @@ function cpAOther pPeer
 end cpAOther
 
 -- ---- B: enet two-machine chat -------------------------------------------------
+-- The failure modes here are SILENT at the transport (a refused bind returns
+-- 0, a bad address returns 0, a blocked connect just times out), so every
+-- return is validated the way enet-lan-chat does it, and a watchdog names
+-- the usual LAN culprits while ENet is still quietly retrying.
 command cpBStart pRole
-   local tErr
+   local tErr, tAddr, tHostAddr, tPort, tOldDelim, tIps
    put empty into field "cpBOut"
    try
       get enInitialize()
@@ -630,25 +638,87 @@ command cpBStart pRole
       cpSay "cpBOut", "enetxt missing:" && tErr
       exit cpBStart
    end try
+   if sEnHost is an integer and sEnHost > 0 then
+      cpSay "cpBOut", "already hosting or joined; restart OXT to re-run this leg cleanly"
+      exit cpBStart
+   end if
    put pRole into sEnRole
    put empty into sEnPeer
    put empty into sEnSent
    put empty into sEnGotText
    put empty into sEnGotEcho
+   put empty into sEnConnected
    if pRole is "host" then
-      put enHostCreateServer("0.0.0.0", kEnetPort, 8, 2, 0, 0) into sEnHost
+      -- empty bind host = ENET_HOST_ANY (the shim's documented LAN spelling;
+      -- a named host would go through the resolver instead)
+      put enHostCreateServer("", kEnetPort, 8, 2, 0, 0) into sEnHost
+      if sEnHost is 0 or sEnHost is empty then
+         cpSay "cpBOut", "could not host (port in use? another stack still bound?):" && enLastError()
+         put empty into sEnHost
+         exit cpBStart
+      end if
       cpSay "cpBOut", "hosting on UDP" && kEnetPort & "; join from the other machine with this machine's LAN ip"
+      try
+         put hostNameToAddress(the hostName) into tIps
+         replace return with comma & space in tIps
+         cpSay "cpBOut", "this machine's address(es):" && tIps
+         cpSay "cpBOut", "(use the 192.168.*/10.* one; if the join stalls, allow the engine through THIS machine's firewall - inbound UDP" && kEnetPort & ")"
+      catch tErr
+         cpSay "cpBOut", "(could not list local addresses; read the LAN ip from the OS network settings)"
+      end try
    else
+      -- accept ip or ip:port, the lan-chat convention
+      put word 1 of field "cpBAddr" into tAddr
+      if tAddr is empty then
+         cpSay "cpBOut", "enter the host machine's ip first"
+         exit cpBStart
+      end if
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to ":"
+      put item 1 of tAddr into tHostAddr
+      if the number of items of tAddr > 1 and item 2 of tAddr is a number then
+         put item 2 of tAddr into tPort
+      else
+         put kEnetPort into tPort
+      end if
+      set the itemDelimiter to tOldDelim
       put enHostCreateClient(1, 2, 0, 0) into sEnHost
-      put enConnect(sEnHost, word 1 of field "cpBAddr", kEnetPort, 2, 99) into sEnPeer
-      cpSay "cpBOut", "connecting to" && word 1 of field "cpBAddr" & ":" & kEnetPort & "..."
+      if sEnHost is 0 or sEnHost is empty then
+         cpSay "cpBOut", "could not create a client host:" && enLastError()
+         put empty into sEnHost
+         exit cpBStart
+      end if
+      put enConnect(sEnHost, tHostAddr, tPort, 2, 99) into sEnPeer
+      if sEnPeer is 0 or sEnPeer is empty then
+         cpSay "cpBOut", "could not start connecting (bad address?):" && enLastError()
+         enHostDestroy sEnHost
+         put empty into sEnHost
+         exit cpBStart
+      end if
+      cpSay "cpBOut", "connecting to" && tHostAddr & ":" & tPort & "..."
+      send "cpBCheckStuck" to me in 15000 milliseconds
    end if
 end cpBStart
+
+-- The join watchdog: ENet retries quietly for ~30 seconds before giving up,
+-- so a blocked port reads as a hang. Name the usual causes while it still
+-- tries; the definitive FAIL arrives as an enetDisconnect with no prior
+-- enetConnect.
+command cpBCheckStuck
+   if sEnRole is not "join" or sEnConnected is "true" then
+      exit cpBCheckStuck
+   end if
+   if sEnHost is not an integer or sEnHost <= 0 then
+      exit cpBCheckStuck
+   end if
+   cpSay "cpBOut", "still connecting. Usual causes, in order: (1) the HOST machine's firewall blocks inbound UDP" && kEnetPort && "- allow the OXT engine for private networks over there, then Host + Join again; (2) the machines are on different networks (guest wifi isolates devices); (3) the host stack is not actually hosting - its section B must say so"
+end cpBCheckStuck
 
 command cpOnEnEvent pEvent
    local tBin
    switch pEvent["name"]
       case "enetConnect"
+         put "true" into sEnConnected
          if sEnRole is "host" then
             put pEvent["peer"] into sEnPeer
             cpSay "cpBOut", "PASS peer connected from" && pEvent["address"]
@@ -683,7 +753,11 @@ command cpOnEnEvent pEvent
          end if
          break
       case "enetDisconnect"
-         cpSay "cpBOut", "PASS graceful disconnect observed (data" && pEvent["data"] & ")"
+         if sEnRole is "join" and sEnConnected is not "true" then
+            cpSay "cpBOut", "connect FAILED (ENet gave up after ~30 s). Work the watchdog checklist: host-machine firewall first, then same-network"
+         else
+            cpSay "cpBOut", "PASS graceful disconnect observed (data" && pEvent["data"] & ")"
+         end if
          break
    end switch
 end cpOnEnEvent

@@ -178,7 +178,7 @@ on buildUI
       exit buildUI
    end if
    set the width of this stack to 820
-   set the height of this stack to 648
+   set the height of this stack to 640
    set the name of this stack to "SodiumXT Demo"
    set the backgroundColor of this stack to clr("appBg")
 

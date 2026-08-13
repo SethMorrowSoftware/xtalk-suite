@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#3b82f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#070b16" media="(prefers-color-scheme: dark)">
+  <title>No Cloud Quick Share — send any file, no cloud, no account, no size limit</title>
+  <meta name="description" content="Open-source peer-to-peer file sharing with no server, no account and no size limit. Drop a file, get a code, send it — the bytes go straight from your device to theirs, over BitTorrent, a Tor onion, or a plain web link, with optional end-to-end encryption.">
+  <meta property="og:title" content="No Cloud Quick Share">
+  <meta property="og:description" content="Peer-to-peer file sharing with no server, no account, no size limit. One open-source stack, three ways to share, optional end-to-end encryption.">
+  <meta property="og:type" content="website">
+  <!-- One self-contained stylesheet + one progressive-enhancement script. No external
+       fonts, no CDN, no trackers, no build step: the whole site is a folder you could
+       serve from No Cloud Quick Share itself. -->
+  <link rel="icon" href="assets/logo.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="mesh" aria-hidden="true"></div>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ============================================================ header -->
+  <header class="chrome" id="chrome">
+    <div class="site">
+      <a class="brand" href="#top" aria-label="No Cloud Quick Share — home">
+        <img src="assets/logo.svg" width="34" height="34" alt="">
+        <span class="brand-name">No&nbsp;Cloud Quick&nbsp;Share</span>
+      </a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#ways">Ways to share</a>
+        <a href="#features">Features</a>
+        <a href="#tech">Under the hood</a>
+        <a href="#compare">Vs the cloud</a>
+        <a href="#start">Get it</a>
+      </nav>
+      <div class="site-actions">
+        <button class="iconbtn" id="themebtn" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.4 4.4l1.8 1.8M17.8 17.8l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.4 19.6l1.8-1.8M17.8 6.2l1.8-1.8"/></svg>
+        </button>
+        <a class="btn ghost gh" href="https://github.com/SethMorrowSoftware/nocloud" rel="noopener">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2A9.8 9.8 0 0 0 8.9 21.3c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.3.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2z" fill="currentColor" stroke="none"/></svg>
+          GitHub
+        </a>
+      </div>
+      <button class="navtoggle" id="navtoggle" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <span id="top"></span>
+
+    <!-- ========================================================== hero -->
+    <section class="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <span class="kicker">Open-source peer-to-peer file sharing</span>
+          <h1>Send any file to anyone.<br><span class="grad">No cloud. No account. No size limit.</span></h1>
+          <p class="lede">Drop a file, get a short code, send the code. The bytes travel
+            <b>straight from your device to theirs</b> — nothing is uploaded to a server first,
+            nothing expires behind a paywall, and there is no size cap. One small open-source app,
+            three ways to share, optional end-to-end encryption.</p>
+          <div class="row hero-cta">
+            <a class="btn" href="#start">Get it <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+            <a class="btn ghost" href="https://github.com/SethMorrowSoftware/nocloud" rel="noopener">View the source</a>
+          </div>
+          <ul class="trust">
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> No server in the middle</li>
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> No sign-up, ever</li>
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> Files never leave your machine until <i>you</i> send them</li>
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> MIT-licensed, one readable stack</li>
+          </ul>
+        </div>
+        <div class="hero-art">
+          <!-- the logo's 3-node glyph, brought to life: a source radiating to peers -->
+          <svg class="qs-net" viewBox="0 0 360 300" fill="none" role="img" aria-label="A source sending a file peer-to-peer to three nodes">
+            <defs>
+              <linearGradient id="qsg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#3b82f6"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#ec4899"/>
+              </linearGradient>
+              <radialGradient id="qsc" cx=".5" cy=".38" r=".7">
+                <stop offset="0" stop-color="#a5b4fc"/><stop offset="1" stop-color="#6366f1"/>
+              </radialGradient>
+            </defs>
+            <circle class="qs-ring" cx="180" cy="110" r="20" stroke="#8b5cf6" stroke-width="2"/>
+            <circle class="qs-ring b" cx="180" cy="110" r="20" stroke="#3b82f6" stroke-width="2"/>
+            <circle class="qs-ring c" cx="180" cy="110" r="20" stroke="#22d3ee" stroke-width="2"/>
+            <path class="qs-link" d="M180 110 L95 225"  stroke="url(#qsg)" stroke-width="2.5"/>
+            <path class="qs-link" d="M180 110 L265 225" stroke="url(#qsg)" stroke-width="2.5"/>
+            <path class="qs-link" d="M180 110 L180 52"  stroke="url(#qsg)" stroke-width="2.5"/>
+            <circle class="pkt pkt-l" cx="180" cy="110" r="4" fill="#22d3ee"/>
+            <circle class="pkt pkt-r" cx="180" cy="110" r="4" fill="#ec4899"/>
+            <circle class="pkt pkt-t" cx="180" cy="110" r="4" fill="#3b82f6"/>
+            <g class="qs-peer core">
+              <path d="M150 130V98a4 4 0 0 1 4-4h17l6 7h29a4 4 0 0 1 4 4v25a4 4 0 0 1-4 4h-52a4 4 0 0 1-4-4Z" fill="url(#qsc)"/>
+              <path d="M150 114v12a4 4 0 0 0 4 4h52a4 4 0 0 0 4-4v-12Z" fill="#fff" opacity=".10"/>
+              <path d="M150 114h60" stroke="#fff" stroke-width="1.4" opacity=".3"/>
+            </g>
+            <g class="qs-peer b"><circle cx="95" cy="225" r="17" fill="#0f1428" stroke="url(#qsg)" stroke-width="2.5"/><circle cx="95" cy="225" r="4.5" fill="#22d3ee"/></g>
+            <g class="qs-peer c"><circle cx="265" cy="225" r="17" fill="#0f1428" stroke="url(#qsg)" stroke-width="2.5"/><circle cx="265" cy="225" r="4.5" fill="#ec4899"/></g>
+            <g class="qs-peer"><circle cx="180" cy="52" r="15" fill="#0f1428" stroke="url(#qsg)" stroke-width="2.5"/><circle cx="180" cy="52" r="4" fill="#3b82f6"/></g>
+          </svg>
+          <span class="art-note"><span class="dot"></span>peer&nbsp;<b>to</b>&nbsp;peer &middot; no middle</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== stat strip -->
+    <section class="stats" aria-label="At a glance">
+      <div class="stat"><b>0</b><span>servers in the path</span></div>
+      <div class="stat"><b>&infin;</b><span>file-size limit</span></div>
+      <div class="stat"><b>3</b><span>ways to share</span></div>
+      <div class="stat"><b>1</b><span>self-contained stack</span></div>
+    </section>
+
+    <!-- ==================================================== how it works -->
+    <section id="how" class="band">
+      <span class="kicker">How it works</span>
+      <h2 class="band-h">Three steps. No account, no upload, no wait.</h2>
+      <ol class="steps">
+        <li class="step">
+          <span class="step-n">1</span>
+          <h3>Drop a file</h3>
+          <p>Drag any file — or a whole folder — onto the window. It stays on your disk; nothing
+            is copied to a cloud. Optionally type a passphrase to lock it end-to-end.</p>
+        </li>
+        <li class="step">
+          <span class="step-n">2</span>
+          <h3>Get a code</h3>
+          <p>You get a short share code (or a Tor address, or a plain web link — your choice). The
+            code <i>is</i> the file's content address; there is no upload step to wait for.</p>
+        </li>
+        <li class="step">
+          <span class="step-n">3</span>
+          <h3>Send the code</h3>
+          <p>Message the code to your friend however you like. They paste it in and the file streams
+            <b>directly from your machine to theirs</b>, resuming if the connection drops.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ==================================================== ways to share -->
+    <section id="ways" class="band">
+      <span class="kicker">Three ways to share</span>
+      <h2 class="band-h">Pick the trade-off you want — and know exactly what it hides.</h2>
+      <p class="band-lede">"No cloud" is not the same as "anonymous," and not the same as "encrypted."
+        Those are three separate switches. Here is the honest breakdown of each path.</p>
+      <div class="ways">
+        <article class="card way">
+          <span class="way-badge code">Share code</span>
+          <h3>BitTorrent over the DHT</h3>
+          <p class="muted">A ~40-character code that <i>is</i> the file's info-hash. No tracker, no
+            server — the distributed hash table introduces your machine to whoever pastes the code.
+            Resumes if interrupted.</p>
+          <ul class="way-facts">
+            <li class="no"><span>IP hidden</span><b>No — visible to peers</b></li>
+            <li class="opt"><span>Encrypted</span><b>Optional (passphrase)</b></li>
+            <li class="opt"><span>Recipient needs app</span><b>Yes</b></li>
+          </ul>
+        </article>
+        <article class="card way feature-tor">
+          <span class="way-badge tor">Private / Tor</span>
+          <h3>An onion stream, both ends hidden</h3>
+          <p class="muted">The bytes ride a Tor onion service. <b>Both</b> your IP and the
+            recipient's are hidden, and no torrent is ever created. The anonymous path, for when
+            who is sharing matters as much as what.</p>
+          <ul class="way-facts">
+            <li class="yes"><span>IP hidden</span><b>Yes — both ends</b></li>
+            <li class="opt"><span>Encrypted</span><b>Optional + authenticated</b></li>
+            <li class="opt"><span>Recipient needs app</span><b>File: yes · link: no</b></li>
+          </ul>
+        </article>
+        <article class="card way">
+          <span class="way-badge web">Web link</span>
+          <h3>A plain link, any browser</h3>
+          <p class="muted">An ordinary <span class="mono">http://</span> link that opens with no app
+            on the other end. Serve a file, a folder, or a whole website. The router port opens
+            automatically over UPnP / NAT-PMP.</p>
+          <ul class="way-facts">
+            <li class="no"><span>IP hidden</span><b>No — link exposes it</b></li>
+            <li class="no"><span>Encrypted</span><b>No — plain HTTP</b></li>
+            <li class="yes"><span>Recipient needs app</span><b>No — any browser</b></li>
+          </ul>
+        </article>
+      </div>
+      <p class="band-foot muted">Any file can be locked with a <b>passphrase</b> (optional): the
+        network only ever sees ciphertext under a neutral name, and a wrong passphrase is caught
+        <i>before</i> anything downloads. The exact model is in
+        <a href="https://github.com/SethMorrowSoftware/nocloud/blob/main/docs/what-it-hides.md" rel="noopener"><span class="mono">what-it-hides.md</span></a>.</p>
+    </section>
+
+    <!-- ==================================================== features grid -->
+    <section id="features" class="band">
+      <span class="kicker">Everything it does</span>
+      <h2 class="band-h">Small app, serious capabilities.</h2>
+      <div class="grid feats">
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none"/></svg></span>
+          <h3>End-to-end encryption</h3>
+          <p>A passphrase derives a key with <b>Argon2id</b> and seals the file with libsodium's
+            authenticated <span class="mono">crypto_secretstream</span>. Truncation is detected on
+            decrypt; a wrong passphrase never downloads a byte.</p>
+        </article>
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><path d="M18 15l3 3-3 3" fill="none"/></svg></span>
+          <h3>No size limit, ever</h3>
+          <p>Multi-gigabyte files move one bounded slice at a time, straight between disks. The
+            payload never crosses into the interpreter, so the app's memory stays flat whether
+            it's a photo or a film.</p>
+        </article>
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l7 3v5c0 5-3 7.5-7 9.5-4-2-7-4.5-7-9.5v-5z"/><path d="M9 12l2 2 4-4.5"/></svg></span>
+          <h3>Tor anonymity, built in</h3>
+          <p>The Private path runs the transfer over a Tor onion service, hiding both IP addresses
+            and creating no torrent at all. It fails closed: no Tor, no leak — the other two paths
+            just keep working.</p>
+        </article>
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M17 6v12M7 12h10"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/></svg></span>
+          <h3>Streaming &amp; seeking</h3>
+          <p>The built-in web host speaks HTTP Range, so a browser can stream and <i>scrub</i> a
+            video or track without downloading the whole file — served one memory-flat slice per
+            write, with natural backpressure.</p>
+        </article>
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h8L18 7v13.5H6.5z"/><path d="M9.5 8h3M9.5 11h5M9.5 14h5"/></svg></span>
+          <h3>Host a whole website</h3>
+          <p>Point the web link at a folder and it serves a real site — SPA routing, forced
+            downloads, correct MIME, custom API routes from a drop-in <span class="mono">.qsroutes.json</span>,
+            and a LAN-only admin panel to edit it live.</p>
+        </article>
+        <article class="feat card">
+          <span class="feat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg></span>
+          <h3>Self-contained &amp; standalone-ready</h3>
+          <p>One stack script builds its own UI on every launch — nothing to persist. Package it as
+            a native <span class="mono">.exe</span> / <span class="mono">.app</span> / Linux binary
+            for Windows, macOS and Linux with no native code to compile.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ==================================================== transparency -->
+    <section id="transparency" class="band">
+      <span class="kicker">The honest page</span>
+      <h2 class="band-h">What each path hides — and what it doesn't.</h2>
+      <p class="band-lede">Nothing here is marketing. Where a protection doesn't apply, it says so.</p>
+      <div class="tablewrap card">
+        <table class="cmp">
+          <thead>
+            <tr><th scope="col">Path</th><th scope="col">Your IP hidden?</th><th scope="col">Encrypted?</th><th scope="col">Recipient needs the app?</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><span class="dotchip code"></span>Share code <span class="muted">(BitTorrent / DHT)</span></th>
+              <td class="c-no">No — visible to every peer</td>
+              <td class="c-opt">Optional — passphrase (E2E)</td>
+              <td class="c-mid">Yes</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="dotchip tor"></span>Private / Tor</th>
+              <td class="c-yes">Yes — both ends hidden</td>
+              <td class="c-opt">Optional + authenticated</td>
+              <td class="c-mid">File: yes · link: no</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="dotchip web"></span>Web link <span class="muted">(plain web)</span></th>
+              <td class="c-no">No — public IP published</td>
+              <td class="c-no">No — a browser can't decrypt</td>
+              <td class="c-yes">No — any browser</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="band-foot muted">Two questions decide everything: <b>can someone see your IP?</b>
+        (only Tor hides it) and <b>can someone read the bytes?</b> (that's the separate encryption
+        switch). A path can do one, both, or neither — so check, don't assume.</p>
+    </section>
+
+    <!-- ==================================================== under the hood -->
+    <section id="tech" class="band tech">
+      <span class="kicker">Under the hood</span>
+      <h2 class="band-h">For the people who read the source.</h2>
+      <p class="band-lede">No Cloud Quick Share is a <b>single OpenXTalk / xTalk stack script</b> —
+        a binding consumer that calls into prebuilt, battle-tested extensions. There is no native
+        code in the app itself, and no build step for the logic.</p>
+
+      <div class="tech-grid">
+        <div class="tech-diagram card" aria-hidden="true">
+          <svg viewBox="0 0 320 340" role="img">
+            <defs>
+              <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+            </defs>
+            <!-- app layer -->
+            <rect x="20" y="16" width="280" height="60" rx="12" fill="url(#tg)" opacity=".92"/>
+            <text x="160" y="42" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="15" font-weight="700">nocloudquickshare.livecodescript</text>
+            <text x="160" y="62" text-anchor="middle" fill="#e6ecff" font-family="ui-monospace,monospace" font-size="11">one stack · self-building UI · poll loop</text>
+            <!-- connectors -->
+            <path d="M75 76v22M160 76v22M245 76v22" stroke="#8b5cf6" stroke-width="2" opacity=".6"/>
+            <!-- extensions row -->
+            <g font-family="system-ui,sans-serif">
+              <rect x="16" y="100" width="90" height="66" rx="11" fill="rgba(59,130,246,.14)" stroke="#3b82f6" stroke-width="1.5"/>
+              <text x="61" y="126" text-anchor="middle" fill="#3b82f6" font-size="12.5" font-weight="700">TorrentXT</text>
+              <text x="61" y="144" text-anchor="middle" fill="#7f8bb0" font-size="10">libtorrent</text>
+              <text x="61" y="158" text-anchor="middle" fill="#7f8bb0" font-size="9.5">DHT · web</text>
+
+              <rect x="115" y="100" width="90" height="66" rx="11" fill="rgba(139,92,246,.14)" stroke="#8b5cf6" stroke-width="1.5"/>
+              <text x="160" y="126" text-anchor="middle" fill="#8b5cf6" font-size="12.5" font-weight="700">cryptoXT</text>
+              <text x="160" y="144" text-anchor="middle" fill="#7f8bb0" font-size="10">libsodium</text>
+              <text x="160" y="158" text-anchor="middle" fill="#7f8bb0" font-size="9.5">Argon2id</text>
+
+              <rect x="214" y="100" width="90" height="66" rx="11" fill="rgba(34,211,238,.14)" stroke="#22d3ee" stroke-width="1.5"/>
+              <text x="259" y="126" text-anchor="middle" fill="#22a3c0" font-size="12.5" font-weight="700">OnionXT</text>
+              <text x="259" y="144" text-anchor="middle" fill="#7f8bb0" font-size="10">Tor</text>
+              <text x="259" y="158" text-anchor="middle" fill="#7f8bb0" font-size="9.5">onion stream</text>
+            </g>
+            <!-- engine layer -->
+            <rect x="20" y="196" width="280" height="52" rx="12" fill="rgba(120,130,170,.12)" stroke="rgba(120,130,170,.5)" stroke-width="1.5"/>
+            <text x="160" y="219" text-anchor="middle" fill="#8892b8" font-family="system-ui,sans-serif" font-size="12.5" font-weight="700">OpenXTalk engine</text>
+            <text x="160" y="237" text-anchor="middle" fill="#7f8bb0" font-family="ui-monospace,monospace" font-size="10">one interpreted thread · FFI firewalls exceptions</text>
+            <!-- gates -->
+            <rect x="20" y="268" width="280" height="52" rx="12" fill="rgba(16,185,129,.10)" stroke="rgba(16,185,129,.5)" stroke-width="1.5"/>
+            <text x="160" y="291" text-anchor="middle" fill="#0e9f6e" font-family="system-ui,sans-serif" font-size="12.5" font-weight="700">Two safety gates</text>
+            <text x="160" y="309" text-anchor="middle" fill="#7f8bb0" font-family="ui-monospace,monospace" font-size="10">check-livecodescript.py · fileserver_golden.py</text>
+          </svg>
+        </div>
+
+        <ul class="tech-notes">
+          <li><b>Fail-closed by design.</b> Every optional extension is probed once at startup into a
+            boolean and never called outside its guard. Missing cryptoXT? Encryption is simply off and
+            everything else works. Missing Tor? The other two paths carry on.</li>
+          <li><b>Single-threaded, on purpose.</b> Script, the FFI and rendering share one interpreted
+            thread. Inbound BitTorrent events are <i>poll-drained</i> off a 250&nbsp;ms timer, so no
+            engine callback ever runs app script — the discipline that keeps it stable.</li>
+          <li><b>Payload never crosses the FFI.</b> Gigabytes move engine&nbsp;&harr;&nbsp;disk on the
+            extension's own threads; the app only issues tiny commands and reads small status records.</li>
+          <li><b>Versioned, authenticated wire formats.</b> Encrypted codes carry a magic prefix
+            (<span class="mono">BTXQS1:</span> / <span class="mono">BTXTOR1:</span>); an old reader
+            rejects an unknown format cleanly rather than mis-parsing it.</li>
+          <li><b>Verifiable off-engine.</b> A static linter and a pure-logic "golden" pin the
+            security-critical helpers (range parsing, path confinement, MIME, header sanitising) in
+            plain Python, so a regression is caught before it ships.</li>
+          <li><b>Extends the family.</b> It stands on the same OpenXTalk extensions its siblings do —
+            <span class="mono">TorrentXT</span>, <span class="mono">cryptoXT/SodiumXT</span>,
+            <span class="mono">OnionXT</span> — sharing their hard-won safety rules.</li>
+        </ul>
+      </div>
+
+      <div class="deps">
+        <div class="dep"><b>TorrentXT</b><span>org.openxtalk.library.torrent — required; the DHT + web transports</span></div>
+        <div class="dep"><b>cryptoXT</b><span>org.openxtalk.library.sodium — optional; passphrase encryption</span></div>
+        <div class="dep"><b>OnionXT</b><span>optional; the Tor path (needs cryptoXT + a local Tor daemon)</span></div>
+        <div class="dep"><b>Internet library</b><span>optional; the public-IP lookup on the web-link path</span></div>
+      </div>
+    </section>
+
+    <!-- ==================================================== vs the cloud -->
+    <section id="compare" class="band">
+      <span class="kicker">Vs the cloud</span>
+      <h2 class="band-h">What you stop paying for — in money and in data.</h2>
+      <div class="tablewrap card">
+        <table class="cmp vs">
+          <thead>
+            <tr>
+              <th scope="col">&nbsp;</th>
+              <th scope="col" class="us"><span class="mini-brand"><img src="assets/logo.svg" width="18" height="18" alt=""> No&nbsp;Cloud Quick&nbsp;Share</span></th>
+              <th scope="col">Typical cloud transfer</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Account required</th><td class="c-yes">None</td><td class="c-no">Usually</td></tr>
+            <tr><th scope="row">File-size limit</th><td class="c-yes">None</td><td class="c-no">Capped (more if you pay)</td></tr>
+            <tr><th scope="row">Where the file lives</th><td class="c-yes">Only your device</td><td class="c-no">On their servers</td></tr>
+            <tr><th scope="row">Link expiry</th><td class="c-yes">You control it</td><td class="c-no">Auto-deleted / paywalled</td></tr>
+            <tr><th scope="row">End-to-end encryption</th><td class="c-yes">Optional, built in</td><td class="c-mid">Rare</td></tr>
+            <tr><th scope="row">Anonymous option</th><td class="c-yes">Yes (Tor)</td><td class="c-no">No</td></tr>
+            <tr><th scope="row">Works offline / LAN</th><td class="c-yes">Yes</td><td class="c-no">No</td></tr>
+            <tr><th scope="row">Source you can read</th><td class="c-yes">MIT, one stack</td><td class="c-no">Closed</td></tr>
+            <tr><th scope="row">Price</th><td class="c-yes">Free</td><td class="c-mid">Freemium</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================================================== get started -->
+    <section id="start" class="band">
+      <span class="kicker">Get it</span>
+      <h2 class="band-h">Run it from source, or package a standalone.</h2>
+      <div class="start-grid">
+        <div class="card start-card">
+          <h3>From source (fastest)</h3>
+          <ol class="tight">
+            <li>Open <a href="https://openxtalk.org" rel="noopener">OpenXTalk</a> and make a one-card mainstack.</li>
+            <li>Paste the stack script into its <b>stack script</b>, then compile.</li>
+            <li>Close and reopen the window — it builds its UI and logs <span class="mono">ready</span>.</li>
+          </ol>
+          <div class="term">
+            <div class="term-bar"><span class="term-dots"></span><span class="term-title">clone it</span>
+              <button class="copybtn" id="copybtn" type="button" aria-label="Copy command">Copy</button>
+            </div>
+            <pre class="code" id="clonecmd">git clone https://github.com/SethMorrowSoftware/nocloud
+# then open src/nocloudquickshare.livecodescript in OpenXTalk</pre>
+          </div>
+        </div>
+        <div class="card start-card">
+          <h3>As a standalone app</h3>
+          <p class="muted">In the standalone builder, include <b>TorrentXT</b> (required) and — for the
+            optional features — <b>cryptoXT</b>, <b>OnionXT</b>, the <b>Internet library</b> and the
+            <b>JSON library</b>. Every one fails closed, so it's safe to ship with or without them.</p>
+          <p class="muted">No other inclusions, externals, fonts or native resources are needed. Ships
+            for Windows, macOS and Linux; downloads land in <span class="mono">Documents/No Cloud Quick Share</span>.</p>
+          <div class="row">
+            <a class="btn ghost" href="https://github.com/SethMorrowSoftware/nocloud/blob/main/docs/building-a-standalone.md" rel="noopener">Building a standalone &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================== FAQ -->
+    <section id="faq" class="band">
+      <span class="kicker">Questions</span>
+      <h2 class="band-h">The things people ask.</h2>
+      <div class="faq">
+        <details class="card q">
+          <summary>Is it really peer-to-peer, with no server?</summary>
+          <p>Yes. On the Share-code and Tor paths there is no server and no tracker — your machine
+            talks to the recipient's directly (the DHT or a Tor onion just introduces them). The Web
+            link runs a tiny HTTP host <i>on your own machine</i>; the file still never leaves it
+            until someone fetches it.</p>
+        </details>
+        <details class="card q">
+          <summary>Does "no cloud" mean it's anonymous?</summary>
+          <p>Not by itself. A direct connection means the other side sees your IP — that's only hidden
+            on the <b>Tor</b> path. And encryption is a <i>separate</i> switch (a passphrase). The
+            <a href="#transparency">transparency table</a> spells out exactly what each path does and
+            doesn't hide.</p>
+        </details>
+        <details class="card q">
+          <summary>What's the largest file I can send?</summary>
+          <p>There's no built-in cap. Files stream one bounded slice at a time straight between disks,
+            so a multi-gigabyte transfer uses the same flat memory as a small one. The practical limit
+            is your disk and your connection.</p>
+        </details>
+        <details class="card q">
+          <summary>Do I need to install anything special?</summary>
+          <p>To <i>send</i>, you run the app. To <i>receive</i>: a Share code or a single Tor file needs
+            the app too; a <b>Web link</b> opens in any browser with nothing installed. The Tor path
+            additionally needs a local Tor daemon on the sending machine.</p>
+        </details>
+        <details class="card q">
+          <summary>Can I host a website or an API from a folder?</summary>
+          <p>Yes — that's what the demo web app shows. Share a folder over a web link and it serves a
+            real SPA (routing, Range streaming, forced downloads), plus custom endpoints from a
+            drop-in <span class="mono">.qsroutes.json</span> and a LAN-only admin panel for editing it
+            live.</p>
+        </details>
+        <details class="card q">
+          <summary>What's the license?</summary>
+          <p>MIT. The whole thing is one readable OpenXTalk stack script plus a small bundled web app —
+            fork it, audit it, ship it.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- ==================================================== final CTA -->
+    <section class="band">
+      <div class="cta card">
+        <h2>Send your next file straight from your machine.</h2>
+        <p class="muted">No account to make, no upload to wait for, no size to worry about — and the
+          source is right there to read.</p>
+        <div class="row">
+          <a class="btn" href="https://github.com/SethMorrowSoftware/nocloud" rel="noopener">Get it on GitHub</a>
+          <a class="btn ghost" href="#transparency">Read the honest page</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ footer -->
+  <footer class="footer">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <span class="brand"><img src="assets/logo.svg" width="26" height="26" alt=""><span class="brand-name">No&nbsp;Cloud Quick&nbsp;Share</span></span>
+        <p class="muted">Peer-to-peer file sharing with no server, no account and no size limit.
+          One open-source OpenXTalk stack — it exists only while the sharing window is open.</p>
+      </div>
+      <nav class="foot-col" aria-label="Project">
+        <b>Project</b>
+        <a href="https://github.com/SethMorrowSoftware/nocloud" rel="noopener">Source code</a>
+        <a href="https://github.com/SethMorrowSoftware/nocloud/blob/main/docs/what-it-hides.md" rel="noopener">What it hides</a>
+        <a href="https://github.com/SethMorrowSoftware/nocloud/blob/main/docs/building-a-standalone.md" rel="noopener">Build a standalone</a>
+        <a href="https://github.com/SethMorrowSoftware/nocloud/blob/main/docs/webapp.md" rel="noopener">Web-app demo</a>
+      </nav>
+      <nav class="foot-col" aria-label="Built on">
+        <b>Built on</b>
+        <a href="https://openxtalk.org" rel="noopener">OpenXTalk</a>
+        <span class="mono muted">TorrentXT · libtorrent</span>
+        <span class="mono muted">cryptoXT · libsodium</span>
+        <span class="mono muted">OnionXT · Tor</span>
+      </nav>
+    </div>
+    <div class="foot-legal">
+      <span>MIT-licensed &middot; &copy; 2026 Seth Morrow Software</span>
+      <span class="muted">No trackers on this page. No cloud in the product.</span>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

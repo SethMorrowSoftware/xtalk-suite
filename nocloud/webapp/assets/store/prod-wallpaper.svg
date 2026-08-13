@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="Gradient wallpaper on a screen">
+  <defs>
+    <linearGradient id="pwg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0ea5e9"/><stop offset="0.5" stop-color="#6366f1"/><stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="360" fill="#eef2f8"/>
+  <rect x="70" y="46" width="340" height="212" rx="12" fill="#0b1020"/>
+  <rect x="82" y="58" width="316" height="188" rx="6" fill="url(#pwg)"/>
+  <rect x="210" y="262" width="60" height="26" fill="#94a3b8"/>
+  <rect x="160" y="288" width="160" height="12" rx="6" fill="#64748b"/>
+  <text x="240" y="336" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1c2430">desktop wallpaper &#183; PNG</text>
+</svg>

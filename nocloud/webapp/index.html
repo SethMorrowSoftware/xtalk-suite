@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#3b82f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0e1a" media="(prefers-color-scheme: dark)">
+  <title>No Cloud Quick Share Web App Demo</title>
+  <meta name="description" content="A gallery, cinema, record shelf, storefront, and blog - one single-page app served from a shared folder by No Cloud Quick Share over Tor or a direct web link.">
+  <!-- All asset paths are RELATIVE, so the app works both at the root (over Tor) and
+       under /<token>/ (over the direct web link) without any build step or <base>. Every
+       style lives in app.css and every behavior in app.js: no inline <style>, <script>,
+       style= attribute or data: URI, so the exact same folder runs unchanged under a
+       strict CSP (default-src 'self') and offline over a Tor .onion. -->
+  <link rel="icon" href="assets/logo.svg">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Decorative, behind everything: a living blue->violet->cyan aurora field painted
+       purely with CSS radial gradients (no images), plus a faint mesh to kill banding.
+       It is the light source the frosted-glass UI is lit by; frozen under reduced-motion. -->
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="mesh" aria-hidden="true"></div>
+
+  <a class="skip" href="#view">Skip to content</a>
+
+  <div class="chrome" id="chrome">
+    <header class="site">
+      <a class="brand" data-route="" href="./" aria-label="No Cloud Quick Share Demo - home">
+        <img src="assets/logo.svg" width="36" height="36" alt="">
+        <span class="brand-name">No&nbsp;Cloud Quick&nbsp;Share<b>&#8202;Demo</b></span>
+      </a>
+      <span id="transport" class="badge" title="How this page reached your browser">
+        <span class="dot"></span><span class="badge-txt">detecting&hellip;</span>
+      </span>
+    </header>
+    <nav id="nav" class="nav" aria-label="Sections"></nav>
+  </div>
+
+  <main id="view" class="view" tabindex="-1">
+    <noscript><div class="card"><p>This demo uses JavaScript for its client-side routing. The
+      folder still serves as plain files without it.</p></div></noscript>
+  </main>
+
+  <footer class="site-ft">
+    <span class="ft-mark" aria-hidden="true">
+      <img src="assets/logo.svg" width="20" height="20" alt="">
+    </span>
+    <span>Served by <b>No Cloud Quick Share</b> &mdash; static assets, HTTP Range streaming, SPA
+      deep links, forced downloads, and a live backend. One folder, no cloud &mdash;
+      <i>it exists only while the sharing window is open.</i></span>
+    <a class="ft-admin" data-route="admin" href="admin" title="Manage this site through the LAN-only live editor">Admin</a>
+  </footer>
+  <script src="app.js" defer></script>
+</body>
+</html>

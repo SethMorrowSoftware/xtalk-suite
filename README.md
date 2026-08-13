@@ -196,6 +196,15 @@ The members are deliberately non-overlapping, so real apps mix them:
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
+- **The shipped example.** [`nocloud/`](nocloud/) is **No Cloud Quick Share**,
+  a finished end-user app that composes the suite the way the ladder above
+  describes: peer-to-peer file sharing as one stack script over torrentxt
+  (the DHT is the introduction, BitTorrent moves the bytes), with sodiumxt
+  supplying the optional passphrase seal and onionxt the optional
+  Private/Tor path — each degrading independently with a clear message when
+  absent. Folded in from its standalone repository 2026-08-13 (that repo
+  becomes a mirror, like every pre-suite home); it is member-shaped, so the
+  same gate set walks it.
 
 ## Development
 
