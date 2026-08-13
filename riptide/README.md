@@ -16,6 +16,14 @@ is knowing their key, and reaching them is verifying them.
 > - a SECOND machine walks the chain and verifies every authorSig - still needs
 > two machines on a real DHT. rp1 DMs and onion streams are later phases; no
 > claim is made about them at all.
+>
+> The flagship STACK now exists for exactly that run:
+> `examples/riptide-social.livecodescript` (2026-08-13, on the suite UI kit)
+> walks identity, publish, and the verified chain walk on one card. It is
+> verified statically and needs its own OXT pass - it is also the first code
+> that can drive real btPoll DHT events into the ingest verifiers, which the
+> harness only ever fed synthetically. `examples/README.md` carries the
+> single-machine half and the two-machine done-criterion procedure.
 
 What ships today, per the spec's phased roadmap (section 10.3, phases 1
 and 2):

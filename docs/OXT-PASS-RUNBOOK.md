@@ -537,6 +537,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 14 | `torrentxt/examples/torrent-dht-channels.livecodescript` and `torrent-rp1-chat.livecodescript` | torrentxt; **two machines** |
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
 | 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
+| 17 | `riptide/examples/riptide-social.livecodescript` - the phase-1/2 flagship: identity, publish over the real DHT, and the verified chain walk. Single machine = the honest half; **two machines** = phase 2's done-criterion (item 6; procedure in `riptide/examples/README.md`) | sodiumxt + torrentxt + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
 
 Items 8, 13, and 14 are genuine two-machine tests. If you only have one machine
 tonight, run them anyway to the point where the UI builds and the session starts, and
@@ -1176,6 +1177,7 @@ DEMOS
 [ ] torrent-dht-channels / torrent-rp1-chat   (two machines)
 [ ] onionxt Mode B: oxLaunchTor               processId: ______  bootstrapped: ___
 [ ] coinxt-demo (phase 6: mnemonic -> decoded, signed BTC+ETH tx)
+[ ] riptide-social (one machine / two machines: ______)  <- item 6's vehicle
 
 FOLLOW-UP
 [ ] result text saved for every run above

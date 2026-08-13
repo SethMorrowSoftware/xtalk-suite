@@ -33,6 +33,7 @@ MASTER = os.path.join("tools", "ui-kit.livecodescript")
 # AND adding it here, in the same commit.
 ADOPTERS = [
     os.path.join("coinxt", "examples", "coinxt-demo.livecodescript"),
+    os.path.join("riptide", "examples", "riptide-social.livecodescript"),
 ]
 
 BEGIN = ("-- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: "
