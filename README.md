@@ -188,8 +188,11 @@ The members are deliberately non-overlapping, so real apps mix them:
   social app on all six, and `riptide/` is that app being built — phase 1
   (the identity foundation and the feed wire formats, offline-verifiable,
   golden-pinned, and engine-passed 2026-08-12) and phase 2 (the live feed
-  layer: signed BEP44 heads, content-addressed posts, verified ingest — also
-  engine-passed 2026-08-12, as part of the combined 133/133 harness) are in the tree;
+  layer: signed BEP44 heads, content-addressed posts, verified ingest —
+  engine-passed 2026-08-12 at 133/133, and its **two-machine propagation
+  done-criterion met 2026-08-13**: `riptide/examples/riptide-social.livecodescript`
+  exchanged verified feeds in both directions over the real DHT, the suite's
+  first two-machine result) are COMPLETE in the tree;
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.

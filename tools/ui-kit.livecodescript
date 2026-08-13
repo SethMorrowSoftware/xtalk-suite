@@ -29,6 +29,10 @@
 -- (inclusive) into the adopting stack script, then add the file to the
 -- ADOPTERS list in tools/check-ui-kit-drift.py. The gate fails on a stale
 -- copy, an unregistered adopter, and a registered non-adopter alike.
+--
+-- FIRST ENGINE EVIDENCE 2026-08-13: the kit's chrome, status line, inputs,
+-- areas and footer rendered and ran inside riptide-social's two-machine
+-- pass (the riptide leg of runbook item 6), on both machines.
 
 -- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and

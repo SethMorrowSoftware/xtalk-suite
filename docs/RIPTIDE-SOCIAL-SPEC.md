@@ -482,7 +482,9 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    passphrase reconstruct the same handle and `.onion`.
 2. **Public feed read/write** — head sign/put/get, post chain, one follower sees
    another's post. *Done when* a second machine walks the chain and verifies
-   every `authorSig`.
+   every `authorSig`. *(Met 2026-08-13: `riptide/examples/riptide-social.livecodescript`
+   on two machines, feeds exchanged both directions; the as-built record is
+   `riptide/CLAUDE.md`.)*
 3. **Media** — create/seed/co-seed a photo and a sequential video. *Done when* a
    follower plays a video mid-download.
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.

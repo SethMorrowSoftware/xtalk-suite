@@ -11,15 +11,17 @@ script "riptideSocial"
 -- the real DHT, and follow another author: fetch their head, walk the post
 -- chain back to the zero target, and show every authorSig verdict.
 --
--- HONESTY (the suite convention): this stack is verified statically and
--- NEEDS an OXT pass. The library underneath is engine-passed (2026-08-12,
--- 133/133) and its publish/lookup calls ran against a real session there -
--- but the EVENT half (btPoll delivering dhtMutableItem/dhtImmutableItem into
--- the ingest verifiers) has only ever run against synthetic events, so this
--- stack is the first thing that can close that loop. And a ONE-machine run
--- does not prove propagation: phase 2's done-criterion is a SECOND machine
--- walking the chain and verifying every authorSig (runbook item 6). Running
--- publisher and follower on one machine is the honest half-result.
+-- HONESTY (the suite convention): this stack HAS ITS PASS - and it was the
+-- two-machine one. On 2026-08-13 the maintainer ran it on two machines:
+-- identities created on both sides, feeds published and received in BOTH
+-- directions through the real DHT. That run closed phase 2's done-criterion
+-- (a second machine walks the chain and verifies every authorSig - a post
+-- renders here only after rsIngestHead/rsIngestPost verify it) and was the
+-- first to drive REAL btPoll DHT events into the ingest verifiers, which
+-- the harness only ever fed synthetically. The library underneath was
+-- already engine-passed (2026-08-12, 133/133). Result text and machine
+-- environments were not captured with the report; the record is the
+-- maintainer's dated account.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then

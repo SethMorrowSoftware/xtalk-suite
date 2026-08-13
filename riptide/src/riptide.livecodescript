@@ -8,7 +8,11 @@ script "RiptideSocial"
 -- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
 -- The phase-2 run covered the pure helpers, synthetic ingest verifiers, and
 -- real-session puts and accepted lookup requests. Its propagation half ("a
--- second machine walks the chain") still needs two machines on a real DHT.
+-- second machine walks the chain") CLOSED 2026-08-13: the maintainer ran
+-- examples/riptide-social.livecodescript on two machines - identities
+-- created on both, feeds published and received in both directions through
+-- the real DHT (the stack renders a post only after rsIngestHead and
+-- rsIngestPost verify it, so a received feed is a verified chain walk).
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,

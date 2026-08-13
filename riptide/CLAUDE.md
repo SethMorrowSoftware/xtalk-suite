@@ -17,11 +17,11 @@ it is an APP, not an extension: nothing here is compiled, nothing here
 adds native surface, and `rs*` never becomes a library other members may
 call.
 
-Currently at **phase 2** of the spec's seven: phase 1 (identity + the
-pure-compute feed layer) is engine-passed; the phase-2 LIVE feed layer
-(BEP44 head/post publish, async lookups, ingest verifiers) is in the tree,
-and its single-engine harness is also engine-passed. Its two-machine
-propagation criterion remains open. The remaining transport phases land later,
+**Phases 1 and 2 of the spec's seven are COMPLETE**, done-criteria included:
+phase 1 (identity + the pure-compute feed layer) and the phase-2 LIVE feed
+layer (BEP44 head/post publish, async lookups, ingest verifiers) are
+engine-passed, and phase 2's two-machine propagation criterion closed
+2026-08-13 (see rule 8). The remaining transport phases (3-7) land later,
 each behind its own pass.
 
 ## The rules that bind this directory
@@ -64,9 +64,15 @@ each behind its own pass.
    skipped, every probe true including hasSha3. The sealed key file, KDF tree,
    identity -> handle -> onion, RSH1/RSP1 formats, post chain, phase-2 puts,
    accepted lookups, and synthetic ingest verifiers all ran green on a real
-   engine. The full phase-2 done-criterion (a second machine walks the chain
-   and verifies every authorSig) still needs TWO machines on a real DHT; the
-   one-machine pass does not prove propagation.
+   engine. **The full phase-2 done-criterion closed 2026-08-13**: the
+   maintainer ran `examples/riptide-social.livecodescript` on TWO machines -
+   identities created on both sides, feeds published and received in BOTH
+   directions through the real DHT. The stack renders a post only after
+   `rsIngestHead`/`rsIngestPost` verify it, so a received feed is a verified
+   chain walk; this was also the first run to drive REAL btPoll DHT events
+   into the ingest verifiers (previously synthetic-only). Result text and
+   environments were not captured with the report; the record is the
+   maintainer's account, dated.
 
 ## Things learned building phase 1 (do not relearn)
 

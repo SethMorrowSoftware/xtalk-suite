@@ -148,7 +148,7 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 | 3 | ~~**The selftests grew after their passes; the new sections are static-only.**~~ **CLOSED 2026-08-10.** | The folded suite harness ran every member's own deep self-test on a real engine, twice in one day, green: torrentxt's whole harness including the v9-v11 surface (`btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, the `btRp1*` quartet) at 96/96; enetxt's isolated teardown section (`enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth`) inside its 21/21 sync half; and the complete `sxSelfTest()` at 68/68, attached-signature form, keyed hashing and preset accessors included. The one extended section the folds exclude is the live `enHostStatus` pair inside enetxt's own async loopback. | Labels updated 2026-08-10 in `torrentxt/tests/torrent-selftest.livecodescript` + `torrentxt/README.md`, `enetxt/tests/enet-selftest.livecodescript` + `enetxt/CLAUDE.md`, and `sodiumxt/docs/api-reference.md`. |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
-| 6 | **Two-machine behaviour, for every member that has it.** enetxt's LAN chat, torrentxt's rp1 chat and Channels, datachannelxt's DHT chat. | Loopback proves the binding; only a second machine proves the transport. | `enetxt/CLAUDE.md`: "Still un-exercised: the LAN chat demo between two real machines." `torrentxt/examples/README.md`: rp1 chat "needs a live peer to show anything, so it is a two-machine test by nature." |
+| 6 | **Two-machine behaviour, for every member that has it.** enetxt's LAN chat, torrentxt's rp1 chat and Channels, datachannelxt's DHT chat. The riptide phase-2 propagation leg CLOSED 2026-08-13 (riptide-social on two machines, feeds both directions - which also means a signed BEP44 put propagated between real machines over the live DHT); the member demo legs remain. | Loopback proves the binding; only a second machine proves the transport. | `enetxt/CLAUDE.md`: "Still un-exercised: the LAN chat demo between two real machines." `torrentxt/examples/README.md`: rp1 chat "needs a live peer to show anything, so it is a two-machine test by nature." |
 
 Items 1, 2 and 3 are **all closed**: every member's deep self-test had run on a
 real engine via the folded suite harness (as of the 2026-08-10 passes), and the
@@ -171,11 +171,12 @@ engine:**
 
 | # | New surface | What a green run proves | Status |
 |---|---|---|---|
-| 10 | **riptide phase 2, the live feed layer** (inside `rs1rsSelfTest`, no extra step: the folded live-feed section drives the suite's own session) | the pure-script BEP44 buffer matches `btDhtBep44SignBuf` byte-for-byte; `rsPublishImmutable`/`rsPublishPost` return the oracle's pinned targets (libtorrent's SHA-1 agrees); `btDhtPutSigned` ACCEPTS `rsPublishHead`'s SodiumXT signature over the script-assembled buffer; the lookups are accepted; and the ingest verifiers pass/refuse their synthetic golden events. NOT covered by one machine: propagation - phase 2's done-criterion (a second machine walks the chain) is item 6's session | **CLOSED 2026-08-12**: riptide 133/133, 0 skipped; canonical buffer, real-session puts/requests, and ingest verifiers all green |
+| 10 | **riptide phase 2, the live feed layer** (inside `rs1rsSelfTest`, no extra step: the folded live-feed section drives the suite's own session) | the pure-script BEP44 buffer matches `btDhtBep44SignBuf` byte-for-byte; `rsPublishImmutable`/`rsPublishPost` return the oracle's pinned targets (libtorrent's SHA-1 agrees); `btDhtPutSigned` ACCEPTS `rsPublishHead`'s SodiumXT signature over the script-assembled buffer; the lookups are accepted; and the ingest verifiers pass/refuse their synthetic golden events. NOT covered by one machine: propagation - phase 2's done-criterion (a second machine walks the chain), which then CLOSED 2026-08-13 via the riptide-social two-machine run (item 6's riptide leg) | **CLOSED 2026-08-12**: riptide 133/133, 0 skipped; canonical buffer, real-session puts/requests, and ingest verifiers all green; propagation followed 2026-08-13 |
 
 What remains is entirely environmental: items **4 and 5 need a live tor daemon**
 (one evening with `ControlPort 9051` covers both), and item **6 needs a second
-machine** (including riptide phase 2's propagation half). Plan those as their
+machine** for its member-demo legs - the riptide propagation leg closed
+2026-08-13, the first two-machine result in the suite. Plan the rest as their
 own sessions.
 
 ---
@@ -537,7 +538,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 14 | `torrentxt/examples/torrent-dht-channels.livecodescript` and `torrent-rp1-chat.livecodescript` | torrentxt; **two machines** |
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
 | 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
-| 17 | `riptide/examples/riptide-social.livecodescript` - the phase-1/2 flagship: identity, publish over the real DHT, and the verified chain walk. Single machine = the honest half; **two machines** = phase 2's done-criterion (item 6; procedure in `riptide/examples/README.md`) | sodiumxt + torrentxt + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
+| 17 | `riptide/examples/riptide-social.livecodescript` - the phase-1/2 flagship: identity, publish over the real DHT, and the verified chain walk. **RAN ON TWO MACHINES 2026-08-13** - identities both sides, feeds both directions - closing phase 2's done-criterion. A re-run needs no label work | sodiumxt + torrentxt + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
 
 Items 8, 13, and 14 are genuine two-machine tests. If you only have one machine
 tonight, run them anyway to the point where the UI builds and the session starts, and
@@ -1176,7 +1177,11 @@ DEMOS
 [ ] torrent-dht-channels / torrent-rp1-chat   (two machines)
 [ ] onionxt Mode B: oxLaunchTor               processId: ______  bootstrapped: ___
 [ ] coinxt-demo (phase 6: mnemonic -> decoded, signed BTC+ETH tx)
-[ ] riptide-social (one machine / two machines: ______)  <- item 6's vehicle
+[x] riptide-social  2026-08-13: TWO machines - identities created on both
+                    sides, feeds published and received in BOTH directions
+                    through the real DHT; every rendered post ingest-verified
+                    -> PHASE 2's DONE-CRITERION MET (the riptide leg of item
+                    6). Environments not captured; maintainer's dated account
 
 FOLLOW-UP
 [ ] result text saved for every run above
