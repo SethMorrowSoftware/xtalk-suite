@@ -49,10 +49,10 @@ script "riptideSocial"
 -- guards anything real in a demo.
 
 -- ---- constants ---------------------------------------------------------------
-constant kPollMs is 250
-constant kDhtWaitMs is 25000
-constant kWalkMax is 12
-constant kNameMax is 64
+constant kPollMs = 250
+constant kDhtWaitMs = 25000
+constant kWalkMax = 12
+constant kNameMax = 64
 
 -- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -60,14 +60,14 @@ constant kNameMax is 64
 -- logic. Builders are idempotent (create-if-missing), so a rebuild on
 -- reopen is safe. Do not edit this block in place: change the master and
 -- re-carry it.
-constant kUiBg is "237,239,243"
-constant kUiAccent is "44,90,160"
-constant kUiAccentText is "255,255,255"
-constant kUiOk is "20,120,40"
-constant kUiWarn is "160,90,10"
-constant kUiBad is "170,30,30"
-constant kUiMuted is "90,96,110"
-constant kUiMono is "Courier"
+constant kUiBg = "237,239,243"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiOk = "20,120,40"
+constant kUiWarn = "160,90,10"
+constant kUiBad = "170,30,30"
+constant kUiMuted = "90,96,110"
+constant kUiMono = "Courier"
 
 -- The window chrome every adopter shares: stack size, ground color, the
 -- title band, and the one status line under it (write it with uiStatus).

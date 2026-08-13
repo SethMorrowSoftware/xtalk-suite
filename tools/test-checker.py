@@ -63,6 +63,24 @@ FIXTURES = [
      'library org.test.t\n\npublic handler tGo()\n   end switch\nend handler\n\nend library\n',
      "unexpected `end switch`"),
 
+    # -- constant declaration dialect (the carried-`is` slip, 2026-08-13) ----
+    ("LCS refuses the Builder constant spelling (is)",
+     "t.livecodescript",
+     'constant kFoo is 1\non tGo\n   put kFoo into tX\nend tGo\n',
+     "BUILDER spelling"),
+    ("LCS accepts its own constant spelling (=)",
+     "t.livecodescript",
+     'constant kFoo = 1\non tGo\n   put kFoo into tX\nend tGo\n',
+     None),
+    ("LCB refuses the Script constant spelling (=)",
+     "t.lcb",
+     'library org.test.t\n\nconstant kFoo = 1\n\npublic handler tGo()\n   variable tX as Integer\n   put kFoo into tX\nend handler\n\nend library\n',
+     "SCRIPT spelling"),
+    ("LCB accepts its own constant spelling (is)",
+     "t.lcb",
+     'library org.test.t\n\nconstant kFoo is 1\n\npublic handler tGo()\n   variable tX as Integer\n   put kFoo into tX\nend handler\n\nend library\n',
+     None),
+
     # -- engine-hostile constructs -------------------------------------------
     ("throw inside catch fires",
      "t.livecodescript",
