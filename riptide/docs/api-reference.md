@@ -9,7 +9,9 @@ the app owns).
 > harness: 133/133, 0 skipped, hasSha3 true. The phase-2 live layer below ran
 > its real-session puts and accepted lookups plus its synthetic ingest
 > verifier paths. The propagation half of phase 2 (a second machine walks the
-> chain) additionally needs two machines on a real DHT.
+> chain) closed 2026-08-13: `examples/riptide-social.livecodescript` ran on
+> two machines, feeds published and received in both directions through the
+> real DHT, every rendered post ingest-verified.
 
 ## Conventions
 

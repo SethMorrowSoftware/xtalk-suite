@@ -6,24 +6,27 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
-## Status: phase 2 (of 7) in the tree; single-engine harness passed
+## Status: phases 1-2 (of 7) COMPLETE, two-machine propagation included
 
 > **Honesty convention.** **Phases 1 and 2 are ENGINE-PASSED as of
 > 2026-08-12**, folded into the suite harness: 133/133, 0 skipped, every
 > extension probe true including hasSha3. The phase-2 run covered head publish
 > through the external-signing seam, content-addressed post publish, accepted
 > async lookups, and the ingest verifiers. Phase 2's propagation done-criterion
-> - a SECOND machine walks the chain and verifies every authorSig - still needs
-> two machines on a real DHT. rp1 DMs and onion streams are later phases; no
-> claim is made about them at all.
+> - a SECOND machine walks the chain and verifies every authorSig - **closed
+> 2026-08-13**: the maintainer ran the flagship stack on two machines,
+> identities created on both sides, feeds published and received in both
+> directions through the real DHT. rp1 DMs and onion streams are later
+> phases; no claim is made about them at all.
 >
-> The flagship STACK now exists for exactly that run:
-> `examples/riptide-social.livecodescript` (2026-08-13, on the suite UI kit)
-> walks identity, publish, and the verified chain walk on one card. It is
-> verified statically and needs its own OXT pass - it is also the first code
-> that can drive real btPoll DHT events into the ingest verifiers, which the
-> harness only ever fed synthetically. `examples/README.md` carries the
-> single-machine half and the two-machine done-criterion procedure.
+> The stack that closed it is `examples/riptide-social.livecodescript` (on
+> the suite UI kit): identity, publish, and the verified chain walk on one
+> card - a post renders only after `rsIngestHead`/`rsIngestPost` verify it,
+> so a received feed IS a verified walk. That run was also the first to
+> drive real btPoll DHT events into the ingest verifiers, which the harness
+> only ever fed synthetically. `examples/README.md` carries both run
+> procedures; result text and environments of the closing run were not
+> captured, so the record is the maintainer's dated account.
 
 What ships today, per the spec's phased roadmap (section 10.3, phases 1
 and 2):
