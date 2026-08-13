@@ -98,9 +98,12 @@ CoinXT/
     coin_reference.py       TEST TOOLING, not shipped: an independent implementation of the
                             phase-3 encodings, validated against the published vectors first so
                             it can serve as the oracle the script is checked against
-  examples/                 (later phases)
-    coinxt-demo.livecodescript    keygen, addresses, sign/verify, an HD wallet from a mnemonic
-    coinxt-tests.livecodescript   a pure, offline self-test harness (sPass/sFail, KATs)
+  examples/
+    coinxt-demo.livecodescript    the phase-6 demo: mnemonic -> accounts -> addresses ->
+                                  sign/verify -> a decoded, signed BTC + ETH transaction
+                                  (verified statically; needs its OXT pass). The offline
+                                  self-test role this tree once planned for examples/ is
+                                  filled by tests/coin-selftest.livecodescript
 ```
 
 ## The gates (run before any commit)
