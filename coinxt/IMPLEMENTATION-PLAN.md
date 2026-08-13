@@ -55,8 +55,10 @@ native seam and the KAT harness come first, because everything downstream trusts
 > CLOSED 2026-08-10** - 205/206 on the first folded run (the one red line was the trailing-separator
 > fail-open in `cxHdDerivePath`, fixed and re-modelled in the interpreter the same day), then 207/207
 > on the re-run with the fixed layer embedded in the paste. Phase 5
-> (transaction building) is the member's next critical path, and it is explicitly optional - the
-> primitive layer is shippable without it.
+> (transaction building) has since landed too: built 2026-08-11, executed headlessly, engine-passed
+> 2026-08-12 at 230/230, and independently accepted in all four transaction families 2026-08-13
+> (its own section below carries the record). It remains true that it was optional - the primitive
+> layer was shippable without it - but "next" it no longer is.
 
 ## The "done" bar (applies to every phase)
 
@@ -223,7 +225,13 @@ engine's one-trailing-delimiter chunk rule (fixed, pinned, and confirmed green i
 builds a FRESH native-P2WPKH transaction through the shipped script and python-bitcointx (a full
 consensus-shaped verifier) accepts it - `VerifyScript` under `SCRIPT_VERIFY_WITNESS`, its own BIP-143
 sighash matching the script's, with a flipped-signature and wrong-amount negative control each rejected.
-It is an acceptance run, not a CI gate (the pip verifier is not vendored; it SKIPS loudly without it).
+**Extended 2026-08-13 to all four shipped families**: the same tool now also builds a fresh legacy
+P2PKH spend (accepted under the same consensus evaluation, with a tampered-output control - the legacy
+sighash commits to the outputs) and fresh EIP-155 / EIP-1559 transactions, which eth-account accepts
+by recovering the exact sender, an independent RLP decode confirming every field; 31 checks, a
+negative control firing in every family.
+It is an acceptance run, not a CI gate (the pip verifiers are not vendored; each half SKIPS loudly
+without its packages).
 **A live testnet broadcast is the one bar left**, so nothing here is called broadcastable yet.
 **Risk retired:** the jump from "signs a digest" to "assembles a real transaction."
 Explicitly optional: the primitive layer (phases 1-4) is useful and shippable without this.
@@ -237,8 +245,12 @@ Explicitly optional: the primitive layer (phases 1-4) is useful and shippable wi
   token there is no way to run the phase-1 engine pass at all - the packaging step was blocking the
   phase-1 "done when" bar rather than following it. Pulling the export-filtering decision forward also
   matters more than it looks: once a surface ships it is frozen, and the unfiltered build exported 61
-  vendored trezor-crypto symbols (see `src/coinxt.map`). What is still genuinely phase 6 is the other
-  four platforms and a `tools/package-extension.py`.
+  vendored trezor-crypto symbols (see `src/coinxt.map`). Since written, both halves of that residue
+  have landed: FOUR platforms are committed and manifest-pinned (`x86_64-linux`, `x86-linux`,
+  `x86_64-win32`, `x86-win32` - the 2026-08-12 release run refreshed all four), and
+  `tools/package-extension.py` exists. What is still genuinely phase 6 on the packaging side is the
+  `universal-mac` build alone, a deliberate manual `lipo` step (CI builds no macOS lanes; see the
+  suite runbook).
 - A demo stack and a pure offline self-test harness, formatted like OnionXT's
   (`onionxt-demo` / `onionxt-tests` split): show key gen, address derivation, sign/verify, an HD wallet
   from a mnemonic, and (if phase 5) a signed transaction.

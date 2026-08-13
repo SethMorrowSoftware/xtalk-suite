@@ -889,3 +889,18 @@ untouched (no shim change: this is pure script over the existing primitives).
   testnet node: an external dependency the gate set cannot assume. **The one bar left is a live
   testnet broadcast**; "broadcastable" stays unclaimed until then, but "an independent decoder accepts
   our bytes" is now true.
+
+- **EXTENDED TO ALL FOUR FAMILIES (2026-08-13).** The 2026-08-12 run proved the claim for one family;
+  the shipped surface has four (legacy P2PKH, native P2WPKH, EIP-155, EIP-1559), and an acceptance
+  that samples one is exactly the shape of overstatement the gate lessons above exist to prevent.
+  `tools/verify-independent-decoder.py` now builds a FRESH transaction in every family. The legacy
+  spend signs the pre-BIP-143 preimage (DER by the SCRIPT this time, so both DER producers get an
+  external verdict between the two Bitcoin legs) and passes python-bitcointx's `VerifyScript`, with
+  a tampered-OUTPUT negative control because the legacy sighash commits to the outputs, not the spent
+  amount. The Ethereum pair (chain id 137, wei values above 2^53 so the big-int hex path is genuinely
+  exercised, a non-empty 1559 data payload) is accepted by **eth-account** - the recovery library
+  web3.py itself uses - which must recover the exact sender address from the script-built bytes, an
+  independent RLP decode confirming every field (the empty access list included) and a
+  flipped-signature control in each. 31 checks, green on python-bitcointx 1.1.5 + eth-account 0.13.7.
+  The Ethereum half SKIPS loudly without eth-account, the same contract as the Bitcoin half, and
+  `--require` fails on any skip. A live testnet broadcast remains the one bar left.

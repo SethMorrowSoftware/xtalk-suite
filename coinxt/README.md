@@ -12,8 +12,9 @@ a thin C ABI and a livecodescript API. One wrap covers both chains:
 - **Hashes** both chains need: SHA-256/512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST padding),
   RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
-- **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, WIF, and the
-  EIP-55 Ethereum checksum.
+- **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, and the
+  EIP-55 Ethereum checksum. (WIF is designed in SPEC.md but not yet shipped - calling it is a
+  `handler not found`.)
 
 ```
 app (livecodescript)
@@ -213,8 +214,11 @@ own deterministic signatures), the same net phases 3-4 carry. It caught a defect
 not - `cxBtcTxEncode` refused to assemble the reference transaction because its trailing-empty scriptSig
 collapses under the engine's one-trailing-delimiter chunk rule (fixed and pinned). The **on-engine pass
 landed 2026-08-12** (Windows x64): the folded suite harness ran the whole coinxt surface at 230/230,
-the BIP-143 signed transaction byte for byte included. The one open bar is external: no transaction
-should be called broadcastable until an independent decoder or testnet node accepts it.
+the BIP-143 signed transaction byte for byte included. The first half of the external bar is met too
+(2026-08-12, extended 2026-08-13 to all four families): `tools/verify-independent-decoder.py` has
+python-bitcointx accept fresh legacy and segwit spends under consensus rules, and eth-account recover
+the exact sender from fresh EIP-155 and EIP-1559 transactions, negative controls firing in every
+family. A live testnet broadcast is the one bar left before any transaction is called broadcastable.
 Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
