@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="Signal arcs on a night field">
+  <rect width="480" height="360" fill="#0b1020"/>
+  <g fill="none" stroke="#38bdf8" stroke-linecap="round">
+    <path d="M120 250 a120 120 0 0 1 240 0" stroke-width="6" opacity="0.9"/>
+    <path d="M90 262 a160 160 0 0 1 300 0" stroke-width="5" opacity="0.55"/>
+    <path d="M62 274 a196 196 0 0 1 356 0" stroke-width="4" opacity="0.32"/>
+    <path d="M38 286 a228 228 0 0 1 404 0" stroke-width="3" opacity="0.18"/>
+  </g>
+  <circle cx="240" cy="252" r="14" fill="#f472b6"/>
+  <circle cx="240" cy="252" r="26" fill="none" stroke="#f472b6" stroke-width="2" opacity="0.5"/>
+  <g fill="#e2e8f0">
+    <circle cx="70" cy="66" r="2"/><circle cx="150" cy="40" r="1.6"/><circle cx="236" cy="84" r="2.2"/>
+    <circle cx="330" cy="50" r="1.8"/><circle cx="410" cy="92" r="2"/><circle cx="440" cy="30" r="1.4"/>
+    <circle cx="30" cy="140" r="1.5"/><circle cx="390" cy="160" r="1.7"/><circle cx="110" cy="180" r="1.3"/>
+  </g>
+</svg>

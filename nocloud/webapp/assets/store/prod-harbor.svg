@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="Harbor single">
+  <defs>
+    <linearGradient id="phg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#164e63"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="360" fill="url(#phg)"/>
+  <circle cx="352" cy="92" r="44" fill="#e2e8f0"/>
+  <circle cx="338" cy="80" r="40" fill="#0f172a" opacity="0.35"/>
+  <g stroke="#22d3ee" stroke-linecap="round">
+    <line x1="40" y1="230" x2="200" y2="230" stroke-width="5" opacity="0.8"/>
+    <line x1="250" y1="230" x2="440" y2="230" stroke-width="5" opacity="0.5"/>
+    <line x1="80" y1="258" x2="300" y2="258" stroke-width="4" opacity="0.45"/>
+    <line x1="340" y1="258" x2="430" y2="258" stroke-width="4" opacity="0.3"/>
+    <line x1="40" y1="286" x2="160" y2="286" stroke-width="3" opacity="0.3"/>
+    <line x1="200" y1="286" x2="420" y2="286" stroke-width="3" opacity="0.22"/>
+    <line x1="100" y1="312" x2="380" y2="312" stroke-width="2" opacity="0.16"/>
+  </g>
+  <text x="240" y="62" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="700" fill="#e2e8f0">HARBOR</text>
+</svg>

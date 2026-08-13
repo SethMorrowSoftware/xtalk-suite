@@ -146,9 +146,10 @@ if [ -f tools/check-stack-size.py ]; then
 fi
 
 # --- static gates for every member (always run) ---
-# riptide is not an extension but carries the same gate shape (script checker,
-# golden glob, vector gate, docs style), so it rides the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide; do
+# riptide and nocloud are not extensions but carry the same gate shape
+# (script checker, golden glob, vector gate, docs style), so they ride the
+# same loop.
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 

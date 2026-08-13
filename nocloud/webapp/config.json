@@ -1,0 +1,5 @@
+{
+  "app": "No Cloud Quick Share",
+  "demo": true,
+  "note": "Served as /api/config by a file route in .qsroutes.json - the bytes stream straight from disk, Range-aware, confined to the shared folder."
+}

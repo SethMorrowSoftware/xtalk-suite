@@ -1,0 +1,39 @@
+{
+  "_comment": "Add your own HTTP endpoints WITHOUT touching LiveCode. Drop this file (named .qsroutes.json) in the folder you share; No Cloud Quick Share reads it and serves the routes below. A route returns a canned body (optionally with {{...}} request values, always escaped), a file from this folder, or a redirect - no code runs. Paths under /_qs/ and /_edit/ are reserved, header values are sanitised, and this dotfile itself is never served. Requires the engine's JSON support (fails closed if absent). See docs/user-routes.md.",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/hello",
+      "type": "application/json; charset=utf-8",
+      "body": "{\"hello\":\"from a folder\",\"cloud\":false,\"defined_in\":\".qsroutes.json\"}",
+      "cors": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/note",
+      "type": "text/plain; charset=utf-8",
+      "body": "This endpoint was declared in .qsroutes.json - no LiveCode, no cloud.",
+      "headers": { "X-Defined-By": "qsroutes.json" }
+    },
+    {
+      "method": "GET",
+      "path": "/api/echo",
+      "type": "application/json; charset=utf-8",
+      "template": true,
+      "body": "{\"method\":\"{{method}}\",\"path\":\"{{path}}\",\"you_said\":\"{{query.msg}}\",\"served\":\"{{date}}\"}",
+      "cors": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/config",
+      "file": "config.json",
+      "type": "application/json; charset=utf-8"
+    },
+    {
+      "method": "GET",
+      "path": "/go/gallery",
+      "redirect": "/gallery",
+      "status": 302
+    }
+  ]
+}

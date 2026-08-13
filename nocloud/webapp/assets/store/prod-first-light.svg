@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="First Light single">
+  <defs>
+    <linearGradient id="p1g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/><stop offset="0.7" stop-color="#7c3aed"/><stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="360" fill="url(#p1g)"/>
+  <circle cx="240" cy="288" r="60" fill="#fde68a"/>
+  <g stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.9">
+    <line x1="120" y1="150" x2="120" y2="182"/><line x1="150" y1="140" x2="150" y2="196"/>
+    <line x1="180" y1="128" x2="180" y2="206"/><line x1="210" y1="118" x2="210" y2="216"/>
+    <line x1="240" y1="110" x2="240" y2="224"/><line x1="270" y1="118" x2="270" y2="216"/>
+    <line x1="300" y1="128" x2="300" y2="206"/><line x1="330" y1="140" x2="330" y2="196"/>
+    <line x1="360" y1="150" x2="360" y2="182"/>
+  </g>
+  <text x="240" y="62" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="700" fill="#ffffff">FIRST LIGHT</text>
+</svg>

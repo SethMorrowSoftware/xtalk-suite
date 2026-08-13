@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="No Cloud sticker sheet">
+  <rect width="480" height="360" rx="14" fill="#eef2f8"/>
+  <!-- sticker 1: crossed-out cloud -->
+  <g transform="translate(38,34)">
+    <rect width="180" height="130" rx="12" fill="#ffffff" stroke="#dbe3ef"/>
+    <path d="M52 84 a22 22 0 0 1 6 -43 a30 30 0 0 1 57 -8 a24 24 0 0 1 15 45 z" fill="#93c5fd"/>
+    <line x1="34" y1="98" x2="146" y2="26" stroke="#ef4444" stroke-width="9" stroke-linecap="round"/>
+    <text x="90" y="116" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="700" fill="#1c2430">NO CLOUD</text>
+  </g>
+  <!-- sticker 2: the share code pill -->
+  <g transform="translate(258,34)">
+    <rect width="184" height="58" rx="29" fill="#2c5aa0"/>
+    <text x="92" y="36" text-anchor="middle" font-family="monospace" font-size="19" fill="#ffffff">btih:8c2a...</text>
+  </g>
+  <!-- sticker 3: onion -->
+  <g transform="translate(258,116)">
+    <rect width="86" height="86" rx="43" fill="#ffffff" stroke="#dbe3ef"/>
+    <circle cx="43" cy="43" r="26" fill="none" stroke="#7c3aed" stroke-width="4"/>
+    <circle cx="43" cy="43" r="16" fill="none" stroke="#7c3aed" stroke-width="3.4" opacity="0.7"/>
+    <circle cx="43" cy="43" r="7" fill="#7c3aed"/>
+  </g>
+  <!-- sticker 4: lightning folder -->
+  <g transform="translate(356,116)">
+    <rect width="86" height="86" rx="12" fill="#ffffff" stroke="#dbe3ef"/>
+    <path d="M16 34 l14 -12 h18 l6 8 h16 a6 6 0 0 1 6 6 v28 a6 6 0 0 1 -6 6 h-48 a6 6 0 0 1 -6 -6 z" fill="#f6ad3b"/>
+    <path d="M46 28 l-12 22 h10 l-6 20 l20 -26 h-11 l8 -16 z" fill="#ffffff"/>
+  </g>
+  <!-- sticker 5: wordmark -->
+  <g transform="translate(38,196)">
+    <rect width="404" height="128" rx="12" fill="#0b1020"/>
+    <text x="202" y="52" text-anchor="middle" font-family="sans-serif" font-size="26" font-weight="700" fill="#e2e8f0">No Cloud Quick Share</text>
+    <text x="202" y="86" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#7ea6e0">your files, straight from your machine</text>
+    <circle cx="84" cy="72" r="5" fill="#38bdf8"/><circle cx="320" cy="72" r="5" fill="#f472b6"/>
+    <path d="M89 72 h226" stroke="#334155" stroke-width="2" stroke-dasharray="6 6"/>
+  </g>
+</svg>

@@ -1,0 +1,76 @@
+{
+  "shop": "The No Cloud Shop",
+  "tagline": "Digital goods delivered by the very server you are browsing. Pay-what-you-want, and the demo price is zero.",
+  "products": [
+    {
+      "id": "art-pack",
+      "title": "The Aurora Art Pack",
+      "blurb": "All eight gallery pieces as crisp, infinitely scalable SVG. Zipped by hand, served by the folder.",
+      "image": "assets/store/prod-artpack.svg",
+      "file": "assets/store/art-pack.zip",
+      "kind": "zip archive",
+      "size": "5 KB",
+      "price": 0
+    },
+    {
+      "id": "film",
+      "title": "First Light - the short film",
+      "blurb": "The 46-second procedural short you can stream in the Theater, yours to keep in H.264.",
+      "image": "assets/store/prod-film.svg",
+      "file": "assets/film.mp4",
+      "kind": "MP4 video",
+      "size": "2.2 MB",
+      "price": 0
+    },
+    {
+      "id": "track-first-light",
+      "title": "First Light (title theme)",
+      "blurb": "The ambient title theme: slow major-seventh pads and far-away bells.",
+      "image": "assets/store/prod-first-light.svg",
+      "file": "assets/music/first-light.mp3",
+      "kind": "MP3 audio",
+      "size": "0.5 MB",
+      "price": 0
+    },
+    {
+      "id": "track-packet-rain",
+      "title": "Packet Rain",
+      "blurb": "Sixteenth-note plucks falling like packets on a wire. The up-tempo one.",
+      "image": "assets/store/prod-packet-rain.svg",
+      "file": "assets/music/packet-rain.mp3",
+      "kind": "MP3 audio",
+      "size": "0.6 MB",
+      "price": 0
+    },
+    {
+      "id": "track-harbor",
+      "title": "Harbor",
+      "blurb": "Slow water, deep bass, a little moonlight. For late-night seeding sessions.",
+      "image": "assets/store/prod-harbor.svg",
+      "file": "assets/music/harbor.mp3",
+      "kind": "MP3 audio",
+      "size": "0.4 MB",
+      "price": 0
+    },
+    {
+      "id": "wallpaper",
+      "title": "Gradient wallpaper",
+      "blurb": "The gallery's raster gradient at full size, ready for a desktop near you.",
+      "image": "assets/store/prod-wallpaper.svg",
+      "file": "assets/photo.png",
+      "kind": "PNG image",
+      "size": "69 KB",
+      "price": 0
+    },
+    {
+      "id": "stickers",
+      "title": "No Cloud sticker sheet",
+      "blurb": "Five vector stickers - print them, cut them, put them on the laptop that seeds.",
+      "image": "assets/stickers.svg",
+      "file": "assets/stickers.svg",
+      "kind": "SVG sheet",
+      "size": "3 KB",
+      "price": 0
+    }
+  ]
+}

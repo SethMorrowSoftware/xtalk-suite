@@ -32,6 +32,13 @@ openxtalk-libraries/
                        implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
                        phase in pure script; structured like a member so the
                        gate machinery walks it; has its own CLAUDE.md
+  nocloud/             a SHIPPED APP (not an extension): No Cloud Quick Share,
+                       one stack over torrentxt (+ optional sodiumxt/onionxt),
+                       folded in from its standalone repo 2026-08-13 (that
+                       repo becomes a mirror, like the other pre-suite repos);
+                       member-shaped so the gates walk it; its checker copy
+                       was replaced with the unified one in the fold commit;
+                       has its own CLAUDE.md
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /
