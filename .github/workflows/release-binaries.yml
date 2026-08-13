@@ -106,7 +106,12 @@ jobs:
         # These rows are PORTED VERBATIM from each member's own native-*.yml,
         # which is the copy that is known to work. When a member's dependencies
         # change, change them there and mirror the row here - do not re-derive
-        # them, which is what produced the failure above.
+        # them, which is what produced the failure above. ONE deliberate
+        # exception: torrentxt's x86_64-linux row diverges from its native lane
+        # on purpose - the RELEASE build runs in a manylinux container for the
+        # portability floor (see that row), while native-torrentxt.yml stays a
+        # stock runner because it exists for fast per-push feedback and its
+        # artifacts are never committed.
         include:
           # ---- sodiumxt: builds libsodium from source; vcpkg + NMake on Windows
           - member: sodiumxt
@@ -137,10 +142,27 @@ jobs:
             win_style: nmake
 
           # ---- torrentxt: Boost + OpenSSL + zlib; libtorrent from vcpkg on Windows
+          #
+          # The x64 RELEASE build runs INSIDE a manylinux_2_28 container so the
+          # committed .so floors at glibc 2.28 (AlmaLinux 8) instead of
+          # inheriting whatever the stock runner ships (the 2026-08-12 run's
+          # artifact measures glibc 2.38 + a dynamic libssl.so.3), with OpenSSL
+          # STATIC-linked so no libssl/libcrypto soname is required at all.
+          # Why 2_28 and not the manylinux2014 (glibc 2.17) building.md
+          # originally sketched: GitHub's node20-based actions (checkout,
+          # upload-artifact) refuse to start in a glibc-2.17 container, and the
+          # only distro the lower floor would add - CentOS 7 - has been EOL
+          # since June 2024. The image tag floats on purpose: the CONTRACT is
+          # the floor, and the "Assert the portability floor" step fails the
+          # job if an image update ever raises it. Dependencies arrive as
+          # pinned, hash-checked downloads in their own step below; the paths
+          # in cmake_args are where that step installs them.
           - member: torrentxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
-            apt: g++ cmake ninja-build libboost-dev libssl-dev zlib1g-dev
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            cmake_args: -DBOOST_ROOT=/opt/boost-1.86.0 -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
             build_jobs: 2          # libtorrent from source OOMs a runner at -j4
           - member: torrentxt
             platform_id: x86-linux
@@ -204,12 +226,18 @@ jobs:
             triplet: x86-windows-static
             cmake_args: -A Win32
     runs-on: ${{ matrix.os }}
+    # Empty for every row that does not set one, which Actions treats as "no
+    # container" - only the manylinux lane runs containerized.
+    container: ${{ matrix.container }}
     defaults:
       run:
         working-directory: ${{ matrix.member }}
     steps:
       - uses: actions/checkout@v4
+      # The manylinux image supplies its own CPython (setup-python cannot
+      # install into a container it did not provision).
       - uses: actions/setup-python@v5
+        if: ${{ !matrix.container }}
         with:
           python-version: "3.x"
 
@@ -230,6 +258,43 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_i386 }}
+
+      # The manylinux lane's dependencies are PINNED DOWNLOADS, hash-checked
+      # before use (the libsodium discipline: the pin is the integrity gate).
+      # The image supplies the old-glibc toolchain (gcc-toolset on PATH) and a
+      # CPython under /opt/python; cmake and ninja come from that CPython's
+      # pip, so the lane never depends on which build tools a given image tag
+      # happens to bundle. Boost is HEADERS ONLY (libtorrent builds via
+      # FetchContent and needs nothing linked from Boost), extracted from the
+      # b2-nodocs release archive, which carries the flattened boost/ tree.
+      # OpenSSL builds static (no-shared no-module) so the resulting .so
+      # carries its TLS stack instead of requiring a host libssl soname.
+      - name: Acquire pinned deps (manylinux lane)
+        if: matrix.manylinux
+        shell: bash
+        working-directory: /
+        run: |
+          set -euo pipefail
+          PYBIN=/opt/python/cp312-cp312/bin
+          "$PYBIN/python3" -m pip install --quiet cmake ninja
+          ln -sf "$PYBIN/python3" /usr/local/bin/python3
+          ln -sf "$PYBIN/cmake"   /usr/local/bin/cmake
+          ln -sf "$PYBIN/ctest"   /usr/local/bin/ctest
+          ln -sf "$PYBIN/ninja"   /usr/local/bin/ninja
+          command -v perl >/dev/null    # OpenSSL's Configure needs it; the image ships it
+          curl -fsSL -o /tmp/boost.tar.gz \
+            https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
+          echo "2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26  /tmp/boost.tar.gz" | sha256sum -c -
+          tar -C /opt -xzf /tmp/boost.tar.gz boost-1.86.0/boost
+          curl -fsSL -o /tmp/openssl.tar.gz \
+            https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz
+          echo "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  /tmp/openssl.tar.gz" | sha256sum -c -
+          tar -C /tmp -xzf /tmp/openssl.tar.gz
+          cd /tmp/openssl-3.5.4
+          ./Configure linux-x86_64 no-shared no-module no-tests -fPIC \
+            --prefix=/opt/static-openssl --libdir=lib >/dev/null
+          make -s -j"$(nproc)" >/dev/null 2>&1
+          make -s install_sw >/dev/null 2>&1
 
       - name: Set up vcpkg
         if: matrix.vcpkg_port
@@ -303,6 +368,34 @@ jobs:
         run: |
           ls -l "src/code/${{ matrix.platform_id }}/"
           test -n "$(ls src/code/${{ matrix.platform_id }}/${{ matrix.member }}.* 2>/dev/null)"
+
+      # The manylinux lane's CONTRACT, asserted where the artifact is born:
+      # nothing dynamic beyond glibc and the loader (OpenSSL, libstdc++,
+      # libgcc, Boost all static), and a glibc floor no higher than the
+      # image's 2.28. If a future image raises the floor, or a dependency
+      # quietly returns to dynamic linking, this fails the job instead of
+      # shipping a binary that stopped loading on the older distros the lane
+      # exists for. The smoke test already RAN in this container (the Test
+      # step above), so the artifact's toolchain is execution-proven too.
+      - name: Assert the portability floor (manylinux lane)
+        if: matrix.manylinux
+        shell: bash
+        run: |
+          set -euo pipefail
+          so="src/code/${{ matrix.platform_id }}/${{ matrix.member }}.so"
+          echo "dynamic dependencies:"
+          readelf -d "$so" | grep NEEDED || true
+          if readelf -d "$so" | grep -E 'Shared library: \[(libssl|libcrypto|libstdc\+\+|libgcc_s|libboost)'; then
+            echo "FAIL: a dependency that must be static is dynamic"
+            exit 1
+          fi
+          max=$(objdump -T "$so" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sort -uV | tail -1)
+          echo "max glibc symbol version referenced: $max"
+          highest=$(printf '%s\n' "$max" GLIBC_2.28 | sort -V | tail -1)
+          if [ "$highest" != "GLIBC_2.28" ]; then
+            echo "FAIL: the glibc floor is above 2.28"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

@@ -512,7 +512,9 @@ before its predecessor's gate is green.
 - **Phase 5 (optional) — The visual widget.** An LCB `widget` dashboard (overall +
   per-torrent progress, rates, peer count, a piece-completion grid driven by the
   bitfield snapshot), refreshing at ≤ 4 Hz on change. Pure presentation over the
-  Phase-1/2 status calls.
+  Phase-1/2 status calls. **Decided 2026-08-13: out of v1 scope.** The library is
+  complete without it; this phase stays recorded as a possible post-v1 addition,
+  so its absence is a decision with a date, not an open item.
 
 ---
 
