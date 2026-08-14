@@ -36,7 +36,10 @@ ADOPTERS = [
     os.path.join("datachannelxt", "examples", "datachannel-dht-chat.livecodescript"),
     os.path.join("datachannelxt", "examples", "datachannel-loopback.livecodescript"),
     os.path.join("enetxt", "examples", "enet-lan-chat.livecodescript"),
+    os.path.join("onionxt", "examples", "onionxt-demo.livecodescript"),
+    os.path.join("onionxt", "examples", "onion-httpd", "spike.livecodescript"),
     os.path.join("riptide", "examples", "riptide-social.livecodescript"),
+    os.path.join("sodiumxt", "examples", "sodium-demo.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
 ]
