@@ -61,15 +61,30 @@ script "DataChannelDhtChat"
 --   3. Machine B pastes the code and clicks Join. Watch the status walk:
 --      fetch offer -> publish answer -> connecting -> OPEN. Expect first
 --      contact to take roughly 10-30 s (two DHT round-trips plus ICE).
---      (This walkthrough is verified statically; needs an OXT pass.)
 --   4. Type. The messages now travel peer-to-peer over DTLS - close the DHT
 --      out of your mind; it was only the introduction.
 --   If both NATs are hostile (rare), add a TURN server line to the ICE field
 --   on BOTH sides: turn:user:pass@host:port?transport=udp - the status line
 --   shows whether the final path is direct or relayed.
+--
+-- HONESTY (the suite convention): every dc* and bt* handler used here is
+-- individually engine-proven, but this two-machine walkthrough has no
+-- recorded engine run and the UI was unified onto the suite kit 2026-08-14 -
+-- the stack as a whole is verified statically; needs an OXT pass (the
+-- closing pass's section E drives the same handshake shape).
+--
+-- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
+-- byte-identical). Change the look in the master, never here.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kWxUiVersion = "dhtchat-ui-2026-08"
+constant kWxUiVersion = "dhtchat-kit2-1"
+-- Ticks (of kWxTickMs) before the joiner is TOLD the offer is not there yet,
+-- and the gathering watchdog's own deadline. Neither aborts anything - the
+-- retries are the design - they just stop a silent wait from reading as a
+-- hang (the enet closing-pass lesson).
+constant kWxOfferHintTicks = 25
+constant kWxGatherMs = 20000
 
 -- The wire format above, pinned. kWxMagic versions the blob; bump it (and both
 -- sides) on ANY change to the framing. The chunk size stays comfortably under
@@ -118,6 +133,343 @@ local sPubCount         -- number of chunks in sPubChunks (0 = direct head)
 local sFetchTargets     -- comma-list of 40-hex chunk targets being fetched
 local sFetchHave        -- array target -> chunk bytes received so far
 local sFetchTries       -- ticks spent fetching (bounded by kWxFetchTriesMax)
+
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v2 END ====
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -175,42 +527,34 @@ command wxBuild
    end if
    wxClearGeneratedUI
    lock screen
-   set the width of this stack to 560
-   set the height of this stack to 640
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "DataChannelXT - P2P chat over DHT-signalled WebRTC"
-   -- title band
-   wxLabel "wxTitle", "  P2P chat - WebRTC data channel, DHT-signalled, no server anywhere", "0,0,560,40", 14
-   set the opaque of field "wxTitle" to true
-   set the backgroundColor of field "wxTitle" to "44,90,160"
-   set the foregroundColor of field "wxTitle" to "255,255,255"
-   set the textStyle of field "wxTitle" to "bold"
-   wxLabel "wxTagline", "One side Hosts and sends the room code to the other, who Joins. The BitTorrent DHT carries the WebRTC handshake; the chat itself is a direct, DTLS-encrypted data channel between the two machines.", "16,46,544,92", 10
-   set the foregroundColor of field "wxTagline" to "90,96,105"
+   uiChrome "P2P chat - WebRTC data channel, DHT-signalled, no server anywhere", 560, 640
+   uiCap "wxTagline", "One side Hosts and sends the room code to the other, who Joins. The BitTorrent DHT carries the WebRTC handshake; the chat itself is a direct, DTLS-encrypted data channel between the two machines.", "16,56,544,102"
    -- host / join row
-   wxButton "wxHost", "Host a room", "16,100,150,130"
-   wxLabel "wxCodeCap", "Room code (yours after Host; paste your friend's to Join):", "160,98,544,116", 10
-   wxField "wxCode", "160,118,470,144", false
-   wxButton "wxJoin", "Join", "476,116,544,146"
-   wxButton "wxCopy", "Copy code", "16,136,150,162"
+   uiButton "wxHost", "Host a room", "16,106,150,136"
+   uiCap "wxCodeCap", "Room code (yours after Host; paste your friend's to Join):", "160,104,544,122"
+   uiInput "wxCode", "160,124,470,148"
+   uiButton "wxJoin", "Join", "476,122,544,152"
+   uiButton "wxCopy", "Copy code", "16,142,150,168"
    -- ICE servers
-   wxLabel "wxIceCap", "ICE servers (one URI per line; add a turn: line if both NATs are hostile):", "16,170,544,188", 10
-   wxField "wxIce", "16,190,544,222", false
+   uiCap "wxIceCap", "ICE servers (one URI per line; add a turn: line if both NATs are hostile):", "16,176,544,194"
+   uiInput "wxIce", "16,196,544,228"
    put kWxDefaultIce into field "wxIce"
    -- your name
-   wxLabel "wxNameCap", "Your name:", "16,230,100,250", 10
-   wxField "wxName", "100,228,280,252", false
-   wxButton "wxDrop", "Disconnect", "290,226,410,254"
-   wxButton "wxAgain", "Reconnect", "416,226,544,254"
-   -- status
-   wxLabel "wxStatus", "Starting...", "16,262,544,282", 10
-   set the foregroundColor of field "wxStatus" to "90,96,105"
-   -- combined event + chat log
-   wxList "wxLog", "16,290,544,580"
-   set the textSize of field "wxLog" to 11
+   uiCap "wxNameCap", "Your name:", "16,236,100,254"
+   uiInput "wxName", "100,234,280,258"
+   uiButton "wxDrop", "Disconnect", "290,232,410,260"
+   uiButton "wxAgain", "Reconnect", "416,232,544,260"
+   -- combined event + chat log (the status line is the kit's, under the band)
+   uiArea "wxLog", "16,268,544,540"
    -- message box + send
-   wxField "wxMsg", "16,588,420,616", false
-   wxButton "wxSend", "Send", "430,586,544,618"
+   uiInput "wxMsg", "16,548,420,574"
+   uiButton "wxSend", "Send", "430,546,544,576"
+   uiFooter \
+         "The room code is a write-capability: anyone who has it can read the" \
+         & " handshake blobs (they contain your addresses) until the chat" \
+         & " opens. The chat itself is direct and DTLS-encrypted. Verified" \
+         & " statically; needs an OXT pass.", \
+         "16,582,544,634"
    wxAddTips
    set the uWxUiVersion of this stack to kWxUiVersion
    unlock screen
@@ -231,49 +575,6 @@ command wxClearGeneratedUI
    end repeat
    unlock screen
 end wxClearGeneratedUI
-
-command wxLabel pName, pText, pRect, pSize
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the borderWidth of field pName to 0
-   set the opaque of field pName to false
-   set the textSize of field pName to pSize
-   put pText into field pName
-end wxLabel
-
-command wxField pName, pRect, pLocked
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to pLocked
-   set the traversalOn of field pName to (not pLocked)
-end wxField
-
-command wxButton pName, pLabel, pRect
-   if there is no button pName then
-      create button
-      set the name of the last button to pName
-   end if
-   set the rect of button pName to pRect
-   set the label of button pName to pLabel
-end wxButton
-
-command wxList pName, pRect
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the vScrollbar of field pName to true
-   set the listBehavior of field pName to false
-end wxList
 
 command wxAddTips
    set the tooltip of button "wxHost" to "Mint a fresh room code and publish a WebRTC offer under it on the DHT."
@@ -495,6 +796,7 @@ command wxBeginOffer
    put wxRandomNonce() into sNonce
    put empty into sSeenAnswerNonce
    put "gathering" into sPhase
+   send "wxGatherWatch" to me in kWxGatherMs milliseconds
    put 0 into sTicks
    wxClearFetch
    wxClearPublished
@@ -625,14 +927,36 @@ command wxRepublish
       exit wxRepublish
    end if
    repeat with tI = 1 to sPubCount
-      get btDhtPutImmutable(sSession, sPubChunks[tI])
+      put btDhtPutImmutable(sSession, sPubChunks[tI]) into tR
+      if tR < 0 then
+         wxLog "* chunk republish" && tI && "FAILED (" & tR & "):" && btLastError()
+      end if
    end repeat
    if sRole is "host" then
       put btDhtPutMutable(sSession, sKeys["publicKey"], sKeys["secretKey"], kWxSaltOffer, sPubHead) into tR
    else
       put btDhtPutMutable(sSession, sKeys["publicKey"], sKeys["secretKey"], kWxSaltAnswer, sPubHead) into tR
    end if
+   -- the old version put this into tR and never read it - a dead session
+   -- would have stopped every republish silently, which is the one failure
+   -- the republish cadence exists to defend against
+   if tR < 0 then
+      wxLog "* head republish FAILED (" & tR & "):" && btLastError()
+      wxSetStatus "Republish failing - the session may be gone. See the log.", "bad"
+   end if
 end wxRepublish
+
+-- The gathering watchdog: non-trickle signaling publishes ONLY when ICE
+-- gathering completes, so a machine whose STUN is blocked sits in
+-- "gathering" forever with nothing on the wire and nothing on screen. Name
+-- it; the phase machine is untouched (gathering may still complete late).
+command wxGatherWatch
+   if sPhase is not "gathering" then
+      exit wxGatherWatch
+   end if
+   wxLog "* still gathering candidates after" && (kWxGatherMs div 1000) && "s: STUN may be blocked on this network. Chat may still work LAN-only; a turn: line in the ICE field is the fix for the general case."
+   wxSetStatus "ICE gathering is slow - STUN blocked? See the log.", "warn"
+end wxGatherWatch
 
 -- ---- the signal tick: poll the far side, retry chunks, republish -------------
 -- ONE standing chain (armed in wxStart). Reschedules FIRST so no body path can
@@ -651,6 +975,12 @@ command wxSignalTick
       exit wxSignalTick
    end if
    add 1 to sTicks
+   -- a joiner still offer-less after the hint window is TOLD so, once - a
+   -- wrong or stale code otherwise reads as an indefinite silent hang
+   if sRole is "join" and sPhase is "fetch-offer" and sTicks is kWxOfferHintTicks then
+      wxLog "* still no offer after" && ((kWxOfferHintTicks * kWxTickMs) div 1000) && "s. Is the host online with THIS exact code? Codes are single-use: Reconnect on both sides mints a fresh handshake."
+      wxSetStatus "Still looking for the host's offer - see the log.", "warn"
+   end if
    -- what is the far side's mailbox slot for my role?
    if sRole is "host" and sPhase is "waiting-answer" then
       put kWxSaltAnswer into tWant
@@ -873,6 +1203,7 @@ command wxApplyOffer pNonce, pKind, pSdp
    put pNonce into sSeenOfferNonce
    put pNonce into sNonce -- echoed into our answer blob
    put "gathering" into sPhase
+   send "wxGatherWatch" to me in kWxGatherMs milliseconds
    wxClearPublished
    wxLog "Offer received. Building the answer (STUN)..."
    -- applying a remote OFFER makes libdatachannel produce the answer and start
@@ -1030,9 +1361,11 @@ command wxDashOnce
 end wxDashOnce
 
 -- ---- small helpers -----------------------------------------------------------
-command wxSetStatus pText
-   if there is a field "wxStatus" then
-      set the text of field "wxStatus" to pText
+command wxSetStatus pText, pKind
+   -- the kit's status line under the title band; pKind (ok/warn/bad/empty)
+   -- colors it semantically, and the one-argument call sites stay muted
+   if there is a field "uiStatus" then
+      uiStatus pText, pKind
    end if
 end wxSetStatus
 
