@@ -623,6 +623,18 @@ private command rstSectionAnon pCaps
          "public persona: rp1 is allowed"
    rstCheck (rsPersonaAllows(false, "onion") is false), \
          "public persona: the anon onion route is REFUSED"
+   -- feed and media are in the guard's own known-transport list, so the
+   -- "full truth table" must assert them too - an anon persona reaching
+   -- either is the exact DHT/torrent-under-the-anon-key leak the guard
+   -- exists to prevent, and a hole here would be a silent deanonymization
+   rstCheck (rsPersonaAllows(true, "feed") is false), \
+         "anon persona: the public feed is REFUSED"
+   rstCheck (rsPersonaAllows(true, "media") is false), \
+         "anon persona: torrent media is REFUSED"
+   rstCheck (rsPersonaAllows(false, "feed") is true), \
+         "public persona: the feed is allowed"
+   rstCheck (rsPersonaAllows(false, "media") is true), \
+         "public persona: media is allowed"
    -- fail-closed: an unknown transport is refused for BOTH personas
    rstCheck (rsPersonaAllows(true, "smoke-signal") is false), \
          "an unknown transport is refused for an anon persona"
@@ -647,6 +659,11 @@ private command rstSectionAnon pCaps
          "a truncated BTXO header is refused"
    rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
          "a negative total size is refused"
+   -- a header whose name field is invalid UTF-8 (0xFF) passes the exact
+   -- length gate but must be REFUSED, not thrown (the never-throw contract)
+   rstCheck (rsBtxoParseHeader(rstBin("4254584f0100" & "0001" & "ff" & \
+         "000000000000000b")) is empty), \
+         "a non-UTF-8 file name in a BTXO header is refused, not thrown"
    -- the onion-service wrapper: refusals run offline
    rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
@@ -667,6 +684,7 @@ end rstSectionAnon
 -- response" property is checked with a second, different nonce.
 private command rstSectionLan
    local tKeys, tChallenge, tResponse, tNonce2, tChallenge2, tName, tBadName
+   local tBadUtf
    rstSection "phase 6 - LAN mesh admission"
    put rsLanKeys(rstBin(kRsGoldMasterHex)) into tKeys
    rstCheck (rstHex(tKeys["publicKey"]) is kRsGoldLanPub), \
@@ -720,6 +738,15 @@ private command rstSectionLan
          "a 31-byte nonce is refused"
    rstCheck (rsLanBuildChallenge("", rstBin(kRsGoldLanNonce)) is empty), \
          "an empty device name is refused"
+   -- a name field of INVALID UTF-8 (0xFF 0xFE) passes the exact-length gate
+   -- but must be REFUSED, not thrown, out of the parser (the never-throw
+   -- contract; a LAN peer could otherwise crash the admission drain)
+   put rstBin("52534c314302fffe") & rstBin(kRsGoldLanNonce) into tBadUtf
+   rstCheck (rsLanParseChallenge(tBadUtf) is empty), \
+         "a non-UTF-8 device name in a challenge is refused, not thrown"
+   put rstBin("52534c31520180") & (byte -64 to -1 of tResponse) into tBadUtf
+   rstCheck (rsLanParseResponse(tBadUtf) is empty), \
+         "a non-UTF-8 device name in a response is refused, not thrown"
 end rstSectionLan
 
 -- The phase-4 DM layer. The pure half (keys, records, session derivation,

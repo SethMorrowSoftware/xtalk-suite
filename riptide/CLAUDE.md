@@ -306,6 +306,54 @@ both noted below.
   the derivation, the guard, the service wrapper, and BTXO; the sealed
   inbound DM is the one piece left.
 
+## The phase 4-7 adversarial review (2026-08-14)
+
+After building phases 4-7, a five-lens adversarial review (crypto
+correctness, wire-parse safety, dialect laws, demo state machines, gate
+integrity) ran over the new code. The crypto came back CLEAN and that is
+worth recording: the pure-Python X25519/crypto_kx matches libsodium's
+construction exactly (checked byte-for-byte against a real libsodium via
+emit-kx-anchor.py), the new ed25519 verify accepts/rejects correctly on
+every tested path, the role rule makes both peers agree, rsDmSessionKeys
+passes the kx keys in libsodium's order on both branches, and the intro's
+recipient-binding + the LAN nonce/name binding make replay and
+cross-identity reuse structurally impossible. Five real defects surfaced
+in the surrounding code, all now fixed with regression coverage:
+
+- **Never-throw violated in three parsers.** rsLanParseChallenge,
+  rsLanParseResponse, and rsBtxoParseHeader decoded an attacker-controlled
+  UTF-8 name field OUTSIDE a try, so malformed bytes THREW instead of
+  returning empty (rule 5) - a LAN peer or BTXO sender could crash the
+  admission/parse path. Wrapped each in a try like the phase-1/3/4 parsers
+  already do; the harness now feeds each an invalid-UTF-8 name and asserts
+  a clean refusal.
+- **The multi-card demo turned two feed painters into pump-killers.**
+  raExpire and raMediaPaint write card-1 status fields with BARE
+  references and run OUTSIDE raPoll's try; before phase 4 there was one
+  card so they always resolved, but the new Messages/Devices/Anon cards
+  meant a deadline or a media tick firing while off-card threw "no such
+  object" out of raPoll and PERMANENTLY stopped the pump (DHT + rp1 +
+  enet). Added raFeedNote (card-1-qualified + existence-guarded, the
+  raDmLog pattern) and routed every pump-reachable feed write through it,
+  including raHandleEvent's walk-status writes (which had stalled the feed
+  walk off-card).
+- **The guard's "full truth table" omitted two of its own transports.**
+  rsPersonaAllows knows eight transports; the harness and the demo panel
+  asserted only six, leaving feed and media - the two an anon persona most
+  needs kept off - unproven. A future edit letting an anon persona onto
+  either would have leaked it to the clearnet DHT/torrent rails while
+  rsSelfTest stayed green. Both cells are asserted now, and the live guard
+  panel iterates all eight.
+- **itemDelimiter left as "/".** raAttach set it for the leaf name and
+  never restored it; the pump's raHandleEvent then read comma-joined media
+  lists under the wrong delimiter. Restored to comma after use and set
+  before the item read.
+
+The lesson is the multi-card one: adding cards silently widened the blast
+radius of every bare card-1 reference in the older single-card handlers.
+A pump that runs from every card must treat EVERY control reference as
+cross-card - qualify and guard, always.
+
 ## Suite integration status
 
 - `tools/build-all.sh` runs riptide's gates in the member loop (script

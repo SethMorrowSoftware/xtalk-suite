@@ -1103,22 +1103,40 @@ command raPoll
    send "raPoll" to me in kPollMs milliseconds
 end raPoll
 
+-- Append a status line to a Feed-card (card 1) field from anywhere, safely.
+-- The pump and its handlers run on whatever card the user is viewing, but
+-- the feed status fields live only on card 1; a bare cross-card reference
+-- throws, and several callers run outside raPoll's try, so a throw here
+-- would kill the pump. Qualify to card 1 and guard existence, exactly as
+-- raDmLog / raLanLog / raAnonLog do for their own cards.
+command raFeedNote pFieldName, pLine
+   if there is a field pFieldName of card 1 of me then
+      put pLine & return after field pFieldName of card 1 of me
+   end if
+end raFeedNote
+
 -- The deadline half: the walk keys every request by the exact target it
 -- awaits, so a DHT that never answers expires visibly instead of hanging.
 command raExpire
    if the milliseconds <= sWaitUntil then
       exit raExpire
    end if
+   -- The pump runs from every card since phase 4, but these status fields
+   -- live on the Feed card (card 1). Clear the state flags UNCONDITIONALLY
+   -- (they must expire wherever the user is), then land the message on card
+   -- 1, guarded - a bare cross-card field reference throws "no such object"
+   -- and, because raExpire runs OUTSIDE raPoll's try, that throw would kill
+   -- the whole pump. raFeedNote qualifies + guards, like raDmLog et al.
    if sAwaitOwn is "true" then
       put empty into sAwaitOwn
-      put "no head found for your key (fresh identity, or not yet propagated); starting at seq 0." & return after field "raIdOut"
+      raFeedNote "raIdOut", "no head found for your key (fresh identity, or not yet propagated); starting at seq 0."
    end if
    if sAwaitHead is "true" then
       put empty into sAwaitHead
-      put "the DHT did not answer for that head in time; try again in a minute (bootstrap takes a moment)." & return after field "raTheirFeed"
+      raFeedNote "raTheirFeed", "the DHT did not answer for that head in time; try again in a minute (bootstrap takes a moment)."
    end if
    if sWalkNext is not empty then
-      put "the DHT did not answer for post target" && sWalkNext && "in time; walk abandoned." & return after field "raTheirFeed"
+      raFeedNote "raTheirFeed", "the DHT did not answer for post target" && sWalkNext && "in time; walk abandoned."
       put empty into sWalkNext
    end if
    if sDmAwaitDmHead is "true" then
@@ -1166,7 +1184,7 @@ command raHandleEvent pEvent
                if tHead["latestPostTarget"] is not rsZeroTarget() then
                   put tHead["latestPostTarget"] into sMyLatest
                end if
-               put "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"] & return after field "raIdOut"
+               raFeedNote "raIdOut", "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"]
             end if
          end if
          if sAwaitHead is "true" then
@@ -1174,16 +1192,16 @@ command raHandleEvent pEvent
             put the number of lines of the keys of tHead into tKeyCount
             if tKeyCount > 0 then
                put empty into sAwaitHead
-               put "head VERIFIED for" && tHead["displayName"] && "(seq" && tHead["seq"] & ")" & return after field "raTheirFeed"
+               raFeedNote "raTheirFeed", "head VERIFIED for" && tHead["displayName"] && "(seq" && tHead["seq"] & ")"
                if tHead["latestPostTarget"] is rsZeroTarget() then
-                  put "no posts yet." & return after field "raTheirFeed"
+                  raFeedNote "raTheirFeed", "no posts yet."
                else
                   put tHead["latestPostTarget"] into sWalkNext
                   put 0 into sWalkCount
                   put the milliseconds + kDhtWaitMs into sWaitUntil
                   put rsRequestImmutable(sSession, sWalkNext) into tOk
                   if tOk is not true then
-                     put "lookup refused:" && rsLastError() & return after field "raTheirFeed"
+                     raFeedNote "raTheirFeed", "lookup refused:" && rsLastError()
                      put empty into sWalkNext
                   end if
                end if
@@ -1198,33 +1216,40 @@ command raHandleEvent pEvent
             put rsIngestPost(pEvent, sWalkNext, sFollowHandle) into tPost
             put the number of lines of the keys of tPost into tKeyCount
             if tKeyCount is 0 then
-               put "post REFUSED (tamper or wrong author):" && rsLastError() & return after field "raTheirFeed"
+               raFeedNote "raTheirFeed", "post REFUSED (tamper or wrong author):" && rsLastError()
                put empty into sWalkNext
             else
                add 1 to sWalkCount
-               put "post" && sWalkCount && "[t=" & tPost["timestamp"] & "] authorSig VERIFIED:" && tPost["text"] & return after field "raTheirFeed"
+               raFeedNote "raTheirFeed", "post" && sWalkCount && "[t=" & tPost["timestamp"] & "] authorSig VERIFIED:" && tPost["text"]
                if tPost["mediaTargets"] is not empty then
                   -- a verified post's media list is trustworthy (it sat
                   -- under the authorSig); surface it and pre-fill the strip
                   -- with the first hash so Fetch + play is one click
-                  put "  media attachment(s):" && tPost["mediaTargets"] & return after field "raTheirFeed"
-                  if field "raMediaHash" is empty then
-                     put item 1 of tPost["mediaTargets"] into field "raMediaHash"
+                  raFeedNote "raTheirFeed", "  media attachment(s):" && tPost["mediaTargets"]
+                  -- itemDelimiter is global mutable state; set it right
+                  -- before the item read (an earlier handler may have left
+                  -- it as "/"), and target card 1's field, guarded
+                  set the itemDelimiter to comma
+                  if there is a field "raMediaHash" of card 1 of me then
+                     if field "raMediaHash" of card 1 of me is empty then
+                        put item 1 of tPost["mediaTargets"] into \
+                              field "raMediaHash" of card 1 of me
+                     end if
                   end if
                end if
                put tPost["prevPostTarget"] into tNext
                if tNext is rsZeroTarget() then
-                  put "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified." & return after field "raTheirFeed"
+                  raFeedNote "raTheirFeed", "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified."
                   put empty into sWalkNext
                else if sWalkCount >= kWalkMax then
-                  put "stopped at the" && kWalkMax & "-post demo cap; the chain continues at" && tNext & return after field "raTheirFeed"
+                  raFeedNote "raTheirFeed", "stopped at the" && kWalkMax & "-post demo cap; the chain continues at" && tNext
                   put empty into sWalkNext
                else
                   put tNext into sWalkNext
                   put the milliseconds + kDhtWaitMs into sWaitUntil
                   put rsRequestImmutable(sSession, sWalkNext) into tOk
                   if tOk is not true then
-                     put "lookup refused:" && rsLastError() & return after field "raTheirFeed"
+                     raFeedNote "raTheirFeed", "lookup refused:" && rsLastError()
                      put empty into sWalkNext
                   end if
                end if
@@ -1324,8 +1349,12 @@ command raAttach
       exit raAttach
    end if
    put it into sPendingMediaPath
+   -- itemDelimiter is global mutable state; take the leaf, then RESTORE it
+   -- to comma (the pump's raHandleEvent reads comma-joined media lists, and
+   -- leaving it as "/" made item 1 return the whole list)
    set the itemDelimiter to "/"
    put item -1 of sPendingMediaPath into tShortName
+   set the itemDelimiter to comma
    set the label of button "raAttach" to "Clear attach"
    uiStatus "Attached" && quote & tShortName & quote & \
          "- it rides the next post and seeds from its current location.", empty
@@ -1967,7 +1996,9 @@ command raAnonPaintGuard
    local tRows, tT, tList
    put "transport      anon persona   public persona" & return & \
          "---------      ------------   --------------" & return into tRows
-   put "onion,dht,torrent,rp1,enet,dc" into tList
+   -- every transport the guard knows, so the panel is a TRUE full read (the
+   -- feed and media rails were the two an anon persona most needs kept off)
+   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tList
    set the itemDelimiter to comma
    repeat for each item tT in tList
       put rsPadRight(tT, 15) after tRows
@@ -2130,11 +2161,18 @@ command raMediaPaint
       put " -" && tS["filePath"] after tLine
       put "Play now" into tLabel
    end if
-   if the text of field "raMediaProg" is not tLine then
-      set the text of field "raMediaProg" to tLine
+   -- card-1 controls, but raMediaPaint runs every tick from any card and
+   -- OUTSIDE raPoll's try; a bare reference would throw off-card and kill
+   -- the pump, so qualify to card 1 and guard existence
+   if there is a field "raMediaProg" of card 1 of me then
+      if the text of field "raMediaProg" of card 1 of me is not tLine then
+         set the text of field "raMediaProg" of card 1 of me to tLine
+      end if
    end if
-   if the label of button "raMediaGet" is not tLabel then
-      set the label of button "raMediaGet" to tLabel
+   if there is a button "raMediaGet" of card 1 of me then
+      if the label of button "raMediaGet" of card 1 of me is not tLabel then
+         set the label of button "raMediaGet" of card 1 of me to tLabel
+      end if
    end if
 end raMediaPaint
 

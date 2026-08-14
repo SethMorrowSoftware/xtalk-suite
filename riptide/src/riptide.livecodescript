@@ -2084,7 +2084,7 @@ function rsLanBuildChallenge pName, pNonce
 end rsLanBuildChallenge
 
 function rsLanParseChallenge pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 6 + kRsLanNonceLen then
       rsSetError "rsLanParseChallenge: truncated challenge"
@@ -2100,8 +2100,16 @@ function rsLanParseChallenge pBytes
       rsSetError "rsLanParseChallenge: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- the name is attacker-controlled bytes; textDecode throws on malformed
+   -- UTF-8, and this parser promises never to throw (rule 5), so refuse
+   -- rather than let it escape into the caller's poll pump
+   try
+      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsLanParseChallenge: the device name is not valid UTF-8"
+      return empty
+   end try
    put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
    return tOut
 end rsLanParseChallenge
@@ -2152,7 +2160,7 @@ function rsLanBuildResponse pChallengeBytes, pName, pMaster
 end rsLanBuildResponse
 
 function rsLanParseResponse pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 6 + 64 then
       rsSetError "rsLanParseResponse: truncated response"
@@ -2168,8 +2176,15 @@ function rsLanParseResponse pBytes
       rsSetError "rsLanParseResponse: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- attacker-controlled name; refuse on malformed UTF-8 rather than throw
+   -- (rule 5), so a host draining an enet batch cannot be crashed by it
+   try
+      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsLanParseResponse: the device name is not valid UTF-8"
+      return empty
+   end try
    put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
    return tOut
 end rsLanParseResponse
@@ -2338,7 +2353,7 @@ function rsBtxoHeader pName, pTotalSize, pFlags
 end rsBtxoHeader
 
 function rsBtxoParseHeader pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 8 then
       rsSetError "rsBtxoParseHeader: truncated header"
@@ -2358,8 +2373,15 @@ function rsBtxoParseHeader pBytes
       rsSetError "rsBtxoParseHeader: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- attacker-controlled file name; refuse on malformed UTF-8 rather than
+   -- throw out of a parser the never-throw contract covers (rule 5)
+   try
+      put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsBtxoParseHeader: the file name is not valid UTF-8"
+      return empty
+   end try
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
    return tOut
 end rsBtxoParseHeader

@@ -7853,7 +7853,7 @@ function rsLanBuildChallenge pName, pNonce
 end rsLanBuildChallenge
 
 function rsLanParseChallenge pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 6 + kRsLanNonceLen then
       rsSetError "rsLanParseChallenge: truncated challenge"
@@ -7869,8 +7869,16 @@ function rsLanParseChallenge pBytes
       rsSetError "rsLanParseChallenge: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- the name is attacker-controlled bytes; textDecode throws on malformed
+   -- UTF-8, and this parser promises never to throw (rule 5), so refuse
+   -- rather than let it escape into the caller's poll pump
+   try
+      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsLanParseChallenge: the device name is not valid UTF-8"
+      return empty
+   end try
    put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
    return tOut
 end rsLanParseChallenge
@@ -7915,7 +7923,7 @@ function rsLanBuildResponse pChallengeBytes, pName, pMaster
 end rsLanBuildResponse
 
 function rsLanParseResponse pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 6 + 64 then
       rsSetError "rsLanParseResponse: truncated response"
@@ -7931,8 +7939,15 @@ function rsLanParseResponse pBytes
       rsSetError "rsLanParseResponse: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- attacker-controlled name; refuse on malformed UTF-8 rather than throw
+   -- (rule 5), so a host draining an enet batch cannot be crashed by it
+   try
+      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsLanParseResponse: the device name is not valid UTF-8"
+      return empty
+   end try
    put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
    return tOut
 end rsLanParseResponse
@@ -8057,7 +8072,7 @@ function rsBtxoHeader pName, pTotalSize, pFlags
 end rsBtxoHeader
 
 function rsBtxoParseHeader pBytes
-   local tLen, tNameLen, tOut
+   local tLen, tNameLen, tOut, tErr
    put the number of bytes in pBytes into tLen
    if tLen < 8 then
       rsSetError "rsBtxoParseHeader: truncated header"
@@ -8077,8 +8092,15 @@ function rsBtxoParseHeader pBytes
       rsSetError "rsBtxoParseHeader: length does not match its name field"
       return empty
    end if
-   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
-         tOut["name"]
+   -- attacker-controlled file name; refuse on malformed UTF-8 rather than
+   -- throw out of a parser the never-throw contract covers (rule 5)
+   try
+      put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+            tOut["name"]
+   catch tErr
+      rsSetError "rsBtxoParseHeader: the file name is not valid UTF-8"
+      return empty
+   end try
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
    return tOut
 end rsBtxoParseHeader
@@ -11697,6 +11719,18 @@ private command rs1rstSectionAnon pCaps
          "public persona: rp1 is allowed"
    rs1rstCheck (rsPersonaAllows(false, "onion") is false), \
          "public persona: the anon onion route is REFUSED"
+   -- feed and media are in the guard's own known-transport list, so the
+   -- "full truth table" must assert them too - an anon persona reaching
+   -- either is the exact DHT/torrent-under-the-anon-key leak the guard
+   -- exists to prevent, and a hole here would be a silent deanonymization
+   rs1rstCheck (rsPersonaAllows(true, "feed") is false), \
+         "anon persona: the public feed is REFUSED"
+   rs1rstCheck (rsPersonaAllows(true, "media") is false), \
+         "anon persona: torrent media is REFUSED"
+   rs1rstCheck (rsPersonaAllows(false, "feed") is true), \
+         "public persona: the feed is allowed"
+   rs1rstCheck (rsPersonaAllows(false, "media") is true), \
+         "public persona: media is allowed"
    -- fail-closed: an unknown transport is refused for BOTH personas
    rs1rstCheck (rsPersonaAllows(true, "smoke-signal") is false), \
          "an unknown transport is refused for an anon persona"
@@ -11721,6 +11755,11 @@ private command rs1rstSectionAnon pCaps
          "a truncated BTXO header is refused"
    rs1rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
          "a negative total size is refused"
+   -- a header whose name field is invalid UTF-8 (0xFF) passes the exact
+   -- length gate but must be REFUSED, not thrown (the never-throw contract)
+   rs1rstCheck (rsBtxoParseHeader(rs1rstBin("4254584f0100" & "0001" & "ff" & \
+         "000000000000000b")) is empty), \
+         "a non-UTF-8 file name in a BTXO header is refused, not thrown"
    -- the onion-service wrapper: refusals run offline
    rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
@@ -11735,6 +11774,7 @@ end rs1rstSectionAnon
 
 private command rs1rstSectionLan
    local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName
+   local rs1tBadUtf
    rs1rstSection "phase 6 - LAN mesh admission"
    put rsLanKeys(rs1rstBin(rs1kRsGoldMasterHex)) into rs1tKeys
    rs1rstCheck (rs1rstHex(rs1tKeys["publicKey"]) is rs1kRsGoldLanPub), \
@@ -11788,6 +11828,15 @@ private command rs1rstSectionLan
          "a 31-byte nonce is refused"
    rs1rstCheck (rsLanBuildChallenge("", rs1rstBin(rs1kRsGoldLanNonce)) is empty), \
          "an empty device name is refused"
+   -- a name field of INVALID UTF-8 (0xFF 0xFE) passes the exact-length gate
+   -- but must be REFUSED, not thrown, out of the parser (the never-throw
+   -- contract; a LAN peer could otherwise crash the admission drain)
+   put rs1rstBin("52534c314302fffe") & rs1rstBin(rs1kRsGoldLanNonce) into rs1tBadUtf
+   rs1rstCheck (rsLanParseChallenge(rs1tBadUtf) is empty), \
+         "a non-UTF-8 device name in a challenge is refused, not thrown"
+   put rs1rstBin("52534c31520180") & (byte -64 to -1 of rs1tResponse) into rs1tBadUtf
+   rs1rstCheck (rsLanParseResponse(rs1tBadUtf) is empty), \
+         "a non-UTF-8 device name in a response is refused, not thrown"
 end rs1rstSectionLan
 
 private command rs1rstSectionDm pCaps
