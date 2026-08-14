@@ -37,6 +37,7 @@ MASTER = os.path.join("tools", "ui-kit.livecodescript")
 # Adopters, repo-relative. Adding a demo to the kit means carrying the block
 # AND adding it here, in the same commit.
 ADOPTERS = [
+    "start-here.livecodescript",
     os.path.join("coinxt", "examples", "coinxt-demo.livecodescript"),
     os.path.join("datachannelxt", "examples", "datachannel-dht-chat.livecodescript"),
     os.path.join("datachannelxt", "examples", "datachannel-loopback.livecodescript"),
@@ -110,7 +111,8 @@ def main():
     # freshness gate (build-standalone.py --check / build-suite-selftest.py
     # --check) already pins it to the checked source.
     carriers = []
-    for pattern in ("*/examples/*.livecodescript",
+    for pattern in ("*.livecodescript",
+                    "*/examples/*.livecodescript",
                     "*/examples/*/*.livecodescript",
                     "*/src/*.livecodescript",
                     "tests/*.livecodescript"):
@@ -127,7 +129,8 @@ def main():
                             "register it here in the same commit" % rel)
 
     # every window-building stack in the scanned set must adopt or be excused
-    for pattern in ("*/examples/*.livecodescript",
+    for pattern in ("*.livecodescript",
+                    "*/examples/*.livecodescript",
                     "*/examples/*/*.livecodescript",
                     "*/src/*.livecodescript",
                     "*/tests/*.livecodescript",

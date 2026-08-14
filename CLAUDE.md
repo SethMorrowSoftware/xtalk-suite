@@ -21,6 +21,12 @@ datachannelxt/ as subfolders) become mirrors. Development happens here.
 ```
 openxtalk-libraries/
   README.md            the suite front door + the honest release matrix
+  start-here.livecodescript
+                       the RUNNABLE front door: open it in OXT for a
+                       clickable directory of every demo/harness stack by
+                       repo-relative path (launches them in place, putting
+                       helper stacks in use first); a kit adopter, held
+                       true to the tree by tools/check-launcher-registry.py
   CLAUDE.md            this file
   LICENSE              MIT + third-party attributions for every bundled lib
   docs/                CROSS-CUTTING documents (span >1 member)

@@ -148,6 +148,10 @@ if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
   python3 tools/check-harness-scaffold-drift.py
 fi
+if [ -f tools/check-launcher-registry.py ]; then
+  echo "== suite: tools/check-launcher-registry.py =="
+  python3 tools/check-launcher-registry.py
+fi
 
 # --- static gates for every member (always run) ---
 # riptide and nocloud are not extensions but carry the same gate shape

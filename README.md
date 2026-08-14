@@ -29,6 +29,14 @@ They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachann
 — so the engine resolves each binding automatically once its packaged extension
 is installed.
 
+**Start here.** Download the repo and open
+[`start-here.livecodescript`](start-here.livecodescript) in OXT
+(File > Open Stack): it is a clickable directory of every sample, demo and
+harness stack, listed by its repo-relative path — click one to see what it
+is and what it needs, double-click to launch it in place (helper stacks are
+put in use automatically). `tools/check-launcher-registry.py` holds the
+directory true to the tree on every push.
+
 ## Release status (honest, per member)
 
 Maturity is uneven by design — the suite is released as members reach the bar,
