@@ -162,8 +162,8 @@ It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, and riptide's harness (phases 1-3, including the live feed
-and media layers against the suite's own session) — plus the cross-member compositions no
+and datachannelxt, and riptide's harness (phases 1-4, including the live feed,
+media, and DM layers against the suite's own session) — plus the cross-member compositions no
 per-member harness can have. One paste settles what used to take seven runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
@@ -177,11 +177,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**343 of 361 public handlers**:
+**359 of 377 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 38/38 |
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 54/54 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -215,11 +215,14 @@ The members are deliberately non-overlapping, so real apps mix them:
   engine-passed 2026-08-12 at 133/133, and its **two-machine propagation
   done-criterion met 2026-08-13**: `riptide/examples/riptide-social.livecodescript`
   exchanged verified feeds in both directions over the real DHT, the suite's
-  first two-machine result) are COMPLETE in the tree; phase 3 (media —
+  first two-machine result) are COMPLETE in the tree; phases 3 (media —
   attachments seed in place as trackerless torrents, posts carry only
-  info-hashes, followers fetch sequentially and co-seed) is BUILT
-  (2026-08-14, statically verified; its done-criterion — a follower plays
-  a video mid-download — awaits the two-machine pass);
+  info-hashes, followers fetch sequentially and co-seed) and 4 (DMs —
+  signed kx prekeys in the feed head, sealed intros over inbox phantom
+  swarms, pairwise secretstreams over rp1, crypto_kx anchored against a
+  real libsodium) are BUILT (2026-08-14, statically verified; their
+  done-criteria — a follower plays a video mid-download, and two machines
+  exchange encrypted DMs with no server — await two-machine passes);
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.

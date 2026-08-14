@@ -493,6 +493,16 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    needs its two-machine pass. As-built decisions: `riptide/CLAUDE.md`.)*
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
    *Done when* two machines exchange authenticated encrypted DMs with no server.
+   *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records
+   named by the head's `prekeyTarget`, RSI1 sealed intros bound to one
+   recipient, RSM1 rp1 frames, deterministic kx roles - plus the Messages
+   card in the demo and full harness coverage; crypto_kx is anchored against
+   a real libsodium via `riptide/tools/emit-kx-anchor.py`. One deliberate
+   delta from this section's sketch: the intro seals to the recipient's
+   VERIFIED prekey, not to the ed25519 handle - `sxSeal` takes a curve25519
+   key, and a signed prekey record makes the seal target provable. Verified
+   statically; the done-criterion needs its two-machine pass. As-built:
+   `riptide/CLAUDE.md`.)*
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
    cold start. *Done when* a call connects across two networks.
 6. **LAN sync** — enet device mesh with subkey-3 admission. *Done when* a draft

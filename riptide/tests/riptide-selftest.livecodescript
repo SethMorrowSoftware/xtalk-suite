@@ -1,5 +1,5 @@
 script "RiptideSelfTest"
--- riptide-selftest.livecodescript - the self-test for the Riptide phase 1-3
+-- riptide-selftest.livecodescript - the self-test for the Riptide phase 1-4
 -- library (src/riptide.livecodescript).
 --
 -- HOW TO RUN: install the suite extensions (SodiumXT is required; coinxt and
@@ -33,6 +33,9 @@ constant kRsGoldPost1Text = "hello, riptide"
 constant kRsGoldPost2Text = "second post"
 constant kRsGoldTs1 = "1754870400"
 constant kRsGoldTs2 = "1754870460"
+constant kRsGoldDmTs = "1754870520"
+constant kRsGoldMsgTs = "1754870580"
+constant kRsGoldDmMsgText = "hello, dm"
 constant kRsGoldHeadSeq = "7"
 constant kRsGoldHeadName = "Riptide"
 constant kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -57,6 +60,14 @@ constant kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
 constant kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
+constant kRsGoldDmKxPub = "d946190585386568c3123a6fa706f94f5140fdfe647ab51fdf76e3f6e5799d3c"
+constant kRsGoldConfKxPub = "9cf14a375404bd5f3fc048647215af20b506717fdab3f6e7df50c64e837f2059"
+constant kRsGoldSessionRx = "0cf0c702142da300ac5d769dff39a1b4aabe4842b617cdf4a624815290b4ba38"
+constant kRsGoldSessionTx = "2f8bb162c5e2d4346eadcf2a47804458428840336303e629d1ac20e8375dfe83"
+constant kRsGoldPrekeyRecHex = "52534b31643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433634af78ee3dc74534030feac4a92bf540c17cd9fb992c8e3e0eeb9af2822c9d6c40df10e2880b8a395bfe1cf076d8a325c00d9fbb046987657c080faff77a98609"
+constant kRsGoldPrekeyRecTarget = "5b92cd531aa0537e43def0f737e2a61c48673008"
+constant kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646331623265646564373563343462666663393030616637343631613236643834323734353361393266323264643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433633637326538653062323539363237663135633737326563306436316631356364373836636532626337323434353439323535663964366366616163333030623200000000689932f89d0357d4159ca1bab0e329d9b1ef1bfe88dbf75970389251a855dc6237f43ede513265c5590c0b889be490c4b07f60e279f1405cca0d1c069f532f4fc9b61905"
+constant kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 
 local sLog
 local sPass
@@ -87,6 +98,7 @@ function rsSelfTest
       rstSectionHelpers
       rstSectionBep44
       rstSectionIngest
+      rstSectionDm tCaps
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
    else
@@ -546,6 +558,202 @@ private command rstSectionIngest
    rstCheck (rsIngestPost(tPostEvent, rsZeroTarget(), kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rstSectionIngest
+
+-- The phase-4 DM layer. The pure half (keys, records, session derivation,
+-- seal round trip, the message-through-a-secretstream path) runs on
+-- SodiumXT alone; the live half (inbox join, framed send) mirrors the
+-- other live sections: refusals everywhere, real calls behind hasTorrent.
+-- Both sides of every pair are derived HERE, so the cross-match claims
+-- (my tx is your rx; the seal opens only for its recipient) are engine
+-- results, not assumptions.
+private command rstSectionDm pCaps
+   local tSeed, tMyKeys, tConfKeys, tSess, tSessB, tPrekey, tIntro
+   local tSealed, tOpened, tFrame, tParsed, tMsg, tBig, tDir, tErr
+   local tHeader, tPush, tPull, tCipher, tCipher2, tPlain, tTag, tSession, tH
+   rstSection "phase 4 - DM keys, records, and the sealed first contact"
+   put rstBin(kRsGoldIdSeedHex) into tSeed
+   -- keys: the kx pair from the DM subkey, pinned against real libsodium
+   put rsDmKeys(rstBin(kRsGoldDmSeedHex)) into tMyKeys
+   rstCheck (tMyKeys["publicKeyHex"] is kRsGoldDmKxPub), \
+         "the DM subkey yields the golden kx public"
+   rstCheck (the number of bytes in tMyKeys["secretKey"] is 32), \
+         "and a 32-byte kx secret"
+   put rsDmKeys(rstBin(kRsGoldConfSeedHex)) into tConfKeys
+   rstCheck (tConfKeys["publicKeyHex"] is kRsGoldConfKxPub), \
+         "the conformance seed yields its golden kx public"
+   rstCheck (rsDmKeys(byte 1 to 31 of tSeed) is empty), \
+         "a 31-byte DM seed is refused"
+   -- one session, two roles, derived from BOTH ends: the golden handle
+   -- sorts below the conformance pub, so the golden side is the client
+   put rsDmSessionKeys(kRsGoldHandle, tMyKeys, kRsGoldConfPub, \
+         kRsGoldConfKxPub) into tSess
+   rstCheck (tSess["role"] is "client"), \
+         "the lexically smaller handle takes the client role"
+   rstCheck (rstHex(tSess["rx"]) is kRsGoldSessionRx), \
+         "client rx matches the libsodium-anchored golden"
+   rstCheck (rstHex(tSess["tx"]) is kRsGoldSessionTx), \
+         "client tx matches the libsodium-anchored golden"
+   put rsDmSessionKeys(kRsGoldConfPub, tConfKeys, kRsGoldHandle, \
+         kRsGoldDmKxPub) into tSessB
+   rstCheck (tSessB["role"] is "server"), "the peer takes the server role"
+   rstCheck (rstHex(tSessB["rx"]) is kRsGoldSessionTx), \
+         "my tx is the peer's rx"
+   rstCheck (rstHex(tSessB["tx"]) is kRsGoldSessionRx), \
+         "and my rx is the peer's tx"
+   rstCheck (rsDmSessionKeys(kRsGoldHandle, tMyKeys, kRsGoldHandle, \
+         kRsGoldConfKxPub) is empty), \
+         "a session with myself is refused"
+   rstCheck (rsDmSessionKeys("zz", tMyKeys, kRsGoldConfPub, \
+         kRsGoldConfKxPub) is empty), "a malformed handle is refused"
+   -- RSK1: the signed prekey record
+   put rsBuildPrekey(kRsGoldDmKxPub, tSeed) into tPrekey
+   rstCheck (rstHex(tPrekey) is kRsGoldPrekeyRecHex), \
+         "prekey record bytes match golden"
+   rstCheck (rsImmutableTarget(tPrekey) is kRsGoldPrekeyRecTarget), \
+         "and its DHT target re-derives"
+   put rsParsePrekey(tPrekey) into tParsed
+   rstCheck (tParsed["kxPub"] is kRsGoldDmKxPub), "prekey kx round-trips"
+   put rsVerifyPrekey(tPrekey, kRsGoldHandle) into tParsed
+   rstCheck (tParsed is not empty), "the prekey verifies under its author"
+   rstCheck (rsVerifyPrekey(tPrekey, kRsGoldConfPub) is empty), \
+         "and refuses a different author"
+   rstCheck (rsVerifyPrekey(rstFlipByte(tPrekey, 10), kRsGoldHandle) is \
+         empty), "a tampered prekey is refused"
+   rstCheck (rsParsePrekey(byte 1 to 131 of tPrekey) is empty), \
+         "a truncated prekey is refused"
+   rstCheck (rsBuildPrekey("zz", tSeed) is empty), \
+         "a malformed kx public is refused at build"
+   -- RSI1: the intro, built by the golden identity FOR the conformance
+   -- identity; the sender handle comes from the signing seed, never an arg
+   put rsBuildIntro(kRsGoldDmTs, kRsGoldConfPub, kRsGoldDmKxPub, tSeed) \
+         into tIntro
+   rstCheck (rstHex(tIntro) is kRsGoldIntroHex), \
+         "intro record bytes match golden"
+   put rsParseIntro(tIntro) into tParsed
+   rstCheck (tParsed["senderHandle"] is kRsGoldHandle), \
+         "the sender handle round-trips"
+   rstCheck (tParsed["senderKxPub"] is kRsGoldDmKxPub), \
+         "the sender kx public round-trips"
+   rstCheck (tParsed["recipientHandle"] is kRsGoldConfPub), \
+         "the recipient handle round-trips"
+   rstCheck (tParsed["timestamp"] is 1754870520), "the timestamp round-trips"
+   put rsVerifyIntro(tIntro, kRsGoldConfPub) into tParsed
+   rstCheck (tParsed is not empty), "the intro verifies for its recipient"
+   rstCheck (rsVerifyIntro(tIntro, kRsGoldHandle) is empty), \
+         "and refuses a recipient it is not addressed to"
+   rstCheck (rsVerifyIntro(rstFlipByte(tIntro, 200), kRsGoldConfPub) is \
+         empty), "a tampered intro fails its signature"
+   rstCheck (rsParseIntro(tIntro & numToByte(0)) is empty), \
+         "trailing bytes are refused"
+   -- the seal: to the recipient's kx prekey; only the recipient opens it
+   put rsDmSealIntro(tIntro, kRsGoldConfKxPub) into tSealed
+   rstCheck (tSealed is not empty), "the intro seals to the recipient prekey"
+   rstCheck (the number of bytes in tSealed is 268 + 48), \
+         "the sealed intro carries the 48-byte seal overhead"
+   put rsDmOpenIntro(tSealed, kRsGoldConfPub, rstBin(kRsGoldConfSeedHex)) \
+         into tOpened
+   rstCheck (tOpened is not empty), "the recipient opens and verifies it"
+   rstCheck (tOpened["senderHandle"] is kRsGoldHandle), \
+         "learning who is calling"
+   rstCheck (tOpened["senderKxPub"] is kRsGoldDmKxPub), \
+         "and the key to answer on"
+   rstCheck (rsDmOpenIntro(tSealed, kRsGoldHandle, \
+         rstBin(kRsGoldDmSeedHex)) is empty), \
+         "a NON-recipient cannot open the seal"
+   rstCheck (rsDmOpenIntro(rstFlipByte(tSealed, 40), kRsGoldConfPub, \
+         rstBin(kRsGoldConfSeedHex)) is empty), \
+         "a tampered seal is refused"
+   -- RSM1 frames: canonical kinds by byte value, strict parse
+   put rsDmFrame("I", tSealed) into tFrame
+   rstCheck (tFrame is not empty), "an intro frame builds"
+   put rsDmParseFrame(tFrame) into tParsed
+   rstCheck (tParsed["kind"] is "I"), "the frame kind round-trips"
+   rstCheck (tParsed["payload"] is tSealed), "the frame payload round-trips"
+   rstCheck (rsDmFrame("X", tSealed) is empty), \
+         "an unknown frame kind is refused"
+   rstCheck (rsDmFrame("i", tSealed) is empty), \
+         "a lowercase kind is refused (canonical bytes, not folded case)"
+   rstCheck (rsDmFrame("M", empty) is empty), \
+         "an empty frame payload is refused"
+   put "x" into tBig
+   repeat 16 times
+      put tBig & tBig into tBig
+   end repeat
+   rstCheck (rsDmFrame("M", textEncode(tBig, "ASCII")) is empty), \
+         "a frame over the rp1 cap is refused"
+   rstCheck (rsDmParseFrame(byte 1 to 5 of tFrame) is empty), \
+         "a payload-less frame is refused"
+   -- the message record, and the whole DM message path through a REAL
+   -- secretstream: build -> push (my tx) -> pull (peer rx = same key)
+   -- -> parse. The stream handles are freed even though the section is
+   -- pure - sodiumxt has no unload hook (its own rule).
+   put rsDmMessageBody("T", kRsGoldMsgTs, kRsGoldDmMsgText) into tMsg
+   rstCheck (rstHex(tMsg) is kRsGoldDmMsgHex), \
+         "message record bytes match golden"
+   put rsDmParseMessage(tMsg) into tParsed
+   rstCheck (tParsed["kind"] is "T"), "message kind round-trips"
+   rstCheck (tParsed["timestamp"] is 1754870580), \
+         "message timestamp round-trips"
+   rstCheck (tParsed["text"] is kRsGoldDmMsgText), "message text round-trips"
+   rstCheck (rsDmMessageBody("X", 1, "hi") is empty), \
+         "an unknown message kind is refused"
+   rstCheck (rsDmMessageBody("T", 1, empty) is empty), \
+         "an empty message body is refused"
+   rstCheck (rsDmParseMessage(byte 1 to 9 of tMsg) is empty), \
+         "a truncated message record is refused"
+   put sxSecretStreamInitPush(tSess["tx"], tHeader) into tPush
+   put sxSecretStreamPush(tPush, tMsg, empty, false) into tCipher
+   rstCheck (the number of bytes in tCipher > the number of bytes in tMsg), \
+         "the stream ciphertext carries its auth overhead"
+   put sxSecretStreamInitPull(tSessB["rx"], tHeader) into tPull
+   put sxSecretStreamPull(tPull, tCipher, empty, tTag) into tPlain
+   rstCheck (tPlain is tMsg), \
+         "the peer's rx key decrypts what my tx key sent"
+   rstCheck (sxIsFinalTag(tTag) is false), "mid-stream is not final"
+   put sxSecretStreamPush(tPush, tMsg, empty, true) into tCipher2
+   put sxSecretStreamPull(tPull, tCipher2, empty, tTag) into tPlain
+   rstCheck (sxIsFinalTag(tTag) is true), \
+         "the final tag survives the stream"
+   sxFreeStream tPush
+   sxFreeStream tPull
+   -- the live half: refusals run everywhere, the join runs on a session
+   rstCheck (rsDmJoinInbox(0, "zz", "/") is empty), \
+         "rsDmJoinInbox refuses a malformed handle first"
+   rstCheck (rsDmSend(0, 1, textEncode("junk", "ASCII")) is false), \
+         "rsDmSend refuses a non-RSM1 frame"
+   rstCheck (rsDmSend(0, 1, tFrame) is false), \
+         "rsDmSend refuses a dead session handle"
+   rstCheck (rsDmSend(0, 0, tFrame) is false), \
+         "rsDmSend refuses a bad peer id"
+   if pCaps["hasTorrent"] is not true then
+      rstSkip "DM inbox join + framed send: torrentxt is not installed"
+      exit rstSectionDm
+   end if
+   put rstAcquireSession() into tSession
+   if tSession is 0 then
+      rstSkip "DM inbox join + framed send: could not start a session"
+      exit rstSectionDm
+   end if
+   put specialFolderPath("temporary") into tDir
+   if tDir is empty then put specialFolderPath("documents") into tDir
+   if the last char of tDir is "/" then delete the last char of tDir
+   rstCheck (rsDmJoinInbox(tSession, kRsGoldHandle, \
+         tDir & "/riptide-no-such-folder") is empty), \
+         "rsDmJoinInbox refuses a missing save path"
+   put rsDmJoinInbox(tSession, kRsGoldHandle, tDir) into tH
+   rstCheck (tH is not empty and tH > 0), \
+         "joining the inbox swarm returns its live handle"
+   rstCheck (rsDmSend(tSession, 999999999, tFrame) is false), \
+         "rsDmSend to an unknown peer is refused by the binding"
+   -- tidy: drop the phantom swarm so a re-run starts clean
+   if tH is not empty and tH > 0 then
+      try
+         btRemoveTorrent tSession, tH, false
+      catch tErr
+         -- best effort; the harness rule keeps the session itself alive
+      end try
+   end if
+end rstSectionDm
 
 -- Acquire the ONE torrent session the live-layer checks share. TorrentXT
 -- allows a single session per process, so: reuse the handle a previous run

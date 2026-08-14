@@ -21,13 +21,15 @@ call.
 phase 1 (identity + the pure-compute feed layer) and the phase-2 LIVE feed
 layer (BEP44 head/post publish, async lookups, ingest verifiers) are
 engine-passed, and phase 2's two-machine propagation criterion closed
-2026-08-13 (see rule 8). **Phase 3 (media) is BUILT but not passed**
-(2026-08-14): `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library,
-the media strip in the riptide-social stack, refusal-path and local
-seed/status coverage in the harness - all verified statically; the
-done-criterion (a follower plays a video mid-download) needs a two-machine
-pass. The remaining transport phases (4-7) land later, each behind its own
-pass.
+2026-08-13 (see rule 8). **Phases 3 (media) and 4 (DMs) are BUILT but not
+passed** (2026-08-14): phase 3 is `rsMediaCreate`/`rsMediaFetch`/
+`rsMediaStatus` plus the demo's media strip; phase 4 is the `rsDm*` layer
+(kx prekeys, RSK1/RSI1/RSM1 records, deterministic-role sessions, inbox
+join + framed send) plus the demo's Messages card - all golden-pinned
+where deterministic, refusal-covered in the harness, verified statically;
+their done-criteria (a follower plays a video mid-download; two machines
+exchange authenticated encrypted DMs) each need a two-machine pass. The
+remaining phases (5-7) land later, each behind its own pass.
 
 ## The rules that bind this directory
 
@@ -191,6 +193,46 @@ pass.
   name a hash nobody can fetch. The strip's one button is two-mooded
   (Fetch until the on-disk file exists for the field's hash, then Play)
   and hands the file to the system player mid-download on purpose.
+
+## Things decided building phase 4 (do not re-litigate)
+
+- **Intros seal to the PREKEY, not the handle.** `sxSeal` takes a
+  curve25519 public key; the ed25519 handle is not one, and sodiumxt
+  ships no conversion handler. So first contact needs the recipient's
+  crypto_kx public - which is exactly what the head's `prekeyTarget`
+  publishes, as an RSK1 record SIGNED by the identity key. The seal
+  target is therefore provable before anything is sealed to it
+  (`rsVerifyPrekey`), and a swapped prekey is a refusal, not a readable
+  first message. This is a deliberate delta from the spec section 5.1
+  sketch, recorded there too.
+- **kx facts are anchored, not remembered.** `tools/emit-kx-anchor.py`
+  loads a REAL libsodium via ctypes and prints what crypto_kx returns for
+  the oracle's fixed inputs; the oracle's pure-Python X25519/crypto_kx
+  self-checks against that output (provenance in both files). A crypto
+  constant typed from memory is exactly what rule 1 exists to refuse.
+- **Roles are decided by handle order.** The lexically smaller handle
+  (lowercase hex = raw byte order, the roomId discipline) is the kx
+  CLIENT. Both sides derive the same session with no negotiation, and
+  `my tx is your rx` is asserted from BOTH ends in the harness.
+- **The recipient handle lives INSIDE the signed intro.** Replaying a
+  sealed intro to a third party dies on the recipient check, and a
+  sender/signer mismatch cannot be expressed because `rsBuildIntro`
+  derives the sender handle from the signing seed rather than taking it
+  as an argument.
+- **Frame and message kinds compare by BYTE, not by `is`.** `is` folds
+  case, and an unsigned transport frame gets no signature backstop, so
+  "i" is refused where "I" is meant (the coinxt canonical-form lesson,
+  applied at build AND parse).
+- **The demo authenticates peers by what only they can do.** A bystander
+  in the inbox swarm can see sealed intros (it cannot open them) and can
+  even send a fake stream header; what it can NEVER do is produce a
+  ciphertext the derived session accepts, so the first failed pull drops
+  the peer. The compose box binds to a peer at channel-open and unbinds
+  on that failure. ONE conversation at a time, loudly documented - the
+  library supports many; the demo optimizes for a two-machine pass.
+- **Streams are freed everywhere they can die** (sodiumxt has no unload
+  hook): per-peer teardown, lock, and closeStack all run the idempotent
+  `sxFreeStream` path.
 
 ## Suite integration status
 

@@ -393,6 +393,9 @@ constant rs1kRsGoldPost1Text = "hello, riptide"
 constant rs1kRsGoldPost2Text = "second post"
 constant rs1kRsGoldTs1 = "1754870400"
 constant rs1kRsGoldTs2 = "1754870460"
+constant rs1kRsGoldDmTs = "1754870520"
+constant rs1kRsGoldMsgTs = "1754870580"
+constant rs1kRsGoldDmMsgText = "hello, dm"
 constant rs1kRsGoldHeadSeq = "7"
 constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -415,6 +418,14 @@ constant rs1kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
 constant rs1kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant rs1kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant rs1kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
+constant rs1kRsGoldDmKxPub = "d946190585386568c3123a6fa706f94f5140fdfe647ab51fdf76e3f6e5799d3c"
+constant rs1kRsGoldConfKxPub = "9cf14a375404bd5f3fc048647215af20b506717fdab3f6e7df50c64e837f2059"
+constant rs1kRsGoldSessionRx = "0cf0c702142da300ac5d769dff39a1b4aabe4842b617cdf4a624815290b4ba38"
+constant rs1kRsGoldSessionTx = "2f8bb162c5e2d4346eadcf2a47804458428840336303e629d1ac20e8375dfe83"
+constant rs1kRsGoldPrekeyRecHex = "52534b31643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433634af78ee3dc74534030feac4a92bf540c17cd9fb992c8e3e0eeb9af2822c9d6c40df10e2880b8a395bfe1cf076d8a325c00d9fbb046987657c080faff77a98609"
+constant rs1kRsGoldPrekeyRecTarget = "5b92cd531aa0537e43def0f737e2a61c48673008"
+constant rs1kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646331623265646564373563343462666663393030616637343631613236643834323734353361393266323264643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433633637326538653062323539363237663135633737326563306436316631356364373836636532626337323434353439323535663964366366616163333030623200000000689932f89d0357d4159ca1bab0e329d9b1ef1bfe88dbf75970389251a855dc6237f43ede513265c5590c0b889be490c4b07f60e279f1405cca0d1c069f532f4fc9b61905"
+constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -481,10 +492,14 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.3.0"
+constant kRsVersion = "0.4.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
+constant kRsPrekeyMagic = "RSK1"
+constant kRsIntroMagic = "RSI1"
+constant kRsFrameMagic = "RSM1"
+constant kRsFrameMax = 60000
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -6223,7 +6238,7 @@ end oxProcessId
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 3: identity, the live feed, media)"
+         "(phase 4: identity, the live feed, media, DMs)"
 end rsVersion
 
 function rsLastError
@@ -7345,6 +7360,448 @@ function rsMediaStatus pTorrent
    end if
    return tS
 end rsMediaStatus
+
+function rsDmKeys pDmSeed
+   local tPub, tSec, tKeys, tErr
+   if the number of bytes in pDmSeed is not 32 then
+      rsSetError "rsDmKeys: the DM seed must be 32 bytes (rsDmSeed of" && \
+            "the master seed)"
+      return empty
+   end if
+   try
+      sxKeyExchangeKeypairFromSeed pDmSeed, tPub, tSec
+   catch tErr
+      rsSetError "rsDmKeys: needs SodiumXT" && \
+            "(sxKeyExchangeKeypairFromSeed):" && tErr
+      return empty
+   end try
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsDmKeys: sxKeyExchangeKeypairFromSeed returned a" && \
+            (the number of bytes in tPub) & "-byte public key"
+      return empty
+   end if
+   put tPub into tKeys["publicKey"]
+   put tSec into tKeys["secretKey"]
+   put rsBinToHexString(tPub) into tKeys["publicKeyHex"]
+   if tKeys["publicKeyHex"] is empty then return empty
+   return tKeys
+end rsDmKeys
+
+function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex
+   local tMine, tTheirs, tTheirPub, tRx, tTx, tOut, tErr
+   put toLower(pMyHandleHex) into tMine
+   put toLower(pTheirHandleHex) into tTheirs
+   if not rsIsHexOfLen(tMine, 64) then
+      rsSetError "rsDmSessionKeys: my handle must be 64 hex chars"
+      return empty
+   end if
+   if not rsIsHexOfLen(tTheirs, 64) then
+      rsSetError "rsDmSessionKeys: the peer handle must be 64 hex chars"
+      return empty
+   end if
+   if tMine is tTheirs then
+      rsSetError "rsDmSessionKeys: a DM session needs two DISTINCT handles"
+      return empty
+   end if
+   if the number of bytes in pMyKxKeys["secretKey"] is not 32 then
+      rsSetError "rsDmSessionKeys: pMyKxKeys must be the rsDmKeys array" && \
+            "(32-byte secretKey)"
+      return empty
+   end if
+   put rsHexToBin(pTheirKxPubHex) into tTheirPub
+   if the number of bytes in tTheirPub is not 32 then
+      rsSetError "rsDmSessionKeys: the peer kx public must be 64 hex chars"
+      return empty
+   end if
+   try
+      if tMine < tTheirs then
+         sxKeyExchangeClient pMyKxKeys["publicKey"], \
+               pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
+         put "client" into tOut["role"]
+      else
+         sxKeyExchangeServer pMyKxKeys["publicKey"], \
+               pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
+         put "server" into tOut["role"]
+      end if
+   catch tErr
+      rsSetError "rsDmSessionKeys: needs SodiumXT (sxKeyExchange):" && tErr
+      return empty
+   end try
+   if the number of bytes in tRx is not 32 or \
+         the number of bytes in tTx is not 32 then
+      rsSetError "rsDmSessionKeys: sxKeyExchange returned session keys" && \
+            "that are not 32 bytes"
+      return empty
+   end if
+   put tRx into tOut["rx"]
+   put tTx into tOut["tx"]
+   return tOut
+end rsDmSessionKeys
+
+function rsBuildPrekey pKxPubHex, pIdentitySeed
+   local tPub, tBody
+   put toLower(pKxPubHex) into tPub
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsBuildPrekey: the kx public must be 64 hex chars"
+      return empty
+   end if
+   put textEncode(kRsPrekeyMagic, "ASCII") into tBody
+   put textEncode(tPub, "ASCII") after tBody
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPrekey
+
+function rsParsePrekey pBytes
+   local tOut, tField
+   if the number of bytes in pBytes is not 132 then
+      rsSetError "rsParsePrekey: an RSK1 record is exactly 132 bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsPrekeyMagic then
+      rsSetError "rsParsePrekey: bad magic, not an RSK1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParsePrekey: malformed kx public key"
+      return empty
+   end if
+   put tField into tOut["kxPub"]
+   return tOut
+end rsParsePrekey
+
+function rsVerifyPrekey pBytes, pHandleHex
+   local tOut
+   put rsParsePrekey(pBytes) into tOut
+   if tOut is empty then return empty
+   return rsVerifyDmSigned(pBytes, pHandleHex, tOut)
+end rsVerifyPrekey
+
+private function rsVerifyDmSigned pBytes, pHandleHex, pParsed
+   local tPub, tLen, tOk, tErr
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsVerifyDmSigned: the handle must be 64 hex chars"
+      return empty
+   end if
+   put the number of bytes in pBytes into tLen
+   try
+      put sxSignVerifyDetached(byte (tLen - 63) to tLen of pBytes, \
+            byte 1 to (tLen - 64) of pBytes, tPub) into tOk
+   catch tErr
+      rsSetError "rsVerifyDmSigned: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyDmSigned: the signature does not verify under" && \
+            pHandleHex
+      return empty
+   end if
+   return pParsed
+end rsVerifyDmSigned
+
+function rsBuildIntro pTimestamp, pRecipientHandleHex, pSenderKxPubHex, pIdentitySeed
+   local tRecipient, tKxPub, tSender, tBody
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsBuildIntro: the timestamp must be below 2^53"
+      return empty
+   end if
+   put toLower(pRecipientHandleHex) into tRecipient
+   if not rsIsHexOfLen(tRecipient, 64) then
+      rsSetError "rsBuildIntro: the recipient handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pSenderKxPubHex) into tKxPub
+   if not rsIsHexOfLen(tKxPub, 64) then
+      rsSetError "rsBuildIntro: the sender kx public must be 64 hex chars"
+      return empty
+   end if
+   put rsHandleFromSeed(pIdentitySeed) into tSender
+   if tSender is empty then return empty
+   put textEncode(kRsIntroMagic, "ASCII") into tBody
+   put textEncode(tSender, "ASCII") after tBody
+   put textEncode(tKxPub, "ASCII") after tBody
+   put textEncode(tRecipient, "ASCII") after tBody
+   put rsBEu64(pTimestamp) after tBody
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildIntro
+
+function rsParseIntro pBytes
+   local tOut, tField
+   if the number of bytes in pBytes is not 268 then
+      rsSetError "rsParseIntro: an RSI1 record is exactly 268 bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsIntroMagic then
+      rsSetError "rsParseIntro: bad magic, not an RSI1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed sender handle"
+      return empty
+   end if
+   put tField into tOut["senderHandle"]
+   put textDecode(byte 69 to 132 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed sender kx public"
+      return empty
+   end if
+   put tField into tOut["senderKxPub"]
+   put textDecode(byte 133 to 196 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed recipient handle"
+      return empty
+   end if
+   put tField into tOut["recipientHandle"]
+   put rsReadBEu64(byte 197 to 204 of pBytes) into tOut["timestamp"]
+   return tOut
+end rsParseIntro
+
+function rsVerifyIntro pBytes, pMyHandleHex
+   local tOut
+   put rsParseIntro(pBytes) into tOut
+   if tOut is empty then return empty
+   if tOut["recipientHandle"] is not toLower(pMyHandleHex) then
+      rsSetError "rsVerifyIntro: this intro is addressed to" && \
+            tOut["recipientHandle"] & ", not to me"
+      return empty
+   end if
+   return rsVerifyDmSigned(pBytes, tOut["senderHandle"], tOut)
+end rsVerifyIntro
+
+function rsDmSealIntro pIntroBytes, pRecipientKxPubHex
+   local tPub, tOut, tErr
+   if rsParseIntro(pIntroBytes) is empty then
+      rsSetError "rsDmSealIntro: not a valid RSI1 record:" && rsLastError()
+      return empty
+   end if
+   put rsHexToBin(pRecipientKxPubHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsDmSealIntro: the recipient kx public must be 64 hex chars"
+      return empty
+   end if
+   try
+      put sxSeal(pIntroBytes, tPub) into tOut
+   catch tErr
+      rsSetError "rsDmSealIntro: needs SodiumXT (sxSeal):" && tErr
+      return empty
+   end try
+   return tOut
+end rsDmSealIntro
+
+function rsDmOpenIntro pSealedBytes, pMyHandleHex, pMyDmSeed
+   local tKeys, tPlain, tErr
+   if the number of bytes in pSealedBytes < 48 + 268 then
+      rsSetError "rsDmOpenIntro: too short to be a sealed RSI1 intro"
+      return empty
+   end if
+   put rsDmKeys(pMyDmSeed) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSealOpen(pSealedBytes, tKeys["publicKey"], \
+            tKeys["secretKey"]) into tPlain
+   catch tErr
+      rsSetError "rsDmOpenIntro: the seal does not open with my prekey" && \
+            "(wrong recipient or tampered):" && tErr
+      return empty
+   end try
+   return rsVerifyIntro(tPlain, pMyHandleHex)
+end rsDmOpenIntro
+
+function rsDmFrame pKind, pPayload
+   local tKindByte, tOut
+   if the number of chars in pKind is not 1 then
+      rsSetError "rsDmFrame: the kind must be one of I, H, M"
+      return empty
+   end if
+   put byteToNum(byte 1 of textEncode(pKind, "ASCII")) into tKindByte
+   if tKindByte is not 73 and tKindByte is not 72 and tKindByte is not 77 then
+      rsSetError "rsDmFrame: the kind must be one of I, H, M"
+      return empty
+   end if
+   if the number of bytes in pPayload < 1 then
+      rsSetError "rsDmFrame: the payload must be non-empty"
+      return empty
+   end if
+   if the number of bytes in pPayload + 5 > kRsFrameMax then
+      rsSetError "rsDmFrame: the frame is over the rp1" && kRsFrameMax && \
+            "cap; a DM payload that size belongs in a torrent"
+      return empty
+   end if
+   put textEncode(kRsFrameMagic, "ASCII") into tOut
+   put numToByte(tKindByte) after tOut
+   put pPayload after tOut
+   return tOut
+end rsDmFrame
+
+function rsDmParseFrame pBytes
+   local tOut, tKindByte
+   if the number of bytes in pBytes < 6 then
+      rsSetError "rsDmParseFrame: truncated frame"
+      return empty
+   end if
+   if the number of bytes in pBytes > kRsFrameMax then
+      rsSetError "rsDmParseFrame: frame over the rp1 cap"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsFrameMagic then
+      rsSetError "rsDmParseFrame: bad magic, not an RSM1 frame"
+      return empty
+   end if
+   put byteToNum(byte 5 of pBytes) into tKindByte
+   if tKindByte is not 73 and tKindByte is not 72 and tKindByte is not 77 then
+      rsSetError "rsDmParseFrame: unknown frame kind"
+      return empty
+   end if
+   put textDecode(byte 5 of pBytes, "ASCII") into tOut["kind"]
+   put byte 6 to -1 of pBytes into tOut["payload"]
+   return tOut
+end rsDmParseFrame
+
+function rsDmMessageBody pKind, pTimestamp, pBodyText
+   local tKindByte, tBody, tOut
+   if the number of chars in pKind is not 1 then
+      rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
+      return empty
+   end if
+   put byteToNum(byte 1 of textEncode(pKind, "ASCII")) into tKindByte
+   if tKindByte is not 84 and tKindByte is not 79 and tKindByte is not 65 then
+      rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsDmMessageBody: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsDmMessageBody: the timestamp must be below 2^53"
+      return empty
+   end if
+   put textEncode(pBodyText, "UTF-8") into tBody
+   if the number of bytes in tBody < 1 then
+      rsSetError "rsDmMessageBody: the body must be non-empty"
+      return empty
+   end if
+   put numToByte(tKindByte) into tOut
+   put rsBEu64(pTimestamp) after tOut
+   put tBody after tOut
+   return tOut
+end rsDmMessageBody
+
+function rsDmParseMessage pBytes
+   local tOut, tKindByte, tErr
+   if the number of bytes in pBytes < 10 then
+      rsSetError "rsDmParseMessage: truncated message record"
+      return empty
+   end if
+   put byteToNum(byte 1 of pBytes) into tKindByte
+   if tKindByte is not 84 and tKindByte is not 79 and tKindByte is not 65 then
+      rsSetError "rsDmParseMessage: unknown message kind"
+      return empty
+   end if
+   put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
+   put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
+   try
+      put textDecode(byte 10 to -1 of pBytes, "UTF-8") into tOut["text"]
+   catch tErr
+      rsSetError "rsDmParseMessage: the body is not valid UTF-8"
+      return empty
+   end try
+   return tOut
+end rsDmParseMessage
+
+function rsDmJoinInbox pSession, pHandleHex, pSavePath
+   local tInbox, tCode, tH, tWhy, tErr
+   put rsInboxId(pHandleHex) into tInbox
+   if tInbox is empty then return empty
+   if there is not a folder pSavePath then
+      rsSetError "rsDmJoinInbox: no folder at" && pSavePath && \
+            "(a phantom swarm still needs a valid save path)"
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsDmJoinInbox: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   try
+      btRp1Enable pSession
+      put the result into tCode
+   catch tErr
+      rsSetError "rsDmJoinInbox: needs torrentxt (btRp1Enable):" && tErr
+      return empty
+   end try
+   if tCode is not empty and tCode < 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmJoinInbox: btRp1Enable refused (" & tCode & ")" && tWhy
+      return empty
+   end if
+   try
+      put btAddInfohash(pSession, tInbox, pSavePath) into tH
+   catch tErr
+      rsSetError "rsDmJoinInbox: needs torrentxt (btAddInfohash):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmJoinInbox: btAddInfohash refused;" && tWhy
+      return empty
+   end if
+   try
+      btDhtAnnounce pSession, tInbox, 0
+   catch tErr
+      -- non-fatal: the swarm's own announce schedule still runs
+   end try
+   return tH
+end rsDmJoinInbox
+
+function rsDmSend pSession, pPeerId, pFrameBytes
+   local tCode, tWhy, tErr
+   if rsDmParseFrame(pFrameBytes) is empty then
+      rsSetError "rsDmSend: not a valid RSM1 frame:" && rsLastError()
+      return false
+   end if
+   if pPeerId is not an integer or pPeerId <= 0 then
+      rsSetError "rsDmSend: pPeerId is not an rp1 peer id"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsDmSend: pSession is not a live torrent session handle"
+      return false
+   end if
+   try
+      btRp1Send pSession, pPeerId, pFrameBytes
+      put the result into tCode
+   catch tErr
+      rsSetError "rsDmSend: needs torrentxt (btRp1Send):" && tErr
+      return false
+   end try
+   if tCode is not empty and tCode < 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmSend: btRp1Send refused (" & tCode & ")" && tWhy && \
+            "- the peer may be gone or its handshake incomplete"
+      return false
+   end if
+   return true
+end rsDmSend
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN
@@ -10445,6 +10902,7 @@ function rs1rsSelfTest
       rs1rstSectionHelpers
       rs1rstSectionBep44
       rs1rstSectionIngest
+      rs1rstSectionDm rs1tCaps
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
    else
@@ -10895,6 +11353,195 @@ private command rs1rstSectionIngest
    rs1rstCheck (rsIngestPost(rs1tPostEvent, rsZeroTarget(), rs1kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rs1rstSectionIngest
+
+private command rs1rstSectionDm pCaps
+   local rs1tSeed, rs1tMyKeys, rs1tConfKeys, rs1tSess, rs1tSessB, rs1tPrekey, rs1tIntro
+   local rs1tSealed, rs1tOpened, rs1tFrame, rs1tParsed, rs1tMsg, rs1tBig, rs1tDir, rs1tErr
+   local rs1tHeader, rs1tPush, rs1tPull, rs1tCipher, rs1tCipher2, rs1tPlain, rs1tTag, rs1tSession, rs1tH
+   rs1rstSection "phase 4 - DM keys, records, and the sealed first contact"
+   put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
+   -- keys: the kx pair from the DM subkey, pinned against real libsodium
+   put rsDmKeys(rs1rstBin(rs1kRsGoldDmSeedHex)) into rs1tMyKeys
+   rs1rstCheck (rs1tMyKeys["publicKeyHex"] is rs1kRsGoldDmKxPub), \
+         "the DM subkey yields the golden kx public"
+   rs1rstCheck (the number of bytes in rs1tMyKeys["secretKey"] is 32), \
+         "and a 32-byte kx secret"
+   put rsDmKeys(rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tConfKeys
+   rs1rstCheck (rs1tConfKeys["publicKeyHex"] is rs1kRsGoldConfKxPub), \
+         "the conformance seed yields its golden kx public"
+   rs1rstCheck (rsDmKeys(byte 1 to 31 of rs1tSeed) is empty), \
+         "a 31-byte DM seed is refused"
+   -- one session, two roles, derived from BOTH ends: the golden handle
+   -- sorts below the conformance pub, so the golden side is the client
+   put rsDmSessionKeys(rs1kRsGoldHandle, rs1tMyKeys, rs1kRsGoldConfPub, \
+         rs1kRsGoldConfKxPub) into rs1tSess
+   rs1rstCheck (rs1tSess["role"] is "client"), \
+         "the lexically smaller handle takes the client role"
+   rs1rstCheck (rs1rstHex(rs1tSess["rx"]) is rs1kRsGoldSessionRx), \
+         "client rx matches the libsodium-anchored golden"
+   rs1rstCheck (rs1rstHex(rs1tSess["tx"]) is rs1kRsGoldSessionTx), \
+         "client tx matches the libsodium-anchored golden"
+   put rsDmSessionKeys(rs1kRsGoldConfPub, rs1tConfKeys, rs1kRsGoldHandle, \
+         rs1kRsGoldDmKxPub) into rs1tSessB
+   rs1rstCheck (rs1tSessB["role"] is "server"), "the peer takes the server role"
+   rs1rstCheck (rs1rstHex(rs1tSessB["rx"]) is rs1kRsGoldSessionTx), \
+         "my tx is the peer's rx"
+   rs1rstCheck (rs1rstHex(rs1tSessB["tx"]) is rs1kRsGoldSessionRx), \
+         "and my rx is the peer's tx"
+   rs1rstCheck (rsDmSessionKeys(rs1kRsGoldHandle, rs1tMyKeys, rs1kRsGoldHandle, \
+         rs1kRsGoldConfKxPub) is empty), \
+         "a session with myself is refused"
+   rs1rstCheck (rsDmSessionKeys("zz", rs1tMyKeys, rs1kRsGoldConfPub, \
+         rs1kRsGoldConfKxPub) is empty), "a malformed handle is refused"
+   -- RSK1: the signed prekey record
+   put rsBuildPrekey(rs1kRsGoldDmKxPub, rs1tSeed) into rs1tPrekey
+   rs1rstCheck (rs1rstHex(rs1tPrekey) is rs1kRsGoldPrekeyRecHex), \
+         "prekey record bytes match golden"
+   rs1rstCheck (rsImmutableTarget(rs1tPrekey) is rs1kRsGoldPrekeyRecTarget), \
+         "and its DHT target re-derives"
+   put rsParsePrekey(rs1tPrekey) into rs1tParsed
+   rs1rstCheck (rs1tParsed["kxPub"] is rs1kRsGoldDmKxPub), "prekey kx round-trips"
+   put rsVerifyPrekey(rs1tPrekey, rs1kRsGoldHandle) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), "the prekey verifies under its author"
+   rs1rstCheck (rsVerifyPrekey(rs1tPrekey, rs1kRsGoldConfPub) is empty), \
+         "and refuses a different author"
+   rs1rstCheck (rsVerifyPrekey(rs1rstFlipByte(rs1tPrekey, 10), rs1kRsGoldHandle) is \
+         empty), "a tampered prekey is refused"
+   rs1rstCheck (rsParsePrekey(byte 1 to 131 of rs1tPrekey) is empty), \
+         "a truncated prekey is refused"
+   rs1rstCheck (rsBuildPrekey("zz", rs1tSeed) is empty), \
+         "a malformed kx public is refused at build"
+   -- RSI1: the intro, built by the golden identity FOR the conformance
+   -- identity; the sender handle comes from the signing seed, never an arg
+   put rsBuildIntro(rs1kRsGoldDmTs, rs1kRsGoldConfPub, rs1kRsGoldDmKxPub, rs1tSeed) \
+         into rs1tIntro
+   rs1rstCheck (rs1rstHex(rs1tIntro) is rs1kRsGoldIntroHex), \
+         "intro record bytes match golden"
+   put rsParseIntro(rs1tIntro) into rs1tParsed
+   rs1rstCheck (rs1tParsed["senderHandle"] is rs1kRsGoldHandle), \
+         "the sender handle round-trips"
+   rs1rstCheck (rs1tParsed["senderKxPub"] is rs1kRsGoldDmKxPub), \
+         "the sender kx public round-trips"
+   rs1rstCheck (rs1tParsed["recipientHandle"] is rs1kRsGoldConfPub), \
+         "the recipient handle round-trips"
+   rs1rstCheck (rs1tParsed["timestamp"] is 1754870520), "the timestamp round-trips"
+   put rsVerifyIntro(rs1tIntro, rs1kRsGoldConfPub) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), "the intro verifies for its recipient"
+   rs1rstCheck (rsVerifyIntro(rs1tIntro, rs1kRsGoldHandle) is empty), \
+         "and refuses a recipient it is not addressed to"
+   rs1rstCheck (rsVerifyIntro(rs1rstFlipByte(rs1tIntro, 200), rs1kRsGoldConfPub) is \
+         empty), "a tampered intro fails its signature"
+   rs1rstCheck (rsParseIntro(rs1tIntro & numToByte(0)) is empty), \
+         "trailing bytes are refused"
+   -- the seal: to the recipient's kx prekey; only the recipient opens it
+   put rsDmSealIntro(rs1tIntro, rs1kRsGoldConfKxPub) into rs1tSealed
+   rs1rstCheck (rs1tSealed is not empty), "the intro seals to the recipient prekey"
+   rs1rstCheck (the number of bytes in rs1tSealed is 268 + 48), \
+         "the sealed intro carries the 48-byte seal overhead"
+   put rsDmOpenIntro(rs1tSealed, rs1kRsGoldConfPub, rs1rstBin(rs1kRsGoldConfSeedHex)) \
+         into rs1tOpened
+   rs1rstCheck (rs1tOpened is not empty), "the recipient opens and verifies it"
+   rs1rstCheck (rs1tOpened["senderHandle"] is rs1kRsGoldHandle), \
+         "learning who is calling"
+   rs1rstCheck (rs1tOpened["senderKxPub"] is rs1kRsGoldDmKxPub), \
+         "and the key to answer on"
+   rs1rstCheck (rsDmOpenIntro(rs1tSealed, rs1kRsGoldHandle, \
+         rs1rstBin(rs1kRsGoldDmSeedHex)) is empty), \
+         "a NON-recipient cannot open the seal"
+   rs1rstCheck (rsDmOpenIntro(rs1rstFlipByte(rs1tSealed, 40), rs1kRsGoldConfPub, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) is empty), \
+         "a tampered seal is refused"
+   -- RSM1 frames: canonical kinds by byte value, strict parse
+   put rsDmFrame("I", rs1tSealed) into rs1tFrame
+   rs1rstCheck (rs1tFrame is not empty), "an intro frame builds"
+   put rsDmParseFrame(rs1tFrame) into rs1tParsed
+   rs1rstCheck (rs1tParsed["kind"] is "I"), "the frame kind round-trips"
+   rs1rstCheck (rs1tParsed["payload"] is rs1tSealed), "the frame payload round-trips"
+   rs1rstCheck (rsDmFrame("X", rs1tSealed) is empty), \
+         "an unknown frame kind is refused"
+   rs1rstCheck (rsDmFrame("i", rs1tSealed) is empty), \
+         "a lowercase kind is refused (canonical bytes, not folded case)"
+   rs1rstCheck (rsDmFrame("M", empty) is empty), \
+         "an empty frame payload is refused"
+   put "x" into rs1tBig
+   repeat 16 times
+      put rs1tBig & rs1tBig into rs1tBig
+   end repeat
+   rs1rstCheck (rsDmFrame("M", textEncode(rs1tBig, "ASCII")) is empty), \
+         "a frame over the rp1 cap is refused"
+   rs1rstCheck (rsDmParseFrame(byte 1 to 5 of rs1tFrame) is empty), \
+         "a payload-less frame is refused"
+   -- the message record, and the whole DM message path through a REAL
+   -- secretstream: build -> push (my tx) -> pull (peer rx = same key)
+   -- -> parse. The stream handles are freed even though the section is
+   -- pure - sodiumxt has no unload hook (its own rule).
+   put rsDmMessageBody("T", rs1kRsGoldMsgTs, rs1kRsGoldDmMsgText) into rs1tMsg
+   rs1rstCheck (rs1rstHex(rs1tMsg) is rs1kRsGoldDmMsgHex), \
+         "message record bytes match golden"
+   put rsDmParseMessage(rs1tMsg) into rs1tParsed
+   rs1rstCheck (rs1tParsed["kind"] is "T"), "message kind round-trips"
+   rs1rstCheck (rs1tParsed["timestamp"] is 1754870580), \
+         "message timestamp round-trips"
+   rs1rstCheck (rs1tParsed["text"] is rs1kRsGoldDmMsgText), "message text round-trips"
+   rs1rstCheck (rsDmMessageBody("X", 1, "hi") is empty), \
+         "an unknown message kind is refused"
+   rs1rstCheck (rsDmMessageBody("T", 1, empty) is empty), \
+         "an empty message body is refused"
+   rs1rstCheck (rsDmParseMessage(byte 1 to 9 of rs1tMsg) is empty), \
+         "a truncated message record is refused"
+   put sxSecretStreamInitPush(rs1tSess["tx"], rs1tHeader) into rs1tPush
+   put sxSecretStreamPush(rs1tPush, rs1tMsg, empty, false) into rs1tCipher
+   rs1rstCheck (the number of bytes in rs1tCipher > the number of bytes in rs1tMsg), \
+         "the stream ciphertext carries its auth overhead"
+   put sxSecretStreamInitPull(rs1tSessB["rx"], rs1tHeader) into rs1tPull
+   put sxSecretStreamPull(rs1tPull, rs1tCipher, empty, rs1tTag) into rs1tPlain
+   rs1rstCheck (rs1tPlain is rs1tMsg), \
+         "the peer's rx key decrypts what my tx key sent"
+   rs1rstCheck (sxIsFinalTag(rs1tTag) is false), "mid-stream is not final"
+   put sxSecretStreamPush(rs1tPush, rs1tMsg, empty, true) into rs1tCipher2
+   put sxSecretStreamPull(rs1tPull, rs1tCipher2, empty, rs1tTag) into rs1tPlain
+   rs1rstCheck (sxIsFinalTag(rs1tTag) is true), \
+         "the final tag survives the stream"
+   sxFreeStream rs1tPush
+   sxFreeStream rs1tPull
+   -- the live half: refusals run everywhere, the join runs on a session
+   rs1rstCheck (rsDmJoinInbox(0, "zz", "/") is empty), \
+         "rsDmJoinInbox refuses a malformed handle first"
+   rs1rstCheck (rsDmSend(0, 1, textEncode("junk", "ASCII")) is false), \
+         "rsDmSend refuses a non-RSM1 frame"
+   rs1rstCheck (rsDmSend(0, 1, rs1tFrame) is false), \
+         "rsDmSend refuses a dead session handle"
+   rs1rstCheck (rsDmSend(0, 0, rs1tFrame) is false), \
+         "rsDmSend refuses a bad peer id"
+   if pCaps["hasTorrent"] is not true then
+      rs1rstSkip "DM inbox join + framed send: torrentxt is not installed"
+      exit rs1rstSectionDm
+   end if
+   put rs1rstAcquireSession() into rs1tSession
+   if rs1tSession is 0 then
+      rs1rstSkip "DM inbox join + framed send: could not start a session"
+      exit rs1rstSectionDm
+   end if
+   put specialFolderPath("temporary") into rs1tDir
+   if rs1tDir is empty then put specialFolderPath("documents") into rs1tDir
+   if the last char of rs1tDir is "/" then delete the last char of rs1tDir
+   rs1rstCheck (rsDmJoinInbox(rs1tSession, rs1kRsGoldHandle, \
+         rs1tDir & "/riptide-no-such-folder") is empty), \
+         "rsDmJoinInbox refuses a missing save path"
+   put rsDmJoinInbox(rs1tSession, rs1kRsGoldHandle, rs1tDir) into rs1tH
+   rs1rstCheck (rs1tH is not empty and rs1tH > 0), \
+         "joining the inbox swarm returns its live handle"
+   rs1rstCheck (rsDmSend(rs1tSession, 999999999, rs1tFrame) is false), \
+         "rsDmSend to an unknown peer is refused by the binding"
+   -- tidy: drop the phantom swarm so a re-run starts clean
+   if rs1tH is not empty and rs1tH > 0 then
+      try
+         btRemoveTorrent rs1tSession, rs1tH, false
+      catch rs1tErr
+         -- best effort; the harness rule keeps the session itself alive
+      end try
+   end if
+end rs1rstSectionDm
 
 private function rs1rstAcquireSession
    local rs1tNew, rs1tErr

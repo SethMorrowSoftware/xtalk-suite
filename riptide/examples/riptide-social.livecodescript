@@ -1,8 +1,8 @@
 script "riptideSocialApp"
 
 -- riptide-social.livecodescript - the Riptide Social flagship stack, phases
--- 1-3: one identity, one public feed, one follow, media over torrents, on
--- one self-building card.
+-- 1-4: one identity, one public feed, one follow, media over torrents, and
+-- serverless encrypted DMs, on two self-building cards.
 --
 -- WHAT IT WALKS (RIPTIDE-SOCIAL-SPEC.md sections 10.3 phases 1-3): create or
 -- unlock the Argon2id-sealed master seed (RIPTKEY1, a 97-byte file the APP
@@ -27,9 +27,10 @@ script "riptideSocialApp"
 -- library underneath was already engine-passed (2026-08-12, 133/133).
 -- Result text and machine environments were not captured with the report;
 -- the record is the maintainer's dated account. The PHASE-3 media strip
--- (2026-08-14) is verified statically only; its done-criterion - a
--- follower on a second machine plays a video mid-download - still needs
--- its two-machine pass.
+-- and the PHASE-4 Messages card (both 2026-08-14) are verified statically
+-- only; their done-criteria - a follower on a second machine plays a
+-- video mid-download, and two machines exchange authenticated encrypted
+-- DMs with no server - still need their two-machine passes.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -46,14 +47,15 @@ script "riptideSocialApp"
 -- (master: tools/ui-kit.livecodescript; tools/check-ui-kit-drift.py holds
 -- every copy byte-identical). Change the look in the master, never here.
 --
--- SCOPE, said loudly: phases 4-7 are NOT here - no DMs (rsInboxId /
--- rsRoomId / rsDmSeed exist but are phase-4 fuel), no live sessions, no
--- LAN sync, no anonymous persona. Prekey and profile-meta head fields are
--- published EMPTY (phase-4 material). Public feeds are PUBLIC: the DHT
--- keeps records until expiry, there is no deletion, and nothing here is
--- anonymity (spec section 9) - and media rides ORDINARY BitTorrent swarms,
--- so seeding or fetching an attachment shows your IP to its peers, exactly
--- as any torrent does.
+-- SCOPE, said loudly: phases 5-7 are NOT here - no live sessions, no LAN
+-- sync, no anonymous persona. The profile-meta head field is still
+-- published EMPTY. DMs (phase 4, the Messages card) hold ONE conversation
+-- at a time in this demo, in memory only - no history, no offline queue;
+-- both ends must be running. Public feeds are PUBLIC: the DHT keeps
+-- records until expiry, there is no deletion, and nothing here is
+-- anonymity (spec section 9) - media rides ORDINARY BitTorrent swarms and
+-- rp1 DM peers connect DIRECTLY, so both show your IP to the other side,
+-- exactly as any torrent peer does.
 --
 -- KEYRING honesty: while unlocked, the identity seed lives in a script
 -- local (the spec's one-keyring pattern) and OXT script memory is not
@@ -67,7 +69,7 @@ constant kWalkMax = 12
 constant kNameMax = 64
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-2"
+constant kRaUiVersion = "ra-ui-720p-3"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -424,6 +426,24 @@ local sWalkCount       -- posts verified so far in this walk
 local sWaitUntil       -- ms deadline for the outstanding DHT request
 local sPendingMediaPath -- file waiting to ride the NEXT post (phase 3)
 local sMediaWatch      -- torrent handle of the media item the strip watches
+-- phase 4 (DMs). The demo holds ONE conversation at a time, loudly: the
+-- library supports any number, but a first pass a maintainer can verify on
+-- two machines beats a chat manager nobody has run.
+local sDmSeed          -- the DM subkey Data(32) while unlocked
+local sDmKeys          -- rsDmKeys array (kx publicKey/secretKey/publicKeyHex)
+local sMyPrekeyTarget  -- where my RSK1 prekey record lives (40 hex)
+local sDmInbox         -- torrent handle of MY inbox phantom swarm
+local sDmTheirInbox    -- torrent handle of the OUTBOUND target's inbox swarm
+local sDmTarget        -- the handle I am dialing (outbound), or empty
+local sDmTargetKx      -- their VERIFIED prekey kx public (64 hex)
+local sDmAwaitDmHead   -- "true" while the outbound head lookup is in flight
+local sDmAwaitPrekey   -- the 40-hex prekey target awaited, or empty
+local sDmTheirHandle   -- per-peer: the authenticated handle behind an rp1 peer
+local sDmRxKey         -- per-peer: session receive key
+local sDmTxKey         -- per-peer: session transmit key
+local sDmPush          -- per-peer: secretstream push handle (my outbound)
+local sDmPull          -- per-peer: secretstream pull handle (their inbound)
+local sDmActivePeer    -- the rp1 peer id of the live conversation, or empty
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -434,6 +454,7 @@ end openStack
 on closeStack
    local tErr
    put empty into sPolling
+   raDmTeardown
    if sSession is an integer and sSession > 0 then
       try
          btStopSession sSession
@@ -442,6 +463,8 @@ on closeStack
       end try
    end if
    put empty into sSession
+   put empty into sDmInbox
+   put empty into sDmTheirInbox
    put empty into sMediaWatch
    put empty into sPendingMediaPath
    raClearKeys
@@ -470,20 +493,46 @@ on mouseUp
       case "raMediaGet"
          raMediaGet
          break
+      case "raGoDm"
+         go card "raMessages" of me
+         break
+      case "raGoFeed"
+         go card 1 of me
+         break
+      case "raDmStart"
+         raDmStart
+         break
+      case "raDmSend"
+         raDmSend
+         break
       default
          pass mouseUp
    end switch
 end mouseUp
 
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
+-- Two CARDS since phase 4 (the spec's one-stack-rails-behind-tabs answer):
+-- card 1 is the feed (phases 1-3), card "raMessages" is the DM rail
+-- (phase 4). The stack script owns every handler, so navigation is just
+-- `go card`; the pump keeps running wherever you are.
 command raBuild
    if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild
    end if
    lock screen
+   raBuildFeedCard
+   raBuildDmCard
+   go card 1 of me
+   set the uUiVersion of this stack to kRaUiVersion
+   unlock screen
+end raBuild
+
+command raBuildFeedCard
+   go card 1 of me
    -- two columns inside the family's 720p budget (1200 x 640, the
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
-   uiChrome "Riptide Social - identity + public feed + media (phases 1-3)", 1200, 640
+   uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
+   uiButton "raGoDm", "Messages >", "1080,4,1192,26"
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -532,9 +581,39 @@ command raBuild
          & " done when a follower on a SECOND machine plays a video" \
          & " mid-download.", \
          "16,572,1184,632"
-   set the uUiVersion of this stack to kRaUiVersion
-   unlock screen
-end raBuild
+end raBuildFeedCard
+
+command raBuildDmCard
+   if there is no card "raMessages" of me then
+      create card
+      set the name of the last card to "raMessages"
+   end if
+   go card "raMessages" of me
+   uiChrome "Riptide Social - Messages (phase 4: encrypted DMs over rp1)", 1200, 640
+   uiButton "raGoFeed", "< Feed", "1080,4,1192,26"
+
+   uiSection "raDmSec1", "1. My inbox: the phantom swarm strangers reach you in", "16,58,592,76"
+   uiCap "raDmMine", "Unlock on the Feed card first; the inbox derives from your identity.", "16,82,592,124"
+   uiArea "raDmLog", "16,130,592,562"
+
+   uiSection "raDmSec2", "2. Conversation: sealed first contact, then a private stream", "608,58,1184,76"
+   uiLabel "raDmToL", "to handle (64 hex):", "608,80,748,98", 11
+   uiInput "raDmTo", "752,80,1050,100"
+   uiButton "raDmStart", "Start DM", "1056,80,1184,104"
+   uiArea "raDmChat", "608,110,1184,498"
+   uiInput "raDmMsg", "608,506,1050,528"
+   uiButton "raDmSend", "Send", "1056,504,1184,528"
+
+   uiFooter \
+         "DMs are end-to-end encrypted (a sealed RSI1 intro, then a" \
+         & " secretstream in each direction) - but rp1 peers see your IP," \
+         & " exactly as any torrent peer does, and this demo holds ONE" \
+         & " conversation at a time. Sessions live in memory only: Lock" \
+         & " or close ends them, there is no history. Phase 4 is done" \
+         & " when TWO machines exchange authenticated encrypted DMs" \
+         & " with no server.", \
+         "16,572,1184,632"
+end raBuildDmCard
 
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
@@ -600,6 +679,7 @@ command raCreate
          throw "the key file did not write; check the path and permissions"
       end if
       put rsIdentitySeed(tSeed) into sIdSeed
+      put rsDmSeed(tSeed) into sDmSeed
    catch tErr
       put true into tFailed
    end try
@@ -634,6 +714,7 @@ command raUnlock
          throw rsLastError()
       end if
       put rsIdentitySeed(tMaster) into sIdSeed
+      put rsDmSeed(tMaster) into sDmSeed
    catch tErr
       put true into tFailed
    end try
@@ -671,10 +752,91 @@ command raIdentityReady
          put the milliseconds + kDhtWaitMs into sWaitUntil
          put "recovering your head from the DHT (fresh identities start at seq 0)..." & return after field "raIdOut"
       end if
+      raDmBringUp
    else
       put "no session: posts stay disabled until TorrentXT is available." & return after field "raIdOut"
    end if
 end raIdentityReady
+
+-- Phase 4 bring-up, run once per unlock: derive the kx prekey pair,
+-- publish the signed RSK1 record (so the NEXT head names it and strangers
+-- can seal to a key that provably belongs to you), and join your own
+-- inbox swarm so intros can arrive. Degrades line by line with reasons -
+-- an inbox that failed to join disables inbound DMs and nothing else.
+command raDmBringUp
+   local tPrekey, tH
+   if sDmSeed is empty then
+      exit raDmBringUp
+   end if
+   put rsDmKeys(sDmSeed) into sDmKeys
+   if sDmKeys is empty then
+      raDmLog "DM keys failed:" && rsLastError()
+      exit raDmBringUp
+   end if
+   put rsBuildPrekey(sDmKeys["publicKeyHex"], sIdSeed) into tPrekey
+   if tPrekey is empty then
+      raDmLog "prekey record refused:" && rsLastError()
+      exit raDmBringUp
+   end if
+   put rsPublishImmutable(sSession, tPrekey) into sMyPrekeyTarget
+   if sMyPrekeyTarget is empty then
+      raDmLog "prekey publish failed:" && rsLastError()
+   else
+      raDmLog "prekey published at" && sMyPrekeyTarget & \
+            "; your next post's head will advertise it."
+   end if
+   put rsDmJoinInbox(sSession, sHandle, raMediaFolder()) into tH
+   if tH is empty then
+      raDmLog "inbox join failed (inbound DMs disabled):" && rsLastError()
+      put empty into sDmInbox
+   else
+      put tH into sDmInbox
+      raDmLog "inbox open at swarm" && rsInboxId(sHandle) & \
+            "; strangers who follow you can now knock."
+   end if
+   raDmPaintMine
+end raDmBringUp
+
+-- The inbox status cap on the Messages card, painted on state change.
+command raDmPaintMine
+   local tLine
+   if sHandle is empty then
+      put "Unlock on the Feed card first; the inbox derives from your identity." into tLine
+   else
+      if sMyPrekeyTarget is empty then
+         put "prekey: NOT published. " into tLine
+      else
+         put "prekey: published. " into tLine
+      end if
+      if sDmInbox is empty then
+         put "inbox: NOT joined." after tLine
+      else
+         put "inbox: joined (swarm" && rsInboxId(sHandle) & ")." after tLine
+      end if
+   end if
+   if there is a field "raDmMine" of card "raMessages" of me then
+      if the text of field "raDmMine" of card "raMessages" of me \
+            is not tLine then
+         set the text of field "raDmMine" of card "raMessages" of me to tLine
+      end if
+   end if
+end raDmPaintMine
+
+command raDmLog pLine
+   if there is a field "raDmLog" of card "raMessages" of me then
+      put pLine & return after field "raDmLog" of card "raMessages" of me
+   end if
+end raDmLog
+
+command raDmChatLine pLine
+   if there is a field "raDmChat" of card "raMessages" of me then
+      put pLine & return after field "raDmChat" of card "raMessages" of me
+   end if
+end raDmChatLine
+
+private function raDmShort pHandleHex
+   return char 1 to 8 of pHandleHex & "..."
+end raDmShort
 
 command raLock
    raClearKeys
@@ -682,13 +844,48 @@ command raLock
 end raLock
 
 command raClearKeys
+   raDmTeardown
    put empty into sIdSeed
+   put empty into sDmSeed
+   put empty into sDmKeys
    put empty into sHandle
    put empty into sOnion
    put 0 into sSeq
    put empty into sMyLatest
+   put empty into sMyPrekeyTarget
    put empty into sAwaitOwn
 end raClearKeys
+
+-- End every DM conversation: free the secretstream handles (SodiumXT has
+-- no unload hook; sxFreeStream is idempotent) and forget the per-peer
+-- state. The inbox swarms stay in the session - they carry no secrets.
+command raDmTeardown
+   local tPeer, tErr
+   repeat for each key tPeer in sDmPush
+      try
+         sxFreeStream sDmPush[tPeer]
+      catch tErr
+         -- already gone; free is best-effort by design
+      end try
+   end repeat
+   repeat for each key tPeer in sDmPull
+      try
+         sxFreeStream sDmPull[tPeer]
+      catch tErr
+         -- already gone
+      end try
+   end repeat
+   put empty into sDmPush
+   put empty into sDmPull
+   put empty into sDmTheirHandle
+   put empty into sDmRxKey
+   put empty into sDmTxKey
+   put empty into sDmActivePeer
+   put empty into sDmTarget
+   put empty into sDmTargetKx
+   put empty into sDmAwaitDmHead
+   put empty into sDmAwaitPrekey
+end raDmTeardown
 
 -- ---- the session + the pump --------------------------------------------------
 -- The app owns THE one TorrentXT session (the library never does), pumps
@@ -735,6 +932,16 @@ command raPoll
       catch tErr
          -- one bad drain must not kill the chain; the next tick retries
       end try
+      -- the rp1 stream (DM peers + frames) drains beside the DHT stream;
+      -- inert until a swarm is joined, and guarded the same way
+      try
+         put btRp1Poll(sSession) into tEvents
+         repeat for each element tEvent in tEvents
+            raHandleRp1 tEvent
+         end repeat
+      catch tErr
+         -- rp1 not enabled yet, or a bad drain; the next tick retries
+      end try
    end if
    raExpire
    raMediaPaint
@@ -759,12 +966,42 @@ command raExpire
       put "the DHT did not answer for post target" && sWalkNext && "in time; walk abandoned." & return after field "raTheirFeed"
       put empty into sWalkNext
    end if
+   if sDmAwaitDmHead is "true" then
+      put empty into sDmAwaitDmHead
+      raDmLog "no head arrived for" && raDmShort(sDmTarget) && \
+            "in time; Start DM again in a minute."
+   end if
+   if sDmAwaitPrekey is not empty then
+      raDmLog "their prekey record did not arrive in time; Start DM again."
+      put empty into sDmAwaitPrekey
+   end if
 end raExpire
 
 command raHandleEvent pEvent
    local tHead, tPost, tNext, tOk, tKeyCount
    switch pEvent["name"]
       case "dhtMutableItem"
+         if sDmAwaitDmHead is "true" and sDmTarget is not empty then
+            put rsIngestHead(pEvent, sDmTarget) into tHead
+            put the number of lines of the keys of tHead into tKeyCount
+            if tKeyCount > 0 then
+               put empty into sDmAwaitDmHead
+               if tHead["prekeyTarget"] is rsZeroTarget() then
+                  raDmLog raDmShort(sDmTarget) && "publishes no prekey" && \
+                        "(their app predates DMs); cannot open a channel."
+               else
+                  put tHead["prekeyTarget"] into sDmAwaitPrekey
+                  put the milliseconds + kDhtWaitMs into sWaitUntil
+                  put rsRequestImmutable(sSession, sDmAwaitPrekey) into tOk
+                  if tOk is true then
+                     raDmLog "head verified; fetching their prekey record..."
+                  else
+                     raDmLog "prekey lookup refused:" && rsLastError()
+                     put empty into sDmAwaitPrekey
+                  end if
+               end if
+            end if
+         end if
          if sAwaitOwn is "true" then
             put rsIngestHead(pEvent, sHandle) into tHead
             put the number of lines of the keys of tHead into tKeyCount
@@ -799,6 +1036,9 @@ command raHandleEvent pEvent
          end if
          break
       case "dhtImmutableItem"
+         if sDmAwaitPrekey is not empty and pEvent["target"] is sDmAwaitPrekey then
+            raDmPrekeyArrived pEvent["value"]
+         end if
          if sWalkNext is not empty and pEvent["target"] is sWalkNext then
             put rsIngestPost(pEvent, sWalkNext, sFollowHandle) into tPost
             put the number of lines of the keys of tPost into tKeyCount
@@ -886,7 +1126,10 @@ command raPost
       exit raPost
    end if
    add 1 to sSeq
-   put rsBuildHead(sSeq, tName, tTarget, empty, sOnion, empty) into tHead
+   -- since phase 4 the head advertises the prekey target, so a reader can
+   -- open a DM to any author whose post they verified
+   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, empty) \
+         into tHead
    if tHead is empty then
       subtract 1 from sSeq
       uiStatus "rsBuildHead refused:" && rsLastError(), "bad"
@@ -960,6 +1203,303 @@ command raFetch
    end if
    uiStatus "Asking the DHT for" && sFollowHandle & "...", empty
 end raFetch
+
+-- ---- phase 4: DMs ------------------------------------------------------------
+-- The outbound dance (Start DM): fetch their head -> fetch + VERIFY their
+-- RSK1 prekey -> join their inbox swarm -> on each rp1-capable handshake
+-- there, send the sealed intro plus my stream header. Only the real
+-- recipient can open the seal; a bystander's stream never authenticates
+-- (its first ciphertext fails the pull), so wrong peers fall away without
+-- a byte of plaintext. Inbound is the mirror: an intro arrives in MY
+-- inbox, is opened + verified, and I answer with my own header.
+
+command raDmStart
+   local tHandle, tOk
+   if sIdSeed is empty or sDmKeys is empty then
+      uiStatus "Unlock (or create) your identity before starting a DM.", "warn"
+      exit raDmStart
+   end if
+   if sSession is not an integer or sSession <= 0 then
+      uiStatus "No TorrentXT session: DMs need the network.", "bad"
+      exit raDmStart
+   end if
+   put toLower(word 1 of field "raDmTo" of card "raMessages" of me) \
+         into tHandle
+   if the number of chars of tHandle is not 64 then
+      uiStatus "A handle is 64 hex characters (from the author's Feed card).", "warn"
+      exit raDmStart
+   end if
+   if tHandle is sHandle then
+      uiStatus "That is your own handle; DM someone else.", "warn"
+      exit raDmStart
+   end if
+   put tHandle into sDmTarget
+   put empty into sDmTargetKx
+   put "true" into sDmAwaitDmHead
+   put the milliseconds + kDhtWaitMs into sWaitUntil
+   put rsRequestHead(sSession, sDmTarget) into tOk
+   if tOk is not true then
+      put empty into sDmAwaitDmHead
+      uiStatus "rsRequestHead refused:" && rsLastError(), "bad"
+      exit raDmStart
+   end if
+   raDmLog "dialing" && raDmShort(sDmTarget) & ": fetching their head..."
+   uiStatus "Fetching their head from the DHT...", empty
+end raDmStart
+
+-- Their prekey record arrived: check the content address, verify the
+-- author signature, and only then join their inbox swarm. A prekey that
+-- fails EITHER check is a swapped key - refusing it here is what keeps
+-- first contact readable only by the person the post chain belongs to.
+command raDmPrekeyArrived pValue
+   local tParsed, tH
+   if rsImmutableTarget(pValue) is not sDmAwaitPrekey then
+      raDmLog "a prekey answer did not hash to its target; ignored."
+      exit raDmPrekeyArrived
+   end if
+   put empty into sDmAwaitPrekey
+   put rsVerifyPrekey(pValue, sDmTarget) into tParsed
+   if tParsed is empty then
+      raDmLog "their prekey record FAILED verification:" && rsLastError()
+      exit raDmPrekeyArrived
+   end if
+   put tParsed["kxPub"] into sDmTargetKx
+   put rsDmJoinInbox(sSession, sDmTarget, raMediaFolder()) into tH
+   if tH is empty then
+      raDmLog "could not join their inbox swarm:" && rsLastError()
+      exit raDmPrekeyArrived
+   end if
+   put tH into sDmTheirInbox
+   raDmLog "prekey VERIFIED; waiting in their inbox swarm for a peer" && \
+         "(the DHT introduces you - give it a minute)..."
+end raDmPrekeyArrived
+
+-- One rp1 event. Peer ids are stable per connection (the rp1-chat rule);
+-- everything DM-shaped is keyed by them.
+command raHandleRp1 pEvent
+   local tPeer, tFrame, tOpened, tParsed, tPlain, tTag, tErr
+   put pEvent["peer"] into tPeer
+   switch pEvent["name"]
+      case "rp1Handshake"
+         if pEvent["supportsRp1"] is not "1" then
+            break
+         end if
+         -- a capable peer in the OUTBOUND target's inbox swarm gets the
+         -- sealed intro + my stream header; anyone else is inbound-side
+         -- and speaks first
+         if sDmTarget is not empty and sDmTargetKx is not empty then
+            if pEvent["infoHashV1"] is rsInboxId(sDmTarget) then
+               raDmIntroduceTo tPeer
+            end if
+         end if
+         break
+      case "rp1Message"
+         put rsDmParseFrame(pEvent["payload"]) into tFrame
+         if tFrame is empty then
+            break
+         end if
+         switch tFrame["kind"]
+            case "I"
+               put rsDmOpenIntro(tFrame["payload"], sHandle, sDmSeed) \
+                     into tOpened
+               if tOpened is empty then
+                  raDmLog "an intro arrived that is not for me; ignored" && \
+                        "(" & rsLastError() & ")"
+                  break
+               end if
+               raDmLog "DM intro from" && raDmShort(tOpened["senderHandle"]) \
+                     && "- answering with my stream header."
+               raDmSessionUp tPeer, tOpened["senderHandle"], \
+                     tOpened["senderKxPub"]
+               break
+            case "H"
+               if sDmRxKey[tPeer] is empty then
+                  break
+               end if
+               try
+                  put sxSecretStreamInitPull(sDmRxKey[tPeer], \
+                        tFrame["payload"]) into sDmPull[tPeer]
+               catch tErr
+                  raDmLog "their stream header failed:" && tErr
+                  break
+               end try
+               -- the channel-open moment is also when the compose box
+               -- binds to this peer; a peer that never authenticates
+               -- (first "M" pull fails) is dropped right back off it
+               put tPeer into sDmActivePeer
+               raDmChatLine "-- channel open with" && \
+                     raDmShort(sDmTheirHandle[tPeer]) && "--"
+               break
+            case "M"
+               if sDmPull[tPeer] is empty then
+                  break
+               end if
+               try
+                  put sxSecretStreamPull(sDmPull[tPeer], \
+                        tFrame["payload"], empty, tTag) into tPlain
+               catch tErr
+                  -- wrong peer or tamper: this connection never becomes a
+                  -- conversation; drop its DM state, keep the swarm
+                  raDmLog "a stream message failed authentication;" && \
+                        "dropping that peer."
+                  raDmDropPeer tPeer
+                  break
+               end try
+               put rsDmParseMessage(tPlain) into tParsed
+               if tParsed is empty then
+                  raDmLog "an authenticated but malformed message;" && \
+                        "dropping that peer."
+                  raDmDropPeer tPeer
+                  break
+               end if
+               if tParsed["kind"] is "T" then
+                  raDmChatLine raDmShort(sDmTheirHandle[tPeer]) & ":" && \
+                        tParsed["text"]
+               end if
+               break
+         end switch
+         break
+      case "rp1PeerDisconnected"
+         if sDmTheirHandle[tPeer] is not empty then
+            raDmChatLine "-- " & raDmShort(sDmTheirHandle[tPeer]) && \
+                  "disconnected --"
+         end if
+         raDmDropPeer tPeer
+         break
+   end switch
+end raHandleRp1
+
+-- Outbound first contact to one peer in the target's inbox swarm.
+command raDmIntroduceTo pPeer
+   local tIntro, tSealed, tFrame, tOk
+   if sDmTheirHandle[pPeer] is not empty then
+      exit raDmIntroduceTo
+   end if
+   put rsBuildIntro(the seconds, sDmTarget, sDmKeys["publicKeyHex"], \
+         sIdSeed) into tIntro
+   if tIntro is empty then
+      raDmLog "intro build refused:" && rsLastError()
+      exit raDmIntroduceTo
+   end if
+   put rsDmSealIntro(tIntro, sDmTargetKx) into tSealed
+   if tSealed is empty then
+      raDmLog "intro seal refused:" && rsLastError()
+      exit raDmIntroduceTo
+   end if
+   put rsDmFrame("I", tSealed) into tFrame
+   if tFrame is empty then
+      exit raDmIntroduceTo
+   end if
+   put rsDmSend(sSession, pPeer, tFrame) into tOk
+   if tOk is not true then
+      raDmLog "intro send refused:" && rsLastError()
+      exit raDmIntroduceTo
+   end if
+   raDmLog "sealed intro sent to peer" && pPeer & \
+         "; opening my stream side..."
+   raDmSessionUp pPeer, sDmTarget, sDmTargetKx
+end raDmIntroduceTo
+
+-- Shared by both directions: derive the pairwise session for this peer,
+-- start MY push stream, and send its header. The pull side arrives as
+-- their "H" frame and is inited in the dispatcher.
+command raDmSessionUp pPeer, pTheirHandle, pTheirKxPub
+   local tSess, tHeader, tFrame, tOk, tErr
+   if sDmPush[pPeer] is not empty then
+      exit raDmSessionUp
+   end if
+   put rsDmSessionKeys(sHandle, sDmKeys, pTheirHandle, pTheirKxPub) \
+         into tSess
+   if tSess is empty then
+      raDmLog "session derivation refused:" && rsLastError()
+      exit raDmSessionUp
+   end if
+   put pTheirHandle into sDmTheirHandle[pPeer]
+   put tSess["rx"] into sDmRxKey[pPeer]
+   put tSess["tx"] into sDmTxKey[pPeer]
+   try
+      put sxSecretStreamInitPush(sDmTxKey[pPeer], tHeader) into \
+            sDmPush[pPeer]
+   catch tErr
+      raDmLog "stream init failed:" && tErr
+      raDmDropPeer pPeer
+      exit raDmSessionUp
+   end try
+   put rsDmFrame("H", tHeader) into tFrame
+   if tFrame is empty then
+      raDmLog "header frame refused:" && rsLastError()
+      raDmDropPeer pPeer
+      exit raDmSessionUp
+   end if
+   put rsDmSend(sSession, pPeer, tFrame) into tOk
+   if tOk is not true then
+      raDmLog "header send refused:" && rsLastError()
+      raDmDropPeer pPeer
+      exit raDmSessionUp
+   end if
+end raDmSessionUp
+
+-- Forget one peer's DM state, freeing its stream handles (idempotent).
+command raDmDropPeer pPeer
+   local tErr
+   if sDmPush[pPeer] is not empty then
+      try
+         sxFreeStream sDmPush[pPeer]
+      catch tErr
+      end try
+   end if
+   if sDmPull[pPeer] is not empty then
+      try
+         sxFreeStream sDmPull[pPeer]
+      catch tErr
+      end try
+   end if
+   delete variable sDmPush[pPeer]
+   delete variable sDmPull[pPeer]
+   delete variable sDmTheirHandle[pPeer]
+   delete variable sDmRxKey[pPeer]
+   delete variable sDmTxKey[pPeer]
+   if sDmActivePeer is pPeer then
+      put empty into sDmActivePeer
+   end if
+end raDmDropPeer
+
+command raDmSend
+   local tBody, tMsg, tCipher, tFrame, tOk, tErr
+   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
+      uiStatus "No open conversation yet: Start DM and wait for the" && \
+            "channel-open line.", "warn"
+      exit raDmSend
+   end if
+   put field "raDmMsg" of card "raMessages" of me into tBody
+   if tBody is empty then
+      exit raDmSend
+   end if
+   put rsDmMessageBody("T", the seconds, tBody) into tMsg
+   if tMsg is empty then
+      uiStatus "rsDmMessageBody refused:" && rsLastError(), "bad"
+      exit raDmSend
+   end if
+   try
+      put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
+            into tCipher
+   catch tErr
+      uiStatus "stream push failed:" && tErr, "bad"
+      exit raDmSend
+   end try
+   put rsDmFrame("M", tCipher) into tFrame
+   if tFrame is empty then
+      uiStatus "rsDmFrame refused:" && rsLastError(), "bad"
+      exit raDmSend
+   end if
+   put rsDmSend(sSession, sDmActivePeer, tFrame) into tOk
+   if tOk is not true then
+      uiStatus "send refused:" && rsLastError(), "bad"
+      exit raDmSend
+   end if
+   raDmChatLine "you:" && tBody
+   set the text of field "raDmMsg" of card "raMessages" of me to empty
+end raDmSend
 
 -- ---- phase 3: the media strip ------------------------------------------------
 -- One button, two moods. While the watched item is not yet openable the

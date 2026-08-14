@@ -120,6 +120,96 @@ def ed25519_sign(msg, seed):
 
 
 # ---------------------------------------------------------------------------
+# X25519 (RFC 7748 montgomery ladder) and crypto_kx (libsodium's key
+# exchange: kx secret = BLAKE2b-32(seed), kx public = X25519 base mult,
+# session keys = BLAKE2b-64(q || client_pk || server_pk) split rx||tx for
+# the client and tx||rx for the server, q = X25519(own_sk, peer_pk)).
+#
+# Anchored against a REAL libsodium (not typed from anyone's memory):
+# tools/emit-kx-anchor.py loads libsodium through ctypes and prints what
+# crypto_scalarmult_base / crypto_kx_seed_keypair /
+# crypto_kx_{client,server}_session_keys return for the oracle's fixed
+# inputs; the constants in _self_check below are that script's output
+# (libsodium.so.23.3.0 = 1.0.18, Linux x86_64, 2026-08-14). Re-run the
+# emitter against any libsodium to re-verify.
+# ---------------------------------------------------------------------------
+
+_A24 = 121665
+
+
+def _x25519(scalar_bytes, u_bytes):
+    k = int.from_bytes(scalar_bytes, "little")
+    k &= (1 << 254) - 8
+    k |= 1 << 254
+    x1 = int.from_bytes(u_bytes, "little") & ((1 << 255) - 1)
+    x2, z2 = 1, 0
+    x3, z3 = x1, 1
+    swap = 0
+    for t in reversed(range(255)):
+        k_t = (k >> t) & 1
+        swap ^= k_t
+        if swap:
+            x2, x3 = x3, x2
+            z2, z3 = z3, z2
+        swap = k_t
+        a = (x2 + z2) % _p
+        aa = a * a % _p
+        b = (x2 - z2) % _p
+        bb = b * b % _p
+        e = (aa - bb) % _p
+        c = (x3 + z3) % _p
+        d = (x3 - z3) % _p
+        da = d * a % _p
+        cb = c * b % _p
+        x3 = (da + cb) % _p
+        x3 = x3 * x3 % _p
+        z3 = (da - cb) % _p
+        z3 = z3 * z3 % _p
+        z3 = z3 * x1 % _p
+        x2 = aa * bb % _p
+        z2 = e * (aa + _A24 * e) % _p
+    if swap:
+        x2, x3 = x3, x2
+        z2, z3 = z3, z2
+    return (x2 * pow(z2, _p - 2, _p) % _p).to_bytes(32, "little")
+
+
+def x25519_base(scalar_bytes):
+    return _x25519(scalar_bytes, (9).to_bytes(32, "little"))
+
+
+def kx_seed_keypair(seed):
+    """libsodium crypto_kx_seed_keypair: sk = BLAKE2b-32(seed), pk = base
+    mult. Returns (pk, sk)."""
+    if len(seed) != 32:
+        raise ValueError("kx seed must be 32 bytes")
+    sk = hashlib.blake2b(seed, digest_size=32).digest()
+    return x25519_base(sk), sk
+
+
+def _kx_session(q, client_pk, server_pk):
+    h = hashlib.blake2b(digest_size=64)
+    h.update(q)
+    h.update(client_pk)
+    h.update(server_pk)
+    keys = h.digest()
+    return keys[:32], keys[32:]
+
+
+def kx_client_session_keys(client_pk, client_sk, server_pk):
+    """(rx, tx) for the client, per sxKeyExchangeClient."""
+    q = _x25519(client_sk, server_pk)
+    return _kx_session(q, client_pk, server_pk)
+
+
+def kx_server_session_keys(server_pk, server_sk, client_pk):
+    """(rx, tx) for the server: the client's pair swapped."""
+    q = _x25519(server_sk, client_pk)
+    first, second = _kx_session(q, client_pk, server_pk)
+    return second, first
+
+
+# ---------------------------------------------------------------------------
 # sxKdfDerive / sxHash semantics (libsodium BLAKE2b)
 # ---------------------------------------------------------------------------
 
@@ -396,6 +486,75 @@ def build_post_chunked(timestamp, prev_target, chunk_targets, media, identity_se
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 - the DM wire formats (RIPTIDE-SOCIAL-SPEC.md section 5)
+#
+# RSK1 prekey record (the immutable item a head's prekeyTarget names):
+#   magic(4) kxPub(64 ascii hex) authorSig(64): ed25519 by the identity key
+#   over every byte before it. Exact length 132.
+# RSI1 intro (the plaintext sxSeal wraps; sealed bytes are nondeterministic):
+#   magic(4) senderHandle(64 hex) senderKxPub(64 hex) recipientHandle(64 hex)
+#   timestamp(u64 BE) authorSig(64). Exact length 268. The recipient handle
+#   inside the signed body binds the intro to ONE inbox (no replay to a
+#   third party); the timestamp lets an app apply a freshness window.
+# RSM1 rp1 frame (the outer transport frame; payload stays opaque here):
+#   magic(4) kind(1: "I" sealed intro / "H" secretstream header / "M" stream
+#   ciphertext) payload(1..59995). The whole frame caps at the rp1 60000.
+# DM inner message (the plaintext INSIDE the secretstream):
+#   kind(1: "T" text / "O" sdp offer / "A" sdp answer) timestamp(u64 BE)
+#   body(UTF-8, may be empty for "O"/"A"? no - body always >= 1 byte).
+# ---------------------------------------------------------------------------
+
+PREKEY_MAGIC = b"RSK1"
+INTRO_MAGIC = b"RSI1"
+FRAME_MAGIC = b"RSM1"
+FRAME_KINDS = (b"I", b"H", b"M")
+MESSAGE_KINDS = (b"T", b"O", b"A")
+FRAME_MAX = 60000  # the rp1 payload cap; the frame must fit inside it
+
+
+def _hex64(value):
+    t = value.lower()
+    if len(t) != 64 or any(c not in "0123456789abcdef" for c in t):
+        raise ValueError("expected 64 hex chars")
+    return t.encode("ascii")
+
+
+def build_prekey(kx_pub_hex, identity_seed_bytes):
+    body = PREKEY_MAGIC + _hex64(kx_pub_hex)
+    return body + ed25519_sign(body, identity_seed_bytes)
+
+
+def build_intro(sender_handle, sender_kx_pub_hex, recipient_handle,
+                timestamp, identity_seed_bytes):
+    body = INTRO_MAGIC
+    body += _hex64(sender_handle)
+    body += _hex64(sender_kx_pub_hex)
+    body += _hex64(recipient_handle)
+    body += _u64(timestamp)
+    return body + ed25519_sign(body, identity_seed_bytes)
+
+
+def build_dm_frame(kind, payload):
+    if kind not in FRAME_KINDS:
+        raise ValueError("frame kind must be I, H, or M")
+    if len(payload) < 1:
+        raise ValueError("frame payload must be non-empty")
+    rec = FRAME_MAGIC + kind + payload
+    if len(rec) > FRAME_MAX:
+        raise ValueError("frame over the rp1 %d cap" % FRAME_MAX)
+    return rec
+
+
+def build_dm_message(kind, timestamp, body_text):
+    if kind not in MESSAGE_KINDS:
+        raise ValueError("message kind must be T, O, or A")
+    body = body_text.encode("utf-8")
+    if len(body) < 1:
+        raise ValueError("message body must be non-empty")
+    return kind + _u64(timestamp) + body
+
+
+# ---------------------------------------------------------------------------
 # Import-time self-checks against the independent anchors. A model that
 # cannot reproduce a vector it did not invent must not be consulted.
 # ---------------------------------------------------------------------------
@@ -435,6 +594,38 @@ def _self_check():
     if onion_from_pubkey(pubkey_from_onion(real)) != real:
         raise AssertionError("onion address self-check failed")
 
+    # X25519 + crypto_kx: anchored against a REAL libsodium via
+    # tools/emit-kx-anchor.py (libsodium.so.23.3.0 = 1.0.18, Linux x86_64,
+    # 2026-08-14). These constants are that script's printed output; re-run
+    # it against any libsodium to re-verify the anchor.
+    if x25519_base(b"\x42" * 32).hex() != (
+            "132c442be010fbd57e72603328aa76e71fccc1503aae219327d14d9c9993f472"):
+        raise AssertionError("X25519 base-mult self-check failed")
+    dm = kdf_derive(b"\x42" * 32, SUBKEY_DM, 32)
+    conf = bytes.fromhex(
+        "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7")
+    gpk, gsk = kx_seed_keypair(dm)
+    if gpk.hex() != ("d946190585386568c3123a6fa706f94f"
+                     "5140fdfe647ab51fdf76e3f6e5799d3c"):
+        raise AssertionError("crypto_kx seed keypair self-check failed (pk)")
+    if gsk.hex() != ("f594dec79bb8d739bfe462cfd602a83e"
+                     "dd48d17fecd6890bd71e1417edfae92b"):
+        raise AssertionError("crypto_kx seed keypair self-check failed (sk)")
+    cpk, csk = kx_seed_keypair(conf)
+    if cpk.hex() != ("9cf14a375404bd5f3fc048647215af20"
+                     "b506717fdab3f6e7df50c64e837f2059"):
+        raise AssertionError("crypto_kx conf keypair self-check failed")
+    rx, tx = kx_client_session_keys(gpk, gsk, cpk)
+    if rx.hex() != ("0cf0c702142da300ac5d769dff39a1b4"
+                    "aabe4842b617cdf4a624815290b4ba38"):
+        raise AssertionError("crypto_kx client rx self-check failed")
+    if tx.hex() != ("2f8bb162c5e2d4346eadcf2a47804458"
+                    "428840336303e629d1ac20e8375dfe83"):
+        raise AssertionError("crypto_kx client tx self-check failed")
+    srx, stx = kx_server_session_keys(cpk, csk, gpk)
+    if srx != tx or stx != rx:
+        raise AssertionError("crypto_kx server keys do not cross-match")
+
 
 _self_check()
 
@@ -465,6 +656,17 @@ def golden_vectors():
     head_v = bencode_bytes(head)
     head_buf = bep44_signbuf(HEAD_SALT.encode("ascii"), 7, head_v)
     head_sig = ed25519_sign(head_buf, id_seed)
+    # phase 4: the DM keys and wire records. The golden identity's handle
+    # (5a54...) sorts below the conformance pubkey (672e...), so per the
+    # role rule (lexically smaller handle is the kx CLIENT) the golden
+    # side is the client and the conformance side the server.
+    dm_kx_pk, dm_kx_sk = kx_seed_keypair(dm_seed(master))
+    conf_kx_pk, conf_kx_sk = kx_seed_keypair(conf_seed)
+    sess_rx, sess_tx = kx_client_session_keys(dm_kx_pk, dm_kx_sk, conf_kx_pk)
+    prekey_rec = build_prekey(dm_kx_pk.hex(), id_seed)
+    intro = build_intro(handle, dm_kx_pk.hex(), conf_pub, 1754870520, id_seed)
+    intro_frame = build_dm_frame(b"I", intro)
+    dm_msg = build_dm_message(b"T", 1754870580, "hello, dm")
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -485,6 +687,17 @@ def golden_vectors():
         "headValue": head_v.hex(),
         "headBuf": head_buf.hex(),
         "headSig": head_sig.hex(),
+        "dmKxPub": dm_kx_pk.hex(),
+        "confKxPub": conf_kx_pk.hex(),
+        "confKxSec": conf_kx_sk.hex(),
+        "sessionRx": sess_rx.hex(),
+        "sessionTx": sess_tx.hex(),
+        "prekeyRec": prekey_rec.hex(),
+        "prekeyRecTarget": immutable_target(prekey_rec),
+        "intro": intro.hex(),
+        "introTarget": immutable_target(intro),
+        "introFrame": intro_frame.hex(),
+        "dmMsg": dm_msg.hex(),
     }
 
 
