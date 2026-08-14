@@ -1,0 +1,177 @@
+name: build
+
+# Builds the native box2dxt shared library and runs the C smoke test for every
+# supported target, then attaches the binaries to a published GitHub Release.
+#
+# Targets:
+#   linux-x86_64   64-bit, built in a manylinux2014 container  -> glibc 2.17 floor
+#   linux-i686     32-bit, built in a manylinux2014 container  -> glibc 2.17 floor
+#   macos-universal  arm64 + x86_64 in one dylib (both 64-bit)
+#   windows-x64    64-bit MSVC
+#   windows-x86    32-bit MSVC
+#
+# Notes:
+#   * 32-bit macOS is intentionally absent: modern macOS/Xcode (and Apple Silicon)
+#     dropped the 32-bit runtime entirely, so it cannot be built. The universal
+#     dylib already covers every architecture macOS actually runs.
+#   * SIMD: x86-64 uses SSE2 (the x86-64 baseline) via -DBOX2D_AVX2=OFF; 32-bit x86
+#     uses Box2D's scalar path via -DBOX2D_DISABLE_SIMD=ON, because Box2D's SSE2
+#     path needs intrinsics that 32-bit i686 does not enable by default. Both keep
+#     the binaries runnable on any CPU of their word size.
+#
+# Triggers: a published Release builds + attaches; pushes to main and PRs get the
+# same build + test gate (no attach). A manual run (Actions > build > Run workflow)
+# with a release_tag attaches binaries to an existing tag after the fact.
+#
+# IMPORTANT: a bare `git push --tags` does NOT trigger this — you must publish a
+# GitHub *Release* (or use the manual run with release_tag).
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the built binaries to this existing release tag (e.g. dev-01). Leave blank to only build & test."
+        required: false
+        default: ""
+
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event.inputs.release_tag }}
+  cancel-in-progress: true
+
+jobs:
+  # Cheap gate: static checks on the .livecodescript layer (OXT cannot compile in
+  # CI). Verifies no smart quotes, balanced handlers/control structures, and that
+  # the examples' embedded Kit copy has not drifted from src/box2dxt-kit.livecodescript.
+  embedded-kit:
+    name: lint .livecodescript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static checks (quotes, handler balance, embedded-Kit sync)
+        run: python3 tools/check-livecodescript.py
+
+  # Linux binaries are built inside a manylinux2014 container (CentOS 7, glibc 2.17)
+  # so they load on virtually any Linux from 2013 onward. We check out on the host
+  # and `docker run` the build, because actions/checkout's bundled Node won't run
+  # against glibc 2.17 inside the container.
+  build-linux:
+    name: build & smoke-test (${{ matrix.name }})
+    needs: embedded-kit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            image: quay.io/pypa/manylinux2014_x86_64
+            cmake_args: -DBOX2D_AVX2=OFF
+            asset: libbox2dxt-linux-x86_64.so
+          - name: linux-i686
+            image: quay.io/pypa/manylinux2014_i686
+            cmake_args: -DBOX2D_DISABLE_SIMD=ON
+            asset: libbox2dxt-linux-i686.so
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & smoke-test in ${{ matrix.image }} (glibc 2.17)
+        run: |
+          docker run --rm -v "$PWD":/io -w /io "${{ matrix.image }}" \
+            bash -euxo pipefail -c '
+              if ! command -v cmake >/dev/null 2>&1; then
+                PYBIN="$(ls -d /opt/python/cp31*-cp31*/bin 2>/dev/null | tail -1)"
+                "$PYBIN/pip" install --quiet cmake ninja
+                export PATH="$PYBIN:$PATH"
+              fi
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON ${{ matrix.cmake_args }}
+              cmake --build build --config Release
+              ctest --test-dir build --output-on-failure
+              mkdir -p dist
+              cp "$(find build -maxdepth 2 -name libbox2dxt.so | head -n 1)" "dist/${{ matrix.asset }}"
+            '
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # macOS + Windows build natively on their runners.
+  build-native:
+    name: build & smoke-test (${{ matrix.name }})
+    needs: embedded-kit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            # Intel + Apple Silicon in one dylib; AVX2 off keeps the x86 slice portable.
+            # The arch list is quoted so bash does not split on the ';'.
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBOX2D_AVX2=OFF'
+            lib: libbox2dxt.dylib
+            asset: libbox2dxt-macos-universal.dylib
+          - name: windows-x64
+            os: windows-latest
+            cmake_args: -A x64 -DBOX2D_AVX2=OFF
+            lib: box2dxt.dll
+            asset: box2dxt-windows-x64.dll
+          - name: windows-x86
+            os: windows-latest
+            # 32-bit MSVC: scalar Box2D so the DLL needs no specific x86 CPU features.
+            cmake_args: -A Win32 -DBOX2D_DISABLE_SIMD=ON
+            lib: box2dxt.dll
+            asset: box2dxt-windows-x86.dll
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Smoke test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Stage library
+        shell: bash
+        run: |
+          mkdir -p dist
+          # MSVC drops the DLL in build/Release/; single-config generators use build/.
+          src="$(find build -maxdepth 2 -name '${{ matrix.lib }}' | head -n 1)"
+          test -n "$src" || { echo "could not find ${{ matrix.lib }} under build/"; exit 1; }
+          cp "$src" "dist/${{ matrix.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # Gather every binary and attach it to the release — either the one that was just
+  # published, or the tag passed to a manual run.
+  release:
+    name: attach binaries to the release
+    needs: [ build-linux, build-native ]
+    if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach binaries to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+        run: |
+          echo "Attaching binaries to release: $TAG"
+          gh release upload "$TAG" dist/* --repo "${GITHUB_REPOSITORY}" --clobber

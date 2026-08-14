@@ -1,0 +1,143 @@
+# box2dxt's native build matrix, ported to the ROOT of the monorepo.
+#
+# WHY THIS FILE EXISTS: GitHub Actions runs only the workflows in the
+# repository-root .github/workflows/, so box2dxt/.github/workflows/build.yml is
+# inert here. That file stays for when the member is developed in isolation;
+# this is the copy that actually fires, with the member directory as the
+# working directory.
+#
+# WHAT IT DOES NOT DO: it does not attach releases and it does not commit
+# binaries. The member workflow attached its builds to GitHub Releases; in the
+# suite, release assembly is the manual release-binaries.yml pass and the rule
+# is that a committed binary traces to a human decision. Each lane uploads its
+# library as a build ARTIFACT; a maintainer places it deliberately
+# (box2dxt/tools/package-extension.py does the placing) and refreshes
+# box2dxt/src/code/MANIFEST.sha256 in the same change.
+#
+# The always-on, compiler-free gates live in suite-gates.yml and cover every
+# member on every push; this heavier matrix is scoped by paths so it only runs
+# when box2dxt (or this file) changes.
+name: native box2dxt
+
+on:
+  pull_request:
+    paths:
+      - "box2dxt/**"
+      - ".github/workflows/native-box2dxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "box2dxt/**"
+      - ".github/workflows/native-box2dxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-box2dxt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Linux binaries build inside a manylinux2014 container (CentOS 7, glibc
+  # 2.17) so they load on virtually any Linux from 2013 onward. Checkout on
+  # the host, `docker run` the build: actions/checkout's bundled Node won't
+  # run against glibc 2.17 inside the container.
+  build-linux:
+    name: build & smoke-test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            image: quay.io/pypa/manylinux2014_x86_64
+            cmake_args: -DBOX2D_AVX2=OFF
+            asset: libbox2dxt-linux-x86_64.so
+          - name: linux-i686
+            image: quay.io/pypa/manylinux2014_i686
+            cmake_args: -DBOX2D_DISABLE_SIMD=ON
+            asset: libbox2dxt-linux-i686.so
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & smoke-test in ${{ matrix.image }} (glibc 2.17)
+        run: |
+          docker run --rm -v "$PWD":/io -w /io/box2dxt "${{ matrix.image }}" \
+            bash -euxo pipefail -c '
+              if ! command -v cmake >/dev/null 2>&1; then
+                PYBIN="$(ls -d /opt/python/cp31*-cp31*/bin 2>/dev/null | tail -1)"
+                "$PYBIN/pip" install --quiet cmake ninja
+                export PATH="$PYBIN:$PATH"
+              fi
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON ${{ matrix.cmake_args }}
+              cmake --build build --config Release
+              ctest --test-dir build --output-on-failure
+              mkdir -p dist
+              cp "$(find build -maxdepth 2 -name libbox2dxt.so | head -n 1)" "dist/${{ matrix.asset }}"
+            '
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: box2dxt/dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # macOS + Windows build natively on their runners.
+  build-native:
+    name: build & smoke-test (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            # Intel + Apple Silicon in one dylib; AVX2 off keeps the x86
+            # slice portable. Quoted so bash does not split on the ';'.
+            # NOTE this is the ONE member whose universal build works on a
+            # plain macos runner: CMAKE_OSX_ARCHITECTURES fans out both
+            # slices in one configure, unlike the sodiumxt-style rebundle
+            # that regressed to thin dylibs and keeps macOS manual there.
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBOX2D_AVX2=OFF'
+            lib: libbox2dxt.dylib
+            asset: libbox2dxt-macos-universal.dylib
+          - name: windows-x64
+            os: windows-latest
+            cmake_args: -A x64 -DBOX2D_AVX2=OFF
+            lib: box2dxt.dll
+            asset: box2dxt-windows-x64.dll
+          - name: windows-x86
+            os: windows-latest
+            # 32-bit MSVC: scalar Box2D so the DLL needs no specific x86
+            # CPU features.
+            cmake_args: -A Win32 -DBOX2D_DISABLE_SIMD=ON
+            lib: box2dxt.dll
+            asset: box2dxt-windows-x86.dll
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: box2dxt
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Smoke test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Stage library
+        shell: bash
+        run: |
+          mkdir -p dist
+          # MSVC drops the DLL in build/Release/; single-config generators
+          # use build/.
+          src="$(find build -maxdepth 2 -name '${{ matrix.lib }}' | head -n 1)"
+          test -n "$src" || { echo "could not find ${{ matrix.lib }} under build/"; exit 1; }
+          cp "$src" "dist/${{ matrix.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: box2dxt/dist/${{ matrix.asset }}
+          if-no-files-found: error

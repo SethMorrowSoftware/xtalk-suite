@@ -1,0 +1,3101 @@
+/*
+box2dxt.lcb - xTalk Builder (LCB) binding library for Box2D v3, via the
+              box2d_lc C shim. Part of Box2Dxt for OpenXTalk (OXT).
+
+Box2Dxt targets OpenXTalk / the xTalk language family and is compatible with
+LiveCode 9.6.3+. Once this extension is loaded, every public handler below is
+callable directly from xTalk (OpenXTalk Script), e.g.
+    put b2NewWorld(0, -10, true, true) into gWorld
+
+Conventions:
+  * Handles are integers (0 = invalid). Every handler tolerates a stale or 0
+    handle: getters return 0, actions do nothing (the C shim validates ids).
+  * All distances are METRES, angles are RADIANS (convert to pixels at draw time).
+  * Body type codes: 0 = static, 1 = kinematic, 2 = dynamic.
+
+The foreign handlers bind to the shared library "box2dxt" (built by CMakeLists.txt).
+Bindings resolve on first use, so the library only needs to be present at run time.
+The exported C ABI symbols keep the historical "b2lc_" prefix for binary stability.
+*/
+
+library org.openxtalk.box2dxt
+
+use com.livecode.foreign
+
+metadata title is "Box2D for OpenXTalk"
+metadata author is "Box2Dxt contributors"
+metadata version is "0.2.0"
+
+-- =====================================================================
+-- Foreign bindings to the shim (private)
+-- =====================================================================
+private foreign handler _abi_version() returns CInt binds to "c:box2dxt>b2lc_abi_version!cdecl"
+
+private foreign handler _world_create(in pGx as CDouble, in pGy as CDouble, in pSleep as CInt, in pCont as CInt) returns CInt binds to "c:box2dxt>b2lc_world_create!cdecl"
+private foreign handler _world_create_threaded(in pGx as CDouble, in pGy as CDouble, in pSleep as CInt, in pCont as CInt, in pWorkers as CInt) returns CInt binds to "c:box2dxt>b2lc_world_create_threaded!cdecl"
+private foreign handler _world_thread_count(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_world_thread_count!cdecl"
+private foreign handler _world_destroy(in pW as CInt) returns nothing binds to "c:box2dxt>b2lc_world_destroy!cdecl"
+private foreign handler _world_set_gravity(in pW as CInt, in pGx as CDouble, in pGy as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_gravity!cdecl"
+private foreign handler _world_enable_sleeping(in pW as CInt, in pFlag as CInt) returns nothing binds to "c:box2dxt>b2lc_world_enable_sleeping!cdecl"
+private foreign handler _world_enable_continuous(in pW as CInt, in pFlag as CInt) returns nothing binds to "c:box2dxt>b2lc_world_enable_continuous!cdecl"
+private foreign handler _world_step(in pW as CInt, in pDt as CDouble, in pSub as CInt) returns nothing binds to "c:box2dxt>b2lc_world_step!cdecl"
+
+private foreign handler _body_create(in pW as CInt, in pT as CInt, in pX as CDouble, in pY as CDouble, in pA as CDouble, in pBullet as CInt, in pFixedRot as CInt) returns CInt binds to "c:box2dxt>b2lc_body_create!cdecl"
+private foreign handler _body_destroy(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_destroy!cdecl"
+private foreign handler _body_x(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_x!cdecl"
+private foreign handler _body_y(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_y!cdecl"
+private foreign handler _body_angle(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_angle!cdecl"
+private foreign handler _body_vx(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_vx!cdecl"
+private foreign handler _body_vy(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_vy!cdecl"
+private foreign handler _body_omega(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_omega!cdecl"
+private foreign handler _body_mass(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_mass!cdecl"
+private foreign handler _body_is_awake(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_is_awake!cdecl"
+private foreign handler _body_world_center_x(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_world_center_x!cdecl"
+private foreign handler _body_world_center_y(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_world_center_y!cdecl"
+private foreign handler _body_type(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_type!cdecl"
+private foreign handler _body_is_bullet(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_is_bullet!cdecl"
+private foreign handler _body_is_enabled(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_is_enabled!cdecl"
+private foreign handler _body_linear_damping(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_linear_damping!cdecl"
+private foreign handler _body_angular_damping(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_angular_damping!cdecl"
+private foreign handler _body_gravity_scale(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_gravity_scale!cdecl"
+private foreign handler _body_set_transform(in pB as CInt, in pX as CDouble, in pY as CDouble, in pA as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_transform!cdecl"
+private foreign handler _body_set_velocity(in pB as CInt, in pVx as CDouble, in pVy as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_velocity!cdecl"
+private foreign handler _body_set_angular_velocity(in pB as CInt, in pW as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_angular_velocity!cdecl"
+private foreign handler _body_apply_force(in pB as CInt, in pFx as CDouble, in pFy as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_force!cdecl"
+private foreign handler _body_apply_impulse(in pB as CInt, in pIx as CDouble, in pIy as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_impulse!cdecl"
+private foreign handler _body_apply_torque(in pB as CInt, in pT as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_torque!cdecl"
+private foreign handler _body_apply_angular_impulse(in pB as CInt, in pImp as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_angular_impulse!cdecl"
+private foreign handler _body_set_bullet(in pB as CInt, in pFlag as CInt) returns nothing binds to "c:box2dxt>b2lc_body_set_bullet!cdecl"
+private foreign handler _body_set_awake(in pB as CInt, in pFlag as CInt) returns nothing binds to "c:box2dxt>b2lc_body_set_awake!cdecl"
+private foreign handler _body_set_fixed_rotation(in pB as CInt, in pFlag as CInt) returns nothing binds to "c:box2dxt>b2lc_body_set_fixed_rotation!cdecl"
+private foreign handler _body_set_type(in pB as CInt, in pT as CInt) returns nothing binds to "c:box2dxt>b2lc_body_set_type!cdecl"
+private foreign handler _body_set_linear_damping(in pB as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_linear_damping!cdecl"
+private foreign handler _body_set_angular_damping(in pB as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_angular_damping!cdecl"
+private foreign handler _body_set_gravity_scale(in pB as CInt, in pS as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_gravity_scale!cdecl"
+private foreign handler _body_set_sleep_threshold(in pB as CInt, in pV as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_sleep_threshold!cdecl"
+private foreign handler _body_enable(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_enable!cdecl"
+private foreign handler _body_disable(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_disable!cdecl"
+
+private foreign handler _shape_add_box(in pB as CInt, in pHw as CDouble, in pHh as CDouble, in pD as CDouble, in pF as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_add_box!cdecl"
+private foreign handler _shape_add_circle(in pB as CInt, in pCx as CDouble, in pCy as CDouble, in pRad as CDouble, in pD as CDouble, in pF as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_add_circle!cdecl"
+private foreign handler _shape_add_capsule(in pB as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble, in pRad as CDouble, in pD as CDouble, in pF as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_add_capsule!cdecl"
+private foreign handler _shape_add_segment(in pB as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble, in pF as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_add_segment!cdecl"
+private foreign handler _poly_begin() returns nothing binds to "c:box2dxt>b2lc_poly_begin!cdecl"
+private foreign handler _poly_add(in pX as CDouble, in pY as CDouble) returns nothing binds to "c:box2dxt>b2lc_poly_add!cdecl"
+private foreign handler _shape_add_polygon(in pB as CInt, in pD as CDouble, in pF as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_add_polygon!cdecl"
+private foreign handler _shape_destroy(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_destroy!cdecl"
+private foreign handler _shape_set_friction(in pS as CInt, in pF as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_friction!cdecl"
+private foreign handler _shape_set_restitution(in pS as CInt, in pR as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_restitution!cdecl"
+private foreign handler _shape_set_density(in pS as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_density!cdecl"
+private foreign handler _shape_body(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_body!cdecl"
+private foreign handler _shape_test_point(in pS as CInt, in pX as CDouble, in pY as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_test_point!cdecl"
+
+private foreign handler _joint_revolute(in pW as CInt, in pBa as CInt, in pBb as CInt, in pAx as CDouble, in pAy as CDouble, in pBx as CDouble, in pBy as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_revolute!cdecl"
+private foreign handler _revolute_enable_limit(in pJ as CInt, in pEnable as CInt, in pLo as CDouble, in pHi as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_enable_limit!cdecl"
+private foreign handler _revolute_enable_motor(in pJ as CInt, in pEnable as CInt, in pSpeed as CDouble, in pMaxTorque as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_enable_motor!cdecl"
+private foreign handler _revolute_angle(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_angle!cdecl"
+private foreign handler _joint_distance(in pW as CInt, in pBa as CInt, in pBb as CInt, in pAx as CDouble, in pAy as CDouble, in pBx as CDouble, in pBy as CDouble, in pLength as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_distance!cdecl"
+private foreign handler _distance_set_length(in pJ as CInt, in pLength as CDouble) returns nothing binds to "c:box2dxt>b2lc_distance_set_length!cdecl"
+private foreign handler _distance_set_length_range(in pJ as CInt, in pLo as CDouble, in pHi as CDouble) returns nothing binds to "c:box2dxt>b2lc_distance_set_length_range!cdecl"
+private foreign handler _distance_enable_spring(in pJ as CInt, in pEnable as CInt, in pHertz as CDouble, in pDamping as CDouble) returns nothing binds to "c:box2dxt>b2lc_distance_enable_spring!cdecl"
+private foreign handler _distance_length(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_length!cdecl"
+private foreign handler _joint_weld(in pW as CInt, in pBa as CInt, in pBb as CInt, in pAx as CDouble, in pAy as CDouble, in pBx as CDouble, in pBy as CDouble, in pRefAngle as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_weld!cdecl"
+private foreign handler _weld_set_stiffness(in pJ as CInt, in pLh as CDouble, in pLd as CDouble, in pAh as CDouble, in pAd as CDouble) returns nothing binds to "c:box2dxt>b2lc_weld_set_stiffness!cdecl"
+private foreign handler _joint_prismatic(in pW as CInt, in pBa as CInt, in pBb as CInt, in pAx as CDouble, in pAy as CDouble, in pBx as CDouble, in pBy as CDouble, in pAxisX as CDouble, in pAxisY as CDouble, in pRefAngle as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_prismatic!cdecl"
+private foreign handler _prismatic_enable_limit(in pJ as CInt, in pEnable as CInt, in pLo as CDouble, in pHi as CDouble) returns nothing binds to "c:box2dxt>b2lc_prismatic_enable_limit!cdecl"
+private foreign handler _prismatic_enable_motor(in pJ as CInt, in pEnable as CInt, in pSpeed as CDouble, in pMaxForce as CDouble) returns nothing binds to "c:box2dxt>b2lc_prismatic_enable_motor!cdecl"
+private foreign handler _prismatic_translation(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_translation!cdecl"
+private foreign handler _joint_wheel(in pW as CInt, in pBa as CInt, in pBb as CInt, in pAx as CDouble, in pAy as CDouble, in pBx as CDouble, in pBy as CDouble, in pAxisX as CDouble, in pAxisY as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_wheel!cdecl"
+private foreign handler _wheel_enable_spring(in pJ as CInt, in pEnable as CInt, in pHertz as CDouble, in pDamping as CDouble) returns nothing binds to "c:box2dxt>b2lc_wheel_enable_spring!cdecl"
+private foreign handler _wheel_enable_motor(in pJ as CInt, in pEnable as CInt, in pSpeed as CDouble, in pMaxTorque as CDouble) returns nothing binds to "c:box2dxt>b2lc_wheel_enable_motor!cdecl"
+private foreign handler _joint_mouse(in pW as CInt, in pBa as CInt, in pBb as CInt, in pTx as CDouble, in pTy as CDouble, in pHertz as CDouble, in pDamping as CDouble, in pMaxForce as CDouble) returns CInt binds to "c:box2dxt>b2lc_joint_mouse!cdecl"
+private foreign handler _mouse_set_target(in pJ as CInt, in pTx as CDouble, in pTy as CDouble) returns nothing binds to "c:box2dxt>b2lc_mouse_set_target!cdecl"
+private foreign handler _joint_destroy(in pJ as CInt) returns nothing binds to "c:box2dxt>b2lc_joint_destroy!cdecl"
+
+private foreign handler _cast_ray_closest(in pW as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble) returns CInt binds to "c:box2dxt>b2lc_cast_ray_closest!cdecl"
+private foreign handler _ray_body() returns CInt binds to "c:box2dxt>b2lc_ray_body!cdecl"
+private foreign handler _ray_shape() returns CInt binds to "c:box2dxt>b2lc_ray_shape!cdecl"
+private foreign handler _ray_x() returns CDouble binds to "c:box2dxt>b2lc_ray_x!cdecl"
+private foreign handler _ray_y() returns CDouble binds to "c:box2dxt>b2lc_ray_y!cdecl"
+private foreign handler _ray_normal_x() returns CDouble binds to "c:box2dxt>b2lc_ray_normal_x!cdecl"
+private foreign handler _ray_normal_y() returns CDouble binds to "c:box2dxt>b2lc_ray_normal_y!cdecl"
+private foreign handler _ray_fraction() returns CDouble binds to "c:box2dxt>b2lc_ray_fraction!cdecl"
+private foreign handler _body_at_point(in pW as CInt, in pX as CDouble, in pY as CDouble) returns CInt binds to "c:box2dxt>b2lc_body_at_point!cdecl"
+
+private foreign handler _contacts_update(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_contacts_update!cdecl"
+private foreign handler _contact_begin_count() returns CInt binds to "c:box2dxt>b2lc_contact_begin_count!cdecl"
+private foreign handler _contact_end_count() returns CInt binds to "c:box2dxt>b2lc_contact_end_count!cdecl"
+private foreign handler _contact_begin_a(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_begin_a!cdecl"
+private foreign handler _contact_begin_b(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_begin_b!cdecl"
+private foreign handler _contact_end_a(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_end_a!cdecl"
+private foreign handler _contact_end_b(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_end_b!cdecl"
+
+-- ===== ABI v3 additions: foreign bindings ===========================
+-- shape-def builder (one-shot extras applied by the next shape creation)
+private foreign handler _shapedef_reset() returns nothing binds to "c:box2dxt>b2lc_shapedef_reset!cdecl"
+private foreign handler _shapedef_set_sensor(in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_sensor!cdecl"
+private foreign handler _shapedef_set_enable_contact_events(in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_enable_contact_events!cdecl"
+private foreign handler _shapedef_set_enable_sensor_events(in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_enable_sensor_events!cdecl"
+private foreign handler _shapedef_set_enable_hit_events(in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_enable_hit_events!cdecl"
+private foreign handler _shapedef_set_enable_presolve_events(in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_enable_presolve_events!cdecl"
+private foreign handler _shapedef_set_filter(in pCat as CDouble, in pMask as CDouble, in pGroup as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_filter!cdecl"
+private foreign handler _shapedef_set_material_id(in pId as CInt) returns nothing binds to "c:box2dxt>b2lc_shapedef_set_material_id!cdecl"
+
+-- contact hit events
+private foreign handler _contact_hit_count() returns CInt binds to "c:box2dxt>b2lc_contact_hit_count!cdecl"
+private foreign handler _contact_hit_a(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_hit_a!cdecl"
+private foreign handler _contact_hit_b(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_contact_hit_b!cdecl"
+private foreign handler _contact_hit_x(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_contact_hit_x!cdecl"
+private foreign handler _contact_hit_y(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_contact_hit_y!cdecl"
+private foreign handler _contact_hit_nx(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_contact_hit_nx!cdecl"
+private foreign handler _contact_hit_ny(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_contact_hit_ny!cdecl"
+private foreign handler _contact_hit_speed(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_contact_hit_speed!cdecl"
+
+-- sensor events
+private foreign handler _sensors_update(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_sensors_update!cdecl"
+private foreign handler _sensor_begin_count() returns CInt binds to "c:box2dxt>b2lc_sensor_begin_count!cdecl"
+private foreign handler _sensor_end_count() returns CInt binds to "c:box2dxt>b2lc_sensor_end_count!cdecl"
+private foreign handler _sensor_begin_sensor(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_sensor_begin_sensor!cdecl"
+private foreign handler _sensor_begin_visitor(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_sensor_begin_visitor!cdecl"
+private foreign handler _sensor_end_sensor(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_sensor_end_sensor!cdecl"
+private foreign handler _sensor_end_visitor(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_sensor_end_visitor!cdecl"
+
+-- body move events
+private foreign handler _bodies_update(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_bodies_update!cdecl"
+private foreign handler _body_move_count() returns CInt binds to "c:box2dxt>b2lc_body_move_count!cdecl"
+private foreign handler _body_move_body(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_body_move_body!cdecl"
+private foreign handler _body_move_x(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_move_x!cdecl"
+private foreign handler _body_move_y(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_move_y!cdecl"
+private foreign handler _body_move_angle(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_move_angle!cdecl"
+private foreign handler _body_move_asleep(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_body_move_asleep!cdecl"
+
+-- world tuning / info / explode / profile / counters
+private foreign handler _world_gravity_x(in pW as CInt) returns CDouble binds to "c:box2dxt>b2lc_world_gravity_x!cdecl"
+private foreign handler _world_gravity_y(in pW as CInt) returns CDouble binds to "c:box2dxt>b2lc_world_gravity_y!cdecl"
+private foreign handler _world_set_restitution_threshold(in pW as CInt, in pV as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_restitution_threshold!cdecl"
+private foreign handler _world_restitution_threshold(in pW as CInt) returns CDouble binds to "c:box2dxt>b2lc_world_restitution_threshold!cdecl"
+private foreign handler _world_set_hit_event_threshold(in pW as CInt, in pV as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_hit_event_threshold!cdecl"
+private foreign handler _world_hit_event_threshold(in pW as CInt) returns CDouble binds to "c:box2dxt>b2lc_world_hit_event_threshold!cdecl"
+private foreign handler _world_set_contact_tuning(in pW as CInt, in pHz as CDouble, in pDamp as CDouble, in pPush as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_contact_tuning!cdecl"
+private foreign handler _world_set_joint_tuning(in pW as CInt, in pHz as CDouble, in pDamp as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_joint_tuning!cdecl"
+private foreign handler _world_set_maximum_linear_speed(in pW as CInt, in pV as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_set_maximum_linear_speed!cdecl"
+private foreign handler _world_maximum_linear_speed(in pW as CInt) returns CDouble binds to "c:box2dxt>b2lc_world_maximum_linear_speed!cdecl"
+private foreign handler _world_enable_warm_starting(in pW as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_world_enable_warm_starting!cdecl"
+private foreign handler _world_is_warm_starting(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_world_is_warm_starting!cdecl"
+private foreign handler _world_enable_speculative(in pW as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_world_enable_speculative!cdecl"
+private foreign handler _world_is_sleeping_enabled(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_world_is_sleeping_enabled!cdecl"
+private foreign handler _world_is_continuous_enabled(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_world_is_continuous_enabled!cdecl"
+private foreign handler _world_awake_body_count(in pW as CInt) returns CInt binds to "c:box2dxt>b2lc_world_awake_body_count!cdecl"
+private foreign handler _world_explode(in pW as CInt, in pX as CDouble, in pY as CDouble, in pR as CDouble, in pFalloff as CDouble, in pImpulse as CDouble) returns nothing binds to "c:box2dxt>b2lc_world_explode!cdecl"
+private foreign handler _world_profile_update(in pW as CInt) returns nothing binds to "c:box2dxt>b2lc_world_profile_update!cdecl"
+private foreign handler _world_profile_step() returns CDouble binds to "c:box2dxt>b2lc_world_profile_step!cdecl"
+private foreign handler _world_profile_pairs() returns CDouble binds to "c:box2dxt>b2lc_world_profile_pairs!cdecl"
+private foreign handler _world_profile_collide() returns CDouble binds to "c:box2dxt>b2lc_world_profile_collide!cdecl"
+private foreign handler _world_profile_solve() returns CDouble binds to "c:box2dxt>b2lc_world_profile_solve!cdecl"
+private foreign handler _world_profile_refit() returns CDouble binds to "c:box2dxt>b2lc_world_profile_refit!cdecl"
+private foreign handler _world_profile_sensors() returns CDouble binds to "c:box2dxt>b2lc_world_profile_sensors!cdecl"
+private foreign handler _world_counters_update(in pW as CInt) returns nothing binds to "c:box2dxt>b2lc_world_counters_update!cdecl"
+private foreign handler _world_count_bodies() returns CInt binds to "c:box2dxt>b2lc_world_count_bodies!cdecl"
+private foreign handler _world_count_shapes() returns CInt binds to "c:box2dxt>b2lc_world_count_shapes!cdecl"
+private foreign handler _world_count_contacts() returns CInt binds to "c:box2dxt>b2lc_world_count_contacts!cdecl"
+private foreign handler _world_count_joints() returns CInt binds to "c:box2dxt>b2lc_world_count_joints!cdecl"
+private foreign handler _world_count_islands() returns CInt binds to "c:box2dxt>b2lc_world_count_islands!cdecl"
+
+-- body: transforms / velocity-at-point / force-at-point / mass / enum
+private foreign handler _body_world_point_x(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_point_x!cdecl"
+private foreign handler _body_world_point_y(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_point_y!cdecl"
+private foreign handler _body_local_point_x(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_point_x!cdecl"
+private foreign handler _body_local_point_y(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_point_y!cdecl"
+private foreign handler _body_world_vector_x(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_vector_x!cdecl"
+private foreign handler _body_world_vector_y(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_vector_y!cdecl"
+private foreign handler _body_local_vector_x(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_vector_x!cdecl"
+private foreign handler _body_local_vector_y(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_vector_y!cdecl"
+private foreign handler _body_world_point_velocity_x(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_point_velocity_x!cdecl"
+private foreign handler _body_world_point_velocity_y(in pB as CInt, in pWx as CDouble, in pWy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_world_point_velocity_y!cdecl"
+private foreign handler _body_local_point_velocity_x(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_point_velocity_x!cdecl"
+private foreign handler _body_local_point_velocity_y(in pB as CInt, in pLx as CDouble, in pLy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_body_local_point_velocity_y!cdecl"
+private foreign handler _body_apply_force_at(in pB as CInt, in pFx as CDouble, in pFy as CDouble, in pPx as CDouble, in pPy as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_force_at!cdecl"
+private foreign handler _body_apply_impulse_at(in pB as CInt, in pIx as CDouble, in pIy as CDouble, in pPx as CDouble, in pPy as CDouble, in pWake as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_impulse_at!cdecl"
+private foreign handler _body_rotational_inertia(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_rotational_inertia!cdecl"
+private foreign handler _body_local_center_x(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_local_center_x!cdecl"
+private foreign handler _body_local_center_y(in pB as CInt) returns CDouble binds to "c:box2dxt>b2lc_body_local_center_y!cdecl"
+private foreign handler _body_mass_data_update(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_mass_data_update!cdecl"
+private foreign handler _md_mass() returns CDouble binds to "c:box2dxt>b2lc_md_mass!cdecl"
+private foreign handler _md_center_x() returns CDouble binds to "c:box2dxt>b2lc_md_center_x!cdecl"
+private foreign handler _md_center_y() returns CDouble binds to "c:box2dxt>b2lc_md_center_y!cdecl"
+private foreign handler _md_inertia() returns CDouble binds to "c:box2dxt>b2lc_md_inertia!cdecl"
+private foreign handler _body_set_mass_data(in pB as CInt, in pMass as CDouble, in pCx as CDouble, in pCy as CDouble, in pInertia as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_mass_data!cdecl"
+private foreign handler _body_apply_mass_from_shapes(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_apply_mass_from_shapes!cdecl"
+private foreign handler _body_set_target_transform(in pB as CInt, in pX as CDouble, in pY as CDouble, in pAngle as CDouble, in pDt as CDouble) returns nothing binds to "c:box2dxt>b2lc_body_set_target_transform!cdecl"
+private foreign handler _body_enable_sleep(in pB as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_body_enable_sleep!cdecl"
+private foreign handler _body_is_sleep_enabled(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_is_sleep_enabled!cdecl"
+private foreign handler _body_is_fixed_rotation(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_is_fixed_rotation!cdecl"
+private foreign handler _body_enable_contact_events(in pB as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_body_enable_contact_events!cdecl"
+private foreign handler _body_enable_hit_events(in pB as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_body_enable_hit_events!cdecl"
+private foreign handler _body_aabb_update(in pB as CInt) returns nothing binds to "c:box2dxt>b2lc_body_aabb_update!cdecl"
+private foreign handler _aabb_lower_x() returns CDouble binds to "c:box2dxt>b2lc_aabb_lower_x!cdecl"
+private foreign handler _aabb_lower_y() returns CDouble binds to "c:box2dxt>b2lc_aabb_lower_y!cdecl"
+private foreign handler _aabb_upper_x() returns CDouble binds to "c:box2dxt>b2lc_aabb_upper_x!cdecl"
+private foreign handler _aabb_upper_y() returns CDouble binds to "c:box2dxt>b2lc_aabb_upper_y!cdecl"
+private foreign handler _body_shape_count(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_shape_count!cdecl"
+private foreign handler _body_shape_at(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_body_shape_at!cdecl"
+private foreign handler _body_joint_count(in pB as CInt) returns CInt binds to "c:box2dxt>b2lc_body_joint_count!cdecl"
+private foreign handler _body_joint_at(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_body_joint_at!cdecl"
+
+-- shape: type / material / filter / event flags / geometry / queries
+private foreign handler _shape_type(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_type!cdecl"
+private foreign handler _shape_is_sensor(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_is_sensor!cdecl"
+private foreign handler _shape_density(in pS as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_density!cdecl"
+private foreign handler _shape_friction(in pS as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_friction!cdecl"
+private foreign handler _shape_restitution(in pS as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_restitution!cdecl"
+private foreign handler _shape_material_id(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_material_id!cdecl"
+private foreign handler _shape_set_material_id(in pS as CInt, in pM as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_set_material_id!cdecl"
+private foreign handler _shape_set_filter(in pS as CInt, in pCat as CDouble, in pMask as CDouble, in pGroup as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_set_filter!cdecl"
+private foreign handler _shape_filter_category(in pS as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_filter_category!cdecl"
+private foreign handler _shape_filter_mask(in pS as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_filter_mask!cdecl"
+private foreign handler _shape_filter_group(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_filter_group!cdecl"
+private foreign handler _shape_enable_sensor_events(in pS as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_enable_sensor_events!cdecl"
+private foreign handler _shape_are_sensor_events_enabled(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_are_sensor_events_enabled!cdecl"
+private foreign handler _shape_enable_contact_events(in pS as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_enable_contact_events!cdecl"
+private foreign handler _shape_are_contact_events_enabled(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_are_contact_events_enabled!cdecl"
+private foreign handler _shape_enable_hit_events(in pS as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_enable_hit_events!cdecl"
+private foreign handler _shape_are_hit_events_enabled(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_are_hit_events_enabled!cdecl"
+private foreign handler _shape_enable_presolve_events(in pS as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_enable_presolve_events!cdecl"
+private foreign handler _shape_circle_update(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_circle_update!cdecl"
+private foreign handler _shape_circle_x() returns CDouble binds to "c:box2dxt>b2lc_shape_circle_x!cdecl"
+private foreign handler _shape_circle_y() returns CDouble binds to "c:box2dxt>b2lc_shape_circle_y!cdecl"
+private foreign handler _shape_circle_radius() returns CDouble binds to "c:box2dxt>b2lc_shape_circle_radius!cdecl"
+private foreign handler _shape_capsule_update(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_capsule_update!cdecl"
+private foreign handler _shape_capsule_x1() returns CDouble binds to "c:box2dxt>b2lc_shape_capsule_x1!cdecl"
+private foreign handler _shape_capsule_y1() returns CDouble binds to "c:box2dxt>b2lc_shape_capsule_y1!cdecl"
+private foreign handler _shape_capsule_x2() returns CDouble binds to "c:box2dxt>b2lc_shape_capsule_x2!cdecl"
+private foreign handler _shape_capsule_y2() returns CDouble binds to "c:box2dxt>b2lc_shape_capsule_y2!cdecl"
+private foreign handler _shape_capsule_radius() returns CDouble binds to "c:box2dxt>b2lc_shape_capsule_radius!cdecl"
+private foreign handler _shape_segment_update(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_segment_update!cdecl"
+private foreign handler _shape_segment_x1() returns CDouble binds to "c:box2dxt>b2lc_shape_segment_x1!cdecl"
+private foreign handler _shape_segment_y1() returns CDouble binds to "c:box2dxt>b2lc_shape_segment_y1!cdecl"
+private foreign handler _shape_segment_x2() returns CDouble binds to "c:box2dxt>b2lc_shape_segment_x2!cdecl"
+private foreign handler _shape_segment_y2() returns CDouble binds to "c:box2dxt>b2lc_shape_segment_y2!cdecl"
+private foreign handler _shape_polygon_update(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_polygon_update!cdecl"
+private foreign handler _shape_polygon_count() returns CInt binds to "c:box2dxt>b2lc_shape_polygon_count!cdecl"
+private foreign handler _shape_polygon_vx(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_polygon_vx!cdecl"
+private foreign handler _shape_polygon_vy(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_shape_polygon_vy!cdecl"
+private foreign handler _shape_polygon_radius() returns CDouble binds to "c:box2dxt>b2lc_shape_polygon_radius!cdecl"
+private foreign handler _shape_set_circle(in pS as CInt, in pCx as CDouble, in pCy as CDouble, in pR as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_circle!cdecl"
+private foreign handler _shape_set_capsule(in pS as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble, in pR as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_capsule!cdecl"
+private foreign handler _shape_set_segment(in pS as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble) returns nothing binds to "c:box2dxt>b2lc_shape_set_segment!cdecl"
+private foreign handler _shape_set_polygon(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_set_polygon!cdecl"
+private foreign handler _shape_raycast(in pS as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble) returns CInt binds to "c:box2dxt>b2lc_shape_raycast!cdecl"
+private foreign handler _shape_ray_x() returns CDouble binds to "c:box2dxt>b2lc_shape_ray_x!cdecl"
+private foreign handler _shape_ray_y() returns CDouble binds to "c:box2dxt>b2lc_shape_ray_y!cdecl"
+private foreign handler _shape_ray_normal_x() returns CDouble binds to "c:box2dxt>b2lc_shape_ray_normal_x!cdecl"
+private foreign handler _shape_ray_normal_y() returns CDouble binds to "c:box2dxt>b2lc_shape_ray_normal_y!cdecl"
+private foreign handler _shape_ray_fraction() returns CDouble binds to "c:box2dxt>b2lc_shape_ray_fraction!cdecl"
+private foreign handler _shape_aabb_update(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_aabb_update!cdecl"
+private foreign handler _shape_closest_point_x(in pS as CInt, in pTx as CDouble, in pTy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_shape_closest_point_x!cdecl"
+private foreign handler _shape_closest_point_y(in pS as CInt, in pTx as CDouble, in pTy as CDouble) returns CDouble binds to "c:box2dxt>b2lc_shape_closest_point_y!cdecl"
+private foreign handler _shape_mass_data_update(in pS as CInt) returns nothing binds to "c:box2dxt>b2lc_shape_mass_data_update!cdecl"
+private foreign handler _shape_sensor_capacity(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_sensor_capacity!cdecl"
+private foreign handler _shape_sensor_overlaps_update(in pS as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_sensor_overlaps_update!cdecl"
+private foreign handler _shape_sensor_overlap_count() returns CInt binds to "c:box2dxt>b2lc_shape_sensor_overlap_count!cdecl"
+private foreign handler _shape_sensor_overlap_at(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_shape_sensor_overlap_at!cdecl"
+
+-- chains
+private foreign handler _chain_begin() returns nothing binds to "c:box2dxt>b2lc_chain_begin!cdecl"
+private foreign handler _chain_add_point(in pX as CDouble, in pY as CDouble) returns nothing binds to "c:box2dxt>b2lc_chain_add_point!cdecl"
+private foreign handler _chain_create(in pB as CInt, in pLoop as CInt, in pFriction as CDouble, in pRestitution as CDouble) returns CInt binds to "c:box2dxt>b2lc_chain_create!cdecl"
+private foreign handler _chain_destroy(in pC as CInt) returns nothing binds to "c:box2dxt>b2lc_chain_destroy!cdecl"
+private foreign handler _chain_is_valid(in pC as CInt) returns CInt binds to "c:box2dxt>b2lc_chain_is_valid!cdecl"
+private foreign handler _chain_set_friction(in pC as CInt, in pF as CDouble) returns nothing binds to "c:box2dxt>b2lc_chain_set_friction!cdecl"
+private foreign handler _chain_friction(in pC as CInt) returns CDouble binds to "c:box2dxt>b2lc_chain_friction!cdecl"
+private foreign handler _chain_set_restitution(in pC as CInt, in pR as CDouble) returns nothing binds to "c:box2dxt>b2lc_chain_set_restitution!cdecl"
+private foreign handler _chain_restitution(in pC as CInt) returns CDouble binds to "c:box2dxt>b2lc_chain_restitution!cdecl"
+private foreign handler _chain_segment_count(in pC as CInt) returns CInt binds to "c:box2dxt>b2lc_chain_segment_count!cdecl"
+private foreign handler _chain_segment_at(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_chain_segment_at!cdecl"
+
+-- joints: generic
+private foreign handler _joint_type(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_type!cdecl"
+private foreign handler _joint_body_a(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_body_a!cdecl"
+private foreign handler _joint_body_b(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_body_b!cdecl"
+private foreign handler _joint_local_anchor_a_x(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_local_anchor_a_x!cdecl"
+private foreign handler _joint_local_anchor_a_y(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_local_anchor_a_y!cdecl"
+private foreign handler _joint_local_anchor_b_x(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_local_anchor_b_x!cdecl"
+private foreign handler _joint_local_anchor_b_y(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_local_anchor_b_y!cdecl"
+private foreign handler _joint_get_collide_connected(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_get_collide_connected!cdecl"
+private foreign handler _joint_set_collide_connected(in pJ as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_joint_set_collide_connected!cdecl"
+private foreign handler _joint_constraint_force_x(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_constraint_force_x!cdecl"
+private foreign handler _joint_constraint_force_y(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_constraint_force_y!cdecl"
+private foreign handler _joint_constraint_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_joint_constraint_torque!cdecl"
+private foreign handler _joint_wake_bodies(in pJ as CInt) returns nothing binds to "c:box2dxt>b2lc_joint_wake_bodies!cdecl"
+
+-- joints: motor + filter
+private foreign handler _joint_motor(in pW as CInt, in pBa as CInt, in pBb as CInt, in pOffX as CDouble, in pOffY as CDouble, in pAngOff as CDouble, in pMaxForce as CDouble, in pMaxTorque as CDouble, in pCorr as CDouble, in pCollide as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_motor!cdecl"
+private foreign handler _motor_set_linear_offset(in pJ as CInt, in pX as CDouble, in pY as CDouble) returns nothing binds to "c:box2dxt>b2lc_motor_set_linear_offset!cdecl"
+private foreign handler _motor_linear_offset_x(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_linear_offset_x!cdecl"
+private foreign handler _motor_linear_offset_y(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_linear_offset_y!cdecl"
+private foreign handler _motor_set_angular_offset(in pJ as CInt, in pA as CDouble) returns nothing binds to "c:box2dxt>b2lc_motor_set_angular_offset!cdecl"
+private foreign handler _motor_angular_offset(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_angular_offset!cdecl"
+private foreign handler _motor_set_max_force(in pJ as CInt, in pF as CDouble) returns nothing binds to "c:box2dxt>b2lc_motor_set_max_force!cdecl"
+private foreign handler _motor_max_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_max_force!cdecl"
+private foreign handler _motor_set_max_torque(in pJ as CInt, in pT as CDouble) returns nothing binds to "c:box2dxt>b2lc_motor_set_max_torque!cdecl"
+private foreign handler _motor_max_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_max_torque!cdecl"
+private foreign handler _motor_set_correction_factor(in pJ as CInt, in pC as CDouble) returns nothing binds to "c:box2dxt>b2lc_motor_set_correction_factor!cdecl"
+private foreign handler _motor_correction_factor(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_motor_correction_factor!cdecl"
+private foreign handler _joint_filter(in pW as CInt, in pBa as CInt, in pBb as CInt) returns CInt binds to "c:box2dxt>b2lc_joint_filter!cdecl"
+
+-- joints: revolute granular
+private foreign handler _revolute_enable_spring(in pJ as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_revolute_enable_spring!cdecl"
+private foreign handler _revolute_is_spring_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_revolute_is_spring_enabled!cdecl"
+private foreign handler _revolute_set_spring_hertz(in pJ as CInt, in pHz as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_set_spring_hertz!cdecl"
+private foreign handler _revolute_spring_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_spring_hertz!cdecl"
+private foreign handler _revolute_set_spring_damping(in pJ as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_set_spring_damping!cdecl"
+private foreign handler _revolute_spring_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_spring_damping!cdecl"
+private foreign handler _revolute_is_limit_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_revolute_is_limit_enabled!cdecl"
+private foreign handler _revolute_lower_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_lower_limit!cdecl"
+private foreign handler _revolute_upper_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_upper_limit!cdecl"
+private foreign handler _revolute_is_motor_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_revolute_is_motor_enabled!cdecl"
+private foreign handler _revolute_set_motor_speed(in pJ as CInt, in pS as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_set_motor_speed!cdecl"
+private foreign handler _revolute_motor_speed(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_motor_speed!cdecl"
+private foreign handler _revolute_motor_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_motor_torque!cdecl"
+private foreign handler _revolute_set_max_motor_torque(in pJ as CInt, in pT as CDouble) returns nothing binds to "c:box2dxt>b2lc_revolute_set_max_motor_torque!cdecl"
+private foreign handler _revolute_max_motor_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_revolute_max_motor_torque!cdecl"
+
+-- joints: prismatic granular
+private foreign handler _prismatic_enable_spring(in pJ as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_prismatic_enable_spring!cdecl"
+private foreign handler _prismatic_is_spring_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_prismatic_is_spring_enabled!cdecl"
+private foreign handler _prismatic_set_spring_hertz(in pJ as CInt, in pHz as CDouble) returns nothing binds to "c:box2dxt>b2lc_prismatic_set_spring_hertz!cdecl"
+private foreign handler _prismatic_spring_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_spring_hertz!cdecl"
+private foreign handler _prismatic_set_spring_damping(in pJ as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_prismatic_set_spring_damping!cdecl"
+private foreign handler _prismatic_spring_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_spring_damping!cdecl"
+private foreign handler _prismatic_is_limit_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_prismatic_is_limit_enabled!cdecl"
+private foreign handler _prismatic_lower_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_lower_limit!cdecl"
+private foreign handler _prismatic_upper_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_upper_limit!cdecl"
+private foreign handler _prismatic_is_motor_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_prismatic_is_motor_enabled!cdecl"
+private foreign handler _prismatic_set_motor_speed(in pJ as CInt, in pS as CDouble) returns nothing binds to "c:box2dxt>b2lc_prismatic_set_motor_speed!cdecl"
+private foreign handler _prismatic_motor_speed(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_motor_speed!cdecl"
+private foreign handler _prismatic_motor_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_motor_force!cdecl"
+private foreign handler _prismatic_max_motor_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_max_motor_force!cdecl"
+private foreign handler _prismatic_speed(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_prismatic_speed!cdecl"
+
+-- joints: distance granular
+private foreign handler _distance_is_spring_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_distance_is_spring_enabled!cdecl"
+private foreign handler _distance_spring_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_spring_hertz!cdecl"
+private foreign handler _distance_spring_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_spring_damping!cdecl"
+private foreign handler _distance_is_limit_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_distance_is_limit_enabled!cdecl"
+private foreign handler _distance_min_length(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_min_length!cdecl"
+private foreign handler _distance_max_length(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_max_length!cdecl"
+private foreign handler _distance_current_length(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_current_length!cdecl"
+private foreign handler _distance_enable_motor(in pJ as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_distance_enable_motor!cdecl"
+private foreign handler _distance_is_motor_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_distance_is_motor_enabled!cdecl"
+private foreign handler _distance_set_motor_speed(in pJ as CInt, in pS as CDouble) returns nothing binds to "c:box2dxt>b2lc_distance_set_motor_speed!cdecl"
+private foreign handler _distance_motor_speed(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_motor_speed!cdecl"
+private foreign handler _distance_set_max_motor_force(in pJ as CInt, in pF as CDouble) returns nothing binds to "c:box2dxt>b2lc_distance_set_max_motor_force!cdecl"
+private foreign handler _distance_max_motor_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_max_motor_force!cdecl"
+private foreign handler _distance_motor_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_distance_motor_force!cdecl"
+
+-- joints: weld
+private foreign handler _weld_reference_angle(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_weld_reference_angle!cdecl"
+private foreign handler _weld_set_reference_angle(in pJ as CInt, in pA as CDouble) returns nothing binds to "c:box2dxt>b2lc_weld_set_reference_angle!cdecl"
+private foreign handler _weld_linear_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_weld_linear_hertz!cdecl"
+private foreign handler _weld_linear_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_weld_linear_damping!cdecl"
+private foreign handler _weld_angular_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_weld_angular_hertz!cdecl"
+private foreign handler _weld_angular_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_weld_angular_damping!cdecl"
+
+-- joints: wheel granular
+private foreign handler _wheel_is_spring_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_wheel_is_spring_enabled!cdecl"
+private foreign handler _wheel_spring_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_spring_hertz!cdecl"
+private foreign handler _wheel_spring_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_spring_damping!cdecl"
+private foreign handler _wheel_enable_limit(in pJ as CInt, in pF as CInt) returns nothing binds to "c:box2dxt>b2lc_wheel_enable_limit!cdecl"
+private foreign handler _wheel_is_limit_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_wheel_is_limit_enabled!cdecl"
+private foreign handler _wheel_set_limits(in pJ as CInt, in pLo as CDouble, in pHi as CDouble) returns nothing binds to "c:box2dxt>b2lc_wheel_set_limits!cdecl"
+private foreign handler _wheel_lower_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_lower_limit!cdecl"
+private foreign handler _wheel_upper_limit(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_upper_limit!cdecl"
+private foreign handler _wheel_is_motor_enabled(in pJ as CInt) returns CInt binds to "c:box2dxt>b2lc_wheel_is_motor_enabled!cdecl"
+private foreign handler _wheel_motor_speed(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_motor_speed!cdecl"
+private foreign handler _wheel_motor_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_motor_torque!cdecl"
+private foreign handler _wheel_max_motor_torque(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_wheel_max_motor_torque!cdecl"
+
+-- joints: mouse granular
+private foreign handler _mouse_target_x(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_mouse_target_x!cdecl"
+private foreign handler _mouse_target_y(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_mouse_target_y!cdecl"
+private foreign handler _mouse_set_spring_hertz(in pJ as CInt, in pHz as CDouble) returns nothing binds to "c:box2dxt>b2lc_mouse_set_spring_hertz!cdecl"
+private foreign handler _mouse_spring_hertz(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_mouse_spring_hertz!cdecl"
+private foreign handler _mouse_set_spring_damping(in pJ as CInt, in pD as CDouble) returns nothing binds to "c:box2dxt>b2lc_mouse_set_spring_damping!cdecl"
+private foreign handler _mouse_spring_damping(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_mouse_spring_damping!cdecl"
+private foreign handler _mouse_set_max_force(in pJ as CInt, in pF as CDouble) returns nothing binds to "c:box2dxt>b2lc_mouse_set_max_force!cdecl"
+private foreign handler _mouse_max_force(in pJ as CInt) returns CDouble binds to "c:box2dxt>b2lc_mouse_max_force!cdecl"
+
+-- world queries (overlap / ray-cast-all / shape-cast)
+private foreign handler _query_overlap_aabb(in pW as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_overlap_aabb!cdecl"
+private foreign handler _query_overlap_point(in pW as CInt, in pX as CDouble, in pY as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_overlap_point!cdecl"
+private foreign handler _query_overlap_circle(in pW as CInt, in pCx as CDouble, in pCy as CDouble, in pR as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_overlap_circle!cdecl"
+private foreign handler _query_overlap_shape(in pW as CInt, in pRadius as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_overlap_shape!cdecl"
+private foreign handler _query_raycast_all(in pW as CInt, in pX1 as CDouble, in pY1 as CDouble, in pX2 as CDouble, in pY2 as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_raycast_all!cdecl"
+private foreign handler _query_shapecast(in pW as CInt, in pRadius as CDouble, in pDx as CDouble, in pDy as CDouble) returns CInt binds to "c:box2dxt>b2lc_query_shapecast!cdecl"
+private foreign handler _query_count() returns CInt binds to "c:box2dxt>b2lc_query_count!cdecl"
+private foreign handler _query_body(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_query_body!cdecl"
+private foreign handler _query_shape(in pIdx as CInt) returns CInt binds to "c:box2dxt>b2lc_query_shape!cdecl"
+private foreign handler _query_x(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_query_x!cdecl"
+private foreign handler _query_y(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_query_y!cdecl"
+private foreign handler _query_normal_x(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_query_normal_x!cdecl"
+private foreign handler _query_normal_y(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_query_normal_y!cdecl"
+private foreign handler _query_fraction(in pIdx as CInt) returns CDouble binds to "c:box2dxt>b2lc_query_fraction!cdecl"
+
+-- ---- native loader assist (Linux) ----------------------------------
+-- The ONLY three bindings that do NOT target the box2dxt shim: they bind to
+-- the platform's own loader/libc (dlopen/dlerror/realpath), resolved from the
+-- host process's global symbol table. That is the whole point -- they must
+-- be callable BEFORE box2dxt.so is loadable, so a script can preload the
+-- shim by absolute path. On Linux the engine hands the bare name
+-- "box2dxt.so" to dlopen and never searches the stack's folder; preloading
+-- the exact file first puts it in the process, so the engine's later
+-- bare-name load finds the already-resident copy (matched by soname --
+-- build with -DBOX2DXT_BARE_SONAME=ON so that soname is "box2dxt.so").
+-- Bindings resolve on first use, so these are harmless dead weight on
+-- Windows/macOS as long as nothing calls them there (the engine already
+-- finds the library next to the stack on those platforms).
+-- If OXT cannot bind "c:>dlopen", swap the empty library token for your
+-- libc: glibc >= 2.34 -> "c:libc.so.6>dlopen!cdecl"; older glibc or where
+-- dlopen still lives in libdl -> "c:libdl.so.2>dlopen!cdecl".
+private foreign handler _dlopen(in pPath as ZStringNative, in pFlags as CInt) returns optional Pointer binds to "c:>dlopen!cdecl"
+private foreign handler _dlerror() returns optional ZStringNative binds to "c:>dlerror!cdecl"
+-- realpath("/proc/self/exe", nil) -> the running engine's own executable path
+-- on Linux; used by the b2LoadNativeLibHere helper below to locate the engine
+-- folder. Returns nothing off Linux (no /proc). Only ever called on Linux.
+private foreign handler _realpath(in pPath as ZStringNative, in pResolved as optional Pointer) returns optional ZStringNative binds to "c:>realpath!cdecl"
+
+-- small bool -> int helper (no foreign call, so no unsafe needed)
+private handler bi(in pB as Boolean) returns Integer
+   if pB then
+      return 1
+   end if
+   return 0
+end handler
+
+-- ---- engine-folder preload (Linux helper) --------------------------
+-- Locate the running engine's OWN folder (realpath /proc/self/exe), strip to
+-- its directory, and preload "<dir>/box2dxt.so" by absolute path -- so a user
+-- can just drop the library beside the OXT engine (or bundle it in a
+-- standalone) and a later bare-name bind resolves to it (no /usr/lib, no sudo,
+-- no LD_LIBRARY_PATH). Returns 1 if a library was loaded, else 0.
+--
+-- LINUX ONLY, and deliberately NOT auto-fired: realpath/dlopen are POSIX, so
+-- call this ONLY when the platform is Linux (e.g. the Kit gates it with
+-- `the platform is "Linux"`). It is intentionally NOT invoked from
+-- b2Version/checkABI -- those run on every platform, and touching the POSIX
+-- bindings on Windows/macOS would error (those platforms already load the
+-- library from beside the stack/app anyway). Requires the library's soname to
+-- be "box2dxt.so" (-DBOX2DXT_BARE_SONAME) or the resident copy will not match
+-- the engine's bare-name request.
+public handler b2LoadNativeLibHere() returns Integer
+   variable tExe as optional String
+   variable tPath as String
+   variable tLen as Integer
+   variable tCut as Integer
+   variable tIdx as Integer
+   variable tLib as String
+   variable tHandle as optional Pointer
+   unsafe
+      put _realpath("/proc/self/exe", nothing) into tExe
+   end unsafe
+   if tExe is nothing then
+      return 0
+   end if
+   put tExe into tPath
+   put the number of chars in tPath into tLen
+   put 0 into tCut
+   repeat with tIdx from 1 up to tLen
+      if char tIdx of tPath is "/" then
+         put tIdx into tCut
+      end if
+   end repeat
+   if tCut is 0 then
+      return 0
+   end if
+   put char 1 to tCut of tPath into tLib
+   put tLib & "box2dxt.so" into tLib
+   unsafe
+      put _dlopen(tLib, 258) into tHandle
+   end unsafe
+   if tHandle is nothing then
+      return 0
+   end if
+   return 1
+end handler
+
+-- =====================================================================
+-- Public API (callable from xTalk / OpenXTalk Script)
+-- =====================================================================
+
+public handler b2Version() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+-- This binding targets shim ABI 4. A mismatched libbox2dxt would otherwise
+-- surface as an opaque crash on whichever call hits the skew first; checking
+-- at world creation (the gateway every script goes through) turns it into a
+-- clear, catchable error instead.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 4 then
+      throw "box2dxt: incompatible native library (binding needs ABI 4) - update libbox2dxt / box2dxt.dll"
+   end if
+end handler
+
+-- ---- native loader assist -------------------------------------------
+-- Preload the native shim by ABSOLUTE path so the engine's later bare-name
+-- load resolves to the already-resident copy. Lets a Linux script point at
+-- box2dxt.so sitting next to the stack (no /usr/lib, no sudo, no
+-- LD_LIBRARY_PATH). Returns 1 on success, 0 on failure (then call
+-- b2LoadNativeLibError for the reason). The library MUST have been built
+-- with a soname of "box2dxt.so" (see -DBOX2DXT_BARE_SONAME) or the match
+-- fails silently. Flags 258 = RTLD_NOW (2) | RTLD_GLOBAL (256) on Linux:
+-- resolve every symbol now and expose them globally so the bare-name
+-- bindings bind to them. Intended for Linux; gate the call to Linux when
+-- wiring it into the Kit (the dlopen binding will not resolve on Windows).
+public handler b2LoadNativeLib(in pPath as String) returns Integer
+   variable tHandle as optional Pointer
+   unsafe
+      put _dlopen(pPath, 258) into tHandle
+   end unsafe
+   if tHandle is nothing then
+      return 0
+   end if
+   return 1
+end handler
+
+-- The last loader error string ("" if none) -- makes a failed
+-- b2LoadNativeLib self-diagnosing (wrong path vs. could-not-load) instead
+-- of a bare 0.
+public handler b2LoadNativeLibError() returns String
+   variable tErr as optional String
+   unsafe
+      put _dlerror() into tErr
+   end unsafe
+   if tErr is nothing then
+      return ""
+   end if
+   return tErr
+end handler
+
+-- ---- world ----------------------------------------------------------
+public handler b2NewWorld(in pGravityX as Number, in pGravityY as Number, in pAllowSleep as Boolean, in pContinuous as Boolean) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _world_create(pGravityX, pGravityY, bi(pAllowSleep), bi(pContinuous)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2NewThreadedWorld(in pGravityX as Number, in pGravityY as Number, in pAllowSleep as Boolean, in pContinuous as Boolean, in pWorkers as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _world_create_threaded(pGravityX, pGravityY, bi(pAllowSleep), bi(pContinuous), pWorkers) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2WorldThreadCount(in pWorld as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_thread_count(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2DestroyWorld(in pWorld as Integer)
+   unsafe
+      _world_destroy(pWorld)
+   end unsafe
+end handler
+
+public handler b2SetGravity(in pWorld as Integer, in pGx as Number, in pGy as Number)
+   unsafe
+      _world_set_gravity(pWorld, pGx, pGy)
+   end unsafe
+end handler
+
+public handler b2EnableSleeping(in pWorld as Integer, in pFlag as Boolean)
+   unsafe
+      _world_enable_sleeping(pWorld, bi(pFlag))
+   end unsafe
+end handler
+
+public handler b2EnableContinuous(in pWorld as Integer, in pFlag as Boolean)
+   unsafe
+      _world_enable_continuous(pWorld, bi(pFlag))
+   end unsafe
+end handler
+
+-- pSubSteps is the Soft Step sub-step count (4 is a good default).
+public handler b2Step(in pWorld as Integer, in pDt as Number, in pSubSteps as Integer)
+   unsafe
+      _world_step(pWorld, pDt, pSubSteps)
+   end unsafe
+end handler
+
+-- ---- bodies ----------------------------------------------------------
+public handler b2NewBody(in pWorld as Integer, in pType as Integer, in pX as Number, in pY as Number, in pAngle as Number, in pBullet as Boolean, in pFixedRotation as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_create(pWorld, pType, pX, pY, pAngle, bi(pBullet), bi(pFixedRotation)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2NewStaticBody(in pWorld as Integer, in pX as Number, in pY as Number) returns Integer
+   return b2NewBody(pWorld, 0, pX, pY, 0, false, false)
+end handler
+
+public handler b2NewKinematicBody(in pWorld as Integer, in pX as Number, in pY as Number) returns Integer
+   return b2NewBody(pWorld, 1, pX, pY, 0, false, false)
+end handler
+
+public handler b2NewDynamicBody(in pWorld as Integer, in pX as Number, in pY as Number) returns Integer
+   return b2NewBody(pWorld, 2, pX, pY, 0, false, false)
+end handler
+
+public handler b2DestroyBody(in pBody as Integer)
+   unsafe
+      _body_destroy(pBody)
+   end unsafe
+end handler
+
+public handler b2BodyX(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_x(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyY(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_y(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyAngle(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_angle(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyVX(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_vx(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyVY(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_vy(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyAngularVelocity(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_omega(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyMass(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_mass(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyIsAwake(in pBody as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_is_awake(pBody) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+public handler b2BodyWorldCenterX(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_center_x(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyWorldCenterY(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_center_y(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyType(in pBody as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_type(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyIsBullet(in pBody as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_is_bullet(pBody) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+public handler b2BodyIsEnabled(in pBody as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_is_enabled(pBody) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+public handler b2BodyLinearDamping(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_linear_damping(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyAngularDamping(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_angular_damping(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2BodyGravityScale(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_gravity_scale(pBody) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2SetTransform(in pBody as Integer, in pX as Number, in pY as Number, in pAngle as Number)
+   unsafe
+      _body_set_transform(pBody, pX, pY, pAngle)
+   end unsafe
+end handler
+
+public handler b2SetVelocity(in pBody as Integer, in pVx as Number, in pVy as Number)
+   unsafe
+      _body_set_velocity(pBody, pVx, pVy)
+   end unsafe
+end handler
+
+public handler b2SetAngularVelocity(in pBody as Integer, in pOmega as Number)
+   unsafe
+      _body_set_angular_velocity(pBody, pOmega)
+   end unsafe
+end handler
+
+public handler b2ApplyForce(in pBody as Integer, in pFx as Number, in pFy as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_force(pBody, pFx, pFy, bi(pWake))
+   end unsafe
+end handler
+
+public handler b2ApplyImpulse(in pBody as Integer, in pIx as Number, in pIy as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_impulse(pBody, pIx, pIy, bi(pWake))
+   end unsafe
+end handler
+
+public handler b2ApplyTorque(in pBody as Integer, in pTorque as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_torque(pBody, pTorque, bi(pWake))
+   end unsafe
+end handler
+
+public handler b2ApplyAngularImpulse(in pBody as Integer, in pImpulse as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_angular_impulse(pBody, pImpulse, bi(pWake))
+   end unsafe
+end handler
+
+public handler b2SetBullet(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_set_bullet(pBody, bi(pFlag))
+   end unsafe
+end handler
+
+public handler b2SetAwake(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_set_awake(pBody, bi(pFlag))
+   end unsafe
+end handler
+
+public handler b2SetFixedRotation(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_set_fixed_rotation(pBody, bi(pFlag))
+   end unsafe
+end handler
+
+public handler b2SetBodyType(in pBody as Integer, in pType as Integer)
+   unsafe
+      _body_set_type(pBody, pType)
+   end unsafe
+end handler
+
+public handler b2SetLinearDamping(in pBody as Integer, in pDamping as Number)
+   unsafe
+      _body_set_linear_damping(pBody, pDamping)
+   end unsafe
+end handler
+
+public handler b2SetAngularDamping(in pBody as Integer, in pDamping as Number)
+   unsafe
+      _body_set_angular_damping(pBody, pDamping)
+   end unsafe
+end handler
+
+public handler b2SetGravityScale(in pBody as Integer, in pScale as Number)
+   unsafe
+      _body_set_gravity_scale(pBody, pScale)
+   end unsafe
+end handler
+
+public handler b2SetSleepThreshold(in pBody as Integer, in pThreshold as Number)
+   unsafe
+      _body_set_sleep_threshold(pBody, pThreshold)
+   end unsafe
+end handler
+
+public handler b2EnableBody(in pBody as Integer)
+   unsafe
+      _body_enable(pBody)
+   end unsafe
+end handler
+
+public handler b2DisableBody(in pBody as Integer)
+   unsafe
+      _body_disable(pBody)
+   end unsafe
+end handler
+
+-- ---- shapes ----------------------------------------------------------
+public handler b2AddBox(in pBody as Integer, in pHalfW as Number, in pHalfH as Number, in pDensity as Number, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_add_box(pBody, pHalfW, pHalfH, pDensity, pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2AddCircle(in pBody as Integer, in pCx as Number, in pCy as Number, in pRadius as Number, in pDensity as Number, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_add_circle(pBody, pCx, pCy, pRadius, pDensity, pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2AddCapsule(in pBody as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number, in pRadius as Number, in pDensity as Number, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_add_capsule(pBody, pX1, pY1, pX2, pY2, pRadius, pDensity, pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2AddSegment(in pBody as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_add_segment(pBody, pX1, pY1, pX2, pY2, pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2PolyBegin()
+   unsafe
+      _poly_begin()
+   end unsafe
+end handler
+
+public handler b2PolyAddPoint(in pX as Number, in pY as Number)
+   unsafe
+      _poly_add(pX, pY)
+   end unsafe
+end handler
+
+public handler b2AddPolygon(in pBody as Integer, in pDensity as Number, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_add_polygon(pBody, pDensity, pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2DestroyShape(in pShape as Integer)
+   unsafe
+      _shape_destroy(pShape)
+   end unsafe
+end handler
+
+public handler b2SetShapeFriction(in pShape as Integer, in pFriction as Number)
+   unsafe
+      _shape_set_friction(pShape, pFriction)
+   end unsafe
+end handler
+
+public handler b2SetShapeRestitution(in pShape as Integer, in pRestitution as Number)
+   unsafe
+      _shape_set_restitution(pShape, pRestitution)
+   end unsafe
+end handler
+
+public handler b2SetShapeDensity(in pShape as Integer, in pDensity as Number)
+   unsafe
+      _shape_set_density(pShape, pDensity)
+   end unsafe
+end handler
+
+public handler b2ShapeBody(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_body(pShape) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ShapeTestPoint(in pShape as Integer, in pX as Number, in pY as Number) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_test_point(pShape, pX, pY) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+-- ---- joints ----------------------------------------------------------
+public handler b2RevoluteJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pAx as Number, in pAy as Number, in pBx as Number, in pBy as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_revolute(pWorld, pBodyA, pBodyB, pAx, pAy, pBx, pBy, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RevoluteEnableLimit(in pJoint as Integer, in pEnable as Boolean, in pLowerRad as Number, in pUpperRad as Number)
+   unsafe
+      _revolute_enable_limit(pJoint, bi(pEnable), pLowerRad, pUpperRad)
+   end unsafe
+end handler
+
+public handler b2RevoluteEnableMotor(in pJoint as Integer, in pEnable as Boolean, in pSpeed as Number, in pMaxTorque as Number)
+   unsafe
+      _revolute_enable_motor(pJoint, bi(pEnable), pSpeed, pMaxTorque)
+   end unsafe
+end handler
+
+public handler b2RevoluteAngle(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_angle(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2DistanceJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pAx as Number, in pAy as Number, in pBx as Number, in pBy as Number, in pLength as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_distance(pWorld, pBodyA, pBodyB, pAx, pAy, pBx, pBy, pLength, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2DistanceSetLength(in pJoint as Integer, in pLength as Number)
+   unsafe
+      _distance_set_length(pJoint, pLength)
+   end unsafe
+end handler
+
+public handler b2DistanceSetLengthRange(in pJoint as Integer, in pMin as Number, in pMax as Number)
+   unsafe
+      _distance_set_length_range(pJoint, pMin, pMax)
+   end unsafe
+end handler
+
+public handler b2DistanceEnableSpring(in pJoint as Integer, in pEnable as Boolean, in pHertz as Number, in pDamping as Number)
+   unsafe
+      _distance_enable_spring(pJoint, bi(pEnable), pHertz, pDamping)
+   end unsafe
+end handler
+
+public handler b2DistanceLength(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_length(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2WeldJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pAx as Number, in pAy as Number, in pBx as Number, in pBy as Number, in pRefAngle as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_weld(pWorld, pBodyA, pBodyB, pAx, pAy, pBx, pBy, pRefAngle, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2WeldSetStiffness(in pJoint as Integer, in pLinearHertz as Number, in pLinearDamping as Number, in pAngularHertz as Number, in pAngularDamping as Number)
+   unsafe
+      _weld_set_stiffness(pJoint, pLinearHertz, pLinearDamping, pAngularHertz, pAngularDamping)
+   end unsafe
+end handler
+
+public handler b2PrismaticJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pAx as Number, in pAy as Number, in pBx as Number, in pBy as Number, in pAxisX as Number, in pAxisY as Number, in pRefAngle as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_prismatic(pWorld, pBodyA, pBodyB, pAx, pAy, pBx, pBy, pAxisX, pAxisY, pRefAngle, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2PrismaticEnableLimit(in pJoint as Integer, in pEnable as Boolean, in pLower as Number, in pUpper as Number)
+   unsafe
+      _prismatic_enable_limit(pJoint, bi(pEnable), pLower, pUpper)
+   end unsafe
+end handler
+
+public handler b2PrismaticEnableMotor(in pJoint as Integer, in pEnable as Boolean, in pSpeed as Number, in pMaxForce as Number)
+   unsafe
+      _prismatic_enable_motor(pJoint, bi(pEnable), pSpeed, pMaxForce)
+   end unsafe
+end handler
+
+public handler b2PrismaticTranslation(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_translation(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2WheelJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pAx as Number, in pAy as Number, in pBx as Number, in pBy as Number, in pAxisX as Number, in pAxisY as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_wheel(pWorld, pBodyA, pBodyB, pAx, pAy, pBx, pBy, pAxisX, pAxisY, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2WheelEnableSpring(in pJoint as Integer, in pEnable as Boolean, in pHertz as Number, in pDamping as Number)
+   unsafe
+      _wheel_enable_spring(pJoint, bi(pEnable), pHertz, pDamping)
+   end unsafe
+end handler
+
+public handler b2WheelEnableMotor(in pJoint as Integer, in pEnable as Boolean, in pSpeed as Number, in pMaxTorque as Number)
+   unsafe
+      _wheel_enable_motor(pJoint, bi(pEnable), pSpeed, pMaxTorque)
+   end unsafe
+end handler
+
+public handler b2MouseJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pTargetX as Number, in pTargetY as Number, in pHertz as Number, in pDamping as Number, in pMaxForce as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_mouse(pWorld, pBodyA, pBodyB, pTargetX, pTargetY, pHertz, pDamping, pMaxForce) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2MouseSetTarget(in pJoint as Integer, in pTargetX as Number, in pTargetY as Number)
+   unsafe
+      _mouse_set_target(pJoint, pTargetX, pTargetY)
+   end unsafe
+end handler
+
+public handler b2DestroyJoint(in pJoint as Integer)
+   unsafe
+      _joint_destroy(pJoint)
+   end unsafe
+end handler
+
+-- ---- world queries ---------------------------------------------------
+-- Cast a ray from (x1,y1) to (x2,y2). Returns true on hit; then read the
+-- hit details with b2RayBody / b2RayX / b2RayNormalX / b2RayFraction etc.
+public handler b2CastRayClosest(in pWorld as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _cast_ray_closest(pWorld, pX1, pY1, pX2, pY2) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+public handler b2RayBody() returns Integer
+   variable tR as Integer
+   unsafe
+      put _ray_body() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayShape() returns Integer
+   variable tR as Integer
+   unsafe
+      put _ray_shape() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayX() returns Number
+   variable tR as Number
+   unsafe
+      put _ray_x() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayY() returns Number
+   variable tR as Number
+   unsafe
+      put _ray_y() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayNormalX() returns Number
+   variable tR as Number
+   unsafe
+      put _ray_normal_x() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayNormalY() returns Number
+   variable tR as Number
+   unsafe
+      put _ray_normal_y() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2RayFraction() returns Number
+   variable tR as Number
+   unsafe
+      put _ray_fraction() into tR
+   end unsafe
+   return tR
+end handler
+
+-- Return the handle of a body whose shape covers world point (x,y), else 0.
+public handler b2BodyAtPoint(in pWorld as Integer, in pX as Number, in pY as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_at_point(pWorld, pX, pY) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- contact events --------------------------------------------------
+-- Call b2ContactsUpdate(world) once after each b2Step. It returns the number
+-- of begin-touch events and snapshots them. Then iterate 1..count and read
+-- the two body handles for each event. Indices are 1-based.
+public handler b2ContactsUpdate(in pWorld as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contacts_update(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactBeginCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_begin_count() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactEndCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_end_count() into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactBeginBodyA(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_begin_a(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactBeginBodyB(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_begin_b(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactEndBodyA(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_end_a(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+public handler b2ContactEndBodyB(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_end_b(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- ABI v3 additions: public API
+-- =====================================================================
+
+-- ---- shape-def builder (one-shot; consumed by the next shape creation) ----
+public handler b2ShapeDefReset()
+   unsafe
+      _shapedef_reset()
+   end unsafe
+end handler
+public handler b2ShapeDefSensor(in pFlag as Boolean)
+   unsafe
+      _shapedef_set_sensor(bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeDefEnableContactEvents(in pFlag as Boolean)
+   unsafe
+      _shapedef_set_enable_contact_events(bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeDefEnableSensorEvents(in pFlag as Boolean)
+   unsafe
+      _shapedef_set_enable_sensor_events(bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeDefEnableHitEvents(in pFlag as Boolean)
+   unsafe
+      _shapedef_set_enable_hit_events(bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeDefEnablePreSolveEvents(in pFlag as Boolean)
+   unsafe
+      _shapedef_set_enable_presolve_events(bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeDefFilter(in pCategory as Number, in pMask as Number, in pGroup as Integer)
+   unsafe
+      _shapedef_set_filter(pCategory, pMask, pGroup)
+   end unsafe
+end handler
+public handler b2ShapeDefMaterialId(in pId as Integer)
+   unsafe
+      _shapedef_set_material_id(pId)
+   end unsafe
+end handler
+
+-- ---- contact HIT events (snapshotted by b2ContactsUpdate; 1-based) ----
+public handler b2ContactHitCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_hit_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitBodyA(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_hit_a(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitBodyB(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _contact_hit_b(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _contact_hit_x(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _contact_hit_y(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitNormalX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _contact_hit_nx(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitNormalY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _contact_hit_ny(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ContactHitSpeed(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _contact_hit_speed(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- sensor events (shape handles; 1-based) ----
+public handler b2SensorsUpdate(in pWorld as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensors_update(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorBeginCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_begin_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorEndCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_end_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorBeginSensorShape(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_begin_sensor(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorBeginVisitorShape(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_begin_visitor(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorEndSensorShape(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_end_sensor(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SensorEndVisitorShape(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sensor_end_visitor(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- body MOVE events (bulk transform readback; 1-based) ----
+public handler b2BodiesUpdate(in pWorld as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _bodies_update(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_move_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveBody(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_move_body(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_move_x(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_move_y(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveAngle(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_move_angle(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMoveFellAsleep(in pIndex as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_move_asleep(pIndex - 1) into tR
+   end unsafe
+   return tR is 1
+end handler
+
+-- ---- world: tuning / info / explode / profile / counters ----
+public handler b2WorldGravityX(in pWorld as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _world_gravity_x(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldGravityY(in pWorld as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _world_gravity_y(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetRestitutionThreshold(in pWorld as Integer, in pValue as Number)
+   unsafe
+      _world_set_restitution_threshold(pWorld, pValue)
+   end unsafe
+end handler
+public handler b2RestitutionThreshold(in pWorld as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _world_restitution_threshold(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetHitEventThreshold(in pWorld as Integer, in pValue as Number)
+   unsafe
+      _world_set_hit_event_threshold(pWorld, pValue)
+   end unsafe
+end handler
+public handler b2HitEventThreshold(in pWorld as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _world_hit_event_threshold(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetContactTuning(in pWorld as Integer, in pHertz as Number, in pDamping as Number, in pPushSpeed as Number)
+   unsafe
+      _world_set_contact_tuning(pWorld, pHertz, pDamping, pPushSpeed)
+   end unsafe
+end handler
+public handler b2SetJointTuning(in pWorld as Integer, in pHertz as Number, in pDamping as Number)
+   unsafe
+      _world_set_joint_tuning(pWorld, pHertz, pDamping)
+   end unsafe
+end handler
+public handler b2SetMaximumLinearSpeed(in pWorld as Integer, in pValue as Number)
+   unsafe
+      _world_set_maximum_linear_speed(pWorld, pValue)
+   end unsafe
+end handler
+public handler b2MaximumLinearSpeed(in pWorld as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _world_maximum_linear_speed(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2EnableWarmStarting(in pWorld as Integer, in pFlag as Boolean)
+   unsafe
+      _world_enable_warm_starting(pWorld, bi(pFlag))
+   end unsafe
+end handler
+public handler b2IsWarmStartingEnabled(in pWorld as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _world_is_warm_starting(pWorld) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2EnableSpeculative(in pWorld as Integer, in pFlag as Boolean)
+   unsafe
+      _world_enable_speculative(pWorld, bi(pFlag))
+   end unsafe
+end handler
+public handler b2IsSleepingEnabled(in pWorld as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _world_is_sleeping_enabled(pWorld) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2IsContinuousEnabled(in pWorld as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _world_is_continuous_enabled(pWorld) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2AwakeBodyCount(in pWorld as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_awake_body_count(pWorld) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldExplode(in pWorld as Integer, in pX as Number, in pY as Number, in pRadius as Number, in pFalloff as Number, in pImpulsePerLength as Number)
+   unsafe
+      _world_explode(pWorld, pX, pY, pRadius, pFalloff, pImpulsePerLength)
+   end unsafe
+end handler
+public handler b2WorldProfileUpdate(in pWorld as Integer)
+   unsafe
+      _world_profile_update(pWorld)
+   end unsafe
+end handler
+public handler b2WorldProfileStep() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_step() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldProfilePairs() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_pairs() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldProfileCollide() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_collide() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldProfileSolve() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_solve() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldProfileRefit() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_refit() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldProfileSensors() returns Number
+   variable tR as Number
+   unsafe
+      put _world_profile_sensors() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldCountersUpdate(in pWorld as Integer)
+   unsafe
+      _world_counters_update(pWorld)
+   end unsafe
+end handler
+public handler b2WorldBodyCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_count_bodies() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldShapeCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_count_shapes() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldContactCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_count_contacts() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldJointCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_count_joints() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WorldIslandCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _world_count_islands() into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- body: transforms / velocity-at-point / force-at-point / mass / enum ----
+public handler b2BodyWorldPointX(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_point_x(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyWorldPointY(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_point_y(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalPointX(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_point_x(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalPointY(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_point_y(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyWorldVectorX(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_vector_x(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyWorldVectorY(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_vector_y(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalVectorX(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_vector_x(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalVectorY(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_vector_y(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyWorldPointVelocityX(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_point_velocity_x(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyWorldPointVelocityY(in pBody as Integer, in pWorldX as Number, in pWorldY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_world_point_velocity_y(pBody, pWorldX, pWorldY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalPointVelocityX(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_point_velocity_x(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalPointVelocityY(in pBody as Integer, in pLocalX as Number, in pLocalY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_point_velocity_y(pBody, pLocalX, pLocalY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ApplyForceAt(in pBody as Integer, in pFx as Number, in pFy as Number, in pPointX as Number, in pPointY as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_force_at(pBody, pFx, pFy, pPointX, pPointY, bi(pWake))
+   end unsafe
+end handler
+public handler b2ApplyImpulseAt(in pBody as Integer, in pIx as Number, in pIy as Number, in pPointX as Number, in pPointY as Number, in pWake as Boolean)
+   unsafe
+      _body_apply_impulse_at(pBody, pIx, pIy, pPointX, pPointY, bi(pWake))
+   end unsafe
+end handler
+public handler b2BodyRotationalInertia(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_rotational_inertia(pBody) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalCenterX(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_center_x(pBody) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyLocalCenterY(in pBody as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _body_local_center_y(pBody) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyMassDataUpdate(in pBody as Integer)
+   unsafe
+      _body_mass_data_update(pBody)
+   end unsafe
+end handler
+public handler b2MassDataMass() returns Number
+   variable tR as Number
+   unsafe
+      put _md_mass() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MassDataCenterX() returns Number
+   variable tR as Number
+   unsafe
+      put _md_center_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MassDataCenterY() returns Number
+   variable tR as Number
+   unsafe
+      put _md_center_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MassDataInertia() returns Number
+   variable tR as Number
+   unsafe
+      put _md_inertia() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetMassData(in pBody as Integer, in pMass as Number, in pCenterX as Number, in pCenterY as Number, in pInertia as Number)
+   unsafe
+      _body_set_mass_data(pBody, pMass, pCenterX, pCenterY, pInertia)
+   end unsafe
+end handler
+public handler b2ApplyMassFromShapes(in pBody as Integer)
+   unsafe
+      _body_apply_mass_from_shapes(pBody)
+   end unsafe
+end handler
+public handler b2SetTargetTransform(in pBody as Integer, in pX as Number, in pY as Number, in pAngle as Number, in pTimeStep as Number)
+   unsafe
+      _body_set_target_transform(pBody, pX, pY, pAngle, pTimeStep)
+   end unsafe
+end handler
+public handler b2EnableSleep(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_enable_sleep(pBody, bi(pFlag))
+   end unsafe
+end handler
+public handler b2BodyIsSleepEnabled(in pBody as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_is_sleep_enabled(pBody) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2BodyIsFixedRotation(in pBody as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _body_is_fixed_rotation(pBody) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2BodyEnableContactEvents(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_enable_contact_events(pBody, bi(pFlag))
+   end unsafe
+end handler
+public handler b2BodyEnableHitEvents(in pBody as Integer, in pFlag as Boolean)
+   unsafe
+      _body_enable_hit_events(pBody, bi(pFlag))
+   end unsafe
+end handler
+public handler b2BodyAABBUpdate(in pBody as Integer)
+   unsafe
+      _body_aabb_update(pBody)
+   end unsafe
+end handler
+public handler b2AABBLowerX() returns Number
+   variable tR as Number
+   unsafe
+      put _aabb_lower_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2AABBLowerY() returns Number
+   variable tR as Number
+   unsafe
+      put _aabb_lower_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2AABBUpperX() returns Number
+   variable tR as Number
+   unsafe
+      put _aabb_upper_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2AABBUpperY() returns Number
+   variable tR as Number
+   unsafe
+      put _aabb_upper_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyShapeCount(in pBody as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_shape_count(pBody) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyShapeAt(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_shape_at(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyJointCount(in pBody as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_joint_count(pBody) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2BodyJointAt(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _body_joint_at(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- shape: type / material / filter / event flags / geometry / queries ----
+public handler b2ShapeType(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_type(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeIsSensor(in pShape as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_is_sensor(pShape) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2ShapeDensity(in pShape as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_density(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeFriction(in pShape as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_friction(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeRestitution(in pShape as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_restitution(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeMaterialId(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_material_id(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetShapeMaterialId(in pShape as Integer, in pId as Integer)
+   unsafe
+      _shape_set_material_id(pShape, pId)
+   end unsafe
+end handler
+public handler b2SetShapeFilter(in pShape as Integer, in pCategory as Number, in pMask as Number, in pGroup as Integer)
+   unsafe
+      _shape_set_filter(pShape, pCategory, pMask, pGroup)
+   end unsafe
+end handler
+public handler b2ShapeFilterCategory(in pShape as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_filter_category(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeFilterMask(in pShape as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_filter_mask(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeFilterGroup(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_filter_group(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeEnableSensorEvents(in pShape as Integer, in pFlag as Boolean)
+   unsafe
+      _shape_enable_sensor_events(pShape, bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeSensorEventsEnabled(in pShape as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_are_sensor_events_enabled(pShape) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2ShapeEnableContactEvents(in pShape as Integer, in pFlag as Boolean)
+   unsafe
+      _shape_enable_contact_events(pShape, bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeContactEventsEnabled(in pShape as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_are_contact_events_enabled(pShape) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2ShapeEnableHitEvents(in pShape as Integer, in pFlag as Boolean)
+   unsafe
+      _shape_enable_hit_events(pShape, bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeHitEventsEnabled(in pShape as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_are_hit_events_enabled(pShape) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2ShapeEnablePreSolveEvents(in pShape as Integer, in pFlag as Boolean)
+   unsafe
+      _shape_enable_presolve_events(pShape, bi(pFlag))
+   end unsafe
+end handler
+public handler b2ShapeCircleUpdate(in pShape as Integer)
+   unsafe
+      _shape_circle_update(pShape)
+   end unsafe
+end handler
+public handler b2ShapeCircleX() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_circle_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCircleY() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_circle_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCircleRadius() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_circle_radius() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCapsuleUpdate(in pShape as Integer)
+   unsafe
+      _shape_capsule_update(pShape)
+   end unsafe
+end handler
+public handler b2ShapeCapsuleX1() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_capsule_x1() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCapsuleY1() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_capsule_y1() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCapsuleX2() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_capsule_x2() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCapsuleY2() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_capsule_y2() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCapsuleRadius() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_capsule_radius() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSegmentUpdate(in pShape as Integer)
+   unsafe
+      _shape_segment_update(pShape)
+   end unsafe
+end handler
+public handler b2ShapeSegmentX1() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_segment_x1() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSegmentY1() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_segment_y1() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSegmentX2() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_segment_x2() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSegmentY2() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_segment_y2() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapePolygonUpdate(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_polygon_update(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapePolygonCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_polygon_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapePolygonVertexX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_polygon_vx(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapePolygonVertexY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_polygon_vy(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapePolygonRadius() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_polygon_radius() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetShapeCircle(in pShape as Integer, in pCx as Number, in pCy as Number, in pRadius as Number)
+   unsafe
+      _shape_set_circle(pShape, pCx, pCy, pRadius)
+   end unsafe
+end handler
+public handler b2SetShapeCapsule(in pShape as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number, in pRadius as Number)
+   unsafe
+      _shape_set_capsule(pShape, pX1, pY1, pX2, pY2, pRadius)
+   end unsafe
+end handler
+public handler b2SetShapeSegment(in pShape as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number)
+   unsafe
+      _shape_set_segment(pShape, pX1, pY1, pX2, pY2)
+   end unsafe
+end handler
+public handler b2SetShapePolygon(in pShape as Integer)
+   unsafe
+      _shape_set_polygon(pShape)
+   end unsafe
+end handler
+public handler b2ShapeRayCast(in pShape as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _shape_raycast(pShape, pX1, pY1, pX2, pY2) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2ShapeRayX() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_ray_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeRayY() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_ray_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeRayNormalX() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_ray_normal_x() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeRayNormalY() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_ray_normal_y() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeRayFraction() returns Number
+   variable tR as Number
+   unsafe
+      put _shape_ray_fraction() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeAABBUpdate(in pShape as Integer)
+   unsafe
+      _shape_aabb_update(pShape)
+   end unsafe
+end handler
+public handler b2ShapeClosestPointX(in pShape as Integer, in pTargetX as Number, in pTargetY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_closest_point_x(pShape, pTargetX, pTargetY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeClosestPointY(in pShape as Integer, in pTargetX as Number, in pTargetY as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _shape_closest_point_y(pShape, pTargetX, pTargetY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeMassDataUpdate(in pShape as Integer)
+   unsafe
+      _shape_mass_data_update(pShape)
+   end unsafe
+end handler
+public handler b2ShapeSensorCapacity(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_sensor_capacity(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSensorOverlapsUpdate(in pShape as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_sensor_overlaps_update(pShape) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSensorOverlapCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_sensor_overlap_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeSensorOverlapAt(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _shape_sensor_overlap_at(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- chains ----
+public handler b2ChainBegin()
+   unsafe
+      _chain_begin()
+   end unsafe
+end handler
+public handler b2ChainAddPoint(in pX as Number, in pY as Number)
+   unsafe
+      _chain_add_point(pX, pY)
+   end unsafe
+end handler
+public handler b2CreateChain(in pBody as Integer, in pLoop as Boolean, in pFriction as Number, in pRestitution as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _chain_create(pBody, bi(pLoop), pFriction, pRestitution) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DestroyChain(in pChain as Integer)
+   unsafe
+      _chain_destroy(pChain)
+   end unsafe
+end handler
+public handler b2ChainIsValid(in pChain as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _chain_is_valid(pChain) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2SetChainFriction(in pChain as Integer, in pFriction as Number)
+   unsafe
+      _chain_set_friction(pChain, pFriction)
+   end unsafe
+end handler
+public handler b2ChainFriction(in pChain as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _chain_friction(pChain) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2SetChainRestitution(in pChain as Integer, in pRestitution as Number)
+   unsafe
+      _chain_set_restitution(pChain, pRestitution)
+   end unsafe
+end handler
+public handler b2ChainRestitution(in pChain as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _chain_restitution(pChain) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ChainSegmentCount(in pChain as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _chain_segment_count(pChain) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ChainSegmentAt(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _chain_segment_at(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: generic ----
+public handler b2JointType(in pJoint as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_type(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointBodyA(in pJoint as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_body_a(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointBodyB(in pJoint as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_body_b(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointLocalAnchorAX(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_local_anchor_a_x(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointLocalAnchorAY(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_local_anchor_a_y(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointLocalAnchorBX(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_local_anchor_b_x(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointLocalAnchorBY(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_local_anchor_b_y(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointCollideConnected(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _joint_get_collide_connected(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2SetJointCollideConnected(in pJoint as Integer, in pFlag as Boolean)
+   unsafe
+      _joint_set_collide_connected(pJoint, bi(pFlag))
+   end unsafe
+end handler
+public handler b2JointConstraintForceX(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_constraint_force_x(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointConstraintForceY(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_constraint_force_y(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointConstraintTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _joint_constraint_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2JointWakeBodies(in pJoint as Integer)
+   unsafe
+      _joint_wake_bodies(pJoint)
+   end unsafe
+end handler
+
+-- ---- joints: motor + filter ----
+public handler b2MotorJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer, in pOffsetX as Number, in pOffsetY as Number, in pAngularOffset as Number, in pMaxForce as Number, in pMaxTorque as Number, in pCorrectionFactor as Number, in pCollide as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_motor(pWorld, pBodyA, pBodyB, pOffsetX, pOffsetY, pAngularOffset, pMaxForce, pMaxTorque, pCorrectionFactor, bi(pCollide)) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorSetLinearOffset(in pJoint as Integer, in pX as Number, in pY as Number)
+   unsafe
+      _motor_set_linear_offset(pJoint, pX, pY)
+   end unsafe
+end handler
+public handler b2MotorLinearOffsetX(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_linear_offset_x(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorLinearOffsetY(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_linear_offset_y(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorSetAngularOffset(in pJoint as Integer, in pAngle as Number)
+   unsafe
+      _motor_set_angular_offset(pJoint, pAngle)
+   end unsafe
+end handler
+public handler b2MotorAngularOffset(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_angular_offset(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorSetMaxForce(in pJoint as Integer, in pForce as Number)
+   unsafe
+      _motor_set_max_force(pJoint, pForce)
+   end unsafe
+end handler
+public handler b2MotorMaxForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_max_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorSetMaxTorque(in pJoint as Integer, in pTorque as Number)
+   unsafe
+      _motor_set_max_torque(pJoint, pTorque)
+   end unsafe
+end handler
+public handler b2MotorMaxTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_max_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MotorSetCorrectionFactor(in pJoint as Integer, in pFactor as Number)
+   unsafe
+      _motor_set_correction_factor(pJoint, pFactor)
+   end unsafe
+end handler
+public handler b2MotorCorrectionFactor(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _motor_correction_factor(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2FilterJoint(in pWorld as Integer, in pBodyA as Integer, in pBodyB as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _joint_filter(pWorld, pBodyA, pBodyB) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: revolute granular ----
+public handler b2RevoluteEnableSpring(in pJoint as Integer, in pFlag as Boolean)
+   unsafe
+      _revolute_enable_spring(pJoint, bi(pFlag))
+   end unsafe
+end handler
+public handler b2RevoluteIsSpringEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _revolute_is_spring_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2RevoluteSetSpringHertz(in pJoint as Integer, in pHertz as Number)
+   unsafe
+      _revolute_set_spring_hertz(pJoint, pHertz)
+   end unsafe
+end handler
+public handler b2RevoluteSpringHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_spring_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteSetSpringDamping(in pJoint as Integer, in pDamping as Number)
+   unsafe
+      _revolute_set_spring_damping(pJoint, pDamping)
+   end unsafe
+end handler
+public handler b2RevoluteSpringDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_spring_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteIsLimitEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _revolute_is_limit_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2RevoluteLowerLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_lower_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteUpperLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_upper_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteIsMotorEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _revolute_is_motor_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2RevoluteSetMotorSpeed(in pJoint as Integer, in pSpeed as Number)
+   unsafe
+      _revolute_set_motor_speed(pJoint, pSpeed)
+   end unsafe
+end handler
+public handler b2RevoluteMotorSpeed(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_motor_speed(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteMotorTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_motor_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RevoluteSetMaxMotorTorque(in pJoint as Integer, in pTorque as Number)
+   unsafe
+      _revolute_set_max_motor_torque(pJoint, pTorque)
+   end unsafe
+end handler
+public handler b2RevoluteMaxMotorTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _revolute_max_motor_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: prismatic granular ----
+public handler b2PrismaticEnableSpring(in pJoint as Integer, in pFlag as Boolean)
+   unsafe
+      _prismatic_enable_spring(pJoint, bi(pFlag))
+   end unsafe
+end handler
+public handler b2PrismaticIsSpringEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _prismatic_is_spring_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2PrismaticSetSpringHertz(in pJoint as Integer, in pHertz as Number)
+   unsafe
+      _prismatic_set_spring_hertz(pJoint, pHertz)
+   end unsafe
+end handler
+public handler b2PrismaticSpringHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_spring_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticSetSpringDamping(in pJoint as Integer, in pDamping as Number)
+   unsafe
+      _prismatic_set_spring_damping(pJoint, pDamping)
+   end unsafe
+end handler
+public handler b2PrismaticSpringDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_spring_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticIsLimitEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _prismatic_is_limit_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2PrismaticLowerLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_lower_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticUpperLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_upper_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticIsMotorEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _prismatic_is_motor_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2PrismaticSetMotorSpeed(in pJoint as Integer, in pSpeed as Number)
+   unsafe
+      _prismatic_set_motor_speed(pJoint, pSpeed)
+   end unsafe
+end handler
+public handler b2PrismaticMotorSpeed(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_motor_speed(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticMotorForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_motor_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticMaxMotorForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_max_motor_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2PrismaticSpeed(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _prismatic_speed(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: distance granular ----
+public handler b2DistanceIsSpringEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _distance_is_spring_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2DistanceSpringHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_spring_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceSpringDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_spring_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceIsLimitEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _distance_is_limit_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2DistanceMinLength(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_min_length(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceMaxLength(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_max_length(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceCurrentLength(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_current_length(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceEnableMotor(in pJoint as Integer, in pFlag as Boolean)
+   unsafe
+      _distance_enable_motor(pJoint, bi(pFlag))
+   end unsafe
+end handler
+public handler b2DistanceIsMotorEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _distance_is_motor_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2DistanceSetMotorSpeed(in pJoint as Integer, in pSpeed as Number)
+   unsafe
+      _distance_set_motor_speed(pJoint, pSpeed)
+   end unsafe
+end handler
+public handler b2DistanceMotorSpeed(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_motor_speed(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceSetMaxMotorForce(in pJoint as Integer, in pForce as Number)
+   unsafe
+      _distance_set_max_motor_force(pJoint, pForce)
+   end unsafe
+end handler
+public handler b2DistanceMaxMotorForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_max_motor_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2DistanceMotorForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _distance_motor_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: weld ----
+public handler b2WeldReferenceAngle(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _weld_reference_angle(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WeldSetReferenceAngle(in pJoint as Integer, in pAngle as Number)
+   unsafe
+      _weld_set_reference_angle(pJoint, pAngle)
+   end unsafe
+end handler
+public handler b2WeldLinearHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _weld_linear_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WeldLinearDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _weld_linear_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WeldAngularHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _weld_angular_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WeldAngularDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _weld_angular_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: wheel granular ----
+public handler b2WheelIsSpringEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _wheel_is_spring_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2WheelSpringHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_spring_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelSpringDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_spring_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelEnableLimit(in pJoint as Integer, in pFlag as Boolean)
+   unsafe
+      _wheel_enable_limit(pJoint, bi(pFlag))
+   end unsafe
+end handler
+public handler b2WheelIsLimitEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _wheel_is_limit_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2WheelSetLimits(in pJoint as Integer, in pLower as Number, in pUpper as Number)
+   unsafe
+      _wheel_set_limits(pJoint, pLower, pUpper)
+   end unsafe
+end handler
+public handler b2WheelLowerLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_lower_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelUpperLimit(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_upper_limit(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelIsMotorEnabled(in pJoint as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _wheel_is_motor_enabled(pJoint) into tR
+   end unsafe
+   return tR is 1
+end handler
+public handler b2WheelMotorSpeed(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_motor_speed(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelMotorTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_motor_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2WheelMaxMotorTorque(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _wheel_max_motor_torque(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- joints: mouse granular ----
+public handler b2MouseTargetX(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _mouse_target_x(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MouseTargetY(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _mouse_target_y(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MouseSetSpringHertz(in pJoint as Integer, in pHertz as Number)
+   unsafe
+      _mouse_set_spring_hertz(pJoint, pHertz)
+   end unsafe
+end handler
+public handler b2MouseSpringHertz(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _mouse_spring_hertz(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MouseSetSpringDamping(in pJoint as Integer, in pDamping as Number)
+   unsafe
+      _mouse_set_spring_damping(pJoint, pDamping)
+   end unsafe
+end handler
+public handler b2MouseSpringDamping(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _mouse_spring_damping(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2MouseSetMaxForce(in pJoint as Integer, in pForce as Number)
+   unsafe
+      _mouse_set_max_force(pJoint, pForce)
+   end unsafe
+end handler
+public handler b2MouseMaxForce(in pJoint as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _mouse_max_force(pJoint) into tR
+   end unsafe
+   return tR
+end handler
+
+-- ---- world queries (overlap / ray-cast-all / shape-cast); results 1-based ----
+public handler b2OverlapAABB(in pWorld as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_overlap_aabb(pWorld, pX1, pY1, pX2, pY2) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2OverlapPoint(in pWorld as Integer, in pX as Number, in pY as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_overlap_point(pWorld, pX, pY) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2OverlapCircle(in pWorld as Integer, in pCx as Number, in pCy as Number, in pRadius as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_overlap_circle(pWorld, pCx, pCy, pRadius) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2OverlapShape(in pWorld as Integer, in pRadius as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_overlap_shape(pWorld, pRadius) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2RayCastAll(in pWorld as Integer, in pX1 as Number, in pY1 as Number, in pX2 as Number, in pY2 as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_raycast_all(pWorld, pX1, pY1, pX2, pY2) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2ShapeCast(in pWorld as Integer, in pRadius as Number, in pDx as Number, in pDy as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_shapecast(pWorld, pRadius, pDx, pDy) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_count() into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryBody(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_body(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryShape(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _query_shape(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _query_x(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _query_y(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryNormalX(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _query_normal_x(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryNormalY(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _query_normal_y(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+public handler b2QueryFraction(in pIndex as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _query_fraction(pIndex - 1) into tR
+   end unsafe
+   return tR
+end handler
+
+end library

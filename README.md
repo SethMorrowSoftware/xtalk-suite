@@ -9,7 +9,7 @@ separately.**
 
 Every member is a thin, well-behaved binding over a proven C/C++ library (or,
 for OnionXT, pure LiveCodeScript over a local Tor daemon), built to one shared
-set of engineering rules so the six read as one system. They interoperate: your
+set of engineering rules so the seven read as one system. They interoperate: your
 identity, your transport, and your storage can come from different members and
 compose cleanly — the flagship of that idea is the **Riptide Social** design
 (`docs/RIPTIDE-SOCIAL-SPEC.md`), a serverless social app that uses all of them.
@@ -23,11 +23,14 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
+| **[box2dxt](box2dxt/)** | `b2*` / `b2k*` | Box2D v3.1.0 | The family ANCESTOR, folded home 2026-08-14: full rigid-body physics (bodies, joints, motors, sensors, queries) plus the pure-script **b2k game Kit** - control-backed bodies in pixels/degrees, sprites, input, a player controller and a camera - the game-engine half that pairs with enetxt's game-grade networking |
 | **[coinxt](coinxt/)** | `cx*` | trezor-crypto | Bitcoin + Ethereum primitives. **Built:** the hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2), the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH), the encodings and addresses (hex, Base58Check, Bech32/Bech32m, RLP, P2PKH/P2WPKH/P2TR/ETH + EIP-55), HD wallets (BIP-39 mnemonics, BIP-32/BIP-44 derivation, xprv/xpub), and (phase 5) transactions (Bitcoin legacy + BIP-143 SegWit, Ethereum EIP-155 + EIP-1559) — engine-passed 2026-08-12. Schnorr/BIP-340 deferred with Taproot |
 
 They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachannel,...}`
 — so the engine resolves each binding automatically once its packaged extension
-is installed.
+is installed. (box2dxt predates that convention and ships as
+`org.openxtalk.box2dxt`; the name is installed on users' machines, so it
+stays.)
 
 ## Start here (no experience needed)
 
@@ -61,6 +64,7 @@ authority; this is the summary:
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). The standalone async loopback - the live `enHostStatus` pair and the `enPeerStatus` statistics included - ran green 2026-08-13, so nothing in its selftest is static any more; only the two-machine LAN chat stays open |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have now been called on-engine (2026-08-10, folded sync half); only the member harness's own async live halves stay static |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (now 43 checks) ran green on-engine 2026-08-12, folded. Mode B (launching tor) still unexercised |
+| box2dxt | yes | **all 5 platforms** + `MANIFEST.sha256` (added in the fold) | The family ancestor, mature and feature-frozen upstream. The 2026-08-14 fold replaced its pre-unification checker with the suite's (first contact found ~1550 violations: mostly the pre-ASCII character set, plus 29 real `repeat with ... step` engine traps in the platformer, all fixed) - so the whole member is **verified statically; needs an OXT re-pass**; its prior engine evidence predates the sweep |
 | coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All five phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. **Phase 5 (transactions) is ENGINE-PASSED (2026-08-12, Windows x64, 230/230)**: Bitcoin legacy + BIP-143 SegWit and Ethereum EIP-155 + EIP-1559, model-verified against the BIP-143/EIP-155 published examples, driven through the real `.livecodescript` by `check-script-vectors.py` (251 checks) — which caught and fixed a would-be-red engine defect (`cxBtcTxEncode` refused the reference tx over a trailing-empty scriptSig) — and then confirmed on a real engine, the BIP-143 signed tx byte for byte. The independent-decoder bar is met (2026-08-12, extended 2026-08-13 to all four tx families: python-bitcointx accepts fresh legacy + segwit spends under consensus rules, eth-account recovers the exact sender from fresh EIP-155 + EIP-1559 txs); a live testnet broadcast is the one bar left before "broadcastable" |
 
 **Where the suite stands after the 2026-08-08 and 2026-08-10 passes.** On
@@ -215,6 +219,15 @@ The members are deliberately non-overlapping, so real apps mix them:
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
+- **The game stack.** box2dxt's b2k Kit is a working game engine (physics,
+  sprites, input, camera - the platformer and contraption-builder examples
+  are complete games), and enetxt is game-grade networking; together they
+  are the suite's multiplayer-game story. The worked design for it is
+  [`docs/holde-em/`](docs/holde-em/): serverless online Texas Hold'em where
+  players meet over the torrentxt DHT, every action lives in a signed
+  hash-chained transcript, and the deal runs a mental-poker shuffle -
+  Riptide's sibling capstone, moved up from box2dxt's docs in the fold
+  because it composes three members.
 - **The shipped example.** [`nocloud/`](nocloud/) is **No Cloud Quick Share**,
   a finished end-user app that composes the suite the way the ladder above
   describes: peer-to-peer file sharing as one stack script over torrentxt

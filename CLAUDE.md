@@ -10,7 +10,7 @@ them and what the consolidation changed.
 
 ## What this repo is
 
-The OpenXTalk library suite: six sibling extensions for OXT / the xTalk family,
+The OpenXTalk library suite: seven sibling extensions for OXT / the xTalk family,
 each a thin binding over a proven native library (or, for OnionXT, pure
 LiveCodeScript over a local Tor daemon), consolidated into one repository so
 they release, version, and interoperate as a suite. This monorepo is the
@@ -34,6 +34,12 @@ openxtalk-libraries/
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
                        member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
+  box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
+                       physics + the pure-script b2k game Kit (sprites, input,
+                       camera); its checker was the oldest pre-unification
+                       lineage, replaced in the fold; its examples are GAMES,
+                       exempt from the ui-kit gate with written reasons; the
+                       fold record is in its CLAUDE.md
   riptide/             the capstone APP (not an extension): Riptide Social,
                        implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
                        phase in pure script; structured like a member so the
@@ -97,7 +103,7 @@ refuses any window-building stack that neither adopts nor carries a written
 exemption** — so "every demo is a kit adopter" is a property of the tree,
 not of one cleanup pass. A look change edits the master and re-carries; it
 is never patched inside an adopter. The 2026-08-14 fleet pass converted
-every demo (all six members' examples, both apps' stacks) and paired each
+every demo (the members' examples, both apps' stacks) and paired each
 conversion with that stack's audit fixes (validated create/connect returns
 with last-errors surfaced, watchdogs on silent async waits, fail-closed
 probes, guarded teardown) — so every converted stack's honesty label reads

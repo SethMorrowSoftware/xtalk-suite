@@ -1,0 +1,12 @@
+# CMake out-of-source build directory (see docs/building.md, CONTRIBUTING.md)
+/build/
+
+# Python bytecode (from tools/)
+__pycache__/
+*.pyc
+
+# Generated distribution zips (tools/make-release.py); the saved stack and the
+# built zip are artifacts -- dist/INSTALL.md is the tracked source.
+/dist/*.zip
+/dist/*.livecode
+/dist/*.oxtstack

@@ -72,6 +72,23 @@ EXEMPT = {
         "carries the harness scaffold block instead (its own drift gate)",
     os.path.join("tests", "suite-selftest.core.livecodescript"):
         "carries the harness scaffold block instead (its own drift gate)",
+    # box2dxt's stacks are GAMES: canvas worlds drawn by the member's own
+    # b2k Kit (whose embedded copies have their own sync gate,
+    # box2dxt/tools/sync-embedded-kit.py) - form chrome is not their UI
+    # language. Suite-kit chrome adoption is deliberate phase-2 work,
+    # recorded in box2dxt/CLAUDE.md.
+    os.path.join("box2dxt", "examples", "box2dxt-demo.livecodescript"):
+        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+    os.path.join("box2dxt", "examples", "box2dxt-platformer.livecodescript"):
+        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+    os.path.join("box2dxt", "examples", "box2dxt-slingshot.livecodescript"):
+        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+    os.path.join("box2dxt", "examples", "box2dxt-contraption-builder.livecodescript"):
+        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+    os.path.join("box2dxt", "examples", "box2dxt-spike-gamekit.livecodescript"):
+        "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
+    os.path.join("box2dxt", "examples", "box2dxt-selftest.livecodescript"):
+        "box2dxt's harness predates the scaffold; scaffold adoption is phase-2",
 }
 
 # The two spellings that mean "this file builds a window".
