@@ -43,8 +43,10 @@ SET_RE = re.compile(
     r'([0-9]+|k[A-Za-z0-9_]+)\s*$')
 CHROME_RE = re.compile(
     r'^\s*uiChrome\s+"[^"]*"\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*(?:,\s*[0-9]+\s*)?$')
-CONST_RE = re.compile(
-    r'^\s*constant\s+(k[A-Za-z0-9_]+)\s*=\s*([0-9]+)\s*(?:--.*)?$')
+# a constant line may declare several names (`constant kW = 1180, kH = 640`),
+# so the line is matched first and each name = number pair is read out of it
+CONST_LINE_RE = re.compile(r'^\s*constant\s+(.+?)\s*(?:--.*)?$')
+CONST_PAIR_RE = re.compile(r'(k[A-Za-z0-9_]+)\s*=\s*([0-9]+)')
 
 # the generated suite harness carries the core's numbers verbatim; checking
 # both would double-report one source line, so the generated copy is skipped
@@ -61,9 +63,10 @@ def check_file(path, rel, problems):
     lines = open(path, encoding="utf-8").read().split("\n")
     consts = {}
     for line in lines:
-        m = CONST_RE.match(line)
+        m = CONST_LINE_RE.match(line)
         if m:
-            consts[m.group(1)] = int(m.group(2))
+            for name, value in CONST_PAIR_RE.findall(m.group(1)):
+                consts[name] = int(value)
     found = 0
     for i, line in enumerate(lines, 1):
         m = SET_RE.match(line)

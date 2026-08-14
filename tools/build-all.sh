@@ -157,7 +157,7 @@ fi
 # riptide and nocloud are not extensions but carry the same gate shape
 # (script checker, golden glob, vector gate, docs style), so they ride the
 # same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 
