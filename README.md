@@ -29,13 +29,24 @@ They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachann
 — so the engine resolves each binding automatically once its packaged extension
 is installed.
 
-**Start here.** Download the repo and open
-[`start-here.livecodescript`](start-here.livecodescript) in OXT
-(File > Open Stack): it is a clickable directory of every sample, demo and
-harness stack, listed by its repo-relative path — click one to see what it
-is and what it needs, double-click to launch it in place (helper stacks are
-put in use automatically). `tools/check-launcher-registry.py` holds the
-directory true to the tree on every push.
+## Start here (no experience needed)
+
+1. **Install [OpenXTalk](https://openxtalk.org)** if you have not already.
+2. **Download this repository** — the green **Code** button above, then
+   **Download ZIP** — and unzip it anywhere (or `git clone` it).
+3. In OpenXTalk pick **File > Open Stack** and choose
+   [`start-here.livecodescript`](start-here.livecodescript) from the
+   unzipped folder.
+
+That opens a clickable directory of every sample, demo and harness stack,
+listed by the path it has in this repository. Click one to read what it is
+and what it needs; **double-click (or press Open) to launch it** right from
+where the download put it — helper stacks are put in use for you, and its
+**Setup help** button explains the rest in plain language. Everything here
+is a script-only stack that builds its own window when opened, so there is
+nothing to install or copy first; a stack missing an extension says so in
+red at the top rather than breaking. (`tools/check-launcher-registry.py`
+holds the directory true to the tree on every push.)
 
 ## Release status (honest, per member)
 

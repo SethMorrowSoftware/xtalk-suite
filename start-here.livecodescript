@@ -25,10 +25,23 @@ script "SuiteStartHere"
 -- status line naming the missing piece - that is the family contract, not
 -- a launcher bug.
 --
+-- SCRIPT-ONLY STACKS, AND WHY THIS STILL WORKS: every stack here is a
+-- script-only file - it has NO saved window; its openStack handler builds
+-- one on open. The two loading verbs differ exactly there: `start using`
+-- LOADS a file without opening it (no window, no openStack - right for the
+-- helper libraries), while `go stack` OPENS it - window plus openStack -
+-- which is why this launcher goes, and only ever start-uses helpers. The
+-- much-documented "paste the script, then close and reopen" ritual exists
+-- because PASTING a script does not re-fire openStack; opening the file
+-- directly never had that problem. Belt and braces anyway: after every
+-- launch the card is checked, and if it arrived EMPTY (an engine that
+-- loaded without messaging - the runbook's trap 5.2 shape) openStack is
+-- sent once. That nudge is safe precisely because an unbuilt stack has run
+-- nothing: no timers to double-arm, no session to re-open.
+--
 -- HONESTY (the suite convention): this launcher is new - verified
--- statically; needs an OXT pass. The one mechanism it stakes everything on
--- (`go stack` on a script-only file) is the documented open path of the
--- loopback demo and both onionxt standalones.
+-- statically; needs an OXT pass. `go stack` on a script-only file is the
+-- documented open path of the loopback demo and both onionxt standalones.
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
@@ -396,6 +409,9 @@ on mouseUp
       case "slCopyPath"
          slCopyPath
          break
+      case "slHelp"
+         slHelp
+         break
       default
          pass mouseUp
    end switch
@@ -440,6 +456,10 @@ command slBuild
    uiWrap "slNote", empty, "708,388,1168,472", 11
    set the foregroundColor of field "slNote" to kUiWarn
    uiButton "slOpen", "Open this stack", "708,506,880,538"
+   uiButton "slHelp", "Setup help", "896,506,1010,538"
+   set the tooltip of button "slOpen" to "Launch the selected stack from where the download put it (double-clicking its path does the same)."
+   set the tooltip of button "slHelp" to "The three-step setup, in plain language."
+   set the tooltip of field "slPath" to "The file's location inside the downloaded folder - click Copy to copy it."
    uiFooter \
          "ONE torrent session per process: open one torrent-flavoured stack" \
          & " (client, channels, quickshare, rp1 chat, dht chat, riptide," \
@@ -617,6 +637,23 @@ function slBasename pRel
    return tName
 end slBasename
 
+-- Plain-language setup, for someone who has never used the suite. An
+-- answer dialog on purpose: it waits until read, and needs no layout.
+command slHelp
+   answer "GETTING SET UP, in three steps:" & return & return \
+         & "1. You already did the hard part - this window opening means" \
+         && "the download works." & return & return \
+         & "2. Most stacks need one or two EXTENSIONS installed in" \
+         && "OpenXTalk (Tools > Extension Manager). Click any stack in the" \
+         && "list and its card says exactly which ones it needs; each" \
+         && "member folder's README.md has the install walkthrough." \
+         & return & return \
+         & "3. Click a stack, then Open. If something is missing, the" \
+         && "stack itself says so in red at the top - install what it" \
+         && "names and reopen it. Nothing here can damage anything:" \
+         && "every stack fails safe." titled "Setup help"
+end slHelp
+
 command slCopyPath
    local tErr
    if sSelected is empty then
@@ -632,7 +669,7 @@ end slCopyPath
 
 -- ---- launching ---------------------------------------------------------------
 command slOpenSelected
-   local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed
+   local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed, tOpened
    if sSelected is empty then
       uiStatus "Click a stack in the list first.", "warn"
       exit slOpenSelected
@@ -686,6 +723,16 @@ command slOpenSelected
       uiStatus "Could not open" && tRel & ":" && tErr, "bad"
       exit slOpenSelected
    end try
+   -- script-only stacks build their window in their own openStack; `go`
+   -- fires it. If an engine ever loads without messaging (the trap 5.2
+   -- shape), the card arrives EMPTY - and one nudge is safe exactly
+   -- because nothing has run: no timers armed, no session opened.
+   put the short name of the defaultStack into tOpened
+   if tOpened is not the short name of me then
+      if the number of controls of card 1 of stack tOpened is 0 then
+         send "openStack" to stack tOpened
+      end if
+   end if
    if sTorrentOpened is "true" and tNote contains "SESSION" then
       uiStatus "Opened" && tRel & ". Its own status line takes it from here.", "ok"
    else
