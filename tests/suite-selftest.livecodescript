@@ -396,6 +396,9 @@ constant rs1kRsGoldTs2 = "1754870460"
 constant rs1kRsGoldDmTs = "1754870520"
 constant rs1kRsGoldMsgTs = "1754870580"
 constant rs1kRsGoldDmMsgText = "hello, dm"
+constant rs1kRsGoldLanNonce = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+constant rs1kRsGoldLanHostName = "laptop"
+constant rs1kRsGoldLanJoinName = "phone"
 constant rs1kRsGoldHeadSeq = "7"
 constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -426,6 +429,9 @@ constant rs1kRsGoldPrekeyRecHex = "52534b316439343631393035383533383635363863333
 constant rs1kRsGoldPrekeyRecTarget = "5b92cd531aa0537e43def0f737e2a61c48673008"
 constant rs1kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646331623265646564373563343462666663393030616637343631613236643834323734353361393266323264643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433633637326538653062323539363237663135633737326563306436316631356364373836636532626337323434353439323535663964366366616163333030623200000000689932f89d0357d4159ca1bab0e329d9b1ef1bfe88dbf75970389251a855dc6237f43ede513265c5590c0b889be490c4b07f60e279f1405cca0d1c069f532f4fc9b61905"
 constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
+constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
+constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -492,7 +498,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.4.0"
+constant kRsVersion = "0.5.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -500,6 +506,10 @@ constant kRsPrekeyMagic = "RSK1"
 constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
+constant kRsLanMagic = "RSL1"
+constant kRsLanDomain = "riptide-lan"
+constant kRsLanNonceLen = 32
+constant kRsLanMaxName = 32
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -6238,7 +6248,7 @@ end oxProcessId
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 4: identity, the live feed, media, DMs)"
+         "(phase 6: identity, the live feed, media, DMs, LAN mesh)"
 end rsVersion
 
 function rsLastError
@@ -7802,6 +7812,151 @@ function rsDmSend pSession, pPeerId, pFrameBytes
    end if
    return true
 end rsDmSend
+
+function rsLanKeys pMaster
+   local tSeed
+   put rsLanKey(pMaster) into tSeed
+   if tSeed is empty then
+      rsSetError "rsLanKeys: could not derive the LAN subkey:" && rsLastError()
+      return empty
+   end if
+   return rsIdentityKeys(tSeed)
+end rsLanKeys
+
+function rsLanBuildChallenge pName, pNonce
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildChallenge: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if the number of bytes in pNonce is not kRsLanNonceLen then
+      rsSetError "rsLanBuildChallenge: the nonce must be" && kRsLanNonceLen && \
+            "bytes (use sxRandomBytes)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("C", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put pNonce after tOut
+   return tOut
+end rsLanBuildChallenge
+
+function rsLanParseChallenge pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: truncated challenge"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "C" then
+      rsSetError "rsLanParseChallenge: not an RSL1 challenge"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
+   return tOut
+end rsLanParseChallenge
+
+private function rsLanSigMessage pNonce, pName
+   local tOut
+   put textEncode(kRsLanDomain, "ASCII") into tOut
+   put pNonce after tOut
+   put textEncode(pName, "UTF-8") after tOut
+   return tOut
+end rsLanSigMessage
+
+function rsLanBuildResponse pChallengeBytes, pName, pMaster
+   local tChallenge, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanBuildResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildResponse: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanSigMessage(tChallenge["nonce"], pName), \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildResponse: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("R", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildResponse
+
+function rsLanParseResponse pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseResponse: truncated response"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "R" then
+      rsSetError "rsLanParseResponse: not an RSL1 response"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseResponse: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseResponse
+
+function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
+   local tResp, tChallenge, tKeys, tOk, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then return empty
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanVerifyResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tResp["signature"], \
+            rsLanSigMessage(tChallenge["nonce"], tResp["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyResponse: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyResponse: the response does not prove the" && \
+            "shared master (a stranger, a stale nonce, or tamper)"
+      return empty
+   end if
+   return tResp["name"]
+end rsLanVerifyResponse
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN
@@ -10903,6 +11058,7 @@ function rs1rsSelfTest
       rs1rstSectionBep44
       rs1rstSectionIngest
       rs1rstSectionDm rs1tCaps
+      rs1rstSectionLan
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
    else
@@ -11353,6 +11509,63 @@ private command rs1rstSectionIngest
    rs1rstCheck (rsIngestPost(rs1tPostEvent, rsZeroTarget(), rs1kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rs1rstSectionIngest
+
+private command rs1rstSectionLan
+   local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName
+   rs1rstSection "phase 6 - LAN mesh admission"
+   put rsLanKeys(rs1rstBin(rs1kRsGoldMasterHex)) into rs1tKeys
+   rs1rstCheck (rs1rstHex(rs1tKeys["publicKey"]) is rs1kRsGoldLanPub), \
+         "the LAN subkey yields the golden mesh public"
+   rs1rstCheck (the number of bytes in rs1tKeys["secretKey"] is 64), \
+         "and a 64-byte signing secret"
+   put rsLanBuildChallenge(rs1kRsGoldLanHostName, rs1rstBin(rs1kRsGoldLanNonce)) \
+         into rs1tChallenge
+   rs1rstCheck (rs1rstHex(rs1tChallenge) is rs1kRsGoldLanChallengeHex), \
+         "the challenge bytes match golden"
+   put rsLanParseChallenge(rs1tChallenge) into rs1tName
+   rs1rstCheck (rs1tName["name"] is rs1kRsGoldLanHostName), \
+         "the host name round-trips out of the challenge"
+   rs1rstCheck (rs1rstHex(rs1tName["nonce"]) is rs1kRsGoldLanNonce), \
+         "the nonce round-trips out of the challenge"
+   put rsLanBuildResponse(rs1tChallenge, rs1kRsGoldLanJoinName, \
+         rs1rstBin(rs1kRsGoldMasterHex)) into rs1tResponse
+   rs1rstCheck (rs1rstHex(rs1tResponse) is rs1kRsGoldLanResponseHex), \
+         "the response bytes match golden"
+   put rsLanParseResponse(rs1tResponse) into rs1tName
+   rs1rstCheck (rs1tName["name"] is rs1kRsGoldLanJoinName), \
+         "the joiner name round-trips out of the response"
+   -- the host's verdict: this response proves the shared master
+   put rsLanVerifyResponse(rs1tResponse, rs1tChallenge, rs1rstBin(rs1kRsGoldMasterHex)) \
+         into rs1tName
+   rs1rstCheck (rs1tName is rs1kRsGoldLanJoinName), \
+         "the host admits a joiner who shares the master, learning its name"
+   -- a STRANGER: a response built under a different master must be refused
+   -- by a host holding the golden master
+   put rsLanBuildResponse(rs1tChallenge, rs1kRsGoldLanJoinName, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBadName
+   rs1rstCheck (rsLanVerifyResponse(rs1tBadName, rs1tChallenge, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a joiner who does NOT share the master is refused"
+   -- freshness: the same response against a DIFFERENT challenge nonce fails
+   -- (this is why the nonce must never be reused)
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tNonce2
+   put rsLanBuildChallenge(rs1kRsGoldLanHostName, \
+         byte 1 to 32 of (rs1tNonce2 & rs1tNonce2)) into rs1tChallenge2
+   rs1rstCheck (rsLanVerifyResponse(rs1tResponse, rs1tChallenge2, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a response replayed against a fresh nonce is refused"
+   -- tamper and cap refusals
+   rs1rstCheck (rsLanVerifyResponse(rs1rstFlipByte(rs1tResponse, 60), rs1tChallenge, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a tampered response is refused"
+   rs1rstCheck (rsLanParseChallenge(byte 1 to 20 of rs1tChallenge) is empty), \
+         "a truncated challenge is refused"
+   rs1rstCheck (rsLanBuildChallenge("laptop", byte 1 to 31 of \
+         rs1rstBin(rs1kRsGoldLanNonce)) is empty), \
+         "a 31-byte nonce is refused"
+   rs1rstCheck (rsLanBuildChallenge("", rs1rstBin(rs1kRsGoldLanNonce)) is empty), \
+         "an empty device name is refused"
+end rs1rstSectionLan
 
 private command rs1rstSectionDm pCaps
    local rs1tSeed, rs1tMyKeys, rs1tConfKeys, rs1tSess, rs1tSessB, rs1tPrekey, rs1tIntro

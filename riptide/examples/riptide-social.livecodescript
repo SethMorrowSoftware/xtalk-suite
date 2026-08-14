@@ -67,9 +67,13 @@ constant kPollMs = 250
 constant kDhtWaitMs = 25000
 constant kWalkMax = 12
 constant kNameMax = 64
+-- phase 6 (LAN): the device-mesh port and a u32 protocol tag the enConnect
+-- rider carries, so a mismatched app is refused before the crypto handshake
+constant kLanPort = 27099
+constant kLanProto = 1
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-3"
+constant kRaUiVersion = "ra-ui-720p-4"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -444,6 +448,17 @@ local sDmTxKey         -- per-peer: session transmit key
 local sDmPush          -- per-peer: secretstream push handle (my outbound)
 local sDmPull          -- per-peer: secretstream pull handle (their inbound)
 local sDmActivePeer    -- the rp1 peer id of the live conversation, or empty
+-- phase 6 (LAN device mesh). The master seed is retained while unlocked
+-- (the spec's one-keyring pattern: it reconstructs every subkey on demand -
+-- the LAN and anon rails both need it), cleared on Lock/close.
+local sMasterSeed      -- the 32-byte master while unlocked (the keyring)
+local sLanHost         -- the enet host handle (server or client), or empty
+local sLanIsServer     -- "true" when hosting the mesh
+local sLanName         -- this device's name in the mesh
+local sLanServerPeer   -- a client's peer handle to the host
+local sLanChallenges   -- server: peer id -> the challenge bytes I sent it
+local sLanDevices      -- peer id -> the admitted device name
+local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -455,12 +470,24 @@ on closeStack
    local tErr
    put empty into sPolling
    raDmTeardown
+   raLanLeave
    if sSession is an integer and sSession > 0 then
       try
          btStopSession sSession
       catch tErr
          -- extension gone or session already dead; nothing to release
       end try
+   end if
+   -- the one mandatory enet teardown: destroys any surviving host and
+   -- releases the socket layer. Bare command form, guarded so a missing
+   -- extension cannot throw out of closeStack.
+   if sLanInit is "true" then
+      try
+         enDeinitialize
+      catch tErr
+         -- extension not installed; nothing to release
+      end try
+      put empty into sLanInit
    end if
    put empty into sSession
    put empty into sDmInbox
@@ -499,6 +526,21 @@ on mouseUp
       case "raGoFeed"
          go card 1 of me
          break
+      case "raGoLanFromFeed"
+         go card "raDevices" of me
+         break
+      case "raGoFeedFromLan"
+         go card 1 of me
+         break
+      case "raLanHostBtn"
+         raLanHost
+         break
+      case "raLanJoinBtn"
+         raLanJoin
+         break
+      case "raLanLeaveBtn"
+         raLanLeave
+         break
       case "raDmStart"
          raDmStart
          break
@@ -522,6 +564,7 @@ command raBuild
    lock screen
    raBuildFeedCard
    raBuildDmCard
+   raBuildLanCard
    go card 1 of me
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
@@ -533,6 +576,7 @@ command raBuildFeedCard
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
    uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
    uiButton "raGoDm", "Messages >", "1080,4,1192,26"
+   uiButton "raGoLanFromFeed", "Devices >", "968,4,1074,26"
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -615,6 +659,43 @@ command raBuildDmCard
          "16,572,1184,632"
 end raBuildDmCard
 
+-- Phase 6: the LAN device mesh. Your own devices (all sharing your master
+-- seed) meet on the LAN and prove they are yours with the challenge/response
+-- above; a stranger on the same Wi-Fi cannot answer. This is enet, not the
+-- DHT: host on one device, Join by IP on the others.
+command raBuildLanCard
+   if there is no card "raDevices" of me then
+      create card
+      set the name of the last card to "raDevices"
+   end if
+   go card "raDevices" of me
+   uiChrome "Riptide Social - Devices (phase 6: your own LAN device mesh)", 1200, 640
+   uiButton "raGoFeedFromLan", "< Feed", "1080,4,1192,26"
+
+   uiSection "raLanSec1", "1. This device: host the mesh, or join one on your LAN", "16,58,592,76"
+   uiLabel "raLanNameL", "device name:", "16,80,110,98", 11
+   uiInput "raLanName", "114,80,340,100"
+   put "this device" into field "raLanName"
+   uiButton "raLanHostBtn", "Host", "446,80,516,104"
+   uiButton "raLanLeaveBtn", "Leave", "524,80,592,104"
+   uiLabel "raLanToL", "host address (IP):", "16,108,130,126", 11
+   uiInput "raLanTo", "134,108,340,128"
+   uiButton "raLanJoinBtn", "Join", "446,108,592,132"
+   uiArea "raLanLog", "16,138,592,562"
+
+   uiSection "raLanSec2", "2. Admitted devices (each proved it shares your master seed)", "608,58,1184,76"
+   uiArea "raLanDevices", "608,80,1184,562"
+
+   uiFooter \
+         "This is your OWN devices only, on one LAN: admission is a" \
+         & " signature under a key only a holder of your master seed can" \
+         & " derive, so a stranger on the same Wi-Fi is refused. It never" \
+         & " touches the internet or your followers. Unlock on the Feed" \
+         & " card first. Phase 6 is done when a device that shares the" \
+         & " master joins and a stranger is refused.", \
+         "16,572,1184,632"
+end raBuildLanCard
+
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
    local tErr
@@ -680,6 +761,7 @@ command raCreate
       end if
       put rsIdentitySeed(tSeed) into sIdSeed
       put rsDmSeed(tSeed) into sDmSeed
+      put tSeed into sMasterSeed
    catch tErr
       put true into tFailed
    end try
@@ -715,6 +797,7 @@ command raUnlock
       end if
       put rsIdentitySeed(tMaster) into sIdSeed
       put rsDmSeed(tMaster) into sDmSeed
+      put tMaster into sMasterSeed
    catch tErr
       put true into tFailed
    end try
@@ -845,9 +928,11 @@ end raLock
 
 command raClearKeys
    raDmTeardown
+   raLanLeave
    put empty into sIdSeed
    put empty into sDmSeed
    put empty into sDmKeys
+   put empty into sMasterSeed
    put empty into sHandle
    put empty into sOnion
    put 0 into sSeq
@@ -941,6 +1026,18 @@ command raPoll
          end repeat
       catch tErr
          -- rp1 not enabled yet, or a bad drain; the next tick retries
+      end try
+   end if
+   -- the enet mesh (phase 6) pumps on the SAME timer - enet is pump-or-
+   -- nothing, so a missed drain is a stalled mesh; guarded like the others
+   if sLanHost is not empty and sLanHost is not 0 then
+      try
+         put enPoll(sLanHost) into tEvents
+         repeat for each element tEvent in tEvents
+            raHandleEnet tEvent
+         end repeat
+      catch tErr
+         -- host torn down mid-drain; the next tick sees it gone
       end try
    end if
    raExpire
@@ -1500,6 +1597,277 @@ command raDmSend
    raDmChatLine "you:" && tBody
    set the text of field "raDmMsg" of card "raMessages" of me to empty
 end raDmSend
+
+-- ---- phase 6: the LAN device mesh --------------------------------------------
+-- enet, not the DHT: your devices meet on the LAN and prove they share
+-- your master seed. Admission is a first-message challenge/response (the
+-- enConnect rider is only a u32 protocol tag). The host challenges every
+-- new peer; a peer that answers with a signature the host's OWN master
+-- verifies is admitted, everyone else is dropped. All the crypto is the
+-- gated rsLan* layer; this is the enet transport around it.
+
+-- Lazily bring enet up once (refcounted global init). Returns "true" on
+-- success; fail-closed with a logged reason.
+private function raLanEnsureInit
+   local tR, tErr
+   if sLanInit is "true" then
+      return "true"
+   end if
+   try
+      put enInitialize() into tR
+   catch tErr
+      raLanLog "enetxt is not installed (org.openxtalk.library.enet); the device mesh needs it."
+      return "false"
+   end try
+   if tR is not 0 then
+      raLanLog "enetxt failed to initialise:" && enLastError()
+      return "false"
+   end if
+   put "true" into sLanInit
+   return "true"
+end raLanEnsureInit
+
+command raLanHost
+   local tHost, tErr
+   if sMasterSeed is empty then
+      uiStatus "Unlock on the Feed card first; the mesh admission needs your master seed.", "warn"
+      exit raLanHost
+   end if
+   if sLanHost is not empty then
+      raLanLog "Already on a mesh; Leave first."
+      exit raLanHost
+   end if
+   if raLanEnsureInit() is not "true" then
+      exit raLanHost
+   end if
+   put raLanMyName() into sLanName
+   -- bind on EVERY interface ("" - the proven LAN spelling), a small peer
+   -- cap, two channels, unmetered
+   try
+      put enHostCreateServer("", kLanPort, 32, 2, 0, 0) into tHost
+   catch tErr
+      raLanLog "could not create the host:" && tErr
+      exit raLanHost
+   end try
+   if tHost is empty or tHost is 0 then
+      raLanLog "could not create the host:" && enLastError()
+      exit raLanHost
+   end if
+   put tHost into sLanHost
+   put "true" into sLanIsServer
+   put empty into sLanChallenges
+   put empty into sLanDevices
+   raLanLog "Hosting the mesh on port" && kLanPort & \
+         ". On your other devices, Join this device's LAN IP."
+   raLanPaintDevices
+end raLanHost
+
+command raLanJoin
+   local tIp, tHost, tPeer, tErr
+   if sMasterSeed is empty then
+      uiStatus "Unlock on the Feed card first; the mesh admission needs your master seed.", "warn"
+      exit raLanJoin
+   end if
+   if sLanHost is not empty then
+      raLanLog "Already on a mesh; Leave first."
+      exit raLanJoin
+   end if
+   put word 1 of field "raLanTo" of card "raDevices" of me into tIp
+   if tIp is empty then
+      uiStatus "Type the host device's LAN IP address first.", "warn"
+      exit raLanJoin
+   end if
+   if raLanEnsureInit() is not "true" then
+      exit raLanJoin
+   end if
+   put raLanMyName() into sLanName
+   try
+      put enHostCreateClient(1, 2, 0, 0) into tHost
+   catch tErr
+      raLanLog "could not create the client host:" && tErr
+      exit raLanJoin
+   end try
+   if tHost is empty or tHost is 0 then
+      raLanLog "could not create the client host:" && enLastError()
+      exit raLanJoin
+   end if
+   put tHost into sLanHost
+   put "false" into sLanIsServer
+   put empty into sLanDevices
+   -- optimistic peer handle now; the enetConnect event confirms it. The
+   -- rider is our u32 protocol tag, checked by the host before the crypto.
+   try
+      put enConnect(sLanHost, tIp, kLanPort, 2, kLanProto) into tPeer
+   catch tErr
+      raLanLog "connect failed:" && tErr
+      raLanLeave
+      exit raLanJoin
+   end try
+   if tPeer is empty or tPeer is 0 then
+      raLanLog "connect failed:" && enLastError()
+      raLanLeave
+      exit raLanJoin
+   end if
+   put tPeer into sLanServerPeer
+   raLanLog "connecting to" && tIp & "; waiting for the host's challenge..."
+   raLanPaintDevices
+end raLanJoin
+
+command raLanLeave
+   local tErr
+   if sLanHost is not empty and sLanHost is not 0 then
+      try
+         enHostDestroy sLanHost
+      catch tErr
+         -- extension gone or host already dead
+      end try
+   end if
+   put empty into sLanHost
+   put empty into sLanIsServer
+   put empty into sLanServerPeer
+   put empty into sLanChallenges
+   put empty into sLanDevices
+   raLanPaintDevices
+end raLanLeave
+
+-- One enet event. The host challenges each new peer; the joiner answers
+-- the challenge; the host verifies and admits or drops.
+command raHandleEnet pEvent
+   local tPeer, tName, tChallenge, tNonce, tResp, tRec, tKind, tErr
+   put pEvent["peer"] into tPeer
+   switch pEvent["name"]
+      case "enetConnect"
+         if sLanIsServer is "true" then
+            -- refuse a mismatched protocol before spending a challenge
+            if pEvent["data"] is not kLanProto then
+               raLanLog "refused a peer speaking protocol" && \
+                     pEvent["data"] & "; dropping."
+               try
+                  enDisconnectNow tPeer, 0
+               catch tErr
+               end try
+               break
+            end if
+            put sxRandomBytes(32) into tNonce
+            put rsLanBuildChallenge(sLanName, tNonce) into tChallenge
+            if tChallenge is empty then
+               raLanLog "challenge build refused:" && rsLastError()
+               break
+            end if
+            put tChallenge into sLanChallenges[tPeer]
+            raLanSend tPeer, tChallenge
+         end if
+         -- a client just waits for the challenge to arrive as a message
+         break
+      case "enetReceive"
+         put rsLanRecordKind(pEvent["payload"]) into tKind
+         if tKind is "C" and sLanIsServer is not "true" then
+            -- joiner: sign the host's challenge under our master
+            put rsLanBuildResponse(pEvent["payload"], sLanName, \
+                  sMasterSeed) into tResp
+            if tResp is empty then
+               raLanLog "response build refused:" && rsLastError()
+               break
+            end if
+            raLanSend tPeer, tResp
+            raLanLog "answered the host's challenge; awaiting admission."
+         else if tKind is "R" and sLanIsServer is "true" then
+            -- host: verify against the challenge WE sent this peer
+            put sLanChallenges[tPeer] into tChallenge
+            if tChallenge is empty then
+               break
+            end if
+            put rsLanVerifyResponse(pEvent["payload"], tChallenge, \
+                  sMasterSeed) into tName
+            if tName is empty then
+               raLanLog "a peer FAILED admission (not your device):" && \
+                     rsLastError() & "; dropping."
+               try
+                  enDisconnectNow tPeer, 0
+               catch tErr
+               end try
+               delete variable sLanChallenges[tPeer]
+               break
+            end if
+            put tName into sLanDevices[tPeer]
+            delete variable sLanChallenges[tPeer]
+            raLanLog "admitted" && quote & tName & quote & \
+                  "(it proved it shares your master)."
+            raLanPaintDevices
+         end if
+         break
+      case "enetDisconnect"
+         if sLanDevices[tPeer] is not empty then
+            raLanLog quote & sLanDevices[tPeer] & quote && "left the mesh."
+            delete variable sLanDevices[tPeer]
+            raLanPaintDevices
+         end if
+         if tPeer is sLanServerPeer then
+            raLanLog "the host went away; Leave and re-Join to reconnect."
+            put empty into sLanServerPeer
+         end if
+         break
+   end switch
+end raHandleEnet
+
+-- Which RSL1 record is this (by its 5th byte, the kind), or empty. A
+-- lighter touch than a full parse just to route in the dispatcher.
+private function rsLanRecordKind pBytes
+   if the number of bytes in pBytes < 5 then return empty
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not "RSL1" then
+      return empty
+   end if
+   return textDecode(byte 5 of pBytes, "ASCII")
+end rsLanRecordKind
+
+private command raLanSend pPeer, pBytes
+   local tErr
+   try
+      enSend pPeer, 0, pBytes, 0
+   catch tErr
+      raLanLog "send to peer" && pPeer && "failed:" && tErr
+   end try
+end raLanSend
+
+private function raLanMyName
+   local tName
+   put word 1 to -1 of field "raLanName" of card "raDevices" of me into tName
+   if tName is empty then put "device" into tName
+   return char 1 to 32 of tName
+end raLanMyName
+
+command raLanLog pLine
+   if there is a field "raLanLog" of card "raDevices" of me then
+      put pLine & return after field "raLanLog" of card "raDevices" of me
+   end if
+end raLanLog
+
+command raLanPaintDevices
+   local tRows, tPeer
+   if there is no field "raLanDevices" of card "raDevices" of me then
+      exit raLanPaintDevices
+   end if
+   if sLanHost is empty then
+      put "Not on a mesh. Host this device, or Join another by its LAN IP." into tRows
+   else if the number of keys of sLanDevices is 0 then
+      if sLanIsServer is "true" then
+         put "Hosting. No devices admitted yet." into tRows
+      else
+         put "Joining. Waiting for admission..." into tRows
+      end if
+   else
+      put empty into tRows
+      repeat for each key tPeer in sLanDevices
+         put sLanDevices[tPeer] & return after tRows
+      end repeat
+      if the last char of tRows is return then
+         delete the last char of tRows
+      end if
+   end if
+   if the text of field "raLanDevices" of card "raDevices" of me is not tRows then
+      set the text of field "raLanDevices" of card "raDevices" of me to tRows
+   end if
+end raLanPaintDevices
 
 -- ---- phase 3: the media strip ------------------------------------------------
 -- One button, two moods. While the watched item is not yet openable the

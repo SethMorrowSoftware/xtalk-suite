@@ -162,8 +162,8 @@ It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, and riptide's harness (phases 1-4, including the live feed,
-media, and DM layers against the suite's own session) — plus the cross-member compositions no
+and datachannelxt, and riptide's harness (phases 1-4 + 6, including the live
+feed, media, DM, and LAN-admission layers) — plus the cross-member compositions no
 per-member harness can have. One paste settles what used to take seven runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
@@ -177,11 +177,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**359 of 377 public handlers**:
+**365 of 383 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 54/54 |
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 60/60 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -222,7 +222,11 @@ The members are deliberately non-overlapping, so real apps mix them:
   swarms, pairwise secretstreams over rp1, crypto_kx anchored against a
   real libsodium) are BUILT (2026-08-14, statically verified; their
   done-criteria — a follower plays a video mid-download, and two machines
-  exchange encrypted DMs with no server — await two-machine passes);
+  exchange encrypted DMs with no server — await two-machine passes); phase 6
+  (LAN device mesh — your own devices meet on the LAN and prove they share
+  your master seed with a signature a stranger cannot forge) is BUILT the
+  same way (its `rsLan*` admission layer is golden-pinned and offline-tested;
+  the Devices card awaits a two-machine pass);
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.

@@ -75,6 +75,9 @@ def main(argv):
         "kRsGoldDmTs": "chosen intro timestamp",
         "kRsGoldMsgTs": "chosen DM message timestamp",
         "kRsGoldDmMsgText": "chosen DM message text",
+        "kRsGoldLanNonce": "a chosen 32-byte LAN challenge nonce (0x5a * 32)",
+        "kRsGoldLanHostName": "chosen LAN host device name",
+        "kRsGoldLanJoinName": "chosen LAN joiner device name",
     }
     for name in inputs:
         if name in k:
@@ -174,6 +177,28 @@ def main(argv):
     if intro[132:196] != conf_pub.encode("ascii"):
         failures.append("the golden intro is not addressed to the "
                         "conformance identity")
+
+    # the phase-6 LAN admission: the mesh public, and the challenge/response
+    # made deterministic by a fixed nonce
+    lan_pub, _lan_seed = ref["lan_keys"](master)
+    want("kRsGoldLanPub", lan_pub.hex())
+    lan_nonce = bytes.fromhex(k["kRsGoldLanNonce"])
+    challenge = ref["lan_build_challenge"](k["kRsGoldLanHostName"], lan_nonce)
+    want("kRsGoldLanChallengeHex", challenge.hex())
+    response = ref["lan_build_response"](challenge, k["kRsGoldLanJoinName"],
+                                         master)
+    want("kRsGoldLanResponseHex", response.hex())
+    # the response really verifies under the mesh public (a structural
+    # claim, not a digest): a golden that did not verify would be useless
+    if not ref["_verify_ed25519"](
+            response[-64:],
+            ref["lan_sig_message"](lan_nonce, k["kRsGoldLanJoinName"]),
+            lan_pub):
+        failures.append("the golden LAN response does not verify under the "
+                        "mesh public key")
+
+    if k.get("kRsGoldLanNonce") != "5a" * 32:
+        failures.append("kRsGoldLanNonce is not the documented 0x5a * 32")
 
     # the honest split
     uncovered = sorted(set(k) - checked)

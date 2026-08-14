@@ -36,6 +36,9 @@ constant kRsGoldTs2 = "1754870460"
 constant kRsGoldDmTs = "1754870520"
 constant kRsGoldMsgTs = "1754870580"
 constant kRsGoldDmMsgText = "hello, dm"
+constant kRsGoldLanNonce = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+constant kRsGoldLanHostName = "laptop"
+constant kRsGoldLanJoinName = "phone"
 constant kRsGoldHeadSeq = "7"
 constant kRsGoldHeadName = "Riptide"
 constant kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -68,6 +71,9 @@ constant kRsGoldPrekeyRecHex = "52534b316439343631393035383533383635363863333132
 constant kRsGoldPrekeyRecTarget = "5b92cd531aa0537e43def0f737e2a61c48673008"
 constant kRsGoldIntroHex = "5253493135613534366534666566356431623736663934646331623265646564373563343462666663393030616637343631613236643834323734353361393266323264643934363139303538353338363536386333313233613666613730366639346635313430666466653634376162353166646637366533663665353739396433633637326538653062323539363237663135633737326563306436316631356364373836636532626337323434353439323535663964366366616163333030623200000000689932f89d0357d4159ca1bab0e329d9b1ef1bfe88dbf75970389251a855dc6237f43ede513265c5590c0b889be490c4b07f60e279f1405cca0d1c069f532f4fc9b61905"
 constant kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
+constant kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
+constant kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+constant kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
 
 local sLog
 local sPass
@@ -99,6 +105,7 @@ function rsSelfTest
       rstSectionBep44
       rstSectionIngest
       rstSectionDm tCaps
+      rstSectionLan
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
    else
@@ -558,6 +565,69 @@ private command rstSectionIngest
    rstCheck (rsIngestPost(tPostEvent, rsZeroTarget(), kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rstSectionIngest
+
+-- The phase-6 LAN admission layer. Entirely pure crypto (no transport),
+-- so it runs on SodiumXT alone - which is right: the admission proof is
+-- what MUST hold before any enet peer is trusted, and it is provable
+-- without a network. The golden challenge/response use a FIXED nonce; a
+-- real host uses sxRandomBytes, and the "fresh nonce refuses a stale
+-- response" property is checked with a second, different nonce.
+private command rstSectionLan
+   local tKeys, tChallenge, tResponse, tNonce2, tChallenge2, tName, tBadName
+   rstSection "phase 6 - LAN mesh admission"
+   put rsLanKeys(rstBin(kRsGoldMasterHex)) into tKeys
+   rstCheck (rstHex(tKeys["publicKey"]) is kRsGoldLanPub), \
+         "the LAN subkey yields the golden mesh public"
+   rstCheck (the number of bytes in tKeys["secretKey"] is 64), \
+         "and a 64-byte signing secret"
+   put rsLanBuildChallenge(kRsGoldLanHostName, rstBin(kRsGoldLanNonce)) \
+         into tChallenge
+   rstCheck (rstHex(tChallenge) is kRsGoldLanChallengeHex), \
+         "the challenge bytes match golden"
+   put rsLanParseChallenge(tChallenge) into tName
+   rstCheck (tName["name"] is kRsGoldLanHostName), \
+         "the host name round-trips out of the challenge"
+   rstCheck (rstHex(tName["nonce"]) is kRsGoldLanNonce), \
+         "the nonce round-trips out of the challenge"
+   put rsLanBuildResponse(tChallenge, kRsGoldLanJoinName, \
+         rstBin(kRsGoldMasterHex)) into tResponse
+   rstCheck (rstHex(tResponse) is kRsGoldLanResponseHex), \
+         "the response bytes match golden"
+   put rsLanParseResponse(tResponse) into tName
+   rstCheck (tName["name"] is kRsGoldLanJoinName), \
+         "the joiner name round-trips out of the response"
+   -- the host's verdict: this response proves the shared master
+   put rsLanVerifyResponse(tResponse, tChallenge, rstBin(kRsGoldMasterHex)) \
+         into tName
+   rstCheck (tName is kRsGoldLanJoinName), \
+         "the host admits a joiner who shares the master, learning its name"
+   -- a STRANGER: a response built under a different master must be refused
+   -- by a host holding the golden master
+   put rsLanBuildResponse(tChallenge, kRsGoldLanJoinName, \
+         rstBin(kRsGoldConfSeedHex)) into tBadName
+   rstCheck (rsLanVerifyResponse(tBadName, tChallenge, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a joiner who does NOT share the master is refused"
+   -- freshness: the same response against a DIFFERENT challenge nonce fails
+   -- (this is why the nonce must never be reused)
+   put rstBin(kRsGoldMasterHex) into tNonce2
+   put rsLanBuildChallenge(kRsGoldLanHostName, \
+         byte 1 to 32 of (tNonce2 & tNonce2)) into tChallenge2
+   rstCheck (rsLanVerifyResponse(tResponse, tChallenge2, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a response replayed against a fresh nonce is refused"
+   -- tamper and cap refusals
+   rstCheck (rsLanVerifyResponse(rstFlipByte(tResponse, 60), tChallenge, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a tampered response is refused"
+   rstCheck (rsLanParseChallenge(byte 1 to 20 of tChallenge) is empty), \
+         "a truncated challenge is refused"
+   rstCheck (rsLanBuildChallenge("laptop", byte 1 to 31 of \
+         rstBin(kRsGoldLanNonce)) is empty), \
+         "a 31-byte nonce is refused"
+   rstCheck (rsLanBuildChallenge("", rstBin(kRsGoldLanNonce)) is empty), \
+         "an empty device name is refused"
+end rstSectionLan
 
 -- The phase-4 DM layer. The pure half (keys, records, session derivation,
 -- seal round trip, the message-through-a-secretstream path) runs on

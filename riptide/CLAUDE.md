@@ -28,8 +28,15 @@ passed** (2026-08-14): phase 3 is `rsMediaCreate`/`rsMediaFetch`/
 join + framed send) plus the demo's Messages card - all golden-pinned
 where deterministic, refusal-covered in the harness, verified statically;
 their done-criteria (a follower plays a video mid-download; two machines
-exchange authenticated encrypted DMs) each need a two-machine pass. The
-remaining phases (5-7) land later, each behind its own pass.
+exchange authenticated encrypted DMs) each need a two-machine pass.
+**Phase 6 (LAN mesh) is BUILT but not passed** (2026-08-14): the `rsLan*`
+admission layer (shared-master ed25519 keypair, RSL1 challenge/response)
+plus the demo's Devices card, golden-pinned and offline-harness-covered;
+its done-criterion (a device that shares the master joins, a stranger is
+refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
+library surface** - SDP rides the phase-4 DM message kinds O/A over the
+existing secretstream, so it is a demo-wiring milestone still to build.
+Phase 7 (anon persona) lands next, behind its own pass.
 
 ## The rules that bind this directory
 
@@ -233,6 +240,34 @@ remaining phases (5-7) land later, each behind its own pass.
 - **Streams are freed everywhere they can die** (sodiumxt has no unload
   hook): per-peer teardown, lock, and closeStack all run the idempotent
   `sxFreeStream` path.
+
+## Things decided building phase 6 (do not re-litigate)
+
+- **The admission proof is a MESSAGE, not connect data.** enet's
+  `enConnect` rider is a u32 (a protocol tag), not a byte buffer, so the
+  RSL1 challenge/response ride channel-0 messages. The rider still earns
+  its keep: the host refuses a wrong protocol tag before spending a
+  challenge on it.
+- **One shared keypair, not per-device identity.** All your devices
+  derive the SAME ed25519 keypair from the LAN subkey, so the signature
+  proves "I hold the master," which is exactly the device-mesh trust
+  question. It is deliberately NOT a per-device identity - that would be
+  a different feature (and a different spec).
+- **The signature binds the nonce AND the name.** `"riptide-lan" ||
+  nonce || name`: the nonce (fresh per challenge, from `sxRandomBytes`)
+  stops a replayed response, and the name stops a captured signature
+  being re-presented under a different device name. The harness proves
+  both - a response verifies against its own nonce/name and fails against
+  a different one.
+- **The nonce anchor is fixed for the golden only.** The oracle pins a
+  `0x5a * 32` nonce so the challenge and its signature are reproducible;
+  a real host always uses `sxRandomBytes`, and "a fresh nonce refuses a
+  stale response" is a harness check, not just a comment.
+- **The demo retains the master while unlocked.** The LAN and anon rails
+  need subkeys the identity/DM seeds cannot give, so the stack keeps the
+  master seed in memory between unlock and Lock/close (the spec's
+  one-keyring pattern), cleared on both. The honesty caveat about
+  unlocked engine memory already covers it.
 
 ## Suite integration status
 

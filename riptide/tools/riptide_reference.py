@@ -119,6 +119,49 @@ def ed25519_sign(msg, seed):
     return R + int.to_bytes(s, 32, "little")
 
 
+def _pt_decompress(comp):
+    """RFC 8032 5.1.3 point decompression: recover x from the compressed y."""
+    y = int.from_bytes(comp, "little") & ((1 << 255) - 1)
+    sign = comp[31] >> 7
+    u = (y * y - 1) % _p
+    v = (_d * y * y + 1) % _p
+    # candidate root x = u*v^3 * (u*v^7)^((p-5)/8)
+    x = u * pow(v, 3, _p) % _p * pow(u * pow(v, 7, _p) % _p,
+                                     (_p - 5) // 8, _p) % _p
+    vxx = v * x * x % _p
+    if vxx == u % _p:
+        pass
+    elif vxx == (-u) % _p:
+        x = x * pow(2, (_p - 1) // 4, _p) % _p
+    else:
+        return None
+    if x == 0 and sign == 1:
+        return None
+    if x & 1 != sign:
+        x = _p - x
+    return (x % _p, y % _p, 1, x * y % _p)
+
+
+def _verify_ed25519(sig, msg, pub):
+    """RFC 8032 verify; the oracle's own check that a signature it built (or
+    one sxSignDetached built) validates under a public key. Matches
+    sxSignVerifyDetached."""
+    if len(sig) != 64 or len(pub) != 32:
+        return False
+    A = _pt_decompress(pub)
+    if A is None:
+        return False
+    R = int.from_bytes(sig[:32], "little")
+    s = int.from_bytes(sig[32:], "little")
+    if s >= _L:
+        return False
+    h = int.from_bytes(_sha512(sig[:32] + pub + msg), "little") % _L
+    sB = _pt_mul(s, _B)
+    hA = _pt_mul(h, A)
+    RplushA = _pt_add(_pt_decompress(sig[:32]), hA)
+    return _pt_compress(sB) == _pt_compress(RplushA)
+
+
 # ---------------------------------------------------------------------------
 # X25519 (RFC 7748 montgomery ladder) and crypto_kx (libsodium's key
 # exchange: kx secret = BLAKE2b-32(seed), kx public = X25519 base mult,
@@ -555,6 +598,76 @@ def build_dm_message(kind, timestamp, body_text):
 
 
 # ---------------------------------------------------------------------------
+# Phase 6 - LAN device-mesh admission (RIPTIDE-SOCIAL-SPEC.md section 7)
+#
+# All your devices share one master seed, so they all derive the SAME LAN
+# subkey ed25519 keypair (lan_key -> sxSignKeypairFromSeed). Admission is a
+# proof that the joiner holds the master: the host sends a random challenge,
+# the joiner signs "riptide-lan" || nonce || itsName under the LAN secret,
+# and the host verifies against the LAN public it derives from its OWN
+# master. A stranger on the same Wi-Fi cannot sign, so cannot join.
+#
+# The enet connect-data rider is a u32 (a protocol tag), NOT a byte buffer,
+# so the challenge/response are first MESSAGES on channel 0, each an RSL1
+# record. The signature binds the nonce (freshness) and the joiner's name.
+# ---------------------------------------------------------------------------
+
+LAN_MAGIC = b"RSL1"
+LAN_DOMAIN = b"riptide-lan"  # signature domain separator
+LAN_NONCE_BYTES = 32
+LAN_MAX_NAME = 32  # bytes of UTF-8 device name
+
+
+def lan_keys(master):
+    """The LAN mesh ed25519 keypair (all your devices derive the same one).
+    Returns (public_key_bytes, seed_bytes) - the seed IS the signing key for
+    ed25519_sign, mirroring sxSignKeypairFromSeed(lan_key)."""
+    seed = lan_key(master)
+    return ed25519_publickey(seed), seed
+
+
+def _lan_name(name):
+    b = name.encode("utf-8")
+    if not 1 <= len(b) <= LAN_MAX_NAME:
+        raise ValueError("device name must be 1..%d bytes" % LAN_MAX_NAME)
+    return b
+
+
+def lan_build_challenge(name, nonce):
+    """Host -> joiner: magic(4) "C" nameLen(u8) name nonce(32)."""
+    if len(nonce) != LAN_NONCE_BYTES:
+        raise ValueError("nonce must be %d bytes" % LAN_NONCE_BYTES)
+    nb = _lan_name(name)
+    return LAN_MAGIC + b"C" + bytes([len(nb)]) + nb + nonce
+
+
+def lan_sig_message(nonce, name):
+    return LAN_DOMAIN + nonce + _lan_name(name)
+
+
+def lan_build_response(challenge_bytes, name, master):
+    """Joiner -> host: magic(4) "R" nameLen(u8) name sig(64), sig ed25519 by
+    the LAN key over "riptide-lan" || nonce || name."""
+    nonce = _lan_parse_challenge(challenge_bytes)["nonce"]
+    nb = _lan_name(name)
+    _pub, seed = lan_keys(master)
+    sig = ed25519_sign(lan_sig_message(nonce, name), seed)
+    return LAN_MAGIC + b"R" + bytes([len(nb)]) + nb + sig
+
+
+def _lan_parse_challenge(rec):
+    if len(rec) < 4 + 1 + 1 + LAN_NONCE_BYTES:
+        raise ValueError("challenge too short")
+    if rec[:4] != LAN_MAGIC or rec[4:5] != b"C":
+        raise ValueError("not an RSL1 challenge")
+    nlen = rec[5]
+    if len(rec) != 6 + nlen + LAN_NONCE_BYTES:
+        raise ValueError("challenge length mismatch")
+    return {"name": rec[6:6 + nlen].decode("utf-8"),
+            "nonce": rec[6 + nlen:]}
+
+
+# ---------------------------------------------------------------------------
 # Import-time self-checks against the independent anchors. A model that
 # cannot reproduce a vector it did not invent must not be consulted.
 # ---------------------------------------------------------------------------
@@ -626,6 +739,19 @@ def _self_check():
     if srx != tx or stx != rx:
         raise AssertionError("crypto_kx server keys do not cross-match")
 
+    # LAN admission: a response built here must verify under the LAN public
+    # derived from the same master, and a one-byte tamper must break it.
+    m = b"\x42" * 32
+    nonce = bytes.fromhex("5a" * 32)
+    ch = lan_build_challenge("laptop", nonce)
+    resp = lan_build_response(ch, "phone", m)
+    lp, _ls = lan_keys(m)
+    sig = resp[-64:]
+    if not _verify_ed25519(sig, lan_sig_message(nonce, "phone"), lp):
+        raise AssertionError("LAN admission self-check failed (valid sig)")
+    if _verify_ed25519(sig, lan_sig_message(nonce, "laptop"), lp):
+        raise AssertionError("LAN admission self-check failed (name binding)")
+
 
 _self_check()
 
@@ -667,6 +793,13 @@ def golden_vectors():
     intro = build_intro(handle, dm_kx_pk.hex(), conf_pub, 1754870520, id_seed)
     intro_frame = build_dm_frame(b"I", intro)
     dm_msg = build_dm_message(b"T", 1754870580, "hello, dm")
+    # phase 6: LAN admission. A fixed nonce makes the challenge and the
+    # signed response deterministic (the app uses sxRandomBytes; the golden
+    # pins a chosen nonce so the record and its signature are reproducible).
+    lan_pub, _lan_seed = lan_keys(master)
+    lan_nonce = bytes.fromhex("5a" * 32)
+    lan_challenge = lan_build_challenge("laptop", lan_nonce)
+    lan_response = lan_build_response(lan_challenge, "phone", master)
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -698,6 +831,10 @@ def golden_vectors():
         "introTarget": immutable_target(intro),
         "introFrame": intro_frame.hex(),
         "dmMsg": dm_msg.hex(),
+        "lanPub": lan_pub.hex(),
+        "lanNonce": lan_nonce.hex(),
+        "lanChallenge": lan_challenge.hex(),
+        "lanResponse": lan_response.hex(),
     }
 
 

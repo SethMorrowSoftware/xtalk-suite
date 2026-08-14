@@ -1,8 +1,11 @@
 script "RiptideSocial"
--- riptide.livecodescript - Riptide Social, phases 1-4: the identity
+-- riptide.livecodescript - Riptide Social, phases 1-4 + 6: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
--- layer, and the DM layer, as a pure-LiveCodeScript library over the
--- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-5).
+-- layer, the DM layer, and the LAN mesh admission layer, as a
+-- pure-LiveCodeScript library over the installed suite extensions
+-- (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-7). Phase 5 (live sessions) adds
+-- no library surface: its SDP offer/answer ride the phase-4 DM message
+-- kinds "O"/"A" over the existing secretstream, so it is demo wiring.
 --
 -- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
 -- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
@@ -59,7 +62,14 @@ script "RiptideSocial"
 --     records a secretstream carries, and the inbox-swarm join + framed
 --     send over rp1 (rsDmJoinInbox / rsDmSend). The app owns the rp1
 --     peer bookkeeping, the secretstream handles (sxFreeStream when
---     done), and the poll loop, as everywhere else.
+--     done), and the poll loop, as everywhere else. The message kinds
+--     "O"/"A" carry phase-5 SDP signalling over this same rail.
+--   - the LAN mesh admission layer (phase 6): the shared-master ed25519
+--     keypair every one of your devices derives (rsLanKeys), and the
+--     RSL1 challenge/response that proves a joiner holds the master
+--     (rsLanBuildChallenge / rsLanBuildResponse / rsLanVerifyResponse) -
+--     a stranger on the same Wi-Fi cannot sign it. The records ride enet
+--     channel-0 messages; the app owns the enet host and the pump.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -106,7 +116,10 @@ script "RiptideSocial"
 --   RSM1 frame: magic(4) kind(1: I/H/M, byte-exact) payload; the whole
 --     frame fits the rp1 60000 cap
 --   DM message (inside the secretstream): kind(1: T/O/A, byte-exact)
---     timestamp(u64 BE) body(UTF-8, non-empty)
+--     timestamp(u64 BE) body(UTF-8, non-empty); O/A carry SDP (phase 5)
+--   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
+--   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
+--     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
@@ -115,7 +128,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.4.0"
+constant kRsVersion = "0.5.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -123,6 +136,10 @@ constant kRsPrekeyMagic = "RSK1"
 constant kRsIntroMagic = "RSI1"
 constant kRsFrameMagic = "RSM1"
 constant kRsFrameMax = 60000
+constant kRsLanMagic = "RSL1"
+constant kRsLanDomain = "riptide-lan"
+constant kRsLanNonceLen = 32
+constant kRsLanMaxName = 32
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -151,7 +168,7 @@ local sRsCaps
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 4: identity, the live feed, media, DMs)"
+         "(phase 6: identity, the live feed, media, DMs, LAN mesh)"
 end rsVersion
 
 function rsLastError
@@ -1994,6 +2011,185 @@ function rsDmSend pSession, pPeerId, pFrameBytes
    end if
    return true
 end rsDmSend
+
+--------------------------------------------------------------------------
+-- the LAN mesh admission layer (phase 6) - device-to-device within ONE
+-- identity (spec section 7)
+--
+-- Every device you own reconstructs the SAME master seed from your
+-- passphrase, so every device derives the SAME LAN subkey ed25519 keypair
+-- (rsLanKey -> sxSignKeypairFromSeed). Admission proves the joiner holds
+-- the master: the host sends a random challenge, the joiner signs
+-- "riptide-lan" || nonce || itsName under the LAN secret, and the host
+-- verifies against the LAN public it derives from its OWN master. A
+-- stranger on the same cafe Wi-Fi cannot produce that signature, so
+-- cannot join the mesh. The records ride enet channel-0 messages (the
+-- enConnect data rider is a u32 protocol tag, not a byte buffer, so the
+-- proof is a first MESSAGE, not connect data). The APP owns the enet host
+-- and the poll loop; the library owns the keypair and the two records.
+--------------------------------------------------------------------------
+
+-- The LAN mesh ed25519 keypair from the master seed. All your devices
+-- derive the same one; publicKey/secretKey are 32/64 bytes as usual.
+function rsLanKeys pMaster
+   local tSeed
+   put rsLanKey(pMaster) into tSeed
+   if tSeed is empty then
+      rsSetError "rsLanKeys: could not derive the LAN subkey:" && rsLastError()
+      return empty
+   end if
+   return rsIdentityKeys(tSeed)
+end rsLanKeys
+
+-- Host -> joiner: magic(4) "C" nameLen(u8) name nonce(32). The nonce is
+-- fresh randomness from the caller (sxRandomBytes(32)); a replayed
+-- challenge would let a recorded response back in, so it must never be
+-- reused. Names are UTF-8, 1..32 bytes.
+function rsLanBuildChallenge pName, pNonce
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildChallenge: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if the number of bytes in pNonce is not kRsLanNonceLen then
+      rsSetError "rsLanBuildChallenge: the nonce must be" && kRsLanNonceLen && \
+            "bytes (use sxRandomBytes)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("C", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put pNonce after tOut
+   return tOut
+end rsLanBuildChallenge
+
+function rsLanParseChallenge pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: truncated challenge"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "C" then
+      rsSetError "rsLanParseChallenge: not an RSL1 challenge"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
+   return tOut
+end rsLanParseChallenge
+
+-- The bytes the admission signature covers: the domain tag, the challenge
+-- nonce (freshness), and the joiner's OWN name (so a captured signature
+-- cannot be replayed under a different device name).
+private function rsLanSigMessage pNonce, pName
+   local tOut
+   put textEncode(kRsLanDomain, "ASCII") into tOut
+   put pNonce after tOut
+   put textEncode(pName, "UTF-8") after tOut
+   return tOut
+end rsLanSigMessage
+
+-- Joiner -> host: magic(4) "R" nameLen(u8) name sig(64). Takes the host's
+-- challenge bytes (for the nonce) and the joiner's master (for the LAN
+-- secret). Returns the response record or empty.
+function rsLanBuildResponse pChallengeBytes, pName, pMaster
+   local tChallenge, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanBuildResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildResponse: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanSigMessage(tChallenge["nonce"], pName), \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildResponse: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("R", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildResponse
+
+function rsLanParseResponse pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseResponse: truncated response"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "R" then
+      rsSetError "rsLanParseResponse: not an RSL1 response"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseResponse: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseResponse
+
+-- The host's verdict: does this response prove the joiner shares my
+-- master? Rebuild the signed bytes from MY challenge's nonce and the
+-- response's claimed name, and verify against the LAN public MY master
+-- derives. Returns the joiner's device name on success, empty on refusal
+-- (a stranger, a replayed response for a different nonce, or tamper).
+function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
+   local tResp, tChallenge, tKeys, tOk, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then return empty
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanVerifyResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tResp["signature"], \
+            rsLanSigMessage(tChallenge["nonce"], tResp["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyResponse: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyResponse: the response does not prove the" && \
+            "shared master (a stranger, a stale nonce, or tamper)"
+      return empty
+   end if
+   return tResp["name"]
+end rsLanVerifyResponse
 
 --------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32

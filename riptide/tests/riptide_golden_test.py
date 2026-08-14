@@ -271,6 +271,41 @@ check_raises("message bad kind", lambda: ref["build_dm_message"](
 check_raises("message empty body", lambda: ref["build_dm_message"](
     b"T", 1, ""))
 
+# --- phase 6: LAN mesh admission (fixed nonce -> deterministic) ------------
+
+LAN_PUB = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
+LAN_NONCE = "5a" * 32
+LAN_CHALLENGE_HEX = (
+    "52534c3143066c6170746f70" + "5a" * 32)
+LAN_RESPONSE_HEX = (
+    "52534c31520570686f6e65"
+    "8941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b"
+    "2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08")
+
+lan_pub, lan_seed = ref["lan_keys"](MASTER)
+check("lan pub", lan_pub.hex(), LAN_PUB)
+challenge = ref["lan_build_challenge"]("laptop", bytes.fromhex(LAN_NONCE))
+check("lan challenge bytes", challenge.hex(), LAN_CHALLENGE_HEX)
+response = ref["lan_build_response"](challenge, "phone", MASTER)
+check("lan response bytes", response.hex(), LAN_RESPONSE_HEX)
+# the response really is a valid signature under the LAN public, and the
+# name binding really holds (a signature made for "phone" does not verify
+# as "laptop")
+check("lan response verifies",
+      ref["_verify_ed25519"](response[-64:],
+                             ref["lan_sig_message"](bytes.fromhex(LAN_NONCE),
+                                                    "phone"), lan_pub),
+      True)
+check("lan name binding",
+      ref["_verify_ed25519"](response[-64:],
+                             ref["lan_sig_message"](bytes.fromhex(LAN_NONCE),
+                                                    "laptop"), lan_pub),
+      False)
+check_raises("lan name over cap", lambda: ref["lan_build_challenge"](
+    "x" * 33, bytes.fromhex(LAN_NONCE)))
+check_raises("lan bad nonce len", lambda: ref["lan_build_challenge"](
+    "a", b"\x00" * 31))
+
 # ---------------------------------------------------------------------------
 
 if FAILURES:

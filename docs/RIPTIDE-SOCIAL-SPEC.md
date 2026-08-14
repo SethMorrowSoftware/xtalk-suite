@@ -504,9 +504,18 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    statically; the done-criterion needs its two-machine pass. As-built:
    `riptide/CLAUDE.md`.)*
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
-   cold start. *Done when* a call connects across two networks.
+   cold start. *Done when* a call connects across two networks. *(Library-ready
+   2026-08-14: SDP offer/answer ride the phase-4 DM message kinds `O`/`A` over
+   the existing secretstream, so no new library surface is needed; the
+   dataChannelXT call wiring is a demo milestone still to build.)*
 6. **LAN sync** — enet device mesh with subkey-3 admission. *Done when* a draft
-   written on one device appears on another with a stranger refused.
+   written on one device appears on another with a stranger refused. *(Built
+   2026-08-14: the `rsLan*` admission layer - the shared-master ed25519 keypair
+   every device derives, and an RSL1 challenge/response a stranger cannot sign -
+   plus the Devices card in the demo and full offline harness coverage; the
+   enConnect rider is a u32 protocol tag, so the proof is a first message, not
+   connect data. Verified statically; the done-criterion needs its two-machine
+   pass. As-built: `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**
    `bt*` calls provable in a trace. Needs an OXT + live-Tor pass.
