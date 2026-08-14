@@ -621,6 +621,10 @@ private command rstSectionAnon pCaps
          "public persona: torrents are allowed"
    rstCheck (rsPersonaAllows(false, "rp1") is true), \
          "public persona: rp1 is allowed"
+   rstCheck (rsPersonaAllows(false, "enet") is true), \
+         "public persona: enet is allowed"
+   rstCheck (rsPersonaAllows(false, "dc") is true), \
+         "public persona: dataChannel is allowed"
    rstCheck (rsPersonaAllows(false, "onion") is false), \
          "public persona: the anon onion route is REFUSED"
    -- feed and media are in the guard's own known-transport list, so the
