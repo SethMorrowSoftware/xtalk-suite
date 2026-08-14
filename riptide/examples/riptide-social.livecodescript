@@ -1,4 +1,4 @@
-script "riptideSocial"
+script "riptideSocialApp"
 
 -- riptide-social.livecodescript - the Riptide Social flagship stack, phases
 -- 1-2: one identity, one public feed, one follow, on one self-building card.

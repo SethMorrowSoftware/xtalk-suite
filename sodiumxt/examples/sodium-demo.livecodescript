@@ -1,3 +1,5 @@
+script "sodiumDemo"
+
 -- sodium-demo.livecodescript - the SodiumXT showcase stack.
 --
 -- A professionally laid-out, self-building demo that makes one point clearly:

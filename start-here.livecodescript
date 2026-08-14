@@ -13,11 +13,20 @@ script "SuiteStartHere"
 -- put them. If the status line reports missing files, the download is
 -- incomplete or this file was moved out of the repo root.
 --
--- WHAT OPENING DOES: `go stack <file>` on a script-only stack fires its
--- openStack, and every stack in this directory builds its own window from
--- that (the family pattern). Where a demo needs a helper stack in the
--- message path first (the poll dispatchers, the coinxt/riptide script
--- layers), the launcher puts those in use before opening, and says so.
+-- WHAT OPENING DOES (the paste ritual, automated): a script-only file is
+-- TEXT - on this engine, going to the file does not produce a built
+-- window (maintainer-observed on OXT, 2026-08-14). What has worked on
+-- every engine pass is the documented ritual: make a stack, set its
+-- script, open it. So that is exactly what Open does: read the file,
+-- CREATE an invisible host stack named by the file's own `script "..."`
+-- line, SET its script (a compile error surfaces right here, with the
+-- demo's name on it), GO to it so openStack builds the window, nudge
+-- openStack once if the card arrived empty, then reveal the finished
+-- window. Helper stacks (the poll dispatchers, the coinxt/riptide script
+-- layers) get the same treatment minus the window: created invisibly,
+-- then `start using` BY NAME - nothing ever depends on loading a stack
+-- FILE. Relaunching raises the running window; a closed one reopens with
+-- its script refreshed from disk (never yanked under a running stack).
 --
 -- WHAT IT CANNOT DO FOR YOU: install the native extensions. Each entry
 -- names what it needs (Tools > Extension Manager ids are in each member's
@@ -25,23 +34,15 @@ script "SuiteStartHere"
 -- status line naming the missing piece - that is the family contract, not
 -- a launcher bug.
 --
--- SCRIPT-ONLY STACKS, AND WHY THIS STILL WORKS: every stack here is a
--- script-only file - it has NO saved window; its openStack handler builds
--- one on open. The two loading verbs differ exactly there: `start using`
--- LOADS a file without opening it (no window, no openStack - right for the
--- helper libraries), while `go stack` OPENS it - window plus openStack -
--- which is why this launcher goes, and only ever start-uses helpers. The
--- much-documented "paste the script, then close and reopen" ritual exists
--- because PASTING a script does not re-fire openStack; opening the file
--- directly never had that problem. Belt and braces anyway: after every
--- launch the card is checked, and if it arrived EMPTY (an engine that
--- loaded without messaging - the runbook's trap 5.2 shape) openStack is
--- sent once. That nudge is safe precisely because an unbuilt stack has run
--- nothing: no timers to double-arm, no session to re-open.
+-- WHY THE NUDGE IS SAFE: the openStack nudge fires only when the opened
+-- card has ZERO controls - and an unbuilt stack has run nothing: no
+-- timers to double-arm, no session to re-open. Every demo's build is
+-- idempotent and version-guarded on top of that.
 --
--- HONESTY (the suite convention): this launcher is new - verified
--- statically; needs an OXT pass. `go stack` on a script-only file is the
--- documented open path of the loopback demo and both onionxt standalones.
+-- HONESTY (the suite convention): this launcher is verified statically
+-- and needs an OXT pass - but its launch mechanism is no longer a bet:
+-- create-stack + set-script + openStack is the exact ritual every
+-- recorded engine pass has performed by hand.
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
@@ -669,7 +670,8 @@ end slCopyPath
 
 -- ---- launching ---------------------------------------------------------------
 command slOpenSelected
-   local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed, tOpened
+   local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed
+   local tHelperName, tName
    if sSelected is empty then
       uiStatus "Click a stack in the list first.", "warn"
       exit slOpenSelected
@@ -699,44 +701,124 @@ command slOpenSelected
       end if
    end if
    -- helpers first, each named as it goes in use, so a failure points at
-   -- the exact file rather than at the demo that later cannot find it
+   -- the exact file rather than at the demo that later cannot find it.
+   -- Same recipe as the demo itself, minus the window: prepared as a named
+   -- in-memory stack, then put in use BY NAME.
    put empty into tFailed
    put the itemDelimiter into tOldDelim
    set the itemDelimiter to comma
    repeat for each item tHelper in tHelpers
       if tFailed is empty then
-         try
-            start using stack (tRoot & "/" & tHelper)
-         catch tErr
+         put slPrepareStack(tRoot & "/" & tHelper) into tHelperName
+         if tHelperName is empty then
             put tHelper into tFailed
-         end try
+         else
+            try
+               start using stack tHelperName
+            catch tErr
+               put tHelper into tFailed
+            end try
+         end if
       end if
    end repeat
    set the itemDelimiter to tOldDelim
    if tFailed is not empty then
-      uiStatus "Could not put" && tFailed && "in use:" && tErr, "bad"
+      -- slPrepareStack already painted the specific red status; this line
+      -- only covers the start-using throw
+      if tErr is not empty then
+         uiStatus "Could not put" && tFailed && "in use:" && tErr, "bad"
+      end if
+      exit slOpenSelected
+   end if
+   -- now the stack itself: prepare, open (openStack builds the window),
+   -- nudge once if the card arrived empty, then reveal the finished window
+   put slPrepareStack(tRoot & "/" & tRel) into tName
+   if tName is empty then
       exit slOpenSelected
    end if
    try
-      go stack (tRoot & "/" & tRel)
+      go stack tName
    catch tErr
-      uiStatus "Could not open" && tRel & ":" && tErr, "bad"
+      uiStatus "Could not open" && tName & ":" && tErr, "bad"
       exit slOpenSelected
    end try
-   -- script-only stacks build their window in their own openStack; `go`
-   -- fires it. If an engine ever loads without messaging (the trap 5.2
-   -- shape), the card arrives EMPTY - and one nudge is safe exactly
-   -- because nothing has run: no timers armed, no session opened.
-   put the short name of the defaultStack into tOpened
-   if tOpened is not the short name of me then
-      if the number of controls of card 1 of stack tOpened is 0 then
-         send "openStack" to stack tOpened
-      end if
+   if the number of controls of card 1 of stack tName is 0 then
+      send "openStack" to stack tName
    end if
+   set the visible of stack tName to true
    if sTorrentOpened is "true" and tNote contains "SESSION" then
-      uiStatus "Opened" && tRel & ". Its own status line takes it from here.", "ok"
+      uiStatus "Opened" && tName && "from" && tRel & ". Its own status line takes it from here.", "ok"
    else
-      uiStatus "Opened" && tRel & ".", "ok"
+      uiStatus "Opened" && tName && "from" && tRel & ".", "ok"
    end if
 end slOpenSelected
+
+-- The heart of the launcher: turn a script-only FILE into a live, named,
+-- in-memory stack, the way every engine pass has done it by hand. Returns
+-- the stack's name, or empty AFTER painting the red status itself.
+function slPrepareStack pPath
+   local tScript, tName, tErr
+   if there is no file pPath then
+      uiStatus pPath && "is missing from the download.", "bad"
+      return empty
+   end if
+   put url ("file:" & pPath) into tScript
+   if tScript is empty then
+      uiStatus "Could not read" && pPath & ":" && the result, "bad"
+      return empty
+   end if
+   put slScriptName(line 1 of tScript, pPath) into tName
+   -- the `script "Name"` header is FILE metadata, not script: strip it
+   -- before the text becomes a live stack script
+   if line 1 of tScript begins with "script " then
+      delete line 1 of tScript
+   end if
+   if there is a stack tName then
+      -- already in memory from an earlier launch. If its window is open,
+      -- leave it exactly alone (never yank a script under a running
+      -- stack); if it is closed, refresh the script from disk so a
+      -- freshly pulled repo is what reopens (the stale-in-memory-stack
+      -- lesson the suite harness embed exists for).
+      if tName is not among the lines of the openStacks then
+         try
+            set the script of stack tName to tScript
+         catch tErr
+            uiStatus "The script of" && tName && "did not compile:" && tErr, "bad"
+            return empty
+         end try
+      end if
+      return tName
+   end if
+   try
+      create invisible stack tName
+      set the script of stack tName to tScript
+   catch tErr
+      uiStatus "Could not prepare" && tName & ":" && tErr, "bad"
+      if there is a stack tName then
+         delete stack tName
+      end if
+      return empty
+   end try
+   return tName
+end slPrepareStack
+
+-- The stack's name comes from the file's own `script "Name"` first line;
+-- the file's basename stands in if that line is ever missing or unquoted.
+function slScriptName pLine1, pPath
+   local tOldDelim, tName
+   if pLine1 begins with "script " then
+      put char 8 to -1 of pLine1 into tName
+      replace quote with empty in tName
+      put word 1 to -1 of tName into tName
+      if tName is not empty then
+         return tName
+      end if
+   end if
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to "/"
+   put the last item of pPath into tName
+   set the itemDelimiter to tOldDelim
+   replace ".livecodescript" with empty in tName
+   return tName
+end slScriptName
 
