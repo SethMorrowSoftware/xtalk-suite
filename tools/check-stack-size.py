@@ -48,8 +48,13 @@ CONST_RE = re.compile(
 
 # the generated suite harness carries the core's numbers verbatim; checking
 # both would double-report one source line, so the generated copy is skipped
-# (build-suite-selftest.py --check already pins it to the core)
-SKIP = {os.path.join("tests", "suite-selftest.livecodescript")}
+# (build-suite-selftest.py --check already pins it to the core). The two
+# suite-level carried-block MASTERS are templates, not runnable stacks: the
+# harness scaffold sizes its window from kStWidth/kStHeight, which each
+# ADOPTER declares - the gate reads the real numbers there.
+SKIP = {os.path.join("tests", "suite-selftest.livecodescript"),
+        os.path.join("tools", "ui-kit.livecodescript"),
+        os.path.join("tools", "harness-scaffold.livecodescript")}
 
 
 def check_file(path, rel, problems):

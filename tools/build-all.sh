@@ -144,6 +144,10 @@ if [ -f tools/check-stack-size.py ]; then
   echo "== suite: tools/check-stack-size.py =="
   python3 tools/check-stack-size.py
 fi
+if [ -f tools/check-harness-scaffold-drift.py ]; then
+  echo "== suite: tools/check-harness-scaffold-drift.py =="
+  python3 tools/check-harness-scaffold-drift.py
+fi
 
 # --- static gates for every member (always run) ---
 # riptide and nocloud are not extensions but carry the same gate shape

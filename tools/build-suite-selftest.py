@@ -127,6 +127,10 @@ DROP_HANDLERS = {
     "openstack", "closestack", "mouseup",
     "stbuild", "stmakelabel", "stmakebutton", "stmakelist",
     "stshow", "stcopyresults", "stpaint",
+    # scaffold v1: the platform-mono helper is called only from the dropped
+    # window half; stResetCounters/stReportDone are NOT here - members call
+    # them mid-run, and stReportDone's stShow/stPaint calls hit the stubs
+    "stmonofont",
 }
 
 # Of those, the ones a member's runner still calls mid-run. They become no-op
