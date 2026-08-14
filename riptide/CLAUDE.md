@@ -21,8 +21,13 @@ call.
 phase 1 (identity + the pure-compute feed layer) and the phase-2 LIVE feed
 layer (BEP44 head/post publish, async lookups, ingest verifiers) are
 engine-passed, and phase 2's two-machine propagation criterion closed
-2026-08-13 (see rule 8). The remaining transport phases (3-7) land later,
-each behind its own pass.
+2026-08-13 (see rule 8). **Phase 3 (media) is BUILT but not passed**
+(2026-08-14): `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library,
+the media strip in the riptide-social stack, refusal-path and local
+seed/status coverage in the harness - all verified statically; the
+done-criterion (a follower plays a video mid-download) needs a two-machine
+pass. The remaining transport phases (4-7) land later, each behind its own
+pass.
 
 ## The rules that bind this directory
 
@@ -72,7 +77,10 @@ each behind its own pass.
    chain walk; this was also the first run to drive REAL btPoll DHT events
    into the ingest verifiers (previously synthetic-only). Result text and
    environments were not captured with the report; the record is the
-   maintainer's account, dated.
+   maintainer's account, dated. **The phase-3 media layer (2026-08-14) has
+   had NO engine pass yet**: its label is "verified statically; needs an
+   OXT pass", and its done-criterion additionally needs the two-machine
+   mid-download play.
 
 ## Things learned building phase 1 (do not relearn)
 
@@ -140,6 +148,49 @@ each behind its own pass.
   `tools/build-suite-selftest.py` carries a riptide rewrite that aliases
   the folded copy to the core's session (the bt1 pattern; a second
   btStartSession would be refused and the live section would SKIP green).
+
+## Things decided building phase 3 (do not re-litigate)
+
+- **Media attachments are SINGLE FILES.** `rsMediaCreate` refuses anything
+  that is not a file: a photo or a video has one obvious thing to play,
+  a folder does not, and folder shares are a file-sharing app's job
+  (quickshare). The torrent is TRACKERLESS (`btCreateTorrent(path, 0, 0,
+  "")`) - DHT-only, like everything else riptide does.
+- **Seed in place; return the hash, not the handle.** The seed's save path
+  is the file's own parent folder, so libtorrent finds the payload where
+  it already sits and no copy is made. The function returns the 40-hex
+  info-hash because that is what posts carry and what followers fetch;
+  `btFindTorrent(pSession, tHash)` recovers the handle whenever the app
+  wants one, which is also exactly how `rsMediaFetch` is idempotent.
+- **`rsMediaFetch` finds before it adds.** A re-click, a restart's
+  re-fetch, or fetching your own seed all land on the `btFindTorrent`
+  path and return the live handle instead of a duplicate-add error - and
+  the sequential flag is applied on BOTH paths, because the caller asked
+  for playback now, not only on first contact. A failed
+  `btSetSequentialDownload` fails the call but deliberately leaves the
+  torrent added: download progress is never thrown away over a flag, and
+  the retry lands on the find path and re-applies.
+- **`rsMediaStatus` takes the torrent handle, not the session.** The
+  snapshot is per-torrent (`btTorrentStatus` + the first file's on-disk
+  path and per-file progress from `btFileList`); demanding a session
+  argument it never used would be dishonest API. filePath/fileSize/
+  fileProgress stay empty until metadata arrives, so "filePath is empty"
+  doubles as the not-openable-yet probe; with a sequential fetch the file
+  is openable long before completion, which IS the mid-download play.
+- **The harness salts its payload with the clock.** A crashed run leaves
+  its torrent in the never-stopped session; fixed payload bytes would make
+  the next run's add collide with that leftover. Time-salted bytes give
+  every run a fresh info-hash, and the section removes its torrent at the
+  end (`btRemoveTorrent`, keep files) so a clean run leaves a clean
+  session. No golden vector pins the hash - a torrent's info dict embeds
+  the file name and piece hashes, and pinning that is a torrent-format
+  oracle this repo does not need.
+- **The demo attaches at click, seeds at POST.** The picker only records
+  the path; `rsMediaCreate` runs inside `raPost`, where the session is
+  guaranteed, and a refusal ABORTS the post - a published post must never
+  name a hash nobody can fetch. The strip's one button is two-mooded
+  (Fetch until the on-disk file exists for the field's hash, then Play)
+  and hands the file to the system player mid-download on purpose.
 
 ## Suite integration status
 

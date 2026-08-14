@@ -1,27 +1,35 @@
 script "riptideSocialApp"
 
 -- riptide-social.livecodescript - the Riptide Social flagship stack, phases
--- 1-2: one identity, one public feed, one follow, on one self-building card.
+-- 1-3: one identity, one public feed, one follow, media over torrents, on
+-- one self-building card.
 --
--- WHAT IT WALKS (RIPTIDE-SOCIAL-SPEC.md sections 10.3 phases 1-2): create or
+-- WHAT IT WALKS (RIPTIDE-SOCIAL-SPEC.md sections 10.3 phases 1-3): create or
 -- unlock the Argon2id-sealed master seed (RIPTKEY1, a 97-byte file the APP
 -- owns - the library does no file I/O), derive the identity, show the same
 -- key as its two spellings (the 64-hex handle the feed publishes under, and
 -- the .onion address), then publish signed posts + a signed BEP44 head over
--- the real DHT, and follow another author: fetch their head, walk the post
--- chain back to the zero target, and show every authorSig verdict.
+-- the real DHT, follow another author - fetch their head, walk the post
+-- chain back to the zero target, show every authorSig verdict - and MEDIA:
+-- attach a file to a post (rsMediaCreate seeds it in place as a trackerless
+-- torrent; the post carries only the 40-hex info-hash), and fetch a post's
+-- media by hash (rsMediaFetch, sequential so a video can hand off to the
+-- system player MID-download; fetching co-seeds, so followers are the CDN).
 --
--- HONESTY (the suite convention): this stack HAS ITS PASS - and it was the
--- two-machine one. On 2026-08-13 the maintainer ran it on two machines:
--- identities created on both sides, feeds published and received in BOTH
--- directions through the real DHT. That run closed phase 2's done-criterion
--- (a second machine walks the chain and verifies every authorSig - a post
--- renders here only after rsIngestHead/rsIngestPost verify it) and was the
--- first to drive REAL btPoll DHT events into the ingest verifiers, which
--- the harness only ever fed synthetically. The library underneath was
--- already engine-passed (2026-08-12, 133/133). Result text and machine
--- environments were not captured with the report; the record is the
--- maintainer's dated account.
+-- HONESTY (the suite convention): phases 1-2 HAVE THEIR PASS - and it was
+-- the two-machine one. On 2026-08-13 the maintainer ran this stack on two
+-- machines: identities created on both sides, feeds published and received
+-- in BOTH directions through the real DHT. That run closed phase 2's
+-- done-criterion (a second machine walks the chain and verifies every
+-- authorSig - a post renders here only after rsIngestHead/rsIngestPost
+-- verify it) and was the first to drive REAL btPoll DHT events into the
+-- ingest verifiers, which the harness only ever fed synthetically. The
+-- library underneath was already engine-passed (2026-08-12, 133/133).
+-- Result text and machine environments were not captured with the report;
+-- the record is the maintainer's dated account. The PHASE-3 media strip
+-- (2026-08-14) is verified statically only; its done-criterion - a
+-- follower on a second machine plays a video mid-download - still needs
+-- its two-machine pass.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -38,12 +46,14 @@ script "riptideSocialApp"
 -- (master: tools/ui-kit.livecodescript; tools/check-ui-kit-drift.py holds
 -- every copy byte-identical). Change the look in the master, never here.
 --
--- SCOPE, said loudly: phases 3-7 are NOT here - no media torrents, no DMs
--- (rsInboxId / rsRoomId / rsDmSeed exist but are phase-4 fuel), no live
--- sessions, no LAN sync, no anonymous persona. Prekey and profile-meta head
--- fields are published EMPTY (phase-4 material). Public feeds are PUBLIC:
--- the DHT keeps records until expiry, there is no deletion, and nothing
--- here is anonymity (spec section 9).
+-- SCOPE, said loudly: phases 4-7 are NOT here - no DMs (rsInboxId /
+-- rsRoomId / rsDmSeed exist but are phase-4 fuel), no live sessions, no
+-- LAN sync, no anonymous persona. Prekey and profile-meta head fields are
+-- published EMPTY (phase-4 material). Public feeds are PUBLIC: the DHT
+-- keeps records until expiry, there is no deletion, and nothing here is
+-- anonymity (spec section 9) - and media rides ORDINARY BitTorrent swarms,
+-- so seeding or fetching an attachment shows your IP to its peers, exactly
+-- as any torrent does.
 --
 -- KEYRING honesty: while unlocked, the identity seed lives in a script
 -- local (the spec's one-keyring pattern) and OXT script memory is not
@@ -57,7 +67,7 @@ constant kWalkMax = 12
 constant kNameMax = 64
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-1"
+constant kRaUiVersion = "ra-ui-720p-2"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -412,6 +422,8 @@ local sAwaitHead       -- "true" while their head lookup is in flight
 local sWalkNext        -- the post target the walk is waiting on, or empty
 local sWalkCount       -- posts verified so far in this walk
 local sWaitUntil       -- ms deadline for the outstanding DHT request
+local sPendingMediaPath -- file waiting to ride the NEXT post (phase 3)
+local sMediaWatch      -- torrent handle of the media item the strip watches
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -430,6 +442,8 @@ on closeStack
       end try
    end if
    put empty into sSession
+   put empty into sMediaWatch
+   put empty into sPendingMediaPath
    raClearKeys
 end closeStack
 
@@ -447,8 +461,14 @@ on mouseUp
       case "raPost"
          raPost
          break
+      case "raAttach"
+         raAttach
+         break
       case "raFetch"
          raFetch
+         break
+      case "raMediaGet"
+         raMediaGet
          break
       default
          pass mouseUp
@@ -463,7 +483,7 @@ command raBuild
    lock screen
    -- two columns inside the family's 720p budget (1200 x 640, the
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
-   uiChrome "Riptide Social - identity + public feed (phases 1-2)", 1200, 640
+   uiChrome "Riptide Social - identity + public feed + media (phases 1-3)", 1200, 640
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -484,6 +504,7 @@ command raBuild
    put "riptide user" into field "raName"
    uiInput "raCompose", "16,292,440,340"
    uiButton "raPost", "Post", "446,292,592,316"
+   uiButton "raAttach", "Attach", "446,320,592,340"
    uiArea "raMyFeed", "16,346,592,562"
 
    -- 3. follow
@@ -491,16 +512,25 @@ command raBuild
    uiLabel "raHandleL", "author handle (64 hex):", "608,80,772,98", 11
    uiInput "raHandle", "776,80,1050,100"
    uiButton "raFetch", "Fetch feed", "1056,80,1184,104"
-   uiArea "raTheirFeed", "608,110,1184,562"
+   uiArea "raTheirFeed", "608,110,1184,508"
+
+   -- the phase-3 media strip: a walked post auto-fills the hash; Fetch
+   -- joins the swarm sequentially, and the button becomes Play the moment
+   -- the on-disk file is openable (mid-download, by design)
+   uiLabel "raMediaL", "media hash:", "608,514,694,532", 11
+   uiInput "raMediaHash", "698,514,1050,534"
+   uiButton "raMediaGet", "Fetch + play", "1056,510,1184,534"
+   uiCap "raMediaProg", empty, "608,540,1184,566"
 
    uiFooter \
-         "Phases 1-2 only: public feeds are public, the DHT keeps records" \
-         & " until expiry, nothing here is deletion or anonymity. While" \
-         & " unlocked, the identity seed lives in unlocked engine memory:" \
-         & " Lock when done, and never reuse a real passphrase in a demo." \
-         & " A one-machine run does not prove propagation - phase 2 is done" \
-         & " when a SECOND machine walks this chain and verifies every" \
-         & " authorSig.", \
+         "Phases 1-3: public feeds are public, the DHT keeps records" \
+         & " until expiry, nothing here is deletion or anonymity - and" \
+         & " media rides ordinary BitTorrent swarms, so seeding or" \
+         & " fetching shows your IP to its peers. While unlocked, the" \
+         & " identity seed lives in unlocked engine memory: Lock when" \
+         & " done, and never reuse a real passphrase in a demo. Phase 3 is" \
+         & " done when a follower on a SECOND machine plays a video" \
+         & " mid-download.", \
          "16,572,1184,632"
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
@@ -707,6 +737,7 @@ command raPoll
       end try
    end if
    raExpire
+   raMediaPaint
    send "raPoll" to me in kPollMs milliseconds
 end raPoll
 
@@ -777,6 +808,15 @@ command raHandleEvent pEvent
             else
                add 1 to sWalkCount
                put "post" && sWalkCount && "[t=" & tPost["timestamp"] & "] authorSig VERIFIED:" && tPost["text"] & return after field "raTheirFeed"
+               if tPost["mediaTargets"] is not empty then
+                  -- a verified post's media list is trustworthy (it sat
+                  -- under the authorSig); surface it and pre-fill the strip
+                  -- with the first hash so Fetch + play is one click
+                  put "  media attachment(s):" && tPost["mediaTargets"] & return after field "raTheirFeed"
+                  if field "raMediaHash" is empty then
+                     put item 1 of tPost["mediaTargets"] into field "raMediaHash"
+                  end if
+               end if
                put tPost["prevPostTarget"] into tNext
                if tNext is rsZeroTarget() then
                   put "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified." & return after field "raTheirFeed"
@@ -805,7 +845,7 @@ end raHandleEvent
 
 -- ---- 2. my feed --------------------------------------------------------------
 command raPost
-   local tText, tName, tPost, tTarget, tHead, tOk
+   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash
    if sIdSeed is empty then
       uiStatus "Unlock (or create) your identity before posting.", "warn"
       exit raPost
@@ -825,7 +865,17 @@ command raPost
       uiStatus "The display name is over the 64-byte head budget; shorten it.", "warn"
       exit raPost
    end if
-   put rsBuildPost(the seconds, sMyLatest, tText, empty, sIdSeed) into tPost
+   -- the attachment seeds FIRST, so a refusal (file moved, torrent error)
+   -- aborts the post rather than publishing a hash nobody can fetch
+   put empty into tMediaHash
+   if sPendingMediaPath is not empty then
+      put rsMediaCreate(sSession, sPendingMediaPath) into tMediaHash
+      if tMediaHash is empty then
+         uiStatus "rsMediaCreate refused:" && rsLastError(), "bad"
+         exit raPost
+      end if
+   end if
+   put rsBuildPost(the seconds, sMyLatest, tText, tMediaHash, sIdSeed) into tPost
    if tPost is empty then
       uiStatus "rsBuildPost refused:" && rsLastError(), "bad"
       exit raPost
@@ -849,10 +899,39 @@ command raPost
       exit raPost
    end if
    put tTarget into sMyLatest
-   put "seq" && sSeq & ":" && tText & return & "  ->" && tTarget & return before field "raMyFeed"
+   if tMediaHash is empty then
+      put "seq" && sSeq & ":" && tText & return & "  ->" && tTarget & return before field "raMyFeed"
+   else
+      put "seq" && sSeq & ":" && tText & return & "  ->" && tTarget & return & "  media seeding:" && tMediaHash & return before field "raMyFeed"
+      put empty into sPendingMediaPath
+      set the label of button "raAttach" to "Attach"
+   end if
    put empty into field "raCompose"
    uiStatus "Posted, and the signed head republished at seq" && sSeq & ".", "ok"
 end raPost
+
+-- The attachment picker: choose now, seed at post time (the session is
+-- guaranteed then, and a cancelled post leaves nothing seeding). A second
+-- click clears the pending choice.
+command raAttach
+   local tShortName
+   if sPendingMediaPath is not empty then
+      put empty into sPendingMediaPath
+      set the label of button "raAttach" to "Attach"
+      uiStatus "Attachment cleared.", empty
+      exit raAttach
+   end if
+   answer file "Choose a photo or video to attach (it seeds from where it is):"
+   if it is empty then
+      exit raAttach
+   end if
+   put it into sPendingMediaPath
+   set the itemDelimiter to "/"
+   put item -1 of sPendingMediaPath into tShortName
+   set the label of button "raAttach" to "Clear attach"
+   uiStatus "Attached" && quote & tShortName & quote & \
+         "- it rides the next post and seeds from its current location.", empty
+end raAttach
 
 -- ---- 3. follow ---------------------------------------------------------------
 command raFetch
@@ -881,6 +960,103 @@ command raFetch
    end if
    uiStatus "Asking the DHT for" && sFollowHandle & "...", empty
 end raFetch
+
+-- ---- phase 3: the media strip ------------------------------------------------
+-- One button, two moods. While the watched item is not yet openable the
+-- click is Fetch: join the swarm for the hash in the field, sequentially
+-- (pieces arrive front-first), and start watching. Once the on-disk file
+-- exists for THAT hash the click is Play: hand the file to the system
+-- player - mid-download on purpose, which is the phase-3 done-criterion.
+-- Fetching your OWN hash lands on the library's find path and plays the
+-- original file instantly (the seeder's copy is already complete).
+command raMediaGet
+   local tHash, tH, tS, tPlayable
+   raStartSession
+   if sSession is not an integer or sSession <= 0 then
+      uiStatus "No TorrentXT session: cannot fetch media.", "bad"
+      exit raMediaGet
+   end if
+   put toLower(word 1 of field "raMediaHash") into tHash
+   if tHash is empty then
+      uiStatus "Paste a 40-hex media info-hash first (a walked post fills it in).", "warn"
+      exit raMediaGet
+   end if
+   put false into tPlayable
+   if sMediaWatch is an integer and sMediaWatch > 0 then
+      put rsMediaStatus(sMediaWatch) into tS
+      if tS is an array then
+         if toLower(tS["infoHashV1"]) is tHash and tS["filePath"] is not empty then
+            if there is a file tS["filePath"] then
+               put true into tPlayable
+            end if
+         end if
+      end if
+   end if
+   if tPlayable is true then
+      launch document tS["filePath"]
+      uiStatus "Handed" && tS["filePath"] && "to the system player" && \
+            "(sequential fetch, so the front of the file is there first).", "ok"
+      exit raMediaGet
+   end if
+   put rsMediaFetch(sSession, tHash, raMediaFolder(), true) into tH
+   if tH is empty then
+      uiStatus "rsMediaFetch refused:" && rsLastError(), "bad"
+      exit raMediaGet
+   end if
+   put tH into sMediaWatch
+   uiStatus "Fetching media" && tHash && "- sequential; co-seeding starts as pieces arrive.", empty
+end raMediaGet
+
+-- The media progress line, at the poll cadence and painted only on change
+-- (the single-thread playbook): one rsMediaStatus snapshot per tick, one
+-- repaint per actual difference.
+command raMediaPaint
+   local tS, tLine, tPct, tLabel
+   if sMediaWatch is not an integer or sMediaWatch <= 0 then
+      exit raMediaPaint
+   end if
+   put rsMediaStatus(sMediaWatch) into tS
+   if tS is not an array then
+      -- the handle went stale (torrent removed, session gone): stop
+      -- watching rather than stomping rsLastError four times a second
+      put empty into sMediaWatch
+      exit raMediaPaint
+   end if
+   put the round of (tS["progress"] * 100) into tPct
+   put "media:" && tPct & "% -" && tS["numPeers"] && "peer(s)" into tLine
+   if tS["isSeeding"] is 1 then
+      put " - complete, now co-seeding" after tLine
+   end if
+   if tS["filePath"] is empty then
+      put " - waiting for metadata from the swarm" after tLine
+      put "Fetch + play" into tLabel
+   else
+      put " -" && tS["filePath"] after tLine
+      put "Play now" into tLabel
+   end if
+   if the text of field "raMediaProg" is not tLine then
+      set the text of field "raMediaProg" to tLine
+   end if
+   if the label of button "raMediaGet" is not tLabel then
+      set the label of button "raMediaGet" to tLabel
+   end if
+end raMediaPaint
+
+-- Where fetched media lands: a dedicated folder under documents, created
+-- on demand - rsMediaFetch refuses a folder that does not exist, so a
+-- failed create surfaces there with the path in the message.
+function raMediaFolder
+   local tBase
+   put specialFolderPath("documents") into tBase
+   if tBase is empty then
+      put specialFolderPath("temporary") into tBase
+   end if
+   put tBase & "/Riptide-media" into tBase
+   if there is no folder tBase then
+      create folder tBase
+   end if
+   return tBase
+end raMediaFolder
 
 -- ---- helpers -----------------------------------------------------------------
 -- The default key-file location, the family preferences idiom (fall back

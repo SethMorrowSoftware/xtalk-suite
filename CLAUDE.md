@@ -138,7 +138,7 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
 member's own deep self-test** (seven since 2026-08-11: the six extensions plus
-riptide's phase-1 harness), folded in with each one's names prefixed, plus —
+riptide's harness, phases 1-3), folded in with each one's names prefixed, plus —
 since 2026-08-10 — **the pure-script LIBRARIES themselves**,
 `coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript` and
 (since 2026-08-11) `riptide/src/riptide.livecodescript`,

@@ -481,7 +481,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.2.0"
+constant kRsVersion = "0.3.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -6222,7 +6222,8 @@ end oxProcessId
 -- ==========================================================================
 
 function rsVersion
-   return "Riptide" && kRsVersion && "(phase 2: identity + the live feed)"
+   return "Riptide" && kRsVersion && \
+         "(phase 3: identity, the live feed, media)"
 end rsVersion
 
 function rsLastError
@@ -7190,6 +7191,160 @@ function rsRequestImmutable pSession, pTarget
    end if
    return true
 end rsRequestImmutable
+
+function rsMediaCreate pSession, pPath
+   local tParent, tData, tH, tHash, tWhy, tErr
+   if there is not a file pPath then
+      rsSetError "rsMediaCreate: no file at" && pPath && \
+            "(media attachments are single files)"
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaCreate: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   set the itemDelimiter to "/"
+   put item 1 to -2 of pPath into tParent
+   if tParent is empty then put "/" into tParent
+   try
+      put btCreateTorrent(pPath, 0, 0, empty) into tData
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btCreateTorrent):" && tErr
+      return empty
+   end try
+   if tData is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btCreateTorrent failed;" && tWhy
+      return empty
+   end if
+   try
+      put btAddTorrentFile(pSession, tData, tParent) into tH
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btAddTorrentFile):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btAddTorrentFile refused;" && tWhy
+      return empty
+   end if
+   try
+      put toLower(btInfoHash(tH)) into tHash
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btInfoHash):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tHash, 40) then
+      rsSetError "rsMediaCreate: btInfoHash returned" && tHash & \
+            ", not 40 hex"
+      return empty
+   end if
+   return tHash
+end rsMediaCreate
+
+function rsMediaFetch pSession, pInfoHash, pSaveFolder, pSequential
+   local tHash, tH, tCode, tWhy, tErr
+   put rsNormalizeTarget(pInfoHash) into tHash
+   if tHash is empty or tHash is kRsZeroTarget then
+      rsSetError "rsMediaFetch: the info-hash must be 40 non-zero hex chars"
+      return empty
+   end if
+   if there is not a folder pSaveFolder then
+      rsSetError "rsMediaFetch: no folder at" && pSaveFolder
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaFetch: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   try
+      put btFindTorrent(pSession, tHash) into tH
+   catch tErr
+      rsSetError "rsMediaFetch: needs torrentxt (btFindTorrent):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btAddMagnet(pSession, "magnet:?xt=urn:btih:" & tHash, \
+               pSaveFolder) into tH
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt (btAddMagnet):" && tErr
+         return empty
+      end try
+      if tH is 0 then
+         try
+            put btLastError() into tWhy
+         catch tErr
+            put empty into tWhy
+         end try
+         rsSetError "rsMediaFetch: btAddMagnet failed;" && tWhy
+         return empty
+      end if
+   end if
+   if pSequential is true then
+      try
+         btSetSequentialDownload tH, true
+         put the result into tCode
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt" && \
+               "(btSetSequentialDownload):" && tErr
+         return empty
+      end try
+      if tCode is not 0 then
+         -- The torrent stays added (progress is never thrown away over a
+         -- flag); a retry lands on the btFindTorrent path and re-applies.
+         rsSetError "rsMediaFetch: btSetSequentialDownload refused (" & \
+               tCode & ")"
+         return empty
+      end if
+   end if
+   return tH
+end rsMediaFetch
+
+function rsMediaStatus pTorrent
+   local tS, tFiles, tErr
+   if pTorrent is not an integer or pTorrent <= 0 then
+      rsSetError "rsMediaStatus: pTorrent is not a torrent handle"
+      return empty
+   end if
+   try
+      put btTorrentStatus(pTorrent) into tS
+   catch tErr
+      rsSetError "rsMediaStatus: needs torrentxt (btTorrentStatus):" && tErr
+      return empty
+   end try
+   if the keys of tS is empty then
+      rsSetError "rsMediaStatus: not a live torrent handle"
+      return empty
+   end if
+   put empty into tS["filePath"]
+   put empty into tS["fileSize"]
+   put empty into tS["fileProgress"]
+   try
+      put btFileList(pTorrent) into tFiles
+   catch tErr
+      -- status just succeeded, so this cannot be "torrentxt missing";
+      -- degrade to no-file-table (same as metadata-not-yet) rather than
+      -- failing a snapshot the caller can still paint progress from
+      put empty into tFiles
+   end try
+   if tFiles is an array and the number of elements in tFiles > 0 then
+      put tS["savePath"] & "/" & tFiles[1]["path"] into tS["filePath"]
+      put tFiles[1]["size"] into tS["fileSize"]
+      put tFiles[1]["progress"] into tS["fileProgress"]
+   end if
+   return tS
+end rsMediaStatus
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN
@@ -10291,6 +10446,7 @@ function rs1rsSelfTest
       rs1rstSectionBep44
       rs1rstSectionIngest
       rs1rstSectionLiveFeed rs1tCaps
+      rs1rstSectionMedia rs1tCaps
    else
       rs1rstSkip "every crypto section: SodiumXT is not installed"
    end if
@@ -10820,3 +10976,83 @@ private command rs1rstSectionLiveFeed pCaps
    rs1rstCheck (rsRequestImmutable(rs1tSession, rs1kRsGoldPost1Target) is true), \
          "rsRequestImmutable's lookup is accepted (async; value not awaited)"
 end rs1rstSectionLiveFeed
+
+private command rs1rstSectionMedia pCaps
+   local rs1tSession, rs1tDir, rs1tPath, rs1tHash, rs1tH, rs1tFound, rs1tS, rs1tCode, rs1tErr
+   rs1rstSection "phase 3 - media create/seed/fetch/status"
+   rs1rstCheck (rsMediaCreate(0, empty) is empty), \
+         "rsMediaCreate refuses an empty path"
+   rs1rstCheck (rsLastError() contains "file"), "and says why"
+   put specialFolderPath("temporary") into rs1tDir
+   if rs1tDir is empty then put specialFolderPath("documents") into rs1tDir
+   if the last char of rs1tDir is "/" then delete the last char of rs1tDir
+   put rs1tDir & "/riptide-media-selftest.bin" into rs1tPath
+   put "riptide media selftest payload," && the milliseconds \
+         into url ("binfile:" & rs1tPath)
+   rs1rstCheck (rsMediaCreate(0, rs1tPath) is empty), \
+         "rsMediaCreate refuses a dead session handle"
+   rs1rstCheck (rsLastError() contains "session"), "and says why"
+   rs1rstCheck (rsMediaFetch(0, "zz", rs1tDir, false) is empty), \
+         "rsMediaFetch refuses a malformed info-hash"
+   rs1rstCheck (rsMediaFetch(0, rsZeroTarget(), rs1tDir, false) is empty), \
+         "rsMediaFetch refuses the zero info-hash"
+   rs1rstCheck (rsMediaFetch(0, rs1kRsGoldMediaTarget, \
+         rs1tDir & "/riptide-no-such-folder", false) is empty), \
+         "rsMediaFetch refuses a missing save folder"
+   rs1rstCheck (rsMediaFetch(0, rs1kRsGoldMediaTarget, rs1tDir, false) is empty), \
+         "rsMediaFetch refuses a dead session handle"
+   rs1rstCheck (rsMediaStatus(0) is empty), \
+         "rsMediaStatus refuses a dead torrent handle"
+   if pCaps["hasTorrent"] is not true then
+      rs1rstSkip "media create/seed/fetch/status: torrentxt is not installed"
+      exit rs1rstSectionMedia
+   end if
+   put rs1rstAcquireSession() into rs1tSession
+   if rs1tSession is 0 then
+      rs1rstSkip "media create/seed/fetch/status: could not start a session"
+      exit rs1rstSectionMedia
+   end if
+   put rsMediaCreate(rs1tSession, rs1tPath) into rs1tHash
+   rs1rstCheck (the number of chars in rs1tHash is 40), \
+         "rsMediaCreate returns a 40-hex info-hash"
+   if the number of chars in rs1tHash is not 40 then
+      put "      rsMediaCreate said:" && rsLastError() & return after rs1sLog
+      exit rs1rstSectionMedia
+   end if
+   -- We are this hash's seeder, so the fetch lands on its find path: the
+   -- live handle comes back (no duplicate-add error) with the sequential
+   -- flag applied - the idempotency a re-click or a restart depends on.
+   put rsMediaFetch(rs1tSession, rs1tHash, rs1tDir, true) into rs1tH
+   rs1rstCheck (rs1tH is not empty and rs1tH > 0), \
+         "rsMediaFetch on a seeding hash returns its live handle"
+   try
+      put btFindTorrent(rs1tSession, rs1tHash) into rs1tFound
+   catch rs1tErr
+      put 0 into rs1tFound
+   end try
+   rs1rstCheck (rs1tFound is rs1tH), "and it is the handle btFindTorrent names"
+   put rsMediaStatus(rs1tH) into rs1tS
+   rs1rstCheck (rs1tS is an array), "rsMediaStatus returns a snapshot"
+   rs1rstCheck (toLower(rs1tS["infoHashV1"]) is rs1tHash), \
+         "whose info-hash is the created one"
+   rs1rstCheck (rs1tS["name"] contains "riptide-media-selftest"), \
+         "whose name is the attached file's"
+   rs1rstCheck (rs1tS["filePath"] is not empty), \
+         "with the player path resolved (metadata is local)"
+   rs1rstCheck (there is a file rs1tS["filePath"]), \
+         "and the player path names the on-disk file"
+   rs1rstCheck (rs1tS["fileSize"] > 0), "with the file's size beside it"
+   rs1rstCheck (rs1tS["progress"] >= 0 and rs1tS["progress"] <= 1), \
+         "progress is a 0..1 fraction"
+   rs1rstCheck (rsMediaStatus(999999999) is empty), \
+         "rsMediaStatus refuses a bogus handle"
+   -- tidy: drop the seed we added so a re-run starts clean; the payload
+   -- file stays (temp folder) and the session stays live (the harness rule)
+   try
+      btRemoveTorrent rs1tSession, rs1tH, false
+      put the result into rs1tCode
+   catch rs1tErr
+      put -1 into rs1tCode
+   end try
+   rs1rstCheck (rs1tCode is 0), "cleanup: the media torrent removes"
+end rs1rstSectionMedia

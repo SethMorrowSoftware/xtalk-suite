@@ -1,16 +1,17 @@
 script "RiptideSelfTest"
--- riptide-selftest.livecodescript - the self-test for the Riptide phase 1-2
+-- riptide-selftest.livecodescript - the self-test for the Riptide phase 1-3
 -- library (src/riptide.livecodescript).
 --
 -- HOW TO RUN: install the suite extensions (SodiumXT is required; coinxt and
--- onionxt light up two extra sections, torrentxt the live-feed one), put the
--- riptide library in use (or paste src/riptide.livecodescript into a stack
--- script and this file into a button), then call rsSelfTest() and read the
--- report. No NETWORK is ever waited on: the phase 1-2 pure layers run fully
--- offline (the onionxt-tests convention), and the live-feed section drives
--- BEP44 puts and lookups against a LOCAL torrent session - stores return
--- their verdict synchronously, lookups are fire-and-forget - skipping
--- honestly when torrentxt is absent or a session cannot start.
+-- onionxt light up two extra sections, torrentxt the live-feed and media
+-- ones), put the riptide library in use (or paste src/riptide.livecodescript
+-- into a stack script and this file into a button), then call rsSelfTest()
+-- and read the report. No NETWORK is ever waited on: the phase 1-2 pure
+-- layers run fully offline (the onionxt-tests convention), the live-feed
+-- section drives BEP44 puts and lookups against a LOCAL torrent session -
+-- stores return their verdict synchronously, lookups are fire-and-forget -
+-- and the media section seeds a local temp file and reads its status back,
+-- all skipping honestly when torrentxt is absent or a session cannot start.
 --
 -- STATUS (honesty convention): the phase-1 and phase-2 sections had their OXT
 -- pass on 2026-08-12 (133/133 via the folded suite harness, no skips). The
@@ -87,6 +88,7 @@ function rsSelfTest
       rstSectionBep44
       rstSectionIngest
       rstSectionLiveFeed tCaps
+      rstSectionMedia tCaps
    else
       rstSkip "every crypto section: SodiumXT is not installed"
    end if
@@ -625,3 +627,92 @@ private command rstSectionLiveFeed pCaps
    rstCheck (rsRequestImmutable(tSession, kRsGoldPost1Target) is true), \
          "rsRequestImmutable's lookup is accepted (async; value not awaited)"
 end rstSectionLiveFeed
+
+-- The phase-3 media layer. The refusal paths run EVERYWHERE (every input
+-- is validated before any bt* handler is touched); the live half creates a
+-- real torrent over a temp file, seeds it in place, resolves it back
+-- through rsMediaFetch's find path, and reads it through rsMediaStatus -
+-- all local to this machine, so nothing waits on a network. The swarm half
+-- (a second machine fetching by hash and playing mid-download) is the
+-- phase-3 done-criterion and needs the two-machine pass. The payload is
+-- salted with the clock so a crashed run's leftover torrent (same file,
+-- different bytes) can never collide with this run's add.
+private command rstSectionMedia pCaps
+   local tSession, tDir, tPath, tHash, tH, tFound, tS, tCode, tErr
+   rstSection "phase 3 - media create/seed/fetch/status"
+   rstCheck (rsMediaCreate(0, empty) is empty), \
+         "rsMediaCreate refuses an empty path"
+   rstCheck (rsLastError() contains "file"), "and says why"
+   put specialFolderPath("temporary") into tDir
+   if tDir is empty then put specialFolderPath("documents") into tDir
+   if the last char of tDir is "/" then delete the last char of tDir
+   put tDir & "/riptide-media-selftest.bin" into tPath
+   put "riptide media selftest payload," && the milliseconds \
+         into url ("binfile:" & tPath)
+   rstCheck (rsMediaCreate(0, tPath) is empty), \
+         "rsMediaCreate refuses a dead session handle"
+   rstCheck (rsLastError() contains "session"), "and says why"
+   rstCheck (rsMediaFetch(0, "zz", tDir, false) is empty), \
+         "rsMediaFetch refuses a malformed info-hash"
+   rstCheck (rsMediaFetch(0, rsZeroTarget(), tDir, false) is empty), \
+         "rsMediaFetch refuses the zero info-hash"
+   rstCheck (rsMediaFetch(0, kRsGoldMediaTarget, \
+         tDir & "/riptide-no-such-folder", false) is empty), \
+         "rsMediaFetch refuses a missing save folder"
+   rstCheck (rsMediaFetch(0, kRsGoldMediaTarget, tDir, false) is empty), \
+         "rsMediaFetch refuses a dead session handle"
+   rstCheck (rsMediaStatus(0) is empty), \
+         "rsMediaStatus refuses a dead torrent handle"
+   if pCaps["hasTorrent"] is not true then
+      rstSkip "media create/seed/fetch/status: torrentxt is not installed"
+      exit rstSectionMedia
+   end if
+   put rstAcquireSession() into tSession
+   if tSession is 0 then
+      rstSkip "media create/seed/fetch/status: could not start a session"
+      exit rstSectionMedia
+   end if
+   put rsMediaCreate(tSession, tPath) into tHash
+   rstCheck (the number of chars in tHash is 40), \
+         "rsMediaCreate returns a 40-hex info-hash"
+   if the number of chars in tHash is not 40 then
+      put "      rsMediaCreate said:" && rsLastError() & return after sLog
+      exit rstSectionMedia
+   end if
+   -- We are this hash's seeder, so the fetch lands on its find path: the
+   -- live handle comes back (no duplicate-add error) with the sequential
+   -- flag applied - the idempotency a re-click or a restart depends on.
+   put rsMediaFetch(tSession, tHash, tDir, true) into tH
+   rstCheck (tH is not empty and tH > 0), \
+         "rsMediaFetch on a seeding hash returns its live handle"
+   try
+      put btFindTorrent(tSession, tHash) into tFound
+   catch tErr
+      put 0 into tFound
+   end try
+   rstCheck (tFound is tH), "and it is the handle btFindTorrent names"
+   put rsMediaStatus(tH) into tS
+   rstCheck (tS is an array), "rsMediaStatus returns a snapshot"
+   rstCheck (toLower(tS["infoHashV1"]) is tHash), \
+         "whose info-hash is the created one"
+   rstCheck (tS["name"] contains "riptide-media-selftest"), \
+         "whose name is the attached file's"
+   rstCheck (tS["filePath"] is not empty), \
+         "with the player path resolved (metadata is local)"
+   rstCheck (there is a file tS["filePath"]), \
+         "and the player path names the on-disk file"
+   rstCheck (tS["fileSize"] > 0), "with the file's size beside it"
+   rstCheck (tS["progress"] >= 0 and tS["progress"] <= 1), \
+         "progress is a 0..1 fraction"
+   rstCheck (rsMediaStatus(999999999) is empty), \
+         "rsMediaStatus refuses a bogus handle"
+   -- tidy: drop the seed we added so a re-run starts clean; the payload
+   -- file stays (temp folder) and the session stays live (the harness rule)
+   try
+      btRemoveTorrent tSession, tH, false
+      put the result into tCode
+   catch tErr
+      put -1 into tCode
+   end try
+   rstCheck (tCode is 0), "cleanup: the media torrent removes"
+end rstSectionMedia

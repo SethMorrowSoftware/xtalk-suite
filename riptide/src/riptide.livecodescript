@@ -1,8 +1,8 @@
 script "RiptideSocial"
--- riptide.livecodescript - Riptide Social, phases 1-2: the identity
--- foundation, the pure-compute feed layer, and the live feed layer, as a
--- pure-LiveCodeScript library over the installed suite extensions
--- (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-4).
+-- riptide.livecodescript - Riptide Social, phases 1-3: the identity
+-- foundation, the pure-compute feed layer, the live feed layer, and the
+-- media layer, as a pure-LiveCodeScript library over the installed suite
+-- extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-4).
 --
 -- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
 -- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
@@ -13,6 +13,10 @@ script "RiptideSocial"
 -- created on both, feeds published and received in both directions through
 -- the real DHT (the stack renders a post only after rsIngestHead and
 -- rsIngestPost verify it, so a received feed is a verified chain walk).
+-- The phase-3 MEDIA layer (rsMediaCreate / rsMediaFetch / rsMediaStatus,
+-- 2026-08-14) is verified statically and by the harness's refusal paths;
+-- its live create/seed/fetch flow and the phase-3 done-criterion (a
+-- follower plays a video mid-download) still NEED an OXT pass.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -31,6 +35,14 @@ script "RiptideSocial"
 --     feeds each dhtMutableItem / dhtImmutableItem event through. The
 --     library NEVER starts, stops, or polls a session: the app owns the one
 --     session per process and its event loop, and passes the handle in.
+--   - the MEDIA layer (phase 3): attach a file as a trackerless torrent
+--     seeded in place (rsMediaCreate -> the 40-hex info-hash a post's
+--     media list carries), fetch-and-co-seed by hash with an optional
+--     sequential playback mode (rsMediaFetch), and the per-torrent status
+--     snapshot a player paints from (rsMediaStatus, btTorrentStatus plus
+--     the first file's on-disk path and per-file progress). Payload never
+--     crosses the FFI: libtorrent moves the bytes engine-to-disk, script
+--     only ever sees hashes, paths, and counters.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -45,10 +57,13 @@ script "RiptideSocial"
 --   onionxt   soft  oxPublicKeyFromAddress verifies a CLAIMED onion against
 --                   a handle offline (structural decode, no daemon needed)
 --   torrentxt soft  the phase-2 live feed layer drives btDhtPutSigned /
---                   btDhtGetMutable / btDhtPutImmutable / btDhtGetImmutable
---                   through a session the APP owns. Absent torrentxt (or a
---                   dead handle), every live handler refuses with a clear
---                   story; the pure-compute layer is untouched.
+--                   btDhtGetMutable / btDhtPutImmutable / btDhtGetImmutable,
+--                   and the phase-3 media layer drives btCreateTorrent /
+--                   btAddTorrentFile / btAddMagnet / btFindTorrent /
+--                   btInfoHash / btSetSequentialDownload / btTorrentStatus /
+--                   btFileList, all through a session the APP owns. Absent
+--                   torrentxt (or a dead handle), every live handler refuses
+--                   with a clear story; the pure-compute layer is untouched.
 --   enetxt / datachannelxt: probed and reported for the app's capability
 --                   matrix; nothing in phases 1-2 calls them.
 --
@@ -75,7 +90,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.2.0"
+constant kRsVersion = "0.3.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -106,7 +121,8 @@ local sRsCaps
 --------------------------------------------------------------------------
 
 function rsVersion
-   return "Riptide" && kRsVersion && "(phase 2: identity + the live feed)"
+   return "Riptide" && kRsVersion && \
+         "(phase 3: identity, the live feed, media)"
 end rsVersion
 
 function rsLastError
@@ -1246,6 +1262,196 @@ function rsRequestImmutable pSession, pTarget
    end if
    return true
 end rsRequestImmutable
+
+--------------------------------------------------------------------------
+-- the media layer (phase 3) - followers are the CDN
+--------------------------------------------------------------------------
+
+-- Attach one file to the feed: build a TRACKERLESS torrent over it (DHT-only,
+-- like everything else here) and seed it IN PLACE - the save path is the
+-- file's own parent folder, so libtorrent finds the payload where it already
+-- sits and no copy is made. Returns the 40-hex v1 info-hash, which is exactly
+-- what rsBuildPost's pMediaList carries and what a follower's rsMediaFetch
+-- takes. Media attachments are SINGLE FILES by design (a photo, a video);
+-- folder shares are a file-sharing app's job (quickshare), not a feed's.
+-- The torrent handle is deliberately not returned: posts name hashes, not
+-- handles, and btFindTorrent(pSession, tHash) recovers the handle whenever
+-- the app wants one (rsMediaFetch on your own hash does exactly that).
+function rsMediaCreate pSession, pPath
+   local tParent, tData, tH, tHash, tWhy, tErr
+   if there is not a file pPath then
+      rsSetError "rsMediaCreate: no file at" && pPath && \
+            "(media attachments are single files)"
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaCreate: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   set the itemDelimiter to "/"
+   put item 1 to -2 of pPath into tParent
+   if tParent is empty then put "/" into tParent
+   try
+      put btCreateTorrent(pPath, 0, 0, empty) into tData
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btCreateTorrent):" && tErr
+      return empty
+   end try
+   if tData is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btCreateTorrent failed;" && tWhy
+      return empty
+   end if
+   try
+      put btAddTorrentFile(pSession, tData, tParent) into tH
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btAddTorrentFile):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btAddTorrentFile refused;" && tWhy
+      return empty
+   end if
+   try
+      put toLower(btInfoHash(tH)) into tHash
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btInfoHash):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tHash, 40) then
+      rsSetError "rsMediaCreate: btInfoHash returned" && tHash & \
+            ", not 40 hex"
+      return empty
+   end if
+   return tHash
+end rsMediaCreate
+
+-- Fetch - and from then on co-seed - one media item a post names: join its
+-- swarm by magnet, downloading under pSaveFolder. pSequential true is the
+-- playback mode: pieces arrive in order, so a video can start playing while
+-- its tail is still downloading (poll rsMediaStatus for the moment filePath
+-- resolves). Idempotent on purpose: if the session already holds this hash
+-- (a re-click, a restart's re-fetch, or the author's own seed), the existing
+-- handle is returned instead of libtorrent's duplicate-add error - and the
+-- sequential flag is still applied, because the caller asked for playback
+-- NOW. Completion is not the end: libtorrent keeps seeding a finished
+-- torrent, which is the whole followers-are-the-CDN design - fetching IS
+-- co-seeding. Returns the positive torrent handle, or empty.
+function rsMediaFetch pSession, pInfoHash, pSaveFolder, pSequential
+   local tHash, tH, tCode, tWhy, tErr
+   put rsNormalizeTarget(pInfoHash) into tHash
+   if tHash is empty or tHash is kRsZeroTarget then
+      rsSetError "rsMediaFetch: the info-hash must be 40 non-zero hex chars"
+      return empty
+   end if
+   if there is not a folder pSaveFolder then
+      rsSetError "rsMediaFetch: no folder at" && pSaveFolder
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaFetch: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   try
+      put btFindTorrent(pSession, tHash) into tH
+   catch tErr
+      rsSetError "rsMediaFetch: needs torrentxt (btFindTorrent):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btAddMagnet(pSession, "magnet:?xt=urn:btih:" & tHash, \
+               pSaveFolder) into tH
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt (btAddMagnet):" && tErr
+         return empty
+      end try
+      if tH is 0 then
+         try
+            put btLastError() into tWhy
+         catch tErr
+            put empty into tWhy
+         end try
+         rsSetError "rsMediaFetch: btAddMagnet failed;" && tWhy
+         return empty
+      end if
+   end if
+   if pSequential is true then
+      try
+         btSetSequentialDownload tH, true
+         put the result into tCode
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt" && \
+               "(btSetSequentialDownload):" && tErr
+         return empty
+      end try
+      if tCode is not 0 then
+         -- The torrent stays added (progress is never thrown away over a
+         -- flag); a retry lands on the btFindTorrent path and re-applies.
+         rsSetError "rsMediaFetch: btSetSequentialDownload refused (" & \
+               tCode & ")"
+         return empty
+      end if
+   end if
+   return tH
+end rsMediaFetch
+
+-- One status snapshot for a media torrent, shaped for a feed/player UI: the
+-- btTorrentStatus record (name, state, progress 0..1, totalDone/totalSize,
+-- isFinished/isSeeding, savePath, ...) with the PLAYER fields added on top:
+-- filePath is the on-disk path of the torrent's first file - the one a
+-- player opens - resolved from btFileList, with fileSize/fileProgress (bytes
+-- done of THAT file) beside it. All three stay empty until metadata arrives
+-- (a magnet fetches its file table over the swarm), so "filePath is empty"
+-- doubles as the not-openable-yet probe; with a sequential fetch,
+-- fileProgress is contiguous from the front, which is what makes playing
+-- mid-download work. Takes the torrent handle (from rsMediaFetch or
+-- btFindTorrent), not the session: the snapshot is per-torrent.
+function rsMediaStatus pTorrent
+   local tS, tFiles, tErr
+   if pTorrent is not an integer or pTorrent <= 0 then
+      rsSetError "rsMediaStatus: pTorrent is not a torrent handle"
+      return empty
+   end if
+   try
+      put btTorrentStatus(pTorrent) into tS
+   catch tErr
+      rsSetError "rsMediaStatus: needs torrentxt (btTorrentStatus):" && tErr
+      return empty
+   end try
+   if the keys of tS is empty then
+      rsSetError "rsMediaStatus: not a live torrent handle"
+      return empty
+   end if
+   put empty into tS["filePath"]
+   put empty into tS["fileSize"]
+   put empty into tS["fileProgress"]
+   try
+      put btFileList(pTorrent) into tFiles
+   catch tErr
+      -- status just succeeded, so this cannot be "torrentxt missing";
+      -- degrade to no-file-table (same as metadata-not-yet) rather than
+      -- failing a snapshot the caller can still paint progress from
+      put empty into tFiles
+   end try
+   if tFiles is an array and the number of elements in tFiles > 0 then
+      put tS["savePath"] & "/" & tFiles[1]["path"] into tS["filePath"]
+      put tFiles[1]["size"] into tS["fileSize"]
+      put tFiles[1]["progress"] into tS["fileProgress"]
+   end if
+   return tS
+end rsMediaStatus
 
 --------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32
