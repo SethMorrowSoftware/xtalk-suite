@@ -162,9 +162,11 @@ constant kStSctpFloor = 16384
 -- plus a 60000-byte transfer each, on a possibly loaded machine.
 constant kStDeadlineMs = 40000
 
+constant kStTitle = "xTalk Suite - End-to-End Self-Test"
+constant kStWidth = 760
+constant kStHeight = 640
+
 -- ---- state -------------------------------------------------------------------
-local sTotal, sPassed, sFailed, sSkipped
-local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local sRunning             -- "true" while the async phases are still live
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
@@ -218,53 +220,51 @@ local sDeadline            -- the async phases' drop-dead time (ms clock)
 -- first handler.
 -- GENERATED MEMBER DECLARATIONS GO HERE --
 
--- ---- lifecycle ---------------------------------------------------------------
-on openStack
-   stBuild
-   stRun
-end openStack
+-- ---- the scaffolding (carried) ----------------------------------------------
+-- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
+-- The harness scaffolding as one carried block: counters, the window, the
+-- assertion plumbing, the report surface. The adopting harness declares
+-- kStTitle/kStWidth/kStHeight above this block, owns openStack/stRun/
+-- stCleanup, calls stResetCounters first in stRun and stReportDone when
+-- the run completes. Do not edit this block in place: change the master
+-- and re-carry it.
+local sTotal, sPassed, sFailed, sSkipped
+local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local sStRunDone           -- "true" once the run finished (drives the color)
 
-on closeStack
-   -- There is NO deterministic unload hook in this family: a leaked libtorrent
-   -- session would block the next run outright (one session per process), and a
-   -- leaked ENet host or WebRTC peer would hold a UDP port and its threads. So
-   -- teardown is unconditional and idempotent here.
-   stCleanup
-end closeStack
-
-on mouseUp
-   if the short name of the target is "stRerun" then
-      stCleanup
-      stRun
-   else if the short name of the target is "stCopy" then
-      stCopyResults
-   else
-      pass mouseUp
+-- The platform's own terminal face (the demo kit's uiMonoFont, by value).
+function stMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
    end if
-end mouseUp
+   return "DejaVu Sans Mono"
+end stMonoFont
 
--- ---- self-building UI (idempotent) -------------------------------------------
+-- ---- the window (idempotent; the fold drops this half) -----------------------
 command stBuild
-   if there is a field "stResults" then
+   -- the guard is on a control this VERSION of the scaffold adds, so a stack
+   -- built by an older scaffold rebuilds once and picks up the new layout
+   -- (the builders re-rect existing controls by name; nothing needs deleting)
+   if there is a button "stCopy" then
       exit stBuild
    end if
    lock screen
-   set the width of this stack to 760
-   set the height of this stack to 640
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "xTalk Suite - End-to-End Self-Test"
-   stMakeLabel "stTitle", "  xTalk Suite - End-to-End Self-Test", "0,0,760,30", 15
+   set the width of this stack to kStWidth
+   set the height of this stack to kStHeight
+   set the backgroundColor of this card to "240,242,246"
+   set the title of this stack to kStTitle
+   stMakeLabel "stTitle", "  " & kStTitle, "0,0," & kStWidth & ",30", 15
    set the opaque of field "stTitle" to true
    set the backgroundColor of field "stTitle" to "44,90,160"
    set the foregroundColor of field "stTitle" to "255,255,255"
    set the textStyle of field "stTitle" to "bold"
-   stMakeLabel "stSummary", "Running...", "16,38,520,66", 13
+   stMakeLabel "stSummary", "Running...", "16,38," & (kStWidth - 200) & ",66", 13
    set the textStyle of field "stSummary" to "bold"
-   stMakeButton "stCopy", "Copy results", "560,38,660,64"
-   stMakeButton "stRerun", "Re-run", "666,38,744,64"
-   stMakeList "stResults", "16,72,744,624"
-   set the textFont of field "stResults" to "Courier"
-   set the textSize of field "stResults" to 11
+   stMakeButton "stCopy", "Copy results", (kStWidth - 184) & ",38," & (kStWidth - 100) & ",64"
+   stMakeButton "stRerun", "Re-run", (kStWidth - 94) & ",38," & (kStWidth - 16) & ",64"
+   stMakeList "stResults", "16,72," & (kStWidth - 16) & "," & (kStHeight - 16)
    unlock screen
 end stBuild
 
@@ -298,9 +298,25 @@ command stMakeList pName, pRect
    set the rect of field pName to pRect
    set the lockText of field pName to true
    set the vScrollbar of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to "225,229,236"
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to "255,255,255"
+   set the textSize of field pName to 11
+   set the textFont of field pName to stMonoFont()
 end stMakeList
 
--- ---- assertion plumbing ------------------------------------------------------
+-- ---- assertion plumbing (this half folds into the suite harness) -------------
+command stResetCounters
+   put 0 into sTotal
+   put 0 into sPassed
+   put 0 into sFailed
+   put 0 into sSkipped
+   put empty into sResultText
+   put empty into sStRunDone
+end stResetCounters
+
 command stAssert pName, pOk
    add 1 to sTotal
    if pOk then
@@ -312,7 +328,7 @@ command stAssert pName, pOk
    end if
 end stAssert
 
--- A SKIP is a first-class outcome here, not a silent gap: it counts, it names
+-- A SKIP is a first-class outcome, not a silent gap: it counts, it names
 -- itself, and it says what would make it run.
 command stSkip pName, pReason
    add 1 to sTotal
@@ -324,8 +340,8 @@ command stSection pTitle
    put return & "== " & pTitle & " ==" & return after sResultText
 end stSection
 
--- A section that threw is a FAIL, never a skip: a skip means "this member is not
--- here", and something that blew up very much is.
+-- A section that threw is a FAIL, never a skip: a skip means "this piece is
+-- not here", and something that blew up very much is.
 command stSectionFailed pWhich, pError
    stAssert pWhich & " section ran to completion", false
    stNote "it raised:" && pError
@@ -340,18 +356,51 @@ command stShow
    put sResultText into field "stResults"
    put sPassed & " passed, " & sFailed & " failed, " & sSkipped & " skipped, " \
          & sTotal & " total" into field "stSummary"
-   if sRunning is not "true" then
+   if sStRunDone is "true" then
       if sFailed is 0 then
-         set the foregroundColor of field "stSummary" to "20,120,40"
+         set the foregroundColor of field "stSummary" to "23,128,63"
       else
-         set the foregroundColor of field "stSummary" to "170,30,30"
+         set the foregroundColor of field "stSummary" to "176,58,46"
       end if
    end if
 end stShow
 
+-- paint the results list: red FAIL, green PASS, amber SKIP, muted the rest
+command stPaint
+   local tN, tI, tLine, tErr
+   put the number of lines of field "stResults" into tN
+   lock screen
+   try
+      repeat with tI = 1 to tN
+         put line tI of field "stResults" into tLine
+         if tLine begins with "FAIL" then
+            set the foregroundColor of line tI of field "stResults" to "176,58,46"
+         else if tLine begins with "PASS" then
+            set the foregroundColor of line tI of field "stResults" to "23,128,63"
+         else if tLine begins with "SKIP" then
+            set the foregroundColor of line tI of field "stResults" to "150,110,40"
+         else
+            set the foregroundColor of line tI of field "stResults" to "138,146,158"
+         end if
+      end repeat
+   catch tErr
+   end try
+   set the vScroll of field "stResults" to 0
+   unlock screen
+end stPaint
+
+-- The run's one epilogue: mark done, render, paint. Synchronous harnesses
+-- call this at the end of stRun; async ones from the tick that ends the run.
+command stReportDone
+   put "true" into sStRunDone
+   stShow
+   stPaint
+end stReportDone
+
 command stCopyResults
-   -- The whole point of the button: the maintainer pastes the run back verbatim
-   -- into the OXT-pass record, so nobody has to retype a result.
+   -- The whole point of the button: the maintainer pastes the run back
+   -- verbatim into the OXT-pass record, so nobody has to retype a result.
+   local tError
    try
       set the clipboardData["text"] to sResultText
       answer "Results copied to the clipboard."
@@ -360,16 +409,47 @@ command stCopyResults
    end try
 end stCopyResults
 
+on closeStack
+   stCleanup
+end closeStack
+
+on mouseUp
+   if the short name of the target is "stRerun" then
+      stCleanup
+      stRun
+   else if the short name of the target is "stCopy" then
+      stCopyResults
+   else
+      pass mouseUp
+   end if
+end mouseUp
+-- ==== SUITE HARNESS SCAFFOLD v1 END ====
+
+-- ---- lifecycle ---------------------------------------------------------------
+on openStack
+   stBuild
+   stRun
+end openStack
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- ---- the run -----------------------------------------------------------------
 command stRun
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
-   put 0 into sTotal
-   put 0 into sPassed
-   put 0 into sFailed
-   put 0 into sSkipped
-   put empty into sResultText
+   stResetCounters
    put "true" into sRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
@@ -1604,7 +1684,7 @@ command stFinish
    stNote "headline paths and the cross-member seams. Each member has a deeper"
    stNote "harness that still needs its own engine run. Paste these numbers back."
    put empty into sRunning
-   stShow
+   stReportDone
 end stFinish
 
 -- Everything this file opened gets closed, in dependency order, each guarded so
@@ -1658,6 +1738,11 @@ end stTeardown
 -- Idempotent hard teardown for closeStack and for Re-run. It must survive being
 -- called when a member was never present, when the run never started, and twice
 -- in a row - so every call is guarded and no assertion is recorded.
+-- There is NO deterministic unload hook in this family: a leaked libtorrent
+-- session would block the next run outright (one session per process), and a
+-- leaked ENet host or WebRTC peer would hold a UDP port and its threads. So
+-- teardown (called from the scaffold's closeStack and Re-run) is
+-- unconditional and idempotent here.
 command stCleanup
    put empty into sRunning
    put "skip" into sPhaseEn
@@ -1818,7 +1903,7 @@ command stRunMemberHarnesses
    if sHaveCoin and sHaveCoinScript then
       try
          cx1stRun
-         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal
+         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
       catch tError
          stSectionFailed "CoinXT deep self-test", tError
       end try
@@ -1833,7 +1918,7 @@ command stRunMemberHarnesses
    if sHaveTorrent then
       try
          bt1stRun
-         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal
+         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
       catch tError
          stSectionFailed "TorrentXT deep self-test", tError
       end try
@@ -1844,7 +1929,7 @@ command stRunMemberHarnesses
    if sHaveEnet then
       try
          en1stRun
-         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal
+         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
       catch tError
          stSectionFailed "ENetXT deep self-test", tError
       end try
@@ -1855,7 +1940,7 @@ command stRunMemberHarnesses
    if sHaveDc then
       try
          dc1stRun
-         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal
+         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
       catch tError
          stSectionFailed "DataChannelXT deep self-test", tError
       end try
@@ -2031,7 +2116,7 @@ end stMergeReturned
 -- For a harness that accumulates into script locals (CoinXT, TorrentXT,
 -- ENetXT, DataChannelXT). Its counters are read directly - they are locals of
 -- THIS script, since the whole thing compiles as one unit.
-command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
+command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal, pSkipped
    stSection pMember & ": its own full self-test"
    -- VALIDATE BEFORE ADDING, and the reason is an engine failure this cost.
    -- These three lines used to be a bare `add pPassed to sPassed`, on the
@@ -2063,7 +2148,10 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
    -- an `if ... \` reads to them as a handler-level statement and every `end if`
    -- after it looks unbalanced. Keeping the opener on one physical line costs
    -- nothing and keeps the file parsable by the strictest reader of it.
-   put (pPassed is a number and pFailed is a number and pTotal is a number) into tOk
+   if pSkipped is empty then
+      put 0 into pSkipped
+   end if
+   put (pPassed is a number and pFailed is a number and pTotal is a number and pSkipped is a number) into tOk
    if tOk is false then
       stAssert pMember & " deep self-test reported numeric counters", false
       stNote "Got passed=[" & pPassed & "] failed=[" & pFailed & \
@@ -2075,6 +2163,7 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
       add pPassed to sPassed
       add pFailed to sFailed
       add pTotal to sTotal
+      add pSkipped to sSkipped
       stAssert pMember & " deep self-test had zero failures", pFailed is 0
       stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
             "checks, folded into the totals above"

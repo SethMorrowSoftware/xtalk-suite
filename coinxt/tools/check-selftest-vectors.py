@@ -492,6 +492,8 @@ def main(argv):
     # answers the question nobody re-asks. So: every k* constant must be either
     # re-derived above or listed here with the reason it cannot be.
     inputs = {
+        "kStTitle": "the harness scaffold's window title, not a vector "
+                    "(tools/check-harness-scaffold-drift.py owns the block)",
         "kFox": "an input string",
         "kBip39Salt": "an input to PBKDF2",
         "kBip39Entropy12": "an input; the mnemonic derived from it is checked",

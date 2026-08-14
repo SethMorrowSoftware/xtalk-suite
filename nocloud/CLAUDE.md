@@ -27,6 +27,31 @@ runtime error, a crash, or a silent misbehavior — several of them in this app.
 > `CLAUDE.md` conflict, this file wins inside `nocloud/`; paths in the docs
 > below may still read as if this were its own repo root (the suite's standing
 > consolidation-debt caveat).
+>
+> **Kit adoption (2026-08-14).** The suite UI kit's v2 "card look" was
+> ABSORBED FROM THIS APP (its tokens, panels, soft shadows, measured labels,
+> platform mono and pill are the kit's now), and this stack adopts the kit in
+> return: the carried block sits above the lifecycle handlers, the duplicate
+> `kClr*` tokens are gone (only genuinely local ones remain - the drop-zone
+> palette, `kClrAccent` "active blue"), `qsLabel`/`qsGfx`/`qsPanel`/`qsCap`/
+> `qsButton`/`qsMonoFont`/`qsCopyFlash*` became the kit's `uiWrap`/`uiGfx`/
+> `uiPanel`/`uiCap`/`uiButton`/`uiMonoFont`/`uiCopyFlash*`, `qsField`/
+> `qsList`/`qsHdr` are thin wrappers, the Tor chip is the kit's `uiPill`
+> driven by `qsOnionPill` exactly as before, and the kit's ONE status line is
+> parked in the bottom-left strip where the connection state has always
+> lived. Deliberately NOT carried: `uiFooter` - this is an APP, not a demo;
+> the packed dashboard has no footer row, and its honesty surfaces are the
+> per-share `qsSharing` copy, the `/_qs/transparency` route, and the header's
+> HONESTY block. The 2026-08-14 fix pass also closed the audit's list: the
+> six `if not sCwActive` sites (a runtime type error on the empty default)
+> are `is not "true"` now, both crypto prologues are try-guarded like the
+> receive side always was, and a second control-connect failure reaches the
+> Activity log instead of only the pill. A note for the doc-vs-code question
+> the audit raised: LCB public handlers are callable in BOTH command and
+> function form from LiveCodeScript, so this file's function-form
+> `btCreateTorrent(...)` and torrentxt's documented command form are the same
+> call - coinxt's engine passes proved the function form against `.lcb`
+> handlers long ago.
 
 ## What this is
 

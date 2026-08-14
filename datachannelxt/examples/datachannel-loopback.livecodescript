@@ -13,109 +13,536 @@ script "DataChannelLoopback"
 -- `dcAddRemoteCandidate` calls with "send it to the far machine somehow"
 -- (TorrentXT DHT rendezvous, a paste, anything) and the rest is identical.
 --
--- USAGE: put this script and the DataChannelXT extension in place, then:
+-- HOW TO USE: put this script and the DataChannelXT extension in place, then:
 --     start using stack "dataChannelHelpers"   -- the poll dispatcher
 --     go stack "DataChannelLoopback"           -- builds its UI on first open
 -- Click "Connect", watch the states walk to connected + open, then type in
 -- either pane's field and press Return.
 --
--- The UI is SELF-BUILDING and idempotent (the family pattern): opening the
--- stack creates the controls once; a rebuild is guarded by an existence check.
+-- HONESTY (the suite convention): the binding and an in-process loopback are
+-- engine-proven (the suite harness drives its own, green 2026-08-12), but
+-- THIS stack has no recorded engine run of its own and its UI was unified
+-- onto the suite kit 2026-08-14 - verified statically; needs an OXT pass.
+--
+-- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
+-- byte-identical). Change the look in the master, never here.
 
+-- Bump when the generated UI changes so a saved stack rebuilds its controls.
+constant kLbUiVersion = "loopback-kit2-1"
+-- The loopback should be OPEN well inside this; a machine that blocks even
+-- UDP-to-itself is the known way for it to hang, and the watchdog says so.
+constant kLbDeadlineMs = 20000
+
+-- ---- script-local state (declared at top) ------------------------------------
 local sPeerA          -- peer handle A (the offerer)
 local sPeerB          -- peer handle B (the answerer)
 local sChanA          -- A's channel handle (created -> triggers the offer)
 local sChanB          -- B's channel handle (learned from dcChannelIncoming)
+local sHaveDc         -- "true" once the extension probe succeeded
+local sOpenSeen       -- "true" once either channel reported open
+local sWatchArmed     -- "true" while a connect watchdog is pending
 
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v2 END ====
+
+-- ---- lifecycle ---------------------------------------------------------------
 on openStack
-   buildLoopbackUi
-   dcStartPolling the long id of this card, 33
+   lbBuild
+   lbStart
 end openStack
 
 on closeStack
-   dcStopPolling
-   -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position
-   -- parses as a command whose argument is `()`, and `()` is not an
-   -- expression. dcStopPolling on the line above is the same idiom.
-   dcCleanup
+   -- both guarded: quitting with the helpers stack or the extension absent
+   -- must not throw out of closeStack (the enet-lan-chat teardown rule)
+   local tErr
+   try
+      dcStopPolling
+   catch tErr
+      -- helpers stack already gone; nothing was polling
+   end try
+   try
+      -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position
+      -- parses as a command whose argument is `()`, and `()` is not an
+      -- expression. dcStopPolling above is the same idiom.
+      dcCleanup
+   catch tErr
+      -- extension not installed; nothing to release
+   end try
 end closeStack
-
--- ---------------------------------------------------------------- the UI --
-
-command buildLoopbackUi
-   if there is a field "statusA" then
-      exit buildLoopbackUi
-   end if
-   lock screen
-   set the width of this stack to 640
-   set the height of this stack to 460
-   set the name of this card to "loopback"
-
-   create button "Connect"
-   set the rect of button "Connect" to 20,16,140,44
-
-   create button "Disconnect"
-   set the rect of button "Disconnect" to 150,16,280,44
-
-   create field "statusA"
-   set the rect of field "statusA" to 20,56,310,84
-   set the lockText of field "statusA" to true
-   put "A: idle" into field "statusA"
-
-   create field "statusB"
-   set the rect of field "statusB" to 330,56,620,84
-   set the lockText of field "statusB" to true
-   put "B: idle" into field "statusB"
-
-   create field "logA"
-   set the rect of field "logA" to 20,94,310,380
-   set the lockText of field "logA" to true
-
-   create field "logB"
-   set the rect of field "logB" to 330,94,620,380
-   set the lockText of field "logB" to true
-
-   create field "sayA"
-   set the rect of field "sayA" to 20,390,310,418
-
-   create field "sayB"
-   set the rect of field "sayB" to 330,390,620,418
-
-   unlock screen
-end buildLoopbackUi
-
--- ------------------------------------------------------------- lifecycle --
 
 on mouseUp
    switch the short name of the target
-      case "Connect"
+      case "lbConnect"
          connectLoopback
          break
-      case "Disconnect"
+      case "lbDisconnect"
          disconnectLoopback
          break
+      default
+         pass mouseUp
    end switch
-   pass mouseUp
 end mouseUp
 
+-- ---- self-building UI (idempotent; rebuilds on a version bump) ----------------
+command lbBuild
+   if the uLbUiVersion of this stack is kLbUiVersion and there is a field "lbLogA" then
+      exit lbBuild
+   end if
+   lbClearGeneratedUI
+   lock screen
+   uiChrome "DataChannelXT loopback - two WebRTC peers in one stack", 640, 460
+   uiButton "lbConnect", "Connect", "16,58,136,84"
+   uiButton "lbDisconnect", "Disconnect", "146,58,266,84"
+   uiCap "lbStatusA", "A: idle", "16,92,312,110"
+   uiCap "lbStatusB", "B: idle", "328,92,624,110"
+   uiArea "lbLogA", "16,114,312,368"
+   uiArea "lbLogB", "328,114,624,368"
+   uiInput "lbSayA", "16,376,312,400"
+   uiInput "lbSayB", "328,376,624,400"
+   uiFooter \
+         "Everything here stays on this machine: the signaling is a script" \
+         & " variable, the transport is a loopback. It proves the pipeline," \
+         & " not the network. Verified statically; needs an OXT pass.", \
+         "16,408,624,452"
+   set the uLbUiVersion of this stack to kLbUiVersion
+   unlock screen
+end lbBuild
+
+command lbClearGeneratedUI
+   local tI, tName
+   lock screen
+   repeat with tI = the number of fields of this card down to 1
+      put the short name of field tI of this card into tName
+      -- "lb"-prefixed controls are this version's; the bare names are the
+      -- pre-kit build's, deleted once on the version bump (spelled out
+      -- rather than item-matched: itemDelimiter is global mutable state)
+      if tName begins with "lb" or tName is "statusA" or tName is "statusB" \
+            or tName is "logA" or tName is "logB" \
+            or tName is "sayA" or tName is "sayB" then
+         delete field tI of this card
+      end if
+   end repeat
+   repeat with tI = the number of buttons of this card down to 1
+      put the short name of button tI of this card into tName
+      if tName begins with "lb" or tName is "Connect" or tName is "Disconnect" then
+         delete button tI of this card
+      end if
+   end repeat
+   unlock screen
+end lbClearGeneratedUI
+
+-- ---- startup (probe, fail closed) --------------------------------------------
+command lbStart
+   local tErr
+   put empty into sHaveDc
+   -- probe the extension with a guarded call; fail closed with a clear
+   -- message when it is missing (the family's SodiumXT probe pattern)
+   try
+      if dcInit() is 0 then
+         put "true" into sHaveDc
+      end if
+   catch tErr
+      -- reported below
+   end try
+   if sHaveDc is not "true" then
+      uiStatus "DataChannelXT NOT loaded: install org.openxtalk.library.datachannel and reopen.", "bad"
+      exit lbStart
+   end if
+   try
+      dcStartPolling the long id of this card, 33
+   catch tErr
+      uiStatus "The poll dispatcher is missing: start using stack" && quote & "dataChannelHelpers" & quote && "first.", "bad"
+      exit lbStart
+   end try
+   uiStatus "Ready. Click Connect to negotiate the loopback.", "ok"
+end lbStart
+
+-- ---- connect / disconnect ----------------------------------------------------
 command connectLoopback
+   if sHaveDc is not "true" then
+      uiStatus "DataChannelXT is not loaded - see above.", "bad"
+      exit connectLoopback
+   end if
    if sPeerA is not empty and sPeerA is not 0 then
       exit connectLoopback -- already connected
    end if
    -- loopback needs no ICE servers: host candidates carry it
    put dcCreatePeer("") into sPeerA
    put dcCreatePeer("") into sPeerB
-   if sPeerA is 0 or sPeerB is 0 then
-      answer "DataChannelXT could not create a peer:" && dcLastError()
+   if sPeerA is 0 or sPeerA is empty or sPeerB is 0 or sPeerB is empty then
+      uiStatus "Could not create a peer:" && dcLastError(), "bad"
+      -- free whichever half DID come up, or a retry leaks it
+      disconnectLoopback
       exit connectLoopback
    end if
    -- creating the first channel starts the negotiation; everything else
    -- arrives as events below
    put dcCreateChannel(sPeerA, "loopback-chat") into sChanA
+   if sChanA is 0 or sChanA is empty then
+      uiStatus "Could not create the channel:" && dcLastError(), "bad"
+      disconnectLoopback
+      exit connectLoopback
+   end if
    put empty into sChanB
-   put "A: connecting..." into field "statusA"
-   put "B: waiting for offer..." into field "statusB"
+   put empty into sOpenSeen
+   lbSetPeerStatus sPeerA, "connecting..."
+   lbSetPeerStatus sPeerB, "waiting for offer..."
+   uiStatus "Negotiating (offer/answer, ICE, DTLS, SCTP)...", empty
+   if sWatchArmed is not "true" then
+      put "true" into sWatchArmed
+      send "lbConnectWatch" to me in kLbDeadlineMs milliseconds
+   end if
 end connectLoopback
+
+-- The connect watchdog: a loopback that has not opened inside the deadline
+-- is not slow, it is stuck - the known cause is a machine that blocks ALL
+-- UDP, even to itself. Say so instead of hanging silently.
+command lbConnectWatch
+   put empty into sWatchArmed
+   if sOpenSeen is "true" then
+      exit lbConnectWatch
+   end if
+   if sPeerA is empty or sPeerA is 0 then
+      exit lbConnectWatch
+   end if
+   uiStatus "Still not open after" && (kLbDeadlineMs div 1000) && "s - this machine may block UDP to itself (VPN/firewall). See the logs.", "bad"
+   logLine sPeerA, "* not open after" && (kLbDeadlineMs div 1000) && "s: check for a firewall/VPN blocking loopback UDP"
+end lbConnectWatch
 
 command disconnectLoopback
    if sPeerA is not empty and sPeerA is not 0 then
@@ -128,28 +555,40 @@ command disconnectLoopback
    put empty into sPeerB
    put empty into sChanA
    put empty into sChanB
-   put "A: idle" into field "statusA"
-   put "B: idle" into field "statusB"
+   put empty into sOpenSeen
+   lbSetPeerStatusRaw "lbStatusA", "A: idle"
+   lbSetPeerStatusRaw "lbStatusB", "B: idle"
 end disconnectLoopback
 
--- ------------------------------------------------- signaling, in miniature --
+-- ---- signaling, in miniature -------------------------------------------------
 -- These two handlers ARE the signaling layer. Loopback edition: hand each
 -- artifact straight to the other peer. Real edition: transmit it instead.
+-- Both returns are CHECKED - a swallowed signaling failure is a demo that
+-- sits at "connecting..." forever with nothing to debug (the dht-chat
+-- pattern; the old version discarded both).
 
 on dcLocalDescription pEvent
-   local tDest
+   local tDest, tR
    put otherPeer(pEvent["peer"]) into tDest
    if tDest is not empty then
-      dcSetRemoteDescription tDest, pEvent["sdp"], pEvent["sdpType"]
-      logLine pEvent["peer"], "-> shipped" && pEvent["sdpType"]
+      put dcSetRemoteDescription(tDest, pEvent["sdp"], pEvent["sdpType"]) into tR
+      if tR is not 0 then
+         logLine tDest, "* set remote description FAILED (" & tR & "):" && dcLastError()
+         uiStatus "Signaling failed - see the logs.", "bad"
+      else
+         logLine pEvent["peer"], "-> shipped" && pEvent["sdpType"]
+      end if
    end if
 end dcLocalDescription
 
 on dcLocalCandidate pEvent
-   local tDest
+   local tDest, tR
    put otherPeer(pEvent["peer"]) into tDest
    if tDest is not empty then
-      dcAddRemoteCandidate tDest, pEvent["candidate"], pEvent["mid"]
+      put dcAddRemoteCandidate(tDest, pEvent["candidate"], pEvent["mid"]) into tR
+      if tR is not 0 then
+         logLine tDest, "* add candidate FAILED (" & tR & "):" && dcLastError()
+      end if
    end if
 end dcLocalCandidate
 
@@ -162,15 +601,15 @@ function otherPeer pPeer
    return empty
 end otherPeer
 
--- ---------------------------------------------------------------- events --
+-- ---- events ------------------------------------------------------------------
 
 on dcStateChange pEvent
    local tLabel
    put dcStateName(pEvent["state"]) into tLabel
-   if pEvent["peer"] is sPeerA then
-      put "A:" && tLabel into field "statusA"
-   else if pEvent["peer"] is sPeerB then
-      put "B:" && tLabel into field "statusB"
+   lbSetPeerStatus pEvent["peer"], tLabel
+   -- state 4 is "failed": say what to do rather than printing a bare word
+   if pEvent["state"] is 4 then
+      uiStatus "A peer reported FAILED - on a loopback that means blocked local UDP.", "bad"
    end if
 end dcStateChange
 
@@ -183,7 +622,9 @@ on dcChannelIncoming pEvent
 end dcChannelIncoming
 
 on dcChannelOpen pEvent
+   put "true" into sOpenSeen
    logLine dcChannelPeer(pEvent["channel"]), "channel open - say something!"
+   uiStatus "Open both ends - type in either pane and press Return.", "ok"
 end dcChannelOpen
 
 on dcChannelClosed pEvent
@@ -203,36 +644,61 @@ on dcChannelError pEvent
    logLine pEvent["peer"], "ERROR:" && pEvent["error"]
 end dcChannelError
 
--- ------------------------------------------------------------------ chat --
+-- ---- chat --------------------------------------------------------------------
 
 on returnInField
-   local tShort, tText
+   local tShort, tText, tR
    put the short name of the target into tShort
    put the text of the target into tText
    if tText is empty then
       exit returnInField
    end if
-   if tShort is "sayA" then
+   if tShort is "lbSayA" then
       if sChanA is not empty and dcChannelIsOpen(sChanA) then
-         dcSendText(sChanA, tText)
-         logLine sPeerA, "sent:" && tText
-         put empty into field "sayA"
+         put dcSendText(sChanA, tText) into tR
+         if tR is 0 then
+            logLine sPeerA, "sent:" && tText
+            put empty into field "lbSayA"
+         else
+            logLine sPeerA, "* send FAILED (" & tR & "):" && dcLastError()
+         end if
       end if
-   else if tShort is "sayB" then
+   else if tShort is "lbSayB" then
       if sChanB is not empty and dcChannelIsOpen(sChanB) then
-         dcSendText(sChanB, tText)
-         logLine sPeerB, "sent:" && tText
-         put empty into field "sayB"
+         put dcSendText(sChanB, tText) into tR
+         if tR is 0 then
+            logLine sPeerB, "sent:" && tText
+            put empty into field "lbSayB"
+         else
+            logLine sPeerB, "* send FAILED (" & tR & "):" && dcLastError()
+         end if
       end if
+   else
+      pass returnInField
    end if
 end returnInField
+
+-- ---- small helpers -----------------------------------------------------------
+command lbSetPeerStatus pPeer, pText
+   if pPeer is sPeerA then
+      lbSetPeerStatusRaw "lbStatusA", "A:" && pText
+   else if pPeer is sPeerB then
+      lbSetPeerStatusRaw "lbStatusB", "B:" && pText
+   end if
+end lbSetPeerStatus
+
+command lbSetPeerStatusRaw pField, pText
+   if there is a field pField then
+      put pText into field pField
+   end if
+end lbSetPeerStatusRaw
 
 command logLine pPeer, pLine
    local tField
    if pPeer is sPeerA then
-      put "logA" into tField
+      put "lbLogA" into tField
    else if pPeer is sPeerB then
-      put "logB" into tField
+      put "lbLogB" into tField
    else
       exit logLine
    end if

@@ -29,6 +29,25 @@ They share a namespace — `org.openxtalk.library.{sodium,torrent,enet,datachann
 — so the engine resolves each binding automatically once its packaged extension
 is installed.
 
+## Start here (no experience needed)
+
+1. **Install [OpenXTalk](https://openxtalk.org)** if you have not already.
+2. **Download this repository** — the green **Code** button above, then
+   **Download ZIP** — and unzip it anywhere (or `git clone` it).
+3. In OpenXTalk pick **File > Open Stack** and choose
+   [`start-here.livecodescript`](start-here.livecodescript) from the
+   unzipped folder.
+
+That opens a clickable directory of every sample, demo and harness stack,
+listed by the path it has in this repository. Click one to read what it is
+and what it needs; **double-click (or press Open) to launch it** right from
+where the download put it — helper stacks are put in use for you, and its
+**Setup help** button explains the rest in plain language. Everything here
+is a script-only stack that builds its own window when opened, so there is
+nothing to install or copy first; a stack missing an extension says so in
+red at the top rather than breaking. (`tools/check-launcher-registry.py`
+holds the directory true to the tree on every push.)
+
 ## Release status (honest, per member)
 
 Maturity is uneven by design — the suite is released as members reach the bar,
@@ -216,8 +235,11 @@ monorepo**):
 
 - **`suite-gates.yml`** — every member's compiler-free gates on every push: the
   LiveCodeScript checker, docs house-style, all golden-vector suites, the
-  record registries, the known-answer harnesses, standalone freshness, and the
-  `MANIFEST.sha256` integrity checks.
+  record registries, the known-answer harnesses, standalone freshness, the
+  `MANIFEST.sha256` integrity checks, and the suite-level carried-block and
+  budget gates (the UI-kit and harness-scaffold drift gates — one look, one
+  scaffold, byte-identical everywhere, adoption enforced — plus the 720p
+  stack-size budget: every sample window fits 1200 x 640).
 - **`native-<member>.yml`** — the per-member native matrix, plus that member's
   sanitizer lanes, scoped by `paths:` so only the member you touched builds. The
   four CMake members cover all five platforms, each with its own dependency

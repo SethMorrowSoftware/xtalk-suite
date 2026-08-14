@@ -21,6 +21,12 @@ datachannelxt/ as subfolders) become mirrors. Development happens here.
 ```
 openxtalk-libraries/
   README.md            the suite front door + the honest release matrix
+  start-here.livecodescript
+                       the RUNNABLE front door: open it in OXT for a
+                       clickable directory of every demo/harness stack by
+                       repo-relative path (launches them in place, putting
+                       helper stacks in use first); a kit adopter, held
+                       true to the tree by tools/check-launcher-registry.py
   CLAUDE.md            this file
   LICENSE              MIT + third-party attributions for every bundled lib
   docs/                CROSS-CUTTING documents (span >1 member)
@@ -77,14 +83,39 @@ These are summarized in `README.md`; the operational point for editing is:
 6. **The honesty convention** — "verified statically; needs an OXT pass"
    (Tor: "+ live-Tor pass") for anything not observed on a real engine.
 
-**Demo UI is ONE carried kit (2026-08-13).** `tools/ui-kit.livecodescript` is
-the master for the family demo look — the chrome, the semantic status line,
-mono data areas, the honesty footer. Adopting demo stacks embed the block
-verbatim between its marker lines (each demo stays a single paste-and-run
-file), and `tools/check-ui-kit-drift.py`, in the gate set, holds every copy
-byte-identical to the master and refuses unregistered adopters — the
-checker-unification model applied to the UI. A look change edits the master
-and re-carries; it is never patched inside an adopter.
+**Demo UI is ONE carried kit, and adoption is enforced (v2, 2026-08-14).**
+`tools/ui-kit.livecodescript` is the master for the family look. v1 was the
+flat style; **v2 is the "card look"** absorbed from its best implementations
+rather than invented (nocloud's tokens/panels/soft shadows/measured labels/
+platform mono/pill, dht-channels' section dividers, torrent-client's copy
+flash) — chrome with a semantic status line, white rounded panels on a cool
+page, mono data surfaces, the honesty footer. Adopting stacks embed the
+block verbatim between its marker lines (each demo stays a single
+paste-and-run file), and `tools/check-ui-kit-drift.py`, in the gate set,
+holds every copy byte-identical, refuses unregistered carriers, **and
+refuses any window-building stack that neither adopts nor carries a written
+exemption** — so "every demo is a kit adopter" is a property of the tree,
+not of one cleanup pass. A look change edits the master and re-carries; it
+is never patched inside an adopter. The 2026-08-14 fleet pass converted
+every demo (all six members' examples, both apps' stacks) and paired each
+conversion with that stack's audit fixes (validated create/connect returns
+with last-errors surfaced, watchdogs on silent async waits, fail-closed
+probes, guarded teardown) — so every converted stack's honesty label reads
+"UI unified 2026-08-14; needs an OXT re-pass" regardless of its earlier
+evidence.
+
+**The five pasteable harnesses share ONE carried scaffold (2026-08-14).**
+`tools/harness-scaffold.livecodescript` is the master for the selftest
+window + counters + assertion plumbing (Copy results, SKIP as a first-class
+outcome, per-line result paint, per-section failure isolation), carried
+byte-identical into the four member selftests and the suite core with
+`tools/check-harness-scaffold-drift.py` in the gate set. The fold machinery
+keeps its split: the generator drops the scaffold's window half from folded
+members and stubs `stShow`/`stPaint`; the counters and plumbing fold in and
+run, and `stMergeCounted` now carries member skip counts into the suite
+totals. Harnesses are deliberately NOT kit adopters (a second 300-line
+block would bloat every paste); the scaffold matches the kit's look BY
+VALUE, and the kit gate's exemption list records exactly that.
 
 ## The unified self-test is GENERATED
 

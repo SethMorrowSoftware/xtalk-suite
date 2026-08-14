@@ -162,9 +162,11 @@ constant kStSctpFloor = 16384
 -- plus a 60000-byte transfer each, on a possibly loaded machine.
 constant kStDeadlineMs = 40000
 
+constant kStTitle = "xTalk Suite - End-to-End Self-Test"
+constant kStWidth = 760
+constant kStHeight = 640
+
 -- ---- state -------------------------------------------------------------------
-local sTotal, sPassed, sFailed, sSkipped
-local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local sRunning             -- "true" while the async phases are still live
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
@@ -327,22 +329,30 @@ constant cx1kEth1559Value = "016345785d8a0000"
 constant cx1kEth1559Sighash = "bf4c3dfa4164868c98534322ecbbce3c022d6d0dee3580b1504da0a28fff9199"
 constant cx1kEth1559Raw = "02f8730180843b9aca008504a817c80082520894353535353535353535353535353535353535353588016345785d8a000080c001a0180a63d9ea767ab51941f4cb5d3f4f1113ae08861b4a660eb72770967ddc8987a04a41c8877f4e53a06c3a7d6f2787f113d9700bd112168f6714ff3b8957f1b123"
 constant cx1kEth1559Txhash = "1d723f02967119095427907564da7762bd6d3a5d8edb1291db53b97191749e7f"
-local cx1sTotal, cx1sPassed, cx1sFailed
-local cx1sResultText       -- the accumulated PASS/FAIL/section lines
-local cx1sDone             -- "true" once the run has finished (drives the colour)
+constant cx1kStTitle = "coinxt - API Self-Test"
+constant cx1kStWidth = 660
+constant cx1kStHeight = 620
+local cx1sTotal, cx1sPassed, cx1sFailed, cx1sSkipped
+local cx1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local cx1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- TorrentXT: the full bt* self-test ----
+constant bt1kStTitle = "TorrentXT - API Self-Test"
+constant bt1kStWidth = 660
+constant bt1kStHeight = 620
 local bt1sSession          -- the live session handle (0 = none)
 local bt1sTorrent          -- a torrent we create + seed, for torrent-scoped checks
 local bt1sTorrent2         -- a second torrent from the extended-add check
-local bt1sTotal, bt1sPassed, bt1sFailed
-local bt1sResultText       -- the accumulated PASS/FAIL/section lines
 local bt1sTempDir          -- parent dir we seed from
 local bt1sContentDir       -- the content folder inside it
+local bt1sTotal, bt1sPassed, bt1sFailed, bt1sSkipped
+local bt1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local bt1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- ENetXT: the synchronous half of the en* self-test ----
-local en1sTotal, en1sPassed, en1sFailed
-local en1sResultText       -- the accumulated PASS/FAIL/section lines
+constant en1kStTitle = "enetxt - API Self-Test"
+constant en1kStWidth = 660
+constant en1kStHeight = 620
 local en1sServer, en1sClient  -- the two loopback hosts
 local en1sClientPeer       -- client side: handle from enConnect
 local en1sServerPeer       -- server side: handle born in its enetConnect event
@@ -353,10 +363,14 @@ local en1sSentBinary       -- what the client sent (kept for byte-exact compare)
 local en1sSawServerDisc    -- "true" once the server drained enetDisconnect
 local en1sDeadline         -- the async phase's drop-dead time (ms clock)
 local en1sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
+local en1sTotal, en1sPassed, en1sFailed, en1sSkipped
+local en1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local en1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- DataChannelXT: the synchronous half of the dc* self-test ----
-local dc1sTotal, dc1sPassed, dc1sFailed
-local dc1sResultText       -- the accumulated PASS/FAIL/section lines
+constant dc1kStTitle = "DataChannelXT - API Self-Test"
+constant dc1kStWidth = 660
+constant dc1kStHeight = 620
 local dc1sPeerA, dc1sPeerB    -- the loopback peers
 local dc1sChanA, dc1sChanB    -- A's channel; B's (learned from dcChannelIncoming)
 local dc1sAOpen, dc1sBOpen    -- "true" once each side's channel open arrived
@@ -367,6 +381,9 @@ local dc1sGotBufferedLow   -- "true" once A's channel reported dcBufferedLow
 local dc1sBigLen           -- the cap-sized payload length for the buffered-low leg
 local dc1sDeadline         -- the async phase's drop-dead time (ms clock)
 local dc1sPhase            -- "", "opening", "messaging", "done"
+local dc1sTotal, dc1sPassed, dc1sFailed, dc1sSkipped
+local dc1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local dc1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -490,53 +507,51 @@ local sRsProbed
 local sRsCaps
 -- <<< GENERATED EMBED: riptide script layer declarations <<< --
 
--- ---- lifecycle ---------------------------------------------------------------
-on openStack
-   stBuild
-   stRun
-end openStack
+-- ---- the scaffolding (carried) ----------------------------------------------
+-- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
+-- The harness scaffolding as one carried block: counters, the window, the
+-- assertion plumbing, the report surface. The adopting harness declares
+-- kStTitle/kStWidth/kStHeight above this block, owns openStack/stRun/
+-- stCleanup, calls stResetCounters first in stRun and stReportDone when
+-- the run completes. Do not edit this block in place: change the master
+-- and re-carry it.
+local sTotal, sPassed, sFailed, sSkipped
+local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local sStRunDone           -- "true" once the run finished (drives the color)
 
-on closeStack
-   -- There is NO deterministic unload hook in this family: a leaked libtorrent
-   -- session would block the next run outright (one session per process), and a
-   -- leaked ENet host or WebRTC peer would hold a UDP port and its threads. So
-   -- teardown is unconditional and idempotent here.
-   stCleanup
-end closeStack
-
-on mouseUp
-   if the short name of the target is "stRerun" then
-      stCleanup
-      stRun
-   else if the short name of the target is "stCopy" then
-      stCopyResults
-   else
-      pass mouseUp
+-- The platform's own terminal face (the demo kit's uiMonoFont, by value).
+function stMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
    end if
-end mouseUp
+   return "DejaVu Sans Mono"
+end stMonoFont
 
--- ---- self-building UI (idempotent) -------------------------------------------
+-- ---- the window (idempotent; the fold drops this half) -----------------------
 command stBuild
-   if there is a field "stResults" then
+   -- the guard is on a control this VERSION of the scaffold adds, so a stack
+   -- built by an older scaffold rebuilds once and picks up the new layout
+   -- (the builders re-rect existing controls by name; nothing needs deleting)
+   if there is a button "stCopy" then
       exit stBuild
    end if
    lock screen
-   set the width of this stack to 760
-   set the height of this stack to 640
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "xTalk Suite - End-to-End Self-Test"
-   stMakeLabel "stTitle", "  xTalk Suite - End-to-End Self-Test", "0,0,760,30", 15
+   set the width of this stack to kStWidth
+   set the height of this stack to kStHeight
+   set the backgroundColor of this card to "240,242,246"
+   set the title of this stack to kStTitle
+   stMakeLabel "stTitle", "  " & kStTitle, "0,0," & kStWidth & ",30", 15
    set the opaque of field "stTitle" to true
    set the backgroundColor of field "stTitle" to "44,90,160"
    set the foregroundColor of field "stTitle" to "255,255,255"
    set the textStyle of field "stTitle" to "bold"
-   stMakeLabel "stSummary", "Running...", "16,38,520,66", 13
+   stMakeLabel "stSummary", "Running...", "16,38," & (kStWidth - 200) & ",66", 13
    set the textStyle of field "stSummary" to "bold"
-   stMakeButton "stCopy", "Copy results", "560,38,660,64"
-   stMakeButton "stRerun", "Re-run", "666,38,744,64"
-   stMakeList "stResults", "16,72,744,624"
-   set the textFont of field "stResults" to "Courier"
-   set the textSize of field "stResults" to 11
+   stMakeButton "stCopy", "Copy results", (kStWidth - 184) & ",38," & (kStWidth - 100) & ",64"
+   stMakeButton "stRerun", "Re-run", (kStWidth - 94) & ",38," & (kStWidth - 16) & ",64"
+   stMakeList "stResults", "16,72," & (kStWidth - 16) & "," & (kStHeight - 16)
    unlock screen
 end stBuild
 
@@ -570,9 +585,25 @@ command stMakeList pName, pRect
    set the rect of field pName to pRect
    set the lockText of field pName to true
    set the vScrollbar of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to "225,229,236"
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to "255,255,255"
+   set the textSize of field pName to 11
+   set the textFont of field pName to stMonoFont()
 end stMakeList
 
--- ---- assertion plumbing ------------------------------------------------------
+-- ---- assertion plumbing (this half folds into the suite harness) -------------
+command stResetCounters
+   put 0 into sTotal
+   put 0 into sPassed
+   put 0 into sFailed
+   put 0 into sSkipped
+   put empty into sResultText
+   put empty into sStRunDone
+end stResetCounters
+
 command stAssert pName, pOk
    add 1 to sTotal
    if pOk then
@@ -584,7 +615,7 @@ command stAssert pName, pOk
    end if
 end stAssert
 
--- A SKIP is a first-class outcome here, not a silent gap: it counts, it names
+-- A SKIP is a first-class outcome, not a silent gap: it counts, it names
 -- itself, and it says what would make it run.
 command stSkip pName, pReason
    add 1 to sTotal
@@ -596,8 +627,8 @@ command stSection pTitle
    put return & "== " & pTitle & " ==" & return after sResultText
 end stSection
 
--- A section that threw is a FAIL, never a skip: a skip means "this member is not
--- here", and something that blew up very much is.
+-- A section that threw is a FAIL, never a skip: a skip means "this piece is
+-- not here", and something that blew up very much is.
 command stSectionFailed pWhich, pError
    stAssert pWhich & " section ran to completion", false
    stNote "it raised:" && pError
@@ -612,18 +643,51 @@ command stShow
    put sResultText into field "stResults"
    put sPassed & " passed, " & sFailed & " failed, " & sSkipped & " skipped, " \
          & sTotal & " total" into field "stSummary"
-   if sRunning is not "true" then
+   if sStRunDone is "true" then
       if sFailed is 0 then
-         set the foregroundColor of field "stSummary" to "20,120,40"
+         set the foregroundColor of field "stSummary" to "23,128,63"
       else
-         set the foregroundColor of field "stSummary" to "170,30,30"
+         set the foregroundColor of field "stSummary" to "176,58,46"
       end if
    end if
 end stShow
 
+-- paint the results list: red FAIL, green PASS, amber SKIP, muted the rest
+command stPaint
+   local tN, tI, tLine, tErr
+   put the number of lines of field "stResults" into tN
+   lock screen
+   try
+      repeat with tI = 1 to tN
+         put line tI of field "stResults" into tLine
+         if tLine begins with "FAIL" then
+            set the foregroundColor of line tI of field "stResults" to "176,58,46"
+         else if tLine begins with "PASS" then
+            set the foregroundColor of line tI of field "stResults" to "23,128,63"
+         else if tLine begins with "SKIP" then
+            set the foregroundColor of line tI of field "stResults" to "150,110,40"
+         else
+            set the foregroundColor of line tI of field "stResults" to "138,146,158"
+         end if
+      end repeat
+   catch tErr
+   end try
+   set the vScroll of field "stResults" to 0
+   unlock screen
+end stPaint
+
+-- The run's one epilogue: mark done, render, paint. Synchronous harnesses
+-- call this at the end of stRun; async ones from the tick that ends the run.
+command stReportDone
+   put "true" into sStRunDone
+   stShow
+   stPaint
+end stReportDone
+
 command stCopyResults
-   -- The whole point of the button: the maintainer pastes the run back verbatim
-   -- into the OXT-pass record, so nobody has to retype a result.
+   -- The whole point of the button: the maintainer pastes the run back
+   -- verbatim into the OXT-pass record, so nobody has to retype a result.
+   local tError
    try
       set the clipboardData["text"] to sResultText
       answer "Results copied to the clipboard."
@@ -632,16 +696,47 @@ command stCopyResults
    end try
 end stCopyResults
 
+on closeStack
+   stCleanup
+end closeStack
+
+on mouseUp
+   if the short name of the target is "stRerun" then
+      stCleanup
+      stRun
+   else if the short name of the target is "stCopy" then
+      stCopyResults
+   else
+      pass mouseUp
+   end if
+end mouseUp
+-- ==== SUITE HARNESS SCAFFOLD v1 END ====
+
+-- ---- lifecycle ---------------------------------------------------------------
+on openStack
+   stBuild
+   stRun
+end openStack
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- ---- the run -----------------------------------------------------------------
 command stRun
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
-   put 0 into sTotal
-   put 0 into sPassed
-   put 0 into sFailed
-   put 0 into sSkipped
-   put empty into sResultText
+   stResetCounters
    put "true" into sRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
@@ -1876,7 +1971,7 @@ command stFinish
    stNote "headline paths and the cross-member seams. Each member has a deeper"
    stNote "harness that still needs its own engine run. Paste these numbers back."
    put empty into sRunning
-   stShow
+   stReportDone
 end stFinish
 
 -- Everything this file opened gets closed, in dependency order, each guarded so
@@ -1930,6 +2025,11 @@ end stTeardown
 -- Idempotent hard teardown for closeStack and for Re-run. It must survive being
 -- called when a member was never present, when the run never started, and twice
 -- in a row - so every call is guarded and no assertion is recorded.
+-- There is NO deterministic unload hook in this family: a leaked libtorrent
+-- session would block the next run outright (one session per process), and a
+-- leaked ENet host or WebRTC peer would hold a UDP port and its threads. So
+-- teardown (called from the scaffold's closeStack and Re-run) is
+-- unconditional and idempotent here.
 command stCleanup
    put empty into sRunning
    put "skip" into sPhaseEn
@@ -2090,7 +2190,7 @@ command stRunMemberHarnesses
    if sHaveCoin and sHaveCoinScript then
       try
          cx1stRun
-         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal
+         stMergeCounted "CoinXT", cx1sResultText, cx1sPassed, cx1sFailed, cx1sTotal, cx1sSkipped
       catch tError
          stSectionFailed "CoinXT deep self-test", tError
       end try
@@ -2105,7 +2205,7 @@ command stRunMemberHarnesses
    if sHaveTorrent then
       try
          bt1stRun
-         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal
+         stMergeCounted "TorrentXT", bt1sResultText, bt1sPassed, bt1sFailed, bt1sTotal, bt1sSkipped
       catch tError
          stSectionFailed "TorrentXT deep self-test", tError
       end try
@@ -2116,7 +2216,7 @@ command stRunMemberHarnesses
    if sHaveEnet then
       try
          en1stRun
-         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal
+         stMergeCounted "ENetXT (sync half)", en1sResultText, en1sPassed, en1sFailed, en1sTotal, en1sSkipped
       catch tError
          stSectionFailed "ENetXT deep self-test", tError
       end try
@@ -2127,7 +2227,7 @@ command stRunMemberHarnesses
    if sHaveDc then
       try
          dc1stRun
-         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal
+         stMergeCounted "DataChannelXT (sync half)", dc1sResultText, dc1sPassed, dc1sFailed, dc1sTotal, dc1sSkipped
       catch tError
          stSectionFailed "DataChannelXT deep self-test", tError
       end try
@@ -2303,7 +2403,7 @@ end stMergeReturned
 -- For a harness that accumulates into script locals (CoinXT, TorrentXT,
 -- ENetXT, DataChannelXT). Its counters are read directly - they are locals of
 -- THIS script, since the whole thing compiles as one unit.
-command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
+command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal, pSkipped
    stSection pMember & ": its own full self-test"
    -- VALIDATE BEFORE ADDING, and the reason is an engine failure this cost.
    -- These three lines used to be a bare `add pPassed to sPassed`, on the
@@ -2335,7 +2435,10 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
    -- an `if ... \` reads to them as a handler-level statement and every `end if`
    -- after it looks unbalanced. Keeping the opener on one physical line costs
    -- nothing and keeps the file parsable by the strictest reader of it.
-   put (pPassed is a number and pFailed is a number and pTotal is a number) into tOk
+   if pSkipped is empty then
+      put 0 into pSkipped
+   end if
+   put (pPassed is a number and pFailed is a number and pTotal is a number and pSkipped is a number) into tOk
    if tOk is false then
       stAssert pMember & " deep self-test reported numeric counters", false
       stNote "Got passed=[" & pPassed & "] failed=[" & pFailed & \
@@ -2347,6 +2450,7 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal
       add pPassed to sPassed
       add pFailed to sFailed
       add pTotal to sTotal
+      add pSkipped to sSkipped
       stAssert pMember & " deep self-test had zero failures", pFailed is 0
       stNote pPassed && "passed," && pFailed && "failed of" && pTotal && \
             "checks, folded into the totals above"
@@ -8128,9 +8232,18 @@ end ox1testZeroSeed
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-command cx1stAssert pName, pPass
+command cx1stResetCounters
+   put 0 into cx1sTotal
+   put 0 into cx1sPassed
+   put 0 into cx1sFailed
+   put 0 into cx1sSkipped
+   put empty into cx1sResultText
+   put empty into cx1sStRunDone
+end cx1stResetCounters
+
+command cx1stAssert pName, pOk
    add 1 to cx1sTotal
-   if pPass then
+   if pOk then
       add 1 to cx1sPassed
       put "PASS  " & pName & return after cx1sResultText
    else
@@ -8139,9 +8252,21 @@ command cx1stAssert pName, pPass
    end if
 end cx1stAssert
 
+command cx1stSkip pName, pReason
+   add 1 to cx1sTotal
+   add 1 to cx1sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after cx1sResultText
+end cx1stSkip
+
 command cx1stSection pTitle
    put return & "== " & pTitle & " ==" & return after cx1sResultText
 end cx1stSection
+
+command cx1stSectionFailed pWhich, pError
+   cx1stAssert pWhich & " section ran to completion", false
+   cx1stNote "it raised:" && pError
+   cx1stNote "the other sections still ran; this one is a defect to report"
+end cx1stSectionFailed
 
 command cx1stNote pText
    put "      " & pText & return after cx1sResultText
@@ -8153,18 +8278,23 @@ end cx1stNote
 command cx1stShow
 end cx1stShow
 
-command cx1stSectionFailed pTitle, pError
-   add 1 to cx1sTotal
-   add 1 to cx1sFailed
-   put "FAIL  " & pTitle & " threw: " & pError & return after cx1sResultText
-end cx1stSectionFailed
+-- GENERATED: cx1stPaint drove this harness's own window.
+-- The suite owns the UI and reads the member's log directly,
+-- so there is nothing left for it to repaint.
+command cx1stPaint
+end cx1stPaint
+
+command cx1stReportDone
+   put "true" into cx1sStRunDone
+   cx1stShow
+   cx1stPaint
+end cx1stReportDone
+
+command cx1stCleanup
+end cx1stCleanup
 
 command cx1stRun
-   put 0 into cx1sTotal
-   put 0 into cx1sPassed
-   put 0 into cx1sFailed
-   put empty into cx1sResultText
-   put "false" into cx1sDone
+   cx1stResetCounters
    -- Byte-exact compares, and hex strings that must not fold case.
    set the caseSensitive to true
 
@@ -8205,8 +8335,7 @@ command cx1stRun
    cx1stNote "headless KAT run are the same claim at two different layers."
    cx1stNote "Phase 4 is the section to read first if anything failed: it is the"
    cx1stNote "only surface where a wrong answer still looks like a right one."
-   put "true" into cx1sDone
-   cx1stShow
+   cx1stReportDone
 end cx1stRun
 
 command cx1stRunAbi
@@ -8215,9 +8344,9 @@ command cx1stRunAbi
    try
       put "true" into cx1tOK
       cxCheckABI
-   catch tError
+   catch cx1tError
       put "false" into cx1tOK
-      cx1stNote "cxCheckABI threw: " & tError
+      cx1stNote "cxCheckABI threw: " & cx1tError
    end try
    cx1stAssert "cxCheckABI passes against the shipped binary", cx1tOK is "true"
    -- The probe that actually prints a value, and the first exercise of the
@@ -8245,8 +8374,8 @@ command cx1stRunLengths
       cx1stAssert "keccak digest length matches its accessor", the number of bytes of cxKeccak256(cx1stText("abc")) is cxKeccak256Len()
       cx1stAssert "sha512 digest length matches its accessor", the number of bytes of cxSha512(cx1stText("abc")) is cxSha512Len()
       cx1stAssert "ripemd digest length matches its accessor", the number of bytes of cxRipemd160(cx1stText("abc")) is cxRipemd160Len()
-   catch tError
-      cx1stSectionFailed "length accessors", tError
+   catch cx1tError
+      cx1stSectionFailed "length accessors", cx1tError
    end try
 end cx1stRunLengths
 
@@ -8261,8 +8390,8 @@ command cx1stRunKeccak
       cx1stAssert "cxKeccak256 of the empty input", cx1stHex(cxKeccak256(cx1stText(""))) is cx1kKeccakEmpty
       cx1stAssert "cxKeccak256 of abc", cx1stHex(cxKeccak256(cx1stText("abc"))) is cx1kKeccakAbc
       cx1stAssert "cxKeccak256 is deterministic", cx1stHex(cxKeccak256(cx1stText("abc"))) is cx1stHex(cxKeccak256(cx1stText("abc")))
-   catch tError
-      cx1stSectionFailed "Keccak-256", tError
+   catch cx1tError
+      cx1stSectionFailed "Keccak-256", cx1tError
    end try
 end cx1stRunKeccak
 
@@ -8278,8 +8407,8 @@ command cx1stRunSha3
       -- address. Assert the difference explicitly, in both directions.
       cx1stAssert "cxSha3_256 is NOT aliased to cxKeccak256", cx1stHex(cxSha3_256(cx1stText("abc"))) is not cx1stHex(cxKeccak256(cx1stText("abc")))
       cx1stAssert "cxKeccak256 is NOT aliased to cxSha3_256", cx1stHex(cxKeccak256(cx1stText(""))) is not cx1stHex(cxSha3_256(cx1stText("")))
-   catch tError
-      cx1stSectionFailed "SHA3-256", tError
+   catch cx1tError
+      cx1stSectionFailed "SHA3-256", cx1tError
    end try
 end cx1stRunSha3
 
@@ -8290,8 +8419,8 @@ command cx1stRunSha2
       cx1stAssert "cxSha256 of abc", cx1stHex(cxSha256(cx1stText("abc"))) is cx1kSha256Abc
       cx1stAssert "cxSha512 of the empty input", cx1stHex(cxSha512(cx1stText(""))) is cx1kSha512Empty
       cx1stAssert "cxSha512 of abc", cx1stHex(cxSha512(cx1stText("abc"))) is cx1kSha512Abc
-   catch tError
-      cx1stSectionFailed "SHA-2", tError
+   catch cx1tError
+      cx1stSectionFailed "SHA-2", cx1tError
    end try
 end cx1stRunSha2
 
@@ -8304,8 +8433,8 @@ command cx1stRunRipemd
       cx1stAssert "cxRipemd160 of message digest", cx1stHex(cxRipemd160(cx1stText("message digest"))) is cx1kRipeMsgDigest
       cx1stNote "No second opinion exists for these: OpenSSL 3 moved RIPEMD-160 to"
       cx1stNote "the legacy provider, so the published vectors stand alone."
-   catch tError
-      cx1stSectionFailed "RIPEMD-160", tError
+   catch cx1tError
+      cx1stSectionFailed "RIPEMD-160", cx1tError
    end try
 end cx1stRunRipemd
 
@@ -8328,8 +8457,8 @@ command cx1stRunHmac
       cx1stAssert "HMAC-SHA512 case 2", cx1stHex(cxHmacSha512(cx1tKey2, cx1tMsg2)) is cx1kHmac2Sha512
       -- A MAC must depend on its key. Same message, different key, different tag.
       cx1stAssert "HMAC-SHA256 depends on the key", cx1stHex(cxHmacSha256(cx1tKey1, cx1tMsg1)) is not cx1stHex(cxHmacSha256(cx1tKey2, cx1tMsg1))
-   catch tError
-      cx1stSectionFailed "HMAC", tError
+   catch cx1tError
+      cx1stSectionFailed "HMAC", cx1tError
    end try
 end cx1stRunHmac
 
@@ -8346,8 +8475,8 @@ command cx1stRunPbkdf2
       put cxPbkdf2HmacSha512(cx1stText(cx1kBip39Mnemonic), cx1stText(cx1kBip39Salt), 2048, 20) into cx1tShort
       cx1stAssert "a 20-byte request returns 20 bytes", the number of bytes of cx1tShort is 20
       cx1stAssert "the short output prefixes the long one", cx1stHex(cx1tShort) is char 1 to 40 of cx1kBip39Seed
-   catch tError
-      cx1stSectionFailed "PBKDF2", tError
+   catch cx1tError
+      cx1stSectionFailed "PBKDF2", cx1tError
    end try
 end cx1stRunPbkdf2
 
@@ -8362,8 +8491,8 @@ command cx1stRunEmptyInputs
       -- An empty KEY and an empty MESSAGE are separate marshalling slots.
       cx1stAssert "cxHmacSha256 with an empty key", the number of bytes of cxHmacSha256(cx1stText(""), cx1stText("abc")) is 32
       cx1stAssert "cxHmacSha256 with an empty message", the number of bytes of cxHmacSha256(cx1stText("abc"), cx1stText("")) is 32
-   catch tError
-      cx1stSectionFailed "empty inputs", tError
+   catch cx1tError
+      cx1stSectionFailed "empty inputs", cx1tError
    end try
 end cx1stRunEmptyInputs
 
@@ -8384,8 +8513,8 @@ command cx1stRunIndependence
       -- only if the vector were wrong too, but this catches a buffer that never
       -- gets the caller's bytes at all.
       cx1stAssert "one changed input byte changes the digest", cx1stHex(cxKeccak256(cx1stText("abc"))) is not cx1stHex(cxKeccak256(cx1stText("abd")))
-   catch tError
-      cx1stSectionFailed "independence", tError
+   catch cx1tError
+      cx1stSectionFailed "independence", cx1tError
    end try
 end cx1stRunIndependence
 
@@ -8408,8 +8537,8 @@ command cx1stRunFailClosed
          put "true" into cx1tThrew
       end try
       cx1stAssert "a zero-length output request is refused", cx1tThrew is "true"
-   catch tError
-      cx1stSectionFailed "fail closed", tError
+   catch cx1tError
+      cx1stSectionFailed "fail closed", cx1tError
    end try
 end cx1stRunFailClosed
 
@@ -8451,8 +8580,8 @@ command cx1stRunCurveKeys
       cx1stAssert "a zero tweak is refused on the private path", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(0, 32))
       cx1stAssert "a zero tweak is refused on the public path", cx1stThrows2("cxPubkeyTweakAdd", cx1tPubC, cx1stRepeatByte(0, 32))
       cx1stAssert "a wrong-length tweak is refused", cx1stThrows2("cxSeckeyTweakAdd", cx1tSk, cx1stRepeatByte(1, 31))
-   catch tError
-      cx1stSectionFailed "secp256k1 keys", tError
+   catch cx1tError
+      cx1stSectionFailed "secp256k1 keys", cx1tError
    end try
 end cx1stRunCurveKeys
 
@@ -8472,8 +8601,8 @@ command cx1stRunCurveSign
       -- that blinding cancels, and this is the check that says so from script.
       put cxSign(cx1tSk, cx1tDigest) into cx1tAgain
       cx1stAssert "signing twice gives the same signature", cx1stHex(cx1tAgain) is cx1stHex(cx1tSig)
-   catch tError
-      cx1stSectionFailed "ECDSA signing", tError
+   catch cx1tError
+      cx1stSectionFailed "ECDSA signing", cx1tError
    end try
 end cx1stRunCurveSign
 
@@ -8496,8 +8625,8 @@ command cx1stRunCurveVerify
       cx1stAssert "cxVerify rejects a wrong digest", cxVerify(cx1tPubC, cxSha256(cx1stText("not the message")), cx1tSig) is false
       put cxPublicKey(cx1stSeckeyTwo(), true) into cx1tOtherPub
       cx1stAssert "cxVerify rejects the wrong public key", cxVerify(cx1tOtherPub, cx1tDigest, cx1tSig) is false
-   catch tError
-      cx1stSectionFailed "ECDSA verification", tError
+   catch cx1tError
+      cx1stSectionFailed "ECDSA verification", cx1tError
    end try
 end cx1stRunCurveVerify
 
@@ -8518,8 +8647,8 @@ command cx1stRunCurveRecover
       -- key, so comparing against the expected key is the real check.
       cx1stAssert "cxRecover returns the signing public key", cx1stHex(cx1tRec) is cx1stHex(cx1tPubU)
       cx1stAssert "and that key is the published G", cx1stHex(cx1tRec) is cx1kPubOneUncompressed
-   catch tError
-      cx1stSectionFailed "ecrecover", tError
+   catch cx1tError
+      cx1stSectionFailed "ecrecover", cx1tError
    end try
 end cx1stRunCurveRecover
 
@@ -8540,8 +8669,8 @@ command cx1stRunCurveEcdh
       -- public key of the other side. That makes this leg checkable against a
       -- value already pinned above rather than against a new magic constant.
       cx1stAssert "1 * 2G is 2G", cx1stHex(cx1tShared1) is cx1stHex(cxPublicKey(cx1tB, false))
-   catch tError
-      cx1stSectionFailed "ECDH", tError
+   catch cx1tError
+      cx1stSectionFailed "ECDH", cx1tError
    end try
 end cx1stRunCurveEcdh
 
@@ -8603,8 +8732,8 @@ command cx1stRunCurveFailClosed
          put "true" into cx1tThrew
       end try
       cx1stAssert "cxVerify throws on a malformed public key (it does not answer false)", cx1tThrew is "true"
-   catch tError
-      cx1stSectionFailed "the curve fails closed", tError
+   catch cx1tError
+      cx1stSectionFailed "the curve fails closed", cx1tError
    end try
 end cx1stRunCurveFailClosed
 
@@ -8616,8 +8745,8 @@ command cx1stRunHex
       cx1stAssert "cxHexEncode of the empty input", cxHexEncode(cxHexDecode("")) is ""
       cx1stAssert "an odd-length hex string is refused", cx1stThrows("cxHexDecode", "abc")
       cx1stAssert "a non-hex character is refused", cx1stThrows("cxHexDecode", "zz")
-   catch tError
-      cx1stSectionFailed "hex", tError
+   catch cx1tError
+      cx1stSectionFailed "hex", cx1tError
    end try
 end cx1stRunHex
 
@@ -8643,8 +8772,8 @@ command cx1stRunBase58
       put numToByte(0) & numToByte(0) & cxHexDecode("deadbeef") into cx1tPadded
       cx1stAssert "two leading zero bytes give two leading ones", char 1 to 2 of cxBase58CheckEncode(cx1tPadded) is "11"
       cx1stAssert "the round trip preserves them", cxHexEncode(cxBase58CheckDecode(cxBase58CheckEncode(cx1tPadded))) is "0000deadbeef"
-   catch tError
-      cx1stSectionFailed "Base58Check", tError
+   catch cx1tError
+      cx1stSectionFailed "Base58Check", cx1tError
    end try
 end cx1stRunBase58
 
@@ -8660,8 +8789,8 @@ command cx1stRunBech32
       cx1stAssert "an empty human-readable part is refused", cx1stThrows("cxBech32DecodeValues", "1pzry9x0s0muk")
       cx1stAssert "a checksum computed over an uppercase HRP is refused", cx1stThrows("cxBech32DecodeValues", "A1G7SGD8")
       cx1stAssert "a data character outside the charset is refused", cx1stThrows("cxBech32DecodeValues", "x1b4n0q5v")
-   catch tError
-      cx1stSectionFailed "bech32", tError
+   catch cx1tError
+      cx1stSectionFailed "bech32", cx1tError
    end try
 end cx1stRunBech32
 
@@ -8691,8 +8820,8 @@ command cx1stRunAddresses
       cx1stAssert "a mainnet address is refused under the testnet HRP", cx1stThrows2("cxSegwitAddressDecode", "tb", cx1kP2wpkhOfG)
       -- THE rule BIP-350 exists for.
       cx1stAssert "a version 0 address with a bech32m checksum is refused", cx1stThrows2("cxSegwitAddressDecode", "bc", cx1kSegwitV0WithBech32m)
-   catch tError
-      cx1stSectionFailed "addresses", tError
+   catch cx1tError
+      cx1stSectionFailed "addresses", cx1tError
    end try
 end cx1stRunAddresses
 
@@ -8706,8 +8835,8 @@ command cx1stRunEip55
       -- would quietly retire the protection EIP-55 exists to give.
       cx1stAssert "an all-lowercase address is NOT reported as checksummed", cxEthAddressIsChecksummed(cx1stToLowerText(cx1kEip55A)) is false
       cx1stAssert "a wrong-length address is refused", cx1stThrows("cxEthAddressChecksum", "0xdeadbeef")
-   catch tError
-      cx1stSectionFailed "EIP-55", tError
+   catch cx1tError
+      cx1stSectionFailed "EIP-55", cx1tError
    end try
 end cx1stRunEip55
 
@@ -8729,8 +8858,8 @@ command cx1stRunRlp
       -- RLP's guarantee is one value, one encoding. A decoder that accepts a
       -- second spelling breaks every hash computed over the result.
       cx1stAssert "a single byte wrapped in a length prefix is refused", cx1stThrows("cxRlpDecode", cxHexDecode("8100"))
-   catch tError
-      cx1stSectionFailed "RLP", tError
+   catch cx1tError
+      cx1stSectionFailed "RLP", cx1tError
    end try
 end cx1stRunRlp
 
@@ -8739,7 +8868,7 @@ function cx1stThrows pHandler, pArg
    put "false" into cx1tThrew
    try
       do "get" && pHandler & "(pArg)"
-   catch tError
+   catch cx1tError
       put "true" into cx1tThrew
    end try
    return cx1tThrew is "true"
@@ -8750,7 +8879,7 @@ function cx1stThrows2 pHandler, pArgA, pArgB
    put "false" into cx1tThrew
    try
       do "get" && pHandler & "(pArgA, pArgB)"
-   catch tError
+   catch cx1tError
       put "true" into cx1tThrew
    end try
    return cx1tThrew is "true"
@@ -8851,8 +8980,8 @@ command cx1stRunBip39
       cx1stAssert "the wordlist is 2048 slots of 8 bytes", the number of bytes of cxBip39Wordlist() is 16384
       cx1stAssert "cxBip39WordlistLen agrees", cxBip39WordlistLen() is 16384
       cx1stAssert "the first word is abandon", byte 1 to 7 of cxBip39Wordlist() is "abandon"
-   catch tError
-      cx1stSectionFailed "BIP-39", tError
+   catch cx1tError
+      cx1stSectionFailed "BIP-39", cx1tError
    end try
 end cx1stRunBip39
 
@@ -8906,8 +9035,8 @@ command cx1stRunBip32
       cx1stAssert "a non-digit level is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/1e3")
       cx1stAssert "a level at or above 2^31 is refused", cx1stThrows2("cxHdDerivePath", cx1tNode, "m/2147483648")
       cx1stAssert "a too-short seed is refused", cx1stThrows("cxHdFromSeed", cx1stRepeatByte(0, 15))
-   catch tError
-      cx1stSectionFailed "BIP-32", tError
+   catch cx1tError
+      cx1stSectionFailed "BIP-32", cx1tError
    end try
 end cx1stRunBip32
 
@@ -8927,8 +9056,8 @@ command cx1stRunBip44
       cx1stAssert "the BIP-84 account xpub", cxXpub(cxHdDerivePath(cx1tMaster, cx1kAbandonBip84Account)) is cx1kAbandonBip84Xpub
       put cxHdDerivePath(cx1tMaster, cx1kAbandonEthPath) into cx1tNode
       cx1stAssert "m/44'/60'/0'/0/0 is the published Ethereum address", cxEthAddressChecksum(cxEthAddress(cx1tNode["pubkey"])) is cx1kAbandonEth
-   catch tError
-      cx1stSectionFailed "BIP-44", tError
+   catch cx1tError
+      cx1stSectionFailed "BIP-44", cx1tError
    end try
 end cx1stRunBip44
 
@@ -9033,8 +9162,8 @@ command cx1stRunTransactions
          put true into cx1tThrew
       end try
       cx1stAssert "cxBtcTxEncode refuses a witness list longer than the input count", cx1tThrew
-   catch tError
-      cx1stSectionFailed "transactions", tError
+   catch cx1tError
+      cx1stSectionFailed "transactions", cx1tError
    end try
 end cx1stRunTransactions
 
@@ -9068,8 +9197,8 @@ command cx1stRunFailOpen
       -- An uppercase HRP used to produce a MIXED-case string, which BIP-173
       -- forbids and which this library's own decoder rejects.
       cx1stAssert "an uppercase HRP is refused", cx1stThrows2("cxBech32EncodeValues", "BC", "0")
-   catch tError
-      cx1stSectionFailed "fail-closed regressions", tError
+   catch cx1tError
+      cx1stSectionFailed "fail-closed regressions", cx1tError
    end try
 end cx1stRunFailOpen
 
@@ -9087,9 +9216,18 @@ end cx1stRunFailOpen
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-command bt1stAssert pName, pPass
+command bt1stResetCounters
+   put 0 into bt1sTotal
+   put 0 into bt1sPassed
+   put 0 into bt1sFailed
+   put 0 into bt1sSkipped
+   put empty into bt1sResultText
+   put empty into bt1sStRunDone
+end bt1stResetCounters
+
+command bt1stAssert pName, pOk
    add 1 to bt1sTotal
-   if pPass then
+   if pOk then
       add 1 to bt1sPassed
       put "PASS  " & pName & return after bt1sResultText
    else
@@ -9098,13 +9236,43 @@ command bt1stAssert pName, pPass
    end if
 end bt1stAssert
 
+command bt1stSkip pName, pReason
+   add 1 to bt1sTotal
+   add 1 to bt1sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after bt1sResultText
+end bt1stSkip
+
 command bt1stSection pTitle
-   put return & "--- " & pTitle & " ---" & return after bt1sResultText
+   put return & "== " & pTitle & " ==" & return after bt1sResultText
 end bt1stSection
 
-command bt1stNote pMsg
-   put "      " & pMsg & return after bt1sResultText
+command bt1stSectionFailed pWhich, pError
+   bt1stAssert pWhich & " section ran to completion", false
+   bt1stNote "it raised:" && pError
+   bt1stNote "the other sections still ran; this one is a defect to report"
+end bt1stSectionFailed
+
+command bt1stNote pText
+   put "      " & pText & return after bt1sResultText
 end bt1stNote
+
+-- GENERATED: bt1stShow drove this harness's own window.
+-- The suite owns the UI and reads the member's log directly,
+-- so there is nothing left for it to repaint.
+command bt1stShow
+end bt1stShow
+
+-- GENERATED: bt1stPaint drove this harness's own window.
+-- The suite owns the UI and reads the member's log directly,
+-- so there is nothing left for it to repaint.
+command bt1stPaint
+end bt1stPaint
+
+command bt1stReportDone
+   put "true" into bt1sStRunDone
+   bt1stShow
+   bt1stPaint
+end bt1stReportDone
 
 function bt1stCount pList
    local bt1tN, bt1tEl
@@ -9126,10 +9294,7 @@ function bt1stListHas pList, pNeedle
 end bt1stListHas
 
 command bt1stRun
-   put 0 into bt1sTotal
-   put 0 into bt1sPassed
-   put 0 into bt1sFailed
-   put "" into bt1sResultText
+   bt1stResetCounters
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
 
@@ -9165,7 +9330,7 @@ command bt1stRun
       try
          put btStartSession() into bt1sSession
          put true into bt1tStartOk
-      catch tErr
+      catch bt1tErr
          put 0 into bt1sSession
       end try
    end if
@@ -9309,8 +9474,7 @@ command bt1stRun
       add 1 to bt1sFailed
    end try
 
-   bt1stShowSummary
-   bt1stPaint
+   bt1stReportDone
 end bt1stRun
 
 command bt1stRunTorrentChecks pTorrentData
@@ -9423,23 +9587,6 @@ command bt1stMakeContent
    put bt1tPayload into url ("binfile:" & bt1tFile)
 end bt1stMakeContent
 
-command bt1stShowSummary
-   local bt1tSummary
-   put bt1sPassed && "passed,  " & bt1sFailed && "failed   (" & bt1sTotal && "checks)" into bt1tSummary
-   set the text of field "stSummary" to bt1tSummary
-   if bt1sFailed is 0 then
-      set the foregroundColor of field "stSummary" to "0,140,70"
-   else
-      set the foregroundColor of field "stSummary" to "200,40,40"
-   end if
-end bt1stShowSummary
-
--- GENERATED: bt1stPaint drove this harness's own window.
--- The suite owns the UI and reads the member's log directly,
--- so there is nothing left for it to repaint.
-command bt1stPaint
-end bt1stPaint
-
 command bt1stCleanup
    if bt1sSession is not empty and bt1sSession is not 0 then
       if bt1sTorrent is not empty and bt1sTorrent > 0 then
@@ -9471,9 +9618,18 @@ end bt1stCleanup
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-command en1stAssert pName, pPass
+command en1stResetCounters
+   put 0 into en1sTotal
+   put 0 into en1sPassed
+   put 0 into en1sFailed
+   put 0 into en1sSkipped
+   put empty into en1sResultText
+   put empty into en1sStRunDone
+end en1stResetCounters
+
+command en1stAssert pName, pOk
    add 1 to en1sTotal
-   if pPass then
+   if pOk then
       add 1 to en1sPassed
       put "PASS  " & pName & return after en1sResultText
    else
@@ -9482,9 +9638,21 @@ command en1stAssert pName, pPass
    end if
 end en1stAssert
 
+command en1stSkip pName, pReason
+   add 1 to en1sTotal
+   add 1 to en1sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after en1sResultText
+end en1stSkip
+
 command en1stSection pTitle
    put return & "== " & pTitle & " ==" & return after en1sResultText
 end en1stSection
+
+command en1stSectionFailed pWhich, pError
+   en1stAssert pWhich & " section ran to completion", false
+   en1stNote "it raised:" && pError
+   en1stNote "the other sections still ran; this one is a defect to report"
+end en1stSectionFailed
 
 command en1stNote pText
    put "      " & pText & return after en1sResultText
@@ -9496,13 +9664,22 @@ end en1stNote
 command en1stShow
 end en1stShow
 
+-- GENERATED: en1stPaint drove this harness's own window.
+-- The suite owns the UI and reads the member's log directly,
+-- so there is nothing left for it to repaint.
+command en1stPaint
+end en1stPaint
+
+command en1stReportDone
+   put "true" into en1sStRunDone
+   en1stShow
+   en1stPaint
+end en1stReportDone
+
 command en1stRun
    local en1tPS, en1tHS, en1tBig
    local en1tAbruptHost, en1tAbruptPeer, en1tResetPeer
-   put 0 into en1sTotal
-   put 0 into en1sPassed
-   put 0 into en1sFailed
-   put empty into en1sResultText
+   en1stResetCounters
    put empty into en1sPhase
 
    en1stSection "lifecycle & diagnostics"
@@ -9699,7 +9876,11 @@ command en1stFinish
    put empty into en1sServer
    put empty into en1sClient
    put "done" into en1sPhase
-   en1stShow
+   en1stSection "summary"
+   en1stNote "A green run proves the sync surface AND a live async loopback on"
+   en1stNote "THIS machine. The two-machine LAN chat leg is the one thing it"
+   en1stNote "cannot prove - that stays the enet-lan-chat / closing-pass run."
+   en1stReportDone
 end en1stFinish
 
 command en1stCleanup
@@ -9717,7 +9898,7 @@ command en1stCleanup
    -- threw loudly at enInitialize) cannot throw a second time from en1closeStack
    try
       enDeinitialize
-   catch tErr
+   catch en1tErr
       -- extension not installed; nothing to release
    end try
 end en1stCleanup
@@ -9753,9 +9934,18 @@ end en1stRepeatByte
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
-command dc1stAssert pName, pPass
+command dc1stResetCounters
+   put 0 into dc1sTotal
+   put 0 into dc1sPassed
+   put 0 into dc1sFailed
+   put 0 into dc1sSkipped
+   put empty into dc1sResultText
+   put empty into dc1sStRunDone
+end dc1stResetCounters
+
+command dc1stAssert pName, pOk
    add 1 to dc1sTotal
-   if pPass then
+   if pOk then
       add 1 to dc1sPassed
       put "PASS  " & pName & return after dc1sResultText
    else
@@ -9764,9 +9954,21 @@ command dc1stAssert pName, pPass
    end if
 end dc1stAssert
 
+command dc1stSkip pName, pReason
+   add 1 to dc1sTotal
+   add 1 to dc1sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after dc1sResultText
+end dc1stSkip
+
 command dc1stSection pTitle
    put return & "== " & pTitle & " ==" & return after dc1sResultText
 end dc1stSection
+
+command dc1stSectionFailed pWhich, pError
+   dc1stAssert pWhich & " section ran to completion", false
+   dc1stNote "it raised:" && pError
+   dc1stNote "the other sections still ran; this one is a defect to report"
+end dc1stSectionFailed
 
 command dc1stNote pText
    put "      " & pText & return after dc1sResultText
@@ -9778,12 +9980,21 @@ end dc1stNote
 command dc1stShow
 end dc1stShow
 
+-- GENERATED: dc1stPaint drove this harness's own window.
+-- The suite owns the UI and reads the member's log directly,
+-- so there is nothing left for it to repaint.
+command dc1stPaint
+end dc1stPaint
+
+command dc1stReportDone
+   put "true" into dc1sStRunDone
+   dc1stShow
+   dc1stPaint
+end dc1stReportDone
+
 command dc1stRun
    local dc1tPair
-   put 0 into dc1sTotal
-   put 0 into dc1sPassed
-   put 0 into dc1sFailed
-   put empty into dc1sResultText
+   dc1stResetCounters
    put empty into dc1sPhase
 
    dc1stSection "lifecycle & diagnostics"
@@ -10001,7 +10212,11 @@ command dc1stFinish
    put empty into dc1sPeerA
    put empty into dc1sPeerB
    put "done" into dc1sPhase
-   dc1stShow
+   dc1stSection "summary"
+   dc1stNote "A green run proves the stale-handle surface AND a live in-process"
+   dc1stNote "loopback (ICE/DTLS/SCTP) on THIS machine. Browser interop and the"
+   dc1stNote "two-machine DHT-signaled path stay the datachannel demos' runs."
+   dc1stReportDone
 end dc1stFinish
 
 command dc1stCleanup
@@ -10017,8 +10232,15 @@ command dc1stCleanup
    -- BARE, not dcCleanup(). A zero-argument call in STATEMENT position parses
    -- as a command taking `()` as its argument, and `()` is not an expression,
    -- so it is a compile error. In EXPRESSION position (the two dc1stAssert lines
-   -- above) the parenthesised form is correct and required.
-   dcCleanup
+   -- above) the parenthesised form is correct and required. Try-guarded the
+   -- way enet's harness guards enDeinitialize: closing the stack with the
+   -- extension absent must not throw a second error out of dc1closeStack.
+   local dc1tCleanupErr
+   try
+      dcCleanup
+   catch dc1tCleanupErr
+      -- extension not installed; nothing to release
+   end try
 end dc1stCleanup
 
 function dc1stRepeatByte pCode, pCount

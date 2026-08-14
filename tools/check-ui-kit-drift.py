@@ -9,7 +9,7 @@ That is the same shape as the per-member checker copies, and it fails the
 same way the checkers once did: a fix applied to one copy and not the others.
 check-checker-drift.py is the precedent; this gate is that idea for the kit.
 
-Three failure modes, all fatal:
+Four failure modes, all fatal:
   - a registered adopter whose embedded block differs from the master
     (drift: the look was patched in place instead of in the master);
   - a file that carries the BEGIN marker but is not registered below
@@ -17,7 +17,12 @@ Three failure modes, all fatal:
     HERE in the same commit);
   - a registered adopter with no marker (the kit was dropped or the file
     moved, and the registry would otherwise rot into a list of exemptions
-    nobody re-reads - the coverage-gate lesson).
+    nobody re-reads - the coverage-gate lesson);
+  - a stack that BUILDS A WINDOW (it sizes a stack or calls uiChrome) but
+    neither adopts the kit nor carries a written exemption below. This is
+    what makes "every demo is a kit adopter" a property of the tree rather
+    than of one cleanup pass - the fleet was unified once (2026-08-14) and
+    without this check the next demo would fork the look again.
 """
 
 import glob
@@ -32,14 +37,48 @@ MASTER = os.path.join("tools", "ui-kit.livecodescript")
 # Adopters, repo-relative. Adding a demo to the kit means carrying the block
 # AND adding it here, in the same commit.
 ADOPTERS = [
+    "start-here.livecodescript",
     os.path.join("coinxt", "examples", "coinxt-demo.livecodescript"),
+    os.path.join("datachannelxt", "examples", "datachannel-dht-chat.livecodescript"),
+    os.path.join("datachannelxt", "examples", "datachannel-loopback.livecodescript"),
+    os.path.join("enetxt", "examples", "enet-lan-chat.livecodescript"),
+    os.path.join("onionxt", "examples", "onionxt-demo.livecodescript"),
+    os.path.join("onionxt", "examples", "onion-httpd", "spike.livecodescript"),
     os.path.join("riptide", "examples", "riptide-social.livecodescript"),
+    os.path.join("sodiumxt", "examples", "sodium-demo.livecodescript"),
+    os.path.join("torrentxt", "examples", "torrent-client.livecodescript"),
+    os.path.join("torrentxt", "examples", "torrent-dht-channels.livecodescript"),
+    os.path.join("torrentxt", "examples", "torrent-quickshare.livecodescript"),
+    os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
+    os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
 ]
 
-BEGIN = ("-- ==== SUITE UI KIT v1 BEGIN (verbatim copy; master: "
+BEGIN = ("-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: "
          "tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====")
-END = "-- ==== SUITE UI KIT v1 END ===="
+END = "-- ==== SUITE UI KIT v2 END ===="
+
+# Window-building stacks that legitimately do NOT carry the kit, each with
+# the reason a reader needs. A stale entry (file gone, or it adopted after
+# all) fails the gate, so this cannot rot into folklore.
+EXEMPT = {
+    os.path.join("enetxt", "tests", "enet-selftest.livecodescript"):
+        "carries the harness scaffold block instead (its own drift gate)",
+    os.path.join("datachannelxt", "tests", "datachannel-selftest.livecodescript"):
+        "carries the harness scaffold block instead (its own drift gate)",
+    os.path.join("torrentxt", "tests", "torrent-selftest.livecodescript"):
+        "carries the harness scaffold block instead (its own drift gate)",
+    os.path.join("coinxt", "tests", "coin-selftest.livecodescript"):
+        "carries the harness scaffold block instead (its own drift gate)",
+    os.path.join("tests", "suite-selftest.core.livecodescript"):
+        "carries the harness scaffold block instead (its own drift gate)",
+}
+
+# The two spellings that mean "this file builds a window".
+import re
+SIZES_RE = re.compile(
+    r'(?m)^\s*(?:set\s+the\s+(?:width|height)\s+of\s+this\s+stack\s+to'
+    r'|uiChrome\s+")')
 
 
 def extract(path):
@@ -65,17 +104,59 @@ def main():
         return 1
 
     # every stack that CARRIES the marker must be registered - member examples
-    # and the suite-level stacks in root tests/ alike
+    # (subdirectories included), app sources, and the suite-level stacks in
+    # root tests/ alike. Generated files (the onionxt standalones, the folded
+    # suite harness) inherit their source part's block and are checked at the
+    # SOURCE, so a generated carrier is skipped rather than registered - its
+    # freshness gate (build-standalone.py --check / build-suite-selftest.py
+    # --check) already pins it to the checked source.
     carriers = []
-    for pattern in ("*/examples/*.livecodescript", "tests/*.livecodescript"):
+    for pattern in ("*.livecodescript",
+                    "*/examples/*.livecodescript",
+                    "*/examples/*/*.livecodescript",
+                    "*/src/*.livecodescript",
+                    "tests/*.livecodescript"):
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
             rel = os.path.relpath(path, ROOT)
-            if BEGIN in open(path, encoding="utf-8").read():
+            text = open(path, encoding="utf-8").read()
+            if "GENERATED - do not edit" in text[:4000]:
+                continue
+            if BEGIN in text:
                 carriers.append(rel)
     for rel in carriers:
         if rel not in ADOPTERS:
             problems.append("%s carries the kit but is not in ADOPTERS - "
                             "register it here in the same commit" % rel)
+
+    # every window-building stack in the scanned set must adopt or be excused
+    for pattern in ("*.livecodescript",
+                    "*/examples/*.livecodescript",
+                    "*/examples/*/*.livecodescript",
+                    "*/src/*.livecodescript",
+                    "*/tests/*.livecodescript",
+                    "tests/*.livecodescript"):
+        for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
+            rel = os.path.relpath(path, ROOT)
+            if rel == os.path.join("tests", "suite-selftest.livecodescript"):
+                continue  # generated; its sources are checked above
+            text = open(path, encoding="utf-8").read()
+            if "GENERATED - do not edit" in text[:4000]:
+                continue
+            if not SIZES_RE.search(text):
+                continue  # no window: libraries, helpers, pure harless files
+            if rel in ADOPTERS:
+                continue
+            if rel in EXEMPT:
+                continue
+            problems.append("%s builds a window but neither adopts the kit "
+                            "nor carries an exemption - adopt it, or add it "
+                            "to EXEMPT with the reason" % rel)
+    for rel in list(EXEMPT):
+        if not os.path.exists(os.path.join(ROOT, rel)):
+            problems.append("EXEMPT entry %s no longer exists - remove it" % rel)
+        elif rel in ADOPTERS:
+            problems.append("EXEMPT entry %s is also in ADOPTERS - drop the "
+                            "exemption" % rel)
 
     checked = 0
     for rel in ADOPTERS:

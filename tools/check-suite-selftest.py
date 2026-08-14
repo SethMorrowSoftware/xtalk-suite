@@ -199,7 +199,8 @@ def main(argv):
                         "against handlers that are not loaded")
 
     # ---- 9. nothing from a member's own window survived --------------------
-    for bad in ("bt1stPaint", "cx1stShow", "en1stShow", "dc1stShow"):
+    for bad in ("bt1stShow", "bt1stPaint", "cx1stShow", "cx1stPaint",
+                "en1stShow", "en1stPaint", "dc1stShow", "dc1stPaint"):
         m = re.search(r'^command ' + bad + r'\b(.*?)^end ' + bad, src, re.S | re.M)
         if m and m.group(1).strip():
             problems.append(f"{bad} should be a no-op stub (the core owns the UI) "

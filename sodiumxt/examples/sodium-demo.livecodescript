@@ -14,14 +14,25 @@
 -- (deterministic keypairs from a passphrase), Rekey (in-session forward
 -- secrecy), About (the pitch + a one-click self-test).
 --
--- To use (requires the SodiumXT extension installed so org.openxtalk.library
--- .sodium is loaded): open as a script-only stack, OR paste this as a stack's
--- script and `send "preOpenStack" to <that stack>`.
+-- HOW TO USE (requires the SodiumXT extension installed so org.openxtalk
+-- .library.sodium is loaded): open as a script-only stack, OR paste this as a
+-- stack's script and `send "preOpenStack" to <that stack>`.
 --
 -- Conventions: bytes cross as Data (textEncode/textDecode at the boundary);
 -- functions return a value, commands report; out-params pass a variable. The
 -- sx* handlers throw on auth failure, so the demo wraps those in try/catch.
--- Verified statically (tools/check-livecodescript.py); run in OXT to confirm.
+--
+-- HONESTY (the suite convention): the sx* surface itself is engine-proven
+-- (sxSelfTest ran 71 checks green on-engine 2026-08-12, per sodiumxt/
+-- CLAUDE.md), but this DEMO's UI was unified onto the suite kit 2026-08-14,
+-- so the stack as a whole is verified statically and needs an OXT re-pass.
+--
+-- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
+-- byte-identical). Change the look in the master, never here.
+
+-- Bump when the generated UI changes so a saved stack rebuilds its controls.
+constant kSdUiVersion = "sodium-kit2-1"
 
 local sTab          -- active tab key: enc | key | sign | hash | about
 local sEncBlob      -- last sealed base64 blob (Secret Key tab)
@@ -38,101 +49,408 @@ local sTPass        -- About self-test: passing checks
 local sTFail        -- About self-test: failing checks
 local sTLog         -- About self-test: running transcript
 
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v2 END ====
+
 on preOpenStack
    buildUI
    showTab "enc"
 end preOpenStack
 
+on closeStack
+   -- Deliberately a no-op: nothing persists between handlers here. The only
+   -- handles this demo ever opens are secretstreams (Rekey tab, About
+   -- self-test), and every one is freed inline on the same click - on the
+   -- error paths too, now - so there is nothing left to release at close.
+end closeStack
+
 -- ==========================================================================
--- Palette. Single RGB source of truth (single-line ifs are checker-safe).
+-- Palette. Kept as a function (its ~40 call sites survive), but every name
+-- now maps onto the kit's tokens, so the whole stack recolors from the ONE
+-- carried palette above (single-line ifs are checker-safe).
 -- ==========================================================================
 
 private function clr pName
-   if pName is "headerBg" then return "26,32,53"
-   if pName is "headerText" then return "237,240,247"
-   if pName is "headerSub" then return "150,160,190"
-   if pName is "appBg" then return "239,241,246"
-   if pName is "panelBg" then return "255,255,255"
-   if pName is "accent" then return "63,94,251"
-   if pName is "accentText" then return "255,255,255"
-   if pName is "muted" then return "120,128,148"
-   if pName is "ink" then return "33,37,48"
-   if pName is "ok" then return "26,137,71"
-   if pName is "bad" then return "201,52,62"
-   if pName is "tabIdle" then return "214,218,228"
-   if pName is "mono" then return "244,246,250"
+   if pName is "headerBg" then return kUiAccent
+   if pName is "headerText" then return kUiAccentText
+   if pName is "headerSub" then return kUiAccentSub
+   if pName is "appBg" then return kUiBg
+   if pName is "panelBg" then return kUiCard
+   if pName is "accent" then return kUiAccent
+   if pName is "accentText" then return kUiAccentText
+   if pName is "muted" then return kUiMuted
+   if pName is "ink" then return kUiInk
+   if pName is "ok" then return kUiOk
+   if pName is "bad" then return kUiBad
+   if pName is "tabIdle" then return kUiCardLine
+   if pName is "mono" then return kUiCodeBg
    return "0,0,0"
 end clr
 
 -- ==========================================================================
--- Styled control factory. Names carry a "prefix:role" tag: the prefix is the
--- owning tab (or "ui" for chrome), so showTab can toggle a panel by visibility
--- and mouseUp can route by the role.
+-- Styled control factory, now THIN WRAPPERS over the kit builders so the ~90
+-- per-tab call sites survive unchanged while the look comes from the ONE
+-- carried block. Each wrapper keeps only the semantics the kit lacks (per-call
+-- color/style, the primary/idle button split styleTab repaints). Names carry a
+-- "prefix:role" tag: the prefix is the owning tab (or "ui" for chrome), so
+-- showTab can toggle a panel by visibility and mouseUp can route by the role.
 -- ==========================================================================
 
-private command makeRect pName, pRect, pColorName, pRound
-   create graphic pName
-   set the rectangle of graphic pName to pRect
-   set the style of graphic pName to "rectangle"
-   if pRound > 0 then
-      set the style of graphic pName to "roundrect"
-      set the roundRadius of graphic pName to pRound
-   end if
-   set the opaque of graphic pName to true
-   set the lineSize of graphic pName to 0
-   set the backgroundColor of graphic pName to clr(pColorName)
-end makeRect
-
 private command makeLabel pName, pRect, pText, pColorName, pSize, pStyle
-   create field pName
-   set the rectangle of field pName to pRect
-   set the lockText of field pName to true
-   set the showBorder of field pName to false
-   set the opaque of field pName to false
-   set the margins of field pName to 4
-   set the textFont of field pName to "Helvetica"
-   set the textSize of field pName to pSize
+   uiLabel pName, pText, pRect, pSize
    set the textStyle of field pName to pStyle
    set the foregroundColor of field pName to clr(pColorName)
-   put pText into field pName
 end makeLabel
 
 private command makeInput pName, pRect, pText
-   create field pName
-   set the rectangle of field pName to pRect
-   set the lockText of field pName to false
-   set the showBorder of field pName to true
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
-   set the backgroundColor of field pName to clr("panelBg")
-   set the textFont of field pName to "Helvetica"
-   set the textSize of field pName to 13
-   set the foregroundColor of field pName to clr("ink")
+   uiInput pName, pRect
    put pText into field pName
 end makeInput
 
 private command makeMono pName, pRect
-   create field pName
-   set the rectangle of field pName to pRect
-   set the lockText of field pName to true
-   set the showBorder of field pName to true
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
-   set the backgroundColor of field pName to clr("mono")
-   set the textFont of field pName to "Courier"
-   set the textSize of field pName to 11
-   set the foregroundColor of field pName to clr("ink")
-   set the vScrollbar of field pName to true
+   uiArea pName, pRect
 end makeMono
 
 private command makeButton pName, pRect, pLabel, pPrimary
-   create button pName
-   set the rectangle of button pName to pRect
+   uiButton pName, pLabel, pRect
+   -- Flat, script-colored chrome: the primary/idle split (and styleTab's
+   -- active-tab repaint) needs the background to actually show, which the
+   -- engine's 3D default would swallow.
    set the showName of button pName to true
-   set the label of button pName to pLabel
-   set the textFont of button pName to "Helvetica"
    set the textSize of button pName to 13
    set the textStyle of button pName to "bold"
    set the threeD of button pName to false
@@ -174,27 +492,28 @@ end shortHex
 -- ==========================================================================
 
 on buildUI
-   if there is a field "ui:title" then
+   -- Version-guarded rebuild: the old "is there a field" guard could not
+   -- tell a current UI from a stale one saved by an earlier script, so a
+   -- kit bump would silently keep the pre-kit controls forever.
+   if the uSdUiVersion of this stack is kSdUiVersion and there is a field "ui:title" then
       exit buildUI
    end if
-   set the width of this stack to 820
-   set the height of this stack to 640
-   set the name of this stack to "SodiumXT Demo"
-   set the backgroundColor of this stack to clr("appBg")
-
-   -- Header bar.
-   makeRect "ui:header", "0,0,820,64", "headerBg", 0
-   makeLabel "ui:title", "24,9,520,40", "SodiumXT", "headerText", 23, "bold"
-   makeLabel "ui:subtitle", "26,40,560,60", "modern cryptography for xTalk, made easy", "headerSub", 12, "plain"
-   makeLabel "ui:ver", "560,16,800,40", "", "headerSub", 12, "plain"
-   set the textAlign of field "ui:ver" to "right"
+   clearGeneratedUI
+   lock screen
+   -- The chrome is the kit's: stack size, ground, title band, status line
+   -- (820x640 is gated by tools/check-stack-size.py).
+   uiChrome "SodiumXT - authenticated crypto for xTalk", 820, 640
+   -- Probe the library through the ONE status line, so a stack that cannot
+   -- run says so in red, at the top, immediately (sxVersion stays inside
+   -- the try: with the extension missing the call itself throws).
    try
-      put sxVersion() into field "ui:ver"
+      uiStatus "Ready (" & sxVersion() & ").", "ok"
    catch tErr
-      put "library not loaded" into field "ui:ver"
+      uiStatus "SodiumXT NOT loaded: install org.openxtalk.library.sodium and reopen.", "bad"
    end try
 
-   -- Tab bar.
+   -- Tab bar (the demo's own mechanism; styleTab recolors from clr's
+   -- kit-token values).
    makeButton "ui:tabEncrypt", "24,76,128,104", "Secret Key", false
    makeButton "ui:tabKeys", "134,76,238,104", "Public Key", false
    makeButton "ui:tabSign", "244,76,348,104", "Signatures", false
@@ -203,9 +522,15 @@ on buildUI
    makeButton "ui:tabRoll", "574,76,678,104", "Rekey", false
    makeButton "ui:tabAbout", "684,76,788,104", "About", false
 
-   -- Content panel + footer.
-   makeRect "ui:panel", "24,112,796,604", "panelBg", 10
-   makeLabel "ui:footer", "24,612,796,638", "Backed by libsodium through the SodiumXT C shim. Every cipher here is authenticated: tampering and wrong keys are rejected.", "muted", 11, "plain"
+   -- Content card + honesty footer, both the kit's. The card is created
+   -- BEFORE the tab content so it sits behind it in z-order.
+   uiPanel "ui:panel", "24,112,796,604"
+   uiFooter \
+         "Backed by libsodium through the SodiumXT C shim. Every cipher" \
+         & " here is authenticated: tampering and wrong keys are rejected." \
+         & " The sx* surface is engine-proven (71 checks green 2026-08-12);" \
+         & " this kit UI still needs an OXT re-pass.", \
+         "24,610,796,638"
 
    buildEncTab
    buildKeyTab
@@ -214,7 +539,34 @@ on buildUI
    buildSeedTab
    buildRollTab
    buildAboutTab
+   set the uSdUiVersion of this stack to kSdUiVersion
+   unlock screen
 end buildUI
+
+-- The rebuild's clear pass: every generated control's short name carries a
+-- ":" (the "prefix:role" scheme), while the kit's own chrome (uiTitle,
+-- uiStatus, uiBand, uiFooter) has none - so the colon IS the ownership tag,
+-- and the kit controls survive to be restyled in place by uiChrome.
+private command clearGeneratedUI
+   local tI
+   lock screen
+   repeat with tI = the number of fields of this card down to 1
+      if the short name of field tI of this card contains ":" then
+         delete field tI of this card
+      end if
+   end repeat
+   repeat with tI = the number of buttons of this card down to 1
+      if the short name of button tI of this card contains ":" then
+         delete button tI of this card
+      end if
+   end repeat
+   repeat with tI = the number of graphics of this card down to 1
+      if the short name of graphic tI of this card contains ":" then
+         delete graphic tI of this card
+      end if
+   end repeat
+   unlock screen
+end clearGeneratedUI
 
 on buildEncTab
    makeLabel "enc:h", "48,126,748,154", "Passphrase-based authenticated encryption", "ink", 16, "bold"
@@ -418,10 +770,18 @@ on doEncrypt
       setStatus "enc:status", "Enter a passphrase first.", "bad"
       exit doEncrypt
    end if
-   put sxRandomBytes(16) into tSalt
-   put sxPwHash(textEncode(field "enc:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
-   put sxSecretBox(textEncode(field "enc:msg", "utf-8"), tKey) into tBox
-   put textDecode(sxBin2Base64(tSalt & tBox), "ascii") into sEncBlob
+   -- Guarded (fleet audit): with the library missing, the first sx* call
+   -- throws, and an unhandled throw here dies silently instead of landing
+   -- in this tab's status line.
+   try
+      put sxRandomBytes(16) into tSalt
+      put sxPwHash(textEncode(field "enc:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+      put sxSecretBox(textEncode(field "enc:msg", "utf-8"), tKey) into tBox
+      put textDecode(sxBin2Base64(tSalt & tBox), "ascii") into sEncBlob
+   catch tErr
+      setStatus "enc:status", "Encrypt failed:" && tErr, "bad"
+      exit doEncrypt
+   end try
    put sEncBlob into field "enc:out"
    setStatus "enc:status", "Sealed" && (the number of bytes in textEncode(field "enc:msg", "utf-8")) & "-byte message into" && (the number of bytes in (tSalt & tBox)) & " bytes. Now try Decrypt, or Flip a byte.", "ok"
 end doEncrypt
@@ -435,15 +795,18 @@ on doDecrypt
       setStatus "enc:status", "Nothing to decrypt yet - click Encrypt first.", "bad"
       exit doDecrypt
    end if
-   put sxBase642Bin(textEncode(sEncBlob, "ascii")) into tRaw
-   if the number of bytes in tRaw < 17 then
-      setStatus "enc:status", "That is not a valid sealed blob.", "bad"
-      exit doDecrypt
-   end if
-   put byte 1 to 16 of tRaw into tSalt
-   put byte 17 to -1 of tRaw into tBox
-   put sxPwHash(textEncode(field "enc:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+   -- The base64 decode and the KDF sit INSIDE the try (fleet audit): both
+   -- are sx* calls that throw with the library missing, and they used to
+   -- run before any catch existed.
    try
+      put sxBase642Bin(textEncode(sEncBlob, "ascii")) into tRaw
+      if the number of bytes in tRaw < 17 then
+         setStatus "enc:status", "That is not a valid sealed blob.", "bad"
+         exit doDecrypt
+      end if
+      put byte 1 to 16 of tRaw into tSalt
+      put byte 17 to -1 of tRaw into tBox
+      put sxPwHash(textEncode(field "enc:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
       put "Recovered: " & textDecode(sxSecretBoxOpen(tBox, tKey), "utf-8") into field "enc:out"
       setStatus "enc:status", "Decrypted and authenticated. The Poly1305 tag verified.", "ok"
    catch tErr
@@ -460,11 +823,18 @@ on doTamper
       setStatus "enc:status", "Encrypt something first, then flip a byte.", "bad"
       exit doTamper
    end if
-   put sxBase642Bin(textEncode(sEncBlob, "ascii")) into tRaw
-   put the number of bytes in tRaw into tLen
-   put 17 + (tLen - 17) div 2 into tPos
-   put numToByte(byteToNum(byte tPos of tRaw) bitXor 1) into byte tPos of tRaw
-   put textDecode(sxBin2Base64(tRaw), "ascii") into field "enc:out"
+   -- Guarded (fleet audit): the decode/re-encode pair throws with the
+   -- library missing.
+   try
+      put sxBase642Bin(textEncode(sEncBlob, "ascii")) into tRaw
+      put the number of bytes in tRaw into tLen
+      put 17 + (tLen - 17) div 2 into tPos
+      put numToByte(byteToNum(byte tPos of tRaw) bitXor 1) into byte tPos of tRaw
+      put textDecode(sxBin2Base64(tRaw), "ascii") into field "enc:out"
+   catch tErr
+      setStatus "enc:status", "Could not flip a byte:" && tErr, "bad"
+      exit doTamper
+   end try
    put field "enc:out" into sEncBlob
    setStatus "enc:status", "Flipped one ciphertext byte. Now click Decrypt - it must be rejected.", "muted"
 end doTamper
@@ -601,8 +971,14 @@ on handleHash pRole
 end handleHash
 
 on doHashText
-   put "BLAKE2b-256:" && return & textDecode(sxBin2Hex(sxHash(textEncode(field "hash:msg", "utf-8"), 32)), "ascii") into field "hash:out"
-   setStatus "hash:status", "Hashed. Change one character of the text and hash again to see a totally different digest.", "ok"
+   -- Guarded to mirror its sibling doHashFile (fleet audit): the same
+   -- missing-library throw applies to the in-memory hash.
+   try
+      put "BLAKE2b-256:" && return & textDecode(sxBin2Hex(sxHash(textEncode(field "hash:msg", "utf-8"), 32)), "ascii") into field "hash:out"
+      setStatus "hash:status", "Hashed. Change one character of the text and hash again to see a totally different digest.", "ok"
+   catch tErr
+      setStatus "hash:status", "Could not hash that text:" && tErr, "bad"
+   end try
 end doHashText
 
 on doHashFile
@@ -644,9 +1020,11 @@ on doEncFile
       exit doEncFile
    end if
    put tDest & ".tmp" into tTmp
-   put sxRandomBytes(16) into tSalt
-   put sxPwHash(textEncode(field "hash:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+   -- The salt draw and the KDF sit INSIDE the try (fleet audit): both are
+   -- sx* calls that used to run before the catch existed.
    try
+      put sxRandomBytes(16) into tSalt
+      put sxPwHash(textEncode(field "hash:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
       sxEncryptFile tSrc, tTmp, tKey
       put tSalt & url ("binfile:" & tTmp) into url ("binfile:" & tDest)
       put "Encrypted (passphrase-derived key, salt stored in the file):" & return & tSrc & return & "  ->  " & tDest into field "hash:out"
@@ -699,8 +1077,10 @@ on doDecFile
    end if
    put tDest & ".tmp" into tTmp
    put tBody into url ("binfile:" & tTmp)
-   put sxPwHash(textEncode(field "hash:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+   -- The KDF sits INSIDE the try (fleet audit): it is an sx* call that
+   -- used to run before the catch existed.
    try
+      put sxPwHash(textEncode(field "hash:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
       sxDecryptFile tTmp, tDest, tKey
       put "Decrypted and authenticated:" & return & tEnc & return & "  ->  " & tDest into field "hash:out"
       setStatus "hash:status", "Decrypted successfully - the authentication tag verified.", "ok"
@@ -747,26 +1127,33 @@ on doSeedDerive
    end if
    -- A FIXED 16-byte salt makes the derivation reproducible on purpose: the
    -- same passphrase must reach the same seed. crypto_pwhash needs 16 salt bytes.
+   -- The whole derivation is guarded (fleet audit): every line is an sx*
+   -- call that throws with the library missing, and none had a catch.
    put textEncode("SodiumXT-Demo-16", "utf-8") into tSalt
-   put sxPwHash(textEncode(field "seed:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tSeed
-   sxBoxKeypairFromSeed tSeed, tBoxPk, tBoxSk
-   sxKeyExchangeKeypairFromSeed tSeed, tKxPk, tKxSk
-   -- The NEW capability: a seed deterministically fixes the keypair. Derive it
-   -- a second time from the same seed and compare the public keys constant-time.
-   sxBoxKeypairFromSeed tSeed, tBoxPk2, tBoxSk2
-   -- One extra character in the passphrase is a completely different identity.
-   put sxPwHash(textEncode(field "seed:pass" & "!", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tSeed2
-   sxBoxKeypairFromSeed tSeed2, tTypoPk, tTypoSk
-   put "box public key:  " & shortHex(tBoxPk, 48) & return into tReport
-   put "kx  public key:  " & shortHex(tKxPk, 48) & return & return after tReport
-   if sxMemEqual(tBoxPk, tBoxPk2) then
-      put "same seed -> keypair: IDENTICAL (verified constant-time)" & return after tReport
-   else
-      put "same seed -> keypair: DIFFERENT (unexpected!)" & return after tReport
-   end if
-   put "one extra character -> " & shortHex(tTypoPk, 24) & "... (a different identity)" & return & return after tReport
-   -- Prove it is a genuine, usable keypair: seal a note to it and open it back.
-   put sxSeal(textEncode("hello, future me", "utf-8"), tBoxPk) into tSealed
+   try
+      put sxPwHash(textEncode(field "seed:pass", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tSeed
+      sxBoxKeypairFromSeed tSeed, tBoxPk, tBoxSk
+      sxKeyExchangeKeypairFromSeed tSeed, tKxPk, tKxSk
+      -- The NEW capability: a seed deterministically fixes the keypair. Derive it
+      -- a second time from the same seed and compare the public keys constant-time.
+      sxBoxKeypairFromSeed tSeed, tBoxPk2, tBoxSk2
+      -- One extra character in the passphrase is a completely different identity.
+      put sxPwHash(textEncode(field "seed:pass" & "!", "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tSeed2
+      sxBoxKeypairFromSeed tSeed2, tTypoPk, tTypoSk
+      put "box public key:  " & shortHex(tBoxPk, 48) & return into tReport
+      put "kx  public key:  " & shortHex(tKxPk, 48) & return & return after tReport
+      if sxMemEqual(tBoxPk, tBoxPk2) then
+         put "same seed -> keypair: IDENTICAL (verified constant-time)" & return after tReport
+      else
+         put "same seed -> keypair: DIFFERENT (unexpected!)" & return after tReport
+      end if
+      put "one extra character -> " & shortHex(tTypoPk, 24) & "... (a different identity)" & return & return after tReport
+      -- Prove it is a genuine, usable keypair: seal a note to it and open it back.
+      put sxSeal(textEncode("hello, future me", "utf-8"), tBoxPk) into tSealed
+   catch tErr
+      setStatus "seed:status", "Derive failed:" && tErr, "bad"
+      exit doSeedDerive
+   end try
    try
       put "real keypair: sealed a note to it and reopened it, got: " & textDecode(sxSealOpen(tSealed, tBoxPk, tBoxSk), "utf-8") after tReport
    catch tErr
@@ -800,38 +1187,65 @@ on doRollDemo
    local tCtA
    local tCtB
    local tReport
-   put sxRandomBytes(32) into tKey
-   put textEncode("", "utf-8") into tNoAd
-   -- One shared session key and header. tRecv is the up-to-date partner; tStale
-   -- copied the SAME key at the start and never rekeys (our stand-in attacker).
-   put sxSecretStreamInitPush(tKey, tHeader) into tSender
-   put sxSecretStreamInitPull(tKey, tHeader) into tRecv
-   put sxSecretStreamInitPull(tKey, tHeader) into tStale
-   put "one session key shared; two receivers start from it" & return & return into tReport
-   -- Chunk one, before any rekey: both receivers can read it.
-   put sxSecretStreamPush(tSender, textEncode(field "roll:before", "utf-8"), tNoAd, false) into tCtA
-   put "-- before the rekey --" & return after tReport
-   put "  sent:       " & field "roll:before" & return after tReport
-   put "  current rx: " & textDecode(sxSecretStreamPull(tRecv, tCtA, tNoAd, tTag), "utf-8") & return after tReport
-   put "  stale rx:   " & textDecode(sxSecretStreamPull(tStale, tCtA, tNoAd, tTag), "utf-8") & return & return after tReport
-   -- Rekey the sender and the current receiver together; the stale one does not.
-   sxSecretStreamRekey tSender
-   sxSecretStreamRekey tRecv
-   put "** sender and current receiver rekey; the stale key is left behind **" & return & return after tReport
-   -- Chunk two, after the rekey.
-   put sxSecretStreamPush(tSender, textEncode(field "roll:after", "utf-8"), tNoAd, true) into tCtB
-   put "-- after the rekey --" & return after tReport
-   put "  sent:       " & field "roll:after" & return after tReport
-   put "  current rx: " & textDecode(sxSecretStreamPull(tRecv, tCtB, tNoAd, tTag), "utf-8") & return after tReport
-   put "  stale rx:   " after tReport
+   local tFailed
+   -- Free-what-you-open (fleet audit): three secretstream handles open at
+   -- the top and used to be freed only on the straight-line path, so a
+   -- throw mid-demo leaked all three. The body now runs guarded and the
+   -- frees below run on BOTH paths.
+   put "false" into tFailed
    try
-      put textDecode(sxSecretStreamPull(tStale, tCtB, tNoAd, tTag), "utf-8") & " (unexpected - should have failed)" & return after tReport
+      put sxRandomBytes(32) into tKey
+      put textEncode("", "utf-8") into tNoAd
+      -- One shared session key and header. tRecv is the up-to-date partner; tStale
+      -- copied the SAME key at the start and never rekeys (our stand-in attacker).
+      put sxSecretStreamInitPush(tKey, tHeader) into tSender
+      put sxSecretStreamInitPull(tKey, tHeader) into tRecv
+      put sxSecretStreamInitPull(tKey, tHeader) into tStale
+      put "one session key shared; two receivers start from it" & return & return into tReport
+      -- Chunk one, before any rekey: both receivers can read it.
+      put sxSecretStreamPush(tSender, textEncode(field "roll:before", "utf-8"), tNoAd, false) into tCtA
+      put "-- before the rekey --" & return after tReport
+      put "  sent:       " & field "roll:before" & return after tReport
+      put "  current rx: " & textDecode(sxSecretStreamPull(tRecv, tCtA, tNoAd, tTag), "utf-8") & return after tReport
+      put "  stale rx:   " & textDecode(sxSecretStreamPull(tStale, tCtA, tNoAd, tTag), "utf-8") & return & return after tReport
+      -- Rekey the sender and the current receiver together; the stale one does not.
+      sxSecretStreamRekey tSender
+      sxSecretStreamRekey tRecv
+      put "** sender and current receiver rekey; the stale key is left behind **" & return & return after tReport
+      -- Chunk two, after the rekey.
+      put sxSecretStreamPush(tSender, textEncode(field "roll:after", "utf-8"), tNoAd, true) into tCtB
+      put "-- after the rekey --" & return after tReport
+      put "  sent:       " & field "roll:after" & return after tReport
+      put "  current rx: " & textDecode(sxSecretStreamPull(tRecv, tCtB, tNoAd, tTag), "utf-8") & return after tReport
+      put "  stale rx:   " after tReport
+      try
+         put textDecode(sxSecretStreamPull(tStale, tCtB, tNoAd, tTag), "utf-8") & " (unexpected - should have failed)" & return after tReport
+      catch tErr
+         put "REJECTED - the old key cannot read past a rekey (forward secrecy)" & return after tReport
+      end try
    catch tErr
-      put "REJECTED - the old key cannot read past a rekey (forward secrecy)" & return after tReport
+      setStatus "roll:status", "Demo failed:" && tErr, "bad"
+      put "true" into tFailed
    end try
-   sxFreeStream tSender
-   sxFreeStream tRecv
-   sxFreeStream tStale
+   -- Free only what was actually opened (a throw at init leaves the later
+   -- handles empty), and guard the frees themselves: with the library
+   -- missing they would throw again out of the error path.
+   try
+      if tSender is not empty then
+         sxFreeStream tSender
+      end if
+      if tRecv is not empty then
+         sxFreeStream tRecv
+      end if
+      if tStale is not empty then
+         sxFreeStream tStale
+      end if
+   catch tErr
+      -- the library is gone; there is nothing left to free
+   end try
+   if tFailed is "true" then
+      exit doRollDemo
+   end if
    put tReport into field "roll:out"
    setStatus "roll:status", "The current receiver read both messages; the stale-key receiver read only the first. A rekey locks the old key out of everything that follows.", "ok"
 end doRollDemo
@@ -864,73 +1278,104 @@ on doSelfTest
    local tRkOk
    put 0 into sTPass
    put 0 into sTFail
-   put "Running checks against" && sxVersion() & return & return into sTLog
-
-   -- secretbox round trip, then a wrong key must be rejected
-   put sxRandomBytes(32) into tKey
-   put sxSecretBox(textEncode("hello", "utf-8"), tKey) into tBox
-   checkInto (textDecode(sxSecretBoxOpen(tBox, tKey), "utf-8") is "hello"), "secretbox round trip"
-   checkInto (not openSucceeds(tBox, sxRandomBytes(32))), "secretbox rejects a wrong key"
-
-   -- Argon2id and BLAKE2b pinned to published known-answer vectors
-   checkInto (textDecode(sxBin2Hex(sxPwHash(textEncode("password", "utf-8"), textEncode("AAAAAAAAAAAAAAAA", "utf-8"), 32, "2", "1048576")), "ascii") is "7216b4357104ed7f8a4e900e9cc7a63a0786855abe0b59340053ee43f841228a"), "Argon2id known-answer vector"
-   checkInto (textDecode(sxBin2Hex(sxHash(textEncode("abc", "utf-8"), 32)), "ascii") is "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"), "BLAKE2b-256(abc) vector"
-
-   -- ed25519 sign / verify, and the tamper case
-   sxSignKeypair tPk, tSk
-   put sxSignDetached(textEncode("release", "utf-8"), tSk) into tSig
-   checkInto (sxSignVerifyDetached(tSig, textEncode("release", "utf-8"), tPk)), "ed25519 signature verifies"
-   checkInto (not sxSignVerifyDetached(tSig, textEncode("RELEASE", "utf-8"), tPk)), "altered message fails verification"
-
-   -- the CSPRNG produces values strictly inside [0, upperBound) - check the
-   -- upper bound too (a bare ">= 0" can never fail, so it proves nothing)
-   put true into tInRange
-   repeat 256 times
-      put sxRandomUniform(2) into tR
-      if tR < 0 or tR >= 2 then
-         put false into tInRange
-         exit repeat
-      end if
-   end repeat
-   checkInto tInRange, "uniform random stays in [0, 2) over 256 draws"
-
-   -- seeded keypairs are deterministic: one seed always fixes the same keypair
-   put sxRandomBytes(32) into tKey
-   sxBoxKeypairFromSeed tKey, tPk, tSk
-   sxBoxKeypairFromSeed tKey, tR, tBox
-   checkInto (sxMemEqual(tPk, tR)), "seeded keypair is deterministic (same seed, same key)"
-
-   -- secretstream rekey: a matched rekey keeps sync; an unmatched one must fail
-   put sxRandomBytes(32) into tKey
-   put textEncode("", "utf-8") into tNoAd
-   put sxSecretStreamInitPush(tKey, tHdr) into tPushH
-   put sxSecretStreamPush(tPushH, textEncode("before", "utf-8"), tNoAd, false) into tCa
-   sxSecretStreamRekey tPushH
-   put sxSecretStreamPush(tPushH, textEncode("after", "utf-8"), tNoAd, true) into tCb
-   sxFreeStream tPushH
-   put sxSecretStreamInitPull(tKey, tHdr) into tPullH
-   get sxSecretStreamPull(tPullH, tCa, tNoAd, tTag)
-   sxSecretStreamRekey tPullH
-   checkInto (textDecode(sxSecretStreamPull(tPullH, tCb, tNoAd, tTag), "utf-8") is "after"), "secretstream stays in sync when both ends rekey"
-   sxFreeStream tPullH
-   put false into tRkOk
-   put sxSecretStreamInitPull(tKey, tHdr) into tPullH
-   get sxSecretStreamPull(tPullH, tCa, tNoAd, tTag)
+   -- Guarded like the buildUI probe (fleet audit): with the library
+   -- missing, sxVersion is the first throw and used to kill the handler.
    try
-      get sxSecretStreamPull(tPullH, tCb, tNoAd, tTag)
+      put "Running checks against" && sxVersion() & return & return into sTLog
    catch tErr
-      put true into tRkOk
+      setStatus "about:status", "SodiumXT NOT loaded: install org.openxtalk.library.sodium and reopen.", "bad"
+      exit doSelfTest
    end try
-   sxFreeStream tPullH
-   checkInto tRkOk, "an unmatched rekey locks the old key out of later chunks"
 
-   -- ed25519 seed -> expanded key (a reproducible identity key): known-answer
-   -- vector for the fixed seed 0x42 x 32 (the letter B is 0x42).
-   put textEncode("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", "ascii") into tKey
-   checkInto (textDecode(sxBin2Hex(sxSignSeedToExpandedKey(tKey)), "ascii") is "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6eeda66ce2983f7ff7e47c49615220e78c25c775a040957316b7bafd5985450f90"), "ed25519 seed-to-expanded-key known-answer vector"
+   -- The run itself is guarded too (free-what-you-open): it opens two
+   -- secretstream handles, and a throw mid-run used to abort the handler
+   -- with them still open. The catch frees whatever was left, then reports.
+   try
 
-   -- HMAC-SHA256 over an arbitrary-length key: RFC 4231 Test Case 2.
-   checkInto (textDecode(sxBin2Hex(sxHmacSha256(textEncode("Jefe", "utf-8"), textEncode("what do ya want for nothing?", "utf-8"))), "ascii") is "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"), "HMAC-SHA256 matches RFC 4231 Test Case 2"
+      -- secretbox round trip, then a wrong key must be rejected
+      put sxRandomBytes(32) into tKey
+      put sxSecretBox(textEncode("hello", "utf-8"), tKey) into tBox
+      checkInto (textDecode(sxSecretBoxOpen(tBox, tKey), "utf-8") is "hello"), "secretbox round trip"
+      checkInto (not openSucceeds(tBox, sxRandomBytes(32))), "secretbox rejects a wrong key"
+
+      -- Argon2id and BLAKE2b pinned to published known-answer vectors
+      checkInto (textDecode(sxBin2Hex(sxPwHash(textEncode("password", "utf-8"), textEncode("AAAAAAAAAAAAAAAA", "utf-8"), 32, "2", "1048576")), "ascii") is "7216b4357104ed7f8a4e900e9cc7a63a0786855abe0b59340053ee43f841228a"), "Argon2id known-answer vector"
+      checkInto (textDecode(sxBin2Hex(sxHash(textEncode("abc", "utf-8"), 32)), "ascii") is "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"), "BLAKE2b-256(abc) vector"
+
+      -- ed25519 sign / verify, and the tamper case
+      sxSignKeypair tPk, tSk
+      put sxSignDetached(textEncode("release", "utf-8"), tSk) into tSig
+      checkInto (sxSignVerifyDetached(tSig, textEncode("release", "utf-8"), tPk)), "ed25519 signature verifies"
+      checkInto (not sxSignVerifyDetached(tSig, textEncode("RELEASE", "utf-8"), tPk)), "altered message fails verification"
+
+      -- the CSPRNG produces values strictly inside [0, upperBound) - check the
+      -- upper bound too (a bare ">= 0" can never fail, so it proves nothing)
+      put true into tInRange
+      repeat 256 times
+         put sxRandomUniform(2) into tR
+         if tR < 0 or tR >= 2 then
+            put false into tInRange
+            exit repeat
+         end if
+      end repeat
+      checkInto tInRange, "uniform random stays in [0, 2) over 256 draws"
+
+      -- seeded keypairs are deterministic: one seed always fixes the same keypair
+      put sxRandomBytes(32) into tKey
+      sxBoxKeypairFromSeed tKey, tPk, tSk
+      sxBoxKeypairFromSeed tKey, tR, tBox
+      checkInto (sxMemEqual(tPk, tR)), "seeded keypair is deterministic (same seed, same key)"
+
+      -- secretstream rekey: a matched rekey keeps sync; an unmatched one must fail
+      put sxRandomBytes(32) into tKey
+      put textEncode("", "utf-8") into tNoAd
+      put sxSecretStreamInitPush(tKey, tHdr) into tPushH
+      put sxSecretStreamPush(tPushH, textEncode("before", "utf-8"), tNoAd, false) into tCa
+      sxSecretStreamRekey tPushH
+      put sxSecretStreamPush(tPushH, textEncode("after", "utf-8"), tNoAd, true) into tCb
+      sxFreeStream tPushH
+      put sxSecretStreamInitPull(tKey, tHdr) into tPullH
+      get sxSecretStreamPull(tPullH, tCa, tNoAd, tTag)
+      sxSecretStreamRekey tPullH
+      checkInto (textDecode(sxSecretStreamPull(tPullH, tCb, tNoAd, tTag), "utf-8") is "after"), "secretstream stays in sync when both ends rekey"
+      sxFreeStream tPullH
+      put false into tRkOk
+      put sxSecretStreamInitPull(tKey, tHdr) into tPullH
+      get sxSecretStreamPull(tPullH, tCa, tNoAd, tTag)
+      try
+         get sxSecretStreamPull(tPullH, tCb, tNoAd, tTag)
+      catch tErr
+         put true into tRkOk
+      end try
+      sxFreeStream tPullH
+      checkInto tRkOk, "an unmatched rekey locks the old key out of later chunks"
+
+      -- ed25519 seed -> expanded key (a reproducible identity key): known-answer
+      -- vector for the fixed seed 0x42 x 32 (the letter B is 0x42).
+      put textEncode("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", "ascii") into tKey
+      checkInto (textDecode(sxBin2Hex(sxSignSeedToExpandedKey(tKey)), "ascii") is "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6eeda66ce2983f7ff7e47c49615220e78c25c775a040957316b7bafd5985450f90"), "ed25519 seed-to-expanded-key known-answer vector"
+
+      -- HMAC-SHA256 over an arbitrary-length key: RFC 4231 Test Case 2.
+      checkInto (textDecode(sxBin2Hex(sxHmacSha256(textEncode("Jefe", "utf-8"), textEncode("what do ya want for nothing?", "utf-8"))), "ascii") is "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"), "HMAC-SHA256 matches RFC 4231 Test Case 2"
+
+   catch tErr
+      -- free what the aborted run left open; the frees are guarded
+      -- themselves because the likeliest cause IS a missing library,
+      -- and sxFreeStream is idempotent so a freed handle is a no-op
+      try
+         if tPushH is not empty then
+            sxFreeStream tPushH
+         end if
+         if tPullH is not empty then
+            sxFreeStream tPullH
+         end if
+      catch tErrFree
+         -- nothing left to free
+      end try
+      put sTLog into field "about:out"
+      setStatus "about:status", "Self-test ABORTED:" && tErr, "bad"
+      exit doSelfTest
+   end try
 
    put return & (sTPass + sTFail) & " checks run." after sTLog
    put sTLog into field "about:out"

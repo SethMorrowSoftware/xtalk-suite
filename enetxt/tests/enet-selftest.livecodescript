@@ -39,9 +39,11 @@ script "enetSelfTest"
 -- byte-exact compares under caseSensitive, and zero-argument calls BARE in
 -- statement position.
 
+constant kStTitle = "enetxt - API Self-Test"
+constant kStWidth = 660
+constant kStHeight = 620
+
 -- ---- state -------------------------------------------------------------------
-local sTotal, sPassed, sFailed
-local sResultText       -- the accumulated PASS/FAIL/section lines
 local sServer, sClient  -- the two loopback hosts
 local sClientPeer       -- client side: handle from enConnect
 local sServerPeer       -- server side: handle born in its enetConnect event
@@ -53,46 +55,51 @@ local sSawServerDisc    -- "true" once the server drained enetDisconnect
 local sDeadline         -- the async phase's drop-dead time (ms clock)
 local sPhase            -- "", "connecting", "messaging", "binary", "closing", "done"
 
--- ---- lifecycle ---------------------------------------------------------------
-on openStack
-   stBuild
-   stRun
-end openStack
+-- ---- the scaffolding (carried) ----------------------------------------------
+-- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
+-- The harness scaffolding as one carried block: counters, the window, the
+-- assertion plumbing, the report surface. The adopting harness declares
+-- kStTitle/kStWidth/kStHeight above this block, owns openStack/stRun/
+-- stCleanup, calls stResetCounters first in stRun and stReportDone when
+-- the run completes. Do not edit this block in place: change the master
+-- and re-carry it.
+local sTotal, sPassed, sFailed, sSkipped
+local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local sStRunDone           -- "true" once the run finished (drives the color)
 
-on closeStack
-   stCleanup
-end closeStack
-
-on mouseUp
-   if the short name of the target is "stRerun" then
-      stCleanup
-      stRun
-   else
-      pass mouseUp
+-- The platform's own terminal face (the demo kit's uiMonoFont, by value).
+function stMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
    end if
-end mouseUp
+   return "DejaVu Sans Mono"
+end stMonoFont
 
--- ---- self-building UI (idempotent) -------------------------------------------
+-- ---- the window (idempotent; the fold drops this half) -----------------------
 command stBuild
-   if there is a field "stResults" then
+   -- the guard is on a control this VERSION of the scaffold adds, so a stack
+   -- built by an older scaffold rebuilds once and picks up the new layout
+   -- (the builders re-rect existing controls by name; nothing needs deleting)
+   if there is a button "stCopy" then
       exit stBuild
    end if
    lock screen
-   set the width of this stack to 660
-   set the height of this stack to 620
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "enetxt - API Self-Test"
-   stMakeLabel "stTitle", "  enetxt - API Self-Test", "0,0,660,30", 15
+   set the width of this stack to kStWidth
+   set the height of this stack to kStHeight
+   set the backgroundColor of this card to "240,242,246"
+   set the title of this stack to kStTitle
+   stMakeLabel "stTitle", "  " & kStTitle, "0,0," & kStWidth & ",30", 15
    set the opaque of field "stTitle" to true
    set the backgroundColor of field "stTitle" to "44,90,160"
    set the foregroundColor of field "stTitle" to "255,255,255"
    set the textStyle of field "stTitle" to "bold"
-   stMakeLabel "stSummary", "Running...", "16,38,520,66", 13
+   stMakeLabel "stSummary", "Running...", "16,38," & (kStWidth - 200) & ",66", 13
    set the textStyle of field "stSummary" to "bold"
-   stMakeButton "stRerun", "Re-run", "566,38,644,64"
-   stMakeList "stResults", "16,72,644,604"
-   set the textFont of field "stResults" to "Courier"
-   set the textSize of field "stResults" to 11
+   stMakeButton "stCopy", "Copy results", (kStWidth - 184) & ",38," & (kStWidth - 100) & ",64"
+   stMakeButton "stRerun", "Re-run", (kStWidth - 94) & ",38," & (kStWidth - 16) & ",64"
+   stMakeList "stResults", "16,72," & (kStWidth - 16) & "," & (kStHeight - 16)
    unlock screen
 end stBuild
 
@@ -126,12 +133,28 @@ command stMakeList pName, pRect
    set the rect of field pName to pRect
    set the lockText of field pName to true
    set the vScrollbar of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to "225,229,236"
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to "255,255,255"
+   set the textSize of field pName to 11
+   set the textFont of field pName to stMonoFont()
 end stMakeList
 
--- ---- assertion plumbing ------------------------------------------------------
-command stAssert pName, pPass
+-- ---- assertion plumbing (this half folds into the suite harness) -------------
+command stResetCounters
+   put 0 into sTotal
+   put 0 into sPassed
+   put 0 into sFailed
+   put 0 into sSkipped
+   put empty into sResultText
+   put empty into sStRunDone
+end stResetCounters
+
+command stAssert pName, pOk
    add 1 to sTotal
-   if pPass then
+   if pOk then
       add 1 to sPassed
       put "PASS  " & pName & return after sResultText
    else
@@ -140,9 +163,25 @@ command stAssert pName, pPass
    end if
 end stAssert
 
+-- A SKIP is a first-class outcome, not a silent gap: it counts, it names
+-- itself, and it says what would make it run.
+command stSkip pName, pReason
+   add 1 to sTotal
+   add 1 to sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after sResultText
+end stSkip
+
 command stSection pTitle
    put return & "== " & pTitle & " ==" & return after sResultText
 end stSection
+
+-- A section that threw is a FAIL, never a skip: a skip means "this piece is
+-- not here", and something that blew up very much is.
+command stSectionFailed pWhich, pError
+   stAssert pWhich & " section ran to completion", false
+   stNote "it raised:" && pError
+   stNote "the other sections still ran; this one is a defect to report"
+end stSectionFailed
 
 command stNote pText
    put "      " & pText & return after sResultText
@@ -150,24 +189,98 @@ end stNote
 
 command stShow
    put sResultText into field "stResults"
-   put sPassed & " passed, " & sFailed & " failed, " & sTotal & " total" into field "stSummary"
-   if sPhase is "done" then
+   put sPassed & " passed, " & sFailed & " failed, " & sSkipped & " skipped, " \
+         & sTotal & " total" into field "stSummary"
+   if sStRunDone is "true" then
       if sFailed is 0 then
-         set the foregroundColor of field "stSummary" to "20,120,40"
+         set the foregroundColor of field "stSummary" to "23,128,63"
       else
-         set the foregroundColor of field "stSummary" to "170,30,30"
+         set the foregroundColor of field "stSummary" to "176,58,46"
       end if
    end if
 end stShow
+
+-- paint the results list: red FAIL, green PASS, amber SKIP, muted the rest
+command stPaint
+   local tN, tI, tLine, tErr
+   put the number of lines of field "stResults" into tN
+   lock screen
+   try
+      repeat with tI = 1 to tN
+         put line tI of field "stResults" into tLine
+         if tLine begins with "FAIL" then
+            set the foregroundColor of line tI of field "stResults" to "176,58,46"
+         else if tLine begins with "PASS" then
+            set the foregroundColor of line tI of field "stResults" to "23,128,63"
+         else if tLine begins with "SKIP" then
+            set the foregroundColor of line tI of field "stResults" to "150,110,40"
+         else
+            set the foregroundColor of line tI of field "stResults" to "138,146,158"
+         end if
+      end repeat
+   catch tErr
+   end try
+   set the vScroll of field "stResults" to 0
+   unlock screen
+end stPaint
+
+-- The run's one epilogue: mark done, render, paint. Synchronous harnesses
+-- call this at the end of stRun; async ones from the tick that ends the run.
+command stReportDone
+   put "true" into sStRunDone
+   stShow
+   stPaint
+end stReportDone
+
+command stCopyResults
+   -- The whole point of the button: the maintainer pastes the run back
+   -- verbatim into the OXT-pass record, so nobody has to retype a result.
+   local tError
+   try
+      set the clipboardData["text"] to sResultText
+      answer "Results copied to the clipboard."
+   catch tError
+      answer "Could not reach the clipboard:" && tError
+   end try
+end stCopyResults
+
+on closeStack
+   stCleanup
+end closeStack
+
+on mouseUp
+   if the short name of the target is "stRerun" then
+      stCleanup
+      stRun
+   else if the short name of the target is "stCopy" then
+      stCopyResults
+   else
+      pass mouseUp
+   end if
+end mouseUp
+-- ==== SUITE HARNESS SCAFFOLD v1 END ====
+
+-- ---- lifecycle ---------------------------------------------------------------
+on openStack
+   stBuild
+   stRun
+end openStack
+
+
+
+
+
+
+
+
+
+
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
    local tPS, tHS, tBig
    local tAbruptHost, tAbruptPeer, tResetPeer
-   put 0 into sTotal
-   put 0 into sPassed
-   put 0 into sFailed
-   put empty into sResultText
+   stResetCounters
    put empty into sPhase
 
    stSection "lifecycle & diagnostics"
@@ -382,7 +495,11 @@ command stFinish
    put empty into sServer
    put empty into sClient
    put "done" into sPhase
-   stShow
+   stSection "summary"
+   stNote "A green run proves the sync surface AND a live async loopback on"
+   stNote "THIS machine. The two-machine LAN chat leg is the one thing it"
+   stNote "cannot prove - that stays the enet-lan-chat / closing-pass run."
+   stReportDone
 end stFinish
 
 command stCleanup

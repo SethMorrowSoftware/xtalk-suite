@@ -262,46 +262,57 @@ constant kEth1559Sighash = "bf4c3dfa4164868c98534322ecbbce3c022d6d0dee3580b1504d
 constant kEth1559Raw = "02f8730180843b9aca008504a817c80082520894353535353535353535353535353535353535353588016345785d8a000080c001a0180a63d9ea767ab51941f4cb5d3f4f1113ae08861b4a660eb72770967ddc8987a04a41c8877f4e53a06c3a7d6f2787f113d9700bd112168f6714ff3b8957f1b123"
 constant kEth1559Txhash = "1d723f02967119095427907564da7762bd6d3a5d8edb1291db53b97191749e7f"
 
+constant kStTitle = "coinxt - API Self-Test"
+constant kStWidth = 660
+constant kStHeight = 620
+
 -- ---- state -------------------------------------------------------------------
-local sTotal, sPassed, sFailed
-local sResultText       -- the accumulated PASS/FAIL/section lines
-local sDone             -- "true" once the run has finished (drives the colour)
 
--- ---- lifecycle ---------------------------------------------------------------
-on openStack
-   stBuild
-   stRun
-end openStack
+-- ---- the scaffolding (carried) ----------------------------------------------
+-- ==== SUITE HARNESS SCAFFOLD v1 BEGIN (verbatim copy; master: tools/harness-scaffold.livecodescript; gate: tools/check-harness-scaffold-drift.py) ====
+-- The harness scaffolding as one carried block: counters, the window, the
+-- assertion plumbing, the report surface. The adopting harness declares
+-- kStTitle/kStWidth/kStHeight above this block, owns openStack/stRun/
+-- stCleanup, calls stResetCounters first in stRun and stReportDone when
+-- the run completes. Do not edit this block in place: change the master
+-- and re-carry it.
+local sTotal, sPassed, sFailed, sSkipped
+local sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
+local sStRunDone           -- "true" once the run finished (drives the color)
 
-on mouseUp
-   if the short name of the target is "stRerun" then
-      stRun
-   else
-      pass mouseUp
+-- The platform's own terminal face (the demo kit's uiMonoFont, by value).
+function stMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
    end if
-end mouseUp
+   return "DejaVu Sans Mono"
+end stMonoFont
 
--- ---- self-building UI (idempotent) -------------------------------------------
+-- ---- the window (idempotent; the fold drops this half) -----------------------
 command stBuild
-   if there is a field "stResults" then
+   -- the guard is on a control this VERSION of the scaffold adds, so a stack
+   -- built by an older scaffold rebuilds once and picks up the new layout
+   -- (the builders re-rect existing controls by name; nothing needs deleting)
+   if there is a button "stCopy" then
       exit stBuild
    end if
    lock screen
-   set the width of this stack to 660
-   set the height of this stack to 620
-   set the backgroundColor of this card to "237,239,243"
-   set the title of this stack to "coinxt - API Self-Test"
-   stMakeLabel "stTitle", "  coinxt - API Self-Test", "0,0,660,30", 15
+   set the width of this stack to kStWidth
+   set the height of this stack to kStHeight
+   set the backgroundColor of this card to "240,242,246"
+   set the title of this stack to kStTitle
+   stMakeLabel "stTitle", "  " & kStTitle, "0,0," & kStWidth & ",30", 15
    set the opaque of field "stTitle" to true
    set the backgroundColor of field "stTitle" to "44,90,160"
    set the foregroundColor of field "stTitle" to "255,255,255"
    set the textStyle of field "stTitle" to "bold"
-   stMakeLabel "stSummary", "Running...", "16,38,520,66", 13
+   stMakeLabel "stSummary", "Running...", "16,38," & (kStWidth - 200) & ",66", 13
    set the textStyle of field "stSummary" to "bold"
-   stMakeButton "stRerun", "Re-run", "566,38,644,64"
-   stMakeList "stResults", "16,72,644,604"
-   set the textFont of field "stResults" to "Courier"
-   set the textSize of field "stResults" to 11
+   stMakeButton "stCopy", "Copy results", (kStWidth - 184) & ",38," & (kStWidth - 100) & ",64"
+   stMakeButton "stRerun", "Re-run", (kStWidth - 94) & ",38," & (kStWidth - 16) & ",64"
+   stMakeList "stResults", "16,72," & (kStWidth - 16) & "," & (kStHeight - 16)
    unlock screen
 end stBuild
 
@@ -335,12 +346,28 @@ command stMakeList pName, pRect
    set the rect of field pName to pRect
    set the lockText of field pName to true
    set the vScrollbar of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to "225,229,236"
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to "255,255,255"
+   set the textSize of field pName to 11
+   set the textFont of field pName to stMonoFont()
 end stMakeList
 
--- ---- assertion plumbing ------------------------------------------------------
-command stAssert pName, pPass
+-- ---- assertion plumbing (this half folds into the suite harness) -------------
+command stResetCounters
+   put 0 into sTotal
+   put 0 into sPassed
+   put 0 into sFailed
+   put 0 into sSkipped
+   put empty into sResultText
+   put empty into sStRunDone
+end stResetCounters
+
+command stAssert pName, pOk
    add 1 to sTotal
-   if pPass then
+   if pOk then
       add 1 to sPassed
       put "PASS  " & pName & return after sResultText
    else
@@ -349,9 +376,25 @@ command stAssert pName, pPass
    end if
 end stAssert
 
+-- A SKIP is a first-class outcome, not a silent gap: it counts, it names
+-- itself, and it says what would make it run.
+command stSkip pName, pReason
+   add 1 to sTotal
+   add 1 to sSkipped
+   put "SKIP  " & pName & "  (" & pReason & ")" & return after sResultText
+end stSkip
+
 command stSection pTitle
    put return & "== " & pTitle & " ==" & return after sResultText
 end stSection
+
+-- A section that threw is a FAIL, never a skip: a skip means "this piece is
+-- not here", and something that blew up very much is.
+command stSectionFailed pWhich, pError
+   stAssert pWhich & " section ran to completion", false
+   stNote "it raised:" && pError
+   stNote "the other sections still ran; this one is a defect to report"
+end stSectionFailed
 
 command stNote pText
    put "      " & pText & return after sResultText
@@ -359,35 +402,102 @@ end stNote
 
 command stShow
    put sResultText into field "stResults"
-   put sPassed & " passed, " & sFailed & " failed, " & sTotal & " total" into field "stSummary"
-   if sDone is "true" then
+   put sPassed & " passed, " & sFailed & " failed, " & sSkipped & " skipped, " \
+         & sTotal & " total" into field "stSummary"
+   if sStRunDone is "true" then
       if sFailed is 0 then
-         set the foregroundColor of field "stSummary" to "20,120,40"
+         set the foregroundColor of field "stSummary" to "23,128,63"
       else
-         set the foregroundColor of field "stSummary" to "170,30,30"
+         set the foregroundColor of field "stSummary" to "176,58,46"
       end if
    end if
 end stShow
 
--- Every section is contained. A section that throws - a mis-declared foreign
--- handler, a renamed export, an ABI skew - must cost EXACTLY ITSELF, so the rest
--- of the surface still gets measured and the maintainer reads a list instead of
--- an error dialog. This is the sibling harnesses' rule and it earns its keep
--- here: an ABI mismatch throws from EVERY handler, and seeing that as 40 failed
--- lines is far more diagnostic than one dialog on the first call.
-command stSectionFailed pTitle, pError
-   add 1 to sTotal
-   add 1 to sFailed
-   put "FAIL  " & pTitle & " threw: " & pError & return after sResultText
-end stSectionFailed
+-- paint the results list: red FAIL, green PASS, amber SKIP, muted the rest
+command stPaint
+   local tN, tI, tLine, tErr
+   put the number of lines of field "stResults" into tN
+   lock screen
+   try
+      repeat with tI = 1 to tN
+         put line tI of field "stResults" into tLine
+         if tLine begins with "FAIL" then
+            set the foregroundColor of line tI of field "stResults" to "176,58,46"
+         else if tLine begins with "PASS" then
+            set the foregroundColor of line tI of field "stResults" to "23,128,63"
+         else if tLine begins with "SKIP" then
+            set the foregroundColor of line tI of field "stResults" to "150,110,40"
+         else
+            set the foregroundColor of line tI of field "stResults" to "138,146,158"
+         end if
+      end repeat
+   catch tErr
+   end try
+   set the vScroll of field "stResults" to 0
+   unlock screen
+end stPaint
+
+-- The run's one epilogue: mark done, render, paint. Synchronous harnesses
+-- call this at the end of stRun; async ones from the tick that ends the run.
+command stReportDone
+   put "true" into sStRunDone
+   stShow
+   stPaint
+end stReportDone
+
+command stCopyResults
+   -- The whole point of the button: the maintainer pastes the run back
+   -- verbatim into the OXT-pass record, so nobody has to retype a result.
+   local tError
+   try
+      set the clipboardData["text"] to sResultText
+      answer "Results copied to the clipboard."
+   catch tError
+      answer "Could not reach the clipboard:" && tError
+   end try
+end stCopyResults
+
+on closeStack
+   stCleanup
+end closeStack
+
+on mouseUp
+   if the short name of the target is "stRerun" then
+      stCleanup
+      stRun
+   else if the short name of the target is "stCopy" then
+      stCopyResults
+   else
+      pass mouseUp
+   end if
+end mouseUp
+-- ==== SUITE HARNESS SCAFFOLD v1 END ====
+
+-- ---- lifecycle ---------------------------------------------------------------
+on openStack
+   stBuild
+   stRun
+end openStack
+
+
+
+
+
+
+
+
+
+
+
+-- Nothing to release: coinxt is stateless (no sessions, no sockets, no
+-- handles). The scaffold's Re-run button and closeStack call this all the
+-- same, so it exists and says why it is empty.
+command stCleanup
+end stCleanup
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
-   put 0 into sTotal
-   put 0 into sPassed
-   put 0 into sFailed
-   put empty into sResultText
-   put "false" into sDone
+   stResetCounters
    -- Byte-exact compares, and hex strings that must not fold case.
    set the caseSensitive to true
 
@@ -428,8 +538,7 @@ command stRun
    stNote "headless KAT run are the same claim at two different layers."
    stNote "Phase 4 is the section to read first if anything failed: it is the"
    stNote "only surface where a wrong answer still looks like a right one."
-   put "true" into sDone
-   stShow
+   stReportDone
 end stRun
 
 -- The ABI guard, called BY NAME at last. cxCheckABI is `returns nothing` and

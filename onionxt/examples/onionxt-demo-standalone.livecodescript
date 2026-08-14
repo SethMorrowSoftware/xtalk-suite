@@ -2970,10 +2970,16 @@ end testZeroSeed
 -- supplies a route handler (demoServePage) for page mode and a folder for share
 -- mode. Buttons are enabled only when their action is valid, so the flow guides you.
 --
--- STATUS: confirmed on-engine (CLAUDE.md as-built notes): the tabbed UI builds
--- and renders, the Service tab serves and swaps modes live, and the About-tab
--- self-test runs. The ox* calls are the real feature surface being
--- demonstrated; the optional Mode B tor launch stays VERIFY in the library.
+-- HONESTY (the suite convention): the library's engine evidence lives in
+-- onionxt/CLAUDE.md (this tabbed demo has built, served, and swapped modes
+-- on-engine against a live tor daemon; the ox* calls are the real feature
+-- surface being demonstrated; the optional Mode B tor launch stays VERIFY in
+-- the library). The demo UI was unified onto the suite kit 2026-08-14, so
+-- the stack as a whole is verified statically and needs an OXT re-pass.
+--
+-- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
+-- byte-identical). Change the look in the master, never here.
 
 -- ==========================================================================
 -- Constants: window geometry, ports (docs/07: system tor 9050/9051, Tor Browser
@@ -2991,9 +2997,12 @@ constant kDemoDefaultDialPort = 80
 constant kDemoKnownAddress = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
 -- A SINGLE font name: LiveCode's textFont reads a comma as "fontname,language"
 -- (a Unicode language tag), NOT a CSS-style fallback list, so a list would be
--- misparsed. "Courier" is the one monospace name that resolves on every platform.
+-- misparsed. The kit's uiMonoFont owns the mono face now (one per-platform
+-- name, honoring the same lesson); this constant stays as the lesson's record.
 constant kMono = "Courier"
 constant kDemoTabs = "stat,dial,svc,addr,about"
+-- Bump when the generated UI changes so a saved stack rebuilds its controls.
+constant kOdUiVersion = "onionxt-kit2-1"
 
 -- ==========================================================================
 -- Script-local state. The demo tracks just enough state to drive the status bar
@@ -3008,33 +3017,418 @@ local sDialStream           -- the Dial tab's stream handle, or empty
 local sDialOpen             -- true once the dial stream's "open" event arrived
 local sSvcHandle            -- the Service tab's published service handle, or empty
 local sSvcMode              -- "page" (serve the editor HTML) or "folder" (share a folder)
+local sSvcReady             -- true once HS_DESC UPLOADED arrived (gates the watchdog)
+
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v2 END ====
 
 on preOpenStack
-   -- Size and centre the window, then build the whole UI in script (no IDE design
+   -- Size the window (explicit sets so tools/check-stack-size.py can read
+   -- the constants), then build the whole UI in script (no IDE design
    -- work). Point OnionXT's callbacks at this stack's script.
    set the width of this stack to kWinWidth
    set the height of this stack to kWinHeight
    set the backgroundColor of this stack to demoColor("bg")
-   oxSetCallbackOwner the long id of me
-   oxSetStatusCallback "onStatus"
-   -- The Service tab hosts via onion-httpd; oxhServe sets OnionXT's peer callback
-   -- to oxhPeer when it publishes, so the demo does not set one here. oxhInit tells
-   -- onion-httpd this stack's script holds the route handlers (demoServePage).
-   oxhInit the long id of me
+   -- The wiring is guarded so a MISSING library still yields a built stack
+   -- whose status line says what to load (the Status tab's probe paints
+   -- it); unguarded, the throw here killed preOpenStack before any control
+   -- existed.
+   try
+      oxSetCallbackOwner the long id of me
+      oxSetStatusCallback "onStatus"
+      -- The Service tab hosts via onion-httpd; oxhServe sets OnionXT's peer callback
+      -- to oxhPeer when it publishes, so the demo does not set one here. oxhInit tells
+      -- onion-httpd this stack's script holds the route handlers (demoServePage).
+      oxhInit the long id of me
+   catch tErr
+      -- reported in red by the Status tab's guarded probe during the build
+   end try
    put "stat" into sTab
    put "disconnected" into sConnState
    put 0 into sBootPct
+   -- THE REBUILD FIX: every factory used to do a BARE create, so reopening
+   -- a saved stack duplicated every control. The factories are
+   -- create-if-missing now, and the build re-runs on EVERY open - it must,
+   -- because demoRegisterTab re-records sTabControls, which is a script
+   -- local and does not survive a stack reload. The version guard decides
+   -- only whether the CLEAR pass runs first, deleting every stale
+   -- generated control before a changed script rebuilds.
+   if the uOdUiVersion of this stack is not kOdUiVersion then
+      demoClearGeneratedUI
+   end if
+   lock screen
    demoBuildChrome
    demoBuildStatusTab
    demoBuildDialTab
    demoBuildServiceTab
    demoBuildAddressTab
    demoBuildAboutTab
+   set the uOdUiVersion of this stack to kOdUiVersion
+   unlock screen
    demoShowTab "stat"
    demoUpdateStatusBar
    demoUpdateButtons
    pass preOpenStack
 end preOpenStack
+
+-- The rebuild's clear pass: every generated control's short name carries a
+-- ":" (the "prefix:role" / "chrome:" / "tabbtn:" schemes), while the kit's
+-- own chrome (uiTitle, uiStatus, uiBand) has none - so the colon IS the
+-- ownership tag, and the kit controls survive to be restyled in place.
+private command demoClearGeneratedUI
+   local tI
+   lock screen
+   repeat with tI = the number of fields of this card down to 1
+      if the short name of field tI of this card contains ":" then
+         delete field tI of this card
+      end if
+   end repeat
+   repeat with tI = the number of buttons of this card down to 1
+      if the short name of button tI of this card contains ":" then
+         delete button tI of this card
+      end if
+   end repeat
+   repeat with tI = the number of graphics of this card down to 1
+      if the short name of graphic tI of this card contains ":" then
+         delete graphic tI of this card
+      end if
+   end repeat
+   unlock screen
+end demoClearGeneratedUI
 
 -- ==========================================================================
 -- Palette: one function, literal RGB triples, so every control is consistent.
@@ -3043,158 +3437,107 @@ end preOpenStack
 private function demoColor pName
    -- Multi-line block form (the return on its own line), matching the library's
    -- own chained-if idiom; the single-line "then return" chain confuses the
-   -- static gate and is less certain on-engine.
+   -- static gate and is less certain on-engine. Every name now maps onto the
+   -- kit's tokens, so the whole stack recolors from the ONE carried palette.
    if pName is "header" then
-      return "20,28,54"
+      return kUiAccent
    else if pName is "headerText" then
-      return "236,240,248"
+      return kUiAccentText
    else if pName is "bg" then
-      return "244,246,250"
+      return kUiBg
    else if pName is "panel" then
-      return "255,255,255"
+      return kUiCard
    else if pName is "border" then
-      return "205,210,220"
+      return kUiCardLine
    else if pName is "accent" then
-      return "44,98,200"
+      return kUiAccent
    else if pName is "tabIdle" then
-      return "225,229,236"
+      return kUiCardLine
    else if pName is "statusbar" then
-      return "30,36,52"
+      return kUiInk
    else if pName is "statusText" then
-      return "205,212,224"
+      return kUiCardLine
    else if pName is "text" then
-      return "28,32,40"
+      return kUiInk
    else if pName is "muted" then
-      return "108,116,130"
+      return kUiMuted
    else if pName is "ok" then
-      return "22,140,70"
+      return kUiOk
    else if pName is "warn" then
-      return "176,120,20"
+      return kUiWarn
    else if pName is "fail" then
-      return "198,54,54"
+      return kUiBad
    end if
    return "0,0,0"
 end demoColor
 
 -- ==========================================================================
--- Control factory: consistent helpers over the standard LiveCode object commands.
+-- Control factory: thin restyled wrappers over the kit builders. Each keeps
+-- only the semantics the kit lacks (the title/hint/value/log/editor variants,
+-- the demoColor names); creation, IDEMPOTENCE (create-if-missing - the fix
+-- for the reopen-duplicates defect), and the base look all come from the
+-- carried block above.
 -- ==========================================================================
 
 private command demoMakeRect pName, pRect, pColorName
-   create graphic pName
+   uiGfx pName, pRect
    set the style of graphic pName to "rectangle"
-   set the rect of graphic pName to pRect
    set the filled of graphic pName to true
    set the lineSize of graphic pName to 0
    set the backgroundColor of graphic pName to demoColor(pColorName)
 end demoMakeRect
 
 private command demoMakeLabel pName, pRect, pText
-   -- A muted, right-nothing caption label; no border, blends with the window bg.
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to pText
-   set the backgroundColor of field pName to demoColor("bg")
+   -- A muted caption at a fixed rect; no border, transparent over the bg.
+   uiLabel pName, pText, pRect, 12
    set the foregroundColor of field pName to demoColor("muted")
-   set the borderWidth of field pName to 0
-   set the threeD of field pName to false
-   set the lockText of field pName to true
 end demoMakeLabel
 
 private command demoMakeTitle pName, pRect, pText
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to pText
-   set the backgroundColor of field pName to demoColor("bg")
-   set the foregroundColor of field pName to demoColor("text")
+   -- A bold section title, fit to its measured text height (kit-style).
+   uiWrap pName, pText, pRect, 13
    set the textStyle of field pName to "bold"
-   set the borderWidth of field pName to 0
-   set the threeD of field pName to false
-   set the lockText of field pName to true
+   set the foregroundColor of field pName to demoColor("text")
 end demoMakeTitle
 
 private command demoMakeHint pName, pRect, pText
    -- A muted, wrapping, multi-line caption (torrc reference, blurb, etc.).
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to pText
-   set the backgroundColor of field pName to demoColor("bg")
-   set the foregroundColor of field pName to demoColor("muted")
-   set the borderWidth of field pName to 0
-   set the threeD of field pName to false
-   set the lockText of field pName to true
-   set the dontWrap of field pName to false
+   uiCap pName, pText, pRect
 end demoMakeHint
 
 private command demoMakeInput pName, pRect, pDefaultText, pMono
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to pDefaultText
-   set the backgroundColor of field pName to demoColor("panel")
-   set the foregroundColor of field pName to demoColor("text")
-   set the borderColor of field pName to demoColor("border")
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
-   if pMono is "mono" then
-      set the textFont of field pName to kMono
-   end if
+   -- pMono is ABSORBED: kit inputs are always mono (ports, hosts and onion
+   -- addresses are what this demo edits); the parameter stays so the call
+   -- sites survive unchanged.
+   uiInput pName, pRect
+   put pDefaultText into field pName
 end demoMakeInput
 
 private command demoMakeValue pName, pRect
    -- A locked, monospace, single-line display of one value (address, pubkey).
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to empty
-   set the backgroundColor of field pName to demoColor("panel")
-   set the foregroundColor of field pName to demoColor("text")
-   set the borderColor of field pName to demoColor("border")
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
+   uiInput pName, pRect
    set the lockText of field pName to true
-   set the textFont of field pName to kMono
+   set the traversalOn of field pName to false
    set the dontWrap of field pName to true
+   put empty into field pName
 end demoMakeValue
 
 private command demoMakeLog pName, pRect
    -- A locked, monospace, scrolling, append-only log / output box.
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to empty
-   set the backgroundColor of field pName to demoColor("panel")
-   set the foregroundColor of field pName to demoColor("text")
-   set the borderColor of field pName to demoColor("border")
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
-   set the lockText of field pName to true
-   set the textFont of field pName to kMono
-   set the dontWrap of field pName to false
-   set the vScrollbar of field pName to true
+   uiArea pName, pRect
+   put empty into field pName
 end demoMakeLog
 
 private command demoMakeEditor pName, pRect
    -- An EDITABLE, monospace, wrapping, scrolling multi-line input (the page HTML).
-   create field pName
-   set the rect of field pName to pRect
-   set the text of field pName to empty
-   set the backgroundColor of field pName to demoColor("panel")
-   set the foregroundColor of field pName to demoColor("text")
-   set the borderColor of field pName to demoColor("border")
-   set the borderWidth of field pName to 1
-   set the threeD of field pName to false
-   set the opaque of field pName to true
+   uiArea pName, pRect
    set the lockText of field pName to false
-   set the textFont of field pName to kMono
-   set the dontWrap of field pName to false
-   set the vScrollbar of field pName to true
+   set the traversalOn of field pName to true
 end demoMakeEditor
 
 private command demoMakeButton pName, pRect, pLabel
-   create button pName
-   set the rect of button pName to pRect
-   set the label of button pName to pLabel
+   uiButton pName, pLabel, pRect
+   -- rectangle style so the tab strip's script-set colors actually paint
    set the style of button pName to "rectangle"
 end demoMakeButton
 
@@ -3203,18 +3546,13 @@ end demoMakeButton
 -- ==========================================================================
 
 private command demoBuildChrome
-   demoMakeRect "chrome:header", "0,0," & kWinWidth & ",46", "header"
-   demoMakeTitle "chrome:title", "24,10,520,38", "OnionXT demo"
-   -- The title/subtitle sit ON the dark header, so their backgrounds must be the
-   -- header colour, not the light window bg, or light text lands on a light box.
-   set the backgroundColor of field "chrome:title" to demoColor("header")
-   set the foregroundColor of field "chrome:title" to demoColor("headerText")
-   demoMakeLabel "chrome:subtitle", "360,14,796,38", "Tor transport + self-authenticating rendezvous"
-   set the backgroundColor of field "chrome:subtitle" to demoColor("header")
-   set the foregroundColor of field "chrome:subtitle" to demoColor("statusText")
-   set the textAlign of field "chrome:subtitle" to "right"
-
    local tNames, tI, tKey, tX, tSaved
+   -- The band, title, ground and top status line are the kit's; the tab
+   -- strip and the persistent bottom status bar stay adopter-owned chrome
+   -- (the kit has no second, always-visible bar, and every tab relies on
+   -- this one for the live tor connection state).
+   uiChrome "OnionXT - Tor from xTalk", kWinWidth, kWinHeight
+
    put "Status,Dial,Service,Address,About" into tNames
    put 24 into tX
    put the itemDelimiter into tSaved
@@ -3227,10 +3565,10 @@ private command demoBuildChrome
    set the itemDelimiter to tSaved
 
    -- The bottom status bar is chrome (never in a tab list), so it stays visible
-   -- on every tab and gives constant feedback about the tor connection.
+   -- on every tab and gives constant feedback about the tor connection. The
+   -- label rides transparently on the dark statusrect graphic.
    demoMakeRect "chrome:statusrect", "0," & (kWinHeight - 44) & "," & kWinWidth & "," & kWinHeight, "statusbar"
    demoMakeLabel "chrome:statusbar", "24," & (kWinHeight - 34) & ",796," & (kWinHeight - 10), ""
-   set the backgroundColor of field "chrome:statusbar" to demoColor("statusbar")
    set the foregroundColor of field "chrome:statusbar" to demoColor("statusText")
 
    demoRestyleTabs
@@ -3295,12 +3633,21 @@ end demoUpdateStatusBar
 private command demoUpdateButtons
    -- Enable each action only when it is currently valid, so a disabled button
    -- (which cannot be clicked) tells the user what to do next.
-   local tConnected
+   local tConnected, tAuthed
    put (sConnState is not "disconnected" and sConnState is not "failed" and sConnState is not empty) into tConnected
+   -- Guarded (fleet audit): this runs at the end of the build too, and with
+   -- the library missing the probe call would be the next throw after the
+   -- guarded ones - a missing library just reads as "not authenticated".
+   put false into tAuthed
+   try
+      put oxIsControlAuthenticated() into tAuthed
+   catch tErr
+      put false into tAuthed
+   end try
    set the enabled of button "stat:connect" to (not tConnected)
    set the enabled of button "stat:disconnect" to tConnected
-   set the enabled of button "svc:page" to oxIsControlAuthenticated()
-   set the enabled of button "svc:folder" to oxIsControlAuthenticated()
+   set the enabled of button "svc:page" to tAuthed
+   set the enabled of button "svc:folder" to tAuthed
    set the enabled of button "svc:remove" to (sSvcHandle is not empty)
    set the enabled of button "dial:send" to (sDialOpen is true)
 end demoUpdateButtons
@@ -3347,6 +3694,7 @@ end demoAppendLog
 -- ==========================================================================
 
 private command demoBuildStatusTab
+   local tVer
    demoMakeTitle "stat:title", "24,100,796,124", "1. Connect to the tor control port"
    demoMakeHint "stat:hint", "24,128,796,150", \
       "Start here. Publishing an onion service and reading bootstrap progress need this connection."
@@ -3357,7 +3705,18 @@ private command demoBuildStatusTab
    demoMakeButton "stat:connect", "468,161,588,191", "Connect"
    demoMakeButton "stat:disconnect", "596,161,716,191", "Disconnect"
    demoMakeLabel "stat:detail", "24,206,796,262", "not connected"
-   demoMakeLabel "stat:version", "24,268,796,290", "version: " & oxVersion()
+   -- The version line doubles as the LIBRARY PROBE, reporting through the
+   -- kit status line: a stack opened without its libraries says so in red
+   -- at the top instead of dying mid-build on this call (fleet audit).
+   try
+      put "version: " & oxVersion() into tVer
+      uiStatus "OnionXT loaded (" & oxVersion() & "). Connect on the Status tab.", "ok"
+   catch tErr
+      put "version: (not loaded)" into tVer
+      uiStatus "OnionXT NOT loaded: start using stack " & quote & "onionxt" & quote \
+            & " and stack " & quote & "onion-httpd" & quote & ", then reopen.", "bad"
+   end try
+   demoMakeLabel "stat:version", "24,268,796,290", tVer
    demoMakeHint "stat:torrc", "24,300,796,408", \
       "Needs a tor daemon reachable on loopback. Reference torrc:" & return & \
       "    SocksPort 9050" & return & "    ControlPort 9051" & return & \
@@ -3445,16 +3804,24 @@ private command demoStartDial
 end demoStartDial
 
 private command demoSendDial
+   local tRequest, tError
    if not sDialOpen then
       demoSetStatus "dial:status", "the tunnel is not open yet", "warn"
       exit demoSendDial
    end if
    -- Convert the request's line endings to CRLF (what HTTP wants) and send it as
    -- bytes. OnionXT does not encrypt; a real protocol would seal with SodiumXT.
-   local tRequest
    put field "dial:msg" into tRequest
    replace return with (numToChar(13) & numToChar(10)) in tRequest
    oxWrite sDialStream, textEncode(tRequest, "UTF-8")
+   -- oxWrite reports an error string through the result (a stale or
+   -- not-open stream); a failed write must not log as "sent N bytes".
+   put the result into tError
+   if tError is not empty then
+      demoSetStatus "dial:status", tError, "fail"
+      demoAppendLog "dial:log", "! write failed: " & tError
+      exit demoSendDial
+   end if
    demoAppendLog "dial:log", "> sent " & (the number of bytes of textEncode(tRequest, "UTF-8")) & " bytes"
 end demoSendDial
 
@@ -3591,6 +3958,7 @@ private command demoRemoveService
    end if
    put empty into sSvcHandle
    put empty into sSvcMode
+   put false into sSvcReady
    put empty into field "svc:address"
    demoSetStatus "svc:status", "not published", "muted"
    demoUpdateButtons
@@ -3702,7 +4070,15 @@ end demoEncodeAddress
 -- ==========================================================================
 
 private command demoBuildAboutTab
-   demoMakeTitle "about:title", "24,100,796,124", "OnionXT " & oxVersion()
+   local tVer
+   -- Guarded like the Status tab's probe (fleet audit): with the library
+   -- missing, oxVersion here killed the whole build.
+   try
+      put "OnionXT " & oxVersion() into tVer
+   catch tErr
+      put "OnionXT (library not loaded)" into tVer
+   end try
+   demoMakeTitle "about:title", "24,100,796,124", tVer
    demoMakeHint "about:blurb", "24,130,796,224", \
       "A Tor transport and self-authenticating rendezvous layer for OXT / LiveCode." & return & \
       "Adds no cryptography of its own: it composes SodiumXT (ABI >= 6) for the" & return & \
@@ -3719,7 +4095,14 @@ end demoBuildAboutTab
 
 private command demoShowCapabilities
    local tInfo, tOut
-   put oxTransportInfo() into tInfo
+   -- Guarded (fleet audit): this runs during the build, and with the
+   -- library missing the oxTransportInfo throw killed preOpenStack.
+   try
+      put oxTransportInfo() into tInfo
+   catch tErr
+      put "(onionxt not loaded - start using stack " & quote & "onionxt" & quote & ")" into field "about:caps"
+      exit demoShowCapabilities
+   end try
    put "transport           : " & tInfo["transport"] & return into tOut
    put "version             : " & tInfo["version"] & return after tOut
    put "safeCookieAuth      : " & tInfo["safeCookieAuth"] & "   (SodiumXT sxHmacSha256 + sxRandomBytes)" & return after tOut
@@ -3760,7 +4143,13 @@ on onStatus pKind, pInfo
       if pInfo is "authenticated" then
          put "authenticated" into sConnState
          demoSetStatus "stat:detail", "authenticated - ready", "ok"
-         put "version: " & oxVersion() into field "stat:version"
+         -- Guarded (fleet audit): the event proves the library is loaded
+         -- NOW, but a callback must never be the handler that throws.
+         try
+            put "version: " & oxVersion() into field "stat:version"
+         catch tErr
+            -- the detail line above already reports the state
+         end try
       else if pInfo begins with "authfailed" or pInfo begins with "error" then
          put "failed" into sConnState
          demoSetStatus "stat:detail", demoConnectHint(pInfo), "fail"
@@ -3781,18 +4170,48 @@ on onStatus pKind, pInfo
       demoUpdateStatusBar
    else if pKind is "service" then
       put pInfo into field "svc:address"
+      put false into sSvcReady
       demoSetStatus "svc:status", "published, awaiting descriptor upload ...", "warn"
       demoAppendLog "svc:log", "address: " & pInfo
+      -- PUBLISH WATCHDOG: readiness only ever arrives from HS_DESC UPLOADED
+      -- (the serviceReady branch below), so a wedged upload otherwise reads
+      -- as an eternal amber "awaiting". demoPublishWatch names it after 90 s.
+      send "demoPublishWatch" to me in 90000 milliseconds
    else if pKind is "serviceReady" then
+      put true into sSvcReady
       demoSetStatus "svc:status", "reachable - open it in Tor Browser now", "ok"
       demoAppendLog "svc:log", "descriptor uploaded; the onion is reachable"
       demoAppendLog "svc:log", "open  http://" & (field "svc:address") & "/  in Tor Browser (keep this demo running)"
+   else if pKind is "event" then
+      -- The library surfaces non-UPLOADED HS_DESC outcomes only as raw 650
+      -- lines under the "event" kind (there is no serviceFailed status), so
+      -- a failed descriptor upload is caught here by SHAPE: the line reads
+      -- "650 HS_DESC FAILED <address> ..." (tor appends a REASON= field).
+      if word 2 of pInfo is "HS_DESC" and word 3 of pInfo is "FAILED" then
+         demoSetStatus "svc:status", "descriptor upload FAILED - see the log; Remove and retry", "fail"
+         demoAppendLog "svc:log", "! " & pInfo
+      end if
    else if pKind is "notice" then
       -- Library diagnostics (e.g. every accepted connection's raw socket id, so a
       -- misparse or a rejected loopback peer is visible in the Service log).
       demoAppendLog "svc:log", pInfo
    end if
 end onStatus
+
+-- The publish watchdog (armed by onStatus's "service" branch). REPORT ONLY:
+-- the upload may still land late and Remove stays the user's call, so
+-- nothing is torn down here - the amber wait just stops masquerading as
+-- progress after 90 s.
+command demoPublishWatch
+   if sSvcReady is true then
+      exit demoPublishWatch
+   end if
+   if sSvcHandle is empty then
+      exit demoPublishWatch
+   end if
+   demoSetStatus "svc:status", "descriptor upload has not confirmed in 90 s - check the tor daemon's log; Remove and retry", "fail"
+   demoAppendLog "svc:log", "! no HS_DESC UPLOADED confirmation after 90 s"
+end demoPublishWatch
 
 -- ==========================================================================
 -- Central click router: parse "prefix:role" from the clicked control's short name
@@ -3829,11 +4248,28 @@ on mouseUp
 end mouseUp
 
 -- Free everything OnionXT opened when the demo closes (there is no deterministic
--- unload hook; the app frees what it opened, CLAUDE.md).
+-- unload hook; the app frees what it opened, CLAUDE.md). Guarded: with the
+-- library missing there is nothing to shut down, and closing the stack must
+-- not throw out of closeStack.
 on closeStack
-   oxShutdown
+   try
+      oxShutdown
+   catch tErr
+      -- not loaded; nothing to release
+   end try
    pass closeStack
 end closeStack
+
+-- An app quit does not always route through closeStack first; same teardown,
+-- same guard, then let the quit continue.
+on shutdownRequest
+   try
+      oxShutdown
+   catch tErr
+      -- not loaded; nothing to release
+   end try
+   pass shutdownRequest
+end shutdownRequest
 
 -- ==========================================================================
 -- Small local helpers (demo glue only, not part of the ox* surface).
