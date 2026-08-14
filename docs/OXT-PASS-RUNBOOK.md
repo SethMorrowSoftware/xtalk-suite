@@ -98,6 +98,31 @@ disqualify an evening runs before the thing that takes an hour to set up.
 
 ---
 
+> ## The 2026-08-14 unification: what it re-opens
+>
+> **Every demo stack and every pasteable harness was unified that day** — the
+> UI kit moved to v2 (the card look) and every demo now carries it verbatim
+> (`tools/check-ui-kit-drift.py` enforces adoption); the five harness windows
+> share one carried scaffold (`tools/check-harness-scaffold-drift.py`); and
+> each conversion also landed that stack's audit fixes (validated
+> create/connect returns, watchdogs on silent waits, fail-closed probes,
+> guarded teardown, version-guarded rebuilds). Two consequences for this
+> runbook:
+>
+> 1. **A restyled stack is a re-opened stack.** Every converted file's
+>    honesty label says "UI unified 2026-08-14; needs an OXT re-pass". The
+>    LOGIC evidence recorded in the pass blocks above still stands for the
+>    handlers it names — but the stacks as wholes (layout, builders, status
+>    plumbing, the new watchdog paths) have not run since the restyle. The
+>    next engine session should START by re-opening one converted demo per
+>    member and confirming it builds its window and probes cleanly, before
+>    working new legs.
+> 2. **The paste artifacts behave the same, plus.** The harnesses gained a
+>    Copy-results button (paste runs back verbatim - stop retyping), SKIP
+>    counts in every summary line, and red/green/amber per-line coloring.
+>    A rebuilt stack picks the new layout up automatically (version-guarded
+>    rebuilds); a stack saved from an older layout rebuilds once on open.
+
 ## 1. What is unproven, and why it matters
 
 ### 1.1 The layer map

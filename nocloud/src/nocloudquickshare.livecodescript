@@ -54,6 +54,18 @@ script "No Cloud Quick Share"
 -- Single-thread playbook: a 250 ms poll drains events and a 1 s loop repaints the
 -- Transfers list. The heavy bytes move on libtorrent's own threads, never script.
 
+-- HONESTY (the suite convention): the VERIFY markers through this file are
+-- the live per-site record; additionally the whole UI was unified onto the
+-- suite kit on 2026-08-14 (chrome, tokens, builders), so the stack as a
+-- whole needs an OXT re-pass even where a site was previously observed.
+--
+-- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
+-- byte-identical). The kit's v2 card look was ABSORBED FROM THIS FILE, so
+-- adoption here is mostly renames; what stays adopter-owned is what the kit
+-- deliberately does not carry (the drop zone, the badge, the method radios).
+-- Change the look in the master, never here.
+
 -- ---- stack-local state -------------------------------------------------------
 local sSession          -- the live session handle (0/empty = none)
 local sPolling          -- "true" while the poll/repaint loops are armed
@@ -283,7 +295,7 @@ constant kQsAppVersion = "1.0.0"
 -- Bump when the generated UI changes; qsBuild rebuilds the controls on a mismatch
 -- so updating the script in a SAVED stack picks up the new layout (passphrase
 -- fields and all) instead of keeping the old controls around.
-constant kQsUiVersion = "ncqs-ui-2027-06"
+constant kQsUiVersion = "ncqs-kit2-1"
 
 -- ---- UI design tokens ----------------------------------------------------------
 -- One palette for every generated control, so the whole surface shifts together
@@ -291,31 +303,347 @@ constant kQsUiVersion = "ncqs-ui-2027-06"
 -- carry the chrome; ONE accent blue carries brand + interaction; the Tor chip gets
 -- three semantic states (unavailable / connecting / ready). All literal RGB
 -- strings - OXT constants must be literal and declared before first use.
-constant kClrPage = "240,242,246"       -- window background
-constant kClrCard = "255,255,255"       -- card fill (and input fill)
-constant kClrCardLine = "225,229,236"   -- hairline card border / dividers
-constant kClrBand = "44,90,160"         -- header band (brand blue)
-constant kClrBandText = "255,255,255"   -- title on the band / badge digits
-constant kClrBandSub = "199,216,241"    -- tagline on the band
-constant kClrInk = "28,34,46"           -- primary text
-constant kClrInkSoft = "95,104,118"     -- secondary text / status lines
-constant kClrInkMute = "138,146,158"    -- captions, hints, empty states
 constant kClrAccent = "43,108,196"      -- accent (step badges, drag-over border)
-constant kClrFieldLine = "203,210,222"  -- entry-field border
-constant kClrCodeBg = "244,246,250"     -- code/link output fill
-constant kClrCodeLine = "210,217,229"   -- code/link output border
 constant kClrDropBg = "247,249,252"     -- drop zone fill, idle
 constant kClrDropHot = "232,241,255"    -- drop zone fill, hover / drag-over
 constant kClrDropLine = "170,182,202"   -- drop zone dashed border, idle
-constant kClrWarn = "150,110,40"        -- small amber hints ("LAN only"; Tor connecting rows)
-constant kClrRowSend = "23,128,63"      -- transfers list: seeding / done / serving rows
-constant kClrRowErr = "176,58,46"       -- transfers list: stopped / errored rows
-constant kClrPillOff = "31,64,116"      -- Tor chip: unavailable (band-toned)
-constant kClrPillOffText = "199,216,241"
-constant kClrPillWait = "250,240,199"   -- Tor chip: bootstrapping
-constant kClrPillWaitText = "133,98,14"
-constant kClrPillOk = "205,240,214"     -- Tor chip: ready
-constant kClrPillOkText = "22,101,52"
+
+-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
+-- The family look as one carried block: the kit owns colors, chrome, and
+-- control construction; the adopting demo owns layout (explicit rects) and
+-- logic. Builders are idempotent (create-if-missing), so a rebuild on
+-- reopen is safe. Do not edit this block in place: change the master and
+-- re-carry it.
+constant kUiBg = "240,242,246"
+constant kUiCard = "255,255,255"
+constant kUiCardLine = "225,229,236"
+constant kUiAccent = "44,90,160"
+constant kUiAccentText = "255,255,255"
+constant kUiAccentSub = "199,216,241"
+constant kUiInk = "28,34,46"
+constant kUiInkSoft = "95,104,118"
+constant kUiMuted = "138,146,158"
+constant kUiOk = "23,128,63"
+constant kUiWarn = "150,110,40"
+constant kUiBad = "176,58,46"
+constant kUiFieldLine = "203,210,222"
+constant kUiCodeBg = "244,246,250"
+constant kUiCodeLine = "210,217,229"
+
+-- The platform's own terminal face for codes, keys, tables and logs, so
+-- the monospace surfaces look native instead of typewriter-Courier. A
+-- missing face substitutes the engine default - a soft, safe failure.
+function uiMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end uiMonoFont
+
+-- The window chrome every adopter shares: stack size, page ground, the
+-- title band, and the one status line under it (write it with uiStatus).
+-- pBandH is optional (default 30); a taller band leaves room for an
+-- adopter's tagline or status pill, placed by the adopter.
+command uiChrome pTitle, pWidth, pHeight, pBandH
+   local tFH
+   if pBandH is empty then
+      put 30 into pBandH
+   end if
+   set the width of this stack to pWidth
+   set the height of this stack to pHeight
+   set the backgroundColor of this card to kUiBg
+   set the title of this stack to pTitle
+   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
+   set the style of graphic "uiBand" to "rectangle"
+   set the filled of graphic "uiBand" to true
+   set the backgroundColor of graphic "uiBand" to kUiAccent
+   set the lineSize of graphic "uiBand" to 0
+   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
+   set the foregroundColor of field "uiTitle" to kUiAccentText
+   set the textStyle of field "uiTitle" to "bold"
+   -- center the title on the band midline by MEASURED height (never guess
+   -- font metrics - the family's OXT passes clipped hand-sized labels)
+   put the formattedHeight of field "uiTitle" into tFH
+   if tFH > 0 and tFH < pBandH then
+      set the height of field "uiTitle" to tFH
+      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
+   end if
+   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
+end uiChrome
+
+-- The status line, colored by what it reports: "ok", "warn", "bad", or
+-- anything else for neutral/muted. Demos route probe results through this
+-- so a stack that cannot run says so in red, at the top, immediately.
+command uiStatus pText, pKind
+   put pText into field "uiStatus"
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kUiOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kUiWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kUiBad
+   else
+      set the foregroundColor of field "uiStatus" to kUiInkSoft
+   end if
+end uiStatus
+
+-- A static caption at a FIXED rect (idempotent, borderless, transparent).
+-- Use uiWrap instead when the text may wrap or the exact height matters.
+command uiLabel pName, pText, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the threeD of field pName to false
+   set the textSize of field pName to pSize
+   set the foregroundColor of field pName to kUiInk
+   put pText into field pName
+end uiLabel
+
+-- A caption FIT to its measured text height (top pinned). The fit does
+-- double duty: it prevents clipping (hand-sized rects clipped text on a
+-- real Windows pass), and it makes `the height of field` equal the TEXT
+-- height, which midline centering relies on. GUARD: only resize on a sane
+-- measurement - a 0/blank formattedHeight (possible before the window is
+-- fully realized) would collapse the label. Empty labels are skipped
+-- (they receive their text later).
+command uiWrap pName, pText, pRect, pSize
+   local tOldDelim, tTop, tFH
+   uiLabel pName, pText, pRect, pSize
+   if pText is not empty then
+      put the itemDelimiter into tOldDelim
+      set the itemDelimiter to comma
+      put item 2 of pRect into tTop
+      set the itemDelimiter to tOldDelim
+      put the formattedHeight of field pName into tFH
+      if tFH > 0 then
+         set the height of field pName to tFH
+         set the top of field pName to tTop
+      end if
+   end if
+end uiWrap
+
+-- A small, muted caption (hints, toggle descriptions, empty states).
+command uiCap pName, pText, pRect
+   uiWrap pName, pText, pRect, 10
+   set the foregroundColor of field pName to kUiMuted
+end uiCap
+
+-- A numbered bold section header with a hairline divider placed below the
+-- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
+-- height on any platform's line metrics.
+command uiSection pName, pText, pRect
+   local tOldDelim, tL, tR, tB
+   uiWrap pName, pText, pRect, 13
+   set the textStyle of field pName to "bold"
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 3 of pRect into tR
+   set the itemDelimiter to tOldDelim
+   put the bottom of field pName into tB
+   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
+   set the style of graphic (pName & "Line") to "rectangle"
+   set the filled of graphic (pName & "Line") to true
+   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
+   set the lineSize of graphic (pName & "Line") to 0
+end uiSection
+
+-- A one-line entry field, mono and flat ("modern input" chrome instead of
+-- the engine's sunken-3D default), because hex, addresses and paths are
+-- what this suite's demos edit.
+command uiInput pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiFieldLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   -- 4-item margins form ONLY: OXT ignored the single-number form on a
+   -- real engine pass
+   set the margins of field pName to "6,6,6,6"
+   set the textSize of field pName to 11
+   set the textFont of field pName to uiMonoFont()
+end uiInput
+
+-- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
+command uiArea pName, pRect
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the threeD of field pName to false
+   set the borderWidth of field pName to 1
+   set the borderColor of field pName to kUiCardLine
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kUiCard
+   set the margins of field pName to "6,6,6,6"
+   set the vScrollbar of field pName to true
+   set the textSize of field pName to 10
+   set the textFont of field pName to uiMonoFont()
+end uiArea
+
+-- A row-selectable table: uiArea plus list behavior and tab stops
+-- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
+-- the same tabStops, set by the adopter.
+command uiTable pName, pRect, pTabStops
+   uiArea pName, pRect
+   set the listBehavior of field pName to true
+   if pTabStops is not empty then
+      set the tabStops of field pName to pTabStops
+   end if
+end uiTable
+
+command uiButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+end uiButton
+
+-- A script-managed checkbox: autoHilite OFF because the family drives
+-- toggle state from script locals (a mode the environment cannot honour
+-- must never stay silently armed - the quickshare pill lesson), so the
+-- hilite is set explicitly by the adopter's state machine.
+command uiCheckbox pName, pLabel, pRect
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "checkbox"
+   set the autoHilite of button pName to false
+end uiCheckbox
+
+-- Create-or-reuse a named graphic: the chrome layer (cards, pills,
+-- dividers, drop targets). Created BEFORE the controls that sit on it, so
+-- it stays behind them in z-order. roundRect + antialiased by default;
+-- callers restyle.
+command uiGfx pName, pRect
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   set the style of graphic pName to "roundRect"
+   set the antialiased of graphic pName to true
+end uiGfx
+
+-- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
+-- placed BEHIND a group of controls. It only groups visually; clicks on
+-- it fall through to the adopter's `default: pass mouseUp`.
+command uiPanel pName, pRect
+   local tShadow, tErr
+   uiGfx pName, pRect
+   set the roundRadius of graphic pName to 14
+   set the filled of graphic pName to true
+   set the backgroundColor of graphic pName to kUiCard
+   set the lineSize of graphic pName to 1
+   -- a graphic strokes its outline in the foregroundColor; borderColor is
+   -- set too so whichever the engine honours, the hairline lands
+   set the foregroundColor of graphic pName to kUiCardLine
+   set the borderColor of graphic pName to kUiCardLine
+   -- soft drop shadow is an LC-9-era feature, so it is a PURE
+   -- enhancement: an engine without it just skips it (the try) and the
+   -- hairline still separates the card from the page
+   try
+      put "90,98,114" into tShadow["color"]
+      put 30 into tShadow["opacity"]
+      put 10 into tShadow["size"]
+      put 0 into tShadow["spread"]
+      put 2 into tShadow["distance"]
+      put 90 into tShadow["angle"]
+      set the dropShadow of graphic pName to tShadow
+   catch tErr
+   end try
+end uiPanel
+
+-- A status pill: rounded chip + centered label, colored by state kind -
+-- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
+-- blue. The adopter repaints it from ONE place so its handlers cannot
+-- disagree about the colors (the nocloud Tor-pill discipline).
+command uiPill pName, pText, pRect, pKind
+   local tOldDelim, tTop, tBot, tFH
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put item 2 of pRect into tTop
+   put item 4 of pRect into tBot
+   set the itemDelimiter to tOldDelim
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
+   set the filled of graphic (pName & "Bg") to true
+   set the lineSize of graphic (pName & "Bg") to 0
+   if pKind is "ok" then
+      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
+   else if pKind is "wait" then
+      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
+   else if pKind is "bad" then
+      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
+   else
+      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
+   end if
+   uiLabel pName, pText, pRect, 10
+   set the textAlign of field pName to "center"
+   if pKind is "ok" then
+      set the foregroundColor of field pName to "22,101,52"
+   else if pKind is "wait" then
+      set the foregroundColor of field pName to "133,98,14"
+   else if pKind is "bad" then
+      set the foregroundColor of field pName to "135,44,38"
+   else
+      set the foregroundColor of field pName to kUiAccentSub
+   end if
+   -- center the label on the chip midline by measured height
+   put the formattedHeight of field pName into tFH
+   if tFH > 0 and tFH < (tBot - tTop) then
+      set the height of field pName to tFH
+      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
+   end if
+end uiPill
+
+-- Click-to-copy feedback: flash the button's label to "Copied!" for
+-- 1200 ms, then restore the real label (stashed in uRealLabel).
+command uiCopyFlash pBtn
+   if there is no button pBtn then
+      exit uiCopyFlash
+   end if
+   if the uRealLabel of button pBtn is empty then
+      set the uRealLabel of button pBtn to the label of button pBtn
+   end if
+   set the label of button pBtn to "Copied!"
+   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
+end uiCopyFlash
+
+command uiCopyFlashReset pBtn
+   if there is no button pBtn then
+      exit uiCopyFlashReset
+   end if
+   if the uRealLabel of button pBtn is not empty then
+      set the label of button pBtn to the uRealLabel of button pBtn
+   end if
+end uiCopyFlashReset
+
+-- The honesty/custody footer every demo carries: what the stack is, what
+-- it is not, and its engine-evidence state.
+command uiFooter pText, pRect
+   uiWrap "uiFooter", pText, pRect, 11
+   set the textStyle of field "uiFooter" to "italic"
+   set the foregroundColor of field "uiFooter" to kUiMuted
+end uiFooter
+-- ==== SUITE UI KIT v2 END ====
 
 -- ---- lifecycle ---------------------------------------------------------------
 -- Build in preOpenStack, BEFORE the window is shown, so a first open (or a
@@ -524,77 +852,57 @@ command qsBuild
    -- each step so it reads at a glance. Every color comes from the kClr* tokens
    -- above; every rect sits on a consistent grid (20px card inset, ~12px between
    -- groups) - labels get margins 0 so a rect places its text exactly.
-   set the width of this stack to 1100
-   set the height of this stack to 640
+   -- the kit band (56px: room for the tagline + Tor chip overlays below);
+   -- the chrome also creates the ONE status line, which this dashboard parks
+   -- in the bottom-left strip where its connection state has always lived
+   uiChrome ("No Cloud Quick Share " & kQsAppVersion), 1100, 640, 56
    -- fixed-size dashboard: the layout is hand-placed, so a free resize would only
    -- tear it (VERIFY on-engine: property honoured by the window manager)
    set the resizable of this stack to false
-   set the backgroundColor of this card to kClrPage
-   set the title of this stack to ("No Cloud Quick Share " & kQsAppVersion)
-
-   -- title band (a plain filled graphic) + tagline + live Tor status chip. Each
-   -- band label auto-sizes in qsLabel, then is CENTERED on the band's midline
-   -- (y 28) by its measured height - no font-metric guessing (the pass-1 lesson).
-   qsGfx "qsTitleBg", "0,0,1100,56"
-   set the style of graphic "qsTitleBg" to "rectangle"
-   set the filled of graphic "qsTitleBg" to true
-   set the backgroundColor of graphic "qsTitleBg" to kClrBand
-   set the lineSize of graphic "qsTitleBg" to 0
-   qsLabel "qsTitle", "No Cloud Quick Share", "12,4,400,52", 16
-   set the foregroundColor of field "qsTitle" to kClrBandText
-   set the textStyle of field "qsTitle" to "bold"
-   set the top of field "qsTitle" to (28 - ((the height of field "qsTitle") div 2))
-   qsLabel "qsTagline", "Send & receive files - by code, over Tor, or a web link.", "240,4,830,52", 10
-   set the foregroundColor of field "qsTagline" to kClrBandSub
+   set the rect of field "uiStatus" to "20,604,700,634"
+   uiWrap "qsTagline", "Send & receive files - by code, over Tor, or a web link.", "240,4,830,52", 10
+   set the foregroundColor of field "qsTagline" to kUiAccentSub
    set the top of field "qsTagline" to (28 - ((the height of field "qsTagline") div 2))
-   -- the Tor chip: a rounded pill whose color + text track the daemon state
-   qsGfx "qsTorPillBg", "870,14,1080,42"
-   set the roundRadius of graphic "qsTorPillBg" to 14
-   set the filled of graphic "qsTorPillBg" to true
-   set the backgroundColor of graphic "qsTorPillBg" to kClrPillOff
-   set the lineSize of graphic "qsTorPillBg" to 0
-   qsLabel "qsTorPill", "Tor: off", "878,4,1072,52", 10
-   set the foregroundColor of field "qsTorPill" to kClrPillOffText
-   set the textAlign of field "qsTorPill" to "center"
-   set the top of field "qsTorPill" to (28 - ((the height of field "qsTorPill") div 2))
+   -- the Tor chip: the kit pill, repainted by qsOnionPill as the daemon state moves
+   uiPill "qsTorPill", "Tor: off", "870,14,1080,42", empty
 
    -- =============== LEFT: SEND ===============
-   qsPanel "qsSendPanel", "20,72,620,596"
+   uiPanel "qsSendPanel", "20,72,620,596"
    qsBadge "qsStep1", "40,90,66,116", "1"
    qsHdr "qsSendHdr", "Send a file or folder", "76,86,440,114"
    -- Signal that a sensible default is already picked (so no up-front decision is
    -- demanded), and keep the jargon out of the labels (it lives in the grey
    -- captions + tooltips).
-   qsLabel "qsMethodCap", "How to share - Share code suits most people (change anytime):", "40,124,600,144", 10
+   uiWrap "qsMethodCap", "How to share - Share code suits most people (change anytime):", "40,124,600,144", 10
    set the textStyle of field "qsMethodCap" to "bold"
-   set the foregroundColor of field "qsMethodCap" to kClrInkSoft
+   set the foregroundColor of field "qsMethodCap" to kUiInkSoft
    -- The send method: three mutually-exclusive RADIOS (autoHilite off; managed via
    -- sTorSend/sWebShare by qsSetMethod/qsSyncMethod), on an equal 3-column grid.
    -- Each caption is click-through to the same choice (mouseUp cases above).
-   qsButton "qsMethodCode", "Share code", "40,148,220,168"
+   uiButton "qsMethodCode", "Share code", "40,148,220,168"
    set the style of button "qsMethodCode" to "radioButton"
    set the autoHilite of button "qsMethodCode" to false
-   qsCap "qsMethodCodeD", "Resumable. Needs the app.", "59,170,224,186"
-   qsButton "qsMethodTor", "Private - Tor", "230,148,410,168"
+   uiCap "qsMethodCodeD", "Resumable. Needs the app.", "59,170,224,186"
+   uiButton "qsMethodTor", "Private - Tor", "230,148,410,168"
    set the style of button "qsMethodTor" to "radioButton"
    set the autoHilite of button "qsMethodTor" to false
-   qsCap "qsMethodTorD", "Hides both IP addresses.", "249,170,414,186"
-   qsButton "qsMethodWeb", "Web link", "420,148,600,168"
+   uiCap "qsMethodTorD", "Hides both IP addresses.", "249,170,414,186"
+   uiButton "qsMethodWeb", "Web link", "420,148,600,168"
    set the style of button "qsMethodWeb" to "radioButton"
    set the autoHilite of button "qsMethodWeb" to false
-   qsCap "qsMethodWebD", "Any browser. Not encrypted.", "439,170,600,186"
+   uiCap "qsMethodWebD", "Any browser. Not encrypted.", "439,170,600,186"
    -- optional end-to-end encryption: a passphrase set BEFORE dropping (needs
    -- cryptoXT), plus a Suggest button that mints a strong one from the CSPRNG
-   qsLabel "qsSendPassCap", "Encrypt (optional):", "40,193,164,215", 10
+   uiWrap "qsSendPassCap", "Encrypt (optional):", "40,193,164,215", 10
    qsField "qsSendPass", "172,194,516,222", false
-   qsButton "qsPassSuggest", "Suggest", "524,194,600,222"
+   uiButton "qsPassSuggest", "Suggest", "524,194,600,222"
    -- the drag zone: the hero action, so it gets the most visual weight - a dashed
    -- rounded target (qsDropBg) with a transparent click/drop overlay field on top
    -- (qsDrop keeps the name every existing handler targets). Drag delivery is
    -- OS/source-dependent - it can be unreliable from a file-manager window - so
    -- the two explicit picker buttons below are the always-works path, and a click
    -- on the zone itself opens the file picker as a shortcut.
-   qsGfx "qsDropBg", "40,234,600,330"
+   uiGfx "qsDropBg", "40,234,600,330"
    set the roundRadius of graphic "qsDropBg" to 12
    set the filled of graphic "qsDropBg" to true
    set the lineSize of graphic "qsDropBg" to 2
@@ -605,117 +913,116 @@ command qsBuild
    set the borderWidth of field "qsDrop" to 0
    set the textAlign of field "qsDrop" to "center"
    set the textSize of field "qsDrop" to 13
-   set the foregroundColor of field "qsDrop" to kClrInk
+   set the foregroundColor of field "qsDrop" to kUiInk
    set the margins of field "qsDrop" to "8,30,8,8"   -- top margin centers the 2 lines
    -- the zone's two-line message is method-aware, painted by qsDropHint (via the
    -- qsSyncMethod call below), so a drop always says what it is about to do
    -- always-reliable pickers: separate file / folder choosers open the native dialog
    -- directly (no guessing), so sharing a FOLDER is one obvious click even when a drag
    -- will not register.
-   qsButton "qsChooseFile", "Choose a file...", "40,340,314,368"
-   qsButton "qsChooseFolder", "Choose a folder...", "326,340,600,368"
+   uiButton "qsChooseFile", "Choose a file...", "40,340,314,368"
+   uiButton "qsChooseFolder", "Choose a folder...", "326,340,600,368"
    -- the resulting code / link, with a Copy button, then a plain-English status line
-   qsLabel "qsCodeCap", "Share this with your friend", "40,382,440,404", 12
+   uiWrap "qsCodeCap", "Share this with your friend", "40,382,440,404", 12
    set the textStyle of field "qsCodeCap" to "bold"
    qsField "qsCode", "40,410,512,446", true
-   set the textFont of field "qsCode" to qsMonoFont()
+   set the textFont of field "qsCode" to uiMonoFont()
    set the textSize of field "qsCode" to 12
    set the margins of field "qsCode" to "8,8,8,8"
-   set the backgroundColor of field "qsCode" to kClrCodeBg
-   set the borderColor of field "qsCode" to kClrCodeLine
+   set the backgroundColor of field "qsCode" to kUiCodeBg
+   set the borderColor of field "qsCode" to kUiCodeLine
    -- a long locked/Tor code never wraps into an unreadable clipped block: it shows
    -- one clean line and Copy (or a click) always carries the FULL text
    set the dontWrap of field "qsCode" to true
-   qsButton "qsCopy", "Copy", "520,410,600,446"
-   qsLabel "qsSharing", "", "40,452,600,506", 10
-   set the foregroundColor of field "qsSharing" to kClrInkSoft
+   uiButton "qsCopy", "Copy", "520,410,600,446"
+   uiWrap "qsSharing", "", "40,452,600,506", 10
+   set the foregroundColor of field "qsSharing" to kUiInkSoft
    put "Nothing is shared yet - pick a method above, then drop a file." into field "qsSharing"
    -- MORE OPTIONS: a quiet labelled divider; qsSyncMethod reveals + lays out only
    -- the advanced row(s) that apply to the chosen method (Share code shows none)
-   qsCap "qsMoreCap", "MORE OPTIONS", "40,510,132,528"
+   uiCap "qsMoreCap", "MORE OPTIONS", "40,510,132,528"
    set the textSize of field "qsMoreCap" to 9
    set the textStyle of field "qsMoreCap" to "bold"
-   qsGfx "qsMoreLine", "138,520,600,521"
+   uiGfx "qsMoreLine", "138,520,600,521"
    set the style of graphic "qsMoreLine" to "rectangle"
    set the filled of graphic "qsMoreLine" to true
-   set the backgroundColor of graphic "qsMoreLine" to kClrCardLine
+   set the backgroundColor of graphic "qsMoreLine" to kUiCardLine
    set the lineSize of graphic "qsMoreLine" to 0
-   qsButton "qsWebCheck", "Also offer a Tor Browser download link", "40,530,520,550"
+   uiButton "qsWebCheck", "Also offer a Tor Browser download link", "40,530,520,550"
    set the style of button "qsWebCheck" to "checkbox"
    set the autoHilite of button "qsWebCheck" to false
    qsField "qsWebLink", "40,558,512,584", true
-   set the textFont of field "qsWebLink" to qsMonoFont()
+   set the textFont of field "qsWebLink" to uiMonoFont()
    set the textSize of field "qsWebLink" to 10
-   set the backgroundColor of field "qsWebLink" to kClrCodeBg
-   set the borderColor of field "qsWebLink" to kClrCodeLine
+   set the backgroundColor of field "qsWebLink" to kUiCodeBg
+   set the borderColor of field "qsWebLink" to kUiCodeLine
    set the dontWrap of field "qsWebLink" to true
-   qsButton "qsWebCopy", "Copy", "520,556,600,584"
-   qsButton "qsEditToggle", "Enable web editing", "40,560,304,582"
+   uiButton "qsWebCopy", "Copy", "520,556,600,584"
+   uiButton "qsEditToggle", "Enable web editing", "40,560,304,582"
    set the style of button "qsEditToggle" to "checkbox"
    set the autoHilite of button "qsEditToggle" to false
-   qsLabel "qsEditPassCap", "Password:", "310,557,376,583", 10
+   uiWrap "qsEditPassCap", "Password:", "310,557,376,583", 10
    qsField "qsEditPass", "380,558,520,584", false
-   qsLabel "qsEditHint", "LAN only", "526,557,600,583", 9
-   set the foregroundColor of field "qsEditHint" to kClrWarn
+   uiWrap "qsEditHint", "LAN only", "526,557,600,583", 9
+   set the foregroundColor of field "qsEditHint" to kUiWarn
    set the textAlign of field "qsEditHint" to "right"
 
    -- =============== RIGHT: RECEIVE ===============
-   qsPanel "qsRecvPanel", "640,72,1080,244"
+   uiPanel "qsRecvPanel", "640,72,1080,244"
    qsBadge "qsStep2", "656,90,682,116", "2"
    qsHdr "qsRecvSec", "Receive a file", "692,86,940,114"
-   qsLabel "qsRecvCap", "Paste the code your friend sent you:", "656,122,1064,142", 10
-   set the foregroundColor of field "qsRecvCap" to kClrInkSoft
+   uiWrap "qsRecvCap", "Paste the code your friend sent you:", "656,122,1064,142", 10
+   set the foregroundColor of field "qsRecvCap" to kUiInkSoft
    qsField "qsRecvCode", "656,146,948,180", false
-   set the textFont of field "qsRecvCode" to qsMonoFont()
+   set the textFont of field "qsRecvCode" to uiMonoFont()
    set the textSize of field "qsRecvCode" to 11
    set the margins of field "qsRecvCode" to "8,8,8,8"
    set the dontWrap of field "qsRecvCode" to true
-   qsButton "qsGet", "Download", "956,146,1064,180"
+   uiButton "qsGet", "Download", "956,146,1064,180"
    -- Enter in either Receive field also clicks Download (returnInField above); the
    -- default ring marks Download as the primary action of the whole right column
    set the default of button "qsGet" to true
-   qsLabel "qsRecvPassCap", "Passphrase (only if the file is locked):", "656,186,1064,206", 10
-   set the foregroundColor of field "qsRecvPassCap" to kClrInkSoft
+   uiWrap "qsRecvPassCap", "Passphrase (only if the file is locked):", "656,186,1064,206", 10
+   set the foregroundColor of field "qsRecvPassCap" to kUiInkSoft
    qsField "qsRecvPass", "656,212,1064,236", false
    -- =============== RIGHT: TRANSFERS & SHARES ===============
    -- One actionable list of everything live: downloads, code seeds, and Tor/web pages.
    -- Click a row to select it, then Copy code (re-fetch that share's code) or Stop it.
    -- Multiple code shares run at once - each is its own selectable, stoppable row.
-   qsPanel "qsXferPanel", "640,256,1080,474"
+   uiPanel "qsXferPanel", "640,256,1080,474"
    qsHdr "qsXferSec", "Transfers & shares", "656,268,940,292"
    -- the head's default left margin (8) lands within 1px of the list body's text
    -- origin (1px border + 6px margin), so the columns line up without magic
-   qsLabel "qsXferHead", "Name" & tab & "Direction" & tab & "Progress", "655,298,1064,316", 9
+   uiWrap "qsXferHead", "Name" & tab & "Direction" & tab & "Progress", "655,298,1064,316", 9
    set the tabStops of field "qsXferHead" to "230,340"
-   set the textFont of field "qsXferHead" to qsMonoFont()
-   set the foregroundColor of field "qsXferHead" to kClrInkMute
+   set the textFont of field "qsXferHead" to uiMonoFont()
+   set the foregroundColor of field "qsXferHead" to kUiMuted
    qsList "qsXfers", "656,318,1064,404", false
    set the tabStops of field "qsXfers" to "230,340"
-   set the textFont of field "qsXfers" to qsMonoFont()
+   set the textFont of field "qsXfers" to uiMonoFont()
    set the textSize of field "qsXfers" to 10
    put empty into sLastXferRows   -- freshly (re)built list: force the next refresh to paint
    -- the live detail strip: peers/seeds/rates/ratio for the SELECTED row, fed
    -- by qsRefreshXfers from status data the repaint loop already fetches
-   qsLabel "qsXferInfo", "", "656,408,1064,430", 9
-   set the textFont of field "qsXferInfo" to qsMonoFont()
-   set the foregroundColor of field "qsXferInfo" to kClrInkSoft
+   uiWrap "qsXferInfo", "", "656,408,1064,430", 9
+   set the textFont of field "qsXferInfo" to uiMonoFont()
+   set the foregroundColor of field "qsXferInfo" to kUiInkSoft
    put "Click a row above for live details." into field "qsXferInfo"
    -- per-row management: pick a row, then act on THAT share/transfer
-   qsCap "qsXferHint", "Selected:", "656,438,728,460"
-   qsButton "qsXferCopy", "Copy code", "734,434,838,462"
-   qsButton "qsXferStop", "Stop", "846,434,918,462"
-   qsButton "qsXferFolder", "Open folder", "926,434,1064,462"
+   uiCap "qsXferHint", "Selected:", "656,438,728,460"
+   uiButton "qsXferCopy", "Copy code", "734,434,838,462"
+   uiButton "qsXferStop", "Stop", "846,434,918,462"
+   uiButton "qsXferFolder", "Open folder", "926,434,1064,462"
    -- =============== RIGHT: ACTIVITY ===============
-   qsPanel "qsActPanel", "640,486,1080,596"
+   uiPanel "qsActPanel", "640,486,1080,596"
    qsHdr "qsActSec", "Activity", "656,494,940,518"
    qsList "qsLog", "656,524,1064,584", true
    set the textSize of field "qsLog" to 9
-   set the foregroundColor of field "qsLog" to kClrInkSoft
-   -- slim status strip along the very bottom: connection state left, live rates right
-   qsLabel "qsStatus", "", "20,604,700,634", 10
-   set the foregroundColor of field "qsStatus" to kClrInkSoft
-   qsLabel "qsRates", "", "700,604,1080,634", 10
-   set the foregroundColor of field "qsRates" to kClrInkSoft
+   set the foregroundColor of field "qsLog" to kUiInkSoft
+   -- slim status strip along the very bottom: the kit status line (re-rected
+   -- above) carries connection state on the left; live rates on the right
+   uiWrap "qsRates", "", "700,604,1080,634", 10
+   set the foregroundColor of field "qsRates" to kUiInkSoft
    set the textAlign of field "qsRates" to "right"
    qsAddTips
    qsOnionPill
@@ -749,86 +1056,6 @@ command qsClearGeneratedUI
    unlock screen
 end qsClearGeneratedUI
 
-command qsLabel pName, pText, pRect, pSize
-   local tTop, tFH
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the borderWidth of field pName to 0
-   set the opaque of field pName to false
-   set the threeD of field pName to false
-   set the textSize of field pName to pSize
-   set the foregroundColor of field pName to kClrInk
-   put pText into field pName
-   -- OXT pass 1 taught us never to GUESS font metrics: hand-sized rects clipped
-   -- text on Windows. So FIT the field to its measured text height (top pinned).
-   -- This does double duty: it prevents clipping (the field exactly holds its
-   -- text), AND it makes `the height of field` equal the TEXT height, which the
-   -- band-title and step-badge centering below rely on to place text on a
-   -- midline. GUARD: only resize when the engine returns a sane measurement -
-   -- a 0/blank formattedHeight (possible before the window is fully realized)
-   -- would collapse the label, so in that case keep the given rect. Empty
-   -- labels are skipped (they receive their text later).
-   if pText is not empty then
-      set the itemDelimiter to comma
-      put item 2 of pRect into tTop
-      put the formattedHeight of field pName into tFH
-      if tFH > 0 then
-         set the height of field pName to tFH
-         set the top of field pName to tTop
-      end if
-   end if
-end qsLabel
-
--- Create-or-reuse a named graphic: the chrome layer (cards, the Tor chip, the
--- drop target, dividers). Created BEFORE the controls that sit on it, so it stays
--- behind them in z-order. roundRect + antialiased by default; callers restyle.
-command qsGfx pName, pRect
-   if there is no graphic pName then
-      create graphic
-      set the name of the last graphic to pName
-   end if
-   set the rect of graphic pName to pRect
-   set the style of graphic pName to "roundRect"
-   set the antialiased of graphic pName to true
-end qsGfx
-
--- A dashboard card: a rounded, hairline-bordered, softly shadowed panel placed
--- BEHIND a group of controls. It only groups a step visually; clicks on it fall
--- through to `default: pass mouseUp`.
-command qsPanel pName, pRect
-   qsGfx pName, pRect
-   set the roundRadius of graphic pName to 14
-   set the filled of graphic pName to true
-   set the backgroundColor of graphic pName to kClrCard
-   set the lineSize of graphic pName to 1
-   -- a graphic strokes its outline in the foregroundColor; borderColor is set too
-   -- so whichever the engine honours, the hairline lands (VERIFY on the OXT pass)
-   set the foregroundColor of graphic pName to kClrCardLine
-   set the borderColor of graphic pName to kClrCardLine
-   qsSoftShadow pName
-end qsPanel
-
--- A soft drop shadow under a card. Graphic effects are an LC-9-era feature, so
--- this is a PURE enhancement: an engine without them just skips it (the try)
--- and the hairline border still separates the card from the page.
-command qsSoftShadow pName
-   local tShadow, tErr
-   try
-      put "90,98,114" into tShadow["color"]
-      put 30 into tShadow["opacity"]
-      put 10 into tShadow["size"]
-      put 0 into tShadow["spread"]
-      put 2 into tShadow["distance"]
-      put 90 into tShadow["angle"]
-      set the dropShadow of graphic pName to tShadow
-   catch tErr
-   end try
-end qsSoftShadow
-
 -- A small filled circle holding a step number ("1" Send, "2" Receive), so the two
 -- entry points pop without shouting: accent disc + centered white digit on top.
 command qsBadge pName, pRect, pDigit
@@ -838,82 +1065,40 @@ command qsBadge pName, pRect, pDigit
    put item 2 of pRect into tT
    put item 3 of pRect into tR
    put item 4 of pRect into tB
-   qsGfx (pName & "Bg"), pRect
+   uiGfx (pName & "Bg"), pRect
    set the roundRadius of graphic (pName & "Bg") to (tB - tT)   -- radius caps = circle
    set the filled of graphic (pName & "Bg") to true
    set the backgroundColor of graphic (pName & "Bg") to kClrAccent
    set the lineSize of graphic (pName & "Bg") to 0
-   -- the digit field auto-sizes in qsLabel; center it on the disc by MEASURED
+   -- the digit field auto-sizes in uiWrap; center it on the disc by MEASURED
    -- height (pass 1 clipped the digit clean off by trusting guessed metrics)
-   qsLabel pName, pDigit, pRect, 11
+   uiWrap pName, pDigit, pRect, 11
    set the textStyle of field pName to "bold"
-   set the foregroundColor of field pName to kClrBandText
+   set the foregroundColor of field pName to kUiAccentText
    set the textAlign of field pName to "center"
    set the top of field pName to (tT + (((tB - tT) - the height of field pName) div 2))
 end qsBadge
 
 -- A bold, dark section header sitting on a card (e.g. "Send a file or folder").
 command qsHdr pName, pText, pRect
-   qsLabel pName, pText, pRect, 14
+   uiWrap pName, pText, pRect, 14
    set the textStyle of field pName to "bold"
 end qsHdr
 
--- A small, muted caption (radio descriptions, hints, the MORE OPTIONS divider).
-command qsCap pName, pText, pRect
-   qsLabel pName, pText, pRect, 10
-   set the foregroundColor of field pName to kClrInkMute
-end qsCap
-
 command qsField pName, pRect, pLocked
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
+   uiInput pName, pRect
    set the lockText of field pName to pLocked
    set the traversalOn of field pName to (not pLocked)
-   -- flat "modern input" chrome instead of the engine's sunken-3D default
-   set the threeD of field pName to false
-   set the borderWidth of field pName to 1
-   set the borderColor of field pName to kClrFieldLine
-   set the opaque of field pName to true
-   set the backgroundColor of field pName to kClrCard
-   -- 4-item margins form ONLY: OXT ignored the single-number form on pass 1
-   set the margins of field pName to "6,6,6,6"
-   set the textSize of field pName to 11
 end qsField
 
-command qsButton pName, pLabel, pRect
-   if there is no button pName then
-      create button
-      set the name of the last button to pName
-   end if
-   set the rect of button pName to pRect
-   set the label of button pName to pLabel
-end qsButton
-
 command qsList pName, pRect, pIsLog
-   qsField pName, pRect, true
-   set the vScrollbar of field pName to true
-   set the borderColor of field pName to kClrCardLine
+   uiArea pName, pRect
    if pIsLog then
       set the listBehavior of field pName to false
    else
       set the listBehavior of field pName to true
    end if
 end qsList
-
--- The platform's own terminal face for codes / links / the transfers table, so
--- the monospace surfaces look native instead of typewriter-Courier. If a face is
--- missing the engine substitutes its default - a soft, safe failure.
-function qsMonoFont
-   if the platform is "MacOS" then
-      return "Menlo"
-   else if the platform is "Win32" then
-      return "Consolas"
-   end if
-   return "DejaVu Sans Mono"
-end qsMonoFont
 
 -- Paint the drop target for its three states - "idle", "hover" (pointer over it)
 -- and "hot" (an OS drag is over the window) - in ONE place, so the drag handlers,
@@ -946,7 +1131,7 @@ command qsDropText pLine1, pLine2
    end if
    set the text of field "qsDrop" to (pLine1 & return & pLine2)
    set the textSize of line 2 of field "qsDrop" to 10
-   set the foregroundColor of line 2 of field "qsDrop" to kClrInkMute
+   set the foregroundColor of line 2 of field "qsDrop" to kUiMuted
 end qsDropText
 
 -- The method-aware idle hint: the hero control narrates what a drop WILL do
@@ -964,29 +1149,6 @@ command qsDropHint
          "you get a short code to send - or click to browse (the buttons below always work)"
    end if
 end qsDropHint
-
--- Flash a Copy button's label to "Copied!" for a beat, then restore it - the
--- feedback lands AT the pointer instead of only in the far-away Activity log.
--- The original label rides a custom property so any button can flash.
-command qsCopyFlash pBtn
-   if there is no button pBtn then
-      exit qsCopyFlash
-   end if
-   if the uRealLabel of button pBtn is empty then
-      set the uRealLabel of button pBtn to the label of button pBtn
-   end if
-   set the label of button pBtn to "Copied!"
-   send ("qsCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
-end qsCopyFlash
-
-command qsCopyFlashReset pBtn
-   if there is no button pBtn then
-      exit qsCopyFlashReset
-   end if
-   if the uRealLabel of button pBtn is not empty then
-      set the label of button pBtn to the uRealLabel of button pBtn
-   end if
-end qsCopyFlashReset
 
 command qsAddTips
    set the tooltip of field "qsSendPass" to "Leave blank to share normally. Type a passphrase to ENCRYPT the file; tell your friend the passphrase separately."
@@ -1283,10 +1445,15 @@ command qsShareFile pPath
       -- (the salt rides in the share code), encrypt to a temp .enc with cryptoXT,
       -- then seed the ciphertext.
       put qsTempEncPath() into tEncPath
-      put sxRandomBytes(16) into tSalt
-      put sxPwHash(textEncode(tPass, "UTF-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
-      -- a small authenticator so the receiver can check the passphrase up front
-      put sxSecretBox(textEncode(kQsVerify, "ASCII"), tKey) into tVerifier
+      try
+         put sxRandomBytes(16) into tSalt
+         put sxPwHash(textEncode(tPass, "UTF-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+         -- a small authenticator so the receiver can check the passphrase up front
+         put sxSecretBox(textEncode(kQsVerify, "ASCII"), tKey) into tVerifier
+      catch tErr
+         qsLog "Could not prepare the encryption (is cryptoXT fully installed?):" && tErr
+         exit qsShareFile
+      end try
       qsLog "Encrypting" && quote & tName & quote & "- the app may pause briefly on a large file..."
       put qsEncryptFile(pPath, tEncPath, tKey) into tErr
       if tErr is not empty then
@@ -1350,7 +1517,7 @@ command qsCopyCode
       exit qsCopyCode
    end if
    set the clipboardData["text"] to field "qsCode"
-   qsCopyFlash "qsCopy"
+   uiCopyFlash "qsCopy"
    qsLog "Code copied. Send it to your friend by email, chat, anywhere."
 end qsCopyCode
 
@@ -1640,15 +1807,15 @@ command qsRefreshXfers
       end if
       -- the row's state color (applied after the retype, chunk-level)
       if tS["error"] is not empty then
-         put kClrRowErr into tClr[tLineNum]
+         put kUiBad into tClr[tLineNum]
       else if tStalled then
-         put kClrInkMute into tClr[tLineNum]
+         put kUiMuted into tClr[tLineNum]
       else if tDir contains "sending" then
-         put kClrRowSend into tClr[tLineNum]
+         put kUiOk into tClr[tLineNum]
       else if tDir contains "receiving" then
          put kClrAccent into tClr[tLineNum]
       else
-         put kClrInkMute into tClr[tLineNum]
+         put kUiMuted into tClr[tLineNum]
       end if
       -- keep the SELECTED torrent's full status for the detail strip below
       -- (no extra FFI call: this pass already fetched it)
@@ -1681,20 +1848,20 @@ command qsRefreshXfers
       end if
       if tE["state"] is "connecting" or tE["total"] is 0 then
          put qsTrunc(tE["name"], 26) & tab & tDir & tab & "connecting..." & return after tRows
-         put kClrWarn into tClr[tLineNum]
+         put kUiWarn into tClr[tLineNum]
       else if tE["state"] is "done" then
          put qsTrunc(tE["name"], 26) & tab & tDir & tab & "done" & return after tRows
-         put kClrRowSend into tClr[tLineNum]
+         put kUiOk into tClr[tLineNum]
       else if tE["state"] is "error" then
          put qsTrunc(tE["name"], 26) & tab & tDir & tab & "stopped" & return after tRows
-         put kClrRowErr into tClr[tLineNum]
+         put kUiBad into tClr[tLineNum]
       else
          put (the round of (tE["got"] / tE["total"] * 1000) / 10) into tPct
          put qsTrunc(tE["name"], 26) & tab & tDir & tab & tPct & "%  " & qsBytes(tE["got"]) & return after tRows
          if tE["dir"] is "receiving" then
             put kClrAccent into tClr[tLineNum]
          else
-            put kClrRowSend into tClr[tLineNum]
+            put kUiOk into tClr[tLineNum]
          end if
       end if
    end repeat
@@ -1704,20 +1871,20 @@ command qsRefreshXfers
       add 1 to tLineNum
       put "torweb|" into sXferRow[tLineNum]        -- the one Tor folder web page
       put qsTrunc(sActiveShare["name"], 26) & tab & "web via Tor" & tab & "serving (open the link)" & return after tRows
-      put kClrRowSend into tClr[tLineNum]
+      put kUiOk into tClr[tLineNum]
    end if
    if sCwActive is "true" then
       add 1 to tLineNum
       put "web|" into sXferRow[tLineNum]           -- the one clearweb share
       put qsTrunc(sCwName, 26) & tab & "direct web" & tab & "serving (open the link)" & return after tRows
-      put kClrRowSend into tClr[tLineNum]
+      put kUiOk into tClr[tLineNum]
    end if
    if the last char of tRows is return then
       delete the last char of tRows
    end if
    if tLineNum is 0 then
       put "Nothing yet. Drag a file to share, or paste a code to download." into tRows
-      put kClrInkMute into tClr[1]
+      put kUiMuted into tClr[1]
    end if
    -- Only RETYPE the list when its content actually changed. A wholesale field relayout
    -- + redraw every poll is the biggest avoidable UI cost (the OXT perf playbook), and -
@@ -1820,7 +1987,7 @@ command qsRefreshXfers
       put "Connecting to the peer network..." into tStat
    end if
    -- state on the left, live rates on the right (two fields, not spacing hacks)
-   set the text of field "qsStatus" to tStat
+   set the text of field "uiStatus" to tStat
    set the text of field "qsRates" to ("sending " & qsBytes(tUp) & "/s" & "      " & \
       "receiving " & qsBytes(tDown) & "/s")
 end qsRefreshXfers
@@ -1878,7 +2045,7 @@ command qsCopySelected
             end if
             put "magnet:?xt=urn:btih:" & tCode & "&tr=" & qsTracker() into tCode
             set the clipboardData["text"] to tCode
-            qsCopyFlash "qsXferCopy"
+            uiCopyFlash "qsXferCopy"
             qsLog "Copied that download as a magnet link - it works in any torrent client, or in this app's Receive box."
             exit qsCopySelected
          end if
@@ -1905,7 +2072,7 @@ command qsCopySelected
       exit qsCopySelected
    end if
    set the clipboardData["text"] to tCode
-   qsCopyFlash "qsXferCopy"
+   uiCopyFlash "qsXferCopy"
    qsLog "Copied that share's code to the clipboard. Send it to your friend."
 end qsCopySelected
 
@@ -2092,7 +2259,7 @@ end qsOnionStopShare
 -- teardown and (now) guards its own field clearing, so a coexisting code share's code
 -- in the left panel survives.
 command qsStopWebShare
-   if not sCwActive then
+   if sCwActive is not "true" then
       qsLog "There is no web share to stop."
       exit qsStopWebShare
    end if
@@ -2437,6 +2604,10 @@ command qsOnionTryTB
    oxSetControlPort kTorControlPortTB
    oxSetSocksPort kTorSocksPortTB
    oxConnectControl
+   if the result is not empty then
+      -- the pill says "not running", but only the log can say WHY twice over
+      qsLog "Tor is not reachable on either port pair (9051 or 9151). Start a Tor daemon or Tor Browser, then reopen this stack."
+   end if
 end qsOnionTryTB
 
 -- OnionXT status callback (dispatched with pKind, pInfo). Coalesced bootstrap and
@@ -2507,7 +2678,7 @@ end qsOnionServicePublished
 -- Repaint the live pill AND drive the toggle's disabled/hilite state. A mode the
 -- environment cannot honor never stays silently armed (sTorSend forced off).
 command qsOnionPill
-   local tState, tBg, tFg
+   local tState, tKind
    if there is no field "qsTorPill" then
       exit qsOnionPill
    end if
@@ -2519,23 +2690,19 @@ command qsOnionPill
       else
          put "Tor: needs cryptoXT" into tState
       end if
-      put kClrPillOff into tBg
-      put kClrPillOffText into tFg
+      put empty into tKind
       set the disabled of button "qsMethodTor" to true
    else if not oxIsControlAuthenticated() then
       put "Tor: not running" into tState
-      put kClrPillOff into tBg
-      put kClrPillOffText into tFg
+      put empty into tKind
       set the disabled of button "qsMethodTor" to true
    else if not oxIsReady() then
       put ("Tor: connecting " & oxBootstrapProgress() & "%") into tState
-      put kClrPillWait into tBg
-      put kClrPillWaitText into tFg
+      put "wait" into tKind
       set the disabled of button "qsMethodTor" to false
    else
       put "Tor: ready" into tState
-      put kClrPillOk into tBg
-      put kClrPillOkText into tFg
+      put "ok" into tKind
       set the disabled of button "qsMethodTor" to false
    end if
    -- if Tor became unavailable while it was the chosen method, fall back to a share code
@@ -2543,11 +2710,7 @@ command qsOnionPill
       put "false" into sTorSend
       qsSyncMethod
    end if
-   set the text of field "qsTorPill" to tState
-   set the foregroundColor of field "qsTorPill" to tFg
-   if there is a graphic "qsTorPillBg" then
-      set the backgroundColor of graphic "qsTorPillBg" to tBg
-   end if
+   uiPill "qsTorPill", tState, "870,14,1080,42", tKind
 end qsOnionPill
 
 -- The send method is a 3-way, mutually-exclusive RADIO choice - "code", "tor", or
@@ -2589,25 +2752,25 @@ command qsSyncMethod
    -- nothing can - in both cases HIDE the field and turn the caption into a full-width
    -- plain-English reason, so the affordance never misleads (qsShareFile already ignores
    -- a passphrase on the web branch, so this changes no share behaviour).
-   -- rect heights here must stay >= the build-time auto-sized height (qsLabel
+   -- rect heights here must stay >= the build-time auto-sized height (uiWrap
    -- measures the engine's real line height); 28px holds one line on any platform
    if tIsWeb then
       set the visible of field "qsSendPass" to false
       set the visible of button "qsPassSuggest" to false
       set the rect of field "qsSendPassCap" to "40,193,600,221"
-      set the foregroundColor of field "qsSendPassCap" to kClrInkMute
+      set the foregroundColor of field "qsSendPassCap" to kUiMuted
       put "Not encrypted - a web link opens in any browser, which cannot decrypt." into field "qsSendPassCap"
    else if sCanEncrypt is not "true" then
       set the visible of field "qsSendPass" to false
       set the visible of button "qsPassSuggest" to false
       set the rect of field "qsSendPassCap" to "40,193,600,221"
-      set the foregroundColor of field "qsSendPassCap" to kClrInkMute
+      set the foregroundColor of field "qsSendPassCap" to kUiMuted
       put "Encrypt: install cryptoXT (org.openxtalk.library.sodium) to lock this file." into field "qsSendPassCap"
    else
       set the visible of field "qsSendPass" to true
       set the visible of button "qsPassSuggest" to true
       set the rect of field "qsSendPassCap" to "40,193,164,221"
-      set the foregroundColor of field "qsSendPassCap" to kClrInk   -- back to a field label
+      set the foregroundColor of field "qsSendPassCap" to kUiInk   -- back to a field label
       put "Encrypt (optional):" into field "qsSendPassCap"
    end if
    -- MORE OPTIONS: reveal only the advanced control(s) that apply to THIS method; the
@@ -2898,9 +3061,14 @@ command qsStartOnionShare pPath, pName, pPass
    put 0 into tEncFlag
    put pPath into tStreamFile
    if pPass is not empty and sCanEncrypt then
-      put sxRandomBytes(16) into tSalt
-      put sxPwHash(textEncode(pPass, "UTF-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
-      put sxSecretBox(textEncode(kQsVerify, "ASCII"), tKey) into tVerifier
+      try
+         put sxRandomBytes(16) into tSalt
+         put sxPwHash(textEncode(pPass, "UTF-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+         put sxSecretBox(textEncode(kQsVerify, "ASCII"), tKey) into tVerifier
+      catch tErr
+         qsLog "Could not prepare the encryption (is cryptoXT fully installed?):" && tErr
+         exit qsStartOnionShare
+      end try
       put qsTempEncPath() into tEncPath
       put tEncPath into sTempEnc[tEncPath]
       qsLog "Encrypting " & quote & tSafe & quote & " before the private transfer - the app may pause briefly on a large file..."
@@ -6032,7 +6200,7 @@ end qsStartClearweb
 
 command qsStopClearweb
    local tK, tErr, tRc
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsStopClearweb
    end if
    qsCwSafeClose sCwPort        -- VERIFY: closing the port-id socket stops accepting
@@ -6068,7 +6236,7 @@ end qsStopClearweb
 -- A browser connected. Stream the request in (`read ... with message`, re-armed per
 -- delivery - OnionXT's proven pattern) and answer once the header block arrives.
 command qsCwAccept pSocketID
-   if not sCwActive then
+   if sCwActive is not "true" then
       qsCwSafeClose pSocketID
       exit qsCwAccept
    end if
@@ -6582,7 +6750,7 @@ end qsLanIp
 -- the primary, and the local-network link. Both are copyable (qsCopy / qsWebCopy).
 command qsCwShowLinks
    local tPath, tLan, tWan
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwShowLinks
    end if
    if sCwKind is "folder" then
@@ -6625,7 +6793,7 @@ end qsCwShowLinks
 -- NAT), or still detecting the public IP.
 command qsCwStatusText
    local tMsg
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwStatusText
    end if
    if sCwExtIp is not empty and not qsIsPrivateIp(sCwExtIp) then
@@ -6703,7 +6871,7 @@ command qsCwIpReply pUrl, pStatus
       unload URL pUrl
    catch tErr
    end try
-   if not sCwActive then
+   if sCwActive is not "true" then
       exit qsCwIpReply
    end if
    -- validate it really looks like an IPv4 (reject an HTML error page etc.)
@@ -7076,7 +7244,7 @@ command qsCopyWebLink
       exit qsCopyWebLink
    end if
    set the clipboardData["text"] to field "qsWebLink"
-   qsCopyFlash "qsWebCopy"
+   uiCopyFlash "qsWebCopy"
    qsLog "Web link copied. Anyone with Tor Browser can open it to download."
 end qsCopyWebLink
 

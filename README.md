@@ -216,8 +216,11 @@ monorepo**):
 
 - **`suite-gates.yml`** — every member's compiler-free gates on every push: the
   LiveCodeScript checker, docs house-style, all golden-vector suites, the
-  record registries, the known-answer harnesses, standalone freshness, and the
-  `MANIFEST.sha256` integrity checks.
+  record registries, the known-answer harnesses, standalone freshness, the
+  `MANIFEST.sha256` integrity checks, and the suite-level carried-block and
+  budget gates (the UI-kit and harness-scaffold drift gates — one look, one
+  scaffold, byte-identical everywhere, adoption enforced — plus the 720p
+  stack-size budget: every sample window fits 1200 x 640).
 - **`native-<member>.yml`** — the per-member native matrix, plus that member's
   sanitizer lanes, scoped by `paths:` so only the member you touched builds. The
   four CMake members cover all five platforms, each with its own dependency
