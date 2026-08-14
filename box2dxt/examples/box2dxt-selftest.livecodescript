@@ -100,13 +100,29 @@ end mouseUp
 -- Harness
 -- =====================================================================
 command stRunAll
+   local tProbeErr
    if gRunning is true then exit stRunAll
    put true into gRunning
    put empty into gRep
    put 0 into gPass
    put 0 into gFail
-   b2kEnsureNativeLib   -- map box2dxt.{so,dll,dylib} (beside this stack) before
-                        -- the header b2Version() call, which precedes b2kSetup
+   -- Probe the native library FIRST, guarded: every b2*/b2k* call below needs
+   -- box2dxt.{so,dll,dylib} mapped, and an absent library throws. Without this
+   -- guard the whole harness died with a raw error the moment b2Version ran;
+   -- now a missing library is a clean, honest skip (the family probe pattern,
+   -- and the prerequisite for ever folding this harness into the suite paste,
+   -- where it must run on machines that do not have box2dxt installed).
+   try
+      b2kEnsureNativeLib   -- map box2dxt.{so,dll,dylib} beside this stack
+      get b2Version()
+   catch tProbeErr
+      stOut "Box2Dxt is not installed (org.openxtalk.box2dxt) - install the"
+      stOut "extension and reopen this stack. Nothing was tested."
+      stOut "  (" & tProbeErr & ")"
+      set the text of field "stReport" to gRep
+      put false into gRunning
+      exit stRunAll
+   end try
    stOut "Box2Dxt Kit self-test v" & kStHarnessV & " - " & the long date && the time
    stOut "engine ABI " & b2Version() & "   (every test builds its own world)"
    stRun "stTestWorld"
