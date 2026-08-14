@@ -1,11 +1,12 @@
 script "RiptideSocial"
--- riptide.livecodescript - Riptide Social, phases 1-4 + 6: the identity
+-- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
--- layer, the DM layer, and the LAN mesh admission layer, as a
--- pure-LiveCodeScript library over the installed suite extensions
--- (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-7). Phase 5 (live sessions) adds
--- no library surface: its SDP offer/answer ride the phase-4 DM message
--- kinds "O"/"A" over the existing secretstream, so it is demo wiring.
+-- layer, the DM layer, the LAN mesh admission layer, and the anonymous
+-- persona layer, as a pure-LiveCodeScript library over the installed suite
+-- extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9). Phase 5 (live
+-- sessions) adds no library surface: its SDP offer/answer ride the phase-4
+-- DM message kinds "O"/"A" over the existing secretstream, so it is demo
+-- wiring.
 --
 -- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
 -- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
@@ -70,6 +71,16 @@ script "RiptideSocial"
 --     (rsLanBuildChallenge / rsLanBuildResponse / rsLanVerifyResponse) -
 --     a stranger on the same Wi-Fi cannot sign it. The records ride enet
 --     channel-0 messages; the app owns the enet host and the pump.
+--   - the ANONYMOUS PERSONA layer (phase 7): a separate onion-only
+--     identity from a subkey-100+n seed (rsAnonHandle / rsAnonOnion,
+--     derivable offline), the probe-gated onion-service wrapper
+--     (rsAnonCreateService), the BTXO framed-chunk protocol for files over
+--     a Tor stream (rsBtxo*), and rsPersonaAllows - the pure-policy
+--     DEANONYMIZATION GUARD (spec 9.3) every transport branch asserts
+--     through, fail-closed: an anon persona may use ONLY the onion, a
+--     public persona may use anything EXCEPT the anon onion, and an
+--     unknown transport is refused for both. This is the highest-severity
+--     invariant in the app; a hole in it is a deanonymization bug.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -120,6 +131,8 @@ script "RiptideSocial"
 --   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
 --   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
 --     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
+--   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
+--   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
@@ -128,7 +141,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.5.0"
+constant kRsVersion = "0.6.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -140,6 +153,9 @@ constant kRsLanMagic = "RSL1"
 constant kRsLanDomain = "riptide-lan"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
+constant kRsBtxoMagic = "BTXO"
+constant kRsBtxoVer = 1
+constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -168,7 +184,7 @@ local sRsCaps
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 6: identity, the live feed, media, DMs, LAN mesh)"
+         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
 end rsVersion
 
 function rsLastError
@@ -2190,6 +2206,181 @@ function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
    end if
    return tResp["name"]
 end rsLanVerifyResponse
+
+--------------------------------------------------------------------------
+-- the anonymous persona (phase 7) - a separate identity that lives ONLY
+-- as an onion service (spec section 8), and the deanonymization guard
+-- (section 9.3, the highest-severity invariant in the app)
+--
+-- An anon persona is the ed25519 identity of a subkey-100+n seed. Its
+-- .onion is that key the same way the public identity's is, so it is
+-- derivable offline (rsAnonOnion), and it NEVER touches the DHT, a
+-- torrent, or rp1: publishing a BEP44 head or announcing a swarm under
+-- the anon key would emit its IP and let anyone link its onion to its DHT
+-- presence. rsPersonaAllows is the pure policy every transport branch
+-- asserts through, fail-closed. The BTXO framing (shared with the Model C
+-- onion file transfer) moves files over a Tor stream, never as a torrent -
+-- anonymity's honest cost.
+--------------------------------------------------------------------------
+
+-- The anon persona's 64-hex handle: the ed25519 public of its subkey.
+function rsAnonHandle pMaster, pIndex
+   local tSeed
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonHandle: could not derive the anon subkey:" && \
+            rsLastError()
+      return empty
+   end if
+   return rsHandleFromSeed(tSeed)
+end rsAnonHandle
+
+-- The anon persona's .onion address (the SAME key as a v3 onion). Needs a
+-- SHA3 provider for the offline checksum, exactly like the public onion;
+-- returns empty with a clear error when neither provider is present.
+function rsAnonOnion pMaster, pIndex
+   local tHandle
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsOnionFromHandle(tHandle)
+end rsAnonOnion
+
+-- THE deanonymization guard (spec 9.3). Pure policy, no I/O: given the
+-- active persona's isAnon flag and a named transport, may this persona use
+-- it? An anon persona may use ONLY the onion; a public persona may use
+-- anything EXCEPT the anon onion route. An unknown transport name is
+-- refused for BOTH (fail-closed: a typo must never read as "allowed").
+-- Every send/publish branch in the app asserts through this before it
+-- selects a transport, so a violation is a refusal with a message, never a
+-- silent clearnet leak.
+function rsPersonaAllows pIsAnon, pTransport
+   local tKnown
+   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   set the itemDelimiter to comma
+   if pTransport is not among the items of tKnown then
+      rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
+            quote & " - refusing fail-closed"
+      return false
+   end if
+   if pIsAnon is true then
+      return pTransport is "onion"
+   end if
+   return pTransport is not "onion"
+end rsPersonaAllows
+
+-- Create the anon persona's onion service (probe-gated: needs onionxt +
+-- a live tor daemon). oxCreateServiceFromSeed derives the same address
+-- rsAnonOnion computes offline, so the returned service serves the
+-- persona's own key. Returns the onionxt service handle (a positive
+-- integer) or empty; the address arrives via onionxt's status callback
+-- once tor publishes the descriptor, or synchronously from
+-- oxServiceAddress on the returned handle once ready.
+function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
+   local tSeed, tHandle, tErr
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if the number of bytes in tSeed is not 32 then
+      rsSetError "rsAnonCreateService: could not derive a 32-byte anon" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   if pVirtualPort is not an integer or pVirtualPort < 1 or \
+         pVirtualPort > 65535 then
+      rsSetError "rsAnonCreateService: the virtual port must be 1..65535"
+      return empty
+   end if
+   if pLocalPort is not an integer or pLocalPort < 1 or pLocalPort > 65535 then
+      rsSetError "rsAnonCreateService: the local port must be 1..65535"
+      return empty
+   end if
+   try
+      oxCreateServiceFromSeed tSeed, pVirtualPort, pLocalPort
+      put the result into tHandle
+   catch tErr
+      rsSetError "rsAnonCreateService: needs onionxt" && \
+            "(oxCreateServiceFromSeed):" && tErr
+      return empty
+   end try
+   if tHandle is not an integer then
+      -- onionxt reports a capability/bind failure as an "OnionXT: ..." string
+      rsSetError "rsAnonCreateService:" && tHandle
+      return empty
+   end if
+   return tHandle
+end rsAnonCreateService
+
+-- BTXO framing (Model C, shared with the quickshare onion transfer): the
+-- header, then u32-length-prefixed DATA frames, then a zero-length
+-- terminator, all over one Tor stream. The library builds and parses the
+-- frames; the app owns the oxWrite/oxStreamData I/O.
+function rsBtxoHeader pName, pTotalSize, pFlags
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or the number of bytes in tName > 65535 \
+         then
+      rsSetError "rsBtxoHeader: the name must be 1..65535 UTF-8 bytes"
+      return empty
+   end if
+   if pTotalSize is not an integer or pTotalSize < 0 then
+      rsSetError "rsBtxoHeader: the total size must be a non-negative integer"
+      return empty
+   end if
+   if pFlags is not an integer or pFlags < 0 or pFlags > 255 then
+      rsSetError "rsBtxoHeader: flags is a single byte (0..255)"
+      return empty
+   end if
+   put textEncode(kRsBtxoMagic, "ASCII") into tOut
+   put numToByte(kRsBtxoVer) after tOut
+   put numToByte(pFlags) after tOut
+   put rsBEu16(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pTotalSize) after tOut
+   return tOut
+end rsBtxoHeader
+
+function rsBtxoParseHeader pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 8 then
+      rsSetError "rsBtxoParseHeader: truncated header"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsBtxoMagic then
+      rsSetError "rsBtxoParseHeader: bad magic, not a BTXO stream"
+      return empty
+   end if
+   if byteToNum(byte 5 of pBytes) is not kRsBtxoVer then
+      rsSetError "rsBtxoParseHeader: unsupported BTXO version"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tOut["flags"]
+   put rsReadBEu16(byte 7 to 8 of pBytes) into tNameLen
+   if tLen is not 8 + tNameLen + 8 then
+      rsSetError "rsBtxoParseHeader: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   return tOut
+end rsBtxoParseHeader
+
+-- One content frame: a u32 big-endian length then the bytes. Non-empty
+-- (the zero-length frame is the terminator, built separately).
+function rsBtxoDataFrame pPayload
+   local tOut
+   if the number of bytes in pPayload < 1 then
+      rsSetError "rsBtxoDataFrame: a data frame carries at least one byte" && \
+            "(use rsBtxoTerminator to end the stream)"
+      return empty
+   end if
+   put binaryEncode("N", the number of bytes in pPayload) into tOut
+   put pPayload after tOut
+   return tOut
+end rsBtxoDataFrame
+
+function rsBtxoTerminator
+   return binaryEncode("N", 0)
+end rsBtxoTerminator
 
 --------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32

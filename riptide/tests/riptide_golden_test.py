@@ -306,6 +306,35 @@ check_raises("lan name over cap", lambda: ref["lan_build_challenge"](
 check_raises("lan bad nonce len", lambda: ref["lan_build_challenge"](
     "a", b"\x00" * 31))
 
+# --- phase 7: the anon persona + BTXO framing ------------------------------
+
+ANON0_HANDLE = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
+ANON0_ONION = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
+BTXO_HEADER_HEX = "4254584f0100000a7365637265742e747874000000000000000b"
+BTXO_FRAME_HEX = "0000000b68656c6c6f20776f726c64"
+
+check("anon0 handle", ref["anon_handle"](MASTER, 0), ANON0_HANDLE)
+check("anon0 onion", ref["anon_onion"](MASTER, 0), ANON0_ONION)
+# the anon handle is the anon SEED's ed25519 public, and the anon onion is
+# that key as a v3 address - so the onion decodes back to the handle, which
+# is what makes an anon .onion self-authenticating (spec 8.1)
+check("anon onion inverts to handle",
+      ref["pubkey_from_onion"](ANON0_ONION).hex(), ANON0_HANDLE)
+# distinct personas are distinct keys
+check("anon personas differ",
+      ref["anon_handle"](MASTER, 0) != ref["anon_handle"](MASTER, 1), True)
+
+check("btxo header bytes", ref["btxo_header"]("secret.txt", 11, 0).hex(),
+      BTXO_HEADER_HEX)
+check("btxo data frame", ref["btxo_data_frame"](b"hello world").hex(),
+      BTXO_FRAME_HEX)
+check("btxo terminator", ref["btxo_terminator"](), bytes.fromhex("00000000"))
+# the frame really is length-prefixed: the u32 prefix equals the payload len
+check("btxo frame prefix",
+      ref["btxo_data_frame"](b"hello world")[:4],
+      (11).to_bytes(4, "big"))
+check_raises("btxo empty frame", lambda: ref["btxo_data_frame"](b""))
+
 # ---------------------------------------------------------------------------
 
 if FAILURES:

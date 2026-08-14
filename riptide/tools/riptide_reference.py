@@ -668,6 +668,61 @@ def _lan_parse_challenge(rec):
 
 
 # ---------------------------------------------------------------------------
+# Phase 7 - the anonymous persona (RIPTIDE-SOCIAL-SPEC.md section 8)
+#
+# An anon persona is a separate ed25519 identity (a subkey-100+n seed) that
+# lives ONLY as an onion service and never touches the DHT, a torrent, or
+# rp1 (the Model C invariant, section 9.3). Its handle is the ed25519
+# public of the anon subkey; its .onion is that key the same way the public
+# identity's is - so anon_onion(master, n) is fully derivable offline and
+# equals oxCreateServiceFromSeed(anon_seed(master, n)).
+#
+# The BTXO framed-chunk protocol (Model C, shared with the quickshare onion
+# transfer): a header, then u32-length-prefixed DATA frames, then a
+# zero-length terminator, all over one Tor stream. Payload never crosses as
+# a torrent - anonymity's honest cost is serving files directly.
+# ---------------------------------------------------------------------------
+
+BTXO_MAGIC = b"BTXO"
+BTXO_VER = 1
+BTXO_MAX_NAME = 65535  # the u16 name-length field
+
+
+def anon_handle(master, index):
+    """The anon persona's 64-hex handle: the ed25519 public of its subkey."""
+    return ed25519_publickey(anon_seed(master, index)).hex()
+
+
+def anon_onion(master, index):
+    """The anon persona's .onion - the SAME key as a v3 onion, derivable
+    offline; equals oxCreateServiceFromSeed(anon_seed(master, index))."""
+    return onion_from_pubkey(ed25519_publickey(anon_seed(master, index)))
+
+
+def btxo_header(name, total, flags=0):
+    """magic(4) ver(1) flags(1) nameLen(u16 BE) name(UTF-8) total(u64 BE)."""
+    nb = name.encode("utf-8")
+    if len(nb) > BTXO_MAX_NAME:
+        raise ValueError("name over the u16 length field")
+    if not 0 <= flags <= 255:
+        raise ValueError("flags is one byte")
+    return (BTXO_MAGIC + bytes([BTXO_VER, flags]) + _u16(len(nb)) + nb
+            + _u64(total))
+
+
+def btxo_data_frame(payload):
+    """length(u32 BE) then the bytes; a non-empty content frame."""
+    if len(payload) < 1:
+        raise ValueError("a data frame carries at least one byte")
+    return struct.pack(">I", len(payload)) + payload
+
+
+def btxo_terminator():
+    """The zero-length frame that ends a BTXO stream."""
+    return struct.pack(">I", 0)
+
+
+# ---------------------------------------------------------------------------
 # Import-time self-checks against the independent anchors. A model that
 # cannot reproduce a vector it did not invent must not be consulted.
 # ---------------------------------------------------------------------------
@@ -800,6 +855,11 @@ def golden_vectors():
     lan_nonce = bytes.fromhex("5a" * 32)
     lan_challenge = lan_build_challenge("laptop", lan_nonce)
     lan_response = lan_build_response(lan_challenge, "phone", master)
+    # phase 7: the anon persona (subkey 100) and a sample BTXO stream
+    anon0_handle = anon_handle(master, 0)
+    anon0_onion = anon_onion(master, 0)
+    btxo_hdr = btxo_header("secret.txt", 11, 0)
+    btxo_frame = btxo_data_frame(b"hello world")
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -835,6 +895,10 @@ def golden_vectors():
         "lanNonce": lan_nonce.hex(),
         "lanChallenge": lan_challenge.hex(),
         "lanResponse": lan_response.hex(),
+        "anon0Handle": anon0_handle,
+        "anon0Onion": anon0_onion,
+        "btxoHeader": btxo_hdr.hex(),
+        "btxoFrame": btxo_frame.hex(),
     }
 
 

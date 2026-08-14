@@ -74,6 +74,10 @@ constant kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
+constant kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
+constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
+constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
+constant kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 
 local sLog
 local sPass
@@ -106,6 +110,7 @@ function rsSelfTest
       rstSectionIngest
       rstSectionDm tCaps
       rstSectionLan
+      rstSectionAnon tCaps
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
    else
@@ -565,6 +570,94 @@ private command rstSectionIngest
    rstCheck (rsIngestPost(tPostEvent, rsZeroTarget(), kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rstSectionIngest
+
+-- The phase-7 anon persona layer. The derivations (handle, onion) and the
+-- BTXO framing are pure and golden-pinned; the deanonymization GUARD is
+-- pure policy and gets its full truth table here (it is the app's
+-- highest-severity invariant, so it is asserted every way it can fail);
+-- the onion-service wrapper's refusal paths run offline, and its live
+-- create needs a tor daemon (SKIP without onionxt, like the other live
+-- sections skip without their transport).
+private command rstSectionAnon pCaps
+   local tHeader, tFrame, tParsed, tHandle
+   rstSection "phase 7 - the anon persona, the guard, and BTXO framing"
+   -- derivations: the anon persona is a real, distinct identity
+   rstCheck (rsAnonHandle(rstBin(kRsGoldMasterHex), 0) is kRsGoldAnon0Handle), \
+         "anon persona 0's handle matches golden"
+   rstCheck (rsAnonHandle(rstBin(kRsGoldMasterHex), 0) is not \
+         rsAnonHandle(rstBin(kRsGoldMasterHex), 1)), \
+         "distinct personas are distinct identities"
+   rstCheck (rsAnonHandle(rstBin(kRsGoldMasterHex), 0) is not kRsGoldHandle), \
+         "and an anon persona is not the public identity"
+   if pCaps["hasSha3"] is true then
+      rstCheck (rsAnonOnion(rstBin(kRsGoldMasterHex), 0) is \
+            kRsGoldAnon0Onion), "anon persona 0's onion matches golden"
+      rstCheck (rsVerifyOnionClaim(kRsGoldAnon0Onion, kRsGoldAnon0Handle) is \
+            true or pCaps["hasOnion"] is not true), \
+            "the anon onion self-authenticates to the anon handle"
+   else
+      rstCheck (rsAnonOnion(rstBin(kRsGoldMasterHex), 0) is empty), \
+            "without a SHA3 provider the anon onion refuses"
+      rstSkip "anon onion self-computation: no SHA3 provider installed"
+   end if
+   -- THE GUARD (spec 9.3): the full truth table, because a hole here is a
+   -- deanonymization bug. An anon persona may use ONLY the onion.
+   rstCheck (rsPersonaAllows(true, "onion") is true), \
+         "anon persona: onion is allowed"
+   rstCheck (rsPersonaAllows(true, "dht") is false), \
+         "anon persona: the DHT is REFUSED"
+   rstCheck (rsPersonaAllows(true, "torrent") is false), \
+         "anon persona: torrents are REFUSED"
+   rstCheck (rsPersonaAllows(true, "rp1") is false), \
+         "anon persona: rp1 is REFUSED"
+   rstCheck (rsPersonaAllows(true, "enet") is false), \
+         "anon persona: enet is REFUSED"
+   rstCheck (rsPersonaAllows(true, "dc") is false), \
+         "anon persona: dataChannel is REFUSED"
+   -- a public persona may use anything EXCEPT the anon onion route
+   rstCheck (rsPersonaAllows(false, "dht") is true), \
+         "public persona: the DHT is allowed"
+   rstCheck (rsPersonaAllows(false, "torrent") is true), \
+         "public persona: torrents are allowed"
+   rstCheck (rsPersonaAllows(false, "rp1") is true), \
+         "public persona: rp1 is allowed"
+   rstCheck (rsPersonaAllows(false, "onion") is false), \
+         "public persona: the anon onion route is REFUSED"
+   -- fail-closed: an unknown transport is refused for BOTH personas
+   rstCheck (rsPersonaAllows(true, "smoke-signal") is false), \
+         "an unknown transport is refused for an anon persona"
+   rstCheck (rsPersonaAllows(false, "smoke-signal") is false), \
+         "and refused for a public persona (fail-closed)"
+   -- BTXO framing
+   put rsBtxoHeader("secret.txt", 11, 0) into tHeader
+   rstCheck (rstHex(tHeader) is kRsGoldBtxoHeaderHex), \
+         "the BTXO header bytes match golden"
+   put rsBtxoParseHeader(tHeader) into tParsed
+   rstCheck (tParsed["name"] is "secret.txt"), "the header name round-trips"
+   rstCheck (tParsed["total"] is 11), "the header total round-trips"
+   rstCheck (tParsed["flags"] is 0), "the header flags round-trip"
+   put rsBtxoDataFrame(textEncode("hello world", "ASCII")) into tFrame
+   rstCheck (rstHex(tFrame) is kRsGoldBtxoFrameHex), \
+         "a BTXO data frame matches golden"
+   rstCheck (the number of bytes in rsBtxoTerminator() is 4), \
+         "the terminator is a 4-byte zero length"
+   rstCheck (rsBtxoDataFrame(empty) is empty), \
+         "an empty data frame is refused (use the terminator)"
+   rstCheck (rsBtxoParseHeader(byte 1 to 5 of tHeader) is empty), \
+         "a truncated BTXO header is refused"
+   rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
+         "a negative total size is refused"
+   -- the onion-service wrapper: refusals run offline
+   rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 0, 8080) is \
+         empty), "rsAnonCreateService refuses a bad virtual port"
+   rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 80, 70000) is \
+         empty), "rsAnonCreateService refuses a bad local port"
+   if pCaps["hasOnion"] is not true then
+      rstSkip "anon onion service create: onionxt is not installed"
+   else
+      rstSkip "anon onion service create: needs a live tor daemon"
+   end if
+end rstSectionAnon
 
 -- The phase-6 LAN admission layer. Entirely pure crypto (no transport),
 -- so it runs on SodiumXT alone - which is right: the admission proof is

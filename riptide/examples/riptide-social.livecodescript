@@ -71,9 +71,12 @@ constant kNameMax = 64
 -- rider carries, so a mismatched app is refused before the crypto handshake
 constant kLanPort = 27099
 constant kLanProto = 1
+-- phase 7 (anon persona): the onion's virtual + local forward ports
+constant kAnonVirtualPort = 80
+constant kAnonLocalPort = 8734
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-4"
+constant kRaUiVersion = "ra-ui-720p-5"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -459,6 +462,9 @@ local sLanServerPeer   -- a client's peer handle to the host
 local sLanChallenges   -- server: peer id -> the challenge bytes I sent it
 local sLanDevices      -- peer id -> the admitted device name
 local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
+-- phase 7 (anon persona). A separate onion-only identity; the guard keeps
+-- it from ever touching the DHT, a torrent, or rp1 (spec 9.3).
+local sAnonService     -- the onionxt service handle while published, or empty
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -471,6 +477,7 @@ on closeStack
    put empty into sPolling
    raDmTeardown
    raLanLeave
+   raAnonStop
    if sSession is an integer and sSession > 0 then
       try
          btStopSession sSession
@@ -541,6 +548,21 @@ on mouseUp
       case "raLanLeaveBtn"
          raLanLeave
          break
+      case "raGoAnonFromFeed"
+         go card "raAnon" of me
+         break
+      case "raGoFeedFromAnon"
+         go card 1 of me
+         break
+      case "raAnonReveal"
+         raAnonReveal
+         break
+      case "raAnonPublishBtn"
+         raAnonPublish
+         break
+      case "raAnonStopBtn"
+         raAnonStop
+         break
       case "raDmStart"
          raDmStart
          break
@@ -565,6 +587,7 @@ command raBuild
    raBuildFeedCard
    raBuildDmCard
    raBuildLanCard
+   raBuildAnonCard
    go card 1 of me
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
@@ -577,6 +600,7 @@ command raBuildFeedCard
    uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
    uiButton "raGoDm", "Messages >", "1080,4,1192,26"
    uiButton "raGoLanFromFeed", "Devices >", "968,4,1074,26"
+   uiButton "raGoAnonFromFeed", "Anon >", "872,4,962,26"
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -695,6 +719,39 @@ command raBuildLanCard
          & " master joins and a stranger is refused.", \
          "16,572,1184,632"
 end raBuildLanCard
+
+-- Phase 7: the anonymous persona. A separate onion-only identity derived
+-- from the same master. This card shows its two spellings and, loudly, the
+-- deanonymization guard (spec 9.3): the transports it may and may NOT use.
+command raBuildAnonCard
+   if there is no card "raAnon" of me then
+      create card
+      set the name of the last card to "raAnon"
+   end if
+   go card "raAnon" of me
+   uiChrome "Riptide Social - Anon persona (phase 7: onion-only identity)", 1200, 640
+   uiButton "raGoFeedFromAnon", "< Feed", "1080,4,1192,26"
+
+   uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
+   uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
+   uiButton "raAnonPublishBtn", "Publish onion", "228,80,432,104"
+   uiButton "raAnonStopBtn", "Unpublish", "440,80,592,104"
+   uiArea "raAnonOut", "16,110,592,562"
+
+   uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
+   uiArea "raAnonGuard", "608,80,1184,562"
+
+   uiFooter \
+         "The anon persona is a DIFFERENT key from your public identity," \
+         & " reachable ONLY as an onion service - it never publishes to the" \
+         & " DHT, seeds a torrent, or opens an rp1 peer (that would leak its" \
+         & " IP and link it to your public feed). The guard enforces that at" \
+         & " every transport branch. Publishing needs onionxt + a running" \
+         & " tor daemon. Cross-posting or correlated timing can still link" \
+         & " your personas: the tool removes the easy links, not the hard" \
+         & " ones (spec 9).", \
+         "16,572,1184,632"
+end raBuildAnonCard
 
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
@@ -929,6 +986,7 @@ end raLock
 command raClearKeys
    raDmTeardown
    raLanLeave
+   raAnonStop
    put empty into sIdSeed
    put empty into sDmSeed
    put empty into sDmKeys
@@ -1868,6 +1926,136 @@ command raLanPaintDevices
       set the text of field "raLanDevices" of card "raDevices" of me to tRows
    end if
 end raLanPaintDevices
+
+-- ---- phase 7: the anonymous persona ------------------------------------------
+-- Everything here is the gated rsAnon*/rsPersonaAllows layer. Revealing is
+-- pure and offline; publishing needs onionxt + tor. The guard panel is a
+-- live read of rsPersonaAllows, so it can never drift from the policy the
+-- library actually enforces.
+
+command raAnonReveal
+   local tHandle, tOnion, tOut
+   if sMasterSeed is empty then
+      uiStatus "Unlock on the Feed card first; the anon persona derives from your master seed.", "warn"
+      exit raAnonReveal
+   end if
+   put rsAnonHandle(sMasterSeed, 0) into tHandle
+   if tHandle is empty then
+      put "Could not derive the anon persona:" && rsLastError() into tOut
+   else
+      put "anon persona 0 handle (a DIFFERENT key from your public one):" \
+            & return & "  " & tHandle & return into tOut
+      put rsAnonOnion(sMasterSeed, 0) into tOnion
+      if tOnion is empty then
+         put "onion address: unavailable (no SHA3 provider loaded)." & return \
+               after tOut
+      else
+         put "reachable ONLY at this onion (share it out of band, never post it):" \
+               & return & "  " & tOnion & return after tOut
+      end if
+      put return & "To an outside observer this key and your public handle" \
+            && "are unlinkable - as long as you never cross-post or correlate" \
+            && "their timing yourself." after tOut
+   end if
+   set the text of field "raAnonOut" of card "raAnon" of me to tOut
+   raAnonPaintGuard
+end raAnonReveal
+
+-- The guard panel: a LIVE read of rsPersonaAllows for every transport, so
+-- what the user sees is exactly what the library enforces.
+command raAnonPaintGuard
+   local tRows, tT, tList
+   put "transport      anon persona   public persona" & return & \
+         "---------      ------------   --------------" & return into tRows
+   put "onion,dht,torrent,rp1,enet,dc" into tList
+   set the itemDelimiter to comma
+   repeat for each item tT in tList
+      put rsPadRight(tT, 15) after tRows
+      if rsPersonaAllows(true, tT) then
+         put rsPadRight("allowed", 15) after tRows
+      else
+         put rsPadRight("REFUSED", 15) after tRows
+      end if
+      if rsPersonaAllows(false, tT) then
+         put "allowed" after tRows
+      else
+         put "REFUSED" after tRows
+      end if
+      put return after tRows
+   end repeat
+   put return & "The anon persona may use ONLY the onion. Every other" & \
+         return & "transport is refused fail-closed - that is what keeps" & \
+         return & "its .onion unlinkable from your public DHT presence." \
+         after tRows
+   if there is a field "raAnonGuard" of card "raAnon" of me then
+      if the text of field "raAnonGuard" of card "raAnon" of me is not tRows \
+            then
+         set the text of field "raAnonGuard" of card "raAnon" of me to tRows
+      end if
+   end if
+end raAnonPaintGuard
+
+private function rsPadRight pText, pWidth
+   local tOut
+   put pText into tOut
+   repeat while the number of chars in tOut < pWidth
+      put space after tOut
+   end repeat
+   return tOut
+end rsPadRight
+
+command raAnonPublish
+   local tService
+   if sMasterSeed is empty then
+      uiStatus "Unlock on the Feed card first.", "warn"
+      exit raAnonPublish
+   end if
+   if sCaps["hasOnion"] is not true then
+      raAnonLog "onionxt is not installed; the anon persona cannot be served. Install org.openxtalk.library.onion and run a tor daemon."
+      exit raAnonPublish
+   end if
+   if sAnonService is not empty then
+      raAnonLog "Already published; Unpublish first."
+      exit raAnonPublish
+   end if
+   -- the guard, asserted at the one branch that could leak: publishing IS
+   -- an onion action, which the anon persona is allowed - but we route it
+   -- through the same policy the rest of the app uses, so this call site
+   -- can never quietly become a non-onion one
+   if not rsPersonaAllows(true, "onion") then
+      raAnonLog "the guard refused an onion publish - this is a bug, not a normal path."
+      exit raAnonPublish
+   end if
+   put rsAnonCreateService(sMasterSeed, 0, kAnonVirtualPort, kAnonLocalPort) \
+         into tService
+   if tService is empty then
+      raAnonLog "publish failed:" && rsLastError()
+      exit raAnonPublish
+   end if
+   put tService into sAnonService
+   raAnonLog "onion service requested (handle" && tService & \
+         "); tor publishes the descriptor in a few seconds. Serve your feed at the local port with onion-httpd."
+end raAnonPublish
+
+command raAnonStop
+   local tErr
+   if sAnonService is empty then
+      exit raAnonStop
+   end if
+   try
+      oxRemoveService sAnonService
+   catch tErr
+      -- onionxt gone or service already down; nothing to release
+   end try
+   put empty into sAnonService
+   raAnonLog "anon onion unpublished."
+end raAnonStop
+
+command raAnonLog pLine
+   if there is a field "raAnonOut" of card "raAnon" of me then
+      put pLine & return after field "raAnonOut" of card "raAnon" of me
+   end if
+end raAnonLog
 
 -- ---- phase 3: the media strip ------------------------------------------------
 -- One button, two moods. While the watched item is not yet openable the

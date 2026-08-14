@@ -432,6 +432,10 @@ constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
+constant rs1kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
+constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
+constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
+constant rs1kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -498,7 +502,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.5.0"
+constant kRsVersion = "0.6.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -510,6 +514,9 @@ constant kRsLanMagic = "RSL1"
 constant kRsLanDomain = "riptide-lan"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
+constant kRsBtxoMagic = "BTXO"
+constant kRsBtxoVer = 1
+constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
 constant kRsInboxSuffix = "riptide-inbox"
@@ -6248,7 +6255,7 @@ end oxProcessId
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 6: identity, the live feed, media, DMs, LAN mesh)"
+         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
 end rsVersion
 
 function rsLastError
@@ -7957,6 +7964,140 @@ function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
    end if
    return tResp["name"]
 end rsLanVerifyResponse
+
+function rsAnonHandle pMaster, pIndex
+   local tSeed
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonHandle: could not derive the anon subkey:" && \
+            rsLastError()
+      return empty
+   end if
+   return rsHandleFromSeed(tSeed)
+end rsAnonHandle
+
+function rsAnonOnion pMaster, pIndex
+   local tHandle
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsOnionFromHandle(tHandle)
+end rsAnonOnion
+
+function rsPersonaAllows pIsAnon, pTransport
+   local tKnown
+   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   set the itemDelimiter to comma
+   if pTransport is not among the items of tKnown then
+      rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
+            quote & " - refusing fail-closed"
+      return false
+   end if
+   if pIsAnon is true then
+      return pTransport is "onion"
+   end if
+   return pTransport is not "onion"
+end rsPersonaAllows
+
+function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
+   local tSeed, tHandle, tErr
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if the number of bytes in tSeed is not 32 then
+      rsSetError "rsAnonCreateService: could not derive a 32-byte anon" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   if pVirtualPort is not an integer or pVirtualPort < 1 or \
+         pVirtualPort > 65535 then
+      rsSetError "rsAnonCreateService: the virtual port must be 1..65535"
+      return empty
+   end if
+   if pLocalPort is not an integer or pLocalPort < 1 or pLocalPort > 65535 then
+      rsSetError "rsAnonCreateService: the local port must be 1..65535"
+      return empty
+   end if
+   try
+      oxCreateServiceFromSeed tSeed, pVirtualPort, pLocalPort
+      put the result into tHandle
+   catch tErr
+      rsSetError "rsAnonCreateService: needs onionxt" && \
+            "(oxCreateServiceFromSeed):" && tErr
+      return empty
+   end try
+   if tHandle is not an integer then
+      -- onionxt reports a capability/bind failure as an "OnionXT: ..." string
+      rsSetError "rsAnonCreateService:" && tHandle
+      return empty
+   end if
+   return tHandle
+end rsAnonCreateService
+
+function rsBtxoHeader pName, pTotalSize, pFlags
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or the number of bytes in tName > 65535 \
+         then
+      rsSetError "rsBtxoHeader: the name must be 1..65535 UTF-8 bytes"
+      return empty
+   end if
+   if pTotalSize is not an integer or pTotalSize < 0 then
+      rsSetError "rsBtxoHeader: the total size must be a non-negative integer"
+      return empty
+   end if
+   if pFlags is not an integer or pFlags < 0 or pFlags > 255 then
+      rsSetError "rsBtxoHeader: flags is a single byte (0..255)"
+      return empty
+   end if
+   put textEncode(kRsBtxoMagic, "ASCII") into tOut
+   put numToByte(kRsBtxoVer) after tOut
+   put numToByte(pFlags) after tOut
+   put rsBEu16(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pTotalSize) after tOut
+   return tOut
+end rsBtxoHeader
+
+function rsBtxoParseHeader pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 8 then
+      rsSetError "rsBtxoParseHeader: truncated header"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsBtxoMagic then
+      rsSetError "rsBtxoParseHeader: bad magic, not a BTXO stream"
+      return empty
+   end if
+   if byteToNum(byte 5 of pBytes) is not kRsBtxoVer then
+      rsSetError "rsBtxoParseHeader: unsupported BTXO version"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tOut["flags"]
+   put rsReadBEu16(byte 7 to 8 of pBytes) into tNameLen
+   if tLen is not 8 + tNameLen + 8 then
+      rsSetError "rsBtxoParseHeader: length does not match its name field"
+      return empty
+   end if
+   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   return tOut
+end rsBtxoParseHeader
+
+function rsBtxoDataFrame pPayload
+   local tOut
+   if the number of bytes in pPayload < 1 then
+      rsSetError "rsBtxoDataFrame: a data frame carries at least one byte" && \
+            "(use rsBtxoTerminator to end the stream)"
+      return empty
+   end if
+   put binaryEncode("N", the number of bytes in pPayload) into tOut
+   put pPayload after tOut
+   return tOut
+end rsBtxoDataFrame
+
+function rsBtxoTerminator
+   return binaryEncode("N", 0)
+end rsBtxoTerminator
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN
@@ -11059,6 +11200,7 @@ function rs1rsSelfTest
       rs1rstSectionIngest
       rs1rstSectionDm rs1tCaps
       rs1rstSectionLan
+      rs1rstSectionAnon rs1tCaps
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
    else
@@ -11509,6 +11651,87 @@ private command rs1rstSectionIngest
    rs1rstCheck (rsIngestPost(rs1tPostEvent, rsZeroTarget(), rs1kRsGoldHandle) is \
          empty), "ingesting against the zero target is refused"
 end rs1rstSectionIngest
+
+private command rs1rstSectionAnon pCaps
+   local rs1tHeader, rs1tFrame, rs1tParsed, rs1tHandle
+   rs1rstSection "phase 7 - the anon persona, the guard, and BTXO framing"
+   -- derivations: the anon persona is a real, distinct identity
+   rs1rstCheck (rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 0) is rs1kRsGoldAnon0Handle), \
+         "anon persona 0's handle matches golden"
+   rs1rstCheck (rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 0) is not \
+         rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 1)), \
+         "distinct personas are distinct identities"
+   rs1rstCheck (rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 0) is not rs1kRsGoldHandle), \
+         "and an anon persona is not the public identity"
+   if pCaps["hasSha3"] is true then
+      rs1rstCheck (rsAnonOnion(rs1rstBin(rs1kRsGoldMasterHex), 0) is \
+            rs1kRsGoldAnon0Onion), "anon persona 0's onion matches golden"
+      rs1rstCheck (rsVerifyOnionClaim(rs1kRsGoldAnon0Onion, rs1kRsGoldAnon0Handle) is \
+            true or pCaps["hasOnion"] is not true), \
+            "the anon onion self-authenticates to the anon handle"
+   else
+      rs1rstCheck (rsAnonOnion(rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+            "without a SHA3 provider the anon onion refuses"
+      rs1rstSkip "anon onion self-computation: no SHA3 provider installed"
+   end if
+   -- THE GUARD (spec 9.3): the full truth table, because a hole here is a
+   -- deanonymization bug. An anon persona may use ONLY the onion.
+   rs1rstCheck (rsPersonaAllows(true, "onion") is true), \
+         "anon persona: onion is allowed"
+   rs1rstCheck (rsPersonaAllows(true, "dht") is false), \
+         "anon persona: the DHT is REFUSED"
+   rs1rstCheck (rsPersonaAllows(true, "torrent") is false), \
+         "anon persona: torrents are REFUSED"
+   rs1rstCheck (rsPersonaAllows(true, "rp1") is false), \
+         "anon persona: rp1 is REFUSED"
+   rs1rstCheck (rsPersonaAllows(true, "enet") is false), \
+         "anon persona: enet is REFUSED"
+   rs1rstCheck (rsPersonaAllows(true, "dc") is false), \
+         "anon persona: dataChannel is REFUSED"
+   -- a public persona may use anything EXCEPT the anon onion route
+   rs1rstCheck (rsPersonaAllows(false, "dht") is true), \
+         "public persona: the DHT is allowed"
+   rs1rstCheck (rsPersonaAllows(false, "torrent") is true), \
+         "public persona: torrents are allowed"
+   rs1rstCheck (rsPersonaAllows(false, "rp1") is true), \
+         "public persona: rp1 is allowed"
+   rs1rstCheck (rsPersonaAllows(false, "onion") is false), \
+         "public persona: the anon onion route is REFUSED"
+   -- fail-closed: an unknown transport is refused for BOTH personas
+   rs1rstCheck (rsPersonaAllows(true, "smoke-signal") is false), \
+         "an unknown transport is refused for an anon persona"
+   rs1rstCheck (rsPersonaAllows(false, "smoke-signal") is false), \
+         "and refused for a public persona (fail-closed)"
+   -- BTXO framing
+   put rsBtxoHeader("secret.txt", 11, 0) into rs1tHeader
+   rs1rstCheck (rs1rstHex(rs1tHeader) is rs1kRsGoldBtxoHeaderHex), \
+         "the BTXO header bytes match golden"
+   put rsBtxoParseHeader(rs1tHeader) into rs1tParsed
+   rs1rstCheck (rs1tParsed["name"] is "secret.txt"), "the header name round-trips"
+   rs1rstCheck (rs1tParsed["total"] is 11), "the header total round-trips"
+   rs1rstCheck (rs1tParsed["flags"] is 0), "the header flags round-trip"
+   put rsBtxoDataFrame(textEncode("hello world", "ASCII")) into rs1tFrame
+   rs1rstCheck (rs1rstHex(rs1tFrame) is rs1kRsGoldBtxoFrameHex), \
+         "a BTXO data frame matches golden"
+   rs1rstCheck (the number of bytes in rsBtxoTerminator() is 4), \
+         "the terminator is a 4-byte zero length"
+   rs1rstCheck (rsBtxoDataFrame(empty) is empty), \
+         "an empty data frame is refused (use the terminator)"
+   rs1rstCheck (rsBtxoParseHeader(byte 1 to 5 of rs1tHeader) is empty), \
+         "a truncated BTXO header is refused"
+   rs1rstCheck (rsBtxoHeader("x", -1, 0) is empty), \
+         "a negative total size is refused"
+   -- the onion-service wrapper: refusals run offline
+   rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 0, 8080) is \
+         empty), "rsAnonCreateService refuses a bad virtual port"
+   rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 80, 70000) is \
+         empty), "rsAnonCreateService refuses a bad local port"
+   if pCaps["hasOnion"] is not true then
+      rs1rstSkip "anon onion service create: onionxt is not installed"
+   else
+      rs1rstSkip "anon onion service create: needs a live tor daemon"
+   end if
+end rs1rstSectionAnon
 
 private command rs1rstSectionLan
    local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName

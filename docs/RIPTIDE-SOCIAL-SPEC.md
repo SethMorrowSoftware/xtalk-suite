@@ -518,7 +518,16 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    pass. As-built: `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**
-   `bt*` calls provable in a trace. Needs an OXT + live-Tor pass.
+   `bt*` calls provable in a trace. Needs an OXT + live-Tor pass. *(Built
+   2026-08-14: the `rsAnon*` layer - the onion-only persona derivation (handle
+   and .onion, offline-derivable and golden-pinned), the probe-gated onion
+   service wrapper, and the BTXO framed-chunk protocol - plus `rsPersonaAllows`,
+   the pure-policy §9.3 guard whose full truth table is asserted in the harness,
+   plus the demo's Anon card with a live guard panel. Verified statically; the
+   done-criterion needs an OXT + live-Tor pass. The sealed anon-DM route (§8.3)
+   is deferred: `sxSeal` needs a curve25519 key, so it wants the same
+   published-prekey refinement the DM rail uses, which is a later pass. As-built:
+   `riptide/CLAUDE.md`.)*
 
 ---
 

@@ -200,6 +200,19 @@ def main(argv):
     if k.get("kRsGoldLanNonce") != "5a" * 32:
         failures.append("kRsGoldLanNonce is not the documented 0x5a * 32")
 
+    # the phase-7 anon persona + BTXO framing
+    want("kRsGoldAnon0Handle", ref["anon_handle"](master, 0))
+    want("kRsGoldAnon0Onion", ref["anon_onion"](master, 0))
+    want("kRsGoldBtxoHeaderHex",
+         ref["btxo_header"]("secret.txt", 11, 0).hex())
+    want("kRsGoldBtxoFrameHex",
+         ref["btxo_data_frame"](b"hello world").hex())
+    # the anon onion inverts back to the anon handle (self-authenticating)
+    if ref["pubkey_from_onion"](k["kRsGoldAnon0Onion"]).hex() != \
+            ref["anon_handle"](master, 0):
+        failures.append("the golden anon onion does not invert to the anon "
+                        "handle")
+
     # the honest split
     uncovered = sorted(set(k) - checked)
     if uncovered:

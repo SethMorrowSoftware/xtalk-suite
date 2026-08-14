@@ -36,7 +36,15 @@ its done-criterion (a device that shares the master joins, a stranger is
 refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
 library surface** - SDP rides the phase-4 DM message kinds O/A over the
 existing secretstream, so it is a demo-wiring milestone still to build.
-Phase 7 (anon persona) lands next, behind its own pass.
+**Phase 7 (anon persona) is BUILT but not passed** (2026-08-14): the
+`rsAnon*` layer (onion-only persona derivation, probe-gated service
+wrapper, BTXO framing) and `rsPersonaAllows` - the pure-policy §9.3 guard,
+the app's highest-severity invariant - plus the demo's Anon card, all
+golden-pinned/harness-covered where deterministic; its done-criterion (a
+persona reachable over Tor with zero `bt*` calls in a trace) needs an OXT +
+live-Tor pass. With that, all seven spec phases are built in the tree;
+only phase 5's dc demo wiring and phase 7's sealed anon-DM route remain,
+both noted below.
 
 ## The rules that bind this directory
 
@@ -268,6 +276,35 @@ Phase 7 (anon persona) lands next, behind its own pass.
   master seed in memory between unlock and Lock/close (the spec's
   one-keyring pattern), cleared on both. The honesty caveat about
   unlocked engine memory already covers it.
+
+## Things decided building phase 7 (do not re-litigate)
+
+- **The guard is a PURE FUNCTION, and it is the crown jewel.**
+  `rsPersonaAllows(pIsAnon, pTransport)` is the spec-9.3 invariant made
+  code: anon may use only `onion`, public may use anything but `onion`,
+  and an unknown transport is refused for BOTH (fail-closed - a typo must
+  never read as allowed). It has no I/O, so its FULL truth table is
+  asserted in the harness, and the demo's guard panel is a LIVE read of
+  it, so what the user sees can never drift from what the library
+  enforces. Every transport branch the app adds must route through it.
+- **The anon onion is offline-derivable and self-authenticating.**
+  `rsAnonOnion(master, n)` = the v3 onion of `anon_seed(master, n)`'s
+  ed25519 public, which equals `oxCreateServiceFromSeed(anon_seed)`'s
+  address; the golden test pins that the onion inverts back to the anon
+  handle. So a follower who has the .onion has verified the key by
+  reaching it.
+- **BTXO is reused, not reinvented.** The anon file transfer uses the
+  Model C `BTXO` framing (magic/ver/flags/nameLen/name/total header,
+  u32-length data frames, zero-length terminator) - the same convention
+  the quickshare onion transfer speaks - so the framing is a shared
+  cross-project contract, golden-pinned here.
+- **The sealed anon-DM route is DEFERRED, honestly.** Spec 8.3 wants
+  `sxSeal(message, anonPub)`, but `sxSeal` takes a curve25519 key and the
+  persona identity is ed25519 (no conversion handler exists). The correct
+  fix is the same published-prekey pattern the DM rail uses (phase 4),
+  which is a later pass - not something to fake now. The library ships
+  the derivation, the guard, the service wrapper, and BTXO; the sealed
+  inbound DM is the one piece left.
 
 ## Suite integration status
 
