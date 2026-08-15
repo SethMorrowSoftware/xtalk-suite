@@ -6642,16 +6642,17 @@ function rsParseHead pBytes
       rsSetError "rsParseHead: truncated head record"
       return empty
    end if
-   -- textDecode can throw on malformed UTF-8, and pBytes is attacker-supplied,
-   -- so a bad display name must be a clean refusal - not a thrown error out of a
-   -- parser the header promises never throws.
-   try
-      put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
-            into tHead["displayName"]
-   catch tErr
+   -- pBytes is attacker-supplied, so a bad display name is a clean refusal.
+   -- OXT's textDecode is LOSSY on malformed UTF-8, not throwing (see
+   -- rsBytesAreUtf8 and the 2026-08-15 engine finding), so the refusal is a
+   -- round-trip validity check, NOT a try - the try that used to sit here
+   -- never fired and the head would have parsed with a mangled name.
+   if not rsBytesAreUtf8(byte (tPos + 1) to (tPos + tNameLen) of pBytes) then
       rsSetError "rsParseHead: the display name is not valid UTF-8"
       return empty
-   end try
+   end if
+   put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
+         into tHead["displayName"]
    add tNameLen to tPos
    put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
          into tField
@@ -6835,15 +6836,16 @@ function rsParsePost pBytes
          rsSetError "rsParsePost: text length runs past the record"
          return empty
       end if
-      -- Attacker-supplied bytes; malformed UTF-8 is a clean refusal, not a throw
-      -- (the header promises this parser never throws).
-      try
-         put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
-               "UTF-8") into tPost["text"]
-      catch tErr
+      -- Attacker-supplied bytes; malformed UTF-8 is a clean refusal. OXT's
+      -- textDecode is lossy not throwing (see rsBytesAreUtf8), so validate
+      -- by round-trip rather than a try that never fires.
+      if not rsBytesAreUtf8(byte (tPos + 1) to (tPos + tTextLen) of pBytes) \
+            then
          rsSetError "rsParsePost: the post text is not valid UTF-8"
          return empty
-      end try
+      end if
+      put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
+            "UTF-8") into tPost["text"]
       add tTextLen to tPos
    else if tKind is "C" then
       put byteToNum(byte (tPos + 1) of pBytes) into tCount
@@ -7724,12 +7726,14 @@ function rsDmParseMessage pBytes
    end if
    put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
    put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
-   try
-      put textDecode(byte 10 to -1 of pBytes, "UTF-8") into tOut["text"]
-   catch tErr
+   -- the body is authenticated (it came out of the secretstream) but is
+   -- still declared UTF-8 text; OXT's textDecode is lossy not throwing (see
+   -- rsBytesAreUtf8), so validate by round-trip rather than an inert try
+   if not rsBytesAreUtf8(byte 10 to -1 of pBytes) then
       rsSetError "rsDmParseMessage: the body is not valid UTF-8"
       return empty
-   end try
+   end if
+   put textDecode(byte 10 to -1 of pBytes, "UTF-8") into tOut["text"]
    return tOut
 end rsDmParseMessage
 
@@ -7853,7 +7857,7 @@ function rsLanBuildChallenge pName, pNonce
 end rsLanBuildChallenge
 
 function rsLanParseChallenge pBytes
-   local tLen, tNameLen, tOut, tErr
+   local tLen, tNameLen, tOut
    put the number of bytes in pBytes into tLen
    if tLen < 6 + kRsLanNonceLen then
       rsSetError "rsLanParseChallenge: truncated challenge"
@@ -7869,16 +7873,15 @@ function rsLanParseChallenge pBytes
       rsSetError "rsLanParseChallenge: length does not match its name field"
       return empty
    end if
-   -- the name is attacker-controlled bytes; textDecode throws on malformed
-   -- UTF-8, and this parser promises never to throw (rule 5), so refuse
-   -- rather than let it escape into the caller's poll pump
-   try
-      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-            tOut["name"]
-   catch tErr
+   -- the name is attacker-controlled; OXT's textDecode is LOSSY, not throwing
+   -- (see rsBytesAreUtf8), so validate by round-trip and REFUSE a malformed
+   -- name rather than admit a mangled one into the poll pump (rule 5)
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
       rsSetError "rsLanParseChallenge: the device name is not valid UTF-8"
       return empty
-   end try
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
    put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
    return tOut
 end rsLanParseChallenge
@@ -7923,7 +7926,7 @@ function rsLanBuildResponse pChallengeBytes, pName, pMaster
 end rsLanBuildResponse
 
 function rsLanParseResponse pBytes
-   local tLen, tNameLen, tOut, tErr
+   local tLen, tNameLen, tOut
    put the number of bytes in pBytes into tLen
    if tLen < 6 + 64 then
       rsSetError "rsLanParseResponse: truncated response"
@@ -7939,15 +7942,15 @@ function rsLanParseResponse pBytes
       rsSetError "rsLanParseResponse: length does not match its name field"
       return empty
    end if
-   -- attacker-controlled name; refuse on malformed UTF-8 rather than throw
-   -- (rule 5), so a host draining an enet batch cannot be crashed by it
-   try
-      put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
-            tOut["name"]
-   catch tErr
+   -- attacker-controlled name; OXT's textDecode is lossy not throwing, so
+   -- validate by round-trip and refuse a malformed name (a host draining an
+   -- enet batch must not be handed a mangled one) - see rsBytesAreUtf8
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
       rsSetError "rsLanParseResponse: the device name is not valid UTF-8"
       return empty
-   end try
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
    put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
    return tOut
 end rsLanParseResponse
@@ -8072,7 +8075,7 @@ function rsBtxoHeader pName, pTotalSize, pFlags
 end rsBtxoHeader
 
 function rsBtxoParseHeader pBytes
-   local tLen, tNameLen, tOut, tErr
+   local tLen, tNameLen, tOut
    put the number of bytes in pBytes into tLen
    if tLen < 8 then
       rsSetError "rsBtxoParseHeader: truncated header"
@@ -8092,15 +8095,15 @@ function rsBtxoParseHeader pBytes
       rsSetError "rsBtxoParseHeader: length does not match its name field"
       return empty
    end if
-   -- attacker-controlled file name; refuse on malformed UTF-8 rather than
-   -- throw out of a parser the never-throw contract covers (rule 5)
-   try
-      put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
-            tOut["name"]
-   catch tErr
+   -- attacker-controlled file name; OXT's textDecode is lossy not throwing,
+   -- so validate by round-trip and refuse a malformed name - see
+   -- rsBytesAreUtf8 (the never-throw contract, rule 5)
+   if not rsBytesAreUtf8(byte 9 to (8 + tNameLen) of pBytes) then
       rsSetError "rsBtxoParseHeader: the file name is not valid UTF-8"
       return empty
-   end try
+   end if
+   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
    put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
    return tOut
 end rsBtxoParseHeader
@@ -8120,6 +8123,17 @@ end rsBtxoDataFrame
 function rsBtxoTerminator
    return binaryEncode("N", 0)
 end rsBtxoTerminator
+
+private function rsBytesAreUtf8 pBytes
+   local tDecoded, tErr
+   if the number of bytes in pBytes is 0 then return true
+   try
+      put textDecode(pBytes, "UTF-8") into tDecoded
+   catch tErr
+      return false
+   end try
+   return textEncode(tDecoded, "UTF-8") is pBytes
+end rsBytesAreUtf8
 
 private function rsIsHexOfLen pValue, pLen
    local tI, tN

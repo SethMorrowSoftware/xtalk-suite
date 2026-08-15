@@ -230,7 +230,11 @@ The members are deliberately non-overlapping, so real apps mix them:
   separate onion-only identity, and `rsPersonaAllows`, the pure-policy guard
   that keeps an anon persona off the DHT/torrents/rp1 entirely) is BUILT
   with its full guard truth-table asserted in the harness (the Anon card and
-  onion serving await an OXT + live-Tor pass);
+  onion serving await an OXT + live-Tor pass). On 2026-08-15 the suite
+  selftest ran on a real engine and the whole phase 4-7 **compute** surface
+  came back green (the kx session agreement, the DM secretstream round trip,
+  the LAN admit/refuse, the anon guard, BTXO framing), so those paths are
+  engine-verified; only the live peer-to-peer criteria still need two boxes.
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
