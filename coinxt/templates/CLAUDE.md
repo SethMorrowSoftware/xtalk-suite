@@ -165,10 +165,10 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    BARE `else` on the next line (nothing after it) binds to that single-line `if`; its `end if` then
    closes the WRONG block, the outer `if` stays open, and OXT reports "missing end if" at the
    handler's end, far from the cause. Chains with the statement ON the else line
-   (`if c then s1` / `else s2`) are fine. GATE status, honestly: the unified checker treats a bare
-   `else` as a continuation and does NOT flag this; the only tool that currently does is holde-em's
-   member idiom gate (`holde-em/tools/check-holdem-idioms.py`). Until that check is ported into the
-   unified checker, the multi-line block form above is your defence.
+   (`if c then s1` / `else s2`) are fine. GATE: the unified checker flags the exact broken pairing -
+   a bare `else` directly after a single-line `if ... then <stmt>` - in every member copy (docstring
+   check 20; ported from the hold-em lineage in the 2026-08-15 checker union, which also retired
+   `holde-em/tools/check-holdem-idioms.py`). The multi-line block form above stays the house shape.
 3. **`does not` is not a valid construction.** There is no `does not end with` / `does not contain`.
    Negate the whole comparison: `not (tHost ends with ".onion")`, `not (x is in y)`.
 4. **`is a <type>` accepts only** number / integer / boolean / point / rect / date / color. There is NO

@@ -765,6 +765,7 @@ on handleEnc pRole
 end handleEnc
 
 on doEncrypt
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSalt
    local tKey
    local tBox
@@ -818,6 +819,7 @@ end doDecrypt
 
 -- Flip one byte of the sealed blob in place, to show open() rejects it.
 on doTamper
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tRaw
    local tLen
    local tPos
@@ -973,6 +975,7 @@ on handleHash pRole
 end handleHash
 
 on doHashText
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Guarded to mirror its sibling doHashFile (fleet audit): the same
    -- missing-library throw applies to the in-memory hash.
    try
@@ -984,6 +987,7 @@ on doHashText
 end doHashText
 
 on doHashFile
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tPath
    answer file "Choose a file to hash:"
    put it into tPath
@@ -1002,6 +1006,7 @@ end doHashFile
 -- random salt is stored at the front, then the authenticated secretstream.
 -- You choose where to save it (ask file).
 on doEncFile
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSrc
    local tDest
    local tTmp
@@ -1110,6 +1115,7 @@ on handleSeed pRole
 end handleSeed
 
 on doSeedDerive
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSalt
    local tSeed
    local tSeed2
@@ -1179,6 +1185,7 @@ on handleRoll pRole
 end handleRoll
 
 on doRollDemo
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tKey
    local tHeader
    local tNoAd
@@ -1263,6 +1270,7 @@ on handleAbout pRole
 end handleAbout
 
 on doSelfTest
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tKey
    local tBox
    local tPk

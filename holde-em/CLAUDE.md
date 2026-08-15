@@ -23,12 +23,21 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   whether the PREVIOUS on-engine Level 0 runs dealt from the stepped or the
 >   1-stepped stream is exactly what that re-pass should establish (the Python KAT
 >   mirrors pin the 2-stepped semantics).
-> - The hold-em lineage checker survives as `tools/check-holdem-idioms.py`: eight of
->   its checks (H6 chunk-of-array, H7 bitwise, engine-token names, undeclared catch
->   vars, command-with-parens, dynamic property names, message-box prose, undeclared
->   k-constants) have no unified-checker counterpart and every one has shipped-defect
->   provenance here. It runs IN ADDITION via `tools/build-all.sh`; porting those
->   checks INTO the unified checker (and retiring the file) is recorded follow-up.
+> - The hold-em lineage checker survived the fold as `tools/check-holdem-idioms.py`,
+>   because eight of its checks had no unified-checker counterpart and every one had
+>   shipped-defect provenance here. The recorded follow-up - porting those checks
+>   INTO the unified checker and retiring the file - was KEPT on 2026-08-15, the
+>   same day: the unified `check-livecodescript.py` now carries them as its checks
+>   13-21 (fixture-tested in every member copy), and the file is gone. Two ports
+>   were honestly NARROWED by fleet engine evidence, and one was refused: the
+>   bitwise refusal gates only the function-call form `bitXor(a, b)` (the operator
+>   form stands in engine-passed code in four members - H7's blanket ban stays THIS
+>   member's prose law); the catch-variable check fires only when the catch body
+>   REFERENCES the undeclared variable (onionxt's probes fired the unreferenced
+>   form green on-engine); and the chunk-of-array-element refusal (H6) was NOT
+>   ported at all - riptide/onionxt/box2dxt/nocloud chunk array elements in
+>   engine-passed code, so H6 stays this member's prose law too, with the
+>   reasoning recorded in the unified checker's docstring.
 > - All ten pure-logic gates (the idiom checker, `check-docs.py`, the seven KATs,
 >   `logic-fuzz.py`) are wired into the suite's `tools/build-all.sh --gates`, which
 >   CI runs on every push; this member's own `.github/workflows/ci.yml` stays for
@@ -118,22 +127,26 @@ checklist) before writing any protocol code, and follow section 16 as law.
 
 ## Commands
 
-**Static verification** (the only automated gate that exists for xTalk; run BOTH after
+**Static verification** (the only automated gate that exists for xTalk; run after
 **every** `.livecodescript` edit, and in CI):
 
 ```sh
 python3 tools/check-livecodescript.py   # the suite's UNIFIED checker (drift-gated copy)
-python3 tools/check-holdem-idioms.py    # this member's extra idiom checks
 ```
 
-Since the 2026-08-15 fold, `check-livecodescript.py` is the suite's unified twelve-check
-gate (ASCII, balance incl. switch/try, constants-before-use, token-shadow, zero-arg
-statement calls, repeat-step and throw-in-catch refusals, and the per-dialect
-antipattern sets) - byte-identical in every member and held so by the suite's
-checker-drift gate: never edit the copy here alone. `check-holdem-idioms.py` is the
-hold-em lineage checker it replaced, kept because eight of its checks (see its
-docstring) exist nowhere in the unified tool and each has caught a real shipped defect
-here. Exit non-zero on any failure, either tool.
+Since the 2026-08-15 fold, `check-livecodescript.py` is the suite's unified gate
+(ASCII, balance incl. switch/try, constants-before-use, token-shadow, zero-arg
+statement calls, repeat-step and throw-in-catch refusals, the per-dialect
+antipattern sets - and, since the same-day checker union, the hold-em lineage
+checks 13-21: bitwise-as-function, engine-token declared names, referenced
+undeclared catch variables, command-with-parens, dynamic property names,
+message-box prose, never-declared k-constants, dangling else, stray backslash) -
+byte-identical in every member and held so by the suite's checker-drift gate:
+never edit the copy here alone. The old lineage checker
+(`check-holdem-idioms.py`) is retired; its two checks the fleet's engine
+evidence would not support fleet-wide (H6's chunk-of-array refusal, H7's
+blanket bitwise ban) remain THIS member's prose law, below. Exit non-zero on
+any failure.
 
 **Pure-logic pinning** (Phase 1+): the evaluator vectors, betting-engine cases, and
 protocol KATs run headless in CI because they are plain algorithms — the one part of
@@ -357,7 +370,7 @@ bug in the family.
    *equals* a token is even worse — it silently evaluates AS the token: `tAb` is read as
    the `tab` constant (found v0.4.2, in `heByteXor` → renamed `tWorkA`). Prefer
    distinctive multi-word stems. The static gate now flags any local/param whose name
-   equals an engine token (check 7).
+   equals an engine token (unified checker check 14).
 3. **Prefix conventions:** `u` = custom property, `g` = script-local global, `t` =
    handler local, `p` = parameter, `k` = constant. Public API prefixes in the family:
    `b2k*`, `bt*`, `sx*`, `ox*`; this repo's public surface will be `he*` (holde-em) —
@@ -378,13 +391,14 @@ bug in the family.
    called `heProbeSodium()` this way and the probe blew up before executing). Only a
    `function` may be invoked with `()`; a command is a statement, or route it through a
    value via `the result`. The static gate flags a locally-declared command used with
-   `()` (check 10) — a parenthesised first argument `heFoo (x), y` is legal and is not
-   flagged.
+   `()` in expression position (unified checker check 16) — a parenthesised first
+   argument `heFoo (x), y` is legal and is not flagged.
 8. **Custom properties are text.** Everything round-trips as strings; booleans are the
    strings `"true"`/`"false"`.
 10. **Dangling else.** A bare `else` on the line after a single-line `if cond then stmt`
     binds to that inner `if`, closes the wrong block, and surfaces as a baffling
-    "missing end if" at handler end. The static gate flags the exact pairing.
+    "missing end if" at handler end. The static gate flags the exact pairing
+    (unified checker check 20).
 11. **Declare `local` only at the top of a handler.** A `local` nested inside an
     `if`/`repeat` block has broken compilation of an entire script.
 13. **Object-type tokens are single words.** `import audioClip from file …` compiles;
@@ -392,7 +406,7 @@ bug in the family.
     tokens are not. Same family (found v0.17.1): the message box CONTAINER is the
     single token `msg` — `put x into msg`; the prose form `put x into the message
     box` throws at runtime. The static gate flags `the message box` in code
-    (check 12).
+    (unified checker check 18).
 14. **Sensor/contact messages go to `b2kContactTarget`, not the frame target.**
     Forgetting it = silent sensors with zero errors. Set both targets if the table ever
     uses Kit sensors.
@@ -414,8 +428,9 @@ bug in the family.
 29. **A `constant` must be declared before its first use, lexically.** OXT resolves
     constant names by file position; a use above the declaration compiles clean and
     silently evaluates to nothing at runtime. Declare constants at the top of the file
-    (this bug shipped a broken feature in the family once already; it is invisible to
-    every static check).
+    (this bug shipped a broken feature in the family once already). The unified
+    checker now gates both halves: use-above-declaration (check 4) and a `k` name
+    with NO declaration at all (check 19, the heTestDealRun defect).
 
 House additions for THIS repo (earned in the siblings, restated as law here):
 
@@ -436,7 +451,11 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   double/binary conversion error at runtime (found on this repo's first OXT pass, in
   the seed-XOR path; the compiler accepts the syntax happily). Copy the element into a
   plain local, then chunk the local. Same rule for `replace ... in tA["k"]` — copy out,
-  modify, or avoid. The static gate flags the chunk pattern (check 5).
+  modify, or avoid. NOT a static gate any more, ON PURPOSE (the 2026-08-15
+  checker union): riptide, onionxt, box2dxt and nocloud all chunk array
+  elements in engine-passed code, so the pattern is not a fleet-wide trap -
+  what threw HERE was FFI-bridged binary meeting the chunk evaluator (see the
+  corollary below). H6 stays this member's law, held by review, not a checker.
   **Corollary (v0.1.1): keep FFI-bridged binary away from the script chunk evaluator
   entirely.** The double/binary error persisted past the copy-to-local fix, so binary
   from `sx*` handlers is now hex-encoded at the edge (`sxBin2Hex` — itself proven by
@@ -448,7 +467,11 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   seed-XOR path — `bitXor(acc, baseConvert(...))`). They are valid LiveCode syntax, so
   no structural check sees them. Do every bit operation with **pure integer arithmetic**
   (`div`, `mod`, `add`, `*`) — the repo carries `heByteXor` (an 8-iteration div/mod XOR)
-  for exactly this. The static gate flags any bitwise operator (check 6).
+  for exactly this. The static gate flags the function-call form `bitXor(a, b)`
+  fleet-wide (unified checker check 13) - which is the exact shape v0.4.1
+  shipped - but NOT the operator form `a bitXor b`, which stands in
+  engine-passed code in four other members; the blanket no-bitwise rule stays
+  THIS member's law, held by review.
 - **H8. Declare the catch variable as a local.** `try … catch tErr` where `tErr` is not in
   the handler's `local` list throws a SECOND error on strict OXT the moment the catch
   fires and its body references the variable — which masks the real failure and surfaces
@@ -457,8 +480,10 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   `heProbeSodium`/`heProbeTorrent`/`heDeckFromStreamKey`/`heNetStart` all shipped this and
   blew up only once SodiumXT/TorrentXT was installed (found v0.10.x — the probe threw
   instead of reporting). Every `catch <var>` must have a matching `local … <var>` (the
-  family pattern; `heTableNew` does it right). The static gate flags any undeclared catch
-  variable (check 9).
+  family pattern; `heTableNew` does it right). The static gate flags an undeclared catch
+  variable whose catch body REFERENCES it (unified checker check 15; the unreferenced
+  form is engine-proven safe in onionxt's probes, so only the reference is gated -
+  declaring every catch variable regardless stays this member's convention).
 - **H9. No parenthesised dynamic property names.** `the (expr) of obj` /
   `set the (expr) of obj to ...` — building a property NAME at runtime — is not
   portable xTalk: property names are compile-time tokens, and the computed-name form
@@ -467,7 +492,7 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   (v0.15.0 fold of PR #33). The portable shape is ONE property holding a line-/item-
   indexed list (`uHeAvatarPaths`, line N = seat N — paths cannot contain a newline,
   so the index is safe); copy the property into a local before chunking it (H6
-  corollary). The static gate flags any `the (` in code (check 11).
+  corollary). The static gate flags any `the (` in code (unified checker check 17).
 
 ## The single-threaded performance playbook (condensed for a card game)
 
@@ -500,8 +525,9 @@ keys only ever sign. When in doubt, the spec's threat model (section 2) decides.
 
 ## Workflow
 
-- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py` AND
-  `python3 tools/check-holdem-idioms.py`.
+- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py`
+  (since the 2026-08-15 checker union it carries the hold-em lineage checks too;
+  the separate idiom gate is retired).
 - **The self-test harness** (`heRunSelftest`, embedded in the one stack) follows the
   Box2Dxt pattern: deterministic assertions, a version constant (`kHeHarnessV`) printed
   in the report header and **bumped on every engine-behavior change** so a stale paste
@@ -524,8 +550,9 @@ CLAUDE.md                          you are here
 LICENSE                            MIT (the family default, decided Phase 0)
 holdem-spec.md                     the design contract
 IMPLEMENTATION-PLAN.md             the phased build order
-tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated)
-tools/check-holdem-idioms.py       this member's extra idiom checks (the old lineage)
+tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated;
+                                   since 2026-08-15 it carries the hold-em lineage
+                                   checks as its 13-21 - the old idiom gate is retired)
 tools/check-docs.py                docs smart-quote scan
 tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
 tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)

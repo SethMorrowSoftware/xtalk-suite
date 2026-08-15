@@ -624,6 +624,7 @@ end cxBech32Const
 -- ==============================================================================
 
 function cxBech32EncodeValues pHrp, pValues, pSpec
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -705,6 +706,7 @@ end cxBech32EncodeValuesInner
 -- and "values" (the data part as a comma separated list of 5-bit numbers, with
 -- the six checksum characters removed). Throws on anything malformed.
 function cxBech32DecodeValues pText
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -931,6 +933,7 @@ end cxConvert5To8
 -- Build a SegWit address from a witness version (0..16) and its program bytes.
 -- The encoding follows from the version, which is the BIP-350 rule.
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -976,6 +979,7 @@ end cxSegwitAddressEncodeInner
 -- and BIP-350 define, including the one that matters most: a version 0 address
 -- carrying a bech32m checksum, or a version 1+ address carrying a bech32 one.
 function cxSegwitAddressDecode pHrp, pAddress
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -1086,6 +1090,7 @@ end cxBtcAddressP2PKH
 -- MUST be compressed - an uncompressed key here produces an address whose funds
 -- are unspendable by every modern wallet, so it is refused rather than encoded.
 function cxBtcAddressP2WPKH pPubkey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -1121,6 +1126,7 @@ end cxBtcAddressP2WPKHInner
 -- nobody can spend from, so if you do not already know your key is tweaked,
 -- it is not.
 function cxBtcAddressP2TR pOutputKey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -1629,6 +1635,7 @@ end cxMnemonicFromEntropy
 -- checksum mismatch - which is the whole point of the checksum, so a single
 -- mistyped word is caught here rather than becoming an empty wallet.
 function cxMnemonicToEntropy pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -1696,6 +1703,7 @@ end cxMnemonicToEntropyInner
 -- work (cxMnemonicToEntropy) still throw, so a caller never acts on a bad
 -- mnemonic by accident.
 function cxMnemonicValidate pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -1859,6 +1867,7 @@ end cxHdDeriveChild
 -- checked is that every level is a number in range and that the separators are
 -- what they claim to be.
 function cxHdDerivePath pNode, pPath
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2265,6 +2274,7 @@ end cxBtcOutput
 -- signed (this layer adds its length prefix); every other input's script slot
 -- is empty. Returns a 32-byte digest to hand to cxSign.
 function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2320,6 +2330,7 @@ end cxBtcSighashLegacyInner
 -- that binds the signature to WHERE the coins go, so a preimage without it would
 -- authorize a payment to anywhere (the review caught exactly this).
 function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2374,6 +2385,7 @@ end cxBtcSighashSegwitInner
 -- then each item as CompactSize-length + bytes. pItems is a comma list of item
 -- hex (empty string for an input with no witness).
 function cxBtcWitness pItems
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2412,6 +2424,7 @@ end cxBtcWitnessInner
 -- witness is non-empty the BIP-141 marker+flag and witness section are emitted.
 -- Returns the raw transaction as Data.
 function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2519,6 +2532,7 @@ end cxBtcTxBody
 -- non-witness serialization (BIP-141), byte-reversed for display. Same input
 -- lists as cxBtcTxEncode minus the witnesses.
 function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma

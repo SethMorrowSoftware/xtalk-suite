@@ -4548,6 +4548,7 @@ end b2kPlayerShowState
 -- b2kCamMouseX/Y. Level coordinates should start at 0,0: an invisible
 -- anchor pins the group's content origin there, so scroll == view corner.
 command b2kCamOn pRect
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tG
    if sCamGroup is not empty then exit b2kCamOn
    put empty into sCamNote
@@ -4894,6 +4895,7 @@ end b2kCamApply
 
 -- Import a WAV/AIFF/AU file as a named sound (replaces any same name).
 command b2kSoundLoad pName, pPath
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tCount
    if pName is empty then exit b2kSoundLoad
    if there is no file pPath then
@@ -4921,6 +4923,7 @@ end b2kSoundLoad
 --   b2kToneMake "coin", "1319,1760", 36          -- a two-note blip
 --   b2kToneMake "win", "523,659,784,1047", 110   -- a little fanfare
 command b2kToneMake pName, pFreqs, pMsPerNote, pVolPct, pShape
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tData, tPath, tCount, tF
    if pName is empty then exit b2kToneMake
    put "b2ksnd_" & pName into tClip
@@ -5004,6 +5007,7 @@ end b2kLE32
 
 -- Play a named sound (cuts whatever is playing -- the audioClip model).
 command b2kSound pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSound
    put sSndClip[pName] into tClip
@@ -5018,6 +5022,7 @@ end b2kSound
 
 -- Loop a named sound until b2kSoundStop / the next play (ambience).
 command b2kSoundLoop pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSoundLoop
    put sSndClip[pName] into tClip
@@ -5051,6 +5056,7 @@ end b2kSoundMuted
 -- The engine-GLOBAL output volume (the playLoudness, 0-100): it affects
 -- every stack's audio, so games should expose it, not hardcode it.
 command b2kSoundVolume pPct
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    try
       set the playLoudness to round(b2kClamp(pPct, 0, 100))
    catch tErr

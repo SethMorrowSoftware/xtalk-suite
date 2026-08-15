@@ -560,6 +560,7 @@ end stRun
 -- The ABI guard, called BY NAME at last. cxCheckABI is `returns nothing` and
 -- throws on skew, so silence is the pass; there is no value to inspect.
 command stRunAbi
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tOK
    stSection "load + ABI guard"
    try
@@ -581,6 +582,7 @@ end stRunAbi
 -- length of a digest the library actually produced - because a length that is
 -- self-consistently wrong would still size every buffer wrong.
 command stRunLengths
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "length accessors (UIntSize as a foreign RETURN type)"
    try
       stAssert "cxKeccak256Len() is 32", cxKeccak256Len() is 32
@@ -606,6 +608,7 @@ command stRunLengths
 end stRunLengths
 
 command stRunKeccak
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "Keccak-256 (published Ethereum vectors)"
    try
       -- The empty input FIRST, on purpose. It is the MCDataGetBytePtr-on-empty
@@ -622,6 +625,7 @@ command stRunKeccak
 end stRunKeccak
 
 command stRunSha3
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "SHA3-256 (NIST) and the aliasing trap"
    try
       stAssert "cxSha3_256 of the empty input", stHex(cxSha3_256(stText(""))) is kSha3Empty
@@ -639,6 +643,7 @@ command stRunSha3
 end stRunSha3
 
 command stRunSha2
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "SHA-256 and SHA-512 (FIPS 180-4)"
    try
       stAssert "cxSha256 of the empty input", stHex(cxSha256(stText(""))) is kSha256Empty
@@ -651,6 +656,7 @@ command stRunSha2
 end stRunSha2
 
 command stRunRipemd
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "RIPEMD-160 (specification vectors)"
    try
       stAssert "cxRipemd160 of the empty input", stHex(cxRipemd160(stText(""))) is kRipeEmpty
@@ -665,6 +671,7 @@ command stRunRipemd
 end stRunRipemd
 
 command stRunHmac
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tKey1, tKey2, tMsg1, tMsg2
    stSection "HMAC-SHA256 / HMAC-SHA512 (RFC 4231 cases 1 and 2)"
    try
@@ -689,6 +696,7 @@ command stRunHmac
 end stRunHmac
 
 command stRunPbkdf2
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSeed, tShort
    stSection "PBKDF2-HMAC-SHA512 (the BIP-39 seed vector)"
    try
@@ -710,6 +718,7 @@ end stRunPbkdf2
 -- only; every one-shot digest marshals its IN buffer the same way, so each one
 -- should return a full-length digest rather than throw.
 command stRunEmptyInputs
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "empty input marshals for every one-shot digest"
    try
       stAssert "cxKeccak256 empty returns 32 bytes", the number of bytes of cxKeccak256(stText("")) is 32
@@ -728,6 +737,7 @@ end stRunEmptyInputs
 -- Four digests of the same input must be four DIFFERENT answers. If any two
 -- agree, a wire has been crossed somewhere in the binding.
 command stRunIndependence
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tK, tS3, tS2, tR
    stSection "the digests are independent of each other"
    try
@@ -753,6 +763,7 @@ end stRunIndependence
 -- a wrong-but-plausible answer. Both of these are guards in the shim
 -- (CNX_ERR_RANGE and CNX_ERR_BADLEN), surfaced by the .lcb as a throw.
 command stRunFailClosed
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tThrew
    stSection "fail closed on malformed input"
    try
@@ -785,6 +796,7 @@ end stRunFailClosed
 -- cxSeckeyIsValid RETURN Boolean where every phase-1 handler returned Data.
 
 command stRunCurveKeys
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSk, tPubC, tPubU, tTweaked
    stSection "secp256k1 keys"
    try
@@ -828,6 +840,7 @@ command stRunCurveKeys
 end stRunCurveKeys
 
 command stRunCurveSign
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSk, tDigest, tSig, tAgain
    stSection "ECDSA signing (RFC 6979, published vector)"
    try
@@ -849,6 +862,7 @@ command stRunCurveSign
 end stRunCurveSign
 
 command stRunCurveVerify
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSk, tDigest, tSig, tPubC, tPubU, tBad, tOtherPub
    stSection "ECDSA verification (true, and false)"
    try
@@ -873,6 +887,7 @@ command stRunCurveVerify
 end stRunCurveVerify
 
 command stRunCurveRecover
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSk, tDigest, tSig, tRec, tPubU
    stSection "recoverable signing and ecrecover"
    try
@@ -895,6 +910,7 @@ command stRunCurveRecover
 end stRunCurveRecover
 
 command stRunCurveEcdh
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tA, tB, tPubA, tPubB, tShared1, tShared2
    stSection "ECDH"
    try
@@ -917,6 +933,7 @@ command stRunCurveEcdh
 end stRunCurveEcdh
 
 command stRunCurveFailClosed
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tThrew, tSk, tDigest
    stSection "the curve fails closed"
    try
@@ -988,6 +1005,7 @@ end stRunCurveFailClosed
 -- problem and not a phase-3 defect - check that first before reading further.
 
 command stRunHex
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "hex"
    try
       stAssert "cxHexEncode of 00ff10ab", cxHexEncode(cxHexDecode("00ff10ab")) is "00ff10ab"
@@ -1001,6 +1019,7 @@ command stRunHex
 end stRunHex
 
 command stRunBase58
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tPayload, tI, tPadded
    stSection "Base58Check"
    try
@@ -1028,6 +1047,7 @@ command stRunBase58
 end stRunBase58
 
 command stRunBech32
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tDecoded
    stSection "bech32 and bech32m"
    try
@@ -1045,6 +1065,7 @@ command stRunBech32
 end stRunBech32
 
 command stRunAddresses
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tPubC, tPubU, tSeckey, tDecoded
    stSection "addresses from the generator G"
    try
@@ -1076,6 +1097,7 @@ command stRunAddresses
 end stRunAddresses
 
 command stRunEip55
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "EIP-55 checksummed Ethereum addresses"
    try
       stAssert "checksums the first specification example", cxEthAddressChecksum(stToLowerText(kEip55A)) is kEip55A
@@ -1091,6 +1113,7 @@ command stRunEip55
 end stRunEip55
 
 command stRunRlp
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tCatDog, tDecoded
    stSection "RLP"
    try
@@ -1114,6 +1137,7 @@ command stRunRlp
 end stRunRlp
 
 command stRunWif
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tDecoded, tThrew
    stSection "WIF (wallet import format)"
    try
@@ -1264,6 +1288,7 @@ end stRepeatByte
 -- ==============================================================================
 
 command stRunBip39
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEnt, tMnemonic
    stSection "BIP-39 mnemonics"
    try
@@ -1308,6 +1333,7 @@ command stRunBip39
 end stRunBip39
 
 command stRunBip32
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tNode, tDeep, tWatch, tChild, tStep
    stSection "BIP-32 derivation"
    try
@@ -1363,6 +1389,7 @@ command stRunBip32
 end stRunBip32
 
 command stRunBip44
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tMaster, tNode
    stSection "BIP-44 / BIP-84 end to end"
    try
@@ -1384,6 +1411,7 @@ command stRunBip44
 end stRunBip44
 
 command stRunTransactions
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tOutpoints, tSequences, tOutputs, tD0, tD1, tSig0, tDer0, tScriptSig0
    local tSig1, tDer1, tPub1, tWit1, tScriptSigs, tWitnesses, tRaw
    local tRecov, tRecid, tRHex, tSHex, tEth, tThrew, tErr2
@@ -1499,6 +1527,7 @@ end stRunTransactions
 -- ==============================================================================
 
 command stRunFailOpen
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tProgram, tDecoded, tKey
    stSection "fail-closed regressions"
    try

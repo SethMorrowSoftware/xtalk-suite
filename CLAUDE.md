@@ -58,7 +58,8 @@ openxtalk-libraries/
                        oracle and mental-poker phases open); its checker was
                        replaced with the unified copy (two real deal-path
                        traps fixed in the fold) and its old lineage checks
-                       survive as tools/check-holdem-idioms.py; seven KAT
+                       were UNIONED into that checker 2026-08-15 (docstring
+                       13-21; the idiom gate file is retired); seven KAT
                        mirrors + an independent-reference fuzz ride
                        build-all; the fold record is in its CLAUDE.md
 ```

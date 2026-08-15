@@ -790,6 +790,7 @@ end openStack
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
@@ -952,6 +953,7 @@ end stRun
 -- handler" execution error, which try/catch turns into a flag; nothing here is
 -- allowed to abort the run.
 command stProbe
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tVersion, tDigest
 
    stSection "extension probe (an absent member SKIPS, it never FAILS)"
@@ -1369,6 +1371,7 @@ end stCoinSection
 -- The whole section is wrapped so that an older CoinXT install (phase-1 .lcb, or
 -- an ABI-2 library) reports one clear failure rather than aborting the run.
 command stCoinCurveSection
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSeckey, tPubC, tPubU, tDigest, tSig, tBad, tRecovered, tByte
 
    stSection "CoinXT: secp256k1 through the binding (phase 2)"
@@ -1935,6 +1938,7 @@ end stCheckSealed
 -- async phase is terminal or the deadline passes; it never blocks the
 -- interpreter, because nothing in this family may block the one script thread.
 command stPump
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
    if sRunning is not "true" then
       exit stPump
@@ -2005,6 +2009,7 @@ end stPump
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
@@ -2213,6 +2218,7 @@ end stRepeatByte
 -- ==========================================================================
 
 command stRunMemberHarnesses
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
@@ -2911,6 +2917,7 @@ private function cxBech32Const pSpec
 end cxBech32Const
 
 function cxBech32EncodeValues pHrp, pValues, pSpec
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2989,6 +2996,7 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
 end cxBech32EncodeValuesInner
 
 function cxBech32DecodeValues pText
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3203,6 +3211,7 @@ private function cxConvert5To8 pValues
 end cxConvert5To8
 
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3244,6 +3253,7 @@ private function cxSegwitAddressEncodeInner pHrp, pVersion, pProgram
 end cxSegwitAddressEncodeInner
 
 function cxSegwitAddressDecode pHrp, pAddress
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3345,6 +3355,7 @@ function cxBtcAddressP2PKH pPubkey
 end cxBtcAddressP2PKH
 
 function cxBtcAddressP2WPKH pPubkey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3370,6 +3381,7 @@ private function cxBtcAddressP2WPKHInner pPubkey
 end cxBtcAddressP2WPKHInner
 
 function cxBtcAddressP2TR pOutputKey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3752,6 +3764,7 @@ function cxMnemonicFromEntropy pEntropy
 end cxMnemonicFromEntropy
 
 function cxMnemonicToEntropy pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3812,6 +3825,7 @@ private function cxMnemonicToEntropyInner pMnemonic
 end cxMnemonicToEntropyInner
 
 function cxMnemonicValidate pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3931,6 +3945,7 @@ function cxHdDeriveChild pNode, pIndex
 end cxHdDeriveChild
 
 function cxHdDerivePath pNode, pPath
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4224,6 +4239,7 @@ function cxBtcOutput pAmountSat, pScriptHex
 end cxBtcOutput
 
 function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4272,6 +4288,7 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
 end cxBtcSighashLegacyInner
 
 function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4323,6 +4340,7 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
 end cxBtcSighashSegwitInner
 
 function cxBtcWitness pItems
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4355,6 +4373,7 @@ private function cxBtcWitnessInner pItems
 end cxBtcWitnessInner
 
 function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4454,6 +4473,7 @@ private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOut
 end cxBtcTxBody
 
 function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -9993,6 +10013,7 @@ command cx1stRun
 end cx1stRun
 
 command cx1stRunAbi
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tOK
    cx1stSection "load + ABI guard"
    try
@@ -10009,6 +10030,7 @@ command cx1stRunAbi
 end cx1stRunAbi
 
 command cx1stRunLengths
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "length accessors (UIntSize as a foreign RETURN type)"
    try
       cx1stAssert "cxKeccak256Len() is 32", cxKeccak256Len() is 32
@@ -10034,6 +10056,7 @@ command cx1stRunLengths
 end cx1stRunLengths
 
 command cx1stRunKeccak
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "Keccak-256 (published Ethereum vectors)"
    try
       -- The empty input FIRST, on purpose. It is the MCDataGetBytePtr-on-empty
@@ -10050,6 +10073,7 @@ command cx1stRunKeccak
 end cx1stRunKeccak
 
 command cx1stRunSha3
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "SHA3-256 (NIST) and the aliasing trap"
    try
       cx1stAssert "cxSha3_256 of the empty input", cx1stHex(cxSha3_256(cx1stText(""))) is cx1kSha3Empty
@@ -10067,6 +10091,7 @@ command cx1stRunSha3
 end cx1stRunSha3
 
 command cx1stRunSha2
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "SHA-256 and SHA-512 (FIPS 180-4)"
    try
       cx1stAssert "cxSha256 of the empty input", cx1stHex(cxSha256(cx1stText(""))) is cx1kSha256Empty
@@ -10079,6 +10104,7 @@ command cx1stRunSha2
 end cx1stRunSha2
 
 command cx1stRunRipemd
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "RIPEMD-160 (specification vectors)"
    try
       cx1stAssert "cxRipemd160 of the empty input", cx1stHex(cxRipemd160(cx1stText(""))) is cx1kRipeEmpty
@@ -10093,6 +10119,7 @@ command cx1stRunRipemd
 end cx1stRunRipemd
 
 command cx1stRunHmac
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tKey1, cx1tKey2, cx1tMsg1, cx1tMsg2
    cx1stSection "HMAC-SHA256 / HMAC-SHA512 (RFC 4231 cases 1 and 2)"
    try
@@ -10117,6 +10144,7 @@ command cx1stRunHmac
 end cx1stRunHmac
 
 command cx1stRunPbkdf2
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSeed, cx1tShort
    cx1stSection "PBKDF2-HMAC-SHA512 (the BIP-39 seed vector)"
    try
@@ -10135,6 +10163,7 @@ command cx1stRunPbkdf2
 end cx1stRunPbkdf2
 
 command cx1stRunEmptyInputs
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "empty input marshals for every one-shot digest"
    try
       cx1stAssert "cxKeccak256 empty returns 32 bytes", the number of bytes of cxKeccak256(cx1stText("")) is 32
@@ -10151,6 +10180,7 @@ command cx1stRunEmptyInputs
 end cx1stRunEmptyInputs
 
 command cx1stRunIndependence
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tK, cx1tS3, cx1tS2, cx1tR
    cx1stSection "the digests are independent of each other"
    try
@@ -10173,6 +10203,7 @@ command cx1stRunIndependence
 end cx1stRunIndependence
 
 command cx1stRunFailClosed
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tThrew
    cx1stSection "fail closed on malformed input"
    try
@@ -10197,6 +10228,7 @@ command cx1stRunFailClosed
 end cx1stRunFailClosed
 
 command cx1stRunCurveKeys
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tPubC, cx1tPubU, cx1tTweaked
    cx1stSection "secp256k1 keys"
    try
@@ -10240,6 +10272,7 @@ command cx1stRunCurveKeys
 end cx1stRunCurveKeys
 
 command cx1stRunCurveSign
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tAgain
    cx1stSection "ECDSA signing (RFC 6979, published vector)"
    try
@@ -10261,6 +10294,7 @@ command cx1stRunCurveSign
 end cx1stRunCurveSign
 
 command cx1stRunCurveVerify
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tPubC, cx1tPubU, cx1tBad, cx1tOtherPub
    cx1stSection "ECDSA verification (true, and false)"
    try
@@ -10285,6 +10319,7 @@ command cx1stRunCurveVerify
 end cx1stRunCurveVerify
 
 command cx1stRunCurveRecover
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tRec, cx1tPubU
    cx1stSection "recoverable signing and ecrecover"
    try
@@ -10307,6 +10342,7 @@ command cx1stRunCurveRecover
 end cx1stRunCurveRecover
 
 command cx1stRunCurveEcdh
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tA, cx1tB, cx1tPubA, cx1tPubB, cx1tShared1, cx1tShared2
    cx1stSection "ECDH"
    try
@@ -10329,6 +10365,7 @@ command cx1stRunCurveEcdh
 end cx1stRunCurveEcdh
 
 command cx1stRunCurveFailClosed
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tThrew, cx1tSk, cx1tDigest
    cx1stSection "the curve fails closed"
    try
@@ -10392,6 +10429,7 @@ command cx1stRunCurveFailClosed
 end cx1stRunCurveFailClosed
 
 command cx1stRunHex
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "hex"
    try
       cx1stAssert "cxHexEncode of 00ff10ab", cxHexEncode(cxHexDecode("00ff10ab")) is "00ff10ab"
@@ -10405,6 +10443,7 @@ command cx1stRunHex
 end cx1stRunHex
 
 command cx1stRunBase58
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tPayload, cx1tI, cx1tPadded
    cx1stSection "Base58Check"
    try
@@ -10432,6 +10471,7 @@ command cx1stRunBase58
 end cx1stRunBase58
 
 command cx1stRunBech32
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tDecoded
    cx1stSection "bech32 and bech32m"
    try
@@ -10449,6 +10489,7 @@ command cx1stRunBech32
 end cx1stRunBech32
 
 command cx1stRunAddresses
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tPubC, cx1tPubU, cx1tSeckey, cx1tDecoded
    cx1stSection "addresses from the generator G"
    try
@@ -10480,6 +10521,7 @@ command cx1stRunAddresses
 end cx1stRunAddresses
 
 command cx1stRunEip55
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "EIP-55 checksummed Ethereum addresses"
    try
       cx1stAssert "checksums the first specification example", cxEthAddressChecksum(cx1stToLowerText(cx1kEip55A)) is cx1kEip55A
@@ -10495,6 +10537,7 @@ command cx1stRunEip55
 end cx1stRunEip55
 
 command cx1stRunRlp
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tCatDog, cx1tDecoded
    cx1stSection "RLP"
    try
@@ -10518,6 +10561,7 @@ command cx1stRunRlp
 end cx1stRunRlp
 
 command cx1stRunWif
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tDecoded, cx1tThrew
    cx1stSection "WIF (wallet import format)"
    try
@@ -10640,6 +10684,7 @@ function cx1stRepeatByte pCode, pCount
 end cx1stRepeatByte
 
 command cx1stRunBip39
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tEnt, cx1tMnemonic
    cx1stSection "BIP-39 mnemonics"
    try
@@ -10684,6 +10729,7 @@ command cx1stRunBip39
 end cx1stRunBip39
 
 command cx1stRunBip32
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tNode, cx1tDeep, cx1tWatch, cx1tChild, cx1tStep
    cx1stSection "BIP-32 derivation"
    try
@@ -10739,6 +10785,7 @@ command cx1stRunBip32
 end cx1stRunBip32
 
 command cx1stRunBip44
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tMaster, cx1tNode
    cx1stSection "BIP-44 / BIP-84 end to end"
    try
@@ -10760,6 +10807,7 @@ command cx1stRunBip44
 end cx1stRunBip44
 
 command cx1stRunTransactions
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tOutpoints, cx1tSequences, cx1tOutputs, cx1tD0, cx1tD1, cx1tSig0, cx1tDer0, cx1tScriptSig0
    local cx1tSig1, cx1tDer1, cx1tPub1, cx1tWit1, cx1tScriptSigs, cx1tWitnesses, cx1tRaw
    local cx1tRecov, cx1tRecid, cx1tRHex, cx1tSHex, cx1tEth, cx1tThrew, cx1tErr2
@@ -10866,6 +10914,7 @@ command cx1stRunTransactions
 end cx1stRunTransactions
 
 command cx1stRunFailOpen
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tProgram, cx1tDecoded, cx1tKey
    cx1stSection "fail-closed regressions"
    try
@@ -10992,6 +11041,7 @@ function bt1stListHas pList, pNeedle
 end bt1stListHas
 
 command bt1stRun
+   local bt1tRunErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    bt1stResetCounters
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
@@ -11167,8 +11217,8 @@ command bt1stRun
    bt1stNote "btMoveStorage + btRemoveTorrent(deleteFiles=true) are destructive;"
    bt1stNote "btSetFilePriorities needs a binary buffer; btAddTorrentWithResume"
    bt1stNote "needs async resume bytes; btAddMagnet is covered via btAddMagnetEx."
-   catch tRunErr
-      bt1stNote "RUNTIME ERROR - a binding call failed: " & tRunErr
+   catch bt1tRunErr
+      bt1stNote "RUNTIME ERROR - a binding call failed: " & bt1tRunErr
       add 1 to bt1sFailed
    end try
 
