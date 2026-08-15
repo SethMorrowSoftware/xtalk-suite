@@ -435,12 +435,16 @@ Two things follow, and they are the operational point:
      criterion's spirit is sequential playback starting before the file is
      complete; a fast small transfer looks the same from outside. Treat the
      mid-download nuance as plausible but unmeasured.
-   - **The media strip lives on card 1 (Feed), so this may not have
-     exercised the multi-card navigation at all.** The `go to card` fix is
-     confirmed only if someone actually clicked Messages / Devices / Anon
-     and came back. Until that is reported, treat the navigation as
-     fixed-but-unconfirmed and the phase 4/6/7 CARDS as still
-     statically-checked-only.
+   - ~~The media strip lives on card 1, so this may not have exercised the
+     multi-card navigation.~~ **RESOLVED the same day: PHASE 4 IS DONE TOO.**
+     Two machines exchanged DMs, chat working BOTH WAYS - the sealed RSI1
+     intro, the deterministic-role crypto_kx session, and the pairwise
+     secretstream over rp1 all carrying real traffic with no server. Since
+     the Messages card had to be reached to do it, that also CONFIRMS the
+     `go to card` navigation fix on a real engine. The Devices and Anon
+     cards are built by the same `raBuild` pass and use the same navigation
+     and reference forms, so the syntax class is settled; what remains
+     unexercised there is their own flows, not their spelling.
 
 ## Suite integration status
 

@@ -38,22 +38,30 @@ script "riptideSocialApp"
 -- through the real UI, not the harness. (Not distinguished in the report:
 -- whether playback began MID-download or after a fast complete transfer.)
 --
--- THE PHASE-4/6/7 CARDS (Messages, Devices, Anon) are still verified
--- STATICALLY ONLY, and that label is load-bearing: no harness opens this
--- stack. The suite selftest that went green exercises the LIBRARY
--- (src/riptide.livecodescript); it never builds a card here or dispatches
--- a mouseUp, so check-livecodescript.py is the only thing that has read
--- most of these lines. It caught nothing when the multi-card conversion
--- used `... of me` object references throughout - a form the engine
--- rejects, reported and fixed 2026-08-15 (see riptide/CLAUDE.md). The
--- media strip lives on card 1, so the media pass above may not have
--- exercised the `go to card` navigation at all: treat it as
--- fixed-but-unconfirmed until someone clicks Messages / Devices / Anon and
--- comes back. Assume more of that class is still here until then. The live
--- done-criteria (a follower plays a video mid-download; two machines
--- exchange authenticated encrypted DMs; a device joins the mesh while a
--- stranger is refused; a persona is reachable over Tor) each need their
--- own pass on top of that.
+-- PHASE 4 IS DONE TOO (2026-08-15, TWO MACHINES): chat worked BOTH WAYS -
+-- the sealed RSI1 intro, the deterministic-role crypto_kx session, and the
+-- pairwise secretstream over rp1 all carried real traffic between two
+-- identities with NO SERVER anywhere. Reaching the Messages card to do it
+-- also CONFIRMS the `go to card` navigation, which had been fixed but
+-- unverified after the multi-card conversion shipped `... of me` object
+-- references the engine rejects (reported and fixed the same day; see
+-- riptide/CLAUDE.md).
+--
+-- STILL UNEXERCISED HERE: the DEVICES card (phase 6 LAN mesh) and the ANON
+-- card (phase 7). Their navigation and reference forms are the same ones
+-- the Feed and Messages cards just proved, so the SYNTAX class is settled;
+-- what has never run is their own flows - the enet host/join admission
+-- handshake, and the onion publish. Their done-criteria (a device that
+-- shares the master joins while a stranger is refused; a persona reachable
+-- over Tor) each need their own pass.
+--
+-- KNOWN GAP in the Devices card, not a bug but worth knowing before you
+-- test it: the JOINER gets no positive confirmation. On success the HOST
+-- logs `admitted "<name>"` and lists the device; the joiner just sits at
+-- "answered the host's challenge; awaiting admission." Read the HOST's
+-- screen for the verdict. On FAILURE the host drops the peer, so the
+-- joiner does see "the host went away". The RSL1 "W" welcome frame that
+-- would close this was designed but not implemented.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then

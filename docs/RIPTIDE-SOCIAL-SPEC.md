@@ -497,6 +497,11 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    transfer. As-built decisions: `riptide/CLAUDE.md`.)*
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
    *Done when* two machines exchange authenticated encrypted DMs with no server.
+   **DONE 2026-08-15** *(two machines, chat working both ways - the sealed RSI1
+   intro, the deterministic-role crypto_kx session, and the pairwise
+   secretstream over rp1 all carried real traffic between two identities with
+   no server anywhere; it also confirmed the multi-card `go to card`
+   navigation, since the Messages card had to be reached to do it.)*
    *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records
    named by the head's `prekeyTarget`, RSI1 sealed intros bound to one
    recipient, RSM1 rp1 frames, deterministic kx roles - plus the Messages

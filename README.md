@@ -219,7 +219,9 @@ The members are deliberately non-overlapping, so real apps mix them:
   (media)** — on 2026-08-15 a follower on a SECOND machine fetched and played
   an attached video near instantly, which necessarily walked the whole path
   (head publish → head fetch → chain walk → authorSig verify → media
-  info-hash → swarm join → playback); phase 4 (DMs —
+  info-hash → swarm join → playback) and **phase 4 (DMs)** — on the same day
+  two machines chatted both ways with no server, which also confirmed the
+  multi-card navigation; phase 4 (DMs —
   signed kx prekeys in the feed head, sealed intros over inbox phantom
   swarms, pairwise secretstreams over rp1, crypto_kx anchored against a
   real libsodium) are BUILT (2026-08-14, statically verified; their
