@@ -385,6 +385,44 @@ exercised, it was wrong, and the first inputs that touched the path found it.
 Whenever you must reject malformed UTF-8 in this family, round-trip it - never
 trust a decode to throw.
 
+## THE DEMO STACK IS THE LEAST-VERIFIED SURFACE HERE (read before editing it)
+
+`examples/riptide-social.livecodescript` is **not** covered by any harness.
+The suite selftest exercises `src/riptide.livecodescript` (the library) and
+is what went green on the engine; it never opens the demo, never builds a
+card, never dispatches a `mouseUp`. So EVERY line of the demo has only ever
+been seen by `check-livecodescript.py`, which validates balance, quoting and
+the token traps - NOT whether an object-reference or navigation form is
+something the engine accepts.
+
+That gap has now produced its own bug, reported from an engine 2026-08-15:
+the phase 4-7 multi-card conversion wrote card navigation and cross-card
+references as **`... of me`** - `go card "raMessages" of me`,
+`field "raDmLog" of card "raMessages" of me`, `card 1 of me` - 48 sites in
+all. **That form is wrong for LiveCodeScript** and the checker passed every
+one. The canonical forms are used now: `go to card "raMessages"` /
+`go to card 1` for navigation, plain `field "X" of card "Y"` for a control on
+another card of the same stack (no qualifier is needed - it is one stack),
+and `set the name of this card to "..."` right after `create card` (the new
+card is already current). The `send "raPoll" to me in <n> milliseconds` form
+is UNCHANGED and correct - that is a message target, engine-proven in
+torrent-rp1-chat, and a different construct entirely.
+
+Two things follow, and they are the operational point:
+
+1. **There was no in-repo precedent to copy, and that should have been the
+   warning.** Every other demo in this family is a SINGLE card, so the repo
+   contained no proven multi-card navigation idiom; `grep` for `go card`
+   returns only `go stack` (a different command). Writing a form the tree has
+   never executed, in a file no harness runs, is how this landed. When you
+   need a construct the suite has no engine-proven example of, say so in the
+   honesty label rather than letting a green checker imply it was verified.
+2. **The demo still needs its own engine pass, and more of this class may be
+   in there.** The library is engine-verified; the demo is not. Until someone
+   opens the stack in OXT and clicks through all four cards, treat
+   `riptide-social.livecodescript` as "statically checked only" - which is
+   exactly what its own honesty footer says, and it means it.
+
 ## Suite integration status
 
 - `tools/build-all.sh` runs riptide's gates in the member loop (script

@@ -26,11 +26,22 @@ script "riptideSocialApp"
 -- ingest verifiers, which the harness only ever fed synthetically. The
 -- library underneath was already engine-passed (2026-08-12, 133/133).
 -- Result text and machine environments were not captured with the report;
--- the record is the maintainer's dated account. The PHASE-3 media strip
--- and the PHASE-4 Messages card (both 2026-08-14) are verified statically
--- only; their done-criteria - a follower on a second machine plays a
--- video mid-download, and two machines exchange authenticated encrypted
--- DMs with no server - still need their two-machine passes.
+-- the record is the maintainer's dated account.
+--
+-- EVERYTHING ADDED SINCE (the phase-3 media strip, and the phase-4/6/7
+-- Messages, Devices and Anon CARDS) is verified STATICALLY ONLY, and that
+-- label is load-bearing: no harness opens this stack. The suite selftest
+-- that went green on an engine (2026-08-15) exercises the LIBRARY
+-- (src/riptide.livecodescript); it never builds a card here or dispatches
+-- a mouseUp, so check-livecodescript.py is the only thing that has ever
+-- read these lines. It caught nothing when the multi-card conversion used
+-- `... of me` object references throughout - a form the engine rejects,
+-- reported and fixed 2026-08-15 (see riptide/CLAUDE.md). Assume more of
+-- that class is still here until someone clicks through all four cards in
+-- OXT. The live done-criteria (a follower plays a video mid-download; two
+-- machines exchange authenticated encrypted DMs; a device joins the mesh
+-- while a stranger is refused; a persona is reachable over Tor) each need
+-- their own pass on top of that.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -528,16 +539,16 @@ on mouseUp
          raMediaGet
          break
       case "raGoDm"
-         go card "raMessages" of me
+         go to card "raMessages"
          break
       case "raGoFeed"
-         go card 1 of me
+         go to card 1
          break
       case "raGoLanFromFeed"
-         go card "raDevices" of me
+         go to card "raDevices"
          break
       case "raGoFeedFromLan"
-         go card 1 of me
+         go to card 1
          break
       case "raLanHostBtn"
          raLanHost
@@ -549,10 +560,10 @@ on mouseUp
          raLanLeave
          break
       case "raGoAnonFromFeed"
-         go card "raAnon" of me
+         go to card "raAnon"
          break
       case "raGoFeedFromAnon"
-         go card 1 of me
+         go to card 1
          break
       case "raAnonReveal"
          raAnonReveal
@@ -588,13 +599,13 @@ command raBuild
    raBuildDmCard
    raBuildLanCard
    raBuildAnonCard
-   go card 1 of me
+   go to card 1
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
 end raBuild
 
 command raBuildFeedCard
-   go card 1 of me
+   go to card 1
    -- two columns inside the family's 720p budget (1200 x 640, the
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
    uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
@@ -652,11 +663,11 @@ command raBuildFeedCard
 end raBuildFeedCard
 
 command raBuildDmCard
-   if there is no card "raMessages" of me then
+   if there is no card "raMessages" then
       create card
-      set the name of the last card to "raMessages"
+      set the name of this card to "raMessages"
    end if
-   go card "raMessages" of me
+   go to card "raMessages"
    uiChrome "Riptide Social - Messages (phase 4: encrypted DMs over rp1)", 1200, 640
    uiButton "raGoFeed", "< Feed", "1080,4,1192,26"
 
@@ -688,11 +699,11 @@ end raBuildDmCard
 -- above; a stranger on the same Wi-Fi cannot answer. This is enet, not the
 -- DHT: host on one device, Join by IP on the others.
 command raBuildLanCard
-   if there is no card "raDevices" of me then
+   if there is no card "raDevices" then
       create card
-      set the name of the last card to "raDevices"
+      set the name of this card to "raDevices"
    end if
-   go card "raDevices" of me
+   go to card "raDevices"
    uiChrome "Riptide Social - Devices (phase 6: your own LAN device mesh)", 1200, 640
    uiButton "raGoFeedFromLan", "< Feed", "1080,4,1192,26"
 
@@ -724,11 +735,11 @@ end raBuildLanCard
 -- from the same master. This card shows its two spellings and, loudly, the
 -- deanonymization guard (spec 9.3): the transports it may and may NOT use.
 command raBuildAnonCard
-   if there is no card "raAnon" of me then
+   if there is no card "raAnon" then
       create card
-      set the name of the last card to "raAnon"
+      set the name of this card to "raAnon"
    end if
-   go card "raAnon" of me
+   go to card "raAnon"
    uiChrome "Riptide Social - Anon persona (phase 7: onion-only identity)", 1200, 640
    uiButton "raGoFeedFromAnon", "< Feed", "1080,4,1192,26"
 
@@ -954,23 +965,23 @@ command raDmPaintMine
          put "inbox: joined (swarm" && rsInboxId(sHandle) & ")." after tLine
       end if
    end if
-   if there is a field "raDmMine" of card "raMessages" of me then
-      if the text of field "raDmMine" of card "raMessages" of me \
+   if there is a field "raDmMine" of card "raMessages" then
+      if the text of field "raDmMine" of card "raMessages" \
             is not tLine then
-         set the text of field "raDmMine" of card "raMessages" of me to tLine
+         set the text of field "raDmMine" of card "raMessages" to tLine
       end if
    end if
 end raDmPaintMine
 
 command raDmLog pLine
-   if there is a field "raDmLog" of card "raMessages" of me then
-      put pLine & return after field "raDmLog" of card "raMessages" of me
+   if there is a field "raDmLog" of card "raMessages" then
+      put pLine & return after field "raDmLog" of card "raMessages"
    end if
 end raDmLog
 
 command raDmChatLine pLine
-   if there is a field "raDmChat" of card "raMessages" of me then
-      put pLine & return after field "raDmChat" of card "raMessages" of me
+   if there is a field "raDmChat" of card "raMessages" then
+      put pLine & return after field "raDmChat" of card "raMessages"
    end if
 end raDmChatLine
 
@@ -1110,8 +1121,8 @@ end raPoll
 -- would kill the pump. Qualify to card 1 and guard existence, exactly as
 -- raDmLog / raLanLog / raAnonLog do for their own cards.
 command raFeedNote pFieldName, pLine
-   if there is a field pFieldName of card 1 of me then
-      put pLine & return after field pFieldName of card 1 of me
+   if there is a field pFieldName of card 1 then
+      put pLine & return after field pFieldName of card 1
    end if
 end raFeedNote
 
@@ -1230,10 +1241,10 @@ command raHandleEvent pEvent
                   -- before the item read (an earlier handler may have left
                   -- it as "/"), and target card 1's field, guarded
                   set the itemDelimiter to comma
-                  if there is a field "raMediaHash" of card 1 of me then
-                     if field "raMediaHash" of card 1 of me is empty then
+                  if there is a field "raMediaHash" of card 1 then
+                     if field "raMediaHash" of card 1 is empty then
                         put item 1 of tPost["mediaTargets"] into \
-                              field "raMediaHash" of card 1 of me
+                              field "raMediaHash" of card 1
                      end if
                   end if
                end if
@@ -1407,7 +1418,7 @@ command raDmStart
       uiStatus "No TorrentXT session: DMs need the network.", "bad"
       exit raDmStart
    end if
-   put toLower(word 1 of field "raDmTo" of card "raMessages" of me) \
+   put toLower(word 1 of field "raDmTo" of card "raMessages") \
          into tHandle
    if the number of chars of tHandle is not 64 then
       uiStatus "A handle is 64 hex characters (from the author's Feed card).", "warn"
@@ -1655,7 +1666,7 @@ command raDmSend
             "channel-open line.", "warn"
       exit raDmSend
    end if
-   put field "raDmMsg" of card "raMessages" of me into tBody
+   put field "raDmMsg" of card "raMessages" into tBody
    if tBody is empty then
       exit raDmSend
    end if
@@ -1682,7 +1693,7 @@ command raDmSend
       exit raDmSend
    end if
    raDmChatLine "you:" && tBody
-   set the text of field "raDmMsg" of card "raMessages" of me to empty
+   set the text of field "raDmMsg" of card "raMessages" to empty
 end raDmSend
 
 -- ---- phase 6: the LAN device mesh --------------------------------------------
@@ -1759,7 +1770,7 @@ command raLanJoin
       raLanLog "Already on a mesh; Leave first."
       exit raLanJoin
    end if
-   put word 1 of field "raLanTo" of card "raDevices" of me into tIp
+   put word 1 of field "raLanTo" of card "raDevices" into tIp
    if tIp is empty then
       uiStatus "Type the host device's LAN IP address first.", "warn"
       exit raLanJoin
@@ -1918,20 +1929,20 @@ end raLanSend
 
 private function raLanMyName
    local tName
-   put word 1 to -1 of field "raLanName" of card "raDevices" of me into tName
+   put word 1 to -1 of field "raLanName" of card "raDevices" into tName
    if tName is empty then put "device" into tName
    return char 1 to 32 of tName
 end raLanMyName
 
 command raLanLog pLine
-   if there is a field "raLanLog" of card "raDevices" of me then
-      put pLine & return after field "raLanLog" of card "raDevices" of me
+   if there is a field "raLanLog" of card "raDevices" then
+      put pLine & return after field "raLanLog" of card "raDevices"
    end if
 end raLanLog
 
 command raLanPaintDevices
    local tRows, tPeer
-   if there is no field "raLanDevices" of card "raDevices" of me then
+   if there is no field "raLanDevices" of card "raDevices" then
       exit raLanPaintDevices
    end if
    if sLanHost is empty then
@@ -1951,8 +1962,8 @@ command raLanPaintDevices
          delete the last char of tRows
       end if
    end if
-   if the text of field "raLanDevices" of card "raDevices" of me is not tRows then
-      set the text of field "raLanDevices" of card "raDevices" of me to tRows
+   if the text of field "raLanDevices" of card "raDevices" is not tRows then
+      set the text of field "raLanDevices" of card "raDevices" to tRows
    end if
 end raLanPaintDevices
 
@@ -1986,7 +1997,7 @@ command raAnonReveal
             && "are unlinkable - as long as you never cross-post or correlate" \
             && "their timing yourself." after tOut
    end if
-   set the text of field "raAnonOut" of card "raAnon" of me to tOut
+   set the text of field "raAnonOut" of card "raAnon" to tOut
    raAnonPaintGuard
 end raAnonReveal
 
@@ -2018,10 +2029,10 @@ command raAnonPaintGuard
          return & "transport is refused fail-closed - that is what keeps" & \
          return & "its .onion unlinkable from your public DHT presence." \
          after tRows
-   if there is a field "raAnonGuard" of card "raAnon" of me then
-      if the text of field "raAnonGuard" of card "raAnon" of me is not tRows \
+   if there is a field "raAnonGuard" of card "raAnon" then
+      if the text of field "raAnonGuard" of card "raAnon" is not tRows \
             then
-         set the text of field "raAnonGuard" of card "raAnon" of me to tRows
+         set the text of field "raAnonGuard" of card "raAnon" to tRows
       end if
    end if
 end raAnonPaintGuard
@@ -2083,8 +2094,8 @@ command raAnonStop
 end raAnonStop
 
 command raAnonLog pLine
-   if there is a field "raAnonOut" of card "raAnon" of me then
-      put pLine & return after field "raAnonOut" of card "raAnon" of me
+   if there is a field "raAnonOut" of card "raAnon" then
+      put pLine & return after field "raAnonOut" of card "raAnon"
    end if
 end raAnonLog
 
@@ -2164,14 +2175,14 @@ command raMediaPaint
    -- card-1 controls, but raMediaPaint runs every tick from any card and
    -- OUTSIDE raPoll's try; a bare reference would throw off-card and kill
    -- the pump, so qualify to card 1 and guard existence
-   if there is a field "raMediaProg" of card 1 of me then
-      if the text of field "raMediaProg" of card 1 of me is not tLine then
-         set the text of field "raMediaProg" of card 1 of me to tLine
+   if there is a field "raMediaProg" of card 1 then
+      if the text of field "raMediaProg" of card 1 is not tLine then
+         set the text of field "raMediaProg" of card 1 to tLine
       end if
    end if
-   if there is a button "raMediaGet" of card 1 of me then
-      if the label of button "raMediaGet" of card 1 of me is not tLabel then
-         set the label of button "raMediaGet" of card 1 of me to tLabel
+   if there is a button "raMediaGet" of card 1 then
+      if the label of button "raMediaGet" of card 1 is not tLabel then
+         set the label of button "raMediaGet" of card 1 to tLabel
       end if
    end if
 end raMediaPaint
