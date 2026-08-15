@@ -263,7 +263,9 @@ Built and statically verified; pending under the honesty convention.
    scope block; onionxt's "SHA3-256 (deferred)" UI strings for a shipped gap
    (fix requires regenerating both standalones + the suite harness);
    box2dxt platformer's "remaining slice 3" comments for shipped slices.
-   The convention only works if labels flip both ways.
+   The convention only works if labels flip both ways. (The onionxt
+   "SHA3-256 (deferred)" strings were fixed 2026-08-15, standalones and the
+   suite harness regenerated; the rest of this item stands.)
 
 2. **The tracked consolidation path-rewrite pass** (medium). Docs moved
    verbatim still cite member-root-relative paths; includes box2dxt's README

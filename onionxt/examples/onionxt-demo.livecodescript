@@ -1065,7 +1065,7 @@ end demoDefaultHtml
 private command demoBuildAddressTab
    demoMakeTitle "addr:title", "24,100,796,124", "Address tools (pure, no network)"
    demoMakeHint "addr:hint", "24,128,796,150", \
-      "A v3 .onion address IS an ed25519 public key. Decoding needs no crypto; re-encoding needs SodiumXT SHA3-256 (deferred)."
+      "A v3 .onion address IS an ed25519 public key. Decoding needs no crypto; re-encoding uses SodiumXT SHA3-256 (sxSha3_256, ABI 7+)."
    demoMakeLabel "addr:pasteLbl", "24,166,150,188", "Onion address:"
    demoMakeInput "addr:paste", "158,163,636,189", kDemoKnownAddress, "mono"
    demoMakeButton "addr:decode", "652,161,772,191", "Decode"
@@ -1111,9 +1111,10 @@ private command demoEncodeAddress
       demoSetStatus "addr:valid", "decode an address above first, or paste a 64-hex-char public key", "warn"
       exit demoEncodeAddress
    end if
-   -- Re-encode needs the SHA3-256 checksum (SodiumXT gap #2, deferred), so a
-   -- capability error comes back as an "OnionXT:" string, not an address. Route
-   -- it to the wrapping status line instead of the cramped single-line field.
+   -- Re-encode needs the SHA3-256 checksum (SodiumXT sxSha3_256, shipped at
+   -- ABI 7 - docs/08 gap #2 CLOSED), so on an older SodiumXT a capability error
+   -- comes back as an "OnionXT:" string, not an address. Route it to the
+   -- wrapping status line instead of the cramped single-line field.
    put oxAddressFromPublicKey(binaryEncode("H*", tPubHex)) into tAddr
    if tAddr begins with "OnionXT:" then
       put empty into field "addr:reencoded"
@@ -1167,7 +1168,7 @@ private command demoShowCapabilities
    put "version             : " & tInfo["version"] & return after tOut
    put "safeCookieAuth      : " & tInfo["safeCookieAuth"] & "   (SodiumXT sxHmacSha256 + sxRandomBytes)" & return after tOut
    put "deterministicOnion  : " & tInfo["deterministicOnion"] & "   (SodiumXT sxSignSeedToExpandedKey)" & return after tOut
-   put "offlineAddress      : " & tInfo["offlineAddress"] & "   (SodiumXT sxSha3_256, deferred gap #2)" after tOut
+   put "offlineAddress      : " & tInfo["offlineAddress"] & "   (SodiumXT sxSha3_256, ABI 7+; false means an older SodiumXT)" after tOut
    put tOut into field "about:caps"
 end demoShowCapabilities
 

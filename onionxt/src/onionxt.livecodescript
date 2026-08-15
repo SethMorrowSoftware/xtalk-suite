@@ -1586,7 +1586,7 @@ private function oxSha3_256 pData
    try
       put sxSha3_256(pData) into tOut
    catch tError
-      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, deferred gap, docs/08)"
+      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, ABI 7+; this SodiumXT predates it - docs/08 #2)"
    end try
    return tOut
 end oxSha3_256
@@ -1646,7 +1646,8 @@ private function oxSodiumHasRandom
 end oxSodiumHasRandom
 
 private function oxSodiumHasSha3
-   -- Deferred gap: expected false until SodiumXT ships SHA3-256 (docs/08 #2).
+   -- Capability probe: true on SodiumXT ABI 7+ (sxSha3_256 shipped 2026-08-11,
+   -- docs/08 #2 CLOSED); false only against an older installed SodiumXT.
    try
       get sxSha3_256(empty)
       return true
