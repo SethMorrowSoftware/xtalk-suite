@@ -10,6 +10,28 @@ audit. When an item closes, strike it here in the same change (the truth-sync
 discipline), and when this file's date grows old, re-audit or retire it rather
 than trust it.
 
+**THE ENGINE-FREE COLUMN IS EXHAUSTED (2026-08-15, waves 1-3).** Between the
+morning audit and this line, everything in this document that could be
+finished without an OXT engine, a second machine, a Tor daemon, a Mac, or an
+owner decision WAS finished, committed chunk by chunk with its gates green:
+the holde-em fold; SodiumXT ABI 8 (ristretto255, four binaries rebuilt);
+coinxt WIF; nocloud's redirect hole and ETag/304 dedup; the family template
+sync + drift gate; Model C for DHT-Channels (plan Phases 0/2/3); the ONIONXT
+Phase 4 docs; riptide's onion serving, phase-6 sync payload, phase-5 typing
+lane, and profileMeta; holde-em's Level 2 deal algebra (4a-4c) and 2f onion
+tables; the checker union (checks 13-21, 78 latent traps fixed fleet-wide,
+the idioms gate retired); the hygiene sweep; and the consolidation path
+sweep. Every one of those builds is "verified statically" with machine proof
+(KATs, goldens, mirrors, fixtures, coverage 393/411) and is listed in its
+member's own ledger with exactly what its engine pass owes. What remains in
+this file is now ONLY: the B-section verification backlog (the runbook's
+sessions), the macOS/release lanes (C), the harness-fold integrations that
+themselves want an engine in the same change (C.2, C.4), the E-section owner
+decisions, and the A-section items that are genuinely engine-era or
+owner-gated (the 720p re-layout, Schnorr/Taproot, cnx_memzero's ABI ripple,
+nocloud Phase 3's contract questions, box2dxt's polish passes, and Hold'em's
+2e-remainder/3/4d-f/5).
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
