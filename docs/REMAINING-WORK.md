@@ -255,6 +255,17 @@ Built and statically verified; pending under the honesty convention.
 
 ## D. Label and doc hygiene (9)
 
+> **2026-08-15 hygiene sweep (commit `fa03fac`, after `7977ffb`/`f6e7b20`):**
+> closed headlessly - item 1's label halves (sodiumxt, coinxt, riptide,
+> box2dxt, onionxt all flipped to their recorded passes), item 2's NAMED
+> citations (box2dxt badge, riptide example paths, suite-gates.yml header,
+> coinxt ci.yml pre-split text), items 3, 6, 8, and 9 in full, and item 7's
+> inline marks (ship-or-strike SHA3-512 is now an owner call, E-class).
+> Still standing in this section: the broad member-root-relative path sweep
+> (the rest of item 2), the family template (item 4), and the checker union
+> (item 5).
+
+
 1. **Stale honesty labels lagging recorded passes — one sync pass** (medium).
    `sodiumxt/src/sodium.lcb:10-20` + `sodium-tests:18` (closed by the 71-check
    2026-08-12 pass); `coinxt/src/coinxt.livecodescript:1976-1979` phase-5
