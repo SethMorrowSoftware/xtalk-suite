@@ -12,10 +12,10 @@ machines chatting across the internet with no server — that is section 6.
 > The example stacks this guide walks through have **not** themselves been run
 > on an engine. Every public `dc*` handler has now been called on one — the
 > **2026-08-10** suite pass folded the member harness's synchronous half in,
-> green — with only the live halves of a few channel accessors still static
-> (see the coverage note in `tests/datachannel-selftest.livecodescript`).
-> Treat the step-by-step flow described here as designed behaviour until the
-> demos themselves are run.
+> and the **2026-08-15** standalone run closed the async loopback too, so
+> nothing in the member selftest is static any more. Treat the step-by-step
+> flow described here as designed behaviour until the demos themselves are
+> run.
 
 ## 1. Install the extension
 

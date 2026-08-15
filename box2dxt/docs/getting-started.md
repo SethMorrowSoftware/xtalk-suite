@@ -37,9 +37,9 @@ The engine then loads the correct library for your platform automatically —
 **no `/usr/lib`, no `sudo`, no `LD_LIBRARY_PATH`, no renaming.**
 
 > The per-platform libraries under `src/code/<arch>-<platform>/` are committed
-> (built and tested by CI, and attached to each [Release](../../releases)), so
-> this is already done in the repo. Prefer building the library yourself? See
-> [building.md](building.md).
+> and pinned by `MANIFEST.sha256` (the suite's CI builds and tests them as
+> artifacts), so this is already done in the repo. Prefer building the library
+> yourself? See [building.md](building.md).
 
 ## 2. Load it while developing
 

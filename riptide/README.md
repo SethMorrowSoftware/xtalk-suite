@@ -6,30 +6,32 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
-## Status: phases 1-2 (of 7) COMPLETE, two-machine propagation included
+## Status: all 7 phases BUILT; phases 1-4 DONE on two machines
 
-> **Honesty convention.** **Phases 1 and 2 are ENGINE-PASSED as of
-> 2026-08-12**, folded into the suite harness: 133/133, 0 skipped, every
-> extension probe true including hasSha3. The phase-2 run covered head publish
-> through the external-signing seam, content-addressed post publish, accepted
-> async lookups, and the ingest verifiers. Phase 2's propagation done-criterion
-> - a SECOND machine walks the chain and verifies every authorSig - **closed
-> 2026-08-13**: the maintainer ran the flagship stack on two machines,
-> identities created on both sides, feeds published and received in both
-> directions through the real DHT. rp1 DMs and onion streams are later
-> phases; no claim is made about them at all.
+> **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded
+> into the suite harness), their two-machine propagation criterion closed
+> 2026-08-13. **Phases 3 and 4 closed on two machines 2026-08-15**: a
+> follower fetched and PLAYED an attached video (which necessarily walked
+> head publish -> fetch -> chain walk -> authorSig verify -> media
+> info-hash -> swarm join -> playback), and two identities exchanged
+> encrypted DMs, chat both ways, with no server (the sealed RSI1 intro,
+> the deterministic-role crypto_kx session, and the pairwise secretstream
+> over rp1 all carrying real traffic). The same day the whole phase 4-7
+> COMPUTE surface ran green in the suite selftest on a real engine.
+> **Phases 5-7 are BUILT and statically verified, their live passes
+> pending**: the dc call (phase 5), the LAN mesh with its mutual welcome
+> (phase 6), and the anon persona over live Tor (phase 7).
+> `docs/two-machine-runbook.md` scripts what remains.
 >
-> The stack that closed it is `examples/riptide-social.livecodescript` (on
-> the suite UI kit): identity, publish, and the verified chain walk on one
-> card - a post renders only after `rsIngestHead`/`rsIngestPost` verify it,
-> so a received feed IS a verified walk. That run was also the first to
-> drive real btPoll DHT events into the ingest verifiers, which the harness
-> only ever fed synthetically. `examples/README.md` carries both run
-> procedures; result text and environments of the closing run were not
-> captured, so the record is the maintainer's dated account.
+> The flagship stack is `examples/riptide-social.livecodescript` (on the
+> suite UI kit): FOUR cards - Feed (identity, publish, the verified chain
+> walk, the media strip), Messages (DMs + the Call button), Devices (the
+> LAN mesh), and Anon (the persona and the live guard panel). A post
+> renders only after `rsIngestHead`/`rsIngestPost` verify it, so a
+> received feed IS a verified walk. `examples/README.md` carries the run
+> procedures; run records are the maintainer's dated accounts.
 
-What ships today, per the spec's phased roadmap (section 10.3, phases 1
-and 2):
+What ships today, per the spec's phased roadmap (section 10.3):
 
 - **`src/riptide.livecodescript`**, a pure-script library:
   - the master seed and the `RIPTKEY1` sealed key file (Argon2id +
@@ -43,6 +45,23 @@ and 2):
   - the `RSH1` feed-head and `RSP1` post-record wire formats: build,
     strict parse, and author-signature verification, with the
     tamper-evident post chain
+  - **the media layer (phase 3)**: attach a file as a trackerless torrent
+    seeded in place (`rsMediaCreate`), fetch-and-co-seed sequentially
+    (`rsMediaFetch`), and the status snapshot a player paints from
+  - **the DM layer (phase 4)**: crypto_kx prekeys as signed `RSK1`
+    records, sealed `RSI1` intros bound to one recipient, `RSM1` rp1
+    frames, deterministic-role sessions, and the inbox-swarm join +
+    framed send; the message kinds `O`/`A` carry phase-5 SDP over the
+    same encrypted rail
+  - **the LAN mesh admission (phase 6)**: the shared-master keypair and
+    the three-leg RSL1 challenge/response/WELCOME handshake (mutual auth
+    - a stranger on your Wi-Fi cannot join, and a rogue host cannot fake
+    being yours)
+  - **the anon persona (phase 7)**: onion-only identities
+    (`rsAnonHandle`/`rsAnonOnion`), the sealed-DM prekey subkey
+    (`rsAnonDmSeed`, spec 8.3), BTXO framing, and `rsPersonaAllows` - the
+    section-9.3 deanonymization guard every transport branch routes
+    through
   - **the phase-2 live feed layer**: `rsPublishHead` signs the canonical
     BEP44 buffer with SodiumXT and stores it with `btDhtPutSigned` (the
     identity secret never enters libtorrent, and libtorrent re-verifies
@@ -86,13 +105,14 @@ Riptide probes, never assumes (`rsProbeCapabilities()`); a missing
 extension disables exactly its feature, with a clear message, and never
 another one.
 
-| Extension | Need | Role today (phases 1-2) |
+| Extension | Need | Role today (phases 1-7) |
 |---|---|---|
-| SodiumXT | required | the trust root: KDF, sealing, signing, hashing; at ABI 7 also the preferred SHA3 provider |
+| SodiumXT | required | the trust root: KDF, sealing, signing, hashing, crypto_kx, secretstream; at ABI 7 also the preferred SHA3 provider |
 | coinxt | optional | `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation |
-| onionxt | optional | `oxPublicKeyFromAddress` verifies a claimed onion offline |
-| torrentxt | optional | the phase-2 live feed layer: BEP44 puts and lookups through a session the app owns; every live handler refuses cleanly without it |
-| enetxt, datachannelxt | later phases | probed and reported only |
+| onionxt | optional | offline onion verification, and the anon persona's service (`rsAnonCreateService` via `oxCreateServiceFromSeed`) |
+| torrentxt | optional | the live feed (BEP44 puts/lookups), media torrents, and the DM inbox swarms + rp1 transport; every live handler refuses cleanly without it |
+| enetxt | optional | the phase-6 LAN device mesh (the admission handshake rides enet channel 0) |
+| datachannelxt | optional | the phase-5 call (a direct data channel, signalled over the DM rail) |
 
 A note on the onion address, because it is the one place the composition
 was subtle: libsodium has no SHA-3, so onionxt's `oxAddressFromPublicKey`
@@ -108,11 +128,13 @@ available from `oxServiceAddress` after publishing, via tor itself). The
 security-relevant VERIFY direction, `rsVerifyOnionClaim`, needs no SHA-3
 at all and works with onionxt alone.
 
-## What phase 3+ adds (not yet written)
+## What remains
 
-In spec order: media torrents (create, seed, co-seed, sequential
-playback), then DMs (the inbox rendezvous swarm, sealed intros, pairwise
-secretstream over rp1), live dataChannel sessions, LAN device sync, and
-the anonymous persona. Each phase lands with its own engine pass before
-its labels flip. Phase 2's single-engine pass is complete; only its two-machine
-propagation half remains open, per the status note above.
+The live passes, scripted in `docs/two-machine-runbook.md`: the phase-5
+call (watch for the CONNECTED/via line, ideally `typ srflx` across two
+networks), the phase-6 mesh (mutual admitted verdicts on both sides, a
+stranger refused), phase 7 over a live tor daemon, phase 3's mid-download
+nuance (playback visibly below 100%), and spec 8.3's onion transport
+(serving the persona's prekey and accepting sealed intros via
+onion-httpd - the crypto layer is closed, the serving is not built).
+Labels flip only on a dated engine report, per the honesty convention.

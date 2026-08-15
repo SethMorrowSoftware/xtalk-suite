@@ -138,7 +138,8 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
 member's own deep self-test** (seven since 2026-08-11: the six extensions plus
-riptide's harness, phases 1-3), folded in with each one's names prefixed, plus —
+riptide's harness, which now spans phases 1-4, 6, and 7 plus the spec-8.3
+sealed-anon-DM crypto), folded in with each one's names prefixed, plus —
 since 2026-08-10 — **the pure-script LIBRARIES themselves**,
 `coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript` and
 (since 2026-08-11) `riptide/src/riptide.livecodescript`,
@@ -266,8 +267,9 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 `check-suite-selftest.py` proves the merge holds together. Neither one looks at
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
-That gap is invisible from the inside: the harness is ~4400 lines and runs ~580
-checks, and nobody re-asks "is this thorough?" after a number that size. When it was
+That gap is invisible from the inside: the harness was ~4400 lines running ~580
+checks when this was learned (12382 lines today, and the lesson still holds),
+and nobody re-asks "is this thorough?" after a number that size. When it was
 first measured, **31 public handlers had never been called** - including coinxt's
 `cxHdDeriveChild` (the single CKD step the whole HD layer loops over) and both ABI-4
 tweak exports, which are what make an xpub watch-only wallet agree with its xprv.

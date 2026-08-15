@@ -154,7 +154,8 @@ rule and not a hedge.
 
 2. **Never GUESS font metrics — measure, and FIT the field to the text.** Hand-sized
    label rects clip text on Windows (different line metrics). The label helper
-   (`qsLabel`) sets the field's height to its own `the formattedHeight` (top pinned),
+   (the kit's `uiWrap`, which absorbed the old `qsLabel` in the 2026-08-14
+   adoption) sets the field's height to its own `the formattedHeight` (top pinned),
    so the field exactly holds its text. This does double duty: it prevents clipping,
    **and** it makes `the height of field` equal the *text* height — which the band-
    title and step-badge centering (`set the top to (midline - height/2)`) depend on.

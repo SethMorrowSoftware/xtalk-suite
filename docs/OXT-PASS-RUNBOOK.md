@@ -168,18 +168,17 @@ typo in a handler name; expect marshalling, ordering, and environment instead.
 
 | # | Unproven thing | Why it matters | The label that says so |
 |---|---|---|---|
-| 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual closed at the synchronous level 2026-08-10:** the folded suite harness calls all 31 public `dc*` handlers by name and its datachannelxt sections ran green twice; only the member harness's own ASYNC loopback halves (live `dcSendText`, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, the a=candidate pins) remain standalone work. | Labels updated in `datachannelxt/README.md`, `datachannelxt/examples/README.md`, `datachannelxt/docs/getting-started.md`, `datachannelxt/tests/datachannel-selftest.livecodescript`, and `datachannelxt/src/datachannel.lcb`. |
+| 1 | ~~**datachannelxt has never had an engine pass at all.**~~ **CLOSED 2026-08-08.** | The member now has engine evidence: `dcInit`, a stale-handle no-op, peer and channel creation, a live loopback that negotiated and opened both ends, a byte-for-byte payload round-trip, the `-4` refusal at 60001 bytes, a payload at the SCTP-negotiated cap, and `dcCleanup`. **Residual closed at the synchronous level 2026-08-10**, and **the async residual CLOSED 2026-08-15**: the member harness ran STANDALONE green end to end - a real SDP carrying candidates, offer/answer roles, gathering complete both peers, a selected pair, text and binary (embedded NUL included) byte-for-byte, and a cap-sized send. Nothing in the dc selftest is static anymore; what remains for this member is browser interop and a two-network call. | Labels updated in `datachannelxt/README.md`, `datachannelxt/examples/README.md`, `datachannelxt/docs/getting-started.md`, `datachannelxt/tests/datachannel-selftest.livecodescript`, and `datachannelxt/src/datachannel.lcb`. |
 | 2 | ~~**coinxt's binding is brand new and has never been loaded.**~~ **CLOSED 2026-08-08 — and it closed coinxt phase 1.** | All five numbered questions in the `.lcb` header were answered, each on the side the code assumed: the module loads and binds resolve; the ABI guard holds (transitively — `sPrepare()` is the whole body of `cxCheckABI()` and every wrapper calls it); **`UIntSize` works as a foreign RETURN type**; **`MCDataGetBytePtr` marshals an empty `Data`** (`cxKeccak256("")` returned `c5d2…a470` instead of throwing); and the vectors are byte-exact. Neither fallback — `CUInt`, `optional Pointer` — was needed. **Residual CLOSED 2026-08-10:** the folded coin-selftest ran every public handler by name on a real engine — the 12 phase-1 stragglers (`cxCheckABI` by name at last), all 15 phase-2 curve handlers, and the whole of phases 3 and 4 — at 207/207 on the re-run. Nothing in coinxt is "verified statically" any more. | Labels updated in `coinxt/src/coinxt.lcb` (STATUS block), `coinxt/CLAUDE.md`, `coinxt/IMPLEMENTATION-PLAN.md`, and the root `README.md` row. |
 | 3 | ~~**The selftests grew after their passes; the new sections are static-only.**~~ **CLOSED 2026-08-10.** | The folded suite harness ran every member's own deep self-test on a real engine, twice in one day, green: torrentxt's whole harness including the v9-v11 surface (`btDhtGetPeers`, `btAddInfohash`, `btMapPort`/`btUnmapPort`, the `btRp1*` quartet) at 96/96; enetxt's isolated teardown section (`enDisconnectNow` / `enResetPeer` / `enSetPeerTimeout` / `enSetHostBandwidth`) inside its 21/21 sync half; and the complete `sxSelfTest()` at 68/68, attached-signature form, keyed hashing and preset accessors included. The one extended section the folds exclude is the live `enHostStatus` pair inside enetxt's own async loopback. | Labels updated 2026-08-10 in `torrentxt/tests/torrent-selftest.livecodescript` + `torrentxt/README.md`, `enetxt/tests/enet-selftest.livecodescript` + `enetxt/CLAUDE.md`, and `sodiumxt/docs/api-reference.md`. |
 | 4 | **onionxt Mode B (launching tor as a child process) has never run.** | It is the one remaining `VERIFY:` in an otherwise on-engine-proven member, and it is what a turnkey app would ship. | `onionxt/CLAUDE.md`, "Still `VERIFY:` (not yet exercised)" item 8: "`the processId` / `open process` for the optional Mode B tor launch (the default is assume-running)." Also the intro blockquote in `onionxt/docs/10-usage-guide.md` and `onionxt/docs/07-tor-lifecycle.md` Mode B. |
 | 5 | **torrentxt's Tor path (Quick Share Model C) has never run against a daemon.** | It is a cross-member composition, so it is the one place three members must agree at runtime. | `torrentxt/examples/torrent-quickshare.livecodescript` (two places): "Every ox* handler is OnionXT's published ABI; this is verified statically ... and NEEDS an on-engine OXT pass with a running Tor daemon before any runtime claim." Register: `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3. |
 | 6 | **Two-machine behaviour, for every member that has it.** enetxt's LAN chat, torrentxt's rp1 chat and Channels, datachannelxt's DHT chat. The riptide phase-2 propagation leg CLOSED 2026-08-13 (riptide-social on two machines, feeds both directions - which also means a signed BEP44 put propagated between real machines over the live DHT); the member demo legs remain. | Loopback proves the binding; only a second machine proves the transport. | `enetxt/CLAUDE.md`: "Still un-exercised: the LAN chat demo between two real machines." `torrentxt/examples/README.md`: rp1 chat "needs a live peer to show anything, so it is a two-machine test by nature." |
 
-Items 1, 2 and 3 are **all closed**: every member's deep self-test had run on a
-real engine via the folded suite harness (as of the 2026-08-10 passes), and the
-residuals that remain (the enet and datachannel member harnesses' own async
-loopback halves) are small, named in each harness's coverage note, and closable by
-one standalone paste each.
+Items 1, 2 and 3 are **all closed**, residuals included: every member's deep
+self-test has run on a real engine via the folded suite harness (the 2026-08-10
+passes), and BOTH async-loopback residuals have since closed standalone - enetxt
+2026-08-13, datachannelxt 2026-08-15. No member-selftest label stands anywhere.
 
 **Offline work then added THREE new surfaces, and the 2026-08-12 Step-0 paste
 (Windows x64, SodiumXT ABI 7 installed) closed all three in one run — the run
@@ -200,9 +199,12 @@ engine:**
 
 What remains is entirely environmental: items **4 and 5 need a live tor daemon**
 (one evening with `ControlPort 9051` covers both), and item **6 needs a second
-machine** for its member-demo legs - the riptide propagation leg closed
-2026-08-13, the first two-machine result in the suite. Plan the rest as their
-own sessions.
+machine** for its member-demo legs. The riptide legs have been closing steadily:
+propagation 2026-08-13 (the suite's first two-machine result), media and
+both-ways DMs 2026-08-15. The riptide phase 5-7 legs (the dc call, the LAN
+mesh, the anon persona over Tor) are NOT inventoried here -
+`riptide/docs/two-machine-runbook.md` is their script, written for exactly
+these sessions. Plan the rest as their own sessions.
 
 ---
 
@@ -356,8 +358,10 @@ coinxt installs like any other member and the run below is just a run.
 > had before. If you would rather ship a gcc-built one, running
 > `release-binaries.yml` replaces it and the same CI step will re-verify it.
 
-**macOS is the only gap**, and it is the same gap four of the five native members
-have: CI builds no macOS lane on purpose (the runners are arm64-only, so an
+**macOS is the only gap**, and it is the same gap the native members share
+(box2dxt, folded home 2026-08-14, is the one already shipping all five
+platforms; it sits outside this runbook's §2.1 table because it is not yet in
+the suite harness): CI builds no macOS lane on purpose (the runners are arm64-only, so an
 automated lane would emit a thin dylib). Build it first - one command, and it puts
 the file where the engine expects it:
 
@@ -480,8 +484,8 @@ rather than remembered:
 | torrentxt | 85 / 85 | - |
 | enetxt | 23 / 23 | - |
 | datachannelxt | 31 / 31 | - |
-| riptide | 35 / 35 | - |
-| **total** | **340 / 358** | **18** |
+| riptide | 72 / 72 | - |
+| **total** | **377 / 395** | **18** |
 
 The eighteen are onionxt's, all of them, and they are the only handlers in the suite
 with a written excuse: eleven are **engine socket callbacks** (the engine calls them
@@ -541,7 +545,7 @@ Ordered by (value of the result) divided by (setup cost):
 
 | Order | Stack | Needs | Why here |
 |---|---|---|---|
-| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all five packaged extensions installed; the coinxt, onionxt, and Riptide script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all seven member harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 28 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and Riptide phases 1-2 against the suite's session. If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The two deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3. |
+| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all five packaged extensions installed; the coinxt, onionxt, and Riptide script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all seven member harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 48 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and Riptide's 24 sections (phases 1-4, 6, 7 + the 8.3 sealed-anon-DM crypto) against the suite's session. If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The two deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3. |
 | 1 | `sodiumxt/examples/sodium-tests.livecodescript` (`put sxSelfTest()`) | sodiumxt only | No I/O at all, no network, runs in a second. Everything else composes sodiumxt, so a failure here invalidates results further down. |
 | 2 | `enetxt/tests/enet-selftest.livecodescript` | enetxt only | Loopback UDP on 127.0.0.1, no daemon, no second machine. Also the fastest way to discover a machine that blocks loopback UDP, which would also sink datachannelxt (see trap 5.5). |
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send, and the a=candidate / offer-answer-role pins. |
@@ -563,7 +567,7 @@ Ordered by (value of the result) divided by (setup cost):
 | 14 | `torrentxt/examples/torrent-dht-channels.livecodescript` and `torrent-rp1-chat.livecodescript` | torrentxt; **two machines** |
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
 | 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
-| 17 | `riptide/examples/riptide-social.livecodescript` - the phase-1/2 flagship: identity, publish over the real DHT, and the verified chain walk. **RAN ON TWO MACHINES 2026-08-13** - identities both sides, feeds both directions - closing phase 2's done-criterion. A re-run needs no label work | sodiumxt + torrentxt + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
+| 17 | `riptide/examples/riptide-social.livecodescript` - the phase 1-7 flagship on four cards (Feed + media, Messages + Call, Devices, Anon). **TWO-MACHINE RECORD**: feeds both directions 2026-08-13; media fetched-and-played and DMs both ways 2026-08-15. The remaining legs (the call, the mesh, anon over Tor) are scripted in `riptide/docs/two-machine-runbook.md`, which supersedes this row for riptide | sodiumxt + torrentxt (+ enetxt/datachannelxt/onionxt per leg) + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
 | 18 | `tests/suite-closing-pass.livecodescript` - ONE stack for the remaining legs, so the closing sessions are a checklist, not an expedition. Six sections, each printing PASS lines: **A** datachannel local async (item 3's still-static live halves, single machine), **B** enet two-machine chat (closes item 8), **C** torrent seed/leech with a hash-verified payload plus resume saved to disk and re-added across an OXT restart, **D** rp1 chat over a DHT rendezvous (with C, closes item 14's legs), **E** datachannel chat signaled over the real DHT (closes item 13's shape), **F** Mode B `oxLaunchTor` plus a live onion echo - listen, dial your own onion through the Tor network, exact bytes both ways (closes item 15 and the seven live-Tor coverage exemptions' `oxTransport*` half) | sodiumxt + torrentxt + enetxt + datachannelxt packaged; onionxt in the message path for F; takes THE torrent session (trap 5.1); **install on both machines** for B/C/D/E |
 
 Items 8, 13, and 14 are genuine two-machine tests; item 18 packages their
@@ -605,35 +609,18 @@ Alongside each result, record: **OXT version, OS and architecture, the date, and
 which extensions were loaded.** A result with no environment attached cannot be
 turned into a claim.
 
-### 4.2 datachannelxt (inventory item 1 - CLOSED; this is now the async residual)
+### 4.2 datachannelxt (inventory item 1 - CLOSED, async residual included)
 
-The first-engine-evidence flips this section used to enumerate were applied
-after the 2026-08-08 and 2026-08-10 passes (the README honesty notes, the
-COVERAGE NOTE, the root release row - all carry dated results now). What a
-STANDALONE run of `tests/datachannel-selftest.livecodescript` settles today is
-the async loopback's live halves, the one part the folded suite deliberately
-excludes.
-
-**A pass looks like:** `stSummary` green, zero failures - and specifically the
-live halves: `dcSendText` on an open channel, `dcBufferedAmount` on a live
-channel, `dcGatheringState` reporting complete (2) on both peers, a populated
-`dcSelectedCandidatePair`, the `dcBufferedLow` EVENT after the cap-sized send
-(the channel is armed at 4096; the payload is far above it), the a=candidate /
-offer-answer-role pins, and clean teardown. The synchronous surface also runs
-(it is the same file), but those checks are re-confirmation, not news.
-
-**Copy back:** the full `stResults` text.
-
-**What flips:**
-
-- `datachannelxt/tests/datachannel-selftest.livecodescript`, the COVERAGE NOTE
-  sentence beginning "Still verified statically: this file's own async
-  loopback" - replace with the dated result.
-- `datachannelxt/README.md`, the "What remains **verified statically**"
-  sentence naming the same live halves.
-- This runbook's tick-sheet row for datachannelxt, and the root `README.md`
-  release row's "only the member harness's own async live halves stay static"
-  clause.
+The first-engine-evidence flips were applied after the 2026-08-08 and
+2026-08-10 passes, and **the standalone async run happened 2026-08-15,
+green end to end**: the live halves this section used to enumerate -
+`dcSendText` on an open channel, `dcBufferedAmount` live, `dcGatheringState`
+complete (2) on both peers, a populated `dcSelectedCandidatePair`, the
+offer/answer-role and a=candidate pins, a cap-sized send, clean teardown -
+are all dated results now, recorded in `datachannelxt/README.md` and
+`datachannelxt/CLAUDE.md`. **A green re-run needs no label work.** What this
+member still owes is browser interop (a real Chrome/Firefox peer) and a
+two-network call with real NAT traversal - neither is a selftest leg.
 
 Leave `datachannelxt/CLAUDE.md`'s *rule* about not claiming unobserved behaviour
 alone - that is policy, not a status label.
@@ -1149,10 +1136,11 @@ DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
                counters, zero peers after disconnect). Nothing static
                remains in this file; two-machine LAN chat rides item 6
 [x] datachannelxt  datachannel-selftest (sync)  2026-08-10: 23/0 (folded, twice);
-               still open: its own async-loopback halves (live dcSendText,
-               dcBufferedAmount, gathering/candidate-pair, and the dcBufferedLow
-               event after a cap-sized send, added 2026-08-13)
-               <- one paste closes it
+               and CLOSED 2026-08-15: the standalone ran green end to end WITH
+               the async loopback (real SDP w/ candidates, offer/answer roles,
+               gathering complete both peers, selected pair, text + binary incl
+               NUL, cap-sized send). Nothing static remains in this file;
+               browser interop + a two-network call ride outside the selftest
 [x] torrentxt  torrent-selftest               2026-08-10: 96/0 (folded, twice;
                shares the core's single session by design)
 [x] onionxt    oxSelfTest()                   2026-08-10: 40/0, 3 sha3 skips by
@@ -1212,7 +1200,7 @@ DEMOS
                     -> PHASE 2's DONE-CRITERION MET (the riptide leg of item
                     6). Environments not captured; maintainer's dated account
 [ ] suite-closing-pass (row 18; ONE stack for the legs still open above)
-      A dc local async      (single machine)               PASS lines: ______
+      A dc local async      CLOSED 2026-08-15 standalone   (skip this leg)
       B enet chat           (two machines)                 PASS lines: ______
       C seed/leech + resume (two machines; restart? _____) PASS lines: ______
       D rp1 chat            (two machines)                 PASS lines: ______

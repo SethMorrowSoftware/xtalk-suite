@@ -10,7 +10,8 @@ reaches outside it. This file is the procedure for the split and the checklist f
 ## Before you split
 
 Run the gates from `coinxt/` (the directory is lowercase; only the eventual repository name is
-capitalised) and confirm all eight are green. They are the same steps `.github/workflows/ci.yml`
+capitalised) and confirm all NINE are green (check-script-vectors.py joined when phase 3 became
+headlessly executed). They are the same steps `.github/workflows/ci.yml`
 runs, and the same ones the suite's `tools/build-all.sh --gates` runs today:
 
 ```sh

@@ -99,8 +99,10 @@ end closeCard
 
 `b2kQuickStart` is the one-liner that does everything: makes the world, sets
 gravity, builds static walls around the card edges, and starts the loop. The two
-`b2kSpawn…` calls each **create a graphic and give it a body** — we wrap them in
-`get` because they *return* the new control and we don't need the value here.
+`b2kSpawn…` calls each **create a graphic and give it a body** — they are
+COMMANDS, called as bare statements exactly as the snippet shows; the new
+control's name lands in `the result` if you want it (`put the result into
+tBox`). Wrapping them in `get`/`()` throws in OXT (the S11 spike verdict).
 
 That's a complete, playable physics toy. Everything below is about doing more.
 
@@ -1226,9 +1228,13 @@ A few things that trip up LiveCode/OpenXTalk users specifically:
   (`type`, `name`, `layer`, `number`, `time`, `id`, `mode`…) are reserved. The
   Kit prefixes everything (`b2k…`, internal `s…`); prefix **your** variables too
   (`tBox`, `gScore`) so you never collide with a keyword.
-- **`get` vs. `put` for functions that return.** `b2kSpawn…`, `b2kGrab`, and the
-  joint constructors *return* a value. Use `put … into tVar` to keep it, or
-  `get …` to discard it. Calling them as a bare statement is a syntax error.
+- **Command vs. function, and where the value lands.** `b2kSpawn…` and the
+  joint constructors are COMMANDS: call them bare (`b2kSpawnBox 100,100,40,40`)
+  and read `the result` for the new control or joint id — `get`/`()` on a
+  command throws in OXT (the S11 verdict; the CHANGELOG records that the
+  function spelling never worked). `b2kGrab` and the query handlers marked
+  `[f]` in the index below are the FUNCTIONS: those you do call with `()` via
+  `put`/`get`.
 - **Custom properties stick to objects.** A handy pattern is to stash per-object
   data as `set the uColor of tBox to …` and read it back later — the Kit and the
   examples use `u…` custom properties throughout.
@@ -1259,8 +1265,8 @@ Optional arguments are in `[…]`.
 ### Attach & spawn
 `b2kAddBox ctrl [,dyn]` · `b2kAddBall ctrl [,dyn]` · `b2kAddCapsule ctrl [,dyn]` ·
 `b2kAddPolygon ctrl [,dyn]` · `b2kAddStatic ctrl` · `b2kReshape ctrl, shape` ·
-`b2kSpawnBox x,y,w,h [,color]` `[f]` · `b2kSpawnBall x,y,diam [,color]` `[f]` ·
-`b2kSpawnCapsule x,y,len,thick [,color]` `[f]`
+`b2kSpawnBox x,y,w,h [,color]` · `b2kSpawnBall x,y,diam [,color]` ·
+`b2kSpawnCapsule x,y,len,thick [,color]` — commands; the new control is `the result`
 
 ### Materials & body settings
 `b2kSetBounce ctrl,0..1` · `b2kSetFriction ctrl,0..1` · `b2kSetDensity ctrl,d` ·
@@ -1287,10 +1293,10 @@ Optional arguments are in `[…]`.
 `b2kAwakeCount()` `[f]` · `b2kControlAt(x,y)` `[f]` · `b2kControlContains(ctrl,x,y)` `[f]`
 
 ### Joints
-`b2kHinge a,b,x,y` `[f]` · `b2kWeld a,b` `[f]` · `b2kRope a,b [,len]` `[f]` ·
-`b2kSlider a,b,axisDeg` `[f]` · `b2kWheel chassis,wheel,x,y [,axisDeg]` `[f]` ·
-`b2kMotorTo mover,ref,dx,dy,deg [,maxF,maxT]` `[f]` · `b2kNoCollide a,b` `[f]` ·
-`b2kRemoveJoint joint`
+`b2kHinge a,b,x,y` · `b2kWeld a,b` · `b2kRope a,b [,len]` ·
+`b2kSlider a,b,axisDeg` · `b2kWheel chassis,wheel,x,y [,axisDeg]` ·
+`b2kMotorTo mover,ref,dx,dy,deg [,maxF,maxT]` · `b2kNoCollide a,b` ·
+`b2kRemoveJoint joint` — all commands; the joint id is `the result`
 &nbsp;&nbsp;**Drive/limit/spring:** `b2kMotor j,deg/s [,maxT]` ·
 `b2kHingeLimit j,lo,hi` · `b2kHingeAngle(j)` `[f]` · `b2kMotorOff j` ·
 `b2kHingeLimitOff j` · `b2kSliderMotor j,px/s [,maxF]` · `b2kSliderLimit j,lo,hi` ·
@@ -1358,14 +1364,14 @@ Optional arguments are in `[…]`.
 `b2kEndContactB(i)` `[f]`
 
 ### Sensors
-`b2kAddSensor ctrl [,shape]` `[f]` · `b2kSetSensor ctrl,flag` ·
+`b2kAddSensor ctrl [,shape]` · `b2kSetSensor ctrl,flag` ·
 `b2kSensorCount()` `[f]` · `b2kSensorEnterSensor(i)` `[f]` ·
 `b2kSensorEnterVisitor(i)` `[f]` · `b2kSensorExitCount()` `[f]` ·
 `b2kSensorExitSensor(i)` `[f]` · `b2kSensorExitVisitor(i)` `[f]`
 
 ### Collision filtering
 `b2kDefineLayer name` · `b2kLayerBits(list)` `[f]` · `b2kSetCategory ctrl,layers` ·
-`b2kSetMask ctrl,layers` · `b2kSetCollisionGroup ctrl,n` · `b2kNoCollide a,b` `[f]`
+`b2kSetMask ctrl,layers` · `b2kSetCollisionGroup ctrl,n` · `b2kNoCollide a,b`
 
 ### Terrain & chains
 `b2kChain points [,loop]` · `b2kSmoothGround points` · `b2kAddChain ctrl,points [,loop]`

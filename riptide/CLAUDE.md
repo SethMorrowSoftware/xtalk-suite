@@ -17,46 +17,48 @@ it is an APP, not an extension: nothing here is compiled, nothing here
 adds native surface, and `rs*` never becomes a library other members may
 call.
 
-**Phases 1 and 2 of the spec's seven are COMPLETE**, done-criteria included:
-phase 1 (identity + the pure-compute feed layer) and the phase-2 LIVE feed
-layer (BEP44 head/post publish, async lookups, ingest verifiers) are
-engine-passed, and phase 2's two-machine propagation criterion closed
-2026-08-13 (see rule 8). **Phases 3 (media) and 4 (DMs) are BUILT but not
-passed** (2026-08-14): phase 3 is `rsMediaCreate`/`rsMediaFetch`/
-`rsMediaStatus` plus the demo's media strip; phase 4 is the `rsDm*` layer
-(kx prekeys, RSK1/RSI1/RSM1 records, deterministic-role sessions, inbox
-join + framed send) plus the demo's Messages card - all golden-pinned
-where deterministic, refusal-covered in the harness, verified statically;
-their done-criteria (a follower plays a video mid-download; two machines
-exchange authenticated encrypted DMs) each need a two-machine pass.
-**Phase 6 (LAN mesh) is BUILT but not passed** (2026-08-14): the `rsLan*`
-admission layer (shared-master ed25519 keypair, RSL1 challenge/response)
-plus the demo's Devices card, golden-pinned and offline-harness-covered;
-its done-criterion (a device that shares the master joins, a stranger is
-refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
-library surface** - SDP rides the phase-4 DM message kinds O/A over the
-existing secretstream; its demo wiring is BUILT (2026-08-15): a Call
-button on the Messages card, one-blob non-trickle signalling (ship the
-local SDP when dcGatheringState hits complete), libdatachannel's
-auto-negotiation on both legs, a visible CONNECTED/via line from the
-selected candidate pair, and teardown tied to hang-up/Lock/close with the
-mandatory BARE dcCleanup at quit. STUN only, no TURN, deliberately - a
-symmetric-NAT pair fails visibly instead of relaying silently. The same
-day the LAN admission gained its RSL1 "W" WELCOME (mutual auth: the host
-signs over the joiner's own response signature, so the joiner verifies
-the host shares the master and gets its positive verdict; golden-pinned,
-rogue-host and cross-handshake-replay refusals in the harness), closing
-the joiner-confirmation gap recorded earlier. Both are statically
-verified; docs/two-machine-runbook.md scripts their passes.
-**Phase 7 (anon persona) is BUILT but not passed** (2026-08-14): the
-`rsAnon*` layer (onion-only persona derivation, probe-gated service
-wrapper, BTXO framing) and `rsPersonaAllows` - the pure-policy §9.3 guard,
-the app's highest-severity invariant - plus the demo's Anon card, all
-golden-pinned/harness-covered where deterministic; its done-criterion (a
-persona reachable over Tor with zero `bt*` calls in a trace) needs an OXT +
-live-Tor pass. With that, all seven spec phases are built in the tree;
-only phase 5's dc demo wiring and phase 7's sealed anon-DM route remain,
-both noted below.
+**All seven spec phases are BUILT, and phases 1-4 are DONE on two
+machines, done-criteria included** (library 0.7.0; 72 public handlers,
+72/72 exercised by the suite harness):
+
+- **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
+  2026-08-12; the two-machine propagation criterion closed 2026-08-13
+  (see rule 8).
+- **Phase 3 (media): DONE 2026-08-15**, two machines - a follower fetched
+  and played an attached video, which necessarily exercised head publish
+  -> fetch -> chain walk -> authorSig verify -> media info-hash -> swarm
+  join -> playback. The mid-download nuance (playback visibly below 100%)
+  stays unmeasured; the runbook scripts it.
+- **Phase 4 (DMs): DONE 2026-08-15**, two machines, chat both ways - the
+  sealed RSI1 intro, the deterministic-role crypto_kx session, and the
+  pairwise secretstream over rp1 all carried real traffic with no server.
+- **Phase 5 (live sessions): BUILT, awaiting its pass.** No library
+  surface (SDP rides the phase-4 O/A kinds); the demo wiring landed
+  2026-08-15 - a Call button on the Messages card, one-blob non-trickle
+  signalling (ship the local SDP when dcGatheringState hits complete),
+  libdatachannel auto-negotiation on both legs, a visible CONNECTED/via
+  line, teardown on hang-up/Lock/close, the mandatory BARE dcCleanup at
+  quit. STUN only, no TURN, deliberately - a symmetric-NAT pair fails
+  visibly instead of relaying silently.
+- **Phase 6 (LAN mesh): BUILT, awaiting its pass.** The `rsLan*`
+  admission layer plus the RSL1 "W" WELCOME (2026-08-15, mutual auth:
+  the host signs over the joiner's own response signature, so the joiner
+  verifies the host shares the master and gets its positive verdict;
+  golden-pinned, rogue-host and cross-handshake-replay refusals in the
+  harness). The admission COMPUTE ran engine-green in the suite selftest
+  2026-08-15; the live two-machine mesh pass is what remains.
+- **Phase 7 (anon persona): BUILT, awaiting OXT + live-Tor.** The
+  `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
+  §9.3 guard, the app's highest-severity invariant) - compute engine-green
+  2026-08-15. The sealed anon-DM CRYPTO (spec 8.3) closed the same day
+  via `rsAnonDmSeed` (subkey 200+n); only its ONION TRANSPORT (serve the
+  prekey + accept sealed intros via onion-httpd) remains, with the live
+  done-criterion (a persona reachable over Tor with zero `bt*` calls in a
+  trace).
+
+What remains, in one line: the live passes for 5 (the call), 6 (the
+mesh), and 7 (tor), plus 8.3's onion transport - all scripted in
+docs/two-machine-runbook.md.
 
 ## The rules that bind this directory
 
@@ -106,10 +108,11 @@ both noted below.
    chain walk; this was also the first run to drive REAL btPoll DHT events
    into the ingest verifiers (previously synthetic-only). Result text and
    environments were not captured with the report; the record is the
-   maintainer's account, dated. **The phase-3 media layer (2026-08-14) has
-   had NO engine pass yet**: its label is "verified statically; needs an
-   OXT pass", and its done-criterion additionally needs the two-machine
-   mid-download play.
+   maintainer's account, dated. The phase-3 media layer followed the same
+   arc: built 2026-08-14, then **PASSED on two machines 2026-08-15** (a
+   follower fetched and played an attached video); the one nuance still
+   unmeasured is playback starting visibly mid-download, which the runbook
+   scripts.
 
 ## Things learned building phase 1 (do not relearn)
 

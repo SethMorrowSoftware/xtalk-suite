@@ -1,21 +1,25 @@
 # Riptide examples
 
-One stack so far: `riptide-social.livecodescript`, the phase-1/2 flagship.
-Identity (create or unlock the RIPTKEY1-sealed seed), a public feed (signed
-posts + a signed BEP44 head over the real DHT), and follow (fetch another
-author's head, walk the post chain to the zero target, show every authorSig
-verdict). It is built on the suite UI kit (the block between the marker
-lines is carried verbatim from `tools/ui-kit.livecodescript` at the suite
-root; do not edit it here).
+One stack so far: `riptide-social.livecodescript`, the phase-1-through-7
+flagship on FOUR cards: Feed (identity via the RIPTKEY1-sealed seed, a
+public feed of signed posts + a signed BEP44 head over the real DHT, the
+verified follow walk, and the media strip), Messages (encrypted DMs + the
+phase-5 Call button), Devices (the phase-6 LAN mesh), and Anon (the
+phase-7 persona with its live guard panel). It is built on the suite UI
+kit (the block between the marker lines is carried verbatim from
+`tools/ui-kit.livecodescript` at the suite root; do not edit it here).
 
-Status: PASSED, on two machines (2026-08-13). Identities were created on
-both sides and feeds published and received in both directions through the
-real DHT - which is phase 2's done-criterion, since a post renders only
-after the ingest verifiers accept its signature. That run also closed the
-event loop (real btPoll DHT items into the verifiers, previously
-synthetic-only). The library underneath was engine-passed 2026-08-12
-(133/133). Environments of the closing run were not captured; the record
-is the maintainer's dated account.
+Status, by phase (each a maintainer's dated account):
+- Phases 1-2 (feed + follow): PASSED on two machines 2026-08-13, feeds
+  both directions through the real DHT; the library underneath
+  engine-passed 2026-08-12 (133/133).
+- Phase 3 (media): PASSED on two machines 2026-08-15 - a follower fetched
+  and played an attached video (mid-download start not yet distinguished
+  from a fast complete transfer).
+- Phase 4 (DMs): PASSED on two machines 2026-08-15, chat both ways, no
+  server.
+- Phases 5 (the call), 6 (the mesh), 7 (anon over Tor): BUILT, statically
+  verified, never run - `../docs/two-machine-runbook.md` is the script.
 
 ## Setup
 
@@ -44,5 +48,7 @@ does NOT prove propagation between machines.
   bytes copied between the machines by hand.
 
 Record the result in `docs/OXT-PASS-RUNBOOK.md` (the demo row and item 6).
-Phases 3-7 (media, DMs, live sessions, LAN sync, anonymous personas) are
-deliberately absent here; see `docs/RIPTIDE-SOCIAL-SPEC.md`.
+The phase 3-7 flows (media, DMs, the call, the LAN mesh, the anon persona)
+are all IN this stack now; `../docs/two-machine-runbook.md` scripts their
+per-phase tests and expected log lines, and `docs/RIPTIDE-SOCIAL-SPEC.md`
+is the design they implement.

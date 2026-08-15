@@ -11,9 +11,14 @@ M3 = Phase 4 (+ workstream U), M4 = Phase 5.
 
 ---
 
-## Phase 0 — repo bootstrap (current)
+## Phase 0 — repo bootstrap
 
-The seed folder becomes its own repository and gains its safety net.
+> **Superseded by the 2026-08-14 fold**: this folder moved UP into the suite's
+> `docs/holde-em/` (it composes three members), not out into its own
+> repository. If the build starts, it starts as a suite member directory in
+> the riptide/nocloud mold, and step 1 below is already done in that form.
+
+The seed folder becomes its own directory and gains its safety net.
 
 1. Move `docs/holde-em/` out of Box2Dxt into the new repo root (this folder is laid out
    so the move is a plain copy; nothing references Box2Dxt paths).

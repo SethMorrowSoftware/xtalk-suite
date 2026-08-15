@@ -2,8 +2,8 @@
 
 You only need to build if you want a fresh native library (or are porting to a
 new platform/architecture). Most users can skip this entirely — the per-platform
-libraries are committed inside the extension (`src/code/<arch>-<platform>/`) and
-attached to each [Release](../../releases).
+libraries are committed inside the extension (`src/code/<arch>-<platform>/`),
+pinned by `MANIFEST.sha256`.
 
 - [Prerequisites](#prerequisites)
 - [Build](#build)
@@ -186,9 +186,9 @@ first-run prompt at `spritesheets/`.
 
 ## Continuous integration
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) builds and tests
-the library on native **Linux**, **macOS** (universal arm64 + x86_64), and
-**Windows** runners on every push and pull request. On a `vX.Y.Z` tag it gathers
-every platform's library and attaches them to a GitHub
-[**Release**](../../releases) — that's the canonical source of tested binaries
-for each version.
+In the monorepo, CI is the suite-root [`native-box2dxt.yml`](../../.github/workflows/native-box2dxt.yml):
+a paths-scoped 5-target matrix that builds and tests on every push touching this
+member and uploads each library as an **artifact** (never a Release, never a
+commit — the suite convention). The member's own `build.yml` is kept for
+standalone work but is inert here. The canonical source of tested binaries is
+the committed `src/code/<arch>-<platform>/` tree, pinned by `MANIFEST.sha256`.

@@ -12,10 +12,13 @@
 > *existing* public surfaces of SodiumXT (`sx*`), TorrentXT (`bt*`), OnionXT
 > (`ox*`/`oxh*`), dataChannelXT (`dc*`), and enetxt (`en*`). Every handler,
 > salt, and byte budget cited below is grounded in those repos' current
-> sources and api-references (see §11 for the provenance table). Nothing here
-> has run as an app yet: the convention is the family's — **"verified
-> statically; needs an OXT pass."** Never claim a runtime behaviour this
-> document has not measured.
+> sources and api-references (see §11 for the provenance table). The app is
+> BUILT and partly PROVEN: phases 1-4 have run on two machines (see the
+> §10.3 annotations for the dated records); phases 5-7 are built and
+> statically verified, their live passes pending. The convention stays the
+> family's — **"verified statically; needs an OXT pass"** for anything
+> §10.3 does not mark DONE. Never claim a runtime behaviour this document
+> has not measured.
 
 ---
 
@@ -480,7 +483,10 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
 
 1. **Identity + unlock** — master seed, Argon2id seal, KDF tree, the five-way
    probe, the identity→onion golden. *Done when* two runs from the same
-   passphrase reconstruct the same handle and `.onion`.
+   passphrase reconstruct the same handle and `.onion`. **DONE 2026-08-12**
+   *(engine-passed with the phase-2 run; the reconstruct criterion is also
+   re-proven every time a second machine unlocks the same key file, as the
+   LAN mesh setup does).*
 2. **Public feed read/write** — head sign/put/get, post chain, one follower sees
    another's post. *Done when* a second machine walks the chain and verifies
    every `authorSig`. *(Met 2026-08-13: `riptide/examples/riptide-social.livecodescript`
@@ -512,8 +518,8 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    VERIFIED prekey, not to the ed25519 handle - `sxSeal` takes a curve25519
    key, and a signed prekey record makes the seal target provable. The
    compute paths ran GREEN on a real engine 2026-08-15 (the suite selftest -
-   the kx session agreement and the DM secretstream round trip among them);
-   the live done-criterion still needs its two-machine pass. As-built:
+   the kx session agreement and the DM secretstream round trip among them),
+   and the two-machine pass above closed the same day. As-built:
    `riptide/CLAUDE.md`.)*
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
    cold start. *Done when* a call connects across two networks. *(Library-ready

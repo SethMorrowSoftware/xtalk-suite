@@ -101,7 +101,9 @@ Box2D v3.1.0 (fetched by CMake)
   INSIDE the extension** under `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare token,
   no `lib` prefix; platform-ids `x86_64-linux` / `x86-linux` / `x86_64-win32` / `x86-win32` /
   `universal-mac`, architecture FIRST, Windows `-win32` for both bitnesses). Those libraries are
-  **committed** (built and tested by CI, attached to each Release); `tools/package-extension.py`
+  **committed** and pinned by `src/code/MANIFEST.sha256` (the suite's native lanes build and
+  test them as CI artifacts; Releases exist only on the standalone mirror as history);
+  `tools/package-extension.py`
   refreshes that tree from a newer build. Installing the packaged extension makes the engine
   resolve the `c:box2dxt>` bindings via `the revLibraryMapping` automatically — **no loose library,
   no rename, no sudo/`/usr/lib`/`LD_LIBRARY_PATH`** (see `docs/building.md`).
@@ -117,8 +119,9 @@ Docs live in `docs/` (`architecture.md`, `building.md`, `getting-started.md`, `a
 `kit-guide.md`, `kit-reference.md`, `asset-expansion-plan.md`, and `platformer-polish-plan.md` — the
 forward-looking plan now that feature dev is frozen; the superseded pre-implementation
 `game-engine-spec.md` + `expansion-prep.md` are under `docs/archive/`). The per-platform native
-binaries are **committed inside the extension** at `src/code/<arch>-<platform>/` (built and tested by
-CI, attached to each Release); `tools/package-extension.py` refreshes that tree from a newer build.
+binaries are **committed inside the extension** at `src/code/<arch>-<platform>/`, pinned by
+`MANIFEST.sha256` and built/tested by the suite's `native-box2dxt.yml` as artifacts (Releases are
+mirror history only); `tools/package-extension.py` refreshes that tree from a newer build.
 The install is the packaged extension, not a loose drop-in (a loose `box2dxt.{so,dll,dylib}` beside a
 saved stack — copied from `src/code/<arch>-<platform>/` — is only the dev/fallback path, mapped at
 runtime by the Kit's `b2kEnsureNativeLib`). The **Game Kit** (input/sprites/player/camera/sound modules) is
