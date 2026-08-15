@@ -4520,7 +4520,14 @@ command qsUserRouteServe pConn, pDesc, pRequest, pRoot
    put char 4 to -1 of pConn into tId
    put qsUserRouteExtra(pDesc) into tExtra
    if pDesc["kind"] is "redirect" then
-      put ("Location: " & pDesc["location"] & tCrlf) & tExtra into tExtra
+      -- re-base a folder-absolute Location onto the mount this request rode in under
+      -- (the /<token>/ capability prefix over a web link; empty at the Tor root, where
+      -- the path is already right). Emitting it verbatim was the token-mount redirect
+      -- hole: /go/gallery -> "/gallery" escaped the mount and the token gate refused
+      -- the redirected request. The static trailing-slash redirect already got this
+      -- right by reusing the raw tokened path; user routes only know app-relative
+      -- paths, hence the explicit re-prefix.
+      put ("Location: " & qsMountLocation(pDesc["location"], pRequest["__mount"]) & tCrlf) & tExtra into tExtra
       put pDesc["status"] & space & qsHttpReason(pDesc["status"]) into tStatus
       if tKind is "ox" then
          qsFsSendText tId, tStatus, "text/plain; charset=utf-8", "", tExtra
@@ -4553,6 +4560,26 @@ command qsUserRouteServe pConn, pDesc, pRequest, pRoot
       qsCwSendText tId, tStatus, pDesc["ctype"], tBody, tExtra
    end if
 end qsUserRouteServe
+
+-- Re-base a user-route redirect Location onto the mount the request was served under.
+-- Only a FOLDER-ABSOLUTE path ("/gallery") is rewritten, and only when a mount exists:
+-- an external URL ("http://...", "https://...", or the scheme-relative "//host/...")
+-- points off-host on purpose, and a relative path already resolves against the tokened
+-- request URL in the browser, so both pass through verbatim. The "//" test must come
+-- before the "/" prefixing or a scheme-relative URL would be corrupted into
+-- "/<token>//host/...". Pure; golden: mount_location().
+function qsMountLocation pLocation, pMount
+   if pMount is empty then
+      return pLocation                    -- Tor root (or no mount): nothing to re-base
+   end if
+   if char 1 of pLocation is not "/" then
+      return pLocation                    -- relative path or scheme URL: leave verbatim
+   end if
+   if char 1 to 2 of pLocation is "//" then
+      return pLocation                    -- scheme-relative external URL, not a folder path
+   end if
+   return pMount & pLocation
+end qsMountLocation
 
 -- Substitute {{...}} tokens in a route body with request context, ESCAPED for the response
 -- content-type (JSON-escape for a json type, HTML-escape for html, else control-stripped) so
@@ -5463,6 +5490,82 @@ function qsIfNoneMatch pHeader, pETag
    return tHit
 end qsIfNoneMatch
 
+-- The ONE file-response head decision, shared by both transport twins (the deep-dive's
+-- Phase 2: qsFsServeFile and qsCwServeFile each carried this whole block verbatim, and
+-- twin copies are exactly the drift class that once let keep-alive land on one
+-- transport and not the other). Everything up to "which bytes do I write" is
+-- transport-neutral: pick the Content-Type (a user "file" route may override it),
+-- answer a matching If-None-Match with 304 (full requests only - a Range request
+-- always serves bytes), refuse an unsatisfiable Range with 416, else assemble the
+-- 200/206 head. Returns an array:
+--   ["kind"]    "304" / "416" (terminal: write ["head"], close) or "serve"
+--   ["head"]    the complete head text, through the blank line
+--   ["status"]  "200 OK" / "206 Partial Content" (for the serve log line)
+--   ["start"] / ["length"]   the byte window the pump must stream ("serve" only)
+-- Every branch carries "Connection: close" unconditionally: a streamed body always
+-- closes, and 304/416 are close-per-response on BOTH transports today (that is
+-- as-built behavior kept byte-identical by this factoring, not a new decision).
+-- Mirrored by http_file_head() in the golden, which pins the branch ONCE instead of
+-- the twin copies being trusted twice.
+function qsHttpFileHead pSize, pForMime, pHeaders, pTypeOverride, pExtra
+   local tCrlf, tType, tETag, tRange, tStart, tEnd, tLen, tStatus, tHead, tSavedID, tOut
+   put (numToChar(13) & numToChar(10)) into tCrlf
+   put qsFsMime(pForMime) into tType
+   if pTypeOverride is not empty then
+      put pTypeOverride into tType
+   end if
+   -- Conditional GET: on a full (non-Range) request whose If-None-Match still matches
+   -- our weak ETag, the client's cached copy is current -> 304 with no body
+   -- (Cache-Control: no-cache already told it to revalidate, not to skip the cache).
+   put qsHttpWeakETag(pSize, sHttpEtagSeed, sEditGen) into tETag
+   if pHeaders["range"] is empty and qsIfNoneMatch(pHeaders["if-none-match"], tETag) then
+      put ("HTTP/1.1 304 Not Modified" & tCrlf & "ETag: " & tETag & tCrlf) into tHead
+      put qsHttpExtraHeaders() after tHead
+      put pExtra after tHead
+      put ("Connection: close" & tCrlf & tCrlf) after tHead
+      put "304" into tOut["kind"]
+      put tHead into tOut["head"]
+      return tOut
+   end if
+   put qsFsParseRange(pHeaders["range"], pSize) into tRange
+   if tRange is "unsatisfiable" then
+      -- deliberately spartan, as both twins always sent it: no ETag, no extra block
+      put ("HTTP/1.1 416 Range Not Satisfiable" & tCrlf & "Content-Range: bytes */" & pSize & tCrlf & \
+         "Content-Length: 0" & tCrlf & "Connection: close" & tCrlf & tCrlf) into tHead
+      put "416" into tOut["kind"]
+      put tHead into tOut["head"]
+      return tOut
+   end if
+   if tRange is empty then
+      put 0 into tStart
+      put (pSize - 1) into tEnd
+      put "200 OK" into tStatus
+   else
+      put the itemDelimiter into tSavedID
+      set the itemDelimiter to ","
+      put item 1 of tRange into tStart
+      put item 2 of tRange into tEnd
+      set the itemDelimiter to tSavedID
+      put "206 Partial Content" into tStatus
+   end if
+   put (tEnd - tStart + 1) into tLen
+   put ("HTTP/1.1 " & tStatus & tCrlf & "Content-Type: " & tType & tCrlf & \
+      "Accept-Ranges: bytes" & tCrlf & "ETag: " & tETag & tCrlf & "Content-Length: " & tLen & tCrlf) into tHead
+   if tStatus begins with "206" then
+      put ("Content-Range: bytes " & tStart & "-" & tEnd & "/" & pSize & tCrlf) after tHead
+   end if
+   put qsHttpExtraHeaders() after tHead
+   put pExtra after tHead
+   put qsHttpDisposition(pForMime, pHeaders) after tHead
+   put ("Connection: close" & tCrlf & tCrlf) after tHead
+   put "serve" into tOut["kind"]
+   put tHead into tOut["head"]
+   put tStatus into tOut["status"]
+   put tStart into tOut["start"]
+   put tLen into tOut["length"]
+   return tOut
+end qsHttpFileHead
+
 -- The clearweb peer's IP, from the accepted-socket id "<ip>:<port>[|n]".
 function qsCwPeer pSocketID
    local tIp, tSavedID
@@ -5479,82 +5582,41 @@ command qsAccessLog pPeer, pMethod, pPath
    qsLog (pPeer & "  " & toUpper(pMethod) & " " & pPath)
 end qsAccessLog
 
--- Serve a file: size it, honour a Range, write the HTTP head, then arm the pump. The
--- file is NEVER read whole into memory.
+-- Serve a file over Tor: size it, take the shared head plan (conditional GET / Range /
+-- head assembly live in ONE place, qsHttpFileHead, for both transports), write the
+-- head, then arm the pump. The file is NEVER read whole into memory.
 -- pTypeOverride/pExtra (optional): a Content-Type override and extra CRLF-terminated header
 -- lines, used by user "file" routes. Existing 4-arg callers leave both empty (no change).
 command qsFsServeFile pStream, pDisk, pForMime, pHeaders, pTypeOverride, pExtra
-   local tSize, tRange, tStart, tEnd, tLen, tStatus, tHead, tCrlf, tType, tSavedID, tETag
+   local tSize, tPlan
    put qsFileSize(pDisk) into tSize
    if tSize is empty then
       qsFsSendText pStream, "404 Not Found", "text/plain; charset=utf-8", "Not found."
       exit qsFsServeFile
    end if
-   put (numToChar(13) & numToChar(10)) into tCrlf
-   put qsFsMime(pForMime) into tType
-   if pTypeOverride is not empty then
-      put pTypeOverride into tType
-   end if
-   -- Conditional GET: on a full (non-Range) request whose If-None-Match still matches our weak
-   -- ETag, the client's cached copy is current -> 304 with no body (Cache-Control: no-cache
-   -- already told it to revalidate). A Range request skips this and serves the bytes.
-   put qsHttpWeakETag(tSize, sHttpEtagSeed, sEditGen) into tETag
-   if pHeaders["range"] is empty and qsIfNoneMatch(pHeaders["if-none-match"], tETag) then
-      put ("HTTP/1.1 304 Not Modified" & tCrlf & "ETag: " & tETag & tCrlf) into tHead
-      put qsHttpExtraHeaders() after tHead
-      put pExtra after tHead
-      put ("Connection: close" & tCrlf & tCrlf) after tHead
-      oxWrite pStream, textEncode(tHead, "UTF-8")
+   put qsHttpFileHead(tSize, pForMime, pHeaders, pTypeOverride, pExtra) into tPlan
+   if tPlan["kind"] is not "serve" then
+      -- a terminal mini-response (304 / 416): write the head, close, no pump
+      oxWrite pStream, textEncode(tPlan["head"], "UTF-8")
       oxCloseStream pStream
       qsFsCleanup pStream
       exit qsFsServeFile
    end if
-   put qsFsParseRange(pHeaders["range"], tSize) into tRange
-   if tRange is "unsatisfiable" then
-      put ("HTTP/1.1 416 Range Not Satisfiable" & tCrlf & "Content-Range: bytes */" & tSize & tCrlf & \
-         "Content-Length: 0" & tCrlf & "Connection: close" & tCrlf & tCrlf) into tHead
-      oxWrite pStream, textEncode(tHead, "UTF-8")
-      oxCloseStream pStream
-      qsFsCleanup pStream
-      exit qsFsServeFile
-   end if
-   if tRange is empty then
-      put 0 into tStart
-      put (tSize - 1) into tEnd
-      put "200 OK" into tStatus
-   else
-      put the itemDelimiter into tSavedID
-      set the itemDelimiter to ","
-      put item 1 of tRange into tStart
-      put item 2 of tRange into tEnd
-      set the itemDelimiter to tSavedID
-      put "206 Partial Content" into tStatus
-   end if
-   put (tEnd - tStart + 1) into tLen
-   put ("HTTP/1.1 " & tStatus & tCrlf & "Content-Type: " & tType & tCrlf & \
-      "Accept-Ranges: bytes" & tCrlf & "ETag: " & tETag & tCrlf & "Content-Length: " & tLen & tCrlf) into tHead
-   if tStatus begins with "206" then
-      put ("Content-Range: bytes " & tStart & "-" & tEnd & "/" & tSize & tCrlf) after tHead
-   end if
-   put qsHttpExtraHeaders() after tHead
-   put pExtra after tHead
-   put qsHttpDisposition(pForMime, pHeaders) after tHead
-   put ("Connection: close" & tCrlf & tCrlf) after tHead
-   oxWrite pStream, textEncode(tHead, "UTF-8")
+   oxWrite pStream, textEncode(tPlan["head"], "UTF-8")
    if the result is not empty then
       qsFsAbort pStream
       exit qsFsServeFile
    end if
    put qsFsLeaf(pForMime) into sFsTxName[pStream]
-   qsLog "Serving " & quote & sFsTxName[pStream] & quote & " (" & qsBytes(tLen) & ") over Tor - " & tStatus
+   qsLog "Serving " & quote & sFsTxName[pStream] & quote & " (" & qsBytes(tPlan["length"]) & ") over Tor - " & tPlan["status"]
    if pHeaders["__method"] is "HEAD" then
       oxCloseStream pStream
       qsFsCleanup pStream
       exit qsFsServeFile
    end if
    put pDisk into sFsTxPath[pStream]
-   put tStart into sFsTxPos[pStream]
-   put tLen into sFsTxRemaining[pStream]
+   put tPlan["start"] into sFsTxPos[pStream]
+   put tPlan["length"] into sFsTxRemaining[pStream]
    put the milliseconds into sFsTxDeadline[pStream]
    send ("qsFsPump " & pStream) to me in kOnionPumpTick milliseconds
 end qsFsServeFile
@@ -6349,6 +6411,13 @@ command qsCwServe pSocketID
       qsCwSendText pSocketID, "404 Not Found", "text/plain; charset=utf-8", "Not found."
       exit qsCwServe
    end if
+   -- the mount this request rides under. The static trailing-slash redirect never needs
+   -- it (qsHttpServeStatic reuses tRaw, token and all), but a user-route redirect's
+   -- Location is folder-absolute, so qsUserRouteServe must re-prefix it with the mount
+   -- or the browser leaves /<token>/ and this very token gate 404s the redirected
+   -- request. Carried as a "__" pseudo-field: qsHttpParseHead drops any client header
+   -- starting "__", so a visitor can never plant a fake mount.
+   put ("/" & sCwToken) into tHeaders["__mount"]
    -- shared route layer FIRST (any method), so /_qs/* and OPTIONS work even for a single-file
    -- share - exactly as before the two paths were unified.
    put ("cw:" & pSocketID) into tConn
@@ -6370,76 +6439,40 @@ command qsCwServe pSocketID
    qsHttpServeStatic tConn, tRest, tRaw, sCwRoot, tHeaders
 end qsCwServe
 
--- Serve a file over the socket: size it, honour a Range, write the head, then pump the
--- body. The file is opened/seeked/read/closed within each pump tick (concurrency-safe).
+-- Serve a file over the socket: size it, take the shared head plan (conditional GET /
+-- Range / head assembly live in ONE place, qsHttpFileHead, for both transports), write
+-- the head, then pump the body. The file is opened/seeked/read/closed within each pump
+-- tick (concurrency-safe).
 -- pTypeOverride/pExtra (optional): a Content-Type override and extra CRLF-terminated header
 -- lines, used by user "file" routes. Existing 4-arg callers leave both empty (no change).
 command qsCwServeFile pSocketID, pDisk, pForMime, pHeaders, pTypeOverride, pExtra
-   local tSize, tRange, tStart, tEnd, tLen, tStatus, tHead, tCrlf, tType, tSavedID, tETag
+   local tSize, tPlan
    put qsFileSize(pDisk) into tSize
    if tSize is empty then
       qsCwSendText pSocketID, "404 Not Found", "text/plain; charset=utf-8", "Not found."
       exit qsCwServeFile
    end if
-   put (numToChar(13) & numToChar(10)) into tCrlf
-   put qsFsMime(pForMime) into tType
-   if pTypeOverride is not empty then
-      put pTypeOverride into tType
-   end if
-   -- Conditional GET: a full (non-Range) request whose If-None-Match matches our weak ETag ->
-   -- 304, no body (see qsFsServeFile for the ETag rationale). A Range request serves the bytes.
-   put qsHttpWeakETag(tSize, sHttpEtagSeed, sEditGen) into tETag
-   if pHeaders["range"] is empty and qsIfNoneMatch(pHeaders["if-none-match"], tETag) then
-      put ("HTTP/1.1 304 Not Modified" & tCrlf & "ETag: " & tETag & tCrlf) into tHead
-      put qsHttpExtraHeaders() after tHead
-      put pExtra after tHead
-      put ("Connection: close" & tCrlf & tCrlf) after tHead
-      qsCwWriteClose pSocketID, textEncode(tHead, "UTF-8")
+   put qsHttpFileHead(tSize, pForMime, pHeaders, pTypeOverride, pExtra) into tPlan
+   if tPlan["kind"] is not "serve" then
+      -- a terminal mini-response (304 / 416): buffered write, then close (both always
+      -- close-per-response today; the plan's head says "Connection: close" accordingly)
+      qsCwWriteClose pSocketID, textEncode(tPlan["head"], "UTF-8")
       exit qsCwServeFile
    end if
-   put qsFsParseRange(pHeaders["range"], tSize) into tRange
-   if tRange is "unsatisfiable" then
-      qsCwWriteClose pSocketID, textEncode(("HTTP/1.1 416 Range Not Satisfiable" & tCrlf & \
-         "Content-Range: bytes */" & tSize & tCrlf & "Content-Length: 0" & tCrlf & \
-         "Connection: close" & tCrlf & tCrlf), "UTF-8")
-      exit qsCwServeFile
-   end if
-   if tRange is empty then
-      put 0 into tStart
-      put (tSize - 1) into tEnd
-      put "200 OK" into tStatus
-   else
-      put the itemDelimiter into tSavedID
-      set the itemDelimiter to ","
-      put item 1 of tRange into tStart
-      put item 2 of tRange into tEnd
-      set the itemDelimiter to tSavedID
-      put "206 Partial Content" into tStatus
-   end if
-   put (tEnd - tStart + 1) into tLen
-   put ("HTTP/1.1 " & tStatus & tCrlf & "Content-Type: " & tType & tCrlf & \
-      "Accept-Ranges: bytes" & tCrlf & "ETag: " & tETag & tCrlf & "Content-Length: " & tLen & tCrlf) into tHead
-   if tStatus begins with "206" then
-      put ("Content-Range: bytes " & tStart & "-" & tEnd & "/" & tSize & tCrlf) after tHead
-   end if
-   put qsHttpExtraHeaders() after tHead
-   put pExtra after tHead
-   put qsHttpDisposition(pForMime, pHeaders) after tHead
-   put ("Connection: close" & tCrlf & tCrlf) after tHead
-   write textEncode(tHead, "UTF-8") to socket pSocketID
+   write textEncode(tPlan["head"], "UTF-8") to socket pSocketID
    if the result is not empty then
       qsCwClose pSocketID
       exit qsCwServeFile
    end if
    put qsFsLeaf(pForMime) into sCwTxName[pSocketID]
-   qsLog "Web: serving " & quote & sCwTxName[pSocketID] & quote & " (" & qsBytes(tLen) & ") - " & tStatus
+   qsLog "Web: serving " & quote & sCwTxName[pSocketID] & quote & " (" & qsBytes(tPlan["length"]) & ") - " & tPlan["status"]
    if pHeaders["__method"] is "HEAD" then
       qsCwClose pSocketID
       exit qsCwServeFile
    end if
    put pDisk into sCwTxPath[pSocketID]
-   put tStart into sCwTxPos[pSocketID]
-   put tLen into sCwTxRemaining[pSocketID]
+   put tPlan["start"] into sCwTxPos[pSocketID]
+   put tPlan["length"] into sCwTxRemaining[pSocketID]
    qsCwPump pSocketID
 end qsCwServeFile
 

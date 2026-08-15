@@ -24,7 +24,21 @@
 > `If-None-Match` on a full request returns `304 Not Modified` with no body. And the two serve
 > paths were **unified**: the duplicated route + static tail is now one shared pipeline
 > (`qsHttpTryRoutes` + `qsHttpServeStatic`) that both the Tor and clearweb prologues call, so a
-> feature is written once. Still open: first-class per-route streaming/params.
+> feature is written once.
+>
+> **2026-08-15 (verified statically + golden-pinned; needs an OXT pass):** the last twin
+> residue is gone — the conditional-GET / `Range` / response-head block that `qsFsServeFile`
+> and `qsCwServeFile` still each carried verbatim is now ONE shared `qsHttpFileHead` both
+> twins call (they keep only the transport-specific write/close/pump lines), with the branch
+> pinned **once** in the golden (`http_file_head()` + `http_extra_headers()` /
+> `http_disposition()` / `fs_leaf()`) instead of two pasted copies being trusted twice; wire
+> bytes are unchanged. Same day, the **token-mount redirect hole** closed: a user-route
+> redirect's folder-absolute `Location` is re-based onto the `/<token>/` capability mount
+> over a web link (`qsMountLocation`, golden `mount_location()`) — emitted verbatim it
+> escaped the mount and the token gate 404'd the redirected request; external and relative
+> `Location`s, and the Tor root, are untouched. Still open: first-class per-route
+> streaming/params (Phase 3), and the **Tor keep-alive question** (§6 Phase 2) — an owner
+> decision, deliberately not made by the dedup.
 
 ---
 
@@ -355,6 +369,14 @@ and, for anything touching the wire, an **OXT pass** before it's called "done."
   `cw`/`ox` twins into pure helpers; bring keep-alive to the Tor path (or consciously
   decide Tor stays close-per-response) so the two can't drift again. *Golden:* the extracted
   decision helpers. Do it in small, individually-green steps.
+  **Status (2026-08-15): the dedup half LANDED.** The route + static tails became the shared
+  `qsHttpTryRoutes`/`qsHttpServeStatic` pipeline earlier, and the remaining twin block — the
+  conditional-GET / `Range` / head assembly duplicated across `qsFsServeFile`/`qsCwServeFile`
+  — is now the ONE `qsHttpFileHead` both call, golden-pinned once (`http_file_head()`);
+  behavior byte-identical, verified statically, needs an OXT pass. The **keep-alive half
+  remains deliberately OPEN**: whether Tor gains keep-alive or is consciously recorded as
+  close-per-response (§1.1) is an owner decision this refactor did not make — the shared
+  helper emits `Connection: close` on every file head, exactly as both twins always did.
 - **Phase 3 — first-class routes (M–L):** header-control + streaming replies + a minimal
   `:param` matcher. Unlocks the rest.
 - **Phase 4 — content endpoints (M):** `/_qs/manifest`, `/_qs/hashes` (+ `/_qs/integrity`),

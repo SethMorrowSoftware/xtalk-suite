@@ -12,9 +12,9 @@ load-bearing invariants those ride on (self-building UI, fail-closed extensions,
 
 **How to use it:** work top-to-bottom, mark each `- [ ]` as pass/fail, and note anything odd
 inline. Each item is *action -> expected result*. Anything you can't reach is fine — just say so.
-One item is worth capturing precisely because it unblocks the next feature: whether the engine
-exposes a **cheap single-file modification date** (see section 4) decides whether conditional GET
-/ `ETag` / `304` is worth building.
+One item is worth capturing precisely because it strengthens a shipped feature: whether the engine
+exposes a **cheap single-file modification date** (see section 4) — conditional GET / `ETag` /
+`304` shipped without it, and a cheap mtime would upgrade its validator.
 
 ---
 
@@ -35,7 +35,11 @@ Test over **both** transports: a web link (paths under `/<token>/…`) and a Tor
 - [ ] `GET /api/echo?msg=hi` -> reflects `hi`; **`?msg=<script>alert(1)</script>`** comes back
       **escaped**, not raw.
 - [ ] `GET /api/config` -> streams `config.json` as `application/json` (a `Range:` request -> `206`).
-- [ ] `GET /go/gallery` -> `302` with `Location: /gallery`.
+- [ ] `GET /go/gallery` **from inside a `/<token>/` mount** — i.e. `GET /<token>/go/gallery` over a
+      web link -> `302` with **`Location: /<token>/gallery`** (the mount re-prefix, 2026-08-15;
+      verified statically), and *following* the redirect lands on the gallery, **not** a token-gate
+      `404`. Over Tor (root mount) the same route -> `302` with `Location: /gallery` unchanged.
+      An external `redirect` target (`http://…`) must go out verbatim on both transports.
 
 ## 2. Custom routes - security & fail-closed
 
@@ -77,10 +81,16 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 - [ ] A URL with `?dl` -> `Content-Disposition: attachment`.
 - [ ] MIME spot-check: `.wasm`, `.mjs`, `.xml`, `.map`, `.webmanifest`, `.woff2` served with the
       right types.
-- [ ] **Unblocks the next feature:** does the engine expose a **cheap single-file modification
-      date** (without scanning the whole folder via `the detailed files`)? If yes, note how -> it
-      makes conditional GET / `ETag` / `304` worth building. If only the folder scan exists, that
-      confirms why it stays deferred.
+- [ ] **Conditional GET (shared head builder, 2026-08-15):** a file response carries
+      `ETag: W/"…"`; repeating the GET with that value in `If-None-Match` -> **`304`, empty
+      body**; the same again with a `Range:` header -> the bytes (`200`/`206`), never a `304`.
+      Check over **both** transports — since 2026-08-15 one shared helper (`qsHttpFileHead`)
+      builds every file head for both, so a defect here would now be a shared one (verified
+      statically + golden-pinned; this is its engine pass).
+- [ ] **Would improve the validator:** does the engine expose a **cheap single-file modification
+      date** (without scanning the whole folder via `the detailed files`)? Conditional GET shipped
+      *without* it (the `W/"size-seed-gen"` ETag stands in for mtime); a cheap mtime would let the
+      ETag survive restarts. If only the folder scan exists, that confirms the current design.
 
 ## 5. CORS preflight (newest change)
 
