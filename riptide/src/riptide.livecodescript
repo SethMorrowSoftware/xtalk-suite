@@ -31,7 +31,9 @@ script "RiptideSocial"
 -- against a REAL libsodium - see tools/emit-kx-anchor.py), as do the
 -- harness-covered refusal paths. The phase 5-7 LIVE flows (the call, the
 -- mesh, tor) still await their passes; docs/two-machine-runbook.md
--- scripts each.
+-- scripts each. The 8.2/8.3 onion SERVING seams (rsAnonFeedPage /
+-- rsAnonPrekeyBody / rsAnonAcceptDm, 2026-08-15) are golden-pinned and
+-- verified statically; they need an OXT + live-Tor pass.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -86,6 +88,15 @@ script "RiptideSocial"
 --     public persona may use anything EXCEPT the anon onion, and an
 --     unknown transport is refused for both. This is the highest-severity
 --     invariant in the app; a hole in it is a deanonymization bug.
+--   - the spec 8.2/8.3 onion SERVING seams (2026-08-15): the pure
+--     payload builders and the acceptance path for the persona's
+--     onion-httpd routes - rsAnonFeedPage (the deterministic HTML feed
+--     page, entries escaped), rsAnonPrekeyBody (the signed RSK1 prekey
+--     record as hex text for GET /prekey), and rsAnonAcceptDm (the
+--     POST /dm body: a strict-hex refusal BEFORE any decode, then the
+--     existing rsDmOpenIntro verify-then-parse under the persona's own
+--     subkeys). The APP owns the oxh* routes and every stream; nothing
+--     here does I/O, so all three are testable offline.
 --
 -- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
 --   SodiumXT  HARD  the trust root; without it this library refuses to work.
@@ -138,6 +149,12 @@ script "RiptideSocial"
 --     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
 --   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
 --   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
+--   Onion serving (spec 8.2/8.3, HTTP bodies over the persona's onion):
+--     GET / -> the anon feed page, deterministic UTF-8 HTML (rsAnonFeedPage)
+--     GET /prekey -> the persona's RSK1 record as 264 lowercase hex chars
+--     POST /dm -> body IS the sealed RSI1 intro as EXACTLY 632 lowercase
+--       hex chars (48 seal bytes + the 268-byte intro, times two); anything
+--       else is refused before a byte is decoded
 --   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
 --   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
 --   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
@@ -146,7 +163,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.7.0"
+constant kRsVersion = "0.8.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -160,6 +177,12 @@ constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
+-- the POST /dm body: the sealed RSI1 intro as strict lowercase hex -
+-- (48 sxSeal bytes + the 268-byte intro) * 2 hex chars = 632, exactly
+constant kRsAnonDmBodyLen = 632
+-- the anon feed page cap: a runaway compose must refuse, never build an
+-- unbounded HTTP reply
+constant kRsAnonPageMax = 65536
 constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
@@ -2457,6 +2480,127 @@ function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
    end if
    return tHandle
 end rsAnonCreateService
+
+-- The spec 8.2/8.3 onion SERVING seams: what the persona's onion-httpd
+-- routes reply with, and how a POSTed sealed intro is accepted. All
+-- three are pure (no I/O, no session, no stream), so the harness proves
+-- them offline; the APP registers the oxh* routes and owns the streams.
+
+-- The anon feed page (spec 8.2), as UTF-8 HTML bytes: a title plus
+-- line-delimited entries, each HTML-escaped so a crafted entry cannot
+-- inject markup into the persona's own page. Line breaks are normalized
+-- (CRLF and CR become LF) BEFORE the split, so the page bytes do not
+-- depend on which spelling the engine's `return` or a pasted text
+-- carries; blank lines are skipped. The title shares the head's
+-- display-name budget; the finished page caps at kRsAnonPageMax.
+-- Deterministic bytes in, deterministic bytes out - the golden pins the
+-- page, so the served feed is a wire format, not a template someone
+-- restyles by accident (a look change bumps the golden).
+function rsAnonFeedPage pTitle, pEntries
+   local tTitleBytes, tEsc, tOut, tList, tLine
+   put textEncode(pTitle, "UTF-8") into tTitleBytes
+   if the number of bytes in tTitleBytes < 1 or \
+         the number of bytes in tTitleBytes > kRsMaxDisplayName then
+      rsSetError "rsAnonFeedPage: the title must be 1 to" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsHtmlEscape(pTitle) into tEsc
+   put "<!doctype html><html><head><meta charset='utf-8'><title>" & \
+         tEsc & "</title></head><body><h1>" & tEsc & "</h1><ul>" into tOut
+   put pEntries into tList
+   replace numToChar(13) & numToChar(10) with numToChar(10) in tList
+   replace numToChar(13) with numToChar(10) in tList
+   set the lineDelimiter to numToChar(10)
+   repeat for each line tLine in tList
+      if tLine is empty then
+         next repeat
+      end if
+      put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
+   end repeat
+   put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
+         "hex), then POST your sealed intro as hex to /dm.</p>" & \
+         "</body></html>" after tOut
+   put textEncode(tOut, "UTF-8") into tOut
+   if the number of bytes in tOut > kRsAnonPageMax then
+      rsSetError "rsAnonFeedPage: the page is over" && kRsAnonPageMax && \
+            "bytes; trim the entries"
+      return empty
+   end if
+   return tOut
+end rsAnonFeedPage
+
+-- The GET /prekey response body (spec 8.3): the persona's signed RSK1
+-- prekey record as 264 lowercase hex chars of TEXT - hex because the
+-- record is binary and a text body survives every HTTP client untouched.
+-- The record is rsBuildPrekey of the subkey-200+n kx public, SIGNED by
+-- the subkey-100+n ANON identity, so a follower who fetched this over
+-- the persona's onion verifies it against the very key they dialed:
+-- rsVerifyPrekey(decoded, anonHandle). Served over the onion ONLY, never
+-- the DHT (the 9.3 guard).
+function rsAnonPrekeyBody pMaster, pIndex
+   local tSeed, tKeys, tRec
+   put rsAnonDmSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonPrekeyBody: could not derive the persona's DM" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   put rsDmKeys(tSeed) into tKeys
+   if tKeys is empty then return empty
+   put rsBuildPrekey(tKeys["publicKeyHex"], rsAnonSeed(pMaster, pIndex)) \
+         into tRec
+   if tRec is empty then return empty
+   return rsBinToHexString(tRec)
+end rsAnonPrekeyBody
+
+-- Accept a POST /dm body (spec 8.3): the sealed RSI1 intro as STRICT
+-- lowercase hex, exactly kRsAnonDmBodyLen chars. REFUSE BEFORE DECODE:
+-- the exact-length and per-byte-hex gates run first, so a hostile body
+-- is turned away before any decode or crypto touches it (uppercase is
+-- refused too - the canonical-form discipline). Then the EXISTING 8.3
+-- machinery does verify-then-parse: rsDmOpenIntro opens the seal with
+-- the persona's subkey-200+n kx pair and verifies sender signature and
+-- recipient binding before a field is believed. One refusal covers
+-- every failure mode - the route must not be an oracle for a prober.
+-- Freshness stays the APP's policy, exactly as on the rp1 inbox path.
+function rsAnonAcceptDm pBody, pMaster, pIndex
+   local tLen, tI, tB, tSealed, tHandle, tErr
+   put the number of bytes in pBody into tLen
+   if tLen is not kRsAnonDmBodyLen then
+      rsSetError "rsAnonAcceptDm: a sealed-intro body is exactly" && \
+            kRsAnonDmBodyLen && "hex chars"
+      return empty
+   end if
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pBody) into tB
+      if not ((tB >= 48 and tB <= 57) or (tB >= 97 and tB <= 102)) then
+         rsSetError "rsAnonAcceptDm: the body is not strict lowercase hex"
+         return empty
+      end if
+   end repeat
+   try
+      put sxHex2Bin(textEncode(pBody, "ASCII")) into tSealed
+   catch tErr
+      rsSetError "rsAnonAcceptDm: needs SodiumXT (sxHex2Bin):" && tErr
+      return empty
+   end try
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsDmOpenIntro(tSealed, tHandle, rsAnonDmSeed(pMaster, pIndex))
+end rsAnonAcceptDm
+
+-- Escape a value for HTML text context (the oxhHtmlEscape algorithm,
+-- mirrored in the oracle): `&` first, then the rest.
+private function rsHtmlEscape pText
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   return tOut
+end rsHtmlEscape
 
 -- BTXO framing (Model C, shared with the quickshare onion transfer): the
 -- header, then u32-length-prefixed DATA frames, then a zero-length

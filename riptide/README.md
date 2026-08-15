@@ -62,6 +62,14 @@ What ships today, per the spec's phased roadmap (section 10.3):
     (`rsAnonDmSeed`, spec 8.3), BTXO framing, and `rsPersonaAllows` - the
     section-9.3 deanonymization guard every transport branch routes
     through
+  - **the 8.2/8.3 onion serving seams** (2026-08-15): `rsAnonFeedPage`
+    (the persona's feed page as deterministic, golden-pinned HTML - a
+    wire format, entries escaped), `rsAnonPrekeyBody` (the signed RSK1
+    prekey record as hex text for the GET `/prekey` route), and
+    `rsAnonAcceptDm` (the POST `/dm` body: strict-hex refusal BEFORE any
+    decode, then the existing seal-open verify-then-parse under the
+    persona's own subkeys). The demo registers the onion-httpd routes;
+    the library stays pure
   - **the phase-2 live feed layer**: `rsPublishHead` signs the canonical
     BEP44 buffer with SodiumXT and stores it with `btDhtPutSigned` (the
     identity secret never enters libtorrent, and libtorrent re-verifies
@@ -133,8 +141,12 @@ at all and works with onionxt alone.
 The live passes, scripted in `docs/two-machine-runbook.md`: the phase-5
 call (watch for the CONNECTED/via line, ideally `typ srflx` across two
 networks), the phase-6 mesh (mutual admitted verdicts on both sides, a
-stranger refused), phase 7 over a live tor daemon, phase 3's mid-download
-nuance (playback visibly below 100%), and spec 8.3's onion transport
-(serving the persona's prekey and accepting sealed intros via
-onion-httpd - the crypto layer is closed, the serving is not built).
-Labels flip only on a dated engine report, per the honesty convention.
+stranger refused), phase 7 over a live tor daemon - which now includes
+spec 8.3's onion transport (the feed page, `/prekey`, and the POST `/dm`
+sealed-intro drop are BUILT as of 2026-08-15, library seams plus the
+demo's onion-httpd wiring, verified statically; the live-Tor pass is
+what remains) - and phase 3's mid-download nuance (playback visibly
+below 100%). One piece of the anon rail is deliberately unbuilt: the
+persona's REPLY over an onion stream (answering an accepted intro means
+a public-side DM to the proven sender). Labels flip only on a dated
+engine report, per the honesty convention.

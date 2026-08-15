@@ -1,7 +1,7 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.7.0,
-phases 1-7). Pure LiveCodeScript over the installed suite extensions; the
+The public `rs*` surface of `src/riptide.livecodescript` (library 0.8.0,
+phases 1-7 plus the 8.2/8.3 onion serving seams). Pure LiveCodeScript over the installed suite extensions; the
 byte-exact wire layouts are documented at the top of the library and
 pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
 the harness constants, with `tools/check-selftest-vectors.py` holding the
@@ -201,11 +201,23 @@ handshake by the joiner's own response signature - mutual auth).
 | `rsBtxoTerminator()` | Data | the 4-byte zero-length end-of-stream frame |
 
 Sealed DMs TO a persona (spec 8.3) are the phase-4 machinery composed with
-the anon subkeys - no separate handlers: `rsBuildPrekey(kxPub,
+the anon subkeys - no separate crypto handlers: `rsBuildPrekey(kxPub,
 rsAnonSeed(...))` is the persona's prekey (served over its ONION, never
 the DHT - the guard), `rsBuildIntro` addressed to the anon handle seals to
 it via `rsDmSealIntro`, and the persona opens with
 `rsDmOpenIntro(sealed, anonHandle, rsAnonDmSeed(...))`.
+
+## The onion serving seams (spec 8.2/8.3, added 2026-08-15)
+
+Pure payload builders and the acceptance path for the persona's
+onion-httpd routes; the APP registers the `oxh*` routes and owns every
+stream. Verified statically; needs an OXT + live-Tor pass.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `rsAnonFeedPage(pTitle, pEntries)` | Data | the anon feed page as UTF-8 HTML bytes: title (1..64 UTF-8 bytes, the display-name budget) plus line-delimited entries, each HTML-escaped (no markup injection); blank lines skipped, one trailing CR per line tolerated; the finished page caps at 65536 bytes. Deterministic and golden-pinned - the page is a wire format, and a look change re-pins deliberately |
+| `rsAnonPrekeyBody(pMaster, pIndex)` | String | the GET `/prekey` response body: persona n's RSK1 prekey record (subkey-200+n kx public, signed by the subkey-100+n anon identity) as 264 lowercase hex chars of text. A follower decodes and MUST verify: `rsVerifyPrekey(decoded, anonHandle)` |
+| `rsAnonAcceptDm(pBody, pMaster, pIndex)` | Array | accept a POST `/dm` body: EXACTLY 632 strict lowercase hex chars (the 48-byte seal + the 268-byte RSI1 intro, times two), refused BEFORE any decode on length or a non-hex byte; then the existing `rsDmOpenIntro` verify-then-parse under the persona's subkeys. Returns the verified intro array or empty - one refusal for every failure mode (the route must not be an oracle). Freshness stays the app's policy |
 
 ## What the library deliberately does NOT own
 

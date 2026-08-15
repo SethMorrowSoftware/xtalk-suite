@@ -443,6 +443,8 @@ constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhi
 constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
 constant rs1kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 constant rs1kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
+constant rs1kRsGoldAnonPageHex = "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d277574662d38273e3c7469746c653e526970746964653c2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c656420444d733a20474554202f7072656b657920286d79207369676e65642052534b31207072656b6579207265636f72642c20686578292c207468656e20504f535420796f7572207365616c656420696e74726f2061732068657820746f202f646d2e3c2f703e3c2f626f64793e3c2f68746d6c3e"
+constant rs1kRsGoldAnonPrekeyBody = "52534b31643465366331343665346333623361383935363265643636396334336634626437363031613065343336316264616133333034663462656562343130616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd6c70ba04"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -511,7 +513,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.7.0"
+constant kRsVersion = "0.8.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -525,6 +527,8 @@ constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
+constant kRsAnonDmBodyLen = 632
+constant kRsAnonPageMax = 65536
 constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
@@ -8245,6 +8249,92 @@ function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
    return tHandle
 end rsAnonCreateService
 
+function rsAnonFeedPage pTitle, pEntries
+   local tTitleBytes, tEsc, tOut, tList, tLine
+   put textEncode(pTitle, "UTF-8") into tTitleBytes
+   if the number of bytes in tTitleBytes < 1 or \
+         the number of bytes in tTitleBytes > kRsMaxDisplayName then
+      rsSetError "rsAnonFeedPage: the title must be 1 to" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsHtmlEscape(pTitle) into tEsc
+   put "<!doctype html><html><head><meta charset='utf-8'><title>" & \
+         tEsc & "</title></head><body><h1>" & tEsc & "</h1><ul>" into tOut
+   put pEntries into tList
+   replace numToChar(13) & numToChar(10) with numToChar(10) in tList
+   replace numToChar(13) with numToChar(10) in tList
+   set the lineDelimiter to numToChar(10)
+   repeat for each line tLine in tList
+      if tLine is empty then
+         next repeat
+      end if
+      put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
+   end repeat
+   put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
+         "hex), then POST your sealed intro as hex to /dm.</p>" & \
+         "</body></html>" after tOut
+   put textEncode(tOut, "UTF-8") into tOut
+   if the number of bytes in tOut > kRsAnonPageMax then
+      rsSetError "rsAnonFeedPage: the page is over" && kRsAnonPageMax && \
+            "bytes; trim the entries"
+      return empty
+   end if
+   return tOut
+end rsAnonFeedPage
+
+function rsAnonPrekeyBody pMaster, pIndex
+   local tSeed, tKeys, tRec
+   put rsAnonDmSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonPrekeyBody: could not derive the persona's DM" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   put rsDmKeys(tSeed) into tKeys
+   if tKeys is empty then return empty
+   put rsBuildPrekey(tKeys["publicKeyHex"], rsAnonSeed(pMaster, pIndex)) \
+         into tRec
+   if tRec is empty then return empty
+   return rsBinToHexString(tRec)
+end rsAnonPrekeyBody
+
+function rsAnonAcceptDm pBody, pMaster, pIndex
+   local tLen, tI, tB, tSealed, tHandle, tErr
+   put the number of bytes in pBody into tLen
+   if tLen is not kRsAnonDmBodyLen then
+      rsSetError "rsAnonAcceptDm: a sealed-intro body is exactly" && \
+            kRsAnonDmBodyLen && "hex chars"
+      return empty
+   end if
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pBody) into tB
+      if not ((tB >= 48 and tB <= 57) or (tB >= 97 and tB <= 102)) then
+         rsSetError "rsAnonAcceptDm: the body is not strict lowercase hex"
+         return empty
+      end if
+   end repeat
+   try
+      put sxHex2Bin(textEncode(pBody, "ASCII")) into tSealed
+   catch tErr
+      rsSetError "rsAnonAcceptDm: needs SodiumXT (sxHex2Bin):" && tErr
+      return empty
+   end try
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsDmOpenIntro(tSealed, tHandle, rsAnonDmSeed(pMaster, pIndex))
+end rsAnonAcceptDm
+
+private function rsHtmlEscape pText
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   return tOut
+end rsHtmlEscape
+
 function rsBtxoHeader pName, pTotalSize, pFlags
    local tName, tOut
    put textEncode(pName, "UTF-8") into tName
@@ -12022,7 +12112,7 @@ private command rs1rstSectionIngest
 end rs1rstSectionIngest
 
 private command rs1rstSectionAnon pCaps
-   local rs1tHeader, rs1tFrame, rs1tParsed, rs1tHandle
+   local rs1tHeader, rs1tFrame, rs1tParsed, rs1tHandle, rs1tPage, rs1tPageText, rs1tPkBody, rs1tHex
    rs1rstSection "phase 7 - the anon persona, the guard, and BTXO framing"
    -- derivations: the anon persona is a real, distinct identity
    rs1rstCheck (rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 0) is rs1kRsGoldAnon0Handle), \
@@ -12144,6 +12234,53 @@ private command rs1rstSectionAnon pCaps
    rs1rstCheck (rsDmOpenIntro(rs1tFrame, rs1kRsGoldHandle, \
          rs1rstBin(rs1kRsGoldDmSeedHex)) is empty), \
          "the PUBLIC identity cannot open the persona's mail"
+   -- 8.2/8.3 SERVING SEAMS: the payloads the persona's onion serves and
+   -- the POST /dm acceptance. All pure, so they run right here; only the
+   -- oxh* wiring and the live onion need tor (the skips below).
+   put rsAnonFeedPage(rs1kRsGoldHeadName, rs1kRsGoldPost1Text & return & \
+         rs1kRsGoldPost2Text) into rs1tPage
+   rs1rstCheck (rs1rstHex(rs1tPage) is rs1kRsGoldAnonPageHex), \
+         "the anon feed page bytes match golden"
+   put textDecode(rsAnonFeedPage(rs1kRsGoldHeadName, \
+         "an <i>entry</i> & " & quote & "q" & quote), "UTF-8") into rs1tPageText
+   rs1rstCheck (offset("<i>", rs1tPageText) is 0 and \
+         offset("&lt;i&gt;entry&lt;/i&gt; &amp; &quot;q&quot;", \
+         rs1tPageText) > 0), \
+         "entries are HTML-escaped (no markup injection into the page)"
+   rs1rstCheck (rsAnonFeedPage("", "x") is empty), \
+         "an empty page title is refused"
+   rs1rstCheck (rsAnonFeedPage(rs1kRsGoldHeadName, empty) is not empty), \
+         "an empty feed still serves a (bare) page"
+   put rsAnonPrekeyBody(rs1rstBin(rs1kRsGoldMasterHex), 0) into rs1tPkBody
+   rs1rstCheck (rs1tPkBody is rs1kRsGoldAnonPrekeyBody), \
+         "the GET /prekey body matches golden"
+   rs1rstCheck (rsVerifyPrekey(rs1rstBin(rs1tPkBody), rs1kRsGoldAnon0Handle) is not \
+         empty), "and decodes to a prekey verifying under the ANON handle"
+   rs1rstCheck (rsAnonPrekeyBody(rs1rstBin(rs1kRsGoldMasterHex), -1) is empty), \
+         "a negative persona index refuses a prekey body"
+   -- the POST /dm ACCEPTANCE, against a sealed blob built with the
+   -- existing 8.3 crypto (rs1tFrame still holds the sealed intro from the
+   -- open checks above) - accept the good body, refuse before decode
+   -- everything else
+   put rs1rstHex(rs1tFrame) into rs1tHex
+   put rsAnonAcceptDm(rs1tHex, rs1rstBin(rs1kRsGoldMasterHex), 0) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), \
+         "rsAnonAcceptDm accepts the hex-posted sealed intro"
+   rs1rstCheck (rs1tParsed["senderHandle"] is rs1kRsGoldHandle), \
+         "and reports the proven sender"
+   rs1rstCheck (rsAnonAcceptDm(char 1 to 630 of rs1tHex, \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a short body is refused before any decode"
+   rs1rstCheck (rsAnonAcceptDm(rs1tHex & "00", rs1rstBin(rs1kRsGoldMasterHex), 0) \
+         is empty), "a long body is refused before any decode"
+   rs1rstCheck (rsAnonAcceptDm(toUpper(rs1tHex), rs1rstBin(rs1kRsGoldMasterHex), 0) \
+         is empty), "a non-canonical (uppercase) body is refused"
+   rs1rstCheck (rsAnonAcceptDm("zz" & char 3 to -1 of rs1tHex, \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a non-hex body of the right length is refused before decode"
+   rs1rstCheck (rsAnonAcceptDm(rs1rstHex(rs1rstFlipByte(rs1tFrame, 20)), \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a tampered sealed blob is refused by the seal itself"
    rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
    rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 80, 70000) is \
@@ -12153,6 +12290,8 @@ private command rs1rstSectionAnon pCaps
    else
       rs1rstSkip "anon onion service create: needs a live tor daemon"
    end if
+   rs1rstSkip "anon onion SERVING (the / page, /prekey, POST /dm as routes):" && \
+         "needs onion-httpd + a live tor daemon"
 end rs1rstSectionAnon
 
 private command rs1rstSectionLan

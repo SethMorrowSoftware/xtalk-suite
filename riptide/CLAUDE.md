@@ -18,8 +18,8 @@ adds native surface, and `rs*` never becomes a library other members may
 call.
 
 **All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.7.0; 72 public handlers,
-72/72 exercised by the suite harness):
+machines, done-criteria included** (library 0.8.0; 75 public handlers,
+75/75 exercised by the suite harness):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -51,14 +51,17 @@ machines, done-criteria included** (library 0.7.0; 72 public handlers,
   `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
   §9.3 guard, the app's highest-severity invariant) - compute engine-green
   2026-08-15. The sealed anon-DM CRYPTO (spec 8.3) closed the same day
-  via `rsAnonDmSeed` (subkey 200+n); only its ONION TRANSPORT (serve the
-  prekey + accept sealed intros via onion-httpd) remains, with the live
-  done-criterion (a persona reachable over Tor with zero `bt*` calls in a
-  trace).
+  via `rsAnonDmSeed` (subkey 200+n), and its ONION TRANSPORT is now
+  BUILT too (2026-08-15, later the same day): the pure serving seams
+  (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`,
+  golden-pinned, harness-proven offline) plus the demo's onion-httpd
+  wiring (the / page, GET /prekey, POST /dm). Verified statically; the
+  live done-criterion remains (a persona reachable and served over Tor
+  with zero `bt*` calls in a trace).
 
 What remains, in one line: the live passes for 5 (the call), 6 (the
-mesh), and 7 (tor), plus 8.3's onion transport - all scripted in
-docs/two-machine-runbook.md.
+mesh), and 7 (tor, now including its built 8.2/8.3 serving) - all
+scripted in docs/two-machine-runbook.md.
 
 ## The rules that bind this directory
 
@@ -332,8 +335,63 @@ docs/two-machine-runbook.md.
   unlinkability refusals: the persona's prekey refuses the PUBLIC handle
   as author, and the public identity cannot open the persona's mail. The
   persona's prekey is served over its ONION, never the DHT (the 9.3
-  guard); that serving - onion-httpd routes for /prekey and a sealed-intro
-  drop - is the remaining live-Tor milestone.
+  guard); that serving is now built - see the 8.2/8.3 entry below.
+
+## Things decided building the 8.2/8.3 onion serving (2026-08-15; do not re-litigate)
+
+- **The library builds payloads; the demo owns the routes.** Three pure
+  seams (`rsAnonFeedPage`, `rsAnonPrekeyBody`, `rsAnonAcceptDm`) with no
+  I/O, so the harness proves them offline; the demo registers the
+  onion-httpd routes (`oxhInit`/`oxhRoute`/`oxhReply`) and composes
+  `oxSetPeerCallback "oxhPeer"` with `rsAnonCreateService` - onion-httpd's
+  own `oxhServe` calls `oxCreateService` (a TOR-generated key), which is
+  the wrong key for a persona whose address IS its identity, so the demo
+  wires the peer callback itself and creates the service FROM SEED.
+- **HTTP bodies are HEX TEXT, both directions.** The RSK1 record and the
+  sealed RSI1 intro are binary; hex survives every HTTP client untouched,
+  is copy-pasteable through Tor Browser, and gives the /dm gate an exact
+  spelling to refuse against. GET /prekey returns 264 lowercase hex
+  chars; POST /dm accepts EXACTLY 632 (48 seal bytes + the 268-byte
+  intro, times two) - strict to the char, a trailing newline is a
+  refusal, the caps-refuse discipline on an HTTP body.
+- **Refuse before decode, and one reply for every refusal.**
+  `rsAnonAcceptDm` gates length and per-byte lowercase hex BEFORE
+  `sxHex2Bin`, then hands the blob to the EXISTING `rsDmOpenIntro`
+  (verify-then-parse); the demo's route answers every refusal - bad hex,
+  bad seal, wrong recipient, stale timestamp - with the same 400
+  "refused", so the route is not an oracle for a prober. Freshness stays
+  the app's policy (the same +-600 s window as the rp1 inbox).
+- **The feed page is a WIRE FORMAT, not a template.** Deterministic HTML
+  from (title, entries), entries HTML-escaped (the oxhHtmlEscape
+  algorithm, mirrored in the oracle) so a crafted entry cannot inject
+  markup, golden-pinned byte-for-byte - a look change edits the builder
+  and re-pins deliberately. The demo's page content comes from a
+  dedicated Anon-card entries field, NEVER from the public feed
+  (cross-posting is the spec-8.4 operator mistake that links personas).
+- **The route handlers reply from script locals**, built once at publish
+  time - never from a field read at request time. They run from ENGINE
+  socket callbacks (off raPoll's try, on whatever card is open), so field
+  writes go through the guarded raAnonLog and every oxh reply sits in a
+  try (the multi-card lesson applied to a new event source).
+- **Publish is a two-step state machine when tor is cold.** ADD_ONION
+  needs an authenticated control port and `oxConnectControl` is async, so
+  the first Publish + serve may only kick off the connect;
+  `raAnonStatus` ("control authenticated") re-enters raAnonPublish,
+  whose guards make the re-entry idempotent. Fail closed, never a
+  blocking wait.
+- **The REPLY rail is deliberately unbuilt.** onion-httpd closes each
+  stream after its reply (Connection: close), so "the persona replies
+  over the same accepted stream" (spec 8.3) would need a persistent
+  onion-stream session layer this pass does not add. An accepted intro
+  is logged with its PROVEN sender on the Anon card and echoed to the
+  Messages card; answering means a public-side DM to that sender. Saying
+  so in the UI beats a half-built session.
+- **A.9 rode along: the head's profileMeta is now populated.** raPost
+  publishes the display name's UTF-8 bytes as an immutable item (spec
+  4.1's display-name blob) and names its target in the head -
+  content-addressed, so republishing the same name is idempotent, and a
+  refusal is NON-fatal (the head carries the none target and the reason
+  lands in the feed log). The library needed no change.
 
 ## The phase 4-7 adversarial review (2026-08-14)
 

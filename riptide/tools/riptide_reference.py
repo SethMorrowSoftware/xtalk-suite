@@ -760,6 +760,56 @@ def btxo_terminator():
 
 
 # ---------------------------------------------------------------------------
+# Spec 8.2/8.3 - the onion SERVING payloads (added 2026-08-15 with the
+# transport seams). The persona's onion-httpd routes serve exactly these
+# bytes: GET / is the anon feed page (deterministic HTML - a wire format,
+# pinned, not a restylable template), GET /prekey is the signed RSK1
+# prekey record as lowercase hex text, and POST /dm accepts the sealed
+# RSI1 intro as strict hex (the script layer's rsAnonAcceptDm; its
+# acceptance is seal-open crypto this pure model deliberately does not
+# mirror - sxSeal has no oracle here, the same boundary phase 4 drew).
+# ---------------------------------------------------------------------------
+
+ANON_PAGE_MAX = 65536  # the finished page cap (rsAnonFeedPage refuses over)
+
+
+def html_escape(text):
+    """HTML text-context escape, the oxhHtmlEscape algorithm: & first."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def anon_feed_page(title, entries):
+    """The anon feed page as UTF-8 bytes. `entries` is the final list of
+    non-empty entry strings (the script layer splits its line-delimited
+    argument and skips blanks before reaching this shape)."""
+    tb = title.encode("utf-8")
+    if not 1 <= len(tb) <= MAX_DISPLAY_NAME:
+        raise ValueError("title must be 1..%d UTF-8 bytes"
+                         % MAX_DISPLAY_NAME)
+    esc = html_escape(title)
+    out = ("<!doctype html><html><head><meta charset='utf-8'><title>"
+           + esc + "</title></head><body><h1>" + esc + "</h1><ul>")
+    for entry in entries:
+        out += "<li>" + html_escape(entry) + "</li>"
+    out += ("</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey "
+            "record, hex), then POST your sealed intro as hex to "
+            "/dm.</p></body></html>")
+    page = out.encode("utf-8")
+    if len(page) > ANON_PAGE_MAX:
+        raise ValueError("page over %d bytes" % ANON_PAGE_MAX)
+    return page
+
+
+def anon_prekey_body(master, index):
+    """The GET /prekey response body: persona `index`'s RSK1 prekey record
+    (subkey-200+n kx public, signed by the subkey-100+n anon identity) as
+    lowercase hex text - 264 chars."""
+    kx_pk, _kx_sk = kx_seed_keypair(anon_dm_seed(master, index))
+    return build_prekey(kx_pk.hex(), anon_seed(master, index)).hex()
+
+
+# ---------------------------------------------------------------------------
 # Import-time self-checks against the independent anchors. A model that
 # cannot reproduce a vector it did not invent must not be consulted.
 # ---------------------------------------------------------------------------
@@ -904,6 +954,10 @@ def golden_vectors():
     anon0_prekey = build_prekey(anon0_dm_kx_pk.hex(), anon_seed(master, 0))
     anon0_intro = build_intro(handle, dm_kx_pk.hex(), anon0_handle,
                               1754870640, id_seed)
+    # 8.2/8.3 serving: the feed page (title + the two golden post texts as
+    # entries) and the /prekey body (== anon0_prekey, hex)
+    anon0_page = anon_feed_page("Riptide", ["hello, riptide", "second post"])
+    anon0_prekey_body = anon_prekey_body(master, 0)
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -946,6 +1000,8 @@ def golden_vectors():
         "anon0DmKxPub": anon0_dm_kx_pk.hex(),
         "anon0Prekey": anon0_prekey.hex(),
         "anon0Intro": anon0_intro.hex(),
+        "anon0Page": anon0_page.hex(),
+        "anon0PrekeyBody": anon0_prekey_body,
         "btxoHeader": btxo_hdr.hex(),
         "btxoFrame": btxo_frame.hex(),
     }

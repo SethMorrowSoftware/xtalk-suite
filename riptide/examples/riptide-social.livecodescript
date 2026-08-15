@@ -78,14 +78,19 @@ script "riptideSocialApp"
 --
 -- SCOPE, said loudly: phases 5-7 ARE built in this stack now (the Call
 -- button, the Devices card, the Anon card - built 2026-08-15; see STILL
--- UNEXERCISED above for what has never run), but two pieces are genuinely
--- UNBUILT: the LAN mesh ends at ADMISSION - no feed or DM payload syncs
--- over it yet - and the anon persona's ONION SERVING (the onion-httpd
--- prekey route and sealed-intro drop) does not exist, so a persona cannot
--- yet be reached. The profile-meta head field is still published EMPTY.
--- DMs (phase 4, the Messages card) hold ONE conversation at a time in
--- this demo, in memory only - no history, no offline queue; both ends
--- must be running. Public feeds are PUBLIC: the DHT keeps
+-- UNEXERCISED above for what has never run), and the anon persona's
+-- ONION SERVING is built too (2026-08-15, same day): Publish + serve
+-- registers onion-httpd routes for the feed page at /, the signed
+-- prekey at /prekey, and a POST /dm sealed-intro drop, over the
+-- persona's deterministic onion - verified statically; needs an OXT +
+-- live-Tor pass. The head's profile-meta field now names a display-name
+-- blob (spec 4.1), published at post time. Still genuinely UNBUILT: the
+-- LAN mesh ends at ADMISSION - no feed or DM payload syncs over it
+-- yet - and the persona's REPLY rail (answering an accepted intro over
+-- an onion stream); answering means a public-side DM to the proven
+-- sender. DMs (phase 4, the Messages card) hold ONE conversation at a
+-- time in this demo, in memory only - no history, no offline queue;
+-- both ends must be running. Public feeds are PUBLIC: the DHT keeps
 -- records until expiry, there is no deletion, and the public rails are not
 -- anonymity (spec section 9) - media rides ORDINARY BitTorrent swarms and
 -- rp1 DM peers connect DIRECTLY, so both show your IP to the other side,
@@ -119,7 +124,7 @@ constant kDmIce = "stun:stun.l.google.com:19302"
 constant kDmIntroWindow = 600
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-6"
+constant kRaUiVersion = "ra-ui-720p-7"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -509,6 +514,12 @@ local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
 -- phase 7 (anon persona). A separate onion-only identity; the guard keeps
 -- it from ever touching the DHT, a torrent, or rp1 (spec 9.3).
 local sAnonService     -- the onionxt service handle while published, or empty
+-- 8.2/8.3 serving state: the payloads are built ONCE at publish time (the
+-- route handlers reply from these locals, never from a field read at
+-- request time - a request must not depend on which card is open)
+local sAnonPage        -- the served feed page (UTF-8 Data) while serving
+local sAnonPrekeyBody  -- the served /prekey hex text while serving
+local sAnonServing     -- "true" once the oxh* routes are registered
 -- phase 5 (live sessions). ONE call at a time, riding the ACTIVE DM
 -- conversation: the SDP offer/answer travel as kind-"O"/"A" messages
 -- inside the established secretstream (the phase-4 rail), then the dc
@@ -803,9 +814,14 @@ command raBuildAnonCard
 
    uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
    uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
-   uiButton "raAnonPublishBtn", "Publish onion", "228,80,432,104"
+   uiButton "raAnonPublishBtn", "Publish + serve", "228,80,432,104"
    uiButton "raAnonStopBtn", "Unpublish", "440,80,592,104"
-   uiArea "raAnonOut", "16,110,592,562"
+   -- 8.2: what the persona's onion SERVES as its feed page - typed here,
+   -- never taken from the public feed (cross-posting is the exact
+   -- operator mistake spec 8.4 warns links the personas)
+   uiLabel "raAnonEntriesL", "anon feed entries (one per line; served at / over the onion):", "16,110,592,128", 11
+   uiInput "raAnonEntries", "16,130,592,224"
+   uiArea "raAnonOut", "16,230,592,562"
 
    uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
    uiArea "raAnonGuard", "608,80,1184,562"
@@ -815,8 +831,12 @@ command raBuildAnonCard
          & " reachable ONLY as an onion service - it never publishes to the" \
          & " DHT, seeds a torrent, or opens an rp1 peer (that would leak its" \
          & " IP and link it to your public feed). The guard enforces that at" \
-         & " every transport branch. Publishing needs onionxt + a running" \
-         & " tor daemon. Cross-posting or correlated timing can still link" \
+         & " every transport branch. Publish + serve needs onionxt AND" \
+         & " onion-httpd in use, plus a running tor daemon (control port" \
+         & " enabled); it serves the feed page at /, the signed prekey at" \
+         & " /prekey, and accepts sealed intros POSTed to /dm. Serving is" \
+         & " verified statically; needs an OXT + live-Tor pass." \
+         & " Cross-posting or correlated timing can still link" \
          & " your personas: the tool removes the easy links, not the hard" \
          & " ones (spec 9).", \
          "16,572,1184,632"
@@ -1355,7 +1375,7 @@ end raHandleEvent
 
 -- ---- 2. my feed --------------------------------------------------------------
 command raPost
-   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash
+   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash, tProfile
    if sIdSeed is empty then
       uiStatus "Unlock (or create) your identity before posting.", "warn"
       exit raPost
@@ -1396,9 +1416,24 @@ command raPost
       exit raPost
    end if
    add 1 to sSeq
+   -- the head's profileMeta names a display-name blob (spec 4.1): a small
+   -- immutable item carrying the name's UTF-8 bytes, so a reader can show
+   -- a name without parsing the head's own name field out of band. It is
+   -- content-addressed, so republishing the same name is idempotent and a
+   -- rename mints a new target. A refusal is NON-fatal: the head still
+   -- publishes with the none target, and the reason lands in the feed log.
+   put empty into tProfile
+   if tName is not empty then
+      put rsPublishImmutable(sSession, textEncode(tName, "UTF-8")) \
+            into tProfile
+      if tProfile is empty then
+         put "profile-meta publish refused (the head carries the none" && \
+               "target):" && rsLastError() & return before field "raMyFeed"
+      end if
+   end if
    -- since phase 4 the head advertises the prekey target, so a reader can
    -- open a DM to any author whose post they verified
-   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, empty) \
+   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, tProfile) \
          into tHead
    if tHead is empty then
       subtract 1 from sSeq
@@ -2379,8 +2414,15 @@ private function rsPadRight pText, pWidth
    return tOut
 end rsPadRight
 
+-- Publish AND serve (spec 8.2/8.3): build the serving payloads first
+-- (pure, fail-closed - a page that cannot build aborts before tor hears
+-- anything), register the onion-httpd routes, then create the persona's
+-- deterministic onion service. The control port must be authenticated
+-- before ADD_ONION and connecting is ASYNC, so the first click may only
+-- kick off oxConnectControl; the status callback re-enters here once
+-- authenticated (idempotent - every early guard still holds).
 command raAnonPublish
-   local tService
+   local tService, tEntries, tPage, tPkBody, tOnion, tErr
    if sMasterSeed is empty then
       uiStatus "Unlock on the Feed card first.", "warn"
       exit raAnonPublish
@@ -2401,6 +2443,55 @@ command raAnonPublish
       raAnonLog "the guard refused an onion publish - this is a bug, not a normal path."
       exit raAnonPublish
    end if
+   -- 8.2: the served payloads, built once and held in locals - a request
+   -- must never depend on which card is open, so the route handlers reply
+   -- from state, not from a field read at request time
+   put empty into tEntries
+   if there is a field "raAnonEntries" of card "raAnon" then
+      put the text of field "raAnonEntries" of card "raAnon" into tEntries
+   end if
+   put rsAnonFeedPage("Riptide anon persona", tEntries) into tPage
+   if tPage is empty then
+      raAnonLog "feed page refused:" && rsLastError()
+      exit raAnonPublish
+   end if
+   put rsAnonPrekeyBody(sMasterSeed, 0) into tPkBody
+   if tPkBody is empty then
+      raAnonLog "prekey body refused:" && rsLastError()
+      exit raAnonPublish
+   end if
+   -- the onion-httpd routes; fail closed when the oxh* library is absent
+   -- (it is a separate file - onionxt alone is not enough to SERVE)
+   try
+      oxSetCallbackOwner the long id of me
+      oxSetStatusCallback "raAnonStatus"
+      oxhInit the long id of me
+      oxhRoute "GET", "/", "raAnonRouteFeed"
+      oxhRoute "GET", "/prekey", "raAnonRoutePrekey"
+      oxhRoute "POST", "/dm", "raAnonRouteDm"
+      oxSetPeerCallback "oxhPeer"
+   catch tErr
+      raAnonLog "onion-httpd is not loaded, so the persona cannot serve." && \
+            "Put onionxt/src/onion-httpd.livecodescript in use (start" && \
+            "using) and click Publish + serve again. (" & tErr & ")"
+      exit raAnonPublish
+   end try
+   put tPage into sAnonPage
+   put tPkBody into sAnonPrekeyBody
+   put "true" into sAnonServing
+   -- ADD_ONION needs an authenticated control port, and connecting is
+   -- async: kick it off and let raAnonStatus finish the publish
+   if oxIsControlAuthenticated() is not true then
+      try
+         oxConnectControl
+      catch tErr
+         raAnonLog "control connect failed:" && tErr
+         exit raAnonPublish
+      end try
+      raAnonLog "connecting to tor's control port (watch the tor: lines);" && \
+            "publishing continues automatically once authenticated."
+      exit raAnonPublish
+   end if
    put rsAnonCreateService(sMasterSeed, 0, kAnonVirtualPort, kAnonLocalPort) \
          into tService
    if tService is empty then
@@ -2408,22 +2499,130 @@ command raAnonPublish
       exit raAnonPublish
    end if
    put tService into sAnonService
-   raAnonLog "onion service requested (handle" && tService & \
-         "); tor publishes the descriptor in a few seconds. Serve your feed at the local port with onion-httpd."
+   raAnonLog "onion service requested (handle" && tService & "); tor" && \
+         "publishes the descriptor in a few seconds. Serving: / (the anon" && \
+         "feed page), GET /prekey (the signed prekey record, hex), and" && \
+         "POST /dm (sealed intros)."
+   put rsAnonOnion(sMasterSeed, 0) into tOnion
+   if tOnion is not empty then
+      raAnonLog "reachable at" && tOnion && "once the descriptor uploads" && \
+            "(Tor Browser on this machine is the cheapest check)."
+   end if
 end raAnonPublish
+
+-- Tor's status stream (oxSetStatusCallback), routed to the anon log.
+-- Bootstrap ticks are already coalesced by onionxt but still chatty, so
+-- only milestones land here; "control authenticated" resumes a publish
+-- that was waiting on the async connect.
+command raAnonStatus pKind, pInfo
+   if pKind is "bootstrap" and pInfo is not 100 then
+      exit raAnonStatus
+   end if
+   raAnonLog "tor:" && pKind && pInfo
+   if pKind is "control" and pInfo is "authenticated" and \
+         sAnonServing is "true" and sAnonService is empty then
+      raAnonPublish
+   end if
+end raAnonStatus
+
+-- The three route handlers (dispatched by onion-httpd's oxhHandle with
+-- pStream, pRequest). They run from ENGINE socket callbacks - off the
+-- raPoll try, on whatever card is open - so they reply from script
+-- locals, write fields only through the guarded raAnonLog, and keep the
+-- oxh reply inside a try (a dead stream must not throw into the accept
+-- loop).
+command raAnonRouteFeed pStream, pRequest
+   local tErr
+   try
+      oxhReply pStream, 200, textDecode(sAnonPage, "UTF-8"), \
+            "Content-Type: text/html; charset=utf-8"
+   catch tErr
+      -- stream already gone; nothing to serve
+   end try
+end raAnonRouteFeed
+
+command raAnonRoutePrekey pStream, pRequest
+   local tErr
+   try
+      oxhReply pStream, 200, sAnonPrekeyBody, \
+            "Content-Type: text/plain; charset=utf-8"
+   catch tErr
+      -- stream already gone
+   end try
+end raAnonRoutePrekey
+
+-- The POST /dm drop (spec 8.3). rsAnonAcceptDm refuses before decoding
+-- and then verify-then-parses with the persona's own subkeys; every
+-- refusal gets the SAME reply, so the route is not an oracle for a
+-- prober. An accepted intro drains into the DM surfaces: the proven
+-- sender is logged here and on the Messages card (the persona replies
+-- over onion streams only - that reply rail is deliberately not built,
+-- so answering means a PUBLIC-side DM to the proven sender).
+command raAnonRouteDm pStream, pRequest
+   local tOpened, tErr
+   put empty into tOpened
+   if sMasterSeed is not empty then
+      put rsAnonAcceptDm(pRequest["__body"], sMasterSeed, 0) into tOpened
+   end if
+   -- the app's freshness policy, the same window as the rp1 inbox path
+   if tOpened is not empty then
+      if tOpened["timestamp"] < the seconds - kDmIntroWindow or \
+            tOpened["timestamp"] > the seconds + kDmIntroWindow then
+         raAnonLog "a STALE sealed intro was refused (replay, or a badly skewed clock)."
+         put empty into tOpened
+      end if
+   end if
+   if tOpened is empty then
+      try
+         oxhReply pStream, 400, "refused", \
+               "Content-Type: text/plain; charset=utf-8"
+      catch tErr
+         -- stream already gone
+      end try
+      exit raAnonRouteDm
+   end if
+   raAnonLog "sealed intro ACCEPTED over the onion from" && \
+         tOpened["senderHandle"] & return & "  its kx public:" && \
+         tOpened["senderKxPub"] & return & \
+         "  the sender PROVED that handle; to answer, open a public-side" && \
+         "DM to it (the persona itself replies over onion streams only)."
+   raDmLog "anon persona: a sealed intro arrived over the onion from" && \
+         raDmShort(tOpened["senderHandle"]) && "- see the Anon card."
+   try
+      oxhReply pStream, 200, "accepted", \
+            "Content-Type: text/plain; charset=utf-8"
+   catch tErr
+      -- stream already gone; the intro is still logged
+   end try
+end raAnonRouteDm
 
 command raAnonStop
    local tErr
-   if sAnonService is empty then
+   if sAnonService is empty and sAnonServing is not "true" then
       exit raAnonStop
    end if
+   if sAnonService is not empty then
+      try
+         oxRemoveService sAnonService
+      catch tErr
+         -- onionxt gone or service already down; nothing to release
+      end try
+   end if
+   -- drop the routes so a later oxh user of this engine cannot serve a
+   -- stale page; unrouting an unregistered route is a no-op, and an
+   -- absent onion-httpd means nothing was ever routed
    try
-      oxRemoveService sAnonService
+      oxhUnroute "GET", "/"
+      oxhUnroute "GET", "/prekey"
+      oxhUnroute "POST", "/dm"
    catch tErr
-      -- onionxt gone or service already down; nothing to release
+      -- onion-httpd not loaded; nothing was routed
    end try
    put empty into sAnonService
-   raAnonLog "anon onion unpublished."
+   put empty into sAnonPage
+   put empty into sAnonPrekeyBody
+   put empty into sAnonServing
+   raAnonLog "anon onion unpublished; the routes are dropped."
 end raAnonStop
 
 command raAnonLog pLine

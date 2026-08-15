@@ -76,16 +76,42 @@ LAN, UDP 27099 allowed.
 
 ## Phase 7 - the anon persona (needs tor; single machine is enough)
 
+The serving is BUILT as of 2026-08-15 (the 8.2 feed page, the 8.3
+/prekey and POST /dm routes - library seams plus the demo's onion-httpd
+wiring), verified statically; this pass is what flips its label.
+
 1. Run a tor daemon with the control port enabled (see
-   `onionxt/docs/03-control-port.md` for the torrc lines).
-2. Anon card: `Reveal persona 0`, then `Publish onion`.
-3. From Tor Browser on the SAME machine, visit the shown .onion. Reaching
-   it at all proves the deterministic service key (the address IS the
-   persona's public key). Serving the actual feed page over it is the
-   remaining onion-httpd wiring, recorded as not yet built.
-4. The done-criterion also wants a trace showing zero `bt*` calls for the
+   `onionxt/docs/03-control-port.md` for the torrc lines). Put BOTH
+   onionxt libraries in use: `onionxt/src/onionxt.livecodescript` AND
+   `onionxt/src/onion-httpd.livecodescript` (the demo refuses with a
+   clear message if the second is missing).
+2. Anon card: type a line or two into "anon feed entries", `Reveal
+   persona 0`, then `Publish + serve`. A cold tor means the first click
+   only connects the control port (watch the `tor:` lines in the log);
+   publishing continues automatically once authenticated.
+3. From Tor Browser on the SAME machine, visit the shown .onion.
+   Expected: the anon feed page renders, title and your typed entries
+   (reaching it at all proves the deterministic service key - the
+   address IS the persona's public key; the page proves the serving).
+4. Visit `<onion>/prekey`. Expected: 264 hex chars, and on a second
+   machine (or a scratch stack) `rsVerifyPrekey(sxHex2Bin(body),
+   anonHandle)` returns non-empty - the served prekey proves itself.
+5. The /dm drop: build a sealed intro with the PUBLIC identity
+   (`rsBuildIntro` to the anon handle, `rsDmSealIntro` to the served
+   prekey), spell it as hex, and POST it to `<onion>/dm` (curl through
+   the tor SOCKS proxy works: `curl --socks5-hostname 127.0.0.1:9050
+   --data "<hex>" http://<onion>/dm`). Expected: `accepted`, and the
+   Anon card logs the PROVEN sender handle (the Messages card gets a
+   pointer line). A mangled body or a replay outside the 600 s window
+   must answer `refused` with nothing logged but the stale note.
+6. The done-criterion also wants a trace showing zero `bt*` calls for the
    persona; the guard panel on that card shows the policy that enforces
    it.
+7. Known limits, not bugs: the persona does not REPLY over the onion
+   (answering an accepted intro means a public-side DM to the proven
+   sender - the reply rail is recorded as deliberately unbuilt), and
+   curl's `--data` must carry the hex EXACTLY (a trailing newline is a
+   refusal - the strict 632-char gate).
 
 ## Re-verifications worth repeating on any pass
 

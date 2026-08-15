@@ -387,6 +387,53 @@ check("btxo frame prefix",
       (11).to_bytes(4, "big"))
 check_raises("btxo empty frame", lambda: ref["btxo_data_frame"](b""))
 
+# --- 8.2/8.3: the onion serving payloads (added with the transport seams) --
+# The feed page is a WIRE FORMAT (the golden pins its exact bytes; a look
+# change re-pins deliberately), and the /prekey body is the anon prekey
+# record above spelled as hex text. The POST /dm acceptance itself is
+# seal-open crypto with no oracle here (the phase-4 boundary); the script
+# harness proves it end to end against a sealed blob built by the crypto.
+
+ANON_PAGE_HEX = (
+    "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d657461"
+    "20636861727365743d277574662d38273e3c7469746c653e526970746964653c"
+    "2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c"
+    "2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c"
+    "6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c65"
+    "6420444d733a20474554202f7072656b657920286d79207369676e6564205253"
+    "4b31207072656b6579207265636f72642c20686578292c207468656e20504f53"
+    "5420796f7572207365616c656420696e74726f2061732068657820746f202f64"
+    "6d2e3c2f703e3c2f626f64793e3c2f68746d6c3e")
+
+page = ref["anon_feed_page"]("Riptide", ["hello, riptide", "second post"])
+check("anon feed page bytes", page.hex(), ANON_PAGE_HEX)
+# escaping: an entry cannot inject markup, and the escape is the oxh one
+esc_page = ref["anon_feed_page"]("Riptide", ['<i>x</i> & "q"']).decode("utf-8")
+check("page escapes markup", "<i>" in esc_page, False)
+check("page escapes entities",
+      "&lt;i&gt;x&lt;/i&gt; &amp; &quot;q&quot;" in esc_page, True)
+check_raises("page empty title", lambda: ref["anon_feed_page"]("", ["x"]))
+check_raises("page title over cap",
+             lambda: ref["anon_feed_page"]("x" * 65, []))
+check_raises("page over size cap",
+             lambda: ref["anon_feed_page"]("t", ["x" * 70000]))
+
+body = ref["anon_prekey_body"](MASTER, 0)
+check("prekey body is the anon prekey record, hex", body, anon_prekey.hex())
+check("prekey body length", len(body), 264)
+check("prekey body pinned", body, (
+    "52534b3164346536633134366534633362336138393536326564363639633433"
+    "6634626437363031613065343336316264616133333034663462656562343130"
+    "616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07"
+    "db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd"
+    "6c70ba04"))
+# the body decodes to a record that verifies under the ANON handle - the
+# whole point of serving it over the persona's own onion
+decoded = bytes.fromhex(body)
+check("prekey body verifies under the anon handle",
+      ref["_verify_ed25519"](decoded[-64:], decoded[:-64],
+                             bytes.fromhex(ANON0_HANDLE)), True)
+
 # ---------------------------------------------------------------------------
 
 if FAILURES:

@@ -232,6 +232,14 @@ def main(argv):
          ref["btxo_header"]("secret.txt", 11, 0).hex())
     want("kRsGoldBtxoFrameHex",
          ref["btxo_data_frame"](b"hello world").hex())
+    # 8.2/8.3 serving: the feed page from the golden title + post texts
+    # (the harness passes them line-delimited; the oracle takes the split
+    # list - one derivation, two spellings of the argument), and the
+    # /prekey body re-derived from the master
+    want("kRsGoldAnonPageHex", ref["anon_feed_page"](
+        k["kRsGoldHeadName"],
+        [k["kRsGoldPost1Text"], k["kRsGoldPost2Text"]]).hex())
+    want("kRsGoldAnonPrekeyBody", ref["anon_prekey_body"](master, 0))
     # the anon onion inverts back to the anon handle (self-authenticating)
     if ref["pubkey_from_onion"](k["kRsGoldAnon0Onion"]).hex() != \
             ref["anon_handle"](master, 0):

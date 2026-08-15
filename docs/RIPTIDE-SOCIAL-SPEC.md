@@ -385,6 +385,18 @@ proves they reached the key-holder. Media is served as ordinary files over the
 same onion, not as torrents — slower and non-scaling, the honest cost of
 anonymity.
 
+*(As built, 2026-08-15: the serving landed with two deliberate deltas from
+this sketch. The feed page is a LIBRARY seam, `rsAnonFeedPage` - one
+deterministic, golden-pinned HTML page built from typed entries with every
+entry HTML-escaped - rather than an `oxhServeFiles` folder; a persona's
+feed is authored in the app, and pinning the page bytes makes the served
+feed a wire format instead of a restylable template. And the demo does NOT
+call `oxhServe`, because `oxhServe` creates a TOR-generated key: it wires
+`oxSetPeerCallback "oxhPeer"` itself and creates the service from seed via
+`rsAnonCreateService`, so the address stays the persona's identity.
+Verified statically; needs an OXT + live-Tor pass. As-built record:
+`riptide/CLAUDE.md`.)*
+
 ### 8.3 Anon DMs — sealed over a Tor stream
 
 A follower sends the persona a DM by dialing its onion and posting to `/dm`; the
@@ -393,6 +405,20 @@ attribute the sender, and the persona replies over the same accepted stream
 (`oxSetPeerCallback` / `oxPeerAccepted`). File transfers use the Model C `BTXO`
 framed-chunk protocol (HEADER + length-prefixed DATA frames + zero-length
 terminator) over the stream. No swarm, no IP, on either side.
+
+*(As built, 2026-08-15: the seal target is the persona's PREKEY, not the raw
+`anonPub` - the phase-4 delta carried through: `sxSeal` takes a curve25519
+key, so GET `/prekey` serves the persona's signed RSK1 record (subkey-200+n
+kx public, signed by the subkey-100+n anon identity) as 264 hex chars, the
+sender verifies it against the very onion it dialed, and the POST `/dm`
+body is the sealed RSI1 intro as EXACTLY 632 strict lowercase hex chars -
+refused before any decode, then `rsAnonAcceptDm` runs the existing
+seal-open verify-then-parse, and every refusal gets one identical reply.
+One piece is deliberately unbuilt: the persona does NOT reply over the
+accepted stream - onion-httpd answers and closes each request, so the
+reply rail would be a persistent onion-stream session layer; an accepted
+intro surfaces its PROVEN sender and answering means a public-side DM.
+Verified statically; needs an OXT + live-Tor pass.)*
 
 ### 8.4 One unlock, two unlinkable identities
 
@@ -567,10 +593,15 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    `rsBuildIntro`/`rsDmSealIntro` address and seal to it, and
    `rsDmOpenIntro` with `rsAnonDmSeed` opens it; golden-pinned and
    harness-proven end to end, including that the public identity cannot
-   open the persona's mail. What remains of 8.3 is the TRANSPORT - serving
-   the prekey and accepting sealed intros over the onion (onion-httpd
-   wiring), a live-Tor milestone. As-built:
-   `riptide/CLAUDE.md`.)*
+   open the persona's mail. The 8.2/8.3 TRANSPORT followed the same day:
+   the pure serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` /
+   `rsAnonAcceptDm`, golden-pinned, refusals harness-proven offline) plus
+   the demo's onion-httpd wiring - the feed page at `/`, the signed
+   prekey at `/prekey`, the POST `/dm` sealed-intro drop, with the
+   persona's onion still created FROM SEED. The reply-over-the-stream
+   half of 8.3 is deliberately unbuilt (see the 8.3 as-built note).
+   Verified statically; the live-Tor pass is the milestone that remains.
+   As-built: `riptide/CLAUDE.md`.)*
 
 ---
 

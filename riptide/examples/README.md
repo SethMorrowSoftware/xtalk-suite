@@ -20,6 +20,12 @@ Status, by phase (each a maintainer's dated account):
   server.
 - Phases 5 (the call), 6 (the mesh), 7 (anon over Tor): BUILT, statically
   verified, never run - `../docs/two-machine-runbook.md` is the script.
+  Phase 7 now includes the 8.2/8.3 onion SERVING (2026-08-15): Publish +
+  serve registers onion-httpd routes for the feed page at `/`, the signed
+  prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs BOTH
+  `onionxt/src/onionxt.livecodescript` and
+  `onionxt/src/onion-httpd.livecodescript` in use, plus a tor daemon with
+  the control port enabled.
 
 ## Setup
 

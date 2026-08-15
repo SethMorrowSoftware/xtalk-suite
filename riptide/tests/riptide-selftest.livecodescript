@@ -80,6 +80,8 @@ constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3
 constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
 constant kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 constant kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
+constant kRsGoldAnonPageHex = "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d277574662d38273e3c7469746c653e526970746964653c2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c656420444d733a20474554202f7072656b657920286d79207369676e65642052534b31207072656b6579207265636f72642c20686578292c207468656e20504f535420796f7572207365616c656420696e74726f2061732068657820746f202f646d2e3c2f703e3c2f626f64793e3c2f68746d6c3e"
+constant kRsGoldAnonPrekeyBody = "52534b31643465366331343665346333623361383935363265643636396334336634626437363031613065343336316264616133333034663462656562343130616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd6c70ba04"
 
 local sLog
 local sPass
@@ -581,7 +583,7 @@ end rstSectionIngest
 -- create needs a tor daemon (SKIP without onionxt, like the other live
 -- sections skip without their transport).
 private command rstSectionAnon pCaps
-   local tHeader, tFrame, tParsed, tHandle
+   local tHeader, tFrame, tParsed, tHandle, tPage, tPageText, tPkBody, tHex
    rstSection "phase 7 - the anon persona, the guard, and BTXO framing"
    -- derivations: the anon persona is a real, distinct identity
    rstCheck (rsAnonHandle(rstBin(kRsGoldMasterHex), 0) is kRsGoldAnon0Handle), \
@@ -703,6 +705,53 @@ private command rstSectionAnon pCaps
    rstCheck (rsDmOpenIntro(tFrame, kRsGoldHandle, \
          rstBin(kRsGoldDmSeedHex)) is empty), \
          "the PUBLIC identity cannot open the persona's mail"
+   -- 8.2/8.3 SERVING SEAMS: the payloads the persona's onion serves and
+   -- the POST /dm acceptance. All pure, so they run right here; only the
+   -- oxh* wiring and the live onion need tor (the skips below).
+   put rsAnonFeedPage(kRsGoldHeadName, kRsGoldPost1Text & return & \
+         kRsGoldPost2Text) into tPage
+   rstCheck (rstHex(tPage) is kRsGoldAnonPageHex), \
+         "the anon feed page bytes match golden"
+   put textDecode(rsAnonFeedPage(kRsGoldHeadName, \
+         "an <i>entry</i> & " & quote & "q" & quote), "UTF-8") into tPageText
+   rstCheck (offset("<i>", tPageText) is 0 and \
+         offset("&lt;i&gt;entry&lt;/i&gt; &amp; &quot;q&quot;", \
+         tPageText) > 0), \
+         "entries are HTML-escaped (no markup injection into the page)"
+   rstCheck (rsAnonFeedPage("", "x") is empty), \
+         "an empty page title is refused"
+   rstCheck (rsAnonFeedPage(kRsGoldHeadName, empty) is not empty), \
+         "an empty feed still serves a (bare) page"
+   put rsAnonPrekeyBody(rstBin(kRsGoldMasterHex), 0) into tPkBody
+   rstCheck (tPkBody is kRsGoldAnonPrekeyBody), \
+         "the GET /prekey body matches golden"
+   rstCheck (rsVerifyPrekey(rstBin(tPkBody), kRsGoldAnon0Handle) is not \
+         empty), "and decodes to a prekey verifying under the ANON handle"
+   rstCheck (rsAnonPrekeyBody(rstBin(kRsGoldMasterHex), -1) is empty), \
+         "a negative persona index refuses a prekey body"
+   -- the POST /dm ACCEPTANCE, against a sealed blob built with the
+   -- existing 8.3 crypto (tFrame still holds the sealed intro from the
+   -- open checks above) - accept the good body, refuse before decode
+   -- everything else
+   put rstHex(tFrame) into tHex
+   put rsAnonAcceptDm(tHex, rstBin(kRsGoldMasterHex), 0) into tParsed
+   rstCheck (tParsed is not empty), \
+         "rsAnonAcceptDm accepts the hex-posted sealed intro"
+   rstCheck (tParsed["senderHandle"] is kRsGoldHandle), \
+         "and reports the proven sender"
+   rstCheck (rsAnonAcceptDm(char 1 to 630 of tHex, \
+         rstBin(kRsGoldMasterHex), 0) is empty), \
+         "a short body is refused before any decode"
+   rstCheck (rsAnonAcceptDm(tHex & "00", rstBin(kRsGoldMasterHex), 0) \
+         is empty), "a long body is refused before any decode"
+   rstCheck (rsAnonAcceptDm(toUpper(tHex), rstBin(kRsGoldMasterHex), 0) \
+         is empty), "a non-canonical (uppercase) body is refused"
+   rstCheck (rsAnonAcceptDm("zz" & char 3 to -1 of tHex, \
+         rstBin(kRsGoldMasterHex), 0) is empty), \
+         "a non-hex body of the right length is refused before decode"
+   rstCheck (rsAnonAcceptDm(rstHex(rstFlipByte(tFrame, 20)), \
+         rstBin(kRsGoldMasterHex), 0) is empty), \
+         "a tampered sealed blob is refused by the seal itself"
    rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
    rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 80, 70000) is \
@@ -712,6 +761,8 @@ private command rstSectionAnon pCaps
    else
       rstSkip "anon onion service create: needs a live tor daemon"
    end if
+   rstSkip "anon onion SERVING (the / page, /prekey, POST /dm as routes):" && \
+         "needs onion-httpd + a live tor daemon"
 end rstSectionAnon
 
 -- The phase-6 LAN admission layer. Entirely pure crypto (no transport),
