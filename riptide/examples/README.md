@@ -47,8 +47,9 @@ does NOT prove propagation between machines.
   the zero target, and every line reads authorSig VERIFIED - with no record
   bytes copied between the machines by hand.
 
-Record the result in `docs/OXT-PASS-RUNBOOK.md` (the demo row and item 6).
+Record the result in the suite's `../../docs/OXT-PASS-RUNBOOK.md` (the
+repository-root docs/, not riptide's; the demo row and item 6).
 The phase 3-7 flows (media, DMs, the call, the LAN mesh, the anon persona)
 are all IN this stack now; `../docs/two-machine-runbook.md` scripts their
-per-phase tests and expected log lines, and `docs/RIPTIDE-SOCIAL-SPEC.md`
-is the design they implement.
+per-phase tests and expected log lines, and the suite's
+`../../docs/RIPTIDE-SOCIAL-SPEC.md` is the design they implement.

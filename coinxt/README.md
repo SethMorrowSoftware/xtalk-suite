@@ -10,7 +10,9 @@ a thin C ABI and a livecodescript API. One wrap covers both chains:
   recovery (Ethereum's `v` / `ecrecover`), and ECDH - all built (see Status). Schnorr / BIP-340
   (Taproot) is designed but deferred, because trezor-crypto's plain-C tree does not implement it.
 - **Hashes** both chains need: SHA-256/512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST padding),
-  RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
+  RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512. (SHA3-512 is specced but not shipped - calling
+  `cxSha3_512` is a `handler not found`; the vendored `sha3.c` implements it, so ship it or strike it
+  is an open call.)
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
 - **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, and the
   EIP-55 Ethereum checksum. (WIF is designed in SPEC.md but not yet shipped - calling it is a

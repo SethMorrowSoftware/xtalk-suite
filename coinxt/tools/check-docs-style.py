@@ -8,13 +8,13 @@ are a prose rule. The script gate tools/check-livecodescript.py enforces this fo
 .lcb / .livecodescript; this tool enforces the same banned-character set for .md,
 portably (no locale- or grep-PCRE-dependent Unicode escapes).
 
-SCOPE, precisely: the no-dash rule is PER MEMBER, not suite-wide. Three members
+SCOPE, precisely: the no-dash rule is PER MEMBER, not suite-wide. Four members
 declare it in their own CLAUDE.md and ship this gate to enforce it: sodiumxt,
-onionxt, and coinxt. torrentxt, enetxt and datachannelxt deliberately do NOT
-declare it and use em-dashes freely in their prose, as do the suite-level docs at
-the repository root - that is their choice, not debt, and this gate is not run
-against them. Do not "fix" their dashes; do not copy this file into a member that
-has not declared the rule.
+onionxt, coinxt, and riptide. torrentxt, enetxt and datachannelxt deliberately
+do NOT declare it and use em-dashes freely in their prose, as do the suite-level
+docs at the repository root - that is their choice, not debt, and this gate is
+not run against them. Do not "fix" their dashes; do not copy this file into a
+member that has not declared the rule.
 
 Run with no arguments to check every .md under the repo, or pass explicit paths.
 Exits non-zero if any banned character is found.

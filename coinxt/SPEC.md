@@ -30,8 +30,10 @@ node, and not a broadcaster.
 It **is**:
 - secp256k1 elliptic-curve operations: keypairs, ECDSA (RFC 6979 deterministic), **recoverable** ECDSA
   (the `v` recovery id Ethereum needs), public-key recovery (`ecrecover`), ECDH, and Schnorr / BIP-340.
-- The hashes both chains need: SHA-256, SHA-512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST
-  padding), RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
+- The hashes both chains need: SHA-256, SHA-512, SHA3-256/512 (AS BUILT: SHA3-512 is specced here
+  and in the README but not built - no `cnx_sha3_512` / `cxSha3_512` exists, and section 5.1 below
+  never listed one; the vendored `sha3.c` implements it, so ship it or strike it is an open call),
+  **Keccak-256** (Ethereum's non-NIST padding), RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
 - HD wallets: BIP-32 derivation, BIP-39 mnemonics (and SLIP-39 in a later phase).
 - Address and serialization formats: Base58Check, Bech32 / Bech32m (SegWit v0 / v1), hex, RLP, xprv/xpub,
   WIF, and the EIP-55 mixed-case Ethereum checksum.

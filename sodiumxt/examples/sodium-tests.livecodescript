@@ -15,7 +15,15 @@
 -- (the ASCII bytes); textDecode them here when a String is wanted. A passphrase
 -- is textEncoded to UTF-8 before it crosses.
 --
--- Verified statically (tools/check-livecodescript.py); run it in OXT to confirm.
+-- Engine-verified through ABI 7: the "run it in OXT to confirm" label that
+-- stood here is retired by recorded passes - the complete harness ran green
+-- on-engine 2026-08-10 (68 checks, zero failures, twice in one day) and again
+-- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202
+-- vectors); both are recorded in docs/api-reference.md. The one section those
+-- passes do not cover is testRistretto (ABI 8, added 2026-08-15): verified
+-- statically (tools/check-livecodescript.py), vectors pinned against the C
+-- KATs and the independent RFC 9496 reference, not yet run on an engine - that
+-- section is the part still waiting on an OXT pass.
 
 local sLog
 local sPass

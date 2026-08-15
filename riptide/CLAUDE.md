@@ -91,7 +91,11 @@ docs/two-machine-runbook.md.
 7. **The static gate is law**: `python3 tools/check-livecodescript.py`
    (the onionxt/coinxt lineage; it walks this whole directory). The
    repo-wide `tools/check-handler-calls.py` knows the `rs` prefix, so
-   every `rs*` call site is checked for existence and arity too.
+   every `rs*` call site is checked for existence and arity too. House
+   style for prose, declared here because this member carries the gate:
+   no em-dashes (hyphens, commas, colons, parentheses) and no curly
+   quotes, enforced by `python3 tools/check-docs-style.py` (byte-identical
+   with sodiumxt, onionxt and coinxt under `check-checker-drift.py`).
 8. **The honesty convention.** "Verified statically; needs an OXT pass"
    until a recorded run says otherwise; anonymity claims additionally
    need a live-Tor pass. Flip labels only on a recorded engine result,

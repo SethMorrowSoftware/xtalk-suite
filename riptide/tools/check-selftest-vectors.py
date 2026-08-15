@@ -28,13 +28,34 @@ ORACLE = os.path.join(HERE, "riptide_reference.py")
 
 
 def load_constants(path):
+    # Every golden lives in ONE spelling: a single-line, double-quoted
+    # `constant kX = "..."` at column 0. The honest count below can only
+    # cover what this parse SEES, so a k* constant in any other spelling
+    # (indented, unquoted, a continuation line) would bypass the
+    # uncovered-constants enforcement silently - the exact
+    # parsed-vs-checked hole the header refuses. So any `constant k` line
+    # the regex cannot decompose is a LOUD failure, never a skip.
     out = {}
     rx = re.compile(r'^constant (k\w+) = "([^"]*)"\s*$')
+    undecomposable = []
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             m = rx.match(line)
             if m:
                 out[m.group(1)] = m.group(2)
+            elif line.strip().startswith("constant k"):
+                undecomposable.append("%s:%d: %s"
+                                      % (path, lineno, line.strip()))
+    if undecomposable:
+        print("check-selftest-vectors: %d k* constant line(s) this gate "
+              "cannot decompose - only single-line double-quoted "
+              "`constant kX = \"...\"` at column 0 is checkable; rewrite "
+              "the constant to that spelling or extend the parse (a "
+              "constant the gate cannot read is a constant it cannot "
+              "cover):" % len(undecomposable))
+        for entry in undecomposable:
+            print("  " + entry)
+        sys.exit(1)
     return out
 
 

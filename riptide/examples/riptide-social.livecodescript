@@ -1,8 +1,10 @@
 script "riptideSocialApp"
 
 -- riptide-social.livecodescript - the Riptide Social flagship stack, phases
--- 1-4: one identity, one public feed, one follow, media over torrents, and
--- serverless encrypted DMs, on two self-building cards.
+-- 1-7: one identity, one public feed, one follow, media over torrents,
+-- serverless encrypted DMs plus the call, the LAN device mesh, and the
+-- anonymous persona, on four self-building cards (Feed, Messages, Devices,
+-- Anon).
 --
 -- WHAT IT WALKS (RIPTIDE-SOCIAL-SPEC.md sections 10.3 phases 1-3): create or
 -- unlock the Argon2id-sealed master seed (RIPTKEY1, a 97-byte file the APP
@@ -74,12 +76,17 @@ script "riptideSocialApp"
 -- (master: tools/ui-kit.livecodescript; tools/check-ui-kit-drift.py holds
 -- every copy byte-identical). Change the look in the master, never here.
 --
--- SCOPE, said loudly: phases 5-7 are NOT here - no live sessions, no LAN
--- sync, no anonymous persona. The profile-meta head field is still
--- published EMPTY. DMs (phase 4, the Messages card) hold ONE conversation
--- at a time in this demo, in memory only - no history, no offline queue;
--- both ends must be running. Public feeds are PUBLIC: the DHT keeps
--- records until expiry, there is no deletion, and nothing here is
+-- SCOPE, said loudly: phases 5-7 ARE built in this stack now (the Call
+-- button, the Devices card, the Anon card - built 2026-08-15; see STILL
+-- UNEXERCISED above for what has never run), but two pieces are genuinely
+-- UNBUILT: the LAN mesh ends at ADMISSION - no feed or DM payload syncs
+-- over it yet - and the anon persona's ONION SERVING (the onion-httpd
+-- prekey route and sealed-intro drop) does not exist, so a persona cannot
+-- yet be reached. The profile-meta head field is still published EMPTY.
+-- DMs (phase 4, the Messages card) hold ONE conversation at a time in
+-- this demo, in memory only - no history, no offline queue; both ends
+-- must be running. Public feeds are PUBLIC: the DHT keeps
+-- records until expiry, there is no deletion, and the public rails are not
 -- anonymity (spec section 9) - media rides ORDINARY BitTorrent swarms and
 -- rp1 DM peers connect DIRECTLY, so both show your IP to the other side,
 -- exactly as any torrent peer does.
@@ -634,10 +641,12 @@ on mouseUp
 end mouseUp
 
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
--- Two CARDS since phase 4 (the spec's one-stack-rails-behind-tabs answer):
--- card 1 is the feed (phases 1-3), card "raMessages" is the DM rail
--- (phase 4). The stack script owns every handler, so navigation is just
--- `go card`; the pump keeps running wherever you are.
+-- Four CARDS since phases 5-7 landed (the spec's one-stack-rails-behind-
+-- tabs answer): card 1 is the feed (phases 1-3), card "raMessages" the
+-- DM + call rail (phases 4-5), card "raDevices" the LAN mesh (phase 6),
+-- card "raAnon" the persona (phase 7). The stack script owns every
+-- handler, so navigation is just `go to card`; the pump keeps running
+-- wherever you are.
 command raBuild
    if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild

@@ -1,6 +1,6 @@
 # Box2Dxt
 
-[![build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
+[![build](../../actions/workflows/native-box2dxt.yml/badge.svg)](../../actions/workflows/native-box2dxt.yml)
 
 **Real 2D physics for OpenXTalk and the xTalk family.** Box2Dxt packages the
 [Box2D v3.1.0](https://box2d.org) engine — the one behind countless games — as a

@@ -7,9 +7,14 @@ name: CoinXT CI
 # harness builds it from source and drives it through ctypes, and the ASan/UBSan
 # self-test proves it memory-clean. Both run here on every push / PR.
 #
-# NOTE: while CoinXT is staged inside the OnionXT repository this workflow is
-# dormant (GitHub only reads .github/ at the repo root). It goes live the moment
-# CoinXT is split into its own repository (see MIGRATION.md).
+# NOTE: this workflow is INERT in the xtalk-suite monorepo, for the same reason
+# it was dormant when CoinXT was staged inside the OnionXT repository: GitHub
+# only reads .github/ at the repo root. The split this note once promised
+# ("goes live the moment CoinXT is split into its own repository") was
+# superseded by the consolidation (README.md: the monorepo is the source of
+# truth; MIGRATION.md is retained as history, not a plan). The live lane is the
+# root native-coinxt.yml; this file is kept so the standalone mirror still
+# carries CI when a member is worked on there in isolation.
 
 on:
   push:

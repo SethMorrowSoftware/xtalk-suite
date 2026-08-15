@@ -9,20 +9,54 @@ web server that are verifiable off-engine: the HTTP byte-range parser, the
 path-traversal decision, the MIME mapping, and the HTML escaper. If this and the
 .livecodescript ever disagree, one of them is wrong.
 
-Mirrors these LiveCodeScript handlers:
+Mirrors these LiveCodeScript handlers, grouped by surface. This index is the
+AUTHORITATIVE list (CONTRIBUTING.md points here instead of keeping its own
+copy: by 2026-08-15 both enumerations had drifted stale - the guide's table
+named 16 rows, this docstring 13, while the file defined 33 mirrors). A new
+mirror is not done until it is listed here, next to its group.
+
+Static file serving (both transports):
   qsFsParseRange  -> parse_range()      (RFC 7233 single-range; 416 on out-of-range)
   qsFsServePath   -> traversal_ok()     (".." refused after urlDecode + \\ -> /)
+  qsHasDotSegment -> has_dot_segment()  (dotfile guard: .git/.env invisible to serving)
   qsFsMime        -> mime()
   qsFsIcon        -> fs_icon()          (directory-listing icon/colour type token)
   qsFsHtmlEscape  -> html_escape()
-  qsCwServe       -> capability_route() (clearweb: the /<token>/ capability gate)
+  qsFileSizeSeek  -> file_size_probe()  (O(log n) file-size probe)
+  qsSafeFilename  -> safe_filename()    (Content-Disposition filename sanitiser)
   qsSiteSpaTarget -> spa_is_route()     (SPA fallback: a route vs a missing asset)
+  qsCwServe       -> capability_route() (clearweb: the /<token>/ capability gate)
+
+HTTP framing, headers, and conditional GET:
   qsHttpHeaderEnd -> http_header_end()  (byte index of the CRLFCRLF head terminator)
   qsHttpReqComplete -> http_req_complete() (head + Content-Length body received?)
+  qsHttpReqLength -> http_req_length()  (one request's exact byte length; keep-alive trim)
   qsJsonEscape    -> json_escape()      (the /_qs/info route's JSON value escaping)
-  qsEditSafePath  -> edit_safe_path()   (web-editor WRITE-path confinement - linchpin)
-  qsEditIsLocal   -> edit_is_local()    (web-editor LAN-first gate - the other linchpin)
+  qsHttpDate      -> http_date()        (+ its qsIsLeapYear/qsMonthLength/qsPad2 helpers)
+  qsHttpAllow     -> http_allow()       (the Allow header value for a path)
+  qsCorsPreflight -> cors_preflight()   (the OPTIONS preflight header block)
+  qsHttpWeakETag  -> http_weak_etag()   (the weak validator, W/"size-seed-gen")
+  qsETagCore      -> etag_core()        (RFC weak-comparison core of one ETag token)
+  qsIfNoneMatch   -> if_none_match()    (the 304 decision)
+
+The web editor (the WRITE path):
+  qsEditSafePath  -> edit_safe_path()   (write-path confinement - THE linchpin)
+  qsEditIsLocal   -> edit_is_local()    (LAN-first gate - the other linchpin; + qsIsPrivateIp)
+  qsEditParentDirs -> edit_parent_dirs() (the folder chain a write must create first)
+  qsEditLoginWait -> edit_login_wait()  (login brute-force backoff)
   qsQueryParam    -> query_param()      (editor read/write ?path= extraction)
+
+User-declared routes (.qsroutes.json):
+  qsUserPathValid -> user_path_valid()  (absolute, traversal-free; /_qs and /_edit reserved)
+  qsSanitizeHeaderName  -> sanitize_header_name()  (letters/digits/hyphen only)
+  qsSanitizeHeaderValue -> sanitize_header_value() (CR/LF/control bytes dropped)
+  qsRenderTemplate -> render_template() (bounded {{...}} substitution in a route body)
+  qsTemplateValue  -> template_value()  (deterministic tokens; clock tokens empty here)
+  qsTemplateEscape -> template_escape() (default-deny: json types JSON, all else HTML)
+
+Transfers-row formatting:
+  qsRateShort     -> rate_short()
+  qsEtaShort      -> eta_short()
 
     python3 tests/fileserver_golden.py     # exit 0 = OK, 1 = mismatch
 """

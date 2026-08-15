@@ -5,7 +5,11 @@
 If you believe you have found a security vulnerability in No Cloud Quick Share,
 please report it privately so it can be fixed before it is disclosed publicly.
 
-- **Contact:** security@ (maintainer to fill in)
+- **Contact:** use GitHub's **private vulnerability reporting** on this repository —
+  the **Security** tab → *Report a vulnerability* — which opens a draft security
+  advisory visible only to you and the maintainers. This is the working default.
+  [The maintainer may substitute a monitored security email address here; until one
+  is published, use the private-advisory flow above.]
 
 Please include enough detail to reproduce the issue: what you did, what you
 expected, and what actually happened. A minimal proof of concept is more useful
@@ -89,6 +93,20 @@ the file or the metadata.
   link — the classic static-host mistake. (The password-gated editor keeps its own rules
   and may legitimately touch dotfiles; the dotfile guard applies only to the anonymous
   read paths.)
+
+- **Declarative user routes (`.qsroutes.json`), no code.** A shared folder may declare
+  its own HTTP endpoints by dropping a `.qsroutes.json` file in it (see
+  `docs/user-routes.md`). The surface is designed so **no code ever runs**: a route can
+  only return a canned body, a file from the shared folder, or a redirect. Its guards,
+  all mirrored in `tests/fileserver_golden.py`: `{{...}}` template values are escaped
+  **default-deny** for the response type (JSON types get JSON escaping, every other type
+  gets HTML escaping, so a reflected visitor value can never inject markup or JSON);
+  response header names and values are sanitised so a value cannot break a header line;
+  a route path may not contain `..` or control bytes, and the `/_qs` and `/_edit`
+  namespaces are reserved to the app; file routes are confined to the shared folder
+  exactly like static files. The whole feature **fails closed** — a build without JSON
+  support simply has no custom routes and everything else works — and the
+  `.qsroutes.json` file itself is a dotfile, so it is never served or listed.
 
 - **Connection caps and watchdogs.** Concurrent web connections are bounded
   (32 at a time), and an HTTP request (headers plus body) larger than 256 KB is refused

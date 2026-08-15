@@ -14,10 +14,17 @@
 -- The harness has since GROWN to cover the whole public surface - the attached
 -- signature form (sxSign / sxSignOpen), seed-derived keypairs, keyed multipart
 -- and keyed file hashing, sxFreeHash, the memlimit presets, sxInit and
--- sxLastError - and those additions postdate that pass, so they are verified
--- statically and need an OXT pass to become a runtime result. They do have
--- native coverage in tests/sodium_smoke_test.c; what is unproven is their LCB
--- marshaling. The conventions below were settled
+-- sxLastError - and the "those additions need an OXT pass" caveat that used to
+-- stand here is RETIRED: the COMPLETE sxSelfTest ran green on-engine
+-- 2026-08-10 (68 checks, zero failures, twice in one day), and again
+-- 2026-08-12 on Windows x64 at 71 checks with the ABI-7 sxSha3_256 / FIPS 202
+-- additions (both recorded in docs/api-reference.md and CLAUDE.md). So the LCB
+-- marshaling of everything in this file below ABI 8 is a runtime result. The
+-- ONE surface those passes do not cover is the ABI-8 ristretto255 section
+-- (added 2026-08-15): its C KATs are green under ASan/UBSan and cross-checked
+-- against an independent RFC 9496 reference, but no sxRistretto* handler has
+-- run on an engine yet - that section is verified statically and needs an OXT
+-- pass. The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;
