@@ -9,6 +9,140 @@ shims and the pure-compute vectors but can never prove that a binding **loads**,
 a foreign declaration **marshals**, or that a handler **returns what the docs say**.
 That is the gap this session closes.
 
+---
+
+## THE SPARSE-ACCESS SESSION PLAN (2026-08-15)
+
+**Engine access is sparse now, so this section is the scheduler: the entire
+open backlog, partitioned into session types by the resources each item
+actually needs, so whoever gets engine time runs the highest-yield script for
+whatever they have that day and spends zero minutes deciding.** Items cite the
+section-1.2 inventory by number - rows 11-24 were added with this plan (the
+2026-08-14/15 builds) - and #31-#33 cite the VERIFY register in
+`docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3 by that register's own
+numbering, not this inventory's. Everything else in this runbook applies as
+written: section 2 for installs and the exact torrc, 3.1 for paste-and-reopen,
+section 5 for the traps (5.1.1 - quit and relaunch OXT before every
+torrent-bearing paste - governs every session below), section 6 for failure
+capture, 4.1 for copying results back, and the "After the pass" rule for the
+label edits (members first, root `README.md` last). This plan schedules
+passes; it claims none - every "flips" below happens only on a dated recorded
+result, and a leg that only partly ran is recorded as exactly the part that
+ran.
+
+On a day with more than one resource, run the sessions in order anyway: S1 is
+the cheapest signal, and its restyle re-opens de-risk every later leg, so
+S1's hour is the right first hour of every longer session.
+
+### S1 - one machine, one hour, no daemon (~60 min; +35 min stretch)
+
+Prerequisites, once: a Linux or Windows engine, x64 or x86 (every native
+member's library is committed for those - section 2.1); all five packaged
+extensions installed from the current tree, with SodiumXT repackaged at
+**ABI 8** (section 3.2 step -1; on a non-mac row, repackage normally). The
+coinxt, onionxt and riptide script layers are embedded in the suite paste -
+no `start using` step for item 1. No tor, no second machine. Items 1 and 2,
+and each torrent-flavoured stack in items 3 and 5, want a fresh OXT launch
+(trap 5.1.1).
+
+Ordered by yield per minute:
+
+| # | Run | Expect | Record | ~min |
+|---|---|---|---|---|
+| 1 | `tests/suite-selftest.livecodescript` (paste + reopen per 3.1) | green `stSummary`, zero failures - and FOUR things this paste settles for the first time: the sodiumxt section **"ristretto255 (ABI 8)"** RUNS instead of SKIPping (the five `sxRistretto*` handlers, row 11); the coinxt section **"WIF (wallet import format)"** (row 12); riptide's **"phase 6 - LAN sync records (drafts, feed state, presence)"** plus the serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`) inside **"phase 7 - the anon persona, the guard, and BTXO framing"** (row 13); and the three malformed-UTF-8 refusal checks that came back RED on 2026-08-15 - the `rsBytesAreUtf8` fix's first observed run (row 13) | flips rows 11-13's labels: the sodiumxt api-reference ristretto section, all three coinxt WIF labels, riptide's compute-half phase-6/7 labels. Tick: BREADTH, plus rows 11-13 in the ADDED block | 12 |
+| 2 | `holde-em/src/holdem.livecodescript` (paste + reopen), then `heRunSelftest` in the message box | the report panel ends `==== N pass, 0 fail, M skip ====` and `RESULT: green`; **section 16** (`heTestLevel2Run`) RUNS rather than SKIPs on an ABI-8 SodiumXT (row 15); **section 17** (`heTestOnionRun`) pins the 2f headless slice; the deal sections drive the two rewritten handlers - `heXorSeedsHex`, `heDeckFromStreamKey` - against the KAT pins (row 14) | flips row 14 (the fold blockquote's "needs an OXT re-pass" on both deal handlers) and row 15 (the L2 `sx*` call shapes). Tick: rows 14-15 | 12 |
+| 3 | the three HIGHEST-GATING restyle re-opens (the 2026-08-14 blockquote), one OXT launch each: `torrentxt/examples/torrent-quickshare.livecodescript` (gates item 5 and the #31-#33 stack), `torrentxt/examples/torrent-dht-channels.livecodescript` (gates #31-#33), `riptide/examples/riptide-social.livecodescript` (gates rows 16/17/19; unlock an identity, confirm build + pump) | each window BUILDS in the v2 card look, the probe/status line is clean, no error dialog on open or close | each flips its own "UI unified 2026-08-14; needs an OXT re-pass" label; tick the matching DEMOS rows - "UI built, probe clean, no live leg" is the honest wording on a no-daemon day | 12 |
+| 4 | holde-em hotseat: 2-3 hands in item 2's launch (blinds through showdown; force a side pot if you can) | hands complete with no error dialog; the report header names `kHeVersion` 0.20.0 and the harness version | first post-fold hotseat evidence on the v0.20.0 tree. Tick: the hotseat line in the ADDED block | 10 |
+| 5 | the remaining restyle re-opens: `onionxt/examples/onionxt-demo-standalone.livecodescript` (probes must FAIL CLOSED with no tor - that IS tonight's pass), `enetxt/examples/enet-lan-chat.livecodescript`, `datachannelxt/examples/datachannel-loopback.livecodescript`, `torrentxt/examples/torrent-client.livecodescript` (fresh launch), `coinxt/examples/coinxt-demo.livecodescript` (`start using stack "coinxt"` first, 4.6) | as item 3 | as item 3; tick the DEMOS rows | 14 |
+| S | STRETCH: `nocloud/src/nocloudquickshare.livecodescript`, then the web-link half of `nocloud/docs/oxt-pass-checklist.md` (sections 0-6a over a LAN web link; skip every Tor column) | per that checklist's own action -> expected lines | row 22's web-link half; the checklist file is its own record sheet | 35 |
+
+### S2 - one machine plus a tor daemon (~3 h with setup)
+
+Prerequisites, once: S1's install state, plus a system tor with the
+section-2.3 torrc (`SocksPort 9050` / `ControlPort 9051` /
+`CookieAuthentication 1`) and the `Opening Control listener` log line
+confirmed; Tor Browser for the reach checks (its SOCKS is 9150 - trap 5.3); a
+tor BINARY on disk for Mode B (item 2); `onionxt/src/onionxt.livecodescript`
+in the message path for items 2-6, plus `onionxt/src/onion-httpd.livecodescript`
+for item 5 (the riptide demo refuses without it); curl for item 5's /dm POST.
+Re-read traps 5.3, 5.4 and 5.8. Items 3, 4 and 6 each take THE torrent
+session - fresh OXT launch each (5.1.1). Setup ~15 min.
+
+| # | Run | Expect | Record | ~min |
+|---|---|---|---|---|
+| 1 | `onionxt/examples/onionxt-demo.livecodescript` (or the standalone) against the live daemon - the cheapest daemon-config disqualifier, so it goes first | control connects and authenticates, bootstrap seeds (trap 5.8), a service publishes and is reachable | runbook row 11 of section 3.2; exercises the service/control side of the seven live-daemon coverage exemptions. Tick: DEMOS "onionxt demo vs live tor" | 20 |
+| 2 | `tests/suite-closing-pass.livecodescript`, leg **F** only (Mode B + onion echo) | F's PASS lines: `oxLaunchTor` starts a real tor (`the processId`, `Bootstrapped 100%`), then a listen + self-dial through the Tor network with exact bytes both ways | closes inventory item 4 (the 4.7 Mode B flips) + demo row 15 + the `oxTransport*` half of the live-Tor exemptions. Tick: closing-pass F | 25 |
+| 3 | `torrentxt/examples/torrent-quickshare.livecodescript`, Tor toggle ON - item 5's single-machine halves | a Tor share code minted with NO torrent created and NO DHT call (the mutual exclusion); the folder-serving mode renders in Tor Browser. Optional full trip on one box: a SECOND OXT process can receive the code - the Tor path holds no torrent and each process owns its own session | the 4.7 "Quick Share over Tor" flips for exactly what ran; the capture/passphrase legs of the 12.4 gate stay S4. Tick: DEMOS "torrent-quickshare with Tor toggle ON" | 25 |
+| 4 | **#31**, Channels Phase 0: `torrentxt/examples/torrent-dht-channels.livecodescript`, Anonymous ON / OFF / tor-absent | `Tor: ready` on the pill with the onion service up; OFF leaves every clearnet channel bit-for-bit unchanged; tor-absent shows the fail-closed messages; `chVerifyOnionIdentity` passes offline; pill + button fit the unchanged 1180x640 window | tick #31 in the 12.3 register itself (4.7's rule: tick the specific items, not the register); tick row 21's #31 half here | 25 |
+| 5 | riptide persona serving: `riptide/docs/two-machine-runbook.md` phase 7, steps 1-5 on one machine | the anon feed page renders in Tor Browser; `/prekey` returns 264 hex and `rsVerifyPrekey` proves it; a curl POST to `/dm` answers `accepted` and a mangled or replayed one `refused` | row 19's single-machine half (the phase-7 serving label in `riptide/CLAUDE.md`); the second-machine delivery + zero-`bt*` trace stay S4. Tick: row 19 serving half | 30 |
+| 6 | holde-em onion-table bring-up: Create a table with the onion transport in `holde-em/src/holdem.livecodescript` | the lobby Tor line walks the pill states; the invite prints as `<64hex>@<56base32>.onion`; the offline-derived address MATCHES `oxServiceAddress` at publish | row 20's single-machine half; the 2f exit (multi-hand, two machines) stays S4. Tick: row 20 bring-up half | 20 |
+| 7 | the Tor half of `nocloud/docs/oxt-pass-checklist.md` (routes, headers and `/_qs/transparency` over the `.onion`; the concurrent Tor + web shares item) | per the checklist's lines; `/_qs/transparency` answers `both_ends_hidden:true` over Tor | row 22's Tor half; the checklist file is the record | 25 |
+
+### S3 - two machines, no daemon (~3 h)
+
+Prerequisites, once: the current tree's extensions installed on BOTH machines
+(section 2); `tests/suite-closing-pass.livecodescript` pasted on both for
+item 1; the same LAN with UDP allowed (27099 for the riptide mesh; trap 5.5
+if anything loopback-flavoured fails); for item 2's done-criterion, two
+DIFFERENT networks (one machine on a phone hotspot); riptide identity
+discipline per the two-machine runbook's setup table (DIFFERENT identities
+for the call, the SAME identity for the mesh); one OXT process per stack
+instance in item 4 (trap 5.1).
+
+| # | Run | Expect | Record | ~min |
+|---|---|---|---|---|
+| 1 | `tests/suite-closing-pass.livecodescript`, legs **B-E** on both machines (leg A closed standalone 2026-08-15 - skip it) | each leg's PASS lines; C includes resume saved to disk and re-added across an OXT restart | closes the two-machine legs the row-18 table maps: enet chat (item 6's enetxt leg + demo row 8), seed/leech + resume, rp1 chat (row 14's legs), dc chat via the real DHT (row 13's shape). Tick: closing-pass B-E | 75 |
+| 2 | riptide phase 5 (`riptide/docs/two-machine-runbook.md`): the call, then the typing lane | both sides `CALL CONNECTED: direct peer-to-peer channel open` with a `via` line (`typ srflx` on the two-network run is the done-criterion); `the far side is typing...` appears and clears; hang-up leaves the DM conversation alive | row 16; flips the phase-5 bullet in `riptide/CLAUDE.md` on a dated report. Tick: row 16 | 35 |
+| 3 | riptide phase 6 (same runbook): welcome round, sync payload, stranger test | `ADMITTED - the host ... Mesh is mutual.`; `draft from <name> seq N applied` BOTH directions and the draft CONVERGES; `[typing]` then `[quiet]` on a kill; `feed seq N adopted`; `a peer FAILED admission (not your device)` for the stranger, with no record crossing | row 17; flips the phase-6 bullet. Tick: row 17 | 35 |
+| 4 | holde-em 2d: a multi-hand online session over rp1 (extra stack instances fill seats to three or more) | hands complete on every seat; receipts match; the live audit verdicts land in the net feed | row 18; the 2d "needs the multi-machine OXT pass" line in `holde-em/IMPLEMENTATION-PLAN.md`. Tick: row 18 | 40 |
+
+### S4 - two machines plus tor (~3 h)
+
+Prerequisites, once: S3's two-machine state plus S2's tor prerequisites on
+BOTH machines (the follower dials through its own SOCKS; item 4's POST needs
+curl + SOCKS on the posting machine); Tor Browser on the follower; a
+packet-capture tool on both ends for items 2 and 3's zero-swarm/DHT proof;
+give the DHT its bootstrap seconds (trap 5.7) and publish onions fresh
+(trap 5.4).
+
+| # | Run | Expect | Record | ~min |
+|---|---|---|---|---|
+| 1 | **#32**, Channels Phase 2: A publishes an anon channel; B follows by the CARD only | the signed feed arrives over the onion with the DHT off for that channel; releases list; the live `oxServiceAddress == chChannelOnionAddr(pub)` byte-compare holds | tick #32 in the 12.3 register; tick row 21 | 30 |
+| 2 | **#33**, Channels Phase 3: B downloads a selected release entirely over the onion | byte-identical (sha256); the teal `Onion` transfers row; packet capture shows ZERO swarm/DHT traffic for that file on both ends; a publisher restart prunes the stranded relIds | tick #33 in the 12.3 register; tick row 21 | 40 |
+| 3 | the two-machine Quick Share Model C gate (item 5 + the plan's 12.4): a real file both directions with the Tor toggle ON | byte-identical delivery (sha256), onion-only capture, passphrase reject then decrypt, downgrade refusal | the 4.7 "Quick Share over Tor" flips, and the 12.3 ticks for exactly what ran. Tick: the DEMOS Tor-toggle row's two-machine half | 30 |
+| 4 | riptide phase 7, the finishing half: B verifies the served prekey, builds the sealed intro with its PUBLIC identity, and POSTs it to A's onion through tor | `accepted`, and A's Anon card logs the PROVEN sender handle; a trace shows zero `bt*` calls for the persona | row 19 closed; flips the phase-7 bullet in `riptide/CLAUDE.md` and the two-machine runbook's phase-7 intro. Tick: row 19 | 30 |
+| 5 | holde-em 2f exit: a multi-hand onion table session on two machines | join by the `<64hex>@<56base32>.onion` invite; multiple hands complete over the onion transport; failures only where scripted, each fail-closed with a readable reason | row 20 closed; flips the 2f entries in `holde-em/CLAUDE.md` and `holde-em/IMPLEMENTATION-PLAN.md`. Tick: row 20 | 45 |
+
+### S5 - a Mac, or a Windows box
+
+**Windows (~1 h).** Row 23: install the current packages (both bitnesses if
+both engines exist) and run S1's item 1, the suite paste. This is the ABI-8
+mingw DLL re-proof - the exact precedent is the 2026-08-12 pass that proved
+the ABI-7 DLL. Expect the SodiumXT section green INCLUDING the SHA3 and
+ristretto checks; record OS/arch and which DLL row ran. A 64-bit-only day
+proves only `x86_64-win32` - say so, and the `x86-win32` row keeps its note.
+Flips: the "needs its Windows engine pass" notes on the two Windows rows of
+`sodiumxt/CLAUDE.md`'s ABI table. Tick: row 23. Spend any remaining time on
+the rest of S1 - it counts double as Windows evidence.
+
+**Mac (~3 h build, then S1's hour).** Row 24, in this order: sodiumxt manual
+`lipo` build to ABI 8 (its CLAUDE.md mac row; per step -1, do NOT repackage
+SodiumXT on this machine before the build lands); coinxt
+`cd coinxt && sh native/build.sh pack` (2.4; use `tools/package-extension.py
+--lib ... --platform-id universal-mac` for a lipo pair); enetxt and
+datachannelxt local builds + their `tools/package-extension.py`; torrentxt
+last (build + codesign + notarize - needs credentials). Then run S1 on the
+Mac: that single hour is the first mac evidence for four members. Flips:
+`sodiumxt/CLAUDE.md`'s mac ABI row and the section-2.1 gaps. Tick: row 24.
+
+**The totals, for planning a calendar:** S1 ~1 h (+35 min stretch); S2 ~3 h
+including setup; S3 ~3 h; S4 ~3 h; S5 ~1 h on Windows, ~4 h on a Mac (3 h
+build + the S1 hour). Every session ends the same way: 4.1's copy-back for
+each result, then ONE follow-up label pass covering exactly the items that
+ran.
+
+---
+
 > ## The 2026-08-08 pass: what it closed
 >
 > **`tests/suite-selftest.livecodescript` ran green on a real engine with all six
@@ -202,9 +336,33 @@ What remains is entirely environmental: items **4 and 5 need a live tor daemon**
 machine** for its member-demo legs. The riptide legs have been closing steadily:
 propagation 2026-08-13 (the suite's first two-machine result), media and
 both-ways DMs 2026-08-15. The riptide phase 5-7 legs (the dc call, the LAN
-mesh, the anon persona over Tor) are NOT inventoried here -
-`riptide/docs/two-machine-runbook.md` is their script, written for exactly
-these sessions. Plan the rest as their own sessions.
+mesh, the anon persona over Tor) are inventoried below since 2026-08-15 (rows
+16, 17 and 19) - `riptide/docs/two-machine-runbook.md` is their script,
+written for exactly these sessions - and the sparse-access session plan at the
+top of this runbook is the scheduler for all of it.
+
+**The 2026-08-14/15 builds added the surfaces below (rows 11-24, all OPEN).**
+Each row names the session type that closes it; the plan at the top orders the
+work inside each session. Row 21's #31-#33 are the
+`docs/ONIONXT-INTEGRATION-PLAN.md` section-12.3 register's own numbering,
+kept as pointers so the same fact is never book-kept twice:
+
+| # | New surface | What a green run proves | The label that says so | Session |
+|---|---|---|---|---|
+| 11 | **sodiumxt ristretto255** (ABI 8, built 2026-08-15; C KATs green under ASan/UBSan, cross-checked against the independent RFC 9496 reference) | the five `sxRistretto*` handlers marshal on a real engine (Data in and out, the Boolean predicate, throw-as-detection) - the suite paste's "ristretto255 (ABI 8)" section runs instead of SKIPping | `sodiumxt/docs/api-reference.md`, the ristretto section ("verified statically; needs an OXT pass") and the status blockquote's "one exception" note; also holde-em's Workstream U "still open" line | S1 |
+| 12 | **coinxt WIF** (`cxWifEncode` / `cxWifDecode`, built 2026-08-15 - the last two coinxt handlers with no engine run) | the three-argument call shape, the boolean flag both directions, the array return, and both refusal paths | `coinxt/README.md` (the status sentence and the WIF paragraph), `coinxt/CLAUDE.md` (the WIF entry), `coinxt/docs/api-reference.md` (the intro and the WIF note) | S1 |
+| 13 | **riptide 0.9.0 compute additions in the suite paste** (built 2026-08-15): the phase-6 LAN sync-records section, the phase-7 serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`), and the `rsBytesAreUtf8` re-pass (the three checks that were RED on the 2026-08-15 engine run) | the compute halves run green on an engine; the LIVE criteria stay rows 16, 17 and 19 | `riptide/CLAUDE.md`, the phase-6 and phase-7 bullets (their compute-half sentences only) | S1 |
+| 14 | **holde-em deal-path re-pass** (the fold's two rewrites: `heXorSeedsHex` lost its ignored `repeat ... step 2`, `heDeckFromStreamKey` lost its throw-in-catch) | the rewritten handlers match the KAT pins on-engine - and settles which stream the PRE-fold on-engine runs dealt from | `holde-em/CLAUDE.md`, the fold blockquote's "needs an OXT re-pass" sentence | S1 |
+| 15 | **holde-em Level 2 compute** (v0.19.0; harness section 16, `heTestLevel2Run`, behind the ABI-8 probe - NOT in the suite paste: holde-em's harness lives embedded in the game stack) | the `sx*` call shapes the L2 algebra assumes, and the 24 pinned `l2_*` values on-engine (the 4f deal-time budget stays orchestration-era work) | `holde-em/IMPLEMENTATION-PLAN.md`, the Phase 4 blockquote; `holde-em/CLAUDE.md`, the v0.19.0 L2 entry | S1 (wants row 11's ABI 8 installed) |
+| 16 | **riptide phase 5** - the dc call plus the spec-6.2 typing lane (both demo wiring, never run) | `CALL CONNECTED` on both sides, a `typ srflx` `via` line across two networks, the typing indicator appearing and clearing | `riptide/CLAUDE.md`, the phase-5 bullet; the script is `riptide/docs/two-machine-runbook.md` phase 5 | S3 |
+| 17 | **riptide phase 6** - the LAN mesh live: the welcome round, the draft-appears done-criterion, the stranger test | mutual admission, drafts converging both directions, presence expiring, the stranger refused with nothing crossing | `riptide/CLAUDE.md`, the phase-6 bullet; the script is the two-machine runbook phase 6 | S3 |
+| 18 | **holde-em 2d** - online Level 0 play, multi-machine (written v0.17.0, netsim-pinned on one machine) | a multi-hand rp1 session across real machines with receipts matching on every seat | `holde-em/IMPLEMENTATION-PLAN.md`, the 2d status line ("needs the multi-machine OXT pass") | S3 |
+| 19 | **riptide phase 7** - the anon persona live over Tor (the 8.2/8.3 serving built 2026-08-15) | single-machine half: the onion reachable, the feed page + `/prekey` + `/dm` on a live tor; finishing half: the anon delivery from a second machine and the zero-`bt*` trace | `riptide/CLAUDE.md`, the phase-7 bullet; `riptide/docs/two-machine-runbook.md`, the phase-7 intro | S2 + S4 |
+| 20 | **holde-em 2f onion tables** (v0.20.0, built 2026-08-15) | single-machine half: the bring-up states and the offline-derived address matching `oxServiceAddress` at publish; the exit: a multi-hand onion table session on two machines with a running tor | `holde-em/CLAUDE.md`, the 2f entry; `holde-em/IMPLEMENTATION-PLAN.md`, the 2f status | S2 + S4 |
+| 21 | **Quick Share Channels anon, #31 / #32 / #33** - POINTERS ONLY: built 2026-08-15, registered in `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3, and ticked THERE per 4.7's rule | #31: the single-machine ON / OFF / tor-absent behaviour; #32: the card-only anon follow with the DHT off; #33: the onion-only release download with a clean capture | the three 12.3 register rows themselves | #31 S2; #32/#33 S4 |
+| 22 | **nocloud HTTP-host checklist** (`nocloud/docs/oxt-pass-checklist.md`: routes, headers, conditional GET, CORS, the editor, shutdown - over BOTH transports) | per that file's own action -> expected lines; it is its own record sheet | the checklist's intro paragraph ("verified statically; needs an OXT pass") | web-link half S1 stretch; Tor half S2 |
+| 23 | **sodiumxt ABI-8 mingw DLLs' Windows re-proof** (`x86_64-win32` + `x86-win32`, cross-built 2026-08-15; the 2026-08-12 ABI-7 pass is the precedent) | the DLLs load and the full SodiumXT section - SHA3 and ristretto included - runs green on a real Windows engine | the "needs its Windows engine pass" notes on the two Windows rows of `sodiumxt/CLAUDE.md`'s ABI table | S5 |
+| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> 8; first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
 
 ---
 
@@ -1210,6 +1368,34 @@ DEMOS
       D rp1 chat            (two machines)                 PASS lines: ______
       E dc chat via DHT     (two machines; pair: ________) PASS lines: ______
       F Mode B + onion echo (single machine + tor binary)  PASS lines: ______
+
+ADDED 2026-08-15 (inventory rows 11-24; the sparse-access plan at the top
+maps each to a session type - S1 one machine, S2 +tor, S3 two machines,
+S4 two machines +tor, S5 mac/windows)
+[ ] 11 suite paste: "ristretto255 (ABI 8)" RAN, not skipped     ABI seen: ___
+[ ] 12 suite paste: "WIF (wallet import format)" green
+[ ] 13 suite paste: LAN-sync section + serving seams + the three
+       UTF-8 refusal re-pass lines all green
+[ ] 14 holde-em deal re-pass: heXorSeedsHex / heDeckFromStreamKey
+       lines green (pre-fold stream question answered? ______)
+[ ] 15 holde-em section 16 (L2) RAN, not skipped   sx* shapes ok? ___
+[ ] -- holde-em hotseat on v0.20.0 (hands played: ___  side pot? ___)
+[ ] -- restyle re-opens (UI built, probe clean): quickshare ___
+       dht-channels ___  riptide-social ___  onionxt-demo ___
+       enet-lan-chat ___  dc-loopback ___  torrent-client ___
+       coinxt-demo ___  nocloud ___   (record per DEMOS rows too)
+[ ] 22 nocloud checklist: web-link half ______   Tor half ______
+[ ] 21 Channels  #31 ___  #32 ___  #33 ___  (tick the 12.3 register itself)
+[ ] 19 riptide phase 7: serving half (page/prekey/dm) ______
+       anon delivery + zero-bt* trace ______
+[ ] 20 holde-em 2f: bring-up states ___  address == oxServiceAddress? ___
+       two-machine multi-hand onion session ______
+[ ] 16 riptide phase 5 call  CONNECTED? ___  via: ______  typing lane ___
+[ ] 17 riptide phase 6 mesh  welcome ___  draft criterion ___  stranger ___
+[ ] 18 holde-em 2d online session (machines: ___  seats: ___  receipts ___)
+[ ] 23 Windows ABI-8 re-proof   x86_64-win32: ___   x86-win32: ___
+[ ] 24 mac builds: sodiumxt lipo ABI8 ___  coinxt ___  enetxt ___
+       datachannelxt ___  torrentxt (signed?) ___  then S1 run: ______
 
 FOLLOW-UP
 [ ] result text saved for every run above
