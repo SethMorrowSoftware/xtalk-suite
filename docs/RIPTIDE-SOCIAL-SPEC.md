@@ -486,11 +486,15 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    on two machines, feeds exchanged both directions; the as-built record is
    `riptide/CLAUDE.md`.)*
 3. **Media** — create/seed/co-seed a photo and a sequential video. *Done when* a
-   follower plays a video mid-download. *(Built 2026-08-14:
+   follower plays a video mid-download. **DONE 2026-08-15** *(built 2026-08-14:
    `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library, the media
-   strip in `riptide/examples/riptide-social.livecodescript`, harness
-   coverage in the suite self-test. Verified statically; the done-criterion
-   needs its two-machine pass. As-built decisions: `riptide/CLAUDE.md`.)*
+   strip in `riptide/examples/riptide-social.livecodescript`, harness coverage
+   in the suite self-test; the TWO-MACHINE pass followed on 2026-08-15 - a
+   follower on the second machine fetched and played an attached video, near
+   instantly, which necessarily exercised head publish -> head fetch -> chain
+   walk -> authorSig verify -> media info-hash -> swarm join -> playback. Not
+   distinguished in the report: mid-download start vs a fast complete
+   transfer. As-built decisions: `riptide/CLAUDE.md`.)*
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
    *Done when* two machines exchange authenticated encrypted DMs with no server.
    *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records

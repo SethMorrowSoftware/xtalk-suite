@@ -417,11 +417,30 @@ Two things follow, and they are the operational point:
    never executed, in a file no harness runs, is how this landed. When you
    need a construct the suite has no engine-proven example of, say so in the
    honesty label rather than letting a green checker imply it was verified.
-2. **The demo still needs its own engine pass, and more of this class may be
-   in there.** The library is engine-verified; the demo is not. Until someone
-   opens the stack in OXT and clicks through all four cards, treat
-   `riptide-social.livecodescript` as "statically checked only" - which is
-   exactly what its own honesty footer says, and it means it.
+2. **PHASE 3 IS DONE: the two-machine media pass happened 2026-08-15.** After
+   the `of me` fix the demo ran ON TWO MACHINES and a follower fetched and
+   PLAYED an attached video, near instantly. That is the phase-3
+   done-criterion met, and it closes the last of the phase 1-3 criteria. It
+   also means far more than the media layer was exercised end to end on real
+   hardware, because a follower cannot reach a video any other way: machine
+   A published a head and a media-bearing post to the DHT, machine B fetched
+   that head, walked the chain, VERIFIED the authorSig, surfaced the media
+   info-hash from the verified post, joined the author's swarm and played
+   what came back. Phases 1-3 of the app - identity, the live feed, and
+   media - are now engine-proven across two machines through the real UI,
+   not just through the harness.
+
+   Two things this specifically does NOT settle, both worth keeping honest:
+   - **"Near instantly" was not distinguished from "mid-download."** The
+     criterion's spirit is sequential playback starting before the file is
+     complete; a fast small transfer looks the same from outside. Treat the
+     mid-download nuance as plausible but unmeasured.
+   - **The media strip lives on card 1 (Feed), so this may not have
+     exercised the multi-card navigation at all.** The `go to card` fix is
+     confirmed only if someone actually clicked Messages / Devices / Anon
+     and came back. Until that is reported, treat the navigation as
+     fixed-but-unconfirmed and the phase 4/6/7 CARDS as still
+     statically-checked-only.
 
 ## Suite integration status
 

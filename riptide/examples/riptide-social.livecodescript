@@ -28,20 +28,32 @@ script "riptideSocialApp"
 -- Result text and machine environments were not captured with the report;
 -- the record is the maintainer's dated account.
 --
--- EVERYTHING ADDED SINCE (the phase-3 media strip, and the phase-4/6/7
--- Messages, Devices and Anon CARDS) is verified STATICALLY ONLY, and that
--- label is load-bearing: no harness opens this stack. The suite selftest
--- that went green on an engine (2026-08-15) exercises the LIBRARY
+-- PHASE 3 IS DONE (2026-08-15, TWO MACHINES): a follower on the second
+-- machine fetched and PLAYED an attached video, near instantly. A follower
+-- cannot reach a video any other way, so this one result exercised the
+-- whole stack end to end on real hardware: machine A published a head and
+-- a media-bearing post to the DHT; machine B fetched that head, walked the
+-- chain, VERIFIED the authorSig, surfaced the media info-hash from the
+-- verified post, joined A's swarm, and played what came back. Phases 1-3
+-- through the real UI, not the harness. (Not distinguished in the report:
+-- whether playback began MID-download or after a fast complete transfer.)
+--
+-- THE PHASE-4/6/7 CARDS (Messages, Devices, Anon) are still verified
+-- STATICALLY ONLY, and that label is load-bearing: no harness opens this
+-- stack. The suite selftest that went green exercises the LIBRARY
 -- (src/riptide.livecodescript); it never builds a card here or dispatches
--- a mouseUp, so check-livecodescript.py is the only thing that has ever
--- read these lines. It caught nothing when the multi-card conversion used
--- `... of me` object references throughout - a form the engine rejects,
--- reported and fixed 2026-08-15 (see riptide/CLAUDE.md). Assume more of
--- that class is still here until someone clicks through all four cards in
--- OXT. The live done-criteria (a follower plays a video mid-download; two
--- machines exchange authenticated encrypted DMs; a device joins the mesh
--- while a stranger is refused; a persona is reachable over Tor) each need
--- their own pass on top of that.
+-- a mouseUp, so check-livecodescript.py is the only thing that has read
+-- most of these lines. It caught nothing when the multi-card conversion
+-- used `... of me` object references throughout - a form the engine
+-- rejects, reported and fixed 2026-08-15 (see riptide/CLAUDE.md). The
+-- media strip lives on card 1, so the media pass above may not have
+-- exercised the `go to card` navigation at all: treat it as
+-- fixed-but-unconfirmed until someone clicks Messages / Devices / Anon and
+-- comes back. Assume more of that class is still here until then. The live
+-- done-criteria (a follower plays a video mid-download; two machines
+-- exchange authenticated encrypted DMs; a device joins the mesh while a
+-- stranger is refused; a persona is reachable over Tor) each need their
+-- own pass on top of that.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
