@@ -470,6 +470,45 @@ def pubkey(sk: bytes) -> bytes:
     return _compress(_pt_mul(int.from_bytes(sk, "big")))
 
 
+# ---------------------------------------------------------------------- WIF
+# Wallet Import Format: Base58Check over
+#   version || 32-byte private key || optional 0x01 compressed marker
+# with 0x80 on mainnet and 0xEF on testnet. It sits here rather than with the
+# phase-3 encodings because both directions range-check the scalar against the
+# curve order, which the address encoders above have no reason to know about.
+WIF_VERSION_MAIN = 0x80
+WIF_VERSION_TEST = 0xEF
+_WIF_NETWORKS = {"mainnet": WIF_VERSION_MAIN, "testnet": WIF_VERSION_TEST}
+
+
+def wif_encode(seckey: bytes, network: str = "mainnet", compressed: bool = True) -> str:
+    if len(seckey) != 32:
+        raise ValueError("a private key is 32 bytes")
+    if not 1 <= int.from_bytes(seckey, "big") < _N:
+        raise ValueError("key out of secp256k1 range")
+    if network not in _WIF_NETWORKS:
+        raise ValueError("unknown network")
+    return b58check_encode(bytes([_WIF_NETWORKS[network]]) + seckey
+                           + (b"\x01" if compressed else b""))
+
+
+def wif_decode(s: str):
+    """(seckey, network, compressed) - raising, never guessing, on anything
+    malformed, because the script layer under test must refuse the same set."""
+    body = b58check_decode(s)          # raises on a bad character or checksum
+    if len(body) not in (33, 34):
+        raise ValueError("wrong payload length")
+    network = {v: n for n, v in _WIF_NETWORKS.items()}.get(body[0])
+    if network is None:
+        raise ValueError("unknown version byte")
+    if len(body) == 34 and body[-1] != 0x01:
+        raise ValueError("trailing byte is not the compressed marker")
+    key = body[1:33]
+    if not 1 <= int.from_bytes(key, "big") < _N:
+        raise ValueError("key out of secp256k1 range")
+    return key, network, len(body) == 34
+
+
 # ------------------------------------------------------------------- BIP-39
 def _load_wordlist():
     """Parsed straight out of the vendored upstream table, so the oracle and
@@ -578,6 +617,36 @@ assert _compress(_G).hex() == \
 assert bip32_serialize(bip32_master(bytes.fromhex("000102030405060708090a0b0c0d0e0f")), True) == \
     "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6Ln" \
     "F5kejMRNNU3TGtRBeJgk33yuGBxrMPHi", "bip32 model broken"
+
+# WIF self-checks. The positive anchor is the Bitcoin wiki's own worked example
+# (the same page the Base58Check worked example above comes from): the model
+# must DERIVE the published string, not quote it - a transcription slip in
+# either the key or the string fails here at import. The structural checks are
+# the ones a green vector run cannot make on its own: all four network/flag
+# forms are distinct strings that each round-trip to the same key, and every
+# malformed shape RAISES rather than decoding to something plausible.
+_wif_sk = bytes.fromhex("0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d")
+assert wif_encode(_wif_sk, "mainnet", False) == \
+    "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ", "wif model broken"
+_wif_forms = [wif_encode(_wif_sk, n, c) for n in ("mainnet", "testnet")
+              for c in (False, True)]
+assert len(set(_wif_forms)) == 4, "wif forms must be distinct"
+for _wif_n in ("mainnet", "testnet"):
+    for _wif_c in (False, True):
+        assert wif_decode(wif_encode(_wif_sk, _wif_n, _wif_c)) == \
+            (_wif_sk, _wif_n, _wif_c), "wif round trip broken"
+for _wif_bad in ("5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTk",  # checksum
+                 b58check_encode(b"\x80" + _wif_sk[:31]),                # length
+                 b58check_encode(b"\x01" + _wif_sk + b"\x01"),           # version
+                 b58check_encode(b"\x80" + _wif_sk + b"\x02"),           # marker
+                 b58check_encode(b"\x80" + b"\x00" * 32),                # zero key
+                 b58check_encode(b"\x80" + b"\xff" * 32 + b"\x01")):     # >= order
+    try:
+        wif_decode(_wif_bad)
+        raise AssertionError("wif_decode accepted a malformed input")
+    except ValueError:
+        pass
+del _wif_sk, _wif_forms, _wif_n, _wif_c, _wif_bad
 
 
 # ===========================================================================

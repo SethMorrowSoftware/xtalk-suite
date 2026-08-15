@@ -904,3 +904,33 @@ untouched (no shim change: this is pure script over the existing primitives).
   flipped-signature control in each. 31 checks, green on python-bitcointx 1.1.5 + eth-account 0.13.7.
   The Ethereum half SKIPS loudly without eth-account, the same contract as the Bitcoin half, and
   `--require` fails on any skip. A live testnet broadcast remains the one bar left.
+
+**WIF - BUILT 2026-08-15, executed headlessly; verified statically, needs an OXT pass.** The last
+designed encoding: `cxWifEncode` / `cxWifDecode` in `src/coinxt.livecodescript`, no shim change, the
+surface now 80 public handlers (35 `.lcb` + 45 script). Base58Check over `version || key || optional
+0x01 compressed marker`, 0x80 mainnet / 0xEF testnet. The decisions worth knowing before editing it:
+
+- **The key crosses as 64 HEX CHARACTERS, both directions**, unlike the Data keys elsewhere in the
+  script layer: WIF is the paste-in / paste-out format, so the key arrives as pasted text and leaves
+  as pasteable text (the phase-5 reasoning for txids and scripts). Decode returns an array
+  (`seckey` / `network` / `compressed`), the cxSegwitAddressDecode convention. SPEC.md only ever
+  NAMED WIF, so both files carry AS BUILT marks for these decisions.
+- **Both directions range-check the scalar through `cxSeckeyIsValid`** - the handler whose own .lcb
+  comment names "a WIF" as its use case - because the framing alone would happily wrap zero or a
+  value at or above the group order into a checksummed, valid-looking WIF of a key no wallet can
+  spend from (rule 4's wrong-but-plausible answer). The compressed marker is validated too: a
+  34-byte payload whose trailing byte is not 0x01 is refused rather than read as uncompressed,
+  since guessing a flag guesses an ADDRESS - compressed and uncompressed keys pay different ones.
+- **The vectors are derived, not recalled.** `tools/coin_reference.py` gained `wif_encode` /
+  `wif_decode`, and its import self-check anchors the mainnet/uncompressed form of the wiki's
+  worked-example key to the wiki's published string, asserts all four network/flag forms are
+  distinct and round-trip, and asserts six malformed shapes raise. `check-script-vectors.py` drives
+  the SHIPPED script both directions plus eleven refusals (272 checks, floor raised 240 -> 260,
+  `cnx_seckey_verify` newly wired into the interpreter's environment mirroring the .lcb split:
+  false for -1/-2/-4, throw otherwise); `check-selftest-vectors.py` re-derives the three harness
+  strings and holds `kWifBadChecksum` genuinely corrupt. Both gates were mutation-tested in the
+  same change: five constant/registration mutations and four script defects (marker check deleted,
+  testnet aliased to mainnet, marker dropped on encode, range check deleted), all nine caught.
+- **No engine has run these two handlers** - they postdate the 2026-08-10/12 passes, and the README,
+  api-reference and the script's section header all say so. The OXT pass owes: the three-argument
+  call shape, the boolean flag both ways, the array return, and both refusal paths.

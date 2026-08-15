@@ -5,11 +5,12 @@
 CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)).
 [../SPEC.md](../SPEC.md) describes the *whole designed* API. This file is the opposite
 document: it lists only what is shipped, so you can tell at a glance what you can actually
-call. Hashes, the secp256k1 curve, the encodings and addresses, HD wallets and mnemonics,
-and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF are not.
+call. Hashes, the secp256k1 curve, the encodings and addresses (WIF included since
+2026-08-15), HD wallets and mnemonics, and (phase 5) transaction building are all shipped;
+only Schnorr/Taproot is not.
 
-> **Status.** **Seventy-eight** public handlers exist across two layers: **35** in the `.lcb`
-> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **43** in
+> **Status.** **Eighty** public handlers exist across two layers: **35** in the `.lcb`
+> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **45** in
 > `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation and the
 > phase-5 transaction builders). The two load differently - see the phase-3 section.
 >
@@ -55,14 +56,17 @@ and (phase 5) transaction building are all shipped; only Schnorr/Taproot and WIF
 > unchanged because the engine counts one trailing delimiter out of existence - fixed the same
 > day, and the refusal observed green in the re-run. *Phase 5* was closed on **2026-08-12**
 > (Windows x64): the folded harness ran the whole surface at **230/230**, transactions included.
+> The one exception since: the two WIF handlers (2026-08-15) postdate those passes and are
+> **verified statically; needs an OXT pass** - executed headlessly by the vector gate against
+> the Bitcoin wiki's published worked example, never yet on an engine.
 > The native side remains cross-verified on
 > every push: CoinXT reproduces four published RFC 6979 signatures byte for byte, a CoinXT
 > signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
 > the signer.
 >
 > **Not shipped, despite appearing in SPEC.md:** `cxSchnorrSign`/`cxSchnorrVerify` and
-> `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340),
-> and `cxWifEncode`/`cxWifDecode`. Calling any of them is a `handler not found`.
+> `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340).
+> Calling any of them is a `handler not found`.
 
 ## Before anything else
 
@@ -289,6 +293,39 @@ mainnet address, a WIF key and an xprv are all framed. **The decoder verifies**:
 a corrupt string throws, it never returns the payload it happened to decode.
 Leading zero bytes survive as leading `1` characters, one for one, which is why
 a mainnet P2PKH address starts with a `1`.
+
+### `cxWifEncode(pSeckeyHex, pNetwork, pCompressed)` / `cxWifDecode(pWif)`
+
+Wallet Import Format: Base58Check over `version || 32-byte key || optional
+0x01 compressed marker`, version `0x80` on mainnet and `0xEF` on testnet.
+Shipped 2026-08-15; **verified statically (needs an OXT pass)** - executed
+headlessly by `tools/check-script-vectors.py` against oracle-derived vectors
+anchored to the Bitcoin wiki's published worked example, both directions plus
+the refusals, but these two handlers postdate the engine passes above.
+
+| Handler | Takes | Returns |
+|---|---|---|
+| `cxWifEncode(pSeckeyHex, pNetwork, pCompressed)` | the key as **64 hex characters**; `"mainnet"` or `"testnet"`; `true` / `false` | the WIF string (`5...` / `K...` / `L...` on mainnet) |
+| `cxWifDecode(pWif)` | a WIF string | an array: `seckey` (64 lowercase hex), `network` (`"mainnet"` / `"testnet"`), `compressed` (Boolean) |
+
+The key crosses as **hex text**, not `Data`, in both directions - WIF is the
+paste-in / paste-out format, so the key arrives and leaves as text, the same
+convention the transaction layer uses for txids and scripts. Run
+`cxHexDecode` over the decoded `seckey` before handing it to `cxSign` or
+`cxPublicKey`, and note the decoded `compressed` flag: it says which public
+key form the funds are held under, so deriving the other form pays a
+different address.
+
+**Both directions fail closed.** The encoder refuses a key that is not 64 hex
+characters, an unknown network name, a compressed flag that is not literally
+`true` or `false`, and a scalar that is zero or at or above the group order
+(the range check is `cxSeckeyIsValid`, so a checksummed WIF of an unusable
+key can never be produced). The decoder throws on a bad character or
+checksum (inside `cxBase58CheckDecode`, whose message stands), a payload that
+is not 33 or 34 bytes, a version byte that is neither `0x80` nor `0xEF`, a
+trailing byte that is not the `0x01` marker, and the same out-of-range
+scalar. A typo in a pasted key is refused, never coerced into a plausible
+neighbouring wallet.
 
 ### `cxBech32EncodeValues(pHrp, pValues, pSpec)` / `cxBech32DecodeValues(pText)`
 

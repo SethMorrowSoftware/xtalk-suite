@@ -310,6 +310,32 @@ def main(argv):
                             "harness check that it is refused proves nothing")
         elif not terse:
             print("  OK  kSegwitV0WithBech32m  is genuinely invalid")
+
+        # WIF. All three positive forms are re-derived from the input key; the
+        # reference's own import self-check anchors the mainnet/uncompressed
+        # derivation to the Bitcoin wiki's published string, so a drifted
+        # constant here disagrees with a public artifact, not merely with us.
+        try:
+            wif_sk = bytes.fromhex(k.get("kWifSeckey", ""))
+            want("kWifUncompressed", ref.wif_encode(wif_sk, "mainnet", False),
+                 "coin_reference")
+            want("kWifCompressed", ref.wif_encode(wif_sk, "mainnet", True),
+                 "coin_reference")
+            want("kWifTestnet", ref.wif_encode(wif_sk, "testnet", True),
+                 "coin_reference")
+        except ValueError:
+            # A missing or mangled input key leaves the three positives
+            # unchecked, and the completeness sweep below then names them.
+            problems.append("kWifSeckey is not a valid 64-hex private key, so "
+                            "the WIF constants could not be re-derived")
+        # The negative vector must stay negative, the kBase58Corrupt rule.
+        try:
+            ref.wif_decode(k.get("kWifBadChecksum", ""))
+            problems.append("kWifBadChecksum has a VALID checksum, so the harness "
+                            "check that it is refused proves nothing")
+        except ValueError:
+            if not terse:
+                print("  OK  kWifBadChecksum      is genuinely corrupt")
         if ref.bech32_decode(k.get("kBech32Valid", ""))[0] is None:
             problems.append("kBech32Valid does not actually decode")
         elif not terse:
@@ -508,6 +534,10 @@ def main(argv):
         "kAbandonEthPath": "a derivation path, i.e. an input",
         "kBip39Mnemonic12Bad": "a negative vector, checked below as genuinely bad",
         "kBase58Corrupt": "a negative vector, checked as genuinely corrupt",
+        "kWifSeckey": "the Bitcoin wiki's WIF worked-example private key (a "
+                      "published, burned test key); the three WIF strings "
+                      "derived from it are checked",
+        "kWifBadChecksum": "a negative vector, checked as genuinely corrupt",
         "kSegwitV0WithBech32m": "a negative vector, checked as genuinely invalid",
         "kBech32Valid": "a positive vector, checked as genuinely decodable",
         "kSegwitTestnet": "an input; the program decoded from it is checked",

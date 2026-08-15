@@ -14,9 +14,11 @@ a thin C ABI and a livecodescript API. One wrap covers both chains:
   `cxSha3_512` is a `handler not found`; the vendored `sha3.c` implements it, so ship it or strike it
   is an open call.)
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
-- **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, and the
-  EIP-55 Ethereum checksum. (WIF is designed in SPEC.md but not yet shipped - calling it is a
-  `handler not found`.)
+- **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, WIF
+  (encode and fail-closed decode, mainnet and testnet, the 0x01 compressed marker), and the EIP-55
+  Ethereum checksum. (WIF shipped 2026-08-15 and is the one script surface still verified
+  statically: executed headlessly by the vector gate against the Bitcoin wiki's worked example,
+  needs an OXT pass.)
 
 ```
 app (livecodescript)
@@ -84,8 +86,8 @@ CoinXT/
                             message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 78 public cx* handlers against the
-                            published vectors (35 from the .lcb, 43 from the script layer)
+                            its own UI and drives ALL 80 public cx* handlers against the
+                            published vectors (35 from the .lcb, 45 from the script layer)
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
@@ -203,12 +205,14 @@ vector gate is now 170 checks.
 folded into the suite selftest - 205/206 on the first pass (the trailing-separator fail-open above),
 then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
 65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) had by then executed on a real
-engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for **78** total, and the
-2026-08-12 engine pass (230/230, Windows x64) closed them too: every public handler has now run green
-on a real engine.
+engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for 78, and the
+2026-08-12 engine pass (230/230, Windows x64) closed them too. The two WIF handlers (2026-08-15,
+below) are the one exception: every other public handler has run green on a real engine; those two
+are verified statically and executed headlessly, and await their OXT pass.
 
-**Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers, so
-the surface is now **78** public handlers (35 in the `.lcb`, 43 in the script layer). It composes the
+**Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers,
+which brought the surface to 78 public handlers (35 in the `.lcb`, 43 in the script layer; 80 and
+45 since WIF, below). It composes the
 primitives into Bitcoin (legacy SIGHASH_ALL + BIP-143 SegWit) and Ethereum (EIP-155 legacy + EIP-1559
 typed) sighashes, signing and serialization. The reference model `tools/coin_reference.py` reproduces
 the BIP-143 native-P2WPKH worked example byte for byte (a two-input transaction that exercises both
@@ -226,6 +230,19 @@ python-bitcointx accept fresh legacy and segwit spends under consensus rules, an
 the exact sender from fresh EIP-155 and EIP-1559 transactions, negative controls firing in every
 family. A live testnet broadcast is the one bar left before any transaction is called broadcastable.
 Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
+
+**WIF, the last designed encoding, is BUILT (2026-08-15)**: `cxWifEncode` / `cxWifDecode` in the
+script layer, no shim change, for **80** public handlers (35 in the `.lcb`, 45 in the script layer).
+Standard Wallet Import Format - Base58Check over `version || key || optional 0x01 compressed
+marker`, version `0x80` mainnet / `0xEF` testnet - with the fail-closed decode the rest of the
+surface holds to: a bad checksum, a wrong payload length, an unknown version byte, a trailing byte
+that is not `0x01`, and an out-of-range scalar each throw (both directions range-check through
+`cxSeckeyIsValid`, so a checksummed WIF of an unusable key is refused rather than framed). The
+vectors are derived by `tools/coin_reference.py` and anchored to the Bitcoin wiki's published
+worked example, which `tools/check-script-vectors.py` drives through the shipped script in both
+directions plus the refusals, and mutation testing confirmed each refusal vector catches its
+defect. **Verified statically; needs an OXT pass** - these two handlers are the only public
+surface not yet run on a real engine.
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,

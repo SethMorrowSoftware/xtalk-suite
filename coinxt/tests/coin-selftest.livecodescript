@@ -158,6 +158,21 @@ constant kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27
 -- is the single most important rejection in the whole encoding surface.
 constant kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
 
+-- ---- WIF (wallet import format) ----------------------------------------------
+-- The Bitcoin wiki's worked-example private key, the same page the Base58Check
+-- worked example above comes from. It is a published, burned test key, safe to
+-- commit (the KAT rule: public test-vector keys only). The mainnet/uncompressed
+-- string is the wiki's own; the compressed and testnet forms are derived by
+-- tools/coin_reference.py, whose import self-check anchors the derivation to
+-- the published string - all three are re-derived by check-selftest-vectors.py.
+constant kWifSeckey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d"
+constant kWifUncompressed = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"
+constant kWifCompressed = "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617"
+constant kWifTestnet = "cMzLdeGd5vEqxB8B6VFQoRopQ3sLAAvEzDAoQgvX54xwofSWj1fx"
+-- kWifUncompressed with its final character changed, so the checksum must
+-- refuse it (checked genuinely corrupt by the gate, the kBase58Corrupt rule).
+constant kWifBadChecksum = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTk"
+
 -- ---- the fail-closed regression set ------------------------------------------
 -- One constant per defect an adversarial review found in the shipped script
 -- layer. Every one of them FAILED OPEN - a wrong answer that looked like a right
@@ -527,6 +542,7 @@ command stRun
    stRunAddresses
    stRunEip55
    stRunRlp
+   stRunWif
    stRunBip39
    stRunBip32
    stRunBip44
@@ -1096,6 +1112,50 @@ command stRunRlp
       stSectionFailed "RLP", tError
    end try
 end stRunRlp
+
+command stRunWif
+   local tDecoded, tThrew
+   stSection "WIF (wallet import format)"
+   try
+      -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
+      -- example; the other forms are oracle-derived (see the constants block).
+      stAssert "encodes the wiki worked example (mainnet, uncompressed)", cxWifEncode(kWifSeckey, "mainnet", false) is kWifUncompressed
+      stAssert "the compressed form is the same key with the 0x01 marker", cxWifEncode(kWifSeckey, "mainnet", true) is kWifCompressed
+      stAssert "the testnet form differs only in its version byte", cxWifEncode(kWifSeckey, "testnet", true) is kWifTestnet
+      -- The three encodings must be three different strings, or the network
+      -- and the flag are not reaching the payload at all.
+      stAssert "compressed and uncompressed forms are distinct", kWifCompressed is not kWifUncompressed
+      stAssert "mainnet and testnet forms are distinct", kWifTestnet is not kWifCompressed
+      put cxWifDecode(kWifCompressed) into tDecoded
+      stAssert "decodes back to the same key", tDecoded["seckey"] is kWifSeckey
+      stAssert "and reports mainnet", tDecoded["network"] is "mainnet"
+      stAssert "and reports the compressed flag", tDecoded["compressed"] is true
+      put cxWifDecode(kWifUncompressed) into tDecoded
+      stAssert "the uncompressed form reports compressed false", tDecoded["compressed"] is false
+      put cxWifDecode(kWifTestnet) into tDecoded
+      stAssert "the testnet form reports testnet", tDecoded["network"] is "testnet"
+      -- The refusals. A typo in a pasted key must never decode to a plausible
+      -- neighbouring wallet, so "it threw" is the assertion.
+      stAssert "a corrupt checksum is refused", stThrows("cxWifDecode", kWifBadChecksum)
+      stAssert "an xprv is refused (wrong payload length)", stThrows("cxWifDecode", kBip32V1Xprv)
+      put "false" into tThrew
+      try
+         get cxWifEncode(kWifSeckey, "regtest", true)
+      catch tInner
+         put "true" into tThrew
+      end try
+      stAssert "an unknown network is refused", tThrew is "true"
+      put "false" into tThrew
+      try
+         get cxWifEncode("deadbeef", "mainnet", true)
+      catch tInner2
+         put "true" into tThrew
+      end try
+      stAssert "a short key is refused", tThrew is "true"
+   catch tError
+      stSectionFailed "WIF", tError
+   end try
+end stRunWif
 
 -- ---- small helpers -----------------------------------------------------------
 -- Did calling pHandler with one argument throw? The encoders fail closed by

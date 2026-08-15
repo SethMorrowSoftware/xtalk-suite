@@ -25,6 +25,17 @@ the one release gap. The rest is label/doc hygiene and recorded owner decisions.
 
 ## A. Unbuilt phases and features (16)
 
+> **2026-08-15 wave-1 closures (commits `0a1f79d`, `4029e50`, and the WIF
+> commit):** item 11 (coinxt WIF) SHIPPED statically - cxWifEncode/Decode,
+> vectors derived from the independent reference and anchored to the Bitcoin
+> wiki's published string, 272 script-vector checks executing the shipped
+> file, mutation-tested, coverage 80/80 - needs its OXT pass. Item 15 (the
+> token-mount redirect hole) FIXED and golden-mirrored. Item 14 (the
+> ETag/304 duplication) FACTORED into one golden-pinned helper; the Tor
+> keep-alive half stays an owner decision. Section D's item 4 (the family
+> template) also closed - synced and drift-gated.
+
+
 Code that does not exist yet: planned phases, designed-but-unshipped surfaces,
 and one functional hole.
 

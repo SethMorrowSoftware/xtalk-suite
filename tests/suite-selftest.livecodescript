@@ -270,6 +270,11 @@ constant cx1kBech32Valid = "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
 constant cx1kSegwitTestnet = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
 constant cx1kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"
 constant cx1kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
+constant cx1kWifSeckey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d"
+constant cx1kWifUncompressed = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"
+constant cx1kWifCompressed = "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617"
+constant cx1kWifTestnet = "cMzLdeGd5vEqxB8B6VFQoRopQ3sLAAvEzDAoQgvX54xwofSWj1fx"
+constant cx1kWifBadChecksum = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTk"
 constant cx1kEip55Corrupt = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"
 constant cx1kEip55Flipped = "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd"
 constant cx1kSegwitErrorProgram = "4552524f52000102030405060708090a0b0c0d0e0f101112131415161718191a"
@@ -461,6 +466,8 @@ constant kCxBip32MasterKey = "Bitcoin seed"
 constant kCxHardenedBase = 2147483648
 constant kCxVersionXprv = 76066276
 constant kCxVersionXpub = 76067358
+constant kCxWifVersionMainnet = 128
+constant kCxWifVersionTestnet = 239
 -- <<< GENERATED EMBED: coinxt script layer declarations <<< --
 
 -- >>> GENERATED EMBED: onionxt script layer declarations >>> --
@@ -4020,6 +4027,85 @@ function cxXpub pNode
    end if
    return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
 end cxXpub
+
+function cxWifEncode pSeckeyHex, pNetwork, pCompressed
+   local tKey, tVersion, tPayload, tOut
+   -- The argument checks run before the key is decoded, so no throw below
+   -- them leaves key bytes in a local this handler did not get to clear.
+   if pNetwork is "mainnet" then
+      put kCxWifVersionMainnet into tVersion
+   else if pNetwork is "testnet" then
+      put kCxWifVersionTestnet into tVersion
+   else
+      throw "CoinXT: cxWifEncode: the network must be either mainnet or testnet."
+   end if
+   if pCompressed is not true and pCompressed is not false then
+      throw "CoinXT: cxWifEncode: the compressed flag must be true or false."
+   end if
+   put cxHexDecode(pSeckeyHex) into tKey
+   if the number of bytes of tKey is not 32 then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: a private key is 32 bytes (64 hex characters)."
+   end if
+   -- Range-check through the shim rather than framing blind: the encoding
+   -- itself would happily wrap zero or a value at or above the group order
+   -- into a checksummed, valid-looking WIF of a key no wallet can spend from
+   -- - the wrong-but-plausible answer rule 4 exists to forbid. This is the
+   -- exact question cxSeckeyIsValid was built to answer for an imported key.
+   if cxSeckeyIsValid(tKey) is false then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: the key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put numToByte(tVersion) & tKey into tPayload
+   if pCompressed is true then
+      put numToByte(1) after tPayload
+   end if
+   put cxBase58CheckEncode(tPayload) into tOut
+   -- The secret-hygiene rule: clear the key copies the moment they are done
+   -- with. Script variables are not locked memory (the documented limit), but
+   -- a wallet's key should not linger in a library's locals either.
+   put empty into tKey
+   put empty into tPayload
+   return tOut
+end cxWifEncode
+
+function cxWifDecode pWif
+   local tBody, tCount, tVersion, tKey, tResult
+   put cxBase58CheckDecode(pWif) into tBody
+   put the number of bytes of tBody into tCount
+   if tCount is not 33 and tCount is not 34 then
+      throw "CoinXT: cxWifDecode: the payload must be 33 bytes (version and key) or 34 (with the compressed marker), so this is not a WIF key."
+   end if
+   put byteToNum(byte 1 of tBody) into tVersion
+   if tVersion is kCxWifVersionMainnet then
+      put "mainnet" into tResult["network"]
+   else if tVersion is kCxWifVersionTestnet then
+      put "testnet" into tResult["network"]
+   else
+      throw "CoinXT: cxWifDecode: the version byte is neither mainnet (0x80) nor testnet (0xEF)."
+   end if
+   -- A 34-byte payload whose trailing byte is anything but 0x01 is refused
+   -- rather than read as uncompressed: it is not a shape any encoder emits,
+   -- and guessing a flag guesses an address.
+   if tCount is 34 then
+      if byteToNum(byte 34 of tBody) is not 1 then
+         throw "CoinXT: cxWifDecode: the trailing byte is not the 0x01 compressed marker."
+      end if
+      put true into tResult["compressed"]
+   else
+      put false into tResult["compressed"]
+   end if
+   put byte 2 to 33 of tBody into tKey
+   -- The same range check as the encoder, for the same reason: a WIF that
+   -- frames an unusable scalar is corrupt even with a valid checksum.
+   if cxSeckeyIsValid(tKey) is false then
+      throw "CoinXT: cxWifDecode: the decoded key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put cxHexEncode(tKey) into tResult["seckey"]
+   put empty into tKey
+   put empty into tBody
+   return tResult
+end cxWifDecode
 
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
@@ -9470,6 +9556,7 @@ command cx1stRun
    cx1stRunAddresses
    cx1stRunEip55
    cx1stRunRlp
+   cx1stRunWif
    cx1stRunBip39
    cx1stRunBip32
    cx1stRunBip44
@@ -10008,6 +10095,50 @@ command cx1stRunRlp
       cx1stSectionFailed "RLP", cx1tError
    end try
 end cx1stRunRlp
+
+command cx1stRunWif
+   local cx1tDecoded, cx1tThrew
+   cx1stSection "WIF (wallet import format)"
+   try
+      -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
+      -- example; the other forms are oracle-derived (see the constants block).
+      cx1stAssert "encodes the wiki worked example (mainnet, uncompressed)", cxWifEncode(cx1kWifSeckey, "mainnet", false) is cx1kWifUncompressed
+      cx1stAssert "the compressed form is the same key with the 0x01 marker", cxWifEncode(cx1kWifSeckey, "mainnet", true) is cx1kWifCompressed
+      cx1stAssert "the testnet form differs only in its version byte", cxWifEncode(cx1kWifSeckey, "testnet", true) is cx1kWifTestnet
+      -- The three encodings must be three different strings, or the network
+      -- and the flag are not reaching the payload at all.
+      cx1stAssert "compressed and uncompressed forms are distinct", cx1kWifCompressed is not cx1kWifUncompressed
+      cx1stAssert "mainnet and testnet forms are distinct", cx1kWifTestnet is not cx1kWifCompressed
+      put cxWifDecode(cx1kWifCompressed) into cx1tDecoded
+      cx1stAssert "decodes back to the same key", cx1tDecoded["seckey"] is cx1kWifSeckey
+      cx1stAssert "and reports mainnet", cx1tDecoded["network"] is "mainnet"
+      cx1stAssert "and reports the compressed flag", cx1tDecoded["compressed"] is true
+      put cxWifDecode(cx1kWifUncompressed) into cx1tDecoded
+      cx1stAssert "the uncompressed form reports compressed false", cx1tDecoded["compressed"] is false
+      put cxWifDecode(cx1kWifTestnet) into cx1tDecoded
+      cx1stAssert "the testnet form reports testnet", cx1tDecoded["network"] is "testnet"
+      -- The refusals. A typo in a pasted key must never decode to a plausible
+      -- neighbouring wallet, so "it threw" is the assertion.
+      cx1stAssert "a corrupt checksum is refused", cx1stThrows("cxWifDecode", cx1kWifBadChecksum)
+      cx1stAssert "an xprv is refused (wrong payload length)", cx1stThrows("cxWifDecode", cx1kBip32V1Xprv)
+      put "false" into cx1tThrew
+      try
+         get cxWifEncode(cx1kWifSeckey, "regtest", true)
+      catch tInner
+         put "true" into cx1tThrew
+      end try
+      cx1stAssert "an unknown network is refused", cx1tThrew is "true"
+      put "false" into cx1tThrew
+      try
+         get cxWifEncode("deadbeef", "mainnet", true)
+      catch tInner2
+         put "true" into cx1tThrew
+      end try
+      cx1stAssert "a short key is refused", cx1tThrew is "true"
+   catch cx1tError
+      cx1stSectionFailed "WIF", cx1tError
+   end try
+end cx1stRunWif
 
 function cx1stThrows pHandler, pArg
    local cx1tThrew

@@ -1979,6 +1979,132 @@ end cxXpub
 
 
 -- ==============================================================================
+-- WIF (Wallet Import Format): Base58Check over
+--   version || 32-byte private key || optional 0x01 compressed marker
+-- the last of the Base58Check framings SPEC.md lists beside addresses and
+-- xprv/xpub. The version byte is the network (0x80 mainnet, 0xEF testnet), and
+-- the marker records which FORM of the public key the wallet should derive -
+-- compressed and uncompressed keys hash to different addresses, so losing the
+-- flag silently moves the funds to a different address, which is why it is
+-- surfaced explicitly in both directions rather than defaulted.
+--
+-- THE KEY CROSSES AS HEX TEXT in both directions, unlike the Data keys of the
+-- handlers above, and that follows from what WIF is FOR: it is the paste-in /
+-- paste-out format, so the key arrives as pasted text and leaves as pasteable
+-- text, the same reasoning that has phase 5 moving txids and scripts as hex.
+-- A caller who needs the bytes (cxSign, cxPublicKey) runs cxHexDecode over
+-- the decoded "seckey".
+--
+-- STATUS: verified statically; needs an OXT pass. The logic is executed
+-- headlessly by tools/check-script-vectors.py against oracle-derived vectors
+-- anchored to the Bitcoin wiki's published worked example, both directions
+-- plus the refusals - the same net every earlier phase carries - but no
+-- engine has run these two handlers yet.
+-- ==============================================================================
+
+-- The WIF network version bytes, the same role kCxVersionP2PKH plays for an
+-- address payload. 128 is 0x80 (mainnet), 239 is 0xEF (testnet); they are what
+-- make a mainnet WIF start with 5 (uncompressed) or K/L (compressed). Checked
+-- against the reference by tools/check-script-vectors.py like every other
+-- transcribed constant.
+constant kCxWifVersionMainnet = 128
+constant kCxWifVersionTestnet = 239
+
+-- A private key as WIF text. pSeckeyHex is the key as 64 hex characters;
+-- pNetwork is "mainnet" or "testnet" (any other spelling is refused, the
+-- cxBech32Const rule: a wrong network is a programming error, never a
+-- default); pCompressed must be literally true or false, because it changes
+-- which address the key unlocks and there is no safe side to guess.
+function cxWifEncode pSeckeyHex, pNetwork, pCompressed
+   local tKey, tVersion, tPayload, tOut
+   -- The argument checks run before the key is decoded, so no throw below
+   -- them leaves key bytes in a local this handler did not get to clear.
+   if pNetwork is "mainnet" then
+      put kCxWifVersionMainnet into tVersion
+   else if pNetwork is "testnet" then
+      put kCxWifVersionTestnet into tVersion
+   else
+      throw "CoinXT: cxWifEncode: the network must be either mainnet or testnet."
+   end if
+   if pCompressed is not true and pCompressed is not false then
+      throw "CoinXT: cxWifEncode: the compressed flag must be true or false."
+   end if
+   put cxHexDecode(pSeckeyHex) into tKey
+   if the number of bytes of tKey is not 32 then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: a private key is 32 bytes (64 hex characters)."
+   end if
+   -- Range-check through the shim rather than framing blind: the encoding
+   -- itself would happily wrap zero or a value at or above the group order
+   -- into a checksummed, valid-looking WIF of a key no wallet can spend from
+   -- - the wrong-but-plausible answer rule 4 exists to forbid. This is the
+   -- exact question cxSeckeyIsValid was built to answer for an imported key.
+   if cxSeckeyIsValid(tKey) is false then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: the key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put numToByte(tVersion) & tKey into tPayload
+   if pCompressed is true then
+      put numToByte(1) after tPayload
+   end if
+   put cxBase58CheckEncode(tPayload) into tOut
+   -- The secret-hygiene rule: clear the key copies the moment they are done
+   -- with. Script variables are not locked memory (the documented limit), but
+   -- a wallet's key should not linger in a library's locals either.
+   put empty into tKey
+   put empty into tPayload
+   return tOut
+end cxWifEncode
+
+-- The inverse. Returns an array read by name, the cxSegwitAddressDecode
+-- convention: "seckey" (64 lowercase hex characters), "network" ("mainnet" or
+-- "testnet") and "compressed" (true or false). It FAILS CLOSED on everything
+-- malformed: a bad character or checksum throws inside cxBase58CheckDecode
+-- (the layer that found the corruption reports it, as the SegWit decoder lets
+-- the bech32 layer's messages stand), and the wrong payload length, an
+-- unknown version byte, a trailing byte that is not the 0x01 marker, and an
+-- out-of-range key each throw here. A typo in a pasted key must never decode
+-- to a plausible neighbouring wallet.
+function cxWifDecode pWif
+   local tBody, tCount, tVersion, tKey, tResult
+   put cxBase58CheckDecode(pWif) into tBody
+   put the number of bytes of tBody into tCount
+   if tCount is not 33 and tCount is not 34 then
+      throw "CoinXT: cxWifDecode: the payload must be 33 bytes (version and key) or 34 (with the compressed marker), so this is not a WIF key."
+   end if
+   put byteToNum(byte 1 of tBody) into tVersion
+   if tVersion is kCxWifVersionMainnet then
+      put "mainnet" into tResult["network"]
+   else if tVersion is kCxWifVersionTestnet then
+      put "testnet" into tResult["network"]
+   else
+      throw "CoinXT: cxWifDecode: the version byte is neither mainnet (0x80) nor testnet (0xEF)."
+   end if
+   -- A 34-byte payload whose trailing byte is anything but 0x01 is refused
+   -- rather than read as uncompressed: it is not a shape any encoder emits,
+   -- and guessing a flag guesses an address.
+   if tCount is 34 then
+      if byteToNum(byte 34 of tBody) is not 1 then
+         throw "CoinXT: cxWifDecode: the trailing byte is not the 0x01 compressed marker."
+      end if
+      put true into tResult["compressed"]
+   else
+      put false into tResult["compressed"]
+   end if
+   put byte 2 to 33 of tBody into tKey
+   -- The same range check as the encoder, for the same reason: a WIF that
+   -- frames an unusable scalar is corrupt even with a valid checksum.
+   if cxSeckeyIsValid(tKey) is false then
+      throw "CoinXT: cxWifDecode: the decoded key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put cxHexEncode(tKey) into tResult["seckey"]
+   put empty into tKey
+   put empty into tBody
+   return tResult
+end cxWifDecode
+
+
+-- ==============================================================================
 -- Phase 5 - transaction building and signing.
 --
 -- STATUS: verified statically and against tools/coin_reference.py (which

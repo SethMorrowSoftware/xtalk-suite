@@ -15,7 +15,7 @@ ever runs script); exceptions never cross the FFI; handles are
 generation-tagged so a stale one is a no-op, never a crash; and anything
 not observed on a real engine is labelled "verified statically; needs an
 OXT pass". The generated `tests/suite-selftest.livecodescript` reaches
-382 of the 400 coverage-counted public handlers (the 18 unreached are all
+384 of the 402 coverage-counted public handlers (the 18 unreached are all
 onionxt's, each with a written reason: engine socket callbacks and
 live-daemon paths).
 
@@ -217,7 +217,7 @@ five platforms**. Ships as `org.openxtalk.box2dxt` (predates the
 
 ## coinxt — Bitcoin + Ethereum primitives (`cx*`)
 
-Wraps **trezor-crypto** (pinned; plain C, no external deps). 78 public
+Wraps **trezor-crypto** (pinned; plain C, no external deps). 80 public
 handlers, ABI 4. Binaries: Linux + Windows x64/x86 (macOS pending).
 
 - **The hash surface both chains need** — Keccak-256 (Ethereum) vs
