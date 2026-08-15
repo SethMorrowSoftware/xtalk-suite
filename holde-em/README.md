@@ -69,6 +69,20 @@ wires are machine-pinned in `tools/protocol-kat.py` and re-checked on-engine by
 machines, one code). Online betting/dealing orchestration builds on this confirmed
 transport next.
 
+With **OnionXT** also loaded (plus a locally running tor daemon), the host can flip the
+lobby's transport toggle and host an **onion table** (spec 10, built 2026-08-15): the
+same signed envelopes ride OnionXT streams instead of rp1, the table's v3 onion address
+is derived deterministically from the host's identity and the table id (a restarted
+host keeps its address, so the invite survives), and the invite extends compatibly to
+`64hex@<address>.onion` — one pasteable string carrying transport, rendezvous, and the
+host endpoint's identity (a v3 address IS its ed25519 key). Everything fails closed
+with a readable reason — no tor daemon, no OnionXT, a malformed invite, or an onion
+invite pasted into a stack without the library — never a silent fallback to the DHT
+transport; a lobby status line walks the tor probe states (connecting / bootstrapping
+N% / publishing / ready / FAILED-with-why). The invite codec, the refusals, and the
+stream handshake are pinned headlessly in the harness (section 17); the live multi-hand
+onion session (two machines + tor) is the pending engine-era gate.
+
 The **Level 2 mental-poker COMPUTE layer** (spec 7.3, plan 4a-4c) is built as pure
 `heL2*` handlers on SodiumXT ABI 8's ristretto255 surface: card base points by
 domain-separated hash-to-group, commutative shuffle-mask steps with per-hand scalars

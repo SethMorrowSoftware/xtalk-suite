@@ -142,6 +142,30 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
   transcript replay from last checkpoint, host election.
 - **2f. Onion tables** (spec 10): the same envelopes over OnionXT streams — expected
   to fall out nearly free once 2c is honest about its transport seam.
+  **Status: built 2026-08-15 (v0.20.0), verified statically; the exit — a
+  multi-hand onion table session on two machines with a running tor daemon — is
+  the pending live gate.** It did fall out nearly free: 2c/2d had already
+  funneled every outbound payload through four netCap-seamed senders and every
+  inbound frame through one router (heNetOnMessage), so 2f added exactly one
+  live byte-out seam (heNetTxTo, routed by gGame["transport"]) plus a poll-tick
+  line-reassembly drain on the inbound side — the envelopes, chain, fold, and
+  react engine changed not at all. As-built decisions (recorded in spec 10):
+  the host's service seed is H("HOLDEM-ONION-v1|" || idSeed || "|" || table)
+  (secret-keyed, per-table, deterministic — a restarted host keeps its address,
+  so the invite survives); the invite extends compatibly to
+  `<64hex>@<56base32>.onion` (one word, non-hex, so a pre-2f stack refuses it
+  readably instead of joining an unannounced DHT table — downgrade refusal by
+  format, and heJoinRefusal is the pure gate); the admission token that rides
+  rp1's handshake event rides each stream's first wire line (the "h" frame),
+  answered by the host's own hello before the replay so the ordered stream
+  delivers host identity before host-signed wires; one wire line per oxWrite,
+  LF-terminated (no payload can carry an LF — every free-text field is
+  hex-encoded). Assume-running tor on the stock ports, every probe state on a
+  lobby status line, every silent wait watchdogged, every failure fail-closed
+  with a readable reason (the nocloud pattern). Harness section 17 pins the
+  headless slice: invite codec + refusal vectors, seed-derivation properties,
+  the address round-trip when OnionXT is present, and the hello handshake
+  driven through the real router on loopback contexts.
 
 **Exit:** a **6-seat** table completes a multi-hand session over rp1, spread across as
 many real machines as are available (minimum three; multiple stack instances per

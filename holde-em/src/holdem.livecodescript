@@ -6,6 +6,70 @@ ONE self-contained, paste-and-run stack: the hotseat game plus its own
 self-test harness (call heRunSelftest in the message box). No second stack,
 no required extensions to be playable.
 
+v0.20.0 -- ONION TABLES (Phase 2f, spec 10): the same envelopes, the same
+game, over OnionXT streams -- only the byte transport swaps, exactly as the
+plan's framing promised once 2c was honest about its transport seam.
+kHeHarnessV 34 -> 35; kUIVersion 12 -> 13 (lobby transport toggle + tor line).
+  * THE SEAM, as-built: 2c/2d had already funneled every outbound payload
+    through four senders (heNetSendToHost / heNetBroadcast / heNetSendWireTo
+    / heNetReplayLogTo, each with the netCap capture branch) and every
+    inbound frame through ONE router (heNetOnMessage) -- what was missing
+    was only that each sender ended in a hard-coded btRp1Send. 2f adds
+    heNetTxTo, the one live byte-out seam, routing by gGame["transport"]
+    ("rp1" | "onion"): over onion streams each payload goes out as ONE
+    LF-terminated wire line (LF framing is safe by construction -- every
+    free-text field is hex-encoded into the frame, so no payload can carry
+    an LF). Inbound, the stream callback only STASHES bytes; the poll tick
+    reassembles complete lines per stream and dispatches them through the
+    SAME heNetOnMessage router rp1 events take (H2: all net work on the
+    timer; the OnionXT callbacks are stash-only). The envelopes, the chain,
+    the fold, and the react engine change NOT AT ALL.
+  * THE HANDSHAKE: rp1 carries the signed admission token in its transport
+    handshake event; an onion stream has no such event, so the token rides
+    the stream's FIRST wire line instead (the "h" frame -- new transport
+    class beside "c"/"w"/"r!"/"s?"). Verify-or-drop BEFORE any reply: a
+    stranger's dial earns nothing, not even the host's identity. The host
+    answers a verified hello with its OWN hello (the stream is ordered, so
+    the joiner adopts the host key before the replayed wires reach it),
+    then the shared heNetOnHandshake path runs -- admission, replay,
+    roster -- identical to rp1's.
+  * ADDRESS + INVITE, the spec-10 as-built decisions: the service seed is
+    H("HOLDEM-ONION-v1|" || idSeed || "|" || table) -- SECRET-keyed by the
+    host identity seed (an invitee holding the table code cannot derive the
+    service key and impersonate the table endpoint), fresh per table, and
+    DETERMINISTIC, so a crashed host republishes the SAME .onion and the
+    invite outlives the restart (spec 9). The address is derived OFFLINE at
+    create time (sxSignKeypairFromSeed -> oxAddressFromPublicKey; a v3
+    address IS the service's ed25519 pubkey) so the invite exists
+    immediately, and the published address is cross-checked against it when
+    the descriptor uploads. The invite extends compatibly:
+    "<64hex>@<56base32>.onion" -- ONE word, deliberately NOT hex, so a
+    pre-2f stack's `word 1` + heIsHex gate refuses the whole invite with
+    its readable message instead of silently joining a DHT table nobody
+    announced (downgrade refusal by format; heJoinRefusal is the pure,
+    dependency-injected gate the harness drives both ways).
+  * ASSUME-RUNNING TOR, FAIL CLOSED (the nocloud pattern): stock ports
+    (SOCKS 9050, control 9051), no port scan, no silent fallback to the DHT
+    transport in either direction. The lobby gains a "Host over: DHT/Tor"
+    toggle (gCfg["transport"]) and a tor status line walking the quickshare
+    pill states (library missing / connecting control / bootstrapping N% /
+    publishing / dialing / ready / FAILED-with-reason). Every silent async
+    wait has a watchdog (kHeOnionCtlTicks/BootTicks/PubTicks/DialTicks) and
+    every ox* call sits in its own try with declared catch locals (H8).
+    Streams and the service are closed on leave/stop (H1); the control
+    connection deliberately stays up between tables and is oxShutdown on
+    closeStack (gOxCtlUp).
+  * HARNESS section 17 pins the headless slice: invite parse/build round
+    trips both transports (+ five refusal vectors), the pure heJoinRefusal
+    downgrade refusal, onion-seed determinism/keying, the OnionXT address
+    round-trip (oxAddressFromPublicKey <-> oxPublicKeyFromAddress, gated
+    SKIP without OnionXT or pre-ABI-7 SodiumXT), and the "h" hello driven
+    through the REAL router on netCap loopback contexts -- verified hello
+    admits + replies + replays in order, garbage/wrong-table hellos earn
+    nothing, the player adopts the host from its hello. The LIVE multi-hand
+    onion table session (two machines + a running tor daemon) is the
+    engine-era exit gate and is SKIPped by name.
+
 v0.19.0 -- Phase 4a-4c COMPUTE layer: the Level 2 ristretto255 mental-poker
 deal algebra (spec 7.3), pure handlers only, on SodiumXT ABI 8's sxRistretto*
 surface (Workstream U, shipped 2026-08-15). kHeHarnessV 33 -> 34.
@@ -539,9 +603,9 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.19.0"
-constant kHeHarnessV = "34"
-constant kUIVersion = "12"
+constant kHeVersion = "0.20.0"
+constant kHeHarnessV = "35"
+constant kUIVersion = "13"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
 -- index = (rank - 2) * 4 + suit, rank 2..14, suit 1..4 = c,d,h,s
@@ -585,6 +649,34 @@ constant kHeDomainRsig = "HOLDEM-RSIG-v1|"
 constant kHeDomainL2Card = "HOLDEM-L2-CARD-v1|"
 constant kHeGenesisPrev = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kHeTwo32 = 4294967296
+-- Phase 2f (onion tables, spec 10). The onion-SERVICE seed domain: the seed
+-- is H("HOLDEM-ONION-v1|" || idSeed || "|" || table) -- SECRET-keyed by the
+-- host's identity seed (an invitee holding the public table code cannot
+-- derive the service key and republish/impersonate the table endpoint),
+-- fresh per table, and DETERMINISTIC, so a crashed host re-derives the same
+-- .onion and the invite survives the restart (spec 9 reconnect; the same
+-- PRF shape as the v0.18.0 per-hand seed, kHeDomainSeedP).
+constant kHeDomainOnion = "HOLDEM-ONION-v1|"
+-- the fixed virtual port every table's onion listens on (4653 = "HOLD" on a
+-- phone keypad) and the loopback port tor forwards it to (OnionXT owns the
+-- accept loop there). Virtual ports are per-onion, so a fixed one never
+-- collides across tables; the local port only has to be free on the HOST's
+-- machine (a bind failure surfaces through oxCreateServiceFromSeed's
+-- fail-closed result).
+constant kHeOnionVirtPort = 4653
+constant kHeOnionLocalPort = 46530
+-- fail-closed deadlines for the transport's silent async waits, counted in
+-- 250 ms poll ticks (the fleet-pass watchdog discipline: no wait without a
+-- watchdog). Bootstrap is generous because a cold tor takes tens of seconds
+-- and the status line shows live progress the whole way.
+constant kHeOnionCtlTicks = 80
+constant kHeOnionBootTicks = 720
+constant kHeOnionPubTicks = 480
+constant kHeOnionDialTicks = 240
+-- a per-stream reassembly buffer past this size means the peer is not
+-- speaking LF-framed wire lines at all: fail that stream closed (bounded,
+-- like kHeWireBufMax bounds the reorder buffer)
+constant kHeOnionBufMax = 131072
 
 -- table defaults. kHeDefaultSeats is the MAX seats the layout builds (6 spots);
 -- the host can seat fewer (kHeMinSeats..kHeMaxSeats) per table via the config.
@@ -695,6 +787,11 @@ local gAvatarOn
 local gSndChk
 local gSndOk
 local gSndTick
+-- 2f onion transport: "true" once THIS stack opened the tor control
+-- connection, so closeStack knows to oxShutdown what it opened (H1). A
+-- script-local, not a gGame key, because gGame is wiped by every new table
+-- while the control connection deliberately survives between tables.
+local gOxCtlUp
 
 --------------------------------------------------------------------------
 -- lifecycle (house law H1: sessions bracket the stack's life)
@@ -717,10 +814,22 @@ on openStack
 end openStack
 
 on closeStack
-   local tMsgLine
+   local tMsgLine, tShutErr
    put false into gHudTickOn
    -- H1: never leave a TorrentXT session running after close
    heNetStop
+   -- H1 for the onion transport too: if THIS stack opened the tor control
+   -- connection, free everything it opened -- oxShutdown is OnionXT's
+   -- documented app-close call (idempotent: streams, services, control).
+   -- Guarded: the library may have been unloaded since (H8 catch local).
+   if gOxCtlUp is "true" then
+      try
+         oxShutdown
+      catch tShutErr
+         -- OnionXT gone; nothing left to free
+      end try
+      put empty into gOxCtlUp
+   end if
    -- cancel only our own timers; pendingMessages lines are id,time,name,target
    -- (gotcha 5: set the delimiter before parsing -- closeStack inherits it)
    set the itemDelimiter to comma
@@ -1979,12 +2088,138 @@ function heReadableErr pErr
    return pErr
 end heReadableErr
 
+--------------------------------------------------------------------------
+-- Phase 2f: invites and the onion-table preliminaries (spec 10 as-built).
+-- Pure where the harness needs them pure: the invite codec and the join
+-- refusal take values and return values, so section 17 pins them headless.
+--------------------------------------------------------------------------
+
+function heHasOnion
+   -- OnionXT presence, probed LIVE at each use (a user can `start using
+   -- onionxt` mid-session; a cached false would wedge until reopen -- the
+   -- heKitReload lesson). A guarded oxVersion() call is the family probe
+   -- (nocloud's qsHasOnion). Message-rate only, never per-frame.
+   local tProbeErr, tVerTxt
+   try
+      put oxVersion() into tVerTxt
+   catch tProbeErr
+      return false
+   end try
+   return tVerTxt is not empty
+end heHasOnion
+
+function heOnionSeedHex pIdSeedHex, pTableHex
+   -- the onion-SERVICE seed (see kHeDomainOnion for the derivation's three
+   -- properties: secret-keyed, per-table, deterministic). Hex text in and
+   -- out; the only Data lives inside the sx* call (H6 corollary).
+   return heHashDomHex(kHeDomainOnion, textEncode(pIdSeedHex & "|" & pTableHex, "utf-8"))
+end heOnionSeedHex
+
+function heInviteTxt
+   -- the shareable invite for the CURRENT table (2f as-built): DHT tables
+   -- keep the bare 64-hex code; an onion table appends "@" and the host's
+   -- derived onion address, so one pasteable string carries the transport,
+   -- the rendezvous, and -- because a v3 address IS the service's ed25519
+   -- public key -- the host endpoint's identity.
+   local tAddrTxt
+   put gGame["onionAddrTxt"] into tAddrTxt
+   if gGame["transport"] is "onion" and tAddrTxt is not empty then
+      return gGame["tableIdHex"] & "@" & tAddrTxt
+   end if
+   return gGame["tableIdHex"]
+end heInviteTxt
+
+function heInviteParse pInviteTxt
+   -- parse an invite into transport/table/onion (2f). A COMPATIBLE extension
+   -- of the original invite: a bare 64-hex code stays the DHT invite; an
+   -- onion invite is "<64hex>@<56-base32>.onion" -- ONE word, "@"-joined,
+   -- deliberately NOT hex, so a pre-2f stack's `word 1` + heIsHex gate
+   -- refuses the WHOLE invite with its readable message instead of silently
+   -- joining a DHT table nobody announced (downgrade refusal by format).
+   -- Structural validation only (pure, harness-pinned); OnionXT's checksum
+   -- validator runs as a belt at join time. Case is normalized: an uppercase
+   -- paste would otherwise bind a mismatching table id and every wire would
+   -- drop as wrong-table. Returns an array: "err" (empty, or the readable
+   -- refusal), "transport", "table", "onion".
+   local tA, tTxt, tAtPos, tTableTxt, tAddrTxt, tCore, tI, tCh
+   put empty into tA["err"]
+   put empty into tA["transport"]
+   put empty into tA["table"]
+   put empty into tA["onion"]
+   put word 1 of pInviteTxt into tTxt
+   if tTxt is empty then
+      put "Paste an invite code first." into tA["err"]
+      return tA
+   end if
+   put toLower(tTxt) into tTxt
+   put offset("@", tTxt) into tAtPos
+   if tAtPos is 0 then
+      if not heIsHex(tTxt, 64) then
+         put "Invite code must be 64 hex characters (or 64hex@<address>.onion for an onion table)." into tA["err"]
+         return tA
+      end if
+      put "rp1" into tA["transport"]
+      put tTxt into tA["table"]
+      return tA
+   end if
+   put char 1 to (tAtPos - 1) of tTxt into tTableTxt
+   put char (tAtPos + 1) to -1 of tTxt into tAddrTxt
+   if not heIsHex(tTableTxt, 64) then
+      put "Onion invite: the part before the @ must be the 64-hex table code." into tA["err"]
+      return tA
+   end if
+   if not (tAddrTxt ends with ".onion") then
+      put "Onion invite: the part after the @ must be a .onion address." into tA["err"]
+      return tA
+   end if
+   put char 1 to -7 of tAddrTxt into tCore
+   if the number of chars of tCore is not 56 then
+      put "Onion invite: a v3 onion address is 56 characters before .onion (got " \
+            & the number of chars of tCore & ")." into tA["err"]
+      return tA
+   end if
+   repeat with tI = 1 to 56
+      put char tI of tCore into tCh
+      if offset(tCh, "abcdefghijklmnopqrstuvwxyz234567") is 0 then
+         put "Onion invite: the address carries a character no onion address can (" & tCh & ")." into tA["err"]
+         return tA
+      end if
+   end repeat
+   put "onion" into tA["transport"]
+   put tTableTxt into tA["table"]
+   put tAddrTxt into tA["onion"]
+   return tA
+end heInviteParse
+
+function heJoinRefusal pInvA, pHasOnion
+   -- the join-side fail-closed gate (2f), PURE so the harness drives both
+   -- branches headlessly: OnionXT presence is a PARAMETER, not a probe. A
+   -- malformed invite refuses with the parser's reason; an onion invite on
+   -- a stack without OnionXT refuses OUTRIGHT -- never a silent downgrade
+   -- to the DHT transport, so "onion table" keeps meaning what the host
+   -- chose. Returns "" (join may proceed) or the readable refusal.
+   local tErrTxt
+   put pInvA["err"] into tErrTxt
+   if tErrTxt is not empty then
+      return tErrTxt
+   end if
+   if pInvA["transport"] is "onion" and pHasOnion is not true then
+      return "This is an ONION table invite: it needs the OnionXT library loaded (start using onionxt) and a running tor daemon. There is no fallback transport -- load OnionXT and Join again, or ask the host for a DHT-table invite."
+   end if
+   return empty
+end heJoinRefusal
+
 command heNetStart
-   -- start THE TorrentXT session, enable rp1, publish our admission token,
-   -- and arm the poll drain. NEEDS AN OXT PASS. Requires tableIdHex + identity
-   -- already set (heTableCreate/heTableJoin do that first).
+   -- start the table's transport and arm the poll drain. NEEDS AN OXT PASS.
+   -- Requires tableIdHex + identity already set (heTableCreate/heTableJoin
+   -- do that first). 2f: gGame["transport"] routes -- "onion" brings up the
+   -- tor transport, anything else the TorrentXT session + rp1 below.
    local tSession, tRole, tErr, tRp1Err
    if gGame["online"] is "true" then
+      exit heNetStart
+   end if
+   if gGame["transport"] is "onion" then
+      heNetStartOnion
       exit heNetStart
    end if
    try
@@ -2031,7 +2266,7 @@ command heNetStart
 end heNetStart
 
 command heNetStop
-   local tMsgLine
+   local tMsgLine, tKeyTxt, tCloseErr
    if gGame["online"] is not "true" then
       exit heNetStop
    end if
@@ -2046,7 +2281,44 @@ command heNetStop
          cancel item 1 of tMsgLine
       end if
    end repeat
-   btStopSession gGame["session"]
+   if gGame["transport"] is "onion" then
+      -- H1: close every stream this table owns (a peer's handle IS its
+      -- stream here; oxCloseStream is idempotent, so the overlap between the
+      -- maps is harmless) and DEL_ONION the service. The control connection
+      -- deliberately STAYS up -- re-creating a table reuses it, and
+      -- closeStack's oxShutdown is the final teardown. Every ox* touch is
+      -- guarded (H8): a mid-session library unload must not wedge the stop.
+      try
+         repeat for each key tKeyTxt in gGame["peerPubA"]
+            oxCloseStream tKeyTxt
+         end repeat
+      catch tCloseErr
+      end try
+      try
+         repeat for each key tKeyTxt in gGame["oxSeenA"]
+            oxCloseStream tKeyTxt
+         end repeat
+      catch tCloseErr
+      end try
+      try
+         if gGame["oxStream"] is not empty then
+            oxCloseStream gGame["oxStream"]
+         end if
+      catch tCloseErr
+      end try
+      try
+         if gGame["oxService"] is not empty then
+            oxRemoveService gGame["oxService"]
+         end if
+      catch tCloseErr
+      end try
+      put empty into gGame["oxService"]
+      put empty into gGame["oxStream"]
+      put empty into gGame["oxBufA"]
+      put empty into gGame["oxSeenA"]
+   else
+      btStopSession gGame["session"]
+   end if
 end heNetStop
 
 command heNetParkHotseat
@@ -2076,6 +2348,12 @@ command heNetJoinSwarm pIsHost
    if gGame["online"] is not "true" then
       exit heNetJoinSwarm
    end if
+   if gGame["transport"] is "onion" then
+      -- onion tables never touch the DHT: the invite carries the rendezvous
+      -- (the host's onion address), and spec 10's "the DHT carries zero game
+      -- data" becomes "the DHT carries nothing at all"
+      exit heNetJoinSwarm
+   end if
    put gGame["session"] into tSession
    try
       get btAddInfohash(tSession, gGame["infohashHex"], heTempPath())
@@ -2095,18 +2373,55 @@ function heTableInfohash pTableHex
 end heTableInfohash
 
 command heTableCreate
-   -- become the host of a fresh table; the 64-hex table code IS the invite.
+   -- become the host of a fresh table; the table code IS the invite (2f: an
+   -- onion table's invite appends the derived onion address -- heInviteTxt).
    -- online play needs the crypto -- guard so a Sodium-less engine gets a
    -- friendly status, not a hard throw out of heIdentitySetup (H4/UX)
+   local tTransport, tTableHex, tOnionSeedHex, tSvcPub, tSvcSec, tAddrTxt, tKeyErr
    if not heHasSodium() then
       heUISetStatus "Online tables need SodiumXT installed. You can still play hotseat."
       exit heTableCreate
+   end if
+   heCfgEnsure
+   put gCfg["transport"] into tTransport
+   -- ONION PRE-FLIGHT, before any teardown: every refusal below leaves a
+   -- running hotseat game untouched (fail closed, the nocloud pattern; no
+   -- silent fallback to the DHT transport -- the host chose onion).
+   if tTransport is "onion" then
+      if not heHasOnion() then
+         heUISetStatus "Onion tables need the OnionXT library loaded (start using onionxt) plus a locally running tor daemon (SOCKS 9050, control 9051). No silent fallback -- switch Host over to DHT, or load OnionXT and try again."
+         exit heTableCreate
+      end if
+      -- the table id is minted EARLY so the onion address -- a pure function
+      -- of identity seed + table id (kHeDomainOnion) -- can be derived and
+      -- refused OFFLINE before anything is torn down. The v3 address IS the
+      -- service's ed25519 public key: sxSignKeypairFromSeed and OnionXT's
+      -- expanded-key publish path share ed25519's seed->pub derivation, and
+      -- the published address is cross-checked against this one when the
+      -- descriptor uploads (heNetOnionTick's "pub" state).
+      put heBin2HexS(sxRandomBytes(32)) into tTableHex
+      put heOnionSeedHex(heIdentitySeedHex(), tTableHex) into tOnionSeedHex
+      try
+         sxSignKeypairFromSeed heHex2BinD(tOnionSeedHex), tSvcPub, tSvcSec
+         put oxAddressFromPublicKey(tSvcPub) into tAddrTxt
+      catch tKeyErr
+         heUISetStatus "Onion address derivation failed: " & heReadableErr(tKeyErr)
+         exit heTableCreate
+      end try
+      if not (tAddrTxt ends with ".onion") then
+         -- oxAddressFromPublicKey surfaces its capability error verbatim:
+         -- the offline checksum needs SodiumXT ABI 7+ (sxSha3_256)
+         heUISetStatus "Onion tables need SodiumXT ABI 7+ for the offline onion address: " & tAddrTxt
+         exit heTableCreate
+      end if
    end if
    -- tear down any prior session first so a re-create starts a clean swarm
    heNetStop
    heNetParkHotseat
    heIdentitySetup
-   if heHasSodium() then
+   if tTransport is "onion" then
+      put tTableHex into gGame["tableIdHex"]
+   else if heHasSodium() then
       put heBin2HexS(sxRandomBytes(32)) into gGame["tableIdHex"]
    else
       put heHexId(64) into gGame["tableIdHex"]
@@ -2131,6 +2446,12 @@ command heTableCreate
    put "true" into gGame["admittedA"][gGame["idPubHex"]]
    put "host" into gGame["roleByPub"][gGame["idPubHex"]]
    heNetGameInit
+   put tTransport into gGame["transport"]
+   heNetOnionReset
+   if tTransport is "onion" then
+      put tAddrTxt into gGame["onionAddrTxt"]
+      put tOnionSeedHex into gGame["oxSeedHex"]
+   end if
    heNetStart
    if gGame["online"] is not "true" then
       exit heTableCreate   -- transport unavailable; heNetStart set the status
@@ -2139,20 +2460,46 @@ command heTableCreate
    -- seed the transcript with a signed table cfg (seq 1, from genesis); late
    -- joiners replay it and verify the host's key before anything else
    heNetSendAction "cfg", heLobbyCfgBody()
-   heUISetStatus "Table created. Share this invite code: " & gGame["tableIdHex"]
+   if tTransport is "onion" then
+      heUISetStatus "Onion table created -- publishing over tor (watch the Tor line). Share this invite: " & heInviteTxt()
+   else
+      heUISetStatus "Table created. Share this invite code: " & heInviteTxt()
+   end if
 end heTableCreate
 
 command heTableJoin pCodeTxt
-   -- join an existing table from its invite code
-   local tCode
+   -- join an existing table from its invite code. 2f: the INVITE names the
+   -- transport (heInviteParse), so there is nothing to toggle on the join
+   -- side -- and every refusal fires BEFORE any teardown, so a bad paste
+   -- leaves a running hotseat game untouched.
+   local tCode, tInvA, tRefusalTxt, tValidOk, tValidErr
+   put heInviteParse(pCodeTxt) into tInvA
+   put heJoinRefusal(tInvA, heHasOnion()) into tRefusalTxt
+   if tRefusalTxt is not empty then
+      heUISetStatus tRefusalTxt
+      exit heTableJoin
+   end if
    if not heHasSodium() then
       heUISetStatus "Online tables need SodiumXT installed. You can still play hotseat."
       exit heTableJoin
    end if
-   put word 1 of pCodeTxt into tCode
-   if not heIsHex(tCode, 64) then
-      heUISetStatus "Invite code must be 64 hex characters."
-      exit heTableJoin
+   put tInvA["table"] into tCode
+   if tInvA["transport"] is "onion" then
+      -- belt over the structural parse: OnionXT's own validator (checksum-
+      -- checking when SodiumXT ships SHA3-256) refuses a corrupted paste
+      -- HERE instead of after a 60 s dial timeout. Guarded (H8): the belt
+      -- must never itself throw a join; the dial still authenticates the
+      -- address either way (a v3 onion IS its key).
+      put true into tValidOk
+      try
+         put oxIsValidAddress(tInvA["onion"]) into tValidOk
+      catch tValidErr
+         put true into tValidOk
+      end try
+      if tValidOk is not true then
+         heUISetStatus "That onion invite's address does not validate (corrupted paste?). Ask the host to copy the invite again."
+         exit heTableJoin
+      end if
    end if
    -- tear down any prior session first so a re-join starts clean
    heNetStop
@@ -2178,17 +2525,29 @@ command heTableJoin pCodeTxt
    put "true" into gGame["admittedA"][gGame["idPubHex"]]
    put "player" into gGame["roleByPub"][gGame["idPubHex"]]
    heNetGameInit
+   put tInvA["transport"] into gGame["transport"]
+   heNetOnionReset
+   if tInvA["transport"] is "onion" then
+      put tInvA["onion"] into gGame["onionAddrTxt"]
+   end if
    heNetStart
    if gGame["online"] is not "true" then
       exit heTableJoin   -- transport unavailable; heNetStart set the status
    end if
    heNetJoinSwarm false
-   heUISetStatus "Joining table " & char 1 to 12 of tCode & "... waiting for the host."
+   if tInvA["transport"] is "onion" then
+      heUISetStatus "Joining onion table " & char 1 to 12 of tCode & "... connecting through tor (watch the Tor line)."
+   else
+      heUISetStatus "Joining table " & char 1 to 12 of tCode & "... waiting for the host."
+   end if
 end heTableJoin
 
 on heNetPollTick
    -- one poll drain per tick (H2): rp1 events for gameplay, plus btPoll to
-   -- keep the engine's own event queue clear. Never per-frame.
+   -- keep the engine's own event queue clear. Never per-frame. 2f: for an
+   -- onion table the tick instead runs the tor transport's whole budget --
+   -- the bring-up state machine plus the stream-buffer drain -- guarded the
+   -- same way, and the re-arm below ALWAYS runs either way.
    local tEvents, tEv, tPollErr
    if gGame["online"] is not "true" then
       exit heNetPollTick
@@ -2196,6 +2555,15 @@ on heNetPollTick
    -- age the resync debounce one tick (heNetRequestSync sets it to 8)
    if gGame["syncCooldown"] > 0 then
       subtract 1 from gGame["syncCooldown"]
+   end if
+   if gGame["transport"] is "onion" then
+      try
+         heNetOnionTick
+      catch tPollErr
+         put "poll   onion tick threw: " & tPollErr & return after gGame["netLog"]
+      end try
+      send "heNetPollTick" to me in 250 milliseconds
+      exit heNetPollTick
    end if
    -- The DRAIN ITSELF has to be guarded too, not just the per-event dispatch: a
    -- throw out of btRp1Poll/btPoll (a torn-down or stale session handle, an
@@ -2315,6 +2683,13 @@ command heNetOnMessage pPeer, pPayloadData
          break
       case "w"
          heNetIngestWire tRest
+         break
+      case "h"
+         -- 2f: the onion-stream hello. rp1 carries the signed admission
+         -- token in its transport handshake event; an onion stream has no
+         -- such event, so the token rides the stream's first wire line and
+         -- lands here (tRest is the whole token, tabs included).
+         heNetOnionHello pPeer, tRest
          break
       case "r!"
          -- the host announces a catch-up replay up to head seq (the frame's
@@ -2621,7 +2996,7 @@ command heNetSendToHost pPayloadTxt
    if tHostPeer is empty then
       exit heNetSendToHost
    end if
-   get btRp1Send(gGame["session"], tHostPeer, textEncode(pPayloadTxt, "utf-8"))
+   heNetTxTo tHostPeer, pPayloadTxt
 end heNetSendToHost
 
 command heNetRequestSync
@@ -2644,15 +3019,16 @@ command heNetRequestSync
 end heNetRequestSync
 
 command heNetBroadcast pPayloadTxt
-   -- host sends to every admitted peer (star topology, spec 4)
-   local tPeer, tData
+   -- host sends to every admitted peer (star topology, spec 4). The netCap
+   -- capture stays HERE (one captured copy per broadcast, not one per peer)
+   -- so the loopback harnesses see exactly the frames they always did.
+   local tPeer
    if gGame["netCap"] is "true" then
       put pPayloadTxt & return after gGame["netOutbox"]
       exit heNetBroadcast
    end if
-   put textEncode(pPayloadTxt, "utf-8") into tData
    repeat for each key tPeer in gGame["peerPubA"]
-      get btRp1Send(gGame["session"], tPeer, tData)
+      heNetTxTo tPeer, pPayloadTxt
    end repeat
 end heNetBroadcast
 
@@ -2664,7 +3040,7 @@ command heNetSendWireTo pPeer, pWire
       put "w" & tab & pWire & return after gGame["netOutbox"]
       exit heNetSendWireTo
    end if
-   get btRp1Send(gGame["session"], pPeer, textEncode("w" & tab & pWire, "utf-8"))
+   heNetTxTo pPeer, "w" & tab & pWire
 end heNetSendWireTo
 
 command heNetReplayLogTo pPeer
@@ -2683,7 +3059,7 @@ command heNetReplayLogTo pPeer
    if gGame["netCap"] is "true" then
       put "r!" & tab & gGame["lastSeq"] & return after gGame["netOutbox"]
    else
-      get btRp1Send(gGame["session"], pPeer, textEncode("r!" & tab & gGame["lastSeq"], "utf-8"))
+      heNetTxTo pPeer, "r!" & tab & gGame["lastSeq"]
    end if
    put gGame["log"] into tLog
    repeat for each line tWireLine in tLog
@@ -2714,6 +3090,560 @@ command heHostEmitRoster
    end if
    heNetSendAction "roster", heRosterBody(tMembers)
 end heHostEmitRoster
+
+--------------------------------------------------------------------------
+-- Phase 2f: the ONION transport (spec 10). The same envelopes, the same
+-- relay, the same fold -- only the bytes ride OnionXT streams instead of
+-- rp1. Assume-running tor on the stock ports (SOCKS 9050, control 9051 --
+-- OnionXT's defaults; Tor Browser alone exposes no control port); fail
+-- CLOSED with a readable reason at every step (the nocloud pattern), never
+-- a silent fallback to the DHT transport. All protocol work happens on the
+-- poll tick (H2): the OnionXT callbacks at the bottom of this section only
+-- STASH bytes and flags. Every ox* call sits in its own try with a declared
+-- catch local (H8). Verified statically; NEEDS a two-machine live-tor pass.
+--------------------------------------------------------------------------
+
+command heNetTxTo pPeer, pPayloadTxt
+   -- THE one live byte-out seam (2f): every payload that used to end in a
+   -- hard-coded btRp1Send routes here by the table's transport. Same frames
+   -- either way; over an onion stream each payload goes out as ONE
+   -- LF-terminated wire line (LF framing is safe by construction: every
+   -- free-text field is hex-encoded into the frame, so no payload can carry
+   -- an LF). The netCap branch keeps direct callers -- the hello path --
+   -- loopback-testable; the four senders capture before reaching here.
+   local tTxErr, tTxRes
+   if gGame["netCap"] is "true" then
+      put pPayloadTxt & return after gGame["netOutbox"]
+      exit heNetTxTo
+   end if
+   if gGame["transport"] is "onion" then
+      try
+         -- LF as an explicit byte value (the OnionXT oxCrlf discipline: the
+         -- wire terminator never depends on how the engine defines a
+         -- line constant)
+         oxWrite pPeer, textEncode(pPayloadTxt & numToChar(10), "utf-8")
+         put the result into tTxRes
+         if tTxRes is not empty then
+            put "drop   onion write failed (stream " & pPeer & "): " & tTxRes \
+                  & return after gGame["netLog"]
+         end if
+      catch tTxErr
+         put "drop   onion write threw: " & tTxErr & return after gGame["netLog"]
+      end try
+      exit heNetTxTo
+   end if
+   get btRp1Send(gGame["session"], pPeer, textEncode(pPayloadTxt, "utf-8"))
+end heNetTxTo
+
+command heNetOnionReset
+   -- fresh transport state for a create/join. Deliberately does NOT touch
+   -- the control connection (it survives between tables; gOxCtlUp).
+   put empty into gGame["oxState"]
+   put 0 into gGame["oxTicks"]
+   put empty into gGame["oxBufA"]
+   put empty into gGame["oxSeenA"]
+   put empty into gGame["oxDeadList"]
+   put empty into gGame["oxCtlErr"]
+   put empty into gGame["oxDialErr"]
+   put empty into gGame["oxDialOpen"]
+   put empty into gGame["oxFailTxt"]
+   put empty into gGame["oxService"]
+   put empty into gGame["oxStream"]
+   put empty into gGame["oxSeedHex"]
+   put empty into gGame["onionAddrTxt"]
+   put -1 into gGame["oxProgShown"]
+end heNetOnionReset
+
+command heNetStartOnion
+   -- bring the tor transport up: register the OnionXT callbacks, ensure a
+   -- control connection, arm the poll tick. The rest of the bring-up (auth,
+   -- bootstrap, publish/dial) is asynchronous and lives in heNetOnionTick's
+   -- watchdogged states.
+   local tErr, tRes, tAuthTxt
+   if gGame["online"] is "true" then
+      exit heNetStartOnion
+   end if
+   if not heHasOnion() then
+      -- belt: heTableCreate/heTableJoin already refused; a direct caller
+      -- still fails closed with the same story
+      heUISetStatus "OnionXT is not loaded (start using onionxt). Onion table unavailable; hotseat still works."
+      exit heNetStartOnion
+   end if
+   try
+      oxSetCallbackOwner the long id of this stack
+      oxSetStatusCallback "heOnionStatus"
+      oxSetPeerCallback "heOnionPeer"
+   catch tErr
+      heUISetStatus "OnionXT callback setup failed: " & heReadableErr(tErr)
+      exit heNetStartOnion
+   end try
+   put "false" into tAuthTxt
+   try
+      if oxIsControlAuthenticated() then
+         put "true" into tAuthTxt
+      end if
+   catch tErr
+   end try
+   if tAuthTxt is not "true" then
+      try
+         -- clear any half-open control socket from an earlier failed attempt
+         -- (oxConnectControl refuses a second concurrent connect; disconnect
+         -- is idempotent), then connect. Auth completes asynchronously; the
+         -- "ctl" state below watches it.
+         oxDisconnectControl
+         oxConnectControl
+         put the result into tRes
+      catch tErr
+         heUISetStatus "Tor control connect threw: " & heReadableErr(tErr) & "  Hotseat still works."
+         exit heNetStartOnion
+      end try
+      if tRes is not empty then
+         heUISetStatus "Tor control connect refused: " & tRes & "  Hotseat still works."
+         exit heNetStartOnion
+      end if
+   end if
+   put "true" into gOxCtlUp
+   put "ctl" into gGame["oxState"]
+   put 0 into gGame["oxTicks"]
+   put "true" into gGame["online"]
+   send "heNetPollTick" to me in 250 milliseconds
+   heLobbyRefresh
+end heNetStartOnion
+
+command heNetOnionTick
+   -- the onion transport's per-tick budget (H2: ALL protocol work on the
+   -- poll timer; the callbacks only stash). Steady state costs one compare
+   -- per concern; the bring-up walks ctl -> boot -> pub|dial -> ready, each
+   -- state watchdogged so no silent async wait can hang forever.
+   local tStateTxt, tErr, tProg, tOkTxt, tAddrTxt, tStreamState
+   heNetOnionDead
+   heNetOnionDrain
+   put gGame["oxState"] into tStateTxt
+   if tStateTxt is "ready" or tStateTxt is empty or tStateTxt is "failed" then
+      exit heNetOnionTick
+   end if
+   add 1 to gGame["oxTicks"]
+   switch tStateTxt
+      case "ctl"
+         put "false" into tOkTxt
+         try
+            if oxIsControlAuthenticated() then
+               put "true" into tOkTxt
+            end if
+         catch tErr
+            heNetOnionFail "OnionXT went away mid-connect: " & tErr
+            exit heNetOnionTick
+         end try
+         if tOkTxt is "true" then
+            put "boot" into gGame["oxState"]
+            put 0 into gGame["oxTicks"]
+            heLobbyRefresh
+            exit heNetOnionTick
+         end if
+         if gGame["oxCtlErr"] is not empty then
+            -- the status callback stashed tor's real reason: fail fast with
+            -- it instead of waiting out the deadline
+            heNetOnionFail "No tor daemon reachable on 127.0.0.1:9051 (" & gGame["oxCtlErr"] \
+                  & "). Start tor with ControlPort 9051 and cookie or password auth, then Create/Join again."
+            exit heNetOnionTick
+         end if
+         if gGame["oxTicks"] > kHeOnionCtlTicks then
+            heNetOnionFail "Tor control connect timed out. Is a tor daemon running with its control port enabled (torrc: ControlPort 9051 + CookieAuthentication 1)? Tor Browser alone exposes no control port."
+         end if
+         break
+      case "boot"
+         put -1 into tProg
+         try
+            put oxBootstrapProgress() into tProg
+         catch tErr
+            heNetOnionFail "OnionXT went away mid-bootstrap: " & tErr
+            exit heNetOnionTick
+         end try
+         if tProg is 100 then
+            -- hand off: the host publishes its deterministic service, a
+            -- player dials the invite's address
+            if gGame["isHost"] is "true" then
+               heNetOnionPublish
+            else
+               heNetOnionDial
+            end if
+            exit heNetOnionTick
+         end if
+         -- status repaints on CHANGE only (the <= 4 Hz discipline)
+         if tProg is not gGame["oxProgShown"] then
+            put tProg into gGame["oxProgShown"]
+            heLobbyRefresh
+         end if
+         if gGame["oxTicks"] > kHeOnionBootTicks then
+            heNetOnionFail "Tor never finished bootstrapping (stuck at " & tProg \
+                  & "%). Check the daemon's network access, then Create/Join again."
+         end if
+         break
+      case "pub"
+         put "false" into tOkTxt
+         try
+            if oxServiceIsReady(gGame["oxService"]) then
+               put "true" into tOkTxt
+            end if
+         catch tErr
+            heNetOnionFail "OnionXT went away mid-publish: " & tErr
+            exit heNetOnionTick
+         end try
+         if tOkTxt is "true" then
+            -- belt: the PUBLISHED address must be the derived one the invite
+            -- carries; a drift here would hand out an invite nobody can dial
+            put empty into tAddrTxt
+            try
+               put oxServiceAddress(gGame["oxService"]) into tAddrTxt
+            catch tErr
+            end try
+            if tAddrTxt is not empty and tAddrTxt is not gGame["onionAddrTxt"] then
+               heNetOnionFail "published onion address does not match the invite (derivation drift: " \
+                     & tAddrTxt & " vs " & gGame["onionAddrTxt"] & ")"
+               exit heNetOnionTick
+            end if
+            put "ready" into gGame["oxState"]
+            heLobbyRefresh
+            heUISetStatus "Onion table live. Share this invite: " & heInviteTxt()
+            exit heNetOnionTick
+         end if
+         if gGame["oxTicks"] > kHeOnionPubTicks then
+            heNetOnionFail "Publishing the table's onion service timed out (descriptor never uploaded). Try again -- a freshly bootstrapped tor can take a minute more."
+         end if
+         break
+      case "dial"
+         if gGame["oxDialErr"] is not empty then
+            heNetOnionFail "Could not reach the host's onion: " & gGame["oxDialErr"] \
+                  & "  Is the host's table still open?"
+            exit heNetOnionTick
+         end if
+         put empty into tStreamState
+         try
+            put oxStreamState(gGame["oxStream"]) into tStreamState
+         catch tErr
+            heNetOnionFail "OnionXT went away mid-dial: " & tErr
+            exit heNetOnionTick
+         end try
+         if gGame["oxDialOpen"] is "open" or tStreamState is "connected" then
+            -- introduce ourselves: the admission token that rides rp1's
+            -- handshake event rides the stream's first wire line here
+            heNetTxTo gGame["oxStream"], "h" & tab & textDecode( \
+                  heAdmitTokenData(gGame["tableIdHex"], gGame["idPubHex"], gGame["idSecData"], "player"), "utf-8")
+            put "ready" into gGame["oxState"]
+            heLobbyRefresh
+            heUISetStatus "Connected to the host's onion -- waiting for the table."
+            exit heNetOnionTick
+         end if
+         if tStreamState is "unknown" then
+            -- the stream failed and OnionXT already forgot the handle; the
+            -- stashed oxDialErr usually carries why (checked above) -- this
+            -- is the catch-all
+            heNetOnionFail "The tor stream to the host closed during the dial. Check the invite and Join again."
+            exit heNetOnionTick
+         end if
+         if gGame["oxTicks"] > kHeOnionDialTicks then
+            heNetOnionFail "Dialing the host's onion timed out. The host may be offline, or its descriptor not yet published -- try again in a minute."
+         end if
+         break
+   end switch
+end heNetOnionTick
+
+command heNetOnionPublish
+   -- host, at bootstrap-done: publish the deterministic service. The
+   -- address was derived and shown at create time; oxServiceIsReady (the
+   -- "pub" state) gates "live".
+   local tSvc, tErr
+   try
+      oxCreateServiceFromSeed heHex2BinD(gGame["oxSeedHex"]), kHeOnionVirtPort, kHeOnionLocalPort
+      put the result into tSvc
+   catch tErr
+      heNetOnionFail "creating the onion service threw: " & heReadableErr(tErr)
+      exit heNetOnionPublish
+   end try
+   if tSvc is not an integer then
+      -- a bind failure on the local forward port, a control refusal, or a
+      -- missing SodiumXT expansion -- OnionXT's result says which
+      heNetOnionFail "could not publish the onion service: " & tSvc
+      exit heNetOnionPublish
+   end if
+   put tSvc into gGame["oxService"]
+   put "pub" into gGame["oxState"]
+   put 0 into gGame["oxTicks"]
+   heLobbyRefresh
+end heNetOnionPublish
+
+command heNetOnionDial
+   -- player, at bootstrap-done: SOCKS-dial the invite's onion. Completes
+   -- asynchronously; the "dial" state watches for open/failed.
+   local tStream, tErr, tCbRes
+   try
+      oxDial gGame["onionAddrTxt"], kHeOnionVirtPort
+      put the result into tStream
+   catch tErr
+      heNetOnionFail "dialing the host's onion threw: " & heReadableErr(tErr)
+      exit heNetOnionDial
+   end try
+   if tStream is not an integer then
+      heNetOnionFail "could not dial the host's onion: " & tStream
+      exit heNetOnionDial
+   end if
+   put tStream into gGame["oxStream"]
+   try
+      oxSetStreamCallback tStream, "heOnionStreamEvt"
+      put the result into tCbRes
+   catch tErr
+      put tErr into tCbRes
+   end try
+   if tCbRes is not empty then
+      heNetOnionFail "could not register the stream callback: " & tCbRes
+      exit heNetOnionDial
+   end if
+   put "dial" into gGame["oxState"]
+   put 0 into gGame["oxTicks"]
+   heLobbyRefresh
+end heNetOnionDial
+
+command heNetOnionHello pPeer, pTokenTxt
+   -- the onion-transport handshake: the SAME signed admission token that
+   -- rides rp1's handshake event arrives as the stream's first wire line
+   -- (the "h" frame). Verify-or-drop BEFORE any reply: a stranger's dial
+   -- earns nothing, not even the host's identity. On the host, a verified
+   -- hello is answered with OUR hello -- the stream is ordered, so the
+   -- joiner adopts the host key before the replayed wires reach it -- and
+   -- then the shared handshake path runs (admission, replay, roster),
+   -- identical to rp1's.
+   local tPubHex
+   put heAdmitTokenVerify(textEncode(pTokenTxt, "utf-8"), gGame["tableIdHex"]) into tPubHex
+   if tPubHex is empty then
+      put "drop   onion hello failed verification (stream " & pPeer & ")" & return after gGame["netLog"]
+      heNetOnionCloseStream pPeer
+      heLobbyRefresh
+      exit heNetOnionHello
+   end if
+   if gGame["isHost"] is "true" then
+      heNetTxTo pPeer, "h" & tab & textDecode( \
+            heAdmitTokenData(gGame["tableIdHex"], gGame["idPubHex"], gGame["idSecData"], "host"), "utf-8")
+   end if
+   heNetOnHandshake pPeer, textEncode(pTokenTxt, "utf-8")
+end heNetOnionHello
+
+command heNetOnionCloseStream pStream
+   -- fail one stream closed and forget its buffer. netCap-guarded so the
+   -- loopback harness can drive the refusal path with no OnionXT loaded.
+   local tErr, tBufA
+   if gGame["netCap"] is not "true" then
+      try
+         oxCloseStream pStream
+      catch tErr
+      end try
+   end if
+   -- delete via a plain local copy (the heNetOnHandshake reconnect pattern),
+   -- and only when there IS an array: deleting a key of a never-filled
+   -- (empty, non-array) store is the kind of edge that throws on strict OXT
+   put gGame["oxBufA"] into tBufA
+   if tBufA is an array then
+      delete variable tBufA[pStream]
+      put tBufA into gGame["oxBufA"]
+   end if
+   put gGame["oxSeenA"] into tBufA
+   if tBufA is an array then
+      delete variable tBufA[pStream]
+      put tBufA into gGame["oxSeenA"]
+   end if
+end heNetOnionCloseStream
+
+command heNetOnionDrain
+   -- reassemble LF-framed wire lines from the per-stream byte buffers the
+   -- stream callback fills, and dispatch each through the SAME router the
+   -- rp1 events take (heNetOnMessage). Chunking is on a plain local copy of
+   -- each element (H6), written back after.
+   local tKeysTxt, tKey, tBuf, tNL, tLine, tDispErr
+   if gGame["oxBufA"] is not an array then
+      exit heNetOnionDrain
+   end if
+   put the keys of gGame["oxBufA"] into tKeysTxt
+   repeat for each line tKey in tKeysTxt
+      put gGame["oxBufA"][tKey] into tBuf
+      if tBuf is empty then
+         next repeat
+      end if
+      -- a peer streaming bytes with no line break is not speaking this
+      -- protocol: fail the stream closed rather than grow forever (bounded,
+      -- like the reorder buffer)
+      if the number of chars of tBuf > kHeOnionBufMax then
+         put "drop   oversized unframed buffer from stream " & tKey & return after gGame["netLog"]
+         heNetOnionCloseStream tKey
+         next repeat
+      end if
+      repeat forever
+         put offset(numToChar(10), tBuf) into tNL
+         if tNL is 0 then
+            exit repeat
+         end if
+         put char 1 to (tNL - 1) of tBuf into tLine
+         delete char 1 to tNL of tBuf
+         if tLine is not empty then
+            -- an inbound frame is attacker-controlled: one throwing dispatch
+            -- drops-and-logs (H4), never aborts the drain
+            try
+               heNetOnMessage tKey, textEncode(tLine, "utf-8")
+            catch tDispErr
+               put "poll   dropped a throwing onion frame: " & tDispErr & return after gGame["netLog"]
+            end try
+         end if
+      end repeat
+      -- write the remainder back ONLY if the stream survived its own frames:
+      -- a refused hello closes the stream mid-drain, and an unconditional
+      -- write-back would resurrect the deleted buffer key as an orphan
+      if tKey is among the keys of gGame["oxBufA"] then
+         put tBuf into gGame["oxBufA"][tKey]
+      end if
+   end repeat
+end heNetOnionDrain
+
+command heNetOnionDead
+   -- process stream deaths the callback recorded (poll-tick work, H2): drop
+   -- the peer mappings; a PLAYER losing its host stream is offline -- 2e's
+   -- liveness pass owes auto-reconnect, so today the honest answer is a
+   -- fail-closed message naming the Join-again recovery.
+   local tDead, tLine, tPub, tPeersA
+   put gGame["oxDeadList"] into tDead
+   if tDead is empty then
+      exit heNetOnionDead
+   end if
+   put empty into gGame["oxDeadList"]
+   repeat for each line tLine in tDead
+      if tLine is empty then
+         next repeat
+      end if
+      put gGame["peerPubA"][tLine] into tPub
+      if tPub is not empty then
+         put gGame["peerPubA"] into tPeersA
+         delete variable tPeersA[tLine]
+         put tPeersA into gGame["peerPubA"]
+         if gGame["peerByPub"][tPub] is tLine then
+            put empty into gGame["peerByPub"][tPub]
+         end if
+         put "-peer  " & char 1 to 12 of tPub & "  (stream closed)" & return after gGame["netLog"]
+      end if
+      heNetOnionCloseStream tLine
+      if gGame["isHost"] is not "true" and tLine is gGame["oxStream"] then
+         heNetOnionFail "Lost the tor stream to the host. Join again with the same invite to reconnect."
+         exit heNetOnionDead
+      end if
+   end repeat
+   heLobbyRefresh
+end heNetOnionDead
+
+command heNetOnionFail pWhyTxt
+   -- fail CLOSED with a readable reason (the nocloud pattern): tear the
+   -- transport down, keep the reason on the tor line, never fall back to
+   -- another transport silently.
+   put "failed" into gGame["oxState"]
+   put "Tor: FAILED -- " & pWhyTxt into gGame["oxFailTxt"]
+   put "tor    " & pWhyTxt & return after gGame["netLog"]
+   heNetStop
+   heUISetStatus pWhyTxt & "  Hotseat still works."
+   heLobbyRefresh
+end heNetOnionFail
+
+function heNetOnionStatusTxt
+   -- the lobby's tor status line: the quickshare-pill states in holde-em
+   -- spelling. Empty when the DHT transport is selected and no onion state
+   -- lingers, so the line vanishes rather than nagging.
+   local tStateTxt, tProg, tErr
+   if gGame["transport"] is not "onion" \
+         and not (gCfg["transport"] is "onion" and gGame["online"] is not "true") then
+      return empty
+   end if
+   put gGame["oxState"] into tStateTxt
+   if tStateTxt is "failed" then
+      return gGame["oxFailTxt"]
+   end if
+   if not heHasOnion() then
+      return "Tor: OnionXT library not loaded (start using onionxt)"
+   end if
+   switch tStateTxt
+      case "ctl"
+         return "Tor: connecting to the control port (9051)..."
+      case "boot"
+         put 0 into tProg
+         try
+            put oxBootstrapProgress() into tProg
+         catch tErr
+         end try
+         return "Tor: bootstrapping " & tProg & "%..."
+      case "pub"
+         return "Tor: publishing the table's onion address..."
+      case "dial"
+         return "Tor: connecting to the host's onion..."
+      case "ready"
+         return "Tor: ready"
+   end switch
+   return "Tor: idle -- Create hosts an onion table; Join takes a 64hex@...onion invite"
+end heNetOnionStatusTxt
+
+on heOnionStatus pKind, pInfo
+   -- OnionXT status callback: STASH only -- every reaction happens on the
+   -- poll tick (H2). The control-error stash lets the "ctl" state fail fast
+   -- with tor's real reason instead of waiting out the deadline.
+   if gGame["transport"] is not "onion" then
+      exit heOnionStatus
+   end if
+   if pKind is "control" and pInfo begins with "error" then
+      put pInfo into gGame["oxCtlErr"]
+   end if
+end heOnionStatus
+
+on heOnionPeer pStream, pService, pPeerHost
+   -- a peer connected to our onion service (host side). Register the stream
+   -- callback NOW -- OnionXT's dispatch is synchronous and it arms the
+   -- first read right after this returns -- and note the stream so teardown
+   -- can close it (H1) even if its hello never verifies. The peer stays a
+   -- stranger until that hello does (heNetOnionHello).
+   local tCbErr
+   if gGame["online"] is not "true" or gGame["transport"] is not "onion" then
+      exit heOnionPeer
+   end if
+   try
+      oxSetStreamCallback pStream, "heOnionStreamEvt"
+   catch tCbErr
+      exit heOnionPeer
+   end try
+   put "true" into gGame["oxSeenA"][pStream]
+end heOnionPeer
+
+on heOnionStreamEvt pStream, pEvent, pData
+   -- per-stream OnionXT events: STASH bytes and flags only; the poll tick
+   -- does the protocol work (H2). pData is engine-socket Data -- decoded at
+   -- this edge (payloads are ASCII by construction, hex-framed fields, so a
+   -- chunk boundary can never split a multi-byte character). For "error"
+   -- events pData is OnionXT's error TEXT.
+   local tTxt
+   if gGame["transport"] is not "onion" then
+      exit heOnionStreamEvt
+   end if
+   switch pEvent
+      case "data"
+         put textDecode(pData, "utf-8") into tTxt
+         put tTxt after gGame["oxBufA"][pStream]
+         break
+      case "open"
+         if pStream is gGame["oxStream"] then
+            put "open" into gGame["oxDialOpen"]
+         end if
+         break
+      case "error"
+         if pStream is gGame["oxStream"] then
+            put pData into gGame["oxDialErr"]
+         end if
+         put pStream & return after gGame["oxDeadList"]
+         break
+      case "closed"
+         put pStream & return after gGame["oxDeadList"]
+         break
+   end switch
+end heOnionStreamEvt
 
 --------------------------------------------------------------------------
 -- the ONLINE game (Phase 2d): Level 0 play over the signed wire chain.
@@ -5018,12 +5948,18 @@ command heCfgDefaults
    put kHeDefaultLevelMinutes into gCfg["levelMinutes"]  -- minutes per level (time mode)
    put "normal" into gCfg["speed"]          -- "fast" | "normal" | "slow"
    put "on" into gCfg["sounds"]             -- "on" | "off" (casino-audio SFX)
+   put "rp1" into gCfg["transport"]         -- "rp1" (DHT swarm) | "onion" (Tor, 2f)
 end heCfgDefaults
 
 command heCfgEnsure
    -- lazily fill gCfg so any entry point (a stale paste, a test) has a config
    if gCfg["numSeats"] is empty then
       heCfgDefaults
+   end if
+   -- 2f arrived after stacks in the wild had a saved gCfg: backfill the
+   -- transport key alone so an upgraded stack keeps its other settings
+   if gCfg["transport"] is empty then
+      put "rp1" into gCfg["transport"]
    end if
 end heCfgEnsure
 
@@ -5914,9 +6850,17 @@ command heBuildLobby
    create button "heBtnJoin"
    set the rect of button "heBtnJoin" to "592,134,792,170"
    set the label of button "heBtnJoin" to "Join Table"
+   -- 2f: the transport the NEXT Create hosts over (a joiner's transport
+   -- comes from the invite itself). DHT swarm is the default; Tor onion
+   -- needs OnionXT + a running tor daemon and FAILS CLOSED without them.
+   create button "heBtnTransport"
+   set the rect of button "heBtnTransport" to "442,134,582,170"
+   set the label of button "heBtnTransport" to "Host over: DHT"
 
-   heMakeLabel "heJoinLabel", "212,182,812,204", \
-         "paste a 64-hex invite code, then Join -- or Create to host", kHeWhite, 11
+   heMakeLabel "heJoinLabel", "212,182,532,204", \
+         "paste an invite code, then Join -- or Create to host", kHeWhite, 11
+   -- 2f: the tor probe status line (the quickshare-pill states)
+   heMakeLabel "heTorLine", "542,182,812,204", "", kHeGoldColor, 11
    create field "heJoinCode"
    set the rect of field "heJoinCode" to "232,208,712,238"
    set the lockText of field "heJoinCode" to false
@@ -5979,9 +6923,9 @@ command heLobbySetVisible pOn
    if there is a graphic "heLobbyBg" then
       set the visible of graphic "heLobbyBg" to pOn
    end if
-   put "heLobbyTitle,heJoinLabel,heJoinCode,heLobbyId,heLobbyTable," \
+   put "heLobbyTitle,heJoinLabel,heTorLine,heJoinCode,heLobbyId,heLobbyTable," \
          & "heRosterHdr,heNetHdr,heLobbyRoster,heLobbyNet" into tFields
-   put "heBtnCreate,heBtnJoin,heBtnCopyCode,heBtnLeave,heBtnStartGame" into tButtons
+   put "heBtnCreate,heBtnJoin,heBtnTransport,heBtnCopyCode,heBtnLeave,heBtnStartGame" into tButtons
    set the itemDelimiter to comma
    repeat for each item tNm in tFields
       if there is a field tNm then
@@ -6001,6 +6945,32 @@ function heLobbyVisible
    end if
    return false
 end heLobbyVisible
+
+function heTransportLabel pMode
+   -- the lobby toggle's face (2f)
+   if pMode is "onion" then
+      return "Host over: Tor"
+   end if
+   return "Host over: DHT"
+end heTransportLabel
+
+command heTransportCycle
+   -- the lobby's transport toggle (2f). It shapes the NEXT Create only; a
+   -- joiner's transport comes from the invite itself (heInviteParse), so
+   -- there is nothing to toggle on the join side -- and an onion invite
+   -- pasted into a stack without OnionXT fails closed in heJoinRefusal,
+   -- never silently downgrades to the DHT.
+   heCfgEnsure
+   if gCfg["transport"] is "onion" then
+      put "rp1" into gCfg["transport"]
+   else
+      put "onion" into gCfg["transport"]
+   end if
+   if there is a button "heBtnTransport" then
+      set the label of button "heBtnTransport" to heTransportLabel(gCfg["transport"])
+   end if
+   heLobbyRefresh
+end heTransportCycle
 
 --------------------------------------------------------------------------
 -- Settings overlay: the host configures the table (opening chips, blinds,
@@ -6315,13 +7285,14 @@ command heLobbyRefresh
    -- gGame -- called on every handshake and every ingested wire. No-op if the
    -- overlay is not built or not visible.
    local tRoleTxt, tKeyPub, tRoster, tSeatRole, tNet, tNetAll, tCount
-   local tMyPub, tTableId
+   local tMyPub, tTableId, tOnlineTxt
    if not (there is a field "heLobbyRoster") then
       exit heLobbyRefresh
    end if
    if not heLobbyVisible() then
       exit heLobbyRefresh
    end if
+   heCfgEnsure
    -- copy array elements to plain locals before chunking them (house gotcha H6)
    put gGame["idPubHex"] into tMyPub
    put gGame["tableIdHex"] into tTableId
@@ -6339,10 +7310,22 @@ command heLobbyRefresh
       else
          put "player" into tRoleTxt
       end if
+      if gGame["transport"] is "onion" then
+         put "-- online over tor --" into tOnlineTxt
+      else
+         put "-- online --" into tOnlineTxt
+      end if
       set the text of field "heLobbyTable" to \
-            "Table " & char 1 to 16 of tTableId & "   role " & tRoleTxt & "   -- online --"
+            "Table " & char 1 to 16 of tTableId & "   role " & tRoleTxt & "   " & tOnlineTxt
    else
       set the text of field "heLobbyTable" to "Not connected. Create a table to host, or Join with a code."
+   end if
+   -- 2f: transport toggle label + the tor status line
+   if there is a button "heBtnTransport" then
+      set the label of button "heBtnTransport" to heTransportLabel(gCfg["transport"])
+   end if
+   if there is a field "heTorLine" then
+      set the text of field "heTorLine" to heNetOnionStatusTxt()
    end if
    -- roster from the admitted set (+ roles); the host key is marked
    put empty into tRoster
@@ -7284,16 +8267,21 @@ on mouseUp
          put word 1 of the text of field "heJoinCode" into tCodeTxt
          heTableJoin tCodeTxt
          exit mouseUp
+      case "heBtnTransport"
+         heTransportCycle
+         exit mouseUp
       case "heBtnCopyCode"
          -- the invite is only real once a table is HOSTED/JOINED: heTableNew
          -- also fills tableIdHex (the Level 0 deal domain) for every hotseat
          -- table when SodiumXT is present, so testing it for empty handed out
-         -- a dead code nobody announces -- a joiner would wait forever
+         -- a dead code nobody announces -- a joiner would wait forever.
+         -- 2f: heInviteTxt appends the onion address for an onion table, so
+         -- the copied string is the WHOLE invite either way.
          if gGame["online"] is not "true" or gGame["tableIdHex"] is empty then
             heUISetStatus "No online table yet -- Create one first."
          else
-            set the clipboardData["text"] to gGame["tableIdHex"]
-            heUISetStatus "Invite code copied to the clipboard."
+            set the clipboardData["text"] to heInviteTxt()
+            heUISetStatus "Invite copied to the clipboard."
          end if
          exit mouseUp
       case "heBtnStartGame"
@@ -8075,6 +9063,12 @@ constant kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d2488
 constant kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
 constant kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
 constant kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+-- Phase 2f invite vector: a STRUCTURALLY valid v3 onion address (56 chars of
+-- the base32 alphabet + ".onion") for the pure invite-parse pins. Its
+-- checksum is fake by design -- the parse is structural, and the checksum
+-- round-trip runs on a REAL derived address when OnionXT + SodiumXT ABI 7
+-- are present (section 17). KAT INPUT, not generated.
+constant kKatOnionAddr = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
 -- Phase 4a-4c Level 2 vectors (generated by tools/protocol-kat.py
 -- --gen-xtalk; the ristretto255 deal algebra from FIXED scalars, pinned by
 -- the file's independent RFC 9496 reference). Keep the block complete: a
@@ -8128,6 +9122,7 @@ command heRunSelftest
    heRunSection "heTestNetSim"
    heRunSection "heTestNetPlay"
    heRunSection "heTestLevel2Run"
+   heRunSection "heTestOnionRun"
    heRunSection "heProbeSodium"
    put return & "==== " & gPassN & " pass, " & gFailN & " fail, " & gSkipN & " skip ====" \
          & return after gRpt
@@ -9195,6 +10190,198 @@ command heTestLevel2Run
    put heL2MaskPointHex(heL2ScalarInvertHex(tRndK), tRndMask) into tRndBack
    heTAssert "level2: random mask/unmask roundtrip", tRndBack, item 3 of tBaseList
 end heTestLevel2Run
+
+command heTestOnionRun
+   -- Phase 2f's headless slice: everything an engine can pin WITHOUT a tor
+   -- daemon or a second machine -- the invite codec round-trip on both
+   -- transports (plus its refusal vectors), the pure heJoinRefusal
+   -- downgrade-refusal gate (OnionXT presence is dependency-injected, so
+   -- BOTH branches run on any engine), onion-seed derivation properties,
+   -- the OnionXT address round-trip when the library is present, and the
+   -- "h" hello handshake driven through the REAL message router on netCap
+   -- loopback contexts (the netsim mold). The LIVE multi-hand onion table
+   -- session is the engine-era exit gate and is SKIPped by name at the end.
+   local tInvA, tInviteTxt, tSeedHex1, tSeedHex2, tAddrTxt, tOxErr, tRecovHex
+   local tSaved, tHostPub, tHostSec, tPlayPub, tPlaySec, tHostPubHex, tPlayPubHex
+   local tTokTxt, tHostTokTxt, tOutbox, tReplyTok
+   put return & "-- 17. Onion tables (2f): invite codec + fail-closed + hello" & return after gRpt
+   set the itemDelimiter to comma
+
+   -- the invite codec: pure, no dependencies at all
+   put heInviteParse(kKatTableHex) into tInvA
+   heTAssert "invite: a bare 64-hex code parses as the DHT transport", \
+         tInvA["transport"] & "/" & tInvA["table"] & "/" & tInvA["err"], "rp1/" & kKatTableHex & "/"
+   put kKatTableHex & "@" & kKatOnionAddr into tInviteTxt
+   put heInviteParse(tInviteTxt) into tInvA
+   heTAssert "invite: table@address.onion parses as the onion transport", \
+         tInvA["transport"] & "/" & tInvA["table"] & "/" & tInvA["onion"] & "/" & tInvA["err"], \
+         "onion/" & kKatTableHex & "/" & kKatOnionAddr & "/"
+   put heInviteParse(toUpper(tInviteTxt)) into tInvA
+   heTAssert "invite: parsing normalizes case (an uppercase paste still binds the table)", \
+         tInvA["table"] & "/" & tInvA["onion"], kKatTableHex & "/" & kKatOnionAddr
+   -- the downgrade-refusal-BY-FORMAT property: one word, and not bare hex,
+   -- so a pre-2f stack's `word 1` + heIsHex gate refuses the WHOLE invite
+   heTAssert "invite: an onion invite is one word and NOT bare hex (a pre-2f stack fails closed)", \
+         (the number of words of tInviteTxt) & "/" & heIsHex(tInviteTxt, 64), "1/false"
+   put heInviteParse("abc123") into tInvA
+   heTContains "invite: a short code is refused readably", tInvA["err"], "64 hex"
+   put heInviteParse("zz" & char 3 to -1 of kKatTableHex & "@" & kKatOnionAddr) into tInvA
+   heTContains "invite: a non-hex table part is refused readably", tInvA["err"], "table code"
+   put heInviteParse(kKatTableHex & "@" & "1" & char 2 to -1 of kKatOnionAddr) into tInvA
+   heTContains "invite: an address character outside base32 is refused", tInvA["err"], "character"
+   put heInviteParse(kKatTableHex & "@" & char 2 to -1 of kKatOnionAddr) into tInvA
+   heTContains "invite: a 55-char address core is refused", tInvA["err"], "56"
+   put heInviteParse(kKatTableHex & "@" & char 1 to 56 of kKatOnionAddr) into tInvA
+   heTContains "invite: a missing .onion suffix is refused", tInvA["err"], ".onion"
+   put heInviteParse("") into tInvA
+   heTContains "invite: an empty paste is refused readably", tInvA["err"], "Paste"
+
+   -- the join-side fail-closed gate, both branches, on ANY engine (presence
+   -- is a parameter -- the H5 shape)
+   put heInviteParse(tInviteTxt) into tInvA
+   heTContains "refusal: onion invite without OnionXT fails CLOSED (no silent downgrade)", \
+         heJoinRefusal(tInvA, false), "OnionXT"
+   heTAssert "refusal: onion invite with OnionXT present is admitted to the join path", \
+         heJoinRefusal(tInvA, true), empty
+   put heInviteParse("not-an-invite") into tInvA
+   heTContains "refusal: a malformed invite carries the parser's reason", \
+         heJoinRefusal(tInvA, true), "64 hex"
+
+   -- the onion-service seed (spec 10 as-built): deterministic, identity-
+   -- keyed, per-table. Needs SodiumXT (it is a domain-separated hash).
+   if heHasSodium() then
+      put heOnionSeedHex(kKatIdSeed1, kKatTableHex) into tSeedHex1
+      put heOnionSeedHex(kKatIdSeed1, kKatTableHex) into tSeedHex2
+      heTAssert "onion seed: deterministic (a restarted host re-derives its address)", tSeedHex1, tSeedHex2
+      heTAssert "onion seed: 32 bytes of lowercase hex", heIsHex(tSeedHex1, 64), true
+      put heOnionSeedHex(kKatIdSeed2, kKatTableHex) into tSeedHex2
+      heTAssert "onion seed: keyed by the host identity (another key, another address)", \
+            tSeedHex1 is tSeedHex2, false
+      put heOnionSeedHex(kKatIdSeed1, kKatSeed1) into tSeedHex2
+      heTAssert "onion seed: fresh per table (another table, another address)", \
+            tSeedHex1 is tSeedHex2, false
+   else
+      heTSkip "onion seed: derivation properties", "SodiumXT not installed"
+   end if
+
+   -- the address round-trip through OnionXT's pure helpers (no daemon
+   -- involved): a REAL checksummed address from a fixed pubkey rides the
+   -- invite and decodes back to the same key -- the self-authenticating-
+   -- rendezvous property the transport leans on.
+   if heHasOnion() and heHasSodium() then
+      put empty into tAddrTxt
+      try
+         put oxAddressFromPublicKey(heHex2BinD(kKatIdPub1)) into tAddrTxt
+      catch tOxErr
+         put tOxErr into tAddrTxt
+      end try
+      if tAddrTxt ends with ".onion" then
+         heTAssert "onion addr: a v3 address is 62 chars with its .onion", \
+               the number of chars of tAddrTxt, 62
+         heTAssert "onion addr: OnionXT validates the derived address", \
+               oxIsValidAddress(tAddrTxt), true
+         put heInviteParse(kKatTableHex & "@" & tAddrTxt) into tInvA
+         heTAssert "onion addr: a real derived address rides the invite round-trip", \
+               tInvA["onion"] & "/" & tInvA["err"], tAddrTxt & "/"
+         put heBin2HexS(oxPublicKeyFromAddress(tAddrTxt)) into tRecovHex
+         heTAssert "onion addr: the address IS the pubkey (decode recovers it)", tRecovHex, kKatIdPub1
+      else
+         heTSkip "onion addr: derive + validate", "needs SodiumXT ABI 7 sxSha3_256 -- " & tAddrTxt
+      end if
+   else
+      heTSkip "onion addr: derive + validate", "OnionXT (or SodiumXT) not loaded"
+   end if
+
+   -- the "h" hello handshake through the REAL router, netCap loopback (the
+   -- netsim mold): a verified hello admits + replies + replays IN ORDER;
+   -- garbage and wrong-table hellos earn nothing; the player adopts the
+   -- host from its hello. gGame is swapped and restored (heRunSection's
+   -- snapshot backstops a mid-section throw).
+   if heHasSodium() then
+      put gGame into tSaved
+      sxSignKeypairFromSeed heHex2BinD(kKatIdSeed1), tHostPub, tHostSec
+      sxSignKeypairFromSeed heHex2BinD(kKatIdSeed2), tPlayPub, tPlaySec
+      put heBin2HexS(tHostPub) into tHostPubHex
+      put heBin2HexS(tPlayPub) into tPlayPubHex
+      -- HOST context with the capture seam on and one cfg wire on the chain
+      put empty into gGame
+      put "true" into gGame["online"]
+      put "true" into gGame["isHost"]
+      put tHostPubHex into gGame["idPubHex"]
+      put tHostSec into gGame["idSecData"]
+      put tHostPubHex into gGame["hostPubHex"]
+      put kKatTableHex into gGame["tableIdHex"]
+      put 0 into gGame["handNum"]
+      put 0 into gGame["seqCounter"]
+      put 0 into gGame["syncCooldown"]
+      put kHeGenesisPrev into gGame["chainHeadHex"]
+      put 0 into gGame["lastSeq"]
+      put empty into gGame["wireBuf"]
+      put 0 into gGame["wireBufN"]
+      put "true" into gGame["netCap"]
+      put empty into gGame["netOutbox"]
+      put "true" into gGame["admittedA"][tHostPubHex]
+      put "host" into gGame["roleByPub"][tHostPubHex]
+      heNetSendAction "cfg", kKatLobbyCfgBody
+      put empty into gGame["netOutbox"]   -- keep only the handshake's own output
+      put textDecode(heAdmitTokenData(kKatTableHex, tPlayPubHex, tPlaySec, "player"), "utf-8") into tTokTxt
+      heNetOnMessage 7, textEncode("h" & tab & tTokTxt, "utf-8")
+      heTAssert "hello: a verified hello admits the peer", gGame["admittedA"][tPlayPubHex], "true"
+      heTAssert "hello: the stream handle becomes the peer handle", gGame["peerPubA"][7], tPlayPubHex
+      put gGame["netOutbox"] into tOutbox
+      heTAssert "hello: the host answers with its own hello FIRST (ordered stream)", \
+            char 1 to 2 of line 1 of tOutbox, "h" & tab
+      set the itemDelimiter to tab
+      put item 2 to -1 of line 1 of tOutbox into tReplyTok
+      set the itemDelimiter to comma
+      heTAssert "hello: the reply token verifies and names the host key", \
+            heAdmitTokenVerify(textEncode(tReplyTok, "utf-8"), kKatTableHex), tHostPubHex
+      heTAssert "hello: the reply token declares role host", \
+            heAdmitTokenRole(textEncode(tReplyTok, "utf-8")), "host"
+      heTAssert "hello: the r! catch-up marker follows the hello", \
+            char 1 to 3 of line 2 of tOutbox, "r!" & tab
+      heTContains "hello: the replay carries the signed cfg wire", tOutbox, "w" & tab
+      -- an invalid hello earns NOTHING: no admit, no reply, a named drop
+      put empty into gGame["netOutbox"]
+      heNetOnMessage 9, textEncode("h" & tab & "garbage-token", "utf-8")
+      heTAssert "hello: a garbage hello admits nothing", gGame["peerPubA"][9], empty
+      heTAssert "hello: a garbage hello earns no reply", gGame["netOutbox"], empty
+      heTContains "hello: the drop is named in the net feed", gGame["netLog"], "onion hello failed"
+      -- a hello signed for ANOTHER table is a stranger here (the token binds
+      -- the table id): refused identically
+      put textDecode(heAdmitTokenData(kKatSeed1, tPlayPubHex, tPlaySec, "player"), "utf-8") into tTokTxt
+      heNetOnMessage 11, textEncode("h" & tab & tTokTxt, "utf-8")
+      heTAssert "hello: a wrong-table hello admits nothing", gGame["peerPubA"][11], empty
+      -- PLAYER side: adopting the host from ITS hello over the dialed stream
+      put empty into gGame
+      put "true" into gGame["online"]
+      put "false" into gGame["isHost"]
+      put tPlayPubHex into gGame["idPubHex"]
+      put tPlaySec into gGame["idSecData"]
+      put empty into gGame["hostPubHex"]
+      put kKatTableHex into gGame["tableIdHex"]
+      put 0 into gGame["syncCooldown"]
+      put "true" into gGame["netCap"]
+      put empty into gGame["netOutbox"]
+      put textDecode(heAdmitTokenData(kKatTableHex, tHostPubHex, tHostSec, "host"), "utf-8") into tHostTokTxt
+      heNetOnMessage 3, textEncode("h" & tab & tHostTokTxt, "utf-8")
+      heTAssert "hello: the player adopts the host key from the host hello", \
+            gGame["hostPubHex"], tHostPubHex
+      heTAssert "hello: the host's stream handle is pinned for sends", \
+            gGame["peerByPub"][tHostPubHex], 3
+      heTAssert "hello: the player answers no hello of its own (no ping-pong)", \
+            gGame["netOutbox"], empty
+      put tSaved into gGame
+   else
+      heTSkip "hello handshake loopback", "SodiumXT not installed"
+   end if
+
+   -- what only the real world can verify -- say so, by name (the honesty
+   -- convention): the exit for 2f is a MULTI-HAND onion table session on
+   -- two machines with a running tor daemon, plus the live probe states.
+   heTSkip "onion: LIVE multi-hand table session over tor", \
+         "two machines + a running tor daemon -- the 2f engine-era exit gate"
+end heTestOnionRun
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

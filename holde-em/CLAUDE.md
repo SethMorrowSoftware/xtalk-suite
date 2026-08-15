@@ -80,9 +80,10 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online lobby + online play (2d) written, on Phase 1 hotseat, plus
-the Phase 4a-4c Level 2 COMPUTE layer at v0.19.0 (pure algebra only; nothing plays on
-it yet).** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online lobby + online play (2d) + onion tables (2f) written, on
+Phase 1 hotseat, plus the Phase 4a-4c Level 2 COMPUTE layer (pure algebra only;
+nothing plays on it yet), at v0.20.0. 2f's exit -- a multi-hand onion table session
+on two machines with a running tor -- is the pending live gate.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -221,6 +222,43 @@ the UI, or the wire: 4d-4f and all orchestration are engine-era work, and the OX
 pass owes the sx* call shapes plus the 4f deal-time budget (52 mults per shuffle
 step, deal-time only, per the playbook).
 
+**Onion tables (v0.20.0, 2026-08-15 -- Phase 2f).** The plan's bet paid off: 2c/2d
+had already funneled every outbound payload through four netCap-seamed senders and
+every inbound frame through ONE router (heNetOnMessage), so swapping the byte
+transport cost one new live seam -- `heNetTxTo`, routed by `gGame["transport"]`
+("rp1" | "onion") -- plus a poll-tick line-reassembly drain inbound. The envelopes,
+chain, fold, and react engine changed NOT AT ALL. The contracts to keep intact when
+touching the `heNetOnion*` section:
+  - **All protocol work on the poll tick (H2).** The three OnionXT callbacks
+    (`heOnionStatus`/`heOnionPeer`/`heOnionStreamEvt`) only STASH bytes and flags
+    into gGame; `heNetOnionTick` does everything else, one state compare when idle.
+    Every ox* call sits in its own try with a declared catch local (H8), and every
+    silent async wait has a watchdog (the `kHeOnion*Ticks` deadlines).
+  - **Fail closed, never fall back.** Assume-running tor on the stock ports (9050/
+    9051; Tor Browser alone exposes no control port -- say so in the message). An
+    onion invite without OnionXT refuses outright (`heJoinRefusal`, pure and
+    dependency-injected so the harness drives both branches); a DHT invite never
+    goes near tor. The lobby's Tor line walks the quickshare-pill states.
+  - **The invite is the compatibility seam:** `<64hex>@<56base32>.onion`, one word
+    and non-hex ON PURPOSE -- a pre-2f stack's `word 1` + heIsHex gate refuses it
+    readably (downgrade refusal by format). The onion address derives from
+    `heOnionSeedHex` (kHeDomainOnion: secret-keyed by the host identity seed,
+    per-table, deterministic -- restart-stable, spec 9) and is computed OFFLINE at
+    create, then cross-checked against `oxServiceAddress` at publish.
+  - **The "h" hello frame is the rp1 handshake's stand-in**: the same signed
+    admission token as the stream's first wire line, verify-or-drop before any
+    reply; the host's answering hello precedes the replay so the ordered stream
+    delivers host identity before host-signed wires. LF framing is safe because
+    every free-text field is hex-encoded (one wire line per oxWrite; LF as
+    `numToChar(10)`, the OnionXT byte-discipline).
+  - **H1:** streams + service close on leave/stop (`heNetStop`'s onion branch);
+    the control connection deliberately survives between tables and is
+    `oxShutdown` on closeStack (`gOxCtlUp` remembers we opened it).
+  - Deferred with 2e liveness, on purpose: auto-redial after a lost host stream
+    (today it fail-closes naming "Join again"), host election over onion.
+  The whole section is verified statically; the live two-machine tor session is
+  the exit gate (harness section 17 pins the headless slice).
+
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
 user confirms in the IDE. This discipline is house law across the family.
@@ -231,7 +269,7 @@ user confirms in the IDE. This discipline is house law across the family.
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
 | **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*` — cross-checked KATs green, handlers still need their OXT pass). |
-| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | optional (onion tables; Phase 3 oracle hosting) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051). Needs SodiumXT ABI >= 6 for deterministic onions. |
+| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0)** -- optional per table (the host picks the transport at Create; a DHT table never touches it); Phase 3 oracle hosting is future | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass. |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
 Install all of them through the OXT **Extension Manager**; each bundles its native

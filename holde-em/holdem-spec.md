@@ -459,7 +459,42 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   join = same from the short code; leave = part message + remove torrent. The DHT
   carries **zero game data** — rendezvous only (plus optional BEP44 standings).
 - Onion tables: identical envelopes over OnionXT streams; the table code becomes the
-  onion address. Latency budget already fits.
+  onion address. Latency budget already fits. **As-built (2026-08-15, v0.20.0 — 2f;
+  code wins; verified statically, needs the two-machine live-tor pass):**
+  - The table code does not literally *become* the address — the invite carries
+    both, extending the short-code UX compatibly: `<64hex-table>@<56base32>.onion`,
+    one word and deliberately non-hex, so a pre-2f client's `word 1` + 64-hex gate
+    refuses the whole invite readably instead of silently joining a DHT table
+    nobody announced (downgrade refusal by format). A joiner's transport comes
+    from the invite; an onion invite on a stack without OnionXT is refused
+    outright — no fallback transport in either direction.
+  - The host's onion is deterministic: service seed =
+    `sxHash("HOLDEM-ONION-v1|" || idSeed || "|" || tableId)` — secret-keyed by the
+    host's identity seed (an invitee holding the public table code cannot derive
+    the service key and impersonate the table endpoint), fresh per table, and
+    re-derivable, so a restarted host republishes the same address and the invite
+    outlives the crash (section 9). The address is computed offline at create time
+    (`sxSignKeypairFromSeed` → `oxAddressFromPublicKey`; needs SodiumXT ABI 7's
+    SHA3 for the checksum, refused with a clear message below that) and
+    cross-checked against `oxServiceAddress` once the descriptor uploads.
+  - Framing: one envelope (or transport frame) per `oxWrite`, LF-terminated —
+    safe by construction, since every free-text field is hex-encoded into the
+    frame and no payload can contain an LF. The receiver reassembles complete
+    lines per stream on the poll tick (the OnionXT callbacks only stash bytes;
+    the 250 ms tick does all protocol work) and feeds the same router the rp1
+    events take.
+  - The handshake: rp1 carries the signed admission token in its transport
+    handshake event; an onion stream has no such event, so the token rides the
+    stream's first wire line (the `h` transport frame, beside `c`/`w`/`r!`/`s?`).
+    The host answers a verified hello with its own hello *before* the transcript
+    replay — the stream is ordered, so the joiner adopts the host key before any
+    host-signed wire arrives. An unverified hello earns nothing, not even the
+    host's identity.
+  - Onion tables touch no DHT at all (this section's "the DHT carries zero game
+    data" becomes "the DHT carries nothing"). Tor is assumed running on the stock
+    ports (SOCKS 9050, control 9051), probed fail-closed through watchdogged
+    states surfaced on a lobby status line (the nocloud/quickshare probe-chain
+    pattern).
 - Direct-TCP upgrade: optional pairwise `btMapPort` + engine sockets for sub-100 ms
   action UX; protocol-equivalent, falls back to rp1 silently.
 
