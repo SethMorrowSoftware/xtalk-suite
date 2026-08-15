@@ -4,6 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 repository. Read it before touching anything; it carries everything already learned the
 hard way across the sibling repos so it never has to be re-learned here.
 
+> **Folded into the monorepo 2026-08-15.** This directory was copied verbatim (via
+> `git archive`, tracked files only) from the standalone `hold-em` repository, which
+> becomes a mirror; development happens here now, like every other member. The seed
+> docs the suite had carried at `docs/holde-em/` (stale at pre-implementation while
+> this repo reached v0.18.0) were REMOVED in the fold - this directory is the one
+> authority. What the fold changed, each per suite law:
+>
+> - `tools/check-livecodescript.py` was REPLACED with the suite's unified checker,
+>   registered in `tools/check-checker-drift.py` and fixture-tested by
+>   `tools/test-checker.py` - never edit it here alone. First contact found TWO real
+>   engine traps this repo's own lineage could not see, both in the Level 0 deal
+>   path: `heXorSeedsHex` walked its hex pairs with `repeat with ... step 2` (OXT
+>   ignores the increment - it would have XORed 63 OVERLAPPING pairs and derived a
+>   wrong-but-internally-consistent deck), and `heDeckFromStreamKey` re-threw from
+>   inside a `catch` (the throw never reaches the caller on OXT). Both are rewritten;
+>   both handlers are re-labelled "verified statically; needs an OXT re-pass", and
+>   whether the PREVIOUS on-engine Level 0 runs dealt from the stepped or the
+>   1-stepped stream is exactly what that re-pass should establish (the Python KAT
+>   mirrors pin the 2-stepped semantics).
+> - The hold-em lineage checker survives as `tools/check-holdem-idioms.py`: eight of
+>   its checks (H6 chunk-of-array, H7 bitwise, engine-token names, undeclared catch
+>   vars, command-with-parens, dynamic property names, message-box prose, undeclared
+>   k-constants) have no unified-checker counterpart and every one has shipped-defect
+>   provenance here. It runs IN ADDITION via `tools/build-all.sh`; porting those
+>   checks INTO the unified checker (and retiring the file) is recorded follow-up.
+> - All ten pure-logic gates (the idiom checker, `check-docs.py`, the seven KATs,
+>   `logic-fuzz.py`) are wired into the suite's `tools/build-all.sh --gates`, which
+>   CI runs on every push; this member's own `.github/workflows/ci.yml` stays for
+>   standalone work but is inert here (GitHub runs only root workflows).
+> - `src/holdem.livecodescript` is EXEMPT in the suite's `tools/check-ui-kit-drift.py`
+>   ("game table on the b2k Kit; suite-kit chrome is phase-2" - the box2dxt games'
+>   reasoning). Registering it exposed a latent suite-gate bug the fold fixed: the
+>   gate's window-building regex ended in a literal backspace byte, so the
+>   width/height spelling had never matched; the rect spelling this stack uses was
+>   also unknown to it (and to `tools/check-stack-size.py`, which now parses it).
+> - The stack ships at 1024x690 - 50px over the suite's 720p height budget, with the
+>   status line and quick-bet row genuinely below y=640. It carries a written SKIP in
+>   `tools/check-stack-size.py`; the 720p re-layout is recorded follow-up work, not a
+>   number a gate can hold down.
+> - The `he*` prefix is registered in `tools/check-handler-calls.py`, which also
+>   learned to strip `/* */` block comments (this file's header changelog leaked
+>   prose into its candidate set - and 31 phantom "definitions" out of it, suite-wide).
+> - Registered in the `start-here.livecodescript` launcher. NOT folded into the
+>   generated suite selftest or its coverage gate: this member's harness lives
+>   EMBEDDED in the game stack (`heRunSelftest`), not as a separate foldable file -
+>   extracting it (or teaching the fold machinery an embedded harness) is recorded
+>   follow-up, the box2dxt precedent.
+>
+> Where this file and the suite root `CLAUDE.md` conflict, this file wins inside
+> `holde-em/`; paths in the docs below may still read as if this were its own repo
+> root (the suite's standing consolidation-debt caveat).
+
 ## What this is
 
 **holde-em** is a serverless online no-limit Texas Hold'em game for **OpenXTalk (OXT)**
@@ -12,7 +64,7 @@ pure-script project: **no native code lives in this repo**. It composes four sib
 extensions, each of which wraps its own native library behind a friendly xTalk surface:
 
 ```
-your table stack (this repo)                 src/holdem.livecodescript (planned)
+your table stack (this repo)                 src/holdem.livecodescript
    |- game logic: transcript, deal ladder, betting, evaluator = pure xTalk, here
    |- bt*   TorrentXT   org.openxtalk.library.torrent    rp1 messaging, DHT rendezvous, BEP44
    |- sx*   SodiumXT    org.openxtalk.library.sodium     identity, sealing, hashing, randomness
@@ -28,8 +80,11 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: pre-implementation.** The repo was seeded from Box2Dxt's `docs/holde-em/`
-folder; Phase 0 of the plan (bootstrap) is the current work.
+**Status: Phase 2 online lobby + online play (2d) written at v0.18.0, on Phase 1
+hotseat.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
+README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
+per-phase ledger.
 
 **Because chips may someday carry real value**, the security posture is not optional
 polish: read spec sections 2 (threat model), 13 (value-readiness), and 16 (security
@@ -61,25 +116,86 @@ checklist) before writing any protocol code, and follow section 16 as law.
 
 ## Commands
 
-**Static verification** (the only automated gate that exists for xTalk; run after
+**Static verification** (the only automated gate that exists for xTalk; run BOTH after
 **every** `.livecodescript` edit, and in CI):
 
 ```sh
-python3 tools/check-livecodescript.py
+python3 tools/check-livecodescript.py   # the suite's UNIFIED checker (drift-gated copy)
+python3 tools/check-holdem-idioms.py    # this member's extra idiom checks
 ```
 
-It scans every `.livecodescript` under `src/` and `examples/` for: **smart/curly
-quotes** (any single one fails OXT compilation), **handler balance**, **control-structure
-balance**, and the **dangling-else** pairing. Exit non-zero on any failure. It was
-carried from Box2Dxt (where it has caught real breakage repeatedly); the embedded-kit
-drift check was dropped as not-yet-applicable — restore it if this repo ever embeds a
-library between sentinels.
+Since the 2026-08-15 fold, `check-livecodescript.py` is the suite's unified twelve-check
+gate (ASCII, balance incl. switch/try, constants-before-use, token-shadow, zero-arg
+statement calls, repeat-step and throw-in-catch refusals, and the per-dialect
+antipattern sets) - byte-identical in every member and held so by the suite's
+checker-drift gate: never edit the copy here alone. `check-holdem-idioms.py` is the
+hold-em lineage checker it replaced, kept because eight of its checks (see its
+docstring) exist nowhere in the unified tool and each has caught a real shipped defect
+here. Exit non-zero on any failure, either tool.
 
-**Pure-logic pinning** (Phase 1+): the evaluator vectors and protocol KATs run headless
-in CI (`tools/` scripts, per the plan) because they are plain algorithms — the one part
-of this project that CAN be fully machine-verified. Keep it that way: game rules,
-crypto sequencing, and settlement must live in handlers that take values and return
-values, with no UI reads inside.
+**Pure-logic pinning** (Phase 1+): the evaluator vectors, betting-engine cases, and
+protocol KATs run headless in CI because they are plain algorithms — the one part of
+this project that CAN be fully machine-verified. The gates, in the order CI runs them:
+
+```sh
+python3 tools/check-livecodescript.py   # dialect gates, every .livecodescript
+python3 tools/check-docs.py             # smart-quote scan over *.md
+python3 tools/evaluator-kat.py          # spec 8.2 vectors (mirror of heEval7/heRank5)
+python3 tools/betting-kat.py            # spec 8.1/8.3 cases (mirror of heBetApply/heSettleOf)
+python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShuffleDeck)
+python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal (Phase 2 target)
+python3 tools/sounds-kat.py             # vendored casino-audio WAVs <-> stack mapping
+python3 tools/logic-fuzz.py             # INDEPENDENT-reference fuzz (rules, not the port)
+```
+
+The KATs above are *mirrors* — ported line-for-line from the xTalk so a green KAT plus a
+green on-engine harness pins the two together. That proves "the port matches the engine",
+not "the rules are right": a bug living in both the xTalk and its twin passes unseen.
+`tools/logic-fuzz.py` closes that hole — it drives the same mirror functions but checks
+them against a SECOND, independently-written evaluator and side-pot settlement (plus
+whole-game invariants: chip conservation, no negative stacks, termination). It runs the
+evaluator EXHAUSTIVELY (all 2,598,960 five-card hands → exactly 7462 classes) and fuzzes
+settlement/games over ~90k configs with fixed seeds (~30 s; `--full` does the exhaustive
+order-isomorphism, `--quick` a 5 s smoke). This is the committed backing for any
+"verified sound by property tests" claim — do not make that claim without it.
+
+The KAT vectors are also embedded in the stack's own self-test (`heRunSelftest` in the
+message box), so a green harness run on-engine plus green KATs in CI pins the xTalk to
+the mirrors. Keep it that way: game rules, shuffle, and settlement must live in
+handlers that take values and return values, with no UI reads inside.
+
+**The single stack.** `src/holdem.livecodescript` is one paste-and-run stack: the
+hotseat game AND its self-test (`heRunSelftest`) and a SodiumXT diagnostic
+(`heProbeSodium`) are folded into it. There is no second stack.
+
+**Binary stays out of the playable path (v0.2.0, the hard-won rule).** Repeated OXT
+passes threw double/binary conversion errors wherever script touched FFI-bridged
+binary (SodiumXT `Data`) through the chunk/arithmetic evaluator — even after copying
+the element to a local (H6). The resolution: the **playable deal uses a pure-integer
+PRNG** (Park-Miller MINSTD: only `+`, `*`, `mod`, every product `< 2^53` so it is
+exact in a double), seeded from `sxRandomUniform` (an *integer* result — no binary
+crosses into script) when SodiumXT is present, and from engine time+`random()` as a
+labelled practice fallback otherwise. Nothing in a played hand calls `sxHash`,
+`sxRandomBytes`, `sxBin2Hex`, `textEncode`, or any `byte`/`byteToNum`/`numToByte`.
+The cryptographic Level 0 deal (commit-reveal keyed-stream, spec 7.1) stays specced
+and KAT-pinned in `tools/protocol-kat.py` as the Phase 2 / value-path target; wire it
+back only behind a confirmed `heProbeSodium` (which tries each `sx*` call in its own
+`try` and names any that throws).
+
+**RESOLVED (v0.4.0) — `sxHash` needs an output-length argument.** The v0.2.0 probe
+found `sxHash` threw while `sxRandomUniform`/`sxRandomBytes`/`sxBin2Hex` worked; reading
+SodiumXT's real `docs/api-reference.md` (cloned into the session) showed why: the
+signature is **`sxHash(pData, pOutLen)`** — the earlier code called `sxHash(data)` with
+one argument, which throws. Use `sxHash(data, 32)` for BLAKE2b-256. Two other guessed
+shapes were also wrong and are now corrected against the real API: **`sxSignKeypairFrom-
+Seed pSeed, out rPub, out rSec`** is a *command with out-parameters* (not a function
+returning an array), and hole-card delivery uses **`sxSeal(msg, recipPub)` /
+`sxSealOpen(sealed, recipPub, recipSec)`**. Everything crosses as `Data`; `textEncode`
+strings before hashing/signing, `textDecode(..., "ascii")` the hex helpers back to
+text. The crypto seams (`heHash32`, `heHashDomHex`, `heDeriveIdentity`, `heSignDetachedD`,
+`heVerifyDetached`, `heSeal`) now wrap these one place each; `heProbeSodium` exercises
+the full roundtrip. Lesson: **read the sibling's `docs/api-reference.md`, do not guess
+FFI signatures** — the family repos are addable to the session for exactly this.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
@@ -120,12 +236,17 @@ into TorrentXT), `btDhtGetMutable`, `btDhtPutImmutable`/`btDhtGetImmutable`; por
 
 **SodiumXT** — everything is `Data`; `textEncode` xTalk strings before hashing/sealing;
 failures **throw** (wrap in `try`), except `sxSignVerifyDetached` which returns false.
-Identity/signing: `sxSignKeypairFromSeed` (deterministic, BEP44-compatible),
-`sxSignDetached`/`sxSignVerifyDetached`. Private lanes: `sxBoxKeypair`, sealed boxes
-`sxSeal`/`sxSealOpen` (anonymous sender), `sxBox`/`sxBoxOpen` (authenticated).
-Symmetric: `sxSecretBox`/`sxSecretBoxOpen`, `sxAeadEncrypt`/`sxAeadDecrypt` (nonces are
-handled internally — there is deliberately no bring-your-own-nonce entry point).
-Hashing/commitments: `sxHash`, `sxHashKeyed`, `sxHmacSha256`. Randomness:
+**Exact signatures matter (see the resolved-`sxHash` note above):** identity/signing is
+`sxSignKeypairFromSeed pSeed, out rPub, out rSec` (a **command with out-params**, not a
+function), then `sxSignDetached(msg, sec)` → `Data` and `sxSignVerifyDetached(sig, msg,
+pub)` → `Boolean` (never throws). Private lanes: `sxBoxKeypair`/`sxBoxKeypairFromSeed
+pSeed, out rPub, out rSec` (commands), sealed boxes `sxSeal(msg, recipPub)` /
+`sxSealOpen(sealed, recipPub, recipSec)` (anonymous sender), `sxBox`/`sxBoxOpen`
+(authenticated). Symmetric: `sxSecretBox`/`sxSecretBoxOpen`, `sxAeadEncrypt`/
+`sxAeadDecrypt` (nonces handled internally). Hashing/commitments: **`sxHash(pData,
+pOutLen)`** (the output length is mandatory — use `32` for BLAKE2b-256), `sxHashKeyed(pData,
+pKey, pOutLen)`, `sxHmacSha256`. Hex helpers `sxBin2Hex`/`sxHex2Bin` take and return
+`Data` (ASCII) — `textDecode(..., "ascii")` for a display string. Randomness:
 `sxRandomBytes`, `sxRandomUniform`. Utility: `sxMemEqual` (constant-time — the ONLY
 legal way to compare secrets/MACs), `sxBin2Hex`/`sxHex2Bin`, `sxBin2Base64`/
 `sxBase642Bin`. Passphrases (if a UI lock is ever added): `sxPwHash*` (Argon2id).
@@ -161,12 +282,16 @@ lessons that only apply to platformer-style games and were left behind. OXT's co
 is **stricter than LiveCode's**; every one of these broke a real build or shipped a real
 bug in the family.
 
-1. **No smart quotes.** Curly `“ ” ‘ ’` anywhere — even in a comment or string literal —
+1. **No smart quotes.** Curly quotes (U+201C U+201D U+2018 U+2019) anywhere — even in a comment or string literal —
    fail OXT compilation. Straight ASCII `"` and `'` only. (Unicode glyphs in *display*
    strings are fine.) The static gate enforces this.
 2. **Avoid names that shadow engine tokens.** Custom property/variable names whose stem
    is an engine keyword break compilation even when prefixed (real case: `the uCat` /
-   `the uMask` → renamed `uHitChans`/`uOnChans`). Prefer distinctive multi-word stems.
+   `the uMask` → renamed `uHitChans`/`uOnChans`). A whole name that case-insensitively
+   *equals* a token is even worse — it silently evaluates AS the token: `tAb` is read as
+   the `tab` constant (found v0.4.2, in `heByteXor` → renamed `tWorkA`). Prefer
+   distinctive multi-word stems. The static gate now flags any local/param whose name
+   equals an engine token (check 7).
 3. **Prefix conventions:** `u` = custom property, `g` = script-local global, `t` =
    handler local, `p` = parameter, `k` = constant. Public API prefixes in the family:
    `b2k*`, `bt*`, `sx*`, `ox*`; this repo's public surface will be `he*` (holde-em) —
@@ -181,7 +306,14 @@ bug in the family.
 6. **Constants must be literal.** `constant k = "120"` compiles; `constant k = a*b`
    does not — derive computed values at runtime.
 7. **Command results vs function returns.** A command reports via `the result`; a
-   function returns a value. Mixing them up fails silently.
+   function returns a value. Mixing them up fails silently — and calling a **command**
+   with function-call syntax `heFoo()` does not fail silently: it **throws** at the call
+   site ("error in function handler"), the body never runs (found v0.10.x — the harness
+   called `heProbeSodium()` this way and the probe blew up before executing). Only a
+   `function` may be invoked with `()`; a command is a statement, or route it through a
+   value via `the result`. The static gate flags a locally-declared command used with
+   `()` (check 10) — a parenthesised first argument `heFoo (x), y` is legal and is not
+   flagged.
 8. **Custom properties are text.** Everything round-trips as strings; booleans are the
    strings `"true"`/`"false"`.
 10. **Dangling else.** A bare `else` on the line after a single-line `if cond then stmt`
@@ -191,7 +323,10 @@ bug in the family.
     `if`/`repeat` block has broken compilation of an entire script.
 13. **Object-type tokens are single words.** `import audioClip from file …` compiles;
     `import audio clip …` does not. Dictionary prose spells them as two words; the
-    tokens are not.
+    tokens are not. Same family (found v0.17.1): the message box CONTAINER is the
+    single token `msg` — `put x into msg`; the prose form `put x into the message
+    box` throws at runtime. The static gate flags `the message box` in code
+    (check 12).
 14. **Sensor/contact messages go to `b2kContactTarget`, not the frame target.**
     Forgetting it = silent sensors with zero errors. Set both targets if the table ever
     uses Kit sensors.
@@ -230,6 +365,43 @@ House additions for THIS repo (earned in the siblings, restated as law here):
 - **H5. Pure logic stays pure.** Evaluator, betting engine, transcript fold, settlement:
   values in, values out, no UI reads, no `the result` reliance inside — this is what
   keeps them machine-testable (and it is why the KATs can run in CI at all).
+- **H6. Never take a chunk of an array element directly.** `byte i of tA[j]`,
+  `char 5 to -1 of tA["from"]`, `item n of tA["stacks"]` — all of them throw a
+  double/binary conversion error at runtime (found on this repo's first OXT pass, in
+  the seed-XOR path; the compiler accepts the syntax happily). Copy the element into a
+  plain local, then chunk the local. Same rule for `replace ... in tA["k"]` — copy out,
+  modify, or avoid. The static gate flags the chunk pattern (check 5).
+  **Corollary (v0.1.1): keep FFI-bridged binary away from the script chunk evaluator
+  entirely.** The double/binary error persisted past the copy-to-local fix, so binary
+  from `sx*` handlers is now hex-encoded at the edge (`sxBin2Hex` — itself proven by
+  the sodium probe) and everything script-side chunks plain hex text; raw Data exists
+  only in expressions passed straight into `sx*` calls. Seeds, the shuffle stream, and
+  every transcript field follow this rule.
+- **H7. No bitwise operators.** `bitXor`/`bitAnd`/`bitOr`/`bitNot` throw the same
+  double/binary conversion error at runtime on this OXT engine (found v0.4.1, in the
+  seed-XOR path — `bitXor(acc, baseConvert(...))`). They are valid LiveCode syntax, so
+  no structural check sees them. Do every bit operation with **pure integer arithmetic**
+  (`div`, `mod`, `add`, `*`) — the repo carries `heByteXor` (an 8-iteration div/mod XOR)
+  for exactly this. The static gate flags any bitwise operator (check 6).
+- **H8. Declare the catch variable as a local.** `try … catch tErr` where `tErr` is not in
+  the handler's `local` list throws a SECOND error on strict OXT the moment the catch
+  fires and its body references the variable — which masks the real failure and surfaces
+  as an opaque "error in function handler". It is invisible on a read (the catch only
+  misbehaves when it actually fires) and only bites once the `try` body starts throwing:
+  `heProbeSodium`/`heProbeTorrent`/`heDeckFromStreamKey`/`heNetStart` all shipped this and
+  blew up only once SodiumXT/TorrentXT was installed (found v0.10.x — the probe threw
+  instead of reporting). Every `catch <var>` must have a matching `local … <var>` (the
+  family pattern; `heTableNew` does it right). The static gate flags any undeclared catch
+  variable (check 9).
+- **H9. No parenthesised dynamic property names.** `the (expr) of obj` /
+  `set the (expr) of obj to ...` — building a property NAME at runtime — is not
+  portable xTalk: property names are compile-time tokens, and the computed-name form
+  is engine-shaky on OXT. It shipped once (v0.14.0 stored avatar paths in per-seat
+  props named `"uHeAvatarPath" & N`) and was caught in the pre-OXT-pass re-audit
+  (v0.15.0 fold of PR #33). The portable shape is ONE property holding a line-/item-
+  indexed list (`uHeAvatarPaths`, line N = seat N — paths cannot contain a newline,
+  so the index is safe); copy the property into a local before chunking it (H6
+  corollary). The static gate flags any `the (` in code (check 11).
 
 ## The single-threaded performance playbook (condensed for a card game)
 
@@ -262,8 +434,9 @@ keys only ever sign. When in doubt, the spec's threat model (section 2) decides.
 
 ## Workflow
 
-- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py`.
-- **The self-test harness** (`src/holdem-selftest.livecodescript`, Phase 1+) follows the
+- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py` AND
+  `python3 tools/check-holdem-idioms.py`.
+- **The self-test harness** (`heRunSelftest`, embedded in the one stack) follows the
   Box2Dxt pattern: deterministic assertions, a version constant (`kHeHarnessV`) printed
   in the report header and **bumped on every engine-behavior change** so a stale paste
   identifies itself, and self-diagnosing asserts that print what was observed, not just
@@ -277,17 +450,28 @@ keys only ever sign. When in doubt, the spec's threat model (section 2) decides.
 - **Style:** this codebase comments the *why*, densely, in the family's voice — mirror
   it. Straight quotes everywhere, including docs.
 
-## Repo layout (planned end-state; see IMPLEMENTATION-PLAN.md for sequencing)
+## Repo layout (as-built; see IMPLEMENTATION-PLAN.md for sequencing)
 
 ```
 README.md                          front door
 CLAUDE.md                          you are here
+LICENSE                            MIT (the family default, decided Phase 0)
 holdem-spec.md                     the design contract
 IMPLEMENTATION-PLAN.md             the phased build order
-tools/check-livecodescript.py     static gates (carried from the family)
-tools/protocol-kat.py              Phase 2+: envelope/chain/deal known-answer vectors
-src/holdem.livecodescript          the game: one self-building paste-and-run stack
-src/holdem-selftest.livecodescript the harness (evaluator vectors, protocol asserts,
-                                   adversarial cheater bots)
-.github/workflows/ci.yml           runs the gates + KATs on every push/PR
+tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated)
+tools/check-holdem-idioms.py       this member's extra idiom checks (the old lineage)
+tools/check-docs.py                docs smart-quote scan
+tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
+tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)
+tools/shuffle-kat.py               playable integer deal (CI mirror of heShuffleDeck)
+tools/protocol-kat.py              spec 6/7.1 crypto envelope/chain/deal wires
+tools/fold-kat.py                  transcript fold + settlement/deal audits (CI mirror)
+tools/atlas-kat.py                 Kenney card atlas <-> frame-name mapping
+tools/sounds-kat.py                vendored casino WAVs <-> stack mapping
+tools/logic-fuzz.py                INDEPENDENT-reference fuzz (rules, not the port)
+assets/cards/, assets/sounds/      vendored Kenney CC0 art + audio (see NOTICE.md)
+src/holdem.livecodescript          the whole thing: game + self-test + sodium probe,
+                                   one self-building paste-and-run stack
+.github/workflows/ci.yml           the standalone mirror's CI; INERT in the suite
+                                   (tools/build-all.sh --gates runs the same set here)
 ```

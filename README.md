@@ -239,12 +239,17 @@ The members are deliberately non-overlapping, so real apps mix them:
 - **The game stack.** box2dxt's b2k Kit is a working game engine (physics,
   sprites, input, camera - the platformer and contraption-builder examples
   are complete games), and enetxt is game-grade networking; together they
-  are the suite's multiplayer-game story. The worked design for it is
-  [`docs/holde-em/`](docs/holde-em/): serverless online Texas Hold'em where
-  players meet over the torrentxt DHT, every action lives in a signed
-  hash-chained transcript, and the deal runs a mental-poker shuffle -
-  Riptide's sibling capstone, moved up from box2dxt's docs in the fold
-  because it composes three members.
+  are the suite's multiplayer-game story. The worked PROOF of it is
+  [`holde-em/`](holde-em/): serverless online Texas Hold'em - players meet
+  over the torrentxt DHT, every action lives in a signed hash-chained
+  transcript, and the deal ladder tops out at a mental-poker shuffle.
+  Riptide's sibling capstone, folded home from its standalone repository
+  2026-08-15 at v0.18.0: the hotseat game and the Phase 2 online lobby +
+  online play are BUILT (evaluator exhaustively verified, settlement fuzzed,
+  seven KAT mirrors + an independent-reference fuzz in the gate set); the
+  multi-machine pass, onion tables, and the ristretto255 mental-poker deal
+  (blocked on sodiumxt's planned `sxRistretto*` surface) are the open
+  phases.
 - **The shipped example.** [`nocloud/`](nocloud/) is **No Cloud Quick Share**,
   a finished end-user app that composes the suite the way the ladder above
   describes: peer-to-peer file sharing as one stack script over torrentxt

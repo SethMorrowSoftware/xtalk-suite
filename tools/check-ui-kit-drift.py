@@ -89,12 +89,27 @@ EXEMPT = {
         "game canvas on the member's own embedded Kit; suite-kit chrome is phase-2",
     os.path.join("box2dxt", "examples", "box2dxt-selftest.livecodescript"):
         "box2dxt's harness predates the scaffold; scaffold adoption is phase-2",
+    # holde-em's table is a game in the box2dxt mold: a canvas drawn by the
+    # b2k Kit's sprites (cards) and bodies (chips), with the member's own
+    # dark-felt chrome. Suite-kit adoption is the same deliberate phase-2
+    # call the box2dxt games carry, recorded in holde-em/CLAUDE.md's fold
+    # record.
+    os.path.join("holde-em", "src", "holdem.livecodescript"):
+        "game table on the b2k Kit; suite-kit chrome is phase-2",
 }
 
-# The two spellings that mean "this file builds a window".
+# The three spellings that mean "this file builds a window". Until the
+# 2026-08-15 holde-em fold this regex ended in a literal BACKSPACE byte -
+# a \b word boundary that was baked in as \x08 somewhere upstream - so the
+# width/height spelling never matched and only uiChrome callers were ever
+# classified as window-building. The box2dxt EXEMPT entries above were
+# written for a pass that could not actually see those stacks; the repaired
+# regex confirms they are all correctly exempt. The rect spelling joined at
+# the same time (holde-em sizes its stack with `set the rect of this stack
+# to kHeStackRect` and would otherwise dodge the gate).
 import re
 SIZES_RE = re.compile(
-    r'(?m)^\s*(?:set\s+the\s+(?:width|height)\s+of\s+this\s+stack\s+to'
+    r'(?m)^\s*(?:set\s+the\s+(?:width|height|rect)\s+of\s+this\s+stack\s+to\b'
     r'|uiChrome\s+")')
 
 

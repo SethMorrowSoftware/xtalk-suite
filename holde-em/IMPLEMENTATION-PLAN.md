@@ -11,36 +11,77 @@ M3 = Phase 4 (+ workstream U), M4 = Phase 5.
 
 ---
 
-## Phase 0 — repo bootstrap
+## Phase 0 — repo bootstrap (done)
 
-> **Superseded by the 2026-08-14 fold**: this folder moved UP into the suite's
-> `docs/holde-em/` (it composes three members), not out into its own
-> repository. If the build starts, it starts as a suite member directory in
-> the riptide/nocloud mold, and step 1 below is already done in that form.
+> **Where this project lives (updated in the 2026-08-15 fold):** the seed folder
+> left Box2Dxt for its own repository as step 1 planned, was built there through
+> v0.18.0, and then folded home into the xTalk suite monorepo as the member
+> directory `holde-em/` — the riptide/nocloud mold. The standalone repository
+> becomes a mirror; the suite's stale seed copy at `docs/holde-em/` was removed
+> in the fold. The safety net below now ALSO runs suite-side on every push, via
+> `tools/build-all.sh --gates`.
 
-The seed folder becomes its own directory and gains its safety net.
+The seed folder becomes its own repository and gains its safety net.
 
 1. Move `docs/holde-em/` out of Box2Dxt into the new repo root (this folder is laid out
-   so the move is a plain copy; nothing references Box2Dxt paths).
-2. `README.md` (done in the seed), license decision (the family is MIT — confirm).
-3. CI (`.github/workflows/ci.yml`): run `tools/check-livecodescript.py` on every
-   push/PR (it passes trivially until `src/` exists), plus the docs smart-quote scan.
-4. Skeletons: `src/holdem.livecodescript` and `src/holdem-selftest.livecodescript`
-   with the stack scaffolding (openStack/closeStack brackets, build-UI stub, harness
-   runner stub with `kHeHarnessV = 1`).
-5. **Decision to record here when made — Kit delivery:** `start using` the Box2Dxt Kit
-   stack as an installed dependency, vs embedding a synced copy between sentinels (the
-   Box2Dxt-examples pattern; requires carrying `sync-embedded-kit.py` and its CI gate).
-   Default leaning: **embed**, so the game stays one paste-and-run stack like the rest
-   of the family's examples — but measure the paste size first.
+   so the move is a plain copy; nothing references Box2Dxt paths). **Done.**
+2. `README.md` (done in the seed), license decision. **Decided: MIT** (the family
+   default), `LICENSE` at the repo root.
+3. CI (`.github/workflows/ci.yml`): runs `tools/check-livecodescript.py`, the docs
+   smart-quote scan (`tools/check-docs.py`), and every headless KAT
+   (`tools/evaluator-kat.py`, `tools/betting-kat.py`, `tools/protocol-kat.py`) on
+   every push/PR. **Done.**
+4. Skeletons: superseded — Phase 1's pure logic landed directly (see below); the two
+   stacks exist with full scaffolding and `kHeHarnessV = 1`.
+5. **Decision recorded — Kit delivery:** `start using` the installed Kit stack for now
+   (`heKitTryInit` probes for stack "box2dxt-kit" and degrades to the dependency-free
+   flat UI mode when absent). Embedding a synced copy between sentinels stays open as
+   a Phase 1d option once the Kit is actually wired to art and the paste size can be
+   measured; the sync tooling is not carried until then.
 
-**Exit:** CI green in the new repo; skeleton stack compiles in OXT (user-confirmed).
+**Exit:** CI green in the new repo ✅; stack compiles and runs in OXT ✅ (the
+"pending, needs the first OXT pass" this line carried was stale by v0.11.1 — the
+stack's changelog records repeated OXT passes from v0.2.0 on, and the v0.17.2
+defect was found AT first run on engine; corrected in the 2026-08-15 fold's
+truth pass).
 
 ## Phase 1 — hotseat game (spec M0)
 
 Everything runs locally, six seats on one machine, zero networking. This phase is
 where all visual iteration happens and where the pure logic gets pinned. Build order
 inside the phase matters:
+
+**Status:** 1a/1b and the pure halves of 1e are written and machine-pinned (CI KATs
+green; the stack's own `heRunSelftest` carries the same vectors for the on-engine
+run). 1d exists as the self-building chrome in two modes — a dependency-free flat mode
+and the Kit mode scaffold (atlas loading, pre-warm, gated frame loop); animation
+polish is left for the OXT pass. Everything below stays "verified statically; needs an
+OXT pass" until the user runs the harness and plays hands in OXT.
+
+**Math + rules audit (v0.3.0).** The betting engine, side pots, settlement, evaluator,
+and PRNG were audited: property tests (an independent conserving side-pot reference vs
+the engine over 60k+ configs; 6k random full games; 400 full sessions to elimination;
+min-raise invariants; PRNG uniformity) all pass with zero defects, and an
+xTalk-vs-Python equivalence pass confirmed the shipped stack matches the tested
+mirrors. The one rules gap found -- no dead-button handling, so an elimination could
+double- or skip-charge a blind -- is fixed: the big blind now always advances to the
+next live seat (`heScheduleButton`, pinned in `tools/betting-kat.py` and the on-engine
+harness). The table UI was also rebuilt chip-forward (per-seat panels, chip totals,
+bets in front, dealer/blind badges, fold/all-in/acting/winner states, pot, quick-bet
+buttons) -- verified statically, needs an OXT pass.
+
+**As-built deal (v0.2.0, a code-wins decision).** 1c was originally the Level 0
+commit-reveal keyed-stream deal (spec 7.1). Repeated OXT passes threw double/binary
+conversion errors wherever script code touched FFI-bridged SodiumXT `Data` through the
+chunk/arithmetic evaluator — persisting even after the H6 copy-to-local fix. So the
+**playable deal is now a pure-integer PRNG shuffle** (Park-Miller MINSTD, seeded from
+`sxRandomUniform` when present — an integer result, no binary in script — else engine
+time+`random()`, labelled practice), pinned by `tools/shuffle-kat.py`. This unblocks a
+playable, demoable M0 without depending on the fragile FFI-binary path. The
+cryptographic Level 0 deal stays specced and KAT-pinned (`tools/protocol-kat.py`) and
+moves to **Phase 2**, to be wired only behind a confirmed `heProbeSodium` (the stack's
+per-`sx*`-call diagnostic). Everything is one paste-and-run stack now — the separate
+self-test stack was folded into `src/holdem.livecodescript`.
 
 - **1a. Hand evaluator** (spec 8.2) — first code written, pure function, pinned by
   known-answer vectors in the harness AND mirrored in `tools/` so CI runs them
@@ -87,7 +128,16 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
   from fixed seeds — headless, in CI.
 - **2d. Online Level 0 deal + receipts** (spec 7.1, 8.3): sealed-box hole delivery,
   end-of-hand seed reveal audit, countersigned settlement receipts chained hand to
-  hand.
+  hand. **Status: written (v0.17.0), netsim-pinned on one machine; needs the
+  multi-machine OXT pass.** As-built shape: `join` wires bind each player's session
+  box pub on-chain; host `sit` wires assign seats; the dealer is the button seat;
+  seeds travel as on-chain `seedSeal` ciphertexts; showdown ranks are re-derived
+  from the revealed seeds (players cannot lie about holes); the host's `settle` is
+  verified by every client before folding; `receipt` wires carry the 8.3
+  co-signatures. Street `ckpt` wires and `show`/`muck` are deferred to 2e alongside
+  liveness (they exist for reconnect windows and display choice, not correctness).
+  Online History folding (translating the wire log for the History panel) is also
+  deferred -- the live audit verdicts land in the net feed.
 - **2e. Liveness** (spec 9): act timers + time-bank, sit-out, reconnect via
   transcript replay from last checkpoint, host election.
 - **2f. Onion tables** (spec 10): the same envelopes over OnionXT streams — expected

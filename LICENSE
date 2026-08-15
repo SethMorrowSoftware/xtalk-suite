@@ -46,6 +46,13 @@ licenses, reproduced with their sources:
                   Kenney game assets            CC0-1.0
                   (the Spritesheets/ art the
                   platformer + demos draw)
+  holde-em        Kenney playing-card assets    CC0-1.0
+                  (assets/cards/ atlases; local
+                  edits recorded in NOTICE.md)
+                  Kenney casino audio           CC0-1.0
+                  (assets/sounds/ WAVs,
+                  converted OGG->PCM16 per
+                  NOTICE.md)
   coinxt          trezor-crypto                 MIT
                   SHA-2 (Gifford)               BSD-3-Clause
                   SHA-3/Keccak (RHash)          MIT

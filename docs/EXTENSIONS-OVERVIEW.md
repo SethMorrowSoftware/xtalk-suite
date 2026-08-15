@@ -308,6 +308,7 @@ onionxt are optional and probed at startup.
   The shared 60000-byte message budget is the seam: when a payload stops
   being a message, it becomes a torrent.
 - **The game stack** — box2dxt's Kit plus enetxt's networking; the
-  worked design is `docs/holde-em/` (serverless poker over the DHT).
+  worked proof is `holde-em/` (serverless poker over the DHT, folded
+  home 2026-08-15: hotseat + online play built, later phases open).
 - **The proofs** — riptide composes five members into a social app;
   nocloud ships the ladder as a file-sharing product.

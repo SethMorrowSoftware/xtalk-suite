@@ -51,6 +51,16 @@ openxtalk-libraries/
                        member-shaped so the gates walk it; its checker copy
                        was replaced with the unified one in the fold commit;
                        has its own CLAUDE.md
+  holde-em/            the second capstone APP: serverless Texas Hold'em over
+                       torrentxt/sodiumxt (+ box2dxt Kit art, optional
+                       onionxt), one paste-and-run stack, folded home
+                       2026-08-15 at v0.18.0 (hotseat + online play built;
+                       oracle and mental-poker phases open); its checker was
+                       replaced with the unified copy (two real deal-path
+                       traps fixed in the fold) and its old lineage checks
+                       survive as tools/check-holdem-idioms.py; seven KAT
+                       mirrors + an independent-reference fuzz ride
+                       build-all; the fold record is in its CLAUDE.md
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /

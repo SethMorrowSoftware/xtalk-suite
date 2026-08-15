@@ -27,7 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COPY_SETS = {
     "check-livecodescript.py": ["sodiumxt", "torrentxt", "enetxt",
                                 "datachannelxt", "onionxt", "coinxt",
-                                "riptide", "nocloud", "box2dxt"],
+                                "riptide", "nocloud", "box2dxt",
+                                "holde-em"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide"],
 }
 
