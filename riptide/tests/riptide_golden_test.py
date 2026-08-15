@@ -200,6 +200,141 @@ check("signbuf saltless",
       b"3:seqi7e1:v2:hi")
 check("bencode empty", ref["bencode_bytes"](b""), b"0:")
 
+# --- phase 4: X25519 / crypto_kx (anchored against real libsodium by
+# --- tools/emit-kx-anchor.py; see the oracle's self-check provenance) ------
+
+DM_KX_PUB = "d946190585386568c3123a6fa706f94f5140fdfe647ab51fdf76e3f6e5799d3c"
+CONF_KX_PUB = "9cf14a375404bd5f3fc048647215af20b506717fdab3f6e7df50c64e837f2059"
+SESSION_RX = "0cf0c702142da300ac5d769dff39a1b4aabe4842b617cdf4a624815290b4ba38"
+SESSION_TX = "2f8bb162c5e2d4346eadcf2a47804458428840336303e629d1ac20e8375dfe83"
+
+dm_kx_pk, dm_kx_sk = ref["kx_seed_keypair"](ref["dm_seed"](MASTER))
+conf_kx_pk, conf_kx_sk = ref["kx_seed_keypair"](bytes.fromhex(
+    "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"))
+check("dm kx pub", dm_kx_pk.hex(), DM_KX_PUB)
+check("conf kx pub", conf_kx_pk.hex(), CONF_KX_PUB)
+# role rule: the golden handle (5a54...) sorts below the conformance pub
+# (672e...), so the golden side is the kx CLIENT
+rx, tx = ref["kx_client_session_keys"](dm_kx_pk, dm_kx_sk, conf_kx_pk)
+check("session rx", rx.hex(), SESSION_RX)
+check("session tx", tx.hex(), SESSION_TX)
+srx, stx = ref["kx_server_session_keys"](conf_kx_pk, conf_kx_sk, dm_kx_pk)
+check("session cross-match rx", srx.hex(), SESSION_TX)
+check("session cross-match tx", stx.hex(), SESSION_RX)
+check_raises("kx bad seed len", lambda: ref["kx_seed_keypair"](b"\x01" * 31))
+
+# --- phase 4: the DM wire records (RSK1 / RSI1 / RSM1 / inner message) -----
+
+PREKEY_REC_HEX = (
+    "52534b31643934363139303538353338363536386333313233613666613730366639"
+    "3466353134306664666536343761623531666466373665336636653537393964336"
+    "34af78ee3dc74534030feac4a92bf540c17cd9fb992c8e3e0eeb9af2822c9d6c40d"
+    "f10e2880b8a395bfe1cf076d8a325c00d9fbb046987657c080faff77a98609")
+PREKEY_REC_TARGET = "5b92cd531aa0537e43def0f737e2a61c48673008"
+INTRO_TARGET = "2906ed430af1a60385dc2bc70bd99d621d238d4d"
+DM_MSG_HEX = "54000000006899333468656c6c6f2c20646d"
+
+prekey_rec = ref["build_prekey"](DM_KX_PUB, ID_SEED)
+check("prekey bytes", prekey_rec.hex(), "".join(PREKEY_REC_HEX.split()))
+check("prekey length", len(prekey_rec), 132)
+check("prekey target", ref["immutable_target"](prekey_rec), PREKEY_REC_TARGET)
+# the trailing 64 bytes really are ed25519 by the identity key over the rest
+check("prekey sig", prekey_rec[-64:],
+      ref["ed25519_sign"](prekey_rec[:-64], ID_SEED))
+
+intro = ref["build_intro"](HANDLE, DM_KX_PUB, CONF_PUB, 1754870520, ID_SEED)
+check("intro length", len(intro), 268)
+check("intro target", ref["immutable_target"](intro), INTRO_TARGET)
+check("intro magic", intro[:4], b"RSI1")
+check("intro sender", intro[4:68], HANDLE.encode("ascii"))
+check("intro kx pub", intro[68:132], DM_KX_PUB.encode("ascii"))
+check("intro recipient", intro[132:196], CONF_PUB.encode("ascii"))
+check("intro sig", intro[-64:], ref["ed25519_sign"](intro[:-64], ID_SEED))
+
+frame = ref["build_dm_frame"](b"I", intro)
+check("frame magic+kind", frame[:5], b"RSM1I")
+check("frame payload", frame[5:], intro)
+
+msg = ref["build_dm_message"](b"T", 1754870580, "hello, dm")
+check("dm message bytes", msg.hex(), DM_MSG_HEX)
+check("dm message kind", msg[:1], b"T")
+
+check_raises("prekey bad hex", lambda: ref["build_prekey"]("zz" * 32, ID_SEED))
+check_raises("intro bad handle", lambda: ref["build_intro"](
+    "zz" * 32, DM_KX_PUB, CONF_PUB, 1, ID_SEED))
+check_raises("frame bad kind", lambda: ref["build_dm_frame"](b"X", b"x"))
+check_raises("frame empty payload", lambda: ref["build_dm_frame"](b"M", b""))
+check_raises("frame over cap", lambda: ref["build_dm_frame"](
+    b"M", b"x" * 60000))
+check_raises("message bad kind", lambda: ref["build_dm_message"](
+    b"X", 1, "hi"))
+check_raises("message empty body", lambda: ref["build_dm_message"](
+    b"T", 1, ""))
+
+# --- phase 6: LAN mesh admission (fixed nonce -> deterministic) ------------
+
+LAN_PUB = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
+LAN_NONCE = "5a" * 32
+LAN_CHALLENGE_HEX = (
+    "52534c3143066c6170746f70" + "5a" * 32)
+LAN_RESPONSE_HEX = (
+    "52534c31520570686f6e65"
+    "8941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b"
+    "2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08")
+
+lan_pub, lan_seed = ref["lan_keys"](MASTER)
+check("lan pub", lan_pub.hex(), LAN_PUB)
+challenge = ref["lan_build_challenge"]("laptop", bytes.fromhex(LAN_NONCE))
+check("lan challenge bytes", challenge.hex(), LAN_CHALLENGE_HEX)
+response = ref["lan_build_response"](challenge, "phone", MASTER)
+check("lan response bytes", response.hex(), LAN_RESPONSE_HEX)
+# the response really is a valid signature under the LAN public, and the
+# name binding really holds (a signature made for "phone" does not verify
+# as "laptop")
+check("lan response verifies",
+      ref["_verify_ed25519"](response[-64:],
+                             ref["lan_sig_message"](bytes.fromhex(LAN_NONCE),
+                                                    "phone"), lan_pub),
+      True)
+check("lan name binding",
+      ref["_verify_ed25519"](response[-64:],
+                             ref["lan_sig_message"](bytes.fromhex(LAN_NONCE),
+                                                    "laptop"), lan_pub),
+      False)
+check_raises("lan name over cap", lambda: ref["lan_build_challenge"](
+    "x" * 33, bytes.fromhex(LAN_NONCE)))
+check_raises("lan bad nonce len", lambda: ref["lan_build_challenge"](
+    "a", b"\x00" * 31))
+
+# --- phase 7: the anon persona + BTXO framing ------------------------------
+
+ANON0_HANDLE = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
+ANON0_ONION = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
+BTXO_HEADER_HEX = "4254584f0100000a7365637265742e747874000000000000000b"
+BTXO_FRAME_HEX = "0000000b68656c6c6f20776f726c64"
+
+check("anon0 handle", ref["anon_handle"](MASTER, 0), ANON0_HANDLE)
+check("anon0 onion", ref["anon_onion"](MASTER, 0), ANON0_ONION)
+# the anon handle is the anon SEED's ed25519 public, and the anon onion is
+# that key as a v3 address - so the onion decodes back to the handle, which
+# is what makes an anon .onion self-authenticating (spec 8.1)
+check("anon onion inverts to handle",
+      ref["pubkey_from_onion"](ANON0_ONION).hex(), ANON0_HANDLE)
+# distinct personas are distinct keys
+check("anon personas differ",
+      ref["anon_handle"](MASTER, 0) != ref["anon_handle"](MASTER, 1), True)
+
+check("btxo header bytes", ref["btxo_header"]("secret.txt", 11, 0).hex(),
+      BTXO_HEADER_HEX)
+check("btxo data frame", ref["btxo_data_frame"](b"hello world").hex(),
+      BTXO_FRAME_HEX)
+check("btxo terminator", ref["btxo_terminator"](), bytes.fromhex("00000000"))
+# the frame really is length-prefixed: the u32 prefix equals the payload len
+check("btxo frame prefix",
+      ref["btxo_data_frame"](b"hello world")[:4],
+      (11).to_bytes(4, "big"))
+check_raises("btxo empty frame", lambda: ref["btxo_data_frame"](b""))
+
 # ---------------------------------------------------------------------------
 
 if FAILURES:

@@ -32,14 +32,39 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   5-target native matrix (paths-scoped; artifacts, never releases or
 >   commits - the suite convention). The member's own build.yml stays for
 >   standalone work but is inert here. NOT yet done: box2dxt is not in
->   release-binaries.yml's manual assembly matrix - add it there when the
->   next release pass happens.
+>   release-binaries.yml's manual assembly matrix. **This is not a clean
+>   matrix add** (checked 2026-08-14): box2dxt's known-good Linux build
+>   (native-box2dxt.yml) uses `docker run manylinux2014` INSIDE a stock
+>   runner, because manylinux2014 is glibc 2.17 and GitHub's node20 actions
+>   (checkout/upload-artifact) refuse to start in a 2.17 container - which
+>   is exactly why release-binaries.yml's `cmake-members` job uses the
+>   `container:` shape with manylinux_2_28. So box2dxt cannot join
+>   `cmake-members` as-is: it needs either its own docker-run job ported
+>   from native-box2dxt.yml, or a move to manylinux_2_28 that would raise
+>   its glibc floor from 2.17 to 2.28 (a real portability regression, the
+>   owner's call). `tools/install-release-binaries.py` would also need to
+>   learn box2dxt's package layout. Do this as a deliberate release-lane
+>   pass, not a drive-by.
 > - The examples are registered EXEMPT in the suite UI-kit gate: they are
 >   games drawn by this member's own embedded b2k Kit (whose copies have
 >   their own sync gate, `tools/sync-embedded-kit.py`), not form UIs.
 >   **Phase-2 work, deliberately deferred:** suite-kit chrome for the game
->   stacks, harness-scaffold adoption for `examples/box2dxt-selftest`, and
->   folding that selftest into the suite harness as the ninth member.
+>   stacks (an aesthetic call - the exemptions argue form chrome is not the
+>   games' UI language), harness-scaffold adoption for
+>   `examples/box2dxt-selftest`, and folding that selftest into the suite
+>   harness as the eighth folded member. **Fold prerequisite DONE
+>   2026-08-14:** `stRunAll` now probes the native library in a guarded try
+>   and SKIPS cleanly when box2dxt is absent, instead of dying with a raw
+>   `b2Version` throw - which is what a folded harness needs, since the
+>   suite paste runs on machines without box2dxt. What remains for the fold:
+>   give `stRunAll` a returned-report mode (the "N passed, M failed" first
+>   line `stMergeReturned` parses, as `rsSelfTest` does) OR adopt the
+>   harness scaffold's counter names, then add a `Member(...)` row to
+>   `tools/build-suite-selftest.py` and teach `check-suite-coverage.py` the
+>   `b2`/`b2k` prefixes. The coverage gate will then REQUIRE every public
+>   `b2*`/`b2k*` handler to be called by name in the harness, so expect to
+>   close gaps there too. None of that is runtime-verifiable without an
+>   engine, so it wants an OXT pass in the same change.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document.

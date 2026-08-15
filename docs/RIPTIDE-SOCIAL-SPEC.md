@@ -486,16 +486,48 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    on two machines, feeds exchanged both directions; the as-built record is
    `riptide/CLAUDE.md`.)*
 3. **Media** — create/seed/co-seed a photo and a sequential video. *Done when* a
-   follower plays a video mid-download.
+   follower plays a video mid-download. *(Built 2026-08-14:
+   `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library, the media
+   strip in `riptide/examples/riptide-social.livecodescript`, harness
+   coverage in the suite self-test. Verified statically; the done-criterion
+   needs its two-machine pass. As-built decisions: `riptide/CLAUDE.md`.)*
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
    *Done when* two machines exchange authenticated encrypted DMs with no server.
+   *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records
+   named by the head's `prekeyTarget`, RSI1 sealed intros bound to one
+   recipient, RSM1 rp1 frames, deterministic kx roles - plus the Messages
+   card in the demo and full harness coverage; crypto_kx is anchored against
+   a real libsodium via `riptide/tools/emit-kx-anchor.py`. One deliberate
+   delta from this section's sketch: the intro seals to the recipient's
+   VERIFIED prekey, not to the ed25519 handle - `sxSeal` takes a curve25519
+   key, and a signed prekey record makes the seal target provable. Verified
+   statically; the done-criterion needs its two-machine pass. As-built:
+   `riptide/CLAUDE.md`.)*
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
-   cold start. *Done when* a call connects across two networks.
+   cold start. *Done when* a call connects across two networks. *(Library-ready
+   2026-08-14: SDP offer/answer ride the phase-4 DM message kinds `O`/`A` over
+   the existing secretstream, so no new library surface is needed; the
+   dataChannelXT call wiring is a demo milestone still to build.)*
 6. **LAN sync** — enet device mesh with subkey-3 admission. *Done when* a draft
-   written on one device appears on another with a stranger refused.
+   written on one device appears on another with a stranger refused. *(Built
+   2026-08-14: the `rsLan*` admission layer - the shared-master ed25519 keypair
+   every device derives, and an RSL1 challenge/response a stranger cannot sign -
+   plus the Devices card in the demo and full offline harness coverage; the
+   enConnect rider is a u32 protocol tag, so the proof is a first message, not
+   connect data. Verified statically; the done-criterion needs its two-machine
+   pass. As-built: `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**
-   `bt*` calls provable in a trace. Needs an OXT + live-Tor pass.
+   `bt*` calls provable in a trace. Needs an OXT + live-Tor pass. *(Built
+   2026-08-14: the `rsAnon*` layer - the onion-only persona derivation (handle
+   and .onion, offline-derivable and golden-pinned), the probe-gated onion
+   service wrapper, and the BTXO framed-chunk protocol - plus `rsPersonaAllows`,
+   the pure-policy §9.3 guard whose full truth table is asserted in the harness,
+   plus the demo's Anon card with a live guard panel. Verified statically; the
+   done-criterion needs an OXT + live-Tor pass. The sealed anon-DM route (§8.3)
+   is deferred: `sxSeal` needs a curve25519 key, so it wants the same
+   published-prekey refinement the DM rail uses, which is a later pass. As-built:
+   `riptide/CLAUDE.md`.)*
 
 ---
 

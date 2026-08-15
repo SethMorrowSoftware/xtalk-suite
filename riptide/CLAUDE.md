@@ -21,8 +21,30 @@ call.
 phase 1 (identity + the pure-compute feed layer) and the phase-2 LIVE feed
 layer (BEP44 head/post publish, async lookups, ingest verifiers) are
 engine-passed, and phase 2's two-machine propagation criterion closed
-2026-08-13 (see rule 8). The remaining transport phases (3-7) land later,
-each behind its own pass.
+2026-08-13 (see rule 8). **Phases 3 (media) and 4 (DMs) are BUILT but not
+passed** (2026-08-14): phase 3 is `rsMediaCreate`/`rsMediaFetch`/
+`rsMediaStatus` plus the demo's media strip; phase 4 is the `rsDm*` layer
+(kx prekeys, RSK1/RSI1/RSM1 records, deterministic-role sessions, inbox
+join + framed send) plus the demo's Messages card - all golden-pinned
+where deterministic, refusal-covered in the harness, verified statically;
+their done-criteria (a follower plays a video mid-download; two machines
+exchange authenticated encrypted DMs) each need a two-machine pass.
+**Phase 6 (LAN mesh) is BUILT but not passed** (2026-08-14): the `rsLan*`
+admission layer (shared-master ed25519 keypair, RSL1 challenge/response)
+plus the demo's Devices card, golden-pinned and offline-harness-covered;
+its done-criterion (a device that shares the master joins, a stranger is
+refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
+library surface** - SDP rides the phase-4 DM message kinds O/A over the
+existing secretstream, so it is a demo-wiring milestone still to build.
+**Phase 7 (anon persona) is BUILT but not passed** (2026-08-14): the
+`rsAnon*` layer (onion-only persona derivation, probe-gated service
+wrapper, BTXO framing) and `rsPersonaAllows` - the pure-policy §9.3 guard,
+the app's highest-severity invariant - plus the demo's Anon card, all
+golden-pinned/harness-covered where deterministic; its done-criterion (a
+persona reachable over Tor with zero `bt*` calls in a trace) needs an OXT +
+live-Tor pass. With that, all seven spec phases are built in the tree;
+only phase 5's dc demo wiring and phase 7's sealed anon-DM route remain,
+both noted below.
 
 ## The rules that bind this directory
 
@@ -72,7 +94,10 @@ each behind its own pass.
    chain walk; this was also the first run to drive REAL btPoll DHT events
    into the ingest verifiers (previously synthetic-only). Result text and
    environments were not captured with the report; the record is the
-   maintainer's account, dated.
+   maintainer's account, dated. **The phase-3 media layer (2026-08-14) has
+   had NO engine pass yet**: its label is "verified statically; needs an
+   OXT pass", and its done-criterion additionally needs the two-machine
+   mid-download play.
 
 ## Things learned building phase 1 (do not relearn)
 
@@ -140,6 +165,194 @@ each behind its own pass.
   `tools/build-suite-selftest.py` carries a riptide rewrite that aliases
   the folded copy to the core's session (the bt1 pattern; a second
   btStartSession would be refused and the live section would SKIP green).
+
+## Things decided building phase 3 (do not re-litigate)
+
+- **Media attachments are SINGLE FILES.** `rsMediaCreate` refuses anything
+  that is not a file: a photo or a video has one obvious thing to play,
+  a folder does not, and folder shares are a file-sharing app's job
+  (quickshare). The torrent is TRACKERLESS (`btCreateTorrent(path, 0, 0,
+  "")`) - DHT-only, like everything else riptide does.
+- **Seed in place; return the hash, not the handle.** The seed's save path
+  is the file's own parent folder, so libtorrent finds the payload where
+  it already sits and no copy is made. The function returns the 40-hex
+  info-hash because that is what posts carry and what followers fetch;
+  `btFindTorrent(pSession, tHash)` recovers the handle whenever the app
+  wants one, which is also exactly how `rsMediaFetch` is idempotent.
+- **`rsMediaFetch` finds before it adds.** A re-click, a restart's
+  re-fetch, or fetching your own seed all land on the `btFindTorrent`
+  path and return the live handle instead of a duplicate-add error - and
+  the sequential flag is applied on BOTH paths, because the caller asked
+  for playback now, not only on first contact. A failed
+  `btSetSequentialDownload` fails the call but deliberately leaves the
+  torrent added: download progress is never thrown away over a flag, and
+  the retry lands on the find path and re-applies.
+- **`rsMediaStatus` takes the torrent handle, not the session.** The
+  snapshot is per-torrent (`btTorrentStatus` + the first file's on-disk
+  path and per-file progress from `btFileList`); demanding a session
+  argument it never used would be dishonest API. filePath/fileSize/
+  fileProgress stay empty until metadata arrives, so "filePath is empty"
+  doubles as the not-openable-yet probe; with a sequential fetch the file
+  is openable long before completion, which IS the mid-download play.
+- **The harness salts its payload with the clock.** A crashed run leaves
+  its torrent in the never-stopped session; fixed payload bytes would make
+  the next run's add collide with that leftover. Time-salted bytes give
+  every run a fresh info-hash, and the section removes its torrent at the
+  end (`btRemoveTorrent`, keep files) so a clean run leaves a clean
+  session. No golden vector pins the hash - a torrent's info dict embeds
+  the file name and piece hashes, and pinning that is a torrent-format
+  oracle this repo does not need.
+- **The demo attaches at click, seeds at POST.** The picker only records
+  the path; `rsMediaCreate` runs inside `raPost`, where the session is
+  guaranteed, and a refusal ABORTS the post - a published post must never
+  name a hash nobody can fetch. The strip's one button is two-mooded
+  (Fetch until the on-disk file exists for the field's hash, then Play)
+  and hands the file to the system player mid-download on purpose.
+
+## Things decided building phase 4 (do not re-litigate)
+
+- **Intros seal to the PREKEY, not the handle.** `sxSeal` takes a
+  curve25519 public key; the ed25519 handle is not one, and sodiumxt
+  ships no conversion handler. So first contact needs the recipient's
+  crypto_kx public - which is exactly what the head's `prekeyTarget`
+  publishes, as an RSK1 record SIGNED by the identity key. The seal
+  target is therefore provable before anything is sealed to it
+  (`rsVerifyPrekey`), and a swapped prekey is a refusal, not a readable
+  first message. This is a deliberate delta from the spec section 5.1
+  sketch, recorded there too.
+- **kx facts are anchored, not remembered.** `tools/emit-kx-anchor.py`
+  loads a REAL libsodium via ctypes and prints what crypto_kx returns for
+  the oracle's fixed inputs; the oracle's pure-Python X25519/crypto_kx
+  self-checks against that output (provenance in both files). A crypto
+  constant typed from memory is exactly what rule 1 exists to refuse.
+- **Roles are decided by handle order.** The lexically smaller handle
+  (lowercase hex = raw byte order, the roomId discipline) is the kx
+  CLIENT. Both sides derive the same session with no negotiation, and
+  `my tx is your rx` is asserted from BOTH ends in the harness.
+- **The recipient handle lives INSIDE the signed intro.** Replaying a
+  sealed intro to a third party dies on the recipient check, and a
+  sender/signer mismatch cannot be expressed because `rsBuildIntro`
+  derives the sender handle from the signing seed rather than taking it
+  as an argument.
+- **Frame and message kinds compare by BYTE, not by `is`.** `is` folds
+  case, and an unsigned transport frame gets no signature backstop, so
+  "i" is refused where "I" is meant (the coinxt canonical-form lesson,
+  applied at build AND parse).
+- **The demo authenticates peers by what only they can do.** A bystander
+  in the inbox swarm can see sealed intros (it cannot open them) and can
+  even send a fake stream header; what it can NEVER do is produce a
+  ciphertext the derived session accepts, so the first failed pull drops
+  the peer. The compose box binds to a peer at channel-open and unbinds
+  on that failure. ONE conversation at a time, loudly documented - the
+  library supports many; the demo optimizes for a two-machine pass.
+- **Streams are freed everywhere they can die** (sodiumxt has no unload
+  hook): per-peer teardown, lock, and closeStack all run the idempotent
+  `sxFreeStream` path.
+
+## Things decided building phase 6 (do not re-litigate)
+
+- **The admission proof is a MESSAGE, not connect data.** enet's
+  `enConnect` rider is a u32 (a protocol tag), not a byte buffer, so the
+  RSL1 challenge/response ride channel-0 messages. The rider still earns
+  its keep: the host refuses a wrong protocol tag before spending a
+  challenge on it.
+- **One shared keypair, not per-device identity.** All your devices
+  derive the SAME ed25519 keypair from the LAN subkey, so the signature
+  proves "I hold the master," which is exactly the device-mesh trust
+  question. It is deliberately NOT a per-device identity - that would be
+  a different feature (and a different spec).
+- **The signature binds the nonce AND the name.** `"riptide-lan" ||
+  nonce || name`: the nonce (fresh per challenge, from `sxRandomBytes`)
+  stops a replayed response, and the name stops a captured signature
+  being re-presented under a different device name. The harness proves
+  both - a response verifies against its own nonce/name and fails against
+  a different one.
+- **The nonce anchor is fixed for the golden only.** The oracle pins a
+  `0x5a * 32` nonce so the challenge and its signature are reproducible;
+  a real host always uses `sxRandomBytes`, and "a fresh nonce refuses a
+  stale response" is a harness check, not just a comment.
+- **The demo retains the master while unlocked.** The LAN and anon rails
+  need subkeys the identity/DM seeds cannot give, so the stack keeps the
+  master seed in memory between unlock and Lock/close (the spec's
+  one-keyring pattern), cleared on both. The honesty caveat about
+  unlocked engine memory already covers it.
+
+## Things decided building phase 7 (do not re-litigate)
+
+- **The guard is a PURE FUNCTION, and it is the crown jewel.**
+  `rsPersonaAllows(pIsAnon, pTransport)` is the spec-9.3 invariant made
+  code: anon may use only `onion`, public may use anything but `onion`,
+  and an unknown transport is refused for BOTH (fail-closed - a typo must
+  never read as allowed). It has no I/O, so its FULL truth table is
+  asserted in the harness, and the demo's guard panel is a LIVE read of
+  it, so what the user sees can never drift from what the library
+  enforces. Every transport branch the app adds must route through it.
+- **The anon onion is offline-derivable and self-authenticating.**
+  `rsAnonOnion(master, n)` = the v3 onion of `anon_seed(master, n)`'s
+  ed25519 public, which equals `oxCreateServiceFromSeed(anon_seed)`'s
+  address; the golden test pins that the onion inverts back to the anon
+  handle. So a follower who has the .onion has verified the key by
+  reaching it.
+- **BTXO is reused, not reinvented.** The anon file transfer uses the
+  Model C `BTXO` framing (magic/ver/flags/nameLen/name/total header,
+  u32-length data frames, zero-length terminator) - the same convention
+  the quickshare onion transfer speaks - so the framing is a shared
+  cross-project contract, golden-pinned here.
+- **The sealed anon-DM route is DEFERRED, honestly.** Spec 8.3 wants
+  `sxSeal(message, anonPub)`, but `sxSeal` takes a curve25519 key and the
+  persona identity is ed25519 (no conversion handler exists). The correct
+  fix is the same published-prekey pattern the DM rail uses (phase 4),
+  which is a later pass - not something to fake now. The library ships
+  the derivation, the guard, the service wrapper, and BTXO; the sealed
+  inbound DM is the one piece left.
+
+## The phase 4-7 adversarial review (2026-08-14)
+
+After building phases 4-7, a five-lens adversarial review (crypto
+correctness, wire-parse safety, dialect laws, demo state machines, gate
+integrity) ran over the new code. The crypto came back CLEAN and that is
+worth recording: the pure-Python X25519/crypto_kx matches libsodium's
+construction exactly (checked byte-for-byte against a real libsodium via
+emit-kx-anchor.py), the new ed25519 verify accepts/rejects correctly on
+every tested path, the role rule makes both peers agree, rsDmSessionKeys
+passes the kx keys in libsodium's order on both branches, and the intro's
+recipient-binding + the LAN nonce/name binding make replay and
+cross-identity reuse structurally impossible. Five real defects surfaced
+in the surrounding code, all now fixed with regression coverage:
+
+- **Never-throw violated in three parsers.** rsLanParseChallenge,
+  rsLanParseResponse, and rsBtxoParseHeader decoded an attacker-controlled
+  UTF-8 name field OUTSIDE a try, so malformed bytes THREW instead of
+  returning empty (rule 5) - a LAN peer or BTXO sender could crash the
+  admission/parse path. Wrapped each in a try like the phase-1/3/4 parsers
+  already do; the harness now feeds each an invalid-UTF-8 name and asserts
+  a clean refusal.
+- **The multi-card demo turned two feed painters into pump-killers.**
+  raExpire and raMediaPaint write card-1 status fields with BARE
+  references and run OUTSIDE raPoll's try; before phase 4 there was one
+  card so they always resolved, but the new Messages/Devices/Anon cards
+  meant a deadline or a media tick firing while off-card threw "no such
+  object" out of raPoll and PERMANENTLY stopped the pump (DHT + rp1 +
+  enet). Added raFeedNote (card-1-qualified + existence-guarded, the
+  raDmLog pattern) and routed every pump-reachable feed write through it,
+  including raHandleEvent's walk-status writes (which had stalled the feed
+  walk off-card).
+- **The guard's "full truth table" omitted two of its own transports.**
+  rsPersonaAllows knows eight transports; the harness and the demo panel
+  asserted only six, leaving feed and media - the two an anon persona most
+  needs kept off - unproven. A future edit letting an anon persona onto
+  either would have leaked it to the clearnet DHT/torrent rails while
+  rsSelfTest stayed green. Both cells are asserted now, and the live guard
+  panel iterates all eight.
+- **itemDelimiter left as "/".** raAttach set it for the leaf name and
+  never restored it; the pump's raHandleEvent then read comma-joined media
+  lists under the wrong delimiter. Restored to comma after use and set
+  before the item read.
+
+The lesson is the multi-card one: adding cards silently widened the blast
+radius of every bare card-1 reference in the older single-card handlers.
+A pump that runs from every card must treat EVERY control reference as
+cross-card - qualify and guard, always.
 
 ## Suite integration status
 

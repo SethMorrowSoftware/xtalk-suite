@@ -72,6 +72,12 @@ def main(argv):
         "kRsGoldPrekeyTarget": "a chosen 40-hex placeholder target",
         "kRsGoldProfileTarget": "a chosen 40-hex placeholder target",
         "kRsGoldMediaTarget": "a chosen 40-hex placeholder info-hash",
+        "kRsGoldDmTs": "chosen intro timestamp",
+        "kRsGoldMsgTs": "chosen DM message timestamp",
+        "kRsGoldDmMsgText": "chosen DM message text",
+        "kRsGoldLanNonce": "a chosen 32-byte LAN challenge nonce (0x5a * 32)",
+        "kRsGoldLanHostName": "chosen LAN host device name",
+        "kRsGoldLanJoinName": "chosen LAN joiner device name",
     }
     for name in inputs:
         if name in k:
@@ -138,6 +144,26 @@ def main(argv):
     want("kRsGoldHeadBufHex", head_buf.hex())
     want("kRsGoldHeadSigHex", ref["ed25519_sign"](head_buf, id_seed).hex())
 
+    # the phase-4 DM layer: kx keys (anchored against real libsodium in the
+    # oracle's self-check), the session pair from the golden (client) side,
+    # and the RSK1 / RSI1 / message records
+    dm_kx_pk, dm_kx_sk = ref["kx_seed_keypair"](ref["dm_seed"](master))
+    conf_kx_pk, _conf_kx_sk = ref["kx_seed_keypair"](conf_seed)
+    want("kRsGoldDmKxPub", dm_kx_pk.hex())
+    want("kRsGoldConfKxPub", conf_kx_pk.hex())
+    sess_rx, sess_tx = ref["kx_client_session_keys"](dm_kx_pk, dm_kx_sk,
+                                                     conf_kx_pk)
+    want("kRsGoldSessionRx", sess_rx.hex())
+    want("kRsGoldSessionTx", sess_tx.hex())
+    prekey_rec = ref["build_prekey"](dm_kx_pk.hex(), id_seed)
+    want("kRsGoldPrekeyRecHex", prekey_rec.hex())
+    want("kRsGoldPrekeyRecTarget", ref["immutable_target"](prekey_rec))
+    intro = ref["build_intro"](handle, dm_kx_pk.hex(), conf_pub,
+                               int(k["kRsGoldDmTs"]), id_seed)
+    want("kRsGoldIntroHex", intro.hex())
+    want("kRsGoldDmMsgHex", ref["build_dm_message"](
+        b"T", int(k["kRsGoldMsgTs"]), k["kRsGoldDmMsgText"]).hex())
+
     # structural claims, not just digests: the records really chain, and the
     # head really names the newest post
     if post2[12:52] != post1_target.encode("ascii"):
@@ -146,6 +172,46 @@ def main(argv):
         failures.append("the head does not name post 2 as latest")
     if len(head) > 1000 or len(post1) > 1000 or len(post2) > 1000:
         failures.append("a golden record exceeds the BEP44 1000-byte cap")
+    if intro[4:68] != handle.encode("ascii"):
+        failures.append("the golden intro's sender is not the golden handle")
+    if intro[132:196] != conf_pub.encode("ascii"):
+        failures.append("the golden intro is not addressed to the "
+                        "conformance identity")
+
+    # the phase-6 LAN admission: the mesh public, and the challenge/response
+    # made deterministic by a fixed nonce
+    lan_pub, _lan_seed = ref["lan_keys"](master)
+    want("kRsGoldLanPub", lan_pub.hex())
+    lan_nonce = bytes.fromhex(k["kRsGoldLanNonce"])
+    challenge = ref["lan_build_challenge"](k["kRsGoldLanHostName"], lan_nonce)
+    want("kRsGoldLanChallengeHex", challenge.hex())
+    response = ref["lan_build_response"](challenge, k["kRsGoldLanJoinName"],
+                                         master)
+    want("kRsGoldLanResponseHex", response.hex())
+    # the response really verifies under the mesh public (a structural
+    # claim, not a digest): a golden that did not verify would be useless
+    if not ref["_verify_ed25519"](
+            response[-64:],
+            ref["lan_sig_message"](lan_nonce, k["kRsGoldLanJoinName"]),
+            lan_pub):
+        failures.append("the golden LAN response does not verify under the "
+                        "mesh public key")
+
+    if k.get("kRsGoldLanNonce") != "5a" * 32:
+        failures.append("kRsGoldLanNonce is not the documented 0x5a * 32")
+
+    # the phase-7 anon persona + BTXO framing
+    want("kRsGoldAnon0Handle", ref["anon_handle"](master, 0))
+    want("kRsGoldAnon0Onion", ref["anon_onion"](master, 0))
+    want("kRsGoldBtxoHeaderHex",
+         ref["btxo_header"]("secret.txt", 11, 0).hex())
+    want("kRsGoldBtxoFrameHex",
+         ref["btxo_data_frame"](b"hello world").hex())
+    # the anon onion inverts back to the anon handle (self-authenticating)
+    if ref["pubkey_from_onion"](k["kRsGoldAnon0Onion"]).hex() != \
+            ref["anon_handle"](master, 0):
+        failures.append("the golden anon onion does not invert to the anon "
+                        "handle")
 
     # the honest split
     uncovered = sorted(set(k) - checked)
