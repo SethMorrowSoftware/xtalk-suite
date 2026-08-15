@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""check-checker-drift.py - every member's copy of a copied tool is the SAME
-tool.
+"""check-checker-drift.py - every member's copy of a carried file is the SAME
+file.
 
 Each member carries its own tools/check-livecodescript.py (and, where it has
 docs gates, tools/check-docs-style.py) so the member stays self-contained
@@ -13,6 +13,10 @@ the suite. The copies are unified now, and this gate is what keeps them
 unified: it FAILS when any copy's bytes differ from its siblings', so "fix
 one copy" is no longer a state the tree can quietly be in.
 
+Since 2026-08-15 the same rule covers the carried family engineering
+template (templates/CLAUDE.md) - the TEMPLATE_SETS registry below records
+why.
+
     python3 tools/check-checker-drift.py
 
 Exit code 0 = every copy set is byte-identical, 1 = drift.
@@ -23,7 +27,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# tool name -> the members that must carry a byte-identical copy
+# tool name -> the members that must carry a byte-identical copy under
+# <member>/tools/
 COPY_SETS = {
     "check-livecodescript.py": ["sodiumxt", "torrentxt", "enetxt",
                                 "datachannelxt", "onionxt", "coinxt",
@@ -32,35 +37,57 @@ COPY_SETS = {
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide"],
 }
 
+# carried document name -> the members that must carry a byte-identical copy
+# under <member>/templates/. The family engineering template was, until
+# 2026-08-15, the one carried family file with NO drift machinery at all,
+# which is exactly the pre-unification checker state this gate exists to
+# forbid. Its own header calls it a living document whose value "is
+# proportional to how faithfully it is updated" and warns that a lesson not
+# written down "will be paid for again" - and the 2026-08-15 audit found that
+# state in the tree: the two copies identical only by discipline, the content
+# two days stale against the family's newest lessons, and nothing anywhere to
+# fail a build over either. Same law as the checkers now: edit one copy, copy
+# byte-identically to the rest in the same change, and this gate proves it
+# happened.
+TEMPLATE_SETS = {
+    "CLAUDE.md": ["onionxt", "coinxt"],
+}
+
 
 def main():
     failures = []
     checked = 0
-    for tool, members in sorted(COPY_SETS.items()):
-        digests = {}
-        for member in members:
-            path = os.path.join(ROOT, member, "tools", tool)
-            if not os.path.exists(path):
-                failures.append("%s: missing from %s/tools/" % (tool, member))
-                continue
-            with open(path, "rb") as f:
-                digests.setdefault(hashlib.sha256(f.read()).hexdigest(),
-                                   []).append(member)
-            checked += 1
-        if len(digests) > 1:
-            groups = ", ".join("{%s}" % ", ".join(ms)
-                               for ms in sorted(digests.values()))
-            failures.append(
-                "%s has DRIFTED into %d variants: %s - re-sync every copy "
-                "byte-identically (edit one, copy to the rest) in the same "
-                "change" % (tool, len(digests), groups))
+    sets = 0
+    for subdir, registry in (("tools", COPY_SETS),
+                             ("templates", TEMPLATE_SETS)):
+        for name, members in sorted(registry.items()):
+            sets += 1
+            rel = subdir + "/" + name
+            digests = {}
+            for member in members:
+                path = os.path.join(ROOT, member, subdir, name)
+                if not os.path.exists(path):
+                    failures.append("%s: missing from %s/" % (rel, member))
+                    continue
+                with open(path, "rb") as f:
+                    digests.setdefault(
+                        hashlib.sha256(f.read()).hexdigest(),
+                        []).append(member)
+                checked += 1
+            if len(digests) > 1:
+                groups = ", ".join("{%s}" % ", ".join(ms)
+                                   for ms in sorted(digests.values()))
+                failures.append(
+                    "%s has DRIFTED into %d variants: %s - re-sync every "
+                    "copy byte-identically (edit one, copy to the rest) in "
+                    "the same change" % (rel, len(digests), groups))
     if failures:
         print("check-checker-drift: %d FAILURE(S)" % len(failures))
         for f in failures:
             print("  " + f)
         return 1
-    print("check-checker-drift: OK (%d copies across %d tools, "
-          "byte-identical per tool)" % (checked, len(COPY_SETS)))
+    print("check-checker-drift: OK (%d copies across %d carried files, "
+          "byte-identical per file)" % (checked, sets))
     return 0
 
 

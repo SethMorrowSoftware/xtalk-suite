@@ -19,6 +19,13 @@
 > cause, and the fix. Where the trap is statically detectable, also add it to the static gate (a new
 > reserved word to the checker's `RESERVED` set, or a new check). The value of this file is proportional
 > to how faithfully it is updated. A lesson learned and not written down will be paid for again.
+>
+> **Master/copy convention (since 2026-08-15).** This template is itself a carried family document:
+> byte-identical copies live in every suite member that ships it (today
+> `onionxt/templates/CLAUDE.md` and `coinxt/templates/CLAUDE.md`), and the suite gate
+> `tools/check-checker-drift.py` FAILS the build if the copies differ. Edit one copy and copy it
+> byte-identically to the others in the same change; never patch one copy alone.
+> **Last synced to the family's lessons: 2026-08-15.**
 
 House style: no em-dashes (use hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
 `.livecodescript`, even in comments and strings. Comment the *why*, densely; match the surrounding
@@ -32,6 +39,14 @@ style.
   runtime. You cannot prove a script compiles from the command line. So the honest status of any script
   change you have not run on the engine is exactly: **"designed and statically reasoned; needs an
   on-engine pass."** Say that. Do NOT claim a handler "works" until it has actually run on a real engine.
+- **Shipped is not run, and an unexecuted line is not evidence - in either direction.** Never cite
+  shipped-but-unrun code as precedent ("the sibling ships this spelling, so the engine must accept it"
+  is circular when the sibling's copy has never run on an engine), and never trust a comment's claim
+  about engine behaviour that no test has ever exercised. The canonical recurrence is riptide's
+  textDecode failure: six shipped parsers carried the comment "textDecode throws on malformed UTF-8",
+  it does not (see the gotcha log), and the first inputs that ever touched the path found it. An
+  attestation is only worth keeping once it becomes a COMMITTED FIXTURE that runs in the gate set
+  (the checker's fixtures in `tools/test-checker.py` are this rule applied to the checker itself).
 - **The static gate is the only automated safety net the script layer gets.** Run it on every change
   (`tools/check-livecodescript.py`, section 3). It catches a specific, growing set of traps that the
   engine would otherwise punish with a compile error or, worse, silent misbehaviour. Passing it is
@@ -68,20 +83,48 @@ style.
 ```sh
 python3 tools/check-livecodescript.py
 ```
-It checks every `.lcb` / `.livecodescript` for:
-- **smart/curly quotes** (U+2018/2019/201C/201D) and **em/en dashes** - the quotes FAIL OXT compilation;
-  ASCII `"` and `'` only.
-- **block balance** - handler / `if` / `repeat` / `unsafe` / `try` (and `library`/`module`/`widget`) each
-  open a block that must be closed by the matching `end`. A single-line `if X then <do>` does NOT open a
-  block; only `if X then` with nothing after `then` does. A stray or missing `end` mis-scopes everything
-  after it.
-- **constants declared before first use** - OXT resolves a constant by lexical position; a forward
-  reference silently evaluates to `nothing`.
-- **the prefixed-token-shadow trap** - a `t/p/s/k`-prefixed name whose full spelling lowercases to a
-  reserved token (the classic `tExt` == `text`, `tOp` == `top`).
-- **`put ... into ... after`** malformation (a `put` takes `into` OR `after`/`before`, never both).
-- (`.lcb` only) missing `use com.livecode.foreign` when a foreign type is used, and `textEncode` /
-  `textDecode` used inside an LCB module (they are livecodescript-only).
+**The checker is ONE unified tool, kept byte-identical in every member of the suite.** The family
+learned this the expensive way: the per-member copies drifted into two independent implementations,
+each with real checks the other lacked (one copy did not know `switch`, reported phantom imbalances
+in dispatchers, and would have hidden a real one). The copies are unified now; the suite gate
+`tools/check-checker-drift.py` FAILS the build if any copy's bytes differ, and
+`tools/test-checker.py` fixture-tests every rule in every copy. **To adopt it, copy any member's
+CURRENT copy TOGETHER WITH `tools/test-checker.py` and its fixtures** - the fixtures are what keep a
+rule honest when you extend it (an attestation must become a committed fixture, section 1).
+
+Its twelve check families, and the engine lesson each encodes:
+
+1. **ASCII only.** Smart/curly quotes (U+2018/2019/201C/201D) fail OXT compilation outright; en/em
+   dashes break house style; any other non-ASCII byte is reported, and a non-UTF-8 file is refused.
+2. **Unterminated strings and `/*` block comments** (lexer-level).
+3. **Balanced blocks, matched by kind and dialect** - handler / `if` / `repeat` (plus `unsafe` in
+   `.lcb`; `switch` / `try` in `.livecodescript`), and an LCB `library`/`module`/`widget` closed by
+   its matching `end`, with line numbers. A single-line `if X then <do>` opens NO block; a stray or
+   missing `end` mis-scopes everything after it.
+4. **Constants declared before first use, BOTH dialects** - OXT resolves a constant by lexical
+   position; a forward reference silently evaluates to nothing. The WRONG dialect's constant
+   spelling (`constant k is ...` in `.livecodescript`, `constant k = ...` in `.lcb`) is refused
+   outright, because a mis-spelled declaration is INVISIBLE to the before-use check - a fail-open
+   in the gate itself, found 2026-08-13 (see the gotcha log).
+5. **Declarations at the top of a handler, `.lcb` ONLY** - a nested `variable` has broken whole-LCB
+   compilation. Deliberately NOT enforced for `.livecodescript`, where mid-handler `local` is legal
+   and stands in engine-passed code; there the top-of-handler habit is a style convention.
+6. **The prefixed-token-shadow trap** (section 4) - a `t/p/s/k`-prefixed name whose full spelling
+   lowercases to a reserved token (the classic `tExt` == `text`, `tOp` == `top`). Both dialects.
+7. **`does not begin/end with` / `does not contain`** - not xTalk; the parser errors on `does`.
+8. **A zero-argument call written `foo()` in STATEMENT position** (`.livecodescript` only; LCB
+   allows it) - see section 5 item 9.
+9. **Engine-hostile constructs that COMPILE and silently do the wrong thing** (`.livecodescript`
+   only): `repeat with ... step N` and `throw` inside a `catch` block - see section 5 items 10-11.
+10. **LCB-only checks:** a foreign type used without `use com.livecode.foreign`; `textEncode` /
+    `textDecode` inside a module (they are livecodescript-only); `the empty list` / `the empty
+    array` (LCB wants the literals `[]` / `{}`); an all-lowercase `variable` name.
+11. **LCS-only checks:** braces (LCB array literals leaking into script) and subscripting a
+    function result (`f(x)["k"]` does not parse).
+12. **`put X into Y after Z`** malformation (a `put` takes `into` OR `after`/`before`, never both).
+
+It is a lexer-level checker, not a compiler: it errs toward NOT raising false positives, so passing
+it is necessary, never sufficient.
 
 A prose gate (`tools/check-docs-style.py`) enforces the same no-dash / no-curly-quote rule on `.md`.
 
@@ -99,7 +142,9 @@ on-engine pass. Keep both gates green in CI on every push / PR.
   lowercases to a known reserved token - but the reserved set is only as complete as you have made it.
   When the engine surprises you with one, ADD IT to the checker's `RESERVED` set (only ATOMIC short
   tokens: `top`, `time`, `size`, `style`, `stack`, `scroll`, `point`, `script`, ...; not compound
-  property names like `textFont`, which are legitimately CamelCase when you set the property).
+  property names like `textFont`, which are legitimately CamelCase when you set the property) - in
+  EVERY member's copy, with a fixture in `tools/test-checker.py`; the drift gate holds the copies
+  byte-identical (section 3).
 - **Watch reserved COMMANDS too:** `tSend` shadows `send`; use `tSender`. `tSort` shadows `sort`.
 
 ## 5. livecodescript language gotchas
@@ -116,6 +161,14 @@ on-engine pass. Keep both gates green in CI on every push / PR.
       return Y
    end if
    ```
+   And the DANGLING-ELSE trap: a single-line `if C then <stmt>` may legally take an `else`, so a
+   BARE `else` on the next line (nothing after it) binds to that single-line `if`; its `end if` then
+   closes the WRONG block, the outer `if` stays open, and OXT reports "missing end if" at the
+   handler's end, far from the cause. Chains with the statement ON the else line
+   (`if c then s1` / `else s2`) are fine. GATE status, honestly: the unified checker treats a bare
+   `else` as a continuation and does NOT flag this; the only tool that currently does is holde-em's
+   member idiom gate (`holde-em/tools/check-holdem-idioms.py`). Until that check is ported into the
+   unified checker, the multi-line block form above is your defence.
 3. **`does not` is not a valid construction.** There is no `does not end with` / `does not contain`.
    Negate the whole comparison: `not (tHost ends with ".onion")`, `not (x is in y)`.
 4. **`is a <type>` accepts only** number / integer / boolean / point / rect / date / color. There is NO
@@ -138,12 +191,15 @@ on-engine pass. Keep both gates green in CI on every push / PR.
 8. **Commands report via `the result`; functions return a value.** Pick ONE API shape per operation and
    hold it: a command that must both signal success/failure and yield a handle returns the handle through
    `the result` on success and an error STRING on failure (so callers test `the result is an integer`);
-   a pure query is a function that returns its value. Do not mix.
+   a pure query is a function that returns its value. Do not mix. And treat `the result` as
+   IMMEDIATELY perishable: it is consumed by the NEXT command, so capture it into a local on the
+   very next line after any command whose result you need, before calling anything else - several
+   past family bugs were a stale `the result` read after an intervening call (the box2dxt lesson).
 9. **A ZERO-ARGUMENT call in STATEMENT position must be written BARE.** `dcCleanup` yes,
    `dcCleanup()` no. A statement that starts with an identifier is parsed as a COMMAND and what
    follows is its argument list, so the parenthesised spelling hands the command the expression
    `()` - and `()` is not an expression. It is a compile error, and since a whole
-   `.livecodescript` compiles as one unit it takes the ENTIRE FILE with it (see 9 in section 3),
+   `.livecodescript` compiles as one unit it takes the ENTIRE FILE with it (section 1),
    usually reported at some unrelated line. Three traps around it, all of them real:
    - **One argument is FINE.** `dcFreePeer(sPeerA)` compiles, because `(sPeerA)` IS an
      expression. So the broken line looks identical in shape to the working line beside it -
@@ -166,11 +222,21 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    `oxSodiumHasSha3`); do not over-generalise this into "avoid catch". Cost a
    money-library fail-open on 2026-08-09: nine itemDelimiter guards did it, and one of
    them was a mnemonic validator whose Inner reaches `return false` only via its catch,
-   so an invalid seed phrase was reported VALID.
+   so an invalid seed phrase was reported VALID. The holde-em fold (2026-08-15) found a
+   recurrence in that member's deck-derivation path. GATE: every checker copy refuses a
+   `throw` inside a `catch` (`.livecodescript` only; docstring check 9); `return` inside
+   a catch stays legal.
 11. **`repeat with i = A to B step N` does not honour the increment.** i walks one at a
-   time. Use `repeat while` with an explicit `add N to i`. Found the same day, in the
-   only `step` loop in the whole family - and it made a hex decoder reject valid input
-   with its own "not a hex digit" error, i.e. the library blaming the caller's data.
+   time. Use `repeat while` with an explicit `add N to i`. Found the same day it cost a
+   money library: a hex decoder rejected valid input with its own "not a hex digit"
+   error, i.e. the library blaming the caller's data. And it was NOT a one-off, however
+   rare it first looked: the box2dxt fold (2026-08-14) found 29 more `step` loops in
+   that one member (every tile loop would have walked 1px at a time, placing 64x the
+   tiles), and the holde-em fold (2026-08-15) found one in its DEAL path (a seed-XOR
+   walking hex pairs with `step 2` would have XORed overlapping pairs into a
+   wrong-but-internally-consistent deck). Assume any `step` loop you meet is broken.
+   GATE: every checker copy refuses `repeat with ... step` (`.livecodescript` only;
+   docstring check 9).
 12. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
    name sockets by their `host:port` string (with a numeric or `|`-suffix for multiples). Store the EXACT
    id the engine hands you and use it verbatim in `read` / `write` / `close`; never reconstruct it.
@@ -266,7 +332,18 @@ wait for it.
 
 ## 11. Building the UI in script (no IDE design step)
 
-Family demos build the entire UI in `preOpenStack` so no manual IDE work is needed. The traps:
+Family demos build the entire UI in `preOpenStack` so no manual IDE work is needed - but since
+2026-08-14 a demo does NOT start from scratch. **The family look is ONE carried kit:**
+`tools/ui-kit.livecodescript` at the suite root (v2, the "card look": chrome with a semantic status
+line, white rounded panels on a cool page, mono data surfaces, the honesty footer). An adopting
+stack embeds the kit block VERBATIM between its marker lines, so every demo stays a single
+paste-and-run file, and the suite gate `tools/check-ui-kit-drift.py` holds every copy
+byte-identical, refuses unregistered carriers, and refuses any window-building stack that neither
+adopts the kit nor carries a written exemption - "every demo is a kit adopter" is a property of the
+tree, not of one cleanup pass. A look change edits the MASTER and re-carries; it is never patched
+inside an adopter. Start a new demo from the master (a standalone adopter copies the master file,
+and ideally that gate with it). The traps below are the WHY behind how the kit is built, and they
+still apply to any control you create beside it:
 
 - **There is NO reparenting.** LiveCode has no `set the owner` to move a control into a group. Create
   controls on the card (`create field "x"`, `create button "y"`, `create graphic "z"`), track each
@@ -333,9 +410,30 @@ The single most expensive thing the family has learned. Change nothing here with
   it, so the KAT proves the script, not the other way around.
 - **Write the negative paths first** - bad input, a stalled peer, a wrong credential, a double close, a
   vanished mid-handshake peer. These are the security- and robustness-relevant tests.
-- **Ship a demo and a pure offline self-test harness**, formatted like the family (a `sPass`/`sFail`
-  counter, KAT sections, capability-gated sections that SKIP rather than FAIL when an optional dependency
-  is absent). Wire behaviour that needs a live peer can only be integration-tested on the engine; say so.
+- **Ship a demo and a pure offline self-test harness - and start the harness from the ONE carried
+  scaffold**, `tools/harness-scaffold.livecodescript` at the suite root: the selftest window, the
+  pass/fail/skip counters, and the assertion plumbing (a Copy-results button, SKIP as a first-class
+  outcome so a capability-gated section skips rather than fails when an optional dependency is
+  absent, per-line result paint, per-section failure isolation), carried byte-identical into every
+  family harness and held there by `tools/check-harness-scaffold-drift.py`. Harnesses are
+  deliberately NOT ui-kit adopters (a second 300-line block would bloat every paste); the scaffold
+  matches the kit's look BY VALUE, and the kit gate's exemption list records exactly that. Wire
+  behaviour that needs a live peer can only be integration-tested on the engine; say so.
+- **Measure whether the harness actually CALLS every public handler.** "The generated file is
+  current" and "the assembly is structurally sound" are gates that stay green about a harness that
+  never touches the new code, and nobody re-asks "is this thorough?" of a harness thousands of
+  lines long. When the family first measured reach, 31 public handlers had never been called -
+  including the single child-key-derivation step a whole HD-wallet layer loops over. A handler the
+  harness genuinely cannot reach (an engine-minted socket callback id, a live daemon) gets a
+  WRITTEN per-handler exemption with its reason, and the coverage gate fails both on a new
+  unexercised handler and on a stale excuse, so a renamed handler cannot leave a permanent
+  exemption behind. It is a floor, not a ceiling: "called by name" is not "tested well".
+- **A gate must report the honest checked-vs-input split, never a parsed count.** A vector gate
+  that printed "66 harness constants re-derived" was counting the constants it had PARSED, not the
+  ones it had CHECKED; two constants added in the very change that found this sailed through it. A
+  gate that overstates its coverage is worse than no gate, because it answers the question nobody
+  asks twice. Fail on anything neither checked nor listed as an input with a written reason, and
+  print the honest split.
 
 ## 15. Git and workflow
 
@@ -425,3 +523,17 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
   FIX:     write `=` in `.livecodescript` and `is` in `.lcb`. All checker copies now refuse the
            wrong dialect's spelling in BOTH directions (fixture-tested in tools/test-checker.py),
            so the slip is a gate failure instead of an engine discovery.
+- SYMPTOM: a parser that wraps textDecode(tBytes, "UTF-8") in try/catch accepts malformed UTF-8
+           anyway, handing back mangled text where it meant to refuse; the catch never runs.
+  CAUSE:   confirmed on-engine (2026-08-15): textDecode(..., "UTF-8") on OXT is LOSSY and never
+           throws - invalid bytes decode to replacement characters and the call returns a
+           non-empty string, so every try guard around a decode is inert. Six shipped parsers
+           carried the comment "textDecode throws on malformed UTF-8"; no test had ever fed the
+           path malformed bytes, so the attestation was unexercised and wrong (shipped is not
+           run, section 1).
+  FIX:     validate by ROUND TRIP - decode, re-encode with textEncode, and require the bytes to
+           reproduce exactly (only valid UTF-8 does); keep an inner try as belt-and-suspenders
+           for any engine that does throw (riptide's rsBytesAreUtf8 is the family reference).
+           Never trust a decode to throw.
+  GATE:    none in the static checker today; the round-trip helper plus a malformed-bytes test
+           per parser is the defence.
