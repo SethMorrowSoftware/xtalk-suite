@@ -1,10 +1,16 @@
 # Plan: replace TorrentXT's crypto with SodiumXT
 
-Status: **proposal**. Written when SodiumXT and TorrentXT were separate
-repositories; both now live in the xtalk-suite monorepo, so the actual edits land
-in the sibling `torrentxt/` directory. Items marked
-**[confirm]** are assumptions about TorrentXT's current code that must be checked
-against its source (`torrentxt/src/`) before implementing.
+Status: **SUPERSEDED - the migration SHIPPED, and differently than planned
+here.** The torrentxt demos now do their optional encryption through SodiumXT
+(Argon2id `sxPwHash` + `sxSecretBox` + `sxEncryptFile`), with the feed marker
+moved `BTXENC1:` -> `BTXENC2:` and the old AES path deliberately DROPPED with
+no read-both-formats fallback (breakage accepted) - see `torrentxt/CLAUDE.md`,
+"Example demos: cryptoXT dependency", which is the as-built record. This
+document stays as the design rationale (the weak-KDF and unauthenticated-CBC
+arguments below are why the migration happened); its "TorrentXT today"
+mapping table describes the pre-migration state and its phased plan was not
+followed literally. Originally written when SodiumXT and TorrentXT were
+separate repositories.
 
 ## Why
 

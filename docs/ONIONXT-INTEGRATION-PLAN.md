@@ -1557,9 +1557,9 @@ No headless OXT exists, so the discipline is **static gate first, KATs second, t
 ### 12.1 Static gate (every script edit)
 
 `python3 torrentxt/tools/check-livecodescript.py` must pass on both demos (they are torrentxt's): smart/curly-quote zero, handler/`unsafe`/control
-balance, constants-before-use, and the reserved-token-shadow check. **This has not yet been run on any of the new
-names** — the many new `s*/t*/p*/k*` identifiers (`sTxTotal`, `sRxState`, `sChanServicePort`, `pReq`, `pEnc`, etc.)
-must be cleared mechanically for the `tExt`==`text` class before "done" is claimed (M11). Also confirm every onion
+balance, constants-before-use, and the reserved-token-shadow check. **This gate now runs on every push**: the Model C
+code is built into `torrentxt/examples/torrent-quickshare.livecodescript`, and the unified checker clears all its
+`s*/t*/p*/k*` identifiers (`sTxTotal`, `sRxState`, `sChanServicePort`, `pReq`, `pEnc`, etc.) in the suite gate set (M11 met). Also confirm every onion
 constant is declared literally in §3.2 **before first use** (the constant-before-use footgun; `kOnionVirtualPort`,
 the loopback-port handling, `kSendTimeout`/`kRecvTimeout`, `kMax*`, `kPumpTick` are all defined there, resolving the
 earlier use-before-definition gap).

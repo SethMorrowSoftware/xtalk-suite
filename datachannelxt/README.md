@@ -96,12 +96,16 @@ pipeline works; real signaling is the only thing left to add.
 > engine too (23 checks, twice in one day), folded into the suite selftest,
 > which now calls **every one of the 31 public `dc*` handlers** by name —
 > `dcCreateChannelEx`, `dcSetBufferedLowThreshold`, `dcLocalDescriptionType`,
-> `dcChannelProtocol`, `dcSetLocalDescription` and friends included. What
-> remains **verified statically** is the member harness's own async loopback:
-> the LIVE halves of `dcSendText`, `dcBufferedAmount`, `dcGatheringState`,
-> `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send,
-> and the non-trickle signaling pins. Running
-> `tests/datachannel-selftest.livecodescript` standalone is what covers those.
+> `dcChannelProtocol`, `dcSetLocalDescription` and friends included. On
+> **2026-08-15** the standalone async loopback closed too:
+> `tests/datachannel-selftest.livecodescript` ran green end to end — a real
+> SDP carrying ICE candidates, correct offer/answer roles, gathering
+> complete on both peers with a selected candidate pair, text and binary
+> (embedded NUL included) byte-for-byte, the `dcCreateChannelEx`
+> label/protocol round-trip, and a cap-sized send. **Nothing in the
+> selftest is verified statically any more.** Still open: browser interop
+> (a real Chrome/Firefox peer) and a call across two networks with real
+> NAT traversal.
 
 ## Then try the flagship (two machines, no server)
 

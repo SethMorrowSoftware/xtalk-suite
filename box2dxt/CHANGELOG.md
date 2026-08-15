@@ -8,7 +8,15 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
-Nothing yet.
+- Folded into the xtalk-suite monorepo (2026-08-14): the unified suite checker
+  replaced the local copy (an ~1550-violation ASCII sweep followed, including 29
+  real `repeat ... step` loop bugs in the platformer, rewritten), all five
+  committed binaries pinned by a new `src/code/MANIFEST.sha256`, three stacks
+  trimmed to the family's 720p budget, and suite-root CI
+  (`native-box2dxt.yml`).
+- `examples/box2dxt-selftest`: `stRunAll` now probes the native library in a
+  guarded try and SKIPS cleanly when box2dxt is absent (fold prerequisite;
+  2026-08-14).
 
 ## [0.3.0] - 2026-06-22
 

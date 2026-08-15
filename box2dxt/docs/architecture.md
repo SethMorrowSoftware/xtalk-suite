@@ -35,8 +35,9 @@ How the pieces fit, why the shim exists, and how to extend the binding.
   in `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare token, no `lib`
   prefix; platform-ids `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
   `universal-mac` — architecture first, Windows `-win32` for both bitnesses).
-  Those libraries are committed (built and tested by CI, and attached to each
-  Release); `tools/package-extension.py` refreshes the tree from a newer build.
+  Those libraries are committed and pinned by `MANIFEST.sha256` (the suite's
+  `native-box2dxt.yml` builds and tests them as CI artifacts);
+  `tools/package-extension.py` refreshes the tree from a newer build.
 - **`src/box2dxt.lcb`** is the xTalk Builder (LCB) extension. It declares
   `private foreign handler` bindings to the `b2lc_*` symbols
   (`binds to "c:box2dxt>b2lc_…!cdecl"`) and wraps each in a friendly public

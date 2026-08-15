@@ -80,6 +80,7 @@ The root CI workflow `.github/workflows/native-enetxt.yml` builds and tests the
 5-target matrix (the member's own `.github/workflows/build.yml` is kept for
 isolated development but is inert here, since GitHub runs only root workflows).
 Each lane uploads its library as an artifact; binaries are committed
-deliberately by a maintainer rather than pushed by CI, so today `x86_64-linux`
-is the committed one and the other platforms are a download (or a local build)
-away.
+deliberately by a maintainer rather than pushed by CI. Four platforms are
+committed today (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
+per `src/code/MANIFEST.sha256`, landed by the 2026-08-08 release run);
+macOS remains the manual `lipo` build.

@@ -22,12 +22,13 @@ script "dataChannelSelfTest"
 -- harness (23 checks, twice in one day), which calls every one of the 31
 -- public handlers by name and pins the whole stale-handle surface as harmless
 -- no-ops. So the binding, the transfer spine, and the synchronous contracts
--- are observed. Still verified statically: this file's own async loopback
--- (the fold excludes it; the suite core drives its own) - the LIVE halves of
+-- are observed. CLOSED 2026-08-15: this file ran STANDALONE green end to
+-- end, async loopback included (the fold still excludes that section; the
+-- suite core drives its own) - the LIVE halves of
 -- dcSendText, dcBufferedAmount, dcGatheringState, dcSelectedCandidatePair,
 -- the dcBufferedLow EVENT after a cap-sized send, and the a=candidate/role
--- pins are what running THIS file standalone would turn into a runtime
--- result.
+-- pins among them are all dated runtime results now. A green re-run needs
+-- no label work.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,

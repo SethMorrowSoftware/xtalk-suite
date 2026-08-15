@@ -10,8 +10,8 @@ xtalk-suite monorepo (`onionxt/`).
 > (the onion-address-is-a-public-key idea) are the source of truth for WHAT OnionXT is.
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) is the phased HOW. This file is the operational
 > as-built record and the hard-won-lesson list, in the same spirit as the `CLAUDE.md` files in our
-> suite siblings TorrentXT and SodiumXT (and the pre-suite projects Box2Dxt and ShowControl,
-> where this lineage began). Most of the OXT/LCB and
+> suite siblings TorrentXT, SodiumXT, and Box2Dxt (folded home 2026-08-14; the lineage began
+> there and in the still-external ShowControl). Most of the OXT/LCB and
 > FFI lessons below were paid for in full while building those; they are carried here so we do not
 > pay for them twice. The socket-I/O lessons are the new ones and are called out as such.
 

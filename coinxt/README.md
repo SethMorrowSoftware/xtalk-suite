@@ -64,8 +64,9 @@ CoinXT/
   native/
     coinxt.c                the C shim (cnx_ ABI over the vendored crypto)
     build.sh                builds the shared library, and the ASan + UBSan self-test
-    MANIFEST.sha256         integrity pins: the vendored sources now; release binaries and the
-                            wordlist join in later phases
+    MANIFEST.sha256         integrity pins for the vendored sources AND the wordlist (47
+                            entries); the four committed release binaries are pinned by
+                            src/code/MANIFEST.sha256
     vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE.
                             The curve half is a CLOSURE, not a pick-list: see VENDOR.md for
                             why hasher.c, blake, groestl, base58.c and address.c are in it
@@ -73,7 +74,7 @@ CoinXT/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to all 30 cnx_* exports);
+    coinxt.lcb              the foreign-handler module (binds to all 34 cnx_* exports);
                             engine-proven end to end: phase 1 closed 2026-08-08, phases 2-4
                             closed 2026-08-10 (the folded harness, 207/207 on the re-run)
     coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP

@@ -3,9 +3,14 @@
 Status: **brainstorm / design exploration.** This is an ideas document, not a spec and not a
 security guarantee. It sketches communication channels that piggyback on the BitTorrent network
 (via TorrentXT) and are secured with modern cryptography (via SodiumXT). Several ideas here,
-especially the metadata-privacy and multi-hop ones, are open problems flagged as such. Nothing
-below has been implemented, threat-modeled to completion, or audited. Treat it as a menu to argue
-with, then turn the chosen corner into a real protocol doc.
+especially the metadata-privacy and multi-hop ones, are open problems flagged as such. Since it
+was written, the core substrate it asks for HAS shipped - the section-7 wishlist became
+TorrentXT's v9-v11 surface (signed BEP44 puts, `btDhtAnnounce`/`btDhtGetPeers`, `btAddInfohash`
+phantom swarms, the `btRp1*` peer-wire extension) plus SodiumXT's seeded kx keypairs, and the
+signed-feed / phantom-swarm-rendezvous / secretstream-over-the-peer-wire design runs today as
+`riptide/` (which took this document's own proposed name, section 12). The rest stays a menu to
+argue with; nothing beyond what riptide ships has been implemented, threat-modeled to
+completion, or audited.
 
 House style: no em-dashes (hyphens, commas, colons, parentheses instead).
 

@@ -80,9 +80,13 @@ self-contained form — every member's own deep self-test folded in, the coinxt 
 onionxt script layers embedded in the paste — and reported **zero failures across
 455 member-harness checks plus the whole core**, re-confirming the compositions
 and retiring the deeper per-member selftests as an open item. What remains
-broadly open: **macOS binaries** for four of the five native members, and the
-**live-Tor and two-machine work** (runbook items 4-6), which no single-machine
-offline paste can reach.
+broadly open: **macOS binaries** for the native members (box2dxt, folded home
+2026-08-14, is the one already shipping all five platforms), and the
+**live-Tor and remaining two-machine work** — riptide's feed propagation
+closed 2026-08-13 and its media + both-ways DMs on 2026-08-15, so what is
+left is the phase-5 call, the LAN mesh, and the anon persona
+(`riptide/docs/two-machine-runbook.md`), which no single-machine offline
+paste can reach.
 
 The 2026-08-12 re-run then exercised all seven folded harnesses at their current
 sizes — **617 member-harness checks, zero failures** (SodiumXT 71, OnionXT 43,
@@ -101,9 +105,9 @@ still unproven and where each label lives, the install order, the run order, and
 what to record. The convention cuts both ways — a label is removed only for what
 a run actually exercised, so each recorded pass (2026-08-08, 2026-08-10) promoted
 the handlers it called and left the ones it did not still labelled, member by
-member — which is why the datachannel async-loopback half is still labelled
-today, inside an otherwise green suite (the enet half closed with the
-2026-08-13 standalone pass).
+member — and both async-loopback halves have since closed the same way (enet
+with the 2026-08-13 standalone pass, datachannel with the 2026-08-15 one),
+leaving no member-selftest label standing.
 
 ## The shared engineering rules
 
@@ -177,11 +181,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**373 of 391 public handlers**:
+**377 of 395 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 68/68 |
+| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 72/72 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -208,37 +212,27 @@ The members are deliberately non-overlapping, so real apps mix them:
   60000-byte packet budget is the seam: when a payload stops being a message,
   it becomes a torrent.
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
-  social app on all six, and `riptide/` is that app being built — phase 1
-  (the identity foundation and the feed wire formats, offline-verifiable,
-  golden-pinned, and engine-passed 2026-08-12) and phase 2 (the live feed
-  layer: signed BEP44 heads, content-addressed posts, verified ingest —
-  engine-passed 2026-08-12 at 133/133, and its **two-machine propagation
-  done-criterion met 2026-08-13**: `riptide/examples/riptide-social.livecodescript`
-  exchanged verified feeds in both directions over the real DHT, the suite's
-  first two-machine result) are COMPLETE in the tree, and so is **phase 3
-  (media)** — on 2026-08-15 a follower on a SECOND machine fetched and played
-  an attached video near instantly, which necessarily walked the whole path
-  (head publish → head fetch → chain walk → authorSig verify → media
-  info-hash → swarm join → playback) and **phase 4 (DMs)** — on the same day
-  two machines chatted both ways with no server, which also confirmed the
-  multi-card navigation; phase 4 (DMs —
-  signed kx prekeys in the feed head, sealed intros over inbox phantom
-  swarms, pairwise secretstreams over rp1, crypto_kx anchored against a
-  real libsodium) are BUILT (2026-08-14, statically verified; their
-  done-criteria — a follower plays a video mid-download, and two machines
-  exchange encrypted DMs with no server — await two-machine passes); phase 6
-  (LAN device mesh — your own devices meet on the LAN and prove they share
-  your master seed with a signature a stranger cannot forge) is BUILT the
-  same way (its `rsLan*` admission layer is golden-pinned and offline-tested;
-  the Devices card awaits a two-machine pass); phase 7 (anon persona — a
-  separate onion-only identity, and `rsPersonaAllows`, the pure-policy guard
-  that keeps an anon persona off the DHT/torrents/rp1 entirely) is BUILT
-  with its full guard truth-table asserted in the harness (the Anon card and
-  onion serving await an OXT + live-Tor pass). On 2026-08-15 the suite
-  selftest ran on a real engine and the whole phase 4-7 **compute** surface
-  came back green (the kx session agreement, the DM secretstream round trip,
-  the LAN admit/refuse, the anon guard, BTXO framing), so those paths are
-  engine-verified; only the live peer-to-peer criteria still need two boxes.
+  social app on the suite, and `riptide/` is that app: **all seven phases
+  built; phases 1-4 DONE on two machines.** Phases 1-2 (identity + the live
+  feed) engine-passed 2026-08-12, propagation met 2026-08-13 — the suite's
+  first two-machine result. **Phase 3 (media) met 2026-08-15**: a follower
+  on a second machine fetched and played an attached video, which
+  necessarily walked head publish → head fetch → chain walk → authorSig
+  verify → media info-hash → swarm join → playback. **Phase 4 (DMs — signed
+  kx prekeys in the feed head, sealed intros over inbox phantom swarms,
+  pairwise secretstreams over rp1, crypto_kx anchored against a real
+  libsodium) met the same day**: two machines chatted both ways with no
+  server. Phases 5-7 are BUILT and statically verified, their live passes
+  pending: the dc call (signalled over the encrypted DM rail), the LAN mesh
+  (your own devices prove a shared master with a three-leg mutual
+  handshake), and the anon persona (an onion-only identity behind
+  `rsPersonaAllows`, the pure-policy guard whose full truth table the
+  harness asserts). On 2026-08-15 the suite selftest ran on a real engine
+  and the whole phase 4-7 **compute** surface came back green (the kx
+  session agreement, the DM secretstream round trip, the LAN admit/refuse,
+  the anon guard, BTXO framing), so those paths are engine-verified;
+  `riptide/docs/two-machine-runbook.md` scripts what the two boxes still
+  owe.
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
