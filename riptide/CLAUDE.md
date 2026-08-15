@@ -35,7 +35,19 @@ plus the demo's Devices card, golden-pinned and offline-harness-covered;
 its done-criterion (a device that shares the master joins, a stranger is
 refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
 library surface** - SDP rides the phase-4 DM message kinds O/A over the
-existing secretstream, so it is a demo-wiring milestone still to build.
+existing secretstream; its demo wiring is BUILT (2026-08-15): a Call
+button on the Messages card, one-blob non-trickle signalling (ship the
+local SDP when dcGatheringState hits complete), libdatachannel's
+auto-negotiation on both legs, a visible CONNECTED/via line from the
+selected candidate pair, and teardown tied to hang-up/Lock/close with the
+mandatory BARE dcCleanup at quit. STUN only, no TURN, deliberately - a
+symmetric-NAT pair fails visibly instead of relaying silently. The same
+day the LAN admission gained its RSL1 "W" WELCOME (mutual auth: the host
+signs over the joiner's own response signature, so the joiner verifies
+the host shares the master and gets its positive verdict; golden-pinned,
+rogue-host and cross-handshake-replay refusals in the harness), closing
+the joiner-confirmation gap recorded earlier. Both are statically
+verified; docs/two-machine-runbook.md scripts their passes.
 **Phase 7 (anon persona) is BUILT but not passed** (2026-08-14): the
 `rsAnon*` layer (onion-only persona derivation, probe-gated service
 wrapper, BTXO framing) and `rsPersonaAllows` - the pure-policy §9.3 guard,
@@ -417,11 +429,34 @@ Two things follow, and they are the operational point:
    never executed, in a file no harness runs, is how this landed. When you
    need a construct the suite has no engine-proven example of, say so in the
    honesty label rather than letting a green checker imply it was verified.
-2. **The demo still needs its own engine pass, and more of this class may be
-   in there.** The library is engine-verified; the demo is not. Until someone
-   opens the stack in OXT and clicks through all four cards, treat
-   `riptide-social.livecodescript` as "statically checked only" - which is
-   exactly what its own honesty footer says, and it means it.
+2. **PHASE 3 IS DONE: the two-machine media pass happened 2026-08-15.** After
+   the `of me` fix the demo ran ON TWO MACHINES and a follower fetched and
+   PLAYED an attached video, near instantly. That is the phase-3
+   done-criterion met, and it closes the last of the phase 1-3 criteria. It
+   also means far more than the media layer was exercised end to end on real
+   hardware, because a follower cannot reach a video any other way: machine
+   A published a head and a media-bearing post to the DHT, machine B fetched
+   that head, walked the chain, VERIFIED the authorSig, surfaced the media
+   info-hash from the verified post, joined the author's swarm and played
+   what came back. Phases 1-3 of the app - identity, the live feed, and
+   media - are now engine-proven across two machines through the real UI,
+   not just through the harness.
+
+   Two things this specifically does NOT settle, both worth keeping honest:
+   - **"Near instantly" was not distinguished from "mid-download."** The
+     criterion's spirit is sequential playback starting before the file is
+     complete; a fast small transfer looks the same from outside. Treat the
+     mid-download nuance as plausible but unmeasured.
+   - ~~The media strip lives on card 1, so this may not have exercised the
+     multi-card navigation.~~ **RESOLVED the same day: PHASE 4 IS DONE TOO.**
+     Two machines exchanged DMs, chat working BOTH WAYS - the sealed RSI1
+     intro, the deterministic-role crypto_kx session, and the pairwise
+     secretstream over rp1 all carrying real traffic with no server. Since
+     the Messages card had to be reached to do it, that also CONFIRMS the
+     `go to card` navigation fix on a real engine. The Devices and Anon
+     cards are built by the same `raBuild` pass and use the same navigation
+     and reference forms, so the syntax class is settled; what remains
+     unexercised there is their own flows, not their spelling.
 
 ## Suite integration status
 

@@ -486,13 +486,22 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    on two machines, feeds exchanged both directions; the as-built record is
    `riptide/CLAUDE.md`.)*
 3. **Media** — create/seed/co-seed a photo and a sequential video. *Done when* a
-   follower plays a video mid-download. *(Built 2026-08-14:
+   follower plays a video mid-download. **DONE 2026-08-15** *(built 2026-08-14:
    `rsMediaCreate`/`rsMediaFetch`/`rsMediaStatus` in the library, the media
-   strip in `riptide/examples/riptide-social.livecodescript`, harness
-   coverage in the suite self-test. Verified statically; the done-criterion
-   needs its two-machine pass. As-built decisions: `riptide/CLAUDE.md`.)*
+   strip in `riptide/examples/riptide-social.livecodescript`, harness coverage
+   in the suite self-test; the TWO-MACHINE pass followed on 2026-08-15 - a
+   follower on the second machine fetched and played an attached video, near
+   instantly, which necessarily exercised head publish -> head fetch -> chain
+   walk -> authorSig verify -> media info-hash -> swarm join -> playback. Not
+   distinguished in the report: mid-download start vs a fast complete
+   transfer. As-built decisions: `riptide/CLAUDE.md`.)*
 4. **DMs** — inbox rendezvous, sealed intro, pairwise secretstream over rp1.
    *Done when* two machines exchange authenticated encrypted DMs with no server.
+   **DONE 2026-08-15** *(two machines, chat working both ways - the sealed RSI1
+   intro, the deterministic-role crypto_kx session, and the pairwise
+   secretstream over rp1 all carried real traffic between two identities with
+   no server anywhere; it also confirmed the multi-card `go to card`
+   navigation, since the Messages card had to be reached to do it.)*
    *(Built 2026-08-14: the `rsDm*` layer - kx prekeys as signed RSK1 records
    named by the head's `prekeyTarget`, RSI1 sealed intros bound to one
    recipient, RSM1 rp1 frames, deterministic kx roles - plus the Messages
@@ -508,8 +517,15 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
    cold start. *Done when* a call connects across two networks. *(Library-ready
    2026-08-14: SDP offer/answer ride the phase-4 DM message kinds `O`/`A` over
-   the existing secretstream, so no new library surface is needed; the
-   dataChannelXT call wiring is a demo milestone still to build.)*
+   the existing secretstream, so no new library surface is needed. The demo
+   call wiring is BUILT 2026-08-15 - a Call button on the Messages card,
+   one-blob non-trickle signalling over the encrypted DM rail, auto-negotiated
+   offer/answer, and a direct dc channel with a visible connected/via line;
+   STUN only, no TURN, by design. Statically verified; the done-criterion
+   needs its two-network pass - `riptide/docs/two-machine-runbook.md` is the
+   script. The DHT-dead-drop cold start stays deliberately unbuilt: phase 4's
+   secretstream IS the warm channel, and the no-prior-contact case remains
+   dht-chat's design.)*
 6. **LAN sync** — enet device mesh with subkey-3 admission. *Done when* a draft
    written on one device appears on another with a stranger refused. *(Built
    2026-08-14: the `rsLan*` admission layer - the shared-master ed25519 keypair
@@ -517,8 +533,14 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    plus the Devices card in the demo and full offline harness coverage; the
    enConnect rider is a u32 protocol tag, so the proof is a first message, not
    connect data. The admission compute ran GREEN on a real engine 2026-08-15
-   (the suite selftest - admit under the shared master, refuse a stranger);
-   the live done-criterion still needs its two-machine pass. As-built:
+   (the suite selftest - admit under the shared master, refuse a stranger).
+   Same day the handshake gained its third leg: an RSL1 "W" WELCOME the host
+   signs over the joiner's own response signature, making the admission
+   MUTUAL - the joiner now verifies the host shares the master too, and gets
+   the positive signal it previously never got. Golden-pinned and
+   harness-covered (rogue host refused, cross-handshake replay refused). The
+   live done-criterion still needs its two-machine pass -
+   `riptide/docs/two-machine-runbook.md` is the script. As-built:
    `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**

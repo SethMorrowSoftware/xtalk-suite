@@ -28,20 +28,36 @@ script "riptideSocialApp"
 -- Result text and machine environments were not captured with the report;
 -- the record is the maintainer's dated account.
 --
--- EVERYTHING ADDED SINCE (the phase-3 media strip, and the phase-4/6/7
--- Messages, Devices and Anon CARDS) is verified STATICALLY ONLY, and that
--- label is load-bearing: no harness opens this stack. The suite selftest
--- that went green on an engine (2026-08-15) exercises the LIBRARY
--- (src/riptide.livecodescript); it never builds a card here or dispatches
--- a mouseUp, so check-livecodescript.py is the only thing that has ever
--- read these lines. It caught nothing when the multi-card conversion used
--- `... of me` object references throughout - a form the engine rejects,
--- reported and fixed 2026-08-15 (see riptide/CLAUDE.md). Assume more of
--- that class is still here until someone clicks through all four cards in
--- OXT. The live done-criteria (a follower plays a video mid-download; two
--- machines exchange authenticated encrypted DMs; a device joins the mesh
--- while a stranger is refused; a persona is reachable over Tor) each need
--- their own pass on top of that.
+-- PHASE 3 IS DONE (2026-08-15, TWO MACHINES): a follower on the second
+-- machine fetched and PLAYED an attached video, near instantly. A follower
+-- cannot reach a video any other way, so this one result exercised the
+-- whole stack end to end on real hardware: machine A published a head and
+-- a media-bearing post to the DHT; machine B fetched that head, walked the
+-- chain, VERIFIED the authorSig, surfaced the media info-hash from the
+-- verified post, joined A's swarm, and played what came back. Phases 1-3
+-- through the real UI, not the harness. (Not distinguished in the report:
+-- whether playback began MID-download or after a fast complete transfer.)
+--
+-- PHASE 4 IS DONE TOO (2026-08-15, TWO MACHINES): chat worked BOTH WAYS -
+-- the sealed RSI1 intro, the deterministic-role crypto_kx session, and the
+-- pairwise secretstream over rp1 all carried real traffic between two
+-- identities with NO SERVER anywhere. Reaching the Messages card to do it
+-- also CONFIRMS the `go to card` navigation, which had been fixed but
+-- unverified after the multi-card conversion shipped `... of me` object
+-- references the engine rejects (reported and fixed the same day; see
+-- riptide/CLAUDE.md).
+--
+-- STILL UNEXERCISED HERE (docs/two-machine-runbook.md is the script for
+-- each): the CALL (phase 5, built 2026-08-15: a Call button on the
+-- Messages card, one-blob SDP signalling as "O"/"A" messages over the
+-- encrypted DM rail, then a DIRECT dc channel; STUN only, no TURN, by
+-- design), the DEVICES card (phase 6 - the admission handshake, now
+-- three-legged: challenge, response, and an RSL1 "W" WELCOME the host
+-- signs over the joiner's own response signature, so the admission is
+-- MUTUAL and the joiner finally gets a positive, authenticated verdict),
+-- and the ANON card (phase 7, needs tor). The navigation and reference
+-- forms are the ones the Feed and Messages cards proved; what has never
+-- run is these flows themselves.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -85,9 +101,13 @@ constant kLanProto = 1
 -- phase 7 (anon persona): the onion's virtual + local forward ports
 constant kAnonVirtualPort = 80
 constant kAnonLocalPort = 8734
+-- phase 5 (live sessions): the ICE server for the dc call. STUN only - a
+-- TURN relay is a deliberate non-goal for the demo (spec 6); two peers
+-- that need one will fail visibly instead of relaying silently.
+constant kDmIce = "stun:stun.l.google.com:19302"
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-5"
+constant kRaUiVersion = "ra-ui-720p-6"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -471,11 +491,20 @@ local sLanIsServer     -- "true" when hosting the mesh
 local sLanName         -- this device's name in the mesh
 local sLanServerPeer   -- a client's peer handle to the host
 local sLanChallenges   -- server: peer id -> the challenge bytes I sent it
+local sLanMyResponse   -- joiner: the response I sent (the welcome binds to it)
 local sLanDevices      -- peer id -> the admitted device name
 local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
 -- phase 7 (anon persona). A separate onion-only identity; the guard keeps
 -- it from ever touching the DHT, a torrent, or rp1 (spec 9.3).
 local sAnonService     -- the onionxt service handle while published, or empty
+-- phase 5 (live sessions). ONE call at a time, riding the ACTIVE DM
+-- conversation: the SDP offer/answer travel as kind-"O"/"A" messages
+-- inside the established secretstream (the phase-4 rail), then the dc
+-- channel is direct peer-to-peer.
+local sDcInit          -- "true" once dcInit succeeded (teardown guard)
+local sDcPeer          -- the dc peer handle while a call exists, or empty
+local sDcChannel       -- the call's data-channel handle once known
+local sDcAwaitLocal    -- "O"/"A" while waiting to ship our local SDP
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -506,6 +535,17 @@ on closeStack
          -- extension not installed; nothing to release
       end try
       put empty into sLanInit
+   end if
+   -- and datachannelxt's mandatory quit call - BARE, never dcCleanup():
+   -- the parenthesised statement spelling is the one-line bug that once
+   -- took a whole 4400-line paste down (the suite CLAUDE.md story)
+   if sDcInit is "true" then
+      try
+         dcCleanup
+      catch tErr
+         -- extension not installed; nothing to release
+      end try
+      put empty into sDcInit
    end if
    put empty into sSession
    put empty into sDmInbox
@@ -579,6 +619,9 @@ on mouseUp
          break
       case "raDmSend"
          raDmSend
+         break
+      case "raDmCallBtn"
+         raDmCall
          break
       default
          pass mouseUp
@@ -678,7 +721,8 @@ command raBuildDmCard
    uiSection "raDmSec2", "2. Conversation: sealed first contact, then a private stream", "608,58,1184,76"
    uiLabel "raDmToL", "to handle (64 hex):", "608,80,748,98", 11
    uiInput "raDmTo", "752,80,1050,100"
-   uiButton "raDmStart", "Start DM", "1056,80,1184,104"
+   uiButton "raDmStart", "Start DM", "1056,80,1116,104"
+   uiButton "raDmCallBtn", "Call", "1122,80,1184,104"
    uiArea "raDmChat", "608,110,1184,498"
    uiInput "raDmMsg", "608,506,1050,528"
    uiButton "raDmSend", "Send", "1056,504,1184,528"
@@ -1015,6 +1059,7 @@ end raClearKeys
 -- state. The inbox swarms stay in the session - they carry no secrets.
 command raDmTeardown
    local tPeer, tErr
+   raDcTeardown
    repeat for each key tPeer in sDmPush
       try
          sxFreeStream sDmPush[tPeer]
@@ -1107,6 +1152,26 @@ command raPoll
          end repeat
       catch tErr
          -- host torn down mid-drain; the next tick sees it gone
+      end try
+   end if
+   -- the dc call (phase 5): drain its events, and ship our one-blob SDP
+   -- the moment gathering completes (non-trickle signalling over the DM
+   -- stream); guarded like the others so a dc hiccup cannot kill the pump
+   if sDcInit is "true" then
+      try
+         put dcPoll() into tEvents
+         repeat for each element tEvent in tEvents
+            raHandleDc tEvent
+         end repeat
+      catch tErr
+         -- dc torn down mid-drain; the next tick sees it gone
+      end try
+   end if
+   if sDcAwaitLocal is not empty and sDcPeer is not empty then
+      try
+         raDmCallShipLocal
+      catch tErr
+         -- a failed ship retries next tick; teardown clears the flag
       end try
    end if
    raExpire
@@ -1550,6 +1615,10 @@ command raHandleRp1 pEvent
                if tParsed["kind"] is "T" then
                   raDmChatLine raDmShort(sDmTheirHandle[tPeer]) & ":" && \
                         tParsed["text"]
+               else if tParsed["kind"] is "O" then
+                  raDmCallIncoming tParsed["text"]
+               else if tParsed["kind"] is "A" then
+                  raDmCallAnswered tParsed["text"]
                end if
                break
          end switch
@@ -1660,7 +1729,7 @@ command raDmDropPeer pPeer
 end raDmDropPeer
 
 command raDmSend
-   local tBody, tMsg, tCipher, tFrame, tOk, tErr
+   local tBody, tOk
    if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
       uiStatus "No open conversation yet: Start DM and wait for the" && \
             "channel-open line.", "warn"
@@ -1670,24 +1739,7 @@ command raDmSend
    if tBody is empty then
       exit raDmSend
    end if
-   put rsDmMessageBody("T", the seconds, tBody) into tMsg
-   if tMsg is empty then
-      uiStatus "rsDmMessageBody refused:" && rsLastError(), "bad"
-      exit raDmSend
-   end if
-   try
-      put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
-            into tCipher
-   catch tErr
-      uiStatus "stream push failed:" && tErr, "bad"
-      exit raDmSend
-   end try
-   put rsDmFrame("M", tCipher) into tFrame
-   if tFrame is empty then
-      uiStatus "rsDmFrame refused:" && rsLastError(), "bad"
-      exit raDmSend
-   end if
-   put rsDmSend(sSession, sDmActivePeer, tFrame) into tOk
+   put raDmSendMessage("T", tBody) into tOk
    if tOk is not true then
       uiStatus "send refused:" && rsLastError(), "bad"
       exit raDmSend
@@ -1695,6 +1747,234 @@ command raDmSend
    raDmChatLine "you:" && tBody
    set the text of field "raDmMsg" of card "raMessages" to empty
 end raDmSend
+
+-- One message of any kind into the ACTIVE conversation's secretstream.
+-- "T" is chat; "O"/"A" carry the phase-5 SDP signalling over the same
+-- authenticated encrypted rail (the whole point of the kinds existing).
+-- Returns true/false. rsSetError is PRIVATE to the library, so a failure
+-- here that is not a library refusal logs its reason to the chat directly
+-- (callers guard the no-conversation case before calling).
+private function raDmSendMessage pKind, pBody
+   local tMsg, tCipher, tFrame, tOk, tErr
+   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
+      return false
+   end if
+   put rsDmMessageBody(pKind, the seconds, pBody) into tMsg
+   if tMsg is empty then
+      return false
+   end if
+   try
+      put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
+            into tCipher
+   catch tErr
+      raDmChatLine "-- send failed: stream push:" && tErr && "--"
+      return false
+   end try
+   put rsDmFrame("M", tCipher) into tFrame
+   if tFrame is empty then
+      return false
+   end if
+   put rsDmSend(sSession, sDmActivePeer, tFrame) into tOk
+   return tOk is true
+end raDmSendMessage
+
+-- ---- phase 5: the live session (a dc call over the DM rail) ------------------
+-- The cold-start problem phase 5 exists to solve is ALREADY solved by
+-- phase 4: the secretstream is an authenticated, encrypted, ordered
+-- channel between exactly the two of us, so the SDP offer/answer ride it
+-- as kind-"O"/"A" messages (no dead drop needed - that design remains in
+-- dht-chat for the no-prior-contact case). One-blob signalling: we wait
+-- for ICE gathering to COMPLETE, then ship a single SDP carrying its
+-- candidates; the far side does the same. libdatachannel auto-negotiates:
+-- the caller's first dcCreateChannel triggers the offer, and applying an
+-- offer auto-generates the answer. Once the channel opens, the payload
+-- path is DIRECT peer-to-peer - the rp1 rail carried only the signalling.
+
+-- Lazily bring datachannelxt up once. Returns "true" or logs why not.
+private function raDcEnsureInit
+   local tR, tErr
+   if sDcInit is "true" then
+      return "true"
+   end if
+   try
+      put dcInit() into tR
+   catch tErr
+      raDmChatLine "-- calls need dataChannelXT (org.openxtalk.library.datachannel); not installed --"
+      return "false"
+   end try
+   if tR is not 0 then
+      raDmChatLine "-- dataChannelXT failed to initialise:" && dcLastError() && "--"
+      return "false"
+   end if
+   put "true" into sDcInit
+   return "true"
+end raDcEnsureInit
+
+-- The Call button: start a call on the active conversation, or hang up.
+command raDmCall
+   local tChan
+   if sDcPeer is not empty then
+      raDmChatLine "-- you hung up --"
+      get raDmSendMessage("T", "(hung up)")
+      raDcTeardown
+      exit raDmCall
+   end if
+   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
+      uiStatus "Open a conversation first: a call rides the DM channel.", "warn"
+      exit raDmCall
+   end if
+   -- the persona guard, at the one branch that opens a NEW transport
+   if not rsPersonaAllows(false, "dc") then
+      raDmChatLine "-- the guard refused a dc call; this is a bug --"
+      exit raDmCall
+   end if
+   if raDcEnsureInit() is not "true" then
+      exit raDmCall
+   end if
+   put dcCreatePeer(kDmIce) into sDcPeer
+   if sDcPeer is 0 or sDcPeer is empty then
+      raDmChatLine "-- dcCreatePeer failed:" && dcLastError() && "--"
+      put empty into sDcPeer
+      exit raDmCall
+   end if
+   -- the first channel triggers the offer (auto-negotiation)
+   put dcCreateChannel(sDcPeer, "riptide-call") into tChan
+   if tChan is 0 or tChan is empty then
+      raDmChatLine "-- dcCreateChannel failed:" && dcLastError() && "--"
+      raDcTeardown
+      exit raDmCall
+   end if
+   put tChan into sDcChannel
+   put "O" into sDcAwaitLocal
+   raDmChatLine "-- calling: gathering ICE candidates... --"
+end raDmCall
+
+-- An SDP offer arrived inside the secretstream (the far side pressed Call).
+command raDmCallIncoming pSdp
+   local tR
+   if sDcPeer is not empty then
+      raDmChatLine "-- incoming call ignored: already in one --"
+      exit raDmCallIncoming
+   end if
+   if raDcEnsureInit() is not "true" then
+      exit raDmCallIncoming
+   end if
+   put dcCreatePeer(kDmIce) into sDcPeer
+   if sDcPeer is 0 or sDcPeer is empty then
+      raDmChatLine "-- dcCreatePeer failed:" && dcLastError() && "--"
+      put empty into sDcPeer
+      exit raDmCallIncoming
+   end if
+   put dcSetRemoteDescription(sDcPeer, pSdp, "offer") into tR
+   if tR is not 0 then
+      raDmChatLine "-- their offer was refused:" && dcLastError() && "--"
+      raDcTeardown
+      exit raDmCallIncoming
+   end if
+   -- auto-negotiation generates our answer; ship it when gathering is done
+   put "A" into sDcAwaitLocal
+   raDmChatLine "-- incoming call: answering (gathering candidates)... --"
+end raDmCallIncoming
+
+-- Their answer arrived: apply it and let ICE connect.
+command raDmCallAnswered pSdp
+   local tR
+   if sDcPeer is empty then
+      exit raDmCallAnswered
+   end if
+   put dcSetRemoteDescription(sDcPeer, pSdp, "answer") into tR
+   if tR is not 0 then
+      raDmChatLine "-- their answer was refused:" && dcLastError() && "--"
+      raDcTeardown
+      exit raDmCallAnswered
+   end if
+   raDmChatLine "-- answer applied; connecting... --"
+end raDmCallAnswered
+
+-- Ship our one-blob local SDP once ICE gathering completes (called from
+-- the pump while sDcAwaitLocal is armed). kGatheringComplete is 2.
+command raDmCallShipLocal
+   local tSdp, tKind
+   if dcGatheringState(sDcPeer) is not 2 then
+      exit raDmCallShipLocal
+   end if
+   put dcLocalDescription(sDcPeer) into tSdp
+   if tSdp is empty then
+      exit raDmCallShipLocal
+   end if
+   put sDcAwaitLocal into tKind
+   put empty into sDcAwaitLocal
+   if raDmSendMessage(tKind, tSdp) is true then
+      if tKind is "O" then
+         raDmChatLine "-- offer sent over the encrypted DM channel --"
+      else
+         raDmChatLine "-- answer sent; connecting... --"
+      end if
+   else
+      raDmChatLine "-- could not send the SDP; hang up and retry --"
+   end if
+end raDmCallShipLocal
+
+-- One dc event (drained by the pump).
+command raHandleDc pEvent
+   local tPair
+   switch pEvent["name"]
+      case "dcChannelIncoming"
+         -- the callee learns the call channel here; open follows
+         put pEvent["channel"] into sDcChannel
+         break
+      case "dcChannelOpen"
+         if pEvent["channel"] is not sDcChannel then
+            break
+         end if
+         put dcSelectedCandidatePair(sDcPeer) into tPair
+         raDmChatLine "-- CALL CONNECTED: direct peer-to-peer channel open --"
+         if tPair["localCandidate"] is not empty then
+            raDmChatLine "--   via" && tPair["localCandidate"] && "--"
+         end if
+         -- one greeting proves the direct path carries data both ways
+         get dcSendText(sDcChannel, "live from" && raDmShort(sHandle))
+         break
+      case "dcMessage"
+         if pEvent["text"] is not empty then
+            raDmChatLine "-- call:" && pEvent["text"] && "--"
+         end if
+         break
+      case "dcChannelClosed"
+         if pEvent["channel"] is sDcChannel then
+            raDmChatLine "-- call ended --"
+            raDcTeardown
+         end if
+         break
+      case "dcStateChange"
+         -- kPeerStateFailed 4 / kPeerStateClosed 5 end the call; anything
+         -- else is progress
+         if sDcPeer is not empty and pEvent["peer"] is sDcPeer then
+            if pEvent["state"] is 4 or pEvent["state"] is 5 then
+               raDmChatLine "-- call failed or closed (state" && \
+                     pEvent["state"] & ") --"
+               raDcTeardown
+            end if
+         end if
+         break
+   end switch
+end raHandleDc
+
+-- End the call and free the dc handles (dcFreePeer frees its channels
+-- too; idempotent). The DM conversation stays up - only the call dies.
+command raDcTeardown
+   local tErr
+   if sDcPeer is not empty then
+      try
+         dcFreePeer sDcPeer
+      catch tErr
+         -- extension gone or peer already freed
+      end try
+   end if
+   put empty into sDcPeer
+   put empty into sDcChannel
+   put empty into sDcAwaitLocal
+end raDcTeardown
 
 -- ---- phase 6: the LAN device mesh --------------------------------------------
 -- enet, not the DHT: your devices meet on the LAN and prove they share
@@ -1824,6 +2104,7 @@ command raLanLeave
    put empty into sLanIsServer
    put empty into sLanServerPeer
    put empty into sLanChallenges
+   put empty into sLanMyResponse
    put empty into sLanDevices
    raLanPaintDevices
 end raLanLeave
@@ -1860,15 +2141,33 @@ command raHandleEnet pEvent
       case "enetReceive"
          put rsLanRecordKind(pEvent["payload"]) into tKind
          if tKind is "C" and sLanIsServer is not "true" then
-            -- joiner: sign the host's challenge under our master
+            -- joiner: sign the host's challenge under our master, and keep
+            -- the response - the host's welcome must be bound to it
             put rsLanBuildResponse(pEvent["payload"], sLanName, \
                   sMasterSeed) into tResp
             if tResp is empty then
                raLanLog "response build refused:" && rsLastError()
                break
             end if
+            put tResp into sLanMyResponse
             raLanSend tPeer, tResp
-            raLanLog "answered the host's challenge; awaiting admission."
+            raLanLog "answered the host's challenge; awaiting the welcome."
+         else if tKind is "W" and sLanIsServer is not "true" then
+            -- joiner: the host's welcome must prove IT shares the master,
+            -- for THIS handshake (mutual auth - and the positive signal
+            -- the joiner previously never got)
+            put rsLanVerifyWelcome(pEvent["payload"], sLanMyResponse, \
+                  sMasterSeed) into tName
+            if tName is empty then
+               raLanLog "the host FAILED to prove itself (not your" && \
+                     "device):" && rsLastError() & "; leaving."
+               raLanLeave
+               break
+            end if
+            put tName into sLanDevices[tPeer]
+            raLanLog "ADMITTED - the host" && quote & tName & quote && \
+                  "proved it shares your master. Mesh is mutual."
+            raLanPaintDevices
          else if tKind is "R" and sLanIsServer is "true" then
             -- host: verify against the challenge WE sent this peer
             put sLanChallenges[tPeer] into tChallenge
@@ -1891,6 +2190,15 @@ command raHandleEnet pEvent
             delete variable sLanChallenges[tPeer]
             raLanLog "admitted" && quote & tName & quote & \
                   "(it proved it shares your master)."
+            -- prove ourselves BACK (mutual auth): the welcome is bound to
+            -- this joiner's response, so it admits no other session
+            put rsLanBuildWelcome(pEvent["payload"], sLanName, sMasterSeed) \
+                  into tChallenge
+            if tChallenge is empty then
+               raLanLog "welcome build refused:" && rsLastError()
+            else
+               raLanSend tPeer, tChallenge
+            end if
             raLanPaintDevices
          end if
          break

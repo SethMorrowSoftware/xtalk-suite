@@ -432,6 +432,7 @@ constant rs1kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
+constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
 constant rs1kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -502,7 +503,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.6.0"
+constant kRsVersion = "0.7.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -7983,6 +7984,101 @@ function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
    return tResp["name"]
 end rsLanVerifyResponse
 
+private function rsLanWelcomeSigMessage pResponseSig, pHostName
+   local tOut
+   put textEncode("riptide-lan-w", "ASCII") into tOut
+   put pResponseSig after tOut
+   put textEncode(pHostName, "UTF-8") after tOut
+   return tOut
+end rsLanWelcomeSigMessage
+
+function rsLanBuildWelcome pResponseBytes, pHostName, pMaster
+   local tResp, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanBuildWelcome: bad response:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pHostName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildWelcome: the host name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanWelcomeSigMessage(tResp["signature"], \
+            pHostName), tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildWelcome: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("W", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildWelcome
+
+function rsLanParseWelcome pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseWelcome: truncated welcome"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "W" then
+      rsSetError "rsLanParseWelcome: not an RSL1 welcome"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseWelcome: length does not match its name field"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanParseWelcome: the host name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseWelcome
+
+function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
+   local tWelcome, tResp, tKeys, tOk, tErr
+   put rsLanParseWelcome(pWelcomeBytes) into tWelcome
+   if tWelcome is empty then return empty
+   put rsLanParseResponse(pMyResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanVerifyWelcome: bad own-response bytes:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tWelcome["signature"], \
+            rsLanWelcomeSigMessage(tResp["signature"], tWelcome["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyWelcome: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyWelcome: the welcome does not prove the" && \
+            "shared master for this handshake (a rogue host, a replay," && \
+            "or tamper)"
+      return empty
+   end if
+   return tWelcome["name"]
+end rsLanVerifyWelcome
+
 function rsAnonHandle pMaster, pIndex
    local tSeed
    put rsAnonSeed(pMaster, pIndex) into tSeed
@@ -11792,7 +11888,7 @@ end rs1rstSectionAnon
 
 private command rs1rstSectionLan
    local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName
-   local rs1tBadUtf
+   local rs1tBadUtf, rs1tWelcome
    rs1rstSection "phase 6 - LAN mesh admission"
    put rsLanKeys(rs1rstBin(rs1kRsGoldMasterHex)) into rs1tKeys
    rs1rstCheck (rs1rstHex(rs1tKeys["publicKey"]) is rs1kRsGoldLanPub), \
@@ -11855,6 +11951,39 @@ private command rs1rstSectionLan
    put rs1rstBin("52534c31520180") & (byte -64 to -1 of rs1tResponse) into rs1tBadUtf
    rs1rstCheck (rsLanParseResponse(rs1tBadUtf) is empty), \
          "a non-UTF-8 device name in a response is refused, not thrown"
+   -- the W welcome: mutual auth back to the joiner, bound to THIS handshake
+   put rsLanBuildWelcome(rs1tResponse, rs1kRsGoldLanHostName, \
+         rs1rstBin(rs1kRsGoldMasterHex)) into rs1tWelcome
+   rs1rstCheck (rs1rstHex(rs1tWelcome) is rs1kRsGoldLanWelcomeHex), \
+         "the welcome bytes match golden"
+   put rsLanParseWelcome(rs1tWelcome) into rs1tName
+   rs1rstCheck (rs1tName["name"] is rs1kRsGoldLanHostName), \
+         "the host name round-trips out of the welcome"
+   put rsLanVerifyWelcome(rs1tWelcome, rs1tResponse, rs1rstBin(rs1kRsGoldMasterHex)) \
+         into rs1tName
+   rs1rstCheck (rs1tName is rs1kRsGoldLanHostName), \
+         "the joiner verifies the host shares the master, learning ITS name"
+   -- a rogue host: a welcome built under a different master is refused
+   put rsLanBuildWelcome(rs1tResponse, rs1kRsGoldLanHostName, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBadName
+   rs1rstCheck (rsLanVerifyWelcome(rs1tBadName, rs1tResponse, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a welcome from a host that does NOT share the master is refused"
+   -- handshake binding: the welcome must not verify against a DIFFERENT
+   -- response (a captured welcome cannot admit a later session)
+   put rsLanBuildResponse(rs1tChallenge2, rs1kRsGoldLanJoinName, \
+         rs1rstBin(rs1kRsGoldMasterHex)) into rs1tBadName
+   rs1rstCheck (rsLanVerifyWelcome(rs1tWelcome, rs1tBadName, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a welcome replayed against another handshake is refused"
+   rs1rstCheck (rsLanVerifyWelcome(rs1rstFlipByte(rs1tWelcome, 70), rs1tResponse, \
+         rs1rstBin(rs1kRsGoldMasterHex)) is empty), \
+         "a tampered welcome is refused"
+   rs1rstCheck (rsLanParseWelcome(byte 1 to 30 of rs1tWelcome) is empty), \
+         "a truncated welcome is refused"
+   put rs1rstBin("52534c31570180") & (byte -64 to -1 of rs1tWelcome) into rs1tBadUtf
+   rs1rstCheck (rsLanParseWelcome(rs1tBadUtf) is empty), \
+         "a non-UTF-8 host name in a welcome is refused, not thrown"
 end rs1rstSectionLan
 
 private command rs1rstSectionDm pCaps

@@ -137,6 +137,32 @@ python3 tools/check-record-registry.py    # registries + ABI sync + size budget
 **Do not claim runtime behaviour you cannot observe** — say "verified statically;
 needs an OXT pass" and let a human run `tests/datachannel-selftest.livecodescript`.
 
+**THE ASYNC LOOPBACK IS NO LONGER STATIC (2026-08-15).** The member's own
+harness ran STANDALONE on a real engine, green end to end — including the
+`loopback: create + negotiate (async)` section that the suite harness
+deliberately does NOT fold in (the core drives its own loopback there, and two
+state machines in one process would race for the event handlers). That closes
+the last static half of this member's selftest, the same way enetxt's closed on
+2026-08-13. What it actually proved, beyond "it connected":
+
+- the negotiation is real WebRTC, not a shortcut — the local description is a
+  genuine SDP **carrying candidates**, peer A describes itself as the **offer**
+  and peer B as the **answer**, and `dcGatheringState` reaches complete (2) on
+  **both** peers with a selected candidate pair exposing a `localCandidate`;
+- the channel surface holds live: a stream id is assigned, the negotiated max
+  message is > 0, `dcBufferedAmount` is >= 0, and
+  `dcSetBufferedLowThreshold` returns 0 **on a live channel** (the stale-handle
+  path was already covered);
+- payload integrity both ways: `dcSendText` arrives intact and `dcSendData`
+  arrives **byte-for-byte including an embedded NUL** — the case a
+  length-unaware string copy would silently truncate;
+- `dcCreateChannelEx` round-trips both its label and its protocol, and a
+  **cap-sized send** returns 0.
+
+Still open for this member: browser interop (a real Chrome/Firefox peer) and a
+call across two networks with actual NAT traversal. Loopback exercises ICE's
+machinery but never leaves the host.
+
 ## FFI / C-ABI conventions (carried from the family, unchanged)
 
 - **Handles are positive 32-bit ints** (`0` = invalid), generation-tagged, one
