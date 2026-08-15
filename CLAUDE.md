@@ -319,13 +319,17 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   (`ONIONXT-INTEGRATION-PLAN.md`), and the five-extension capstone design
   (`RIPTIDE-SOCIAL-SPEC.md`). See `docs/README.md`.
 
-> **Cross-reference caveat (consolidation debt).** Members and suite docs were
-> moved verbatim, so some internal path references still read as if each project
-> were its own repo root (e.g. a doc citing `examples/foo` now lives under
-> `<member>/examples/foo`, and a cross-member reference like "TorrentXT's
-> `docs/…`" now means `torrentxt/docs/…`). This is known, harmless to the code,
-> and a good first cleanup pass — do not treat such a path as a bug in the code
-> it points at.
+> **Cross-reference caveat (consolidation debt; swept 2026-08-15).** Members
+> and suite docs were moved verbatim, so internal path references read as if
+> each project were its own repo root. The tracked path-rewrite pass ran
+> 2026-08-15: the references that actually misled - suite docs citing member
+> files bare, standalone GitHub URLs where an in-tree path serves, claims
+> about docs that have since moved - were fixed or annotated. What
+> deliberately remains, and is not a bug: a member's own docs cite paths
+> relative to THAT member's root (`examples/foo` inside `box2dxt/docs/` means
+> `box2dxt/examples/foo`) - each member's own convention, still true on its
+> standalone mirror - and dated records (fold notes, changelogs, plans,
+> quoted engine reports) keep their original pre-suite spellings.
 
 ## Building & CI
 

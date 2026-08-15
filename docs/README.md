@@ -23,8 +23,10 @@ capabilities at a glance) → `NEXT-EXTENSIONS-PLAN.md` (why they exist) →
 `RIPTIDE-SOCIAL-SPEC.md` (what they build together). Then dive into any
 member's own `docs/`.
 
-> **Path caveat.** These documents were consolidated verbatim from the
-> standalone repositories. Where one cites a member-relative path (e.g.
-> `examples/…`, `src/…`) or another project by name, resolve it under that
-> member's directory (`torrentxt/examples/…`, `sodiumxt/src/…`). Rewriting the
-> cross-references to suite-relative paths is a tracked cleanup, not a code bug.
+> **Path caveat (swept 2026-08-15).** These documents were consolidated
+> verbatim from the standalone repositories, and the tracked path-rewrite pass
+> has now run over them: a present-tense cross-reference into a member spells
+> the member prefix (`torrentxt/examples/…`, `coinxt/tools/…`). Dated records
+> and quoted member accounts deliberately keep their original
+> member-root-relative spellings; resolve those under the member their
+> context names.

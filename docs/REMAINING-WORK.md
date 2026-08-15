@@ -294,11 +294,18 @@ Built and statically verified; pending under the honesty convention.
    badge, riptide/examples/README's runbook path, and suite-gates.yml's
    "tracked follow-up" header for a port that shipped.
    — root `CLAUDE.md` cross-reference caveat
+   (CLOSED 2026-08-15: the sweep ran - full-tree inventory of every `*.md`,
+   the misleading navigation references fixed or annotated, and both caveats
+   - root `CLAUDE.md` and `docs/README.md` - rewritten to record the
+   residual convention: a member's own docs stay member-root-relative, and
+   dated records keep their original pre-suite spellings.)
 
 3. **nocloud CONTRIBUTING still describes the standalone repo** (small). Names
    only the two member gates; the suite gate set has walked the directory
    since the fold. A contributor following it verbatim misses all of that.
    — `nocloud/CONTRIBUTING.md:5-15,32-58,127-135`
+   (CLOSED 2026-08-15 in the hygiene sweep: CONTRIBUTING opens with the fold
+   preamble and names the suite gates as item 3 of its workflow.)
 
 4. **The family engineering template is stale and ungated** (medium).
    `onionxt/templates/CLAUDE.md` (+ byte-identical coinxt twin): its checker
@@ -322,6 +329,11 @@ Built and statically verified; pending under the honesty convention.
    gate.
    — `holde-em/tools/check-holdem-idioms.py` docstring, root `CLAUDE.md`
    checker-unification passage
+   (CLOSED 2026-08-15: the union shipped - the eight checks are the unified
+   checker's docstring checks 13-21, fixture-tested in every member copy,
+   with two ports narrowed and H6 refused on fleet engine evidence - and
+   `check-holdem-idioms.py` is retired; holde-em/CLAUDE.md's fold record
+   carries the detail.)
 
 6. **nocloud doc surface lagging the newest features** (medium). SECURITY.md's
    unfilled contact placeholder and missing .qsroutes.json model bullet;

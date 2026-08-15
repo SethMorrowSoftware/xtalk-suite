@@ -11,10 +11,10 @@ Built by composing the OXT extension family:
 
 | Extension | Provides |
 |---|---|
-| [TorrentXT](https://github.com/SethMorrowSoftware/TorrentXT) | rp1 peer messaging, DHT rendezvous (the table code IS the invite), BEP44 signed standings |
-| [SodiumXT](https://github.com/SethMorrowSoftware/SodiumXT) | identities, sealed lanes, commitments, randomness — and (since its ABI 8, 2026-08-15) the ristretto255 surface the mental-poker deal needs |
-| [OnionXT](https://github.com/SethMorrowSoftware/OnionXT) | optional: anonymous tables over Tor, and onion-hosted deck oracles |
-| [Box2Dxt](https://github.com/SethMorrowSoftware/Box2Dxt) | the Kit: spritesheet card animation and physics chips |
+| [TorrentXT](../torrentxt/) | rp1 peer messaging, DHT rendezvous (the table code IS the invite), BEP44 signed standings |
+| [SodiumXT](../sodiumxt/) | identities, sealed lanes, commitments, randomness — and (since its ABI 8, 2026-08-15) the ristretto255 surface the mental-poker deal needs |
+| [OnionXT](../onionxt/) | optional: anonymous tables over Tor, and onion-hosted deck oracles |
+| [Box2Dxt](../box2dxt/) | the Kit: spritesheet card animation and physics chips |
 
 ## Status
 

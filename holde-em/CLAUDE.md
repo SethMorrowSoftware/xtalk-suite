@@ -6,7 +6,9 @@ hard way across the sibling repos so it never has to be re-learned here.
 
 > **Folded into the monorepo 2026-08-15.** This directory was copied verbatim (via
 > `git archive`, tracked files only) from the standalone `hold-em` repository, which
-> becomes a mirror; development happens here now, like every other member. The seed
+> becomes a mirror; development happens here now, like every other member. Prose and
+> paths below may still say "this repo" or read as if this directory were its own
+> repo root (the suite's standing consolidation-debt caveat). The seed
 > docs the suite had carried at `docs/holde-em/` (stale at pre-implementation while
 > this repo reached v0.18.0) were REMOVED in the fold - this directory is the one
 > authority. What the fold changed, each per suite law:
@@ -210,7 +212,9 @@ strings before hashing/signing, `textDecode(..., "ascii")` the hex helpers back 
 text. The crypto seams (`heHash32`, `heHashDomHex`, `heDeriveIdentity`, `heSignDetachedD`,
 `heVerifyDetached`, `heSeal`) now wrap these one place each; `heProbeSodium` exercises
 the full roundtrip. Lesson: **read the sibling's `docs/api-reference.md`, do not guess
-FFI signatures** — the family repos are addable to the session for exactly this.
+FFI signatures** — the family repos are addable to the session for exactly this (and
+since the fold the siblings sit right beside this directory:
+`../sodiumxt/docs/api-reference.md` and so on).
 
 **Level 2 COMPUTE layer (v0.19.0, 2026-08-15 -- Phase 4a-4c, the pure half only).**
 The ristretto255 mental-poker deal algebra (spec 7.3) is the `heL2*` section of the

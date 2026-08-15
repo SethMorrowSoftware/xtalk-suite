@@ -632,7 +632,7 @@ alone - that is policy, not a status label.
 ### 4.3 enetxt (inventory item 3 - CLOSED; the standalone async ran 2026-08-13)
 
 The standalone run this section existed for has happened: on 2026-08-13
-`tests/enet-selftest.livecodescript` ran green END TO END on a real engine -
+`enetxt/tests/enet-selftest.livecodescript` ran green END TO END on a real engine -
 the live `enHostStatus` pair (connected, then zero peers after the
 disconnect), the `enPeerStatus` statistics (rtt >= 0, packetLoss within
 0..1, populated packet/byte counters), and the full echo/broadcast/binary
@@ -766,7 +766,7 @@ single paste now carries the entire public surface instead of 16 handlers:
 > name at last, all thirteen `*Len` accessors, every digest, both HMACs, PBKDF2,
 > and the whole curve surface, then the script layer's encoders, addresses,
 > BIP-39 mnemonics and BIP-32 derivation — against the same published vectors
-> `tools/coin-kat.py` and `tools/check-script-vectors.py` pin.
+> `coinxt/tools/coin-kat.py` and `coinxt/tools/check-script-vectors.py` pin.
 
 **A question this runbook used to ask here has been WITHDRAWN, and why is worth
 one paragraph.** It asked you to determine whether `the itemDelimiter` is a
@@ -1033,7 +1033,7 @@ their defaults on the way out, so a non-default port you set by hand before runn
 is gone afterwards. Set your ports *after* the selftest, not before. The three dispatch
 setters are deliberately restored rather than cleared — to owner `me`, status
 `onStatus`, no peer callback — which is exactly the configuration
-`examples/onionxt-demo.livecodescript` establishes in `preOpenStack`, so running the
+`onionxt/examples/onionxt-demo.livecodescript` establishes in `preOpenStack`, so running the
 selftest from the demo's About tab leaves the demo working.
 
 ### 5.7 Give the DHT a few seconds
