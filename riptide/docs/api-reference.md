@@ -1,7 +1,8 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.8.0,
-phases 1-7 plus the 8.2/8.3 onion serving seams). Pure LiveCodeScript over the installed suite extensions; the
+The public `rs*` surface of `src/riptide.livecodescript` (library 0.9.0,
+phases 1-7 plus the 8.2/8.3 onion serving seams and the phase-6 sync
+records). Pure LiveCodeScript over the installed suite extensions; the
 byte-exact wire layouts are documented at the top of the library and
 pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
 the harness constants, with `tools/check-selftest-vectors.py` holding the
@@ -186,6 +187,31 @@ handshake by the joiner's own response signature - mutual auth).
 | `rsLanBuildWelcome(pResponseBytes, pHostName, pMaster)` | Data | host -> joiner after admitting: sig over `"riptide-lan-w" \|\| responseSig \|\| hostName` |
 | `rsLanParseWelcome(pBytes)` | Array | `name`, `signature` |
 | `rsLanVerifyWelcome(pWelcomeBytes, pMyResponseBytes, pMaster)` | String | the HOST's device name, or empty (a rogue host, a cross-handshake replay, tamper) |
+
+## LAN sync records (phase 6, added 2026-08-15)
+
+The payload past admission, per spec section 7's channel discipline:
+drafts and feed state on channel 0 reliable, presence/typing on channel 1
+unreliable-unsequenced. Every record is signed under the SAME shared LAN
+key as the admission with the distinct domain `"riptide-lan-s"` over the
+whole record body, kind byte included (the welcome establishes no fresh
+session secret - it is mutual signature verification - so the records
+sign under the one key both sides already hold; replay is neutralized by
+each record's monotonic/absolute apply semantics, not a per-handshake
+binder, which is what lets a host relay a record verbatim). The verifiers
+are verify-then-parse: structure to the byte, then the signature, then -
+and only then - the fields. Authenticated, NOT encrypted: the LAN sees
+draft plaintext. Device names are cooperative labels among your own
+devices, not identities (all of them share the one keypair).
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `rsLanBuildDraft(pName, pSeq, pDraftText, pMaster)` | Data | the channel-0 draft record: ABSOLUTE state (the whole current draft, empty = cleared, max 4096 UTF-8 bytes - refused, never truncated) with a monotonic per-device `pSeq` |
+| `rsLanVerifyDraft(pBytes, pMaster)` | Array | `name`, `seq`, `draft`, or empty with a distinct refusal; apply only a `seq` strictly above the last applied for that device |
+| `rsLanBuildFeedState(pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster)` | Data | the channel-0 feed-seq / read-receipt record; `pReadPeerHex` empty (with `pReadUpTo` 0) is a pure feed-seq claim |
+| `rsLanVerifyFeedState(pBytes, pMaster)` | Array | `name`, `feedSeq`, `readPeer` (empty for none), `readUpTo`; apply both halves as MAX - feedSeq is what keeps two devices from publishing a conflicting head |
+| `rsLanBuildPresence(pName, pTyping, pTick, pMaster)` | Data | the channel-1 presence/typing record: absolute state with a monotonic per-device `pTick`, engineered to be safely droppable - senders re-assert on a cadence, never send deltas |
+| `rsLanVerifyPresence(pBytes, pMaster)` | Array | `name`, `typing` (true/false), `tick`, or empty; unknown flag bits are refused fail-closed; apply only a `tick` strictly above the last applied |
 
 ## The anon persona and the guard (phase 7)
 

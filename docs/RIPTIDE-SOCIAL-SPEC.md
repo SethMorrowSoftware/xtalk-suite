@@ -320,6 +320,21 @@ large transfer never starves the interactive channel. `dcPoll` drains state and
 inbound messages in the shared dispatcher. When the live session ends, the
 conversation falls back to the persistent rp1 DM.
 
+*(As built, 2026-08-15: the typing lane exists - demo wiring, no library
+surface. At call setup the caller opens a second channel,
+`dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false, -1)` -
+exactly this section's unordered + maxRetransmits-0 mode - created before
+ICE gathering so both channels ride the one offer; the callee routes its
+incoming channels BY LABEL, never arrival order. Both sides send ABSOLUTE
+state ("1" typing, "0" not), debounced on the poll timer and re-asserted
+every second while the call lives, and each side expires the far state
+locally so a dropped "0" cannot stick - droppable by construction, per
+this section's design. No record format is needed: the DTLS session the
+DM-signalled SDP authenticated already scopes and authenticates the lane.
+This lane is the CALL peers' typing indicator; the LAN device mesh has
+its own, separately, as a signed section-7 channel-1 record. Verified
+statically; needs the two-machine call pass.)*
+
 ---
 
 ## 7. Rail 4 — same-LAN device sync (enetxt)
@@ -345,6 +360,34 @@ device mesh. Channels split by traffic shape:
 `enPeerStatus` gives RTT and loss for a live "your devices" panel. This is the
 one rail where sub-frame latency actually matters and where dc's ICE handshake
 would be pure overhead — the devices already share a network and a secret.
+
+*(As built, 2026-08-15: the sync payload landed as three RSL1 record kinds
+over the ADMITTED mesh - "D" draft sync (channel 0, reliable: the whole
+current draft text as absolute state, empty meaning cleared, capped at
+4096 bytes refuse-not-truncate, with a monotonic per-device seq and the
+sender device name), "F" feed-seq/read-receipt state (channel 0: feedSeq
+applied as MAX so two devices never publish a conflicting head, plus an
+optional read-receipt peer/timestamp pair, also max-applied), and "P"
+presence/typing (channel 1: absolute state with a monotonic per-device
+tick). Two deliberate deltas from this section's sketch, both recorded in
+riptide/CLAUDE.md. First, presence is sent unreliable-UNSEQUENCED (enet
+flag 2), not unreliable-sequenced: the record's own tick makes it
+reorder-proof, so transport sequencing would only mask what the record
+must survive anyway. Second, the records are SIGNED rather than riding
+the admission bare: the same shared LAN key as the admission, with a
+distinct domain tag "riptide-lan-s" over the whole body, kind byte
+included - the welcome leaves no fresh session secret (it is mutual
+signature verification), so the records sign under the one key both
+sides hold, and replay is neutralized by each record's monotonic/
+absolute apply semantics instead of a per-handshake binder (which would
+break a host relaying a record verbatim to the other admitted devices).
+Verify-then-parse on every inbound record, refusals distinct; records
+from unadmitted peers are refused outright. Honest limit, surfaced in
+the UI: authenticated, NOT encrypted - the LAN carries draft plaintext;
+this section's design is admission-only, and encryption would need a new
+traffic subkey. Channel 2's bulk media handoff remains unbuilt; the demo
+allocates the third channel so both sides already agree when it lands.
+Verified statically; needs the two-machine pass.)*
 
 ---
 
@@ -554,8 +597,13 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    call wiring is BUILT 2026-08-15 - a Call button on the Messages card,
    one-blob non-trickle signalling over the encrypted DM rail, auto-negotiated
    offer/answer, and a direct dc channel with a visible connected/via line;
-   STUN only, no TURN, by design. Statically verified; the done-criterion
-   needs its two-network pass - `riptide/docs/two-machine-runbook.md` is the
+   STUN only, no TURN, by design. TYPING PRESENCE is BUILT too (later the
+   same day): the section-6.2 lane as a second dc channel - unordered,
+   maxRetransmits 0 - carrying absolute "1"/"0" state, debounced on the
+   poll timer with a local expiry so a dropped "0" cannot stick; demo
+   wiring only, no library surface (the 6.2 as-built note has the
+   details). Statically verified; the done-criterion needs its
+   two-network pass - `riptide/docs/two-machine-runbook.md` is the
    script. The DHT-dead-drop cold start stays deliberately unbuilt: phase 4's
    secretstream IS the warm channel, and the no-prior-contact case remains
    dht-chat's design.)*
@@ -571,9 +619,17 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    signs over the joiner's own response signature, making the admission
    MUTUAL - the joiner now verifies the host shares the master too, and gets
    the positive signal it previously never got. Golden-pinned and
-   harness-covered (rogue host refused, cross-handshake replay refused). The
-   live done-criterion still needs its two-machine pass -
-   `riptide/docs/two-machine-runbook.md` is the script. As-built:
+   harness-covered (rogue host refused, cross-handshake replay refused).
+   THE SYNC PAYLOAD itself is BUILT as of later that day: the section-7
+   channel discipline as three signed RSL1 record kinds - draft sync,
+   feed-seq/read-receipt state, presence/typing - golden-pinned with
+   refusals harness-proven offline, plus the demo's Devices-card wiring
+   (a draft field debounced on the poll timer, incoming drafts rendered
+   with their origin device, per-peer presence, strangers refused and
+   logged), so the done-criterion is now REACHABLE: the two-machine pass
+   is all that remains - `riptide/docs/two-machine-runbook.md` is the
+   script (type on A, see it on B, stranger refused). As-built details
+   and the authentication choice: the section-7 as-built note and
    `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**

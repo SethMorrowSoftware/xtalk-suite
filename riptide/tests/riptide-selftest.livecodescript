@@ -39,6 +39,11 @@ constant kRsGoldDmMsgText = "hello, dm"
 constant kRsGoldLanNonce = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant kRsGoldLanHostName = "laptop"
 constant kRsGoldLanJoinName = "phone"
+constant kRsGoldLanDraftText = "draft: hello mesh"
+constant kRsGoldLanSeq = "5"
+constant kRsGoldLanFeedSeq = "9"
+constant kRsGoldLanReadTs = "1754870700"
+constant kRsGoldLanTick = "3"
 constant kRsGoldHeadSeq = "7"
 constant kRsGoldHeadName = "Riptide"
 constant kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -75,6 +80,9 @@ constant kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f18
 constant kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
 constant kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
+constant kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
+constant kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
 constant kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -114,6 +122,7 @@ function rsSelfTest
       rstSectionIngest
       rstSectionDm tCaps
       rstSectionLan
+      rstSectionLanSync
       rstSectionAnon tCaps
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
@@ -870,6 +879,109 @@ private command rstSectionLan
    rstCheck (rsLanParseWelcome(tBadUtf) is empty), \
          "a non-UTF-8 host name in a welcome is refused, not thrown"
 end rstSectionLan
+
+-- The phase-6 SYNC records over the admitted mesh: pure crypto again (no
+-- transport), signed under the same shared LAN key as the admission with
+-- the distinct "riptide-lan-s" domain over the whole body. Build + verify
+-- + a distinct refusal per record kind, the stranger/tamper refusals, and
+-- the two hand-signed forgeries the builders cannot produce (a valid
+-- signature over a non-UTF-8 name; a valid signature over unknown flag
+-- bits) so the post-verification refusal paths run too.
+private command rstSectionLanSync
+   local tMaster, tKeys, tRec, tOut, tBytes, tBody
+   rstSection "phase 6 - LAN sync records (drafts, feed state, presence)"
+   put rstBin(kRsGoldMasterHex) into tMaster
+   put rsLanKeys(tMaster) into tKeys
+   -- the draft record (channel 0, reliable)
+   put rsLanBuildDraft(kRsGoldLanJoinName, kRsGoldLanSeq, \
+         kRsGoldLanDraftText, tMaster) into tRec
+   rstCheck (rstHex(tRec) is kRsGoldLanDraftHex), \
+         "the draft record bytes match golden"
+   put rsLanVerifyDraft(tRec, tMaster) into tOut
+   rstCheck (tOut["name"] is kRsGoldLanJoinName), \
+         "the draft's device name verifies and round-trips"
+   rstCheck (tOut["seq"] is kRsGoldLanSeq + 0), \
+         "the draft's per-device seq round-trips"
+   rstCheck (tOut["draft"] is kRsGoldLanDraftText), \
+         "the draft text round-trips"
+   -- absolute state: an EMPTY draft is legal and means cleared
+   put rsLanBuildDraft(kRsGoldLanJoinName, 6, empty, tMaster) into tBytes
+   put rsLanVerifyDraft(tBytes, tMaster) into tOut
+   rstCheck (tOut is not empty and tOut["draft"] is empty), \
+         "an empty draft builds and verifies (cleared state)"
+   -- the stranger: a record signed under a DIFFERENT master is refused
+   put rsLanBuildDraft(kRsGoldLanJoinName, kRsGoldLanSeq, \
+         kRsGoldLanDraftText, rstBin(kRsGoldConfSeedHex)) into tBytes
+   rstCheck (rsLanVerifyDraft(tBytes, tMaster) is empty), \
+         "a stranger's draft record is refused"
+   rstCheck (rsLanVerifyDraft(rstFlipByte(tRec, 30), tMaster) is empty), \
+         "a tampered draft record is refused"
+   rstCheck (rsLanVerifyDraft(byte 1 to 40 of tRec, tMaster) is empty), \
+         "a truncated draft record is refused"
+   rstCheck (rsLanBuildDraft(kRsGoldLanJoinName, -1, "x", tMaster) \
+         is empty), "a negative draft seq is refused"
+   -- a hand-signed record with a non-UTF-8 name: the signature is VALID
+   -- (only a master-holder could make it), so this exercises the
+   -- refusal AFTER the proof - refused clean, never thrown, never mangled
+   put rstBin("52534c3144") & numToByte(2) & rstBin("fffe") & \
+         rstBin("0000000000000001") & rstBin("0000") into tBody
+   put tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         tBody, tKeys["secretKey"]) into tBytes
+   rstCheck (rsLanVerifyDraft(tBytes, tMaster) is empty), \
+         "a validly signed draft with a non-UTF-8 name is refused, not thrown"
+   -- the feed-state record (channel 0): feedSeq + an optional read receipt
+   put rsLanBuildFeedState(kRsGoldLanJoinName, kRsGoldLanFeedSeq, \
+         kRsGoldHandle, kRsGoldLanReadTs, tMaster) into tRec
+   rstCheck (rstHex(tRec) is kRsGoldLanFeedStateHex), \
+         "the feed-state record bytes match golden"
+   put rsLanVerifyFeedState(tRec, tMaster) into tOut
+   rstCheck (tOut["feedSeq"] is kRsGoldLanFeedSeq + 0), \
+         "the feed seq verifies and round-trips"
+   rstCheck (tOut["readPeer"] is kRsGoldHandle), \
+         "the read-receipt peer round-trips"
+   rstCheck (tOut["readUpTo"] is kRsGoldLanReadTs + 0), \
+         "the read-up-to timestamp round-trips"
+   -- an empty peer travels as the all-zeros handle and parses back EMPTY
+   put rsLanBuildFeedState(kRsGoldLanJoinName, 1, empty, 0, tMaster) \
+         into tBytes
+   put rsLanVerifyFeedState(tBytes, tMaster) into tOut
+   rstCheck (tOut is not empty and tOut["readPeer"] is empty), \
+         "a pure feed-seq claim (no receipt) round-trips the none spelling"
+   put rsLanBuildFeedState(kRsGoldLanJoinName, 1, empty, 0, \
+         rstBin(kRsGoldConfSeedHex)) into tBytes
+   rstCheck (rsLanVerifyFeedState(tBytes, tMaster) is empty), \
+         "a stranger's feed-state record is refused"
+   rstCheck (rsLanBuildFeedState(kRsGoldLanJoinName, 1, "zz", 0, tMaster) \
+         is empty), "a malformed read-receipt peer is refused at build"
+   -- the presence record (channel 1, unreliable-unsequenced)
+   put rsLanBuildPresence(kRsGoldLanJoinName, true, kRsGoldLanTick, \
+         tMaster) into tRec
+   rstCheck (rstHex(tRec) is kRsGoldLanPresenceHex), \
+         "the presence record bytes match golden"
+   put rsLanVerifyPresence(tRec, tMaster) into tOut
+   rstCheck (tOut["typing"] is true and tOut["tick"] is kRsGoldLanTick + 0), \
+         "typing state and tick verify and round-trip"
+   put rsLanBuildPresence(kRsGoldLanJoinName, false, 4, tMaster) into tBytes
+   put rsLanVerifyPresence(tBytes, tMaster) into tOut
+   rstCheck (tOut is not empty and tOut["typing"] is false), \
+         "the not-typing absolute state round-trips"
+   put rsLanBuildPresence(kRsGoldLanJoinName, true, 1, \
+         rstBin(kRsGoldConfSeedHex)) into tBytes
+   rstCheck (rsLanVerifyPresence(tBytes, tMaster) is empty), \
+         "a stranger's presence record is refused"
+   -- a hand-signed record with UNKNOWN flag bits (2): a valid signature,
+   -- refused fail-closed - a newer format must never half-parse
+   put rstBin("52534c3150") & numToByte(5) & \
+         textEncode(kRsGoldLanJoinName, "UTF-8") & numToByte(2) & \
+         rstBin("0000000000000001") into tBody
+   put tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         tBody, tKeys["secretKey"]) into tBytes
+   rstCheck (rsLanVerifyPresence(tBytes, tMaster) is empty), \
+         "a validly signed presence record with unknown flags is refused"
+   -- no cross-kind reads: one record kind can never verify as another
+   rstCheck (rsLanVerifyDraft(tRec, tMaster) is empty), \
+         "a presence record fed to the draft verifier is refused"
+end rstSectionLanSync
 
 -- The phase-4 DM layer. The pure half (keys, records, session derivation,
 -- seal round trip, the message-through-a-secretstream path) runs on

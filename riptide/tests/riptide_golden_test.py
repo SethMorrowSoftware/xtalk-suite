@@ -332,6 +332,85 @@ check("lan welcome handshake binding",
 check_raises("lan welcome bad resp sig len",
              lambda: ref["lan_welcome_sig_message"](b"\x00" * 63, "x"))
 
+# --- phase 6: the sync records over the admitted mesh ----------------------
+# All three sign under the SAME shared LAN key as the admission but with
+# the DISTINCT domain "riptide-lan-s" over the whole body, kind byte
+# included - pinned here both as bytes and as the two structural claims
+# that carry the design: the sig verifies under the sync domain, and does
+# NOT verify under the admission domain (no cross-record confusion).
+
+LAN_DRAFT_HEX = (
+    "52534c31440570686f6e650000000000000005001164726166743a2068656c6c"
+    "6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675"
+    "ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef5"
+    "3ae05ec0bc0b")
+LAN_FEED_STATE_HEX = (
+    "52534c31460570686f6e6500000000000000093561353436653466656635643162"
+    "373666393464633162326564656437356334346266666339303061663734363161"
+    "32366438343237343533613932663232640000000068"
+    "9933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae520"
+    "9d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca"
+    "09")
+LAN_PRESENCE_HEX = (
+    "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6"
+    "132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb9"
+    "2ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f")
+
+draft_rec = ref["lan_build_draft"]("phone", 5, "draft: hello mesh", MASTER)
+check("lan draft bytes", draft_rec.hex(), "".join(LAN_DRAFT_HEX.split()))
+check("lan draft kind", draft_rec[4:5], b"D")
+feed_rec = ref["lan_build_feed_state"]("phone", 9, HANDLE, 1754870700,
+                                       MASTER)
+check("lan feed-state bytes", feed_rec.hex(),
+      "".join(LAN_FEED_STATE_HEX.split()))
+check("lan feed-state peer field", feed_rec[19:83], HANDLE.encode("ascii"))
+pres_rec = ref["lan_build_presence"]("phone", True, 3, MASTER)
+check("lan presence bytes", pres_rec.hex(),
+      "".join(LAN_PRESENCE_HEX.split()))
+check("lan presence flags", pres_rec[11], 1)
+check("lan presence not typing flags",
+      ref["lan_build_presence"]("phone", False, 3, MASTER)[11], 0)
+
+# the design's two structural claims, per record kind
+for _label, _rec in (("draft", draft_rec), ("feed-state", feed_rec),
+                     ("presence", pres_rec)):
+    check("lan %s sig verifies (sync domain)" % _label,
+          ref["_verify_ed25519"](
+              _rec[-64:], ref["LAN_SYNC_DOMAIN"] + _rec[:-64], lan_pub),
+          True)
+    check("lan %s sig refuses the admission domain" % _label,
+          ref["_verify_ed25519"](
+              _rec[-64:], ref["LAN_DOMAIN"] + _rec[:-64], lan_pub),
+          False)
+
+# a record built under a DIFFERENT master must not verify under this
+# mesh's public (the stranger refusal, at the crypto layer)
+stranger = ref["lan_build_draft"](
+    "phone", 5, "draft: hello mesh",
+    bytes.fromhex(
+        "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"))
+check("lan stranger draft refused",
+      ref["_verify_ed25519"](
+          stranger[-64:], ref["LAN_SYNC_DOMAIN"] + stranger[:-64], lan_pub),
+      False)
+
+# builder caps refuse, never truncate
+check_raises("lan draft over cap", lambda: ref["lan_build_draft"](
+    "phone", 1, "x" * 4097, MASTER))
+check_raises("lan draft bad seq", lambda: ref["lan_build_draft"](
+    "phone", -1, "x", MASTER))
+check_raises("lan feed-state bad peer", lambda: ref["lan_build_feed_state"](
+    "phone", 1, "zz" * 32, 0, MASTER))
+check_raises("lan presence bad tick", lambda: ref["lan_build_presence"](
+    "phone", True, 2 ** 53, MASTER))
+check_raises("lan sync name over cap", lambda: ref["lan_build_presence"](
+    "x" * 33, True, 1, MASTER))
+
+# an empty draft is legal ABSOLUTE state (it means "cleared")
+empty_draft = ref["lan_build_draft"]("phone", 6, "", MASTER)
+check("lan empty draft length", len(empty_draft), 85)
+check("lan empty draft len field", empty_draft[19:21], b"\x00\x00")
+
 # --- phase 7: the anon persona + BTXO framing ------------------------------
 
 ANON0_HANDLE = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"

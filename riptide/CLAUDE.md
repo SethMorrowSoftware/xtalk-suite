@@ -18,8 +18,8 @@ adds native surface, and `rs*` never becomes a library other members may
 call.
 
 **All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.8.0; 75 public handlers,
-75/75 exercised by the suite harness):
+machines, done-criteria included** (library 0.9.0; 81 public handlers,
+81/81 exercised by the suite harness):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -39,14 +39,27 @@ machines, done-criteria included** (library 0.8.0; 75 public handlers,
   libdatachannel auto-negotiation on both legs, a visible CONNECTED/via
   line, teardown on hang-up/Lock/close, the mandatory BARE dcCleanup at
   quit. STUN only, no TURN, deliberately - a symmetric-NAT pair fails
-  visibly instead of relaying silently.
+  visibly instead of relaying silently. **The spec-6.2 TYPING LANE is
+  built too** (2026-08-15, closing remaining-work A.8): a second dc
+  channel (unordered, maxRetransmits 0) opened at call setup, absolute
+  "1"/"0" state debounced on the poll timer - demo wiring only, no
+  library surface (the DTLS session the DM-signalled SDP authenticated
+  scopes it; see the sync-payload as-built section below).
 - **Phase 6 (LAN mesh): BUILT, awaiting its pass.** The `rsLan*`
   admission layer plus the RSL1 "W" WELCOME (2026-08-15, mutual auth:
   the host signs over the joiner's own response signature, so the joiner
   verifies the host shares the master and gets its positive verdict;
   golden-pinned, rogue-host and cross-handshake-replay refusals in the
   harness). The admission COMPUTE ran engine-green in the suite selftest
-  2026-08-15; the live two-machine mesh pass is what remains.
+  2026-08-15. **The SYNC PAYLOAD landed later the same day** (closing
+  remaining-work A.7): three new RSL1 record kinds over the admitted
+  mesh - "D" draft sync, "F" feed-seq/read-receipt state, "P"
+  presence/typing - signed under the shared LAN key with a distinct
+  domain, golden-pinned, refusals harness-proven offline, plus the
+  demo's Devices-card wiring (a debounced draft field, per-peer
+  presence, verified drafts rendered with their origin, strangers
+  refused and logged). Verified statically; the live two-machine mesh
+  pass - now the full draft-appears done-criterion - is what remains.
 - **Phase 7 (anon persona): BUILT, awaiting OXT + live-Tor.** The
   `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
   §9.3 guard, the app's highest-severity invariant) - compute engine-green
@@ -59,9 +72,10 @@ machines, done-criteria included** (library 0.8.0; 75 public handlers,
   live done-criterion remains (a persona reachable and served over Tor
   with zero `bt*` calls in a trace).
 
-What remains, in one line: the live passes for 5 (the call), 6 (the
-mesh), and 7 (tor, now including its built 8.2/8.3 serving) - all
-scripted in docs/two-machine-runbook.md.
+What remains, in one line: the live passes for 5 (the call + typing
+lane), 6 (the mesh, through the draft-appears criterion), and 7 (tor,
+now including its built 8.2/8.3 serving) - all scripted in
+docs/two-machine-runbook.md.
 
 ## The rules that bind this directory
 
@@ -298,6 +312,78 @@ scripted in docs/two-machine-runbook.md.
   master seed in memory between unlock and Lock/close (the spec's
   one-keyring pattern), cleared on both. The honesty caveat about
   unlocked engine memory already covers it.
+
+## Things decided building the phase-6 sync payload + A.8 typing (2026-08-15; do not re-litigate)
+
+- **Sync records sign under the SHARED LAN KEY with a distinct domain,
+  and there is deliberately NO per-handshake session binder.** The
+  design question was "what key material does the welcome leave each
+  side?", and the honest answer is NONE that is fresh: the welcome is
+  mutual signature VERIFICATION, not a key exchange, so the only secret
+  both sides hold afterwards is the master-derived LAN ed25519 keypair
+  itself. Deriving a per-handshake MAC key from that seed would feed
+  one seed to two cipher schemes (the exact reason subkey 2 is separate
+  from subkey 1), and binding records to a handshake would break the
+  hub-and-spoke RELAY - a record the host forwards verbatim must verify
+  identically at every admitted peer. So: ed25519 under the shared key,
+  domain "riptide-lan-s" (admission signs "riptide-lan", the welcome
+  "riptide-lan-w"), over the WHOLE record body with the kind byte
+  inside the signed span. Replay is neutralized where it matters by
+  each record's APPLY semantics - drafts by strictly-increasing
+  per-device seq, feed/read state by max-apply, presence by
+  strictly-increasing tick - plus admission gating at the transport.
+- **Every record is ABSOLUTE state, never a delta.** The draft record
+  carries the whole current text (empty = cleared), feed state carries
+  the latest seq, presence carries the current flag - so any record can
+  be dropped, duplicated, or reordered and the next one repairs it.
+  That is what makes channel 1's flag-2 send honest, and it is also why
+  the demo re-asserts presence every second instead of sending edges.
+- **Presence is sent UNSEQUENCED (flag 2), a recorded delta from the
+  spec's "unreliable-sequenced".** The record carries its own monotonic
+  tick, so it is reorder-proof without enet's sequencing; taking flag
+  1's sequencing would only mask ordering bugs the record must survive
+  anyway. The spec's section-7 as-built note records the same delta.
+- **The counters seed from the clock, not zero.** A leave-and-rejoin
+  (or restart) must keep a device's seq/tick moving strictly forward
+  past anything a receiver applied for an earlier session; `the
+  seconds` gives that for free (the phase-3 clock-salt precedent). The
+  receiver additionally drops per-peer tracking with the enet peer, so
+  even a clock step backwards only costs a stale-looking first record.
+- **Sync sends go per-admitted-peer, never enBroadcast.** A broadcast
+  would also reach a connected-but-unadmitted stranger in its pre-drop
+  window, and drafts are plaintext. The host relays verified records to
+  the other admitted peers (bytes intact - the no-binder choice is what
+  makes that sound); a two-device pass never exercises the relay, but
+  it keeps a three-device mesh from silently not syncing.
+- **Authenticated, NOT encrypted, and the UI says so.** A LAN observer
+  reads draft plaintext; the spec's section 7 is admission-only by
+  design, and encrypting would need a new traffic subkey (a future spec
+  row, not a quiet addition). The Devices-card footer carries the
+  caveat.
+- **Draft edits debounce on the poll timer and CONVERGE.** The tick
+  compares the field against the last state actually broadcast and
+  re-sends until they match (at most ~1/s), so intermediate states may
+  be skipped but the final state cannot be lost - and a refused build
+  (an over-cap draft) adopts the state to avoid logging every tick,
+  retrying on the next edit.
+- **The demo publishes NO read receipts.** The record carries the
+  receipt half (library-complete, harness-covered); the demo's
+  one-conversation DM rail keeps no read state to publish, so it sends
+  the none spelling and logs any receipt it receives. Inventing read
+  semantics for the demo would have been dishonest wiring.
+- **A.8 disposition: BUILT, as demo wiring on the dc call.** Spec 6.2's
+  typing lane is genuinely separate from the LAN rail's (section 7
+  channel 1 covers your OWN devices; 6.2 covers the two call peers),
+  and the call plumbing made it modest: a second channel via
+  `dcCreateChannelEx(peer, "riptide-typing", "", true, 0, -1, false,
+  -1)` created before gathering so both channels ride the one offer,
+  absolute "1"/"0" state re-sent on a cadence, a local expiry so a
+  dropped "0" cannot stick, and the callee routing incoming channels BY
+  LABEL (arrival order is not a protocol). No library surface and no
+  record format: the DTLS session the DM-signalled SDP authenticated
+  already scopes and authenticates the lane, and a one-byte absolute
+  state has nothing to parse. A lane refusal is non-fatal - the call
+  continues without it, logged.
 
 ## Things decided building phase 7 (do not re-litigate)
 

@@ -1,12 +1,13 @@
 script "RiptideSocial"
 -- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
--- layer, the DM layer, the LAN mesh admission layer, and the anonymous
--- persona layer, as a pure-LiveCodeScript library over the installed suite
--- extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9). Phase 5 (live
--- sessions) adds no library surface: its SDP offer/answer ride the phase-4
--- DM message kinds "O"/"A" over the existing secretstream, so it is demo
--- wiring.
+-- layer, the DM layer, the LAN mesh admission + sync layer, and the
+-- anonymous persona layer, as a pure-LiveCodeScript library over the
+-- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9).
+-- Phase 5 (live sessions) adds no library surface: its SDP offer/answer
+-- ride the phase-4 DM message kinds "O"/"A" over the existing
+-- secretstream, and its spec-6.2 typing lane is a second dc channel the
+-- demo opens - both demo wiring.
 --
 -- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
 -- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
@@ -78,6 +79,18 @@ script "RiptideSocial"
 --     (rsLanBuildChallenge / rsLanBuildResponse / rsLanVerifyResponse) -
 --     a stranger on the same Wi-Fi cannot sign it. The records ride enet
 --     channel-0 messages; the app owns the enet host and the pump.
+--   - the phase-6 SYNC records over the admitted mesh (2026-08-15, the
+--     spec section 7 channel discipline): the "D" draft-sync record
+--     (channel 0, reliable - draft text + a monotonic per-device seq +
+--     the sender device name), the "F" feed-seq/read-receipt state
+--     record (channel 0 - feedSeq applies as max so two devices never
+--     publish a conflicting head), and the "P" presence/typing record
+--     (channel 1, unreliable-unsequenced - absolute state with its own
+--     monotonic tick, safely droppable and reorder-proof). All three
+--     are signed under the SAME shared LAN key as the admission with a
+--     distinct domain tag; verify-then-parse on every inbound record
+--     (rsLanBuildDraft / rsLanVerifyDraft / rsLanBuildFeedState /
+--     rsLanVerifyFeedState / rsLanBuildPresence / rsLanVerifyPresence).
 --   - the ANONYMOUS PERSONA layer (phase 7): a separate onion-only
 --     identity from a subkey-100+n seed (rsAnonHandle / rsAnonOnion,
 --     derivable offline), the probe-gated onion-service wrapper
@@ -147,6 +160,14 @@ script "RiptideSocial"
 --   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
 --   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
 --     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
+--   RSL1 LAN draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
+--     draftLen(u16 BE) draft(UTF-8, 0..4096; empty = cleared) sig(64)
+--   RSL1 LAN feed state: magic(4) "F" nameLen(u8) name feedSeq(u64 BE)
+--     readPeer(64 hex; all-zeros = none) readUpTo(u64 BE) sig(64)
+--   RSL1 LAN presence: magic(4) "P" nameLen(u8) name flags(u8: bit0
+--     typing, other bits refused) tick(u64 BE) sig(64)
+--     ...the three sync sigs are ed25519 by the SAME shared LAN key over
+--     "riptide-lan-s" || the whole record body, kind byte included
 --   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
 --   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
 --   Onion serving (spec 8.2/8.3, HTTP bodies over the persona's onion):
@@ -163,7 +184,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.8.0"
+constant kRsVersion = "0.9.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -175,6 +196,14 @@ constant kRsLanMagic = "RSL1"
 constant kRsLanDomain = "riptide-lan"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
+-- the phase-6 SYNC records over the admitted mesh: a distinct signature
+-- domain (admission signs "riptide-lan", the welcome "riptide-lan-w"),
+-- a draft-text cap (refused, never truncated - a draft over it still
+-- lives locally, it just does not sync), and the all-zeros "no peer"
+-- spelling for the feed-state record's optional read receipt
+constant kRsLanSyncDomain = "riptide-lan-s"
+constant kRsLanMaxDraft = 4096
+constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
 -- the POST /dm body: the sealed RSI1 intro as strict lowercase hex -
@@ -2379,6 +2408,393 @@ function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
    end if
    return tWelcome["name"]
 end rsLanVerifyWelcome
+
+--------------------------------------------------------------------------
+-- the phase-6 SYNC records over the ADMITTED mesh (spec section 7's
+-- channel discipline: drafts + feed state on channel 0 reliable,
+-- presence/typing on channel 1 unreliable-unsequenced)
+--
+-- THE AUTHENTICATION CHOICE, recorded (do not re-litigate). Every sync
+-- record is SIGNED under the SAME shared LAN ed25519 key the admission
+-- uses, with a DISTINCT domain tag - "riptide-lan-s"; admission signs
+-- "riptide-lan", the welcome "riptide-lan-w" - over the WHOLE record
+-- body, kind byte included, so an admission signature can never be
+-- replayed as a sync record, and one sync kind can never be read as
+-- another (the case-folded-kind trick dies on the signature too: the
+-- sig covers the raw bytes). The admission WELCOME leaves no fresh
+-- session secret behind - it is mutual signature verification, not a
+-- key exchange - so the only secret material both sides hold afterwards
+-- is the master-derived LAN keypair itself, and deriving a per-handshake
+-- MAC key from that ed25519 seed would feed one seed to two cipher
+-- schemes (the registry rule that made subkey 2 separate from subkey 1).
+-- A per-handshake session binder was considered and REJECTED: a record
+-- the host relays hub-and-spoke must verify identically at EVERY
+-- admitted peer, and the replay a binder would stop is already neutral
+-- because every record's APPLY semantics are monotonic or absolute (a
+-- draft's per-device seq only moves forward, feed/read state applies as
+-- max, a presence tick only moves forward) and only ADMITTED peers'
+-- records are applied at all. Two honest limits, also recorded: the
+-- records are authenticated, NOT encrypted - a LAN observer reads draft
+-- plaintext (the spec's admission-only design; confidentiality would
+-- need a new traffic subkey and is not claimed) - and the device NAME
+-- is a cooperative label among your own devices, not an identity (all
+-- of them share the one keypair, the phase-6 decision): a signature
+-- proves "a master-holder said this", the name says which device
+-- claims to have said it.
+--------------------------------------------------------------------------
+
+-- A wire counter (seq / tick / timestamp): a non-negative integer below
+-- 2^53, the exact-double cap (the rsDmMessageBody discipline).
+private function rsLanValidCount pValue
+   if pValue is not an integer then return false
+   if pValue < 0 then return false
+   if pValue >= 9007199254740992 then return false
+   return true
+end rsLanValidCount
+
+-- Sign a sync-record body under the shared LAN key, domain-tagged.
+private function rsLanSyncSign pBody, pMaster
+   local tKeys, tSig, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanSyncSign: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   return tSig
+end rsLanSyncSign
+
+-- The shared-master verdict on a sync record: "true" / "false", or empty
+-- on an environment failure (no SodiumXT, a bad master) with the reason
+-- recorded - callers must treat only "true" as proof.
+private function rsLanSyncSigOk pBody, pSig, pMaster
+   local tKeys, tOk, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(pSig, \
+            textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanSyncSigOk: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is true then return "true"
+   return "false"
+end rsLanSyncSigOk
+
+-- Channel-0 draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
+-- draftLen(u16 BE) draft sig(64). The draft is ABSOLUTE state (the whole
+-- current text, empty meaning cleared), and the per-device seq is what
+-- lets a receiver refuse a replayed or reordered draft: apply only a seq
+-- strictly above the last one applied for that device.
+function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
+   local tName, tDraft, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildDraft: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put textEncode(pDraftText, "UTF-8") into tDraft
+   if the number of bytes in tDraft > kRsLanMaxDraft then
+      rsSetError "rsLanBuildDraft: the draft is over the" && \
+            kRsLanMaxDraft & "-byte sync cap (refused, never truncated)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("D", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put rsBEu16(the number of bytes in tDraft) after tOut
+   put tDraft after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildDraft
+
+-- Verify-then-parse a draft record: structure first (exact length, to
+-- the byte), then the shared-master signature, and only THEN believe a
+-- field. Returns name / seq / draft, or empty with a distinct refusal.
+function rsLanVerifyDraft pBytes, pMaster
+   local tLen, tNameLen, tDraftLen, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 81 then
+      rsSetError "rsLanVerifyDraft: truncated draft record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "D" then
+      rsSetError "rsLanVerifyDraft: not an RSL1 draft record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyDraft: bad device-name length"
+      return empty
+   end if
+   if tLen < 80 + tNameLen then
+      rsSetError "rsLanVerifyDraft: length does not match its name field"
+      return empty
+   end if
+   put rsReadBEu16(byte (15 + tNameLen) to (16 + tNameLen) of pBytes) \
+         into tDraftLen
+   if tDraftLen > kRsLanMaxDraft then
+      rsSetError "rsLanVerifyDraft: the draft field is over the" && \
+            kRsLanMaxDraft & "-byte cap"
+      return empty
+   end if
+   if tLen is not 80 + tNameLen + tDraftLen then
+      rsSetError "rsLanVerifyDraft: length does not match its draft field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyDraft: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   -- decode AFTER the proof; OXT's textDecode is lossy not throwing, so
+   -- UTF-8 validity is a round-trip check (rsBytesAreUtf8), refused clean
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyDraft: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   if tDraftLen is 0 then
+      put empty into tOut["draft"]
+   else
+      if not rsBytesAreUtf8(byte (17 + tNameLen) to \
+            (16 + tNameLen + tDraftLen) of pBytes) then
+         rsSetError "rsLanVerifyDraft: the draft text is not valid UTF-8"
+         return empty
+      end if
+      put textDecode(byte (17 + tNameLen) to (16 + tNameLen + tDraftLen) \
+            of pBytes, "UTF-8") into tOut["draft"]
+   end if
+   return tOut
+end rsLanVerifyDraft
+
+-- Channel-0 feed-seq / read-receipt state: magic(4) "F" nameLen(u8) name
+-- feedSeq(u64 BE) readPeer(64 hex; all-zeros = none) readUpTo(u64 BE)
+-- sig(64). Absolute state, applied as MAX on both halves: feedSeq is the
+-- device's latest published head seq (so two devices never publish a
+-- conflicting head), and readPeer/readUpTo say "I have read the DM
+-- conversation with that handle up to that timestamp". Pass pReadPeerHex
+-- empty (and pReadUpTo 0) for a pure feed-seq claim.
+function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
+   local tName, tPeer, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildFeedState: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pFeedSeq) then
+      rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   if pReadPeerHex is empty then
+      put kRsZeroHandle into tPeer
+   else
+      put toLower(pReadPeerHex) into tPeer
+      if not rsIsHexOfLen(tPeer, 64) then
+         rsSetError "rsLanBuildFeedState: the read-receipt peer must be" && \
+               "empty or a 64-hex handle"
+         return empty
+      end if
+   end if
+   if not rsLanValidCount(pReadUpTo) then
+      rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
+            "a non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("F", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pFeedSeq) after tOut
+   put textEncode(tPeer, "ASCII") after tOut
+   put rsBEu64(pReadUpTo) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildFeedState
+
+-- Verify-then-parse a feed-state record. Returns name / feedSeq /
+-- readPeer (empty for the all-zeros "none") / readUpTo, or empty.
+function rsLanVerifyFeedState pBytes, pMaster
+   local tLen, tNameLen, tPeer, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 151 then
+      rsSetError "rsLanVerifyFeedState: truncated feed-state record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "F" then
+      rsSetError "rsLanVerifyFeedState: not an RSL1 feed-state record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyFeedState: bad device-name length"
+      return empty
+   end if
+   if tLen is not 150 + tNameLen then
+      rsSetError "rsLanVerifyFeedState: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyFeedState: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyFeedState: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the peer travels as 64 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (78 + tNameLen) of pBytes, \
+         "ASCII") into tPeer
+   if not rsIsHexOfLen(tPeer, 64) then
+      rsSetError "rsLanVerifyFeedState: the read-receipt peer is not" && \
+            "64 lowercase hex chars"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["feedSeq"]
+   if tPeer is kRsZeroHandle then
+      put empty into tOut["readPeer"]
+   else
+      put tPeer into tOut["readPeer"]
+   end if
+   put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
+         into tOut["readUpTo"]
+   return tOut
+end rsLanVerifyFeedState
+
+-- Channel-1 presence/typing: magic(4) "P" nameLen(u8) name flags(u8:
+-- bit0 typing, every other bit refused fail-closed) tick(u64 BE) sig(64).
+-- ABSOLUTE state, engineered to be safely droppable: the record says
+-- "as of tick N this device is (not) typing", the per-device tick makes
+-- it reorder-proof without enet sequencing (apply only a tick strictly
+-- above the last applied), and any lost record is repaired by the next
+-- one - senders re-assert on a cadence, they never send deltas.
+function rsLanBuildPresence pName, pTyping, pTick, pMaster
+   local tName, tFlags, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildPresence: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if pTyping is not true and pTyping is not false then
+      rsSetError "rsLanBuildPresence: typing must be true or false"
+      return empty
+   end if
+   if not rsLanValidCount(pTick) then
+      rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   if pTyping is true then
+      put 1 into tFlags
+   else
+      put 0 into tFlags
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("P", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put numToByte(tFlags) after tOut
+   put rsBEu64(pTick) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildPresence
+
+-- Verify-then-parse a presence record. Returns name / typing (true or
+-- false) / tick, or empty with a distinct refusal. Unknown flag bits are
+-- refused fail-closed - a newer record format must never half-parse.
+function rsLanVerifyPresence pBytes, pMaster
+   local tLen, tNameLen, tFlags, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 80 then
+      rsSetError "rsLanVerifyPresence: truncated presence record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "P" then
+      rsSetError "rsLanVerifyPresence: not an RSL1 presence record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyPresence: bad device-name length"
+      return empty
+   end if
+   if tLen is not 79 + tNameLen then
+      rsSetError "rsLanVerifyPresence: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put byteToNum(byte (7 + tNameLen) of pBytes) into tFlags
+   if tFlags is not 0 and tFlags is not 1 then
+      rsSetError "rsLanVerifyPresence: unknown flag bits (refused" && \
+            "fail-closed)"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyPresence: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyPresence: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   if tFlags is 1 then
+      put true into tOut["typing"]
+   else
+      put false into tOut["typing"]
+   end if
+   put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
+         into tOut["tick"]
+   return tOut
+end rsLanVerifyPresence
 
 --------------------------------------------------------------------------
 -- the anonymous persona (phase 7) - a separate identity that lives ONLY

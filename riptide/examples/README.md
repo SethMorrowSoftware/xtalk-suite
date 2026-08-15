@@ -20,6 +20,15 @@ Status, by phase (each a maintainer's dated account):
   server.
 - Phases 5 (the call), 6 (the mesh), 7 (anon over Tor): BUILT, statically
   verified, never run - `../docs/two-machine-runbook.md` is the script.
+  Phase 5 now includes the spec-6.2 typing lane (2026-08-15): a second,
+  deliberately lossy dc channel showing "the far side is typing..."
+  during a call. Phase 6 now includes the SYNC PAYLOAD (2026-08-15):
+  the Devices card's draft field broadcasts signed channel-0 records to
+  every admitted device (debounced, absolute state), incoming drafts
+  render with their origin device and seq, channel-1 presence shows
+  [typing]/[quiet] per peer, and a stranger's record is refused and
+  logged - the phase-6 done-criterion (a draft typed on one device
+  appears on another with a stranger refused) is now reachable.
   Phase 7 now includes the 8.2/8.3 onion SERVING (2026-08-15): Publish +
   serve registers onion-httpd routes for the feed page at `/`, the signed
   prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs BOTH

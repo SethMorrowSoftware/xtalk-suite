@@ -705,6 +705,85 @@ def _lan_parse_challenge(rec):
 
 
 # ---------------------------------------------------------------------------
+# Phase 6 - the SYNC records over the admitted mesh (spec section 7's
+# channel discipline; added 2026-08-15 with the sync-payload build).
+#
+# THE AUTHENTICATION CHOICE, recorded: every sync record is signed under
+# the SAME shared LAN ed25519 key the admission uses, with a DISTINCT
+# domain tag ("riptide-lan-s") over the WHOLE record body, kind byte
+# included. The admission welcome leaves no fresh session secret behind
+# (it is mutual signature verification, not a key exchange), so the
+# records sign under the one key both sides already hold; a per-handshake
+# binder was rejected because a host-relayed record must verify
+# identically at every admitted peer, and replay is neutralized by each
+# record's monotonic/absolute APPLY semantics (draft seq strictly
+# forward, feed/read state as max, presence tick strictly forward)
+# rather than by the wire format. Authenticated, NOT encrypted - the
+# spec's admission-only design.
+# ---------------------------------------------------------------------------
+
+LAN_SYNC_DOMAIN = b"riptide-lan-s"
+LAN_MAX_DRAFT = 4096
+ZERO_HANDLE = "0" * 64
+
+
+def _lan_sync_sign(body, master):
+    _pub, seed = lan_keys(master)
+    return ed25519_sign(LAN_SYNC_DOMAIN + body, seed)
+
+
+def _lan_counter(n, what):
+    if not isinstance(n, int) or not 0 <= n < 2 ** 53:
+        raise ValueError("%s must be a non-negative integer below 2^53"
+                         % what)
+    return n
+
+
+def lan_build_draft(name, seq, draft_text, master):
+    """Channel-0 draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
+    draftLen(u16 BE) draft(UTF-8, 0..4096 - empty means cleared) sig(64).
+    The draft is ABSOLUTE state; the per-device seq is the replay/reorder
+    guard (receivers apply only a strictly higher seq per device)."""
+    nb = _lan_name(name)
+    db = draft_text.encode("utf-8")
+    if len(db) > LAN_MAX_DRAFT:
+        raise ValueError("draft over %d bytes" % LAN_MAX_DRAFT)
+    body = (LAN_MAGIC + b"D" + bytes([len(nb)]) + nb
+            + _u64(_lan_counter(seq, "seq")) + _u16(len(db)) + db)
+    return body + _lan_sync_sign(body, master)
+
+
+def lan_build_feed_state(name, feed_seq, read_peer_hex, read_up_to, master):
+    """Channel-0 feed-seq / read-receipt state: magic(4) "F" nameLen(u8)
+    name feedSeq(u64 BE) readPeer(64 ascii hex; all-zeros = none)
+    readUpTo(u64 BE) sig(64). Absolute state, applied as MAX on both
+    halves - feedSeq is what keeps two devices from publishing a
+    conflicting head."""
+    nb = _lan_name(name)
+    peer = (read_peer_hex or ZERO_HANDLE).lower()
+    if len(peer) != 64 or any(c not in "0123456789abcdef" for c in peer):
+        raise ValueError("read peer must be empty or 64 hex chars")
+    body = (LAN_MAGIC + b"F" + bytes([len(nb)]) + nb
+            + _u64(_lan_counter(feed_seq, "feed seq"))
+            + peer.encode("ascii")
+            + _u64(_lan_counter(read_up_to, "read-up-to")))
+    return body + _lan_sync_sign(body, master)
+
+
+def lan_build_presence(name, typing, tick, master):
+    """Channel-1 presence/typing: magic(4) "P" nameLen(u8) name flags(u8:
+    bit0 typing, other bits refused fail-closed) tick(u64 BE) sig(64).
+    ABSOLUTE state, safely droppable: the per-device monotonic tick makes
+    it reorder-proof without transport sequencing, and senders re-assert
+    on a cadence instead of sending deltas."""
+    nb = _lan_name(name)
+    body = (LAN_MAGIC + b"P" + bytes([len(nb)]) + nb
+            + bytes([1 if typing else 0])
+            + _u64(_lan_counter(tick, "tick")))
+    return body + _lan_sync_sign(body, master)
+
+
+# ---------------------------------------------------------------------------
 # Phase 7 - the anonymous persona (RIPTIDE-SOCIAL-SPEC.md section 8)
 #
 # An anon persona is a separate ed25519 identity (a subkey-100+n seed) that
@@ -894,6 +973,16 @@ def _self_check():
     if _verify_ed25519(sig, lan_sig_message(nonce, "laptop"), lp):
         raise AssertionError("LAN admission self-check failed (name binding)")
 
+    # LAN sync records: the signature verifies under the sync domain, and
+    # ONLY under the sync domain (an admission-domain read must fail - the
+    # cross-record confusion the distinct tag exists to stop).
+    dr = lan_build_draft("phone", 1, "d", m)
+    if not _verify_ed25519(dr[-64:], LAN_SYNC_DOMAIN + dr[:-64], lp):
+        raise AssertionError("LAN sync self-check failed (valid sig)")
+    if _verify_ed25519(dr[-64:], LAN_DOMAIN + dr[:-64], lp):
+        raise AssertionError("LAN sync self-check failed (domain "
+                             "separation)")
+
 
 _self_check()
 
@@ -943,6 +1032,11 @@ def golden_vectors():
     lan_challenge = lan_build_challenge("laptop", lan_nonce)
     lan_response = lan_build_response(lan_challenge, "phone", master)
     lan_welcome = lan_build_welcome(lan_response, "laptop", master)
+    # the phase-6 sync records (deterministic: chosen name/counters/text)
+    lan_draft = lan_build_draft("phone", 5, "draft: hello mesh", master)
+    lan_feed_state = lan_build_feed_state("phone", 9, handle,
+                                          1754870700, master)
+    lan_presence = lan_build_presence("phone", True, 3, master)
     # phase 7: the anon persona (subkey 100) and a sample BTXO stream
     anon0_handle = anon_handle(master, 0)
     anon0_onion = anon_onion(master, 0)
@@ -994,6 +1088,9 @@ def golden_vectors():
         "lanChallenge": lan_challenge.hex(),
         "lanResponse": lan_response.hex(),
         "lanWelcome": lan_welcome.hex(),
+        "lanDraft": lan_draft.hex(),
+        "lanFeedState": lan_feed_state.hex(),
+        "lanPresence": lan_presence.hex(),
         "anon0Handle": anon0_handle,
         "anon0Onion": anon0_onion,
         "anon0DmSeed": anon_dm_seed(master, 0).hex(),

@@ -19,8 +19,10 @@ is knowing their key, and reaching them is verifying them.
 > over rp1 all carrying real traffic). The same day the whole phase 4-7
 > COMPUTE surface ran green in the suite selftest on a real engine.
 > **Phases 5-7 are BUILT and statically verified, their live passes
-> pending**: the dc call (phase 5), the LAN mesh with its mutual welcome
-> (phase 6), and the anon persona over live Tor (phase 7).
+> pending**: the dc call with its spec-6.2 typing lane (phase 5), the
+> LAN mesh with its mutual welcome AND its sync payload - drafts, feed
+> seq, presence over the admitted mesh (phase 6, built 2026-08-15) - and
+> the anon persona over live Tor (phase 7).
 > `docs/two-machine-runbook.md` scripts what remains.
 >
 > The flagship stack is `examples/riptide-social.livecodescript` (on the
@@ -57,6 +59,15 @@ What ships today, per the spec's phased roadmap (section 10.3):
     the three-leg RSL1 challenge/response/WELCOME handshake (mutual auth
     - a stranger on your Wi-Fi cannot join, and a rogue host cannot fake
     being yours)
+  - **the phase-6 sync records** (2026-08-15): the payload past admission,
+    per spec section 7's channel discipline - draft sync (channel 0:
+    absolute draft text with a monotonic per-device seq), feed-seq /
+    read-receipt state (channel 0, applied as max so two devices never
+    publish a conflicting head), and presence/typing (channel 1,
+    unreliable-unsequenced, safely droppable absolute state). All signed
+    under the shared LAN key with a distinct domain tag,
+    verify-then-parse on every inbound record; authenticated, not
+    encrypted (the LAN sees draft plaintext, said loudly in the UI)
   - **the anon persona (phase 7)**: onion-only identities
     (`rsAnonHandle`/`rsAnonOnion`), the sealed-DM prekey subkey
     (`rsAnonDmSeed`, spec 8.3), BTXO framing, and `rsPersonaAllows` - the
@@ -140,8 +151,11 @@ at all and works with onionxt alone.
 
 The live passes, scripted in `docs/two-machine-runbook.md`: the phase-5
 call (watch for the CONNECTED/via line, ideally `typ srflx` across two
-networks), the phase-6 mesh (mutual admitted verdicts on both sides, a
-stranger refused), phase 7 over a live tor daemon - which now includes
+networks, and the spec-6.2 typing lane built 2026-08-15), the phase-6
+mesh (mutual admitted verdicts on both sides, then the full
+done-criterion: a draft typed on one device appearing on the other with
+a stranger refused - the sync payload is BUILT as of 2026-08-15,
+verified statically), phase 7 over a live tor daemon - which now includes
 spec 8.3's onion transport (the feed page, `/prekey`, and the POST `/dm`
 sealed-intro drop are BUILT as of 2026-08-15, library seams plus the
 demo's onion-httpd wiring, verified statically; the live-Tor pass is

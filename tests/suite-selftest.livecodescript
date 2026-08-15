@@ -404,6 +404,11 @@ constant rs1kRsGoldDmMsgText = "hello, dm"
 constant rs1kRsGoldLanNonce = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanHostName = "laptop"
 constant rs1kRsGoldLanJoinName = "phone"
+constant rs1kRsGoldLanDraftText = "draft: hello mesh"
+constant rs1kRsGoldLanSeq = "5"
+constant rs1kRsGoldLanFeedSeq = "9"
+constant rs1kRsGoldLanReadTs = "1754870700"
+constant rs1kRsGoldLanTick = "3"
 constant rs1kRsGoldHeadSeq = "7"
 constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -438,6 +443,9 @@ constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
 constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant rs1kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
+constant rs1kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
+constant rs1kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
 constant rs1kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -513,7 +521,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.8.0"
+constant kRsVersion = "0.9.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -525,6 +533,9 @@ constant kRsLanMagic = "RSL1"
 constant kRsLanDomain = "riptide-lan"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
+constant kRsLanSyncDomain = "riptide-lan-s"
+constant kRsLanMaxDraft = 4096
+constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
 constant kRsAnonDmBodyLen = 632
@@ -8183,6 +8194,326 @@ function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
    return tWelcome["name"]
 end rsLanVerifyWelcome
 
+private function rsLanValidCount pValue
+   if pValue is not an integer then return false
+   if pValue < 0 then return false
+   if pValue >= 9007199254740992 then return false
+   return true
+end rsLanValidCount
+
+private function rsLanSyncSign pBody, pMaster
+   local tKeys, tSig, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanSyncSign: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   return tSig
+end rsLanSyncSign
+
+private function rsLanSyncSigOk pBody, pSig, pMaster
+   local tKeys, tOk, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(pSig, \
+            textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanSyncSigOk: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is true then return "true"
+   return "false"
+end rsLanSyncSigOk
+
+function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
+   local tName, tDraft, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildDraft: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put textEncode(pDraftText, "UTF-8") into tDraft
+   if the number of bytes in tDraft > kRsLanMaxDraft then
+      rsSetError "rsLanBuildDraft: the draft is over the" && \
+            kRsLanMaxDraft & "-byte sync cap (refused, never truncated)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("D", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put rsBEu16(the number of bytes in tDraft) after tOut
+   put tDraft after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildDraft
+
+function rsLanVerifyDraft pBytes, pMaster
+   local tLen, tNameLen, tDraftLen, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 81 then
+      rsSetError "rsLanVerifyDraft: truncated draft record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "D" then
+      rsSetError "rsLanVerifyDraft: not an RSL1 draft record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyDraft: bad device-name length"
+      return empty
+   end if
+   if tLen < 80 + tNameLen then
+      rsSetError "rsLanVerifyDraft: length does not match its name field"
+      return empty
+   end if
+   put rsReadBEu16(byte (15 + tNameLen) to (16 + tNameLen) of pBytes) \
+         into tDraftLen
+   if tDraftLen > kRsLanMaxDraft then
+      rsSetError "rsLanVerifyDraft: the draft field is over the" && \
+            kRsLanMaxDraft & "-byte cap"
+      return empty
+   end if
+   if tLen is not 80 + tNameLen + tDraftLen then
+      rsSetError "rsLanVerifyDraft: length does not match its draft field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyDraft: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   -- decode AFTER the proof; OXT's textDecode is lossy not throwing, so
+   -- UTF-8 validity is a round-trip check (rsBytesAreUtf8), refused clean
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyDraft: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   if tDraftLen is 0 then
+      put empty into tOut["draft"]
+   else
+      if not rsBytesAreUtf8(byte (17 + tNameLen) to \
+            (16 + tNameLen + tDraftLen) of pBytes) then
+         rsSetError "rsLanVerifyDraft: the draft text is not valid UTF-8"
+         return empty
+      end if
+      put textDecode(byte (17 + tNameLen) to (16 + tNameLen + tDraftLen) \
+            of pBytes, "UTF-8") into tOut["draft"]
+   end if
+   return tOut
+end rsLanVerifyDraft
+
+function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
+   local tName, tPeer, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildFeedState: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pFeedSeq) then
+      rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   if pReadPeerHex is empty then
+      put kRsZeroHandle into tPeer
+   else
+      put toLower(pReadPeerHex) into tPeer
+      if not rsIsHexOfLen(tPeer, 64) then
+         rsSetError "rsLanBuildFeedState: the read-receipt peer must be" && \
+               "empty or a 64-hex handle"
+         return empty
+      end if
+   end if
+   if not rsLanValidCount(pReadUpTo) then
+      rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
+            "a non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("F", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pFeedSeq) after tOut
+   put textEncode(tPeer, "ASCII") after tOut
+   put rsBEu64(pReadUpTo) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildFeedState
+
+function rsLanVerifyFeedState pBytes, pMaster
+   local tLen, tNameLen, tPeer, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 151 then
+      rsSetError "rsLanVerifyFeedState: truncated feed-state record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "F" then
+      rsSetError "rsLanVerifyFeedState: not an RSL1 feed-state record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyFeedState: bad device-name length"
+      return empty
+   end if
+   if tLen is not 150 + tNameLen then
+      rsSetError "rsLanVerifyFeedState: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyFeedState: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyFeedState: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the peer travels as 64 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (78 + tNameLen) of pBytes, \
+         "ASCII") into tPeer
+   if not rsIsHexOfLen(tPeer, 64) then
+      rsSetError "rsLanVerifyFeedState: the read-receipt peer is not" && \
+            "64 lowercase hex chars"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["feedSeq"]
+   if tPeer is kRsZeroHandle then
+      put empty into tOut["readPeer"]
+   else
+      put tPeer into tOut["readPeer"]
+   end if
+   put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
+         into tOut["readUpTo"]
+   return tOut
+end rsLanVerifyFeedState
+
+function rsLanBuildPresence pName, pTyping, pTick, pMaster
+   local tName, tFlags, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildPresence: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if pTyping is not true and pTyping is not false then
+      rsSetError "rsLanBuildPresence: typing must be true or false"
+      return empty
+   end if
+   if not rsLanValidCount(pTick) then
+      rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   if pTyping is true then
+      put 1 into tFlags
+   else
+      put 0 into tFlags
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("P", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put numToByte(tFlags) after tOut
+   put rsBEu64(pTick) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildPresence
+
+function rsLanVerifyPresence pBytes, pMaster
+   local tLen, tNameLen, tFlags, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 80 then
+      rsSetError "rsLanVerifyPresence: truncated presence record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "P" then
+      rsSetError "rsLanVerifyPresence: not an RSL1 presence record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyPresence: bad device-name length"
+      return empty
+   end if
+   if tLen is not 79 + tNameLen then
+      rsSetError "rsLanVerifyPresence: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put byteToNum(byte (7 + tNameLen) of pBytes) into tFlags
+   if tFlags is not 0 and tFlags is not 1 then
+      rsSetError "rsLanVerifyPresence: unknown flag bits (refused" && \
+            "fail-closed)"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyPresence: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyPresence: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   if tFlags is 1 then
+      put true into tOut["typing"]
+   else
+      put false into tOut["typing"]
+   end if
+   put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
+         into tOut["tick"]
+   return tOut
+end rsLanVerifyPresence
+
 function rsAnonHandle pMaster, pIndex
    local tSeed
    put rsAnonSeed(pMaster, pIndex) into tSeed
@@ -11659,6 +11990,7 @@ function rs1rsSelfTest
       rs1rstSectionIngest
       rs1rstSectionDm rs1tCaps
       rs1rstSectionLan
+      rs1rstSectionLanSync
       rs1rstSectionAnon rs1tCaps
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
@@ -12393,6 +12725,102 @@ private command rs1rstSectionLan
    rs1rstCheck (rsLanParseWelcome(rs1tBadUtf) is empty), \
          "a non-UTF-8 host name in a welcome is refused, not thrown"
 end rs1rstSectionLan
+
+private command rs1rstSectionLanSync
+   local rs1tMaster, rs1tKeys, rs1tRec, rs1tOut, rs1tBytes, rs1tBody
+   rs1rstSection "phase 6 - LAN sync records (drafts, feed state, presence)"
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tMaster
+   put rsLanKeys(rs1tMaster) into rs1tKeys
+   -- the draft record (channel 0, reliable)
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
+         rs1kRsGoldLanDraftText, rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanDraftHex), \
+         "the draft record bytes match golden"
+   put rsLanVerifyDraft(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["name"] is rs1kRsGoldLanJoinName), \
+         "the draft's device name verifies and round-trips"
+   rs1rstCheck (rs1tOut["seq"] is rs1kRsGoldLanSeq + 0), \
+         "the draft's per-device seq round-trips"
+   rs1rstCheck (rs1tOut["draft"] is rs1kRsGoldLanDraftText), \
+         "the draft text round-trips"
+   -- absolute state: an EMPTY draft is legal and means cleared
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, 6, empty, rs1tMaster) into rs1tBytes
+   put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["draft"] is empty), \
+         "an empty draft builds and verifies (cleared state)"
+   -- the stranger: a record signed under a DIFFERENT master is refused
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
+         rs1kRsGoldLanDraftText, rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyDraft(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's draft record is refused"
+   rs1rstCheck (rsLanVerifyDraft(rs1rstFlipByte(rs1tRec, 30), rs1tMaster) is empty), \
+         "a tampered draft record is refused"
+   rs1rstCheck (rsLanVerifyDraft(byte 1 to 40 of rs1tRec, rs1tMaster) is empty), \
+         "a truncated draft record is refused"
+   rs1rstCheck (rsLanBuildDraft(rs1kRsGoldLanJoinName, -1, "x", rs1tMaster) \
+         is empty), "a negative draft seq is refused"
+   -- a hand-signed record with a non-UTF-8 name: the signature is VALID
+   -- (only a master-holder could make it), so this exercises the
+   -- refusal AFTER the proof - refused clean, never thrown, never mangled
+   put rs1rstBin("52534c3144") & numToByte(2) & rs1rstBin("fffe") & \
+         rs1rstBin("0000000000000001") & rs1rstBin("0000") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyDraft(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed draft with a non-UTF-8 name is refused, not thrown"
+   -- the feed-state record (channel 0): feedSeq + an optional read receipt
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, rs1kRsGoldLanFeedSeq, \
+         rs1kRsGoldHandle, rs1kRsGoldLanReadTs, rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanFeedStateHex), \
+         "the feed-state record bytes match golden"
+   put rsLanVerifyFeedState(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["feedSeq"] is rs1kRsGoldLanFeedSeq + 0), \
+         "the feed seq verifies and round-trips"
+   rs1rstCheck (rs1tOut["readPeer"] is rs1kRsGoldHandle), \
+         "the read-receipt peer round-trips"
+   rs1rstCheck (rs1tOut["readUpTo"] is rs1kRsGoldLanReadTs + 0), \
+         "the read-up-to timestamp round-trips"
+   -- an empty peer travels as the all-zeros handle and parses back EMPTY
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, empty, 0, rs1tMaster) \
+         into rs1tBytes
+   put rsLanVerifyFeedState(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["readPeer"] is empty), \
+         "a pure feed-seq claim (no receipt) round-trips the none spelling"
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, empty, 0, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyFeedState(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's feed-state record is refused"
+   rs1rstCheck (rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, "zz", 0, rs1tMaster) \
+         is empty), "a malformed read-receipt peer is refused at build"
+   -- the presence record (channel 1, unreliable-unsequenced)
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, true, rs1kRsGoldLanTick, \
+         rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanPresenceHex), \
+         "the presence record bytes match golden"
+   put rsLanVerifyPresence(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["typing"] is true and rs1tOut["tick"] is rs1kRsGoldLanTick + 0), \
+         "typing state and tick verify and round-trip"
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, false, 4, rs1tMaster) into rs1tBytes
+   put rsLanVerifyPresence(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["typing"] is false), \
+         "the not-typing absolute state round-trips"
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, true, 1, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyPresence(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's presence record is refused"
+   -- a hand-signed record with UNKNOWN flag bits (2): a valid signature,
+   -- refused fail-closed - a newer format must never half-parse
+   put rs1rstBin("52534c3150") & numToByte(5) & \
+         textEncode(rs1kRsGoldLanJoinName, "UTF-8") & numToByte(2) & \
+         rs1rstBin("0000000000000001") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyPresence(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed presence record with unknown flags is refused"
+   -- no cross-kind reads: one record kind can never verify as another
+   rs1rstCheck (rsLanVerifyDraft(rs1tRec, rs1tMaster) is empty), \
+         "a presence record fed to the draft verifier is refused"
+end rs1rstSectionLanSync
 
 private command rs1rstSectionDm pCaps
    local rs1tSeed, rs1tMyKeys, rs1tConfKeys, rs1tSess, rs1tSessB, rs1tPrekey, rs1tIntro
