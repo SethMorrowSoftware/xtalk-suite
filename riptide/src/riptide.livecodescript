@@ -164,6 +164,7 @@ constant kRsSubkeyIdentity = "1"
 constant kRsSubkeyDm = "2"
 constant kRsSubkeyLan = "3"
 constant kRsSubkeyAnonBase = 100
+constant kRsSubkeyAnonDmBase = 200
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
@@ -387,6 +388,25 @@ function rsAnonSeed pMaster, pIndex
    put kRsSubkeyAnonBase + pIndex into tId
    return rsSubkey(pMaster, tId)
 end rsAnonSeed
+
+-- The anon persona's sealed-DM kx seed (spec 8.3): subkey 200+n, SEPARATE
+-- from the persona's ed25519 identity for the same reason subkey 2 is
+-- separate from subkey 1 - one seed never feeds two cipher schemes. This
+-- one handler is all 8.3 needs from the library: the whole phase-4 record
+-- machinery composes for anon personas unchanged - rsBuildPrekey(kxPub,
+-- rsAnonSeed(...)) is the persona's prekey (served over its ONION, never
+-- the DHT - the 9.3 guard), rsBuildIntro addressed to the anon handle
+-- seals to it via rsDmSealIntro, and rsDmOpenIntro opens with THIS seed.
+function rsAnonDmSeed pMaster, pIndex
+   local tId
+   if pIndex is not an integer or pIndex < 0 then
+      rsSetError "rsAnonDmSeed: the persona index must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   put kRsSubkeyAnonDmBase + pIndex into tId
+   return rsSubkey(pMaster, tId)
+end rsAnonDmSeed
 
 --------------------------------------------------------------------------
 -- identity -> handle -> onion

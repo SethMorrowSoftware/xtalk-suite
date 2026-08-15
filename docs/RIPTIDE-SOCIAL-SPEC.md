@@ -100,6 +100,7 @@ the whole tree:
 | `2` | **DM key-exchange** X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | pairwise DM session keys |
 | `3` | **LAN device** pre-shared key (32 B) | enet join auth (§7) | admits only your own devices |
 | `100 + n` | **Anonymous persona** *n* ed25519 seed (32 B) | `oxCreateServiceFromSeed` only | an onion-only, unlinkable identity (§8) |
+| `200 + n` | **Anonymous persona** *n* DM key-exchange X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | the persona's sealed-DM prekey (§8.3) - a separate subkey for the same reason `2` is separate from `1`: one seed never feeds two cipher schemes *(added 2026-08-15 with the §8.3 build)* |
 
 The load-bearing subtlety that makes the whole app cohere is in subkey `1`.
 
@@ -552,9 +553,17 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    plus the demo's Anon card with a live guard panel. The guard truth table,
    the offline onion derivation, and the BTXO framing ran GREEN on a real
    engine 2026-08-15 (the suite selftest); the done-criterion still needs an
-   OXT + live-Tor pass. The sealed anon-DM route (§8.3)
-   is deferred: `sxSeal` needs a curve25519 key, so it wants the same
-   published-prekey refinement the DM rail uses, which is a later pass. As-built:
+   OXT + live-Tor pass. The sealed anon-DM CRYPTO layer (§8.3) closed
+   2026-08-15: subkey `200+n` (the registry row in §3.2) gives each persona
+   its own kx prekey seed, and the whole phase-4 record machinery composes
+   unchanged - `rsBuildPrekey` signed by the ANON identity is the persona's
+   prekey (served over its onion, NEVER the DHT - the guard),
+   `rsBuildIntro`/`rsDmSealIntro` address and seal to it, and
+   `rsDmOpenIntro` with `rsAnonDmSeed` opens it; golden-pinned and
+   harness-proven end to end, including that the public identity cannot
+   open the persona's mail. What remains of 8.3 is the TRANSPORT - serving
+   the prekey and accepting sealed intros over the onion (onion-httpd
+   wiring), a live-Tor milestone. As-built:
    `riptide/CLAUDE.md`.)*
 
 ---

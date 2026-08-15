@@ -285,6 +285,7 @@ SUBKEY_IDENTITY = 1
 SUBKEY_DM = 2
 SUBKEY_LAN = 3
 SUBKEY_ANON_BASE = 100
+SUBKEY_ANON_DM_BASE = 200
 
 
 def identity_seed(master):
@@ -301,6 +302,18 @@ def lan_key(master):
 
 def anon_seed(master, n):
     return kdf_derive(master, SUBKEY_ANON_BASE + n, 32)
+
+
+def anon_dm_seed(master, n):
+    """The anon persona's sealed-DM kx seed (spec 8.3): subkey 200+n, a
+    SEPARATE subkey from the persona's ed25519 identity for the same reason
+    subkey 2 is separate from subkey 1 - one seed never feeds two cipher
+    schemes. With it, the WHOLE phase-4 record machinery composes for anon
+    personas unchanged: build_prekey(kx_pub, anon_seed) is the persona's
+    prekey (served over its onion, NEVER the DHT - the 9.3 guard),
+    build_intro(..., recipient=anon_handle, ...) seals to it, and the
+    recipient opens with this seed."""
+    return kdf_derive(master, SUBKEY_ANON_DM_BASE + n, 32)
 
 
 def handle_from_identity_seed(seed):
@@ -885,6 +898,12 @@ def golden_vectors():
     anon0_onion = anon_onion(master, 0)
     btxo_hdr = btxo_header("secret.txt", 11, 0)
     btxo_frame = btxo_data_frame(b"hello world")
+    # 8.3: the anon persona's sealed-DM prekey - the phase-4 RSK1/RSI1
+    # machinery composed with the anon subkeys, nothing new on the wire
+    anon0_dm_kx_pk, _adk_sk = kx_seed_keypair(anon_dm_seed(master, 0))
+    anon0_prekey = build_prekey(anon0_dm_kx_pk.hex(), anon_seed(master, 0))
+    anon0_intro = build_intro(handle, dm_kx_pk.hex(), anon0_handle,
+                              1754870640, id_seed)
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -923,6 +942,10 @@ def golden_vectors():
         "lanWelcome": lan_welcome.hex(),
         "anon0Handle": anon0_handle,
         "anon0Onion": anon0_onion,
+        "anon0DmSeed": anon_dm_seed(master, 0).hex(),
+        "anon0DmKxPub": anon0_dm_kx_pk.hex(),
+        "anon0Prekey": anon0_prekey.hex(),
+        "anon0Intro": anon0_intro.hex(),
         "btxoHeader": btxo_hdr.hex(),
         "btxoFrame": btxo_frame.hex(),
     }

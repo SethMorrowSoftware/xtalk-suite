@@ -105,6 +105,11 @@ constant kAnonLocalPort = 8734
 -- TURN relay is a deliberate non-goal for the demo (spec 6); two peers
 -- that need one will fail visibly instead of relaying silently.
 constant kDmIce = "stun:stun.l.google.com:19302"
+-- the intro freshness window (seconds either way): rsVerifyIntro leaves
+-- timestamp policy to the app, and this is the app's policy - a captured
+-- sealed intro replayed later is refused with its age named, bounding the
+-- replay surface the recipient-binding already narrows
+constant kDmIntroWindow = 600
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
 constant kRaUiVersion = "ra-ui-720p-6"
@@ -1565,6 +1570,17 @@ command raHandleRp1 pEvent
                if tOpened is empty then
                   raDmLog "an intro arrived that is not for me; ignored" && \
                         "(" & rsLastError() & ")"
+                  break
+               end if
+               -- the freshness window (app policy; the library verifies
+               -- authorship and addressing, the app bounds replay in time)
+               if tOpened["timestamp"] < the seconds - kDmIntroWindow or \
+                     tOpened["timestamp"] > the seconds + kDmIntroWindow then
+                  raDmLog "a STALE intro from" && \
+                        raDmShort(tOpened["senderHandle"]) && "(" & \
+                        the seconds - tOpened["timestamp"] && \
+                        "seconds old) was refused - a replay, or a badly" && \
+                        "skewed clock."
                   break
                end if
                raDmLog "DM intro from" && raDmShort(tOpened["senderHandle"]) \
