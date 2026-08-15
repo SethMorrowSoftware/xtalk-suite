@@ -350,6 +350,32 @@ check("anon onion inverts to handle",
 check("anon personas differ",
       ref["anon_handle"](MASTER, 0) != ref["anon_handle"](MASTER, 1), True)
 
+# 8.3: the anon persona's sealed-DM prekey - the phase-4 machinery composed
+# with the anon subkeys (subkey 200+n for kx, 100+n signs), nothing new on
+# the wire
+ANON0_DM_KX_PUB = (
+    "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17")
+
+anon_dm_pk, _anon_dm_sk = ref["kx_seed_keypair"](ref["anon_dm_seed"](MASTER, 0))
+check("anon0 dm kx pub", anon_dm_pk.hex(), ANON0_DM_KX_PUB)
+check("anon dm seed is its own subkey",
+      ref["anon_dm_seed"](MASTER, 0) != ref["anon_seed"](MASTER, 0), True)
+anon_prekey = ref["build_prekey"](ANON0_DM_KX_PUB, ref["anon_seed"](MASTER, 0))
+# the prekey verifies under the ANON handle (its signer), not the public one
+check("anon prekey signer", anon_prekey[-64:],
+      ref["ed25519_sign"](anon_prekey[:-64], ref["anon_seed"](MASTER, 0)))
+check("anon prekey verifies under anon handle",
+      ref["_verify_ed25519"](anon_prekey[-64:], anon_prekey[:-64],
+                             bytes.fromhex(ANON0_HANDLE)), True)
+check("anon prekey refuses the public handle",
+      ref["_verify_ed25519"](anon_prekey[-64:], anon_prekey[:-64],
+                             bytes.fromhex(HANDLE)), False)
+# an intro TO the anon persona: the recipient binding carries the anon handle
+anon_intro = ref["build_intro"](HANDLE, DM_KX_PUB, ANON0_HANDLE,
+                                1754870640, ID_SEED)
+check("anon intro recipient", anon_intro[132:196],
+      ANON0_HANDLE.encode("ascii"))
+
 check("btxo header bytes", ref["btxo_header"]("secret.txt", 11, 0).hex(),
       BTXO_HEADER_HEX)
 check("btxo data frame", ref["btxo_data_frame"](b"hello world").hex(),

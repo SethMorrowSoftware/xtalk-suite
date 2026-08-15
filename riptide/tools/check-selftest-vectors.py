@@ -205,6 +205,8 @@ def main(argv):
     # the phase-7 anon persona + BTXO framing
     want("kRsGoldAnon0Handle", ref["anon_handle"](master, 0))
     want("kRsGoldAnon0Onion", ref["anon_onion"](master, 0))
+    want("kRsGoldAnonDmKxPub", ref["kx_seed_keypair"](
+        ref["anon_dm_seed"](master, 0))[0].hex())
     want("kRsGoldBtxoHeaderHex",
          ref["btxo_header"]("secret.txt", 11, 0).hex())
     want("kRsGoldBtxoFrameHex",

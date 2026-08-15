@@ -310,13 +310,23 @@ both noted below.
   u32-length data frames, zero-length terminator) - the same convention
   the quickshare onion transfer speaks - so the framing is a shared
   cross-project contract, golden-pinned here.
-- **The sealed anon-DM route is DEFERRED, honestly.** Spec 8.3 wants
-  `sxSeal(message, anonPub)`, but `sxSeal` takes a curve25519 key and the
-  persona identity is ed25519 (no conversion handler exists). The correct
-  fix is the same published-prekey pattern the DM rail uses (phase 4),
-  which is a later pass - not something to fake now. The library ships
-  the derivation, the guard, the service wrapper, and BTXO; the sealed
-  inbound DM is the one piece left.
+- **The sealed anon-DM route: the CRYPTO layer is CLOSED (2026-08-15);
+  the transport remains.** The deferral was real - `sxSeal` takes a
+  curve25519 key, the persona identity is ed25519 - and the fix was the
+  predicted one, and it cost exactly ONE new handler: `rsAnonDmSeed`
+  (subkey 200+n, a spec-registry row added with its rationale - one seed
+  never feeds two cipher schemes, the same reason subkey 2 is separate
+  from subkey 1). Everything else composes from phase 4 unchanged:
+  `rsBuildPrekey(kxPub, rsAnonSeed(...))` is the persona's prekey,
+  `rsBuildIntro` addressed to the anon handle seals to it via
+  `rsDmSealIntro`, and `rsDmOpenIntro(sealed, anonHandle,
+  rsAnonDmSeed(...))` opens it. Golden-pinned (the kx public re-derived by
+  the vector gate) and harness-proven end to end, including the two
+  unlinkability refusals: the persona's prekey refuses the PUBLIC handle
+  as author, and the public identity cannot open the persona's mail. The
+  persona's prekey is served over its ONION, never the DHT (the 9.3
+  guard); that serving - onion-httpd routes for /prekey and a sealed-intro
+  drop - is the remaining live-Tor milestone.
 
 ## The phase 4-7 adversarial review (2026-08-14)
 

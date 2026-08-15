@@ -79,6 +79,7 @@ constant kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129
 constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
 constant kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
+constant kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
 
 local sLog
 local sPass
@@ -670,6 +671,38 @@ private command rstSectionAnon pCaps
          "000000000000000b")) is empty), \
          "a non-UTF-8 file name in a BTXO header is refused, not thrown"
    -- the onion-service wrapper: refusals run offline
+   -- 8.3: sealed DMs TO the anon persona - the phase-4 machinery composed
+   -- with the anon subkeys, end to end: the persona's prekey (signed by
+   -- its ANON identity), an intro from the PUBLIC identity addressed to
+   -- the anon handle, sealed to the anon prekey, opened with the anon DM
+   -- seed. The sender proves itself; only the persona can read it.
+   put rsDmKeys(rsAnonDmSeed(rstBin(kRsGoldMasterHex), 0)) into tParsed
+   rstCheck (tParsed["publicKeyHex"] is kRsGoldAnonDmKxPub), \
+         "the anon DM subkey (200+n) yields the golden kx public"
+   rstCheck (rsAnonDmSeed(rstBin(kRsGoldMasterHex), 0) is not \
+         rsAnonSeed(rstBin(kRsGoldMasterHex), 0)), \
+         "and it is a DIFFERENT subkey from the persona identity"
+   rstCheck (rsAnonDmSeed(rstBin(kRsGoldMasterHex), -1) is empty), \
+         "a negative persona index is refused"
+   put rsBuildPrekey(kRsGoldAnonDmKxPub, \
+         rsAnonSeed(rstBin(kRsGoldMasterHex), 0)) into tHeader
+   rstCheck (rsVerifyPrekey(tHeader, kRsGoldAnon0Handle) is not empty), \
+         "the persona's prekey verifies under its ANON handle"
+   rstCheck (rsVerifyPrekey(tHeader, kRsGoldHandle) is empty), \
+         "and refuses the PUBLIC handle (the personas stay unlinked)"
+   put rsBuildIntro(kRsGoldMsgTs, kRsGoldAnon0Handle, kRsGoldDmKxPub, \
+         rstBin(kRsGoldIdSeedHex)) into tFrame
+   put rsDmSealIntro(tFrame, kRsGoldAnonDmKxPub) into tFrame
+   rstCheck (tFrame is not empty), "an intro seals to the anon prekey"
+   put rsDmOpenIntro(tFrame, kRsGoldAnon0Handle, \
+         rsAnonDmSeed(rstBin(kRsGoldMasterHex), 0)) into tParsed
+   rstCheck (tParsed is not empty), \
+         "the persona opens it with its anon DM seed"
+   rstCheck (tParsed["senderHandle"] is kRsGoldHandle), \
+         "learning the (proven) sender"
+   rstCheck (rsDmOpenIntro(tFrame, kRsGoldHandle, \
+         rstBin(kRsGoldDmSeedHex)) is empty), \
+         "the PUBLIC identity cannot open the persona's mail"
    rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
    rstCheck (rsAnonCreateService(rstBin(kRsGoldMasterHex), 0, 80, 70000) is \
