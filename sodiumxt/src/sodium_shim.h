@@ -15,8 +15,10 @@
  * (secretstream) and the C-side file helpers; X25519 boxes and sealed boxes;
  * ed25519 signatures; key exchange; padding; (ABI 6) an ed25519
  * seed-to-expanded-key helper and HMAC-SHA256 for onion-service support; and
- * (ABI 7) SHA3-256 for the offline v3 onion-address checksum. The ABI is
- * versioned by SXT_ABI_VERSION below; bump it on any signature change.
+ * (ABI 7) SHA3-256 for the offline v3 onion-address checksum; (ABI 8) the
+ * ristretto255 group surface for mental-poker deals (holde-em Workstream U).
+ * The ABI is versioned by SXT_ABI_VERSION below; bump it on any signature
+ * change.
  */
 #ifndef SODIUMXT_SODIUM_SHIM_H
 #define SODIUMXT_SODIUM_SHIM_H
@@ -46,7 +48,7 @@ extern "C" {
  * clear "reinstall the extension" error on skew, instead of corrupting memory
  * on first use against a mismatched native library.
  */
-#define SXT_ABI_VERSION 7
+#define SXT_ABI_VERSION 8
 
 /*
  * The largest single in-memory out-buffer we will service. The return value of
@@ -590,6 +592,79 @@ SXT_API int SXT_CALL sxt_sha3_256_bytes(void);
  */
 SXT_API int SXT_CALL sxt_sha3_256(unsigned char *out, int cap,
                                   const unsigned char *in, int inlen);
+
+/* --- ABI 8: ristretto255 (holde-em Workstream U) --------------------------- */
+
+/*
+ * The prime-order group surface the mental-poker deal needs (holde-em's
+ * IMPLEMENTATION-PLAN.md, Workstream U): thin wrappers over libsodium's
+ * crypto_core_ristretto255_* / crypto_scalarmult_ristretto255 - expose-only,
+ * no new cryptography, exactly as that plan specifies. ristretto255 is a
+ * prime-order group built on Curve25519, so protocols never meet a cofactor:
+ * every valid 32-byte encoding IS a group element, and validity is checkable.
+ * The deliberately-small surface is the plan's: hash-to-group, scalar
+ * multiplication, scalar random/invert, and point validity. Batch
+ * multiplication, point add/sub, and base-point multiplication are the plan's
+ * recorded Phase 5 follow-ons (DLEQ proofs), NOT shipped here. The 64-byte
+ * from-hash input comes from any 512-bit hash; sxHash(data, 64) (BLAKE2b-512)
+ * already serves it, which is why the plan's conditional "sxHash512 if not
+ * already public" adds no new entry point.
+ */
+
+/* Point encoding length (32). */
+SXT_API int SXT_CALL sxt_ristretto_bytes(void);
+/* The from-hash input length (64: one 512-bit digest). */
+SXT_API int SXT_CALL sxt_ristretto_hashbytes(void);
+/* Scalar encoding length (32; scalars live mod the group order L). */
+SXT_API int SXT_CALL sxt_ristretto_scalarbytes(void);
+
+/*
+ * Map a 64-byte uniform hash to a group point (crypto_core_ristretto255_
+ * from_hash: the two-Elligator map). Every 64-byte input maps to SOME valid
+ * point, so this cannot fail on content - only on lengths. in must be exactly
+ * sxt_ristretto_hashbytes(). Writes sxt_ristretto_bytes() bytes and returns
+ * that count, or -needed, or a hard error.
+ */
+SXT_API int SXT_CALL sxt_ristretto_from_hash(unsigned char *out, int cap,
+                                             const unsigned char *in, int inlen);
+
+/*
+ * q = n * p (crypto_scalarmult_ristretto255). n and p must each be exactly
+ * 32 bytes (sxt_ristretto_scalarbytes() / sxt_ristretto_bytes()). Fails - a
+ * hard SXT_ERR_BADARG with text - when p is not a valid ristretto255 encoding
+ * OR the result is the identity (n is 0 mod L): libsodium reports both as one
+ * -1 and a deal protocol must treat both as a cheating/void condition anyway.
+ * Writes sxt_ristretto_bytes() bytes and returns that count on success.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalarmult(unsigned char *out, int cap,
+                                              const unsigned char *n, int nlen,
+                                              const unsigned char *p, int plen);
+
+/*
+ * A uniformly random non-zero scalar mod L (crypto_core_ristretto255_
+ * scalar_random) - the per-hand masking scalar generator. Writes
+ * sxt_ristretto_scalarbytes() bytes and returns that count.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalar_random(unsigned char *out, int cap);
+
+/*
+ * recip = s^-1 mod L (crypto_core_ristretto255_scalar_invert), the unmask
+ * scalar. s must be exactly 32 bytes; a zero scalar has no inverse and is a
+ * hard SXT_ERR_BADARG. Writes sxt_ristretto_scalarbytes() bytes and returns
+ * that count.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalar_invert(unsigned char *out, int cap,
+                                                 const unsigned char *s, int slen);
+
+/*
+ * 1 if p is a canonical encoding of a ristretto255 group element, 0 if it is
+ * not (including a wrong length, reported as 0 with the reason in
+ * sxt_last_error rather than a hard error: this is the deal protocol's
+ * validity PREDICATE, and a predicate that throws on the malformed input it
+ * exists to detect would be useless). Null p with plen > 0 stays a hard
+ * SXT_ERR_BADARG - that is a caller bug, not a hostile encoding.
+ */
+SXT_API int SXT_CALL sxt_ristretto_is_valid_point(const unsigned char *p, int plen);
 
 #ifdef __cplusplus
 }

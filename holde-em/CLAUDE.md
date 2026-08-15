@@ -206,7 +206,7 @@ user confirms in the IDE. This discipline is house law across the family.
 | Extension | Library id | Prefix | Needed from | Notes |
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
-| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4 requires the planned ristretto255 surface** (`sxRistretto*`) — an upstream SodiumXT work item (expose-only; libsodium already carries the primitives). |
+| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*` — cross-checked KATs green, handlers still need their OXT pass). |
 | **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | optional (onion tables; Phase 3 oracle hosting) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051). Needs SodiumXT ABI >= 6 for deterministic onions. |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
@@ -250,8 +250,12 @@ pKey, pOutLen)`, `sxHmacSha256`. Hex helpers `sxBin2Hex`/`sxHex2Bin` take and re
 `sxRandomBytes`, `sxRandomUniform`. Utility: `sxMemEqual` (constant-time — the ONLY
 legal way to compare secrets/MACs), `sxBin2Hex`/`sxHex2Bin`, `sxBin2Base64`/
 `sxBase642Bin`. Passphrases (if a UI lock is ever added): `sxPwHash*` (Argon2id).
-Planned (Phase 4 prerequisite): `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`,
-`sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid`.
+Shipped for Phase 4 (SodiumXT ABI 8, 2026-08-15): `sxRistrettoFromHash(h64)`,
+`sxRistrettoScalarMultPoint(k, p)`, `sxRistrettoScalarRandom()`,
+`sxRistrettoScalarInvert(k)` (all -> 32-byte `Data`, throw on failure - the
+catch path is the detection path), `sxRistrettoPointValid(p)` -> Boolean (a
+predicate, never throws on malformed input); the 64-byte from-hash input is
+`sxHash(tData, 64)`. Verified statically; needs an OXT pass.
 
 **OnionXT** — assumes a reachable tor daemon; it is a transport + naming layer and adds
 no cryptography of its own (composes SodiumXT). Dial-out: `oxDial` through SOCKS5 →

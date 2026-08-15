@@ -2379,3 +2379,165 @@ SXT_API int SXT_CALL sxt_sha3_256(unsigned char *out, int cap,
     sha3_256((inlen > 0 ? in : (const unsigned char *)""), (size_t)inlen, out);
     return outbytes;
 }
+
+/* --- ABI 8: ristretto255 (holde-em Workstream U) --------------------------- */
+
+SXT_API int SXT_CALL sxt_ristretto_bytes(void)
+{
+    return (int)crypto_core_ristretto255_BYTES;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_hashbytes(void)
+{
+    return (int)crypto_core_ristretto255_HASHBYTES;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalarbytes(void)
+{
+    return (int)crypto_core_ristretto255_SCALARBYTES;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_from_hash(unsigned char *out, int cap,
+                                             const unsigned char *in, int inlen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_BYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (inlen != (int)crypto_core_ristretto255_HASHBYTES) {
+        set_error("sxt_ristretto_from_hash: input must be exactly the 64-byte hash");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_from_hash: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (in == NULL) {
+        set_error("sxt_ristretto_from_hash: null input");
+        return SXT_ERR_BADARG;
+    }
+    /* Cannot fail on content: the two-Elligator map takes any 64 bytes to a
+     * valid group element. The return is checked anyway - a future libsodium
+     * is allowed to grow a failure path, and silently ignoring one here would
+     * hand the deal an unreduced garbage point. */
+    if (crypto_core_ristretto255_from_hash(out, in) != 0) {
+        set_error("sxt_ristretto_from_hash: mapping failed");
+        return SXT_ERR_BADARG;
+    }
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalarmult(unsigned char *out, int cap,
+                                              const unsigned char *n, int nlen,
+                                              const unsigned char *p, int plen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_BYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (nlen != (int)crypto_core_ristretto255_SCALARBYTES) {
+        set_error("sxt_ristretto_scalarmult: scalar must be exactly 32 bytes");
+        return SXT_ERR_BADARG;
+    }
+    if (plen != (int)crypto_core_ristretto255_BYTES) {
+        set_error("sxt_ristretto_scalarmult: point must be exactly 32 bytes");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_scalarmult: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (n == NULL || p == NULL) {
+        set_error("sxt_ristretto_scalarmult: null scalar or point");
+        return SXT_ERR_BADARG;
+    }
+    /* libsodium's one -1 covers both "p is not a valid encoding" and "the
+     * result is the identity" (n is 0 mod L). The header documents why the
+     * two stay merged: a deal treats either as a void/cheating condition. */
+    if (crypto_scalarmult_ristretto255(out, n, p) != 0) {
+        set_error("sxt_ristretto_scalarmult: invalid point encoding, or the "
+                  "result is the identity (zero scalar)");
+        return SXT_ERR_BADARG;
+    }
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalar_random(unsigned char *out, int cap)
+{
+    const int outbytes = (int)crypto_core_ristretto255_SCALARBYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_scalar_random: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    crypto_core_ristretto255_scalar_random(out);
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalar_invert(unsigned char *out, int cap,
+                                                 const unsigned char *s, int slen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_SCALARBYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (slen != (int)crypto_core_ristretto255_SCALARBYTES) {
+        set_error("sxt_ristretto_scalar_invert: scalar must be exactly 32 bytes");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_scalar_invert: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (s == NULL) {
+        set_error("sxt_ristretto_scalar_invert: null scalar");
+        return SXT_ERR_BADARG;
+    }
+    if (crypto_core_ristretto255_scalar_invert(out, s) != 0) {
+        set_error("sxt_ristretto_scalar_invert: a zero scalar has no inverse");
+        return SXT_ERR_BADARG;
+    }
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_is_valid_point(const unsigned char *p, int plen)
+{
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (p == NULL && plen > 0) {
+        set_error("sxt_ristretto_is_valid_point: null point");
+        return SXT_ERR_BADARG;
+    }
+    if (plen != (int)crypto_core_ristretto255_BYTES) {
+        /* A predicate, not a firewall breach: a wrong-length blob is simply
+         * not a valid encoding, and the caller asked exactly that question.
+         * The reason still lands in the error text for a curious caller. */
+        set_error("sxt_ristretto_is_valid_point: not 32 bytes, so not a valid encoding");
+        return 0;
+    }
+    return crypto_core_ristretto255_is_valid_point(p) == 1 ? 1 : 0;
+}

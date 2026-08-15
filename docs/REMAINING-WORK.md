@@ -42,13 +42,16 @@ and one functional hole.
    — `holde-em/IMPLEMENTATION-PLAN.md`, `holde-em/README.md` (Status),
    `holde-em/CLAUDE.md` (fold record)
 
-2. **SodiumXT ristretto255 surface (Workstream U)** (medium). sxRistrettoFromHash
-   / ScalarMultPoint / ScalarRandom / ScalarInvert / PointValid + sxHash512
-   (later: ScalarMultBatch, point add/sub for DLEQ), ABI bump, KATs. Absent
-   from `sodiumxt/src`; "the only blocking native work" for the mental-poker
-   deal — and since the fold, an internal work item between two members of this
-   tree, not an upstream request.
-   — `holde-em/IMPLEMENTATION-PLAN.md` (Workstream U), `holde-em/holdem-spec.md` §14
+2. **~~SodiumXT ristretto255 surface (Workstream U)~~ SHIPPED statically
+   2026-08-15** (SodiumXT ABI 8: the five sxRistretto* handlers, no sxHash512
+   needed, KATs cross-checked between libsodium and the independent RFC 9496
+   reference now in `holde-em/tools/protocol-kat.py`, all four non-mac
+   binaries rebuilt). Remaining from this item: the handlers' first OXT pass
+   (they are engine-unexercised - the harness section SKIPs on a pre-ABI-8
+   package), the Windows engine re-proof of the mingw cross-built DLLs, and
+   the recorded Phase 5 follow-ons (ScalarMultBatch, point add/sub, base
+   mult for DLEQ).
+   — `sodiumxt/CLAUDE.md` ABI table, `holde-em/IMPLEMENTATION-PLAN.md` (Workstream U)
 
 3. **Hold'em table 720p re-layout (1024x690 -> height <= 640)** (small). The
    overage is real — the status line (y 632-672) and quick-bet row (y 688) live

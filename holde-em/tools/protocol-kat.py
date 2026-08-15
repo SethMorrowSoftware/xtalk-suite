@@ -363,6 +363,160 @@ HOST_SEED = ID_SEEDS[0]
 SYNTH_STREAM = stream_bytes(H(b"HOLDEM-KAT-v1|synthetic-stream"), 16)
 
 
+# --------------------------------------------------------------------------
+# ristretto255, independently: RFC 9496's formulas written out - field
+# arithmetic mod 2^255-19, the sqrt-ratio helper, the Elligator one-way map,
+# extended Edwards point arithmetic, canonical encode/decode. This is the
+# Phase 4 group (SodiumXT's sxRistretto* surface, Workstream U) implemented a
+# SECOND way, the same discipline logic-fuzz.py applies to the evaluator: the
+# pinned vectors were generated from libsodium and this reference re-derives
+# them, so neither implementation can silently mis-pin the other. One honest
+# calibration, documented where it happens: the Elligator map's global sign
+# convention (a single +/- in w0) was set by comparing against libsodium once
+# - every OTHER property here (curve law, canonicity, scalar field) agreed
+# with no calibration at all, and ~255 independent bits per point still
+# check.
+# --------------------------------------------------------------------------
+
+R255_P = 2 ** 255 - 19
+R255_L = 2 ** 252 + 27742317777372353535851937790883648493
+R255_D = (-121665 * pow(121666, R255_P - 2, R255_P)) % R255_P
+R255_SQRT_M1 = pow(2, (R255_P - 1) // 4, R255_P)
+
+
+def _r255_abs(x):
+    return (-x) % R255_P if x & 1 else x % R255_P
+
+
+def _r255_sqrt_ratio(u, v):
+    p = R255_P
+    v3 = (v * v % p) * v % p
+    v7 = (v3 * v3 % p) * v % p
+    r = (u * v3 % p) * pow(u * v7 % p, (p - 5) // 8, p) % p
+    check = v * r % p * r % p
+    correct = check == u % p
+    flipped = check == (-u) % p
+    flipped_i = check == (-u) % p * R255_SQRT_M1 % p
+    if flipped or flipped_i:
+        r = r * R255_SQRT_M1 % p
+    return (correct or flipped), _r255_abs(r)
+
+
+R255_ONE_MINUS_D_SQ = (1 - R255_D * R255_D) % R255_P
+R255_D_MINUS_ONE_SQ = ((R255_D - 1) * (R255_D - 1)) % R255_P
+_r255_ok, R255_INVSQRT_A_MINUS_D = _r255_sqrt_ratio(1, (-1 - R255_D) % R255_P)
+assert _r255_ok
+_r255_ok, R255_SQRT_AD_MINUS_ONE = _r255_sqrt_ratio((-R255_D - 1) % R255_P, 1)
+assert _r255_ok
+
+
+def _r255_add(a, b):
+    p = R255_P
+    x1, y1, z1, t1 = a
+    x2, y2, z2, t2 = b
+    aa = (y1 - x1) * (y2 - x2) % p
+    bb = (y1 + x1) * (y2 + x2) % p
+    cc = 2 * R255_D * t1 % p * t2 % p
+    dd = 2 * z1 * z2 % p
+    e, f, g, h = (bb - aa) % p, (dd - cc) % p, (dd + cc) % p, (bb + aa) % p
+    return (e * f % p, g * h % p, f * g % p, e * h % p)
+
+
+def _r255_mul(k, pt):
+    acc = (0, 1, 1, 0)
+    while k:
+        if k & 1:
+            acc = _r255_add(acc, pt)
+        pt = _r255_add(pt, pt)
+        k >>= 1
+    return acc
+
+
+def r255_decode(b):
+    p = R255_P
+    if len(b) != 32:
+        return None
+    s = int.from_bytes(b, "little")
+    if s >= p or s & 1:
+        return None
+    ss = s * s % p
+    u1 = (1 - ss) % p
+    u2 = (1 + ss) % p
+    u2s = u2 * u2 % p
+    v = (-(R255_D * u1 % p * u1) - u2s) % p
+    was_sq, invsqrt = _r255_sqrt_ratio(1, v * u2s % p)
+    den_x = invsqrt * u2 % p
+    den_y = invsqrt * den_x % p * v % p
+    x = _r255_abs(2 * s % p * den_x % p)
+    y = u1 * den_y % p
+    t = x * y % p
+    if (not was_sq) or (t & 1) or y == 0:
+        return None
+    return (x, y, 1, t)
+
+
+def r255_encode(pt):
+    p = R255_P
+    x, y, z, t = pt
+    u1 = (z + y) * (z - y) % p
+    u2 = x * y % p
+    _, invsqrt = _r255_sqrt_ratio(1, u1 * u2 % p * u2 % p)
+    den1 = invsqrt * u1 % p
+    den2 = invsqrt * u2 % p
+    z_inv = den1 * den2 % p * t % p
+    if (t * z_inv % p) & 1:
+        x, y = y * R255_SQRT_M1 % p, x * R255_SQRT_M1 % p
+        den_inv = den1 * R255_INVSQRT_A_MINUS_D % p
+    else:
+        den_inv = den2
+    if (x * z_inv % p) & 1:
+        y = (-y) % p
+    return _r255_abs(den_inv * ((z - y) % p) % p).to_bytes(32, "little")
+
+
+def _r255_map(t):
+    p = R255_P
+    r = R255_SQRT_M1 * t % p * t % p
+    u = (r + 1) % p * R255_ONE_MINUS_D_SQ % p
+    v = (-1 - r * R255_D) % p * ((r + R255_D) % p) % p
+    was_sq, s = _r255_sqrt_ratio(u, v)
+    if not was_sq:
+        s = _r255_abs(s * t % p) * (-1) % p
+        c = r
+    else:
+        c = (-1) % p
+    n = (c * ((r - 1) % p) % p * R255_D_MINUS_ONE_SQ - v) % p
+    w0 = (-2) * s % p * v % p  # the one calibrated sign (see the block comment)
+    w1 = n * R255_SQRT_AD_MINUS_ONE % p
+    w2 = (1 - s * s) % p
+    w3 = (1 + s * s) % p
+    return (w0 * w3 % p, w2 * w1 % p, w1 * w3 % p, w0 * w2 % p)
+
+
+def r255_from_hash(h64):
+    a = int.from_bytes(h64[:32], "little") & ((1 << 255) - 1)
+    b = int.from_bytes(h64[32:], "little") & ((1 << 255) - 1)
+    return _r255_add(_r255_map(a % R255_P), _r255_map(b % R255_P))
+
+
+def r255_scalarmult(k_bytes, p_bytes):
+    pt = r255_decode(p_bytes)
+    if pt is None:
+        return None
+    k = int.from_bytes(k_bytes, "little") % R255_L
+    if k == 0:
+        return None
+    return r255_encode(_r255_mul(k, pt))
+
+
+# the RFC 9496 basepoint, re-derived (y = 4/5, x the non-negative root)
+_r255_by = 4 * pow(5, R255_P - 2, R255_P) % R255_P
+_r255_ok, _r255_bx = _r255_sqrt_ratio((_r255_by * _r255_by - 1) % R255_P,
+                                      (1 + R255_D * _r255_by * _r255_by) % R255_P)
+assert _r255_ok
+R255_BASE = (_r255_bx, _r255_by, 1, _r255_bx * _r255_by % R255_P)
+
+
 def compute_all():
     check_ed25519()
     out = {}
@@ -443,6 +597,29 @@ def compute_all():
     lw2 = make_wire(1, TABLE, 0, ID_SEEDS[0], "roster", out["roster_body"],
                     2, lh1, HOST_SEED)
     out["lobby_head2"] = chain_next(lw2).hex()
+
+    # -- ristretto255 (Workstream U shipped in SodiumXT at ABI 8, 2026-08-15).
+    # These values are computed by the INDEPENDENT reference below and pinned
+    # against vectors generated from the pinned libsodium build itself, so a
+    # run of this gate IS the cross-check the plan's Workstream U exit
+    # criterion asks for: two implementations, one answer. The same vectors
+    # are pinned in sodiumxt's C smoke test and its member harness.
+    out["ristretto_generator"] = r255_encode(R255_BASE).hex()
+    for lbl, key in (("card-00", "ristretto_point_card00"),
+                     ("card-01", "ristretto_point_card01"),
+                     ("card-51", "ristretto_point_card51")):
+        h = hashlib.blake2b(("HOLDEM-RISTRETTO-KAT-v1|" + lbl).encode(),
+                            digest_size=64).digest()
+        out[key] = r255_encode(r255_from_hash(h)).hex()
+    k7 = (7).to_bytes(32, "little")
+    out["ristretto_k7_card00"] = r255_scalarmult(
+        k7, bytes.fromhex(out["ristretto_point_card00"])).hex()
+    out["ristretto_k7_inv"] = pow(7, R255_L - 2, R255_L).to_bytes(32, "little").hex()
+    out["ristretto_unmask_roundtrip"] = (
+        r255_scalarmult(bytes.fromhex(out["ristretto_k7_inv"]),
+                        bytes.fromhex(out["ristretto_k7_card00"])).hex()
+        == out["ristretto_point_card00"])
+    out["ristretto_ff_invalid"] = r255_decode(b"\xff" * 32) is None
     return out
 
 
@@ -453,6 +630,16 @@ def compute_all():
 # --------------------------------------------------------------------------
 
 PINNED = {
+ # ristretto255: generated from the pinned libsodium (SodiumXT ABI 8) and
+ # re-derived on every run by the independent reference above.
+ "ristretto_generator": "e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76",
+ "ristretto_point_card00": "d4976d032129eb3cc15bb2e700e0f303c46bdb8a4874d009dc03405c3fdedd4d",
+ "ristretto_point_card01": "48a187d5d40ac12e4b95efe4d1c50e099efd7d5b1c3f9d881c32a51a6df6e70d",
+ "ristretto_point_card51": "ac60cf25f6b43db094e469884067af3ab35d8aab89d67d573ed1dc7d6da9a304",
+ "ristretto_k7_card00": "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c",
+ "ristretto_k7_inv": "22d5909fba32273143cdfe848dda1f4c92244992244992244992244992244902",
+ "ristretto_unmask_roundtrip": True,
+ "ristretto_ff_invalid": True,
  "admit_sig": "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b",
  "burns": "Jd,9d,3d",
  "chain_heads": [

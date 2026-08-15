@@ -15,16 +15,16 @@ ever runs script); exceptions never cross the FFI; handles are
 generation-tagged so a stale one is a no-op, never a crash; and anything
 not observed on a real engine is labelled "verified statically; needs an
 OXT pass". The generated `tests/suite-selftest.livecodescript` reaches
-377 of the 395 coverage-counted public handlers (the 18 unreached are all
+382 of the 400 coverage-counted public handlers (the 18 unreached are all
 onionxt's, each with a written reason: engine socket callbacks and
 live-daemon paths).
 
 ## sodiumxt — modern cryptography (`sx*`)
 
-Wraps **libsodium** (1.0.20; the Windows builds carry 1.0.22). 61 public
+Wraps **libsodium** (1.0.20; the Windows builds carry 1.0.22). 66 public
 handlers. Binaries committed for **all five platforms** (Linux and Windows
-x64/x86 at ABI 7; `universal-mac` one ABI behind, pending the manual
-`lipo` build).
+x64/x86 at ABI 8, which added the ristretto255 group surface 2026-08-15;
+`universal-mac` two ABIs behind, pending the manual `lipo` build).
 
 - **Secret-key authenticated encryption** — XChaCha20-Poly1305, with or
   without associated data: `sxSecretBox`, `sxAeadEncrypt`.
@@ -39,6 +39,12 @@ x64/x86 at ABI 7; `universal-mac` one ABI behind, pending the manual
   al., `sxEncryptFile` / `sxDecryptFile` (file bytes never enter script).
 - **Hashing** — BLAKE2b one-shot / keyed / multipart / file (`sxHash`,
   `sxHashFile`), plus `sxHmacSha256` and `sxSha3_256` (FIPS 202).
+- **The ristretto255 group** (ABI 8, holde-em Workstream U) — hash-to-group,
+  scalar multiplication, scalar random/invert, point validity for the
+  mental-poker deal: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`,
+  `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`,
+  `sxRistrettoPointValid`. Verified statically (cross-checked KATs); needs
+  an OXT pass.
 - **Key exchange** — `crypto_kx` client/server session keys
   (`sxKeyExchangeClient` / `sxKeyExchangeServer`).
 - **Utilities** — CSPRNG (`sxRandomBytes`), constant-time compare

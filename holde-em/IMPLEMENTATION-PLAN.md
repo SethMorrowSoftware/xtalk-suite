@@ -166,6 +166,17 @@ resumes per spec 9.
 
 ## Workstream U — upstream SodiumXT ristretto255 (parallel; blocks Phase 4)
 
+> **SHIPPED 2026-08-15 (statically).** With both projects now members of the
+> xtalk-suite monorepo, this landed as suite-internal work: SodiumXT ABI 8
+> exposes the five handlers below, KAT-pinned twice over (libsodium-derived
+> vectors in its C smoke test and member harness, re-derived by the
+> independent RFC 9496 reference now embedded in this repo's
+> `tools/protocol-kat.py` - the exit criterion's cross-check). `sxHash512`
+> proved unnecessary: `sxHash(tData, 64)` already yields the 64-byte digest
+> `sxRistrettoFromHash` wants. Still open before Phase 4 leans on it: the
+> `sxRistretto*` handlers' first OXT engine pass, and the recorded Phase 5
+> follow-ons (batch multiplication, point add/sub, base mult for DLEQ).
+
 Runs in the **SodiumXT repo**, not here; tracked in this plan because Phase 4 cannot
 start without it.
 

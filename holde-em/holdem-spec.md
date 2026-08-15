@@ -500,7 +500,7 @@ This spec makes the *game* value-ready; it does not make a *product* value-ready
 
 | Repo | Item | Size |
 |---|---|---|
-| **SodiumXT** | Expose ristretto255: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`, `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid`, plus `sxHash512` if not already public (libsodium carries all of it; this is expose-only, no new cryptography) + ABI bump + KAT vectors | the only blocking native work |
+| **SodiumXT** | **SHIPPED 2026-08-15 (suite-internal, SodiumXT ABI 8)**: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`, `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid` (no `sxHash512` needed - `sxHash(tData, 64)` is the 64-byte hash), with cross-checked KATs (C smoke test + this repo's `tools/protocol-kat.py` independent reference). Verified statically; the `sxRistretto*` handlers need their OXT pass. Was: the only blocking native work |
 | **SodiumXT** (later) | `sxRistrettoScalarMultBatch` (52 points, one crossing); point add/sub + `sxRistrettoScalarMultBase` for DLEQ (7.4) | optimization / hardening pass |
 | **TorrentXT** | none — rp1 + BEP44 + phantom swarms suffice as shipped | — |
 | **OnionXT** | none — streams + onion services as shipped (L1 oracle, onion tables) | — |

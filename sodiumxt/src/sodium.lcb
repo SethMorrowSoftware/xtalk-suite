@@ -41,7 +41,7 @@
 --   * out parameters are passed by reference: command form `sxBoxKeypair tPk, tSk`,
 --     or inside a function call `put sxSecretStreamInitPush(tKey, tHeader) into h`.
 -- The native C layer is independently tested (KATs + ASan/UBSan);
--- the current C ABI is SXT_ABI_VERSION 7 (kSXTABIVersion below must match).
+-- the current C ABI is SXT_ABI_VERSION 8 (kSXTABIVersion below must match).
 -- ==========================================================================
 
 library org.openxtalk.library.sodium
@@ -59,7 +59,7 @@ metadata summary    is "Modern cryptography for xTalk via libsodium (authenticat
 --   kSXTABIVersion == SXT_ABI_VERSION ; kSXTErrBase == SXT_ERR_BASE.
 -- Declared before first use (OXT resolves a constant by lexical position; a
 -- forward reference silently evaluates to nothing).
-constant kSXTABIVersion is 7
+constant kSXTABIVersion is 8
 constant kSXTErrBase is -2000000000
 
 -- The engine MCStringEncoding enum value for UTF-8 (libfoundation: ASCII=0,
@@ -196,6 +196,15 @@ foreign handler _sxt_hmac_sha256_bytes() returns CInt binds to "c:sodiumxt>sxt_h
 foreign handler _sxt_hmac_sha256(in pOut as Pointer, in pCap as CInt, in pKey as Pointer, in pKeyLen as CInt, in pMsg as Pointer, in pMsgLen as CInt) returns CInt binds to "c:sodiumxt>sxt_hmac_sha256"
 foreign handler _sxt_sha3_256_bytes() returns CInt binds to "c:sodiumxt>sxt_sha3_256_bytes"
 foreign handler _sxt_sha3_256(in pOut as Pointer, in pCap as CInt, in pIn as Pointer, in pInLen as CInt) returns CInt binds to "c:sodiumxt>sxt_sha3_256"
+-- ABI 8: the ristretto255 group surface (holde-em Workstream U).
+foreign handler _sxt_ristretto_bytes() returns CInt binds to "c:sodiumxt>sxt_ristretto_bytes"
+foreign handler _sxt_ristretto_hashbytes() returns CInt binds to "c:sodiumxt>sxt_ristretto_hashbytes"
+foreign handler _sxt_ristretto_scalarbytes() returns CInt binds to "c:sodiumxt>sxt_ristretto_scalarbytes"
+foreign handler _sxt_ristretto_from_hash(in pOut as Pointer, in pCap as CInt, in pIn as Pointer, in pInLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_from_hash"
+foreign handler _sxt_ristretto_scalarmult(in pOut as Pointer, in pCap as CInt, in pN as Pointer, in pNLen as CInt, in pP as Pointer, in pPLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalarmult"
+foreign handler _sxt_ristretto_scalar_random(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_random"
+foreign handler _sxt_ristretto_scalar_invert(in pOut as Pointer, in pCap as CInt, in pS as Pointer, in pSLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_invert"
+foreign handler _sxt_ristretto_is_valid_point(in pP as Pointer, in pPLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_is_valid_point"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -1594,6 +1603,127 @@ public handler sxSha3_256(in pData as Data) returns Data
       put _sxt_sha3_256(tOut, tBytes, tInPtr, tInLen) into tWritten
    end unsafe
    return sFinish("sxSha3_256", tOut, tWritten)
+end handler
+
+-- ==========================================================================
+-- ABI 8: ristretto255 (holde-em Workstream U).
+--
+-- The prime-order group surface a mental-poker deal needs: hash-to-group,
+-- scalar multiplication, scalar random/invert, and point validity - thin
+-- wrappers over libsodium's crypto_core_ristretto255_* exactly as holde-em's
+-- IMPLEMENTATION-PLAN.md (Workstream U) specifies; no new cryptography.
+-- Points and scalars are 32-byte Data; the from-hash input is one 64-byte
+-- digest, and sxHash(tData, 64) (BLAKE2b-512) already produces it, which is
+-- why the plan's conditional "sxHash512" adds no handler. Batch
+-- multiplication and point add/sub are the plan's recorded Phase 5
+-- follow-ons, deliberately NOT shipped here.
+-- ==========================================================================
+
+-- Map one 64-byte uniform hash to a group point. Every 64-byte input maps to
+-- SOME valid point (the two-Elligator map), so the only failures are length
+-- failures. The deal derives its 52 card base points this way from
+-- domain-separated labels: sxRistrettoFromHash(sxHash(tLabel, 64)).
+public handler sxRistrettoFromHash(in pHash as Data) returns Data
+   variable tOut as Pointer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pHash) into tInLen
+   put sDataPtr(pHash) into tInPtr
+   unsafe
+      put _sxt_ristretto_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_from_hash(tOut, tBytes, tInPtr, tInLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoFromHash", tOut, tWritten)
+end handler
+
+-- q = pScalar * pPoint. Throws when pPoint is not a valid ristretto255
+-- encoding OR the result would be the identity (a zero scalar): libsodium
+-- reports both as one failure, and a deal protocol treats either as a
+-- void/cheating condition anyway - so the caller's try/catch IS the
+-- detection path, per the family's H4 discipline.
+public handler sxRistrettoScalarMultPoint(in pScalar as Data, in pPoint as Data) returns Data
+   variable tOut as Pointer
+   variable tNPtr as Pointer
+   variable tNLen as Integer
+   variable tPPtr as Pointer
+   variable tPLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pScalar) into tNLen
+   put sDataPtr(pScalar) into tNPtr
+   put sDataLen(pPoint) into tPLen
+   put sDataPtr(pPoint) into tPPtr
+   unsafe
+      put _sxt_ristretto_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalarmult(tOut, tBytes, tNPtr, tNLen, tPPtr, tPLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarMultPoint", tOut, tWritten)
+end handler
+
+-- A uniformly random non-zero scalar mod the group order L - the per-hand
+-- masking scalar. Uses libsodium's CSPRNG (never the engine random()).
+public handler sxRistrettoScalarRandom() returns Data
+   variable tOut as Pointer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   unsafe
+      put _sxt_ristretto_scalarbytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalar_random(tOut, tBytes) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarRandom", tOut, tWritten)
+end handler
+
+-- pScalar^-1 mod L, the unmask scalar: sxRistrettoScalarMultPoint with the
+-- inverse undoes the mask. Throws on a zero scalar (no inverse exists).
+public handler sxRistrettoScalarInvert(in pScalar as Data) returns Data
+   variable tOut as Pointer
+   variable tSPtr as Pointer
+   variable tSLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pScalar) into tSLen
+   put sDataPtr(pScalar) into tSPtr
+   unsafe
+      put _sxt_ristretto_scalarbytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalar_invert(tOut, tBytes, tSPtr, tSLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarInvert", tOut, tWritten)
+end handler
+
+-- true when pPoint is a canonical 32-byte ristretto255 encoding. A PREDICATE:
+-- a wrong-length or malformed blob returns false rather than throwing (a
+-- validity check that throws on the malformed input it exists to detect
+-- would be useless to the deal's verify-then-parse discipline). Only the
+-- init/ABI failures still throw, via sPrepare.
+public handler sxRistrettoPointValid(in pPoint as Data) returns Boolean
+   variable tPPtr as Pointer
+   variable tPLen as Integer
+   variable tR as Integer
+   sPrepare()
+   put sDataLen(pPoint) into tPLen
+   put sDataPtr(pPoint) into tPPtr
+   unsafe
+      put _sxt_ristretto_is_valid_point(tPPtr, tPLen) into tR
+   end unsafe
+   return tR is 1
 end handler
 
 end library

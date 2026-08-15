@@ -46,6 +46,7 @@ function sxSelfTest
    testOnionPrimitives
    testPadding
    testHashExtras
+   testRistretto
    testDiagnostics
 
    put return & "----" & return after sLog
@@ -574,6 +575,97 @@ on testHashExtras
    sxCheck true, "sxFreeHash is idempotent on an abandoned state"
    delete file tPath
 end testHashExtras
+
+on testRistretto
+   -- ABI 8 (holde-em Workstream U): the ristretto255 group surface. The
+   -- point/scalar vectors are pinned twice over: generated from the pinned
+   -- libsodium AND re-derived by the independent pure-Python RFC 9496
+   -- reference in holde-em/tools/protocol-kat.py - both agree on every value
+   -- here, so a transcription slip cannot pass. The same vectors are pinned
+   -- in the C smoke test, so a green run here plus a green ctest pins the
+   -- whole path: script -> LCB -> shim -> libsodium.
+   local tGen
+   local tP0
+   local tP1
+   local tK7
+   local tKp
+   local tKinv
+   local tBack
+   local tR1
+   local tR2
+   local tBad
+   local tZero
+   local tProbe
+   local tErr
+   local tCaught
+   sxSection "ristretto255 (ABI 8)"
+   put sxHex2Bin(textEncode("e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76", "ascii")) into tGen
+   -- SKIP cleanly on a pre-ABI-8 package: the probe call throws (handler not
+   -- found on an older .lcb, or the ABI-mismatch guard on a mixed package)
+   -- instead of answering, and this section must not take the whole run down
+   -- with it (the suite's stMergeCounted lesson: one uncaught engine error
+   -- loses every section's results).
+   try
+      put sxRistrettoPointValid(tGen) into tProbe
+   catch tErr
+      sxCheck true, "SKIP: this SodiumXT package predates ristretto255 (ABI 8)"
+      exit testRistretto
+   end try
+   sxCheck tProbe, "the RFC 9496 generator encoding is a valid point"
+   -- hash-to-group, the deal's card-point derivation: BLAKE2b-512 of a
+   -- domain-separated label into from_hash (sxHash(tData, 64) IS the 64-byte
+   -- hash the plan's conditional "sxHash512" asked about)
+   put sxRistrettoFromHash(sxHash(sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-00"), 64)) into tP0
+   sxCheck (sxHexOf(tP0) is "d4976d032129eb3cc15bb2e700e0f303c46bdb8a4874d009dc03405c3fdedd4d"), \
+         "from_hash(card-00) matches the cross-checked vector"
+   put sxRistrettoFromHash(sxHash(sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-01"), 64)) into tP1
+   sxCheck (sxHexOf(tP1) is "48a187d5d40ac12e4b95efe4d1c50e099efd7d5b1c3f9d881c32a51a6df6e70d"), \
+         "from_hash(card-01) matches the cross-checked vector"
+   sxCheck (sxRistrettoPointValid(tP0) and sxRistrettoPointValid(tP1)), \
+         "from_hash outputs are valid encodings"
+   -- mask/unmask, the deal's core algebra: k*P, k^-1, k^-1*(k*P) == P
+   put sxHex2Bin(textEncode("0700000000000000000000000000000000000000000000000000000000000000", "ascii")) into tK7
+   put sxRistrettoScalarMultPoint(tK7, tP0) into tKp
+   sxCheck (sxHexOf(tKp) is "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c"), \
+         "7 * from_hash(card-00) matches the cross-checked vector"
+   put sxRistrettoScalarInvert(tK7) into tKinv
+   sxCheck (sxHexOf(tKinv) is "22d5909fba32273143cdfe848dda1f4c92244992244992244992244992244902"), \
+         "invert(7) matches 7^-1 mod L (independently pow(7, L-2, L))"
+   put sxRistrettoScalarMultPoint(tKinv, tKp) into tBack
+   sxCheck (tBack is tP0), "the mask/unmask roundtrip returns exactly P"
+   -- random masking scalars: right length, and two draws differ
+   put sxRistrettoScalarRandom() into tR1
+   put sxRistrettoScalarRandom() into tR2
+   sxCheck (the number of bytes in tR1 is 32), "sxRistrettoScalarRandom returns 32 bytes"
+   sxCheck (tR1 is not tR2), "two random scalars differ"
+   -- the predicate refuses garbage without throwing
+   put sxHex2Bin(textEncode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "ascii")) into tBad
+   sxCheck (not sxRistrettoPointValid(tBad)), "all-FF is not a valid encoding"
+   sxCheck (not sxRistrettoPointValid(sxRandomBytes(31))), "a 31-byte blob is not a valid point"
+   -- the failure paths THROW (H4: the catch path is the detection path)
+   put sxHex2Bin(textEncode("0000000000000000000000000000000000000000000000000000000000000000", "ascii")) into tZero
+   put false into tCaught
+   try
+      put sxRistrettoScalarInvert(tZero) into tKinv
+   catch tErr
+      put true into tCaught
+   end try
+   sxCheck tCaught, "a zero scalar has no inverse (throws)"
+   put false into tCaught
+   try
+      put sxRistrettoScalarMultPoint(tZero, tP0) into tKp
+   catch tErr
+      put true into tCaught
+   end try
+   sxCheck tCaught, "a zero scalar refuses to multiply (identity result, throws)"
+   put false into tCaught
+   try
+      put sxRistrettoScalarMultPoint(tK7, tBad) into tKp
+   catch tErr
+      put true into tCaught
+   end try
+   sxCheck tCaught, "an invalid point encoding refuses to multiply (throws)"
+end testRistretto
 
 on testDiagnostics
    local tErr

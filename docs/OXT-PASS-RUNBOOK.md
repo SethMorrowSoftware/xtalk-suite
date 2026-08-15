@@ -450,13 +450,17 @@ riptide (hard SodiumXT dependency), and onionxt's SAFECOOKIE / deterministic-oni
 offline-address paths with it, and the failure text points at your install rather than
 at the real cause.
 
-As of 2026-08-12 (release run 31551536144) the committed binaries are at **ABI 7
-everywhere except `universal-mac`**, which stays at **ABI 6** until the manual
-`lipo` build (the currency table with the reasons lives in `sodiumxt/CLAUDE.md`).
-On an ABI-7 row: repackage normally and the SHA3 / offline onion-address checks
-run - the 2026-08-12 Windows x64 pass did exactly this, green. On the mac row:
-**do not repackage SodiumXT** - keep the older package, where `sxSha3_256` simply
-does not exist and every composing member degrades the way it was written to,
+As of 2026-08-15 the committed binaries are at **ABI 8 everywhere except
+`universal-mac`**, which stays at **ABI 6** - now two behind - until the manual
+`lipo` build (the currency table with the reasons lives in `sodiumxt/CLAUDE.md`;
+ABI 8 added the ristretto255 surface, and the two Windows rows are mingw
+cross-builds per that file's proven fallback recipe, awaiting their Windows
+engine pass like the 2026-08-11 DLL before them). On an ABI-8 row: repackage
+normally and the SHA3 / offline onion-address / ristretto checks run - the
+2026-08-12 Windows x64 pass did exactly this at ABI 7, green. On the mac row:
+**do not repackage SodiumXT** - keep the older package, where `sxSha3_256` and
+`sxRistretto*` simply do not exist and every composing member degrades the way
+it was written to,
 which the harness tracks rather than hard-asserts. Either way the run is useful;
 mixing the two is what is not.
 
