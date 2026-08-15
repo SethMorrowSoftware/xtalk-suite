@@ -109,7 +109,9 @@
 --            and three WARDENS holding the wide "fight" ledges (a slime, a hopping
 --            frog, a SPIKE slime you dodge). ~22 coins up the climb, two bonus
 --            GEMs (mid + summit), the flag atop the keep (the win); torchlit walls
---            and windows. (Multi-key/switch PUZZLES are the remaining slice 3.)
+--            and windows. (Slice 3's multi-key/switch PUZZLES SHIPPED too,
+--            into L2 - switches and keys fit the factory, not the keep; see
+--            pfL2Scene and CHANGELOG 0.3.0.)
 --
 -- WHAT TO VERIFY (the Phase 3 + level-rebuild OXT pass)
 --   1. Feel: a TAPPED jump is clearly shorter than a HELD one; jumping
@@ -5221,13 +5223,17 @@ command pfMakeLedge pL, pR, pY
 end pfMakeLedge
 
 -- =====================================================================
--- LEVEL 7 - "STONE KEEP" (asset-expansion Phase C, slice 1): a VERTICAL
--- TOWER you CLIMB, not a level you cross. The terrain_stone_* set (unused
--- before this) builds a tall keep; the camera SCROLLS UP as the hero
--- jumps from one one-way stone ledge to the next (pfBoundsV opens the
--- vertical camera; L1-L6 are untouched). A pure climb for slice 1; the
--- SPINNER (slice 2) and the multi-key / switch PUZZLES (slice 3) are the
--- keep's hazards, landing next. NOTE: the vertical camera scroll is the
+-- LEVEL 7 - "STONE KEEP" (asset-expansion Phase C, all three slices
+-- SHIPPED - CHANGELOG 0.3.0): a VERTICAL TOWER you CLIMB, not a level
+-- you cross. The terrain_stone_* set (unused before this) builds a tall
+-- keep; the camera SCROLLS UP as the hero jumps from one one-way stone
+-- ledge to the next (pfBoundsV opens the vertical camera; L1-L6 are
+-- untouched). Slice 1's pure climb is now the blade-and-warden gauntlet:
+-- slice 2's SPINNERS guard it (five sweepers + a stationary half-blade,
+-- pfL7Cast). Slice 3's multi-key / switch PUZZLES shipped into L2, not
+-- here - the keep went vertical, and switches and keys fit the factory
+-- (pfMakeSwitchGate, deployed in pfL2Scene).
+-- NOTE: the vertical camera scroll is the
 -- one thing that needs an OXT eye (every other level only scrolls
 -- horizontally) - if it is janky, that is where to look.
 -- =====================================================================

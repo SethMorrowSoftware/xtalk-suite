@@ -47,16 +47,19 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 
 | platform id | ABI | note |
 |---|---|---|
-| `x86_64-linux` | **7** | rebuilt with `sxt_sha3_256` (2026-08-11) |
-| `x86_64-win32` | **7** | mingw64 cross-build 2026-08-11 (engine-proven on Windows x64 2026-08-12), then refreshed by release run 31551536144 |
-| `x86-linux` | **7** | refreshed by `release-binaries.yml` run 31551536144 (2026-08-12) |
-| `x86-win32` | **7** | refreshed by the same release run |
-| `universal-mac` | 6 | STALE: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
+| `x86_64-linux` | **8** | rebuilt with the ristretto255 surface (2026-08-15); ctest + the ASan/UBSan lane green on this exact build |
+| `x86_64-win32` | **8** | mingw64 cross-build 2026-08-15 per the PROVEN fallback recipe below; the three checks pass (115/115 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0x8,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
+| `x86-linux` | **8** | rebuilt 2026-08-15 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
+| `x86-win32` | **8** | mingw32 cross-build 2026-08-15, same recipe and checks as the x64 row |
+| `universal-mac` | 6 | STALE, now TWO ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
 
 Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
-the older ABI-6 package end to end, where `sxSha3_256` simply does not exist and the
-composing members degrade the way they were written to, or (b) do the manual `lipo` build.
-Everywhere else the tree now packages clean at ABI 7.
+the older ABI-6 package end to end, where `sxSha3_256` and the `sxRistretto*` surface
+simply do not exist and the composing members degrade the way they were written to, or
+(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 8.
+The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
+canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
+cross-builds the same way run 31551536144 superseded the 2026-08-11 one.
 
 **The `x86_64-win32` binary is a mingw64 cross-build, and that is a toolchain CHANGE worth
 knowing.** The CMake path for Windows links the libsodium that **vcpkg** provides under

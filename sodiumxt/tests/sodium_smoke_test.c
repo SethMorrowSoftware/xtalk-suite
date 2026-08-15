@@ -1154,6 +1154,137 @@ static void test_sha3(void)
  * assumed, so silently resizing a table without updating the documentation
  * fails here instead of nowhere.
  */
+/* ========================================================================== *
+ * ABI 8: ristretto255 (holde-em Workstream U).
+ *
+ * The point/scalar vectors below were generated from the PINNED libsodium
+ * this shim links, then cross-checked against an INDEPENDENT pure-Python
+ * ristretto255 reference (RFC 9496 formulas: field arithmetic, sqrt-ratio,
+ * the Elligator map, extended Edwards group law, canonical encode/decode -
+ * committed as the reference inside holde-em/tools/protocol-kat.py, the
+ * consumer's cross-check gate). Python and libsodium agree on every value
+ * here, so a transcription slip in one of these literals cannot pass.
+ * ========================================================================== */
+
+static void test_ristretto(void)
+{
+    /* The RFC 9496 generator encoding - also independently re-derived by the
+     * Python reference from y = 4/5. */
+    static const unsigned char gen[32] = {
+        0xe2, 0xf2, 0xae, 0x0a, 0x6a, 0xbc, 0x4e, 0x71,
+        0xa8, 0x84, 0xa9, 0x61, 0xc5, 0x00, 0x51, 0x5f,
+        0x58, 0xe3, 0x0b, 0x6a, 0xa5, 0x82, 0xdd, 0x8d,
+        0xb6, 0xa6, 0x59, 0x45, 0xe0, 0x8d, 0x2d, 0x76
+    };
+    static const char *LBL0 = "HOLDEM-RISTRETTO-KAT-v1|card-00";
+    static const char *LBL1 = "HOLDEM-RISTRETTO-KAT-v1|card-01";
+    static const char *LBL51 = "HOLDEM-RISTRETTO-KAT-v1|card-51";
+    unsigned char h[64], p0[32], p1[32], p51[32];
+    unsigned char k7[32], kinv[32], kp[32], back[32];
+    unsigned char r1[32], r2[32], ff[32], junk[32], small[8];
+
+    printf("ristretto255 (ABI 8: cross-checked KATs + firewall):\n");
+
+    CHECK(sxt_ristretto_bytes() == 32, "sxt_ristretto_bytes is 32");
+    CHECK(sxt_ristretto_hashbytes() == 64, "sxt_ristretto_hashbytes is 64");
+    CHECK(sxt_ristretto_scalarbytes() == 32, "sxt_ristretto_scalarbytes is 32");
+
+    CHECK(sxt_ristretto_is_valid_point(gen, 32) == 1,
+          "the RFC 9496 generator encoding is a valid point");
+
+    /* Hash-to-group, the whole consumer pipeline in one leg: BLAKE2b-512 of a
+     * domain-separated card label (sxHash(data, 64) script-side) into
+     * from_hash. Both stages pinned. */
+    CHECK(sxt_generichash(h, (int)sizeof(h), 64,
+                          (const unsigned char *)LBL0, (int)strlen(LBL0),
+                          NULL, 0) == 64, "BLAKE2b-512(card-00 label)");
+    CHECK(sxt_ristretto_from_hash(p0, (int)sizeof(p0), h, 64) == 32,
+          "from_hash(card-00) maps");
+    CHECK(digest_is(p0, 32,
+            "d4976d032129eb3cc15bb2e700e0f303c46bdb8a4874d009dc03405c3fdedd4d"),
+          "from_hash(card-00) matches the cross-checked vector");
+    CHECK(sxt_generichash(h, (int)sizeof(h), 64,
+                          (const unsigned char *)LBL1, (int)strlen(LBL1),
+                          NULL, 0) == 64, "BLAKE2b-512(card-01 label)");
+    CHECK(sxt_ristretto_from_hash(p1, (int)sizeof(p1), h, 64) == 32,
+          "from_hash(card-01) maps");
+    CHECK(digest_is(p1, 32,
+            "48a187d5d40ac12e4b95efe4d1c50e099efd7d5b1c3f9d881c32a51a6df6e70d"),
+          "from_hash(card-01) matches the cross-checked vector");
+    CHECK(sxt_generichash(h, (int)sizeof(h), 64,
+                          (const unsigned char *)LBL51, (int)strlen(LBL51),
+                          NULL, 0) == 64, "BLAKE2b-512(card-51 label)");
+    CHECK(sxt_ristretto_from_hash(p51, (int)sizeof(p51), h, 64) == 32,
+          "from_hash(card-51) maps");
+    CHECK(digest_is(p51, 32,
+            "ac60cf25f6b43db094e469884067af3ab35d8aab89d67d573ed1dc7d6da9a304"),
+          "from_hash(card-51) matches the cross-checked vector");
+    CHECK(sxt_ristretto_is_valid_point(p0, 32) == 1 &&
+          sxt_ristretto_is_valid_point(p1, 32) == 1 &&
+          sxt_ristretto_is_valid_point(p51, 32) == 1,
+          "every from_hash output is a valid encoding");
+
+    /* Mask/unmask, the deal's core algebra: k*P, k^-1, and the roundtrip
+     * k^-1*(k*P) == P. The fixed scalar is 7 (LE). */
+    memset(k7, 0, sizeof(k7));
+    k7[0] = 7;
+    CHECK(sxt_ristretto_scalarmult(kp, (int)sizeof(kp), k7, 32, p0, 32) == 32,
+          "7 * from_hash(card-00) multiplies");
+    CHECK(digest_is(kp, 32,
+            "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c"),
+          "7 * P matches the cross-checked vector");
+    CHECK(sxt_ristretto_scalar_invert(kinv, (int)sizeof(kinv), k7, 32) == 32,
+          "invert(7) inverts");
+    CHECK(digest_is(kinv, 32,
+            "22d5909fba32273143cdfe848dda1f4c92244992244992244992244992244902"),
+          "invert(7) matches 7^-1 mod L (independently: pow(7, L-2, L))");
+    CHECK(sxt_ristretto_scalarmult(back, (int)sizeof(back), kinv, 32, kp, 32) == 32,
+          "7^-1 * (7*P) multiplies");
+    CHECK(memcmp(back, p0, 32) == 0,
+          "the mask/unmask roundtrip returns exactly P");
+
+    /* Random scalars: right length, and two draws differ (a stuck CSPRNG or a
+     * wrong buffer size would collide instantly). */
+    CHECK(sxt_ristretto_scalar_random(r1, (int)sizeof(r1)) == 32 &&
+          sxt_ristretto_scalar_random(r2, (int)sizeof(r2)) == 32,
+          "scalar_random fills 32 bytes");
+    CHECK(memcmp(r1, r2, 32) != 0, "two random scalars differ");
+    CHECK(sxt_ristretto_scalarmult(kp, (int)sizeof(kp), r1, 32, gen, 32) == 32,
+          "a random scalar multiplies the generator");
+
+    /* Firewall + the failure semantics the header promises. */
+    memset(ff, 0xff, sizeof(ff));
+    CHECK(sxt_ristretto_is_valid_point(ff, 32) == 0,
+          "all-FF is not a valid encoding");
+    CHECK(sxt_ristretto_is_valid_point(gen, 31) == 0,
+          "a wrong-length blob is invalid, not an error (predicate semantics)");
+    CHECK(sxt_ristretto_is_valid_point(NULL, 32) == SXT_ERR_BADARG,
+          "a null point with a positive length stays a hard BADARG");
+    memset(junk, 0, sizeof(junk));
+    CHECK(sxt_ristretto_scalarmult(kp, (int)sizeof(kp), junk, 32, p0, 32)
+              == SXT_ERR_BADARG,
+          "a zero scalar fails scalarmult (identity result)");
+    CHECK(last_error_len() > 0, "the scalarmult failure sets a message");
+    CHECK(sxt_ristretto_scalarmult(kp, (int)sizeof(kp), k7, 32, ff, 32)
+              == SXT_ERR_BADARG,
+          "an invalid point encoding fails scalarmult");
+    CHECK(sxt_ristretto_scalar_invert(kinv, (int)sizeof(kinv), junk, 32)
+              == SXT_ERR_BADARG,
+          "a zero scalar has no inverse");
+    CHECK(sxt_ristretto_from_hash(p0, (int)sizeof(p0), h, 63) == SXT_ERR_BADARG,
+          "from_hash refuses a 63-byte input");
+    CHECK(sxt_ristretto_from_hash(small, (int)sizeof(small), h, 64) == -32,
+          "a short from_hash buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalarmult(small, (int)sizeof(small), k7, 32, p0, 32)
+              == -32, "a short scalarmult buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalar_random(small, (int)sizeof(small)) == -32,
+          "a short scalar_random buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalarmult(kp, (int)sizeof(kp), k7, 31, p0, 32)
+              == SXT_ERR_BADARG, "a 31-byte scalar is refused");
+    CHECK(sxt_ristretto_from_hash(NULL, 64, h, 64) == SXT_ERR_BADARG,
+          "a null from_hash output buffer is refused");
+}
+
 static void test_handle_table_stress(void)
 {
     unsigned char key[32];
@@ -1316,6 +1447,7 @@ int main(void)
     test_pad();
     test_phase6();
     test_sha3();
+    test_ristretto();
     test_handle_table_stress();
 
     printf("-------------------\n");

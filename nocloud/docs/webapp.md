@@ -59,7 +59,9 @@ compiled or copied:
 4. *(Optional)* enable the LAN-only **web editing** option and set a password. Then either
    append **`/_edit`** to the link for the raw file editor, or click **Admin** in the
    demo's own footer for the friendly **site-admin panel** (see below). The service worker
-   deliberately does no caching, so edits show up immediately.
+   deliberately does no caching, and every editor write bumps the host's ETag generation,
+   so edits made through the editor show up immediately (the honest caveat for
+   out-of-band disk edits is in the Editing notes below).
 
 ### The admin panel (the live editor, with a face)
 
@@ -156,9 +158,15 @@ assets/
 
 - **Keep every path relative and every route single-segment** (see above) - the two
   most important rules.
-- **`sw.js` must stay cache-free.** It has no `fetch` handler on purpose so live edits
-  through `/_edit` are never masked by a stale cached file. Do not add caching without a
-  very good reason.
+- **`sw.js` must stay cache-free.** It has no `fetch` handler on purpose, so the worker
+  itself can never mask a live edit - but since the host grew conditional GET, that is
+  only half the freshness story. The server tags every file response with a weak ETag
+  (`W/"size-seed-generation"`, `qsHttpWeakETag` in the stack) plus `Cache-Control:
+  no-cache`, so the *browser's* cache revalidates on every load: an edit through
+  `/_edit` bumps the generation and always shows up immediately, while an out-of-band
+  disk edit that keeps the byte size unchanged leaves the ETag intact and revalidates
+  `304`-stale until the app is relaunched (a fresh per-launch seed). Do not add caching
+  without a very good reason.
 - **The demo must degrade gracefully in a plain static preview** (opened as files, or
   from a non-Quick Share server): the Backend tab and transport badge already fail
   closed with a clear message when `/_qs/info` is unreachable, and the JSON-driven tabs

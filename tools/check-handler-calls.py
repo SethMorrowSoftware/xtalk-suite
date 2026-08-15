@@ -58,13 +58,14 @@ KNOWN_MISSING = {
 
 # The family prefixes. Order matters: oxh must be tried before ox so an oxh*
 # call is not mis-attributed to OnionXT's core ox* surface. rs is the riptide
-# app layer (pure script over the extension surfaces).
-PREFIXES = ("oxh", "sx", "bt", "en", "dc", "ox", "cx", "rs")
+# app layer (pure script over the extension surfaces); he is the holde-em app
+# layer (same shape, added in the 2026-08-15 fold).
+PREFIXES = ("oxh", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he")
 
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
 # a variable named "extra") out of the candidate set.
-CALL_RE = re.compile(r"\b((?:oxh|sx|bt|en|dc|ox|cx|rs)[A-Z]\w*)\b")
+CALL_RE = re.compile(r"\b((?:oxh|sx|bt|en|dc|ox|cx|rs|he)[A-Z]\w*)\b")
 
 # Handler definitions we harvest to build the "exists" set.
 LCB_PUBLIC_RE = re.compile(r"^\s*public handler\s+(\w+)\s*\(([^)]*)\)", re.M)
@@ -80,10 +81,31 @@ def strip_noise(text):
     """Remove comments and string literals so neither can create a phantom call.
 
     A doc comment that mentions sxFoo, or an error message containing a handler
-    name, is prose - not a call - and must not be flagged.
+    name, is prose - not a call - and must not be flagged. Block comments
+    (/* ... */) are legal LCS and holde-em keeps its whole header changelog in
+    one - until the 2026-08-15 fold this function only knew line comments, so
+    prose in a block comment leaked into the candidate set.
     """
     out = []
+    in_block = False
     for line in text.splitlines():
+        if in_block:
+            idx = line.find("*/")
+            if idx == -1:
+                continue
+            line = line[idx + 2:]
+            in_block = False
+        # a block comment may open (and close) mid-line, repeatedly
+        while True:
+            idx = line.find("/*")
+            if idx == -1:
+                break
+            end = line.find("*/", idx + 2)
+            if end == -1:
+                line = line[:idx]
+                in_block = True
+                break
+            line = line[:idx] + line[end + 2:]
         # LiveCodeScript / LCB line comments: -- and #, plus // in .lcb.
         for marker in ("--", "//"):
             idx = line.find(marker)

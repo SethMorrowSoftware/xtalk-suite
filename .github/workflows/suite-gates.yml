@@ -9,10 +9,15 @@
 # MANIFEST.sha256 integrity checks. No engine needed; the only compiler use is
 # coinxt's tiny KAT build, so the job stays fast.
 #
-# Heavy native matrix builds (libtorrent, libdatachannel, libsodium, ENet across
-# five platforms) remain defined in each member's own workflow files for when a
-# member is developed in isolation; porting them into a root build matrix is a
-# tracked follow-up, kept out of the always-on gate so this job stays quick.
+# Heavy native matrix builds (libtorrent, libdatachannel, libsodium, ENet,
+# Box2D, trezor-crypto, across five platforms) run from the ROOT
+# native-<member>.yml workflows beside this file, one per member with native
+# code, `paths:`-scoped so only the touched member builds. This paragraph once
+# called that port a tracked follow-up; it shipped as those six root lanes.
+# The matrix copies inside each member's own .github/ are inert here (the
+# root-only rule above) and are kept only for developing a member in isolation
+# against its standalone mirror. The matrices stay out of this always-on job
+# so it stays quick.
 name: suite gates
 
 on:

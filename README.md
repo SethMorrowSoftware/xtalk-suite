@@ -59,7 +59,7 @@ authority; this is the summary:
 
 | Extension | Native shim | Committed binaries | Maturity |
 |---|---|---|---|
-| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86 at ABI 7; `universal-mac` still ABI 6, one behind, pending the manual `lipo` build) + `MANIFEST.sha256` | The most complete member. The full `sxSelfTest()` — now 71 checks, every post-pass addition included — ran green on-engine 2026-08-12, folded into the suite harness, on top of the 2026-08-08 headline-path pass |
+| sodiumxt | yes | **all 5 platforms** (Linux x64/x86, Windows x64/x86 at ABI 8; `universal-mac` still ABI 6, two behind, pending the manual `lipo` build) + `MANIFEST.sha256` | The most complete member. The full `sxSelfTest()` — 71 checks — ran green on-engine 2026-08-12, folded into the suite harness, on top of the 2026-08-08 headline-path pass. ABI 8 (2026-08-15) added the ristretto255 group surface for holde-em's mental-poker deal — C KATs cross-checked against an independent RFC 9496 reference and green under ASan; the new `sxRistretto*` handlers and the mingw-cross Windows rows are **verified statically; need an OXT pass** (the harness ristretto section SKIPs cleanly on a pre-ABI-8 package) |
 | torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the full 96-check member selftest ran green on-engine 2026-08-10 (folded), the v9-v11 surface included. Two-machine rp1/DHT behaviour still open |
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). The standalone async loopback - the live `enHostStatus` pair and the `enPeerStatus` statistics included - ran green 2026-08-13, so nothing in its selftest is static any more; only the two-machine LAN chat stays open |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have been called on-engine (2026-08-10, folded sync half). The standalone **async loopback** ran green 2026-08-15 - real SDP carrying ICE candidates, correct offer/answer roles, gathering complete on both peers, a selected candidate pair, text and binary (NUL included) byte-for-byte, `dcCreateChannelEx` label/protocol round-trip, and a cap-sized send - so nothing in its selftest is static any more; only browser interop and a two-network call stay open |
@@ -181,7 +181,7 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**377 of 395 public handlers**:
+**382 of 400 public handlers**:
 
 | sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
 |---|---|---|---|---|---|---|
@@ -239,12 +239,17 @@ The members are deliberately non-overlapping, so real apps mix them:
 - **The game stack.** box2dxt's b2k Kit is a working game engine (physics,
   sprites, input, camera - the platformer and contraption-builder examples
   are complete games), and enetxt is game-grade networking; together they
-  are the suite's multiplayer-game story. The worked design for it is
-  [`docs/holde-em/`](docs/holde-em/): serverless online Texas Hold'em where
-  players meet over the torrentxt DHT, every action lives in a signed
-  hash-chained transcript, and the deal runs a mental-poker shuffle -
-  Riptide's sibling capstone, moved up from box2dxt's docs in the fold
-  because it composes three members.
+  are the suite's multiplayer-game story. The worked PROOF of it is
+  [`holde-em/`](holde-em/): serverless online Texas Hold'em - players meet
+  over the torrentxt DHT, every action lives in a signed hash-chained
+  transcript, and the deal ladder tops out at a mental-poker shuffle.
+  Riptide's sibling capstone, folded home from its standalone repository
+  2026-08-15 at v0.18.0: the hotseat game and the Phase 2 online lobby +
+  online play are BUILT (evaluator exhaustively verified, settlement fuzzed,
+  seven KAT mirrors + an independent-reference fuzz in the gate set); the
+  multi-machine pass, onion tables, and the ristretto255 mental-poker deal
+  (blocked on sodiumxt's planned `sxRistretto*` surface) are the open
+  phases.
 - **The shipped example.** [`nocloud/`](nocloud/) is **No Cloud Quick Share**,
   a finished end-user app that composes the suite the way the ladder above
   describes: peer-to-peer file sharing as one stack script over torrentxt

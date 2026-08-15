@@ -16,11 +16,15 @@ script "coinxt"
 -- 256-bit number in this file, stop; it is in the wrong layer.
 --
 -- ==========================================================================
--- STATUS: NEEDS AN OXT PASS - but this file HAS been executed, which is new.
+-- STATUS: ENGINE-PASSED, twice. This block used to read "NEEDS AN OXT PASS";
+-- the passes landed 2026-08-10 (the folded suite harness, coinxt section
+-- 207/207) and 2026-08-12 (Windows x64, 230/230, phase 5 included), both
+-- recorded in CLAUDE.md's as-built notes.
 --
 -- OXT cannot compile or run a .livecodescript headlessly, so historically a
--- file like this would ship never having run. Three things stand behind it
--- instead, and it is worth being exact about what each is worth:
+-- file like this would ship never having run. Three things stood behind it
+-- before the engine did - each still runs in CI, and it is worth being exact
+-- about what each is worth:
 --
 --   * tools/coin_reference.py is an independent implementation of every
 --     encoding here, and it reproduces the PUBLISHED vectors - BIP-173's valid
@@ -44,7 +48,11 @@ script "coinxt"
 --   * tests/coin-selftest.livecodescript drives every handler below against the
 --     same vectors, so ONE paste on a real engine settles the rest.
 --
--- Until that engine run: the LOGIC is observed, the ENGINE BEHAVIOUR is not.
+-- That engine run has happened (the two passes above), so the closing line
+-- that stood here - "the LOGIC is observed, the ENGINE BEHAVIOUR is not" -
+-- no longer holds: both are observed for this layer. What stays open is
+-- narrower and is phase 5's alone: a live testnet broadcast is still owed
+-- before any "broadcastable" claim (see the phase-5 STATUS block below).
 -- ==========================================================================
 --
 -- THE THREE PORTABILITY DISCIPLINES this file follows, each paid for already
@@ -1975,8 +1983,15 @@ end cxXpub
 --
 -- STATUS: verified statically and against tools/coin_reference.py (which
 -- reproduces the BIP-143 native-P2WPKH worked example, the EIP-155 spec
--- example and a self-consistent EIP-1559 typed transaction); NEEDS AN OXT
--- PASS + independent-decoder acceptance before any "broadcastable" claim.
+-- example and a self-consistent EIP-1559 typed transaction). This block
+-- used to demand "an OXT pass + independent-decoder acceptance" before any
+-- "broadcastable" claim; both bars are met and recorded in CLAUDE.md's
+-- as-built notes: ENGINE-PASSED 2026-08-12 (Windows x64, 230/230, this
+-- phase included), and INDEPENDENTLY ACCEPTED 2026-08-12, extended to all
+-- four transaction families 2026-08-13 - fresh transactions built end to
+-- end through THIS file and accepted by python-bitcointx / eth-account
+-- (tools/verify-independent-decoder.py). The one bar left: a live testnet
+-- broadcast is still owed, so "broadcastable" stays unclaimed until then.
 --
 -- This is still the SCRIPT layer, so it composes the primitives and NEVER
 -- touches a private key or a curve point: signing is the app calling cxSign /

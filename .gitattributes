@@ -1,0 +1,11 @@
+# Suite-level attributes. Carried up from holde-em's standalone repo in the
+# 2026-08-15 fold (it pinned *.png binary for its vendored Kenney card
+# atlases) and widened to every binary type the suite commits - the vendored
+# art and audio, and each member's per-platform native libraries under
+# src/code/<arch>-<platform>/ - so git's diff/merge behaviour on them is
+# pinned rather than heuristic.
+*.png binary
+*.wav binary
+*.so binary
+*.dll binary
+*.dylib binary

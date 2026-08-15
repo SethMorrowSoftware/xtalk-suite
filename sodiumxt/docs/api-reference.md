@@ -62,6 +62,28 @@ BLAKE2b. The default digest length is 32 bytes; the valid range is 16..64.
 | `sxHmacSha256(pKey, pMessage)` | `Data` | HMAC-SHA256 (32 bytes) over an arbitrary-length key and message. A standard keyed MAC (e.g. for the Tor control-port SAFECOOKIE challenge-response). Compare a resulting MAC with `sxMemEqual`, never `is`. |
 | `sxSha3_256(pData)` | `Data` | SHA3-256 (32 bytes, NIST FIPS 202; ABI 7). The one primitive served by vendored code (RHash via trezor-crypto, `src/vendor/`) because libsodium has no SHA-3; it exists for the v3 `.onion` address checksum, so an address is computable offline from an ed25519 public key (onionxt `oxAddressFromPublicKey` composes it). NOT Ethereum's Keccak-256 - coinxt exports both and documents the footgun. Empty input is legal. |
 
+### ristretto255 (ABI 8 - the mental-poker group surface)
+
+The prime-order group holde-em's deal ladder needs (its IMPLEMENTATION-PLAN.md,
+Workstream U): thin wrappers over libsodium's `crypto_core_ristretto255_*`, no
+new cryptography. Points and scalars are 32-byte `Data`; the from-hash input is
+one 64-byte digest - `sxHash(tData, 64)` (BLAKE2b-512) produces it, which is why
+the plan's conditional "sxHash512" needed no new handler. Batch multiplication
+and point add/sub are the plan's recorded Phase 5 follow-ons, deliberately not
+shipped. NOT yet observed on an engine: the C layer's KATs (cross-checked
+against an independent RFC 9496 reference in holde-em/tools/protocol-kat.py)
+ran green under ASan/UBSan 2026-08-15, and every handler below is **verified
+statically; needs an OXT pass** - the harness section SKIPs cleanly on a
+pre-ABI-8 package.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `sxRistrettoFromHash(pHash)` | `Data` | Map one 64-byte uniform hash to a group point (the two-Elligator map). Every 64-byte input maps to some valid point; only a wrong length throws. Card base points: `sxRistrettoFromHash(sxHash(tLabel, 64))` with a domain-separated label. |
+| `sxRistrettoScalarMultPoint(pScalar, pPoint)` | `Data` | `q = pScalar * pPoint`. Throws when pPoint is not a valid encoding OR the result would be the identity (zero scalar) - libsodium reports both as one failure, and a deal treats either as a void/cheating condition, so the caller's try/catch IS the detection path (H4). |
+| `sxRistrettoScalarRandom()` | `Data` | A uniformly random non-zero scalar mod the group order L, from libsodium's CSPRNG - the per-hand masking scalar. |
+| `sxRistrettoScalarInvert(pScalar)` | `Data` | `pScalar^-1 mod L`, the unmask scalar; multiplying by it undoes the mask. Throws on a zero scalar. |
+| `sxRistrettoPointValid(pPoint)` | `Boolean` | true when pPoint is a canonical 32-byte encoding. A predicate: malformed or wrong-length input returns false rather than throwing (verify-then-parse needs a validity check that does not blow up on the garbage it exists to catch). |
+
 ### Multipart hash (data assembled incrementally)
 
 Open a state, feed chunks, finalize. `sxHashFinal` writes the digest and releases
@@ -196,7 +218,10 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   repository root), which carries this member's own self-test verbatim. That retires the
   old caveat that the recorded pass predated the newer sections. The ABI-7 additions
   (`sxSha3_256` and its FIPS 202 vectors, 71 checks total) had their pass on **2026-08-12**,
-  on Windows x64 - so nothing in this file is "verified statically" any more. The 2026-08-08 suite pass
+  on Windows x64 - so nothing in this file below ABI 8 is "verified statically" any more
+  (the ABI-8 ristretto255 section, added 2026-08-15, is the one exception: its C KATs are
+  green under ASan and cross-checked, but no `sxRistretto*` handler has run on an engine
+  yet - the section above says exactly that). The 2026-08-08 suite pass
   had already proven the cross-member half from the outside: `sxSignSeedToExpandedKey`'s
   64-byte expanded key equals, on-engine, the DHT secret key libtorrent derives from the
   same seed.

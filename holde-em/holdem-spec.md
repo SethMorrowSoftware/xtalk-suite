@@ -1,6 +1,9 @@
 # Online Texas Hold'em for the OXT extension family — design spec
 
-**Status: pre-implementation spec (plan, not as-built).** This is the design brief for a
+**Status: living contract, corrected against the as-built code inline.** (The
+"pre-implementation" label this line carried was stale by v0.2.0; the body below marks
+every place the build diverged, per the convention at the end of this paragraph —
+corrected in the 2026-08-15 fold's truth pass.) This is the design brief for a
 serverless online no-limit Texas Hold'em game built on the OpenXTalk extension family:
 Box2Dxt (presentation), TorrentXT (transport + rendezvous), SodiumXT (all cryptography),
 and optionally OnionXT (anonymous transport / oracle hosting). This spec is the contract
@@ -124,29 +127,36 @@ pure fold over transcript messages. This buys: reconnection (replay the log), sp
 
 ## 6. The transcript
 
-Every game message is one envelope, CBOR-or-tab-delimited (implementation's choice, but
-canonical — one byte sequence per logical message, or signatures break):
+Every game message is one envelope. **As-built (canonical, byte-pinned by
+`tools/protocol-kat.py`):** tab-delimited, layered signatures. The original draft had
+the sender sign `seq` and `prev`, but a sender cannot know either under a relay that
+assigns ordering — so the sender signs the *content* and the host signs the *sequenced
+envelope*:
 
 ```
-{ v: 1,                     -- protocol version
-  table: <32B table id>,    -- random, chosen by the creator; the DHT info-hash is sxHash(table)
-  hand: <int>,              -- hand number, 0 = table setup
-  seq: <int>,               -- assigned by the host relay, strictly increasing
-  prev: <32B>,              -- sxHash of the previous envelope (hash chain)
-  from: <ed25519 pubkey>,
-  type: <string>,           -- see the message vocabulary below
-  body: <type-specific>,
-  sig: <64B> }              -- sxSignDetached over all preceding fields, canonical order
+contentLine = v TAB tableHex TAB hand TAB fromHex TAB type TAB bodyHex
+senderSig   = sxSignDetached over utf8(contentLine), by the sender key
+envLine     = contentLine TAB senderSigHex TAB seq TAB prevHex
+hostSig     = sxSignDetached over utf8(envLine), by the host relay key
+wire        = envLine TAB hostSigHex          -- one wire line = one rp1 payload
+chainHead   = sxHash("HOLDEM-CHAIN-v1|" || utf8(wire)); genesis prev = 32 zero bytes
 ```
+
+Field meanings are unchanged: `v` protocol version; `table` the 32-byte random table
+id (the DHT info-hash is `sxHash(table)`); `hand` the hand number, 0 = table setup;
+`seq` assigned by the host relay, strictly increasing; `prev` the previous envelope's
+chain head; `from` the sender's ed25519 pubkey; `body` hex of type-specific UTF-8 text
+(hex so no tab can leak into the frame).
 
 Rules, each closing a specific hole:
 
 - **Verify or drop.** A message with a bad signature, an unknown `from`, a stale `seq`,
   or a `prev` that does not match the local chain head is dropped and logged. No
   exceptions, including from the host.
-- **The host assigns `seq` and countersigns the envelope it relays** (an outer
-  signature). A host that reorders or drops selectively produces a chain other players
-  can present as evidence; it still cannot forge content.
+- **The host assigns `seq` and countersigns the envelope it relays** (the outer
+  `hostSig`). A host that reorders or drops selectively produces a chain other players
+  can present as evidence; it still cannot forge content (the inner `senderSig` covers
+  everything the sender meant).
 - **Checkpoints**: at every street boundary (deal complete, flop, turn, river, showdown)
   each player signs the current chain head (`type: "ckpt"`). A rollback attack now needs
   every player's cooperation — i.e. it is not an attack, it is a table agreeing to void.
@@ -155,8 +165,31 @@ Rules, each closing a specific hole:
   later dispute the rules they signed.
 
 Message vocabulary (body schemas fixed at implementation time, names fixed here):
-`cfg join leave sit stand shuffleStep unmaskStep seedCommit seedReveal holeDeliver
-bid[SB/BB] act(fold|check|call|bet|raise|allin) ckpt show muck settle audit chat`.
+`cfg join leave sit stand shuffleStep unmaskStep seedCommit seedSeal seedReveal
+holeDeliver board bid[SB/BB/Ante] act(fold|check|call|bet|raise|allin) ckpt show muck
+settle receipt audit chat`. (`board` was added as-built: the L0/L1 street broadcast
+needed its own type, and at every level the board record is what makes transcript
+replay self-contained. `seedSeal` was added as-built: spec 7.1 step 2 sends each seed
+to the dealer in a sealed box, and carrying that ciphertext ON the chain -- body
+`pos=<seat>,sealed=<hex>` -- keeps the transcript self-contained and replayable
+instead of routing the seed through an out-of-band lane. `receipt` was added as-built:
+the 8.3 settlement co-signature needed its own type -- body `head=<hex>,sig=<hex>` --
+rather than overloading `ckpt`.)
+
+As-built body schemas for the online (M1) game wires: `join` carries the sender's
+per-table session box pub (`box=<64hex>`) -- the contentLine signature IS the spec 5
+session-key binding (long-term key over table + box pub). `sit` is host-authored seat
+assignment, one wire per seated player (`seat=N,pub=<64hex>`), emitted at game start.
+`handStart` (host) carries `seats=1|2|..,button=B`; stacks are whatever the folded
+stream says they are. `dealLevel` (host) carries `level=0,dealer=<seat>,count=N` --
+the dealer is the button seat's player (the L0 rotation). `seedCommit`/`seedSeal`/
+`seedReveal` carry `pos=<seat>` plus their payload and must come from the seat's own
+key. `holeDeliver` (dealer) carries `seat=N,sealed=<hex>` -- the two card names sealed
+to seat N's session box pub. `board` (dealer) carries `street=..,cards=a|b|c`.
+`settle` (host) carries the standard deltas body; every client verifies it against its
+own `heSettleOf` recomputation before folding it. Showdown ranks online are derived
+from the REVEALED seeds (re-derive deck -> holes -> ranks), never from player claims,
+so `show`/`muck` remain display-only niceties (deferred with liveness, 2e).
 
 ## 7. The deal protocol ladder
 
@@ -168,10 +201,21 @@ levels share the transcript, betting engine, and settlement.
 
 The spades-grade protocol, inherited unchanged:
 
-1. Every player broadcasts `seedCommit` = `sxHash(seed_i)` (32-byte `sxRandomBytes` seed).
+1. Every player broadcasts `seedCommit` = `sxHash("HOLDEM-SEEDC-v1|" || seed_i)`
+   (the commitment is domain-separated per section 16, an as-built correction to the
+   original bare `sxHash(seed_i)`). As-built (v0.18.0), `seed_i` is DERIVED, not
+   drawn: `sxHash("HOLDEM-SEEDP-v1|" || idSeed || "|" || table || "|" || hand)` —
+   secret-keyed by the player's identity seed (unguessable to others), fresh per
+   hand (the hand number is in the input, honoring the section 5 freshness law), and
+   deterministic, so a client that crashes and rejoins mid-hand re-derives the exact
+   seed it committed and can still seal and reveal — without this, a reconnect
+   wedged the hand's audit forever because the drawn seed lived only in RAM.
 2. Every player sends `seed_i` to the current dealer in a sealed box.
-3. The shuffle is a Fisher-Yates draw from a keyed stream:
-   `stream = sxHash("HOLDEM-SHUF-v1" || table || hand || seed_1 XOR ... XOR seed_N)`.
+3. The shuffle is a Fisher-Yates draw from a keyed stream, pinned byte-exactly in
+   `tools/protocol-kat.py`:
+   `streamKey = sxHash("HOLDEM-SHUF-v1|" || table || "|" || decimal(hand) || "|" ||
+   seed_1 XOR ... XOR seed_N)`; stream block j = `sxHash(streamKey || uint32be(j))`;
+   draws are 4-byte big-endian words, rejection-sampled (no modulo bias).
    The dealer **cannot stack the deck**: their own seed was committed before they saw
    anyone else's.
 4. The dealer sends each player's two hole cards in a sealed box (`holeDeliver`); board
@@ -297,9 +341,15 @@ pin (all classic, all fiddly, all testable without networking):
 - Button and blinds rotate by seat order; heads-up: button is small blind and acts
   first pre-flop, last post-flop.
 - Min-raise = size of the largest prior bet/raise of the street; an all-in below the
-  min-raise does **not** reopen betting for players who already acted.
+  min-raise does **not** reopen betting for players who already acted. This is
+  deliberately **per-wager**: several short all-ins that only *cumulatively* amount to
+  a full raise still do not reopen (TDA's cumulative reading is the stricter tournament
+  rule; the per-wager pin is simpler, KAT-pinned on both sides, and is the as-built
+  behavior — revisit only as a deliberate, spec-first change).
 - Side pots: layered by all-in amounts; each layer awarded independently at showdown
-  (the settlement function iterates pot layers, not players).
+  (the settlement function iterates pot layers, not players). As-built pins: split-pot
+  odd chips go to the first winning seat clockwise from the button; a short all-in big
+  blind still sets the full `bb` as the amount to call.
 - Showdown order: last aggressor of the final street first, then clockwise; players may
   muck in turn (Level 2: muck = don't reveal scalars).
 - Timers (from the signed config): act timer with one time-bank per hand; deal-phase
@@ -333,7 +383,30 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
 - **Reconnect**: rejoin with the table code, present identity, receive the transcript
   since your last `ckpt`, fold the log, resume. Hole cards at L2 need no re-delivery —
   the chain values are in the transcript; the player recomputes with their own scalar.
-  (L0/L1: the dealer re-sends the sealed `holeDeliver` on request.)
+  (L0/L1 as-built: the sealed `holeDeliver` is already ON the chain, so the replay
+  itself re-delivers it, and the per-hand seed re-derives — see 7.1 step 1.) As-built,
+  the host prefixes a replay with an unsigned `r!` control frame carrying its head
+  seq (the same transport class as `s?`, honored only from the host's live handle):
+  the catching-up client suspends its protocol emissions until its applied seq
+  reaches the mark, then reacts once against the complete transcript — without this,
+  every mid-replay state re-emitted the client's own historical messages as fresh
+  duplicates onto the live chain. A lost marker degrades to noise, never a wedge.
+- **Mid-stream gap recovery** (as-built, M1): rp1 is a ~1 s, lossy, reordering,
+  REDELIVERING transport, so a client can miss a wire — or see one twice — without
+  disconnecting. A signature-verified, table-bound wire is classified by its
+  host-assigned `seq` against the last seq applied locally, never by a bare
+  `prev`-vs-head test: at or below the local seq it is an already-applied duplicate
+  and drops silently (no resync — treating duplicates as chain gaps is what made the
+  original design storm: every redelivery triggered a full replay whose own wires
+  re-triggered it); exactly next, it must chain onto the local head and is applied;
+  further ahead, it is held in a bounded per-seq reorder buffer (drained as the gap
+  fills) and an unsigned `s?` resync control message goes to the host, debounced so
+  it re-asks at most ~once/2 s. The host replays its signed wire log to the requester
+  (also automatically on any reconnect handshake); a full replay is safe and
+  idempotent for a mid-stream client because replayed wires at or below its seq shed
+  silently and it resumes from its head forward. `s?` is a transport control message,
+  not a transcript type, and is honored only from an already-admitted, connected
+  peer, rate-limited per peer.
 - **Timeout in betting**: auto check/fold, seat goes to sit-out after (config) misses.
 - **Timeout in dealing** (L2): void-and-audit (7.3). A player who habitually
   "disconnects" when the flop looks bad voids hands but never sees that flop — aborting
@@ -427,7 +500,7 @@ This spec makes the *game* value-ready; it does not make a *product* value-ready
 
 | Repo | Item | Size |
 |---|---|---|
-| **SodiumXT** | Expose ristretto255: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`, `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid`, plus `sxHash512` if not already public (libsodium carries all of it; this is expose-only, no new cryptography) + ABI bump + KAT vectors | the only blocking native work |
+| **SodiumXT** | **SHIPPED 2026-08-15 (suite-internal, SodiumXT ABI 8)**: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`, `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid` (no `sxHash512` needed - `sxHash(tData, 64)` is the 64-byte hash), with cross-checked KATs (C smoke test + this repo's `tools/protocol-kat.py` independent reference). Verified statically; the `sxRistretto*` handlers need their OXT pass. Was: the only blocking native work |
 | **SodiumXT** (later) | `sxRistrettoScalarMultBatch` (52 points, one crossing); point add/sub + `sxRistrettoScalarMultBase` for DLEQ (7.4) | optimization / hardening pass |
 | **TorrentXT** | none — rp1 + BEP44 + phantom swarms suffice as shipped | — |
 | **OnionXT** | none — streams + onion services as shipped (L1 oracle, onion tables) | — |

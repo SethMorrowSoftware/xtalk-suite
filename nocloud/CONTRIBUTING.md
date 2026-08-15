@@ -2,6 +2,16 @@
 
 Thanks for pitching in! No Cloud Quick Share is a small, sharp desktop app: one OpenXTalk/xTalk stack script plus a bundled static web-app. This guide is short, but please read it start to finish — the workflow here is unusual because of what OXT is, and skipping a step is how bugs sneak in.
 
+> **Folded into the xtalk-suite monorepo 2026-08-13.** This directory is now the
+> `nocloud/` member of the suite; the standalone repository is a mirror, and
+> development happens here. The full fold record is in `CLAUDE.md` in this
+> directory — read it before your first change. Two consequences for this guide:
+> paths below still read as if `nocloud/` were its own repo root (the suite's
+> standing consolidation-debt caveat), and the two member gates below are no
+> longer the whole automated safety net — the suite's cross-member gates also
+> walk this directory on every push (see "3. The suite gates" under the
+> workflow section).
+
 ## The shape of the repo
 
 ```
@@ -29,9 +39,9 @@ Because of this split, there's a hard honesty rule for anything runtime-related:
 
 > **Never claim runtime behavior you have not observed in OXT.** If you changed a handler and the static gates pass, the correct thing to say is *"verified statically; needs an OXT pass."* Do not write "fixed the server hang" or "the dialog now closes" unless you actually watched it happen in the IDE. This is not pedantry — the static tools genuinely cannot see those things, and overclaiming is how regressions ship.
 
-## Before every change: run both checks
+## Before every change: run the checks
 
-Every change to `src/nocloudquickshare.livecodescript` (and any `.lcb`, if you add one) must pass **both** of these, every time:
+Every change to `src/nocloudquickshare.livecodescript` (and any `.lcb`, if you add one) must pass **both** of the member checks below, every time — and, since the 2026-08-13 fold, the suite gates in item 3 run over this directory too:
 
 ### 1. The static script gate
 
@@ -39,7 +49,7 @@ Every change to `src/nocloudquickshare.livecodescript` (and any `.lcb`, if you a
 python3 tools/check-livecodescript.py
 ```
 
-This is a lexer-level checker (not a compiler) that scans every `.lcb` and `.livecodescript` in the repo. It enforces the rules OXT would otherwise only surface as a cryptic compile error — or, worse, a silent misbehavior — including:
+Since the fold this is the suite's **unified** checker (every member carries a byte-identical copy, and the suite's checker-drift gate fails the build on any divergence) — so never edit this copy alone; a checker change is a suite change. It is a lexer-level checker (not a compiler) that scans every `.lcb` and `.livecodescript` in the repo. It enforces the rules OXT would otherwise only surface as a cryptic compile error — or, worse, a silent misbehavior — including:
 
 - **Pure ASCII / no smart quotes.** Any curly quote (`‘ ’ “ ”`) or *any* non-ASCII byte anywhere — even in a comment — is rejected. OXT source is pure ASCII. Use straight `"` and `'` only.
 - **Balanced strings** — no stray unterminated `"` on a logical line.
@@ -57,28 +67,17 @@ python3 tests/fileserver_golden.py
 
 This is the safety net for the security- and correctness-critical logic inside the stack — the parts of the file server that *can* be verified off-engine. It's a hand-written pure-Python reference that mirrors specific handlers, byte-for-byte, in behavior. If the golden and the `.livecodescript` disagree, **one of them is wrong** — and given what these handlers do, that's not a bug you want to find in production.
 
-It currently pins the logic of (LiveCodeScript handler → Python mirror):
+This guide used to enumerate the pinned handlers in a table here, and the golden's own docstring carried a second list — by 2026-08-15 the table named 16 rows, the docstring 13, and the file actually defined 33 mirrors. Two stale copies of one list is how counts drift, so the enumeration now lives in exactly one place: **the docstring index at the top of `tests/fileserver_golden.py`**, complete and grouped by surface (static file serving, HTTP framing + conditional GET, the web editor's write path, the `.qsroutes.json` user-route guards, transfer-row formatting). Read it there; it is the authority, and a new mirror is not done until it is listed there.
 
-| Handler | What it decides |
-|---|---|
-| `qsFsParseRange` → `parse_range` | RFC 7233 single byte-range; 416 on out-of-range |
-| `qsFsServePath` → `traversal_ok` | path-traversal refusal (`..` after urlDecode + `\`→`/`) |
-| `qsHasDotSegment` → `has_dot_segment` | dotfile guard (`.git`/`.env` invisible to static serving) |
-| `qsFsMime` → `mime` | extension → MIME mapping |
-| `qsFsIcon` → `fs_icon` | directory-listing icon class |
-| `qsFsHtmlEscape` → `html_escape` | HTML escaping (`&` first) |
-| `qsCwServe` → `capability_route` | clearweb `/<token>/` capability gate |
-| `qsSiteSpaTarget` → `spa_is_route` | SPA route-vs-missing-asset fallback |
-| `qsHttpHeaderEnd` / `qsHttpReqComplete` / `qsHttpReqLength` | HTTP request framing + keep-alive |
-| `qsJsonEscape` → `json_escape` | JSON value escaping |
-| `qsEditSafePath` → `edit_safe_path` | web-editor **write**-path confinement (the linchpin) |
-| `qsEditIsLocal` → `edit_is_local` | web-editor LAN-first gate (the other linchpin) |
-| `qsQueryParam` → `query_param` | `?path=` extraction |
-| `qsFileSizeSeek` → `file_size_probe` | O(log n) file-size probe |
-| `qsSafeFilename` → `safe_filename` | Content-Disposition filename sanitiser |
-| `qsRateShort` / `qsEtaShort` | compact transfer-row rate + ETA formatting |
+Two of the mirrors — `qsEditSafePath` and `qsEditIsLocal` — gate a path that can **write to disk** and must only be reachable from the local network. Treat any change to them with real care.
 
-Two of these — `qsEditSafePath` and `qsEditIsLocal` — gate a path that can **write to disk** and must only be reachable from the local network. Treat any change to them with real care.
+### 3. The suite gates (since the 2026-08-13 fold)
+
+The monorepo's cross-member gates walk this directory on every push: **checker-drift** (proves the checker copy above is byte-identical to every member's — which is why `tools/check-livecodescript.py` must **never be edited here alone**; a checker fix is a suite change), **ui-kit-drift** (the carried UI-kit block in the stack must match the suite master byte-for-byte), **handler-calls**, and **stack-size** (the 720p budget). You don't need to run them one by one — run the set the way CI does, from the suite root:
+
+```sh
+tools/build-all.sh --gates
+```
 
 ## Then: the manual OXT pass
 
@@ -128,7 +127,9 @@ If a handler is genuinely all I/O (it opens a socket, reads a file, sets a UI pr
 
 - [ ] `python3 tools/check-livecodescript.py` is clean
 - [ ] `python3 tests/fileserver_golden.py` is OK
-- [ ] New pure-logic helpers are mirrored + covered in the golden
+- [ ] The suite gates are clean too: `tools/build-all.sh --gates` at the suite root (checker-drift, ui-kit-drift, handler-calls, stack-size all walk this directory)
+- [ ] `tools/check-livecodescript.py` was not edited here alone (it is the suite's drift-gated unified copy)
+- [ ] New pure-logic helpers are mirrored + covered in the golden, and listed in its docstring index
 - [ ] Layout changed? `kQsUiVersion` bumped
 - [ ] Did an OXT pass: opened the stack, pasted the script, closed + reopened, exercised the change
 - [ ] PR text distinguishes what you **observed in OXT** from what's **verified statically; needs an OXT pass**

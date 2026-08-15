@@ -68,6 +68,30 @@ run_gates() {
     echo "== $m: tools/coin-kat.py --check =="
     ( cd "$m" && python3 tools/coin-kat.py --check )
   fi
+  # holde-em's pure-logic gates: the member-specific idiom checker (the
+  # hold-em lineage checks the unified checker does not carry - see its
+  # docstring), the docs smart-quote scan, seven KAT mirrors of the game's
+  # pure handlers (evaluator, betting/settlement, shuffle, crypto protocol,
+  # transcript fold, card atlas, sounds), and the independent-reference fuzz
+  # (a SECOND evaluator/settlement implementation plus whole-game invariants
+  # - the backing for the member's "verified sound" claim). Probed by exact
+  # name, not a glob: the *-kat.py names would otherwise collide with the
+  # different --check calling convention of onion-kat.py/coin-kat.py above.
+  if [ -f "$m/tools/check-holdem-idioms.py" ]; then
+    echo "== $m: tools/check-holdem-idioms.py =="
+    ( cd "$m" && python3 tools/check-holdem-idioms.py )
+  fi
+  if [ -f "$m/tools/check-docs.py" ]; then
+    echo "== $m: tools/check-docs.py =="
+    ( cd "$m" && python3 tools/check-docs.py )
+  fi
+  for rel in evaluator-kat.py betting-kat.py shuffle-kat.py protocol-kat.py \
+             fold-kat.py atlas-kat.py sounds-kat.py logic-fuzz.py; do
+    if [ -f "$m/tools/$rel" ]; then
+      echo "== $m: tools/$rel =="
+      ( cd "$m" && python3 "tools/$rel" )
+    fi
+  done
   # The OXT self-test's vectors are hand-copied literals in a .livecodescript,
   # so they can drift from the shim and from the published answers. A drifted
   # expectation turns a real regression into a green run, which in a money
@@ -154,10 +178,10 @@ if [ -f tools/check-launcher-registry.py ]; then
 fi
 
 # --- static gates for every member (always run) ---
-# riptide and nocloud are not extensions but carry the same gate shape
-# (script checker, golden glob, vector gate, docs style), so they ride the
-# same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt; do
+# riptide, nocloud, and holde-em are not extensions but carry the same gate
+# shape (script checker, golden glob, vector gate, docs style), so they ride
+# the same loop.
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 

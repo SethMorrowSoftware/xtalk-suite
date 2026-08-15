@@ -5868,7 +5868,7 @@ private function oxSha3_256 pData
    try
       put sxSha3_256(pData) into tOut
    catch tError
-      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, deferred gap, docs/08)"
+      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, ABI 7+; this SodiumXT predates it - docs/08 #2)"
    end try
    return tOut
 end oxSha3_256
@@ -5928,7 +5928,8 @@ private function oxSodiumHasRandom
 end oxSodiumHasRandom
 
 private function oxSodiumHasSha3
-   -- Deferred gap: expected false until SodiumXT ships SHA3-256 (docs/08 #2).
+   -- Capability probe: true on SodiumXT ABI 7+ (sxSha3_256 shipped 2026-08-11,
+   -- docs/08 #2 CLOSED); false only against an older installed SodiumXT.
    try
       get sxSha3_256(empty)
       return true
@@ -8406,6 +8407,7 @@ function sx1sxSelfTest
    sx1testOnionPrimitives
    sx1testPadding
    sx1testHashExtras
+   sx1testRistretto
    sx1testDiagnostics
 
    put return & "----" & return after sx1sLog
@@ -8929,6 +8931,97 @@ on sx1testHashExtras
    sx1sxCheck true, "sxFreeHash is idempotent on an abandoned state"
    delete file sx1tPath
 end sx1testHashExtras
+
+on sx1testRistretto
+   -- ABI 8 (holde-em Workstream U): the ristretto255 group surface. The
+   -- point/scalar vectors are pinned twice over: generated from the pinned
+   -- libsodium AND re-derived by the independent pure-Python RFC 9496
+   -- reference in holde-em/tools/protocol-kat.py - both agree on every value
+   -- here, so a transcription slip cannot pass. The same vectors are pinned
+   -- in the C smoke test, so a green run here plus a green ctest pins the
+   -- whole path: script -> LCB -> shim -> libsodium.
+   local sx1tGen
+   local sx1tP0
+   local sx1tP1
+   local sx1tK7
+   local sx1tKp
+   local sx1tKinv
+   local sx1tBack
+   local sx1tR1
+   local sx1tR2
+   local sx1tBad
+   local sx1tZero
+   local sx1tProbe
+   local sx1tErr
+   local sx1tCaught
+   sx1sxSection "ristretto255 (ABI 8)"
+   put sxHex2Bin(textEncode("e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76", "ascii")) into sx1tGen
+   -- SKIP cleanly on a pre-ABI-8 package: the probe call throws (handler not
+   -- found on an older .lcb, or the ABI-mismatch guard on a mixed package)
+   -- instead of answering, and this section must not take the whole run down
+   -- with it (the suite's stMergeCounted lesson: one uncaught engine error
+   -- loses every section's results).
+   try
+      put sxRistrettoPointValid(sx1tGen) into sx1tProbe
+   catch sx1tErr
+      sx1sxCheck true, "SKIP: this SodiumXT package predates ristretto255 (ABI 8)"
+      exit sx1testRistretto
+   end try
+   sx1sxCheck sx1tProbe, "the RFC 9496 generator encoding is a valid point"
+   -- hash-to-group, the deal's card-point derivation: BLAKE2b-512 of a
+   -- domain-separated label into from_hash (sxHash(sx1tData, 64) IS the 64-byte
+   -- hash the plan's conditional "sxHash512" asked about)
+   put sxRistrettoFromHash(sxHash(sx1sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-00"), 64)) into sx1tP0
+   sx1sxCheck (sx1sxHexOf(sx1tP0) is "d4976d032129eb3cc15bb2e700e0f303c46bdb8a4874d009dc03405c3fdedd4d"), \
+         "from_hash(card-00) matches the cross-checked vector"
+   put sxRistrettoFromHash(sxHash(sx1sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-01"), 64)) into sx1tP1
+   sx1sxCheck (sx1sxHexOf(sx1tP1) is "48a187d5d40ac12e4b95efe4d1c50e099efd7d5b1c3f9d881c32a51a6df6e70d"), \
+         "from_hash(card-01) matches the cross-checked vector"
+   sx1sxCheck (sxRistrettoPointValid(sx1tP0) and sxRistrettoPointValid(sx1tP1)), \
+         "from_hash outputs are valid encodings"
+   -- mask/unmask, the deal's core algebra: k*P, k^-1, k^-1*(k*P) == P
+   put sxHex2Bin(textEncode("0700000000000000000000000000000000000000000000000000000000000000", "ascii")) into sx1tK7
+   put sxRistrettoScalarMultPoint(sx1tK7, sx1tP0) into sx1tKp
+   sx1sxCheck (sx1sxHexOf(sx1tKp) is "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c"), \
+         "7 * from_hash(card-00) matches the cross-checked vector"
+   put sxRistrettoScalarInvert(sx1tK7) into sx1tKinv
+   sx1sxCheck (sx1sxHexOf(sx1tKinv) is "22d5909fba32273143cdfe848dda1f4c92244992244992244992244992244902"), \
+         "invert(7) matches 7^-1 mod L (independently pow(7, L-2, L))"
+   put sxRistrettoScalarMultPoint(sx1tKinv, sx1tKp) into sx1tBack
+   sx1sxCheck (sx1tBack is sx1tP0), "the mask/unmask roundtrip returns exactly P"
+   -- random masking scalars: right length, and two draws differ
+   put sxRistrettoScalarRandom() into sx1tR1
+   put sxRistrettoScalarRandom() into sx1tR2
+   sx1sxCheck (the number of bytes in sx1tR1 is 32), "sxRistrettoScalarRandom returns 32 bytes"
+   sx1sxCheck (sx1tR1 is not sx1tR2), "two random scalars differ"
+   -- the predicate refuses garbage without throwing
+   put sxHex2Bin(textEncode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "ascii")) into sx1tBad
+   sx1sxCheck (not sxRistrettoPointValid(sx1tBad)), "all-FF is not a valid encoding"
+   sx1sxCheck (not sxRistrettoPointValid(sxRandomBytes(31))), "a 31-byte blob is not a valid point"
+   -- the failure paths THROW (H4: the catch path is the detection path)
+   put sxHex2Bin(textEncode("0000000000000000000000000000000000000000000000000000000000000000", "ascii")) into sx1tZero
+   put false into sx1tCaught
+   try
+      put sxRistrettoScalarInvert(sx1tZero) into sx1tKinv
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a zero scalar has no inverse (throws)"
+   put false into sx1tCaught
+   try
+      put sxRistrettoScalarMultPoint(sx1tZero, sx1tP0) into sx1tKp
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a zero scalar refuses to multiply (identity result, throws)"
+   put false into sx1tCaught
+   try
+      put sxRistrettoScalarMultPoint(sx1tK7, sx1tBad) into sx1tKp
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "an invalid point encoding refuses to multiply (throws)"
+end sx1testRistretto
 
 on sx1testDiagnostics
    local sx1tErr

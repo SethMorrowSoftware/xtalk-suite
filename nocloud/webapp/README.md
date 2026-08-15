@@ -48,7 +48,9 @@ data.json           gallery manifest, fetched at runtime
 store.json          storefront catalog (products, prices, download files)
 blog.json           blog posts (slugs, structured bodies), fetched at runtime
 site.webmanifest    PWA manifest (installable)
-sw.js               minimal service worker (registers only in a secure context; no caching)
+sw.js               minimal service worker (registers only in a secure context; no caching
+                    of its own - freshness rides the host's weak-ETag revalidation, see the
+                    comment in sw.js for the one stale case)
 assets/
   logo.svg          app mark / favicon
   art-01..08.svg    gallery artwork (pure SVG)

@@ -18,15 +18,20 @@ script "RiptideSocial"
 -- the real DHT (the stack renders a post only after rsIngestHead and
 -- rsIngestPost verify it, so a received feed is a verified chain walk).
 -- The phase-3 MEDIA layer (rsMediaCreate / rsMediaFetch / rsMediaStatus,
--- 2026-08-14) is verified statically and by the harness's refusal paths;
--- its live create/seed/fetch flow and the phase-3 done-criterion (a
--- follower plays a video mid-download) still NEED an OXT pass. The
--- phase-4 DM layer (rsDm* / rsBuildPrekey / rsBuildIntro, 2026-08-14) is
--- in the same state: the records and key derivations are golden-pinned
--- (crypto_kx anchored against a REAL libsodium - see
--- tools/emit-kx-anchor.py), the refusal paths are harness-covered, and
--- the live rp1 flow plus the phase-4 done-criterion (two machines
--- exchange authenticated encrypted DMs with no server) NEED an OXT pass.
+-- 2026-08-14) CLOSED 2026-08-15 on TWO machines (recorded in
+-- riptide/CLAUDE.md): a follower fetched and PLAYED an attached video
+-- through the demo stack, the phase-3 done-criterion met - the one
+-- unmeasured nuance is playback starting visibly MID-download, which a
+-- fast complete transfer can mimic. The phase-4 DM layer (rsDm* /
+-- rsBuildPrekey / rsBuildIntro, 2026-08-14) closed the SAME day, same
+-- record: two machines exchanged authenticated encrypted DMs with no
+-- server, chat both ways - the sealed RSI1 intro, the deterministic-role
+-- crypto_kx session, and the pairwise secretstream over rp1 all carried
+-- real traffic. The golden pins stand underneath (crypto_kx anchored
+-- against a REAL libsodium - see tools/emit-kx-anchor.py), as do the
+-- harness-covered refusal paths. The phase 5-7 LIVE flows (the call, the
+-- mesh, tor) still await their passes; docs/two-machine-runbook.md
+-- scripts each.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
