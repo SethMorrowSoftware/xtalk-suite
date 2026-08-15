@@ -354,6 +354,37 @@ radius of every bare card-1 reference in the older single-card handlers.
 A pump that runs from every card must treat EVERY control reference as
 cross-card - qualify and guard, always.
 
+## The first engine pass of phases 4-7 (2026-08-15): textDecode does NOT throw
+
+The suite selftest ran on a real OXT engine, and the phase 4-7 surface came
+back GREEN except three checks - a huge result: the DM secretstream round
+trip (my tx key's ciphertext decrypts under the peer's rx key, the FINAL
+tag survives), the LAN admit/refuse under the shared master, the anon guard
+truth table, the BTXO framing, and the whole cross-member seam all passed on
+the engine, so the phase 4-7 COMPUTE/CRYPTO paths are engine-verified now,
+not merely static. The live two-machine done-criteria (a real DM exchange, a
+device joining the mesh, an onion reachable over Tor) still need two boxes.
+
+The three failures were the malformed-UTF-8 refusal checks added in the
+review pass, and they exposed a FALSE PREMISE the whole library carried:
+six parsers guarded their name/text decode with a `try`, commented "textDecode
+throws on malformed UTF-8." **It does not.** On OXT textDecode(...,"UTF-8")
+is LOSSY: it decodes invalid bytes to replacement characters and returns a
+non-empty string, so every one of those try blocks was INERT and the parsers
+would have handed back a mangled name where they meant to refuse. The three
+phase-6/7 parsers were the only ones with a test that fed malformed bytes,
+so they were the only ones that showed red - the three authenticated parsers
+(rsParseHead/rsParsePost/rsDmParseMessage) were silently broken the same way.
+
+The fix is `rsBytesAreUtf8`: validity by ROUND TRIP - decode, re-encode, and
+require the bytes to reproduce exactly (only valid UTF-8 does), with an inner
+try kept as belt-and-suspenders for any engine that does throw. All six sites
+use it now. This is the canonical "shipped is not run" lesson in its purest
+form: the "textDecode throws" comment was an attestation no test had ever
+exercised, it was wrong, and the first inputs that touched the path found it.
+Whenever you must reject malformed UTF-8 in this family, round-trip it - never
+trust a decode to throw.
+
 ## Suite integration status
 
 - `tools/build-all.sh` runs riptide's gates in the member loop (script

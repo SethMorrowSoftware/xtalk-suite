@@ -500,8 +500,10 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    a real libsodium via `riptide/tools/emit-kx-anchor.py`. One deliberate
    delta from this section's sketch: the intro seals to the recipient's
    VERIFIED prekey, not to the ed25519 handle - `sxSeal` takes a curve25519
-   key, and a signed prekey record makes the seal target provable. Verified
-   statically; the done-criterion needs its two-machine pass. As-built:
+   key, and a signed prekey record makes the seal target provable. The
+   compute paths ran GREEN on a real engine 2026-08-15 (the suite selftest -
+   the kx session agreement and the DM secretstream round trip among them);
+   the live done-criterion still needs its two-machine pass. As-built:
    `riptide/CLAUDE.md`.)*
 5. **Live sessions** — rp1-signalled dc call + typing presence, DHT-dead-drop
    cold start. *Done when* a call connects across two networks. *(Library-ready
@@ -514,8 +516,10 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    every device derives, and an RSL1 challenge/response a stranger cannot sign -
    plus the Devices card in the demo and full offline harness coverage; the
    enConnect rider is a u32 protocol tag, so the proof is a first message, not
-   connect data. Verified statically; the done-criterion needs its two-machine
-   pass. As-built: `riptide/CLAUDE.md`.)*
+   connect data. The admission compute ran GREEN on a real engine 2026-08-15
+   (the suite selftest - admit under the shared master, refuse a stranger);
+   the live done-criterion still needs its two-machine pass. As-built:
+   `riptide/CLAUDE.md`.)*
 7. **Anon persona** — onion feed via onion-httpd, sealed anon DMs, the §9.3
    guard. *Done when* a persona is reachable and browsable over Tor with **zero**
    `bt*` calls provable in a trace. Needs an OXT + live-Tor pass. *(Built
@@ -523,8 +527,10 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    and .onion, offline-derivable and golden-pinned), the probe-gated onion
    service wrapper, and the BTXO framed-chunk protocol - plus `rsPersonaAllows`,
    the pure-policy §9.3 guard whose full truth table is asserted in the harness,
-   plus the demo's Anon card with a live guard panel. Verified statically; the
-   done-criterion needs an OXT + live-Tor pass. The sealed anon-DM route (§8.3)
+   plus the demo's Anon card with a live guard panel. The guard truth table,
+   the offline onion derivation, and the BTXO framing ran GREEN on a real
+   engine 2026-08-15 (the suite selftest); the done-criterion still needs an
+   OXT + live-Tor pass. The sealed anon-DM route (§8.3)
    is deferred: `sxSeal` needs a curve25519 key, so it wants the same
    published-prekey refinement the DM rail uses, which is a later pass. As-built:
    `riptide/CLAUDE.md`.)*
