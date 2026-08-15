@@ -10,7 +10,18 @@ audit. When an item closes, strike it here in the same change (the truth-sync
 discipline), and when this file's date grows old, re-audit or retire it rather
 than trust it.
 
-**THE ENGINE-FREE COLUMN IS EXHAUSTED (2026-08-15, waves 1-3).** Between the
+**CORRECTION (2026-08-15, wave 4): "exhausted" was true at this document's
+ITEM granularity, not absolutely.** With sparse OXT access the right lens is
+"what can the tree gain headlessly", and under it more remains: the ladder
+continues below the audited items (Hold'em 2e-remainder + Phase 3 oracle;
+the SodiumXT DLEQ/batch surface as ABI 9; then 4d/4e's pure adversarial
+harness and Phase 5's DLEQ proofs), the 720p re-layout is designable
+statically with only the confirming eye left to the engine, and preparation
+multiplies engine time (the runbook's sparse-access session plan; decision
+briefs for the E section). Wave 4 is executing these; strikes land per
+chunk.
+
+**THE ENGINE-FREE COLUMN WAS DECLARED EXHAUSTED (2026-08-15, waves 1-3) - see the correction above.** Between the
 morning audit and this line, everything in this document that could be
 finished without an OXT engine, a second machine, a Tor daemon, a Mac, or an
 owner decision WAS finished, committed chunk by chunk with its gates green:
