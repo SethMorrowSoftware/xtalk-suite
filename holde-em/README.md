@@ -12,7 +12,7 @@ Built by composing the OXT extension family:
 | Extension | Provides |
 |---|---|
 | [TorrentXT](https://github.com/SethMorrowSoftware/TorrentXT) | rp1 peer messaging, DHT rendezvous (the table code IS the invite), BEP44 signed standings |
-| [SodiumXT](https://github.com/SethMorrowSoftware/SodiumXT) | identities, sealed lanes, commitments, randomness — and (planned) the ristretto255 surface the mental-poker deal needs |
+| [SodiumXT](https://github.com/SethMorrowSoftware/SodiumXT) | identities, sealed lanes, commitments, randomness — and (since its ABI 8, 2026-08-15) the ristretto255 surface the mental-poker deal needs |
 | [OnionXT](https://github.com/SethMorrowSoftware/OnionXT) | optional: anonymous tables over Tor, and onion-hosted deck oracles |
 | [Box2Dxt](https://github.com/SethMorrowSoftware/Box2Dxt) | the Kit: spritesheet card animation and physics chips |
 
@@ -68,6 +68,19 @@ wires are machine-pinned in `tools/protocol-kat.py` and re-checked on-engine by
 `heTestLobbyRun`; the transport itself is verified statically and needs an OXT pass (two
 machines, one code). Online betting/dealing orchestration builds on this confirmed
 transport next.
+
+The **Level 2 mental-poker COMPUTE layer** (spec 7.3, plan 4a-4c) is built as pure
+`heL2*` handlers on SodiumXT ABI 8's ristretto255 surface: card base points by
+domain-separated hash-to-group, commutative shuffle-mask steps with per-hand scalars
+and permutations, the free duplicate check (identical points in a masked deck are
+publicly visible), public and hole unmask-chain verification, and reveal-scalar
+showdown re-verification — every failure a distinct, attributable `void:` string.
+`tools/protocol-kat.py` pins a complete Level 2 hand from fixed scalars end to end
+(re-derived by an independent RFC 9496 reference), and the embedded harness re-checks
+the same vectors on-engine, skipping cleanly on a pre-ristretto SodiumXT. **Honestly:
+this is the algebra only** — nothing plays on it yet; the deal orchestration,
+void-and-audit sequencing, and adversarial harness (plan 4d-4f) are open, and the
+handlers are verified statically pending their first OXT pass.
 
 The math is **verified sound** by `tools/logic-fuzz.py`, which checks the committed logic
 against *independently-written* references (not the line-for-line KAT mirrors): the

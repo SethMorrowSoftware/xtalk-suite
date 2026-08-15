@@ -6,6 +6,48 @@ ONE self-contained, paste-and-run stack: the hotseat game plus its own
 self-test harness (call heRunSelftest in the message box). No second stack,
 no required extensions to be playable.
 
+v0.19.0 -- Phase 4a-4c COMPUTE layer: the Level 2 ristretto255 mental-poker
+deal algebra (spec 7.3), pure handlers only, on SodiumXT ABI 8's sxRistretto*
+surface (Workstream U, shipped 2026-08-15). kHeHarnessV 33 -> 34.
+  * NEW heL2* SECTION (values in, values out -- H5; nothing here touches a
+    played hand, the UI, or the wire): card base points by domain-separated
+    hash-to-group ("HOLDEM-L2-CARD-v1|" & cardName through sxHash(...,64) ->
+    sxRistrettoFromHash); one full shuffle-mask step (out[j] = k *
+    in[sigma[j]], 52 scalar mults, deal-time only); the FREE duplicate check
+    (identical points in a masked deck are publicly visible); public and
+    hole unmask-chain verification (last value must hit the 52-point table;
+    the hole's penultimate value is public and CDH-useless to non-owners);
+    and reveal-scalar showdown re-verification (shuffle step + unmask steps
+    recomputed from a revealed (k, sigma)).
+  * EVERY SEAM IS LOWERCASE HEX TEXT (the H6 corollary): raw Data exists
+    only inside expressions passed straight into sx* calls; decks are
+    52-item comma lists of 64-hex points, sigma a 52-item comma list of
+    indices, chains comma lists with the masked table point first.
+  * FAILURES ARE DISTINCT "void:..." STRINGS, never throws (every sx*
+    call sits in its own try, H4/H8): scalar-format / point-format / invalid-point /
+    identity-point (libsodium reports zero-scalar and identity results as
+    ONE failure -- the sxRistrettoScalarMultPoint throw IS that detection) /
+    deck-size / perm-size / perm-format / duplicate-point / chain-short /
+    final-not-in-table / hole-not-in-table / shuffle-mismatch /
+    unmask-mismatch / scalar-zero / no-ristretto -- so Phase 4d's
+    void-and-audit attribution can NAME the condition. sigma is validated
+    for range only, deliberately not distinctness: a repeated index
+    duplicates an OUTPUT point, which the public duplicate check catches on
+    every client (spec 7.3: prevented, not just detected).
+  * KAT-PINNED END TO END from fixed scalars in tools/protocol-kat.py (the
+    Phase 4 exit criterion): l2_* mirror twins driven by the file's
+    independent RFC 9496 ristretto reference pin the base deck, a 3-seat
+    mask/shuffle round, both chain kinds, the showdown re-verification, and
+    seven refusal cases (24 new pinned values); heTestLevel2Run re-checks
+    the same constants on-engine, gated like every sodium section PLUS a
+    cached ABI-8 probe (a pre-ristretto SodiumXT throws "can't find
+    handler" on first touch -- caught, reported as a SKIP, never an
+    uncaught engine error).
+  * NOT HERE (engine-era, plan 4d-4f): wire vocabulary and orchestration,
+    void-and-audit sequencing, the adversarial harness bots, and the
+    deal-time FFI-burst budget measurement. The sx* call shapes themselves
+    are verified statically; the whole section needs an OXT pass.
+
 v0.18.0 -- reconnect + adversarial hardening (the single-machine half of 2e,
 chosen because it is exactly what real-network play will stress first).
 kHeHarnessV 32 -> 33.
@@ -497,8 +539,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.18.0"
-constant kHeHarnessV = "33"
+constant kHeVersion = "0.19.0"
+constant kHeHarnessV = "34"
 constant kUIVersion = "12"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -535,6 +577,12 @@ constant kHeDomainSeedP = "HOLDEM-SEEDP-v1|"
 constant kHeDomainCkpt = "HOLDEM-CKPT-v1|"
 constant kHeDomainRcpt = "HOLDEM-RCPT-v1|"
 constant kHeDomainRsig = "HOLDEM-RSIG-v1|"
+-- Phase 4 (Level 2 mental poker, spec 7.3): the card-table hash-to-group
+-- domain. As-built decision: L2-scoped and versioned ("HOLDEM-L2-CARD-v1|",
+-- not the spec sketch's "HOLDEM-CARD-v1|"), so the card table can never
+-- collide with any other domain in the family and a future re-keying bumps
+-- the version. Pinned in tools/protocol-kat.py (l2_base_deck).
+constant kHeDomainL2Card = "HOLDEM-L2-CARD-v1|"
 constant kHeGenesisPrev = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kHeTwo32 = 4294967296
 
@@ -621,6 +669,10 @@ local gCfg             -- persistent table configuration: survives heTableNew so
                        -- the host's chosen stakes/stacks/seats/levels/speed carry
                        -- from one table to the next. See heCfgDefaults for keys.
 local gHasSodiumChk    -- cached extension probe ("", "true", "false")
+local gHasR255Chk      -- cached ABI-8 ristretto probe ("", "true", "false"):
+                       -- a pre-ristretto SodiumXT throws "can't find handler"
+                       -- on the first sxRistretto* touch, so the probe's catch
+                       -- IS the detection (heL2HasRistretto)
 local gHasKitChk
 local gUIMode          -- "flat" or "kit"
 local gHudDirty        -- HUD repaints only on change, max 4 Hz (playbook)
@@ -1397,6 +1449,374 @@ function heAuditDealLog pTableHex, pHandNum, pSeedsHexA, pCommitsA, pCount, pOcc
    end if
    return "pass"
 end heAuditDealLog
+
+--------------------------------------------------------------------------
+-- Level 2 mental poker COMPUTE (Phase 4a-4c, spec 7.3): the ristretto255
+-- deal algebra, on SodiumXT ABI 8's sxRistretto* surface. PURE handlers
+-- (H5): values in, values out -- nothing here reads UI, touches the wire,
+-- or is called from any played-hand path; the 4d-4f orchestration (wire
+-- vocabulary, void-and-audit sequencing, adversarial bots, the deal-time
+-- budget measurement) is engine-era work that composes these.
+--
+-- Representation (the H6 corollary, applied): EVERY seam is lowercase hex
+-- text. A deck is a 52-item comma list of 64-hex points; sigma is a 52-item
+-- comma list of indices (out[j] = k * in[sigma[j]]); an unmask chain is a
+-- comma list whose item 1 is the masked table point and each later item one
+-- seat's broadcast step value, in chain order. Raw Data exists ONLY inside
+-- expressions passed straight into sx* calls.
+--
+-- Failures are DISTINCT "void:..." strings, never throws (every sx* call
+-- try-guarded, H4, with declared catch locals, H8), so Phase 4d's
+-- void-and-audit attribution can name the condition it is refusing on.
+-- libsodium reports an invalid point and an identity result as ONE
+-- scalar-mult failure; the validity predicate runs FIRST here, so a throw
+-- after it can only be the identity result -- that split is what makes
+-- "void:invalid-point" and "void:identity-point" separable at all.
+--
+-- Twinned line for line by the l2_* mirrors in tools/protocol-kat.py,
+-- which the file's INDEPENDENT RFC 9496 ristretto reference drives: the
+-- pinned values hold this section and the reference together, and
+-- heTestLevel2Run re-checks the same constants on-engine. Everything
+-- below: verified statically; needs an OXT pass (the sx* call shapes above
+-- all).
+--------------------------------------------------------------------------
+
+function heL2HasRistretto
+   -- cached probe (the heHasSodium pattern): a pre-ABI-8 SodiumXT has no
+   -- sxRistretto* handlers at all, so the FIRST touch throws ("can't find
+   -- handler") -- the catch IS the detection (H4). sxRistrettoPointValid is
+   -- a predicate that never throws on any input and sxRistrettoScalarRandom
+   -- takes none, so a throw here can only mean the surface is absent.
+   local tProbeErr
+   if gHasR255Chk is empty then
+      try
+         get sxRistrettoPointValid(sxRistrettoScalarRandom())
+         put "true" into gHasR255Chk
+      catch tProbeErr
+         put "false" into gHasR255Chk
+      end try
+   end if
+   return gHasR255Chk is "true"
+end heL2HasRistretto
+
+function heL2CardPointHex pCardIdx
+   -- base point P_c for card index 1..52 (spec 7.3 setup): domain-separated
+   -- hash-to-group, so no party knows any discrete-log relation between two
+   -- card points -- the unknowability the whole construction leans on. The
+   -- 64-byte uniform input sxRistrettoFromHash wants is sxHash(label, 64)
+   -- (BLAKE2b-512); the label is kHeDomainL2Card & the card name.
+   local tCardErr
+   if pCardIdx is not an integer or pCardIdx < 1 or pCardIdx > 52 then
+      return "void:card-range"
+   end if
+   if not heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return heBin2HexS(sxRistrettoFromHash(sxHash(textEncode( \
+            kHeDomainL2Card & heCardName(pCardIdx), "utf-8"), 64)))
+   catch tCardErr
+      return "void:no-ristretto"
+   end try
+end heL2CardPointHex
+
+function heL2BaseDeckHex
+   -- the public 52-point card table, built once per hand at deal time
+   -- (52 hash+map FFI crossings -- deal-time only, never per-frame, per
+   -- the playbook). Position j = card index j (1..52); the SHUFFLED order
+   -- comes from the mask steps, never from this table.
+   local tCardIdx, tPointHex, tOutList
+   put empty into tOutList
+   repeat with tCardIdx = 1 to 52
+      put heL2CardPointHex(tCardIdx) into tPointHex
+      if tPointHex begins with "void:" then
+         return tPointHex
+      end if
+      if tOutList is empty then
+         put tPointHex into tOutList
+      else
+         put comma & tPointHex after tOutList
+      end if
+   end repeat
+   return tOutList
+end heL2BaseDeckHex
+
+function heL2ScalarRandomHex
+   -- one fresh per-hand masking scalar: uniform nonzero mod L, from
+   -- libsodium's CSPRNG (spec 16: engine random() never touches dealing)
+   local tRndErr
+   if not heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return heBin2HexS(sxRistrettoScalarRandom())
+   catch tRndErr
+      return "void:no-ristretto"
+   end try
+end heL2ScalarRandomHex
+
+function heL2ScalarInvertHex pScalarHex
+   -- k^-1 mod L, the unmask scalar. sxRistrettoScalarInvert throws only on
+   -- a zero scalar (surface presence is gated first), so the catch names it.
+   local tInvErr
+   if not heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return heBin2HexS(sxRistrettoScalarInvert(heHex2BinD(pScalarHex)))
+   catch tInvErr
+      return "void:scalar-zero"
+   end try
+end heL2ScalarInvertHex
+
+function heL2MaskPointHex pScalarHex, pPointHex
+   -- q = k * P on ristretto255, hex in / hex out: the atomic op every mask
+   -- and unmask step is made of. The validity predicate runs FIRST, so the
+   -- scalar-mult throw after it can only be the identity result (a zero
+   -- scalar, or P itself the identity) -- the invalid/identity split 4d
+   -- attribution needs.
+   local tMaskErr, tValidOk
+   if not heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not heIsHex(pPointHex, 64) then
+      return "void:point-format"
+   end if
+   if not heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      put sxRistrettoPointValid(heHex2BinD(pPointHex)) into tValidOk
+   catch tMaskErr
+      return "void:no-ristretto"
+   end try
+   if tValidOk is not true then
+      return "void:invalid-point"
+   end if
+   try
+      return heBin2HexS(sxRistrettoScalarMultPoint(heHex2BinD(pScalarHex), \
+            heHex2BinD(pPointHex)))
+   catch tMaskErr
+      return "void:identity-point"
+   end try
+end heL2MaskPointHex
+
+function heL2DeckCheckHex pDeckList
+   -- spec 7.3's FREE integrity check: the same card under the same
+   -- composite mask is an IDENTICAL 32-byte point, publicly visible, so
+   -- every client asserts all 52 points of every shuffle step are distinct
+   -- valid encodings and refuses the step otherwise -- duplication is
+   -- prevented, not detected after the fact. One pass in position order:
+   -- format, then encoding validity, then the duplicate lookup, so the
+   -- first offence names its position(s). Keys are lowercased so the
+   -- verdict never depends on engine case rules.
+   local tPos, tPointHex, tKeyHex, tSeenA, tValidOk, tChkErr
+   set the itemDelimiter to comma
+   if the number of items of pDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   put 0 into tPos
+   repeat for each item tPointHex in pDeckList
+      add 1 to tPos
+      if not heIsHex(tPointHex, 64) then
+         return "void:point-format:" & tPos
+      end if
+      try
+         put sxRistrettoPointValid(heHex2BinD(tPointHex)) into tValidOk
+      catch tChkErr
+         return "void:no-ristretto"
+      end try
+      if tValidOk is not true then
+         return "void:invalid-point:" & tPos
+      end if
+      put toLower(tPointHex) into tKeyHex
+      if tSeenA[tKeyHex] is not empty then
+         return "void:duplicate-point:" & tSeenA[tKeyHex] & "," & tPos
+      end if
+      put tPos into tSeenA[tKeyHex]
+   end repeat
+   return "ok"
+end heL2DeckCheckHex
+
+function heL2MaskDeckHex pDeckList, pScalarHex, pPermList
+   -- one full shuffle-mask step (spec 7.3): out[j] = k * in[sigma[j]] for
+   -- j = 1..52 -- 52 scalar-mult FFI crossings, deal-time only. Reused
+   -- verbatim by showdown re-verification (heL2RevealShuffleHex), so the
+   -- doer and the verifier can never drift. sigma is validated for
+   -- range/format ONLY, deliberately not distinctness: a repeated index
+   -- duplicates a point in the OUTPUT deck, which the public duplicate
+   -- check catches on every client. A void from the point mask comes back
+   -- with the output position appended.
+   local tOutPos, tSrcPos, tSrcHex, tMaskedHex, tOutList
+   set the itemDelimiter to comma
+   if the number of items of pDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   if the number of items of pPermList is not 52 then
+      return "void:perm-size"
+   end if
+   put empty into tOutList
+   put 0 into tOutPos
+   repeat for each item tSrcPos in pPermList
+      add 1 to tOutPos
+      if tSrcPos is not an integer or tSrcPos < 1 or tSrcPos > 52 then
+         return "void:perm-format:" & tOutPos
+      end if
+      put item tSrcPos of pDeckList into tSrcHex
+      put heL2MaskPointHex(pScalarHex, tSrcHex) into tMaskedHex
+      if tMaskedHex begins with "void:" then
+         return tMaskedHex & ":" & tOutPos
+      end if
+      if tOutList is empty then
+         put tMaskedHex into tOutList
+      else
+         put comma & tMaskedHex after tOutList
+      end if
+   end repeat
+   return tOutList
+end heL2MaskDeckHex
+
+function heL2CardOfPointHex pPointHex, pBaseDeckList
+   -- card index 1..52 of a point in the base table, 0 when absent. PURE
+   -- text scan, no FFI, so table lookups can never throw on hostile input;
+   -- `is` compares case-insensitively, which the Python twin mirrors by
+   -- lowercasing both sides.
+   local tIdx, tBaseHex
+   set the itemDelimiter to comma
+   put 0 into tIdx
+   repeat for each item tBaseHex in pBaseDeckList
+      add 1 to tIdx
+      if tBaseHex is pPointHex then
+         return tIdx
+      end if
+   end repeat
+   return 0
+end heL2CardOfPointHex
+
+function heL2PublicCardHex pChainList, pBaseDeckList
+   -- verify a COMPLETED public unmask chain (spec 7.3 dealing): every
+   -- value must be well-formed and a valid encoding, and the FINAL value
+   -- must hit the 52-point table -- that point IS the card. Landing
+   -- outside the table is proof of a wrong step somewhere: the
+   -- void-and-audit condition, named distinctly for 4d.
+   local tPos, tStepHex, tLastHex, tValidOk, tPubErr, tCardIdx
+   set the itemDelimiter to comma
+   if the number of items of pChainList < 2 then
+      return "void:chain-short"
+   end if
+   put 0 into tPos
+   repeat for each item tStepHex in pChainList
+      add 1 to tPos
+      if not heIsHex(tStepHex, 64) then
+         return "void:point-format:" & tPos
+      end if
+      try
+         put sxRistrettoPointValid(heHex2BinD(tStepHex)) into tValidOk
+      catch tPubErr
+         return "void:no-ristretto"
+      end try
+      if tValidOk is not true then
+         return "void:invalid-point:" & tPos
+      end if
+      put tStepHex into tLastHex
+   end repeat
+   put heL2CardOfPointHex(tLastHex, pBaseDeckList) into tCardIdx
+   if tCardIdx is 0 then
+      return "void:final-not-in-table"
+   end if
+   return "card:" & tCardIdx
+end heL2PublicCardHex
+
+function heL2HoleCardHex pChainList, pInvScalarHex, pBaseDeckList
+   -- the owner's last, PRIVATE step of a hole chain (spec 7.3): pChainList
+   -- is the PUBLIC part (masked table point first, the other seats' steps
+   -- in chain order -- the owner's step is exactly what is absent), and
+   -- its final value V = k_owner * P_c is publicly visible but CDH-useless
+   -- to everyone else. Strip the own mask off V and resolve the card.
+   -- Showdown reuses this with the REVEALED inverse, so A's holes fall out
+   -- of V * kA^-1 for the whole table.
+   local tPos, tStepHex, tLastHex, tValidOk, tHoleErr, tOwnHex, tCardIdx
+   set the itemDelimiter to comma
+   if the number of items of pChainList < 1 then
+      return "void:chain-short"
+   end if
+   put 0 into tPos
+   repeat for each item tStepHex in pChainList
+      add 1 to tPos
+      if not heIsHex(tStepHex, 64) then
+         return "void:point-format:" & tPos
+      end if
+      try
+         put sxRistrettoPointValid(heHex2BinD(tStepHex)) into tValidOk
+      catch tHoleErr
+         return "void:no-ristretto"
+      end try
+      if tValidOk is not true then
+         return "void:invalid-point:" & tPos
+      end if
+      put tStepHex into tLastHex
+   end repeat
+   put heL2MaskPointHex(pInvScalarHex, tLastHex) into tOwnHex
+   if tOwnHex begins with "void:" then
+      return tOwnHex
+   end if
+   put heL2CardOfPointHex(tOwnHex, pBaseDeckList) into tCardIdx
+   if tCardIdx is 0 then
+      return "void:hole-not-in-table"
+   end if
+   return "card:" & tCardIdx
+end heL2HoleCardHex
+
+function heL2RevealShuffleHex pInDeckList, pOutDeckList, pScalarHex, pPermList
+   -- spec 7.3 showdown: recompute the revealer's whole shuffle-mask step
+   -- from the revealed (k, sigma) and compare it against the deck it
+   -- broadcast that hand; the first mismatching position is named (4d
+   -- attribution). Verification IS the doer function re-run, so there is
+   -- no second implementation to drift.
+   local tRedoneList, tPos, tOutHex, tRedoneHex
+   set the itemDelimiter to comma
+   put heL2MaskDeckHex(pInDeckList, pScalarHex, pPermList) into tRedoneList
+   if tRedoneList begins with "void:" then
+      return tRedoneList
+   end if
+   if the number of items of pOutDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   repeat with tPos = 1 to 52
+      put item tPos of pOutDeckList into tOutHex
+      put item tPos of tRedoneList into tRedoneHex
+      if tRedoneHex is not tOutHex then
+         return "void:shuffle-mismatch:" & tPos
+      end if
+   end repeat
+   return "ok"
+end heL2RevealShuffleHex
+
+function heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
+   -- spec 7.3 showdown: one broadcast unmask step re-verified from the
+   -- revealed scalar -- the step value must equal k^-1 * (its input).
+   -- A wrong revealed scalar and a wrong original step are the same
+   -- verdict by design: either way the revealer's claim does not recompute.
+   local tInvHex, tRedoneHex
+   put heL2ScalarInvertHex(pScalarHex) into tInvHex
+   if tInvHex begins with "void:" then
+      return tInvHex
+   end if
+   put heL2MaskPointHex(tInvHex, pInHex) into tRedoneHex
+   if tRedoneHex begins with "void:" then
+      return tRedoneHex
+   end if
+   if not heIsHex(pOutHex, 64) then
+      return "void:point-format"
+   end if
+   if tRedoneHex is pOutHex then
+      return "ok"
+   end if
+   return "void:unmask-mismatch"
+end heL2RevealUnmaskHex
 
 --------------------------------------------------------------------------
 -- Online transport (Phase 2a/2b, spec 3/4/5/10). Peers meet on the DHT via
@@ -7655,6 +8075,32 @@ constant kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d2488
 constant kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
 constant kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
 constant kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+-- Phase 4a-4c Level 2 vectors (generated by tools/protocol-kat.py
+-- --gen-xtalk; the ristretto255 deal algebra from FIXED scalars, pinned by
+-- the file's independent RFC 9496 reference). Keep the block complete: a
+-- dropped constant evaluates to its own name and fails like a library
+-- defect (the kKatSeedsXor lesson above).
+constant kKatL2Scalar1 = "38f967b55df92422303a885e0bdd8400e52e6ca53623f2c816bc08ce6b7d480a"
+constant kKatL2Scalar2 = "04db114cfbf9228a88b8533a2fd8f7b3d023db8adb22abf3ce804a33d105e804"
+constant kKatL2Scalar3 = "380b4308d6301ffd7c124b79b15ae31343e221dfc77d6bb4c1ea48de8f34810a"
+constant kKatL2Inv1 = "05e469c6d0880a9b8e27c9cfc6b887171837d1c5b5e01a9bc0320fe70a64bc0f"
+constant kKatL2Inv2 = "5211b8e991092be89603c8b33eb590833774d63832f1294b7f3dc2b312112b0a"
+constant kKatL2Inv3 = "8cf1653acb11f8ea598fe0918c83210d1282a4218f4cf9546a5907f3401c6403"
+constant kKatL2Perm1 = "35,31,39,27,36,51,26,11,7,49,18,9,28,24,40,50,25,44,45,34,15,2,13,5,41,3,23,12,33,6,29,52,20,10,21,42,17,46,8,22,38,19,32,47,16,37,30,14,48,1,43,4"
+constant kKatL2Perm2 = "30,35,31,18,7,33,4,50,38,19,15,2,29,44,49,16,22,51,47,9,5,10,25,12,6,21,52,24,14,39,8,3,20,37,43,36,46,34,40,26,23,48,28,11,41,42,27,32,1,45,13,17"
+constant kKatL2Perm3 = "22,14,28,2,48,29,37,23,52,32,38,25,30,47,43,5,11,3,39,20,1,45,50,21,51,27,15,4,9,26,24,8,19,36,41,35,18,49,7,13,46,6,31,34,44,16,12,33,42,17,10,40"
+constant kKatL2BaseDeck = "f43e364e1c1a4da57953b755e62e4a21c6ca54dad6c8afdd4fe527d1fa0f1471,e2b5c63bf1cb966f79bb5dd8049eb0fca145588b5128a6f7322acd1012e45b7c,ca68072db08307f62268023fb580e8148aea78f8b87e7b1d2691a922b5245446,b6e6777a5bf7657fd842629a537b02f06bc9e9c202d51b27cdd550b61c8a8a18,d68850b61f37953e920659d48ee504a51addd0e26996f0719188dad7f37fa52b,0c4a3a1a25314e3144391e6133bc6c7b135fae6673fbe9a0889dd5ed477c171a,4acd93b546fc640606953a84123707ad9a1617357d00e5f763084daa6a0d3840,dcfd9215cf8a022e2198e87af9f4c08059504ffb309a6dd1ff97917b6012902f,a825c649a65028cfa090453b8f8d7c91b5761a4df3c3a099105f764d05bbfc79,a2751a23688be97fee506a367e917f2d1b0b8445d56679fb66af2aca3f1dbc04,e2fd88a0a2bf8ec954e1bd7c637e9c5e810195e3614a09ee400adf6d8cb8c856,78f3c83c94a84614c0589b3f58269687a539de6a4cae5c02449f95bf6a46a46b,a40fdc57edfa2dc321608b50e782cc6f0907f65eada0ad48a25a00f546d0987a,22830c692615fc4b2a8ef1e3f8fbedc51a720107e359f9d2c1af737699af733b,d8ee75f4266debe97bcb495971922583ebb97ad60b78f5e9c1d187972bb1ec1b,44744fa706cee62e39546bb3f60b86c8563625be486dd73ae41bab0fd1a7cb00,4cd2d796f2e9e21c10b4db346d08ec53bbc7af1338f605d1d7e9a5244500af74,4aad6f63cff471e83ab8abbfefc7c52c4ac7e38eec8bab874a98db796b69f710,6ab24c9cd511a4fed28e34f86a40198700626511d05fc986eb5c4e0ac0688245,1a815ccb611b5b5fdcece3e811bf479e6d866f5211c4222766008c7de0b3fd77,40ebc4540b298dec8b107d3465bae5b4298c0d9dd0b052b6ee35085a15967043,1e7bb71f06a5a72d4f6dc5f0e5131b3ed38f344ae8afe4ab6325bd71d97eb770,0e6ac715b89c1b7350d1216965122c5565009b7d9140e0090c4041932c8a5a35,72edfa2243b1b418c24d89f6c7cc3444367945ead40cc152c1a02ed74b894d73,1af2d8904604eb9de539209d048932660026be3e09f1591deed8475b466d9c1d,98afeba72c1aad9ef62bb78730b25e81fb8c0f0aa496f5f558d4a401fb08dc32,2436bc86ba0f7a7a065a61e572021e4ba2f58edba7cf529d0f2fd9c852938d6b,36ff7c85101d8f18a8a98e16d225b56904ae11e5d4b3d441b0213237d274ee1f,9e3d2f7ba70b89df9fbeb9be41281e3738937f124195772e032c3d1fdb78f855,1cd179e72cb1b79eec94f4a249cb7ca303be533cf60004d22d18847ea06b6f74,ee9bf366559e64e3120c89a71b3a3f5157e901b52035c77add57f1e77631c621,62bb8617c9d4a3868b2685d0b68251a7ed77a438835f3955a809cdf991da5144,64b530ce023f8108b30706674fb1d50bcaec450e24b2eebebde1d0039be87b3f,6a88be3b6e714f8c47eb879456ee5343a54ad0090b1f8efa2ee3c55654b7cc16,146f81383fd8305ceec4ca6d3d59cf1358ef3333c708b6e6bb4d5dbd7cebb335,ccdf0af1f4608a4186a2ebddd4729174fb696a72606c0205bc237a181be2e006,248e4956f6625bc4e38f1025413893827006ec904f1d9e48f5bd8b9e8cfe622e,569050be976d1b9f7c3bb79534202819d33b2f747a04b34b00f74e4533f3d534,e686afeda75fbafe47f550a9914e5872f867fd144be9727906844fd7a5efba76,46f0ee3869ccfbd02973504688e82360867cead0540237b88cca8dd64ab8653e,feaa1f3bbfcd9f3e3428dc887d61612bab06635b7991abdd34ec69e01cd21a09,7ac0547ac2ae5c08f7b7dd14e1f2fd46d4110cc464c54379ed738e877bcdb42d,0ad5483deee6ec96989b844a54a52d93fdf9d61aa1c8bad49de64001e0aa7e42,7228ec86b2507b1f73de6668f23b68b01af1cbd1a18bc74b56bb98e0d1044d32,d070da71ae4c8f56464e6a9f0c0a7265f062de5047bce758957a37c3c06b4272,18b94704378b8065af2d9603b0e7a350105628025c8093ad9d6991c8efcd747b,967b07c684c6865789f35f3d3aaa16fae3f7d16d82b13dfe9c06fe79cf6f8578,a4467ecf421b21ff1783d95a45790c51a5904d0da89edfccf0c142e07b558901,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b,d0f0a3ca37ae84285a38836c0abba3536af53cfc32ca1681347baec559f47b7b,88ce578d9d4f057a76486e5f2e15fce75b1d07ea6d23efcb5d0ed421e1d35c37,50532c4ee88d1439e01a61f151c2f25f1ba2319c2d32f943ecfb1264d03ed72e"
+constant kKatL2Deck1 = "a8de3428db2d1cb591341ac375bbdb0581bd46f80d2804e94e71710a3b48541f,6208a4235f8ae00a67e3c8f0ebbbf2c97fbcded0363569d684a174c9f9c33472,d80f7d6653463748864517be750974916e0139fe3afcbd1a5e05481471d1e71e,0cb1f4e9cc67e1d58c88b5141f12c64caad25c5cbd5641ed6eb7433ffd9b236f,aca2977971dfa44ef40e9086ab5b58f635f25993d91d1c9eebec806b42e2084d,b42c199b8688e4fa95be56db11c0f269defd692ec3d56726055f4f2e3bf15c22,be8fd78c93e5096e7f156a4b6401874965065c9a39abdb57d2e278b5252cae03,b83bf82a7d4192df111443cde252d748245569be844c373078c97b3c5c21d042,380662f5a44beb9168bad94af183a145d6aa68330087e47c2413e1c02255ce7b,880321e01b402cab8e58739e24b8650502e87a1e53a728f4c7120f85cd79ec31,c4a33acbf3a9748e75320863de31088d2c156358797f55c1992e11ea95a5e768,a610eeaa66e3a4f799ab05ad0a5791ccf155fe9105815c8a5a27341cf00c3e20,ac94ae783e70f5b4db4e723283815cc2266fd5def3d0063ac58f50444e6e6620,ccf2a5e4813136eebc70cc00c8452d587701f378214aaedd1ed577a7f1c1020f,2ad863fc5aa197b4c35efccdb87379ebcc84a15a046bdf7fab33ffb9acd1f759,9ac91cad66318f80906c50bc9c2161ff4204fdd5e573a71c9409b5e92ecfc446,06c97bc904c39b8f2f13833ca41b376d0a70df99c3f48ce81c63e827c700b135,82c2bb912824f452cb8d62f5acad8b700324d13083016ade60dbebd0e24adf16,4cbdb1a1a87e1b2087df92f229a7e3d646f841a730275f3a355647b79d4c726f,202a2868ad6d3b99b4646a08f4f571e2373221ff58df7af32ce2801d1d725770,dc1d10c111206bc0e777e46a9fd5a56a2df56f37cec67f5261c26aa12a2aa937,9ef54cb33db9d77c664069f15bf54061ed01e075b5a5846bff366acb7f477d37,30dec7a12b6fd2f973683dfa053865fa8aa3f08ea5325a10e27aad97020bb729,6aae1939f32cc599e76e968455a30ce4d82280274ddaa3da099226aee642b57a,cac50035ec7bfe2a6f0091969ce08045b28b5fcaf6502d8aae107557e3c3e109,70337dc2f81c273be97d83f42e8f36ea03acec7451c0f6472155ffc4ac0f3518,02bbda5b5f1987ec365739fb37c2a599d2b725bedc0c204deb31fea49b5a9c4b,b4eb5d98403b1e5276994305fca33f4aa508978ed4edd923f18616783458b118,90f8bce01a01e5b30373962182b648c731452a2ccbfec2dba91de8fb022c193a,12cf3f7c4cd5cbc9b1fac833454ef6dbbd7ddd139bfa3812ee19b2bc3a34753f,24fc8edd6bcccf04c49b2b4b337131f6d4fd4d36d1b1c4ba6ed1a24ebeaf581b,98063c80c1bfa451e791f19fbb52723a302c94d16dd01f52425b6a496413785f,6e161fd50766cbd972d31ea5fc0b90807a4a103bf79b9766427cdd7fc4e3521b,8a835b4edd4375f1e2e908f14f1a47ba48e2cd499dc90a64040333d9c9344a74,94deccd57786903f49e7783e30b373781ffd162eab5f095ebdf99f088a048e4c,f0e6fd4c43e8647095384db6e110202c691408d6c9be53f00b4b13023a24d217,b61e937b2825e50de783985a69279b1e07cf45b2113c4ada5a78b8951f57ae0d,2239b5510058e2962e0bd9cf17f54fde38cb3d76f0503ce5ec4e132887c9a571,10135c31a39b36a2af83c0a0ff759facde77bce17b6350579c706f656486a10f,acdee51d73bdf6ee8613c73739d7c897d97a52fb9c6c4a0104395ea4806f2047,6ad5cc0f70a07befcbfbd6abcdb0279a579968e51555c36af6bc6b2bb0f6a010,aa66031a9585d3487f62170ad6bc236d81dbdeff4e0287dcce6e971afcfd4150,205f6e66b3d54d4e23e7be0512194444a13e76ef53bc032773e3eb1ba615015f,1cad41fa4896a2192cb96763568fd7b0b1a17a641235c571d6b9f735f970d800,fa91391acee3da6ce5beb220842c6d3a89b127d898915d78569becf98e42c405,92fd398554c27e6d525f6ab451a60bd34773fb627f5ac5e335ba26ba01d30c39,c202fb60a22eebdf70b871f93f0c871b97a602f2c46e77c9bf6517e5eac87677,2ef2dc398f3c20aa0d472c7be964b1450c8aea652cbc950a0684559328771371,e6ac5b83882b4f694775463dcfa35b30e269be84200826242615191af8072b7a,d4e11d4f0dba15abe5ec94e448871bd11e00e7c5f8c301a5573fbccd3ea2cc04,e4e0dfcd6cf502920991dd5789504d3b4764db3ca8b5a7356d6e1fdd70ffc274,d69d1e07c98931eea27cdd197eee2dd78d2d787adfc8c21dfef0968b9aed5d07"
+constant kKatL2MaskedDeck = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,ccbd8b67ded62a4c617adaf2661b6a5f3b321f8ac82d4ed631e174f17e016872,9087ea23c9a04974739041651d08ffaa60c83fe30e93c37ead172ddaeecea577,520321aa5411f0102d9854d7c36d0d9c0d218634c44655b99a3a78256178e774,8c155652fd2bdc7f3b1bbb3e960d9eb5097366f62c924b1c92bed58e945f9f19,1ed3f96f1a7d03fe3da78c54c209ed98aa2f2260bc5ff290ab9cb8ce1391ac0c,b632f200ca5decad5e041fa1d2411ea3555cd46a4b64790ccfe0c70c4de34a0f,9a4602b46bde2c6c860f9e7b9562ce87b62053c75daefeda0ffa3d72e13c4a05,4476b7e54b72b9abda47c42c7a0b55676acb865a9949119d2814a028b381bd10,4a0bb09499996a33d379909b8b7f1c6b48f276c76d7213abc82e920b2155872d,1ce9352e0a5505d7a67c00e0139bcd32ba585c84e416310e92eaccd4ff10245d,dca2411b332e647eec34df62d5fb8162d850bb831a115d1e71d51dce55eed626,56ba017c3ad1ea1126093efca04c749d085112132a578ec755d23a777f982f23,6edb77fbda06a59d0afa90686f9945efa863434424f74a1739c3d5153015f357,fa8273b7c9a231dfeb3ef71bc77788e7d357f292731c79cd2c52ef76acf47a29,c0ba5d3b244be2b869252cf23988a8063908520ff3e34ceca71cda4bbbc84b04,a8c3d44a17fbe150dedf35fadb9f3d5a3fbcf400f20994b4f0e1620478301a15,5e3168d6f5106aca4fea6916765ad28931aeba746d4e5c438e7257a053ec255b,3e59ef03c2f78b1c0be06501b254cee66608e3570dd08c9f16a2256f0585e476,20c2fcd252741106fc6bac82a30dccb3d9bb05f4c65891ebdc81d20cf4c6831a,5a954722e48f2a0534a26271ee77809fe27111152e77c161091d5c78476f6819,b42ba308571bd4f27052bf38ec82b50755dd22d97832cc4eb784630264d99638,a871a574b10e19d6431ae82e6f3d67571e29225e137d44821e887e1efceef715,a2d8ab119c8a7c9f2746cff786f8514fee315631e54c1850a20389b2e2d57e0b,6cc6bbf761404aca110b92e36e637dd5a8bca799e5680077654b0d0f192fa554,7cb1aeacfd37b1d7809c7d269c15737c7f746507c4358a30291c40a0efcfc13f,603aa0b85684a71fe8be7edbaa26cab094c4633df389f818faa6d1dbe69a4a51,2af6de55fc37181ad678f8dcb141c365f875d9a571b8e9727f8c963066792e62,38b0fbfdf0cdb815094dae6ae1ebe102125d5fc5933d2bf42ce9bc2bddd4eb0b,38f162c482282626597a32d0eff26dcadc22ea38b1e107c1934b905397d8b973,9c5f3d94578d122f329b825a8563b03d12b2e5b96916e83f1ff00264df8e9c67,767ac5e92db1ea84be5cf73dd70a39c61a7024e3464e109e36ff2c62b14a7235,308cdbdc2f3334271ef4d25e7f7ecc8933b5918ddbe819bb3484d3fa02325c27,8e8544127ae68c2a8d18a9c8cb8d37a76758916286ebf17597b17b9283b5f909,c0ddddd1e00241611d3c045b85d45b0fbf3ac2ae0078fd928da2955579339920,48c8be8d6374e2763cf6ab51e9a84863ad9d322098006243c8e1eaa318479e78,b49934b95c8748348fe21a30f191d080c805aae4e3505555f324b6974379ab68,bc2c0a3edf2c8f9c761980bcf13d444455d846c2a137a582ca8679ead71ee604,b463da981cfef69817ab80245630bf70deb604820fc87265719410f72462de35,6c7dc076178538735f5e1a890a21f054a9d81039f72424b65be5b041b5c3fa4f,8015469fa91721b299a3b6f7522478398820085127429312e17d42e5a40a462a,9abd2266d21ee49b0a6fc227a6ae21a8a18e8f0019eaf35933518d61f71c4052,d4a31d2d53796a3ffa6f12de5ed0de6cc2131a5d811c6b55505a5e58317af20e,b4e06f3351546a873220664a0585c506524e605453d9ea7d0de46bae5c90ea24,f4383b63dcb04aa7d70595c1450cad7842552095c31328d1c2ff3a5b3469067b,4876092cf6739c17bab348b6ff2d05feb8d00ecdcc865c5c17154b80f157c301,f4bb4c89cacaf8727fd11878f03b9fa47cb1645f5db293a656d3ba3b2641bf3b,da8fba36a6c821b0125984a1b9432c0911849f7fe6183c98abd940dad8d41b41,7247827e28f0b6116ec614a4d713f49ac291b6112f4ad0dd5f3a4f92bc331c02,feef6df7bf025f0f0b77c2fd40da954c44be8b85ccf943301e888e783a312307,e625479c6e3b0e1f1bafbe6f7e7630bd8c7c8c583e802b9282255bfe27574136"
+constant kKatL2PublicChain = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,dccce0c6d9e263337316e3487d17796b76d3057c9473c40b95be7b4b78a10069,54a040c81ab1aca13bf76c725416660af35c171209001e3abfb7aa6f56e2ce24,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b"
+constant kKatL2PublicCard = "card:49"
+constant kKatL2HoleChain = "62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,80b56b50f6eea1ab201aaa93c738dd6441f5842f256bb890a5ebc867e5807c70,3a18dfc38fbbce3503f1fa5b45ba7b88c547799f663ecbd38d7474aa2aadff5b"
+constant kKatL2HoleCard = "card:47"
+-- KAT INPUTS (not generated): the canonical identity encoding (the one
+-- VALID point scalar mult must still refuse -- 32 zero bytes) and 32 bytes
+-- that are NOT a valid ristretto encoding at all
+constant kKatL2Identity = "0000000000000000000000000000000000000000000000000000000000000000"
+constant kKatL2BadPoint = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 command heRunSelftest
    put empty into gRpt
@@ -7681,6 +8127,7 @@ command heRunSelftest
    heRunSection "heTestLobbyRun"
    heRunSection "heTestNetSim"
    heRunSection "heTestNetPlay"
+   heRunSection "heTestLevel2Run"
    heRunSection "heProbeSodium"
    put return & "==== " & gPassN & " pass, " & gFailN & " fail, " & gSkipN & " skip ====" \
          & return after gRpt
@@ -8657,6 +9104,97 @@ command heTestReceiptRun
    heTAssert "receipt: a forged co-signer is rejected", \
          heReceiptSigVerify(tSig3, tRh2, heBin2HexS(tPub1)), "false"
 end heTestReceiptRun
+
+command heTestLevel2Run
+   -- Level 2 mental-poker COMPUTE algebra (spec 7.3, plan 4a-4c): the
+   -- on-engine mirror of tools/protocol-kat.py's l2_* twins, which the
+   -- file's independent RFC 9496 reference drives -- a green run here plus
+   -- the green KAT pins engine, xTalk, and reference to one answer. SKIPs
+   -- without SodiumXT, and SKIPs on a pre-ABI-8 build (no sxRistretto*
+   -- surface: the first touch throws "can't find handler", the probe's
+   -- catch is the detection, and no uncaught engine error can take the run
+   -- -- the stMergeCounted lesson). Fixed scalars end to end; the ONLY
+   -- fresh randomness is the closing roundtrip, which asserts an identity
+   -- law, not a pinned value.
+   local tBaseList, tDeck1, tDeck2, tDeck3, tChainTxt, tVal1, tVal2, tVal3
+   local tHole0, tHole1, tHole2, tDupList, tBad2, tBad3, tPermBad
+   local tTablePt, tRndK, tRndMask, tRndBack
+   put return & "-- 16. Level 2 mental poker: ristretto255 deal algebra (spec 7.3)" & return after gRpt
+   if not heHasSodium() then
+      heTSkip "level2: ristretto255 deal algebra", "SodiumXT not installed"
+      exit heTestLevel2Run
+   end if
+   if not heL2HasRistretto() then
+      heTSkip "level2: ristretto255 deal algebra", "SodiumXT pre-ABI-8 (no sxRistretto* surface)"
+      exit heTestLevel2Run
+   end if
+   set the itemDelimiter to comma
+   -- 4a: the public card table, then a three-seat shuffle-mask round
+   put heL2BaseDeckHex() into tBaseList
+   heTAssert "level2: 52 base points (domain-separated hash-to-group)", tBaseList, kKatL2BaseDeck
+   heTAssert "level2: base deck passes the free integrity check", heL2DeckCheckHex(tBaseList), "ok"
+   heTAssert "level2: scalar inversion (k1^-1 mod L)", heL2ScalarInvertHex(kKatL2Scalar1), kKatL2Inv1
+   put heL2MaskDeckHex(tBaseList, kKatL2Scalar1, kKatL2Perm1) into tDeck1
+   heTAssert "level2: seat 1 shuffle-mask step (52 mults + sigma)", tDeck1, kKatL2Deck1
+   put heL2MaskDeckHex(tDeck1, kKatL2Scalar2, kKatL2Perm2) into tDeck2
+   put heL2MaskDeckHex(tDeck2, kKatL2Scalar3, kKatL2Perm3) into tDeck3
+   heTAssert "level2: three-seat masked table deck", tDeck3, kKatL2MaskedDeck
+   heTAssert "level2: masked table deck all distinct", heL2DeckCheckHex(tDeck3), "ok"
+   -- 4b: unmask chains -- a public card, then a hole card owned by seat 2
+   put item 1 of tDeck3 into tTablePt
+   put heL2MaskPointHex(kKatL2Inv1, tTablePt) into tVal1
+   put heL2MaskPointHex(kKatL2Inv2, tVal1) into tVal2
+   put heL2MaskPointHex(kKatL2Inv3, tVal2) into tVal3
+   put tTablePt & comma & tVal1 & comma & tVal2 & comma & tVal3 into tChainTxt
+   heTAssert "level2: public unmask chain values", tChainTxt, kKatL2PublicChain
+   heTAssert "level2: public chain resolves to its card", \
+         heL2PublicCardHex(tChainTxt, tBaseList), kKatL2PublicCard
+   put item 2 of tDeck3 into tHole0
+   put heL2MaskPointHex(kKatL2Inv1, tHole0) into tHole1
+   put heL2MaskPointHex(kKatL2Inv3, tHole1) into tHole2
+   heTAssert "level2: hole chain public part (owner's step absent)", \
+         tHole0 & comma & tHole1 & comma & tHole2, kKatL2HoleChain
+   heTAssert "level2: penultimate value hits no card (CDH-hidden)", \
+         heL2CardOfPointHex(tHole2, tBaseList), 0
+   heTAssert "level2: owner strips its mask and resolves the hole", \
+         heL2HoleCardHex(kKatL2HoleChain, kKatL2Inv2, tBaseList), kKatL2HoleCard
+   -- 4c: showdown -- the revealed (k2, sigma2) re-verifies seat 2's steps
+   heTAssert "level2: reveal re-verifies the shuffle step", \
+         heL2RevealShuffleHex(tDeck1, tDeck2, kKatL2Scalar2, kKatL2Perm2), "ok"
+   heTAssert "level2: reveal re-verifies an unmask step", \
+         heL2RevealUnmaskHex(tVal1, tVal2, kKatL2Scalar2), "ok"
+   -- the void vocabulary: distinct, attributable refusals (all KAT-pinned)
+   put tDeck3 into tDupList
+   put item 1 of tDupList into item 2 of tDupList
+   heTAssert "level2: duplicate points are publicly refused", \
+         heL2DeckCheckHex(tDupList), "void:duplicate-point:1,2"
+   heTAssert "level2: a wrong revealed scalar is named", \
+         heL2RevealUnmaskHex(tVal1, tVal2, kKatL2Scalar3), "void:unmask-mismatch"
+   heTAssert "level2: an invalid encoding mid-chain is named", \
+         heL2PublicCardHex(tTablePt & comma & kKatL2BadPoint & comma & tVal2 & comma & tVal3, \
+         tBaseList), "void:invalid-point:2"
+   -- seat 2 applies the WRONG inverse mid-chain; seat 3 steps honestly
+   -- after it -- the chain completes but lands outside the card table
+   put heL2MaskPointHex(kKatL2Inv3, tVal1) into tBad2
+   put heL2MaskPointHex(kKatL2Inv3, tBad2) into tBad3
+   heTAssert "level2: a wrong-scalar chain lands outside the table", \
+         heL2PublicCardHex(tTablePt & comma & tVal1 & comma & tBad2 & comma & tBad3, \
+         tBaseList), "void:final-not-in-table"
+   heTAssert "level2: the identity result is named", \
+         heL2MaskPointHex(kKatL2Scalar1, kKatL2Identity), "void:identity-point"
+   heTAssert "level2: an invalid mask target is named", \
+         heL2MaskPointHex(kKatL2Scalar1, kKatL2BadPoint), "void:invalid-point"
+   put kKatL2Perm1 into tPermBad
+   put 0 into item 1 of tPermBad
+   heTAssert "level2: a malformed permutation is named", \
+         heL2MaskDeckHex(tBaseList, kKatL2Scalar1, tPermBad), "void:perm-format:1"
+   -- fresh-randomness property (engine-only, deliberately unpinned): mask
+   -- with a random scalar, unmask with its inverse, land exactly back
+   put heL2ScalarRandomHex() into tRndK
+   put heL2MaskPointHex(tRndK, item 3 of tBaseList) into tRndMask
+   put heL2MaskPointHex(heL2ScalarInvertHex(tRndK), tRndMask) into tRndBack
+   heTAssert "level2: random mask/unmask roundtrip", tRndBack, item 3 of tBaseList
+end heTestLevel2Run
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

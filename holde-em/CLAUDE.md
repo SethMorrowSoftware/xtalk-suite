@@ -80,8 +80,9 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online lobby + online play (2d) written at v0.18.0, on Phase 1
-hotseat.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online lobby + online play (2d) written, on Phase 1 hotseat, plus
+the Phase 4a-4c Level 2 COMPUTE layer at v0.19.0 (pure algebra only; nothing plays on
+it yet).** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -143,7 +144,7 @@ python3 tools/check-docs.py             # smart-quote scan over *.md
 python3 tools/evaluator-kat.py          # spec 8.2 vectors (mirror of heEval7/heRank5)
 python3 tools/betting-kat.py            # spec 8.1/8.3 cases (mirror of heBetApply/heSettleOf)
 python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShuffleDeck)
-python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal (Phase 2 target)
+python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal + 7.3 L2 algebra
 python3 tools/sounds-kat.py             # vendored casino-audio WAVs <-> stack mapping
 python3 tools/logic-fuzz.py             # INDEPENDENT-reference fuzz (rules, not the port)
 ```
@@ -196,6 +197,29 @@ text. The crypto seams (`heHash32`, `heHashDomHex`, `heDeriveIdentity`, `heSignD
 `heVerifyDetached`, `heSeal`) now wrap these one place each; `heProbeSodium` exercises
 the full roundtrip. Lesson: **read the sibling's `docs/api-reference.md`, do not guess
 FFI signatures** — the family repos are addable to the session for exactly this.
+
+**Level 2 COMPUTE layer (v0.19.0, 2026-08-15 -- Phase 4a-4c, the pure half only).**
+The ristretto255 mental-poker deal algebra (spec 7.3) is the `heL2*` section of the
+stack: base points by domain-separated hash-to-group (`kHeDomainL2Card` -- the
+as-built domain is `"HOLDEM-L2-CARD-v1|"`, spec 7.3 carries the decision marks), one
+full shuffle-mask step (`out[j] = k * in[sigma[j]]`, doer and showdown-verifier are
+the SAME handler), the free duplicate check, public/hole unmask-chain verification,
+and reveal-scalar re-verification. The contracts to keep intact when touching it:
+values in, values out (H5); every seam lowercase hex text (the H6 corollary -- raw
+Data only ever inside sx* call expressions); every failure a DISTINCT `"void:..."`
+string, never a throw (each sx* call in its own try with declared catch locals,
+H4/H8), because Phase 4d's void-and-audit attribution will switch on those exact
+strings -- they are pinned in `tools/protocol-kat.py` (the `l2_*` mirror twins,
+re-derived by its independent RFC 9496 reference; 24 pinned values) and re-checked
+on-engine by `heTestLevel2Run`, which SKIPs behind `heL2HasRistretto` (a pre-ABI-8
+SodiumXT throws "can't find handler" on the first `sxRistretto*` touch; the cached
+probe's catch is the detection). The `sxRistrettoScalarMultPoint` throw conflates
+invalid-point and identity-result (libsodium reports one failure); the validity
+predicate runs FIRST in `heL2MaskPointHex`, which is what makes the two void strings
+separable -- keep that ordering. NOTHING in this layer is wired to a played hand,
+the UI, or the wire: 4d-4f and all orchestration are engine-era work, and the OXT
+pass owes the sx* call shapes plus the 4f deal-time budget (52 mults per shuffle
+step, deal-time only, per the playbook).
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
@@ -468,7 +492,9 @@ tools/check-docs.py                docs smart-quote scan
 tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
 tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)
 tools/shuffle-kat.py               playable integer deal (CI mirror of heShuffleDeck)
-tools/protocol-kat.py              spec 6/7.1 crypto envelope/chain/deal wires
+tools/protocol-kat.py              spec 6/7.1 envelope/chain/deal wires + the
+                                   spec 7.3 Level 2 ristretto algebra (l2_* twins
+                                   over an independent RFC 9496 reference)
 tools/fold-kat.py                  transcript fold + settlement/deal audits (CI mirror)
 tools/atlas-kat.py                 Kenney card atlas <-> frame-name mapping
 tools/sounds-kat.py                vendored casino WAVs <-> stack mapping

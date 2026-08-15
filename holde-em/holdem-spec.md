@@ -319,6 +319,37 @@ card-by-card (cards x N ticks — over a minute at 6-max) is a spec violation, n
 implementation choice. A batch FFI handler (`sxRistrettoScalarMultBatch`) is an
 optional later optimization, not a prerequisite.
 
+**As-built (2026-08-15, v0.19.0 — the 4a-4c COMPUTE half; code wins).** The deal
+algebra above exists as pure `heL2*` handlers in `src/holdem.livecodescript`,
+KAT-pinned end to end from fixed scalars in `tools/protocol-kat.py` against that
+file's independent RFC 9496 reference (verified statically; needs an OXT pass).
+Transport wiring, void-and-audit sequencing, and played-hand integration stay open
+(plan 4d-4f). Decisions the code made under this section:
+
+- The card-table domain is `"HOLDEM-L2-CARD-v1|" || cardName` — L2-scoped and
+  versioned, superseding this section's illustrative `"HOLDEM-CARD-v1|"` — and the
+  64-byte uniform input is `sxHash(label, 64)` (Workstream U established no separate
+  `sxHash512` is needed).
+- Every seam is lowercase hex text (the H6 corollary): a deck is a 52-item comma
+  list of 64-hex points; sigma is a 52-item comma list of source indices with
+  `out[j] = k * in[sigma[j]]`; an unmask chain is a comma list whose first item is
+  the masked table point and each later item one seat's broadcast value, in chain
+  order (a hole chain carries only the public part — the owner's step is exactly
+  what is absent).
+- Void conditions surface as DISTINCT strings, never throws, so the 4d audit can
+  name what it refuses: `scalar-format` / `point-format` / `invalid-point` /
+  `identity-point` / `deck-size` / `perm-size` / `perm-format` / `duplicate-point`
+  / `chain-short` / `final-not-in-table` / `hole-not-in-table` /
+  `shuffle-mismatch` / `unmask-mismatch` / `scalar-zero` (position-tagged where a
+  position exists). libsodium reports an invalid point and an identity result as
+  ONE scalar-mult failure; the validity predicate runs first, which is what makes
+  `invalid-point` and `identity-point` separable at all.
+- sigma's distinctness is deliberately NOT validated by the masker: a repeated
+  index duplicates a point in the output deck and the free duplicate check refuses
+  the step publicly — exactly this section's "prevented, not just detected".
+- Verification IS the doer re-run: the showdown shuffle re-check calls the same
+  full-deck mask handler that built the step, so doer and verifier cannot drift.
+
 ### 7.4 The ceiling above Level 2 (documented, not built)
 
 Two upgrades exist in the literature if this ever needs to outgrow void-and-audit:

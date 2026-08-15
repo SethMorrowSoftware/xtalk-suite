@@ -195,6 +195,25 @@ start without it.
 
 ## Phase 4 — mental poker (spec M3, deal Level 2)
 
+> **4a-4c COMPUTE built + KAT-pinned 2026-08-15 (statically; v0.19.0).** The
+> pure algebra of the masked deck, the unmask chains, and the reveal-scalar
+> showdown landed as the heL2* section of `src/holdem.livecodescript`:
+> values in, values out (H5), lowercase hex at every seam (the H6
+> corollary), every failure a distinct "void:..." string so 4d's
+> attribution can name it, and nothing wired into any played-hand path.
+> `tools/protocol-kat.py` pins a complete Level 2 hand from FIXED scalars
+> end to end -- the 52 base points, a three-seat mask/shuffle round, a
+> public unmask chain, a hole chain with the owner's step absent, the
+> showdown re-verification from a revealed (k, sigma), and seven refusal
+> cases (24 new pinned values, all re-derived by the file's independent
+> RFC 9496 reference) -- and `heTestLevel2Run` re-checks the same constants
+> on-engine behind a cached ABI-8 probe (a pre-ristretto SodiumXT is a
+> clean SKIP, never an uncaught throw). Still open: 4d-4f and ALL
+> orchestration (wire vocabulary, void-and-audit sequencing, the
+> adversarial bots), and the OXT engine pass owes the sx* call shapes and
+> the 4f deal-time budget measurement. Spec 7.3 carries the as-built
+> decision marks.
+
 The value-candidate deal. Prerequisite: Workstream U shipped.
 
 - **4a. Masked deck**: base points from domain-separated hash-to-group; per-hand
