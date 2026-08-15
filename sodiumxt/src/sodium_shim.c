@@ -16,6 +16,7 @@
 
 #include <sodium.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,20 @@ static void set_error(const char *msg)
     }
     memcpy(s_last_error, msg, n);
     s_last_error[n] = '\0';
+}
+
+/*
+ * Formatted variant (added with the ABI 9 shared bodies, where two entry
+ * points feed one implementation and the message must still name the entry
+ * point the caller used - and the batch call must carry its failing index).
+ * vsnprintf NUL-terminates and never overruns, matching set_error's contract.
+ */
+static void set_error_fmt(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(s_last_error, sizeof(s_last_error), fmt, ap);
+    va_end(ap);
 }
 
 static int ensure_init(void)
@@ -2540,4 +2555,222 @@ SXT_API int SXT_CALL sxt_ristretto_is_valid_point(const unsigned char *p, int pl
         return 0;
     }
     return crypto_core_ristretto255_is_valid_point(p) == 1 ? 1 : 0;
+}
+
+/* --- ABI 9: ristretto255 DLEQ/batch follow-ons (holde-em Phase 5) ---------- */
+
+/*
+ * add and sub share one body: the two libsodium calls have identical
+ * signatures and identical failure semantics (either operand not a valid
+ * encoding is the one -1), so the shared helper keeps the firewall in ONE
+ * place and the two entry points cannot drift apart. pName feeds the error
+ * text so a failure still names the entry point the caller actually used.
+ */
+static int ristretto_add_sub(const char *pName,
+                             int (*op)(unsigned char *,
+                                       const unsigned char *,
+                                       const unsigned char *),
+                             unsigned char *out, int cap,
+                             const unsigned char *p, int plen,
+                             const unsigned char *q, int qlen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_BYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (plen != outbytes || qlen != outbytes) {
+        set_error_fmt("%s: each point must be exactly 32 bytes", pName);
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error_fmt("%s: null output buffer", pName);
+        return SXT_ERR_BADARG;
+    }
+    if (p == NULL || q == NULL) {
+        set_error_fmt("%s: null point", pName);
+        return SXT_ERR_BADARG;
+    }
+    /* libsodium validates BOTH operand encodings; the identity is a legal
+     * operand and a legal result (P - P is 32 zero bytes), so unlike
+     * scalarmult the only content failure here is an invalid encoding. */
+    if (op(out, p, q) != 0) {
+        set_error_fmt("%s: invalid point encoding", pName);
+        return SXT_ERR_BADARG;
+    }
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_add(unsigned char *out, int cap,
+                                       const unsigned char *p, int plen,
+                                       const unsigned char *q, int qlen)
+{
+    return ristretto_add_sub("sxt_ristretto_add", crypto_core_ristretto255_add,
+                             out, cap, p, plen, q, qlen);
+}
+
+SXT_API int SXT_CALL sxt_ristretto_sub(unsigned char *out, int cap,
+                                       const unsigned char *p, int plen,
+                                       const unsigned char *q, int qlen)
+{
+    return ristretto_add_sub("sxt_ristretto_sub", crypto_core_ristretto255_sub,
+                             out, cap, p, plen, q, qlen);
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalarmult_base(unsigned char *out, int cap,
+                                                   const unsigned char *n, int nlen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_BYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (nlen != (int)crypto_core_ristretto255_SCALARBYTES) {
+        set_error("sxt_ristretto_scalarmult_base: scalar must be exactly 32 bytes");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_scalarmult_base: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (n == NULL) {
+        set_error("sxt_ristretto_scalarmult_base: null scalar");
+        return SXT_ERR_BADARG;
+    }
+    /* The base point is always a valid encoding, so libsodium's one -1 here
+     * can only be the identity result: n is 0 mod L. Same merged-failure
+     * shape as the general scalarmult, same reason to keep it merged. */
+    if (crypto_scalarmult_ristretto255_base(out, n) != 0) {
+        set_error("sxt_ristretto_scalarmult_base: the result is the identity "
+                  "(zero scalar)");
+        return SXT_ERR_BADARG;
+    }
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalarmult_batch(unsigned char *out, int outcap,
+                                                    const unsigned char *n, int nlen,
+                                                    const unsigned char *points,
+                                                    int pointslen)
+{
+    const int ptbytes = (int)crypto_core_ristretto255_BYTES;
+    int count;
+    int i;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (nlen != (int)crypto_core_ristretto255_SCALARBYTES) {
+        set_error("sxt_ristretto_scalarmult_batch: scalar must be exactly 32 bytes");
+        return SXT_ERR_BADARG;
+    }
+    if (pointslen <= 0 || (pointslen % ptbytes) != 0) {
+        set_error("sxt_ristretto_scalarmult_batch: points must be a non-empty "
+                  "concatenation of 32-byte encodings");
+        return SXT_ERR_BADARG;
+    }
+    if (pointslen >= SXT_MAX_BUFFER) {
+        /* Keeps -pointslen inside the -needed band (the overload contract). */
+        set_error("sxt_ristretto_scalarmult_batch: input too large for one buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (outcap < pointslen) {
+        return -pointslen;
+    }
+    if (out == NULL) {
+        set_error("sxt_ristretto_scalarmult_batch: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (n == NULL || points == NULL) {
+        set_error("sxt_ristretto_scalarmult_batch: null scalar or points");
+        return SXT_ERR_BADARG;
+    }
+    count = pointslen / ptbytes;
+    for (i = 0; i < count; i++) {
+        /* ATOMIC on failure: one bad element (invalid encoding, or the
+         * identity result of a zero scalar - libsodium's one merged -1)
+         * voids the whole call, the way one bad point voids a whole deal
+         * step. The 1-based index lands in the error text so the void can
+         * be attributed to a position, matching the deal layer's
+         * position-tagged void strings. Bytes already written to out are
+         * not scrubbed - they are k*P values the caller must now discard,
+         * not secrets - but the hard-error return means no caller following
+         * the contract ever reads them. */
+        if (crypto_scalarmult_ristretto255(out + (size_t)i * (size_t)ptbytes,
+                                           n,
+                                           points + (size_t)i * (size_t)ptbytes)
+                != 0) {
+            set_error_fmt("sxt_ristretto_scalarmult_batch: point %d of %d is "
+                          "an invalid encoding, or the result is the identity "
+                          "(zero scalar)", i + 1, count);
+            return SXT_ERR_BADARG;
+        }
+    }
+    return pointslen;
+}
+
+/*
+ * scalar add and mul also share one body: both libsodium calls are void
+ * (they cannot fail on content - a zero scalar is a legal operand and a
+ * legal result), with the same reduce semantics (inputs read as little-
+ * endian 256-bit integers, result fully reduced mod L).
+ */
+static int ristretto_scalar_op(const char *pName,
+                               void (*op)(unsigned char *,
+                                          const unsigned char *,
+                                          const unsigned char *),
+                               unsigned char *out, int cap,
+                               const unsigned char *x, int xlen,
+                               const unsigned char *y, int ylen)
+{
+    const int outbytes = (int)crypto_core_ristretto255_SCALARBYTES;
+
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (xlen != outbytes || ylen != outbytes) {
+        set_error_fmt("%s: each scalar must be exactly 32 bytes", pName);
+        return SXT_ERR_BADARG;
+    }
+    if (cap < outbytes) {
+        return -outbytes;
+    }
+    if (out == NULL) {
+        set_error_fmt("%s: null output buffer", pName);
+        return SXT_ERR_BADARG;
+    }
+    if (x == NULL || y == NULL) {
+        set_error_fmt("%s: null scalar", pName);
+        return SXT_ERR_BADARG;
+    }
+    op(out, x, y);
+    return outbytes;
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalar_add(unsigned char *out, int cap,
+                                              const unsigned char *x, int xlen,
+                                              const unsigned char *y, int ylen)
+{
+    return ristretto_scalar_op("sxt_ristretto_scalar_add",
+                               crypto_core_ristretto255_scalar_add,
+                               out, cap, x, xlen, y, ylen);
+}
+
+SXT_API int SXT_CALL sxt_ristretto_scalar_mul(unsigned char *out, int cap,
+                                              const unsigned char *x, int xlen,
+                                              const unsigned char *y, int ylen)
+{
+    return ristretto_scalar_op("sxt_ristretto_scalar_mul",
+                               crypto_core_ristretto255_scalar_mul,
+                               out, cap, x, xlen, y, ylen);
 }

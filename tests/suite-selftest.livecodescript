@@ -9470,6 +9470,7 @@ on sx1testRistretto
    local sx1tGen
    local sx1tP0
    local sx1tP1
+   local sx1tP51
    local sx1tK7
    local sx1tKp
    local sx1tKinv
@@ -9481,6 +9482,14 @@ on sx1testRistretto
    local sx1tProbe
    local sx1tErr
    local sx1tCaught
+   local sx1tBase
+   local sx1tSum
+   local sx1tDiff
+   local sx1tConcat
+   local sx1tBatch
+   local sx1tLm2
+   local sx1tInv7
+   local sx1tScalar
    sx1sxSection "ristretto255 (ABI 8)"
    put sxHex2Bin(textEncode("e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76", "ascii")) into sx1tGen
    -- SKIP cleanly on a pre-ABI-8 package: the probe call throws (handler not
@@ -9548,6 +9557,81 @@ on sx1testRistretto
       put true into sx1tCaught
    end try
    sx1sxCheck sx1tCaught, "an invalid point encoding refuses to multiply (throws)"
+   -- ABI 9 (holde-em Phase 5, added 2026-08-15): the DLEQ/batch follow-ons.
+   -- A SECOND probe, so an ABI-8 package (where everything above just ran)
+   -- SKIPs only these newer checks cleanly instead of dying on the first
+   -- handler it does not have.
+   sx1sxSection "ristretto255 (ABI 9: DLEQ/batch follow-ons)"
+   try
+      put sxRistrettoScalarMultBase(sx1tK7) into sx1tBase
+   catch sx1tErr
+      sx1sxCheck true, "SKIP: this SodiumXT package predates the DLEQ/batch surface (ABI 9)"
+      exit sx1testRistretto
+   end try
+   -- base-mult: the pinned vector (== RFC 9496's small-multiples entry B[7],
+   -- a third independent witness) AND agreement with the general scalarmult
+   -- of the generator encoding - both legs, so a wrong base cannot pass.
+   sx1sxCheck (sx1sxHexOf(sx1tBase) is "44f53520926ec81fbd5a387845beb7df85a96a24ece18738bdcfa6a7822a176d"), \
+         "7 * B matches the cross-checked vector (RFC 9496 B[7])"
+   sx1sxCheck (sx1tBase is sxRistrettoScalarMultPoint(sx1tK7, sx1tGen)), \
+         "sxRistrettoScalarMultBase agrees with scalarmult(generator)"
+   -- add/sub: the pinned sum and the roundtrip (P+Q)-Q == P
+   put sxRistrettoAdd(sx1tP0, sx1tP1) into sx1tSum
+   sx1sxCheck (sx1sxHexOf(sx1tSum) is "34722b333ab7982fe4d5e2be2913c316db8f8675de2394a5cfb704abab7c8b4c"), \
+         "card00 + card01 matches the cross-checked vector"
+   put sxRistrettoSub(sx1tSum, sx1tP1) into sx1tDiff
+   sx1sxCheck (sx1tDiff is sx1tP0), "the add/sub roundtrip (P+Q)-Q returns exactly P"
+   -- the batch call: one FFI crossing over three concatenated card points,
+   -- element-for-element equal to the loop of single multiplications
+   put sxRistrettoFromHash(sxHash(sx1sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-51"), 64)) into sx1tP51
+   put sx1tP0 & sx1tP1 & sx1tP51 into sx1tConcat
+   put sxRistrettoScalarMultBatch(sx1tK7, sx1tConcat) into sx1tBatch
+   sx1sxCheck (the number of bytes in sx1tBatch is 96), \
+         "the batch over 3 points returns 96 concatenated bytes"
+   sx1sxCheck (byte 1 to 32 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP0)), \
+         "batch element 1 equals the single-call multiplication"
+   sx1sxCheck (byte 33 to 64 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP1)), \
+         "batch element 2 equals the single-call multiplication"
+   sx1sxCheck (byte 65 to 96 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP51)), \
+         "batch element 3 equals the single-call multiplication"
+   -- the DLEQ-shaped identity the whole surface exists for
+   sx1sxCheck (sxRistrettoScalarMultPoint(sx1tK7, sx1tSum) is \
+         sxRistrettoAdd(byte 1 to 32 of sx1tBatch, byte 33 to 64 of sx1tBatch)), \
+         "k*(P+Q) equals k*P + k*Q (the DLEQ-shaped identity)"
+   -- scalar arithmetic mod L: 7 + (L-2) wraps to 5, and 7 * 7^-1 is 1
+   put sxHex2Bin(textEncode("ebd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010", "ascii")) into sx1tLm2
+   put sxRistrettoScalarAdd(sx1tK7, sx1tLm2) into sx1tScalar
+   sx1sxCheck (sx1sxHexOf(sx1tScalar) is "0500000000000000000000000000000000000000000000000000000000000000"), \
+         "7 + (L-2) wraps to 5 mod L (reduce semantics)"
+   put sxRistrettoScalarInvert(sx1tK7) into sx1tInv7
+   put sxRistrettoScalarMul(sx1tK7, sx1tInv7) into sx1tScalar
+   sx1sxCheck (sx1sxHexOf(sx1tScalar) is "0100000000000000000000000000000000000000000000000000000000000000"), \
+         "7 * 7^-1 is 1 mod L"
+   -- failure paths: one bad point voids the WHOLE batch, and the thrown
+   -- message carries the 1-based failing index (the atomic-void contract)
+   put false into sx1tCaught
+   put empty into sx1tErr
+   try
+      put sxRistrettoScalarMultBatch(sx1tK7, sx1tP0 & sx1tBad & sx1tP51) into sx1tBatch
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck (sx1tCaught and ("point 2 of 3" is in sx1tErr)), \
+         "one bad point fails the whole batch, naming index 2 of 3"
+   put false into sx1tCaught
+   try
+      put sxRistrettoScalarMultBase(sx1tZero) into sx1tBase
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a zero scalar refuses base multiplication (identity result, throws)"
+   put false into sx1tCaught
+   try
+      put sxRistrettoAdd(sx1tP0, sx1tBad) into sx1tSum
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "an invalid operand encoding refuses to add (throws)"
 end sx1testRistretto
 
 on sx1testDiagnostics

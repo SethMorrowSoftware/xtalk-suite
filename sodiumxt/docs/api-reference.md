@@ -69,8 +69,9 @@ Workstream U): thin wrappers over libsodium's `crypto_core_ristretto255_*`, no
 new cryptography. Points and scalars are 32-byte `Data`; the from-hash input is
 one 64-byte digest - `sxHash(tData, 64)` (BLAKE2b-512) produces it, which is why
 the plan's conditional "sxHash512" needed no new handler. Batch multiplication
-and point add/sub are the plan's recorded Phase 5 follow-ons, deliberately not
-shipped. NOT yet observed on an engine: the C layer's KATs (cross-checked
+and point add/sub were the plan's recorded Phase 5 follow-ons; they shipped as
+the ABI 9 subsection below (2026-08-15). NOT yet observed on an engine: the C
+layer's KATs (cross-checked
 against an independent RFC 9496 reference in holde-em/tools/protocol-kat.py)
 ran green under ASan/UBSan 2026-08-15, and every handler below is **verified
 statically; needs an OXT pass** - the harness section SKIPs cleanly on a
@@ -83,6 +84,30 @@ pre-ABI-8 package.
 | `sxRistrettoScalarRandom()` | `Data` | A uniformly random non-zero scalar mod the group order L, from libsodium's CSPRNG - the per-hand masking scalar. |
 | `sxRistrettoScalarInvert(pScalar)` | `Data` | `pScalar^-1 mod L`, the unmask scalar; multiplying by it undoes the mask. Throws on a zero scalar. |
 | `sxRistrettoPointValid(pPoint)` | `Boolean` | true when pPoint is a canonical 32-byte encoding. A predicate: malformed or wrong-length input returns false rather than throwing (verify-then-parse needs a validity check that does not blow up on the garbage it exists to catch). |
+
+### ristretto255 DLEQ/batch follow-ons (ABI 9)
+
+The recorded Phase 5 follow-ons from holde-em's plan, shipped 2026-08-15: point
+add/sub and base-point multiplication (the algebra a Chaum-Pedersen DLEQ proof
+computes with), the batch call that collapses the deal's 52-point shuffle-mask
+step into ONE FFI crossing (the 4f deal-time budget lever), and scalar add/mul
+mod L (the proof's response arithmetic). Same discipline as the ABI 8 section:
+thin wrappers over `crypto_core_ristretto255_*` /
+`crypto_scalarmult_ristretto255_*`, no new cryptography, vectors pinned from
+the built libsodium and re-derived by the independent RFC 9496 reference (the
+base-mult of 7 additionally equals RFC 9496's own small-multiples entry B[7]).
+Every handler below is **verified statically; needs an OXT pass** - the harness
+probes this subsection separately, so an ABI-8 package SKIPs only these checks
+and still runs the ABI-8 half.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `sxRistrettoAdd(pP, pQ)` | `Data` | `pP + pQ` in the group. Throws when either operand is not a valid encoding (libsodium validates both). The identity is a legal operand AND a legal result here (`P - P` encodes as 32 zero bytes) - unlike scalarmult, add/sub have no identity failure mode. |
+| `sxRistrettoSub(pP, pQ)` | `Data` | `pP - pQ` in the group; the verifier-side recombination of a DLEQ check. Same failure semantics as `sxRistrettoAdd`. |
+| `sxRistrettoScalarMultBase(pScalar)` | `Data` | `pScalar * B` (the RFC 9496 generator): a DLEQ commitment is `w*B` and a verifier recomputes `z*B`. Throws on a zero scalar (the identity result), the same merged failure `sxRistrettoScalarMultPoint` reports. |
+| `sxRistrettoScalarMultBatch(pScalar, pPoints)` | `Data` | `pScalar * point[i]` over a CONCATENATION of 32-byte encodings, one FFI crossing; returns the same-length concatenation of results in order. ATOMIC: one bad point (invalid encoding, or an identity result from a zero scalar) throws for the WHOLE call with the 1-based failing index in the message - a deal that meets one bad point voids the whole step anyway, so a partial result would only invite using half a masked deck. |
+| `sxRistrettoScalarAdd(pX, pY)` | `Data` | `pX + pY mod L` (the DLEQ response `z = w + c*k mod L`). Reduce semantics: each 32-byte input is read as a little-endian 256-bit integer and the result is fully reduced mod L; zero is a legal operand and result, so only a wrong length throws. |
+| `sxRistrettoScalarMul(pX, pY)` | `Data` | `pX * pY mod L` (the `c*k` term). Same reduce semantics and failure surface as `sxRistrettoScalarAdd`. |
 
 ### Multipart hash (data assembled incrementally)
 
@@ -219,9 +244,10 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   old caveat that the recorded pass predated the newer sections. The ABI-7 additions
   (`sxSha3_256` and its FIPS 202 vectors, 71 checks total) had their pass on **2026-08-12**,
   on Windows x64 - so nothing in this file below ABI 8 is "verified statically" any more
-  (the ABI-8 ristretto255 section, added 2026-08-15, is the one exception: its C KATs are
+  (the ristretto255 sections - ABI 8 and the ABI-9 DLEQ/batch follow-ons, both added
+  2026-08-15 - are the one exception: their C KATs are
   green under ASan and cross-checked, but no `sxRistretto*` handler has run on an engine
-  yet - the section above says exactly that). The 2026-08-08 suite pass
+  yet - the sections above say exactly that). The 2026-08-08 suite pass
   had already proven the cross-member half from the outside: `sxSignSeedToExpandedKey`'s
   64-byte expanded key equals, on-engine, the DHT secret key libtorrent derives from the
   same seed.

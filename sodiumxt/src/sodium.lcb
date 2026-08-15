@@ -20,11 +20,13 @@
 -- 2026-08-12 on Windows x64 at 71 checks with the ABI-7 sxSha3_256 / FIPS 202
 -- additions (both recorded in docs/api-reference.md and CLAUDE.md). So the LCB
 -- marshaling of everything in this file below ABI 8 is a runtime result. The
--- ONE surface those passes do not cover is the ABI-8 ristretto255 section
--- (added 2026-08-15): its C KATs are green under ASan/UBSan and cross-checked
+-- ONE surface those passes do not cover is the ristretto255 sections - ABI 8
+-- (the group surface) and ABI 9 (the DLEQ/batch follow-ons: point add/sub,
+-- base-point and batch scalar multiplication, scalar add/mul), both added
+-- 2026-08-15: their C KATs are green under ASan/UBSan and cross-checked
 -- against an independent RFC 9496 reference, but no sxRistretto* handler has
--- run on an engine yet - that section is verified statically and needs an OXT
--- pass. The conventions below were settled
+-- run on an engine yet - those sections are verified statically and need an
+-- OXT pass. The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;
@@ -48,7 +50,7 @@
 --   * out parameters are passed by reference: command form `sxBoxKeypair tPk, tSk`,
 --     or inside a function call `put sxSecretStreamInitPush(tKey, tHeader) into h`.
 -- The native C layer is independently tested (KATs + ASan/UBSan);
--- the current C ABI is SXT_ABI_VERSION 8 (kSXTABIVersion below must match).
+-- the current C ABI is SXT_ABI_VERSION 9 (kSXTABIVersion below must match).
 -- ==========================================================================
 
 library org.openxtalk.library.sodium
@@ -66,7 +68,7 @@ metadata summary    is "Modern cryptography for xTalk via libsodium (authenticat
 --   kSXTABIVersion == SXT_ABI_VERSION ; kSXTErrBase == SXT_ERR_BASE.
 -- Declared before first use (OXT resolves a constant by lexical position; a
 -- forward reference silently evaluates to nothing).
-constant kSXTABIVersion is 8
+constant kSXTABIVersion is 9
 constant kSXTErrBase is -2000000000
 
 -- The engine MCStringEncoding enum value for UTF-8 (libfoundation: ASCII=0,
@@ -212,6 +214,13 @@ foreign handler _sxt_ristretto_scalarmult(in pOut as Pointer, in pCap as CInt, i
 foreign handler _sxt_ristretto_scalar_random(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_random"
 foreign handler _sxt_ristretto_scalar_invert(in pOut as Pointer, in pCap as CInt, in pS as Pointer, in pSLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_invert"
 foreign handler _sxt_ristretto_is_valid_point(in pP as Pointer, in pPLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_is_valid_point"
+-- ABI 9: the DLEQ/batch follow-ons (holde-em Phase 5).
+foreign handler _sxt_ristretto_add(in pOut as Pointer, in pCap as CInt, in pP as Pointer, in pPLen as CInt, in pQ as Pointer, in pQLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_add"
+foreign handler _sxt_ristretto_sub(in pOut as Pointer, in pCap as CInt, in pP as Pointer, in pPLen as CInt, in pQ as Pointer, in pQLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_sub"
+foreign handler _sxt_ristretto_scalarmult_base(in pOut as Pointer, in pCap as CInt, in pN as Pointer, in pNLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalarmult_base"
+foreign handler _sxt_ristretto_scalarmult_batch(in pOut as Pointer, in pOutCap as CInt, in pN as Pointer, in pNLen as CInt, in pPoints as Pointer, in pPointsLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalarmult_batch"
+foreign handler _sxt_ristretto_scalar_add(in pOut as Pointer, in pCap as CInt, in pX as Pointer, in pXLen as CInt, in pY as Pointer, in pYLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_add"
+foreign handler _sxt_ristretto_scalar_mul(in pOut as Pointer, in pCap as CInt, in pX as Pointer, in pXLen as CInt, in pY as Pointer, in pYLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_mul"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -1622,8 +1631,8 @@ end handler
 -- Points and scalars are 32-byte Data; the from-hash input is one 64-byte
 -- digest, and sxHash(tData, 64) (BLAKE2b-512) already produces it, which is
 -- why the plan's conditional "sxHash512" adds no handler. Batch
--- multiplication and point add/sub are the plan's recorded Phase 5
--- follow-ons, deliberately NOT shipped here.
+-- multiplication and point add/sub were the plan's recorded Phase 5
+-- follow-ons; they shipped as the ABI 9 section below (2026-08-15).
 -- ==========================================================================
 
 -- Map one 64-byte uniform hash to a group point. Every 64-byte input maps to
@@ -1731,6 +1740,176 @@ public handler sxRistrettoPointValid(in pPoint as Data) returns Boolean
       put _sxt_ristretto_is_valid_point(tPPtr, tPLen) into tR
    end unsafe
    return tR is 1
+end handler
+
+-- ==========================================================================
+-- ABI 9: ristretto255 DLEQ/batch follow-ons (holde-em Phase 5).
+--
+-- The plan's recorded "Later (Phase 5)" surface, shipped 2026-08-15: point
+-- add/sub and base-point multiplication (what a Chaum-Pedersen DLEQ proof
+-- computes with), and the batch call that collapses the deal's 52-point
+-- shuffle-mask step into ONE FFI crossing (the 4f deal-time budget lever),
+-- plus scalar add/mul mod L (the proof's response arithmetic). Same
+-- discipline as the ABI 8 section above: thin wrappers, no new cryptography.
+-- ==========================================================================
+
+-- r = pP + pQ in the group. Throws when either operand is not a valid
+-- ristretto255 encoding (libsodium validates both). The identity is a legal
+-- operand and a legal result here (P - P encodes as 32 zero bytes): unlike
+-- sxRistrettoScalarMultPoint, add/sub have no identity failure mode.
+public handler sxRistrettoAdd(in pP as Data, in pQ as Data) returns Data
+   variable tOut as Pointer
+   variable tPPtr as Pointer
+   variable tPLen as Integer
+   variable tQPtr as Pointer
+   variable tQLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pP) into tPLen
+   put sDataPtr(pP) into tPPtr
+   put sDataLen(pQ) into tQLen
+   put sDataPtr(pQ) into tQPtr
+   unsafe
+      put _sxt_ristretto_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_add(tOut, tBytes, tPPtr, tPLen, tQPtr, tQLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoAdd", tOut, tWritten)
+end handler
+
+-- r = pP - pQ in the group; the verifier-side recombination of a DLEQ check
+-- moves terms with exactly this. Same failure semantics as sxRistrettoAdd.
+public handler sxRistrettoSub(in pP as Data, in pQ as Data) returns Data
+   variable tOut as Pointer
+   variable tPPtr as Pointer
+   variable tPLen as Integer
+   variable tQPtr as Pointer
+   variable tQLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pP) into tPLen
+   put sDataPtr(pP) into tPPtr
+   put sDataLen(pQ) into tQLen
+   put sDataPtr(pQ) into tQPtr
+   unsafe
+      put _sxt_ristretto_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_sub(tOut, tBytes, tPPtr, tPLen, tQPtr, tQLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoSub", tOut, tWritten)
+end handler
+
+-- q = pScalar * B (the RFC 9496 generator): a DLEQ commitment is w*B, and a
+-- verifier recomputes z*B. Throws on a zero scalar (the identity result),
+-- the same merged failure sxRistrettoScalarMultPoint reports.
+public handler sxRistrettoScalarMultBase(in pScalar as Data) returns Data
+   variable tOut as Pointer
+   variable tNPtr as Pointer
+   variable tNLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pScalar) into tNLen
+   put sDataPtr(pScalar) into tNPtr
+   unsafe
+      put _sxt_ristretto_bytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalarmult_base(tOut, tBytes, tNPtr, tNLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarMultBase", tOut, tWritten)
+end handler
+
+-- out[i] = pScalar * point i of pPoints, where pPoints is a CONCATENATION of
+-- 32-byte encodings (the deal's whole 52-point shuffle-mask step in ONE FFI
+-- crossing; the returned Data is the same length, the results concatenated
+-- in order). ATOMIC: one bad point (invalid encoding, or an identity result
+-- from a zero scalar) throws for the WHOLE call, with the 1-based failing
+-- index in the message - a deal that meets one bad point voids the whole
+-- step anyway, so a partial result would only invite using half a masked
+-- deck. The out buffer is sized from the input length (count * 32), not a
+-- length constant: the one call whose output size the caller chooses.
+public handler sxRistrettoScalarMultBatch(in pScalar as Data, in pPoints as Data) returns Data
+   variable tOut as Pointer
+   variable tNPtr as Pointer
+   variable tNLen as Integer
+   variable tPPtr as Pointer
+   variable tPLen as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pScalar) into tNLen
+   put sDataPtr(pScalar) into tNPtr
+   put sDataLen(pPoints) into tPLen
+   put sDataPtr(pPoints) into tPPtr
+   if tPLen < 1 then
+      throw "sxRistrettoScalarMultBatch: pPoints must hold at least one 32-byte point."
+   end if
+   put sAlloc(tPLen) into tOut
+   unsafe
+      put _sxt_ristretto_scalarmult_batch(tOut, tPLen, tNPtr, tNLen, tPPtr, tPLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarMultBatch", tOut, tWritten)
+end handler
+
+-- z = pX + pY mod L - the DLEQ response arithmetic (z = w + c*k mod L).
+-- Reduce semantics: each 32-byte input is read as a little-endian 256-bit
+-- integer and the result is fully reduced mod L (an unreduced representative
+-- is handled deterministically); the output is always the canonical reduced
+-- encoding. Cannot fail on content - zero is a legal operand and a legal
+-- result - so only a wrong length throws.
+public handler sxRistrettoScalarAdd(in pX as Data, in pY as Data) returns Data
+   variable tOut as Pointer
+   variable tXPtr as Pointer
+   variable tXLen as Integer
+   variable tYPtr as Pointer
+   variable tYLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pX) into tXLen
+   put sDataPtr(pX) into tXPtr
+   put sDataLen(pY) into tYLen
+   put sDataPtr(pY) into tYPtr
+   unsafe
+      put _sxt_ristretto_scalarbytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalar_add(tOut, tBytes, tXPtr, tXLen, tYPtr, tYLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarAdd", tOut, tWritten)
+end handler
+
+-- z = pX * pY mod L (the c*k term of the response). Same reduce semantics
+-- and failure surface as sxRistrettoScalarAdd.
+public handler sxRistrettoScalarMul(in pX as Data, in pY as Data) returns Data
+   variable tOut as Pointer
+   variable tXPtr as Pointer
+   variable tXLen as Integer
+   variable tYPtr as Pointer
+   variable tYLen as Integer
+   variable tBytes as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pX) into tXLen
+   put sDataPtr(pX) into tXPtr
+   put sDataLen(pY) into tYLen
+   put sDataPtr(pY) into tYPtr
+   unsafe
+      put _sxt_ristretto_scalarbytes() into tBytes
+   end unsafe
+   put sAlloc(tBytes) into tOut
+   unsafe
+      put _sxt_ristretto_scalar_mul(tOut, tBytes, tXPtr, tXLen, tYPtr, tYLen) into tWritten
+   end unsafe
+   return sFinish("sxRistrettoScalarMul", tOut, tWritten)
 end handler
 
 end library
