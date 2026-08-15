@@ -141,7 +141,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.6.0"
+constant kRsVersion = "0.7.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -2224,6 +2224,113 @@ function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
    end if
    return tResp["name"]
 end rsLanVerifyResponse
+
+-- The bytes the welcome signature covers: a DISTINCT domain tag, the
+-- joiner's own response signature (unique per challenge nonce, so the
+-- welcome replays to no other handshake), and the host's name.
+private function rsLanWelcomeSigMessage pResponseSig, pHostName
+   local tOut
+   put textEncode("riptide-lan-w", "ASCII") into tOut
+   put pResponseSig after tOut
+   put textEncode(pHostName, "UTF-8") after tOut
+   return tOut
+end rsLanWelcomeSigMessage
+
+-- Host -> joiner after admission: magic(4) "W" nameLen(u8) hostName
+-- sig(64). MUTUAL auth: the admission proved the joiner to the host; this
+-- proves the host back to the joiner (only a master-holder can sign it),
+-- and gives the joiner its positive "you are in" signal.
+function rsLanBuildWelcome pResponseBytes, pHostName, pMaster
+   local tResp, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanBuildWelcome: bad response:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pHostName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildWelcome: the host name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanWelcomeSigMessage(tResp["signature"], \
+            pHostName), tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildWelcome: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("W", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildWelcome
+
+function rsLanParseWelcome pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseWelcome: truncated welcome"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "W" then
+      rsSetError "rsLanParseWelcome: not an RSL1 welcome"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseWelcome: length does not match its name field"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanParseWelcome: the host name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseWelcome
+
+-- The joiner's verdict on the host: does this welcome prove the host
+-- shares my master, for THIS handshake? Takes the response I MYSELF sent
+-- (its signature is what the welcome must be bound to). Returns the host's
+-- device name, or empty (a rogue host, a replayed welcome from another
+-- handshake, or tamper).
+function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
+   local tWelcome, tResp, tKeys, tOk, tErr
+   put rsLanParseWelcome(pWelcomeBytes) into tWelcome
+   if tWelcome is empty then return empty
+   put rsLanParseResponse(pMyResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanVerifyWelcome: bad own-response bytes:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tWelcome["signature"], \
+            rsLanWelcomeSigMessage(tResp["signature"], tWelcome["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyWelcome: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyWelcome: the welcome does not prove the" && \
+            "shared master for this handshake (a rogue host, a replay," && \
+            "or tamper)"
+      return empty
+   end if
+   return tWelcome["name"]
+end rsLanVerifyWelcome
 
 --------------------------------------------------------------------------
 -- the anonymous persona (phase 7) - a separate identity that lives ONLY

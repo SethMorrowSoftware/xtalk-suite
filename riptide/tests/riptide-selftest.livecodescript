@@ -74,6 +74,7 @@ constant kRsGoldDmMsgHex = "54000000006899333468656c6c6f2c20646d"
 constant kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670f189dc07285d9"
 constant kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
+constant kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
 constant kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -688,7 +689,7 @@ end rstSectionAnon
 -- response" property is checked with a second, different nonce.
 private command rstSectionLan
    local tKeys, tChallenge, tResponse, tNonce2, tChallenge2, tName, tBadName
-   local tBadUtf
+   local tBadUtf, tWelcome
    rstSection "phase 6 - LAN mesh admission"
    put rsLanKeys(rstBin(kRsGoldMasterHex)) into tKeys
    rstCheck (rstHex(tKeys["publicKey"]) is kRsGoldLanPub), \
@@ -751,6 +752,39 @@ private command rstSectionLan
    put rstBin("52534c31520180") & (byte -64 to -1 of tResponse) into tBadUtf
    rstCheck (rsLanParseResponse(tBadUtf) is empty), \
          "a non-UTF-8 device name in a response is refused, not thrown"
+   -- the W welcome: mutual auth back to the joiner, bound to THIS handshake
+   put rsLanBuildWelcome(tResponse, kRsGoldLanHostName, \
+         rstBin(kRsGoldMasterHex)) into tWelcome
+   rstCheck (rstHex(tWelcome) is kRsGoldLanWelcomeHex), \
+         "the welcome bytes match golden"
+   put rsLanParseWelcome(tWelcome) into tName
+   rstCheck (tName["name"] is kRsGoldLanHostName), \
+         "the host name round-trips out of the welcome"
+   put rsLanVerifyWelcome(tWelcome, tResponse, rstBin(kRsGoldMasterHex)) \
+         into tName
+   rstCheck (tName is kRsGoldLanHostName), \
+         "the joiner verifies the host shares the master, learning ITS name"
+   -- a rogue host: a welcome built under a different master is refused
+   put rsLanBuildWelcome(tResponse, kRsGoldLanHostName, \
+         rstBin(kRsGoldConfSeedHex)) into tBadName
+   rstCheck (rsLanVerifyWelcome(tBadName, tResponse, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a welcome from a host that does NOT share the master is refused"
+   -- handshake binding: the welcome must not verify against a DIFFERENT
+   -- response (a captured welcome cannot admit a later session)
+   put rsLanBuildResponse(tChallenge2, kRsGoldLanJoinName, \
+         rstBin(kRsGoldMasterHex)) into tBadName
+   rstCheck (rsLanVerifyWelcome(tWelcome, tBadName, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a welcome replayed against another handshake is refused"
+   rstCheck (rsLanVerifyWelcome(rstFlipByte(tWelcome, 70), tResponse, \
+         rstBin(kRsGoldMasterHex)) is empty), \
+         "a tampered welcome is refused"
+   rstCheck (rsLanParseWelcome(byte 1 to 30 of tWelcome) is empty), \
+         "a truncated welcome is refused"
+   put rstBin("52534c31570180") & (byte -64 to -1 of tWelcome) into tBadUtf
+   rstCheck (rsLanParseWelcome(tBadUtf) is empty), \
+         "a non-UTF-8 host name in a welcome is refused, not thrown"
 end rstSectionLan
 
 -- The phase-4 DM layer. The pure half (keys, records, session derivation,

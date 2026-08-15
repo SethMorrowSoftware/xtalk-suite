@@ -655,6 +655,30 @@ def lan_build_response(challenge_bytes, name, master):
     return LAN_MAGIC + b"R" + bytes([len(nb)]) + nb + sig
 
 
+LAN_WELCOME_DOMAIN = b"riptide-lan-w"
+
+
+def lan_welcome_sig_message(response_sig, host_name):
+    """The bytes the welcome signature covers: a distinct domain tag, the
+    joiner's own response SIGNATURE (unique per challenge nonce, so a welcome
+    replays to no other handshake), and the host's name."""
+    if len(response_sig) != 64:
+        raise ValueError("response signature must be 64 bytes")
+    return LAN_WELCOME_DOMAIN + response_sig + _lan_name(host_name)
+
+
+def lan_build_welcome(response_bytes, host_name, master):
+    """Host -> joiner after admission: magic(4) "W" nameLen(u8) hostName
+    sig(64). MUTUAL auth: only a master-holder can sign it, so the joiner
+    learns the host is genuinely one of its own devices - previously the
+    admission proved the joiner to the host and nothing back."""
+    resp_sig = response_bytes[-64:]
+    nb = _lan_name(host_name)
+    _pub, seed = lan_keys(master)
+    sig = ed25519_sign(lan_welcome_sig_message(resp_sig, host_name), seed)
+    return LAN_MAGIC + b"W" + bytes([len(nb)]) + nb + sig
+
+
 def _lan_parse_challenge(rec):
     if len(rec) < 4 + 1 + 1 + LAN_NONCE_BYTES:
         raise ValueError("challenge too short")
@@ -855,6 +879,7 @@ def golden_vectors():
     lan_nonce = bytes.fromhex("5a" * 32)
     lan_challenge = lan_build_challenge("laptop", lan_nonce)
     lan_response = lan_build_response(lan_challenge, "phone", master)
+    lan_welcome = lan_build_welcome(lan_response, "laptop", master)
     # phase 7: the anon persona (subkey 100) and a sample BTXO stream
     anon0_handle = anon_handle(master, 0)
     anon0_onion = anon_onion(master, 0)
@@ -895,6 +920,7 @@ def golden_vectors():
         "lanNonce": lan_nonce.hex(),
         "lanChallenge": lan_challenge.hex(),
         "lanResponse": lan_response.hex(),
+        "lanWelcome": lan_welcome.hex(),
         "anon0Handle": anon0_handle,
         "anon0Onion": anon0_onion,
         "btxoHeader": btxo_hdr.hex(),

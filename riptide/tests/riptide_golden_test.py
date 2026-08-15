@@ -306,6 +306,32 @@ check_raises("lan name over cap", lambda: ref["lan_build_challenge"](
 check_raises("lan bad nonce len", lambda: ref["lan_build_challenge"](
     "a", b"\x00" * 31))
 
+# the W welcome: mutual auth back to the joiner, bound to THIS handshake by
+# the joiner's own response signature
+LAN_WELCOME_HEX = (
+    "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c50692"
+    "3a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56a"
+    "e85e53a1726f91612cf2b805")
+
+welcome = ref["lan_build_welcome"](response, "laptop", MASTER)
+check("lan welcome bytes", welcome.hex(), LAN_WELCOME_HEX)
+check("lan welcome verifies",
+      ref["_verify_ed25519"](
+          welcome[-64:],
+          ref["lan_welcome_sig_message"](response[-64:], "laptop"), lan_pub),
+      True)
+# a welcome is bound to ONE handshake: against a different response's
+# signature it must fail (the replay the binding exists to stop)
+response2 = ref["lan_build_response"](
+    ref["lan_build_challenge"]("laptop", b"\x11" * 32), "phone", MASTER)
+check("lan welcome handshake binding",
+      ref["_verify_ed25519"](
+          welcome[-64:],
+          ref["lan_welcome_sig_message"](response2[-64:], "laptop"), lan_pub),
+      False)
+check_raises("lan welcome bad resp sig len",
+             lambda: ref["lan_welcome_sig_message"](b"\x00" * 63, "x"))
+
 # --- phase 7: the anon persona + BTXO framing ------------------------------
 
 ANON0_HANDLE = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"

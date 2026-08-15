@@ -188,6 +188,8 @@ def main(argv):
     response = ref["lan_build_response"](challenge, k["kRsGoldLanJoinName"],
                                          master)
     want("kRsGoldLanResponseHex", response.hex())
+    want("kRsGoldLanWelcomeHex", ref["lan_build_welcome"](
+        response, k["kRsGoldLanHostName"], master).hex())
     # the response really verifies under the mesh public (a structural
     # claim, not a digest): a golden that did not verify would be useless
     if not ref["_verify_ed25519"](

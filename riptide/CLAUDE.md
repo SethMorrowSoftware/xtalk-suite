@@ -35,7 +35,19 @@ plus the demo's Devices card, golden-pinned and offline-harness-covered;
 its done-criterion (a device that shares the master joins, a stranger is
 refused) needs a two-machine pass. **Phase 5 (live sessions) needs no
 library surface** - SDP rides the phase-4 DM message kinds O/A over the
-existing secretstream, so it is a demo-wiring milestone still to build.
+existing secretstream; its demo wiring is BUILT (2026-08-15): a Call
+button on the Messages card, one-blob non-trickle signalling (ship the
+local SDP when dcGatheringState hits complete), libdatachannel's
+auto-negotiation on both legs, a visible CONNECTED/via line from the
+selected candidate pair, and teardown tied to hang-up/Lock/close with the
+mandatory BARE dcCleanup at quit. STUN only, no TURN, deliberately - a
+symmetric-NAT pair fails visibly instead of relaying silently. The same
+day the LAN admission gained its RSL1 "W" WELCOME (mutual auth: the host
+signs over the joiner's own response signature, so the joiner verifies
+the host shares the master and gets its positive verdict; golden-pinned,
+rogue-host and cross-handshake-replay refusals in the harness), closing
+the joiner-confirmation gap recorded earlier. Both are statically
+verified; docs/two-machine-runbook.md scripts their passes.
 **Phase 7 (anon persona) is BUILT but not passed** (2026-08-14): the
 `rsAnon*` layer (onion-only persona derivation, probe-gated service
 wrapper, BTXO framing) and `rsPersonaAllows` - the pure-policy §9.3 guard,
