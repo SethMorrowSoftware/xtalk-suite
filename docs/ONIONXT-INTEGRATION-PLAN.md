@@ -1164,6 +1164,38 @@ No silent fallback to the swarm ever happens.
 `sOnionServeName`, `sOnionServeTotal`, `sOnionXfer` (plus the §3.3 `sTx*`/`sRx*` arrays). **New stack props:**
 `uFollowAnon`, and (if the persisted serve map is chosen) `uOnionServe`.
 
+### 6.10 As-built notes — the choices this section left open (built 2026-08-15)
+
+Where §6 pinned the framing it was followed exactly (the `BTXC`/`BTXF` byte layouts of §6.4, the `onion:<relId>`
+locator of §6.5, the `svc=` line of §6.1, the `chChannelOnionAddr` derivation, the offline
+`btDhtKeypair`-vs-`sxSignKeypairFromSeed` byte-compare of §6.1, and the §6.7 guard set). Where it left a choice, the
+build made the **same choice QuickShare's shipped Phase-1 layer made**, recorded here:
+
+- **OnionXT owns the accept loop; the demo does NOT call `accept connections on`.** §3.4/§6.3 describe an app-side
+  `accept connections on <port> with message chOnionAccept`, but the shipped OnionXT ABI (`oxCreateServiceFromSeed`
+  "after ensuring a loopback listener is accepting") owns the listener itself and delivers inbound streams through the
+  `oxSetPeerCallback` handler — exactly as `torrent-quickshare` does. So Channels sets `oxSetPeerCallback
+  "chOnionPeer"` once in `chOnionStart` and creates services with `oxCreateServiceFromSeed`; there is **no
+  `chOnionAccept` handler**, and the peer callback disambiguates the target channel from the `BTXC` request's key
+  field (not from `pService`, which `oxGuessService` returns best-effort).
+- **The send pump has no writability gate; it paces on the `~15 ms` timer + `oxWrite`'s error return** — the exact
+  QuickShare resolution of the false-stall lesson (an `oxStreamState` gate could misread a live stream and stall
+  forever). VERIFY #24 stays open; the capped-tick fallback is what shipped.
+- **Concurrency: re-open-per-read fan-out** for Channels (a popular release fans out to concurrent receivers), the
+  §3.3-step-6b choice, via `chOnionSendPump`'s open/seek/read/close-within-one-tick — mirroring `qsFsPump`.
+- **Restart durability: prune-on-load** (`chPruneStrandedAnon`), the documented demo default of §6.5 (not the
+  persisted `uOnionServe`): an in-memory serve map is empty after restart, so stranded `onion:` releases are dropped
+  from the feed with a log rather than advertised un-serveably. `uOnionServe` is left as the documented enhancement.
+- **Subscriber cap = 32 per channel**, oldest-evicted, de-duped by handle, pruned on close AND on each push
+  (§6.4 M1/#20); the ephemeral loopback port is `20000 + random(40000)` (`chPickPort`), matching QuickShare.
+- **The channel card is `Name | key | anon`** (the key is always item 2; names never contain `|`), and an anon
+  feed that answers a stripped 2-field card **promotes** that follow to anon (`chApplyAnonFeed`) so it stops leaking
+  DHT interest — the §6.8 mitigation, applied fail-closed (a public-looking probe writes no placeholder, so a
+  genuinely public-but-slow channel is never mislabeled offline).
+- **`chVerifyOnionIdentity` is the hard gate:** on an older SodiumXT (no ABI-7 `sxSha3_256`) the offline address
+  codec returns no valid `.onion`, the verify fails, and anon is **disabled** with a clear log — the honest
+  fail-closed outcome, not a silent wrong-address.
+
 ---
 
 ## 7. Security model & honesty (Model C)
@@ -1462,6 +1494,16 @@ offline `chVerifyOnionIdentity` (the H5 `btDhtKeypair` vs `sxSignKeypairFromSeed
 `.onion`; toggling **OFF** leaves every clearnet feature bit-for-bit unchanged; with **Tor absent**, the toggle
 shows the §13 fail-closed message and the clearnet demo is entirely unaffected; the offline identity byte-compare
 passes. `check-livecodescript.py` clean.
+> **As-built, Channels half (built 2026-08-15; verified statically).** Done in
+> `torrentxt/examples/torrent-dht-channels.livecodescript`: the `chTor` status pill in the title band
+> (repainted only by `chOnionPill`), the per-channel **`chAnon` "Anonymous..." button** beside `chPrivacy`
+> (built in the stack's own builder section, NOT the ui-kit block, mirroring how quickshare added its toggle),
+> `chHasOnion` (`oxVersion` + `sCanEncrypt`), dual-port `oxConnectControl` (9051 then 9151 via `chOnionTryTB`),
+> `oxSetStatusCallback → chOnionStatus` rendering `oxBootstrapProgress()` into the pill, and the offline
+> `chVerifyOnionIdentity` (`btDhtKeypair` vs `sxSignKeypairFromSeed` byte-compare + the address-codec
+> self-inverse) run once at `chStart`; a failure disables anon (the toggle refuses, no service is ever created).
+> `check-livecodescript.py` clean; the pill/`chAnon` fit inside the unchanged 1180x640 window (`check-stack-size`
+> clean). The **behavioural single-machine gate above remains PENDING an OXT + live-Tor pass** (§12.3).
 
 **Phase 1 — QuickShare onion send/receive.**
 `qsStartOnionShare` stages a file (or its `.enc`), creates `oxCreateServiceFromSeed(random)`, mints a `BTXTOR1:`
@@ -1481,6 +1523,19 @@ the source of truth and the "derivable from pubkey" claim is dropped from the do
 *Done gate:* Two machines. A publishes with anon enabled; B follows by pasting the channel **card only**, reaches
 the onion **with DHT disabled for that channel**, lists releases, and the BEP44 signature still verifies. An old
 2-field card still reaches the channel via the onion-retry fallback (§6.8).
+> **As-built (built 2026-08-15; verified statically).** Done: `chOnionServiceFor` runs one deterministic
+> `oxCreateServiceFromSeed(channelSeed, kOnionVPort, ephemeralPort)` per anon channel, with the **VERIFY-on-service**
+> assert (`oxServiceAddress == chChannelOnionAddr`, byte-equal; a mismatch disables anon as a hard stop);
+> `chAnonFeedText` adds the `svc=<onion>` line to the served feed (built at serve time, parsed by `chRefreshSubs`
+> into `sFollowSvc`, so `chBuildFeed`/the DHT feed are untouched); the `BTXC` request layer is served over onion
+> streams (`chOnionPeer → chOnionServeStream → chOnionServeRequest`), a FEED request returns a `BTXF` frame and
+> **subscribes** the stream (de-duped, capped at 32, pruned on close AND on push); `chOnionPushFeed` re-seals with a
+> fresh nonce per push (M9); the follower `chOnionFollowFetch` dials, sends `BTXC` FEED, and feeds each `BTXF` value
+> through the **unchanged** `chReadFeed`; the deanon guards (§6.7) skip `btDhtPutMutable` for anon in
+> `chPublishActiveFeed`/`chChannelTick` and ignore DHT values for anon follows in `chHandleEvent`; the stripped-card
+> onion-retry + promotion (§6.8) lives in the `chDashOnce` watchdog + `chApplyAnonFeed`. **The two-machine gate above
+> (feed pulled over the onion with DHT off, byte-identical, and the §6.1 live `oxServiceAddress == chChannelOnionAddr`
+> compare) remains PENDING an OXT + live-Tor pass** (§12.3).
 
 **Phase 3 — Channels anonymous file delivery.**
 Follower `chOnionDownload` dials the channel onion and sends a `BTXC` FILE request; publisher `chOnionServeRequest`
@@ -1489,6 +1544,20 @@ maps it and streams the file over §3.3.
 an encrypted release decrypts automatically; the Transfers table marks the row `Onion`; packet capture shows **zero**
 swarm/DHT traffic for that file on both ends; a publisher restart either serves the persisted map or cleanly prunes
 the stranded relIds.
+> **As-built (built 2026-08-15; verified statically).** Done: `chOnionPublishFile` (the anon fork of `chPublishFile`,
+> guarded first-line) picks ONE file (folder refused), optionally encrypts it via the existing
+> `chFileKey`/`chEncryptFile` path when the channel is private, records it in the in-memory serve map
+> `sOnionServe["pub:relId"]`, and publishes a `title TAB onion:<relId> [TAB enc TAB origName]` locator through the
+> **unchanged** `chAddReleaseAndPublish` (no `btCreateTorrent`/`btAddTorrentFile`/`sMineHashes`/magnet reachable);
+> `chDownloadSelected` forks on the `onion:` locator to `chOnionDownload` (never `btAddMagnet`),
+> `chCopySelectedMagnet` gives the friendly no-magnet message; the publisher `chOnionServeRequest` FILE branch
+> streams the file over the §3.3 `BTXO` framing with **re-open-per-read fan-out** (`chOnionSendPump`), a missing
+> serve entry replies with an empty header + FINISH; the follower `chOnionDownload`/`chOnionRecvData` reuses the
+> §3.3 receiver (disk pre-checks, downgrade-refusal, `chSafeLeaf` path-traversal neutralization,
+> auto-decrypt), and `sOnionXfer` rows render in the transfers table with the teal **`Onion`** source. Restart
+> durability is **prune-on-load** (`chPruneStrandedAnon`, the documented demo default: an in-memory serve map is empty
+> after restart, so stranded `onion:` releases are dropped with a log). **The two-machine gate above (byte-identical
+> onion delivery, DHT/swarm off) remains PENDING an OXT + live-Tor pass** (§12.3).
 
 **Phase 4 — Docs / threat-model / onboarding.**
 Write `docs/anon-transport.md` (Model C), the threat model, and the §13 onboarding.
@@ -1618,6 +1687,19 @@ Runnable where the real libs load; each is a hard gate on the phase noted.
   pubkey; `oxPublicKeyFromAddress` inverts it; `oxIsValidAddress` accepts it and rejects a one-bit checksum flip.
 - **#28/§11.2 Throughput** — measure MB/s on two machines before quoting any number to users.
 - **#30/§5.1 UI rects** — pill/toggle do not overlap existing header controls after the tagline shrink.
+- **#31 Channels Phase 0 behaviour (built 2026-08-15, static-only)** — on one machine with Tor: toggling a channel
+  **Anonymous ON** drives `chTor` to "Tor: ready" and brings up its onion service; **OFF** leaves every clearnet
+  channel bit-for-bit unchanged; **Tor absent** shows the §13 fail-closed messages and public channels are
+  untouched; `chVerifyOnionIdentity` passes offline. The `chTor` pill and `chAnon` button fit the unchanged
+  1180x640 window.
+- **#32 Channels Phase 2 behaviour (built 2026-08-15, static-only)** — two machines: A publishes an anon channel,
+  B follows by the **card only**, pulls the signed feed over the onion **with the DHT off for that channel**, lists
+  releases; the live `oxServiceAddress == chChannelOnionAddr(pub)` byte-compare holds (else `svc=` is the source of
+  truth and the derivability claim drops); an old 2-field card recovers via the `chDashOnce` onion-retry (§6.8).
+- **#33 Channels Phase 3 behaviour (built 2026-08-15, static-only)** — two machines: B downloads a selected release
+  **entirely over the onion** (swarm/DHT off), byte-identical (sha256); an encrypted release auto-decrypts; the
+  transfers row shows the teal **`Onion`** source; packet capture shows **zero** swarm/DHT traffic for that file on
+  both ends; a publisher restart cleanly prunes the stranded relIds (`chPruneStrandedAnon`).
 
 ### 12.4 The real proof — two-machine on-engine pass
 
