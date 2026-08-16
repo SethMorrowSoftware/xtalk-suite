@@ -1133,7 +1133,15 @@ def main(argv):
             return rc, out.raw[:32]
 
         signed = verified = 0
-        for idx, sk, pk, aux, msg, sig, want_ok in BIP340_VECTORS:
+        # v_* names ON PURPOSE: this loop lives inside main(), and Python leaks
+        # its loop variables past the loop body. Binding a bare `sk` here
+        # silently rebound the ECDSA section's 32-byte key (line ~875) to a
+        # BIP-340 vector's HEX STRING, which the cross-library check 240 lines
+        # below then handed to `ecdsa`. It only failed where `ecdsa` is
+        # installed - i.e. CI, not this container - so the local gate run was
+        # green and the CI run was red on the same tree.
+        for idx, v_sk, v_pk, v_aux, v_msg, v_sig, v_want_ok in BIP340_VECTORS:
+            sk, pk, aux, msg, sig, want_ok = v_sk, v_pk, v_aux, v_msg, v_sig, v_want_ok
             got = schnorr_verify(h(pk), h(msg), h(sig))
             # CNX_OK means valid; CNX_ERR_BADSIG (-5) means "does not verify",
             # which is what the vector file's FALSE cases expect INCLUDING the
@@ -1373,7 +1381,11 @@ def main(argv):
                             "is not installed, so the cross-library check could not "
                             "run (pip install ecdsa)")
         if have_ecdsa:
-            key = SigningKey.from_string(sk, curve=SECP256k1)
+            # Bound HERE, not inherited: this check pairs with the sig64/dg/pub33
+            # built from RECOVERABLE_SK far above, and anything that rebinds `sk`
+            # in between silently changes what is being cross-checked.
+            xsk = bytes.fromhex(RECOVERABLE_SK)
+            key = SigningKey.from_string(xsk, curve=SECP256k1)
             if not key.get_verifying_key().verify_digest(
                     sig64, dg, sigdecode=sigdecode_string):
                 problems.append("a CoinXT signature did NOT verify in the `ecdsa` library")
