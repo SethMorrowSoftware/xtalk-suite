@@ -108,6 +108,21 @@ tester following it faithfully would have skipped everything built in the last
 two days; and the 720p arithmetic became a committed gate instead of an
 attestation. Full detail in each member's ledger.
 
+**THE FIRST OWNER DECISION CAME BACK, AND IT WAS A BUILD (2026-08-16, commit
+`affdf1c`).** D-01 - the most-blocking of the 21 briefs - was decided "vendor
+it", and coinxt shipped BIP-340 Schnorr and the BIP-341 Taproot tweak the same
+day at ABI 6, closing A.10. Two things are worth carrying out of it. First, the
+brief NAMED THE WRONG LIBRARY: it said `secp256k1-zkp` because coinxt's own
+notes did, and nobody checked until the work started - upstream
+bitcoin-core/secp256k1 carries the modules BIP-340 needs, so the decision was
+cheaper than the brief priced it (the canonical library instead of a fork, and
+no second build system, since coinxt vendors by copying pinned sources).
+A brief is only as good as its evidence, and this one inherited an assumption
+rather than testing it. Second, the brief's own RECOMMENDATION - hold the
+deferral - lost, correctly: it argued from timing ("no consumer needs Taproot
+spends today"), and timing is the owner's to weigh, not the suite's. Both are
+recorded in D-01 rather than tidied away.
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
@@ -224,11 +239,22 @@ and one functional hole.
    field; the demo never populates it. Demo-side wiring only.
    — `riptide/examples/riptide-social.livecodescript:78-79`
 
-10. **coinxt Schnorr/BIP-340 + the Taproot tweak** (large; deferred with
-    Taproot). Waits on a secp256k1-zkp vendoring decision; today
-    cxBtcAddressP2TR encodes a pre-tweaked key and cannot compute the BIP-341
-    tweak.
-    — `coinxt/CLAUDE.md:528`, `coinxt/SPEC.md:158-160`
+10. **~~coinxt Schnorr/BIP-340 + the Taproot tweak~~ SHIPPED statically
+    2026-08-16** (commit `affdf1c`, coinxt ABI 6). The blocking decision
+    (D-01) was DECIDED "vendor it", and the library this item named was
+    wrong: upstream **bitcoin-core/secp256k1** carries schnorrsig and
+    extrakeys in-tree, so the zkp fork was never needed, and coinxt's
+    copy-pinned-sources model meant no second build system. 58 files
+    hash-verified against the pin; all 19 published BIP-340 vectors (10
+    negative) and all 14 BIP-341 wallet vectors drive it. `cxBtcAddressP2TR`
+    is deliberately UNCHANGED - making it tweak would turn every existing
+    correct call into a permanently unspendable double tweak - so the full
+    BIP-341 path is a separately named handler. **Remaining from this item:**
+    the script layer's OXT pass, the Windows DLLs' execution proof (both
+    already counted in section B), and one genuine gap now recorded in
+    coinxt's docs rather than assumed - there is NO BIP-341 sighash builder;
+    coinxt signs a sighash it is handed and cannot compute one.
+    — `coinxt/CLAUDE.md` (the dated rule-change entry), `coinxt/SPEC.md` 2.1
 
 11. **coinxt WIF encode/decode** (small). Designed in SPEC, "handler not found"
     today; the Base58Check framing already exists.
