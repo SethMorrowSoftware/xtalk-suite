@@ -244,12 +244,16 @@ The members are deliberately non-overlapping, so real apps mix them:
   over the torrentxt DHT, every action lives in a signed hash-chained
   transcript, and the deal ladder tops out at a mental-poker shuffle.
   Riptide's sibling capstone, folded home from its standalone repository
-  2026-08-15 at v0.18.0: the hotseat game and the Phase 2 online lobby +
-  online play are BUILT (evaluator exhaustively verified, settlement fuzzed,
-  seven KAT mirrors + an independent-reference fuzz in the gate set); the
-  multi-machine pass, onion tables, and the ristretto255 mental-poker deal
-  (blocked on sodiumxt's planned `sxRistretto*` surface) are the open
-  phases.
+  2026-08-15 at v0.18.0 and built out headlessly to v0.23.0 the following
+  day: the hotseat game, the full Phase 2 online layer (checkpoints,
+  show/muck, host election, act timers/time-bank/sit-out/late-join), onion
+  tables, the Phase 3 deck oracle, the Level 2 mental-poker layer on
+  sodiumxt's ristretto255 surface with its void-and-audit machine and
+  DLEQ proofs — all machine-pinned (evaluator exhaustively verified,
+  settlement fuzzed, seven KAT mirrors + an independent-reference fuzz in
+  the gate set, 114 protocol pins). The live multi-machine passes are the
+  open exit gates; nothing plays on Level 2 until the engine-era wiring
+  lands.
 - **The shipped example.** [`nocloud/`](nocloud/) is **No Cloud Quick Share**,
   a finished end-user app that composes the suite the way the ladder above
   describes: peer-to-peer file sharing as one stack script over torrentxt
