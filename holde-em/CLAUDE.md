@@ -73,11 +73,83 @@ hard way across the sibling repos so it never has to be re-learned here.
 > - The `he*` prefix is registered in `tools/check-handler-calls.py`, which also
 >   learned to strip `/* */` block comments (this file's header changelog leaked
 >   prose into its candidate set - and 31 phantom "definitions" out of it, suite-wide).
-> - Registered in the `start-here.livecodescript` launcher. NOT folded into the
->   generated suite selftest or its coverage gate: this member's harness lives
->   EMBEDDED in the game stack (`heRunSelftest`), not as a separate foldable file -
->   extracting it (or teaching the fold machinery an embedded harness) is recorded
->   follow-up, the box2dxt precedent.
+> - Registered in the `start-here.livecodescript` launcher. **Still NOT folded
+>   into the generated suite selftest or its coverage gate**, and since
+>   2026-08-16 that is a MEASURED decision rather than an untried one. The
+>   box2dxt fold that landed the same day is the precedent and it does not
+>   carry over cleanly, because holde-em is not a harness-plus-library in two
+>   files - it is one 15k-line game stack with the harness inside it, so the
+>   only shape available is the SCRIPT LAYER embed (verbatim, unprefixed), the
+>   way coinxt's, onionxt's, riptide's and now box2dxt's Kit ride. What the
+>   2026-08-16 assessment found, so the next attempt starts here instead of
+>   re-deriving it:
+>
+>   **The good news, and it is most of the file.** The harness is genuinely
+>   headless: every UI-touching handler in all 21 sections' transitive closure
+>   is guarded (`there is a field` / `there is a button` / `heStackFolder`
+>   returning empty for an unsaved stack) and fails closed, so nothing needs
+>   `heBuildTable` to have run. Name collisions against the whole assembled
+>   suite harness (928 handlers, 625 script-level declarations) are FOUR
+>   handlers and ZERO declarations: `openStack`, `closeStack`, `mouseUp` - the
+>   set the fold already drops for every member - and `b2kSpriteOnFinish`.
+>   `heNetStop` (which would call `btStopSession` on the process's ONE
+>   libtorrent session - the `bt1stCleanup` hazard, root CLAUDE.md) is named
+>   only in a comment inside the harness region; it is never reached.
+>
+>   **`b2kSpriteOnFinish` is a real defect here, found by this assessment.**
+>   This file defines `on b2kSpriteOnFinish pSpriteId` as a RECEIVER. That is
+>   the b2k Kit's own SETTER name (`b2kSpriteOnFinish pCtrl, pMessage` - it
+>   registers which message the Kit should dispatch when an animation ends),
+>   and the Kit dispatches the message name the game REGISTERED, never the
+>   literal "b2kSpriteOnFinish". Nothing in this file ever calls the setter, so
+>   the receiver is dead code that also shadows the Kit's setter for any future
+>   caller. It is not the fold's to fix, but the fold cannot proceed past it:
+>   with the Kit now embedded in the suite paste, the two definitions collide
+>   and the paste does not compile.
+>
+>   **Five things the fold machinery does not do yet**, all of them silent
+>   failures rather than errors if anyone forces it:
+>   1. `split_handlers` has no `/* */` awareness. This file's 926-line header
+>      changelog contains a line beginning `on every wire during the netplay
+>      section)`, which the parser reads as a handler opener and dies on.
+>   2. `assert_no_duplicate_definitions` splits declaration lines on commas
+>      WITHOUT removing string literals, so this file's comma-separated KAT
+>      constants (`constant kKatL2Perm1 = "35,31,39,..."`) inject `31`, `39`,
+>      ... into the declared-name set and produce a wall of phantom duplicates.
+>   3. `embed()` is verbatim BY DESIGN and has no drop mechanism, which the
+>      four colliding handlers need.
+>   4. **81 of this file's 188 script-level declarations sit BELOW its first
+>      handler** - `local gRpt, gPassN, gFailN, gSkipN` and every `kKat*`
+>      constant among them - and the hoist only sees the leading preamble. They
+>      would be dropped WITHOUT an error (LiveCodeScript evaluates an
+>      undeclared name as the literal text of its own name), and the suite
+>      checker's check 12 catches only the `s*`/`k*` spellings, never a `g*`.
+>      `tools/build-suite-selftest.py` now REFUSES a source in that shape
+>      (`assert_no_declaration_dropped`, added by the same assessment and
+>      mutation-tested); every current member and layer passes it.
+>   5. `heRunSelftest` needs a quiet returned-report entry point. Its summary
+>      line is `==== n pass, m fail, k skip ====`, which the suite core's
+>      `stSummaryCounts` deliberately refuses (the words are `pass`/`fail`, not
+>      `passed`/`failed`, and `====` disqualifies the line), so it would report
+>      as unreadable. It also BUILDS an 800x560 report overlay on the card,
+>      OVERWRITES the clipboard (the suite scaffold's own Copy-results channel)
+>      and writes to `msg` - all correct standalone, all wrong folded.
+>      Separately, the sections call `heNetHandKick` seven times on synthetic
+>      online contexts, and it can arm `send "heNetNextHandTick"`; a folded
+>      entry point must sweep its own pending messages the way `heNetStop`
+>      sweeps `heNetPollTick`, or a stray tick fires into the suite's async
+>      phase.
+>
+>   **And the size, which is the part to argue about.** The embed is ~14,050
+>   lines (13,899 of body plus the hoisted declarations) on top of a paste that
+>   is 20,590 lines today - a 68% growth, to ~34,650. What it buys is real: 374
+>   assertions and 30 skips across 21 sections. Nobody should call that
+>   prohibitive without saying the number, so: it is not obviously prohibitive,
+>   and it was NOT the reason this was deferred. The reason is items 1-5 plus
+>   the collision above - five pieces of new fold machinery and one defect in
+>   this file, none of it runtime-verifiable here, landing in the same change
+>   as the box2dxt fold that already added 7k lines and 388 handlers to the
+>   same paste. Do it as its own pass, with an OXT run at the end of it.
 >
 > Where this file and the suite root `CLAUDE.md` conflict, this file wins inside
 > `holde-em/`; paths in the docs below may still read as if this were its own repo

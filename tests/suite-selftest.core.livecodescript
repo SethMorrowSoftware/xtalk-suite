@@ -46,14 +46,21 @@ script "xTalkSuiteSelfTest"
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
+--   box2dxt         stSelfTest()      50 test handlers, ~372 assertions,
+--                                     driving the real b2k Kit hand-stepped
+--                                     one fixed 1/60 tick at a time. It
+--                                     BUILDS graphics on this card, wipes
+--                                     them, and tears its world down before
+--                                     returning (added 2026-08-16)
 --   riptide         rsSelfTest()      run LAST: identity, wire formats, and
 --                                     the phase-2 live feed layer, which
 --                                     also shares this file's session
 --
--- AND IT CARRIES THE THREE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- AND IT CARRIES THE FOUR PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
 -- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
--- surface, and riptide's rs* layer are LiveCodeScript, and the first two
--- used to be a separate setup step - `start using stack` x2 before pasting.
+-- surface, riptide's rs* layer and box2dxt's b2k Kit are LiveCodeScript, and
+-- the first two used to be a separate setup step - `start using stack` x2
+-- before pasting.
 -- Embedded, that step is gone, and so is the failure mode it carried: the
 -- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
 -- coinxt stack predated a parser fix, and got two red lines that read as
@@ -167,12 +174,21 @@ constant kStWidth = 760
 constant kStHeight = 640
 
 -- ---- state -------------------------------------------------------------------
-local sRunning             -- "true" while the async phases are still live
+-- "true" while the async phases are still live. Spelled sAsyncRunning rather
+-- than the obvious sRunning because the embedded Box2Dxt Kit declares a
+-- script-level sRunning of its own (its physics loop flag), and the embedded
+-- layers are VERBATIM by design - the generator cannot rename for them, and
+-- two units sharing one variable is the exact isolation failure the fold's
+-- prefixing exists to prevent. Renaming here costs six lines in a
+-- hand-maintained file; renaming there would touch a shipped library and
+-- re-carry its six embedded copies for this file's convenience.
+local sAsyncRunning
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
 local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
+local sHaveBox2d           -- the box2dxt EXTENSION (its Kit is embedded); see stProbe
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -451,7 +467,7 @@ command stRun
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
    stResetCounters
-   put "true" into sRunning
+   put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
@@ -744,6 +760,27 @@ command stProbe
    end try
    stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- BOX2DXT IS THE SECOND TWO-PIECE MEMBER, and its pieces sit the other way
+   -- round from CoinXT's: the b2k Kit is pure script and rides the embed (so it
+   -- cannot be absent from a paste that compiled), while the physics itself is
+   -- the native extension and very much can be. So this probes the EXTENSION,
+   -- and it does it the way box2dxt's own harness does: b2kEnsureNativeLib
+   -- first, which seeds revLibraryMapping["box2dxt"] from the folder beside
+   -- this stack and is the engine hook that lets the library load with no sudo
+   -- and no system path. It is a documented no-op for an unsaved stack, so it
+   -- is safe to call unconditionally - and it is inside the try because on a
+   -- machine with no box2dxt at all, the Kit handler is present (embedded) but
+   -- b2Version is not.
+   put false into sHaveBox2d
+   try
+      b2kEnsureNativeLib
+      put b2Version() into tVersion
+      put (tVersion is not empty) into sHaveBox2d
+   catch tError
+      put false into sHaveBox2d
+   end try
+   stProbeLine "Box2Dxt (extension)", sHaveBox2d, "org.openxtalk.box2dxt"
 end stProbe
 
 command stProbeLine pName, pPresent, pHint
@@ -1596,7 +1633,7 @@ end stCheckSealed
 command stPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
-   if sRunning is not "true" then
+   if sAsyncRunning is not "true" then
       exit stPump
    end if
 
@@ -1688,7 +1725,7 @@ command stFinish
    stNote "This is a sampler, not a full per-member selftest: it drives the"
    stNote "headline paths and the cross-member seams. Each member has a deeper"
    stNote "harness that still needs its own engine run. Paste these numbers back."
-   put empty into sRunning
+   put empty into sAsyncRunning
    stReportDone
 end stFinish
 
@@ -1749,7 +1786,7 @@ end stTeardown
 -- teardown (called from the scaffold's closeStack and Re-run) is
 -- unconditional and idempotent here.
 command stCleanup
-   put empty into sRunning
+   put empty into sAsyncRunning
    put "skip" into sPhaseEn
    put "skip" into sPhaseDc
    stCancelPump
@@ -1805,7 +1842,7 @@ end stCleanup
 -- ---- small helpers -----------------------------------------------------------
 -- Kill any pump still queued from a previous run. Without this, Re-run would arm
 -- a SECOND timer chain while the first was still pending: both would pass the
--- `sRunning is "true"` guard, both would drive the same phase machine, and every
+-- `sAsyncRunning is "true"` guard, both would drive the same phase machine, and every
 -- assertion would be counted twice - a silently wrong report, which is worse
 -- than no report. `the pendingMessages` lines are id,time,message,object.
 command stCancelPump
@@ -1952,6 +1989,27 @@ command stRunMemberHarnesses
       end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   end if
+
+   -- BOX2DXT RUNS AFTER THE TRANSPORTS AND BEFORE RIPTIDE, and unlike every
+   -- other folded harness this one BUILDS THINGS ON THIS CARD: it creates
+   -- graphics and images (all named st_*), drives them through a real physics
+   -- world, and wipes them again. That is exactly what it does standalone; the
+   -- only difference here is whose card it is. Its own stWipe deletes controls
+   -- by the "st_" prefix, which none of this harness's window controls carry
+   -- (stTitle, stSummary, stResults, stCopy, stRerun - no underscore), and its
+   -- last act is b2kStop + b2kTeardown, which bump the Kit's generation tag so
+   -- any frame message still queued from its worlds is a no-op. It therefore
+   -- has to finish BEFORE the cross-member loopbacks below arm their pump.
+   if sHaveBox2d then
+      try
+         stMergeReturned "Box2Dxt", b21stSelfTest()
+      catch tError
+         stSectionFailed "Box2Dxt deep self-test", tError
+      end try
+   else
+      stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
+            "Kit is embedded in this paste, but the physics is native)"
    end if
 
    -- Riptide is an APP layer over the extensions above, so it runs LAST: by

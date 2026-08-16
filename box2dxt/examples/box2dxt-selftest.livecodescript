@@ -47,7 +47,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "22"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "23"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -119,7 +119,7 @@ command stRunAll
       stOut "Box2Dxt is not installed (org.openxtalk.box2dxt) - install the"
       stOut "extension and reopen this stack. Nothing was tested."
       stOut "  (" & tProbeErr & ")"
-      set the text of field "stReport" to gRep
+      stPaintReport
       put false into gRunning
       exit stRunAll
    end try
@@ -162,6 +162,20 @@ command stRunAll
    stRun "stTestDuckReshape"
    stRun "stTestPlayerHelpers"
    stRun "stTestTeardown"
+   -- the Kit API coverage sections (see the banner below stTestTeardown)
+   stRun "stTestKitHelpers"
+   stRun "stTestKitInputMap"
+   stRun "stTestKitAttach"
+   stRun "stTestKitBodyProps"
+   stRun "stTestKitForces"
+   stRun "stTestKitWorldTuning"
+   stRun "stTestKitJoints"
+   stRun "stTestKitEventApi"
+   stRun "stTestKitQueryApi"
+   stRun "stTestKitCameraApi"
+   stRun "stTestKitSpriteApi"
+   stRun "stTestKitSoundApi"
+   stRun "stTestKitPlayerApi"
    try
       b2kInputInjectOff
       b2kStop
@@ -175,9 +189,29 @@ command stRunAll
    else
       stOut "FAILURES: " & gFail & "   passes: " & gPass
    end if
-   set the text of field "stReport" to gRep
+   stPaintReport
    put false into gRunning
 end stRunAll
+
+-- The SUITE entry point: tools/build-suite-selftest.py folds this harness into
+-- tests/suite-selftest.livecodescript, where there is no window of ours and the
+-- core reads what we RETURN. Same run as the button; the report comes back as a
+-- string instead of into a field.
+--
+-- THE FIRST LINE'S SHAPE IS A CONTRACT with the core's stSummaryCounts: a line
+-- counts as the summary only if every word on it is a number or the word
+-- passed/failed (that order, edge punctuation ignored), and EXACTLY ONE line in
+-- the whole report may qualify - zero matches and two matches are both reported
+-- failures rather than a silent zero folded into the suite totals. That is why
+-- the count is repeated here instead of reusing the two lines above: neither
+-- "ALL PASS  (n assertions)" nor "FAILURES: n   passes: n" qualifies (each
+-- carries a disqualifying third word), which is exactly what keeps them from
+-- becoming a SECOND match now that this line exists.
+function stSelfTest
+   stRunAll
+   return gPass && "passed," && gFail && "failed" & cr & \
+         "----------------------------------------" & cr & gRep
+end stSelfTest
 
 -- Run one test isolated: a throw fails THAT test and the suite goes on.
 command stRun pTest
@@ -192,9 +226,22 @@ end stRun
 
 command stOut pLine
    put pLine & cr after gRep
-   set the text of field "stReport" to gRep
-   set the scroll of field "stReport" to 100000
+   stPaintReport
 end stOut
+
+-- Live progress into the standalone window's field - and NOTHING when that
+-- field is not there. Folded into the suite paste the core owns the one window,
+-- so an unguarded `set the text of field "stReport"` would throw on EVERY
+-- output line and take the whole Box2Dxt section down with it. The guard is
+-- `there is a field`, not a try: a missing field is an expected state here, and
+-- swallowing real errors from a field that DOES exist would hide a broken
+-- report surface in the standalone stack.
+command stPaintReport
+   if there is a field "stReport" then
+      set the text of field "stReport" to gRep
+      set the scroll of field "stReport" to 100000
+   end if
+end stPaintReport
 
 command stAssert pName, pCond
    if pCond is true then
@@ -231,6 +278,16 @@ command stStep pN
    end repeat
 end stStep
 
+-- Leave the card as we found it. The st_ prefix is this harness's own
+-- fixtures; the b2k prefix is the KIT's - b2kSpawn* names its controls
+-- b2kspawn_<ms>_<rand>, sprites b2kspr_*, sheet slices b2kfr_/b2kfl_/b2ksheet_,
+-- and the camera its b2kcam_view group. b2kTeardown destroys the BODIES and
+-- the sheets but never the spawned graphics, so 50 test handlers' worth of
+-- them used to pile up on the card and draw over the report field beneath.
+-- That mattered mildly standalone and matters properly now the harness folds
+-- into the suite paste, where the card it litters is the suite's own report
+-- window. Called from stNewWorld AFTER b2kTeardown, so nothing live points at
+-- what this deletes.
 command stWipe
    local tAgain, i, tName
    put true into tAgain
@@ -238,7 +295,7 @@ command stWipe
       put false into tAgain
       repeat with i = 1 to the number of controls of this card
          put the short name of control i of this card into tName
-         if char 1 to 3 of tName is "st_" then
+         if char 1 to 3 of tName is "st_" or char 1 to 3 of tName is "b2k" then
             delete control i of this card
             put true into tAgain
             exit repeat
@@ -1478,6 +1535,829 @@ command stTestSheetPersist
    if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
    if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
 end stTestSheetPersist
+
+
+-- =====================================================================
+-- KIT API COVERAGE (harness v23)
+--
+-- Everything above this banner is a BEHAVIOUR test: a lesson learned on
+-- real hardware, written as an assertion. The block below is a different
+-- job and is labelled so nobody mistakes one for the other.
+--
+-- Folding this harness into the suite paste put it under
+-- tools/check-suite-coverage.py, whose rule is that every public handler
+-- a member ships must be CALLED BY NAME by the suite harness or carry a
+-- written reason why it cannot be. Measured on first contact, 211 of the
+-- Kit's 313 public handlers had never been named here - and a good many
+-- of them RUN on every existing test (b2kStepOnce alone drives
+-- b2kHarvestEvents, b2kSyncBodies, b2kInputTick, b2kPlayerTick,
+-- b2kSpritesTick, b2kCamTick and both dispatchers) without any test ever
+-- writing their names down. Untested and untestable are different
+-- states, and only a gate that can tell them apart is worth having.
+--
+-- So these sections drive the rest of the surface directly and assert
+-- what each handler is contracted to do. They are deliberately SHALLOW
+-- next to the behaviour tests above: the contract here is "this handler
+-- exists, takes these arguments, and reports the documented shape", not
+-- "the physics is right". Depth stays the behaviour tests' job, and a
+-- handler that earns a real lesson should GRADUATE out of these sections
+-- into one of its own above.
+--
+-- Each section is small on purpose. stRun isolates a throw to one
+-- section, so a wrong argument order costs that section and nothing
+-- else - which matters here, where the calls are broad and new.
+-- =====================================================================
+
+-- Pure helpers: no world state, so these are the assertions that can be
+-- fully reasoned about without a physics step at all.
+command stTestKitHelpers
+   local tVerts, tBytes, tWav, tXml, tProf
+   stNewWorld "kit api: pure helpers, coordinates, tone bytes"
+   stAssert "b2kNumberOr passes a number through", (b2kNumberOr(7, 3) is 7)
+   stAssert "b2kNumberOr substitutes for empty", (b2kNumberOr(empty, 3) is 3)
+   stAssert "b2kNumberOr substitutes for non-numeric", (b2kNumberOr("x", 3) is 3)
+   stAssert "b2kClamp holds the low edge", (b2kClamp(-5, 0, 10) is 0)
+   stAssert "b2kClamp holds the high edge", (b2kClamp(50, 0, 10) is 10)
+   stAssert "b2kClamp passes the middle through", (b2kClamp(4, 0, 10) is 4)
+   stAssert "b2kClamp defaults a non-number to the low edge", (b2kClamp("x", 2, 10) is 2)
+   -- the two coordinate systems: pixels/y-down out here, metres/y-up inside
+   stAssert "screen x round-trips through world x", \
+         (round(b2kToScreenX(b2kToWorldX(300))) is 300)
+   stAssert "screen y round-trips through world y", \
+         (round(b2kToScreenY(b2kToWorldY(200))) is 200)
+   stAssert "world y is UP (a lower screen y is a higher world y)", \
+         (b2kToWorldY(100) > b2kToWorldY(300))
+   -- with the origin and scale pinned, the mapping is arithmetic
+   b2kSetOrigin 0, 0
+   b2kSetScale 100
+   stAssert "b2kSetScale + b2kSetOrigin place the world origin exactly", \
+         (round(b2kToScreenX(1)) is 100 and round(b2kToScreenY(1)) is -100)
+   stAssert "b2kToWorldX inverts the new scale", (b2kToWorldX(250) is 2.5)
+   -- b2kCorner rotates a local offset and returns it in screen pixels;
+   -- c/s are the caller's precomputed cos/sin, so 1,0 is angle zero
+   stAssert "b2kCorner at angle zero is the plain offset (" & b2kCorner(0, 0, 1, 0, 1, 0) & ")", \
+         (b2kCorner(0, 0, 1, 0, 1, 0) is "100,0")
+   -- 2 caps of 9 points each; the first is the right cap's bottom
+   put b2kCapsuleVerts(10, 4, true) into tVerts
+   stAssert "b2kCapsuleVerts returns 18 hull points", (the number of lines of tVerts is 18)
+   set the itemDelimiter to comma
+   stAssert "b2kCapsuleVerts starts at the right cap's bottom", \
+         (round(item 1 of line 1 of tVerts) is 10 and round(item 2 of line 1 of tVerts) is -4)
+   stAssert "b2kLayerBits names the reserved one-way bit", \
+         (b2kLayerBits("oneway") is 2147483648)
+   stAssert "b2kLayerBits passes a numeric layer through", (b2kLayerBits(4) is 4)
+   stAssert "b2kLayerBits ORs a list", (b2kLayerBits("2,4") is 6)
+   put "<SubTexture name=" & quote & "run0" & quote & " x=" & quote & "16" & quote & "/>" into tXml
+   stAssert "b2kXmlAttr reads a quoted attribute", (b2kXmlAttr(tXml, "name") is "run0")
+   stAssert "b2kXmlAttr returns empty for an absent attribute", (b2kXmlAttr(tXml, "y") is empty)
+   -- 22050 Hz, 8-bit mono: 100ms is exactly 2205 samples, and the WAV
+   -- wrapper is a fixed 44-byte RIFF header
+   put b2kToneBytes(440, 100, 50, "square") into tBytes
+   stAssert "b2kToneBytes makes 22050Hz samples (2205 for 100ms, got " \
+         & the number of bytes in tBytes & ")", (the number of bytes in tBytes is 2205)
+   put b2kWavWrap(tBytes) into tWav
+   stAssert "b2kWavWrap adds exactly a 44-byte header", \
+         (the number of bytes in tWav is the number of bytes in tBytes + 44)
+   stAssert "b2kWavWrap emits a RIFF header", (byte 1 to 4 of tWav is "RIFF")
+   stAssert "b2kVersion reports the extension ABI", (b2kVersion() is b2Version())
+   stAssert "b2kWorld hands out the live world handle", (b2kWorld() is not empty)
+   stAssert "b2kIsRunning is false while paused", (b2kIsRunning() is false)
+   b2kResume
+   stAssert "b2kResume clears the pause", (b2kIsRunning() is true)
+   b2kPause
+   stAssert "b2kFrameMS reports a number", (b2kFrameMS() is a number)
+   put b2kProfile() into tProf
+   stAssert "b2kProfile reports step,collide,solve (" & tProf & ")", \
+         (the number of items of tProf is 3)
+end stTestKitHelpers
+
+-- The input MAPPING layer, as opposed to the injected-key behaviour the
+-- stTestInput section above already covers.
+command stTestKitInputMap
+   local tCodes
+   stNewWorld "kit api: key codes, names, action and axis bindings"
+   b2kInputOn
+   stAssert "b2kInputIsOn reports the input layer up", (b2kInputIsOn() is true)
+   stAssert "b2kKeyCodes maps a named key", (b2kKeyCodes("left") is 65361)
+   stAssert "b2kKeyCodes maps space", (b2kKeyCodes("space") is 32)
+   stAssert "b2kKeyCodes gives a letter BOTH cases", (b2kKeyCodes("a") is "97,65")
+   stAssert "b2kKeyName inverts a named code", (b2kKeyName(65361) is "left")
+   stAssert "b2kKeyName folds an uppercase letter code to lowercase", (b2kKeyName(65) is "a")
+   put b2kKeyListCodes("left,space") into tCodes
+   stAssert "b2kKeyListCodes flattens a key list (" & tCodes & ")", (tCodes is "65361,32")
+   stAssert "b2kKeyInSet finds a held key", (b2kKeyInSet(comma & "32" & comma, "space") is true)
+   stAssert "b2kKeyInSet misses an absent key", (b2kKeyInSet(comma & "32" & comma, "left") is false)
+   stAssert "b2kCodesInSet takes raw codes", (b2kCodesInSet(comma & "32" & comma, "32") is true)
+   stAssert "b2kCodesInSet refuses an empty set", (b2kCodesInSet(empty, "32") is false)
+   b2kBindAction "stfire", "space"
+   b2kBindAxis "stwalk", "left", "right"
+   -- inject, tick, and read the three edge accessors on one frame
+   b2kInputInject "space"
+   b2kInputTick
+   stAssert "b2kKeyIsDown sees the injected key", (b2kKeyIsDown("space") is true)
+   stAssert "b2kKeyPressed fires on the entering edge", (b2kKeyPressed("space") is true)
+   stAssert "b2kActionIsDown reads the bound action", (b2kActionIsDown("stfire") is true)
+   stAssert "b2kAxis reads the bound axis at rest", (b2kAxis("stwalk") is 0)
+   stAssert "b2kKeysHeld names what is down (" & b2kKeysHeld() & ")", \
+         (b2kKeysHeld() is "space")
+   b2kInputInject ""
+   b2kInputTick
+   stAssert "b2kKeyReleased fires on the leaving edge", (b2kKeyReleased("space") is true)
+   stAssert "b2kKeyIsDown is false once released", (b2kKeyIsDown("space") is false)
+   b2kInputInjectOff
+   b2kInputOff
+   stAssert "b2kInputOff takes the input layer down", (b2kInputIsOn() is false)
+end stTestKitInputMap
+
+-- Attaching bodies to EXISTING controls (the b2kAdd* family), as opposed
+-- to the b2kSpawn* family that makes the control for you.
+command stTestKitAttach
+   local tRef, tBody
+   stNewWorld "kit api: attach a body to an existing control"
+   stSlab "st_floor", 60, 520, 800, 560
+   -- one control per shape kind; each must register a body
+   create graphic "st_abox"
+   set the style of it to "rectangle"
+   set the rect of it to 100, 100, 140, 140
+   b2kAddBox the long id of graphic "st_abox"
+   stAssert "b2kAddBox registers a body", (b2kBodyOf(the long id of graphic "st_abox") is not empty)
+   create graphic "st_aball"
+   set the style of it to "oval"
+   set the rect of it to 200, 100, 240, 140
+   b2kAddBall the long id of graphic "st_aball"
+   stAssert "b2kAddBall registers a body", (b2kBodyOf(the long id of graphic "st_aball") is not empty)
+   create graphic "st_acap"
+   set the style of it to "rectangle"
+   set the rect of it to 300, 100, 380, 140
+   b2kAddCapsule the long id of graphic "st_acap"
+   stAssert "b2kAddCapsule registers a body", (b2kBodyOf(the long id of graphic "st_acap") is not empty)
+   create graphic "st_apoly"
+   set the style of it to "polygon"
+   set the points of it to "400,100" & cr & "440,100" & cr & "420,140" & cr & "400,100"
+   b2kAddPolygon the long id of graphic "st_apoly"
+   stAssert "b2kAddPolygon registers a body", (b2kBodyOf(the long id of graphic "st_apoly") is not empty)
+   create graphic "st_achain"
+   set the style of it to "rectangle"
+   set the rect of it to 500, 300, 700, 320
+   b2kAddChain the long id of graphic "st_achain", "0,0" & cr & "200,0", false
+   stAssert "b2kAddChain registers a static body", \
+         (b2kBodyOf(the long id of graphic "st_achain") is not empty)
+   stAssert "five attachments plus the slab are tracked (got " & b2kBodyCount() & ")", \
+         (b2kBodyCount() is 6)
+   -- static terrain helpers make bodies the Kit does NOT track by control
+   b2kAddGround 580
+   b2kWall 60, 60, 60, 500
+   b2kEdge b2kToWorldX(700), b2kToWorldY(60), b2kToWorldX(700), b2kToWorldY(500)
+   b2kChain "0,0" & cr & "100,0", false
+   b2kAddWalls
+   stAssert "static terrain helpers do not enter the control table", (b2kBodyCount() is 6)
+   -- b2kRegister is the manual door into that table; b2kRemove is the exit
+   put b2kBodyOf(the long id of graphic "st_abox") into tBody
+   b2kRemove the long id of graphic "st_abox"
+   stAssert "b2kRemove forgets the control", \
+         (b2kBodyOf(the long id of graphic "st_abox") is empty)
+   b2kSpawnBall 300, 200, 20
+   put the result into tRef
+   b2kRegister tRef, b2kBodyOf(tRef), false
+   stAssert "b2kRegister is idempotent for a live pair", (b2kBodyOf(tRef) is not empty)
+   b2kSpawnCapsule 420, 200, 60, 24, "green"
+   put the result into tRef
+   stAssert "b2kSpawnCapsule makes a control", (tRef is not empty)
+   stAssert "...with a body", (b2kBodyOf(tRef) is not empty)
+end stTestKitAttach
+
+-- Per-body accessors and mutators.
+command stTestKitBodyProps
+   local tRef, tDamp
+   stNewWorld "kit api: per-body type, flags, damping, sleep, motion"
+   stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 200, 40, 40
+   put the result into tRef
+   stAssert "a spawned box is dynamic", (b2kBodyType(tRef) is "dynamic")
+   b2kSetType tRef, "kinematic"
+   stAssert "b2kSetType makes it kinematic", (b2kBodyType(tRef) is "kinematic")
+   b2kSetType tRef, "static"
+   stAssert "b2kSetType makes it static", (b2kBodyType(tRef) is "static")
+   b2kSetDynamic tRef
+   stAssert "b2kSetDynamic puts it back", (b2kBodyType(tRef) is "dynamic")
+   stAssert "a fresh body is not a bullet", (b2kIsBullet(tRef) is false)
+   b2kSetBullet tRef, true
+   stAssert "b2kSetBullet flips the continuous flag", (b2kIsBullet(tRef) is true)
+   b2kSetBullet tRef, false
+   b2kSetDamping tRef, 0.5, 0.25
+   put b2kDamping(tRef) into tDamp
+   set the itemDelimiter to comma
+   stAssert "b2kDamping reads linear,angular back (" & tDamp & ")", \
+         (abs(item 1 of tDamp - 0.5) < 0.01 and abs(item 2 of tDamp - 0.25) < 0.01)
+   b2kSetDamping tRef, 0, 0
+   b2kSetGravityScale tRef, 0.5
+   stAssert "b2kGravityScale reads the scale back", (abs(b2kGravityScale(tRef) - 0.5) < 0.01)
+   b2kSetGravityScale tRef, 1
+   b2kSetFriction tRef, 0.9
+   b2kSetFixedRotation tRef, true
+   b2kSetCollisionGroup tRef, 3
+   b2kSetSensor tRef, true
+   b2kSetSensor tRef, false
+   b2kSetSleepThreshold tRef, 4
+   -- motion: b2kSpin sets the rate outright, b2kSpinBy adds to it
+   b2kSetFixedRotation tRef, false
+   b2kSpin tRef, 90
+   stAssert "b2kSpin sets the spin rate (got " & round(b2kSpinRate(tRef)) & ")", \
+         (abs(b2kSpinRate(tRef) - 90) < 2)
+   b2kSpinBy tRef, 90
+   stAssert "b2kSpinBy adds to it (got " & round(b2kSpinRate(tRef)) & ")", \
+         (abs(b2kSpinRate(tRef) - 180) < 3)
+   b2kSpin tRef, 0
+   stAssert "b2kAngle starts at zero degrees", (abs(b2kAngle(tRef)) < 1)
+   b2kSetVelocity tRef, 300, 0
+   stAssert "b2kSpeed is the velocity magnitude (got " & round(b2kSpeed(tRef)) & ")", \
+         (abs(b2kSpeed(tRef) - 300) < 2)
+   b2kSetVelocity tRef, 0, 0
+   -- sleeping: allow it, then put the body to sleep by hand
+   b2kSetSleepEnabled tRef, true
+   b2kSleep tRef
+   stAssert "b2kSleep puts the body to sleep", (b2kIsAwake(tRef) is false)
+   stAssert "an asleep body is out of the awake count", (b2kAwakeCount() is 0)
+   b2kWake tRef
+   stAssert "b2kAwakeCount counts the woken body", (b2kAwakeCount() is 1)
+   stAssert "b2kAwakeBodyCount reports the engine's own tally", \
+         (b2kAwakeBodyCount() is a number)
+   -- reshape swaps the shape under a live body without dropping it
+   b2kReshape tRef, "ball"
+   stAssert "b2kReshape keeps the body registered", (b2kBodyOf(tRef) is not empty)
+end stTestKitBodyProps
+
+-- Forces, impulses and the explicit sync/prune entry points.
+command stTestKitForces
+   local tRef, tVy, tGrabbed
+   stNewWorld "kit api: forces, impulses, explosions, grab, sync"
+   stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 200, 40, 40
+   put the result into tRef
+   b2kSetGravityScale tRef, 0
+   b2kPush tRef, 100, 0
+   stStep 1
+   stAssert "b2kPush adds velocity directly (vx " & round(stVX(tRef)) & ")", \
+         (stVX(tRef) > 50)
+   b2kSetVelocity tRef, 0, 0
+   b2kImpulse tRef, 0, 4000
+   stStep 1
+   put stVY(tRef) into tVy
+   stAssert "b2kImpulse pushes UP for a positive y (vy " & round(tVy) & ")", (tVy < -1)
+   b2kSetVelocity tRef, 0, 0
+   b2kForce tRef, 60000, 0
+   stStep 3
+   stAssert "b2kForce accelerates over time (vx " & round(stVX(tRef)) & ")", (stVX(tRef) > 1)
+   b2kSetVelocity tRef, 0, 0
+   b2kSetFixedRotation tRef, false
+   b2kTorque tRef, 5000
+   stStep 3
+   stAssert "b2kTorque spins it (rate " & round(b2kSpinRate(tRef)) & ")", \
+         (abs(b2kSpinRate(tRef)) > 0)
+   b2kSpin tRef, 0
+   b2kAngularImpulse tRef, 50
+   stStep 1
+   stAssert "b2kAngularImpulse spins it too", (abs(b2kSpinRate(tRef)) > 0)
+   b2kSpin tRef, 0
+   b2kSetGravityScale tRef, 1
+   -- BOTH explosion paths: the engine's own, and the pre-v3 script one. The
+   -- box is moved back to a known spot first - by here it has been pushed,
+   -- impulsed and forced around, and a blast centred on a guess about where it
+   -- drifted to is a test of this comment's arithmetic, not of b2kExplode.
+   b2kMoveTo tRef, 300, 260
+   b2kSetVelocity tRef, 0, 0
+   b2kExplode 300, 260, 200, 1200
+   stStep 1
+   stAssert "b2kExplode moves a nearby body", (b2kSpeed(tRef) > 0)
+   b2kMoveTo tRef, 300, 260
+   b2kSetVelocity tRef, 0, 0
+   b2kExplodeLegacy 300, 260, 200, 1200
+   stStep 1
+   stAssert "b2kExplodeLegacy moves it as well", (b2kSpeed(tRef) > 0)
+   b2kSetVelocity tRef, 0, 0
+   -- grab/release is the mouse-joint path, driven here without a mouse
+   set the itemDelimiter to comma
+   put b2kGrab(item 1 of b2kPosition(tRef), item 2 of b2kPosition(tRef)) into tGrabbed
+   stAssert "b2kGrab returns the control it caught", (tGrabbed is tRef)
+   b2kRelease
+   stAssert "b2kRelease leaves the body intact", (b2kBodyOf(tRef) is not empty)
+   -- the explicit redraw entry points; all three are no-throw idempotent
+   b2kSyncBodies
+   b2kSyncAllBodies
+   b2kSync
+   b2kSyncAll
+   stAssert "the sync entry points leave the world alone", (b2kBodyCount() is 2)
+   -- prune is what b2kSyncBodies calls for a control that vanished
+   b2kSpawnBall 500, 200, 20
+   put the result into tRef
+   b2kPruneDeadRefs tRef
+   stAssert "b2kPruneDeadRefs drops the ref it is handed", (b2kBodyOf(tRef) is empty)
+end stTestKitForces
+
+-- World-level tuning. Every one of these is a pass-through to the
+-- engine with a pixels-to-metres conversion, so what is asserted is
+-- that it is callable and leaves the world usable - not the solver's
+-- answer, which is Box2D's business and not this Kit's.
+command stTestKitWorldTuning
+   local tRef, tAnchor, tCentre, tBody
+   stNewWorld "kit api: world tuning pass-throughs"
+   stSlab "st_floor", 60, 520, 800, 560
+   b2kSetGravity 0, -20
+   b2kSetSubsteps 8
+   b2kSetMaxSpeed 4000
+   b2kSetRestitutionThreshold 40
+   b2kSetContactTuning 30, 10, 3
+   b2kSetJointTuning 60, 2
+   b2kEnableSleeping true
+   b2kEnableContinuous true
+   b2kEnableWarmStarting true
+   b2kSpawnBall 300, 200, 24
+   put the result into tRef
+   stStep 20
+   stAssert "the world still steps after every tuning call", (stY(tRef) > 200)
+   stAssert "doubled gravity is felt (vy " & round(stVY(tRef)) & ")", (stVY(tRef) > 200)
+   -- b2kLocalAnchor turns a world point into the body's own frame; the
+   -- body's own centre is the origin of that frame
+   put b2kBodyOf(tRef) into tBody
+   set the itemDelimiter to comma
+   put b2kPosition(tRef) into tCentre
+   put b2kLocalAnchor(tBody, b2kToWorldX(item 1 of tCentre), b2kToWorldY(item 2 of tCentre)) \
+         into tAnchor
+   stAssert "b2kLocalAnchor puts the body centre at its own origin (" & tAnchor & ")", \
+         (abs(item 1 of tAnchor) < 0.05 and abs(item 2 of tAnchor) < 0.05)
+   put b2kWorldCenter(tRef) into tCentre
+   stAssert "b2kWorldCenter reports screen pixels (" & tCentre & ")", \
+         (item 1 of tCentre is a number and item 2 of tCentre is a number)
+   -- the frame message is generation-tagged: a stale tag is a no-op, which
+   -- is what makes b2kStop and b2kTeardown safe mid-flight
+   b2kStep "stale-generation"
+   stAssert "a stale b2kStep generation is a no-op", (b2kBodyCount() is 2)
+   -- b2kEventsReset and b2kResetTables are the two clears; the second is
+   -- the harder one (it forgets every tracked control)
+   b2kEventsReset
+   stAssert "b2kEventsReset empties the contact buffer", (b2kContactCount() is 0)
+   b2kResetTables
+   stAssert "b2kResetTables forgets every tracked control", (b2kBodyCount() is 0)
+   -- b2kQuickStart is world + walls + running in one call
+   b2kQuickStart -10
+   b2kPause
+   stAssert "b2kQuickStart leaves a live world", (b2kWorld() is not empty)
+end stTestKitWorldTuning
+
+-- The joint families the behaviour tests above do not reach: prismatic
+-- (slider), wheel, weld, motor, and the distance-joint tuning calls.
+command stTestKitJoints
+   local tA, tB, tJoint, tPos
+   stNewWorld "kit api: slider, wheel, weld, motor and rope tuning"
+   stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 300, 40, 40
+   put the result into tA
+   -- SLIDER against the world anchor: a vertical axis, motor driven
+   b2kSlider tA, empty, 90
+   put the result into tJoint
+   stAssert "b2kSlider returns a joint", (tJoint > 0)
+   stAssert "b2kSliderPos starts at zero", (abs(b2kSliderPos(tJoint)) < 2)
+   b2kSliderLimit tJoint, -100, 100
+   b2kSliderMotor tJoint, 200, 100000
+   stStep 20
+   stAssert "the slider motor moved it (pos " & round(b2kSliderPos(tJoint)) & ")", \
+         (abs(b2kSliderPos(tJoint)) > 5)
+   b2kSliderMotorOff tJoint
+   b2kSliderLimitOff tJoint
+   b2kRemoveJoint tJoint
+   -- WHEEL: chassis plus wheel, motorised, sprung
+   b2kSpawnBox 500, 300, 80, 20
+   put the result into tA
+   b2kSpawnBall 500, 330, 20
+   put the result into tB
+   b2kWheel tA, tB, 500, 330, 0
+   put the result into tJoint
+   stAssert "b2kWheel returns a joint", (tJoint > 0)
+   b2kWheelMotor tJoint, 360, 5000
+   b2kWheelSpring tJoint, 4, 0.7
+   stStep 20
+   stAssert "the wheel motor spins the wheel (rate " & round(b2kSpinRate(tB)) & ")", \
+         (abs(b2kSpinRate(tB)) > 10)
+   b2kWheelMotorOff tJoint
+   b2kRemoveJoint tJoint
+   -- WELD: two boxes locked together move as one
+   b2kSpawnBox 200, 200, 30, 30
+   put the result into tA
+   b2kSpawnBox 240, 200, 30, 30
+   put the result into tB
+   b2kWeld tA, tB
+   put the result into tJoint
+   stAssert "b2kWeld returns a joint", (tJoint > 0)
+   b2kWeldSpring tJoint, 8, 0.5
+   stStep 20
+   stAssert "welded bodies fall together (dy " & round(abs(stY(tA) - stY(tB))) & "px)", \
+         (abs(stY(tA) - stY(tB)) < 8)
+   b2kRemoveJoint tJoint
+   -- MOTOR joint: drives a body toward an offset from a reference
+   b2kSpawnBox 650, 200, 30, 30
+   put the result into tA
+   b2kSetGravityScale tA, 0
+   b2kMotorTo tA, empty, 0, 0, 0, 100000, 100000
+   put the result into tJoint
+   stAssert "b2kMotorTo returns a joint", (tJoint > 0)
+   stStep 30
+   set the itemDelimiter to comma
+   put b2kPosition(tA) into tPos
+   stAssert "the motor joint drags it toward the anchor (x " & round(item 1 of tPos) & ")", \
+         (item 1 of tPos < 650)
+   b2kRemoveJoint tJoint
+   -- the ROPE (distance joint) tuning calls, on a live rope
+   b2kSpawnBall 400, 150, 16
+   put the result into tA
+   b2kSetStatic tA
+   b2kSpawnBall 400, 220, 16
+   put the result into tB
+   b2kRope tA, tB, 70
+   put the result into tJoint
+   stAssert "b2kRope returns a joint", (tJoint > 0)
+   stAssert "b2kRopeLength reads its length back (got " \
+         & round(b2kRopeLength(tJoint)) & "px)", (abs(b2kRopeLength(tJoint) - 70) < 6)
+   b2kRopeSetLength tJoint, 40
+   stAssert "b2kRopeSetLength changes it (got " & round(b2kRopeLength(tJoint)) & "px)", \
+         (abs(b2kRopeLength(tJoint) - 40) < 6)
+   b2kRopeRange tJoint, 20, 90
+   b2kSpring tJoint, 4, 0.5
+   stStep 10
+   stAssert "a sprung rope still holds the pair", (b2kBodyOf(tB) is not empty)
+   b2kRemoveJoint tJoint
+   -- the hinge tuning calls the behaviour test above does not use
+   b2kSpawnBox 100, 400, 60, 12
+   put the result into tA
+   b2kHinge tA, empty, 100, 400
+   put the result into tJoint
+   stAssert "b2kHingeAngle starts near zero (got " \
+         & round(b2kHingeAngle(tJoint)) & " deg)", (abs(b2kHingeAngle(tJoint)) < 3)
+   b2kHingeLimit tJoint, -30, 30
+   stStep 40
+   stAssert "a limited hinge stays inside its arc (got " \
+         & round(b2kHingeAngle(tJoint)) & " deg)", (abs(b2kHingeAngle(tJoint)) < 40)
+   b2kHingeLimitOff tJoint
+   b2kMotor tJoint, 90, 10000
+   b2kMotorOff tJoint
+   b2kRemoveJoint tJoint
+end stTestKitJoints
+
+-- The event BUFFER accessors. stTestEvents above proves the counts and
+-- the frame-exactness; this proves the per-index readers and the two
+-- dispatchers that turn the buffer into messages.
+command stTestKitEventApi
+   local tBall, tSens, i, tSeen, tMsgs
+   stNewWorld "kit api: event buffer readers and the dispatchers"
+   stSlab "st_ground", 100, 500, 700, 540
+   create graphic "st_sens2"
+   set the style of it to "rectangle"
+   set the rect of it to 270, 300, 330, 360
+   set the visible of it to false
+   put the long id of graphic "st_sens2" into tSens
+   b2kAddSensor tSens, "box"
+   b2kSpawnBall 300, 150, 24
+   put the result into tBall
+   -- fall through the sensor and onto the floor: one enter, one exit, and
+   -- a begin-contact with the ground
+   put false into tSeen
+   repeat with i = 1 to 200
+      b2kStepOnce
+      if b2kSensorCount() > 0 then put true into tSeen
+      if b2kContactCount() > 0 then exit repeat
+   end repeat
+   stAssert "the sensor fired while falling through", (tSeen is true)
+   stAssert "a begin-contact landed in the buffer", (b2kContactCount() > 0)
+   stAssert "b2kContactA names a control", (b2kContactA(1) is not empty)
+   stAssert "b2kContactB names a control", (b2kContactB(1) is not empty)
+   stAssert "one side of the contact is the ball", \
+         (b2kContactA(1) is tBall or b2kContactB(1) is tBall)
+   stAssert "b2kEndContactCount reports a number", (b2kEndContactCount() is a number)
+   -- the sensor buffer is read the same way, by index
+   b2kEventsReset
+   b2kMoveTo tBall, 300, 150
+   b2kSetVelocity tBall, 0, 0
+   put false into tSeen
+   repeat with i = 1 to 200
+      b2kStepOnce
+      if b2kSensorCount() > 0 then
+         put true into tSeen
+         exit repeat
+      end if
+   end repeat
+   if tSeen then
+      stAssert "b2kSensorEnterSensor names the sensor", \
+            (b2kSensorEnterSensor(1) is tSens)
+      stAssert "b2kSensorEnterVisitor names the visitor", \
+            (b2kSensorEnterVisitor(1) is tBall)
+   else
+      stAssert "the ball re-entered the sensor zone", false
+   end if
+   repeat with i = 1 to 200
+      b2kStepOnce
+      if b2kSensorExitCount() > 0 then exit repeat
+   end repeat
+   stAssert "b2kSensorExitSensor names the sensor on the way out", \
+         (b2kSensorExitSensor(1) is tSens or b2kSensorExitCount() is 0)
+   stAssert "b2kSensorExitVisitor names the visitor on the way out", \
+         (b2kSensorExitVisitor(1) is tBall or b2kSensorExitCount() is 0)
+   -- the harvest + dispatch pair, called by hand: the message receivers at
+   -- the top of this file are the same ones b2kStepOnce drives every frame
+   put gMsgContacts into tMsgs
+   b2kEventsReset
+   -- the end-contact readers mirror the begin ones. Their honest offline
+   -- assertion is the EMPTY case: index 1 of a cleared buffer must answer
+   -- empty rather than throw or hand back a stale control, which is what
+   -- makes `repeat with i = 1 to b2kEndContactCount()` safe to write.
+   stAssert "b2kEndContactA answers empty on a cleared buffer", \
+         (b2kEndContactA(1) is empty)
+   stAssert "b2kEndContactB answers empty on a cleared buffer", \
+         (b2kEndContactB(1) is empty)
+   b2kHarvestEvents
+   b2kDispatchContacts
+   b2kDispatchSensors
+   stAssert "b2kHarvestEvents + the dispatchers run without a step", \
+         (gMsgContacts >= tMsgs)
+end stTestKitEventApi
+
+-- The ray-hit accessor set. stTestQueries above uses b2kRayHitAll; this
+-- is the single-closest-hit path and its five readers.
+command stTestKitQueryApi
+   local tRef, tHit
+   stNewWorld "kit api: closest-ray hit and its accessors"
+   stSlab "st_ground", 60, 500, 800, 540
+   b2kSpawnBall 300, 300, 30
+   put the result into tRef
+   b2kSetStatic tRef
+   stStep 2
+   put b2kRayHit(300, 100, 300, 520) into tHit
+   stAssert "b2kRayHit reports a hit on the ball", (tHit is true)
+   stAssert "b2kRayHitX is the ray's own x (got " & b2kRayHitX() & ")", \
+         (abs(b2kRayHitX() - 300) < 6)
+   stAssert "b2kRayHitY stops at the ball's top (got " & b2kRayHitY() & ")", \
+         (b2kRayHitY() > 250 and b2kRayHitY() < 300)
+   stAssert "b2kRayHitNormalY points back UP the ray (got " \
+         & round(b2kRayHitNormalY() * 100) / 100 & ")", (b2kRayHitNormalY() < 0)
+   stAssert "b2kRayHitNormalX is a number", (b2kRayHitNormalX() is a number)
+   stAssert "b2kRayDist is the distance travelled (got " \
+         & round(b2kRayDist()) & "px)", (b2kRayDist() > 100 and b2kRayDist() < 250)
+   stAssert "a ray into empty space misses", (b2kRayHit(60, 60, 90, 60) is false)
+   -- the query-buffer translator the overlap helpers route through
+   stAssert "b2kQueryToControls of zero hits is empty", (b2kQueryToControls(0) is empty)
+   stAssert "b2kOverlapCircle routes through it and finds the ball", \
+         (b2kOverlapCircle(300, 300, 40) is not empty)
+end stTestKitQueryApi
+
+-- The camera accessors around the adopt/goto/off path stTestCamera covers.
+command stTestKitCameraApi
+   local tRef, tStatus
+   stNewWorld "kit api: camera follow, deadzone, shake, shift readers"
+   b2kCamOn
+   b2kCamBounds 0, 0, 3000, 640
+   b2kSpawnBox 200, 300, 30, 30
+   put the result into tRef
+   b2kSetStatic tRef
+   -- sCamNote is documented "empty = healthy; else why the camera is
+   -- degraded", so empty is the assertion and a note is a real finding
+   put b2kCamStatus() into tStatus
+   stAssert "b2kCamStatus is empty on a healthy viewport (" & tStatus & ")", \
+         (tStatus is empty)
+   b2kCamDeadzone 40, 40
+   b2kCamFollow tRef, 0.5
+   stStep 10
+   stAssert "following keeps the camera near its target", \
+         (b2kCamIsOn() is true)
+   stAssert "b2kCamShiftX reports a number for a followed ref", \
+         (b2kCamShiftX(tRef) is a number)
+   stAssert "b2kCamShiftY reports a number for a followed ref", \
+         (b2kCamShiftY(tRef) is a number)
+   b2kCamUnfollow
+   b2kCamGoto 900, 320
+   b2kCamTick
+   b2kCamApply
+   stAssert "an explicit tick+apply scrolls the viewport", \
+         (the hScroll of b2kCamGroup() > 100)
+   b2kCamShake 8, 200
+   b2kCamTick
+   b2kCamApply
+   stAssert "shake leaves the viewport usable", (b2kCamIsOn() is true)
+   stAssert "b2kCamMouseX reports a number", (b2kCamMouseX() is a number)
+   stAssert "b2kCamMouseY reports a number", (b2kCamMouseY() is a number)
+   b2kCamOff
+end stTestKitCameraApi
+
+-- Sheet and sprite bookkeeping around the slicing stTestSprites covers.
+command stTestKitSpriteApi
+   local tRef, tBody, tNames, tSig
+   stNewWorld "kit api: sheet bookkeeping, sprite binding and the drawers"
+   stEnsureSheetImage
+   stAssert "b2kSheetPersists is off by default here", (b2kSheetPersists() is false)
+   b2kSheetFromImage "stapi", the long id of image "st_sheet", 16, 16
+   put b2kSheetFrameNames("stapi") into tNames
+   stAssert "b2kSheetFrameNames lists the frames (" & the number of lines of tNames & ")", \
+         (the number of lines of tNames is 4)
+   stAssert "b2kSheetKeyIndex finds a key by position", \
+         (b2kSheetKeyIndex("stapi", line 2 of tNames) is 2)
+   stAssert "b2kSheetKeyIndex reports 0 for an unknown key", \
+         (b2kSheetKeyIndex("stapi", "no-such-frame") is 0)
+   put b2kSheetSliceSig("stapi") into tSig
+   stAssert "b2kSheetSliceSig carries path and scale (" & tSig & ")", (tSig contains "|")
+   b2kSheetEnsureIcon "stapi", line 1 of tNames
+   b2kSheetEnsureFlip "stapi", line 1 of tNames
+   stAssert "the sheet still holds its 4 frames after slicing", \
+         (b2kSheetFrames("stapi") is 4)
+   -- a second sheet built through the explicit grid-region path
+   b2kSheetFromImage "stapi2", the long id of image "st_sheet", 0, 0
+   b2kSheetGridRegions "stapi2", 16, 16, 4, 0, 0
+   stAssert "b2kSheetGridRegions slices a 2x2 grid", (b2kSheetFrames("stapi2") is 4)
+   b2kSheetForget "stapi2"
+   stAssert "b2kSheetForget drops it", (b2kSheetFrames("stapi2") is 0)
+   -- sprites: bind one to a body and let the tick carry it
+   b2kAnimDef "stapi", "spin", "1-4", 200, true
+   b2kSpriteNew "stapi", 1, 120, 120
+   put the result into tRef
+   b2kSpritePlay tRef, "spin"
+   stAssert "b2kSpriteAnim names the playing animation", (b2kSpriteAnim(tRef) is "spin")
+   b2kSpriteFPS tRef, 30
+   b2kSpriteOnFinish tRef, "stKitSpriteDone"
+   b2kSpriteSetFrame tRef, 2
+   stAssert "b2kSpriteSetFrame moves the frame", (b2kSpriteFrame(tRef) is not empty)
+   b2kSpriteShowFrame tRef, line 3 of tNames
+   b2kSpriteStop tRef
+   stAssert "b2kSpriteStop clears the animation", (b2kSpriteAnim(tRef) is empty)
+   b2kSpawnBox 300, 200, 30, 30
+   put the result into tBody
+   b2kSpriteBind tRef, tBody, 0, -20
+   b2kSpritesTick
+   stAssert "a bound sprite is still known after a tick", \
+         (b2kSpriteFrame(tRef) is not empty)
+   b2kSpriteUnbind tRef
+   b2kSpriteForget tRef
+   stAssert "b2kSpriteForget drops the bookkeeping", (b2kSpriteAnim(tRef) is empty)
+   b2kSpritesClear
+   b2kSpriteSweepOrphans false
+   b2kSheetsWipe
+   stAssert "b2kSheetsWipe purges every sheet", (b2kSheetFrames("stapi") is 0)
+   -- the drawers: b2kSyncBodies routes through b2kDrawBody, which picks one
+   -- of the three by render kind. Called directly, each must move its control.
+   b2kSpawnBall 400, 300, 20
+   put the result into tRef
+   b2kDrawBall tRef, b2kToWorldX(500), b2kToWorldY(300)
+   set the itemDelimiter to comma
+   stAssert "b2kDrawBall moves the ball's graphic (x " \
+         & (item 1 of the loc of tRef) & ")", (abs((item 1 of the loc of tRef) - 500) < 3)
+   b2kDrawBody tRef, b2kToWorldX(420), b2kToWorldY(300), 0
+   stAssert "b2kDrawBody dispatches by render kind", \
+         (abs((item 1 of the loc of tRef) - 420) < 3)
+   b2kSpawnBox 300, 400, 40, 20
+   put the result into tRef
+   b2kDrawPoly tRef, b2kToWorldX(360), b2kToWorldY(400), 0
+   stAssert "b2kDrawPoly re-points the polygon", (the points of tRef is not empty)
+   -- b2kDrawImage sets `the angle`, so it needs a real image control
+   create image "st_drawn"
+   set the rect of image "st_drawn" to 0, 0, 24, 24
+   b2kAddBox the long id of image "st_drawn"
+   b2kDrawImage the long id of image "st_drawn", b2kToWorldX(380), b2kToWorldY(420), 0
+   stAssert "b2kDrawImage places the image (x " \
+         & (item 1 of the loc of image "st_drawn") & ")", \
+         (abs((item 1 of the loc of image "st_drawn") - 380) < 3)
+   -- THE FILE-BACKED LOADERS, on the only half an offline paste can honestly
+   -- reach. Loading a real atlas needs a PNG and an XML beside the stack;
+   -- what is testable here - and is the half that bites in the field - is
+   -- that a missing asset FAILS CLOSED: a documented empty/0, no throw, and
+   -- no half-registered sheet left behind for the next call to trip over.
+   stAssert "b2kSheetSourceFromFile returns empty for a missing file", \
+         (b2kSheetSourceFromFile("stnofile", "/box2dxt-selftest/no-such.png") is empty)
+   b2kSheetLoad "stnofile", "/box2dxt-selftest/no-such.png", 16, 16, 4, 0, 0
+   stAssert "b2kSheetLoad reports 0 frames for a missing file", (the result is 0)
+   b2kSheetLoadAtlas "stnofile", "/box2dxt-selftest/no-such.png", "/box2dxt-selftest/no-such.xml"
+   stAssert "b2kSheetLoadAtlas reports 0 frames for a missing atlas", (the result is 0)
+   b2kSpriteFromGIF "/box2dxt-selftest/no-such.gif", 100, 100
+   stAssert "b2kSpriteFromGIF returns empty for a missing GIF", (the result is empty)
+   stAssert "...and none of them left a sheet behind", (b2kSheetFrames("stnofile") is 0)
+end stTestKitSpriteApi
+
+-- Where the sprite tick sends its end-of-animation message. It is here so
+-- b2kSpriteOnFinish above has a real target rather than a dangling name.
+command stKitSpriteDone
+end stKitSpriteDone
+
+-- Sound STATE. Nothing here plays audibly on purpose: b2kSound and
+-- b2kSoundLoop are called with the mute flag set, which is the branch a
+-- headless or silent machine takes anyway, and the point being asserted is
+-- the bookkeeping (mute, status, stop) rather than the audio device.
+command stTestKitSoundApi
+   stNewWorld "kit api: sound mute, status and stop"
+   b2kToneMake "stapitone", "440", 30, 30
+   stAssert "the tone registered", (b2kSoundIsLoaded("stapitone") is true)
+   stAssert "b2kSoundMuted is false by default", (b2kSoundMuted() is false)
+   b2kSoundMute true
+   stAssert "b2kSoundMute sets the flag", (b2kSoundMuted() is true)
+   -- muted, both play paths exit BEFORE touching the audio device, so the
+   -- assertion is that neither marked the device dead: b2kSound and
+   -- b2kSoundLoop set sSndDead (and a "play failed" note) only when a real
+   -- `play audioClip` throws, which is exactly what must not have happened
+   b2kSound "stapitone"
+   b2kSoundLoop "stapitone"
+   stAssert "muted play never reaches the audio device (" & b2kSoundStatus() & ")", \
+         (not (b2kSoundStatus() contains "play failed"))
+   b2kSoundStop
+   b2kSoundMute false
+   stAssert "b2kSoundMute clears the flag", (b2kSoundMuted() is false)
+   -- b2kSoundLoad's SUCCESS path needs a clip file on disk, which an
+   -- offline paste has no business writing. Its FAILURE path is the one
+   -- that matters anyway: the family's fail-closed rule says a missing
+   -- asset reports and returns, it does not throw and it does not half
+   -- register - and b2kSoundStatus is where it says so.
+   b2kSoundLoad "stnofile", "/box2dxt-selftest/no-such-clip.wav"
+   stAssert "b2kSoundLoad fails closed on a missing file (" & b2kSoundStatus() & ")", \
+         (b2kSoundStatus() contains "no such file")
+   stAssert "...and registers nothing", (b2kSoundIsLoaded("stnofile") is false)
+   b2kSoundsWipe
+   stAssert "the wipe purges the tone", (b2kSoundIsLoaded("stapitone") is false)
+end stTestKitSoundApi
+
+-- The player API surface around the controller behaviour tested above.
+command stTestKitPlayerApi
+   local tRef, tBody, tGrav0
+   stNewWorld "kit api: player tuning, art, and the state entry points"
+   stSlab "st_ground", 60, 500, 800, 540
+   stAssert "b2kPlayerDefault knows the shipped run speed", \
+         (b2kPlayerDefault("movespeed") is 220)
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into tRef
+   stAssert "b2kPlayer names the made player", (b2kPlayer() is tRef)
+   stAssert "b2kPlayerGet falls back to the default", (b2kPlayerGet("movespeed") is 220)
+   b2kPlayerSet "movespeed", 300
+   stAssert "b2kPlayerGet reads a tuned value back", (b2kPlayerGet("movespeed") is 300)
+   b2kPlayerAnims "idle", "run", "jump", "fall", "land", "duck", "climb", "hurt", \
+         "swim", "wall", "dash"
+   stAssert "b2kPlayerSprite is empty with no art bound", (b2kPlayerSprite() is empty)
+   b2kPlayerResolveArt
+   stAssert "b2kPlayerResolveArt leaves it empty with no art", (b2kPlayerSprite() is empty)
+   put b2kBodyOf(tRef) into tBody
+   stStep 40   -- long enough to fall the 6px gap and settle on the slab
+   -- the probes the tick runs every frame, called by hand
+   b2kPlayerProbe tBody, 0
+   stAssert "b2kPlayerProbe finds the ground under a standing player", \
+         (b2kPlayerOnGround() is true)
+   -- the wall probe has no public reader (sPlayWall is the tick's own
+   -- state), so what is assertable from out here is that probing open
+   -- ground neither throws nor disturbs the grounded state the tick
+   -- shares with it
+   b2kPlayerWallProbe tBody, 1
+   stAssert "b2kPlayerWallProbe over open ground leaves the player standing", \
+         (b2kPlayerOnGround() is true)
+   b2kPlayerShowState 0, 0
+   b2kPlayerTick
+   stAssert "an explicit tick leaves the player standing", (b2kPlayerOnGround() is true)
+   -- duck and stand, by the explicit entry points
+   b2kPlayerDuckSet true
+   stAssert "b2kPlayerDuckSet ducks", (b2kPlayerState() is not empty)
+   b2kPlayerStandUp
+   stStep 2
+   stAssert "b2kPlayerStandUp restores full height", (the height of tRef is 48)
+   -- THE FOUR GRAVITY-PARKING PAIRS. Climb, swim and dash each stash the
+   -- body's gravity scale and write their own; the matching End must put
+   -- the stashed one back. A pair that leaks is the bug class this member
+   -- already learned once (the swim tests above), so each is asserted at
+   -- both ends rather than just called.
+   -- the baseline is OBSERVED, not assumed to be 1: what each pair owes is
+   -- that it puts back what it found, and asserting against a constant would
+   -- turn a change in the player's own default into three red lines about
+   -- climb, swim and dash
+   put b2kGravityScale(tRef) into tGrav0
+   b2kPlayerClimbStart tBody
+   stAssert "b2kPlayerClimbStart parks gravity at 0", (b2kGravityScale(tRef) is 0)
+   b2kPlayerClimbEnd tBody
+   stAssert "b2kPlayerClimbEnd restores what it found", \
+         (abs(b2kGravityScale(tRef) - tGrav0) < 0.01)
+   b2kPlayerSwimStart tBody
+   stAssert "b2kPlayerSwimStart uses the buoyant scale, not zero", \
+         (b2kGravityScale(tRef) > 0 and b2kGravityScale(tRef) < 1)
+   b2kPlayerSwimEnd tBody
+   stAssert "b2kPlayerSwimEnd restores what it found", \
+         (abs(b2kGravityScale(tRef) - tGrav0) < 0.01)
+   b2kPlayerDashStart tBody
+   stAssert "b2kPlayerDashStart parks gravity at 0", (b2kGravityScale(tRef) is 0)
+   b2kPlayerDashEnd tBody
+   stAssert "b2kPlayerDashEnd restores what it found", \
+         (abs(b2kGravityScale(tRef) - tGrav0) < 0.01)
+   -- drop-through parks the collision MASK instead, and restores that
+   b2kPlayerDropStart
+   b2kPlayerDropRestore
+   stStep 10
+   stAssert "the player still falls and lands after every pair", \
+         (b2kPlayerOnGround() is true)
+   b2kPlayerControl false
+   stAssert "b2kPlayerControl false hands the body back to the game", \
+         (b2kPlayer() is tRef)
+   b2kPlayerControl true
+   b2kPlayerAttach tRef
+   stAssert "b2kPlayerAttach re-adopts an existing control", (b2kPlayer() is tRef)
+   b2kPlayerRemove
+   stAssert "b2kPlayerRemove forgets the player", (b2kPlayer() is empty)
+   b2kPlayerForget true
+end stTestKitPlayerApi
 
 -- =====================================================================
 -- The Kit (embedded verbatim; regenerated by tools/sync-embedded-kit.py

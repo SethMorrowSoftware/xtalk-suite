@@ -46,14 +46,21 @@ script "xTalkSuiteSelfTest"
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
 --   datachannelxt   its SYNC half      lifecycle, the stale-handle surface
+--   box2dxt         stSelfTest()      50 test handlers, ~372 assertions,
+--                                     driving the real b2k Kit hand-stepped
+--                                     one fixed 1/60 tick at a time. It
+--                                     BUILDS graphics on this card, wipes
+--                                     them, and tears its world down before
+--                                     returning (added 2026-08-16)
 --   riptide         rsSelfTest()      run LAST: identity, wire formats, and
 --                                     the phase-2 live feed layer, which
 --                                     also shares this file's session
 --
--- AND IT CARRIES THE THREE PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
+-- AND IT CARRIES THE FOUR PURE-SCRIPT LIBRARIES THEMSELVES. coinxt's script
 -- layer (encoders, addresses, the HD wallet walk), onionxt's entire ox*
--- surface, and riptide's rs* layer are LiveCodeScript, and the first two
--- used to be a separate setup step - `start using stack` x2 before pasting.
+-- surface, riptide's rs* layer and box2dxt's b2k Kit are LiveCodeScript, and
+-- the first two used to be a separate setup step - `start using stack` x2
+-- before pasting.
 -- Embedded, that step is gone, and so is the failure mode it carried: the
 -- 2026-08-10 re-run pasted a fresh harness into an engine whose in-memory
 -- coinxt stack predated a parser fix, and got two red lines that read as
@@ -167,12 +174,21 @@ constant kStWidth = 760
 constant kStHeight = 640
 
 -- ---- state -------------------------------------------------------------------
-local sRunning             -- "true" while the async phases are still live
+-- "true" while the async phases are still live. Spelled sAsyncRunning rather
+-- than the obvious sRunning because the embedded Box2Dxt Kit declares a
+-- script-level sRunning of its own (its physics loop flag), and the embedded
+-- layers are VERBATIM by design - the generator cannot rename for them, and
+-- two units sharing one variable is the exact isolation failure the fold's
+-- prefixing exists to prevent. Renaming here costs six lines in a
+-- hand-maintained file; renaming there would touch a shipped library and
+-- re-carry its six embedded copies for this file's convenience.
+local sAsyncRunning
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
 local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
+local sHaveBox2d           -- the box2dxt EXTENSION (its Kit is embedded); see stProbe
 local sTorrentNote         -- why torrent is unavailable, when it is
 
 -- torrentxt
@@ -406,6 +422,12 @@ local dc1sTotal, dc1sPassed, dc1sFailed, dc1sSkipped
 local dc1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local dc1sStRunDone           -- "true" once the run finished (drives the color)
 
+-- ---- Box2Dxt: the full b2k Kit self-test ----
+local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
+local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
+constant b21kStUIVersion = "1"
+constant b21kStHarnessV = "23"  -- bump on EVERY harness change: the report
+
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
 constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7fcfb2821ad7eecc7"
@@ -538,6 +560,155 @@ local sServices              -- keyed by integer service handle (nested array)
 local sLocalToService        -- keyed by local port -> service handle
 local sNextHandle            -- monotonic handle allocator (0 is never valid)
 -- <<< GENERATED EMBED: onionxt script layer declarations <<< --
+
+-- >>> GENERATED EMBED: box2dxt-kit script layer declarations >>> --
+-- ---- Box2Dxt b2k Kit (the real Kit, embedded) ----
+local sWorld, sRunning, sPaused, sGen
+local sScale, sOriginX, sOriginY
+local sAccum, sLast, sSub
+local sBody          -- ctrlRef     -> body handle
+local sCtrl          -- body handle -> ctrlRef
+local sShapeH        -- ctrlRef     -> shape handle (for material edits)
+local sRender        -- ctrlRef     -> "poly" | "ball" | "image" | "loc"
+local sVerts         -- ctrlRef     -> local polygon verts (metres) for "poly"
+local sRad           -- ctrlRef     -> radius (metres) for "ball"
+local sImgAngle      -- ctrlRef     -> last applied angle (deg) for "image"
+local sStatic        -- ctrlRef     -> true for bodies that never move
+local sSpawned       -- ctrlRef     -> true if the kit created the control
+local sSensor        -- ctrlRef     -> true for sensor (non-solid trigger) bodies
+local sLayers        -- collision-layer name -> bit value
+local sNextBit       -- next free collision-layer bit
+local sDragJoint, sDragAnchor, sDragging
+local sContactObj    -- object that receives b2kContact messages
+local sFrameObj      -- object that receives an on b2kFrame message each frame
+local sRayX, sRayY   -- last b2kRayHit point (screen pixels)
+local sRayNX, sRayNY -- last b2kRayHit surface normal (screen-oriented)
+local sRayDist       -- last b2kRayHit distance from the ray start (pixels)
+local sRayBodyH      -- last b2kRayHit BODY HANDLE (already fetched for the
+local sOneWayBody    -- body handle -> true for one-way chain bodies (b2kChain)
+local sNeedFullSync  -- true when a script-side transform/type edit bypassed move events
+local sEvtCN, sEvtCA, sEvtCB -- begin-contacts buffered THIS FRAME (body handles)
+local sEvtEN, sEvtEA, sEvtEB -- end-contacts buffered this frame
+local sEvtSN, sEvtSS, sEvtSV -- sensor enters this frame (sensor, visitor)
+local sEvtXN, sEvtXS, sEvtXV -- sensor exits this frame
+local sKillY         -- kill floor: screen y below which dynamic bodies are removed
+local sDrawKey       -- ctrlRef -> last rendered pixel/angle key; avoids redundant redraws
+local sInputOn       -- true while the per-frame keyboard sample is armed
+local sInjectOn      -- true = the sample comes from sInjectKeys, not the keyboard
+local sInjectKeys    -- injected keycode list (tests, replays, cutscene ghosts)
+local sKeysNow       -- comma-wrapped keycode set held this frame (",65361,32,")
+local sKeysPrev      -- last frame's set; pressed/released edges are the diff
+local sKeyActions    -- action name -> bound key list ("jump" -> "space,up,w")
+local sAxisNeg       -- axis name -> negative-direction key list
+local sAxisPos       -- axis name -> positive-direction key list
+local sKeyActionsC   -- action name -> RESOLVED keycode list (bind-time cache)
+local sAxisNegC      -- axis name -> resolved negative keycodes
+local sAxisPosC      -- axis name -> resolved positive keycodes
+local sFrameMS       -- real elapsed ms folded into the last frame (b2kFrameMS)
+local sSheetSrc      -- sheet -> long id of its hidden source image
+local sSheetOwned    -- sheet -> true when the Kit created the source image
+local sSheetRegion   -- sheet -> frame key -> "x,y,w,h" region (source px)
+local sSheetKeys     -- sheet -> CR list of frame keys, definition order
+local sSheetIcon     -- sheet -> frame key -> sliced frame image id (lazy)
+local sSheetFlip     -- sheet -> frame key -> mirrored image id (lazy)
+local sSheetData     -- sheet -> cached source imageData (freed on teardown)
+local sSheetAlpha    -- sheet -> cached source alphaData
+local sSheetScale    -- sheet -> display scale factor (default 1; engine-resampled at slice time)
+local sSheetPath     -- sheet -> its source path/ref (the idempotent-reload + reuse key)
+local sSheetKeep     -- true = sheets survive b2kTeardown (b2kSheetPersist); assets, like sounds
+local sAnimList      -- "sheet|anim" -> CR list of frame keys
+local sAnimFPS       -- "sheet|anim" -> frames per second
+local sAnimLoop      -- "sheet|anim" -> true/false
+local sSprRefs       -- CR list of every live sprite control
+local sSprLive       -- ...the subset the tick must service (bound/playing)
+local sSprLiveDirty  -- true -> rebuild sSprLive from sSprRefs next tick
+local sSprSheet, sSprKind, sSprAnim, sSprStep, sSprNextMS
+local sSprFPS, sSprFPSOver, sSprFlip, sSprMsg, sSprFrameKey, sSprIconNow
+local sSprBind, sSprBindDX, sSprBindDY, sSprLastLoc
+local sCamGroup      -- viewport group long id while the camera is on
+local sCamFollow     -- control the camera tracks (empty = manual)
+local sCamLerp       -- follow smoothing 0..1 (1 = snap)
+local sCamDZW, sCamDZH -- deadzone box in px (0 = always centre)
+local sCamB1X, sCamB1Y, sCamB2X, sCamB2Y -- world bounds (sCamB1X empty = none)
+local sCamX, sCamY   -- current view centre (world px)
+local sCamShakeAmp, sCamShakeEnd
+local sCamLastH, sCamLastV -- last written scroll (skip redundant sets)
+local sCamNote       -- empty = healthy; else why the camera is degraded
+local sCamLocVisual  -- true when this engine reports grouped locs SCROLL-ADJUSTED
+local sCamCurH, sCamCurV -- the scroll actually applied this frame (cached)
+local sInCam         -- ctrlRef -> true when the Kit placed it inside the viewport
+local sPlayRef       -- the player's control (empty = no player controller)
+local sPlayArt       -- the sprite whose anims the controller drives
+local sPlayTune      -- tuning key -> value (b2kPlayerSet; defaults fill gaps)
+local sPlayAnims     -- state -> animation name (idle/run/jump/fall/land/duck/climb/hurt)
+local sPlayState     -- idle | run | jump | fall | land | duck | climb | hurt
+local sPlayFacing    -- 1 right / -1 left (last horizontal intent)
+local sPlayGrounded  -- this frame's ray-probe verdict
+local sPlayGroundMS  -- when last grounded (the coyote window)
+local sPlayPressMS   -- when jump was last pressed (the buffer window)
+local sPlayJumping   -- a controller jump is still ascending (cut-eligible)
+local sPlayControl   -- false = observe only: no velocity or anim writes
+local sPlayOwnBody   -- true when the controller created the body
+local sPlayHalfW, sPlayHalfH -- capsule half-extents in px (probe geometry)
+local sPlayAnimNow   -- last animation written (redundancy suppression)
+local sPlayFlipNow   -- last flip written
+local sPlayHoldMS    -- suppress anim switches until then (land flourish)
+local sPlayMoveSpd, sPlayAccelG, sPlayAccelA, sPlayJumpSpd, sPlayJumpCut
+local sPlayCoyote, sPlayBuffer, sPlayMaxFall, sPlayCosSlope
+local sPlayDropMS, sPlayClimbSpd                       -- Wave 2 caches...
+local sPlayHurtPopX, sPlayHurtPopY, sPlayHurtMS, sPlayInvulnMS
+local sPlayProbeOffs -- the 3 probe x-offsets, precomputed at attach
+local sPlayReach     -- probe ray length (halfH + 4), precomputed
+local sPlayAir       -- consecutive airborne ticks (landing hysteresis)
+local sPlayNormX     -- surface normal X at the grounded probe hit (slope test)
+local sPlayPX, sPlayPY -- the probe's screen-px body centre, stashed for the
+local sPlayOnOneWay  -- this frame's ground is a one-way chain (drop eligible)
+local sPlayDropUntil -- sim-clock end of the drop-through window (0 = inactive)
+local sPlayDropHard  -- hard restore deadline (4x dropMs): a drop that lands on
+local sPlayDropLineY -- surface y the drop started through; the mask is only
+local sPlayDropSeen  -- the probe skipped a one-way hit this frame (still inside)
+local sPlayDropMask  -- the player's mask to restore when the window closes
+local sPlayClimb     -- true while in the climb state (gravity scale parked at 0)
+local sPlayGravSave  -- the body's gravity scale to restore on climb exit
+local sPlayLadN      -- registered ladder zones (flat numeric arrays: the
+local sPlayLadL, sPlayLadT, sPlayLadR, sPlayLadB -- ...in-zone test is pure compares)
+local sPlaySwim      -- true while submerged in a water zone (gravity scaled down)
+local sPlaySwimGravSave -- the body's gravity scale to restore on swim exit
+local sPlaySwimSpd, sPlaySwimJump, sPlaySwimGrav, sPlaySwimMaxFall -- swim tune caches
+local sPlayWatN      -- registered water zones (flat numeric arrays, like ladders)
+local sPlayWatL, sPlayWatT, sPlayWatR, sPlayWatB
+local sPlayHurt      -- true while knockback owns the controller
+local sPlayHurtEnd   -- sim-clock when hurtMs has elapsed
+local sPlayHurtHalf  -- sim-clock when half of hurtMs has elapsed (landings
+local sPlayHurtLand  -- sim-clock of the first landing after the half mark (0 = none)
+local sPlayInvulnUntil -- sim-clock end of the post-hurt mercy window
+local sPlayClock     -- the player's SIM-TIME clock: summed frame ms.
+local sPlayAirJumps     -- extra mid-air jumps allowed (airJumps knob; 0 = none)
+local sPlayAirJumpsLeft -- air jumps remaining (reset to sPlayAirJumps on ground)
+local sPlayWallOn       -- the wall system is armed (wallJumpX or wallSlideMax > 0)
+local sPlayWallJumpX, sPlayWallJumpY, sPlayWallSlideMax -- wall tune caches
+local sPlayWall         -- airborne wall touch: -1 wall on left, 1 on right, 0 none
+local sPlayWallSliding  -- true while actively wall-sliding (drives state + anim)
+local sPlayWallLockUntil -- sim-clock through which a wall-jump owns vx (no air steer)
+local sPlayDashSpd, sPlayDashMS, sPlayDashCool -- dash tune caches
+local sPlayAirDash      -- true = dash allowed in mid-air (airDash knob; false = grounded only)
+local sPlayDash         -- true while a dash is in flight (gravity parked at 0)
+local sPlayDashEnd      -- sim-clock the dash ends
+local sPlayDashReady    -- sim-clock the next dash may start (the cooldown gate)
+local sPlayDashDir      -- dash direction (the facing captured at dash start)
+local sPlayDashGravSave -- the body's gravity scale to restore when the dash ends
+local sPlayDuckScale    -- ducked capsule height as a fraction of standing (1 = no reshape)
+local sPlayDucked       -- true while the capsule is shrunk for a crawl
+local sPlayStandH       -- the full standing capsule height in px (for the duck reshape)
+local sPlayCarry        -- true = inherit a moving platform's velocity (platformCarry knob)
+local sPlayGroundBody   -- the body handle under the grounding ray (carry reads its velocity)
+local sPlayInLad, sPlayInWat -- this frame's ladder/water zone membership (exposed by getters)
+local sSndClip       -- sound name -> audioClip short name ("b2ksnd_...")
+local sSndMute       -- true = swallow play calls (a user preference; survives teardown)
+local sSndDead       -- true after a play failure: degrade to silence, never errors
+local sSndNote       -- empty = healthy; else why audio is degraded
+constant kPI = 3.14159265358979
+-- <<< GENERATED EMBED: box2dxt-kit script layer declarations <<< --
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
@@ -816,7 +987,7 @@ command stRun
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
    stResetCounters
-   put "true" into sRunning
+   put "true" into sAsyncRunning
    put empty into sPhaseEn
    put empty into sPhaseDc
    -- RELEASE THE SESSION BEFORE FORGETTING IT. This line used to be a bare
@@ -1109,6 +1280,27 @@ command stProbe
    end try
    stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- BOX2DXT IS THE SECOND TWO-PIECE MEMBER, and its pieces sit the other way
+   -- round from CoinXT's: the b2k Kit is pure script and rides the embed (so it
+   -- cannot be absent from a paste that compiled), while the physics itself is
+   -- the native extension and very much can be. So this probes the EXTENSION,
+   -- and it does it the way box2dxt's own harness does: b2kEnsureNativeLib
+   -- first, which seeds revLibraryMapping["box2dxt"] from the folder beside
+   -- this stack and is the engine hook that lets the library load with no sudo
+   -- and no system path. It is a documented no-op for an unsaved stack, so it
+   -- is safe to call unconditionally - and it is inside the try because on a
+   -- machine with no box2dxt at all, the Kit handler is present (embedded) but
+   -- b2Version is not.
+   put false into sHaveBox2d
+   try
+      b2kEnsureNativeLib
+      put b2Version() into tVersion
+      put (tVersion is not empty) into sHaveBox2d
+   catch tError
+      put false into sHaveBox2d
+   end try
+   stProbeLine "Box2Dxt (extension)", sHaveBox2d, "org.openxtalk.box2dxt"
 end stProbe
 
 command stProbeLine pName, pPresent, pHint
@@ -1961,7 +2153,7 @@ end stCheckSealed
 command stPump
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
-   if sRunning is not "true" then
+   if sAsyncRunning is not "true" then
       exit stPump
    end if
 
@@ -2053,7 +2245,7 @@ command stFinish
    stNote "This is a sampler, not a full per-member selftest: it drives the"
    stNote "headline paths and the cross-member seams. Each member has a deeper"
    stNote "harness that still needs its own engine run. Paste these numbers back."
-   put empty into sRunning
+   put empty into sAsyncRunning
    stReportDone
 end stFinish
 
@@ -2114,7 +2306,7 @@ end stTeardown
 -- teardown (called from the scaffold's closeStack and Re-run) is
 -- unconditional and idempotent here.
 command stCleanup
-   put empty into sRunning
+   put empty into sAsyncRunning
    put "skip" into sPhaseEn
    put "skip" into sPhaseDc
    stCancelPump
@@ -2170,7 +2362,7 @@ end stCleanup
 -- ---- small helpers -----------------------------------------------------------
 -- Kill any pump still queued from a previous run. Without this, Re-run would arm
 -- a SECOND timer chain while the first was still pending: both would pass the
--- `sRunning is "true"` guard, both would drive the same phase machine, and every
+-- `sAsyncRunning is "true"` guard, both would drive the same phase machine, and every
 -- assertion would be counted twice - a silently wrong report, which is worse
 -- than no report. `the pendingMessages` lines are id,time,message,object.
 command stCancelPump
@@ -2317,6 +2509,27 @@ command stRunMemberHarnesses
       end try
    else
       stSkip "DataChannelXT deep self-test", "install org.openxtalk.library.datachannel"
+   end if
+
+   -- BOX2DXT RUNS AFTER THE TRANSPORTS AND BEFORE RIPTIDE, and unlike every
+   -- other folded harness this one BUILDS THINGS ON THIS CARD: it creates
+   -- graphics and images (all named st_*), drives them through a real physics
+   -- world, and wipes them again. That is exactly what it does standalone; the
+   -- only difference here is whose card it is. Its own stWipe deletes controls
+   -- by the "st_" prefix, which none of this harness's window controls carry
+   -- (stTitle, stSummary, stResults, stCopy, stRerun - no underscore), and its
+   -- last act is b2kStop + b2kTeardown, which bump the Kit's generation tag so
+   -- any frame message still queued from its worlds is a no-op. It therefore
+   -- has to finish BEFORE the cross-member loopbacks below arm their pump.
+   if sHaveBox2d then
+      try
+         stMergeReturned "Box2Dxt", b21stSelfTest()
+      catch tError
+         stSectionFailed "Box2Dxt deep self-test", tError
+      end try
+   else
+      stSkip "Box2Dxt deep self-test", "install org.openxtalk.box2dxt (the b2k " & \
+            "Kit is embedded in this paste, but the physics is native)"
    end if
 
    -- Riptide is an APP layer over the extensions above, so it runs LAST: by
@@ -6429,6 +6642,4589 @@ private function oxProcessId
    return the processId
 end oxProcessId
 -- <<< GENERATED EMBED: onionxt script layer <<< --
+
+
+-- >>> GENERATED EMBED: box2dxt-kit script layer >>> --
+-- ==========================================================================
+-- Box2Dxt b2k Kit (the real Kit, embedded)
+--
+-- The whole b2k* surface - the friendly pixels/degrees/y-down toolkit over
+-- the raw b2* extension, and the layer box2dxt's harness actually drives. It
+-- is pure LiveCodeScript, so it embeds exactly like coinxt's and onionxt's
+-- layers do; the folded harness above calls it by its real names, and the
+-- physics underneath still needs the native extension (the core probes for
+-- it and SKIPS the whole section when it is absent).
+--
+-- GENERATED from box2dxt/src/box2dxt-kit.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild. Names are NOT prefixed: this is the library itself, and the
+-- folded tests above must reach it by its real names.
+-- ==========================================================================
+
+command b2kSetup pGravityX, pGravityY
+   b2kEnsureNativeLib
+   b2kTeardown
+   if pGravityX is empty then put 0 into pGravityX
+   if pGravityY is empty then put -10 into pGravityY
+   put b2NewWorld(pGravityX, pGravityY, true, true) into sWorld
+   put b2NewStaticBody(sWorld, 0, 0) into sDragAnchor
+   put 40 into sScale
+   put (the width of this card) div 2 into sOriginX
+   put (the height of this card) - 40 into sOriginY
+   put 4 into sSub
+   b2kResetTables
+   put empty into sLayers
+   put 1 into sNextBit
+   put 0 into sDragJoint
+   put false into sDragging
+   put false into sRunning
+   put false into sPaused
+   put false into sNeedFullSync
+   put empty into sKillY
+   b2kEventsReset
+end b2kSetup
+
+command b2kEnsureNativeLib
+   local tStackFile, tDir, tName, tPath, tOldDelim
+   put the effective filename of this stack into tStackFile
+   if tStackFile is empty then exit b2kEnsureNativeLib
+   switch the platform
+      case "Win32"
+         put "box2dxt.dll" into tName
+         break
+      case "MacOS"
+         put "box2dxt.dylib" into tName
+         break
+      default
+         put "box2dxt.so" into tName   -- Linux and friends
+         break
+   end switch
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to slash
+   put item 1 to -2 of tStackFile into tDir
+   set the itemDelimiter to tOldDelim
+   put tDir & slash & tName into tPath
+   if there is a file tPath then
+      set the revLibraryMapping["box2dxt"] to tPath
+   end if
+end b2kEnsureNativeLib
+
+command b2kResetTables
+   put empty into sBody
+   put empty into sCtrl
+   put empty into sShapeH
+   put empty into sRender
+   put empty into sVerts
+   put empty into sRad
+   put empty into sImgAngle
+   put empty into sDrawKey
+   put empty into sStatic
+   put false into sNeedFullSync
+   put empty into sSpawned
+   put empty into sSensor
+   put empty into sInCam
+   put empty into sOneWayBody
+end b2kResetTables
+
+command b2kTeardown
+   put false into sRunning
+   put the milliseconds & random(9999) into sGen
+   if sWorld is not empty then b2DestroyWorld sWorld
+   put empty into sWorld
+   b2kPlayerForget true   -- full: a teardown wipes the tuning too
+   if sSheetKeep is true then
+      -- sheets are ASSETS that SURVIVE teardown (b2kSheetPersist), exactly
+      -- like sounds: clear only the sprite INSTANCES + dead viewports and
+      -- keep the sheet cache, so a level rebuild reuses it instead of
+      -- re-decoding/re-parsing/re-slicing (the costliest thing the Kit does).
+      b2kSpritesClear
+      b2kSpriteSweepOrphans true
+      put empty into sSheetData    -- the imageData cache re-derives lazily;
+      put empty into sSheetAlpha   -- free it like the full wipe would
+   else
+      b2kSheetsWipe   -- sprites first: their stored long ids include the group
+   end if
+   -- sounds deliberately SURVIVE teardown: clips are tiny (KBs) and
+   -- deterministic, and re-synthesis cost a fifth of a second on every
+   -- reset. b2kSoundsWipe purges them when you really want them gone.
+   b2kCamOff       -- ...then dissolve the viewport (survivors go to the card)
+   b2kResetTables
+   put 0 into sDragJoint
+   put false into sDragging
+end b2kTeardown
+
+command b2kQuickStart pGravityY
+   b2kSetup 0, pGravityY
+   b2kAddWalls
+   b2kStart
+end b2kQuickStart
+
+command b2kStart
+   if sWorld is empty then b2kSetup
+   put true into sRunning
+   put false into sPaused
+   put 0 into sAccum
+   put the milliseconds into sLast
+   put the milliseconds & "_" & random(1000000) into sGen
+   send ("b2kStep " & sGen) to me in 16 milliseconds
+end b2kStart
+
+command b2kStop
+   put false into sRunning
+   put the milliseconds & random(9999) into sGen
+end b2kStop
+
+command b2kPause
+   put true into sPaused
+end b2kPause
+
+command b2kResume
+   put false into sPaused
+   put the milliseconds into sLast
+end b2kResume
+
+function b2kIsRunning
+   return (sRunning is true) and (sPaused is not true)
+end b2kIsRunning
+
+command b2kAddWalls
+   local tL, tR, tT, tB
+   put b2kToWorldX(0) into tL
+   put b2kToWorldX(the width of this card) into tR
+   put b2kToWorldY(0) into tT
+   put b2kToWorldY(the height of this card) into tB
+   b2kEdge tL, tB, tR, tB
+   b2kEdge tL, tT, tR, tT
+   b2kEdge tL, tB, tL, tT
+   b2kEdge tR, tB, tR, tT
+end b2kAddWalls
+
+command b2kEdge pWx1, pWy1, pWx2, pWy2
+   local tBody
+   if sWorld is empty then exit b2kEdge   -- no world yet: a wall is a quiet no-op
+   put b2NewStaticBody(sWorld, 0, 0) into tBody
+   get b2AddSegment(tBody, pWx1, pWy1, pWx2, pWy2, 0.6, 0.1)
+end b2kEdge
+
+command b2kAddGround pScreenY
+   local tBody, tWy
+   if sWorld is empty then exit b2kAddGround
+   if pScreenY is empty then put (the height of this card) - 40 into pScreenY
+   put b2kToWorldY(pScreenY) into tWy
+   put b2NewStaticBody(sWorld, 0, tWy) into tBody
+   get b2AddSegment(tBody, -500, 0, 500, 0, 0.7, 0.1)
+end b2kAddGround
+
+command b2kKillFloor pScreenY
+   put pScreenY into sKillY
+end b2kKillFloor
+
+command b2kWall pX1, pY1, pX2, pY2
+   b2kEdge b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)
+end b2kWall
+
+command b2kClear
+   local tRef, tList, d
+   b2kSpritesClear
+   b2kPlayerForget false   -- the player is world state; its tuning is config
+   put empty into tList
+   repeat for each key tRef in sBody
+      if sStatic[tRef] is not true then put tRef & cr after tList
+   end repeat
+   repeat for each line d in tList
+      if d is not empty then b2kRemove d
+   end repeat
+end b2kClear
+
+function b2kNumberOr pValue, pDefault
+   if pValue is empty then return pDefault
+   if pValue is not a number then return pDefault
+   return pValue
+end b2kNumberOr
+
+function b2kClamp pValue, pLo, pHi
+   local tValue
+   put b2kNumberOr(pValue, pLo) into tValue
+   if tValue < pLo then put pLo into tValue
+   if tValue > pHi then put pHi into tValue
+   return tValue
+end b2kClamp
+
+command b2kSetScale pPixelsPerMetre
+   put b2kClamp(pPixelsPerMetre, 1, 10000) into sScale
+end b2kSetScale
+
+command b2kSetOrigin pScreenX, pScreenY
+   put b2kNumberOr(pScreenX, sOriginX) into sOriginX
+   put b2kNumberOr(pScreenY, sOriginY) into sOriginY
+end b2kSetOrigin
+
+command b2kSetGravity pGx, pGy
+   put b2kNumberOr(pGx, 0) into pGx
+   put b2kNumberOr(pGy, -10) into pGy
+   if sWorld is not empty then b2SetGravity sWorld, pGx, pGy
+end b2kSetGravity
+
+command b2kSetSubsteps pN
+   put round(b2kClamp(pN, 1, 64)) into sSub
+end b2kSetSubsteps
+
+command b2kEnableSleeping pFlag
+   if sWorld is not empty then b2EnableSleeping sWorld, (pFlag is true)
+end b2kEnableSleeping
+
+command b2kEnableContinuous pFlag
+   if sWorld is not empty then b2EnableContinuous sWorld, (pFlag is true)
+end b2kEnableContinuous
+
+command b2kContactTarget pObject
+   put pObject into sContactObj
+end b2kContactTarget
+
+command b2kFrameTarget pObject
+   put pObject into sFrameObj
+end b2kFrameTarget
+
+function b2kWorld
+   return sWorld
+end b2kWorld
+
+function b2kVersion
+   return b2Version()
+end b2kVersion
+
+function b2kToScreenX pWx
+   return sOriginX + pWx * sScale
+end b2kToScreenX
+
+function b2kToScreenY pWy
+   return sOriginY - pWy * sScale
+end b2kToScreenY
+
+function b2kToWorldX pSx
+   if sScale is empty or sScale = 0 then return 0   -- before b2kSetup: stay safe
+   return (pSx - sOriginX) / sScale
+end b2kToWorldX
+
+function b2kToWorldY pSy
+   if sScale is empty or sScale = 0 then return 0
+   return (sOriginY - pSy) / sScale
+end b2kToWorldY
+
+command b2kAddBox pControl, pDynamic
+   local tRef, tType, tFixed, tBody, tHw, tHh, tWx, tWy, tGraphic, tImage
+   if sWorld is empty then return 0   -- attach needs a world (b2kSetup first)
+   put the long id of pControl into tRef
+   put (pDynamic is not false) into pDynamic
+   if pDynamic then put 2 into tType
+   else put 0 into tType
+   put ((the width of pControl) / 2) / sScale into tHw
+   put ((the height of pControl) / 2) / sScale into tHh
+   if tHw <= 0 or tHh <= 0 then return 0
+   put b2kToWorldX(item 1 of the loc of pControl) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   put (word 1 of tRef is "graphic") into tGraphic
+   put (word 1 of tRef is "image") into tImage
+   -- Graphics rotate as polygons; dynamic images rotate via `the angle`. Other
+   -- control types (button, field, ...) can't be shown rotated, so we lock
+   -- their rotation to keep the simulation consistent with the upright render.
+   if tGraphic or (tImage and pDynamic) then put false into tFixed
+   else put true into tFixed
+   put b2NewBody(sWorld, tType, tWx, tWy, 0, false, tFixed) into tBody
+   b2ShapeDefEnableSensorEvents true   -- so sensors can detect this shape
+   put b2AddBox(tBody, tHw, tHh, 1.0, 0.4, 0.2) into sShapeH[tRef]
+   b2kRegister tRef, tBody, (not pDynamic)
+   if tGraphic and pDynamic then
+      set the style of pControl to "polygon"
+      put "poly" into sRender[tRef]
+      put ("-" & tHw) & "," & ("-" & tHh) & cr & tHw & "," & ("-" & tHh) & cr \
+            & tHw & "," & tHh & cr & ("-" & tHw) & "," & tHh into sVerts[tRef]
+   else if tImage and pDynamic then
+      put "image" into sRender[tRef]
+   else
+      put "loc" into sRender[tRef]
+   end if
+   -- Draw the new body NOW. The style switch above left a "poly" graphic with
+   -- no points (invisible), and the move-event sync can't help: a world that
+   -- isn't stepping emits no move events, so a part spawned while the loop is
+   -- stopped would stay invisible until the first Run. Attach = visible.
+   b2kDrawBody tRef, tWx, tWy, 0
+   return tBody
+end b2kAddBox
+
+command b2kAddBall pControl, pDynamic
+   local tRef, tType, tBody, tRad, tWx, tWy
+   if sWorld is empty then return 0
+   put the long id of pControl into tRef
+   put (pDynamic is not false) into pDynamic
+   if pDynamic then put 2 into tType
+   else put 0 into tType
+   put ((the width of pControl) / 2) / sScale into tRad
+   if tRad <= 0 then return 0
+   put b2kToWorldX(item 1 of the loc of pControl) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   put b2NewBody(sWorld, tType, tWx, tWy, 0, false, false) into tBody
+   b2ShapeDefEnableSensorEvents true   -- so sensors can detect this shape
+   put b2AddCircle(tBody, 0, 0, tRad, 1.0, 0.4, 0.4) into sShapeH[tRef]
+   b2kRegister tRef, tBody, (not pDynamic)
+   if word 1 of tRef is "graphic" then put "ball" into sRender[tRef]
+   else if word 1 of tRef is "image" then put "image" into sRender[tRef]
+   else put "loc" into sRender[tRef]
+   put tRad into sRad[tRef]
+   b2kDrawBody tRef, tWx, tWy, 0   -- visible at attach, even with the loop stopped
+   return tBody
+end b2kAddBall
+
+command b2kAddCapsule pControl, pDynamic
+   local tRef, tType, tFixed, tBody, tWx, tWy, tWm, tHm, tR, tL, tHoriz, tGraphic, tImage
+   if sWorld is empty then return 0
+   put the long id of pControl into tRef
+   put (pDynamic is not false) into pDynamic
+   if pDynamic then put 2 into tType
+   else put 0 into tType
+   put (the width of pControl) / sScale into tWm
+   put (the height of pControl) / sScale into tHm
+   if tWm <= 0 or tHm <= 0 then return 0
+   put (tWm >= tHm) into tHoriz
+   if tHoriz then
+      put tHm / 2 into tR
+      put max(0, tWm / 2 - tR) into tL
+   else
+      put tWm / 2 into tR
+      put max(0, tHm / 2 - tR) into tL
+   end if
+   put b2kToWorldX(item 1 of the loc of pControl) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   put (word 1 of tRef is "graphic") into tGraphic
+   put (word 1 of tRef is "image") into tImage
+   if tGraphic or (tImage and pDynamic) then put false into tFixed
+   else put true into tFixed
+   put b2NewBody(sWorld, tType, tWx, tWy, 0, false, tFixed) into tBody
+   b2ShapeDefEnableSensorEvents true   -- so sensors can detect this shape
+   if tHoriz then
+      put b2AddCapsule(tBody, - tL, 0, tL, 0, tR, 1.0, 0.4, 0.2) into sShapeH[tRef]
+   else
+      put b2AddCapsule(tBody, 0, - tL, 0, tL, tR, 1.0, 0.4, 0.2) into sShapeH[tRef]
+   end if
+   b2kRegister tRef, tBody, (not pDynamic)
+   if tGraphic and pDynamic then
+      set the style of pControl to "polygon"
+      put "poly" into sRender[tRef]
+      put b2kCapsuleVerts(tL, tR, tHoriz) into sVerts[tRef]
+   else if tImage and pDynamic then
+      put "image" into sRender[tRef]
+   else
+      put "loc" into sRender[tRef]
+   end if
+   -- Same as b2kAddBox: the freshly point-less "poly" graphic must be drawn
+   -- here, because a stopped world never emits the move event that would.
+   b2kDrawBody tRef, tWx, tWy, 0
+   return tBody
+end b2kAddCapsule
+
+command b2kAddPolygon pControl, pDynamic
+   local tRef, tType, tBody, tCx, tCy, tWx, tWy, tPoints, p, tLocal, lx, ly, tCount
+   if sWorld is empty then return 0
+   put the long id of pControl into tRef
+   put (pDynamic is not false) into pDynamic
+   if pDynamic then put 2 into tType
+   else put 0 into tType
+   put item 1 of the loc of pControl into tCx
+   put item 2 of the loc of pControl into tCy
+   put b2kToWorldX(tCx) into tWx
+   put b2kToWorldY(tCy) into tWy
+   put b2NewBody(sWorld, tType, tWx, tWy, 0, false, false) into tBody
+   b2PolyBegin
+   put empty into tLocal
+   put 0 into tCount
+   repeat for each line p in the points of pControl
+      if p is empty then next repeat
+      if tCount >= 8 then next repeat
+      put (item 1 of p - tCx) / sScale into lx
+      put - ((item 2 of p - tCy) / sScale) into ly
+      b2PolyAddPoint lx, ly
+      put lx & "," & ly & cr after tLocal
+      add 1 to tCount
+   end repeat
+   if tCount < 3 then
+      b2DestroyBody tBody
+      return 0
+   end if
+   b2ShapeDefEnableSensorEvents true   -- so sensors can detect this shape
+   put b2AddPolygon(tBody, 1.0, 0.4, 0.2) into sShapeH[tRef]
+   b2kRegister tRef, tBody, (not pDynamic)
+   put "poly" into sRender[tRef]
+   put tLocal into sVerts[tRef]
+   b2kDrawBody tRef, tWx, tWy, 0   -- visible at attach, even with the loop stopped
+   return tBody
+end b2kAddPolygon
+
+command b2kAddStatic pControl
+   b2kAddBox pControl, false
+end b2kAddStatic
+
+command b2kRegister pRef, pBody, pIsStatic
+   put pBody into sBody[pRef]
+   put pRef into sCtrl[pBody]
+   put (pIsStatic is true) into sStatic[pRef]
+end b2kRegister
+
+command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
+   local tName, tRef
+   if sWorld is empty then return empty   -- spawn needs a world (b2kSetup first)
+   if pW is empty then put 40 into pW
+   put b2kClamp(pW, 1, 10000) into pW
+   if pH is empty then put pW into pH
+   put b2kClamp(pH, 1, 10000) into pH
+   put b2kNumberOr(pScreenX, sOriginX) into pScreenX
+   put b2kNumberOr(pScreenY, sOriginY) into pScreenY
+   put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create graphic (tName)
+   else
+      create graphic (tName) in group "b2kcam_view"
+   end if
+   put the long id of graphic (tName) into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   set the style of tRef to "rectangle"
+   set the filled of tRef to true
+   set the foregroundColor of tRef to "20,20,24"
+   if pColor is not empty then
+      try
+         set the backgroundColor of tRef to pColor
+      catch tErr
+         -- an unknown colour name (CSS names like "teal" are not LC/X11
+         -- names) must not abort the spawn and orphan the control
+      end try
+   end if
+   set the width of tRef to pW
+   set the height of tRef to pH
+   set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
+   b2kAddBox tRef
+   put true into sSpawned[tRef]
+   return tRef
+end b2kSpawnBox
+
+command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
+   local tName, tRef
+   if sWorld is empty then return empty
+   if pDiameter is empty then put 40 into pDiameter
+   put b2kClamp(pDiameter, 1, 10000) into pDiameter
+   put b2kNumberOr(pScreenX, sOriginX) into pScreenX
+   put b2kNumberOr(pScreenY, sOriginY) into pScreenY
+   put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create graphic (tName)
+   else
+      create graphic (tName) in group "b2kcam_view"
+   end if
+   put the long id of graphic (tName) into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   set the style of tRef to "oval"
+   set the filled of tRef to true
+   set the foregroundColor of tRef to "20,20,24"
+   if pColor is not empty then
+      try
+         set the backgroundColor of tRef to pColor
+      catch tErr
+         -- an unknown colour name (CSS names like "teal" are not LC/X11
+         -- names) must not abort the spawn and orphan the control
+      end try
+   end if
+   set the width of tRef to pDiameter
+   set the height of tRef to pDiameter
+   set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
+   b2kAddBall tRef
+   put true into sSpawned[tRef]
+   return tRef
+end b2kSpawnBall
+
+command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
+   local tName, tRef
+   if sWorld is empty then return empty
+   if pLength is empty then put 80 into pLength
+   if pThickness is empty then put 40 into pThickness
+   put b2kClamp(pLength, 1, 10000) into pLength
+   put b2kClamp(pThickness, 1, 10000) into pThickness
+   put b2kNumberOr(pScreenX, sOriginX) into pScreenX
+   put b2kNumberOr(pScreenY, sOriginY) into pScreenY
+   put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create graphic (tName)
+   else
+      create graphic (tName) in group "b2kcam_view"
+   end if
+   put the long id of graphic (tName) into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   set the style of tRef to "polygon"
+   set the filled of tRef to true
+   set the foregroundColor of tRef to "20,20,24"
+   if pColor is not empty then
+      try
+         set the backgroundColor of tRef to pColor
+      catch tErr
+         -- an unknown colour name (CSS names like "teal" are not LC/X11
+         -- names) must not abort the spawn and orphan the control
+      end try
+   end if
+   if pLength >= pThickness then
+      set the width of tRef to pLength
+      set the height of tRef to pThickness
+   else
+      set the width of tRef to pThickness
+      set the height of tRef to pLength
+   end if
+   set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
+   b2kAddCapsule tRef
+   put true into sSpawned[tRef]
+   return tRef
+end b2kSpawnCapsule
+
+command b2kSetBounce pControl, pRestitution
+   local s
+   put sShapeH[the long id of pControl] into s
+   put b2kClamp(pRestitution, 0, 2) into pRestitution
+   if s is not empty then b2SetShapeRestitution s, pRestitution
+end b2kSetBounce
+
+command b2kSetFriction pControl, pFriction
+   local s
+   put sShapeH[the long id of pControl] into s
+   put b2kClamp(pFriction, 0, 10) into pFriction
+   if s is not empty then b2SetShapeFriction s, pFriction
+end b2kSetFriction
+
+command b2kSetDensity pControl, pDensity
+   local s
+   put sShapeH[the long id of pControl] into s
+   put b2kClamp(pDensity, 0, 10000) into pDensity
+   if s is not empty then b2SetShapeDensity s, pDensity
+end b2kSetDensity
+
+command b2kReshape pControl, pShape
+   local tRef, tBody, tOld, tHw, tHh, tWm, tHm, tR, tL, tHoriz, tCx, tCy, p, lx, ly, tCount, tNewVerts
+   local tWx, tWy, tWa
+   put the long id of pControl into tRef
+   if sBody[tRef] is empty then exit b2kReshape
+   put sBody[tRef] into tBody
+   -- Build the new shape first and drop the old one only afterwards, so the body
+   -- is never momentarily shapeless and a rejected shape leaves the original
+   -- intact (any joints on the body stay valid throughout).
+   put sShapeH[tRef] into tOld
+   put empty into sShapeH[tRef]
+   b2ShapeDefEnableSensorEvents true   -- keep the reshaped body detectable by sensors
+   if sSensor[tRef] is true then b2ShapeDefSensor true   -- a sensor stays a sensor after reshaping
+   switch pShape
+      case "ball"
+         put ((the width of pControl) / 2) / sScale into tR
+         if tR <= 0 then
+            put tOld into sShapeH[tRef]
+            b2ShapeDefReset   -- drop the pending one-shot flags set above
+            exit b2kReshape
+         end if
+         put b2AddCircle(tBody, 0, 0, tR, 1.0, 0.4, 0.4) into sShapeH[tRef]
+         put tR into sRad[tRef]
+         break
+      case "capsule"
+         put (the width of pControl) / sScale into tWm
+         put (the height of pControl) / sScale into tHm
+         if tWm <= 0 or tHm <= 0 then
+            put tOld into sShapeH[tRef]
+            b2ShapeDefReset   -- drop the pending one-shot flags set above
+            exit b2kReshape
+         end if
+         put (tWm >= tHm) into tHoriz
+         if tHoriz then
+            put tHm / 2 into tR
+            put max(0, tWm / 2 - tR) into tL
+            put b2AddCapsule(tBody, - tL, 0, tL, 0, tR, 1.0, 0.4, 0.2) into sShapeH[tRef]
+         else
+            put tWm / 2 into tR
+            put max(0, tHm / 2 - tR) into tL
+            put b2AddCapsule(tBody, 0, - tL, 0, tL, tR, 1.0, 0.4, 0.2) into sShapeH[tRef]
+         end if
+         put b2kCapsuleVerts(tL, tR, tHoriz) into sVerts[tRef]
+         break
+      case "poly"
+         put item 1 of the loc of pControl into tCx
+         put item 2 of the loc of pControl into tCy
+         b2PolyBegin
+         put empty into tNewVerts
+         put 0 into tCount
+         repeat for each line p in the points of pControl
+            if p is empty then next repeat
+            if tCount >= 8 then next repeat
+            put (item 1 of p - tCx) / sScale into lx
+            put - ((item 2 of p - tCy) / sScale) into ly
+            b2PolyAddPoint lx, ly
+            put lx & "," & ly & cr after tNewVerts
+            add 1 to tCount
+         end repeat
+         if tCount < 3 then           -- degenerate outline: keep the existing shape
+            put tOld into sShapeH[tRef]
+            b2ShapeDefReset   -- drop the pending one-shot flags set above
+            exit b2kReshape
+         end if
+         put b2AddPolygon(tBody, 1.0, 0.4, 0.2) into sShapeH[tRef]
+         put tNewVerts into sVerts[tRef]
+         break
+      default
+         put ((the width of pControl) / 2) / sScale into tHw
+         put ((the height of pControl) / 2) / sScale into tHh
+         if tHw <= 0 or tHh <= 0 then
+            put tOld into sShapeH[tRef]
+            b2ShapeDefReset   -- drop the pending one-shot flags set above
+            exit b2kReshape
+         end if
+         put b2AddBox(tBody, tHw, tHh, 1.0, 0.4, 0.2) into sShapeH[tRef]
+         if sRender[tRef] is "poly" then
+            put ("-" & tHw) & "," & ("-" & tHh) & cr & tHw & "," & ("-" & tHh) & cr \
+                  & tHw & "," & tHh & cr & ("-" & tHw) & "," & tHh into sVerts[tRef]
+         end if
+   end switch
+   if tOld is not empty then b2DestroyShape tOld   -- now safe to release the old shape
+   -- The size/outline changed but the body need not have moved, so the move-event
+   -- sync would skip it (an at-rest body produces no move event). Bust the
+   -- pose-keyed draw cache and redraw at the body's current pose right now so the
+   -- new shape is visible immediately, awake or asleep.
+   delete variable sDrawKey[tRef]
+   put b2BodyX(tBody) into tWx
+   put b2BodyY(tBody) into tWy
+   if sRender[tRef] is "poly" or sRender[tRef] is "image" then put b2BodyAngle(tBody) into tWa
+   else put 0 into tWa
+   lock screen
+   b2kDrawBody tRef, tWx, tWy, tWa
+   unlock screen
+end b2kReshape
+
+command b2kSetBullet pControl, pFlag
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetBullet
+   b2SetBullet b, (pFlag is true)
+end b2kSetBullet
+
+command b2kSetFixedRotation pControl, pFlag
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetFixedRotation
+   b2SetFixedRotation b, (pFlag is true)
+end b2kSetFixedRotation
+
+command b2kSetGravityScale pControl, pScale
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetGravityScale
+   b2SetGravityScale b, pScale
+end b2kSetGravityScale
+
+command b2kSetDamping pControl, pLinear, pAngular
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetDamping
+   if pLinear is not empty then b2SetLinearDamping b, pLinear
+   if pAngular is not empty then b2SetAngularDamping b, pAngular
+end b2kSetDamping
+
+command b2kWake pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kWake
+   b2SetAwake b, true
+end b2kWake
+
+command b2kSleep pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSleep
+   b2SetAwake b, false
+end b2kSleep
+
+command b2kSetSleepEnabled pControl, pFlag
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetSleepEnabled
+   b2EnableSleep b, (pFlag is true)
+   if pFlag is not true then b2SetAwake b, true
+end b2kSetSleepEnabled
+
+command b2kSetSleepThreshold pControl, pPxPerSec
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetSleepThreshold
+   b2SetSleepThreshold b, pPxPerSec / sScale
+end b2kSetSleepThreshold
+
+command b2kSetVelocity pControl, pVxPx, pVyPx
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSetVelocity
+   b2SetVelocity b, pVxPx / sScale, - pVyPx / sScale
+   -- setting a velocity means "move": wake the body. Raw SetVelocity
+   -- does NOT wake (why b2kPush always called SetAwake) - a SLEEPING
+   -- kinematic (a parked gate) given one cached write stayed frozen,
+   -- which read as "the pressure plate is flaky".
+   b2SetAwake b, true
+end b2kSetVelocity
+
+command b2kPush pControl, pDvxPx, pDvyPx
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kPush
+   b2SetVelocity b, b2BodyVX(b) + pDvxPx / sScale, b2BodyVY(b) - pDvyPx / sScale
+   b2SetAwake b, true
+end b2kPush
+
+command b2kSpin pControl, pDegPerSec
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSpin
+   b2SetAngularVelocity b, pDegPerSec * kPI / 180
+end b2kSpin
+
+command b2kSpinBy pControl, pDegPerSec
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kSpinBy
+   b2SetAngularVelocity b, b2BodyAngularVelocity(b) + pDegPerSec * kPI / 180
+   b2SetAwake b, true
+end b2kSpinBy
+
+command b2kForce pControl, pFxPx, pFyPx
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kForce
+   b2ApplyForce b, pFxPx / sScale, - pFyPx / sScale, true
+end b2kForce
+
+command b2kImpulse pControl, pIxPx, pIyPx
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kImpulse
+   b2ApplyImpulse b, pIxPx / sScale, - pIyPx / sScale, true
+end b2kImpulse
+
+command b2kTorque pControl, pTorque
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kTorque
+   b2ApplyTorque b, pTorque, true
+end b2kTorque
+
+command b2kAngularImpulse pControl, pImpulse
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kAngularImpulse
+   b2ApplyAngularImpulse b, pImpulse, true
+end b2kAngularImpulse
+
+command b2kSetType pControl, pType
+   local tRef, tCode
+   put the long id of pControl into tRef
+   if sBody[tRef] is empty then exit b2kSetType
+   switch pType
+      case "static"
+         put 0 into tCode
+         break
+      case "kinematic"
+         put 1 into tCode
+         break
+      default
+         put 2 into tCode
+   end switch
+   b2SetBodyType sBody[tRef], tCode
+   put (tCode is 0) into sStatic[tRef]   -- only true statics are skipped by sync
+   if tCode is not 0 then b2SetAwake sBody[tRef], true
+   put true into sNeedFullSync
+end b2kSetType
+
+command b2kSetStatic pControl
+   b2kSetType pControl, "static"
+end b2kSetStatic
+
+command b2kSetDynamic pControl
+   b2kSetType pControl, "dynamic"
+end b2kSetDynamic
+
+command b2kSetKinematic pControl
+   b2kSetType pControl, "kinematic"
+end b2kSetKinematic
+
+command b2kDisable pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kDisable
+   b2DisableBody b
+end b2kDisable
+
+command b2kEnable pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then exit b2kEnable
+   b2EnableBody b
+   put true into sNeedFullSync
+end b2kEnable
+
+command b2kMoveTo pControl, pScreenX, pScreenY, pAngleDeg
+   local tRef, tWx, tWy, tWa
+   if pAngleDeg is empty then put 0 into pAngleDeg
+   put the long id of pControl into tRef
+   if sBody[tRef] is empty then exit b2kMoveTo
+   put b2kToWorldX(pScreenX) into tWx
+   put b2kToWorldY(pScreenY) into tWy
+   put pAngleDeg * kPI / 180 into tWa
+   b2SetTransform sBody[tRef], tWx, tWy, tWa
+   b2kDrawBody tRef, tWx, tWy, tWa
+end b2kMoveTo
+
+command b2kRemove pControl
+   local tRef, tBody, tWasSpawned
+   put the long id of pControl into tRef
+   put sBody[tRef] into tBody
+   if tBody is not empty and tBody > 0 then
+      b2DestroyBody tBody
+      delete variable sCtrl[tBody]
+   end if
+   put (sSpawned[tRef] is true) into tWasSpawned
+   delete variable sBody[tRef]
+   delete variable sShapeH[tRef]
+   delete variable sRender[tRef]
+   delete variable sVerts[tRef]
+   delete variable sRad[tRef]
+   delete variable sImgAngle[tRef]
+   delete variable sStatic[tRef]
+   delete variable sSpawned[tRef]
+   delete variable sSensor[tRef]
+   delete variable sInCam[tRef]
+   -- If the kit created this control (b2kSpawn...), delete it too, so removing
+   -- a body never leaves a dead graphic behind. Attached controls are left alone.
+   if tWasSpawned then
+      try
+         delete tRef
+      end try
+   end if
+end b2kRemove
+
+command b2kExplode pScreenX, pScreenY, pRadiusPx, pPowerPx
+   if pRadiusPx is empty then put 180 into pRadiusPx
+   if pPowerPx is empty then put 900 into pPowerPx
+   if sWorld is empty then exit b2kExplode
+   b2WorldExplode sWorld, b2kToWorldX(pScreenX), b2kToWorldY(pScreenY), \
+         pRadiusPx / sScale, (pRadiusPx / sScale) * 0.5, pPowerPx / sScale
+end b2kExplode
+
+command b2kExplodeLegacy pScreenX, pScreenY, pRadiusPx, pPowerPx
+   local cx, cy, tRadM, tRef, b, dx, dy, d, f
+   if pRadiusPx is empty then put 180 into pRadiusPx
+   if pPowerPx is empty then put 900 into pPowerPx
+   put b2kToWorldX(pScreenX) into cx
+   put b2kToWorldY(pScreenY) into cy
+   put pRadiusPx / sScale into tRadM
+   repeat for each key tRef in sBody
+      if sStatic[tRef] is true then next repeat
+      put sBody[tRef] into b
+      put b2BodyX(b) - cx into dx
+      put b2BodyY(b) - cy into dy
+      put sqrt(dx * dx + dy * dy) into d
+      if d > 0.02 and d < tRadM then
+         put (1 - d / tRadM) * (pPowerPx / sScale) into f
+         b2SetVelocity b, b2BodyVX(b) + dx / d * f, b2BodyVY(b) + dy / d * f
+         b2SetAwake b, true
+      end if
+   end repeat
+end b2kExplodeLegacy
+
+function b2kBodyOf pControl
+   return sBody[the long id of pControl]
+end b2kBodyOf
+
+function b2kPosition pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return "0,0"
+   return b2kToScreenX(b2BodyX(b)) & "," & b2kToScreenY(b2BodyY(b))
+end b2kPosition
+
+function b2kWorldCenter pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return "0,0"
+   return b2kToScreenX(b2BodyWorldCenterX(b)) & "," & b2kToScreenY(b2BodyWorldCenterY(b))
+end b2kWorldCenter
+
+function b2kVelocity pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return "0,0"
+   return (b2BodyVX(b) * sScale) & "," & (- b2BodyVY(b) * sScale)
+end b2kVelocity
+
+function b2kSpeed pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return 0
+   return sqrt((b2BodyVX(b) * sScale) ^ 2 + (b2BodyVY(b) * sScale) ^ 2)
+end b2kSpeed
+
+function b2kAngle pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return 0
+   return b2BodyAngle(b) * 180 / kPI
+end b2kAngle
+
+function b2kIsAwake pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return false
+   return b2BodyIsAwake(b)
+end b2kIsAwake
+
+function b2kSpinRate pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return 0
+   return b2BodyAngularVelocity(b) * 180 / kPI
+end b2kSpinRate
+
+function b2kIsBullet pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return false
+   return b2BodyIsBullet(b)
+end b2kIsBullet
+
+function b2kIsEnabled pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return false
+   return b2BodyIsEnabled(b)
+end b2kIsEnabled
+
+function b2kMass pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return 0
+   return b2BodyMass(b)
+end b2kMass
+
+function b2kGravityScale pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return 0
+   return b2BodyGravityScale(b)
+end b2kGravityScale
+
+function b2kDamping pControl
+   local b
+   put sBody[the long id of pControl] into b
+   if b is empty then return "0,0"
+   return b2BodyLinearDamping(b) & "," & b2BodyAngularDamping(b)
+end b2kDamping
+
+function b2kBodyType pControl
+   local b, tCode
+   put sBody[the long id of pControl] into b
+   if b is empty then return "static"
+   put b2BodyType(b) into tCode
+   if tCode is 1 then return "kinematic"
+   if tCode is 2 then return "dynamic"
+   return "static"
+end b2kBodyType
+
+function b2kBodyCount
+   return the number of lines of the keys of sBody
+end b2kBodyCount
+
+function b2kAwakeCount
+   local tRef, tCount
+   put 0 into tCount
+   repeat for each key tRef in sBody
+      if sStatic[tRef] is not true and b2BodyIsAwake(sBody[tRef]) then add 1 to tCount
+   end repeat
+   return tCount
+end b2kAwakeCount
+
+function b2kControlAt pScreenX, pScreenY
+   if sWorld is empty then return empty
+   return sCtrl[b2BodyAtPoint(sWorld, b2kToWorldX(pScreenX), b2kToWorldY(pScreenY))]
+end b2kControlAt
+
+function b2kControlContains pControl, pScreenX, pScreenY
+   local tRef
+   put the long id of pControl into tRef
+   if sShapeH[tRef] is empty then return false
+   return b2ShapeTestPoint(sShapeH[tRef], b2kToWorldX(pScreenX), b2kToWorldY(pScreenY))
+end b2kControlContains
+
+function b2kRayHit pX1, pY1, pX2, pY2
+   local dx, dy
+   if sWorld is not empty and \
+         b2CastRayClosest(sWorld, b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)) then
+      put round(b2kToScreenX(b2RayX())) into sRayX
+      put round(b2kToScreenY(b2RayY())) into sRayY
+      put b2RayNormalX() into sRayNX        -- surface normal, screen-oriented
+      put - b2RayNormalY() into sRayNY
+      put pX2 - pX1 into dx
+      put pY2 - pY1 into dy
+      put b2RayFraction() * sqrt(dx * dx + dy * dy) into sRayDist
+      -- the handle is fetched for the control lookup anyway; stashing it
+      -- lets the player's probe classify the ground (one-way chain or
+      -- solid) without a single extra FFI call
+      put b2RayBody() into sRayBodyH
+      return sCtrl[sRayBodyH]
+   end if
+   put empty into sRayX
+   put empty into sRayY
+   put empty into sRayNX
+   put empty into sRayNY
+   put empty into sRayDist
+   put empty into sRayBodyH
+   return empty
+end b2kRayHit
+
+function b2kRayHitX
+   return sRayX
+end b2kRayHitX
+
+function b2kRayHitY
+   return sRayY
+end b2kRayHitY
+
+function b2kRayHitNormalX
+   return sRayNX
+end b2kRayHitNormalX
+
+function b2kRayHitNormalY
+   return sRayNY
+end b2kRayHitNormalY
+
+function b2kRayDist
+   return sRayDist
+end b2kRayDist
+
+function b2kContactCount
+   if sEvtCN is empty then return 0
+   return sEvtCN
+end b2kContactCount
+
+function b2kContactA pIndex
+   return sCtrl[sEvtCA[pIndex]]
+end b2kContactA
+
+function b2kContactB pIndex
+   return sCtrl[sEvtCB[pIndex]]
+end b2kContactB
+
+function b2kEndContactCount
+   if sEvtEN is empty then return 0
+   return sEvtEN
+end b2kEndContactCount
+
+function b2kEndContactA pIndex
+   return sCtrl[sEvtEA[pIndex]]
+end b2kEndContactA
+
+function b2kEndContactB pIndex
+   return sCtrl[sEvtEB[pIndex]]
+end b2kEndContactB
+
+command b2kHinge pCtrlA, pCtrlB, pScreenX, pScreenY
+   local bA, bB, wx, wy, aA, aB, j
+   put sBody[the long id of pCtrlA] into bA
+   if bA is empty or sWorld is empty then return 0
+   if pCtrlB is not empty and sBody[the long id of pCtrlB] is empty then return 0
+   put b2kToWorldX(pScreenX) into wx
+   put b2kToWorldY(pScreenY) into wy
+   put b2kLocalAnchor(bA, wx, wy) into aA
+   if pCtrlB is empty then
+      put sDragAnchor into bB
+      put wx & "," & wy into aB
+   else
+      put sBody[the long id of pCtrlB] into bB
+      put b2kLocalAnchor(bB, wx, wy) into aB
+   end if
+   put b2RevoluteJoint(sWorld, bA, bB, item 1 of aA, item 2 of aA, item 1 of aB, item 2 of aB, false) into j
+   return j
+end b2kHinge
+
+command b2kWeld pCtrlA, pCtrlB
+   local bA, bB, wx, wy, aA, refA, j
+   put sBody[the long id of pCtrlA] into bA
+   put sBody[the long id of pCtrlB] into bB
+   if bA is empty or bB is empty or sWorld is empty then return 0
+   put b2BodyX(bB) into wx
+   put b2BodyY(bB) into wy
+   put b2kLocalAnchor(bA, wx, wy) into aA
+   put b2BodyAngle(bB) - b2BodyAngle(bA) into refA
+   put b2WeldJoint(sWorld, bA, bB, item 1 of aA, item 2 of aA, 0, 0, refA, false) into j
+   return j
+end b2kWeld
+
+command b2kRope pCtrlA, pCtrlB, pLengthPx
+   local bA, bB, tLen, dx, dy, j
+   put sBody[the long id of pCtrlA] into bA
+   put sBody[the long id of pCtrlB] into bB
+   if bA is empty or bB is empty or sWorld is empty then return 0
+   if pLengthPx is empty then
+      put b2BodyX(bB) - b2BodyX(bA) into dx
+      put b2BodyY(bB) - b2BodyY(bA) into dy
+      put sqrt(dx * dx + dy * dy) into tLen
+   else
+      put pLengthPx / sScale into tLen
+   end if
+   put b2DistanceJoint(sWorld, bA, bB, 0, 0, 0, 0, tLen, false) into j
+   return j
+end b2kRope
+
+command b2kMotor pJoint, pDegPerSec, pMaxTorque
+   if pJoint is empty or pJoint <= 0 then exit b2kMotor
+   if pMaxTorque is empty then put 1000 into pMaxTorque
+   b2RevoluteEnableMotor pJoint, true, pDegPerSec * kPI / 180, pMaxTorque
+end b2kMotor
+
+command b2kHingeLimit pJoint, pLowerDeg, pUpperDeg
+   if pJoint is empty or pJoint <= 0 then exit b2kHingeLimit
+   b2RevoluteEnableLimit pJoint, true, pLowerDeg * kPI / 180, pUpperDeg * kPI / 180
+end b2kHingeLimit
+
+function b2kHingeAngle pJoint
+   if pJoint is empty or pJoint <= 0 then return 0
+   return b2RevoluteAngle(pJoint) * 180 / kPI
+end b2kHingeAngle
+
+function b2kRopeLength pJoint
+   if pJoint is empty or pJoint <= 0 then return 0
+   return b2DistanceLength(pJoint) * sScale
+end b2kRopeLength
+
+command b2kRopeSetLength pJoint, pLengthPx
+   if pJoint is empty or pJoint <= 0 then exit b2kRopeSetLength
+   b2DistanceSetLength pJoint, pLengthPx / sScale
+end b2kRopeSetLength
+
+command b2kRopeRange pJoint, pMinPx, pMaxPx
+   if pJoint is empty or pJoint <= 0 then exit b2kRopeRange
+   b2DistanceSetLengthRange pJoint, pMinPx / sScale, pMaxPx / sScale
+end b2kRopeRange
+
+command b2kSpring pJoint, pHertz, pDamping
+   if pJoint is empty or pJoint <= 0 then exit b2kSpring
+   if pDamping is empty then put 0.5 into pDamping
+   b2DistanceEnableSpring pJoint, true, pHertz, pDamping
+end b2kSpring
+
+command b2kWeldSpring pJoint, pHertz, pDamping
+   if pJoint is empty or pJoint <= 0 then exit b2kWeldSpring
+   if pDamping is empty then put 0.5 into pDamping
+   b2WeldSetStiffness pJoint, pHertz, pDamping, pHertz, pDamping
+end b2kWeldSpring
+
+command b2kSlider pCtrlA, pCtrlB, pAxisDeg
+   local bMover, bFixed, wax, way, ca, sa, lax, lay, anchX, anchY, aFix, aMov, refA, fixAng, j
+   put sBody[the long id of pCtrlA] into bMover
+   if pCtrlB is empty then put sDragAnchor into bFixed
+   else put sBody[the long id of pCtrlB] into bFixed
+   if bMover is empty or bFixed is empty or sWorld is empty then return 0
+   if pAxisDeg is empty then put 90 into pAxisDeg
+   put cos(pAxisDeg * kPI / 180) into wax
+   put - sin(pAxisDeg * kPI / 180) into way
+   put b2BodyAngle(bFixed) into fixAng
+   put cos(- fixAng) into ca
+   put sin(- fixAng) into sa
+   put wax * ca - way * sa into lax
+   put wax * sa + way * ca into lay
+   put b2BodyX(bMover) into anchX
+   put b2BodyY(bMover) into anchY
+   put b2kLocalAnchor(bFixed, anchX, anchY) into aFix
+   put b2kLocalAnchor(bMover, anchX, anchY) into aMov
+   put b2BodyAngle(bMover) - fixAng into refA
+   put b2PrismaticJoint(sWorld, bFixed, bMover, item 1 of aFix, item 2 of aFix, \
+         item 1 of aMov, item 2 of aMov, lax, lay, refA, false) into j
+   return j
+end b2kSlider
+
+command b2kSliderMotor pJoint, pPxPerSec, pMaxForce
+   if pJoint is empty or pJoint <= 0 then exit b2kSliderMotor
+   if pMaxForce is empty then put 1000 into pMaxForce
+   b2PrismaticEnableMotor pJoint, true, pPxPerSec / sScale, pMaxForce
+end b2kSliderMotor
+
+command b2kSliderLimit pJoint, pLowerPx, pUpperPx
+   if pJoint is empty or pJoint <= 0 then exit b2kSliderLimit
+   b2PrismaticEnableLimit pJoint, true, pLowerPx / sScale, pUpperPx / sScale
+end b2kSliderLimit
+
+function b2kSliderPos pJoint
+   if pJoint is empty or pJoint <= 0 then return 0
+   return b2PrismaticTranslation(pJoint) * sScale
+end b2kSliderPos
+
+command b2kWheel pChassis, pWheel, pScreenX, pScreenY, pAxisDeg
+   local bA, bB, anchX, anchY, aA, aB, wax, way, ca, sa, lax, lay, angA, j
+   put sBody[the long id of pChassis] into bA
+   put sBody[the long id of pWheel] into bB
+   if bA is empty or bB is empty or sWorld is empty then return 0
+   if pScreenX is empty then
+      put b2BodyX(bB) into anchX
+      put b2BodyY(bB) into anchY
+   else
+      put b2kToWorldX(pScreenX) into anchX
+      put b2kToWorldY(pScreenY) into anchY
+   end if
+   if pAxisDeg is empty then
+      put 0 into wax
+      put 1 into way
+   else
+      put cos(pAxisDeg * kPI / 180) into wax
+      put - sin(pAxisDeg * kPI / 180) into way
+   end if
+   put b2BodyAngle(bA) into angA
+   put cos(- angA) into ca
+   put sin(- angA) into sa
+   put wax * ca - way * sa into lax
+   put wax * sa + way * ca into lay
+   put b2kLocalAnchor(bA, anchX, anchY) into aA
+   put b2kLocalAnchor(bB, anchX, anchY) into aB
+   put b2WheelJoint(sWorld, bA, bB, item 1 of aA, item 2 of aA, \
+         item 1 of aB, item 2 of aB, lax, lay, false) into j
+   return j
+end b2kWheel
+
+command b2kWheelMotor pJoint, pDegPerSec, pMaxTorque
+   if pJoint is empty or pJoint <= 0 then exit b2kWheelMotor
+   if pMaxTorque is empty then put 1000 into pMaxTorque
+   b2WheelEnableMotor pJoint, true, pDegPerSec * kPI / 180, pMaxTorque
+end b2kWheelMotor
+
+command b2kWheelSpring pJoint, pHertz, pDamping
+   if pJoint is empty or pJoint <= 0 then exit b2kWheelSpring
+   if pHertz is empty then put 4 into pHertz
+   if pDamping is empty then put 0.7 into pDamping
+   b2WheelEnableSpring pJoint, true, pHertz, pDamping
+end b2kWheelSpring
+
+command b2kMotorOff pJoint
+   if pJoint is not empty and pJoint > 0 then b2RevoluteEnableMotor pJoint, false, 0, 0
+end b2kMotorOff
+
+command b2kHingeLimitOff pJoint
+   if pJoint is not empty and pJoint > 0 then b2RevoluteEnableLimit pJoint, false, 0, 0
+end b2kHingeLimitOff
+
+command b2kSliderMotorOff pJoint
+   if pJoint is not empty and pJoint > 0 then b2PrismaticEnableMotor pJoint, false, 0, 0
+end b2kSliderMotorOff
+
+command b2kSliderLimitOff pJoint
+   if pJoint is not empty and pJoint > 0 then b2PrismaticEnableLimit pJoint, false, 0, 0
+end b2kSliderLimitOff
+
+command b2kWheelMotorOff pJoint
+   if pJoint is not empty and pJoint > 0 then b2WheelEnableMotor pJoint, false, 0, 0
+end b2kWheelMotorOff
+
+command b2kRemoveJoint pJoint
+   if pJoint is not empty and pJoint > 0 then b2DestroyJoint pJoint
+end b2kRemoveJoint
+
+function b2kLocalAnchor pBody, pWx, pWy
+   local bcx, bcy, ba, dx, dy, c, s
+   put b2BodyX(pBody) into bcx
+   put b2BodyY(pBody) into bcy
+   put b2BodyAngle(pBody) into ba
+   put pWx - bcx into dx
+   put pWy - bcy into dy
+   put cos(- ba) into c
+   put sin(- ba) into s
+   return (dx * c - dy * s) & "," & (dx * s + dy * c)
+end b2kLocalAnchor
+
+command b2kAddSensor pControl, pShape
+   local tRef
+   if sWorld is empty then return 0
+   put the long id of pControl into tRef
+   b2ShapeDefSensor true
+   b2ShapeDefEnableSensorEvents true
+   switch pShape
+      case "ball"
+         b2kAddBall pControl, false
+         break
+      case "capsule"
+         b2kAddCapsule pControl, false
+         break
+      default
+         b2kAddBox pControl, false
+   end switch
+   if sBody[tRef] is empty then
+      -- the attach bailed (zero-sized control): clear the pending one-shot
+      -- sensor flags so they cannot leak onto the next shape someone creates
+      b2ShapeDefReset
+      return 0
+   end if
+   put true into sSensor[tRef]
+   return sBody[tRef]
+end b2kAddSensor
+
+command b2kSetSensor pControl, pFlag
+   put (pFlag is true) into sSensor[the long id of pControl]
+end b2kSetSensor
+
+function b2kSensorCount
+   if sEvtSN is empty then return 0
+   return sEvtSN
+end b2kSensorCount
+
+function b2kSensorEnterSensor pIndex
+   return sCtrl[sEvtSS[pIndex]]
+end b2kSensorEnterSensor
+
+function b2kSensorEnterVisitor pIndex
+   return sCtrl[sEvtSV[pIndex]]
+end b2kSensorEnterVisitor
+
+function b2kSensorExitCount
+   if sEvtXN is empty then return 0
+   return sEvtXN
+end b2kSensorExitCount
+
+function b2kSensorExitSensor pIndex
+   return sCtrl[sEvtXS[pIndex]]
+end b2kSensorExitSensor
+
+function b2kSensorExitVisitor pIndex
+   return sCtrl[sEvtXV[pIndex]]
+end b2kSensorExitVisitor
+
+command b2kDefineLayer pName
+   if sLayers[pName] is not empty then return sLayers[pName]
+   if sNextBit is empty or sNextBit < 1 then put 1 into sNextBit
+   -- xTalk's bitOr is 32-bit, so a wrapped layer would get a category of 0
+   -- (= collides with nothing). Refuse instead of corrupting filters. The
+   -- TOP bit (2^31) is the Kit's reserved "oneway" chain layer, so user
+   -- layers stop at 2^30: 31 nameable layers.
+   if sNextBit > 1073741824 then return 0
+   put sNextBit into sLayers[pName]
+   put sNextBit * 2 into sNextBit
+   return sLayers[pName]
+end b2kDefineLayer
+
+function b2kLayerBits pLayerList
+   local tBits, tL
+   put 0 into tBits
+   replace comma with space in pLayerList
+   repeat for each word tL in pLayerList
+      if tL is empty then next repeat
+      if tL is "oneway" then
+         -- the reserved chain layer (bit 2^31): nameable in masks so a
+         -- body can opt in/out of one-way terrain explicitly
+         put tBits bitOr 2147483648 into tBits
+         next repeat
+      end if
+      if tL is a number then
+         put tBits bitOr (tL) into tBits
+      else
+         -- b2kDefineLayer is a COMMAND: OXT cannot call commands with
+         -- function syntax, so invoke it as a statement and read the result
+         b2kDefineLayer tL
+         put tBits bitOr (the result) into tBits
+      end if
+   end repeat
+   return tBits
+end b2kLayerBits
+
+command b2kSetCategory pControl, pLayerList
+   local s
+   put sShapeH[the long id of pControl] into s
+   if s is empty then exit b2kSetCategory
+   b2SetShapeFilter s, b2kLayerBits(pLayerList), b2ShapeFilterMask(s), b2ShapeFilterGroup(s)
+end b2kSetCategory
+
+command b2kSetMask pControl, pLayerList
+   local s
+   put sShapeH[the long id of pControl] into s
+   if s is empty then exit b2kSetMask
+   -- a named-layer mask means OBJECT rules, not "fall through the
+   -- terrain": the reserved chain bit rides along automatically, so
+   -- custom-masked bodies still stand on b2kChain ground. To really
+   -- pass through chains use raw b2SetShapeFilter (the player's
+   -- drop-through window does exactly that, internally).
+   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2kLayerBits(pLayerList) bitOr 2147483648, b2ShapeFilterGroup(s)
+end b2kSetMask
+
+command b2kSetCollisionGroup pControl, pGroup
+   local s
+   put sShapeH[the long id of pControl] into s
+   if s is empty then exit b2kSetCollisionGroup
+   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2ShapeFilterMask(s), pGroup
+end b2kSetCollisionGroup
+
+command b2kChain pPoints, pLoop
+   local tBody, p, tChain
+   if sWorld is empty then return 0
+   set the itemDelimiter to comma   -- points are "x,y" (gotcha 5)
+   put b2NewStaticBody(sWorld, 0, 0) into tBody
+   b2ChainBegin
+   repeat for each line p in pPoints
+      if p is empty then next repeat
+      b2ChainAddPoint b2kToWorldX(item 1 of p), b2kToWorldY(item 2 of p)
+   end repeat
+   -- every Kit chain carries the reserved ONE-WAY category (bit 2^31,
+   -- the "oneway" layer) with an all-bits mask: nothing collides any
+   -- differently, but the player's drop-through window can now stop
+   -- colliding with chains ALONE by masking out that single bit.
+   b2ShapeDefFilter 2147483648, 4294967295, 0
+   put b2CreateChain(tBody, (pLoop is true), 0.6, 0.1) into tChain
+   if tChain > 0 then put true into sOneWayBody[tBody]
+   return tChain
+end b2kChain
+
+command b2kSmoothGround pPoints
+   -- statement call + the result: OXT cannot call commands function-style.
+   -- Mind b2kChain's GHOST RULE: the outer two points anchor, not collide.
+   b2kChain pPoints, false
+   return the result
+end b2kSmoothGround
+
+command b2kAddChain pControl, pPoints, pLoop
+   local tRef, tCx, tCy, tBody, p, lx, ly
+   if sWorld is empty then return 0
+   set the itemDelimiter to comma   -- locs and points are "x,y" (gotcha 5)
+   put the long id of pControl into tRef
+   put item 1 of the loc of pControl into tCx
+   put item 2 of the loc of pControl into tCy
+   put b2NewStaticBody(sWorld, b2kToWorldX(tCx), b2kToWorldY(tCy)) into tBody
+   b2ChainBegin
+   repeat for each line p in pPoints
+      if p is empty then next repeat
+      put (item 1 of p - tCx) / sScale into lx          -- local to the control's centre
+      put - ((item 2 of p - tCy) / sScale) into ly
+      b2ChainAddPoint lx, ly
+   end repeat
+   get b2CreateChain(tBody, (pLoop is true), 0.6, 0.1)
+   b2kRegister tRef, tBody, true                        -- static, kit-tracked
+   put "loc" into sRender[tRef]                          -- static: registered but never synced
+   return tBody
+end b2kAddChain
+
+function b2kOverlap pX1, pY1, pX2, pY2
+   if sWorld is empty then return empty
+   return b2kQueryToControls(b2OverlapAABB(sWorld, b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)))
+end b2kOverlap
+
+function b2kOverlapMoving pX1, pY1, pX2, pY2
+   local tLine, tOut
+   put empty into tOut
+   repeat for each line tLine in b2kOverlap(pX1, pY1, pX2, pY2)
+      if tLine is empty then next repeat
+      if sStatic[tLine] is true then next repeat
+      put tLine & cr after tOut
+   end repeat
+   return tOut
+end b2kOverlapMoving
+
+function b2kOverlapCircle pX, pY, pRadiusPx
+   if sWorld is empty then return empty
+   return b2kQueryToControls(b2OverlapCircle(sWorld, b2kToWorldX(pX), b2kToWorldY(pY), pRadiusPx / sScale))
+end b2kOverlapCircle
+
+function b2kRayHitAll pX1, pY1, pX2, pY2
+   if sWorld is empty then return empty
+   return b2kQueryToControls(b2RayCastAll(sWorld, b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)))
+end b2kRayHitAll
+
+function b2kQueryToControls pCount
+   local i, c, tList
+   put empty into tList
+   repeat with i = 1 to pCount
+      put sCtrl[b2QueryBody(i)] into c
+      if c is not empty then put c & cr after tList
+   end repeat
+   return tList
+end b2kQueryToControls
+
+command b2kMotorTo pMover, pRef, pOffsetXPx, pOffsetYPx, pAngleDeg, pMaxForce, pMaxTorque
+   local bMover, bRef
+   put sBody[the long id of pMover] into bMover
+   if pRef is empty then put sDragAnchor into bRef
+   else put sBody[the long id of pRef] into bRef
+   if bMover is empty or bRef is empty or sWorld is empty then return 0
+   if pAngleDeg is empty then put 0 into pAngleDeg
+   if pMaxForce is empty then put 1000 into pMaxForce
+   if pMaxTorque is empty then put 1000 into pMaxTorque
+   return b2MotorJoint(sWorld, bRef, bMover, pOffsetXPx / sScale, - pOffsetYPx / sScale, \
+         pAngleDeg * kPI / 180, pMaxForce, pMaxTorque, 0.3, false)
+end b2kMotorTo
+
+command b2kNoCollide pCtrlA, pCtrlB
+   local bA, bB
+   put sBody[the long id of pCtrlA] into bA
+   put sBody[the long id of pCtrlB] into bB
+   if bA is empty or bB is empty or sWorld is empty then return 0
+   return b2FilterJoint(sWorld, bA, bB)
+end b2kNoCollide
+
+command b2kSetRestitutionThreshold pPxPerSec
+   if sWorld is not empty then b2SetRestitutionThreshold sWorld, pPxPerSec / sScale
+end b2kSetRestitutionThreshold
+
+command b2kSetContactTuning pHertz, pDamping, pPushPx
+   if sWorld is not empty then b2SetContactTuning sWorld, pHertz, pDamping, pPushPx / sScale
+end b2kSetContactTuning
+
+command b2kSetJointTuning pHertz, pDamping
+   if sWorld is not empty then b2SetJointTuning sWorld, pHertz, pDamping
+end b2kSetJointTuning
+
+command b2kSetMaxSpeed pPxPerSec
+   if sWorld is not empty then b2SetMaximumLinearSpeed sWorld, pPxPerSec / sScale
+end b2kSetMaxSpeed
+
+command b2kEnableWarmStarting pFlag
+   if sWorld is not empty then b2EnableWarmStarting sWorld, (pFlag is true)
+end b2kEnableWarmStarting
+
+function b2kProfile
+   if sWorld is empty then return empty
+   b2WorldProfileUpdate sWorld
+   return b2WorldProfileStep() & "," & b2WorldProfileCollide() & "," & b2WorldProfileSolve()
+end b2kProfile
+
+function b2kAwakeBodyCount
+   if sWorld is empty then return 0
+   return b2AwakeBodyCount(sWorld)
+end b2kAwakeBodyCount
+
+function b2kGrab pScreenX, pScreenY
+   local tWx, tWy, tBody
+   if sWorld is empty then return empty   -- grab before setup: nothing to hit
+   put b2kToWorldX(pScreenX) into tWx
+   put b2kToWorldY(pScreenY) into tWy
+   put b2BodyAtPoint(sWorld, tWx, tWy) into tBody
+   if tBody > 0 and b2BodyType(tBody) is 2 then
+      b2SetAwake tBody, true
+      put b2MouseJoint(sWorld, sDragAnchor, tBody, tWx, tWy, 6, 0.7, 4000) into sDragJoint
+      put true into sDragging
+      return sCtrl[tBody]
+   end if
+   return empty
+end b2kGrab
+
+command b2kRelease
+   if sDragJoint is not empty and sDragJoint > 0 then b2DestroyJoint sDragJoint
+   put 0 into sDragJoint
+   put false into sDragging
+end b2kRelease
+
+command b2kInputOn
+   put true into sInputOn
+   put comma into sKeysNow
+   put comma into sKeysPrev
+   -- starter bindings; rebind freely (these only fill empty slots)
+   if sKeyActions["jump"] is empty then b2kBindAction "jump", "space"
+   if sKeyActions["dash"] is empty then b2kBindAction "dash", "shift,x"
+   if sAxisNeg["moveX"] is empty then b2kBindAxis "moveX", "left,a", "right,d"
+   if sAxisNeg["moveY"] is empty then b2kBindAxis "moveY", "up,w", "down,s"
+end b2kInputOn
+
+command b2kInputOff
+   put false into sInputOn
+   put comma into sKeysNow
+   put comma into sKeysPrev
+end b2kInputOff
+
+function b2kInputIsOn
+   return (sInputOn is true)
+end b2kInputIsOn
+
+command b2kInputTick
+   if sInputOn is not true then exit b2kInputTick
+   put sKeysNow into sKeysPrev
+   if sInjectOn is true then
+      put comma & sInjectKeys & comma into sKeysNow
+   else
+      put comma & the keysDown & comma into sKeysNow
+   end if
+end b2kInputTick
+
+command b2kInputInject pKeys
+   put true into sInjectOn
+   put b2kKeyListCodes(pKeys) into sInjectKeys
+end b2kInputInject
+
+command b2kInputInjectOff
+   put false into sInjectOn
+   put empty into sInjectKeys
+end b2kInputInjectOff
+
+function b2kKeyCodes pKey
+   local tLower, tUpper
+   if pKey is a number and pKey >= 32 then return pKey
+   switch pKey
+      case "left"
+         return 65361
+      case "up"
+         return 65362
+      case "right"
+         return 65363
+      case "down"
+         return 65364
+      case "space"
+         return 32
+      case "return"
+      case "enter"
+         return "65293,65421"
+      case "escape"
+      case "esc"
+         return 65307
+      case "tab"
+         return 65289
+      case "shift"
+         return "65505,65506"
+      case "control"
+      case "ctrl"
+         return "65507,65508"
+      case "alt"
+      case "option"
+         return "65513,65514"
+      case "backspace"
+         return 65288
+      case "delete"
+         return 65535
+   end switch
+   if the number of chars of pKey is 1 then
+      put charToNum(toLower(pKey)) into tLower
+      put charToNum(toUpper(pKey)) into tUpper
+      if tLower >= 97 and tLower <= 122 then return tLower & comma & tUpper
+      return charToNum(pKey)
+   end if
+   return 0
+end b2kKeyCodes
+
+function b2kKeyName pCode
+   switch pCode
+      case 65361
+         return "left"
+      case 65362
+         return "up"
+      case 65363
+         return "right"
+      case 65364
+         return "down"
+      case 32
+         return "space"
+      case 65293
+      case 65421
+         return "return"
+      case 65307
+         return "escape"
+      case 65289
+         return "tab"
+      case 65505
+      case 65506
+         return "shift"
+      case 65507
+      case 65508
+         return "control"
+      case 65513
+      case 65514
+         return "alt"
+      case 65288
+         return "backspace"
+      case 65535
+         return "delete"
+   end switch
+   if pCode >= 97 and pCode <= 122 then return numToChar(pCode)
+   if pCode >= 65 and pCode <= 90 then return numToChar(pCode + 32)
+   if pCode >= 48 and pCode <= 57 then return numToChar(pCode)
+   return pCode
+end b2kKeyName
+
+function b2kKeyInSet pSet, pKey
+   local tC
+   if pSet is empty or pSet is comma then return false
+   repeat for each item tC in b2kKeyCodes(pKey)
+      if pSet contains (comma & tC & comma) then return true
+   end repeat
+   return false
+end b2kKeyInSet
+
+function b2kKeyIsDown pKey
+   return b2kKeyInSet(sKeysNow, pKey)
+end b2kKeyIsDown
+
+function b2kKeyPressed pKey
+   return b2kKeyInSet(sKeysNow, pKey) and not b2kKeyInSet(sKeysPrev, pKey)
+end b2kKeyPressed
+
+function b2kKeyReleased pKey
+   return b2kKeyInSet(sKeysPrev, pKey) and not b2kKeyInSet(sKeysNow, pKey)
+end b2kKeyReleased
+
+function b2kKeysHeld
+   local tOut, tC
+   put empty into tOut
+   repeat for each item tC in char 2 to -2 of sKeysNow
+      put b2kKeyName(tC) & space after tOut
+   end repeat
+   return word 1 to -1 of tOut
+end b2kKeysHeld
+
+command b2kBindAction pName, pKeyList
+   put pKeyList into sKeyActions[pName]
+   put b2kKeyListCodes(pKeyList) into sKeyActionsC[pName]
+end b2kBindAction
+
+function b2kKeyListCodes pKeyList
+   local tK, tOut
+   put empty into tOut
+   set the itemDelimiter to comma
+   repeat for each item tK in pKeyList
+      if tOut is empty then
+         put b2kKeyCodes(word 1 of tK) into tOut
+      else
+         put comma & b2kKeyCodes(word 1 of tK) after tOut
+      end if
+   end repeat
+   return tOut
+end b2kKeyListCodes
+
+function b2kCodesInSet pSet, pCodes
+   local tC
+   if pSet is empty or pSet is comma then return false
+   repeat for each item tC in pCodes
+      if pSet contains (comma & tC & comma) then return true
+   end repeat
+   return false
+end b2kCodesInSet
+
+function b2kActionIsDown pName
+   return b2kCodesInSet(sKeysNow, sKeyActionsC[pName])
+end b2kActionIsDown
+
+function b2kActionPressed pName
+   if not b2kCodesInSet(sKeysNow, sKeyActionsC[pName]) then return false
+   return not b2kCodesInSet(sKeysPrev, sKeyActionsC[pName])
+end b2kActionPressed
+
+function b2kActionReleased pName
+   if not b2kCodesInSet(sKeysPrev, sKeyActionsC[pName]) then return false
+   return not b2kCodesInSet(sKeysNow, sKeyActionsC[pName])
+end b2kActionReleased
+
+command b2kBindAxis pName, pNegKeys, pPosKeys
+   put pNegKeys into sAxisNeg[pName]
+   put pPosKeys into sAxisPos[pName]
+   put b2kKeyListCodes(pNegKeys) into sAxisNegC[pName]
+   put b2kKeyListCodes(pPosKeys) into sAxisPosC[pName]
+end b2kBindAxis
+
+function b2kAxis pName
+   local tNeg, tPos
+   put b2kCodesInSet(sKeysNow, sAxisNegC[pName]) into tNeg
+   put b2kCodesInSet(sKeysNow, sAxisPosC[pName]) into tPos
+   if tPos and not tNeg then return 1
+   if tNeg and not tPos then return -1
+   return 0
+end b2kAxis
+
+function b2kFrameMS
+   if sFrameMS is empty then return 0
+   return sFrameMS
+end b2kFrameMS
+
+command b2kSheetPersist pFlag
+   put (pFlag is not false) into sSheetKeep
+end b2kSheetPersist
+
+function b2kSheetPersists
+   return (sSheetKeep is true)
+end b2kSheetPersists
+
+command b2kSheetLoad pName, pPath, pFW, pFH, pCount, pMargin, pSpacing
+   local tRef, tSig
+   put pPath & "|" & pFW & "|" & pFH & "|" & pCount & "|" & pMargin & "|" & pSpacing into tSig
+   if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
+      return the number of lines of sSheetKeys[pName]   -- already loaded (same file+grid): reuse it
+   end if
+   put b2kSheetSourceFromFile(pName, pPath) into tRef
+   if tRef is empty then return 0
+   b2kSheetGridRegions pName, pFW, pFH, pCount, pMargin, pSpacing
+   put tSig into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetLoad
+
+command b2kSheetFromImage pName, pImgRef, pFW, pFH, pCount, pMargin, pSpacing
+   local tRef, tSig
+   put the long id of pImgRef into tRef
+   put tRef & "|" & pFW & "|" & pFH & "|" & pCount & "|" & pMargin & "|" & pSpacing into tSig
+   if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
+      return the number of lines of sSheetKeys[pName]   -- already loaded (same image+grid): reuse it
+   end if
+   b2kSheetForget pName
+   put tRef into sSheetSrc[pName]
+   put false into sSheetOwned[pName]
+   b2kSheetGridRegions pName, pFW, pFH, pCount, pMargin, pSpacing
+   put tSig into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetFromImage
+
+command b2kSheetAddFrame pSheet, pFrame, pX, pY, pW, pH
+   local tId
+   if sSheetSrc[pSheet] is empty then exit b2kSheetAddFrame
+   if pFrame is empty then exit b2kSheetAddFrame
+   if pX is not a number or pY is not a number then exit b2kSheetAddFrame
+   if pW is not a number or pH is not a number then exit b2kSheetAddFrame
+   if pW < 1 or pH < 1 then exit b2kSheetAddFrame
+   if sSheetRegion[pSheet][pFrame] is empty then
+      if sSheetKeys[pSheet] is empty then
+         put pFrame into sSheetKeys[pSheet]
+      else
+         put cr & pFrame after sSheetKeys[pSheet]
+      end if
+   else
+      -- redefined: drop any stale slices so the new region re-bakes lazily
+      put sSheetIcon[pSheet][pFrame] into tId
+      if tId is not empty then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+      delete variable sSheetIcon[pSheet][pFrame]
+      put sSheetFlip[pSheet][pFrame] into tId
+      if tId is not empty then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+      delete variable sSheetFlip[pSheet][pFrame]
+   end if
+   put round(pX) & comma & round(pY) & comma & round(pW) & comma & round(pH) into sSheetRegion[pSheet][pFrame]
+end b2kSheetAddFrame
+
+command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
+   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig
+   if pXmlPath is empty then
+      put pPngPath into pXmlPath
+      set the itemDelimiter to "."
+      put "xml" into item -1 of pXmlPath
+   end if
+   put pPngPath & "|" & pXmlPath into tSig
+   if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
+      return the number of lines of sSheetKeys[pName]   -- already loaded (same png+xml): reuse it
+   end if
+   put URL ("file:" & pXmlPath) into tXml
+   if tXml is empty then put URL ("binfile:" & pXmlPath) into tXml
+   if tXml is empty then return 0
+   put b2kSheetSourceFromFile(pName, pPngPath) into tRef
+   if tRef is empty then return 0
+   set the itemDelimiter to comma
+   repeat for each line tLine in tXml
+      if tLine contains "<SubTexture" then
+         put b2kXmlAttr(tLine, "name") into tNm
+         put b2kXmlAttr(tLine, "x") into tX
+         put b2kXmlAttr(tLine, "y") into tY
+         put b2kXmlAttr(tLine, "width") into tW
+         put b2kXmlAttr(tLine, "height") into tH
+         if tNm is empty or tX is not a number or tY is not a number then next repeat
+         if tW is not a number or tH is not a number then next repeat
+         put tX & comma & tY & comma & tW & comma & tH into sSheetRegion[pName][tNm]
+         put tNm & cr after sSheetKeys[pName]
+      end if
+   end repeat
+   if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
+   put tSig into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetLoadAtlas
+
+function b2kSheetFrames pName
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetFrames
+
+function b2kSheetHasFrame pName, pFrame
+   return (sSheetRegion[pName][pFrame] is not empty)
+end b2kSheetHasFrame
+
+function b2kSheetFrameNames pName
+   return sSheetKeys[pName]
+end b2kSheetFrameNames
+
+command b2kSheetScale pName, pScale
+   local tKey, tId
+   put b2kClamp(pScale, 0.05, 8) into pScale
+   if b2kNumberOr(sSheetScale[pName], 1) is pScale then exit b2kSheetScale
+   put pScale into sSheetScale[pName]
+   repeat for each key tKey in sSheetIcon[pName]
+      put sSheetIcon[pName][tKey] into tId
+      if tId is not empty then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+   end repeat
+   repeat for each key tKey in sSheetFlip[pName]
+      put sSheetFlip[pName][tKey] into tId
+      if tId is not empty then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+   end repeat
+   delete variable sSheetIcon[pName]
+   delete variable sSheetFlip[pName]
+end b2kSheetScale
+
+function b2kSheetFrameSize pName, pFrame
+   local tRegion, tScale
+   put sSheetRegion[pName][pFrame] into tRegion
+   if tRegion is empty then return empty
+   set the itemDelimiter to comma
+   put b2kNumberOr(sSheetScale[pName], 1) into tScale
+   return max(1, round((item 3 of tRegion) * tScale)) & comma & max(1, round((item 4 of tRegion) * tScale))
+end b2kSheetFrameSize
+
+command b2kAnimDef pSheet, pAnim, pFrames, pFPS, pLoop
+   local tKey, tList, tItem, tA, tB, i
+   put pSheet & "|" & pAnim into tKey
+   put empty into tList
+   set the itemDelimiter to comma
+   repeat for each item tItem in pFrames
+      put word 1 to -1 of tItem into tItem
+      if tItem contains "-" and tItem is not a number then
+         set the itemDelimiter to "-"
+         put item 1 of tItem into tA
+         put item 2 of tItem into tB
+         set the itemDelimiter to comma
+         if tA is a number and tB is a number then
+            repeat with i = tA to tB
+               put i & cr after tList
+            end repeat
+            next repeat
+         end if
+      end if
+      put tItem & cr after tList
+   end repeat
+   if the last char of tList is cr then delete the last char of tList
+   put tList into sAnimList[tKey]
+   put b2kClamp(pFPS, 0.1, 120) into sAnimFPS[tKey]
+   put (pLoop is not false) into sAnimLoop[tKey]
+end b2kAnimDef
+
+command b2kSpriteNew pSheet, pFrame, pX, pY
+   local tName, tRef, tKey, tRegion, tW, tH
+   if sSheetKeys[pSheet] is empty then return empty
+   put pFrame into tKey
+   if tKey is empty then put line 1 of sSheetKeys[pSheet] into tKey
+   put b2kSheetFrameSize(pSheet, tKey) into tRegion   -- "w,h" at display scale
+   if tRegion is empty then return empty
+   set the itemDelimiter to comma
+   put item 1 of tRegion into tW
+   put item 2 of tRegion into tH
+   put b2kNumberOr(pX, (the width of this card) div 2) into pX
+   put b2kNumberOr(pY, (the height of this card) div 2) into pY
+   put "b2kspr_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create button tName
+   else
+      create button tName in group "b2kcam_view"
+   end if
+   put the long id of button tName into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   set the style of tRef to "transparent"
+   set the showName of tRef to false
+   set the traversalOn of tRef to false
+   set the autoHilite of tRef to false
+   subtract b2kCamShiftX(tRef) from pX   -- creation while scrolled: place in
+   subtract b2kCamShiftY(tRef) from pY   -- world coords on visual engines too
+   set the rect of tRef to round(pX - tW / 2), round(pY - tH / 2), round(pX + tW / 2), round(pY + tH / 2)
+   if sCamGroup is empty then
+      -- dynamic layers composite in STACK coordinates: inside a scrolled
+      -- viewport they ignore the group scroll and draw unscrolled, so a
+      -- camera sprite must stay a plain group child
+      try
+         set the layerMode of tRef to "dynamic"
+      catch tErr
+      end try
+   end if
+   put pSheet into sSprSheet[tRef]
+   put "sheet" into sSprKind[tRef]
+   put false into sSprFlip[tRef]
+   put true into sSpawned[tRef]
+   put tRef & cr after sSprRefs
+   b2kSpriteShowFrame tRef, tKey
+   return tRef
+end b2kSpriteNew
+
+command b2kSpriteFromGIF pPath, pX, pY
+   local tName, tRef, tData
+   put URL ("binfile:" & pPath) into tData   -- content-load, like the sheets
+   if tData is empty then return empty
+   put "b2kspr_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create image tName
+   else
+      create image tName in group "b2kcam_view"
+   end if
+   put the long id of image tName into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   try
+      set the text of tRef to tData
+   catch tErr
+   end try
+   set the lockLoc of tRef to true
+   if the width of tRef < 1 then
+      try
+         delete tRef
+      catch tErr
+      end try
+      return empty
+   end if
+   put b2kNumberOr(pX, (the width of this card) div 2) into pX
+   put b2kNumberOr(pY, (the height of this card) div 2) into pY
+   set the loc of tRef to round(pX - b2kCamShiftX(tRef)) & comma & round(pY - b2kCamShiftY(tRef))
+   if sCamGroup is empty then
+      try
+         set the layerMode of tRef to "dynamic"   -- see b2kSpriteNew note
+      catch tErr
+      end try
+   end if
+   try
+      set the repeatCount of tRef to -1
+   catch tErr
+   end try
+   put "gif" into sSprKind[tRef]
+   put true into sSpawned[tRef]
+   put tRef & cr after sSprRefs
+   return tRef
+end b2kSpriteFromGIF
+
+command b2kSpritePlay pCtrl, pAnim, pRestart
+   local tRef, tKey
+   put the long id of pCtrl into tRef
+   if sSprKind[tRef] is "gif" then
+      try
+         set the repeatCount of tRef to -1
+      catch tErr
+      end try
+      exit b2kSpritePlay
+   end if
+   if sSprSheet[tRef] is empty then exit b2kSpritePlay
+   put sSprSheet[tRef] & "|" & pAnim into tKey
+   if sAnimList[tKey] is empty then exit b2kSpritePlay
+   if sSprAnim[tRef] is pAnim and pRestart is not true then exit b2kSpritePlay
+   put pAnim into sSprAnim[tRef]
+   put true into sSprLiveDirty   -- it now needs per-frame service
+   put 1 into sSprStep[tRef]
+   if sSprFPSOver[tRef] is not empty then
+      put sSprFPSOver[tRef] into sSprFPS[tRef]
+   else
+      put sAnimFPS[tKey] into sSprFPS[tRef]
+   end if
+   if sSprFPS[tRef] is empty or sSprFPS[tRef] <= 0 then put 8 into sSprFPS[tRef]
+   put the milliseconds + (1000 / sSprFPS[tRef]) into sSprNextMS[tRef]
+   b2kSpriteShowFrame tRef, line 1 of sAnimList[tKey]
+end b2kSpritePlay
+
+command b2kSpriteStop pCtrl
+   local tRef
+   put the long id of pCtrl into tRef
+   if sSprKind[tRef] is "gif" then
+      try
+         set the repeatCount of tRef to 0
+      catch tErr
+      end try
+      exit b2kSpriteStop
+   end if
+   put empty into sSprAnim[tRef]
+   put true into sSprLiveDirty
+end b2kSpriteStop
+
+function b2kSpriteAnim pCtrl
+   try
+      return sSprAnim[the long id of pCtrl]
+   catch tErr
+      return empty   -- a removed control is a stale ref, not an error
+   end try
+end b2kSpriteAnim
+
+command b2kSpriteSetFrame pCtrl, pFrame
+   local tRef
+   put the long id of pCtrl into tRef
+   if sSprKind[tRef] is "gif" then
+      try
+         set the repeatCount of tRef to 0
+         set the currentFrame of tRef to pFrame
+      catch tErr
+      end try
+      exit b2kSpriteSetFrame
+   end if
+   put empty into sSprAnim[tRef]
+   put true into sSprLiveDirty
+   b2kSpriteShowFrame tRef, pFrame
+end b2kSpriteSetFrame
+
+function b2kSpriteFrame pCtrl
+   try
+      return sSprFrameKey[the long id of pCtrl]
+   catch tErr
+      return empty
+   end try
+end b2kSpriteFrame
+
+command b2kSpriteFPS pCtrl, pFPS
+   local tRef
+   put the long id of pCtrl into tRef
+   put pFPS into sSprFPSOver[tRef]
+   if pFPS is a number and pFPS > 0 then put pFPS into sSprFPS[tRef]
+end b2kSpriteFPS
+
+command b2kSpriteFlipH pCtrl, pFlag
+   local tRef
+   put the long id of pCtrl into tRef
+   if sSprSheet[tRef] is empty then exit b2kSpriteFlipH
+   put (pFlag is true) into pFlag
+   if sSprFlip[tRef] is pFlag then exit b2kSpriteFlipH
+   put pFlag into sSprFlip[tRef]
+   if sSprFrameKey[tRef] is not empty then b2kSpriteShowFrame tRef, sSprFrameKey[tRef]
+end b2kSpriteFlipH
+
+function b2kSpriteFlipped pCtrl
+   try
+      return (sSprFlip[the long id of pCtrl] is true)
+   catch tErr
+      return false
+   end try
+end b2kSpriteFlipped
+
+command b2kSpriteOnFinish pCtrl, pMessage
+   put pMessage into sSprMsg[the long id of pCtrl]
+end b2kSpriteOnFinish
+
+command b2kSpriteBind pCtrl, pBodyCtrl, pDX, pDY
+   local tRef
+   put the long id of pCtrl into tRef
+   put the long id of pBodyCtrl into sSprBind[tRef]
+   put b2kNumberOr(pDX, 0) into sSprBindDX[tRef]
+   put b2kNumberOr(pDY, 0) into sSprBindDY[tRef]
+   put true into sSprLiveDirty   -- it now needs per-frame service
+end b2kSpriteBind
+
+command b2kSpriteUnbind pCtrl
+   delete variable sSprBind[the long id of pCtrl]
+   put true into sSprLiveDirty
+end b2kSpriteUnbind
+
+command b2kSpriteRemove pCtrl
+   local tRef
+   try
+      put the long id of pCtrl into tRef
+   catch tErr
+      put pCtrl into tRef   -- stale path (group gone): still clear the registry
+   end try
+   if sBody[tRef] is not empty then
+      try
+         b2kRemove tRef       -- destroys the body and deletes the control
+      catch tErr
+      end try
+   else
+      try
+         delete tRef
+      catch tErr
+      end try
+   end if
+   b2kSpriteForget tRef
+end b2kSpriteRemove
+
+command b2kSpriteForget pRef
+   local tLn
+   delete variable sSprSheet[pRef]
+   delete variable sSprKind[pRef]
+   delete variable sSprAnim[pRef]
+   delete variable sSprStep[pRef]
+   delete variable sSprNextMS[pRef]
+   delete variable sSprFPS[pRef]
+   delete variable sSprFPSOver[pRef]
+   delete variable sSprFlip[pRef]
+   delete variable sSprMsg[pRef]
+   delete variable sSprBind[pRef]
+   delete variable sSprBindDX[pRef]
+   delete variable sSprBindDY[pRef]
+   delete variable sSprFrameKey[pRef]
+   delete variable sSprIconNow[pRef]
+   delete variable sSprLastLoc[pRef]
+   delete variable sInCam[pRef]
+   set the wholeMatches to true
+   put lineOffset(pRef, sSprRefs) into tLn
+   if tLn > 0 then delete line tLn of sSprRefs
+   put true into sSprLiveDirty
+end b2kSpriteForget
+
+command b2kSpritesClear
+   local tRef, tList
+   put sSprRefs into tList
+   repeat for each line tRef in tList
+      if tRef is not empty then b2kSpriteRemove tRef
+   end repeat
+   put empty into sSprRefs
+   put empty into sSprLive
+   put false into sSprLiveDirty
+end b2kSpritesClear
+
+command b2kSheetForget pName
+   local tKey, tId
+   if sSheetSrc[pName] is empty and sSheetKeys[pName] is empty then exit b2kSheetForget
+   repeat for each key tKey in sSheetIcon[pName]
+      put sSheetIcon[pName][tKey] into tId
+      if tId is not empty then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+   end repeat
+   repeat for each key tKey in sSheetFlip[pName]
+      put sSheetFlip[pName][tKey] into tId
+      if tId is not empty and tId is not sSheetIcon[pName][tKey] then
+         try
+            delete image id tId
+         catch tErr
+         end try
+      end if
+   end repeat
+   if sSheetOwned[pName] is not false and sSheetSrc[pName] is not empty then
+      try
+         delete sSheetSrc[pName]
+      catch tErr
+      end try
+   end if
+   delete variable sSheetSrc[pName]
+   delete variable sSheetOwned[pName]
+   delete variable sSheetRegion[pName]
+   delete variable sSheetKeys[pName]
+   delete variable sSheetIcon[pName]
+   delete variable sSheetFlip[pName]
+   delete variable sSheetData[pName]
+   delete variable sSheetAlpha[pName]
+   delete variable sSheetScale[pName]
+   delete variable sSheetPath[pName]
+   repeat for each key tKey in sAnimList
+      if char 1 to (the number of chars of pName) + 1 of tKey is pName & "|" then
+         delete variable sAnimList[tKey]
+         delete variable sAnimFPS[tKey]
+         delete variable sAnimLoop[tKey]
+      end if
+   end repeat
+end b2kSheetForget
+
+command b2kSheetsWipe
+   local tName
+   b2kSpritesClear
+   repeat for each key tName in sSheetSrc
+      b2kSheetForget tName
+   end repeat
+   put empty into sSheetSrc
+   put empty into sSheetRegion
+   put empty into sSheetKeys
+   put empty into sSheetIcon
+   put empty into sSheetFlip
+   put empty into sSheetData
+   put empty into sSheetAlpha
+   put empty into sSheetScale
+   put empty into sSheetPath
+   put empty into sAnimList
+   put empty into sAnimFPS
+   put empty into sAnimLoop
+   b2kSpriteSweepOrphans
+end b2kSheetsWipe
+
+command b2kSpriteSweepOrphans pKeepAssets
+   local tAgain, i, tName, tHit
+   put true into tAgain
+   repeat while tAgain
+      put false into tAgain
+      repeat with i = 1 to the number of controls of this card
+         put the short name of control i of this card into tName
+         if char 1 to 7 of tName is "b2kcam_" then
+            -- a dead session's viewport: free the children, then the shell
+            try
+               ungroup control i of this card
+            catch tErr
+               delete control i of this card
+            end try
+            put true into tAgain
+            exit repeat
+         end if
+         put false into tHit
+         if char 1 to 7 of tName is "b2kspr_" then put true into tHit
+         -- sheet ASSET images (sources + sliced frames + flips) are KEPT
+         -- when persisting (b2kSheetPersist); only sprite instances + dead
+         -- viewports go, so the sheet cache survives the teardown
+         if pKeepAssets is not true then
+            if char 1 to 6 of tName is "b2kfr_" then put true into tHit
+            if char 1 to 6 of tName is "b2kfl_" then put true into tHit
+            if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
+         end if
+         if tHit then
+            delete control i of this card
+            put true into tAgain
+            exit repeat
+         end if
+      end repeat
+   end repeat
+end b2kSpriteSweepOrphans
+
+function b2kSheetSourceFromFile pName, pPath
+   local tImg, tData
+   put "b2ksheet_" & pName into tImg
+   -- REUSE: a source image already decoded for this exact file -- earlier
+   -- this session, or carried inside a SAVED stack (b2kSheetPersist) -- is
+   -- the cache. Adopt it in place and skip the costly binfile decode.
+   if sSheetKeep is true and there is an image tImg \
+         and the uB2kSrcPath of image tImg is pPath and the width of image tImg >= 2 then
+      set the lockLoc of image tImg to true
+      put the long id of image tImg into sSheetSrc[pName]
+      put true into sSheetOwned[pName]
+      return sSheetSrc[pName]
+   end if
+   b2kSheetForget pName
+   if there is no file pPath then return empty
+   put URL ("binfile:" & pPath) into tData
+   if tData is empty then return empty
+   if there is an image tImg then delete image tImg
+   create image tImg
+   set the visible of it to false
+   try
+      set the text of image tImg to tData
+   catch tErr
+      delete image tImg
+      return empty
+   end try
+   if the width of image tImg < 2 then
+      delete image tImg
+      return empty
+   end if
+   set the lockLoc of image tImg to true
+   set the uB2kSrcPath of image tImg to pPath   -- the cache key for next time
+   put the long id of image tImg into sSheetSrc[pName]
+   put true into sSheetOwned[pName]
+   return sSheetSrc[pName]
+end b2kSheetSourceFromFile
+
+command b2kSheetGridRegions pName, pFW, pFH, pCount, pMargin, pSpacing
+   local tCols, tRows, tMax, i, tC, tR
+   if sSheetSrc[pName] is empty then exit b2kSheetGridRegions
+   if b2kNumberOr(pFW, 0) < 1 or b2kNumberOr(pFH, 0) < 1 then exit b2kSheetGridRegions
+   put b2kClamp(pFW, 1, 4096) into pFW
+   put b2kClamp(pFH, 1, 4096) into pFH
+   put round(b2kClamp(pMargin, 0, 2048)) into pMargin
+   put round(b2kClamp(pSpacing, 0, 2048)) into pSpacing
+   put ((the width of sSheetSrc[pName]) - 2 * pMargin + pSpacing) div (pFW + pSpacing) into tCols
+   put ((the height of sSheetSrc[pName]) - 2 * pMargin + pSpacing) div (pFH + pSpacing) into tRows
+   if tCols < 1 or tRows < 1 then exit b2kSheetGridRegions
+   put tCols * tRows into tMax
+   if pCount is a number and pCount > 0 and pCount < tMax then put pCount into tMax
+   repeat with i = 1 to tMax
+      put (i - 1) mod tCols into tC
+      put (i - 1) div tCols into tR
+      put (pMargin + tC * (pFW + pSpacing)) & comma & (pMargin + tR * (pFH + pSpacing)) & comma & pFW & comma & pFH into sSheetRegion[pName][i]
+      put i & cr after sSheetKeys[pName]
+   end repeat
+   if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
+end b2kSheetGridRegions
+
+function b2kXmlAttr pLine, pAttr
+   local tFrom, tLen
+   put offset(pAttr & "=" & quote, pLine) into tFrom
+   if tFrom is 0 then return empty
+   add the number of chars of pAttr + 2 to tFrom
+   put offset(quote, pLine, tFrom - 1) into tLen
+   if tLen is 0 then return empty
+   return char tFrom to tFrom + tLen - 2 of pLine
+end b2kXmlAttr
+
+function b2kSheetKeyIndex pSheet, pKey
+   local i, tK
+   put 0 into i
+   repeat for each line tK in sSheetKeys[pSheet]
+      add 1 to i
+      if tK is pKey then return i
+   end repeat
+   return 0
+end b2kSheetKeyIndex
+
+function b2kSheetSliceSig pSheet
+   return sSheetPath[pSheet] & "|" & b2kNumberOr(sSheetScale[pSheet], 1)
+end b2kSheetSliceSig
+
+command b2kSheetEnsureIcon pSheet, pKey
+   local tRegion, tX, tY, tW, tH, tSW, tRowPx, tFD, tFA, y, tName, tScale, tW2, tH2
+   if sSheetIcon[pSheet][pKey] is not empty then exit b2kSheetEnsureIcon
+   put sSheetRegion[pSheet][pKey] into tRegion
+   if tRegion is empty then exit b2kSheetEnsureIcon
+   -- Frame image name. Persisting: a DETERMINISTIC name (b2kfr_<sheet>_<n>)
+   -- lets a slice carried in a SAVED stack be found and reused -- but only if
+   -- its uB2kSig still matches (baked from the current source at the current
+   -- scale), so a reused sheet name or a changed scale re-slices rather than
+   -- show stale pixels. Off the persist path: a fresh unique name (no key
+   -- scan; the slice is wiped on teardown anyway), exactly as before.
+   if sSheetKeep is true then
+      put "b2kfr_" & pSheet & "_" & b2kSheetKeyIndex(pSheet, pKey) into tName
+      if there is an image tName and the uB2kSig of image tName is b2kSheetSliceSig(pSheet) then
+         put the id of image tName into sSheetIcon[pSheet][pKey]
+         exit b2kSheetEnsureIcon
+      end if
+   else
+      put "b2kfr_" & the milliseconds & "_" & random(1000000) into tName
+   end if
+   if sSheetData[pSheet] is empty then
+      put the imageData of sSheetSrc[pSheet] into sSheetData[pSheet]
+      put the alphaData of sSheetSrc[pSheet] into sSheetAlpha[pSheet]
+   end if
+   set the itemDelimiter to comma
+   put item 1 of tRegion into tX
+   put item 2 of tRegion into tY
+   put item 3 of tRegion into tW
+   put item 4 of tRegion into tH
+   put the width of sSheetSrc[pSheet] into tSW
+   -- refuse to slice from inconsistent pixels: a stride mismatch must yield
+   -- an empty (invisible) frame, never garbage on screen
+   if the number of bytes in sSheetData[pSheet] is not tSW * (the height of sSheetSrc[pSheet]) * 4 then exit b2kSheetEnsureIcon
+   if tX + tW > tSW then exit b2kSheetEnsureIcon
+   put empty into tFD
+   put empty into tFA
+   repeat with y = 0 to tH - 1
+      put (tY + y) * tSW + tX into tRowPx
+      put byte (tRowPx * 4 + 1) to (tRowPx * 4 + tW * 4) of sSheetData[pSheet] after tFD
+      put byte (tRowPx + 1) to (tRowPx + tW) of sSheetAlpha[pSheet] after tFA
+   end repeat
+   if the number of bytes in tFD is not tW * tH * 4 then exit b2kSheetEnsureIcon
+   if the number of bytes in tFA is not tW * tH then
+      put empty into tFA   -- no usable alpha: ship the frame fully opaque
+   end if
+   if there is an image tName then delete image tName   -- never duplicate a deterministic slice
+   create image tName
+   set the visible of it to false
+   set the lockLoc of it to true
+   set the width of it to tW
+   set the height of it to tH
+   set the imageData of image tName to tFD
+   if tFA is not empty then set the alphaData of image tName to tFA
+   -- sheet scale: resize the control (the engine resamples the render),
+   -- then bake that render back in as the frame's real pixels
+   put b2kNumberOr(sSheetScale[pSheet], 1) into tScale
+   if tScale is not 1 then
+      put max(1, round(tW * tScale)) into tW2
+      put max(1, round(tH * tScale)) into tH2
+      set the width of image tName to tW2
+      set the height of image tName to tH2
+      put the imageData of image tName into tFD
+      put the alphaData of image tName into tFA
+      set the imageData of image tName to tFD
+      if tFA is not empty then set the alphaData of image tName to tFA
+   end if
+   if sSheetKeep is true then set the uB2kSig of image tName to b2kSheetSliceSig(pSheet)
+   put the id of image tName into sSheetIcon[pSheet][pKey]
+end b2kSheetEnsureIcon
+
+command b2kSheetEnsureFlip pSheet, pKey
+   local tName
+   if sSheetFlip[pSheet][pKey] is not empty then exit b2kSheetEnsureFlip
+   if sSheetKeep is true then
+      put "b2kfl_" & pSheet & "_" & b2kSheetKeyIndex(pSheet, pKey) into tName
+      if there is an image tName and the uB2kSig of image tName is b2kSheetSliceSig(pSheet) then
+         put the id of image tName into sSheetFlip[pSheet][pKey]   -- reuse a saved flip
+         exit b2kSheetEnsureFlip
+      end if
+   else
+      put "b2kfl_" & the milliseconds & "_" & random(1000000) into tName
+   end if
+   b2kSheetEnsureIcon pSheet, pKey
+   if sSheetIcon[pSheet][pKey] is empty then exit b2kSheetEnsureFlip
+   try
+      if there is an image tName then delete image tName
+      clone image id sSheetIcon[pSheet][pKey]
+      set the name of it to tName
+      set the visible of it to false
+      flip image tName horizontal
+      if sSheetKeep is true then set the uB2kSig of image tName to b2kSheetSliceSig(pSheet)
+      put the id of image tName into sSheetFlip[pSheet][pKey]
+   catch tErr
+      put sSheetIcon[pSheet][pKey] into sSheetFlip[pSheet][pKey]
+   end try
+end b2kSheetEnsureFlip
+
+command b2kSpriteShowFrame pRef, pKey
+   local tSheet, tIcon
+   put sSprSheet[pRef] into tSheet
+   if tSheet is empty then exit b2kSpriteShowFrame
+   if sSprFlip[pRef] is true then
+      b2kSheetEnsureFlip tSheet, pKey
+      put sSheetFlip[tSheet][pKey] into tIcon
+   else
+      b2kSheetEnsureIcon tSheet, pKey
+      put sSheetIcon[tSheet][pKey] into tIcon
+   end if
+   if tIcon is empty then exit b2kSpriteShowFrame
+   put pKey into sSprFrameKey[pRef]
+   if sSprIconNow[pRef] is tIcon then exit b2kSpriteShowFrame
+   set the icon of pRef to tIcon
+   put tIcon into sSprIconNow[pRef]
+end b2kSpriteShowFrame
+
+command b2kSpritesTick
+   local tNow, tRef, tDead, tSheet, tAnim, tAKey, tList, tStep, tN, tLoc, tBX, tBY
+   if sSprRefs is empty then exit b2kSpritesTick
+   -- the tick walks only the LIVE subset (bound and/or playing); the
+   -- list rebuilds lazily when membership changed. Tile-heavy scenes
+   -- are ~90% inert sprites, and per-frame cost must not scale with
+   -- them (a platformer level: ~100 tiles skipped, ~25 live serviced).
+   if sSprLiveDirty is true then
+      put empty into sSprLive
+      repeat for each line tRef in sSprRefs
+         if tRef is empty then next repeat
+         if sSprBind[tRef] is not empty or sSprAnim[tRef] is not empty then
+            put tRef & cr after sSprLive
+         end if
+      end repeat
+      put false into sSprLiveDirty
+   end if
+   if sSprLive is empty then exit b2kSpritesTick
+   put the milliseconds into tNow
+   put empty into tDead
+   set the itemDelimiter to comma
+   repeat for each line tRef in sSprLive
+      if tRef is empty then next repeat
+      -- still-inert guard: membership changed mid-frame retires next tick
+      if sSprBind[tRef] is empty and sSprAnim[tRef] is empty then next repeat
+      try
+         if sSprBind[tRef] is not empty then
+            put the loc of sSprBind[tRef] into tLoc
+            put (item 1 of tLoc) + b2kCamShiftX(sSprBind[tRef]) + sSprBindDX[tRef] into tBX
+            put (item 2 of tLoc) + b2kCamShiftY(sSprBind[tRef]) + sSprBindDY[tRef] into tBY
+            put tBX & comma & tBY into tLoc
+            if sSprLastLoc[tRef] is not tLoc then
+               set the loc of tRef to (tBX - b2kCamShiftX(tRef)) & comma & (tBY - b2kCamShiftY(tRef))
+               put tLoc into sSprLastLoc[tRef]
+            end if
+         end if
+         if sSprKind[tRef] is "sheet" and sSprAnim[tRef] is not empty then
+            if tNow >= sSprNextMS[tRef] then
+               put sSprSheet[tRef] into tSheet
+               put sSprAnim[tRef] into tAnim
+               put tSheet & "|" & tAnim into tAKey
+               put sAnimList[tAKey] into tList
+               put the number of lines of tList into tN
+               put sSprStep[tRef] + 1 into tStep
+               if tStep > tN then
+                  if sAnimLoop[tAKey] is false then
+                     put empty into sSprAnim[tRef]
+                     put true into sSprLiveDirty   -- (if also unbound) retire it
+                     if sSprMsg[tRef] is not empty and sFrameObj is not empty then
+                        dispatch sSprMsg[tRef] to sFrameObj with tRef, tAnim
+                     end if
+                     next repeat
+                  end if
+                  put 1 into tStep
+               end if
+               put tStep into sSprStep[tRef]
+               add (1000 / sSprFPS[tRef]) to sSprNextMS[tRef]
+               if sSprNextMS[tRef] < tNow then put tNow + (1000 / sSprFPS[tRef]) into sSprNextMS[tRef]
+               b2kSpriteShowFrame tRef, (line tStep of tList)
+            end if
+         end if
+      catch tErr
+         put tRef & cr after tDead   -- control vanished; clean up below
+      end try
+   end repeat
+   repeat for each line tRef in tDead
+      if tRef is not empty then b2kSpriteForget tRef
+   end repeat
+end b2kSpritesTick
+
+command b2kPlayerMake pX, pY, pW, pH, pSheet
+   local tName, tRef, tArt
+   if sWorld is empty then return empty
+   if pW is empty then put 32 into pW
+   if pH is empty then put 48 into pH
+   put b2kClamp(pW, 4, 10000) into pW
+   put b2kClamp(pH, 4, 10000) into pH
+   put b2kNumberOr(pX, sOriginX) into pX
+   put b2kNumberOr(pY, sOriginY) into pY
+   put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   if sCamGroup is empty then
+      create graphic (tName)
+   else
+      create graphic (tName) in group "b2kcam_view"
+   end if
+   put the long id of graphic (tName) into tRef
+   if sCamGroup is not empty then put true into sInCam[tRef]
+   set the style of tRef to "rectangle"
+   set the filled of tRef to true
+   set the foregroundColor of tRef to "20,20,24"
+   set the backgroundColor of tRef to "70,130,220"
+   set the width of tRef to pW
+   set the height of tRef to pH
+   set the loc of tRef to round(pX - b2kCamShiftX(tRef)) & "," & round(pY - b2kCamShiftY(tRef))
+   put true into sSpawned[tRef]
+   if pSheet is not empty and sSheetKeys[pSheet] is not empty then
+      set the visible of tRef to false       -- the graphic is only the body host
+      b2kSpriteNew pSheet, empty, pX, pY
+      put the result into tArt
+      if tArt is not empty then
+         b2kSpriteBind tArt, tRef
+      else
+         set the visible of tRef to true     -- sprite failed: stay visible
+      end if
+   end if
+   b2kPlayerAttach tRef   -- adds the capsule (tall rect -> vertical pill)
+   return tRef
+end b2kPlayerMake
+
+command b2kPlayerAttach pCtrl
+   local tRef
+   if sWorld is empty then exit b2kPlayerAttach
+   put the long id of pCtrl into tRef
+   put false into sPlayOwnBody
+   if sBody[tRef] is empty then
+      b2kAddCapsule tRef
+      if sBody[tRef] is empty then exit b2kPlayerAttach   -- zero-sized control
+      put true into sPlayOwnBody
+      b2kSetFriction tRef, 0.08   -- low: walls must not glue the capsule
+      b2kSetBounce tRef, 0        -- characters land DEAD: the default 0.2
+                                  -- restitution rebounded every landing
+                                  -- (~13px hop = double land ticks/sounds)
+   end if
+   put tRef into sPlayRef
+   b2kSetFixedRotation tRef, true
+   b2kSetSleepEnabled tRef, false   -- a player must always respond
+   put (the width of tRef) / 2 into sPlayHalfW
+   put (the height of tRef) / 2 into sPlayHalfH
+   put (the height of tRef) into sPlayStandH   -- full height, for the duck reshape
+   put "idle" into sPlayState
+   put 1 into sPlayFacing
+   put false into sPlayGrounded
+   put 0 into sPlayGroundMS
+   put 0 into sPlayPressMS
+   put false into sPlayJumping
+   put true into sPlayControl
+   put 0 into sPlayHoldMS
+   put 0 into sPlayClock
+   put 0 into sPlayAir
+   put empty into sPlayAnimNow
+   put empty into sPlayFlipNow
+   -- Wave 2 state starts clean (ladder ZONES survive an attach: they are
+   -- world geometry, registered before or after the player exists)
+   put 0 into sPlayPX
+   put 0 into sPlayPY
+   put false into sPlayOnOneWay
+   put 0 into sPlayDropUntil
+   put 0 into sPlayDropHard
+   put empty into sPlayDropMask
+   put false into sPlayClimb
+   put empty into sPlayGravSave
+   put false into sPlaySwim
+   put empty into sPlaySwimGravSave
+   put false into sPlayHurt
+   put 0 into sPlayHurtEnd
+   put 0 into sPlayHurtHalf
+   put 0 into sPlayHurtLand
+   put 0 into sPlayInvulnUntil
+   -- Wave 5 state starts clean (the knobs decide whether each is reachable)
+   put 0 into sPlayAirJumpsLeft
+   put 0 into sPlayWall
+   put false into sPlayWallSliding
+   put 0 into sPlayWallLockUntil
+   put false into sPlayDash
+   put 0 into sPlayDashEnd
+   put 0 into sPlayDashReady
+   put 0 into sPlayDashDir
+   put empty into sPlayDashGravSave
+   put false into sPlayDucked
+   put empty into sPlayGroundBody
+   put false into sPlayInLad
+   put false into sPlayInWat
+   if sPlayLadN is empty then put 0 into sPlayLadN
+   b2kPlayerTuneCache   -- bake the knobs + probe geometry for the tick
+   b2kPlayerResolveArt
+   b2kInputOn   -- arms the sampler; starter bindings fill empty slots only
+end b2kPlayerAttach
+
+command b2kPlayerResolveArt
+   local tRef
+   put empty into sPlayArt
+   if sPlayRef is empty then exit b2kPlayerResolveArt
+   if sSprSheet[sPlayRef] is not empty then
+      put sPlayRef into sPlayArt
+      exit b2kPlayerResolveArt
+   end if
+   repeat for each line tRef in sSprRefs
+      if sSprBind[tRef] is sPlayRef then
+         put tRef into sPlayArt
+         exit b2kPlayerResolveArt
+      end if
+   end repeat
+end b2kPlayerResolveArt
+
+command b2kPlayerSet pKey, pValue
+   put pValue into sPlayTune[toLower(pKey)]
+   b2kPlayerTuneCache
+end b2kPlayerSet
+
+command b2kPlayerTuneCache
+   put b2kPlayerGet("moveSpeed") into sPlayMoveSpd
+   put b2kPlayerGet("accel") into sPlayAccelG
+   put b2kPlayerGet("airAccel") into sPlayAccelA
+   put b2kPlayerGet("jumpSpeed") into sPlayJumpSpd
+   put b2kPlayerGet("jumpCut") into sPlayJumpCut
+   put b2kPlayerGet("coyoteMs") into sPlayCoyote
+   put b2kPlayerGet("bufferMs") into sPlayBuffer
+   put b2kPlayerGet("maxFall") into sPlayMaxFall
+   put b2kPlayerGet("dropMs") into sPlayDropMS
+   put b2kPlayerGet("climbSpeed") into sPlayClimbSpd
+   put b2kPlayerGet("swimSpeed") into sPlaySwimSpd
+   put b2kPlayerGet("swimJump") into sPlaySwimJump
+   put b2kPlayerGet("swimGravity") into sPlaySwimGrav
+   put b2kPlayerGet("swimMaxFall") into sPlaySwimMaxFall
+   put b2kPlayerGet("hurtPopX") into sPlayHurtPopX
+   put b2kPlayerGet("hurtPopY") into sPlayHurtPopY
+   put b2kPlayerGet("hurtMs") into sPlayHurtMS
+   put b2kPlayerGet("invulnMs") into sPlayInvulnMS
+   -- Wave 5 knob caches + the one-compare gates the tick reads
+   put b2kPlayerGet("airJumps") into sPlayAirJumps
+   put b2kPlayerGet("wallJumpX") into sPlayWallJumpX
+   put b2kPlayerGet("wallJumpY") into sPlayWallJumpY
+   put b2kPlayerGet("wallSlideMax") into sPlayWallSlideMax
+   put (sPlayWallJumpX > 0 or sPlayWallSlideMax > 0) into sPlayWallOn
+   put b2kPlayerGet("dashSpeed") into sPlayDashSpd
+   put b2kPlayerGet("dashMs") into sPlayDashMS
+   put b2kPlayerGet("dashCooldownMs") into sPlayDashCool
+   put (b2kPlayerGet("airDash") is not 0) into sPlayAirDash
+   put b2kPlayerGet("duckScale") into sPlayDuckScale
+   put (b2kPlayerGet("platformCarry") is not 0) into sPlayCarry
+   put cos(b2kPlayerGet("maxSlopeDeg") * kPI / 180) into sPlayCosSlope
+   if sPlayHalfW is not empty and sPlayHalfW > 0 then
+      put sPlayHalfH + 4 into sPlayReach
+      put (0 - max(2, sPlayHalfW * 0.6)) & comma & 0 & comma & max(2, sPlayHalfW * 0.6) into sPlayProbeOffs
+   end if
+end b2kPlayerTuneCache
+
+function b2kPlayerGet pKey
+   local tDef
+   put toLower(pKey) into pKey
+   put b2kPlayerDefault(pKey) into tDef
+   if sPlayTune[pKey] is empty then return tDef
+   -- known keys are numeric: a garbage value must not break the tick
+   if tDef is not empty then return b2kNumberOr(sPlayTune[pKey], tDef)
+   return sPlayTune[pKey]
+end b2kPlayerGet
+
+function b2kPlayerDefault pKey
+   switch pKey
+      case "movespeed"
+         return 220
+      case "accel"
+         return 1800
+      case "airaccel"
+         return 1100
+      case "jumpspeed"
+         return 460
+      case "jumpcut"
+         return 0.45
+      case "coyotems"
+         return 90
+      case "bufferms"
+         return 110
+      case "maxfall"
+         return 900
+      case "maxslopedeg"
+         return 50
+      case "dropms"
+         return 260
+      case "climbspeed"
+         return 160
+      case "swimspeed"
+         return 150
+      case "swimjump"
+         return 300
+      case "swimgravity"
+         return 0.35
+      case "swimmaxfall"
+         return 150
+      case "hurtpopx"
+         return 220
+      case "hurtpopy"
+         return 320
+      case "hurtms"
+         return 700
+      case "invulnms"
+         return 900
+      -- Wave 5 (all OPT-IN: these defaults disable the feature, so an
+      -- untouched controller behaves exactly as it did before Wave 5)
+      case "airjumps"
+         return 0          -- extra mid-air jumps (1 = double-jump)
+      case "walljumpx"
+         return 0          -- away-from-wall launch px/s (0 = wall system off)
+      case "walljumpy"
+         return 0          -- up launch off a wall (0 = fall back to jumpSpeed)
+      case "wallslidemax"
+         return 0          -- capped fall px/s while hugging a wall (0 = no slide)
+      case "dashspeed"
+         return 0          -- dash px/s (0 = dash off)
+      case "dashms"
+         return 160        -- dash duration
+      case "dashcooldownms"
+         return 500        -- minimum gap between dashes
+      case "airdash"
+         return 1          -- 1 = dash works mid-air too; 0 = dash only when grounded
+      case "duckscale"
+         return 1          -- ducked capsule height / standing height (1 = no reshape)
+      case "platformcarry"
+         return 0          -- 1 = inherit a moving platform's velocity (opt-in: it
+                           -- costs 2 reads/grounded-frame and changes how a player
+                           -- rides any kinematic body), 0 = off
+   end switch
+   return empty
+end b2kPlayerDefault
+
+command b2kPlayerAnims pIdle, pRun, pJump, pFall, pLand, pDuck, pClimb, pHurt, pSwim, pWall, pDash
+   put pIdle into sPlayAnims["idle"]
+   put pRun into sPlayAnims["run"]
+   put pJump into sPlayAnims["jump"]
+   if pFall is empty then
+      put pJump into sPlayAnims["fall"]
+   else
+      put pFall into sPlayAnims["fall"]
+   end if
+   put pLand into sPlayAnims["land"]
+   if pDuck is empty then
+      put pIdle into sPlayAnims["duck"]
+   else
+      put pDuck into sPlayAnims["duck"]
+   end if
+   if pClimb is empty then
+      put pJump into sPlayAnims["climb"]
+   else
+      put pClimb into sPlayAnims["climb"]
+   end if
+   if pHurt is empty then
+      put pJump into sPlayAnims["hurt"]
+   else
+      put pHurt into sPlayAnims["hurt"]
+   end if
+   if pSwim is empty then
+      put sPlayAnims["fall"] into sPlayAnims["swim"]
+   else
+      put pSwim into sPlayAnims["swim"]
+   end if
+   if pWall is empty then
+      put sPlayAnims["fall"] into sPlayAnims["wallslide"]
+   else
+      put pWall into sPlayAnims["wallslide"]
+   end if
+   if pDash is empty then
+      put sPlayAnims["run"] into sPlayAnims["dash"]
+   else
+      put pDash into sPlayAnims["dash"]
+   end if
+   put empty into sPlayAnimNow   -- re-assert on the next tick
+   if sPlayArt is empty then b2kPlayerResolveArt
+end b2kPlayerAnims
+
+function b2kPlayer
+   return sPlayRef
+end b2kPlayer
+
+function b2kPlayerSprite
+   return sPlayArt
+end b2kPlayerSprite
+
+function b2kPlayerOnGround
+   return (sPlayGrounded is true)
+end b2kPlayerOnGround
+
+function b2kPlayerState
+   return sPlayState
+end b2kPlayerState
+
+function b2kPlayerFacing
+   if sPlayFacing is -1 then return -1
+   return 1
+end b2kPlayerFacing
+
+function b2kPlayerHalfH
+   return b2kNumberOr(sPlayHalfH, 0)
+end b2kPlayerHalfH
+
+function b2kPlayerHalfW
+   return b2kNumberOr(sPlayHalfW, 0)
+end b2kPlayerHalfW
+
+function b2kPlayerInLadder
+   return (sPlayInLad is true)
+end b2kPlayerInLadder
+
+function b2kPlayerInWater
+   return (sPlayInWat is true)
+end b2kPlayerInWater
+
+command b2kPlayerJump pSpeed
+   local tVel
+   if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerJump
+   if pSpeed is empty then put b2kPlayerGet("jumpSpeed") into pSpeed
+   set the itemDelimiter to comma
+   put b2kVelocity(sPlayRef) into tVel
+   b2kSetVelocity sPlayRef, item 1 of tVel, 0 - pSpeed
+   put true into sPlayJumping
+   put 0 into sPlayGroundMS   -- consume coyote: no free second jump
+   put 0 into sPlayPressMS    -- ...and any buffered press
+end b2kPlayerJump
+
+command b2kPlayerAddLadder pX1, pY1, pX2, pY2
+   if pX1 is not a number or pY1 is not a number \
+         or pX2 is not a number or pY2 is not a number then exit b2kPlayerAddLadder
+   if sPlayLadN is empty then put 0 into sPlayLadN
+   add 1 to sPlayLadN
+   put min(pX1, pX2) into sPlayLadL[sPlayLadN]
+   put max(pX1, pX2) into sPlayLadR[sPlayLadN]
+   put min(pY1, pY2) into sPlayLadT[sPlayLadN]
+   put max(pY1, pY2) into sPlayLadB[sPlayLadN]
+end b2kPlayerAddLadder
+
+command b2kPlayerAddWater pX1, pY1, pX2, pY2
+   if pX1 is not a number or pY1 is not a number \
+         or pX2 is not a number or pY2 is not a number then exit b2kPlayerAddWater
+   if sPlayWatN is empty then put 0 into sPlayWatN
+   add 1 to sPlayWatN
+   put min(pX1, pX2) into sPlayWatL[sPlayWatN]
+   put max(pX1, pX2) into sPlayWatR[sPlayWatN]
+   put min(pY1, pY2) into sPlayWatT[sPlayWatN]
+   put max(pY1, pY2) into sPlayWatB[sPlayWatN]
+end b2kPlayerAddWater
+
+command b2kPlayerHurt pFromX
+   local tDir
+   if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerHurt
+   if b2kPlayerHurtIs() then exit b2kPlayerHurt          -- mercy window
+   if sPlayControl is not true then exit b2kPlayerHurt   -- a cutscene owns the body
+   if sPlayClimb is true then b2kPlayerClimbEnd sBody[sPlayRef]
+   if sPlaySwim is true then b2kPlayerSwimEnd sBody[sPlayRef]
+   if sPlayDash is true then b2kPlayerDashEnd sBody[sPlayRef]
+   if pFromX is a number then
+      if pFromX > sPlayPX then
+         put -1 into tDir
+      else
+         put 1 into tDir
+      end if
+   else
+      put 0 - sPlayFacing into tDir   -- pop back off whatever was ahead
+   end if
+   -- the pop rides the jump flag, like b2kPlayerJump: a raw upward
+   -- set-velocity on a grounded player reads as solver rebound and gets
+   -- ground-snapped to zero (gotcha 16)
+   b2kSetVelocity sPlayRef, tDir * sPlayHurtPopX, 0 - sPlayHurtPopY
+   put true into sPlayJumping
+   put true into sPlayHurt
+   put 0 into sPlayHurtLand
+   put sPlayClock + sPlayHurtMS into sPlayHurtEnd
+   put sPlayClock + sPlayHurtMS / 2 into sPlayHurtHalf
+   put false into sPlayGrounded
+   put 0 into sPlayGroundMS   -- no coyote freebie off a knockback
+   put 0 into sPlayPressMS
+   put "hurt" into sPlayState
+   put empty into sPlayAnimNow   -- assert the hurt anim this tick
+end b2kPlayerHurt
+
+function b2kPlayerHurtIs
+   if sPlayHurt is true then return true
+   if sPlayInvulnUntil is not empty and sPlayInvulnUntil > 0 and sPlayClock < sPlayInvulnUntil then return true
+   return false
+end b2kPlayerHurtIs
+
+command b2kPlayerControl pFlag
+   put (pFlag is not false) into sPlayControl
+   -- an EXPLICIT control call overrides a knockback in flight: the game
+   -- is taking the body (cutscene, respawn). No mercy window is granted
+   -- -- the game owns what happens next.
+   if sPlayHurt is true then
+      put false into sPlayHurt
+      put 0 into sPlayHurtLand
+   end if
+   -- a dash parks gravity at 0 and is ended only by its own tick, which
+   -- stops running when control goes off -- so end it here or the parked
+   -- gravity (and the held vy) leak into the cutscene.
+   if sPlayControl is not true and sPlayDash is true \
+         and sPlayRef is not empty and sBody[sPlayRef] is not empty then
+      b2kPlayerDashEnd sBody[sPlayRef]
+   end if
+   -- returning control must re-assert the state anim over any manual pose
+   if sPlayControl then put empty into sPlayAnimNow
+end b2kPlayerControl
+
+command b2kPlayerRespawn pX, pY
+   local tB
+   if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerRespawn
+   put sBody[sPlayRef] into tB
+   if sPlayClimb is true then b2kPlayerClimbEnd tB
+   if sPlaySwim is true then b2kPlayerSwimEnd tB
+   if sPlayDash is true then b2kPlayerDashEnd tB
+   if sPlayDropUntil is not empty and sPlayDropUntil > 0 then b2kPlayerDropRestore
+   if sPlayDucked is true then b2kPlayerStandUp
+   put b2kNumberOr(pX, sPlayPX) into pX
+   put b2kNumberOr(pY, sPlayPY) into pY
+   b2kMoveTo sPlayRef, pX, pY
+   b2kSetVelocity sPlayRef, 0, 0
+   put true into sPlayControl
+   put false into sPlayJumping
+   put false into sPlayHurt
+   put 0 into sPlayHurtLand
+   put 0 into sPlayInvulnUntil
+   put false into sPlayGrounded
+   put 0 into sPlayAir
+   put 0 into sPlayWallLockUntil
+   put false into sPlayWallSliding
+   put sPlayAirJumps into sPlayAirJumpsLeft
+   put "idle" into sPlayState
+   put empty into sPlayAnimNow   -- re-assert the idle pose next tick
+end b2kPlayerRespawn
+
+command b2kPlayerRemove
+   b2kPlayerForget true
+end b2kPlayerRemove
+
+command b2kPlayerForget pFull
+   if sPlayClimb is true and sPlayRef is not empty and sBody[sPlayRef] is not empty then
+      b2kPlayerClimbEnd sBody[sPlayRef]
+   end if
+   if sPlaySwim is true and sPlayRef is not empty and sBody[sPlayRef] is not empty then
+      b2kPlayerSwimEnd sBody[sPlayRef]
+   end if
+   if sPlayDash is true and sPlayRef is not empty and sBody[sPlayRef] is not empty then
+      b2kPlayerDashEnd sBody[sPlayRef]
+   end if
+   if sPlayDropUntil is not empty and sPlayDropUntil > 0 then b2kPlayerDropRestore
+   put empty into sPlayRef
+   put empty into sPlayArt
+   put empty into sPlayAnims
+   put empty into sPlayState
+   put false into sPlayGrounded
+   put false into sPlayJumping
+   put true into sPlayControl
+   put 1 into sPlayFacing
+   put 0 into sPlayGroundMS
+   put 0 into sPlayPressMS
+   put 0 into sPlayHoldMS
+   put 0 into sPlayClock
+   put 0 into sPlayAir
+   put empty into sPlayAnimNow
+   put empty into sPlayFlipNow
+   put false into sPlayOnOneWay
+   put 0 into sPlayDropUntil
+   put 0 into sPlayDropHard
+   put empty into sPlayDropMask
+   put false into sPlayClimb
+   put empty into sPlayGravSave
+   put false into sPlaySwim
+   put empty into sPlaySwimGravSave
+   put false into sPlayHurt
+   put 0 into sPlayHurtEnd
+   put 0 into sPlayHurtHalf
+   put 0 into sPlayHurtLand
+   put 0 into sPlayInvulnUntil
+   -- Wave 5 state (the body keeps any reshaped duck size -- it is yours
+   -- now; b2kClear removes it, teardown removes everything)
+   put 0 into sPlayAirJumpsLeft
+   put 0 into sPlayWall
+   put false into sPlayWallSliding
+   put 0 into sPlayWallLockUntil
+   put false into sPlayDash
+   put 0 into sPlayDashEnd
+   put 0 into sPlayDashReady
+   put 0 into sPlayDashDir
+   put empty into sPlayDashGravSave
+   put false into sPlayDucked
+   put empty into sPlayGroundBody
+   put false into sPlayInLad
+   put false into sPlayInWat
+   put 0 into sPlayLadN
+   put empty into sPlayLadL
+   put empty into sPlayLadT
+   put empty into sPlayLadR
+   put empty into sPlayLadB
+   put 0 into sPlayWatN
+   put empty into sPlayWatL
+   put empty into sPlayWatT
+   put empty into sPlayWatR
+   put empty into sPlayWatB
+   if pFull is true then put empty into sPlayTune
+end b2kPlayerForget
+
+command b2kPlayerProbe pBody, pVY
+   local tX, tY, tOff
+   put false into sPlayGrounded
+   put false into sPlayOnOneWay
+   put false into sPlayDropSeen
+   put empty into sPlayGroundBody
+   set the itemDelimiter to comma
+   -- raw reads with the caller's body handle: the probe runs every
+   -- frame, so it skips the ref->body lookup and the "x,y" string pack.
+   -- The centre is stashed even when the rays are skipped -- the tick's
+   -- ladder zone test and b2kPlayerHurt read it.
+   put b2kToScreenX(b2BodyX(pBody)) into tX
+   put b2kToScreenY(b2BodyY(pBody)) into tY
+   put tX into sPlayPX
+   put tY into sPlayPY
+   if sPlayJumping is true and pVY < 0 then exit b2kPlayerProbe
+   repeat for each item tOff in sPlayProbeOffs
+      get b2kRayHit(tX + tOff, tY, tX + tOff, tY + sPlayReach)
+      if sRayNY is not empty and sRayNY <= 0 - sPlayCosSlope then
+         if sOneWayBody[sRayBodyH] is true then
+            -- mid-drop, a one-way chain is NOT ground (or the controller
+            -- would re-ground on the very platform it is leaving -- the
+            -- phantom-ground lesson in reverse); remember the sighting:
+            -- the window's restore logic waits for the capsule to clear
+            if sPlayDropUntil > 0 then
+               put true into sPlayDropSeen
+               next repeat
+            end if
+            put true into sPlayOnOneWay   -- standing on a chain: drop eligible
+         end if
+         put true into sPlayGrounded
+         put sRayBodyH into sPlayGroundBody  -- the platform under us (carry)
+         put sRayNX into sPlayNormX          -- flat vs slope, for ground-snap
+         put sPlayClock into sPlayGroundMS   -- the sim clock, not wall time
+         exit b2kPlayerProbe
+      end if
+   end repeat
+end b2kPlayerProbe
+
+command b2kPlayerClimbStart pBody
+   if sPlayClimb is true then exit b2kPlayerClimbStart
+   put b2BodyGravityScale(pBody) into sPlayGravSave
+   b2SetGravityScale pBody, 0
+   put true into sPlayClimb
+   put false into sPlayJumping
+end b2kPlayerClimbStart
+
+command b2kPlayerClimbEnd pBody
+   if sPlayClimb is not true then exit b2kPlayerClimbEnd
+   b2SetGravityScale pBody, b2kNumberOr(sPlayGravSave, 1)
+   put empty into sPlayGravSave
+   put false into sPlayClimb
+end b2kPlayerClimbEnd
+
+command b2kPlayerSwimStart pBody
+   if sPlaySwim is true then exit b2kPlayerSwimStart
+   put b2BodyGravityScale(pBody) into sPlaySwimGravSave
+   b2SetGravityScale pBody, b2kNumberOr(sPlaySwimGrav, 0.35)
+   put true into sPlaySwim
+   put false into sPlayJumping
+end b2kPlayerSwimStart
+
+command b2kPlayerSwimEnd pBody
+   if sPlaySwim is not true then exit b2kPlayerSwimEnd
+   b2SetGravityScale pBody, b2kNumberOr(sPlaySwimGravSave, 1)
+   put empty into sPlaySwimGravSave
+   put false into sPlaySwim
+end b2kPlayerSwimEnd
+
+command b2kPlayerDropStart
+   local tS, tM
+   put sShapeH[sPlayRef] into tS
+   if tS is empty then exit b2kPlayerDropStart
+   put b2ShapeFilterMask(tS) into tM
+   -- Box2D's default mask reads back as 2^64-1, which neither xTalk's
+   -- 32-bit bit ops nor the shim's 2^53 guard can round-trip: clamp to
+   -- "all 32 kit bits" -- identical behaviour, every category this Kit
+   -- can mint lives below 2^32
+   if tM > 4294967295 then put 4294967295 into tM
+   put tM into sPlayDropMask
+   b2SetShapeFilter tS, b2ShapeFilterCategory(tS), tM bitAnd (bitNot 2147483648), b2ShapeFilterGroup(tS)
+   put sPlayClock + sPlayDropMS into sPlayDropUntil
+   put sPlayClock + sPlayDropMS * 4 into sPlayDropHard
+   put sRayY into sPlayDropLineY   -- the grounding ray's hit = the surface line
+end b2kPlayerDropStart
+
+command b2kPlayerDropRestore
+   local tS
+   put 0 into sPlayDropUntil
+   put 0 into sPlayDropHard
+   put sShapeH[sPlayRef] into tS
+   if tS is empty or sPlayDropMask is empty then exit b2kPlayerDropRestore
+   b2SetShapeFilter tS, b2ShapeFilterCategory(tS), sPlayDropMask, b2ShapeFilterGroup(tS)
+   put empty into sPlayDropMask
+end b2kPlayerDropRestore
+
+command b2kPlayerDashStart pBody
+   if sPlayDash is true then exit b2kPlayerDashStart
+   put b2BodyGravityScale(pBody) into sPlayDashGravSave
+   b2SetGravityScale pBody, 0
+   put true into sPlayDash
+   put sPlayFacing into sPlayDashDir
+   put sPlayClock + sPlayDashMS into sPlayDashEnd
+   put sPlayClock + sPlayDashMS + sPlayDashCool into sPlayDashReady
+   put false into sPlayJumping
+end b2kPlayerDashStart
+
+command b2kPlayerDashEnd pBody
+   if sPlayDash is not true then exit b2kPlayerDashEnd
+   b2SetGravityScale pBody, b2kNumberOr(sPlayDashGravSave, 1)
+   put empty into sPlayDashGravSave
+   put false into sPlayDash
+end b2kPlayerDashEnd
+
+command b2kPlayerWallProbe pBody, pAxis
+   local tDir
+   put 0 into sPlayWall
+   if pAxis is 0 then
+      put sPlayFacing into tDir
+   else
+      put pAxis into tDir
+   end if
+   set the itemDelimiter to comma
+   get b2kRayHit(sPlayPX, sPlayPY, sPlayPX + tDir * (sPlayHalfW + 4), sPlayPY)
+   if sRayNX is not empty and abs(sRayNX) > 0.7 and abs(sRayNY) < 0.6 then
+      put tDir into sPlayWall
+   end if
+end b2kPlayerWallProbe
+
+command b2kPlayerDuckSet pWantDuck
+   local tNewH, tShift, tNeed
+   if sPlayRef is empty then exit b2kPlayerDuckSet
+   if pWantDuck is true then
+      if sPlayDucked is true or sPlayDuckScale >= 1 then exit b2kPlayerDuckSet
+      put max(8, round(sPlayStandH * sPlayDuckScale)) into tNewH
+      put (sPlayStandH - tNewH) / 2 into tShift
+      set the height of sPlayRef to tNewH
+      b2kMoveTo sPlayRef, sPlayPX, sPlayPY + tShift
+      b2kReshape sPlayRef, "capsule"
+      b2kSetFriction sPlayRef, 0.08
+      b2kSetBounce sPlayRef, 0
+      put tNewH / 2 into sPlayHalfH
+      put true into sPlayDucked
+      b2kPlayerTuneCache   -- the probe reach follows the new (shorter) capsule
+   else
+      if sPlayDucked is not true then exit b2kPlayerDuckSet
+      put sPlayStandH - (the height of sPlayRef) into tNeed
+      set the itemDelimiter to comma
+      get b2kRayHit(sPlayPX, sPlayPY - sPlayHalfH, sPlayPX, sPlayPY - sPlayHalfH - tNeed - 2)
+      if sRayNY is not empty then exit b2kPlayerDuckSet   -- a ceiling: stay crawling
+      b2kPlayerStandUp
+   end if
+end b2kPlayerDuckSet
+
+command b2kPlayerStandUp
+   local tShift
+   if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
+   put (sPlayStandH - (the height of sPlayRef)) / 2 into tShift
+   set the height of sPlayRef to sPlayStandH
+   b2kMoveTo sPlayRef, sPlayPX, sPlayPY - tShift
+   b2kReshape sPlayRef, "capsule"
+   b2kSetFriction sPlayRef, 0.08
+   b2kSetBounce sPlayRef, 0
+   put sPlayStandH / 2 into sPlayHalfH
+   put false into sPlayDucked
+   b2kPlayerTuneCache
+end b2kPlayerStandUp
+
+command b2kPlayerTick
+   local tNow, tDT, tB, tVX, tVY, tAxis, tAxisY, tTarget, tAcc, tStep
+   local tPrevState, tWrite, tInZone, tDuck, tClimbJump, i, tInWater
+   local tOnLift, tPVX, tPVY   -- Wave 5: platform-carry scratch
+   if sPlayRef is empty then exit b2kPlayerTick
+   put sBody[sPlayRef] into tB
+   if tB is empty then exit b2kPlayerTick
+   -- the controller's clock is SIM time: the coyote/buffer windows must
+   -- mean the same number of frames on every machine (and stand still
+   -- while paused/hand-stepped) -- wall-clock would not
+   put sPlayClock + b2kClamp(sFrameMS, 0, 100) into sPlayClock
+   put sPlayClock into tNow
+   -- present velocity, screen-oriented px/s (positive vy = falling).
+   -- Raw reads with the cached handle: this runs every frame, so skip
+   -- the wrapper's ref lookup and "vx,vy" string round-trip (same math
+   -- as b2kVelocity -- mind the y flip, gotcha 9).
+   set the itemDelimiter to comma
+   put b2BodyVX(tB) * sScale into tVX
+   put 0 - (b2BodyVY(tB) * sScale) into tVY
+   b2kPlayerProbe tB, tVY
+   -- a touch of ground refills the air-jump budget (Wave 5; idle when
+   -- airJumps is 0, the default)
+   if sPlayGrounded is true then put sPlayAirJumps into sPlayAirJumpsLeft
+   -- the drop window's bookkeeping runs UNGATED (a hurt or control-off
+   -- mid-drop must never strand the mask without its one-way bit). The
+   -- mask returns when the clock has run AND the capsule has cleared the
+   -- line it dropped through -- a straddling restore would snap it back
+   -- on top (chain contacts are one-sided, judged by the centroid) --
+   -- with a hard 4x deadline for drops that land on something below.
+   if sPlayDropUntil > 0 and tNow >= sPlayDropUntil then
+      if (sPlayDropSeen is not true and sPlayPY - sPlayHalfH > sPlayDropLineY + 2) \
+            or tNow >= sPlayDropHard then
+         b2kPlayerDropRestore
+      end if
+   end if
+   -- the hurt window runs its own clock: control comes back at hurtMs
+   -- OR the first landing after half of it, whichever is LATER, and the
+   -- mercy window starts then
+   if sPlayHurt is true then
+      if sPlayHurtLand is 0 and sPlayGrounded is true and tNow >= sPlayHurtHalf then
+         put tNow into sPlayHurtLand
+      end if
+      if tNow >= sPlayHurtEnd and sPlayHurtLand > 0 then
+         put false into sPlayHurt
+         put tNow + sPlayInvulnMS into sPlayInvulnUntil
+         put empty into sPlayAnimNow   -- re-assert the state anim
+      end if
+   end if
+   put false into tWrite
+   put false into tDuck
+   put false into tOnLift
+   if sPlayControl is true and sPlayHurt is not true then
+      put sFrameMS / 1000 into tDT
+      if tDT <= 0 then put 1 / 60 into tDT
+      if tDT > 0.05 then put 0.05 into tDT
+      put b2kAxis("moveX") into tAxis
+      put b2kAxis("moveY") into tAxisY
+      if tAxis is not 0 then
+         if tAxis < 0 then
+            put -1 into sPlayFacing
+         else
+            put 1 into sPlayFacing
+         end if
+      end if
+      -- ladder + water presence: pure numeric compares on the probe's
+      -- stashed centre; zero zones of a kind = one compare and out
+      put false into tInZone
+      if sPlayLadN > 0 then
+         repeat with i = 1 to sPlayLadN
+            if sPlayPX >= sPlayLadL[i] and sPlayPX <= sPlayLadR[i] \
+                  and sPlayPY >= sPlayLadT[i] and sPlayPY <= sPlayLadB[i] then
+               put true into tInZone
+               exit repeat
+            end if
+         end repeat
+      end if
+      put false into tInWater
+      if sPlayWatN > 0 then
+         repeat with i = 1 to sPlayWatN
+            if sPlayPX >= sPlayWatL[i] and sPlayPX <= sPlayWatR[i] \
+                  and sPlayPY >= sPlayWatT[i] and sPlayPY <= sPlayWatB[i] then
+               put true into tInWater
+               exit repeat
+            end if
+         end repeat
+      end if
+      put tInZone into sPlayInLad   -- exposed by b2kPlayerInLadder/InWater
+      put tInWater into sPlayInWat
+      -- DASH (Wave 5): a flat horizontal burst that overrides normal
+      -- movement for dashMs, then hands back. Idle in one compare when
+      -- dashSpeed is 0; yields to climb/swim (it ends on entering either).
+      if sPlayDash is true then
+         if tNow >= sPlayDashEnd or tInWater is true or tInZone is true then
+            b2kPlayerDashEnd tB
+         else
+            put sPlayDashDir into sPlayFacing   -- face the dash, not late input
+            put sPlayDashDir * sPlayDashSpd into tVX
+            put 0 into tVY
+            put true into tWrite
+         end if
+      end if
+      if sPlayDash is not true and sPlayDashSpd > 0 and tNow >= sPlayDashReady \
+            and (sPlayAirDash is true or sPlayGrounded is true) \
+            and sPlayClimb is not true and sPlaySwim is not true \
+            and tInZone is not true and tInWater is not true \
+            and b2kActionPressed("dash") then
+         b2kPlayerDashStart tB
+         put sPlayDashDir * sPlayDashSpd into tVX
+         put 0 into tVY
+         put true into tWrite
+      end if
+      -- everything below (climb/swim entry + the three movement modes) is
+      -- suspended while a dash owns the body
+      if sPlayDash is not true then
+      if sPlayClimb is not true and sPlaySwim is not true and tInZone is true then
+         -- enter: UP any time in-zone; DOWN only while AIRBORNE (a
+         -- grounded DOWN is a duck -- or a drop-through on a chain)
+         if tAxisY is -1 or (tAxisY is 1 and sPlayGrounded is not true) then
+            b2kPlayerClimbStart tB
+         end if
+      end if
+      if sPlaySwim is not true and sPlayClimb is not true and tInWater is true then
+         b2kPlayerSwimStart tB   -- submerged: buoyant gravity, stroke to rise
+      end if
+      if sPlayClimb is true then
+         if b2kActionPressed("jump") then
+            -- JUMP exits with a normal jump. The same press edge is
+            -- still "pressed" when the walk branch runs below this
+            -- tick: tClimbJump keeps it from re-arming the buffer
+            -- (one press must never pay for two jumps)
+            b2kPlayerClimbEnd tB
+            put 0 - sPlayJumpSpd into tVY
+            put true into sPlayJumping
+            put false into sPlayGrounded
+            put 0 into sPlayGroundMS
+            put 0 into sPlayPressMS
+            put true into tClimbJump
+            put true into tWrite
+         else
+            if tInZone is not true or (sPlayGrounded is true and tAxisY is 1) then
+               -- slid out of the zone, or climbed down onto ground:
+               -- gravity returns and (same tick) normal control resumes
+               b2kPlayerClimbEnd tB
+            else
+               -- the climb drive: y runs at climbSpeed off the moveY
+               -- axis (0 = hang), x at half speed, gravity parked at 0
+               put tAxisY * sPlayClimbSpd into tVY
+               put tAxis * sPlayMoveSpd / 2 into tTarget
+               put sPlayAccelG * tDT into tStep
+               if tVX < tTarget then
+                  put min(tTarget, tVX + tStep) into tVX
+               else
+                  put max(tTarget, tVX - tStep) into tVX
+               end if
+               put true into tWrite
+            end if
+         end if
+      end if
+      if sPlaySwim is true then
+         if tInWater is not true then
+            b2kPlayerSwimEnd tB   -- surfaced / left the pool: gravity returns
+         else
+            -- horizontal: ease vx toward axis * swimSpeed (sluggish -- the
+            -- air-accel rate gives the underwater drag)
+            put tAxis * sPlaySwimSpd into tTarget
+            put sPlayAccelA * tDT into tStep
+            if tVX < tTarget then
+               put min(tTarget, tVX + tStep) into tVX
+            else
+               put max(tTarget, tVX - tStep) into tVX
+            end if
+            -- vertical: a JUMP press is a repeatable upward STROKE (no
+            -- ground gate -- the spec's water jump); else UP/DOWN swim at
+            -- swimSpeed; else the reduced gravity sinks you, capped low
+            if b2kActionPressed("jump") then
+               put 0 - sPlaySwimJump into tVY
+            else
+               if tAxisY is not 0 then
+                  put tAxisY * sPlaySwimSpd into tVY
+               end if
+            end if
+            put true into tWrite
+         end if
+      end if
+      if sPlayClimb is not true and sPlaySwim is not true then
+         -- horizontal: accelerate vx toward axis * moveSpeed (air = airAccel)
+         put tAxis * sPlayMoveSpd into tTarget
+         -- DUCK: down on the ground. With duckScale < 1 the capsule
+         -- reshapes to a CRAWL (slow movement, shorter hitbox -- so you
+         -- can slip under a low gap); otherwise the Wave 2 duck brakes to
+         -- a stop with the hitbox unchanged.
+         if tAxisY is 1 and sPlayGrounded is true then
+            put true into tDuck
+            if sPlayDuckScale < 1 then
+               b2kPlayerDuckSet true
+               put tAxis * sPlayMoveSpd * 0.5 into tTarget   -- crawl, not brake
+            else
+               put 0 into tTarget
+            end if
+         end if
+         if tDuck is not true and sPlayDucked is true then b2kPlayerDuckSet false
+         -- PLATFORM CARRY (Wave 5): inherit the ground body's velocity so a
+         -- moving platform carries you (static ground reads 0 -> no effect).
+         -- A vertical lift's carry exempts the ground-snap below.
+         if sPlayCarry is true and sPlayGrounded is true and sPlayGroundBody is not empty then
+            put b2BodyVX(sPlayGroundBody) * sScale into tPVX
+            put 0 - (b2BodyVY(sPlayGroundBody) * sScale) into tPVY
+            add tPVX to tTarget
+            if tPVY is not 0 and sPlayJumping is not true then
+               put tPVY into tVY
+               put true into tOnLift
+            end if
+         end if
+         if sPlayGrounded then
+            put sPlayAccelG into tAcc
+         else
+            put sPlayAccelA into tAcc
+         end if
+         -- a wall-jump owns vx briefly (sPlayWallLockUntil): skip the air
+         -- steer so the away-launch carries clear before control resumes
+         if tNow >= sPlayWallLockUntil then
+            put tAcc * tDT into tStep
+            if tVX < tTarget then
+               put min(tTarget, tVX + tStep) into tVX
+            else
+               put max(tTarget, tVX - tStep) into tVX
+            end if
+         end if
+         put true into tWrite
+         if tClimbJump is not true and b2kActionPressed("jump") then put tNow into sPlayPressMS
+         -- WALL slide (Wave 5; airborne only, one ray when the system is
+         -- armed): hugging a wall while falling caps the fall at wallSlideMax
+         put false into sPlayWallSliding
+         if sPlayWallOn is true and sPlayGrounded is not true then
+            b2kPlayerWallProbe tB, tAxis
+            if sPlayWall is not 0 and tAxis is sPlayWall and tVY > 0 and sPlayWallSlideMax > 0 then
+               if tVY > sPlayWallSlideMax then put sPlayWallSlideMax into tVY
+               put true into sPlayWallSliding
+            end if
+         end if
+         if tDuck is true then
+            -- a press while crouched: on a ONE-WAY CHAIN it drops
+            -- through (dropMs of no chain collision); on solid ground
+            -- nothing -- and nothing later either, so the buffer is
+            -- eaten (a crouch-press must not launch on release)
+            if sPlayPressMS > 0 and tNow - sPlayPressMS <= sPlayBuffer then
+               if sPlayOnOneWay is true and sPlayDropUntil is 0 then
+                  b2kPlayerDropStart
+                  put false into sPlayGrounded   -- falling from this frame on
+                  put 0 into sPlayGroundMS       -- no coyote out of a drop
+               end if
+               put 0 into sPlayPressMS
+            end if
+         else
+            -- a buffered press, in priority: WALL-JUMP > ground/coyote
+            -- jump > air-jump (the double-jump). The wall and air branches
+            -- idle (their knobs are 0) unless the game enables them.
+            if sPlayPressMS > 0 and tNow - sPlayPressMS <= sPlayBuffer then
+               if sPlayWallOn is true and sPlayWall is not 0 \
+                     and sPlayGrounded is not true and sPlayWallJumpX > 0 then
+                  -- WALL-JUMP: up + away from the wall, with a brief steer
+                  -- lock so the launch carries before air control resumes
+                  put sPlayWallJumpY into tStep
+                  if tStep <= 0 then put sPlayJumpSpd into tStep
+                  put 0 - tStep into tVY
+                  put (0 - sPlayWall) * sPlayWallJumpX into tVX
+                  put 0 - sPlayWall into sPlayFacing
+                  put true into sPlayJumping
+                  put tNow + 180 into sPlayWallLockUntil
+                  put 0 into sPlayPressMS
+               else
+                  if sPlayGrounded or (sPlayGroundMS > 0 and tNow - sPlayGroundMS <= sPlayCoyote) then
+                     put 0 - sPlayJumpSpd into tVY
+                     put true into sPlayJumping
+                     put false into sPlayGrounded   -- airborne from this frame on
+                     put 0 into sPlayGroundMS       -- consume coyote
+                     put 0 into sPlayPressMS        -- consume the buffer
+                  else
+                     if sPlayAirJumps > 0 and sPlayAirJumpsLeft > 0 then
+                        -- DOUBLE / AIR JUMP: airborne, no ground or coyote
+                        put 0 - sPlayJumpSpd into tVY
+                        put true into sPlayJumping
+                        subtract 1 from sPlayAirJumpsLeft
+                        put 0 into sPlayPressMS
+                     end if
+                  end if
+               end if
+            end if
+         end if
+         -- jump-cut: releasing while still rising from OUR jump shortens it
+         if sPlayJumping and tVY < 0 and b2kActionReleased("jump") then
+            put tVY * sPlayJumpCut into tVY
+            put false into sPlayJumping
+         end if
+      end if
+      end if
+   end if
+   if sPlayJumping and tVY >= 0 then put false into sPlayJumping   -- apex
+   -- terminal velocity: the low swimMaxFall is the buoyant sink cap while
+   -- submerged; the normal maxFall (the character's terminal velocity) else
+   if sPlaySwim is true then
+      if tVY > sPlaySwimMaxFall then
+         put sPlaySwimMaxFall into tVY
+         put true into tWrite
+      end if
+   else
+      if tVY > sPlayMaxFall then
+         put sPlayMaxFall into tVY
+         put true into tWrite
+      end if
+   end if
+   -- GROUND-SNAP: grounded on FLAT ground, drifting upward, and we did
+   -- not jump = the contact solver's push-out rebound after a hard
+   -- landing (a ~7px hop: phantom airtime, double land ticks - measured
+   -- by the self-test at vy 61 up). Kill it at the source. Slopes are
+   -- exempt (|normalX| >= 0.1): running uphill is real upward motion.
+   -- Climbs are exempt too: rising up a ladder from its grounded base
+   -- is exactly the motion this guard exists to kill. External boosts
+   -- must use b2kPlayerJump, which sets the jump flag (b2kPlayerHurt's
+   -- pop rides the same flag).
+   if sPlayGrounded and sPlayJumping is not true and sPlayClimb is not true \
+         and sPlaySwim is not true and tOnLift is not true and tVY < 0 and abs(sPlayNormX) < 0.1 then
+      put 0 into tVY
+      put true into tWrite
+   end if
+   if tWrite then b2SetVelocity tB, tVX / sScale, 0 - (tVY / sScale)
+   -- the state machine (land = exactly one tick on touch-down), with
+   -- LANDING HYSTERESIS: the contact solver's push-out (and chain seams)
+   -- can blip the 4px probe off for a tick around an impact -- without
+   -- hysteresis that read as a second micro-fall and a second land tick
+   -- (double land sounds; the self-test caught it). A touchdown counts
+   -- as "land" only after a real airborne stretch (3+ ticks), and a
+   -- single ungrounded blip does not even show as airborne -- unless it
+   -- is OUR jump, which must read as "jump" on its launch frame.
+   -- Hurt and climb OWN the state outright; a knockback's landing shows
+   -- no "land" tick (the hit pose holds through the touchdown).
+   put sPlayState into tPrevState
+   if sPlayHurt is true then
+      put "hurt" into sPlayState
+      if sPlayGrounded is true then
+         put 0 into sPlayAir
+      else
+         add 1 to sPlayAir
+      end if
+   else
+      if sPlayClimb is true then
+         put "climb" into sPlayState
+         put 0 into sPlayAir
+      else
+         if sPlayGrounded is true then
+            if (tPrevState is "jump" or tPrevState is "fall") and sPlayAir >= 3 then
+               put "land" into sPlayState
+            else
+               if tDuck is true then
+                  put "duck" into sPlayState
+               else
+                  if abs(tVX) < 8 then
+                     put "idle" into sPlayState
+                  else
+                     put "run" into sPlayState
+                  end if
+               end if
+            end if
+            put 0 into sPlayAir
+         else
+            add 1 to sPlayAir
+            if sPlayWallSliding is true then
+               put "wallslide" into sPlayState   -- Wave 5: clinging a wall
+            else
+               if sPlayJumping is true or sPlayAir >= 2 then
+                  if tVY < 0 then
+                     put "jump" into sPlayState
+                  else
+                     put "fall" into sPlayState
+                  end if
+               end if
+            end if
+         end if
+      end if
+   end if
+   -- swim OWNS the state while submerged: the machine above ran the
+   -- grounded/airborne branch (sPlayClimb is false underwater), so override
+   -- to "swim" and keep the air counter clear -- surfacing must never read
+   -- as a long fall plus a phantom land tick.
+   if sPlaySwim is true and sPlayHurt is not true then
+      put "swim" into sPlayState
+      put 0 into sPlayAir
+   end if
+   -- a dash OWNS the state outright (it yields to swim/climb, so it can
+   -- never be underwater -- this safely overrides last)
+   if sPlayDash is true then
+      put "dash" into sPlayState
+      put 0 into sPlayAir
+   end if
+   -- animations: only while controlling (manual poses own the art when
+   -- control is off), and never let a vanished art control abort the
+   -- frame -- the loop's ticks share one try block
+   if sPlayControl is not true then exit b2kPlayerTick
+   if sPlayAnims["idle"] is empty and sPlayAnims["run"] is empty then exit b2kPlayerTick
+   try
+      if sPlayArt is empty then b2kPlayerResolveArt
+      if sPlayArt is not empty then b2kPlayerShowState tNow, tVX
+   catch tErr
+      put empty into sPlayArt   -- art gone; re-resolve next tick
+   end try
+end b2kPlayerTick
+
+command b2kPlayerShowState pNow, pVX
+   local tWant, tAnim, tAKey, tFPS, tFlip
+   put sPlayState into tWant
+   if pNow < sPlayHoldMS and tWant is not "jump" and tWant is not "fall" \
+         and tWant is not "hurt" and tWant is not "climb" and tWant is not "swim" \
+         and tWant is not "wallslide" and tWant is not "dash" then
+      put empty into tAnim   -- mid land-flourish: leave it playing
+   else
+      if tWant is "land" and sPlayAnims["land"] is empty then
+         -- no flourish mapped: land straight into idle or run, by speed
+         if abs(pVX) < 8 then
+            put "idle" into tWant
+         else
+            put "run" into tWant
+         end if
+      end if
+      put sPlayAnims[tWant] into tAnim
+   end if
+   if tAnim is not empty and tAnim is not sPlayAnimNow then
+      b2kSpritePlay sPlayArt, tAnim, (tWant is "land")
+      put tAnim into sPlayAnimNow
+      if tWant is "land" then
+         -- hold the flourish for its own length (frames / fps)
+         put sSprSheet[sPlayArt] & "|" & tAnim into tAKey
+         put sAnimFPS[tAKey] into tFPS
+         if tFPS is empty or tFPS <= 0 then put 8 into tFPS
+         put pNow + (the number of lines of sAnimList[tAKey]) * 1000 / tFPS into sPlayHoldMS
+      else
+         put 0 into sPlayHoldMS
+      end if
+   end if
+   put (sPlayFacing < 0) into tFlip
+   if tFlip is not sPlayFlipNow then
+      b2kSpriteFlipH sPlayArt, tFlip
+      put tFlip into sPlayFlipNow
+   end if
+end b2kPlayerShowState
+
+command b2kCamOn pRect
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tG
+   if sCamGroup is not empty then exit b2kCamOn
+   put empty into sCamNote
+   if pRect is empty then put the rect of this card into pRect
+   try
+      create group "b2kcam_view"
+   catch tErr
+      put "create group failed: " & tErr into sCamNote
+      exit b2kCamOn
+   end try
+   put the long id of group "b2kcam_view" into tG
+   try
+      set the margins of tG to 0
+      set the showBorder of tG to false
+      set the hScrollbar of tG to false
+      set the vScrollbar of tG to false
+      create graphic "b2kcam_anchor" in group "b2kcam_view"
+      set the rect of it to 0, 0, 1, 1
+      set the visible of it to false
+      set the lockLoc of tG to true
+      set the rect of tG to pRect
+   catch tErr
+      put "viewport setup failed: " & tErr into sCamNote
+      try
+         delete group "b2kcam_view"
+      catch tErr
+      end try
+      exit b2kCamOn
+   end try
+   try
+      set the unboundedHScroll of tG to true
+      set the unboundedVScroll of tG to true
+   catch tErr
+   end try
+   -- NOTE: deliberately NOT layerMode "scrolling". The compositor caches
+   -- that mode's content as one surface; past common GPU surface limits
+   -- (~2048px) the cached world freezes while dynamic-layer sprites keep
+   -- moving -- the player "runs off" a stopped picture. Plain rendering
+   -- pans correctly at any level size.
+   put tG into sCamGroup
+   set the itemDelimiter to comma
+   put ((item 1 of pRect) + (item 3 of pRect)) / 2 into sCamX
+   put ((item 2 of pRect) + (item 4 of pRect)) / 2 into sCamY
+   put 0.15 into sCamLerp
+   put 0 into sCamDZW
+   put 0 into sCamDZH
+   put empty into sCamFollow
+   put empty into sCamB1X
+   put 0 into sCamShakeAmp
+   put empty into sCamLastH
+   put empty into sCamLastV
+   -- self-test: prove the scroll property actually pans this group. The
+   -- anchor is stretched first so content exceeds the view (engines clamp
+   -- scroll to content bounds), then restored; failure is reported via
+   -- b2kCamStatus instead of letting the player walk out of a frozen view.
+   try
+      set the rect of graphic "b2kcam_anchor" to 0, 0, 4000, 2000
+      set the hScroll of sCamGroup to 7
+      if the hScroll of sCamGroup is not 7 then
+         put "group scroll is ineffective on this engine" into sCamNote
+      end if
+      set the hScroll of sCamGroup to 0
+      set the rect of graphic "b2kcam_anchor" to 0, 0, 1, 1
+   catch tErr
+      put "setting the group scroll failed: " & tErr into sCamNote
+   end try
+   -- probe the engine's coordinate semantics for grouped controls: place a
+   -- probe at x=100, scroll by 50, and read the loc back. Engines that
+   -- report 50 give SCROLL-ADJUSTED (visual) locs -- every per-frame
+   -- position write into the group must then subtract the live scroll, or
+   -- the write cancels the pan and the control "outruns" the world.
+   put false into sCamLocVisual
+   try
+      set the rect of graphic "b2kcam_anchor" to 0, 0, 4000, 2000
+      create graphic "b2kcam_probe" in group "b2kcam_view"
+      set the rect of it to 96, 96, 104, 104
+      set the visible of it to false
+      set the hScroll of sCamGroup to 50
+      put ((item 1 of the loc of graphic "b2kcam_probe") is 50) into sCamLocVisual
+      set the hScroll of sCamGroup to 0
+      delete graphic "b2kcam_probe"
+      set the rect of graphic "b2kcam_anchor" to 0, 0, 1, 1
+   catch tErr
+      put false into sCamLocVisual
+   end try
+   put 0 into sCamCurH
+   put 0 into sCamCurV
+   put empty into sInCam
+   b2kCamApply
+end b2kCamOn
+
+command b2kCamOff
+   if sCamGroup is empty then exit b2kCamOff
+   try
+      ungroup group "b2kcam_view"
+   catch tErr
+   end try
+   if there is a graphic "b2kcam_anchor" then delete graphic "b2kcam_anchor"
+   put empty into sCamGroup
+   put false into sCamLocVisual
+   put 0 into sCamCurH
+   put 0 into sCamCurV
+   put empty into sInCam
+end b2kCamOff
+
+function b2kCamIsOn
+   return (sCamGroup is not empty)
+end b2kCamIsOn
+
+function b2kCamGroup
+   return sCamGroup
+end b2kCamGroup
+
+command b2kCamAdopt pCtrl
+   if sCamGroup is empty then exit b2kCamAdopt
+   try
+      relayer pCtrl to front of group "b2kcam_view"
+   catch tErr
+      -- no script relayer on this engine: the control stays on the card.
+      -- Physics is unaffected; only its drawing will not scroll.
+   end try
+   -- mark AFTER the move: a long id embeds the group path, so the key
+   -- must be the post-relayer id or the camera's write-compensation
+   -- (b2kCamShiftX/Y) never recognises adopted controls
+   try
+      put true into sInCam[the long id of pCtrl]
+   catch tErr
+   end try
+end b2kCamAdopt
+
+command b2kCamFollow pCtrl, pLerp
+   put the long id of pCtrl into sCamFollow
+   if pLerp is a number then put b2kClamp(pLerp, 0.01, 1) into sCamLerp
+end b2kCamFollow
+
+command b2kCamUnfollow
+   put empty into sCamFollow
+end b2kCamUnfollow
+
+command b2kCamDeadzone pW, pH
+   put b2kNumberOr(pW, 0) into sCamDZW
+   put b2kNumberOr(pH, 0) into sCamDZH
+end b2kCamDeadzone
+
+command b2kCamBounds pX1, pY1, pX2, pY2
+   put pX1 into sCamB1X
+   put pY1 into sCamB1Y
+   put pX2 into sCamB2X
+   put pY2 into sCamB2Y
+   -- stretch the invisible anchor across the whole level: the group's
+   -- scrollable content then always spans the bounds, so the engine can
+   -- never clamp the scroll short (works with or without unbounded scroll)
+   if sCamGroup is not empty then
+      try
+         set the rect of graphic "b2kcam_anchor" to pX1, pY1, pX2, pY2
+      catch tErr
+      end try
+   end if
+end b2kCamBounds
+
+command b2kCamGoto pX, pY
+   put b2kNumberOr(pX, sCamX) into sCamX
+   put b2kNumberOr(pY, sCamY) into sCamY
+   b2kCamApply
+end b2kCamGoto
+
+function b2kCamPos
+   return round(sCamX) & comma & round(sCamY)
+end b2kCamPos
+
+command b2kCamShake pAmpPx, pMs
+   put b2kClamp(pAmpPx, 0, 200) into sCamShakeAmp
+   put the milliseconds + b2kClamp(pMs, 0, 5000) into sCamShakeEnd
+end b2kCamShake
+
+function b2kCamMouseX
+   if sCamGroup is empty then return the mouseH
+   set the itemDelimiter to comma
+   return the mouseH - (item 1 of the rect of sCamGroup) + the hScroll of sCamGroup
+end b2kCamMouseX
+
+function b2kCamMouseY
+   if sCamGroup is empty then return the mouseV
+   set the itemDelimiter to comma
+   return the mouseV - (item 2 of the rect of sCamGroup) + the vScroll of sCamGroup
+end b2kCamMouseY
+
+function b2kCamStatus
+   return sCamNote
+end b2kCamStatus
+
+function b2kCamLocSemantics
+   if sCamLocVisual is true then return "visual"
+   return "content"
+end b2kCamLocSemantics
+
+function b2kCamShiftX pRef
+   if sCamLocVisual is not true then return 0
+   if sInCam[pRef] is not true then return 0
+   return sCamCurH
+end b2kCamShiftX
+
+function b2kCamShiftY pRef
+   if sCamLocVisual is not true then return 0
+   if sInCam[pRef] is not true then return 0
+   return sCamCurV
+end b2kCamShiftY
+
+command b2kSpriteMoveTo pCtrl, pX, pY
+   local tRef
+   put the long id of pCtrl into tRef
+   set the loc of tRef to round(pX - b2kCamShiftX(tRef)) & comma & round(pY - b2kCamShiftY(tRef))
+end b2kSpriteMoveTo
+
+command b2kCamTick
+   local tLoc, tTX, tTY, tHalfW, tHalfH
+   if sCamGroup is empty then exit b2kCamTick
+   if sCamFollow is not empty then
+      try
+         set the itemDelimiter to comma
+         put the loc of sCamFollow into tLoc
+         put (item 1 of tLoc) + b2kCamShiftX(sCamFollow) into tTX
+         put (item 2 of tLoc) + b2kCamShiftY(sCamFollow) into tTY
+         if abs(tTX - sCamX) > sCamDZW / 2 then
+            put sCamX + sCamLerp * (tTX - sCamX) into sCamX
+         end if
+         if abs(tTY - sCamY) > sCamDZH / 2 then
+            put sCamY + sCamLerp * (tTY - sCamY) into sCamY
+         end if
+         -- the never-offscreen guarantee (32 px inside the view edges)
+         put ((item 3 of the rect of sCamGroup) - (item 1 of the rect of sCamGroup)) / 2 into tHalfW
+         put ((item 4 of the rect of sCamGroup) - (item 2 of the rect of sCamGroup)) / 2 into tHalfH
+         if abs(tTX - sCamX) > tHalfW - 32 then put tTX into sCamX
+         if abs(tTY - sCamY) > tHalfH - 32 then put tTY into sCamY
+      catch tErr
+         put empty into sCamFollow   -- target vanished
+      end try
+   end if
+   b2kCamApply
+   -- reality check: prove the target is inside the view using the ACTUAL
+   -- scroll properties (not internal state). If anything desynced them --
+   -- an engine quirk, a missed write -- force the scroll directly.
+   if sCamFollow is not empty then
+      try
+         set the itemDelimiter to comma
+         put the loc of sCamFollow into tLoc
+         put (item 1 of tLoc) + b2kCamShiftX(sCamFollow) - (the hScroll of sCamGroup) into tTX
+         put ((item 3 of the rect of sCamGroup) - (item 1 of the rect of sCamGroup)) into tHalfW
+         if tTX < 48 or tTX > tHalfW - 48 then
+            set the hScroll of sCamGroup to round((item 1 of tLoc) - tHalfW / 2)
+            put the hScroll of sCamGroup into sCamLastH
+            put item 1 of tLoc into sCamX
+         end if
+      catch tErr
+      end try
+   end if
+end b2kCamTick
+
+command b2kCamApply
+   local tVW, tVH, tHalfW, tHalfH, tX, tY, tH, tV, tNow
+   if sCamGroup is empty then exit b2kCamApply
+   set the itemDelimiter to comma
+   put (item 3 of the rect of sCamGroup) - (item 1 of the rect of sCamGroup) into tVW
+   put (item 4 of the rect of sCamGroup) - (item 2 of the rect of sCamGroup) into tVH
+   put tVW / 2 into tHalfW
+   put tVH / 2 into tHalfH
+   put sCamX into tX
+   put sCamY into tY
+   if sCamB1X is not empty then
+      if tX > sCamB2X - tHalfW then put sCamB2X - tHalfW into tX
+      if tX < sCamB1X + tHalfW then put sCamB1X + tHalfW into tX
+      if tY > sCamB2Y - tHalfH then put sCamB2Y - tHalfH into tY
+      if tY < sCamB1Y + tHalfH then put sCamB1Y + tHalfH into tY
+   end if
+   -- write the clamped centre back: the follow math must ease against the
+   -- view that is actually shown, or the camera lags invisibly at the
+   -- bounds and the player outruns a scroll that has not started yet
+   put tX into sCamX
+   put tY into sCamY
+   if sCamShakeAmp > 0 then
+      put the milliseconds into tNow
+      if tNow >= sCamShakeEnd then
+         put 0 into sCamShakeAmp
+      else
+         put tX + (random(sCamShakeAmp * 2 + 1) - sCamShakeAmp - 1) into tX
+         put tY + (random(sCamShakeAmp * 2 + 1) - sCamShakeAmp - 1) into tY
+      end if
+   end if
+   put round(tX - tHalfW) into tH   -- content origin pinned at 0,0
+   put round(tY - tHalfH) into tV
+   if tH is not sCamLastH then
+      set the hScroll of sCamGroup to tH
+      put tH into sCamLastH
+   end if
+   if tV is not sCamLastV then
+      set the vScroll of sCamGroup to tV
+      put tV into sCamLastV
+   end if
+   put tH into sCamCurH
+   put tV into sCamCurV
+end b2kCamApply
+
+command b2kSoundLoad pName, pPath
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tClip, tCount
+   if pName is empty then exit b2kSoundLoad
+   if there is no file pPath then
+      put "no such file: " & pPath into sSndNote
+      exit b2kSoundLoad
+   end if
+   put "b2ksnd_" & pName into tClip
+   try
+      if there is an audioClip tClip then delete audioClip tClip
+      put the number of audioClips of this stack into tCount
+      import audioClip from file pPath
+      if the number of audioClips of this stack > tCount then
+         set the name of audioClip (tCount + 1) of this stack to tClip
+         put tClip into sSndClip[pName]
+      end if
+   catch tErr
+      put "import failed: " & tErr into sSndNote
+   end try
+end b2kSoundLoad
+
+command b2kToneMake pName, pFreqs, pMsPerNote, pVolPct, pShape
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tClip, tData, tPath, tCount, tF
+   if pName is empty then exit b2kToneMake
+   put "b2ksnd_" & pName into tClip
+   put b2kClamp(pMsPerNote, 5, 2000) into pMsPerNote
+   put b2kClamp(b2kNumberOr(pVolPct, 60), 0, 100) into pVolPct
+   put empty into tData
+   set the itemDelimiter to comma
+   repeat for each item tF in pFreqs
+      put b2kToneBytes(b2kNumberOr(word 1 of tF, 440), pMsPerNote, pVolPct, pShape) after tData
+   end repeat
+   if tData is empty then exit b2kToneMake
+   put specialFolderPath("temporary") & "/b2ktone_" & the milliseconds & "_" & random(99999) & ".wav" into tPath
+   put b2kWavWrap(tData) into URL ("binfile:" & tPath)
+   try
+      if there is an audioClip tClip then delete audioClip tClip
+      put the number of audioClips of this stack into tCount
+      import audioClip from file tPath
+      if the number of audioClips of this stack > tCount then
+         set the name of audioClip (tCount + 1) of this stack to tClip
+         put tClip into sSndClip[pName]
+      end if
+   catch tErr
+      put "import failed: " & tErr into sSndNote
+   end try
+   try
+      delete file tPath
+   catch tErr
+   end try
+end b2kToneMake
+
+function b2kToneBytes pFreq, pMs, pVolPct, pShape
+   local tRate, tN, tOut, i, tPhase, tStep, tAmp, tEnv, tS
+   put 22050 into tRate
+   put round(tRate * pMs / 1000) into tN
+   if tN < 1 then return empty
+   put pVolPct * 1.27 into tAmp   -- 0-100 -> 0-127 sample amplitude
+   put pFreq / tRate into tStep
+   put 0 into tPhase
+   put empty into tOut
+   repeat with i = 0 to tN - 1
+      put tAmp * (1 - i / tN) into tEnv
+      if pFreq <= 0 then
+         put 0 into tS   -- a rest
+      else
+         if pShape is "sine" then
+            put tEnv * sin(tPhase * 2 * kPI) into tS
+         else
+            if tPhase mod 1 < 0.5 then
+               put tEnv into tS
+            else
+               put 0 - tEnv into tS
+            end if
+         end if
+      end if
+      put numToByte(round(128 + tS)) after tOut
+      add tStep to tPhase
+   end repeat
+   return tOut
+end b2kToneBytes
+
+function b2kWavWrap pData
+   local tLen
+   put the number of bytes in pData into tLen
+   return "RIFF" & b2kLE32(36 + tLen) & "WAVE" & "fmt " & b2kLE32(16) \
+         & b2kLE16(1) & b2kLE16(1) & b2kLE32(22050) & b2kLE32(22050) \
+         & b2kLE16(1) & b2kLE16(8) & "data" & b2kLE32(tLen) & pData
+end b2kWavWrap
+
+function b2kLE16 pN
+   return numToByte(pN mod 256) & numToByte(pN div 256 mod 256)
+end b2kLE16
+
+function b2kLE32 pN
+   return numToByte(pN mod 256) & numToByte(pN div 256 mod 256) & numToByte(pN div 65536 mod 256) & numToByte(pN div 16777216 mod 256)
+end b2kLE32
+
+command b2kSound pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tClip
+   if sSndMute is true or sSndDead is true then exit b2kSound
+   put sSndClip[pName] into tClip
+   if tClip is empty then exit b2kSound
+   try
+      play audioClip tClip
+   catch tErr
+      put true into sSndDead   -- this engine can't play: silence, no spam
+      put "play failed: " & tErr into sSndNote
+   end try
+end b2kSound
+
+command b2kSoundLoop pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tClip
+   if sSndMute is true or sSndDead is true then exit b2kSoundLoop
+   put sSndClip[pName] into tClip
+   if tClip is empty then exit b2kSoundLoop
+   try
+      play audioClip tClip looping
+   catch tErr
+      put true into sSndDead
+      put "play failed: " & tErr into sSndNote
+   end try
+end b2kSoundLoop
+
+command b2kSoundStop
+   try
+      play stop
+   catch tErr
+   end try
+end b2kSoundStop
+
+command b2kSoundMute pFlag
+   put (pFlag is true) into sSndMute
+   if sSndMute then b2kSoundStop
+end b2kSoundMute
+
+function b2kSoundMuted
+   return (sSndMute is true)
+end b2kSoundMuted
+
+command b2kSoundVolume pPct
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   try
+      set the playLoudness to round(b2kClamp(pPct, 0, 100))
+   catch tErr
+      put "volume failed: " & tErr into sSndNote
+   end try
+end b2kSoundVolume
+
+function b2kSoundIsLoaded pName
+   return (sSndClip[pName] is not empty)
+end b2kSoundIsLoaded
+
+function b2kSoundStatus
+   return sSndNote
+end b2kSoundStatus
+
+command b2kSoundsWipe
+   local i, tName
+   try
+      play stop
+   catch tErr
+   end try
+   repeat with i = the number of audioClips of this stack down to 1
+      put the short name of audioClip i of this stack into tName
+      if char 1 to 7 of tName is "b2ksnd_" then
+         try
+            delete audioClip i of this stack
+         catch tErr
+         end try
+      end if
+   end repeat
+   put empty into sSndClip
+   put false into sSndDead
+   put empty into sSndNote
+end b2kSoundsWipe
+
+on b2kStep pGen
+   local tNow, tElapsed, tFixed, tNext
+   if not sRunning then exit b2kStep
+   if pGen is not sGen then exit b2kStep
+   if sPaused is not true then
+      put the milliseconds into tNow
+      put (tNow - sLast) / 1000 into tElapsed
+      put tNow into sLast
+      add tElapsed to sAccum
+      if sAccum > 0.20 then put 0.20 into sAccum
+      put tElapsed * 1000 into sFrameMS
+      put 1 / 60 into tFixed
+      -- events are HARVESTED per fixed step into frame buffers: Box2D
+      -- only exposes the LAST step's events, so a 2-step frame would
+      -- lose the first step's pickups/stomps, and a 0-step frame would
+      -- re-read (duplicate!) the previous step's. The buffers make the
+      -- frame's event view exact either way.
+      b2kEventsReset
+      repeat while sAccum >= tFixed
+         b2Step sWorld, tFixed, sSub
+         b2kHarvestEvents
+         subtract tFixed from sAccum
+      end repeat
+      if sDragging then
+         -- camera-aware: b2kCamMouseX/Y fall back to the raw mouse when off
+         b2MouseSetTarget sDragJoint, b2kToWorldX(b2kCamMouseX()), b2kToWorldY(b2kCamMouseY())
+      end if
+      lock screen
+      try
+         b2kSyncBodies         -- lock-free; this frame's single lock is held here
+         b2kInputTick          -- keyboard sample, so b2kFrame sees this frame's edges
+         b2kPlayerTick         -- reads the fresh edges, steers, picks the anim
+         b2kSpritesTick        -- bound sprites follow bodies; animations advance
+         b2kCamTick            -- viewport chases its target over the fresh locs
+         b2kDispatchContacts
+         b2kDispatchSensors
+         if sFrameObj is not empty then dispatch "b2kFrame" to sFrameObj
+      catch tErr               -- a user handler error must never freeze the screen
+      end try
+      unlock screen
+   end if
+   -- Pace the next step against what this frame consumed instead of a flat
+   -- 16 ms scheduled AFTER the work: the flat delay made the real rate
+   -- "timer cadence (~16.5 ms) plus frame cost", measured at ~50 fps under
+   -- load in the Phase 0 spike. Clamp to 1..16 so a heavy frame reschedules
+   -- immediately and an idle one never busy-loops.
+   -- Reschedule with pGen (OUR generation), never the live sGen: if a user
+   -- handler inside this frame tore the world down and restarted it (a
+   -- level change from a sensor event), sGen is already the NEW loop's --
+   -- rescheduling with it would clone the loop and double-step forever.
+   -- With pGen, this stale instance's next tick fails the guard and dies.
+   if sPaused is true then
+      send ("b2kStep " & pGen) to me in 16 milliseconds
+   else
+      put 16 - (the milliseconds - tNow) into tNext
+      if tNext < 1 then put 1 into tNext
+      if tNext > 16 then put 16 into tNext
+      send ("b2kStep " & pGen) to me in tNext milliseconds
+   end if
+end b2kStep
+
+command b2kStepOnce
+   if not sRunning then exit b2kStepOnce
+   b2kEventsReset
+   b2Step sWorld, (1 / 60), sSub
+   b2kHarvestEvents
+   put 1000 / 60 into sFrameMS   -- a hand-stepped frame is one fixed step long
+   if sDragging then
+      b2MouseSetTarget sDragJoint, b2kToWorldX(b2kCamMouseX()), b2kToWorldY(b2kCamMouseY())
+   end if
+   lock screen
+   try
+      b2kSyncBodies
+      b2kInputTick
+      b2kPlayerTick
+      b2kSpritesTick
+      b2kCamTick
+      b2kDispatchContacts
+      b2kDispatchSensors
+      if sFrameObj is not empty then dispatch "b2kFrame" to sFrameObj
+   catch tErr
+   end try
+   unlock screen
+end b2kStepOnce
+
+command b2kSync
+   lock screen
+   try
+      b2kSyncAllBodies
+   catch tErr
+   end try
+   unlock screen
+end b2kSync
+
+command b2kSyncAll
+   lock screen
+   try
+      b2kSyncAllBodies
+   catch tErr
+   end try
+   unlock screen
+end b2kSyncAll
+
+command b2kSyncBodies
+   if sNeedFullSync is true then
+      b2kSyncAllBodies
+      put false into sNeedFullSync
+      exit b2kSyncBodies
+   end if
+
+   local tN, i, tBody, tRef, tWx, tWy, tWa, tDead, tFell
+   put empty into tDead
+   put empty into tFell
+   put b2BodiesUpdate(sWorld) into tN
+   if tN <= 0 then exit b2kSyncBodies
+
+   repeat with i = 1 to tN
+      put b2BodyMoveBody(i) into tBody
+      if tBody <= 0 then next repeat
+      put sCtrl[tBody] into tRef
+      if tRef is empty then next repeat
+      if sStatic[tRef] is true then next repeat
+      try
+         put b2BodyMoveX(i) into tWx
+         put b2BodyMoveY(i) into tWy
+         -- the kill floor: a mover that fell below the line is queued for
+         -- removal instead of drawn (the player is the game's to respawn).
+         -- Zero extra scanning: falling bodies are, by definition, moving.
+         if sKillY is not empty and tRef is not sPlayRef and b2kToScreenY(tWy) > sKillY then
+            put tRef & cr after tFell
+            next repeat
+         end if
+         if sRender[tRef] is "poly" or sRender[tRef] is "image" then
+            put b2BodyMoveAngle(i) into tWa
+         else
+            put 0 into tWa
+         end if
+         b2kDrawBody tRef, tWx, tWy, tWa
+      catch tErr
+         put tRef & cr after tDead   -- control vanished; clean up below
+      end try
+   end repeat
+   b2kPruneDeadRefs tDead
+   repeat for each line tRef in tFell
+      if tRef is empty then next repeat
+      if sFrameObj is not empty then dispatch "b2kFell" to sFrameObj with tRef
+      b2kRemove tRef
+   end repeat
+end b2kSyncBodies
+
+command b2kSyncAllBodies
+   local tRef, tBody, tWx, tWy, tWa, tDead
+   put empty into tDead
+   repeat for each key tRef in sBody
+      if sStatic[tRef] is true then next repeat
+      put sBody[tRef] into tBody
+      if b2BodyIsAwake(tBody) is false then next repeat   -- asleep = at rest, skip redraw
+      try
+         put b2BodyX(tBody) into tWx
+         put b2BodyY(tBody) into tWy
+         if sRender[tRef] is "poly" or sRender[tRef] is "image" then
+            put b2BodyAngle(tBody) into tWa
+         else
+            put 0 into tWa
+         end if
+         b2kDrawBody tRef, tWx, tWy, tWa
+      catch tErr
+         put tRef & cr after tDead   -- control vanished; clean up below
+      end try
+   end repeat
+   b2kPruneDeadRefs tDead
+end b2kSyncAllBodies
+
+command b2kPruneDeadRefs pDead
+   local d, tBody
+   repeat for each line d in pDead
+      if d is not empty then
+         put sBody[d] into tBody
+         if tBody is not empty then
+            b2DestroyBody tBody
+            delete variable sCtrl[tBody]
+         end if
+         -- drop every parallel entry, exactly like b2kRemove, so a vanished
+         -- control leaves no stale state behind
+         delete variable sBody[d]
+         delete variable sShapeH[d]
+         delete variable sRender[d]
+         delete variable sVerts[d]
+         delete variable sRad[d]
+         delete variable sImgAngle[d]
+         delete variable sStatic[d]
+         delete variable sSpawned[d]
+         delete variable sSensor[d]
+         delete variable sDrawKey[d]
+         delete variable sInCam[d]
+      end if
+   end repeat
+end b2kPruneDeadRefs
+
+command b2kDrawBody pRef, pWx, pWy, pWa
+   local tSx, tSy, tKey
+   switch sRender[pRef]
+      case "poly"
+         b2kDrawPoly pRef, pWx, pWy, pWa
+         break
+      case "ball"
+         b2kDrawBall pRef, pWx, pWy
+         break
+      case "image"
+         b2kDrawImage pRef, pWx, pWy, pWa
+         break
+      default
+         put round(b2kToScreenX(pWx)) into tSx
+         put round(b2kToScreenY(pWy)) into tSy
+         put tSx & "," & tSy into tKey
+         if sDrawKey[pRef] is tKey then exit b2kDrawBody
+         set the loc of pRef to (tSx - b2kCamShiftX(pRef)) & "," & (tSy - b2kCamShiftY(pRef))
+         put tKey into sDrawKey[pRef]
+   end switch
+end b2kDrawBody
+
+command b2kDrawPoly pRef, pWx, pWy, pWa
+   local c, s, p, pt, tPts, tFirst, tKey
+   put round(b2kToScreenX(pWx)) & "," & round(b2kToScreenY(pWy)) & "," & round(pWa * 1800 / kPI) into tKey
+   if sDrawKey[pRef] is tKey then exit b2kDrawPoly
+   put cos(pWa) into c
+   put sin(pWa) into s
+   put empty into tPts
+   put empty into tFirst
+   local tOffX, tOffY
+   put b2kCamShiftX(pRef) into tOffX
+   put b2kCamShiftY(pRef) into tOffY
+   repeat for each line p in sVerts[pRef]
+      put b2kCorner(pWx, pWy, item 1 of p, item 2 of p, c, s) into pt
+      if tOffX is not 0 or tOffY is not 0 then
+         put ((item 1 of pt) - tOffX) & "," & ((item 2 of pt) - tOffY) into pt
+      end if
+      if tFirst is empty then put pt into tFirst
+      put pt & cr after tPts
+   end repeat
+   put tFirst after tPts
+   set the points of pRef to tPts
+   put tKey into sDrawKey[pRef]
+end b2kDrawPoly
+
+command b2kDrawBall pRef, pWx, pWy
+   local tRp, tSx, tSy, tKey
+   put sRad[pRef] * sScale into tRp
+   put round(b2kToScreenX(pWx)) into tSx
+   put round(b2kToScreenY(pWy)) into tSy
+   put tSx & "," & tSy & "," & round(tRp) into tKey
+   if sDrawKey[pRef] is tKey then exit b2kDrawBall
+   subtract b2kCamShiftX(pRef) from tSx
+   subtract b2kCamShiftY(pRef) from tSy
+   set the rect of pRef to round(tSx - tRp), round(tSy - tRp), round(tSx + tRp), round(tSy + tRp)
+   put tKey into sDrawKey[pRef]
+end b2kDrawBall
+
+command b2kDrawImage pRef, pWx, pWy, pWa
+   local tDeg, tSx, tSy, tKey
+   put ((round(pWa * 180 / kPI) mod 360) + 360) mod 360 into tDeg
+   put round(b2kToScreenX(pWx)) into tSx
+   put round(b2kToScreenY(pWy)) into tSy
+   put tSx & "," & tSy & "," & tDeg into tKey
+   if sDrawKey[pRef] is tKey then exit b2kDrawImage
+   if sImgAngle[pRef] is not tDeg then
+      set the angle of pRef to tDeg
+      put tDeg into sImgAngle[pRef]
+   end if
+   set the loc of pRef to (tSx - b2kCamShiftX(pRef)) & "," & (tSy - b2kCamShiftY(pRef))
+   put tKey into sDrawKey[pRef]
+end b2kDrawImage
+
+function b2kCorner pWx, pWy, pLx, pLy, c, s
+   local rx, ry
+   put pLx * c - pLy * s into rx
+   put pLx * s + pLy * c into ry
+   return round(b2kToScreenX(pWx + rx)) & "," & round(b2kToScreenY(pWy + ry))
+end b2kCorner
+
+function b2kCapsuleVerts pL, pR, pHoriz
+   local tV, i, a, lx, ly
+   local n
+   put 8 into n
+   put empty into tV
+   repeat with i = 0 to n               -- right cap: -90 -> +90 degrees
+      put (-90 + 180 * i / n) * kPI / 180 into a
+      put pL + pR * cos(a) into lx
+      put pR * sin(a) into ly
+      if pHoriz then put lx & "," & ly & cr after tV
+      else put ly & "," & lx & cr after tV
+   end repeat
+   repeat with i = 0 to n               -- left cap: +90 -> +270 degrees
+      put (90 + 180 * i / n) * kPI / 180 into a
+      put - pL + pR * cos(a) into lx
+      put pR * sin(a) into ly
+      if pHoriz then put lx & "," & ly & cr after tV
+      else put ly & "," & lx & cr after tV
+   end repeat
+   return tV
+end b2kCapsuleVerts
+
+command b2kEventsReset
+   put 0 into sEvtCN
+   put 0 into sEvtEN
+   put 0 into sEvtSN
+   put 0 into sEvtXN
+end b2kEventsReset
+
+command b2kHarvestEvents
+   local tN, i
+   put b2ContactsUpdate(sWorld) into tN
+   repeat with i = 1 to tN
+      add 1 to sEvtCN
+      put b2ContactBeginBodyA(i) into sEvtCA[sEvtCN]
+      put b2ContactBeginBodyB(i) into sEvtCB[sEvtCN]
+   end repeat
+   repeat with i = 1 to b2ContactEndCount()
+      add 1 to sEvtEN
+      put b2ContactEndBodyA(i) into sEvtEA[sEvtEN]
+      put b2ContactEndBodyB(i) into sEvtEB[sEvtEN]
+   end repeat
+   put b2SensorsUpdate(sWorld) into tN
+   repeat with i = 1 to tN
+      add 1 to sEvtSN
+      put b2ShapeBody(b2SensorBeginSensorShape(i)) into sEvtSS[sEvtSN]
+      put b2ShapeBody(b2SensorBeginVisitorShape(i)) into sEvtSV[sEvtSN]
+   end repeat
+   repeat with i = 1 to b2SensorEndCount()
+      add 1 to sEvtXN
+      put b2ShapeBody(b2SensorEndSensorShape(i)) into sEvtXS[sEvtXN]
+      put b2ShapeBody(b2SensorEndVisitorShape(i)) into sEvtXV[sEvtXN]
+   end repeat
+end b2kHarvestEvents
+
+command b2kDispatchContacts
+   local i, tA, tB
+   if sContactObj is empty then exit b2kDispatchContacts
+   repeat with i = 1 to sEvtCN
+      put sCtrl[sEvtCA[i]] into tA
+      put sCtrl[sEvtCB[i]] into tB
+      dispatch "b2kContact" to sContactObj with tA, tB
+   end repeat
+   repeat with i = 1 to sEvtEN
+      put sCtrl[sEvtEA[i]] into tA
+      put sCtrl[sEvtEB[i]] into tB
+      dispatch "b2kEndContact" to sContactObj with tA, tB
+   end repeat
+end b2kDispatchContacts
+
+command b2kDispatchSensors
+   local i, tS, tV
+   if sContactObj is empty then exit b2kDispatchSensors
+   repeat with i = 1 to sEvtSN
+      put sCtrl[sEvtSS[i]] into tS
+      put sCtrl[sEvtSV[i]] into tV
+      dispatch "b2kSensorEnter" to sContactObj with tS, tV
+   end repeat
+   repeat with i = 1 to sEvtXN
+      put sCtrl[sEvtXS[i]] into tS
+      put sCtrl[sEvtXV[i]] into tV
+      dispatch "b2kSensorExit" to sContactObj with tS, tV
+   end repeat
+end b2kDispatchSensors
+-- <<< GENERATED EMBED: box2dxt-kit script layer <<< --
 
 
 -- >>> GENERATED EMBED: riptide script layer >>> --
@@ -12387,6 +17183,2139 @@ function dc1stRepeatByte pCode, pCount
    end repeat
    return byte 1 to pCount of dc1tOut
 end dc1stRepeatByte
+
+
+-- ==========================================================================
+-- Box2Dxt: the full b2k Kit self-test
+--
+-- 43 test handlers driving the REAL Kit deterministically: the world started
+-- PAUSED and hand-stepped one fixed 1/60 tick at a time, the keyboard
+-- replaced by b2kInputInject, and every assertion a lesson this member
+-- learned on real hardware - fixed-step determinism, frame-exact contact and
+-- sensor events, the chain ghost rule, one-way platforms, presence polling
+-- through sleeping bodies, the player controller's feel contract (coyote,
+-- jump buffer, drop-through, ladders, duck, swim, double jump, wall jump,
+-- dash, moving-platform carry), sprites and sheets, tones, camera, queries,
+-- joints and teardown hygiene. It builds and destroys its own graphics on
+-- this card, wipes them, and tears the world down before returning.
+--
+-- GENERATED from box2dxt/examples/box2dxt-selftest.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild, or the next build will overwrite you. Every name below is
+-- prefixed `b21` so this harness cannot collide with, or be
+-- perturbed by, any other member's copy of the same scaffolding.
+-- ==========================================================================
+
+command b21stRunAll
+   local b21tProbeErr
+   if b21gRunning is true then exit b21stRunAll
+   put true into b21gRunning
+   put empty into b21gRep
+   put 0 into b21gPass
+   put 0 into b21gFail
+   -- Probe the native library FIRST, guarded: every b2*/b2k* call below needs
+   -- box2dxt.{so,dll,dylib} mapped, and an absent library throws. Without this
+   -- guard the whole harness died with a raw error the moment b2Version ran;
+   -- now a missing library is a clean, honest skip (the family probe pattern,
+   -- and the prerequisite for ever folding this harness into the suite paste,
+   -- where it must run on machines that do not have box2dxt installed).
+   try
+      b2kEnsureNativeLib   -- map box2dxt.{so,dll,dylib} beside this stack
+      get b2Version()
+   catch b21tProbeErr
+      b21stOut "Box2Dxt is not installed (org.openxtalk.box2dxt) - install the"
+      b21stOut "extension and reopen this stack. Nothing was tested."
+      b21stOut "  (" & b21tProbeErr & ")"
+      b21stPaintReport
+      put false into b21gRunning
+      exit b21stRunAll
+   end try
+   b21stOut "Box2Dxt Kit self-test v" & b21kStHarnessV & " - " & the long date && the time
+   b21stOut "engine ABI " & b2Version() & "   (every test builds its own world)"
+   b21stRun "b21stTestWorld"
+   b21stRun "b21stTestEvents"
+   b21stRun "b21stTestGhostRule"
+   b21stRun "b21stTestOneWay"
+   b21stRun "b21stTestPresence"
+   b21stRun "b21stTestKillFloor"
+   b21stRun "b21stTestInput"
+   b21stRun "b21stTestPlayerRun"
+   b21stRun "b21stTestPlayerJumps"
+   b21stRun "b21stTestCoyoteBuffer"
+   b21stRun "b21stTestSprites"
+   b21stRun "b21stTestSheetExtras"
+   b21stRun "b21stTestSheetPersist"
+   b21stRun "b21stTestSounds"
+   b21stRun "b21stTestCamera"
+   b21stRun "b21stTestCamScrolledWrite"
+   b21stRun "b21stTestEngineContracts"
+   b21stRun "b21stTestLoaderMapping"
+   b21stRun "b21stTestMaterialsJoints"
+   b21stRun "b21stTestFiltering"
+   b21stRun "b21stTestQueries"
+   b21stRun "b21stTestDoorClears"
+   b21stRun "b21stTestPlayerSlopes"
+   b21stRun "b21stTestDropThrough"
+   b21stRun "b21stTestLadderClimb"
+   b21stRun "b21stTestDuck"
+   b21stRun "b21stTestHurtKnockback"
+   b21stRun "b21stTestSwim"
+   b21stRun "b21stTestSwimGrounded"
+   b21stRun "b21stTestSwimClear"
+   b21stRun "b21stTestDoubleJump"
+   b21stRun "b21stTestWallJump"
+   b21stRun "b21stTestDash"
+   b21stRun "b21stTestPlatformCarry"
+   b21stRun "b21stTestDuckReshape"
+   b21stRun "b21stTestPlayerHelpers"
+   b21stRun "b21stTestTeardown"
+   -- the Kit API coverage sections (see the banner below b21stTestTeardown)
+   b21stRun "b21stTestKitHelpers"
+   b21stRun "b21stTestKitInputMap"
+   b21stRun "b21stTestKitAttach"
+   b21stRun "b21stTestKitBodyProps"
+   b21stRun "b21stTestKitForces"
+   b21stRun "b21stTestKitWorldTuning"
+   b21stRun "b21stTestKitJoints"
+   b21stRun "b21stTestKitEventApi"
+   b21stRun "b21stTestKitQueryApi"
+   b21stRun "b21stTestKitCameraApi"
+   b21stRun "b21stTestKitSpriteApi"
+   b21stRun "b21stTestKitSoundApi"
+   b21stRun "b21stTestKitPlayerApi"
+   try
+      b2kInputInjectOff
+      b2kStop
+      b2kTeardown
+      b21stWipe
+   catch b21tErr
+   end try
+   b21stOut "----------------------------------------"
+   if b21gFail is 0 then
+      b21stOut "ALL PASS  (" & b21gPass & " assertions)"
+   else
+      b21stOut "FAILURES: " & b21gFail & "   passes: " & b21gPass
+   end if
+   b21stPaintReport
+   put false into b21gRunning
+end b21stRunAll
+
+function b21stSelfTest
+   b21stRunAll
+   return b21gPass && "passed," && b21gFail && "failed" & cr & \
+         "----------------------------------------" & cr & b21gRep
+end b21stSelfTest
+
+command b21stRun pTest
+   local b21tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   try
+      dispatch pTest to me
+   catch b21tErr
+      add 1 to b21gFail
+      b21stOut "  FAIL  " & pTest & " threw: " & line 1 of b21tErr
+   end try
+end b21stRun
+
+command b21stOut pLine
+   put pLine & cr after b21gRep
+   b21stPaintReport
+end b21stOut
+
+command b21stPaintReport
+   if there is a field "stReport" then
+      set the text of field "stReport" to b21gRep
+      set the scroll of field "stReport" to 100000
+   end if
+end b21stPaintReport
+
+command b21stAssert pName, pCond
+   if pCond is true then
+      add 1 to b21gPass
+      b21stOut "  ok    " & pName
+   else
+      add 1 to b21gFail
+      b21stOut "  FAIL  " & pName
+   end if
+end b21stAssert
+
+command b21stNewWorld pName
+   b2kInputInjectOff
+   b2kSheetPersist false   -- isolate tests: a leaked persist flag must not keep sheets
+   b2kTeardown
+   b21stWipe
+   put 0 into b21gFellCount
+   put 0 into b21gMsgEnters
+   put 0 into b21gMsgContacts
+   b2kSetup
+   b2kFrameTarget the long id of me
+   b2kContactTarget the long id of me
+   b2kStart
+   b2kPause
+   b21stOut pName
+end b21stNewWorld
+
+command b21stStep pN
+   local b21i
+   repeat with b21i = 1 to pN
+      b2kStepOnce
+   end repeat
+end b21stStep
+
+command b21stWipe
+   local b21tAgain, b21i, b21tName
+   put true into b21tAgain
+   repeat while b21tAgain
+      put false into b21tAgain
+      repeat with b21i = 1 to the number of controls of this card
+         put the short name of control b21i of this card into b21tName
+         if char 1 to 3 of b21tName is "st_" or char 1 to 3 of b21tName is "b2k" then
+            delete control b21i of this card
+            put true into b21tAgain
+            exit repeat
+         end if
+      end repeat
+   end repeat
+end b21stWipe
+
+command b21stSlab pName, pL, pT, pR, pB
+   create graphic pName
+   set the style of it to "rectangle"
+   set the rect of it to pL, pT, pR, pB
+   set the filled of it to true
+   set the visible of it to false
+   b2kAddStatic the long id of graphic pName
+end b21stSlab
+
+on b2kFell pCtrl
+   add 1 to b21gFellCount
+end b2kFell
+
+on b2kSensorEnter pSensorCtrl, pVisitorCtrl
+   add 1 to b21gMsgEnters
+end b2kSensorEnter
+
+on b2kContact pA, pB
+   add 1 to b21gMsgContacts
+end b2kContact
+
+function b21stX pCtrl
+   set the itemDelimiter to comma
+   return item 1 of b2kPosition(pCtrl)
+end b21stX
+
+function b21stY pCtrl
+   set the itemDelimiter to comma
+   return item 2 of b2kPosition(pCtrl)
+end b21stY
+
+function b21stVY pCtrl
+   set the itemDelimiter to comma
+   return item 2 of b2kVelocity(pCtrl)
+end b21stVY
+
+function b21stVX pCtrl
+   set the itemDelimiter to comma
+   return item 1 of b2kVelocity(pCtrl)
+end b21stVX
+
+command b21stTestLoaderMapping
+   local b21tErr, b21tOK
+   put true into b21tOK
+   try
+      get the revLibraryMapping["box2dxt"]
+   catch b21tErr
+      put false into b21tOK
+   end try
+   b21stAssert "revLibraryMapping engine hook is available (" & the platform & ")", b21tOK
+end b21stTestLoaderMapping
+
+command b21stTestWorld
+   local b21tRef, b21tY1, b21tVy
+   b21stNewWorld "world & fixed-step determinism"
+   b2kSpawnBall 300, 100, 30
+   put the result into b21tRef
+   b21stAssert "spawn returns a control", (b21tRef is not empty)
+   put b21stY(b21tRef) into b21tY1
+   b21stStep 30
+   b21stAssert "gravity pulls it down", (b21stY(b21tRef) > b21tY1 + 50)
+   -- 30 steps at 1/60 under g=10m/s2, scale 40: vy = 30/60*10*40 = 200
+   put b21stVY(b21tRef) into b21tVy
+   b21stAssert "30 fixed steps = 200 px/s fall speed (190..210 got " & round(b21tVy) & ")", \
+         (b21tVy > 190 and b21tVy < 210)
+   b21stAssert "body count tracks", (b2kBodyCount() is 1)
+end b21stTestWorld
+
+command b21stTestEvents
+   local b21tRef, b21tSens, b21tEnters, b21tExits, b21tDupes, b21i, b21tBegins
+   b21stNewWorld "frame-exact events: one enter, one exit, no duplicates"
+   b21stSlab "st_ground", 100, 500, 700, 540
+   create graphic "st_sens"
+   set the style of it to "rectangle"
+   set the rect of it to 370, 270, 430, 330
+   set the visible of it to false
+   put the long id of graphic "st_sens" into b21tSens
+   b2kAddSensor b21tSens, "box"
+   b2kSpawnBall 400, 150, 30
+   put the result into b21tRef
+   put 0 into b21tEnters
+   put 0 into b21tExits
+   put 0 into b21tDupes
+   put 0 into b21tBegins
+   repeat with b21i = 1 to 150
+      b2kStepOnce
+      add b2kSensorCount() to b21tEnters
+      add b2kSensorExitCount() to b21tExits
+      if b2kSensorCount() > 1 then add 1 to b21tDupes
+      add b2kContactCount() to b21tBegins
+   end repeat
+   b21stAssert "sensor fired exactly one enter (got " & b21tEnters & ")", (b21tEnters is 1)
+   b21stAssert "sensor fired exactly one exit (got " & b21tExits & ")", (b21tExits is 1)
+   b21stAssert "never two enters in a frame", (b21tDupes is 0)
+   b21stAssert "landing produced contact begins", (b21tBegins >= 1)
+   b21stAssert "the MESSAGE path delivered on b2kSensorEnter (got " & b21gMsgEnters & ")", (b21gMsgEnters is 1)
+   b21stAssert "the MESSAGE path delivered on b2kContact", (b21gMsgContacts >= 1)
+   -- resting: 30 more frames must produce NOTHING new (the old 0-step
+   -- duplication bug re-fired the last step's events while idle)
+   put 0 into b21tEnters
+   repeat with b21i = 1 to 30
+      b2kStepOnce
+      add b2kSensorCount() to b21tEnters
+      add b2kSensorExitCount() to b21tEnters
+   end repeat
+   b21stAssert "no events while at rest", (b21tEnters is 0)
+end b21stTestEvents
+
+command b21stTestGhostRule
+   local b21tMid, b21tEnd
+   b21stNewWorld "chain ghost rule: middle collides, end segments do not"
+   -- right-to-left flat chain 600..200 at y 400: solid span = 500..300
+   b2kSmoothGround "600,400" & cr & "500,400" & cr & "300,400" & cr & "200,400"
+   b2kSpawnBall 400, 300, 30
+   put the result into b21tMid
+   b2kSpawnBall 560, 300, 30
+   put the result into b21tEnd
+   b21stStep 90
+   b21stAssert "ball on MIDDLE segment rests on the line (y " & round(b21stY(b21tMid)) & ")", \
+         (b21stY(b21tMid) < 395)
+   b21stAssert "ball on END (ghost) segment falls through (y " & round(b21stY(b21tEnd)) & ")", \
+         (b21stY(b21tEnd) > 450)
+end b21stTestGhostRule
+
+command b21stTestOneWay
+   local b21tRef, b21tMinY, b21i
+   b21stNewWorld "one-way chain: rise through from below, land on top"
+   b2kSmoothGround "600,400" & cr & "500,400" & cr & "300,400" & cr & "200,400"
+   b2kSpawnBall 400, 550, 30
+   put the result into b21tRef
+   -- launch -500 px/s: apex ~238 (clears the 400 line), round trip ~130
+   -- frames at scale-40 gravity (400 px/s2); 240 frames = arc + settle
+   b2kSetVelocity b21tRef, 0, -500
+   put 9999 into b21tMinY
+   repeat with b21i = 1 to 240
+      b2kStepOnce
+      if b21stY(b21tRef) < b21tMinY then put b21stY(b21tRef) into b21tMinY
+   end repeat
+   b21stAssert "passed up through the surface (apex y " & round(b21tMinY) & ")", (b21tMinY < 360)
+   b21stAssert "then landed ON it (rest y " & round(b21stY(b21tRef)) & ")", \
+         (b21stY(b21tRef) < 395 and b21stY(b21tRef) > 360)
+end b21stTestOneWay
+
+command b21stTestPresence
+   local b21tRef, b21i, b21tAsleep
+   b21stNewWorld "presence polling: b2kOverlap sees resting AND sleeping bodies"
+   b21stSlab "st_ground", 100, 500, 700, 540
+   b2kSpawnBox 400, 470, 40, 40
+   put the result into b21tRef
+   b21stStep 60
+   b21stAssert "overlap finds the resting crate", \
+         (b2kOverlap(380, 450, 420, 505) is not empty)
+   b21stAssert "overlapMoving finds it too", \
+         (b2kOverlapMoving(380, 450, 420, 505) is not empty)
+   -- the pressure-plate trap: a region hugging BARE floor must read
+   -- empty through the moving filter (the raw broadphase query sees the
+   -- fattened floor box and may not - that is why plates use Moving)
+   b21stAssert "overlapMoving over bare floor is EMPTY", \
+         (b2kOverlapMoving(550, 480, 600, 502) is empty)
+   -- let it fall asleep (sleep time ~0.5s = 30 steps; allow plenty)
+   put false into b21tAsleep
+   repeat with b21i = 1 to 240
+      b2kStepOnce
+      if b2kIsAwake(b21tRef) is false then
+         put true into b21tAsleep
+         exit repeat
+      end if
+   end repeat
+   b21stAssert "the crate fell asleep", (b21tAsleep is true)
+   b21stAssert "overlapMoving STILL finds it asleep (the pressure-plate guarantee)", \
+         (b2kOverlapMoving(380, 450, 420, 505) is not empty)
+   b21stAssert "empty region reports empty", (b2kOverlap(50, 50, 90, 90) is empty)
+end b21stTestPresence
+
+command b21stTestKillFloor
+   local b21tRef
+   b21stNewWorld "kill floor: fallers are destroyed, b2kFell announces"
+   b2kKillFloor 700
+   b2kSpawnBall 200, 100, 30
+   put the result into b21tRef
+   b21stStep 120
+   b21stAssert "b2kFell was dispatched (got " & b21gFellCount & ")", (b21gFellCount is 1)
+   b21stAssert "the body is gone", (b2kBodyCount() is 0)
+end b21stTestKillFloor
+
+command b21stTestDoorClears
+   local b21tBall, b21tSlab, b21tY
+   b21stNewWorld "door mechanics: disabled/parked statics stop blocking"
+   set the itemDelimiter to comma
+   b21stSlab "st_doorSlab", 180, 400, 320, 440
+   put the long id of graphic "st_doorSlab" into b21tSlab
+   b2kSpawnBall 250, 300, 30
+   put the result into b21tBall
+   b21stStep 90
+   put item 2 of b2kPosition(b21tBall) into b21tY
+   b21stAssert "ball rests ON the slab first (y " & b21tY & ")", (b21tY > 340 and b21tY < 400)
+   b21stAssert "the slab reports enabled", (b2kIsEnabled(b21tSlab) is true)
+   b2kDisable b21tSlab
+   b21stAssert "b2kDisable flips b2kIsEnabled", (b2kIsEnabled(b21tSlab) is false)
+   b2kWake b21tBall   -- a rested ball may be asleep; make the fall deterministic
+   b21stStep 90
+   put item 2 of b2kPosition(b21tBall) into b21tY
+   b21stAssert "ball FALLS THROUGH the disabled slab (y " & b21tY & ")", (b21tY > 440)
+   -- barrel two: parking the (re-enabled) slab far away must also clear
+   b2kEnable b21tSlab
+   b2kSpawnBall 250, 300, 30
+   put the result into b21tBall
+   b21stStep 90
+   put item 2 of b2kPosition(b21tBall) into b21tY
+   b21stAssert "second ball rests on the re-enabled slab (y " & b21tY & ")", (b21tY > 340 and b21tY < 400)
+   b2kMoveTo b21tSlab, 250, -2000
+   b2kWake b21tBall
+   b21stStep 90
+   put item 2 of b2kPosition(b21tBall) into b21tY
+   b21stAssert "ball falls once the slab is PARKED off-world (y " & b21tY & ")", (b21tY > 440)
+end b21stTestDoorClears
+
+command b21stTestInput
+   b21stNewWorld "input: injected keys, axes, exact edges"
+   b2kInputOn
+   b2kInputInject "left"
+   b21stStep 1
+   b21stAssert "axis moveX = -1 on left", (b2kAxis("moveX") is -1)
+   b2kInputInject "left,right"
+   b21stStep 1
+   b21stAssert "both directions = 0", (b2kAxis("moveX") is 0)
+   b2kInputInject "space"
+   b21stStep 1
+   b21stAssert "jump pressed on its first frame", (b2kActionPressed("jump") is true)
+   b21stStep 1
+   b21stAssert "pressed is an EDGE (false the next frame)", (b2kActionPressed("jump") is false)
+   b21stAssert "...but still down", (b2kActionIsDown("jump") is true)
+   b2kInputInject ""
+   b21stStep 1
+   b21stAssert "released fires on let-go", (b2kActionReleased("jump") is true)
+end b21stTestInput
+
+command b21stTestPlayerRun
+   local b21tRef, b21tX1, b21tDX
+   b21stNewWorld "player: accel-clamped run + facing"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30   -- settle onto the slab
+   b21stAssert "grounded after settling", (b2kPlayerOnGround() is true)
+   put b21stX(b21tRef) into b21tX1
+   b2kInputInject "right"
+   b21stStep 60
+   put b21stX(b21tRef) - b21tX1 into b21tDX
+   b21stAssert "1s of run covers ~moveSpeed px (120..280, got " & round(b21tDX) & ")", \
+         (b21tDX > 120 and b21tDX < 280)
+   b21stAssert "facing right", (b2kPlayerFacing() is 1)
+   b2kInputInject "left"
+   b21stStep 10
+   b21stAssert "facing flips left", (b2kPlayerFacing() is -1)
+   b2kInputInject ""
+   b21stStep 30
+   b21stAssert "idles to a stop", (b2kPlayerState() is "idle")
+end b21stTestPlayerRun
+
+command b21stTestPlayerJumps
+   local b21tRef, b21tHeld, b21tTap, b21i, b21tLands, b21tLandAt
+   b21stNewWorld "player: tap vs held jump + one land tick"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerMake 300, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   -- HELD jump: at scale 40 (g = 400 px/s2) a 460 px/s jump flies ~138
+   -- frames -- run 220 so the arc lands and the land tick can fire
+   b2kInputInject "space"
+   put 9999 into b21tHeld
+   put 0 into b21tLands
+   put empty into b21tLandAt
+   repeat with b21i = 1 to 220
+      b2kStepOnce
+      if b21stY(b21tRef) < b21tHeld then put b21stY(b21tRef) into b21tHeld
+      if b2kPlayerState() is "land" then
+         add 1 to b21tLands
+         put b21i & "@y" & round(b21stY(b21tRef)) & "/vy" & round(b21stVY(b21tRef)) & space after b21tLandAt
+      end if
+   end repeat
+   b2kInputInject ""
+   b21stStep 10
+   b21stAssert "land fired exactly once (got " & b21tLands & ": " & b21tLandAt & ")", (b21tLands is 1)
+   -- settle fully on the ground before the tap phase (no overlap with
+   -- the held arc -- that was this test's own first-run bug)
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b2kPlayerOnGround() is true then exit repeat
+   end repeat
+   b21stStep 20
+   -- TAP jump apex (release after 2 frames -> the jump-cut)
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   put 9999 into b21tTap
+   repeat with b21i = 1 to 220
+      b2kStepOnce
+      if b21stY(b21tRef) < b21tTap then put b21stY(b21tRef) into b21tTap
+   end repeat
+   b21stAssert "tap jump is clearly shorter than held (tap rose " & round(476 - b21tTap) \
+         & "px, held " & round(476 - b21tHeld) & "px)", (476 - b21tTap) < ((476 - b21tHeld) * 0.6)
+end b21stTestPlayerJumps
+
+command b21stTestCoyoteBuffer
+   local b21tRef, b21i, b21tOffAt, b21tJumped
+   b21stNewWorld "player: coyote window + jump buffer"
+   b21stSlab "st_ledge", 50, 500, 350, 560
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   -- COYOTE: run off the ledge, press jump 3 frames after leaving ground
+   b2kInputInject "right"
+   put 0 into b21tOffAt
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b2kPlayerOnGround() is false then
+         put b21i into b21tOffAt
+         exit repeat
+      end if
+   end repeat
+   b21stAssert "walked off the ledge", (b21tOffAt > 0)
+   b21stStep 3   -- 50ms airborne: inside the 90ms coyote window
+   b2kInputInject "right,space"
+   b21stStep 2
+   b21stAssert "coyote jump fired mid-air (vy " & round(b21stVY(b21tRef)) & ")", (b21stVY(b21tRef) < -250)
+   b2kInputInject ""
+   -- BUFFER: fall onto the ledge with jump pressed shortly BEFORE landing
+   b2kMoveTo b21tRef, 200, 300
+   b2kSetVelocity b21tRef, 0, 0
+   b21stStep 1
+   put false into b21tJumped
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b21stY(b21tRef) > 450 and b21i > 3 then exit repeat   -- ~4 frames before
+   end repeat                                         -- touchdown: inside
+                                                      -- the 110ms buffer
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   repeat with b21i = 1 to 20
+      b2kStepOnce
+      if b21stVY(b21tRef) < -250 then
+         put true into b21tJumped
+         exit repeat
+      end if
+   end repeat
+   b21stAssert "buffered jump fired on landing", (b21tJumped is true)
+end b21stTestCoyoteBuffer
+
+command b21stEnsureSheetImage
+   local b21tData, b21i
+   if there is an image "st_sheet" then exit b21stEnsureSheetImage
+   create image "st_sheet"
+   set the width of it to 32
+   set the height of it to 32
+   put empty into b21tData
+   repeat with b21i = 1 to 1024
+      put numToByte(255) & numToByte((b21i * 7) mod 256) & numToByte(80) & numToByte(40) after b21tData
+   end repeat
+   set the imageData of image "st_sheet" to b21tData
+end b21stEnsureSheetImage
+
+command b21stTestSprites
+   local b21tRef, b21tF1
+   b21stNewWorld "sprites: generated sheet, anim advance, flip, remove"
+   b21stEnsureSheetImage
+   b2kSheetFromImage "stsheet", the long id of image "st_sheet", 16, 16
+   b21stAssert "16px grid of a 32px image = 4 frames", (b2kSheetFrames("stsheet") is 4)
+   b2kAnimDef "stsheet", "spin", "1-4", 200, true
+   b2kSpriteNew "stsheet", 1, 120, 120
+   put the result into b21tRef
+   b21stAssert "sprite created", (b21tRef is not empty)
+   b2kSpritePlay b21tRef, "spin"
+   put b2kSpriteFrame(b21tRef) into b21tF1
+   wait 12 milliseconds
+   b21stStep 1
+   b21stAssert "animation advanced on wall-clock time", (b2kSpriteFrame(b21tRef) is not b21tF1)
+   b2kSpriteFlipH b21tRef, true
+   b21stAssert "flip readback", (b2kSpriteFlipped(b21tRef) is true)
+   b2kSpriteRemove b21tRef
+   b21stAssert "removed sprite is forgotten", (b2kSpriteFrame(b21tRef) is empty)
+end b21stTestSprites
+
+command b21stTestSounds
+   b21stNewWorld "sounds: synthesized clip registers and survives teardown"
+   b2kToneMake "sttone", "440", 30, 30
+   b21stAssert "tone registered", (b2kSoundIsLoaded("sttone") is true)
+   b2kTeardown
+   b21stAssert "sounds survive teardown", (b2kSoundIsLoaded("sttone") is true)
+   b2kSoundsWipe
+   b21stAssert "b2kSoundsWipe purges", (b2kSoundIsLoaded("sttone") is false)
+end b21stTestSounds
+
+command b21stTestCamera
+   local b21tRef, b21tPos, b21tShort
+   b21stNewWorld "camera: spawns join the view, goto/pos, off restores"
+   b2kCamOn
+   b21stAssert "camera reports on", (b2kCamIsOn() is true)
+   b2kSpawnBall 400, 300, 30
+   put the result into b21tRef
+   b21stAssert "spawn lives in the viewport group", \
+         (the short name of the owner of b21tRef is "b2kcam_view")
+   b2kCamGoto 400, 300
+   b21stStep 2
+   set the itemDelimiter to comma
+   put b2kCamPos() into b21tPos
+   b21stAssert "cam pos tracks goto (got " & b21tPos & ")", \
+         (abs(item 1 of b21tPos - 400) < 8 and abs(item 2 of b21tPos - 300) < 8)
+   -- a long id EMBEDS the group path, so it goes stale the moment the
+   -- viewport dissolves (the teardown-order lesson) -- re-resolve by name
+   put the short name of b21tRef into b21tShort
+   b2kCamOff
+   b21stAssert "camera reports off", (b2kCamIsOn() is false)
+   b21stAssert "the child survived the ungroup", (there is a graphic b21tShort)
+   b21stAssert "...and returned to the card", \
+         (the short name of the owner of graphic b21tShort is not "b2kcam_view")
+end b21stTestCamera
+
+command b21stTestTeardown
+   b21stNewWorld "teardown hygiene"
+   b2kSpawnBall 300, 200, 30
+   b2kSpawnBox 360, 200, 40, 40
+   b21stStep 5
+   b2kTeardown
+   b21stAssert "no tracked bodies after teardown", (b2kBodyCount() is 0)
+   b2kSetup
+   b2kStart
+   b2kPause
+   b2kSpawnBall 300, 200, 30
+   b21stStep 10
+   b21stAssert "a fresh world works after teardown", (b2kBodyCount() is 1)
+end b21stTestTeardown
+
+command b21stTestSheetExtras
+   local b21tRef, b21tIc1, b21tIc2
+   b21stNewWorld "sheets: scale, margin/spacing grids, manual regions, mirrors"
+   b21stEnsureSheetImage
+   b2kSheetFromImage "stg1", the long id of image "st_sheet", 16, 16
+   b2kSheetScale "stg1", 2
+   b21stAssert "scaled frame size doubles", (b2kSheetFrameSize("stg1", 1) is "32,32")
+   b2kSpriteNew "stg1", 1, 100, 100
+   put the result into b21tRef
+   b21stAssert "scaled sprite is frame-sized", (the width of b21tRef is 32)
+   -- margin/spacing grid: (32 - 8 + 4) div (8 + 4) = 2 cols x 2 rows
+   b2kSheetFromImage "stg2", the long id of image "st_sheet", 8, 8, 0, 4, 4
+   b21stAssert "margin+spacing grid counts 4 frames", (b2kSheetFrames("stg2") is 4)
+   -- no grid + manual region (the no-XML packed-sheet path)
+   b2kSheetFromImage "stg3", the long id of image "st_sheet", 0, 0
+   b21stAssert "frame size 0 = no grid", (b2kSheetFrames("stg3") is 0)
+   b2kSheetAddFrame "stg3", "face", 4, 4, 10, 12
+   b21stAssert "manual frame registers", (b2kSheetHasFrame("stg3", "face") is true)
+   b2kSpriteNew "stg3", "face", 200, 100
+   put the result into b21tRef
+   b21stAssert "manual frame slices at its size", (the width of b21tRef is 10 and the height of b21tRef is 12)
+   -- the mirror is a real second image, swapped in and back
+   b2kSpriteNew "stg1", 1, 300, 100
+   put the result into b21tRef
+   put the icon of b21tRef into b21tIc1
+   b2kSpriteFlipH b21tRef, true
+   put the icon of b21tRef into b21tIc2
+   b21stAssert "flip swaps to a mirrored frame image", (b21tIc2 is not b21tIc1 and b21tIc2 > 0)
+   b2kSpriteFlipH b21tRef, false
+   b21stAssert "flip back restores the original", (the icon of b21tRef is b21tIc1)
+end b21stTestSheetExtras
+
+command b21stTestCamScrolledWrite
+   local b21tRef, b21tScroll, b21tWorld
+   b21stNewWorld "camera: world-coordinate writes are scroll-compensated"
+   b2kCamOn
+   b2kCamBounds 0, 0, 3000, 640
+   b2kSpawnBox 200, 300, 30, 30
+   put the result into b21tRef
+   b2kSetStatic b21tRef
+   b2kCamGoto 1500, 320
+   b21stStep 3
+   put the hScroll of b2kCamGroup() into b21tScroll
+   b21stAssert "the viewport scrolled (hScroll " & b21tScroll & ")", (b21tScroll > 800)
+   b21stAssert "loc semantics is a known model (" & b2kCamLocSemantics() & ")", \
+         (b2kCamLocSemantics() is "visual" or b2kCamLocSemantics() is "content")
+   b2kSpriteMoveTo b21tRef, 1500, 320
+   set the itemDelimiter to comma
+   if b2kCamLocSemantics() is "visual" then
+      put (item 1 of the loc of b21tRef) + b21tScroll into b21tWorld
+   else
+      put item 1 of the loc of b21tRef into b21tWorld
+   end if
+   b21stAssert "a world-px write lands on the world point (got " & round(b21tWorld) & ")", \
+         (abs(b21tWorld - 1500) < 4)
+end b21stTestCamScrolledWrite
+
+command b21stTestEngineContracts
+   local b21tPath, b21tData, b21i, b21tRef, b21tVol, b21tOwn, b21tErr
+   b21stNewWorld "engine contracts: the behaviours the Kit relies on"
+   b21stAssert "fractional mod (the tone synth)", (4.5 mod 2 is 0.5)
+   b21stAssert "numToByte round-trips", (byteToNum(numToByte(200)) is 200)
+   b21stAssert "b2kLE16 packs 2 bytes", (the number of bytes in b2kLE16(40000) is 2)
+   b21stAssert "b2kLE32 packs 4 bytes", (the number of bytes in b2kLE32(123456789) is 4)
+   b21stAssert "base64 round-trips", (base64Decode(base64Encode("abc123!?")) is "abc123!?")
+   -- the temp-file path the tone synth uses
+   put specialFolderPath("temporary") & "/b2kst_" & the milliseconds & ".bin" into b21tPath
+   put "hello" into URL ("binfile:" & b21tPath)
+   b21stAssert "temp folder writes and reads back", (URL ("binfile:" & b21tPath) is "hello")
+   delete file b21tPath
+   b21stAssert "temp file deletes", (there is no file b21tPath)
+   -- the imageData stride contract the sprite slicer refuses without
+   if there is no image "st_contract" then
+      create image "st_contract"
+      set the width of it to 8
+      set the height of it to 8
+   end if
+   put empty into b21tData
+   repeat with b21i = 1 to 256
+      put numToByte(120) after b21tData
+   end repeat
+   set the imageData of image "st_contract" to b21tData
+   b21stAssert "imageData stride is w*h*4", \
+         (the number of bytes in the imageData of image "st_contract" is 256)
+   b21stAssert "alphaData stride is w*h", \
+         (the number of bytes in the alphaData of image "st_contract" is 64)
+   -- the chunk semantics the level DSL leans on
+   b21stAssert "word 2 to -1 keeps the raw tail", \
+         (word 2 to -1 of "text 10,20,hello there" is "10,20,hello there")
+   set the wholeMatches to true
+   b21stAssert "wholeMatches lineOffset matches exactly", \
+         (lineOffset("bb", "a" & cr & "bb" & cr & "bbb") is 2)
+   -- a long id re-resolves after a relayer (the b2kCamAdopt path)
+   b2kCamOn
+   create graphic "st_reparent"
+   put the long id of graphic "st_reparent" into b21tRef
+   b2kCamAdopt b21tRef
+   -- self-diagnosing: report WHAT we saw -- the owner's name, or the
+   -- exact error if resolving the stale pre-relayer id threw. (Long ids
+   -- are ID-based, so we check the owner's NAME, not the id string.)
+   put empty into b21tErr
+   put empty into b21tOwn
+   try
+      put the short name of the owner of b21tRef into b21tOwn
+   catch b21tErr
+   end try
+   if b21tErr is empty then
+      b21stAssert "stale long id re-resolves into the group (owner: " & b21tOwn & ")", \
+            (b21tOwn is "b2kcam_view")
+   else
+      b21stAssert "stale long id re-resolves into the group (read threw: " & line 1 of b21tErr & ")", false
+   end if
+   set the uStProbe of b21tRef to true
+   b21stAssert "custom-property booleans round-trip", (the uStProbe of b21tRef is true)
+   -- the engine-global volume the sound module wraps
+   put the playLoudness into b21tVol
+   b2kSoundVolume 73
+   b21stAssert "playLoudness readback", (the playLoudness is 73)
+   b2kSoundVolume b21tVol
+end b21stTestEngineContracts
+
+command b21stTestMaterialsJoints
+   local b21tRef, b21tB, b21tJ, b21tMin, b21i, b21tM1, b21tPosA, b21tPosB, b21tDist
+   b21stNewWorld "materials + joints: bounce, mass, hinge motor, rope limit"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   -- restitution: a 0.8 ball dropped 145px must rebound well off the floor
+   b2kSpawnBall 200, 340, 30
+   put the result into b21tRef
+   b2kSetBounce b21tRef, 0.8
+   b21stStep 60   -- past the first impact (~51 frames)
+   put 9999 into b21tMin
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b21stY(b21tRef) < b21tMin then put b21stY(b21tRef) into b21tMin
+   end repeat
+   b21stAssert "a 0.8 ball rebounds (post-impact apex y " & round(b21tMin) & ")", (b21tMin < 455)
+   -- density drives mass (the shim updates body mass)
+   b2kSpawnBox 600, 470, 40, 40
+   put the result into b21tB
+   put b2kMass(b21tB) into b21tM1
+   b2kSetDensity b21tB, 5
+   b21stAssert "density x5 raises the mass", (b2kMass(b21tB) > b21tM1 * 2)
+   -- a motorised hinge spins its arm
+   b2kSpawnBox 400, 300, 80, 16
+   put the result into b21tRef
+   b2kHinge b21tRef, empty, 400, 300
+   put the result into b21tJ
+   b21stAssert "hinge pin returns a joint", (b21tJ > 0)
+   b2kMotor b21tJ, 180, 100000
+   b21stStep 60
+   b21stAssert "the motor spins the arm (got " & round(b2kSpinRate(b21tRef)) & " deg/s)", \
+         (abs(b2kSpinRate(b21tRef)) > 60)
+   -- a rope caps the separation of a DANGLING ball (anchor is static)
+   b2kSpawnBall 700, 200, 24
+   put the result into b21tRef
+   b2kSetStatic b21tRef
+   b2kSpawnBall 700, 250, 24
+   put the result into b21tB
+   b2kRope b21tRef, b21tB, 80
+   b21stStep 90
+   set the itemDelimiter to comma
+   put b2kPosition(b21tRef) into b21tPosA
+   put b2kPosition(b21tB) into b21tPosB
+   put sqrt((item 1 of b21tPosA - item 1 of b21tPosB) ^ 2 + (item 2 of b21tPosA - item 2 of b21tPosB) ^ 2) into b21tDist
+   b21stAssert "rope holds its length (got " & round(b21tDist) & "px of 80)", (b21tDist < 112)
+end b21stTestMaterialsJoints
+
+command b21stTestFiltering
+   local b21tA, b21tB, b21tRef
+   b21stNewWorld "filtering: no-collide pairs and NAMED layers"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   -- a no-collide pair: the upper box falls THROUGH its partner
+   b2kSpawnBox 200, 470, 40, 40
+   put the result into b21tA
+   b2kSpawnBox 200, 380, 40, 40
+   put the result into b21tB
+   b2kNoCollide b21tA, b21tB
+   b21stStep 90
+   b21stAssert "no-collide partner falls through (y " & round(b21stY(b21tB)) & ")", (b21stY(b21tB) > 440)
+   -- named layers (the b2kLayerBits path that once ALWAYS threw): a
+   -- ghost-layer ball ignores a solid-layer platform
+   b2kDefineLayer "stGhost"
+   b2kDefineLayer "stSolid"
+   b21stSlab "st_plat", 500, 380, 700, 400
+   b2kSetCategory the long id of graphic "st_plat", "stSolid"
+   b2kSpawnBall 600, 300, 30
+   put the result into b21tRef
+   b2kSetCategory b21tRef, "stGhost"
+   b2kSetMask b21tRef, "stGhost"
+   b21stStep 90
+   b21stAssert "ghost-layer ball passes the solid-layer platform (y " & round(b21stY(b21tRef)) & ")", \
+         (b21stY(b21tRef) > 420)
+end b21stTestFiltering
+
+command b21stTestQueries
+   local b21tRef, b21tHits
+   b21stNewWorld "queries: point, circle, multi-ray"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kSpawnBall 300, 470, 40
+   put the result into b21tRef
+   b21stStep 40
+   b21stAssert "controlAt finds the resting ball", (b2kControlAt(300, b21stY(b21tRef)) is b21tRef)
+   b21stAssert "controlContains inside", (b2kControlContains(b21tRef, 300, b21stY(b21tRef)) is true)
+   b21stAssert "controlContains outside", (b2kControlContains(b21tRef, 600, 100) is false)
+   b21stAssert "overlapCircle finds it", (b2kOverlapCircle(300, b21stY(b21tRef), 50) is not empty)
+   b21stAssert "overlapCircle empty elsewhere", (b2kOverlapCircle(80, 80, 30) is empty)
+   put b2kRayHitAll(300, 300, 300, 590) into b21tHits
+   b21stAssert "rayHitAll sees ball then ground (" & the number of lines of b21tHits & " hits)", \
+         (the number of lines of b21tHits >= 2 and line 1 of b21tHits is b21tRef)
+end b21stTestQueries
+
+command b21stTestPlayerSlopes
+   local b21tRef, b21tX1, b21tY1, b21tTop, b21i
+   b21stNewWorld "player: slope climb, maxFall clamp, kill-floor exemption"
+   b21stSlab "st_ground", 50, 500, 420, 560
+   -- a 21.8-degree ramp (well under maxSlopeDeg 50), ghost-padded:
+   -- colliding = the top landing (820..700) and the slope (700..400)
+   b2kSmoothGround "880,380" & cr & "820,380" & cr & "700,380" & cr & "400,500" & cr & "340,500"
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   put b21stX(b21tRef) into b21tX1
+   put b21stY(b21tRef) into b21tY1
+   put 9999 into b21tTop
+   b2kInputInject "right"
+   repeat with b21i = 1 to 200
+      b2kStepOnce
+      if b21stY(b21tRef) < b21tTop then put b21stY(b21tRef) into b21tTop   -- the peak: he may
+   end repeat                                            -- run off the top
+   b2kInputInject ""
+   b21stAssert "ran up the slope (peak climb " & round(b21tY1 - b21tTop) & "px)", \
+         (b21tY1 - b21tTop > 80)
+   b21stAssert "no slope wall-stick (advanced " & round(b21stX(b21tRef) - b21tX1) & "px)", \
+         (b21stX(b21tRef) - b21tX1 > 300)
+   -- terminal velocity: a long, clear fall never exceeds maxFall (900)
+   b2kMoveTo b21tRef, 950, -2400
+   b2kSetVelocity b21tRef, 0, 0
+   put 0 into b21tY1
+   repeat with b21i = 1 to 150
+      b2kStepOnce
+      if b21stVY(b21tRef) > b21tY1 then put b21stVY(b21tRef) into b21tY1
+   end repeat
+   b21stAssert "maxFall clamps the dive (peak " & round(b21tY1) & " px/s)", \
+         (b21tY1 > 850 and b21tY1 < 920)
+   -- the kill floor must NEVER take the player: arm it, let him fall
+   -- well past the line, and he must still have his body
+   b2kKillFloor 700
+   b21stStep 150
+   b21stAssert "kill floor exempts the player", (b2kBodyOf(b21tRef) is not empty)
+   b2kKillFloor empty
+end b21stTestPlayerSlopes
+
+command b21stTestDropThrough
+   local b21tRef, b21i, b21tDropAt
+   b21stNewWorld "player: drop-through a one-way chain (down+jump)"
+   b21stSlab "st_floor", 50, 560, 800, 620
+   -- the chain platform at y 400 (ghost-padded: collides 200..400)
+   b2kSmoothGround "440,400" & cr & "400,400" & cr & "200,400" & cr & "160,400"
+   b2kPlayerMake 300, 360, 32, 48
+   put the result into b21tRef
+   b21stStep 30   -- settle onto the chain
+   b21stAssert "stands ON the chain first (y " & round(b21stY(b21tRef)) & ", grounded " \
+         & b2kPlayerOnGround() & ")", \
+         (b2kPlayerOnGround() is true and b21stY(b21tRef) < 400)
+   -- down+jump opens the window; the centre must pass below the deck
+   b2kInputInject "down,space"
+   put 0 into b21tDropAt
+   repeat with b21i = 1 to 40
+      b2kStepOnce
+      if b21stY(b21tRef) > 410 then
+         put b21i into b21tDropAt
+         exit repeat
+      end if
+   end repeat
+   b2kInputInject ""
+   b21stAssert "dropped below the chain (centre passed y410 at step " & b21tDropAt & ")", \
+         (b21tDropAt > 0)
+   -- gravity carries him to the catch floor; the mask restores en route
+   repeat with b21i = 1 to 90
+      b2kStepOnce
+      if b2kPlayerOnGround() is true then exit repeat
+   end repeat
+   b21stAssert "landed on the floor below (y " & round(b21stY(b21tRef)) & ")", \
+         (b2kPlayerOnGround() is true and b21stY(b21tRef) > 500)
+   -- the chain must be SOLID again: hop back above it, land ON it
+   b2kMoveTo b21tRef, 300, 340
+   b2kSetVelocity b21tRef, 0, 0
+   repeat with b21i = 1 to 60
+      b2kStepOnce
+      if b2kPlayerOnGround() is true and b21stY(b21tRef) < 410 then exit repeat
+   end repeat
+   b21stAssert "the chain is solid again after the window (rest y " & round(b21stY(b21tRef)) & ")", \
+         (b2kPlayerOnGround() is true and b21stY(b21tRef) > 360 and b21stY(b21tRef) < 400)
+end b21stTestDropThrough
+
+command b21stTestLadderClimb
+   local b21tRef, b21i, b21tY1, b21tY2
+   b21stNewWorld "player: ladder climb in a zone, hang, jump-exit"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerAddLadder 280, 280, 320, 500   -- x 280..320, floor up to y 280
+   b2kPlayerMake 300, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   b21stAssert "starts grounded at the ladder base", (b2kPlayerOnGround() is true)
+   b2kInputInject "up"
+   b21stStep 8
+   b21stAssert "UP in the zone enters the climb state (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "climb")
+   put b21stY(b21tRef) into b21tY1
+   b21stStep 20
+   put b21stY(b21tRef) into b21tY2
+   b21stAssert "climbing rises at ~climbSpeed (" & round(b21tY1 - b21tY2) & "px in 20 steps)", \
+         (b21tY1 - b21tY2 > 30)
+   -- hands off: gravity is parked at 0, the player HANGS
+   b2kInputInject ""
+   b21stStep 12
+   b21stAssert "hangs in place with no input (drift " & round(abs(b21stY(b21tRef) - b21tY2)) & "px)", \
+         (abs(b21stY(b21tRef) - b21tY2) < 12)
+   -- JUMP exits with a normal jump; gravity must come back
+   b2kInputInject "space"
+   b21stStep 3
+   b21stAssert "jump-exit launches upward (vy " & round(b21stVY(b21tRef)) & ")", \
+         (b21stVY(b21tRef) < -250)
+   b21stAssert "...and leaves the climb state (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is not "climb")
+   b2kInputInject ""
+   repeat with b21i = 1 to 200
+      b2kStepOnce
+      if b2kPlayerOnGround() is true then exit repeat
+   end repeat
+   b21stAssert "gravity restored: lands back on the floor (y " & round(b21stY(b21tRef)) & ")", \
+         (b2kPlayerOnGround() is true and b21stY(b21tRef) > 430)
+end b21stTestLadderClimb
+
+command b21stTestSwim
+   local b21tRef, b21i, b21tY1, b21tY2, b21tVwet
+   b21stNewWorld "player: swim a water zone (buoyant sink, stroke, surface-out)"
+   b21stSlab "st_floor", 50, 760, 800, 820   -- a deep catch floor below the pool
+   b2kPlayerAddWater 200, 260, 400, 740    -- a deep pool, surface at y260
+   b2kPlayerMake 300, 150, 32, 48          -- spawn above the surface, in air
+   put the result into b21tRef
+   -- sink into the water; the swim state engages once the centre submerges
+   repeat with b21i = 1 to 90
+      b2kStepOnce
+      if b2kPlayerState() is "swim" then exit repeat
+   end repeat
+   b21stAssert "diving in enters the swim state (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "swim")
+   -- swim DOWN to a safe depth (headroom for the rise tests below)
+   b2kInputInject "down"
+   b21stStep 32
+   b2kInputInject ""
+   -- buoyant: with no input the sink is capped LOW (vs the 900 air terminal)
+   b21stStep 16
+   put b21stVY(b21tRef) into b21tVwet
+   b21stAssert "buoyant: the neutral sink is capped low (vy " & round(b21tVwet) & ")", \
+         (b21tVwet > 0 and b21tVwet < 220)
+   -- a STROKE: a jump press is a repeatable upward burst, no ground needed
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   b21stAssert "a stroke (jump) pushes upward (vy " & round(b21stVY(b21tRef)) & ")", \
+         (b21stVY(b21tRef) < -120)
+   -- hold UP: swims steadily up while submerged
+   put b21stY(b21tRef) into b21tY1
+   b2kInputInject "up"
+   b21stStep 16
+   put b21stY(b21tRef) into b21tY2
+   b2kInputInject ""
+   b21stAssert "holding UP swims up (" & round(b21tY1 - b21tY2) & "px in 16 steps)", \
+         (b21tY1 - b21tY2 > 20)
+   b21stAssert "still swimming while submerged (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "swim")
+   -- out of the water (teleport to dry air): swim ends, gravity returns
+   b2kMoveTo b21tRef, 600, 200
+   b2kSetVelocity b21tRef, 0, 0
+   b21stStep 36
+   b21stAssert "leaving the water leaves the swim state (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is not "swim")
+   b21stAssert "gravity restored out of the water: free-fall beats the swim cap (vy " \
+         & round(b21stVY(b21tRef)) & ")", (b21stVY(b21tRef) > 180)
+end b21stTestSwim
+
+command b21stTestSwimGrounded
+   local b21tRef, b21i, b21tY1
+   b21stNewWorld "player: swims while RESTING on a submerged floor (the pool floor)"
+   b21stSlab "st_pondfloor", 200, 560, 600, 620   -- the floor sits INSIDE the water
+   b2kPlayerAddWater 200, 300, 600, 600         -- water covers the floor top (y560)
+   b2kPlayerMake 400, 200, 32, 48
+   put the result into b21tRef
+   -- buoyant sink all the way to the floor (it never floats up unaided)
+   repeat with b21i = 1 to 160
+      b2kStepOnce
+      if b2kPlayerOnGround() is true then exit repeat
+   end repeat
+   b21stAssert "sinks and rests on the submerged floor (grounded, y " & round(b21stY(b21tRef)) & ")", \
+         (b2kPlayerOnGround() is true)
+   b21stAssert "...yet still SWIMMING (grounded but submerged, got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "swim")
+   -- a stroke lifts it off the floor: underwater there is NO grounded gate
+   put b21stY(b21tRef) into b21tY1
+   b2kInputInject "space"
+   b21stStep 3
+   b2kInputInject ""
+   b21stAssert "a stroke lifts it off the floor (rose " & round(b21tY1 - b21stY(b21tRef)) & "px)", \
+         (b21tY1 - b21stY(b21tRef) > 6)
+end b21stTestSwimGrounded
+
+command b21stTestSwimClear
+   local b21tRef, b21i
+   b21stNewWorld "player: b2kClear wipes the water zone (the level-rebuild path)"
+   b21stSlab "st_floor", 50, 760, 800, 820
+   b2kPlayerAddWater 200, 200, 600, 740
+   b2kPlayerMake 400, 120, 32, 48
+   put the result into b21tRef
+   repeat with b21i = 1 to 90
+      b2kStepOnce
+      if b2kPlayerState() is "swim" then exit repeat
+   end repeat
+   b21stAssert "world 1: the player swims in its water zone (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "swim")
+   -- the rebuild: b2kClear (what mgBuild/pfStartGame call) must clear it
+   b2kClear
+   b21stSlab "st_floor2", 50, 500, 800, 560
+   b2kPlayerMake 400, 200, 32, 48   -- spawned RIGHT where the old pool was
+   put the result into b21tRef
+   b21stStep 40
+   b21stAssert "after b2kClear: the new player does NOT swim (no stale zone, got " \
+         & b2kPlayerState() & ")", (b2kPlayerState() is not "swim")
+   b21stAssert "after b2kClear: gravity is normal -- it falls and lands (y " & round(b21stY(b21tRef)) & ")", \
+         (b2kPlayerOnGround() is true and b21stY(b21tRef) > 400)
+end b21stTestSwimClear
+
+command b21stTestDuck
+   local b21tRef
+   b21stNewWorld "player: duck brakes to a stop; down+jump on solid = no launch"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   b2kInputInject "right"
+   b21stStep 40   -- up to full run speed
+   b21stAssert "running first (state " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "run")
+   b2kInputInject "down"
+   b21stStep 4
+   b21stAssert "DOWN on the ground ducks (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "duck")
+   b21stStep 30
+   b21stAssert "duck braked vx to ~0 (vx " & round(b21stVX(b21tRef)) & ")", \
+         (abs(b21stVX(b21tRef)) < 10)
+   b21stAssert "still ducking while held", (b2kPlayerState() is "duck")
+   -- DOWN+JUMP on SOLID ground: no drop, no launch -- the press is eaten
+   b2kInputInject "down,space"
+   b21stStep 10
+   b21stAssert "down+jump on solid ground does NOT launch (vy " & round(b21stVY(b21tRef)) & ")", \
+         (b21stVY(b21tRef) > -50)
+   b21stAssert "...and stays grounded", (b2kPlayerOnGround() is true)
+   b2kInputInject ""
+   b21stStep 10
+   b21stAssert "release returns to idle (got " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "idle")
+end b21stTestDuck
+
+command b21stTestHurtKnockback
+   local b21tRef, b21i, b21tRestored
+   b21stNewWorld "player: hurt knockback, control window, mercy no-op"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stStep 30
+   -- hurt from the LEFT (fromX 100): pops RIGHT and up, hurtIs flips on
+   b2kPlayerHurt 100
+   b21stStep 2
+   b21stAssert "pop flies AWAY from fromX (vx " & round(b21stVX(b21tRef)) & ")", \
+         (b21stVX(b21tRef) > 120)
+   b21stAssert "pop is upward (vy " & round(b21stVY(b21tRef)) & ")", (b21stVY(b21tRef) < -150)
+   b21stAssert "state is hurt", (b2kPlayerState() is "hurt")
+   b21stAssert "b2kPlayerHurtIs() is true", (b2kPlayerHurtIs() is true)
+   -- input is ignored while the knockback owns the controller
+   b2kInputInject "left"
+   b21stStep 6
+   b21stAssert "control is OFF mid-knockback (vx " & round(b21stVX(b21tRef)) & " still rightward)", \
+         (b21stVX(b21tRef) > 0)
+   b2kInputInject ""
+   -- ride the arc out: control returns at hurtMs OR the landing after
+   -- half of it, whichever is later (the 320 pop lands ~96 steps in)
+   put false into b21tRestored
+   repeat with b21i = 1 to 130
+      b2kStepOnce
+      if b2kPlayerState() is not "hurt" then
+         put true into b21tRestored
+         exit repeat
+      end if
+   end repeat
+   b21stAssert "control restored after hurtMs + landing (step " & b21i & ")", \
+         (b21tRestored is true)
+   b21stAssert "mercy window still on right after restore", (b2kPlayerHurtIs() is true)
+   -- a second hurt INSIDE the mercy window must be a no-op
+   b2kPlayerHurt 100
+   b21stStep 2
+   b21stAssert "hurt inside the mercy window no-ops (state " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is not "hurt")
+   b21stStep 70   -- invulnMs (54 steps) runs out
+   b21stAssert "mercy window expires", (b2kPlayerHurtIs() is false)
+   b2kPlayerHurt 100
+   b21stStep 2
+   b21stAssert "a fresh hurt works after expiry (state " & b2kPlayerState() & ")", \
+         (b2kPlayerState() is "hurt")
+end b21stTestHurtKnockback
+
+command b21stTestDoubleJump
+   local b21tRef, b21i, b21tV1, b21tV2, b21tV3
+   b21stNewWorld "player: double-jump (airJumps = 1)"
+   b21stSlab "st_ground", 50, 500, 800, 560
+   b2kPlayerMake 300, 470, 32, 48
+   put the result into b21tRef
+   b2kPlayerSet "airJumps", 1
+   b21stStep 30
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   put round(b21stVY(b21tRef)) into b21tV1
+   b21stAssert "ground jump launched up (vy " & b21tV1 & ")", (b21tV1 < -250)
+   -- rise to the apex and begin to fall
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b21stVY(b21tRef) > 60 then exit repeat
+   end repeat
+   -- AIR-JUMP: a second press while falling re-launches up
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   put round(b21stVY(b21tRef)) into b21tV2
+   b21stAssert "double-jump re-launched mid-fall (vy " & b21tV2 & ")", (b21tV2 < -250)
+   -- the budget is spent: fall again, a THIRD press does nothing
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b21stVY(b21tRef) > 60 then exit repeat
+   end repeat
+   b2kInputInject "space"
+   b21stStep 2
+   b2kInputInject ""
+   put round(b21stVY(b21tRef)) into b21tV3
+   b21stAssert "no third jump - air budget spent (vy " & b21tV3 & " still falling)", (b21tV3 > 0)
+end b21stTestDoubleJump
+
+command b21stTestWallJump
+   local b21tRef, b21i, b21tVcap, b21tVup, b21tVx
+   b21stNewWorld "player: wall-slide + wall-jump"
+   b21stSlab "st_ground", 50, 520, 800, 560
+   b21stSlab "st_wall", 400, 80, 440, 520        -- a vertical wall (left face x400)
+   b2kPlayerMake 380, 300, 32, 48             -- just left of the wall, airborne
+   put the result into b21tRef
+   b2kPlayerSet "wallJumpX", 240
+   b2kPlayerSet "wallJumpY", 380
+   b2kPlayerSet "wallSlideMax", 90
+   b21stStep 1
+   b2kSetVelocity b21tRef, 0, 400                -- a fast fall, to show the cap
+   b2kInputInject "right"                     -- press INTO the wall
+   put 0 into b21tVcap
+   repeat with b21i = 1 to 40
+      b2kStepOnce
+      if b2kPlayerState() is "wallslide" then
+         put round(b21stVY(b21tRef)) into b21tVcap
+         exit repeat
+      end if
+   end repeat
+   b21stAssert "wall-slide engaged + capped the fall (vy " & b21tVcap & " in 1..100)", \
+         (b21tVcap > 0 and b21tVcap <= 100)
+   -- WALL-JUMP: jump while sliding -> up and away (to the LEFT)
+   b2kInputInject "right,space"
+   b21stStep 2
+   b2kInputInject ""
+   put round(b21stVY(b21tRef)) into b21tVup
+   put round(b21stVX(b21tRef)) into b21tVx
+   b21stAssert "wall-jump launched up (vy " & b21tVup & ")", (b21tVup < -200)
+   b21stAssert "wall-jump pushed away from the wall (vx " & b21tVx & " < -80)", (b21tVx < -80)
+end b21stTestWallJump
+
+command b21stTestDash
+   local b21tRef, b21i, b21tVmax, b21tState, b21tV2
+   b21stNewWorld "player: dash burst + cooldown"
+   b21stSlab "st_ground", 50, 500, 1200, 560
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b2kPlayerSet "dashSpeed", 520
+   b2kPlayerSet "dashMs", 160
+   b2kPlayerSet "dashCooldownMs", 500
+   b2kInputInject "right"
+   b21stStep 6        -- face right, then release the direction
+   b2kInputInject ""
+   b21stStep 4
+   b2kInputInject "x"
+   b21stStep 1
+   put round(b21stVX(b21tRef)) into b21tVmax
+   put b2kPlayerState() into b21tState
+   b2kInputInject ""
+   b21stAssert "dash burst hit dash speed (vx " & b21tVmax & " > 450)", (b21tVmax > 450)
+   b21stAssert "dash state reported (got " & b21tState & ")", (b21tState is "dash")
+   b21stStep 20       -- run the dash out (dashMs) and decelerate
+   b2kInputInject "x"
+   b21stStep 1
+   put round(b21stVX(b21tRef)) into b21tV2
+   b2kInputInject ""
+   b21stAssert "cooldown blocks an immediate re-dash (vx " & b21tV2 & " < 300)", (b21tV2 < 300)
+   -- airDash OFF: the dash must NOT fire while airborne (the platformer's
+   -- "no mid-air dash"). Clear the cooldown, jump, then press dash in the air.
+   b2kPlayerSet "airDash", 0
+   b2kPlayerTuneCache
+   b21stStep 40
+   b2kPlayerJump 420
+   b21stStep 4
+   b21stAssert "airborne for the mid-air dash test", (b2kPlayerOnGround() is false)
+   b2kInputInject "x"
+   b21stStep 1
+   b2kInputInject ""
+   b21stAssert "airDash off: no dash mid-air (state " & b2kPlayerState() & ")", (b2kPlayerState() is not "dash")
+   b21stAssert "airDash off: no dash burst mid-air (vx " & round(b21stVX(b21tRef)) & ")", (abs(b21stVX(b21tRef)) < 300)
+end b21stTestDash
+
+command b21stTestPlatformCarry
+   local b21tRef, b21tPlat, b21i, b21tX0, b21tX1, b21tDX
+   b21stNewWorld "player: moving-platform carry"
+   b2kSpawnBox 300, 400, 200, 30, "gray"
+   put the result into b21tPlat
+   b2kSetKinematic b21tPlat
+   b2kSetVelocity b21tPlat, 80, 0        -- drift right at 80 px/s
+   b2kPlayerMake 300, 360, 32, 48     -- settle onto the platform
+   put the result into b21tRef
+   b2kPlayerSet "platformCarry", 1    -- opt in (default off)
+   b21stStep 30
+   put b21stX(b21tRef) into b21tX0
+   b21stStep 60
+   put b21stX(b21tRef) into b21tX1
+   put b21tX1 - b21tX0 into b21tDX
+   -- 60 frames at 80 px/s = ~80px; a carried player tracks the platform
+   b21stAssert "player rode the platform right (~80px, got " & round(b21tDX) & ")", \
+         (b21tDX > 55 and b21tDX < 105)
+end b21stTestPlatformCarry
+
+command b21stTestDuckReshape
+   local b21tRef, b21tFullH, b21tDuckH, b21i
+   b21stNewWorld "player: duck capsule reshape (crawl)"
+   b21stSlab "st_ground", 50, 500, 900, 560
+   b21stSlab "st_ceil", 300, 400, 600, 462       -- a low ceiling (underside y462)
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b2kPlayerSet "duckScale", 0.5
+   put round(b2kPlayerHalfH()) into b21tFullH
+   b21stStep 20
+   b2kInputInject "down"
+   b21stStep 5
+   put round(b2kPlayerHalfH()) into b21tDuckH
+   b21stAssert "duck shrank the capsule (" & b21tFullH & " -> " & b21tDuckH & ")", (b21tDuckH < b21tFullH)
+   b21stAssert "ducked state reported (got " & b2kPlayerState() & ")", (b2kPlayerState() is "duck")
+   -- crawl RIGHT until well under the ceiling
+   b2kInputInject "down,right"
+   repeat with b21i = 1 to 120
+      b2kStepOnce
+      if b21stX(b21tRef) > 360 then exit repeat
+   end repeat
+   b21stAssert "crawled under the low ceiling (x " & round(b21stX(b21tRef)) & " > 350)", (b21stX(b21tRef) > 350)
+   -- release DOWN under the ceiling: the headroom check keeps it crouched
+   b2kInputInject "right"
+   b21stStep 6
+   b21stAssert "stand-up blocked under the ceiling (halfH " & round(b2kPlayerHalfH()) & ")", \
+         (round(b2kPlayerHalfH()) is b21tDuckH)
+   -- crawl out PAST the ceiling, then it can stand
+   b2kInputInject "down,right"
+   repeat with b21i = 1 to 160
+      b2kStepOnce
+      if b21stX(b21tRef) > 660 then exit repeat
+   end repeat
+   b2kInputInject ""
+   b21stStep 12
+   b21stAssert "stood back up past the ceiling (halfH " & round(b2kPlayerHalfH()) & ")", \
+         (round(b2kPlayerHalfH()) >= b21tFullH)
+end b21stTestDuckReshape
+
+command b21stTestPlayerHelpers
+   local b21tRef
+   b21stNewWorld "player: half-extents, zone queries, respawn"
+   b21stSlab "st_ground", 50, 500, 900, 560
+   b2kPlayerMake 200, 470, 30, 50
+   put the result into b21tRef
+   b21stStep 8
+   b21stAssert "halfW getter (got " & round(b2kPlayerHalfW()) & " ~ 15)", (round(b2kPlayerHalfW()) is 15)
+   b21stAssert "halfH getter (got " & round(b2kPlayerHalfH()) & " ~ 25)", (round(b2kPlayerHalfH()) is 25)
+   b21stAssert "not in a ladder/water zone yet", \
+         (b2kPlayerInLadder() is false and b2kPlayerInWater() is false)
+   b2kPlayerAddWater 100, 300, 400, 560
+   b2kPlayerAddLadder 600, 300, 660, 560
+   b21stStep 2
+   b21stAssert "in the water zone now", (b2kPlayerInWater() is true)
+   -- RESPAWN to the ladder spot: velocity zeroed, the zone queries follow
+   b2kSetVelocity b21tRef, 200, -200
+   b2kPlayerRespawn 630, 470
+   b21stStep 2
+   b21stAssert "respawn moved the player (x " & round(b21stX(b21tRef)) & " ~ 630)", (abs(b21stX(b21tRef) - 630) < 30)
+   b21stAssert "respawn in the ladder zone, not water", \
+         (b2kPlayerInLadder() is true and b2kPlayerInWater() is false)
+   b21stAssert "respawn zeroed the horizontal speed (vx " & round(b21stVX(b21tRef)) & ")", \
+         (abs(b21stVX(b21tRef)) < 60)
+end b21stTestPlayerHelpers
+
+command b21stTestSheetPersist
+   local b21tN
+   b21stNewWorld "sheets: persist across teardown + idempotent reload"
+   b2kSheetPersist true
+   if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
+   if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
+   create image "st_sheetsrc"
+   set the visible of image "st_sheetsrc" to false
+   set the rect of image "st_sheetsrc" to 0, 0, 32, 16
+   b2kSheetFromImage "stpersist", the long id of image "st_sheetsrc", 16, 16
+   put the result into b21tN
+   b21stAssert "grid sheet loaded with 2 frames (got " & b21tN & ")", (b21tN is 2)
+   b21stAssert "frame 1 present before teardown", (b2kSheetHasFrame("stpersist", 1) is true)
+   b2kTeardown
+   b21stAssert "sheet SURVIVES b2kTeardown (persist on)", (b2kSheetHasFrame("stpersist", 1) is true)
+   b2kSheetFromImage "stpersist", the long id of image "st_sheetsrc", 16, 16
+   put the result into b21tN
+   b21stAssert "identical reload is a cache no-op (still 2 frames, got " & b21tN & ")", (b21tN is 2)
+   -- the idempotency key includes the grid args: a DIFFERENT grid under the
+   -- same image must rebuild, not silently keep the old grid
+   b2kSheetFromImage "stpersist", the long id of image "st_sheetsrc", 32, 16
+   put the result into b21tN
+   b21stAssert "a changed grid rebuilds (1 frame now, got " & b21tN & ")", (b21tN is 1)
+   -- a DIFFERENT source under the same name must rebuild too
+   create image "st_sheetsrc2"
+   set the visible of image "st_sheetsrc2" to false
+   set the rect of image "st_sheetsrc2" to 0, 0, 48, 16
+   b2kSheetFromImage "stpersist", the long id of image "st_sheetsrc2", 16, 16
+   put the result into b21tN
+   b21stAssert "a changed source rebuilds (3 frames now, got " & b21tN & ")", (b21tN is 3)
+   b2kSheetsWipe
+   b21stAssert "b2kSheetsWipe still purges the persisted sheet", (b2kSheetHasFrame("stpersist", 1) is false)
+   b2kSheetPersist false   -- restore the default so the later tests teardown clean
+   if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
+   if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
+end b21stTestSheetPersist
+
+command b21stTestKitHelpers
+   local b21tVerts, b21tBytes, b21tWav, b21tXml, b21tProf
+   b21stNewWorld "kit api: pure helpers, coordinates, tone bytes"
+   b21stAssert "b2kNumberOr passes a number through", (b2kNumberOr(7, 3) is 7)
+   b21stAssert "b2kNumberOr substitutes for empty", (b2kNumberOr(empty, 3) is 3)
+   b21stAssert "b2kNumberOr substitutes for non-numeric", (b2kNumberOr("x", 3) is 3)
+   b21stAssert "b2kClamp holds the low edge", (b2kClamp(-5, 0, 10) is 0)
+   b21stAssert "b2kClamp holds the high edge", (b2kClamp(50, 0, 10) is 10)
+   b21stAssert "b2kClamp passes the middle through", (b2kClamp(4, 0, 10) is 4)
+   b21stAssert "b2kClamp defaults a non-number to the low edge", (b2kClamp("x", 2, 10) is 2)
+   -- the two coordinate systems: pixels/y-down out here, metres/y-up inside
+   b21stAssert "screen x round-trips through world x", \
+         (round(b2kToScreenX(b2kToWorldX(300))) is 300)
+   b21stAssert "screen y round-trips through world y", \
+         (round(b2kToScreenY(b2kToWorldY(200))) is 200)
+   b21stAssert "world y is UP (a lower screen y is a higher world y)", \
+         (b2kToWorldY(100) > b2kToWorldY(300))
+   -- with the origin and scale pinned, the mapping is arithmetic
+   b2kSetOrigin 0, 0
+   b2kSetScale 100
+   b21stAssert "b2kSetScale + b2kSetOrigin place the world origin exactly", \
+         (round(b2kToScreenX(1)) is 100 and round(b2kToScreenY(1)) is -100)
+   b21stAssert "b2kToWorldX inverts the new scale", (b2kToWorldX(250) is 2.5)
+   -- b2kCorner rotates a local offset and returns it in screen pixels;
+   -- c/s are the caller's precomputed cos/sin, so 1,0 is angle zero
+   b21stAssert "b2kCorner at angle zero is the plain offset (" & b2kCorner(0, 0, 1, 0, 1, 0) & ")", \
+         (b2kCorner(0, 0, 1, 0, 1, 0) is "100,0")
+   -- 2 caps of 9 points each; the first is the right cap's bottom
+   put b2kCapsuleVerts(10, 4, true) into b21tVerts
+   b21stAssert "b2kCapsuleVerts returns 18 hull points", (the number of lines of b21tVerts is 18)
+   set the itemDelimiter to comma
+   b21stAssert "b2kCapsuleVerts starts at the right cap's bottom", \
+         (round(item 1 of line 1 of b21tVerts) is 10 and round(item 2 of line 1 of b21tVerts) is -4)
+   b21stAssert "b2kLayerBits names the reserved one-way bit", \
+         (b2kLayerBits("oneway") is 2147483648)
+   b21stAssert "b2kLayerBits passes a numeric layer through", (b2kLayerBits(4) is 4)
+   b21stAssert "b2kLayerBits ORs a list", (b2kLayerBits("2,4") is 6)
+   put "<SubTexture name=" & quote & "run0" & quote & " x=" & quote & "16" & quote & "/>" into b21tXml
+   b21stAssert "b2kXmlAttr reads a quoted attribute", (b2kXmlAttr(b21tXml, "name") is "run0")
+   b21stAssert "b2kXmlAttr returns empty for an absent attribute", (b2kXmlAttr(b21tXml, "y") is empty)
+   -- 22050 Hz, 8-bit mono: 100ms is exactly 2205 samples, and the WAV
+   -- wrapper is a fixed 44-byte RIFF header
+   put b2kToneBytes(440, 100, 50, "square") into b21tBytes
+   b21stAssert "b2kToneBytes makes 22050Hz samples (2205 for 100ms, got " \
+         & the number of bytes in b21tBytes & ")", (the number of bytes in b21tBytes is 2205)
+   put b2kWavWrap(b21tBytes) into b21tWav
+   b21stAssert "b2kWavWrap adds exactly a 44-byte header", \
+         (the number of bytes in b21tWav is the number of bytes in b21tBytes + 44)
+   b21stAssert "b2kWavWrap emits a RIFF header", (byte 1 to 4 of b21tWav is "RIFF")
+   b21stAssert "b2kVersion reports the extension ABI", (b2kVersion() is b2Version())
+   b21stAssert "b2kWorld hands out the live world handle", (b2kWorld() is not empty)
+   b21stAssert "b2kIsRunning is false while paused", (b2kIsRunning() is false)
+   b2kResume
+   b21stAssert "b2kResume clears the pause", (b2kIsRunning() is true)
+   b2kPause
+   b21stAssert "b2kFrameMS reports a number", (b2kFrameMS() is a number)
+   put b2kProfile() into b21tProf
+   b21stAssert "b2kProfile reports step,collide,solve (" & b21tProf & ")", \
+         (the number of items of b21tProf is 3)
+end b21stTestKitHelpers
+
+command b21stTestKitInputMap
+   local b21tCodes
+   b21stNewWorld "kit api: key codes, names, action and axis bindings"
+   b2kInputOn
+   b21stAssert "b2kInputIsOn reports the input layer up", (b2kInputIsOn() is true)
+   b21stAssert "b2kKeyCodes maps a named key", (b2kKeyCodes("left") is 65361)
+   b21stAssert "b2kKeyCodes maps space", (b2kKeyCodes("space") is 32)
+   b21stAssert "b2kKeyCodes gives a letter BOTH cases", (b2kKeyCodes("a") is "97,65")
+   b21stAssert "b2kKeyName inverts a named code", (b2kKeyName(65361) is "left")
+   b21stAssert "b2kKeyName folds an uppercase letter code to lowercase", (b2kKeyName(65) is "a")
+   put b2kKeyListCodes("left,space") into b21tCodes
+   b21stAssert "b2kKeyListCodes flattens a key list (" & b21tCodes & ")", (b21tCodes is "65361,32")
+   b21stAssert "b2kKeyInSet finds a held key", (b2kKeyInSet(comma & "32" & comma, "space") is true)
+   b21stAssert "b2kKeyInSet misses an absent key", (b2kKeyInSet(comma & "32" & comma, "left") is false)
+   b21stAssert "b2kCodesInSet takes raw codes", (b2kCodesInSet(comma & "32" & comma, "32") is true)
+   b21stAssert "b2kCodesInSet refuses an empty set", (b2kCodesInSet(empty, "32") is false)
+   b2kBindAction "stfire", "space"
+   b2kBindAxis "stwalk", "left", "right"
+   -- inject, tick, and read the three edge accessors on one frame
+   b2kInputInject "space"
+   b2kInputTick
+   b21stAssert "b2kKeyIsDown sees the injected key", (b2kKeyIsDown("space") is true)
+   b21stAssert "b2kKeyPressed fires on the entering edge", (b2kKeyPressed("space") is true)
+   b21stAssert "b2kActionIsDown reads the bound action", (b2kActionIsDown("stfire") is true)
+   b21stAssert "b2kAxis reads the bound axis at rest", (b2kAxis("stwalk") is 0)
+   b21stAssert "b2kKeysHeld names what is down (" & b2kKeysHeld() & ")", \
+         (b2kKeysHeld() is "space")
+   b2kInputInject ""
+   b2kInputTick
+   b21stAssert "b2kKeyReleased fires on the leaving edge", (b2kKeyReleased("space") is true)
+   b21stAssert "b2kKeyIsDown is false once released", (b2kKeyIsDown("space") is false)
+   b2kInputInjectOff
+   b2kInputOff
+   b21stAssert "b2kInputOff takes the input layer down", (b2kInputIsOn() is false)
+end b21stTestKitInputMap
+
+command b21stTestKitAttach
+   local b21tRef, b21tBody
+   b21stNewWorld "kit api: attach a body to an existing control"
+   b21stSlab "st_floor", 60, 520, 800, 560
+   -- one control per shape kind; each must register a body
+   create graphic "st_abox"
+   set the style of it to "rectangle"
+   set the rect of it to 100, 100, 140, 140
+   b2kAddBox the long id of graphic "st_abox"
+   b21stAssert "b2kAddBox registers a body", (b2kBodyOf(the long id of graphic "st_abox") is not empty)
+   create graphic "st_aball"
+   set the style of it to "oval"
+   set the rect of it to 200, 100, 240, 140
+   b2kAddBall the long id of graphic "st_aball"
+   b21stAssert "b2kAddBall registers a body", (b2kBodyOf(the long id of graphic "st_aball") is not empty)
+   create graphic "st_acap"
+   set the style of it to "rectangle"
+   set the rect of it to 300, 100, 380, 140
+   b2kAddCapsule the long id of graphic "st_acap"
+   b21stAssert "b2kAddCapsule registers a body", (b2kBodyOf(the long id of graphic "st_acap") is not empty)
+   create graphic "st_apoly"
+   set the style of it to "polygon"
+   set the points of it to "400,100" & cr & "440,100" & cr & "420,140" & cr & "400,100"
+   b2kAddPolygon the long id of graphic "st_apoly"
+   b21stAssert "b2kAddPolygon registers a body", (b2kBodyOf(the long id of graphic "st_apoly") is not empty)
+   create graphic "st_achain"
+   set the style of it to "rectangle"
+   set the rect of it to 500, 300, 700, 320
+   b2kAddChain the long id of graphic "st_achain", "0,0" & cr & "200,0", false
+   b21stAssert "b2kAddChain registers a static body", \
+         (b2kBodyOf(the long id of graphic "st_achain") is not empty)
+   b21stAssert "five attachments plus the slab are tracked (got " & b2kBodyCount() & ")", \
+         (b2kBodyCount() is 6)
+   -- static terrain helpers make bodies the Kit does NOT track by control
+   b2kAddGround 580
+   b2kWall 60, 60, 60, 500
+   b2kEdge b2kToWorldX(700), b2kToWorldY(60), b2kToWorldX(700), b2kToWorldY(500)
+   b2kChain "0,0" & cr & "100,0", false
+   b2kAddWalls
+   b21stAssert "static terrain helpers do not enter the control table", (b2kBodyCount() is 6)
+   -- b2kRegister is the manual door into that table; b2kRemove is the exit
+   put b2kBodyOf(the long id of graphic "st_abox") into b21tBody
+   b2kRemove the long id of graphic "st_abox"
+   b21stAssert "b2kRemove forgets the control", \
+         (b2kBodyOf(the long id of graphic "st_abox") is empty)
+   b2kSpawnBall 300, 200, 20
+   put the result into b21tRef
+   b2kRegister b21tRef, b2kBodyOf(b21tRef), false
+   b21stAssert "b2kRegister is idempotent for a live pair", (b2kBodyOf(b21tRef) is not empty)
+   b2kSpawnCapsule 420, 200, 60, 24, "green"
+   put the result into b21tRef
+   b21stAssert "b2kSpawnCapsule makes a control", (b21tRef is not empty)
+   b21stAssert "...with a body", (b2kBodyOf(b21tRef) is not empty)
+end b21stTestKitAttach
+
+command b21stTestKitBodyProps
+   local b21tRef, b21tDamp
+   b21stNewWorld "kit api: per-body type, flags, damping, sleep, motion"
+   b21stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 200, 40, 40
+   put the result into b21tRef
+   b21stAssert "a spawned box is dynamic", (b2kBodyType(b21tRef) is "dynamic")
+   b2kSetType b21tRef, "kinematic"
+   b21stAssert "b2kSetType makes it kinematic", (b2kBodyType(b21tRef) is "kinematic")
+   b2kSetType b21tRef, "static"
+   b21stAssert "b2kSetType makes it static", (b2kBodyType(b21tRef) is "static")
+   b2kSetDynamic b21tRef
+   b21stAssert "b2kSetDynamic puts it back", (b2kBodyType(b21tRef) is "dynamic")
+   b21stAssert "a fresh body is not a bullet", (b2kIsBullet(b21tRef) is false)
+   b2kSetBullet b21tRef, true
+   b21stAssert "b2kSetBullet flips the continuous flag", (b2kIsBullet(b21tRef) is true)
+   b2kSetBullet b21tRef, false
+   b2kSetDamping b21tRef, 0.5, 0.25
+   put b2kDamping(b21tRef) into b21tDamp
+   set the itemDelimiter to comma
+   b21stAssert "b2kDamping reads linear,angular back (" & b21tDamp & ")", \
+         (abs(item 1 of b21tDamp - 0.5) < 0.01 and abs(item 2 of b21tDamp - 0.25) < 0.01)
+   b2kSetDamping b21tRef, 0, 0
+   b2kSetGravityScale b21tRef, 0.5
+   b21stAssert "b2kGravityScale reads the scale back", (abs(b2kGravityScale(b21tRef) - 0.5) < 0.01)
+   b2kSetGravityScale b21tRef, 1
+   b2kSetFriction b21tRef, 0.9
+   b2kSetFixedRotation b21tRef, true
+   b2kSetCollisionGroup b21tRef, 3
+   b2kSetSensor b21tRef, true
+   b2kSetSensor b21tRef, false
+   b2kSetSleepThreshold b21tRef, 4
+   -- motion: b2kSpin sets the rate outright, b2kSpinBy adds to it
+   b2kSetFixedRotation b21tRef, false
+   b2kSpin b21tRef, 90
+   b21stAssert "b2kSpin sets the spin rate (got " & round(b2kSpinRate(b21tRef)) & ")", \
+         (abs(b2kSpinRate(b21tRef) - 90) < 2)
+   b2kSpinBy b21tRef, 90
+   b21stAssert "b2kSpinBy adds to it (got " & round(b2kSpinRate(b21tRef)) & ")", \
+         (abs(b2kSpinRate(b21tRef) - 180) < 3)
+   b2kSpin b21tRef, 0
+   b21stAssert "b2kAngle starts at zero degrees", (abs(b2kAngle(b21tRef)) < 1)
+   b2kSetVelocity b21tRef, 300, 0
+   b21stAssert "b2kSpeed is the velocity magnitude (got " & round(b2kSpeed(b21tRef)) & ")", \
+         (abs(b2kSpeed(b21tRef) - 300) < 2)
+   b2kSetVelocity b21tRef, 0, 0
+   -- sleeping: allow it, then put the body to sleep by hand
+   b2kSetSleepEnabled b21tRef, true
+   b2kSleep b21tRef
+   b21stAssert "b2kSleep puts the body to sleep", (b2kIsAwake(b21tRef) is false)
+   b21stAssert "an asleep body is out of the awake count", (b2kAwakeCount() is 0)
+   b2kWake b21tRef
+   b21stAssert "b2kAwakeCount counts the woken body", (b2kAwakeCount() is 1)
+   b21stAssert "b2kAwakeBodyCount reports the engine's own tally", \
+         (b2kAwakeBodyCount() is a number)
+   -- reshape swaps the shape under a live body without dropping it
+   b2kReshape b21tRef, "ball"
+   b21stAssert "b2kReshape keeps the body registered", (b2kBodyOf(b21tRef) is not empty)
+end b21stTestKitBodyProps
+
+command b21stTestKitForces
+   local b21tRef, b21tVy, b21tGrabbed
+   b21stNewWorld "kit api: forces, impulses, explosions, grab, sync"
+   b21stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 200, 40, 40
+   put the result into b21tRef
+   b2kSetGravityScale b21tRef, 0
+   b2kPush b21tRef, 100, 0
+   b21stStep 1
+   b21stAssert "b2kPush adds velocity directly (vx " & round(b21stVX(b21tRef)) & ")", \
+         (b21stVX(b21tRef) > 50)
+   b2kSetVelocity b21tRef, 0, 0
+   b2kImpulse b21tRef, 0, 4000
+   b21stStep 1
+   put b21stVY(b21tRef) into b21tVy
+   b21stAssert "b2kImpulse pushes UP for a positive y (vy " & round(b21tVy) & ")", (b21tVy < -1)
+   b2kSetVelocity b21tRef, 0, 0
+   b2kForce b21tRef, 60000, 0
+   b21stStep 3
+   b21stAssert "b2kForce accelerates over time (vx " & round(b21stVX(b21tRef)) & ")", (b21stVX(b21tRef) > 1)
+   b2kSetVelocity b21tRef, 0, 0
+   b2kSetFixedRotation b21tRef, false
+   b2kTorque b21tRef, 5000
+   b21stStep 3
+   b21stAssert "b2kTorque spins it (rate " & round(b2kSpinRate(b21tRef)) & ")", \
+         (abs(b2kSpinRate(b21tRef)) > 0)
+   b2kSpin b21tRef, 0
+   b2kAngularImpulse b21tRef, 50
+   b21stStep 1
+   b21stAssert "b2kAngularImpulse spins it too", (abs(b2kSpinRate(b21tRef)) > 0)
+   b2kSpin b21tRef, 0
+   b2kSetGravityScale b21tRef, 1
+   -- BOTH explosion paths: the engine's own, and the pre-v3 script one. The
+   -- box is moved back to a known spot first - by here it has been pushed,
+   -- impulsed and forced around, and a blast centred on a guess about where it
+   -- drifted to is a test of this comment's arithmetic, not of b2kExplode.
+   b2kMoveTo b21tRef, 300, 260
+   b2kSetVelocity b21tRef, 0, 0
+   b2kExplode 300, 260, 200, 1200
+   b21stStep 1
+   b21stAssert "b2kExplode moves a nearby body", (b2kSpeed(b21tRef) > 0)
+   b2kMoveTo b21tRef, 300, 260
+   b2kSetVelocity b21tRef, 0, 0
+   b2kExplodeLegacy 300, 260, 200, 1200
+   b21stStep 1
+   b21stAssert "b2kExplodeLegacy moves it as well", (b2kSpeed(b21tRef) > 0)
+   b2kSetVelocity b21tRef, 0, 0
+   -- grab/release is the mouse-joint path, driven here without a mouse
+   set the itemDelimiter to comma
+   put b2kGrab(item 1 of b2kPosition(b21tRef), item 2 of b2kPosition(b21tRef)) into b21tGrabbed
+   b21stAssert "b2kGrab returns the control it caught", (b21tGrabbed is b21tRef)
+   b2kRelease
+   b21stAssert "b2kRelease leaves the body intact", (b2kBodyOf(b21tRef) is not empty)
+   -- the explicit redraw entry points; all three are no-throw idempotent
+   b2kSyncBodies
+   b2kSyncAllBodies
+   b2kSync
+   b2kSyncAll
+   b21stAssert "the sync entry points leave the world alone", (b2kBodyCount() is 2)
+   -- prune is what b2kSyncBodies calls for a control that vanished
+   b2kSpawnBall 500, 200, 20
+   put the result into b21tRef
+   b2kPruneDeadRefs b21tRef
+   b21stAssert "b2kPruneDeadRefs drops the ref it is handed", (b2kBodyOf(b21tRef) is empty)
+end b21stTestKitForces
+
+command b21stTestKitWorldTuning
+   local b21tRef, b21tAnchor, b21tCentre, b21tBody
+   b21stNewWorld "kit api: world tuning pass-throughs"
+   b21stSlab "st_floor", 60, 520, 800, 560
+   b2kSetGravity 0, -20
+   b2kSetSubsteps 8
+   b2kSetMaxSpeed 4000
+   b2kSetRestitutionThreshold 40
+   b2kSetContactTuning 30, 10, 3
+   b2kSetJointTuning 60, 2
+   b2kEnableSleeping true
+   b2kEnableContinuous true
+   b2kEnableWarmStarting true
+   b2kSpawnBall 300, 200, 24
+   put the result into b21tRef
+   b21stStep 20
+   b21stAssert "the world still steps after every tuning call", (b21stY(b21tRef) > 200)
+   b21stAssert "doubled gravity is felt (vy " & round(b21stVY(b21tRef)) & ")", (b21stVY(b21tRef) > 200)
+   -- b2kLocalAnchor turns a world point into the body's own frame; the
+   -- body's own centre is the origin of that frame
+   put b2kBodyOf(b21tRef) into b21tBody
+   set the itemDelimiter to comma
+   put b2kPosition(b21tRef) into b21tCentre
+   put b2kLocalAnchor(b21tBody, b2kToWorldX(item 1 of b21tCentre), b2kToWorldY(item 2 of b21tCentre)) \
+         into b21tAnchor
+   b21stAssert "b2kLocalAnchor puts the body centre at its own origin (" & b21tAnchor & ")", \
+         (abs(item 1 of b21tAnchor) < 0.05 and abs(item 2 of b21tAnchor) < 0.05)
+   put b2kWorldCenter(b21tRef) into b21tCentre
+   b21stAssert "b2kWorldCenter reports screen pixels (" & b21tCentre & ")", \
+         (item 1 of b21tCentre is a number and item 2 of b21tCentre is a number)
+   -- the frame message is generation-tagged: a stale tag is a no-op, which
+   -- is what makes b2kStop and b2kTeardown safe mid-flight
+   b2kStep "stale-generation"
+   b21stAssert "a stale b2kStep generation is a no-op", (b2kBodyCount() is 2)
+   -- b2kEventsReset and b2kResetTables are the two clears; the second is
+   -- the harder one (it forgets every tracked control)
+   b2kEventsReset
+   b21stAssert "b2kEventsReset empties the contact buffer", (b2kContactCount() is 0)
+   b2kResetTables
+   b21stAssert "b2kResetTables forgets every tracked control", (b2kBodyCount() is 0)
+   -- b2kQuickStart is world + walls + running in one call
+   b2kQuickStart -10
+   b2kPause
+   b21stAssert "b2kQuickStart leaves a live world", (b2kWorld() is not empty)
+end b21stTestKitWorldTuning
+
+command b21stTestKitJoints
+   local b21tA, b21tB, b21tJoint, b21tPos
+   b21stNewWorld "kit api: slider, wheel, weld, motor and rope tuning"
+   b21stSlab "st_floor", 60, 520, 800, 560
+   b2kSpawnBox 300, 300, 40, 40
+   put the result into b21tA
+   -- SLIDER against the world anchor: a vertical axis, motor driven
+   b2kSlider b21tA, empty, 90
+   put the result into b21tJoint
+   b21stAssert "b2kSlider returns a joint", (b21tJoint > 0)
+   b21stAssert "b2kSliderPos starts at zero", (abs(b2kSliderPos(b21tJoint)) < 2)
+   b2kSliderLimit b21tJoint, -100, 100
+   b2kSliderMotor b21tJoint, 200, 100000
+   b21stStep 20
+   b21stAssert "the slider motor moved it (pos " & round(b2kSliderPos(b21tJoint)) & ")", \
+         (abs(b2kSliderPos(b21tJoint)) > 5)
+   b2kSliderMotorOff b21tJoint
+   b2kSliderLimitOff b21tJoint
+   b2kRemoveJoint b21tJoint
+   -- WHEEL: chassis plus wheel, motorised, sprung
+   b2kSpawnBox 500, 300, 80, 20
+   put the result into b21tA
+   b2kSpawnBall 500, 330, 20
+   put the result into b21tB
+   b2kWheel b21tA, b21tB, 500, 330, 0
+   put the result into b21tJoint
+   b21stAssert "b2kWheel returns a joint", (b21tJoint > 0)
+   b2kWheelMotor b21tJoint, 360, 5000
+   b2kWheelSpring b21tJoint, 4, 0.7
+   b21stStep 20
+   b21stAssert "the wheel motor spins the wheel (rate " & round(b2kSpinRate(b21tB)) & ")", \
+         (abs(b2kSpinRate(b21tB)) > 10)
+   b2kWheelMotorOff b21tJoint
+   b2kRemoveJoint b21tJoint
+   -- WELD: two boxes locked together move as one
+   b2kSpawnBox 200, 200, 30, 30
+   put the result into b21tA
+   b2kSpawnBox 240, 200, 30, 30
+   put the result into b21tB
+   b2kWeld b21tA, b21tB
+   put the result into b21tJoint
+   b21stAssert "b2kWeld returns a joint", (b21tJoint > 0)
+   b2kWeldSpring b21tJoint, 8, 0.5
+   b21stStep 20
+   b21stAssert "welded bodies fall together (dy " & round(abs(b21stY(b21tA) - b21stY(b21tB))) & "px)", \
+         (abs(b21stY(b21tA) - b21stY(b21tB)) < 8)
+   b2kRemoveJoint b21tJoint
+   -- MOTOR joint: drives a body toward an offset from a reference
+   b2kSpawnBox 650, 200, 30, 30
+   put the result into b21tA
+   b2kSetGravityScale b21tA, 0
+   b2kMotorTo b21tA, empty, 0, 0, 0, 100000, 100000
+   put the result into b21tJoint
+   b21stAssert "b2kMotorTo returns a joint", (b21tJoint > 0)
+   b21stStep 30
+   set the itemDelimiter to comma
+   put b2kPosition(b21tA) into b21tPos
+   b21stAssert "the motor joint drags it toward the anchor (x " & round(item 1 of b21tPos) & ")", \
+         (item 1 of b21tPos < 650)
+   b2kRemoveJoint b21tJoint
+   -- the ROPE (distance joint) tuning calls, on a live rope
+   b2kSpawnBall 400, 150, 16
+   put the result into b21tA
+   b2kSetStatic b21tA
+   b2kSpawnBall 400, 220, 16
+   put the result into b21tB
+   b2kRope b21tA, b21tB, 70
+   put the result into b21tJoint
+   b21stAssert "b2kRope returns a joint", (b21tJoint > 0)
+   b21stAssert "b2kRopeLength reads its length back (got " \
+         & round(b2kRopeLength(b21tJoint)) & "px)", (abs(b2kRopeLength(b21tJoint) - 70) < 6)
+   b2kRopeSetLength b21tJoint, 40
+   b21stAssert "b2kRopeSetLength changes it (got " & round(b2kRopeLength(b21tJoint)) & "px)", \
+         (abs(b2kRopeLength(b21tJoint) - 40) < 6)
+   b2kRopeRange b21tJoint, 20, 90
+   b2kSpring b21tJoint, 4, 0.5
+   b21stStep 10
+   b21stAssert "a sprung rope still holds the pair", (b2kBodyOf(b21tB) is not empty)
+   b2kRemoveJoint b21tJoint
+   -- the hinge tuning calls the behaviour test above does not use
+   b2kSpawnBox 100, 400, 60, 12
+   put the result into b21tA
+   b2kHinge b21tA, empty, 100, 400
+   put the result into b21tJoint
+   b21stAssert "b2kHingeAngle starts near zero (got " \
+         & round(b2kHingeAngle(b21tJoint)) & " deg)", (abs(b2kHingeAngle(b21tJoint)) < 3)
+   b2kHingeLimit b21tJoint, -30, 30
+   b21stStep 40
+   b21stAssert "a limited hinge stays inside its arc (got " \
+         & round(b2kHingeAngle(b21tJoint)) & " deg)", (abs(b2kHingeAngle(b21tJoint)) < 40)
+   b2kHingeLimitOff b21tJoint
+   b2kMotor b21tJoint, 90, 10000
+   b2kMotorOff b21tJoint
+   b2kRemoveJoint b21tJoint
+end b21stTestKitJoints
+
+command b21stTestKitEventApi
+   local b21tBall, b21tSens, b21i, b21tSeen, b21tMsgs
+   b21stNewWorld "kit api: event buffer readers and the dispatchers"
+   b21stSlab "st_ground", 100, 500, 700, 540
+   create graphic "st_sens2"
+   set the style of it to "rectangle"
+   set the rect of it to 270, 300, 330, 360
+   set the visible of it to false
+   put the long id of graphic "st_sens2" into b21tSens
+   b2kAddSensor b21tSens, "box"
+   b2kSpawnBall 300, 150, 24
+   put the result into b21tBall
+   -- fall through the sensor and onto the floor: one enter, one exit, and
+   -- a begin-contact with the ground
+   put false into b21tSeen
+   repeat with b21i = 1 to 200
+      b2kStepOnce
+      if b2kSensorCount() > 0 then put true into b21tSeen
+      if b2kContactCount() > 0 then exit repeat
+   end repeat
+   b21stAssert "the sensor fired while falling through", (b21tSeen is true)
+   b21stAssert "a begin-contact landed in the buffer", (b2kContactCount() > 0)
+   b21stAssert "b2kContactA names a control", (b2kContactA(1) is not empty)
+   b21stAssert "b2kContactB names a control", (b2kContactB(1) is not empty)
+   b21stAssert "one side of the contact is the ball", \
+         (b2kContactA(1) is b21tBall or b2kContactB(1) is b21tBall)
+   b21stAssert "b2kEndContactCount reports a number", (b2kEndContactCount() is a number)
+   -- the sensor buffer is read the same way, by index
+   b2kEventsReset
+   b2kMoveTo b21tBall, 300, 150
+   b2kSetVelocity b21tBall, 0, 0
+   put false into b21tSeen
+   repeat with b21i = 1 to 200
+      b2kStepOnce
+      if b2kSensorCount() > 0 then
+         put true into b21tSeen
+         exit repeat
+      end if
+   end repeat
+   if b21tSeen then
+      b21stAssert "b2kSensorEnterSensor names the sensor", \
+            (b2kSensorEnterSensor(1) is b21tSens)
+      b21stAssert "b2kSensorEnterVisitor names the visitor", \
+            (b2kSensorEnterVisitor(1) is b21tBall)
+   else
+      b21stAssert "the ball re-entered the sensor zone", false
+   end if
+   repeat with b21i = 1 to 200
+      b2kStepOnce
+      if b2kSensorExitCount() > 0 then exit repeat
+   end repeat
+   b21stAssert "b2kSensorExitSensor names the sensor on the way out", \
+         (b2kSensorExitSensor(1) is b21tSens or b2kSensorExitCount() is 0)
+   b21stAssert "b2kSensorExitVisitor names the visitor on the way out", \
+         (b2kSensorExitVisitor(1) is b21tBall or b2kSensorExitCount() is 0)
+   -- the harvest + dispatch pair, called by hand: the message receivers at
+   -- the top of this file are the same ones b2kStepOnce drives every frame
+   put b21gMsgContacts into b21tMsgs
+   b2kEventsReset
+   -- the end-contact readers mirror the begin ones. Their honest offline
+   -- assertion is the EMPTY case: index 1 of a cleared buffer must answer
+   -- empty rather than throw or hand back a stale control, which is what
+   -- makes `repeat with b21i = 1 to b2kEndContactCount()` safe to write.
+   b21stAssert "b2kEndContactA answers empty on a cleared buffer", \
+         (b2kEndContactA(1) is empty)
+   b21stAssert "b2kEndContactB answers empty on a cleared buffer", \
+         (b2kEndContactB(1) is empty)
+   b2kHarvestEvents
+   b2kDispatchContacts
+   b2kDispatchSensors
+   b21stAssert "b2kHarvestEvents + the dispatchers run without a step", \
+         (b21gMsgContacts >= b21tMsgs)
+end b21stTestKitEventApi
+
+command b21stTestKitQueryApi
+   local b21tRef, b21tHit
+   b21stNewWorld "kit api: closest-ray hit and its accessors"
+   b21stSlab "st_ground", 60, 500, 800, 540
+   b2kSpawnBall 300, 300, 30
+   put the result into b21tRef
+   b2kSetStatic b21tRef
+   b21stStep 2
+   put b2kRayHit(300, 100, 300, 520) into b21tHit
+   b21stAssert "b2kRayHit reports a hit on the ball", (b21tHit is true)
+   b21stAssert "b2kRayHitX is the ray's own x (got " & b2kRayHitX() & ")", \
+         (abs(b2kRayHitX() - 300) < 6)
+   b21stAssert "b2kRayHitY stops at the ball's top (got " & b2kRayHitY() & ")", \
+         (b2kRayHitY() > 250 and b2kRayHitY() < 300)
+   b21stAssert "b2kRayHitNormalY points back UP the ray (got " \
+         & round(b2kRayHitNormalY() * 100) / 100 & ")", (b2kRayHitNormalY() < 0)
+   b21stAssert "b2kRayHitNormalX is a number", (b2kRayHitNormalX() is a number)
+   b21stAssert "b2kRayDist is the distance travelled (got " \
+         & round(b2kRayDist()) & "px)", (b2kRayDist() > 100 and b2kRayDist() < 250)
+   b21stAssert "a ray into empty space misses", (b2kRayHit(60, 60, 90, 60) is false)
+   -- the query-buffer translator the overlap helpers route through
+   b21stAssert "b2kQueryToControls of zero hits is empty", (b2kQueryToControls(0) is empty)
+   b21stAssert "b2kOverlapCircle routes through it and finds the ball", \
+         (b2kOverlapCircle(300, 300, 40) is not empty)
+end b21stTestKitQueryApi
+
+command b21stTestKitCameraApi
+   local b21tRef, b21tStatus
+   b21stNewWorld "kit api: camera follow, deadzone, shake, shift readers"
+   b2kCamOn
+   b2kCamBounds 0, 0, 3000, 640
+   b2kSpawnBox 200, 300, 30, 30
+   put the result into b21tRef
+   b2kSetStatic b21tRef
+   -- sCamNote is documented "empty = healthy; else why the camera is
+   -- degraded", so empty is the assertion and a note is a real finding
+   put b2kCamStatus() into b21tStatus
+   b21stAssert "b2kCamStatus is empty on a healthy viewport (" & b21tStatus & ")", \
+         (b21tStatus is empty)
+   b2kCamDeadzone 40, 40
+   b2kCamFollow b21tRef, 0.5
+   b21stStep 10
+   b21stAssert "following keeps the camera near its target", \
+         (b2kCamIsOn() is true)
+   b21stAssert "b2kCamShiftX reports a number for a followed ref", \
+         (b2kCamShiftX(b21tRef) is a number)
+   b21stAssert "b2kCamShiftY reports a number for a followed ref", \
+         (b2kCamShiftY(b21tRef) is a number)
+   b2kCamUnfollow
+   b2kCamGoto 900, 320
+   b2kCamTick
+   b2kCamApply
+   b21stAssert "an explicit tick+apply scrolls the viewport", \
+         (the hScroll of b2kCamGroup() > 100)
+   b2kCamShake 8, 200
+   b2kCamTick
+   b2kCamApply
+   b21stAssert "shake leaves the viewport usable", (b2kCamIsOn() is true)
+   b21stAssert "b2kCamMouseX reports a number", (b2kCamMouseX() is a number)
+   b21stAssert "b2kCamMouseY reports a number", (b2kCamMouseY() is a number)
+   b2kCamOff
+end b21stTestKitCameraApi
+
+command b21stTestKitSpriteApi
+   local b21tRef, b21tBody, b21tNames, b21tSig
+   b21stNewWorld "kit api: sheet bookkeeping, sprite binding and the drawers"
+   b21stEnsureSheetImage
+   b21stAssert "b2kSheetPersists is off by default here", (b2kSheetPersists() is false)
+   b2kSheetFromImage "stapi", the long id of image "st_sheet", 16, 16
+   put b2kSheetFrameNames("stapi") into b21tNames
+   b21stAssert "b2kSheetFrameNames lists the frames (" & the number of lines of b21tNames & ")", \
+         (the number of lines of b21tNames is 4)
+   b21stAssert "b2kSheetKeyIndex finds a key by position", \
+         (b2kSheetKeyIndex("stapi", line 2 of b21tNames) is 2)
+   b21stAssert "b2kSheetKeyIndex reports 0 for an unknown key", \
+         (b2kSheetKeyIndex("stapi", "no-such-frame") is 0)
+   put b2kSheetSliceSig("stapi") into b21tSig
+   b21stAssert "b2kSheetSliceSig carries path and scale (" & b21tSig & ")", (b21tSig contains "|")
+   b2kSheetEnsureIcon "stapi", line 1 of b21tNames
+   b2kSheetEnsureFlip "stapi", line 1 of b21tNames
+   b21stAssert "the sheet still holds its 4 frames after slicing", \
+         (b2kSheetFrames("stapi") is 4)
+   -- a second sheet built through the explicit grid-region path
+   b2kSheetFromImage "stapi2", the long id of image "st_sheet", 0, 0
+   b2kSheetGridRegions "stapi2", 16, 16, 4, 0, 0
+   b21stAssert "b2kSheetGridRegions slices a 2x2 grid", (b2kSheetFrames("stapi2") is 4)
+   b2kSheetForget "stapi2"
+   b21stAssert "b2kSheetForget drops it", (b2kSheetFrames("stapi2") is 0)
+   -- sprites: bind one to a body and let the tick carry it
+   b2kAnimDef "stapi", "spin", "1-4", 200, true
+   b2kSpriteNew "stapi", 1, 120, 120
+   put the result into b21tRef
+   b2kSpritePlay b21tRef, "spin"
+   b21stAssert "b2kSpriteAnim names the playing animation", (b2kSpriteAnim(b21tRef) is "spin")
+   b2kSpriteFPS b21tRef, 30
+   b2kSpriteOnFinish b21tRef, "b21stKitSpriteDone"
+   b2kSpriteSetFrame b21tRef, 2
+   b21stAssert "b2kSpriteSetFrame moves the frame", (b2kSpriteFrame(b21tRef) is not empty)
+   b2kSpriteShowFrame b21tRef, line 3 of b21tNames
+   b2kSpriteStop b21tRef
+   b21stAssert "b2kSpriteStop clears the animation", (b2kSpriteAnim(b21tRef) is empty)
+   b2kSpawnBox 300, 200, 30, 30
+   put the result into b21tBody
+   b2kSpriteBind b21tRef, b21tBody, 0, -20
+   b2kSpritesTick
+   b21stAssert "a bound sprite is still known after a tick", \
+         (b2kSpriteFrame(b21tRef) is not empty)
+   b2kSpriteUnbind b21tRef
+   b2kSpriteForget b21tRef
+   b21stAssert "b2kSpriteForget drops the bookkeeping", (b2kSpriteAnim(b21tRef) is empty)
+   b2kSpritesClear
+   b2kSpriteSweepOrphans false
+   b2kSheetsWipe
+   b21stAssert "b2kSheetsWipe purges every sheet", (b2kSheetFrames("stapi") is 0)
+   -- the drawers: b2kSyncBodies routes through b2kDrawBody, which picks one
+   -- of the three by render kind. Called directly, each must move its control.
+   b2kSpawnBall 400, 300, 20
+   put the result into b21tRef
+   b2kDrawBall b21tRef, b2kToWorldX(500), b2kToWorldY(300)
+   set the itemDelimiter to comma
+   b21stAssert "b2kDrawBall moves the ball's graphic (x " \
+         & (item 1 of the loc of b21tRef) & ")", (abs((item 1 of the loc of b21tRef) - 500) < 3)
+   b2kDrawBody b21tRef, b2kToWorldX(420), b2kToWorldY(300), 0
+   b21stAssert "b2kDrawBody dispatches by render kind", \
+         (abs((item 1 of the loc of b21tRef) - 420) < 3)
+   b2kSpawnBox 300, 400, 40, 20
+   put the result into b21tRef
+   b2kDrawPoly b21tRef, b2kToWorldX(360), b2kToWorldY(400), 0
+   b21stAssert "b2kDrawPoly re-points the polygon", (the points of b21tRef is not empty)
+   -- b2kDrawImage sets `the angle`, so it needs a real image control
+   create image "st_drawn"
+   set the rect of image "st_drawn" to 0, 0, 24, 24
+   b2kAddBox the long id of image "st_drawn"
+   b2kDrawImage the long id of image "st_drawn", b2kToWorldX(380), b2kToWorldY(420), 0
+   b21stAssert "b2kDrawImage places the image (x " \
+         & (item 1 of the loc of image "st_drawn") & ")", \
+         (abs((item 1 of the loc of image "st_drawn") - 380) < 3)
+   -- THE FILE-BACKED LOADERS, on the only half an offline paste can honestly
+   -- reach. Loading a real atlas needs a PNG and an XML beside the stack;
+   -- what is testable here - and is the half that bites in the field - is
+   -- that a missing asset FAILS CLOSED: a documented empty/0, no throw, and
+   -- no half-registered sheet left behind for the next call to trip over.
+   b21stAssert "b2kSheetSourceFromFile returns empty for a missing file", \
+         (b2kSheetSourceFromFile("stnofile", "/box2dxt-selftest/no-such.png") is empty)
+   b2kSheetLoad "stnofile", "/box2dxt-selftest/no-such.png", 16, 16, 4, 0, 0
+   b21stAssert "b2kSheetLoad reports 0 frames for a missing file", (the result is 0)
+   b2kSheetLoadAtlas "stnofile", "/box2dxt-selftest/no-such.png", "/box2dxt-selftest/no-such.xml"
+   b21stAssert "b2kSheetLoadAtlas reports 0 frames for a missing atlas", (the result is 0)
+   b2kSpriteFromGIF "/box2dxt-selftest/no-such.gif", 100, 100
+   b21stAssert "b2kSpriteFromGIF returns empty for a missing GIF", (the result is empty)
+   b21stAssert "...and none of them left a sheet behind", (b2kSheetFrames("stnofile") is 0)
+end b21stTestKitSpriteApi
+
+command b21stKitSpriteDone
+end b21stKitSpriteDone
+
+command b21stTestKitSoundApi
+   b21stNewWorld "kit api: sound mute, status and stop"
+   b2kToneMake "stapitone", "440", 30, 30
+   b21stAssert "the tone registered", (b2kSoundIsLoaded("stapitone") is true)
+   b21stAssert "b2kSoundMuted is false by default", (b2kSoundMuted() is false)
+   b2kSoundMute true
+   b21stAssert "b2kSoundMute sets the flag", (b2kSoundMuted() is true)
+   -- muted, both play paths exit BEFORE touching the audio device, so the
+   -- assertion is that neither marked the device dead: b2kSound and
+   -- b2kSoundLoop set sSndDead (and a "play failed" note) only when a real
+   -- `play audioClip` throws, which is exactly what must not have happened
+   b2kSound "stapitone"
+   b2kSoundLoop "stapitone"
+   b21stAssert "muted play never reaches the audio device (" & b2kSoundStatus() & ")", \
+         (not (b2kSoundStatus() contains "play failed"))
+   b2kSoundStop
+   b2kSoundMute false
+   b21stAssert "b2kSoundMute clears the flag", (b2kSoundMuted() is false)
+   -- b2kSoundLoad's SUCCESS path needs a clip file on disk, which an
+   -- offline paste has no business writing. Its FAILURE path is the one
+   -- that matters anyway: the family's fail-closed rule says a missing
+   -- asset reports and returns, it does not throw and it does not half
+   -- register - and b2kSoundStatus is where it says so.
+   b2kSoundLoad "stnofile", "/box2dxt-selftest/no-such-clip.wav"
+   b21stAssert "b2kSoundLoad fails closed on a missing file (" & b2kSoundStatus() & ")", \
+         (b2kSoundStatus() contains "no such file")
+   b21stAssert "...and registers nothing", (b2kSoundIsLoaded("stnofile") is false)
+   b2kSoundsWipe
+   b21stAssert "the wipe purges the tone", (b2kSoundIsLoaded("stapitone") is false)
+end b21stTestKitSoundApi
+
+command b21stTestKitPlayerApi
+   local b21tRef, b21tBody, b21tGrav0
+   b21stNewWorld "kit api: player tuning, art, and the state entry points"
+   b21stSlab "st_ground", 60, 500, 800, 540
+   b21stAssert "b2kPlayerDefault knows the shipped run speed", \
+         (b2kPlayerDefault("movespeed") is 220)
+   b2kPlayerMake 200, 470, 32, 48
+   put the result into b21tRef
+   b21stAssert "b2kPlayer names the made player", (b2kPlayer() is b21tRef)
+   b21stAssert "b2kPlayerGet falls back to the default", (b2kPlayerGet("movespeed") is 220)
+   b2kPlayerSet "movespeed", 300
+   b21stAssert "b2kPlayerGet reads a tuned value back", (b2kPlayerGet("movespeed") is 300)
+   b2kPlayerAnims "idle", "run", "jump", "fall", "land", "duck", "climb", "hurt", \
+         "swim", "wall", "dash"
+   b21stAssert "b2kPlayerSprite is empty with no art bound", (b2kPlayerSprite() is empty)
+   b2kPlayerResolveArt
+   b21stAssert "b2kPlayerResolveArt leaves it empty with no art", (b2kPlayerSprite() is empty)
+   put b2kBodyOf(b21tRef) into b21tBody
+   b21stStep 40   -- long enough to fall the 6px gap and settle on the slab
+   -- the probes the tick runs every frame, called by hand
+   b2kPlayerProbe b21tBody, 0
+   b21stAssert "b2kPlayerProbe finds the ground under a standing player", \
+         (b2kPlayerOnGround() is true)
+   -- the wall probe has no public reader (sPlayWall is the tick's own
+   -- state), so what is assertable from out here is that probing open
+   -- ground neither throws nor disturbs the grounded state the tick
+   -- shares with it
+   b2kPlayerWallProbe b21tBody, 1
+   b21stAssert "b2kPlayerWallProbe over open ground leaves the player standing", \
+         (b2kPlayerOnGround() is true)
+   b2kPlayerShowState 0, 0
+   b2kPlayerTick
+   b21stAssert "an explicit tick leaves the player standing", (b2kPlayerOnGround() is true)
+   -- duck and stand, by the explicit entry points
+   b2kPlayerDuckSet true
+   b21stAssert "b2kPlayerDuckSet ducks", (b2kPlayerState() is not empty)
+   b2kPlayerStandUp
+   b21stStep 2
+   b21stAssert "b2kPlayerStandUp restores full height", (the height of b21tRef is 48)
+   -- THE FOUR GRAVITY-PARKING PAIRS. Climb, swim and dash each stash the
+   -- body's gravity scale and write their own; the matching End must put
+   -- the stashed one back. A pair that leaks is the bug class this member
+   -- already learned once (the swim tests above), so each is asserted at
+   -- both ends rather than just called.
+   -- the baseline is OBSERVED, not assumed to be 1: what each pair owes is
+   -- that it puts back what it found, and asserting against a constant would
+   -- turn a change in the player's own default into three red lines about
+   -- climb, swim and dash
+   put b2kGravityScale(b21tRef) into b21tGrav0
+   b2kPlayerClimbStart b21tBody
+   b21stAssert "b2kPlayerClimbStart parks gravity at 0", (b2kGravityScale(b21tRef) is 0)
+   b2kPlayerClimbEnd b21tBody
+   b21stAssert "b2kPlayerClimbEnd restores what it found", \
+         (abs(b2kGravityScale(b21tRef) - b21tGrav0) < 0.01)
+   b2kPlayerSwimStart b21tBody
+   b21stAssert "b2kPlayerSwimStart uses the buoyant scale, not zero", \
+         (b2kGravityScale(b21tRef) > 0 and b2kGravityScale(b21tRef) < 1)
+   b2kPlayerSwimEnd b21tBody
+   b21stAssert "b2kPlayerSwimEnd restores what it found", \
+         (abs(b2kGravityScale(b21tRef) - b21tGrav0) < 0.01)
+   b2kPlayerDashStart b21tBody
+   b21stAssert "b2kPlayerDashStart parks gravity at 0", (b2kGravityScale(b21tRef) is 0)
+   b2kPlayerDashEnd b21tBody
+   b21stAssert "b2kPlayerDashEnd restores what it found", \
+         (abs(b2kGravityScale(b21tRef) - b21tGrav0) < 0.01)
+   -- drop-through parks the collision MASK instead, and restores that
+   b2kPlayerDropStart
+   b2kPlayerDropRestore
+   b21stStep 10
+   b21stAssert "the player still falls and lands after every pair", \
+         (b2kPlayerOnGround() is true)
+   b2kPlayerControl false
+   b21stAssert "b2kPlayerControl false hands the body back to the game", \
+         (b2kPlayer() is b21tRef)
+   b2kPlayerControl true
+   b2kPlayerAttach b21tRef
+   b21stAssert "b2kPlayerAttach re-adopts an existing control", (b2kPlayer() is b21tRef)
+   b2kPlayerRemove
+   b21stAssert "b2kPlayerRemove forgets the player", (b2kPlayer() is empty)
+   b2kPlayerForget true
+end b21stTestKitPlayerApi
 
 
 -- ==========================================================================

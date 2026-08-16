@@ -60,6 +60,16 @@ offline and synchronous, so they fold in whole:
   sodiumxt   sxSelfTest()   21 groups
   onionxt    oxSelfTest()    8 groups, all offline (no Tor daemon needed)
   coinxt     stRun          28 sections
+box2dxt joined them 2026-08-16 and is the odd one, because its harness is a
+paste-and-run STACK rather than a test file: it carries a verbatim copy of the
+b2k Kit between sentinels (its own tools/sync-embedded-kit.py owns that
+region), it hangs its window off the CARD hooks instead of the stack ones, and
+three of the names it defines are MESSAGE RECEIVERS the Kit dispatches by
+literal name. So its row uses all three of the mechanisms below - strip_spans
+cuts the carried Kit (the real one is embedded once, from src/, as a script
+layer), drop_extra drops the window builder the card hooks called, and
+keep_names holds b2kFell/b2kSensorEnter/b2kContact at their real spelling, since
+a b21b2kFell would simply never be dispatched to.
 Three are not, and each is handled explicitly rather than fudged:
   torrentxt  synchronous, but TorrentXT allows exactly ONE session per process.
              Folded whole, with its session acquisition rewritten to reuse the
@@ -77,7 +87,7 @@ harness is edited such that a marker moves, this build FAILS rather than quietly
 dropping a section - a silently shorter test suite is the failure mode this whole
 file exists to prevent.
 
-THE TWO SCRIPT LAYERS ARE EMBEDDED, VERBATIM, AND THAT IS A DIFFERENT OPERATION
+THE SCRIPT LAYERS ARE EMBEDDED, VERBATIM, AND THAT IS A DIFFERENT OPERATION
 FROM FOLDING. coinxt and onionxt each ship part (coinxt) or all (onionxt) of
 their public API as pure LiveCodeScript - src/coinxt.livecodescript and
 src/onionxt.livecodescript - which used to be the runbook's "two `start using`
@@ -125,6 +135,12 @@ OUT = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 # folded code gets an empty stub (see STUB_IF_CALLED) rather than a dangling call.
 DROP_HANDLERS = {
     "openstack", "closestack", "mouseup",
+    # box2dxt's harness hangs its window off the CARD hooks rather than the
+    # stack ones, and they are the same hazard by a different name: left in,
+    # `on openCard` would rebuild that member's 860x640 window over the suite's
+    # the moment this stack's card opened, and `on closeCard` would run its
+    # teardown on a card close the suite core knows nothing about.
+    "opencard", "closecard",
     "stbuild", "stmakelabel", "stmakebutton", "stmakelist",
     "stshow", "stcopyresults", "stpaint",
     # scaffold v1: the platform-mono helper is called only from the dropped
@@ -141,7 +157,8 @@ STUB_IF_CALLED = {"stshow", "stpaint"}
 
 class Member:
     def __init__(self, key, path, prefix, entry, title, note,
-                 cut_before=None, rewrites=()):
+                 cut_before=None, rewrites=(), strip_spans=(), drop_extra=(),
+                 keep_names=()):
         self.key = key
         self.path = os.path.join(ROOT, path)
         self.prefix = prefix
@@ -150,6 +167,24 @@ class Member:
         self.note = note
         self.cut_before = cut_before  # truncate the entry handler at this marker
         self.rewrites = rewrites      # (must_find, replace_with) applied to the source
+        # (begin_sentinel, end_sentinel) pairs cut out of the source BEFORE
+        # anything else looks at it. box2dxt's harness is a paste-and-run stack
+        # that carries a verbatim copy of the b2k Kit between sentinels (its own
+        # tools/sync-embedded-kit.py owns that region), and this file embeds the
+        # Kit ONCE, from src/, as a script layer. Without the cut the assembly
+        # would define all 313 b2k* handlers twice - a compile error at paste
+        # time, on an engine.
+        self.strip_spans = strip_spans
+        # Handlers beyond DROP_HANDLERS that belong to this member's own window.
+        # Asserted present, so a rename in the member harness fails this build
+        # instead of quietly leaving its window builder in the suite paste.
+        self.drop_extra = tuple(drop_extra)
+        # Names this member defines that must NOT be prefixed. The only honest
+        # reason is that something OUTSIDE the renamed text dispatches them BY
+        # LITERAL NAME - the engine, or an embedded library - so a prefixed copy
+        # would never be found and the checks that depend on it would fail while
+        # looking like a defect in the member.
+        self.keep_names = tuple(keep_names)
 
 
 # The suite's members, in the order the unified harness runs them. Order matters
@@ -252,6 +287,43 @@ MEMBERS = [
         cut_before='   stSection "loopback: create + negotiate (async)"',
     ),
     Member(
+        "box2d", "box2dxt/examples/box2dxt-selftest.livecodescript", "b21",
+        "stSelfTest", "Box2Dxt: the full b2k Kit self-test",
+        "43 test handlers driving the REAL Kit deterministically: the world "
+        "started PAUSED and hand-stepped one fixed 1/60 tick at a time, the "
+        "keyboard replaced by b2kInputInject, and every assertion a lesson this "
+        "member learned on real hardware - fixed-step determinism, frame-exact "
+        "contact and sensor events, the chain ghost rule, one-way platforms, "
+        "presence polling through sleeping bodies, the player controller's feel "
+        "contract (coyote, jump buffer, drop-through, ladders, duck, swim, "
+        "double jump, wall jump, dash, moving-platform carry), sprites and "
+        "sheets, tones, camera, queries, joints and teardown hygiene. It builds "
+        "and destroys its own graphics on this card, wipes them, and tears the "
+        "world down before returning.",
+        # ONE copy of the Kit, and this is where it comes from. box2dxt's
+        # examples are paste-and-run stacks, so each one carries a verbatim copy
+        # of src/box2dxt-kit.livecodescript between sentinels that its own
+        # tools/sync-embedded-kit.py owns. Folding that copy in AND embedding
+        # the Kit as a script layer below would define all 313 b2k* handlers
+        # twice - a compile error the maintainer meets at paste time, on an
+        # engine. The copy is cut here; the layer is the one that ships.
+        strip_spans=(("-- >>> BEGIN EMBEDDED KIT >>>",
+                      "-- <<< END EMBEDDED KIT <<<"),),
+        # The window builder. DROP_HANDLERS covers the hooks that CALL it
+        # (openCard/closeCard/mouseUp); this is the 860x640 window itself, which
+        # would otherwise sit in the paste resizing the suite's stack the moment
+        # anything reached it.
+        drop_extra=("buildStUI",),
+        # NOT prefixed, and this is the one place in this file where that is
+        # true of a folded harness. These three are MESSAGE RECEIVERS: the Kit
+        # dispatches them BY LITERAL NAME (`dispatch "b2kFell" to sFrameObj`)
+        # from inside the embedded layer, which this file never renames. A
+        # prefixed copy would simply never be found, gMsgEnters/gMsgContacts
+        # would stay 0, and the three checks that prove the Kit's message path
+        # works would FAIL while reading like a real defect in the dispatcher.
+        keep_names=("b2kFell", "b2kSensorEnter", "b2kContact"),
+    ),
+    Member(
         "riptide", "riptide/tests/riptide-selftest.livecodescript", "rs1",
         "rsSelfTest", "Riptide Social (phases 1-2): the rs* self-test",
         "The capstone app's harness: the KDF subkey tree, identity to handle "
@@ -331,6 +403,17 @@ SCRIPT_LAYERS = [
         "socket callbacks (socketError and friends) ride along, which is "
         "correct - the engine delivers them to the object that opened the "
         "socket, and in this paste that is this stack.",
+    ),
+    Layer(
+        "box2dxt-kit", "box2dxt/src/box2dxt-kit.livecodescript",
+        "Box2Dxt b2k Kit (the real Kit, embedded)",
+        "The whole b2k* surface - the friendly pixels/degrees/y-down toolkit "
+        "over the raw b2* extension, and the layer box2dxt's harness actually "
+        "drives. It is pure LiveCodeScript, so it embeds exactly like coinxt's "
+        "and onionxt's layers do; the folded harness above calls it by its real "
+        "names, and the physics underneath still needs the native extension "
+        "(the core probes for it and SKIPS the whole section when it is "
+        "absent).",
     ),
     Layer(
         "riptide", "riptide/src/riptide.livecodescript",
@@ -426,9 +509,79 @@ def split_handlers(text):
     return preamble, blocks
 
 
+def strip_span(src, begin, end, who, path):
+    """Remove one sentinel-delimited region, sentinels included.
+
+    Both sentinels are REQUIRED and must appear exactly once, in order. A
+    silently missing sentinel would fold the region in - which for box2dxt
+    means 313 duplicate handler definitions, i.e. a compile error at paste time
+    on an engine - and a silently unmatched one would swallow the rest of the
+    file. Neither is allowed to be a fallback.
+    """
+    lines = src.split("\n")
+    at = {}
+    for want in (begin, end):
+        hits = [i for i, ln in enumerate(lines) if ln.rstrip() == want]
+        if len(hits) != 1:
+            raise SystemExit(
+                f"build-suite-selftest: {who}: expected exactly one line "
+                f"{want!r} in {os.path.relpath(path, ROOT)}, found {len(hits)}. "
+                f"The member harness was restructured; re-read it and update "
+                f"strip_spans rather than folding in a region this file also "
+                f"embeds from its own source.")
+        at[want] = hits[0]
+    if at[end] <= at[begin]:
+        raise SystemExit(f"build-suite-selftest: {who}: {end!r} comes before "
+                         f"{begin!r}; the span cannot be cut safely.")
+    return "\n".join(lines[:at[begin]] + lines[at[end] + 1:])
+
+
+def assert_no_declaration_dropped(src, preamble, who, path):
+    """Every script-level declaration must be in the PREAMBLE, because the
+    preamble is all the hoist can see.
+
+    split_handlers returns only the LEADING run of non-handler lines, so a
+    `local` or `constant` written BETWEEN two handlers - perfectly legal, and
+    the house pattern in any file that groups a subsystem's state next to its
+    handlers - is silently dropped by both fold() and embed(). Silently is the
+    problem: LiveCodeScript evaluates an undeclared name as the literal text of
+    its own name, so the paste compiles and then compares a digest against the
+    string "kSomething", or does arithmetic on the word "gPassN". That is the
+    same failure the declaration hoist exists to prevent, arriving by a
+    different door.
+
+    check-suite-selftest.py's check 12 catches the s*/k* half of it after the
+    fact; it cannot catch a g* or any other spelling, and it should not be the
+    first thing to notice. This is measured at the source, where the message
+    can name the file and the line.
+    """
+    bare = strip_comments(src)
+    total = len(re.findall(r'^(?:local|constant)\s', bare, re.M))
+    in_pre = len([ln for ln in preamble if re.match(r'^(?:local|constant)\s', ln)])
+    if total != in_pre:
+        missed = [ln.strip() for ln in strip_comments("\n".join(
+            src.split("\n")[len(preamble):])).split("\n")
+            if re.match(r'^(?:local|constant)\s', ln)]
+        raise SystemExit(
+            f"build-suite-selftest: {who}: {total - in_pre} script-level "
+            f"declaration(s) in {os.path.relpath(path, ROOT)} sit BELOW its "
+            f"first handler, where the declaration hoist cannot see them. They "
+            f"would be dropped from the assembly WITHOUT an error: "
+            f"LiveCodeScript evaluates an undeclared name as the literal text "
+            f"of its own name, so the paste would compile and then compare "
+            f"against, or do arithmetic on, a string.\n"
+            f"  first few: " + ", ".join(missed[:5]) + "\n"
+            f"  Move them above the first handler in that file, or teach this "
+            f"tool to collect declarations from the whole file - but not "
+            f"silently.")
+
+
 def fold(member):
     """The namespaced, trimmed body of one member harness."""
     src = open(member.path, encoding="utf-8").read()
+
+    for begin, end in member.strip_spans:
+        src = strip_span(src, begin, end, member.key, member.path)
 
     for must_find, replace_with in member.rewrites:
         if must_find not in src:
@@ -441,6 +594,19 @@ def fold(member):
         src = src.replace(must_find, replace_with, 1)
 
     names = defined_names(src)
+    # KEEP_NAMES: defined here, but dispatched from OUTSIDE this text by literal
+    # name, so a prefixed copy would simply never be found. Asserted defined, so
+    # a rename in the member harness fails this build rather than leaving a
+    # permanent no-op exemption behind it.
+    unknown_keep = sorted(n for n in member.keep_names if n not in names)
+    if unknown_keep:
+        raise SystemExit(
+            f"build-suite-selftest: {member.key}: keep_names lists "
+            f"{', '.join(unknown_keep)}, which this harness does not define any "
+            f"more. Either the handler was renamed (update keep_names) or it was "
+            f"deleted (drop the entry) - a stale keep_names entry protects "
+            f"nothing and hides the next one.")
+    names -= set(member.keep_names)
     src = rename(src, names, member.prefix)
     # @CORESESSION@ is a deliberate placeholder, substituted AFTER the rename so
     # it survives it: the torrent rewrite has to reach the CORE's sSession, and
@@ -453,9 +619,16 @@ def fold(member):
         raise SystemExit(f"build-suite-selftest: {member.key}: no entry handler "
                          f"{member.prefix + member.entry}")
 
+    # drop_extra is spelled in the member's OWN names; compare after prefixing.
+    drop_extra = {n.lower() for n in member.drop_extra}
+    seen_extra = set()
+
     kept = []
     for name, spelling, block in blocks:
         base = name[len(member.prefix):] if name.startswith(member.prefix.lower()) else name
+        if base in drop_extra:
+            seen_extra.add(base)
+            continue
         if base in DROP_HANDLERS:
             if base in STUB_IF_CALLED:
                 kept.append(f"-- GENERATED: {spelling} drove this harness's own window.\n"
@@ -488,6 +661,14 @@ def fold(member):
             continue
         kept.append(block)
 
+    missing_extra = sorted(drop_extra - seen_extra)
+    if missing_extra:
+        raise SystemExit(
+            f"build-suite-selftest: {member.key}: drop_extra lists "
+            f"{', '.join(missing_extra)}, which this harness does not define any "
+            f"more. A stale drop entry is an excuse for a handler that is gone, "
+            f"and it would silently stop dropping the one that replaced it.")
+
     # THE PREAMBLE'S DECLARATIONS COME TOO, and forgetting them is a silent
     # disaster rather than a compile error: LiveCodeScript treats an undeclared
     # name as a literal string of itself, so a folded harness missing its
@@ -496,6 +677,7 @@ def fold(member):
     # looks like a real defect. The member's `script "name"` line is dropped (the
     # core supplies the one this file needs) and so is its prose, which stays
     # readable in the source file this section names.
+    assert_no_declaration_dropped(src, preamble, member.key, member.path)
     decls = [ln for ln in preamble
              if re.match(r'^\s*(?:local|constant)\s', ln)]
     if not decls:
@@ -550,6 +732,7 @@ def embed(layer):
         src = "\n".join(lines[1:])
 
     preamble, blocks = split_handlers(src)
+    assert_no_declaration_dropped(src, preamble, layer.key, layer.path)
     decls = [ln for ln in preamble if re.match(r'^\s*(?:local|constant)\s', ln)]
     if not decls:
         raise SystemExit(f"build-suite-selftest: {layer.key}: no script-level "

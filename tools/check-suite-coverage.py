@@ -77,6 +77,35 @@ MEMBERS = [
     # riptide is the capstone APP, not an extension, but its rs* surface is a
     # public API its folded harness must reach, so it rides the same ratchet.
     ("riptide", "rs", ["riptide/src/riptide.livecodescript"]),
+    # BOX2DXT IS MEASURED AS ITS KIT, AND THE RAW b2* BINDING IS NOT IN THIS
+    # RATCHET. That is a deliberate scope call, and the numbers behind it are
+    # here so the next reader can re-take it rather than inherit it:
+    #
+    #   src/box2dxt-kit.livecodescript   313 public b2k* handlers - the
+    #     game-facing API, pure LiveCodeScript, embedded in the suite paste
+    #     and driven by box2dxt's folded harness. RATCHETED, below.
+    #   src/box2dxt.lcb                  376 public b2* handlers - a 1:1
+    #     binding over the C shim (374 foreign declarations for 376 public
+    #     handlers; the bodies are checkABI + unsafe + call). NOT ratcheted.
+    #
+    # The reason is measurement, not convenience. Of those 376, the Kit names
+    # 131 and **245 are named by no script anywhere in box2dxt** - not the
+    # Kit, not the six example stacks, not the harness. Ratcheting them here
+    # would mean writing ~375 new assertions against a foreign-bound API in
+    # one pass, with no engine to run them on, into the file the whole suite
+    # is pasted from. box2dxt's own CLAUDE.md records its measured base rate
+    # for new tests as "5 Kit bugs : 5 harness bugs - expect first-contact
+    # arithmetic errors", so that trade buys a near-certain red suite run in
+    # exchange for a number. The alternative - 375 allowlist entries sharing
+    # one reason - is the "gate that overstates its coverage" this repo
+    # already learned to distrust (coinxt's constant gate, root CLAUDE.md).
+    #
+    # What that layer HAS: tests/smoke_test.c drives the C ABI under
+    # ASan/UBSan in build-all.sh and in native-box2dxt.yml, and the Kit's own
+    # 313 handlers - every one of which is exercised here - are what call it.
+    # What it does NOT have is a script-level ratchet, and that is an open
+    # item, not a closed one.
+    ("box2dxt (kit)", "b2k", ["box2dxt/src/box2dxt-kit.livecodescript"]),
 ]
 
 # The handlers an offline harness genuinely cannot reach, and why. Keep the
@@ -120,7 +149,8 @@ UNTESTABLE = {
 # script layer) is cut automatically without being listed here.
 EMBED_BEGIN_RE = re.compile(r'^-- >>> GENERATED EMBED: (.+) >>> --$')
 EMBED_END_RE = re.compile(r'^-- <<< GENERATED EMBED: (.+) <<< --$')
-REQUIRED_EMBEDS = {"coinxt script layer", "onionxt script layer"}
+REQUIRED_EMBEDS = {"coinxt script layer", "onionxt script layer",
+                   "box2dxt-kit script layer"}
 
 
 def cut_embedded_spans(text):

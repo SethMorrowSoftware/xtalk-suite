@@ -157,7 +157,7 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all six suite members plus the Riptide app layer at once.
+Or run all seven suite members plus the Riptide app layer at once.
 `tests/suite-selftest.livecodescript` is a single stack script that builds its
 own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — a
 member you did not install skips, it never fails.
@@ -166,9 +166,11 @@ It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, and riptide's harness (phases 1-4 + 6 + 7, including the
-live feed, media, DM, LAN-admission, and anon-persona layers) — plus the cross-member compositions no
-per-member harness can have. One paste settles what used to take seven runs.
+and datachannelxt, box2dxt's `stSelfTest` (50 handlers, ~372 assertions driving
+the real b2k Kit hand-stepped one fixed 1/60 tick at a time), and riptide's
+harness (phases 1-4 + 6 + 7, including the live feed, media, DM, LAN-admission,
+and anon-persona layers) — plus the cross-member compositions no
+per-member harness can have. One paste settles what used to take eight runs.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
 than copied from them, because a hand-copied test suite drifts and then reports
@@ -181,11 +183,11 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**384 of 402 public handlers**:
+**724 of 742 public handlers**:
 
-| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide |
-|---|---|---|---|---|---|---|
-| 61/61 | 27/45 | 78/78 | 85/85 | 23/23 | 31/31 | 72/72 |
+| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide | box2dxt (Kit) |
+|---|---|---|---|---|---|---|---|
+| 72/72 | 27/45 | 90/90 | 85/85 | 23/23 | 31/31 | 83/83 | 313/313 |
 
 The eighteen it does not reach are all onionxt's, and each carries a written
 reason in that tool: eleven are **engine socket callbacks** (the engine supplies
@@ -194,6 +196,13 @@ fails both on a new public handler that nothing exercises and on a stale excuse
 left behind by a rename, so the shortfall can only ever be a decision somebody
 wrote down. It counts handlers *reached*, not handlers tested well — depth is
 each member's own vector gate.
+
+One layer is deliberately outside that ratchet and says so beside its row:
+box2dxt's raw `b2*` extension binding — 376 public handlers over 374 foreign
+declarations, of which **245 are named by no script anywhere in that member**.
+The b2k Kit above it is the game-facing API and is held at 313/313; the raw
+layer's cover today is `box2dxt/tests/smoke_test.c` under ASan/UBSan, and a
+script-level ratchet for it is an open item, not a closed one.
 
 **You do not have to clone it.** Every `suite gates` run uploads a
 `suite-selftest` artifact with the pasteable script, that coverage report, and
