@@ -47,6 +47,14 @@ reserved, header values are sanitised, file routes are confined to the shared fo
     },
     {
       "method": "GET",
+      "path": "/api/greet/:name",
+      "type": "application/json; charset=utf-8",
+      "template": true,
+      "body": "{\"hello\":\"{{param.name}}\"}",
+      "cors": true
+    },
+    {
+      "method": "GET",
       "path": "/api/config",
       "file": "config.json",
       "type": "application/json; charset=utf-8"
@@ -63,17 +71,18 @@ reserved, header values are sanitised, file routes are confined to the shared fo
 
 Now `GET /api/hello` (at the onion root over Tor, or under `/<token>/` over a web link)
 returns your JSON with an `Access-Control-Allow-Origin: *` header; `GET /api/echo?msg=hi`
-reflects that back as `{"method":"GET","you_said":"hi"}`; `GET /api/config` streams
-`config.json` from the folder under a friendlier URL; and `/go/gallery` redirects — to
-`/gallery` at the Tor root, and to `/<token>/gallery` over a web link (the mount
-re-prefix described under `redirect` below).
+reflects that back as `{"method":"GET","you_said":"hi"}`; `GET /api/greet/world` answers
+`{"hello":"world"}` (a `:name` path parameter — see "Path parameters" below);
+`GET /api/config` streams `config.json` from the folder under a friendlier URL; and
+`/go/gallery` redirects — to `/gallery` at the Tor root, and to `/<token>/gallery` over a
+web link (the mount re-prefix described under `redirect` below).
 
 ## Route fields
 
 | Field | Meaning | Default |
 |---|---|---|
 | `method` | HTTP method to match (`GET`, `POST`, …) | `GET` |
-| `path` | The URL path. Must start with `/`; may not contain `..` or control bytes; may not be under the reserved `/_qs/` or `/_edit/`. | *(required)* |
+| `path` | The URL path. Must start with `/`; may not contain `..` or control bytes; may not be under the reserved `/_qs/` or `/_edit/`. May contain `:name` **parameter segments** (see "Path parameters" below) — but the **first** segment must always be literal. | *(required)* |
 | `body` | The response body (any text). Capped at 64 KB. | `""` |
 | `template` | `true` enables `{{...}}` substitution in `body` (see below). Values are escaped for `type`. | `false` |
 | `file` | Serve this file (path **relative to the shared folder**) instead of an inline `body`. Range-aware and streamed; confined to the folder just like a static file. | — |
@@ -85,6 +94,53 @@ re-prefix described under `redirect` below).
 
 A route needs exactly one of `body` (default), `file`, or `redirect`; if more than one is
 present the precedence is `redirect` > `file` > `body`.
+
+## Path parameters (`:name`)
+
+A `path` segment written `:name` matches **any one** URL segment and captures it, so one
+route can serve a family of URLs:
+
+```json
+{
+  "method": "GET",
+  "path": "/api/greet/:name",
+  "type": "application/json; charset=utf-8",
+  "template": true,
+  "body": "{\"hello\":\"{{param.name}}\"}",
+  "cors": true
+}
+```
+
+`GET /api/greet/world` answers `{"hello":"world"}`. The rules, all enforced when the file
+is loaded (an invalid pattern is skipped, like any other invalid route):
+
+- **The first segment must be literal.** `/api/:name` is fine; `/:name` is refused — a
+  leading parameter would match *every* top-level path, including the reserved `/_qs/`
+  and `/_edit/` namespaces. With the first segment static (and reserved prefixes already
+  refused literally), no pattern can ever reach a reserved path — by construction, and
+  the request-time matcher independently refuses reserved paths as a backstop.
+- **A parameter matches exactly one non-empty segment.** `/api/files/:name` matches
+  `/api/files/readme.txt`, not `/api/files/` and not `/api/files/a/b`. An encoded slash
+  (`%2F`) is decoded *before* routing, so it splits into real segments — a parameter can
+  never smuggle one. A trailing `/` in the pattern is significant and must be present in
+  the request too.
+- **Names are `A–Z a–z 0–9 _`, non-empty, and unique** within one pattern.
+- **Captures reach only a templated `body`,** as `{{param.name}}` — escaped for the
+  response type exactly like `{{query.NAME}}` (a parameter value is visitor-chosen input).
+  Parameters are **never** substituted into a `file` target, a `redirect` location, or
+  header values — those stay exactly as declared.
+- **Precedence is deterministic:** an exact route on the literal path always wins over a
+  pattern; among matching patterns the one with the *fewest* parameters (most literal)
+  wins, ties broken by comparing the route keys — never by table order.
+- **`Allow`, `405`, and CORS see patterns.** An `OPTIONS` (or an unsupported method) on
+  `/api/greet/world` derives its `Allow` from every route *matching* that path, patterns
+  included, and a `cors: true` param route answers the preflight for its matching paths
+  just like an exact route does.
+- **Big/streamed responses:** a parameterised route can also be a `file` route (the
+  static file target streams Range-aware through the normal pump, with the route's
+  headers). Inline bodies stay capped at 64 KB — point at a file for anything larger.
+- `GET /_qs/routes` lists a pattern route with its literal pattern text
+  (e.g. `/api/greet/:name`).
 
 ## Template placeholders (`{{...}}`)
 
@@ -105,6 +161,7 @@ placeholders become empty.
 | `{{method}}` | The request method (`GET`, `POST`, …) |
 | `{{path}}` | The request path |
 | `{{query.NAME}}` | The `NAME` query-string parameter (URL-decoded), e.g. `{{query.msg}}` |
+| `{{param.NAME}}` | The `:NAME` path-parameter capture (see "Path parameters"), e.g. `{{param.name}}`. Empty when the route has no such parameter. |
 | `{{now}}` | Current time in whole seconds (Unix epoch) |
 | `{{date}}` | Current time as an HTTP-date (`Sun, 06 Jul 2026 12:00:00 GMT`) |
 

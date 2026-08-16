@@ -93,11 +93,13 @@ The three documents that govern this repo:
 
 **Status: Phase 2 online play (2d) + onion tables (2f) + the 2e remainder (street
 ckpt wires, show/muck, online History folding, host election) + the Phase 3 deck
-oracle written, on Phase 1 hotseat, plus the Phase 4a-4c Level 2 COMPUTE layer
-(pure algebra only; nothing plays on it yet), at v0.21.0. The pending live gates:
-a multi-hand onion table session on two machines with running tor (2f), and the
-Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle, killed
-mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle).** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+oracle written, on Phase 1 hotseat, plus the Phase 4a-4d Level 2 layer (compute +
+void-and-audit sequencing), the 4e adversarial bots, and Phase 5's DLEQ proofs on
+SodiumXT ABI 9 (all pure; nothing plays on Level 2 yet), at v0.22.0. The pending
+live gates: a multi-hand onion table session on two machines with running tor (2f),
+and the Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle,
+killed mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle);
+the sx* DLEQ calls have never run on an engine.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -242,6 +244,48 @@ the UI, or the wire: 4d-4f and all orchestration are engine-era work, and the OX
 pass owes the sx* call shapes plus the 4f deal-time budget (52 mults per shuffle
 step, deal-time only, per the playbook).
 
+**Level 2 void-and-audit + bots + DLEQ (v0.22.0, 2026-08-16 -- Phase 4d/4e +
+Phase 5's proof half; verified statically -- the sx* DLEQ calls, ABI 9, have
+never run on an engine).** The contracts to keep intact when touching the
+heL2Void*/heL2Dleq* half of the L2 section:
+  - **The record formats are PINNED consensus surface** (spec 6 as-built):
+    shuffleStep `pos=,ck=,deck=` ("|"-joined points; ck = k*B, the DLEQ
+    commitment key), unmaskStep `pos=,slot=,val=,proof=` (proof = spec 7.4's
+    reserved field, a1||a2||z). Changing a byte of either -- or of the DLEQ
+    transcript derivation -- is a consensus break: protocol-kat pins move,
+    kHeHarnessV bumps, every client updates together.
+  - **The machine stays pure and latched** (H5): values in, values out, the
+    state array shuttled by the caller; after any void it is frozen evidence
+    and every later record is ignored. The signer position comes from the
+    VERIFIED envelope, never from the body (the body's pos must merely agree).
+  - **Dup vs equivocation is load-bearing**: an identical re-post of the last
+    applied record is a harmless "dup" (rp1 redelivers -- naming it would
+    convict the innocent); only a DIFFERENT step for a filled position is
+    named. Keep the transport dedup (seq) in front of the machine.
+  - **Attribution tiers**: direct (named=pos) only for publicly-refusable
+    records; deferred (named=audit) when only reveals can say
+    (final-not-in-table). heL2VoidAudit's ORDER is normative -- ck binding,
+    then shuffle re-verification per contributor, then chains in slot order --
+    and a recorded staller keeps its name only when everything signed
+    re-verifies (spec 7.3's "first bad one" rule).
+  - **Every scalar is reduced mod L (ScalarAdd-zero) before any point mult**,
+    and a non-canonical z in a received proof is refused, never reduced:
+    libsodium masks bit 255 inside scalarmult while protocol-kat's reference
+    reduces the full value mod L -- reducing first is the ONLY reason the two
+    sides can never diverge. Do not "simplify" the reduce away.
+  - **The DLEQ nonce is derandomized on purpose** (w hashes the secret + the
+    whole statement under kHeDomainL2DleqW): it makes the proof pinnable from
+    fixed scalars AND makes nonce reuse across different statements (which
+    forfeits k) impossible by construction. Never swap it for a random w.
+  - **Transcript hashes see LOWERCASED hex** (xTalk `is` is case-blind;
+    hashes are not). heL2DleqVerify batches c*ck + c*P2 through ONE
+    sxRistrettoScalarMultBatch crossing; z*B and z*P1 cannot join it
+    (different bases).
+  - heL2HasDleq is the cached ABI-9 probe (heL2HasRistretto pattern); the
+    audit's ck-binding check gates on it, so a pre-ABI-9 engine still audits
+    (minus the binding) instead of mis-naming. Harness section 19 SKIPs the
+    DLEQ half by name below ABI 9 and still drives the machine on ABI 8.
+
 **Onion tables (v0.20.0, 2026-08-15 -- Phase 2f).** The plan's bet paid off: 2c/2d
 had already funneled every outbound payload through four netCap-seamed senders and
 every inbound frame through ONE router (heNetOnMessage), so swapping the byte
@@ -338,7 +382,7 @@ user confirms in the IDE. This discipline is house law across the family.
 | Extension | Library id | Prefix | Needed from | Notes |
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
-| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*` — cross-checked KATs green, handlers still need their OXT pass). |
+| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*`) **and Phase 5's DLEQ/batch surface too** (ABI 9, same day: add/sub, base-mult, batch, scalar add/mul) — cross-checked KATs green, no `sxRistretto*` handler has run on an engine yet. |
 | **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
@@ -387,7 +431,15 @@ Shipped for Phase 4 (SodiumXT ABI 8, 2026-08-15): `sxRistrettoFromHash(h64)`,
 `sxRistrettoScalarInvert(k)` (all -> 32-byte `Data`, throw on failure - the
 catch path is the detection path), `sxRistrettoPointValid(p)` -> Boolean (a
 predicate, never throws on malformed input); the 64-byte from-hash input is
-`sxHash(tData, 64)`. Verified statically; needs an OXT pass.
+`sxHash(tData, 64)`. Shipped for Phase 5 (SodiumXT ABI 9, 2026-08-15, the
+DLEQ/batch surface): `sxRistrettoAdd(p, q)` / `sxRistrettoSub(p, q)` (identity
+a legal operand AND result - unlike scalarmult, add/sub have no identity
+failure mode), `sxRistrettoScalarMultBase(k)` (throws on zero scalar),
+`sxRistrettoScalarMultBatch(k, pointsConcat)` (one scalar times a CONCATENATION
+of 32-byte encodings, one FFI crossing, ATOMIC - one bad point throws for the
+whole call), `sxRistrettoScalarAdd(x, y)` / `sxRistrettoScalarMul(x, y)` (mod
+L, widen-and-reduce semantics; zero legal, only a wrong length throws).
+Verified statically; NO sxRistretto* handler has run on an engine yet.
 
 **OnionXT** — assumes a reachable tor daemon; it is a transport + naming layer and adds
 no cryptography of its own (composes SodiumXT). Dial-out: `oxDial` through SOCKS5 →

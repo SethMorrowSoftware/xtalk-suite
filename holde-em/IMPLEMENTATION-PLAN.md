@@ -306,6 +306,33 @@ start without it.
 > the 4f deal-time budget measurement. Spec 7.3 carries the as-built
 > decision marks.
 
+> **4d/4e built + KAT-pinned 2026-08-16 (statically; v0.22.0).** The
+> void-and-audit layer landed PURE and transport-agnostic (H5) -- the
+> 4a-4c note above filed sequencing under engine-era orchestration, but
+> the sequencing itself needs no wire, only records, so the harness can
+> drive it fully: the step-record formats are pinned (spec 6 as-built --
+> `shuffleStep` body `pos=,ck=,deck=` with the deck's points "|"-joined and
+> `ck` the Phase 5 commitment key; `unmaskStep` body `pos=,slot=,val=,
+> proof=` with `proof` spec 7.4's reserved field), and `heL2Void*` is the
+> machine that consumes them: strict shuffle order, identical-re-post = dup
+> vs different-re-post = named equivocation, the free public checks per
+> record, owner-aware chain order per slot, completion -> card or void.
+> Attribution is DIRECT (named=pos) when the record itself is refusable
+> and DEFERRED to `heL2VoidAudit` -- the mandatory full-reveal audit, in
+> the mandatory order (ck binding + shuffle re-verification per
+> contributor, then chains in slot order) -- when only the reveals can say
+> (final-not-in-table); a timeout names the staller provisionally and the
+> audit keeps the name only if everything signed re-verifies (the spec's
+> "first bad one" rule). The outcome line pins hand-void + bets-return +
+> reveal-required. The 4e bots are pure drivers over that machine
+> (harness section 19): deck-stacker (vs L0, heAuditDeal names it),
+> duplicate-point shuffler, rollback replayer, wrong-scalar unmasker
+> (deferred -> audit names its step), deal staller -- every verdict string
+> pinned twice (protocol-kat's l2v_/l0_ scenario keys over the independent
+> reference, re-asserted on-engine with self-diagnosing asserts). Still
+> open here: 4f (the deal-time budget is an ENGINE measurement) and the
+> played-hand wiring; the sx* ABI-9 calls have never run on an engine.
+
 The value-candidate deal. Prerequisite: Workstream U shipped.
 
 - **4a. Masked deck**: base points from domain-separated hash-to-group; per-hand
@@ -335,13 +362,41 @@ scripted attack; KATs pin a complete Level 2 hand from fixed scalars end to end.
 
 ## Phase 5 — hardening (spec M4)
 
+> **The DLEQ half built + KAT-pinned 2026-08-16 (statically; v0.22.0), on
+> SodiumXT ABI 9.** `heL2DleqProve`/`heL2DleqVerify` (+ `heL2CommitKeyHex`)
+> are Chaum-Pedersen over ristretto255: prove P2 = k*P1 for the k behind
+> ck = k*B -- an unmask step proves (k, stepOut, stepIn) -- with a
+> DERANDOMIZED nonce (RFC 6979 / EdDSA pattern), a domain-tagged
+> Fiat-Shamir challenge over the lowercased hex transcript, every scalar
+> reduced mod L via ScalarAdd-zero before any point mult (libsodium masks
+> bit 255 in scalarmult; the reference reduces mod L; reducing first pins
+> both), and proof = a1||a2||z (96 bytes, spec 7.4's size) riding the
+> unmaskStep record's reserved `proof` field. The verifier batches c*ck
+> and c*P2 through ONE `sxRistrettoScalarMultBatch` crossing (the one
+> place the batch genuinely saves a crossing -- z*B and z*P1 have
+> different bases and cannot join it; the 52-mult shuffle-step batch
+> stays a 4f decision, measured on-engine). On a dleq=1 machine a wrong
+> unmask is refused INSTANTLY with direct attribution -- 7.4's
+> "impossible rather than attributable" -- and missing ck/proof are
+> themselves named refusals. Soundness is pinned NEGATIVELY in
+> protocol-kat (wrong secret, swapped points, tampered commitment, and
+> the honest procedure over a false statement -- the wrong-scalar
+> unmasker's only forgery). The Fiat-Shamir transcript and response
+> equation were mirrored and pinned in the pure-Python reference FIRST,
+> then the xTalk written to match. NOT done, on purpose: the hostile
+> review and the soak period below are HUMAN-ERA work and stay open --
+> nothing about this build discharges them -- and the sx* DLEQ calls have
+> never run on an engine.
+
 - DLEQ (Chaum-Pedersen) proofs per unmask step — wrong steps become impossible rather
-  than attributable; the envelope's reserved `proof` field fills in.
-- Batch scalar mult; any measured FFI hot spots.
+  than attributable; the envelope's reserved `proof` field fills in. **Built (above).**
+- Batch scalar mult; any measured FFI hot spots. **The batch handler shipped (ABI 9)
+  and the DLEQ verifier uses it; the deal-path hot spots wait on 4f's measurement.**
 - **Hostile review** of the deal implementation by someone who did not write it, and a
   soak-test period. Only after this does spec section 13's sequencing rule (the gate in
   front of any future value layer) even begin to apply — and section 13's non-goals
   (regulatory, collusion, bots) remain exactly as out-of-scope as the spec says.
+  **Open — human-era, deliberately not claimable by any static build.**
 
 **Exit:** spec 7.4's first-hardening ceiling shipped; review findings closed; the
 "value-readiness" checklist in spec 13 honestly assessable.

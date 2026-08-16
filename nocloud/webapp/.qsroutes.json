@@ -25,6 +25,14 @@
     },
     {
       "method": "GET",
+      "path": "/api/greet/:name",
+      "type": "application/json; charset=utf-8",
+      "template": true,
+      "body": "{\"hello\":\"{{param.name}}\",\"note\":\"the :name path segment was captured and escaped - try /api/greet/world\"}",
+      "cors": true
+    },
+    {
+      "method": "GET",
       "path": "/api/config",
       "file": "config.json",
       "type": "application/json; charset=utf-8"

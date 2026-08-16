@@ -28,7 +28,14 @@ Status, by phase (each a maintainer's dated account):
   render with their origin device and seq, channel-1 presence shows
   [typing]/[quiet] per peer, and a stranger's record is refused and
   logged - the phase-6 done-criterion (a draft typed on one device
-  appears on another with a stranger refused) is now reachable.
+  appears on another with a stranger refused) is now reachable. And
+  since 2026-08-16 the MEDIA HANDOFF (the channel-2 decision): Send
+  media... seeds the picked file in place and offers it to every
+  admitted device as a signed channel-0 pointer (info-hash + name +
+  size); the receiving device's Fetch + play pulls the bytes over the
+  phase-3 torrent rail, playable mid-download. Channel 2 itself stays
+  reserved, dark - media never fits enet's 60000-byte budget, and bulk
+  over that seam is a torrent in this suite.
   Phase 7 now includes the 8.2/8.3 onion SERVING (2026-08-15): Publish +
   serve registers onion-httpd routes for the feed page at `/`, the signed
   prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs BOTH

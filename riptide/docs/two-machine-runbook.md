@@ -65,7 +65,7 @@ Needs: an open DM conversation (phase 4 flow), datachannelxt on both.
    fail visibly (STUN only, no TURN relay, by design - spec section 6);
    the call dies on Lock or close.
 
-## Phase 6 - the LAN mesh (never run; now welcome + sync payload)
+## Phase 6 - the LAN mesh (never run; welcome + sync payload + media handoff)
 
 Needs: BOTH machines unlocked with the SAME master (see the table), same
 LAN, UDP 27099 allowed.
@@ -97,18 +97,36 @@ LAN, UDP 27099 allowed.
 6. Feed seq over the mesh: with a published feed (seq N > 0) on A, both
    admitted, B must log `feed seq N adopted from <A's name>` if B's own
    seq is behind - the two-devices-never-conflict half of channel 0.
-7. The stranger test (the security half): on B, Lock, unlock a DIFFERENT
+7. The media handoff (the channel-2 decision, added 2026-08-16: a
+   signed channel-0 POINTER; the bytes ride the phase-3 torrent rail,
+   and channel 2 stays dark). Both machines unlocked so their torrent
+   sessions are up. On A, section 5 of the Devices card: `Send
+   media...`, pick a small photo or video. Expected on A:
+   `offered "<file>" (<size> bytes) to 1 admitted device(s)`; on B:
+   `media offer from "<A's name>": <file> (<size> bytes)` and the offer
+   line fills in with the file, size, sender, and hash. On B click
+   `Fetch + play`: the handoff progress line must climb (on one LAN,
+   near instantly - the phase-3 pass's own shape) and the button must
+   flip to `Play now` the moment the on-disk file exists; click it and
+   the file must open in the system player. Report whether playback
+   was mid-download or after completion, same nuance as phase 3. If
+   the swarm never connects, note it with the network's shape: peer
+   discovery is the DHT, so a LAN with no internet route may not find
+   its swarm even though both devices sit on it - report that as the
+   recorded honest limit, not a defect.
+8. The stranger test (the security half): on B, Lock, unlock a DIFFERENT
    identity, Join again. A must log `a peer FAILED admission (not your
    device)` and drop it. Nothing should appear in either device list,
    and NO draft may cross. If any record does arrive from an unadmitted
    or foreign peer, the log line to expect (and report) is
    `stranger record refused` - the record-level refusal the library
    enforces on top of admission.
-8. Timing note: the admission is a first-message handshake, so a
+9. Timing note: the admission is a first-message handshake, so a
    same-second join is normal; a hang at `connecting to <ip>` is almost
    always the firewall or the wrong IP.
-9. Honest limit, said in the UI too: sync records are authenticated,
-   not encrypted - the LAN carries draft plaintext.
+10. Honest limits, said in the UI too: sync records are authenticated,
+    not encrypted - the LAN carries draft plaintext - and offered media
+    BYTES ride the ordinary torrent rail (swarm peers see your IP).
 
 ## Phase 7 - the anon persona (needs tor; single machine is enough)
 

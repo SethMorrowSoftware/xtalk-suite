@@ -1,8 +1,8 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.9.0,
+The public `rs*` surface of `src/riptide.livecodescript` (library 0.10.0,
 phases 1-7 plus the 8.2/8.3 onion serving seams and the phase-6 sync
-records). Pure LiveCodeScript over the installed suite extensions; the
+records, media handoff included). Pure LiveCodeScript over the installed suite extensions; the
 byte-exact wire layouts are documented at the top of the library and
 pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
 the harness constants, with `tools/check-selftest-vectors.py` holding the
@@ -204,6 +204,22 @@ and only then - the fields. Authenticated, NOT encrypted: the LAN sees
 draft plaintext. Device names are cooperative labels among your own
 devices, not identities (all of them share the one keypair).
 
+**The channel-2 decision (2026-08-16).** Spec section 7's bulk media
+handoff is a fourth record kind, `"M"`, on CHANNEL 0 - a small signed
+POINTER at the phase-3 torrent path - and channel 2 stays reserved,
+dark. A draft's media essentially never fits enet's 60000-byte packet
+budget, and the suite's seam law (enetxt) is that a payload over it
+stops being a message and becomes a torrent; a chunked enet lane would
+reimplement libtorrent's per-piece integrity, resume, and backpressure
+with none of its proof, where `rsMediaCreate`/`rsMediaFetch` are already
+two-machine proven. The 40-hex v1 info-hash is deliberately BOTH fields
+the record needs: the content address libtorrent verifies piece-by-piece
+against and the torrent linkage a magnet fetch takes. Honest limit: the
+sync records never touch the internet, but the pointed-at BYTES ride the
+ordinary torrent rail - swarm peers see your IP and peer discovery is
+the DHT (the same properties the phase-3 pass measured, on one LAN, near
+instantly).
+
 | Handler | Returns | Notes |
 |---|---|---|
 | `rsLanBuildDraft(pName, pSeq, pDraftText, pMaster)` | Data | the channel-0 draft record: ABSOLUTE state (the whole current draft, empty = cleared, max 4096 UTF-8 bytes - refused, never truncated) with a monotonic per-device `pSeq` |
@@ -212,6 +228,8 @@ devices, not identities (all of them share the one keypair).
 | `rsLanVerifyFeedState(pBytes, pMaster)` | Array | `name`, `feedSeq`, `readPeer` (empty for none), `readUpTo`; apply both halves as MAX - feedSeq is what keeps two devices from publishing a conflicting head |
 | `rsLanBuildPresence(pName, pTyping, pTick, pMaster)` | Data | the channel-1 presence/typing record: absolute state with a monotonic per-device `pTick`, engineered to be safely droppable - senders re-assert on a cadence, never send deltas |
 | `rsLanVerifyPresence(pBytes, pMaster)` | Array | `name`, `typing` (true/false), `tick`, or empty; unknown flag bits are refused fail-closed; apply only a `tick` strictly above the last applied |
+| `rsLanBuildHandoff(pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster)` | Data | the channel-0 media-handoff POINTER: the 40-hex info-hash `rsMediaCreate` returned (case-normalized; the all-zeros hash refused), the file leaf name (1..255 UTF-8 bytes, display only), the size (display only - the torrent metadata is the authority), a monotonic per-device `pSeq` |
+| `rsLanVerifyHandoff(pBytes, pMaster)` | Array | `name`, `seq`, `infoHash`, `fileName`, `fileSize`, or empty with a distinct refusal; strict lowercase hash on the wire; apply only a `seq` strictly above the last applied - a duplicate apply is harmless anyway, `rsMediaFetch` finds before it adds |
 
 ## The anon persona and the guard (phase 7)
 

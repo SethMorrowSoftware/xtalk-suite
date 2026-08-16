@@ -355,6 +355,14 @@ LAN_PRESENCE_HEX = (
     "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6"
     "132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb9"
     "2ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f")
+# the channel-0 media handoff POINTER (the channel-2 decision, 2026-08-16:
+# bulk rides the phase-3 torrent path; channel 2 stays reserved, dark)
+LAN_HANDOFF_HEX = (
+    "52534c314d0570686f6e650000000000000007656565656565656565656565"
+    "6565656565656565656565656565656565656565656565656565656508636c"
+    "69702e6d70340000000000100000d769b6b0853772c7fd7a8050f12115c559"
+    "ad663257ea5eb11bd8e808d4f9ef1e55ff92f63f690b30d598408fa6d2a48d"
+    "93c92896d75f9418a1594e6af580e60b")
 
 draft_rec = ref["lan_build_draft"]("phone", 5, "draft: hello mesh", MASTER)
 check("lan draft bytes", draft_rec.hex(), "".join(LAN_DRAFT_HEX.split()))
@@ -370,10 +378,24 @@ check("lan presence bytes", pres_rec.hex(),
 check("lan presence flags", pres_rec[11], 1)
 check("lan presence not typing flags",
       ref["lan_build_presence"]("phone", False, 3, MASTER)[11], 0)
+handoff_rec = ref["lan_build_handoff"]("phone", 7, "ee" * 20, "clip.mp4",
+                                       1048576, MASTER)
+check("lan handoff bytes", handoff_rec.hex(),
+      "".join(LAN_HANDOFF_HEX.split()))
+check("lan handoff kind", handoff_rec[4:5], b"M")
+# the pointed-at hash travels as 40 ASCII hex right after the seq, and it
+# is the SAME placeholder info-hash the golden post-2 media list carries -
+# one value is both the content address and the torrent linkage
+check("lan handoff hash field", handoff_rec[19:59],
+      ("ee" * 20).encode("ascii"))
+check("lan handoff normalizes case",
+      ref["lan_build_handoff"]("phone", 7, "EE" * 20, "clip.mp4", 1048576,
+                               MASTER),
+      handoff_rec)
 
 # the design's two structural claims, per record kind
 for _label, _rec in (("draft", draft_rec), ("feed-state", feed_rec),
-                     ("presence", pres_rec)):
+                     ("presence", pres_rec), ("handoff", handoff_rec)):
     check("lan %s sig verifies (sync domain)" % _label,
           ref["_verify_ed25519"](
               _rec[-64:], ref["LAN_SYNC_DOMAIN"] + _rec[:-64], lan_pub),
@@ -405,6 +427,17 @@ check_raises("lan presence bad tick", lambda: ref["lan_build_presence"](
     "phone", True, 2 ** 53, MASTER))
 check_raises("lan sync name over cap", lambda: ref["lan_build_presence"](
     "x" * 33, True, 1, MASTER))
+check_raises("lan handoff bad hash", lambda: ref["lan_build_handoff"](
+    "phone", 1, "zz" * 20, "f", 1, MASTER))
+check_raises("lan handoff zero hash", lambda: ref["lan_build_handoff"](
+    "phone", 1, "0" * 40, "f", 1, MASTER))
+check_raises("lan handoff empty file name", lambda: ref["lan_build_handoff"](
+    "phone", 1, "ee" * 20, "", 1, MASTER))
+check_raises("lan handoff file name over cap",
+             lambda: ref["lan_build_handoff"](
+                 "phone", 1, "ee" * 20, "x" * 256, 1, MASTER))
+check_raises("lan handoff bad size", lambda: ref["lan_build_handoff"](
+    "phone", 1, "ee" * 20, "f", -1, MASTER))
 
 # an empty draft is legal ABSOLUTE state (it means "cleared")
 empty_draft = ref["lan_build_draft"]("phone", 6, "", MASTER)

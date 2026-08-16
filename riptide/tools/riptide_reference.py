@@ -783,6 +783,44 @@ def lan_build_presence(name, typing, tick, master):
     return body + _lan_sync_sign(body, master)
 
 
+# The channel-2 decision, recorded (2026-08-16): bulk media handoff
+# between admitted devices is a channel-0 POINTER record, not a new wire.
+# A draft's media essentially never fits enet's 60000-byte packet budget,
+# and the suite's seam law (enetxt) is that a payload over it stops being
+# a message and becomes a torrent - which is the phase-3 machinery this
+# repo already proved on two machines. So the "M" record carries the
+# 40-hex v1 info-hash (in the phase-3 design that one value IS both the
+# content address libtorrent verifies piece-by-piece AND the torrent
+# linkage a magnet fetch takes), plus the file's leaf name and size for
+# the receiving UI. Channel 2 stays reserved, dark.
+
+LAN_MAX_FILE = 255  # bytes of UTF-8 file leaf name (the u8 length field)
+
+
+def lan_build_handoff(name, seq, info_hash, file_name, file_size, master):
+    """Channel-0 media handoff: magic(4) "M" nameLen(u8) name seq(u64 BE)
+    infoHash(40 ascii lowercase hex, non-zero) fileNameLen(u8) fileName
+    (UTF-8, 1..255) fileSize(u64 BE) sig(64). ABSOLUTE state - the
+    device's LATEST handoff offer - with the draft record's replay guard
+    (apply only a seq strictly above the last applied per device); a
+    duplicate apply is harmless anyway because the fetch it points at is
+    idempotent (rsMediaFetch finds before it adds)."""
+    nb = _lan_name(name)
+    h = info_hash.lower()
+    if len(h) != 40 or any(c not in "0123456789abcdef" for c in h):
+        raise ValueError("info hash must be 40 hex chars")
+    if h == "0" * 40:
+        raise ValueError("info hash must name real content (non-zero)")
+    fb = file_name.encode("utf-8")
+    if not 1 <= len(fb) <= LAN_MAX_FILE:
+        raise ValueError("file name must be 1..%d bytes" % LAN_MAX_FILE)
+    body = (LAN_MAGIC + b"M" + bytes([len(nb)]) + nb
+            + _u64(_lan_counter(seq, "seq")) + h.encode("ascii")
+            + bytes([len(fb)]) + fb
+            + _u64(_lan_counter(file_size, "file size")))
+    return body + _lan_sync_sign(body, master)
+
+
 # ---------------------------------------------------------------------------
 # Phase 7 - the anonymous persona (RIPTIDE-SOCIAL-SPEC.md section 8)
 #
@@ -982,6 +1020,9 @@ def _self_check():
     if _verify_ed25519(dr[-64:], LAN_DOMAIN + dr[:-64], lp):
         raise AssertionError("LAN sync self-check failed (domain "
                              "separation)")
+    ho = lan_build_handoff("phone", 1, "ab" * 20, "f", 1, m)
+    if not _verify_ed25519(ho[-64:], LAN_SYNC_DOMAIN + ho[:-64], lp):
+        raise AssertionError("LAN handoff self-check failed (valid sig)")
 
 
 _self_check()
@@ -1037,6 +1078,10 @@ def golden_vectors():
     lan_feed_state = lan_build_feed_state("phone", 9, handle,
                                           1754870700, master)
     lan_presence = lan_build_presence("phone", True, 3, master)
+    # the channel-0 media handoff pointer (the chosen placeholder
+    # info-hash is the same one the golden post-2 media list carries)
+    lan_handoff = lan_build_handoff("phone", 7, "ee" * 20, "clip.mp4",
+                                    1048576, master)
     # phase 7: the anon persona (subkey 100) and a sample BTXO stream
     anon0_handle = anon_handle(master, 0)
     anon0_onion = anon_onion(master, 0)
@@ -1091,6 +1136,7 @@ def golden_vectors():
         "lanDraft": lan_draft.hex(),
         "lanFeedState": lan_feed_state.hex(),
         "lanPresence": lan_presence.hex(),
+        "lanHandoff": lan_handoff.hex(),
         "anon0Handle": anon0_handle,
         "anon0Onion": anon0_onion,
         "anon0DmSeed": anon_dm_seed(master, 0).hex(),

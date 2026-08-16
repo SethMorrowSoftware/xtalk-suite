@@ -385,9 +385,34 @@ Verify-then-parse on every inbound record, refusals distinct; records
 from unadmitted peers are refused outright. Honest limit, surfaced in
 the UI: authenticated, NOT encrypted - the LAN carries draft plaintext;
 this section's design is admission-only, and encryption would need a new
-traffic subkey. Channel 2's bulk media handoff remains unbuilt; the demo
-allocates the third channel so both sides already agree when it lands.
-Verified statically; needs the two-machine pass.)*
+traffic subkey.)*
+
+*(As built, 2026-08-16 - the channel-2 decision. Bulk media handoff is
+SETTLED as a fourth RSL1 kind, "M", on CHANNEL 0: a small signed POINTER
+- the 40-hex v1 info-hash (which in the phase-3 design is both the
+content address libtorrent verifies piece-by-piece and the torrent
+linkage a magnet fetch takes), the file's leaf name and size for the
+receiving UI, a monotonic per-device seq, the same shared-LAN-key
+signature under the "riptide-lan-s" domain as the other sync records.
+The BYTES ride the phase-3 torrent path (rsMediaCreate seeds in place on
+the sender; rsMediaFetch fetches sequentially and co-seeds on the
+receiver) - the one rail of this app already proven end to end on two
+machines, on one LAN, near instantly. Channel 2 itself stays RESERVED,
+dark, deliberately: this section's own sketch caps a channel-2 packet at
+the 60000-byte budget and sends anything larger to a torrent even on the
+LAN, and a draft's media - a photo, a video - essentially never fits the
+budget, so the sub-budget lane has no real payload today (drafts already
+ride channel 0, capped at 4096). A chunked channel-2 protocol was
+considered and rejected: it would reimplement libtorrent's per-piece
+integrity, resume, and backpressure with none of its proof. The channel
+stays allocated so both sides already agree if a genuinely sub-budget
+bulk case ever mints its own record kind. Two honest limits, recorded
+and surfaced in the demo's footer: the pointer record never leaves the
+LAN, but the pointed-at bytes ride the ORDINARY torrent rail - swarm
+peers see your IP, and peer discovery is the DHT, so a fully offline LAN
+may not find its swarm even though both devices sit on it (the exact
+transfer shape the phase-3 pass measured). Verified statically; needs
+the two-machine pass.)*
 
 ---
 

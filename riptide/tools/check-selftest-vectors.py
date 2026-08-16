@@ -104,6 +104,9 @@ def main(argv):
         "kRsGoldLanFeedSeq": "chosen LAN feed-state seq",
         "kRsGoldLanReadTs": "chosen LAN read-receipt timestamp",
         "kRsGoldLanTick": "chosen LAN presence tick",
+        "kRsGoldLanMediaSeq": "chosen LAN media-handoff per-device seq",
+        "kRsGoldLanFileName": "chosen handoff file leaf name",
+        "kRsGoldLanFileSize": "chosen handoff file size in bytes",
     }
     for name in inputs:
         if name in k:
@@ -240,6 +243,19 @@ def main(argv):
     want("kRsGoldLanPresenceHex", ref["lan_build_presence"](
         k["kRsGoldLanJoinName"], True, int(k["kRsGoldLanTick"]),
         master).hex())
+    # the channel-0 media handoff (the channel-2 decision): the pointed-at
+    # hash is the SAME chosen placeholder the golden post-2 media list
+    # carries - one value is the content address AND the torrent linkage
+    handoff_rec = ref["lan_build_handoff"](
+        k["kRsGoldLanJoinName"], int(k["kRsGoldLanMediaSeq"]),
+        k["kRsGoldMediaTarget"], k["kRsGoldLanFileName"],
+        int(k["kRsGoldLanFileSize"]), master)
+    want("kRsGoldLanHandoffHex", handoff_rec.hex())
+    if not ref["_verify_ed25519"](
+            handoff_rec[-64:], ref["LAN_SYNC_DOMAIN"] + handoff_rec[:-64],
+            lan_pub):
+        failures.append("the golden LAN handoff does not verify under the "
+                        "mesh public key")
     # structural: the golden draft verifies under the mesh public with the
     # SYNC domain and refuses the ADMISSION domain (the separation the
     # distinct tag exists for) - a golden that did not would be useless

@@ -43,6 +43,22 @@ owner-gated (the 720p re-layout, Schnorr/Taproot, cnx_memzero's ABI ripple,
 nocloud Phase 3's contract questions, box2dxt's polish passes, and Hold'em's
 2e-remainder/3/4d-f/5).
 
+**WAVES 4-5 CLOSED THE LADDER (2026-08-16).** After the correction above,
+wave 4 landed the sparse-access session plan (the runbook's new opening
+section: the whole backlog as five resource-keyed sessions, ~5 x 3h + two
+platform boxes), SodiumXT ABI 9 (the DLEQ/batch algebra, four binaries),
+and holde-em's 2e remainder + Phase 3 oracle; wave 5 landed holde-em 4d/4e
++ the Phase 5 DLEQ proofs (a wrong unmask step is now refused instantly,
+soundness pinned three ways), riptide's channel-2 settlement (a pointer
+record at the proven torrent rail - the design, recorded), nocloud Phase 3
+(:param routes built against the recorded contract questions), and
+docs/OPEN-DECISIONS.md (21 owner briefs, most-blocking first - it found
+five open decisions this file's E section missed and two E entries already
+decided). Suite coverage 401/419; protocol-kat 105 pins; the full gate set
+green. The headless ladder is now at its TRUE ceiling: what remains needs
+an engine (the runbook's S1-S4 sessions), a platform box (S5), a human
+(Phase 5's hostile review + soak), or an owner's five minutes on a brief.
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and

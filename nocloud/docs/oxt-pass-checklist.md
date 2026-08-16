@@ -6,9 +6,10 @@ runtime behaviours that the two gates (`tools/check-livecodescript.py`,
 `tests/fileserver_golden.py`) **cannot** observe, to exercise on a real OpenXTalk engine.
 
 Covers the HTTP-host work landed across the recent PRs: custom `.qsroutes.json` routes (bodies,
-templating, file-mapped, redirects), the `/_qs/*` observability endpoints, the response-header
-set, `OPTIONS`/`Allow`/`405`, the editor-login throttle, and CORS preflight — plus the
-load-bearing invariants those ride on (self-building UI, fail-closed extensions, clean shutdown).
+templating, file-mapped, redirects, and — since 2026-08-16 — `:param` path patterns), the
+`/_qs/*` observability endpoints, the response-header set, `OPTIONS`/`Allow`/`405`, the
+editor-login throttle, and CORS preflight — plus the load-bearing invariants those ride on
+(self-building UI, fail-closed extensions, clean shutdown).
 
 **How to use it:** work top-to-bottom, mark each `- [ ]` as pass/fail, and note anything odd
 inline. Each item is *action -> expected result*. Anything you can't reach is fine — just say so.
@@ -40,6 +41,38 @@ Test over **both** transports: a web link (paths under `/<token>/…`) and a Tor
       verified statically), and *following* the redirect lands on the gallery, **not** a token-gate
       `404`. Over Tor (root mount) the same route -> `302` with `Location: /gallery` unchanged.
       An external `redirect` target (`http://…`) must go out verbatim on both transports.
+
+## 1a. `:param` routes (Phase 3, 2026-08-16 - verified statically + golden-pinned; THIS is its engine pass)
+
+Uses the sample's `GET /api/greet/:name` route. Test over **both** transports.
+
+- [ ] `GET /api/greet/world` -> `{"hello":"world"}` (the `:name` capture reached the template)
+      **+ `Access-Control-Allow-Origin: *`** (the route says `cors: true`).
+- [ ] `GET /api/greet/%3Cscript%3E` -> the reflected value comes back **escaped**
+      (`&lt;script&gt;`), never raw — a param is hostile input, same discipline as `{{query.*}}`.
+- [ ] `GET /api/greet/` (empty segment) and `GET /api/greet/a/b` (two segments) -> **`404`**
+      (a param matches exactly one non-empty segment; these fall through to the static pipeline).
+- [ ] `GET /api/greet/a%2Fb` -> the `%2F` decodes to a real `/` **before** routing, so this is
+      two segments -> **`404`** (a param can never smuggle a slash).
+- [ ] **Allow/405 accounting:** `OPTIONS /api/greet/world` -> `200` with `Allow` derived from the
+      matching pattern (here `GET, HEAD, OPTIONS`); an unsupported method on that path (e.g.
+      `DELETE /api/greet/world`) -> `405` + the same `Allow`. If you add a `POST /api/thing/:id`
+      route, `OPTIONS /api/thing/42` must include **`POST`**.
+- [ ] **CORS preflight on a param path:** `OPTIONS /api/greet/world` (the route is `cors: true`)
+      -> the four `Access-Control-*` headers, exactly as an exact-path cors route answers;
+      a preflighted cross-origin `fetch` to the param path succeeds.
+- [ ] **Reserved namespaces stay sealed:** add a route `"path": "/:x"` or `"path": "/_qs/:x"` to
+      the config -> it is **skipped at load** (not listed by `/_qs/routes`); `GET /_qs/info` and
+      `/_edit` behave exactly as before (no pattern can claim them - request-time backstop).
+- [ ] **Literal pattern text:** `GET /api/greet/:name` (the `:name` typed literally in the URL)
+      -> still served through the matcher, with the capture equal to the literal `:name` text
+      (patterns never ride the exact-key fast path).
+- [ ] **File-kind param route** (add e.g. `"path": "/dl/:tag", "file": "assets/logo.svg"`):
+      `GET /dl/v1` streams the file (a `Range:` request -> `206`; route `headers` present);
+      the `:tag` capture is **not** substituted into the file target — every `/dl/<anything>`
+      serves the same declared file.
+- [ ] `GET /_qs/routes` lists the pattern route with its literal pattern text
+      (`/api/greet/:name`).
 
 ## 2. Custom routes - security & fail-closed
 

@@ -3868,7 +3868,7 @@ end qsSendRedirect
 -- app-relative path; pRoot is THIS share's folder (for its user routes). This is the block that
 -- used to be copied verbatim into qsFsServePath AND qsCwServe.
 command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
-   local tMethod, tRouteKey, tAllow, tCrlf
+   local tMethod, tRouteKey, tAllow, tCrlf, tPatternKey, tParams
    put (numToChar(13) & numToChar(10)) into tCrlf
    put pHeaders["__method"] into tMethod
    put toUpper(tMethod) & space & pAppPath into tRouteKey
@@ -3878,8 +3878,25 @@ command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
       return "true"
    end if
    qsEnsureUserRoutes pRoot                             -- lazy-load this folder's .qsroutes.json
-   if sUserRoutes[pRoot][tRouteKey] is an array then
+   -- exact user routes hit the table directly. A PATTERN descriptor is deliberately NOT
+   -- served off this fast path: a request whose literal path IS the pattern text would
+   -- exact-hit the key and dispatch with no captures, so patterns always go through the
+   -- matcher below - one code path, captures always set.
+   if sUserRoutes[pRoot][tRouteKey] is an array \
+         and sUserRoutes[pRoot][tRouteKey]["pattern"] is not "true" then
       qsUserRouteDispatch pConn, sUserRoutes[pRoot][tRouteKey], pHeaders, pRoot
+      return "true"
+   end if
+   -- parameterised user routes (an exact miss only): deterministic pick, then the
+   -- captures ride the request array under the server-owned "__" namespace
+   -- (qsHttpParseHead refuses client headers starting "__", so __params is unforgeable)
+   -- and reach a route body ONLY through qsTemplateEscape - a param value is hostile
+   -- input, escaped exactly like a query value.
+   put qsUserRouteFind(pRoot, toUpper(tMethod), pAppPath) into tPatternKey
+   if tPatternKey is not empty then
+      put qsRouteMatch(qsRouteKeyPath(tPatternKey), pAppPath) into tParams
+      put tParams into pHeaders["__params"]
+      qsUserRouteDispatch pConn, sUserRoutes[pRoot][tPatternKey], pHeaders, pRoot
       return "true"
    end if
    if tMethod is "OPTIONS" then
@@ -4063,10 +4080,13 @@ function qsPad2 pN
 end qsPad2
 
 -- The Allow header value for pPath: the static verbs (GET, HEAD, OPTIONS) plus any method
--- registered as a dynamic route for EXACTLY this path - both built-in routes (sHttpRoutes) and,
--- when pRoot is given, the shared folder's user-declared .qsroutes.json routes - in a
--- deterministic (sorted) order, de-duplicated. Both route tables key on "METHOD /path", so the
--- same split works for each. Pure over those tables; mirrored by http_allow() in the golden.
+-- registered as a dynamic route CLAIMING this path - both built-in routes (sHttpRoutes, always
+-- exact) and, when pRoot is given, the shared folder's user-declared .qsroutes.json routes,
+-- where "claiming" means an exact key match OR a :param pattern that MATCHES pPath (so a param
+-- route's methods never silently fall out of the OPTIONS/405 derivation - the request would
+-- dispatch there, so Allow must say so) - in a deterministic (sorted) order, de-duplicated.
+-- Both route tables key on "METHOD /path", so the same split works for each. Pure over those
+-- tables; mirrored by http_allow() in the golden.
 function qsHttpAllow pPath, pRoot
    local tKey, tMethod, tRoutePath, tSp, tExtras, tOut
    put "" into tExtras
@@ -4087,7 +4107,9 @@ function qsHttpAllow pPath, pRoot
          if tSp >= 1 then
             put char 1 to (tSp - 1) of tKey into tMethod
             put char (tSp + 1) to -1 of tKey into tRoutePath
-            if tRoutePath is pPath and tMethod is not "GET" and tMethod is not "HEAD" \
+            if (tRoutePath is pPath or (qsRouteHasParams(tRoutePath) \
+                  and qsRouteMatch(tRoutePath, pPath) is an array)) \
+                  and tMethod is not "GET" and tMethod is not "HEAD" \
                   and tMethod is not "OPTIONS" and tMethod is not among the lines of tExtras then
                put tMethod & return after tExtras
             end if
@@ -4104,13 +4126,17 @@ function qsHttpAllow pPath, pRoot
    return tOut
 end qsHttpAllow
 
--- The CORS preflight header block for an OPTIONS to pPath, or empty if no user route on pPath
--- opted into `cors`. A route with "cors": true already stamps Access-Control-Allow-Origin: * on
--- its OWN response (a simple cross-origin GET just works); this closes the gap for a PREFLIGHTED
--- request (POST+JSON, PUT/DELETE, custom headers), where the browser sends OPTIONS first and
--- expects the Allow-* headers back or it aborts the real request. pAllow is the already-computed
--- Allow value (the methods this path accepts), reused verbatim for Allow-Methods. Origin is "*"
--- (never credentialed here), so Allow-Headers: * is valid. Pure over sUserRoutes; golden: cors_*.
+-- The CORS preflight header block for an OPTIONS to pPath, or empty if no user route claiming
+-- pPath opted into `cors` - where "claiming" means an exact key match OR a :param pattern that
+-- MATCHES pPath, the same rule as qsHttpAllow, so the preflight promise holds identically for
+-- param routes (a preflighted cross-origin call to /api/thing/42 must get its Allow-* block
+-- from the route that will actually serve it). A route with "cors": true already stamps
+-- Access-Control-Allow-Origin: * on its OWN response (a simple cross-origin GET just works);
+-- this closes the gap for a PREFLIGHTED request (POST+JSON, PUT/DELETE, custom headers), where
+-- the browser sends OPTIONS first and expects the Allow-* headers back or it aborts the real
+-- request. pAllow is the already-computed Allow value (the methods this path accepts), reused
+-- verbatim for Allow-Methods. Origin is "*" (never credentialed here), so Allow-Headers: * is
+-- valid. Pure over sUserRoutes; golden: cors_*.
 function qsCorsPreflight pRoot, pPath, pAllow
    local tKey, tSp, tRoutePath, tCrlf
    if pRoot is empty then
@@ -4119,12 +4145,15 @@ function qsCorsPreflight pRoot, pPath, pAllow
    put (numToChar(13) & numToChar(10)) into tCrlf
    repeat for each key tKey in sUserRoutes[pRoot]
       put offset(space, tKey) into tSp
-      if tSp >= 1 and (char (tSp + 1) to -1 of tKey) is pPath \
-            and sUserRoutes[pRoot][tKey]["cors"] is "true" then
-         return "Access-Control-Allow-Origin: *" & tCrlf & \
-            "Access-Control-Allow-Methods: " & pAllow & tCrlf & \
-            "Access-Control-Allow-Headers: *" & tCrlf & \
-            "Access-Control-Max-Age: 600" & tCrlf
+      if tSp >= 1 and sUserRoutes[pRoot][tKey]["cors"] is "true" then
+         put char (tSp + 1) to -1 of tKey into tRoutePath
+         if tRoutePath is pPath or (qsRouteHasParams(tRoutePath) \
+               and qsRouteMatch(tRoutePath, pPath) is an array) then
+            return "Access-Control-Allow-Origin: *" & tCrlf & \
+               "Access-Control-Allow-Methods: " & pAllow & tCrlf & \
+               "Access-Control-Allow-Headers: *" & tCrlf & \
+               "Access-Control-Max-Age: 600" & tCrlf
+         end if
       end if
    end repeat
    return ""
@@ -4262,6 +4291,13 @@ end qsRoutesRoute
 -- only return a canned body or a redirect (NO code execution), never under the reserved
 -- /_qs/ or /_edit/ namespaces, headers are CR/LF-sanitised, and the config is a dotfile so
 -- it is never served or listed. Gated by sHasJson (fail-closed: no JSON decoder -> off).
+-- A path may carry :param segments (Phase 3, 2026-08-16): the first segment must be
+-- STATIC (so no pattern can reach the reserved namespaces - see qsUserPatternValid), the
+-- captures reach ONLY a templated body as {{param.NAME}} (escaped like every reflected
+-- value; never a file target, redirect Location, or header), and Allow/405 + the CORS
+-- preflight account for pattern matches exactly as for exact routes. "Streaming" for a
+-- route stays the file kind: a body is capped at kUserBodyMax, and anything larger points
+-- at a folder file (`file`) and rides the existing bounded pump with per-route headers.
 -- ----------------------------------------------------------------------------
 
 -- Fail-closed probe: can the engine decode JSON? Mirrors qsCanEncrypt (probe once into
@@ -4297,6 +4333,197 @@ function qsUserPathValid pPath
    end if
    return true
 end qsUserPathValid
+
+-- The path half of a "METHOD /path" route-table key (both route tables key this way).
+-- Pure; golden: route_key_path().
+function qsRouteKeyPath pKey
+   local tSp
+   put offset(space, pKey) into tSp
+   if tSp < 1 then
+      return ""
+   end if
+   return char (tSp + 1) to -1 of pKey
+end qsRouteKeyPath
+
+-- Does a route path carry a PARAM segment (a "/"-separated segment starting ":")? This is
+-- the one test that decides exact-vs-pattern for a STORED key: qsLoadUserRoutes only stores
+-- a param-shaped path after qsUserPatternValid accepts it (and marks the descriptor
+-- "pattern"), so within the table "has a param segment" and "is a pattern route" are the
+-- same predicate - which lets qsHttpAllow/qsCorsPreflight stay pure over the key strings.
+-- Pure; golden: route_has_params().
+function qsRouteHasParams pPath
+   local tSavedID, tSeg
+   put the itemDelimiter into tSavedID
+   set the itemDelimiter to "/"
+   repeat for each item tSeg in pPath
+      if char 1 of tSeg is ":" then
+         set the itemDelimiter to tSavedID
+         return true
+      end if
+   end repeat
+   set the itemDelimiter to tSavedID
+   return false
+end qsRouteHasParams
+
+-- How many param segments a pattern carries - the specificity rank qsUserRouteFind sorts
+-- by (fewest params = most literal = most specific). Pure; golden: route_param_count().
+function qsRouteParamCount pPath
+   local tSavedID, tSeg, tCount
+   put 0 into tCount
+   put the itemDelimiter into tSavedID
+   set the itemDelimiter to "/"
+   repeat for each item tSeg in pPath
+      if char 1 of tSeg is ":" then
+         add 1 to tCount
+      end if
+   end repeat
+   set the itemDelimiter to tSavedID
+   return tCount
+end qsRouteParamCount
+
+-- Declaration gate for a user route path that MAY carry :param segments. A plain path
+-- defers entirely to qsUserPathValid (nothing changes for existing configs). A
+-- parameterised path must ALSO satisfy the rules that keep patterns safe by construction:
+--   * the FIRST segment is STATIC - "/:x" would match "/_qs" and "/_edit", so refusing a
+--     leading param (on top of qsUserPathValid's literal reserved-prefix refusal) makes
+--     the reserved namespaces unreachable by any stored pattern BY CONSTRUCTION, not by a
+--     runtime check somebody could forget;
+--   * every param has a name, [A-Za-z0-9_] only - the name becomes a {{param.NAME}}
+--     template token, so it must never carry template/markup metacharacters;
+--   * no name repeats - a duplicate would silently shadow the first capture.
+-- Pure; golden: user_pattern_valid().
+function qsUserPatternValid pPath
+   local tSavedID, tSeg, tIdx, tName, tSeen, tCh, tN
+   if not qsUserPathValid(pPath) then
+      return false
+   end if
+   if not qsRouteHasParams(pPath) then
+      return true                              -- a plain exact path: already fully vetted
+   end if
+   put "" into tSeen
+   put 0 into tIdx
+   put the itemDelimiter into tSavedID
+   set the itemDelimiter to "/"
+   repeat for each item tSeg in pPath
+      add 1 to tIdx
+      if char 1 of tSeg is not ":" then
+         next repeat
+      end if
+      -- item 1 is the empty text before the leading "/" (qsUserPathValid guarantees the
+      -- path is absolute), so item 2 is the FIRST real segment - the one that must stay
+      -- static for the reserved namespaces to be unreachable
+      if tIdx is 2 then
+         set the itemDelimiter to tSavedID
+         return false
+      end if
+      put char 2 to -1 of tSeg into tName
+      if tName is empty then
+         set the itemDelimiter to tSavedID
+         return false                          -- ":" alone names nothing
+      end if
+      repeat for each char tCh in tName
+         put charToNum(tCh) into tN
+         if not ((tN >= 48 and tN <= 57) or (tN >= 65 and tN <= 90) \
+               or (tN >= 97 and tN <= 122) or tCh is "_") then
+            set the itemDelimiter to tSavedID
+            return false
+         end if
+      end repeat
+      if tName is among the lines of tSeen then
+         set the itemDelimiter to tSavedID
+         return false                          -- duplicate capture name
+      end if
+      put tName & return after tSeen
+   end repeat
+   set the itemDelimiter to tSavedID
+   return true
+end qsUserPatternValid
+
+-- Match one STORED pattern against a decoded request path. Split both on "/" and compare
+-- pairwise: a static segment must equal the request's; a :param segment captures any ONE
+-- nonempty segment (a param can never span a "/" - the request path was urlDecoded before
+-- routing, so an encoded %2F is already a real separator and splits). A trailing slash is
+-- significant on both sides (checked up front, which also keeps the engine's
+-- trailing-delimiter item counting and the golden's split() in agreement). Returns the
+-- captured name -> value array on a match, or "no" - callers test `is an array`, and only
+-- ever call this on paths qsRouteHasParams accepted (>= 1 param, so a match array is
+-- never empty). BACKSTOP: refuses to match ANY pattern against a reserved (/_qs, /_edit)
+-- request path. qsUserPatternValid already makes such a pattern unstorable (static first
+-- segment + the literal reserved-prefix refusal), so this line should be unreachable -
+-- it is defense in depth, and the golden pins it against a hostile pattern injected past
+-- declaration. Pure; golden: route_match().
+function qsRouteMatch pPattern, pPath
+   local tSavedID, tPatSlash, tPathSlash, tCount, tI, tPatSeg, tPathSeg, tParams
+   if pPath is "/_qs" or pPath begins with "/_qs/" \
+         or pPath is "/_edit" or pPath begins with "/_edit/" then
+      return "no"
+   end if
+   put (the last char of pPattern is "/") into tPatSlash
+   put (the last char of pPath is "/") into tPathSlash
+   if tPatSlash is not tPathSlash then
+      return "no"
+   end if
+   put the itemDelimiter into tSavedID
+   set the itemDelimiter to "/"
+   put the number of items of pPattern into tCount
+   if the number of items of pPath is not tCount then
+      set the itemDelimiter to tSavedID
+      return "no"
+   end if
+   repeat with tI = 1 to tCount
+      put item tI of pPattern into tPatSeg
+      put item tI of pPath into tPathSeg
+      if char 1 of tPatSeg is ":" then
+         if tPathSeg is empty then
+            set the itemDelimiter to tSavedID
+            return "no"                        -- a param never matches an empty segment
+         end if
+         put tPathSeg into tParams[char 2 to -1 of tPatSeg]
+      else
+         if tPatSeg is not tPathSeg then
+            set the itemDelimiter to tSavedID
+            return "no"
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tSavedID
+   return tParams
+end qsRouteMatch
+
+-- The stored PATTERN key that should serve pMethod + pPath, or empty. Exact keys are the
+-- caller's fast path (a straight table hit); this arbitrates only the parameterised
+-- routes. Deterministic when several patterns match one path: fewest params wins (most
+-- literal = most specific), ties broken by the smallest key - array key iteration order
+-- is not a contract, so the winner must never depend on it. Pure over the route table;
+-- golden: user_route_find() (the same walk, over the keys as a list).
+function qsUserRouteFind pRoot, pMethod, pPath
+   local tKey, tSp, tRoutePath, tBestKey, tBestCount, tCount
+   put "" into tBestKey
+   put -1 into tBestCount
+   repeat for each key tKey in sUserRoutes[pRoot]
+      put offset(space, tKey) into tSp
+      if tSp < 1 then
+         next repeat
+      end if
+      if char 1 to (tSp - 1) of tKey is not pMethod then
+         next repeat
+      end if
+      put char (tSp + 1) to -1 of tKey into tRoutePath
+      if not qsRouteHasParams(tRoutePath) then
+         next repeat                           -- exact routes are the caller's fast path
+      end if
+      if qsRouteMatch(tRoutePath, pPath) is not an array then
+         next repeat
+      end if
+      put qsRouteParamCount(tRoutePath) into tCount
+      if tBestKey is empty or tCount < tBestCount \
+            or (tCount is tBestCount and tKey < tBestKey) then
+         put tKey into tBestKey
+         put tCount into tBestCount
+      end if
+   end repeat
+   return tBestKey
+end qsUserRouteFind
 
 -- Drop bytes that could break out of one response-header line (CR/LF/NUL/other controls)
 -- from a user-supplied header VALUE. Pure; golden: sanitize_header_value().
@@ -4399,8 +4626,8 @@ command qsLoadUserRoutes pRoot
             put "GET" into tMethod
          end if
          put tRoute["path"] into tPath
-         if not qsUserPathValid(tPath) then
-            next repeat
+         if not qsUserPatternValid(tPath) then
+            next repeat                       -- exact rules AND the :param pattern rules
          end if
          put empty into tDesc
          if tRoute["redirect"] is not empty and tRoute["redirect"] is not an array then
@@ -4473,6 +4700,12 @@ command qsLoadUserRoutes pRoot
             end repeat
          end if
          put tHdrs into tDesc["headers"]
+         if qsRouteHasParams(tPath) then
+            -- a :param pattern: served ONLY through qsUserRouteFind/qsRouteMatch (never
+            -- the exact-key fast path), so a request whose literal path IS the pattern
+            -- text still goes through the matcher and gets its captures
+            put "true" into tDesc["pattern"]
+         end if
          put tMethod & space & tPath into tKey      -- last write wins on a duplicate key
          put tDesc into sUserRoutes[pRoot][tKey]
       catch tErr
@@ -4583,8 +4816,9 @@ end qsMountLocation
 
 -- Substitute {{...}} tokens in a route body with request context, ESCAPED for the response
 -- content-type (JSON-escape for a json type, HTML-escape for html, else control-stripped) so
--- a reflected value can never break the response. No code runs. The method/path/query tokens
--- are pure and mirrored by render_template() in the golden; {{now}}/{{date}} read the clock.
+-- a reflected value can never break the response. No code runs. The method/path/query/param
+-- tokens are pure and mirrored by render_template() in the golden; {{now}}/{{date}} read the
+-- clock.
 function qsRenderTemplate pText, pRequest, pCtype
    local tOut, tRest, tOpen, tClose, tTok
    put "" into tOut
@@ -4613,6 +4847,10 @@ function qsRenderTemplate pText, pRequest, pCtype
 end qsRenderTemplate
 
 -- Resolve one template token to its (unescaped) value. Unknown tokens resolve to empty.
+-- {{param.NAME}} reads the :param captures qsHttpTryRoutes stashed in __params (the
+-- server-owned pseudo-field namespace a client can never set); a missing capture is empty,
+-- exactly like an absent query value. The value is escaped by qsTemplateEscape at the
+-- substitution site, same as every other token - a param is hostile input.
 function qsTemplateValue pTok, pRequest
    if pTok is "method" then
       return pRequest["__method"]
@@ -4624,6 +4862,8 @@ function qsTemplateValue pTok, pRequest
       return qsHttpDate(the seconds)
    else if pTok begins with "query." then
       return qsQueryParam(pRequest["__query"], char 7 to -1 of pTok)
+   else if pTok begins with "param." then
+      return pRequest["__params"][char 7 to -1 of pTok]
    end if
    return ""
 end qsTemplateValue

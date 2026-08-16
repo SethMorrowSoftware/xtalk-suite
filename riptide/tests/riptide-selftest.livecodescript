@@ -44,6 +44,9 @@ constant kRsGoldLanSeq = "5"
 constant kRsGoldLanFeedSeq = "9"
 constant kRsGoldLanReadTs = "1754870700"
 constant kRsGoldLanTick = "3"
+constant kRsGoldLanMediaSeq = "7"
+constant kRsGoldLanFileName = "clip.mp4"
+constant kRsGoldLanFileSize = "1048576"
 constant kRsGoldHeadSeq = "7"
 constant kRsGoldHeadName = "Riptide"
 constant kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -83,6 +86,7 @@ constant kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03e
 constant kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
 constant kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
 constant kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
+constant kRsGoldLanHandoffHex = "52534c314d0570686f6e6500000000000000076565656565656565656565656565656565656565656565656565656565656565656565656565656508636c69702e6d70340000000000100000d769b6b0853772c7fd7a8050f12115c559ad663257ea5eb11bd8e808d4f9ef1e55ff92f63f690b30d598408fa6d2a48d93c92896d75f9418a1594e6af580e60b"
 constant kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -981,6 +985,82 @@ private command rstSectionLanSync
    -- no cross-kind reads: one record kind can never verify as another
    rstCheck (rsLanVerifyDraft(tRec, tMaster) is empty), \
          "a presence record fed to the draft verifier is refused"
+   -- the media-handoff record (channel 0: the channel-2 decision - a
+   -- signed POINTER at the phase-3 torrent path; the pointed-at hash is
+   -- the same placeholder info-hash the golden post-2 media list names)
+   put rsLanBuildHandoff(kRsGoldLanJoinName, kRsGoldLanMediaSeq, \
+         kRsGoldMediaTarget, kRsGoldLanFileName, kRsGoldLanFileSize, \
+         tMaster) into tRec
+   rstCheck (rstHex(tRec) is kRsGoldLanHandoffHex), \
+         "the media-handoff record bytes match golden"
+   put rsLanVerifyHandoff(tRec, tMaster) into tOut
+   rstCheck (tOut["name"] is kRsGoldLanJoinName), \
+         "the handoff's device name verifies and round-trips"
+   rstCheck (tOut["seq"] is kRsGoldLanMediaSeq + 0), \
+         "the handoff's per-device seq round-trips"
+   rstCheck (tOut["infoHash"] is kRsGoldMediaTarget), \
+         "the handoff's info-hash round-trips"
+   rstCheck (tOut["fileName"] is kRsGoldLanFileName), \
+         "the handoff's file name round-trips"
+   rstCheck (tOut["fileSize"] is kRsGoldLanFileSize + 0), \
+         "the handoff's file size round-trips"
+   -- the build normalizes hash case; the WIRE stays strict lowercase.
+   -- Compared as HEX against the golden, not with `is` on the Data -
+   -- `is` folds case, so a non-normalizing build could pass a bytes
+   -- compare (the vacuous-check trap)
+   put rsLanBuildHandoff(kRsGoldLanJoinName, kRsGoldLanMediaSeq, \
+         toUpper(kRsGoldMediaTarget), kRsGoldLanFileName, \
+         kRsGoldLanFileSize, tMaster) into tBytes
+   rstCheck (rstHex(tBytes) is kRsGoldLanHandoffHex), \
+         "an uppercase info-hash normalizes to the same handoff bytes"
+   rstCheck (rsLanBuildHandoff(kRsGoldLanJoinName, 1, \
+         rsZeroTarget(), "f", 1, tMaster) is empty), \
+         "the all-zeros info-hash is refused at build (no empty handoff)"
+   rstCheck (rsLanBuildHandoff(kRsGoldLanJoinName, 1, "zz", "f", 1, \
+         tMaster) is empty), "a malformed info-hash is refused at build"
+   rstCheck (rsLanBuildHandoff(kRsGoldLanJoinName, 1, \
+         kRsGoldMediaTarget, empty, 1, tMaster) is empty), \
+         "an empty file name is refused at build"
+   put rsLanBuildHandoff(kRsGoldLanJoinName, kRsGoldLanMediaSeq, \
+         kRsGoldMediaTarget, kRsGoldLanFileName, kRsGoldLanFileSize, \
+         rstBin(kRsGoldConfSeedHex)) into tBytes
+   rstCheck (rsLanVerifyHandoff(tBytes, tMaster) is empty), \
+         "a stranger's handoff record is refused"
+   rstCheck (rsLanVerifyHandoff(rstFlipByte(tRec, 25), tMaster) is empty), \
+         "a tampered handoff record is refused"
+   rstCheck (rsLanVerifyHandoff(byte 1 to 60 of tRec, tMaster) is empty), \
+         "a truncated handoff record is refused"
+   -- a hand-signed record with a non-UTF-8 FILE name: the signature is
+   -- VALID, so this exercises the refusal AFTER the proof (the draft
+   -- forgery's discipline, on the handoff's second text field)
+   put rstBin("52534c314d") & numToByte(5) & \
+         textEncode(kRsGoldLanJoinName, "UTF-8") & \
+         rstBin("0000000000000001") & \
+         textEncode(kRsGoldMediaTarget, "ASCII") & numToByte(2) & \
+         rstBin("fffe") & rstBin("0000000000000001") into tBody
+   put tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         tBody, tKeys["secretKey"]) into tBytes
+   rstCheck (rsLanVerifyHandoff(tBytes, tMaster) is empty), \
+         "a validly signed handoff with a non-UTF-8 file name is refused"
+   -- a hand-signed record with an UPPERCASE hash on the wire: valid
+   -- signature, non-canonical spelling - refused (the coinxt lesson)
+   put rstBin("52534c314d") & numToByte(5) & \
+         textEncode(kRsGoldLanJoinName, "UTF-8") & \
+         rstBin("0000000000000001") & \
+         textEncode(toUpper(kRsGoldMediaTarget), "ASCII") & \
+         numToByte(1) & textEncode("f", "UTF-8") & \
+         rstBin("0000000000000001") into tBody
+   put tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         tBody, tKeys["secretKey"]) into tBytes
+   rstCheck (rsLanVerifyHandoff(tBytes, tMaster) is empty), \
+         "a validly signed handoff with an uppercase hash is refused"
+   -- cross-kind, both directions for the new kind
+   rstCheck (rsLanVerifyDraft(tRec, tMaster) is empty), \
+         "a handoff record fed to the draft verifier is refused"
+   put rsLanBuildDraft(kRsGoldLanJoinName, kRsGoldLanSeq, \
+         kRsGoldLanDraftText, tMaster) into tBytes
+   rstCheck (rsLanVerifyHandoff(tBytes, tMaster) is empty), \
+         "a draft record fed to the handoff verifier is refused"
 end rstSectionLanSync
 
 -- The phase-4 DM layer. The pure half (keys, records, session derivation,

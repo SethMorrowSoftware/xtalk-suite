@@ -91,6 +91,12 @@ script "RiptideSocial"
 --     distinct domain tag; verify-then-parse on every inbound record
 --     (rsLanBuildDraft / rsLanVerifyDraft / rsLanBuildFeedState /
 --     rsLanVerifyFeedState / rsLanBuildPresence / rsLanVerifyPresence).
+--     Since 2026-08-16 a fourth kind settles spec section 7's channel 2:
+--     the "M" MEDIA HANDOFF record (channel 0) - a signed POINTER at the
+--     phase-3 torrent path (info-hash + file name + size), because a
+--     draft's media essentially never fits enet's 60000-byte budget and
+--     bulk over that seam IS a torrent in this suite (rsLanBuildHandoff /
+--     rsLanVerifyHandoff). Channel 2 itself stays reserved, dark.
 --   - the ANONYMOUS PERSONA layer (phase 7): a separate onion-only
 --     identity from a subkey-100+n seed (rsAnonHandle / rsAnonOnion,
 --     derivable offline), the probe-gated onion-service wrapper
@@ -166,7 +172,11 @@ script "RiptideSocial"
 --     readPeer(64 hex; all-zeros = none) readUpTo(u64 BE) sig(64)
 --   RSL1 LAN presence: magic(4) "P" nameLen(u8) name flags(u8: bit0
 --     typing, other bits refused) tick(u64 BE) sig(64)
---     ...the three sync sigs are ed25519 by the SAME shared LAN key over
+--   RSL1 LAN media handoff: magic(4) "M" nameLen(u8) name seq(u64 BE)
+--     infoHash(40 lowercase hex, non-zero) fileNameLen(u8) fileName
+--     (UTF-8, 1..255) fileSize(u64 BE) sig(64); a POINTER at the
+--     phase-3 torrent path, never the payload (the channel-2 decision)
+--     ...the four sync sigs are ed25519 by the SAME shared LAN key over
 --     "riptide-lan-s" || the whole record body, kind byte included
 --   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
 --   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
@@ -184,7 +194,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.9.0"
+constant kRsVersion = "0.10.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -203,6 +213,9 @@ constant kRsLanMaxName = 32
 -- spelling for the feed-state record's optional read receipt
 constant kRsLanSyncDomain = "riptide-lan-s"
 constant kRsLanMaxDraft = 4096
+-- the media-handoff record's file leaf name cap (the u8 length field;
+-- refuse, never truncate - and every real platform's leaf cap anyway)
+constant kRsLanMaxFile = 255
 constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
@@ -2795,6 +2808,151 @@ function rsLanVerifyPresence pBytes, pMaster
          into tOut["tick"]
    return tOut
 end rsLanVerifyPresence
+
+-- Channel-0 media handoff: magic(4) "M" nameLen(u8) name seq(u64 BE)
+-- infoHash(40 lowercase hex) fileNameLen(u8) fileName fileSize(u64 BE)
+-- sig(64). THE CHANNEL-2 DECISION, recorded (2026-08-16; do not
+-- re-litigate): spec section 7 reserves channel 2 for bulk handoff BELOW
+-- the 60000-byte packet budget, and a draft's media (a photo, a video)
+-- essentially never fits it - the suite's seam law (enetxt) is that a
+-- payload over the budget stops being a message and becomes a torrent.
+-- So the handoff is this small channel-0 POINTER at the phase-3 media
+-- machinery (rsMediaCreate seeds in place on the sender; rsMediaFetch
+-- joins the swarm on the receiver - the one rail of this app already
+-- proven end to end on two machines), and channel 2 stays RESERVED,
+-- dark, until a genuinely sub-budget bulk case exists (none does today:
+-- drafts already ride channel 0, capped at 4096). A chunked enet lane
+-- was considered and REJECTED - it would reimplement libtorrent's
+-- per-piece integrity, resume, and backpressure with none of its proof.
+-- The 40-hex v1 info-hash is deliberately BOTH fields the design needs:
+-- the content address libtorrent verifies piece-by-piece against (the
+-- receiver cannot be fed different bytes than the hash names) and the
+-- torrent linkage a magnet fetch takes. fileName/fileSize are for the
+-- receiving UI only - the torrent's own metadata is the authority once
+-- fetched. ABSOLUTE state (the device's LATEST offer), the draft
+-- record's replay guard (apply only a strictly higher seq per device);
+-- a duplicate apply is harmless anyway, because rsMediaFetch finds
+-- before it adds.
+function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
+   local tName, tHash, tFile, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildHandoff: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildHandoff: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put toLower(pInfoHash) into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanBuildHandoff: the info-hash must be 40 non-zero" && \
+            "hex chars (what rsMediaCreate returned)"
+      return empty
+   end if
+   put textEncode(pFileName, "UTF-8") into tFile
+   if the number of bytes in tFile < 1 or \
+         the number of bytes in tFile > kRsLanMaxFile then
+      rsSetError "rsLanBuildHandoff: the file name must be 1 to" && \
+            kRsLanMaxFile && "bytes (refused, never truncated)"
+      return empty
+   end if
+   if not rsLanValidCount(pFileSize) then
+      rsSetError "rsLanBuildHandoff: the file size must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("M", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put textEncode(tHash, "ASCII") after tOut
+   put numToByte(the number of bytes in tFile) after tOut
+   put tFile after tOut
+   put rsBEu64(pFileSize) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildHandoff
+
+-- Verify-then-parse a media-handoff record: structure first (exact
+-- length, to the byte), then the shared-master signature, and only THEN
+-- believe a field. Returns name / seq / infoHash / fileName / fileSize,
+-- or empty with a distinct refusal. The hash is checked strict lowercase
+-- by byte value post-proof (the feed-state peer discipline), and the
+-- all-zeros hash is refused - a handoff must name real content.
+function rsLanVerifyHandoff pBytes, pMaster
+   local tLen, tNameLen, tFileLen, tHash, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 129 then
+      rsSetError "rsLanVerifyHandoff: truncated handoff record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "M" then
+      rsSetError "rsLanVerifyHandoff: not an RSL1 media-handoff record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyHandoff: bad device-name length"
+      return empty
+   end if
+   if tLen < 128 + tNameLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its name field"
+      return empty
+   end if
+   put byteToNum(byte (55 + tNameLen) of pBytes) into tFileLen
+   if tFileLen < 1 then
+      rsSetError "rsLanVerifyHandoff: bad file-name length"
+      return empty
+   end if
+   if tLen is not 127 + tNameLen + tFileLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its" && \
+            "file-name field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyHandoff: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the hash travels as 40 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (54 + tNameLen) of pBytes, \
+         "ASCII") into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanVerifyHandoff: the info-hash is not 40 non-zero" && \
+            "lowercase hex chars"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte (56 + tNameLen) to \
+         (55 + tNameLen + tFileLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the file name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   put tHash into tOut["infoHash"]
+   put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
+         of pBytes, "UTF-8") into tOut["fileName"]
+   put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
+         (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   return tOut
+end rsLanVerifyHandoff
 
 --------------------------------------------------------------------------
 -- the anonymous persona (phase 7) - a separate identity that lives ONLY

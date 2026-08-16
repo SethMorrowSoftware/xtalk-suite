@@ -92,8 +92,14 @@ script "riptideSocialApp"
 -- live-Tor pass. The head's profile-meta field now names a display-name
 -- blob (spec 4.1), published at post time. The LAN mesh now carries the
 -- phase-6 SYNC PAYLOAD past admission (drafts, feed seq, presence -
--- signed records, verify-then-apply); its channel-2 bulk media handoff
--- stays unbuilt (the channel is allocated, dark). Still genuinely
+-- signed records, verify-then-apply) and, since 2026-08-16, the MEDIA
+-- HANDOFF: a signed channel-0 "M" POINTER record (info-hash + file name
+-- + size) at the phase-3 torrent path - Send media... seeds the file in
+-- place and offers it; the receiving device fetches by hash and plays,
+-- exactly the engine-proven media rail. Channel 2 itself stays
+-- allocated, dark, ON PURPOSE: a draft's media essentially never fits
+-- enet's 60000-byte packet budget, and bulk over that seam is a torrent
+-- in this suite (the recorded channel-2 decision). Still genuinely
 -- UNBUILT: the persona's REPLY rail (answering an accepted intro over
 -- an onion stream); answering means a public-side DM to the proven
 -- sender. DMs (phase 4, the Messages card) hold ONE conversation at a
@@ -148,7 +154,7 @@ constant kDcTypingMs = 3000
 constant kDcTypingSendMs = 1000
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-8"
+constant kRaUiVersion = "ra-ui-720p-9"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -553,6 +559,15 @@ local sLanPeerDraft    -- peer id -> that device's latest draft text
 local sLanPeerTick     -- peer id -> highest presence tick applied
 local sLanPeerTyping   -- peer id -> "true" while that device is typing
 local sLanPeerSeen     -- peer id -> ms of its last applied presence
+-- the channel-0 media handoff (the channel-2 decision: a signed POINTER
+-- at the phase-3 torrent path; the offer outlives the mesh because the
+-- swarm does - only the per-peer replay tracking dies with a peer)
+local sLanPeerMediaSeq -- peer id -> highest handoff seq applied
+local sLanMediaHash    -- the latest verified offer's 40-hex info-hash
+local sLanMediaName    -- ...its file leaf name (display only)
+local sLanMediaSize    -- ...its claimed size in bytes (display only)
+local sLanMediaFrom    -- ...the offering device's name
+local sLanMediaWatch   -- torrent handle the Devices card strip watches
 -- phase 7 (anon persona). A separate onion-only identity; the guard keeps
 -- it from ever touching the DHT, a torrent, or rp1 (spec 9.3).
 local sAnonService     -- the onionxt service handle while published, or empty
@@ -671,6 +686,12 @@ on mouseUp
          break
       case "raLanLeaveBtn"
          raLanLeave
+         break
+      case "raLanSendMedia"
+         raLanSendMedia
+         break
+      case "raLanMediaGet"
+         raLanMediaGet
          break
       case "raGoAnonFromFeed"
          go to card "raAnon"
@@ -850,20 +871,30 @@ command raBuildLanCard
    uiArea "raLanDevices", "608,80,1184,268"
 
    uiSection "raLanSec4", "4. Drafts from your other devices (signature-verified)", "608,274,1184,292"
-   uiArea "raLanDrafts", "608,298,1184,562"
+   uiArea "raLanDrafts", "608,298,1184,428"
+
+   -- the channel-2 decision made visible: media between your devices is
+   -- a SIGNED POINTER on channel 0; the bytes ride the phase-3 torrent
+   -- rail (seed in place, fetch by hash), and channel 2 stays dark
+   uiSection "raLanSec5", "5. Media to your other devices (a signed pointer; bytes ride the torrent rail)", "608,434,1184,452"
+   uiButton "raLanSendMedia", "Send media...", "608,458,756,482"
+   uiButton "raLanMediaGet", "Fetch + play", "764,458,912,482"
+   uiCap "raLanMediaOffer", "No media offered yet.", "608,488,1184,514"
+   uiCap "raLanMediaProg", empty, "608,520,1184,546"
 
    uiFooter \
          "This is your OWN devices only, on one LAN: admission is a" \
          & " signature under a key only a holder of your master seed can" \
-         & " derive, and every sync record (drafts + feed state on" \
-         & " channel 0, presence/typing on channel 1) is signed under" \
-         & " that key too - a stranger on the same Wi-Fi is refused at" \
-         & " admission AND per record. Records are authenticated, NOT" \
-         & " encrypted: the LAN sees draft plaintext. It never touches" \
-         & " the internet or your followers. Unlock on the Feed card" \
-         & " first. Phase 6 is done when a draft typed here appears on" \
-         & " another device with a stranger refused. Sync is verified" \
-         & " statically; needs the two-machine pass.", \
+         & " derive, and every sync record (drafts + feed state + media" \
+         & " offers on channel 0, presence/typing on channel 1) is signed" \
+         & " under that key too - a stranger on the same Wi-Fi is refused" \
+         & " at admission AND per record. Records are authenticated, NOT" \
+         & " encrypted: the LAN sees draft plaintext. Sync records never" \
+         & " touch the internet; offered media BYTES ride the phase-3" \
+         & " torrent rail (swarm peers see your IP, discovery is the" \
+         & " DHT). Unlock on the Feed card first. Phase 6 is done when a" \
+         & " draft typed here appears on another device with a stranger" \
+         & " refused. Verified statically; needs the two-machine pass.", \
          "16,572,1184,632"
 end raBuildLanCard
 
@@ -1293,6 +1324,7 @@ command raPoll
    end if
    raExpire
    raMediaPaint
+   raLanMediaPaint
    send "raPoll" to me in kPollMs milliseconds
 end raPoll
 
@@ -2464,7 +2496,8 @@ command raHandleEnet pEvent
                raLanSend tPeer, tChallenge
             end if
             raLanPaintDevices
-         else if tKind is "D" or tKind is "F" or tKind is "P" then
+         else if tKind is "D" or tKind is "F" or tKind is "P" or \
+               tKind is "M" then
             -- the phase-6 sync records: verify-then-apply, admitted
             -- peers only, refusals logged (the runbook's stranger line)
             raLanSyncReceive tPeer, tKind, pEvent["payload"]
@@ -2477,12 +2510,15 @@ command raHandleEnet pEvent
             raLanPaintDevices
          end if
          -- drop the peer's sync state with the peer (a rejoin gets a
-         -- fresh peer id and fresh monotonic tracking)
+         -- fresh peer id and fresh monotonic tracking); the media OFFER
+         -- deliberately survives - the swarm it points at outlives the
+         -- mesh, and a mid-download must not lose its Fetch button
          delete variable sLanPeerSeq[tPeer]
          delete variable sLanPeerDraft[tPeer]
          delete variable sLanPeerTick[tPeer]
          delete variable sLanPeerTyping[tPeer]
          delete variable sLanPeerSeen[tPeer]
+         delete variable sLanPeerMediaSeq[tPeer]
          raLanPaintDrafts
          if tPeer is sLanServerPeer then
             raLanLog "the host went away; Leave and re-Join to reconnect."
@@ -2538,6 +2574,10 @@ private command raLanSyncReset
    put empty into sLanPeerTick
    put empty into sLanPeerTyping
    put empty into sLanPeerSeen
+   -- the media handoff: per-peer replay tracking resets with the mesh
+   -- (peer ids recycle across hosts); the OFFER itself and its watched
+   -- fetch survive on purpose - the torrent rail outlives the mesh
+   put empty into sLanPeerMediaSeq
    raLanPaintDrafts
 end raLanSyncReset
 
@@ -2721,6 +2761,33 @@ command raLanSyncReceive pPeer, pKind, pBytes
       put the milliseconds into sLanPeerSeen[pPeer]
       raLanPaintDevices
       raLanRelay pPeer, pKind, pBytes
+   else if pKind is "M" then
+      -- the media handoff POINTER: verify, replay-guard, then just
+      -- REMEMBER it - fetching is the user's click (rsMediaFetch is
+      -- idempotent, so a re-applied offer costs nothing), and the bytes
+      -- themselves never touch the mesh (the channel-2 decision)
+      put rsLanVerifyHandoff(pBytes, sMasterSeed) into tRec
+      if tRec is empty then
+         raLanLog "stranger record refused:" && rsLastError()
+         exit raLanSyncReceive
+      end if
+      put sLanPeerMediaSeq[pPeer] into tLast
+      if tLast is empty then
+         put -1 into tLast
+      end if
+      if tRec["seq"] <= tLast then
+         exit raLanSyncReceive
+      end if
+      put tRec["seq"] into sLanPeerMediaSeq[pPeer]
+      put tRec["infoHash"] into sLanMediaHash
+      put tRec["fileName"] into sLanMediaName
+      put tRec["fileSize"] into sLanMediaSize
+      put tRec["name"] into sLanMediaFrom
+      raLanLog "media offer from" && quote & tRec["name"] & quote & ":" && \
+            tRec["fileName"] && "(" & tRec["fileSize"] && "bytes) -" && \
+            "Fetch + play below pulls it over the torrent rail."
+      raLanPaintMediaOffer
+      raLanRelay pPeer, pKind, pBytes
    end if
 end raLanSyncReceive
 
@@ -2798,6 +2865,180 @@ command raLanPaintDevices
       set the text of field "raLanDevices" of card "raDevices" to tRows
    end if
 end raLanPaintDevices
+
+-- ---- the channel-0 media handoff (the channel-2 decision) --------------------
+-- Send media... seeds the picked file IN PLACE (rsMediaCreate, the
+-- phase-3 path - no copy is made) and offers it to every admitted device
+-- as a signed "M" pointer record; the receiving device fetches by hash
+-- (rsMediaFetch, sequential) and plays mid-download, exactly the media
+-- strip's two-mood discipline. The BYTES never touch the mesh: enet's
+-- 60000-byte budget is the suite's message/bulk seam, and bulk is a
+-- torrent - which also means swarm peers see your IP and discovery is
+-- the DHT (said in the footer). Channel 2 stays allocated, dark.
+
+command raLanSendMedia
+   local tPath, tShortName, tHash, tH, tS, tSize, tBytes
+   if sMasterSeed is empty then
+      uiStatus "Unlock on the Feed card first; the handoff record signs under your master seed.", "warn"
+      exit raLanSendMedia
+   end if
+   if the number of keys of sLanDevices is 0 then
+      raLanLog "No admitted devices to offer media to; Host or Join first."
+      exit raLanSendMedia
+   end if
+   raStartSession
+   if sSession is not an integer or sSession <= 0 then
+      raLanLog "No TorrentXT session: the handoff points at the torrent rail, so it needs torrentxt."
+      exit raLanSendMedia
+   end if
+   answer file "Choose a photo or video to offer your other devices (it seeds from where it is):"
+   if it is empty then
+      exit raLanSendMedia
+   end if
+   put it into tPath
+   put rsMediaCreate(sSession, tPath) into tHash
+   if tHash is empty then
+      raLanLog "rsMediaCreate refused:" && rsLastError()
+      exit raLanSendMedia
+   end if
+   -- itemDelimiter is global mutable state; take the leaf, then RESTORE
+   -- it to comma (the raAttach lesson)
+   set the itemDelimiter to "/"
+   put item -1 of tPath into tShortName
+   set the itemDelimiter to comma
+   -- the size for the record comes from our own seed's metadata: fetching
+   -- our own hash lands on the library's find path (no download, no copy)
+   put 0 into tSize
+   put rsMediaFetch(sSession, tHash, raMediaFolder(), false) into tH
+   if tH is not empty then
+      put rsMediaStatus(tH) into tS
+      if tS is an array and tS["fileSize"] is an integer then
+         put tS["fileSize"] into tSize
+      end if
+   end if
+   add 1 to sLanSeq
+   put rsLanBuildHandoff(sLanName, sLanSeq, tHash, tShortName, tSize, \
+         sMasterSeed) into tBytes
+   if tBytes is empty then
+      raLanLog "media handoff refused:" && rsLastError()
+      exit raLanSendMedia
+   end if
+   raLanSyncSend 0, tBytes, 0
+   -- adopt our own offer locally too (absolute state, same as receivers)
+   put tHash into sLanMediaHash
+   put tShortName into sLanMediaName
+   put tSize into sLanMediaSize
+   put sLanName && "(this device)" into sLanMediaFrom
+   raLanPaintMediaOffer
+   raLanLog "offered" && quote & tShortName & quote && "(" & tSize && \
+         "bytes) to" && the number of keys of sLanDevices && \
+         "admitted device(s); it seeds from where it sits."
+end raLanSendMedia
+
+-- One button, two moods (the media strip's discipline): Fetch until the
+-- offered hash's on-disk file exists, then Play - mid-download by design.
+command raLanMediaGet
+   local tHash, tH, tS, tPlayable
+   if sLanMediaHash is empty then
+      raLanLog "No media offer yet; Send media... on another admitted device first."
+      exit raLanMediaGet
+   end if
+   raStartSession
+   if sSession is not an integer or sSession <= 0 then
+      raLanLog "No TorrentXT session: cannot fetch (the bytes ride the torrent rail)."
+      exit raLanMediaGet
+   end if
+   put sLanMediaHash into tHash
+   put false into tPlayable
+   if sLanMediaWatch is an integer and sLanMediaWatch > 0 then
+      put rsMediaStatus(sLanMediaWatch) into tS
+      if tS is an array then
+         if toLower(tS["infoHashV1"]) is tHash and \
+               tS["filePath"] is not empty then
+            if there is a file tS["filePath"] then
+               put true into tPlayable
+            end if
+         end if
+      end if
+   end if
+   if tPlayable is true then
+      launch document tS["filePath"]
+      raLanLog "handed" && tS["filePath"] && "to the system player."
+      exit raLanMediaGet
+   end if
+   put rsMediaFetch(sSession, tHash, raMediaFolder(), true) into tH
+   if tH is empty then
+      raLanLog "rsMediaFetch refused:" && rsLastError()
+      exit raLanMediaGet
+   end if
+   put tH into sLanMediaWatch
+   raLanLog "fetching" && quote & sLanMediaName & quote && \
+         "over the torrent rail (sequential; playable mid-download)."
+end raLanMediaGet
+
+-- The latest verified offer, ABSOLUTE state repainted whole (diffed so
+-- repeated paints do not churn the field). Guarded: callers run anywhere.
+command raLanPaintMediaOffer
+   local tLine
+   if there is no field "raLanMediaOffer" of card "raDevices" then
+      exit raLanPaintMediaOffer
+   end if
+   if sLanMediaHash is empty then
+      put "No media offered yet." into tLine
+   else
+      put quote & sLanMediaName & quote && "(" & sLanMediaSize && \
+            "bytes) from" && sLanMediaFrom && "-" && sLanMediaHash \
+            into tLine
+   end if
+   if the text of field "raLanMediaOffer" of card "raDevices" \
+         is not tLine then
+      set the text of field "raLanMediaOffer" of card "raDevices" to tLine
+   end if
+end raLanPaintMediaOffer
+
+-- The handoff progress line at the poll cadence, painted only on change
+-- (raMediaPaint's discipline exactly). Devices-card controls, but the
+-- pump runs from any card and OUTSIDE raPoll's try - qualify and guard
+-- every reference, always (the multi-card law).
+command raLanMediaPaint
+   local tS, tLine, tPct, tLabel
+   if sLanMediaWatch is not an integer or sLanMediaWatch <= 0 then
+      exit raLanMediaPaint
+   end if
+   put rsMediaStatus(sLanMediaWatch) into tS
+   if tS is not an array then
+      -- the handle went stale (torrent removed, session gone): stop
+      -- watching rather than stomping rsLastError four times a second
+      put empty into sLanMediaWatch
+      exit raLanMediaPaint
+   end if
+   put the round of (tS["progress"] * 100) into tPct
+   put "handoff:" && tPct & "% -" && tS["numPeers"] && "peer(s)" into tLine
+   if tS["isSeeding"] is 1 then
+      put " - complete, now co-seeding" after tLine
+   end if
+   if tS["filePath"] is empty then
+      put " - waiting for metadata from the swarm" after tLine
+      put "Fetch + play" into tLabel
+   else
+      put " -" && tS["filePath"] after tLine
+      put "Play now" into tLabel
+   end if
+   if there is a field "raLanMediaProg" of card "raDevices" then
+      if the text of field "raLanMediaProg" of card "raDevices" \
+            is not tLine then
+         set the text of field "raLanMediaProg" of card "raDevices" \
+               to tLine
+      end if
+   end if
+   if there is a button "raLanMediaGet" of card "raDevices" then
+      if the label of button "raLanMediaGet" of card "raDevices" \
+            is not tLabel then
+         set the label of button "raLanMediaGet" of card "raDevices" \
+               to tLabel
+      end if
+   end if
+end raLanMediaPaint
 
 -- ---- phase 7: the anonymous persona ------------------------------------------
 -- Everything here is the gated rsAnon*/rsPersonaAllows layer. Revealing is

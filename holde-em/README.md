@@ -20,10 +20,12 @@ Built by composing the OXT extension family:
 
 **Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the 2e
 remainder (street checkpoints, show/muck, online History, host election), plus the
-Phase 3 deck oracle and the Phase 4a-4c Level 2 compute layer — one paste-and-run
-stack, at v0.21.0.** The live multi-machine passes are the pending exit gates: a
+Phase 3 deck oracle, the Phase 4a-4d Level 2 layer (compute + void-and-audit) with
+its 4e adversarial harness, and Phase 5's DLEQ proofs — one paste-and-run stack, at
+v0.22.0.** The live multi-machine passes are the pending exit gates: a
 multi-hand rp1 session on real networks (Phase 2), a two-machine onion table over
-live tor (2f), and a **three-machine oracle round** (Phase 3).
+live tor (2f), and a **three-machine oracle round** (Phase 3); the ristretto255
+handlers (SodiumXT ABI 8/9) have never run on an engine.
 `src/holdem.livecodescript` is the whole thing — the hotseat game, the online lobby, its
 self-test (`heRunSelftest` in the message box), and SodiumXT/TorrentXT diagnostics
 (`heProbeSodium` / `heProbeTorrent`) — in a single self-building stack with no required
@@ -111,18 +113,29 @@ three-machine round** — two players plus a non-playing oracle on an onion addr
 killed mid-hand and recovered per spec 9 — is the Phase 3 exit gate ("verified
 statically; needs the multi-machine pass, + live tor for the onion oracle").
 
-The **Level 2 mental-poker COMPUTE layer** (spec 7.3, plan 4a-4c) is built as pure
-`heL2*` handlers on SodiumXT ABI 8's ristretto255 surface: card base points by
-domain-separated hash-to-group, commutative shuffle-mask steps with per-hand scalars
-and permutations, the free duplicate check (identical points in a masked deck are
-publicly visible), public and hole unmask-chain verification, and reveal-scalar
-showdown re-verification — every failure a distinct, attributable `void:` string.
-`tools/protocol-kat.py` pins a complete Level 2 hand from fixed scalars end to end
-(re-derived by an independent RFC 9496 reference), and the embedded harness re-checks
-the same vectors on-engine, skipping cleanly on a pre-ristretto SodiumXT. **Honestly:
-this is the algebra only** — nothing plays on it yet; the deal orchestration,
-void-and-audit sequencing, and adversarial harness (plan 4d-4f) are open, and the
-handlers are verified statically pending their first OXT pass.
+The **Level 2 mental-poker layer** (spec 7.3, plan 4a-4e + the Phase 5 proof half) is
+built as pure `heL2*` handlers on SodiumXT's ristretto255 surface (ABI 8 + the ABI 9
+DLEQ/batch follow-ons): card base points by domain-separated hash-to-group,
+commutative shuffle-mask steps with per-hand scalars and permutations, the free
+duplicate check (identical points in a masked deck are publicly visible), public and
+hole unmask-chain verification, reveal-scalar showdown re-verification — every failure
+a distinct, attributable `void:` string — plus, since v0.22.0, the **void-and-audit
+state machine** (plan 4d): pinned `shuffleStep`/`unmaskStep` record formats, strict
+ordering with replay-vs-equivocation told apart, hand-void with bets returned, and a
+mandatory full-reveal audit that **names the signer of the first bad step**. The
+spec 12.4 **adversarial harness** (plan 4e) drives five scripted cheater bots against
+it — deck-stacker (vs the Level 0 audit), duplicate-point shuffler, rollback replayer,
+wrong-scalar unmasker, deal staller — every attack detected and correctly attributed,
+every verdict pinned. **Chaum-Pedersen DLEQ proofs** (spec 7.4, Phase 5) ride the
+unmask records' reserved `proof` field: derandomized, domain-tagged, batch-verified,
+with soundness pinned negatively (forged proofs verify false) — so on a `dleq=1` table
+a wrong unmask step is refused instantly instead of costing a void-and-audit round.
+`tools/protocol-kat.py` pins the whole layer from fixed scalars end to end (re-derived
+by an independent RFC 9496 reference), and the embedded harness re-checks the same
+vectors on-engine, skipping cleanly on a pre-ristretto or pre-ABI-9 SodiumXT.
+**Honestly: nothing plays on Level 2 yet** — the played-hand wiring and the 4f
+deal-time budget measurement are engine-era work, the Phase 5 hostile review and soak
+are human-era, and the `sxRistretto*` calls have never run on an engine.
 
 The math is **verified sound** by `tools/logic-fuzz.py`, which checks the committed logic
 against *independently-written* references (not the line-for-line KAT mirrors): the
