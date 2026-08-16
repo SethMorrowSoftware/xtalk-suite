@@ -34,12 +34,12 @@ GEN = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 # The prefixes tools/build-suite-selftest.py assigns, and the member each names.
 PREFIXES = {"sx1": "sodiumxt", "ox1": "onionxt", "cx1": "coinxt",
             "bt1": "torrentxt", "en1": "enetxt", "dc1": "datachannelxt",
-            "rs1": "riptide"}
+            "rs1": "riptide", "b21": "box2dxt"}
 
 # What the core calls into each folded harness. If the generator ever renames or
 # drops one of these, the suite harness compiles and then does nothing.
 ENTRY_POINTS = ["sx1sxSelfTest", "ox1oxSelfTest", "cx1stRun", "bt1stRun",
-                "en1stRun", "dc1stRun", "rs1rsSelfTest"]
+                "en1stRun", "dc1stRun", "rs1rsSelfTest", "b21stSelfTest"]
 COUNTED = ["cx1", "bt1", "en1", "dc1"]
 
 
@@ -183,6 +183,51 @@ def main(argv):
                             f"would tear down the transport the core's own loopback is "
                             f"using. It must stay unreachable.")
 
+    # ---- 7b. box2dxt: the Kit is embedded ONCE, and the message path holds ---
+    # Two deliberate decisions, both silent if they regress.
+    #
+    # ONE COPY OF THE KIT. box2dxt's harness is a paste-and-run stack, so it
+    # carries a verbatim copy of src/box2dxt-kit.livecodescript between
+    # sentinels (its own tools/sync-embedded-kit.py owns that region). The
+    # generator CUTS that copy and embeds the Kit once, from src/, as a script
+    # layer. If the cut ever stopped matching, all 313 b2k* handlers would be
+    # defined twice - check 1 above would catch it, but not say why - so the
+    # positive invariant is checked here: exactly one definition of a handler
+    # only the Kit defines, and no leftover sentinel from the harness's copy.
+    for sentinel in ("-- >>> BEGIN EMBEDDED KIT >>>", "-- <<< END EMBEDDED KIT <<<"):
+        if sentinel in src:
+            problems.append(f"the harness still carries box2dxt's own embedded-Kit "
+                            f"sentinel ({sentinel!r}), so the fold brought a SECOND "
+                            f"copy of the Kit in alongside the embedded layer")
+    if len([d for d in defs if d.lower() == "b2ksteponce"]) != 1:
+        problems.append("b2kStepOnce is not defined exactly once - the b2k Kit is "
+                        "either missing from the paste or in it twice")
+    #
+    # THE MESSAGE PATH. The Kit dispatches b2kFell/b2kSensorEnter/b2kContact BY
+    # LITERAL NAME to the object that registered as the frame/contact target.
+    # The fold prefixes every other name box2dxt's harness defines; these three
+    # are kept, because a b21b2kFell would never be dispatched to - and the three
+    # checks that prove the Kit's message path works (as opposed to its polling
+    # accessors) would report 0 events and read like a dispatcher defect.
+    for receiver in ("b2kFell", "b2kSensorEnter", "b2kContact"):
+        if not re.search(r'^on\s+' + receiver + r'\b', src, re.M):
+            problems.append(f"{receiver} is not defined at its real name - the fold "
+                            f"prefixed a message receiver the embedded Kit dispatches "
+                            f"by literal name, so those events will never arrive")
+        if re.search(r'\bb21' + receiver + r'\b', src):
+            problems.append(f"b21{receiver} exists - the fold renamed a message "
+                            f"receiver the embedded Kit dispatches by literal name")
+
+    # ---- 7c. box2dxt's own window did not come with it -----------------------
+    # It hangs its window off the CARD hooks and a builder of its own, so
+    # DROP_HANDLERS' openStack/closeStack set does not cover it. Left in, `on
+    # openCard` would rebuild an 860x640 window over the suite's the moment this
+    # stack's card opened.
+    for gone in ("b21buildStUI", "b21openCard", "b21closeCard"):
+        if re.search(r'^(?:command|on|function)\s+' + gone + r'\b', src, re.M):
+            problems.append(f"{gone} survived the fold; box2dxt's own window would "
+                            f"be built over the suite's")
+
     # ---- 8. coinxt is probed as TWO pieces ----------------------------------
     # It is the only member that ships an extension AND a separate script layer,
     # and ten of its folded sections call the script. Probing only the extension
@@ -276,7 +321,7 @@ def main(argv):
     for name in stack:
         problems.append(f"embed sentinel begin '{name}' never ends")
     for want in ("coinxt script layer", "onionxt script layer",
-                 "riptide script layer"):
+                 "riptide script layer", "box2dxt-kit script layer"):
         if want not in seen_spans:
             problems.append(f"no embedded span '{want}' - the harness no longer "
                             f"carries that library, so its folded tests run "

@@ -50,21 +50,82 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   their own sync gate, `tools/sync-embedded-kit.py`), not form UIs.
 >   **Phase-2 work, deliberately deferred:** suite-kit chrome for the game
 >   stacks (an aesthetic call - the exemptions argue form chrome is not the
->   games' UI language), harness-scaffold adoption for
->   `examples/box2dxt-selftest`, and folding that selftest into the suite
->   harness as the eighth folded member. **Fold prerequisite DONE
->   2026-08-14:** `stRunAll` now probes the native library in a guarded try
->   and SKIPS cleanly when box2dxt is absent, instead of dying with a raw
->   `b2Version` throw - which is what a folded harness needs, since the
->   suite paste runs on machines without box2dxt. What remains for the fold:
->   give `stRunAll` a returned-report mode (the "N passed, M failed" first
->   line `stMergeReturned` parses, as `rsSelfTest` does) OR adopt the
->   harness scaffold's counter names, then add a `Member(...)` row to
->   `tools/build-suite-selftest.py` and teach `check-suite-coverage.py` the
->   `b2`/`b2k` prefixes. The coverage gate will then REQUIRE every public
->   `b2*`/`b2k*` handler to be called by name in the harness, so expect to
->   close gaps there too. None of that is runtime-verifiable without an
->   engine, so it wants an OXT pass in the same change.
+>   games' UI language) and harness-scaffold adoption for
+>   `examples/box2dxt-selftest`.
+>
+> **FOLDED INTO THE SUITE HARNESS 2026-08-16, as the eighth folded member.**
+> The prerequisite landed 2026-08-14 (`stRunAll` probes the native library in
+> a guarded try and SKIPs cleanly when box2dxt is absent - what a folded
+> harness needs, since the suite paste runs on machines without box2dxt).
+> What the fold did, and what it needed that no earlier member did:
+>
+> - **A returned-report mode, not scaffold counters.** `function stSelfTest`
+>   runs `stRunAll` and returns the report with a summary line the suite
+>   core's `stSummaryCounts` can parse (`<n> passed, <n> failed` - exactly two
+>   numbers and those two words, nothing else on the line, the `rsSelfTest`
+>   shape). Chosen over adopting `tools/harness-scaffold.livecodescript`'s
+>   counter names because this harness is not a scaffold adopter at all: it
+>   has its own `gRep`/`gPass`/`gFail`, its own report format, its own window,
+>   and 43 test handlers of engine-verified history written against them.
+>   A returned-report mode is four lines; scaffold adoption is a rewrite of a
+>   proven file to suit the fold, which is backwards. The two existing summary
+>   lines (`ALL PASS (n assertions)` / `FAILURES: n passes: n`) deliberately do
+>   NOT parse as summaries - each carries a disqualifying third word - which is
+>   what keeps them from becoming a second match now that the new one exists.
+> - **`stOut` writes to its field only when the field is there.** Folded, the
+>   suite owns the one window; an unguarded `set the text of field "stReport"`
+>   would have thrown on every output line and taken the whole section down.
+>   The write moved into `stPaintReport`, guarded with `there is a field` (not
+>   a try: a missing field is expected here, and swallowing an error from a
+>   field that DOES exist would hide a broken report surface standalone).
+> - **The Kit is embedded ONCE.** This example carries a verbatim copy of
+>   `src/box2dxt-kit.livecodescript` between sentinels (`tools/sync-embedded-kit.py`
+>   owns that region). The generator CUTS that copy (`strip_spans`) and embeds
+>   the Kit from `src/` as a suite SCRIPT LAYER, unprefixed, beside coinxt's
+>   and onionxt's - so the folded tests call `b2k*` by their real names and the
+>   313 Kit handlers are defined exactly once. `check-suite-selftest.py` checks
+>   both halves of that (no leftover sentinel; `b2kStepOnce` defined once).
+> - **Three names are NOT prefixed**, the only such case in the fold:
+>   `b2kFell`, `b2kSensorEnter` and `b2kContact` are message RECEIVERS the Kit
+>   dispatches by literal name, so a `b21b2kFell` would never be found and the
+>   three checks that prove the Kit's message path (as opposed to its polling
+>   accessors) would report 0 events and read like a dispatcher defect. The
+>   generator's `keep_names` holds them, asserts they still exist, and the
+>   suite checker asserts both directions.
+> - **`openCard`/`closeCard`/`buildStUI` are dropped.** This harness hangs its
+>   window off the CARD hooks rather than the stack ones, which the fold's
+>   existing `openStack`/`closeStack` drop set did not cover; left in, `on
+>   openCard` would have rebuilt an 860x640 window over the suite's.
+> - **The suite core probes the EXTENSION** (`b2kEnsureNativeLib` then
+>   `b2Version()`, guarded) and SKIPs the whole section when it is absent. That
+>   probe, not `stRunAll`'s own, is what keeps a machine without box2dxt from
+>   folding a green `0 passed, 0 failed` into the suite totals.
+> - **The coverage gate is now on this member, and it found the real gap.**
+>   `check-suite-coverage.py` measures the Kit (`b2k`, 313 public handlers)
+>   and on first contact 211 of them had never been named by any test - many
+>   of which RUN on every existing test (`b2kStepOnce` alone drives
+>   `b2kHarvestEvents`, `b2kSyncBodies`, `b2kInputTick`, `b2kPlayerTick`,
+>   `b2kSpritesTick`, `b2kCamTick` and both dispatchers) with no test ever
+>   writing their name down. Harness **v23** adds 13 "Kit API coverage"
+>   sections that drive the rest of the surface directly; the member is now at
+>   313/313 with ZERO exemptions. Those sections are deliberately SHALLOW next
+>   to the behaviour tests above them and say so in their banner: the contract
+>   they assert is "this handler exists, takes these arguments, and reports the
+>   documented shape". A handler that earns a real lesson should GRADUATE out
+>   of them into a section of its own.
+> - **The raw `b2*` layer is NOT in that ratchet, and the reason is measured.**
+>   `src/box2dxt.lcb` is 376 public handlers over 374 foreign declarations - a
+>   1:1 binding - and of those 376 the Kit names 131 while **245 are named by
+>   no script anywhere in this member**. Ratcheting them would mean ~375 new
+>   assertions against a foreign-bound API written blind in one pass, against
+>   this member's own recorded base rate ("5 Kit bugs : 5 harness bugs - expect
+>   first-contact arithmetic errors"). The reason is written into
+>   `tools/check-suite-coverage.py` beside the row. That layer's cover today is
+>   `tests/smoke_test.c` under ASan/UBSan; a script-level ratchet for it is an
+>   OPEN item.
+> - None of this is runtime-verifiable here: **verified statically; needs an
+>   OXT pass**, and the v23 sections are first-contact code, so expect the
+>   usual arithmetic slips on the first run.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
@@ -193,8 +254,13 @@ failure. Run it after **every** `.livecodescript` edit.
 pass" and let the user confirm.
 
 **The self-test harness** (`examples/box2dxt-selftest.livecodescript`) is the runtime safety net:
-~180 deterministic assertions across 37 test handlers (currently **v22**) driving the real Kit
-(paused world + `b2kStepOnce` hand-stepping + `b2kInputInject` scripted keys). The workflow for
+~372 deterministic assertions across 50 test handlers (currently **v23**) driving the real Kit
+(paused world + `b2kStepOnce` hand-stepping + `b2kInputInject` scripted keys). It is in TWO
+halves and the file says so where they meet: the first 37 handlers are BEHAVIOUR tests, each
+one a lesson learned on real hardware; the 13 added in v23 are **Kit API coverage** - broad,
+deliberately shallow, and there because the suite's `check-suite-coverage.py` measured that
+211 of the Kit's 313 public handlers had never been named by any test. A handler that earns a
+real lesson should graduate out of the second half into a section of its own. The workflow for
 every **Kit** change: (1) add/extend an assertion
 that captures the new behavior, (2) **bump `kStHarnessV`** (the report header prints it, so a
 stale paste identifies itself), (3) the user clicks RUN ALL TESTS and reports. **Example-only

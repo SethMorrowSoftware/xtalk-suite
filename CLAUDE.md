@@ -38,8 +38,10 @@ openxtalk-libraries/
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification
                        lineage, replaced in the fold; its examples are GAMES,
-                       exempt from the ui-kit gate with written reasons; the
-                       fold record is in its CLAUDE.md
+                       exempt from the ui-kit gate with written reasons; its
+                       selftest became the EIGHTH folded member and its Kit the
+                       fourth embedded script layer on 2026-08-16; the fold
+                       record is in its CLAUDE.md
   riptide/             the capstone APP (not an extension): Riptide Social,
                        implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
                        phase in pure script; structured like a member so the
@@ -61,7 +63,10 @@ openxtalk-libraries/
                        were UNIONED into that checker 2026-08-15 (docstring
                        13-21; the idiom gate file is retired); seven KAT
                        mirrors + an independent-reference fuzz ride
-                       build-all; the fold record is in its CLAUDE.md
+                       build-all; the fold record is in its CLAUDE.md - which
+                       also carries the 2026-08-16 assessment of why its
+                       harness is still NOT in the suite paste (five pieces of
+                       missing fold machinery and one real defect, all named)
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /
@@ -148,12 +153,13 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test** (seven since 2026-08-11: the six extensions plus
-riptide's harness, which now spans phases 1-4, 6, and 7 plus the spec-8.3
-sealed-anon-DM crypto), folded in with each one's names prefixed, plus —
-since 2026-08-10 — **the pure-script LIBRARIES themselves**,
-`coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript` and
-(since 2026-08-11) `riptide/src/riptide.livecodescript`,
+member's own deep self-test** (EIGHT since 2026-08-16: the six extensions,
+riptide's harness — which now spans phases 1-4, 6, and 7 plus the spec-8.3
+sealed-anon-DM crypto — and box2dxt's, folded in with each one's names
+prefixed), plus — since 2026-08-10 — **the pure-script LIBRARIES themselves**,
+`coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript`,
+(since 2026-08-11) `riptide/src/riptide.livecodescript` and (since 2026-08-16)
+`box2dxt/src/box2dxt-kit.livecodescript`,
 embedded VERBATIM (no prefixing: the tests must call them by their real names).
 The embed exists because the old "two `start using` lines" setup step cost a
 real engine pass: a fresh harness ran against a stale in-memory coinxt stack
@@ -162,7 +168,7 @@ carries the code its tests test, and `--check` pins both to one tree — which
 also means **a script-layer edit is not done until the harness is rebuilt**,
 exactly like a member-harness edit. Edit the member file, not the generated one.
 
-Four things about it are worth knowing before you touch it:
+Five things about it are worth knowing before you touch it:
 
 - **The embedded libraries sit between sentinel lines, and the coverage gate
   depends on them.** A library's body names nearly its whole own API
@@ -178,6 +184,23 @@ Four things about it are worth knowing before you touch it:
   unprefixed and a script-level duplicate would make two units silently share
   one variable.
 
+- **BOX2DXT IS THE ODD FOLD, and it needed three mechanisms nothing else did
+  (2026-08-16).** Its harness is a paste-and-run STACK, not a test file. It
+  carries a verbatim copy of the b2k Kit between sentinels (its own
+  `tools/sync-embedded-kit.py` owns that region), so the generator CUTS that
+  copy (`strip_spans`) and embeds the Kit ONCE, from `src/`, as a fourth script
+  layer — otherwise all 313 `b2k*` handlers would be defined twice, which is a
+  compile error the maintainer meets at paste time, on an engine. It hangs its
+  window off the CARD hooks rather than the stack ones, so `openCard`,
+  `closeCard` and its own `buildStUI` join the drop set (`drop_extra`). And
+  three of the names it defines — `b2kFell`, `b2kSensorEnter`, `b2kContact` —
+  are message RECEIVERS the embedded Kit dispatches BY LITERAL NAME, so they
+  are the one exception to the prefixing rule below (`keep_names`): a
+  `b21b2kFell` would simply never be dispatched to, and the three checks that
+  prove the Kit's message path works would report zero events and read like a
+  defect in the dispatcher. All three mechanisms assert their inputs still
+  exist, so a rename in the member harness fails the build instead of silently
+  leaving a stale exemption behind.
 - **The namespacing is TOTAL.** All five `.livecodescript` harnesses define
   `stAssert`, `stRun`, `stBuild` and `sTotal`, so every name a member file
   defines is prefixed - including its own scaffolding and its own counters. Not
@@ -193,6 +216,19 @@ Four things about it are worth knowing before you touch it:
   either regresses, and if `en1stCleanup`/`dc1stCleanup` ever become reachable -
   they call `enDeinitialize`/`dcCleanup`, which would pull the transport out from
   under the core's loopback.
+- **A declaration BELOW the first handler is dropped, also silently, and that
+  is now refused at the source (2026-08-16).** `split_handlers` returns only the
+  LEADING run of non-handler lines, so a `local` or `constant` written BETWEEN
+  two handlers — legal, and the natural pattern in any file that keeps a
+  subsystem's state next to its handlers — was dropped by both `fold()` and
+  `embed()` with no error at all. It is the same hazard as the lexical-position
+  one below, arriving by a different door, and the committed-file checker's
+  check 12 catches only the `s*`/`k*` spellings of it, never a `g*`. The
+  generator now measures every source's declaration lines against the ones the
+  hoist can see and refuses the build when they disagree
+  (`assert_no_declaration_dropped`, mutation-tested). Every current member and
+  layer passes it; the assessment that found it was holde-em's, where **81 of
+  188 declarations** sit below the first handler.
 - **A missing declaration is SILENT, which is why there is a checker.** OXT
   cannot compile a `.livecodescript` headlessly, and LiveCodeScript evaluates an
   undeclared name as the literal text of its own name - so a fold that dropped
@@ -279,7 +315,10 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
 That gap is invisible from the inside: the harness was ~4400 lines running ~580
-checks when this was learned (12382 lines today, and the lesson still holds),
+checks when this was learned (20590 lines today, and the lesson still holds - and it landed again on
+2026-08-16, when box2dxt joined the gate and **211 of its Kit's 313 public
+handlers turned out never to have been named by a test**, many of them handlers
+that RUN on every existing test through `b2kStepOnce`),
 and nobody re-asks "is this thorough?" after a number that size. When it was
 first measured, **31 public handlers had never been called** - including coinxt's
 `cxHdDeriveChild` (the single CKD step the whole HD layer loops over) and both ABI-4
@@ -291,6 +330,14 @@ supplies a socket id no harness can mint) and seven that need a **live tor daemo
 The gate fails on a new unexercised handler AND on a stale excuse, so a renamed
 handler cannot leave a permanent exemption behind it. It is a floor, not a ceiling:
 "called by name" is not "tested well", and depth stays the member vector gates' job.
+Box2dxt's 211 were closed the same way, by 13 new sections in its own harness that
+say in their banner that they are shallow; the member is at 313/313 with zero
+exemptions, and the suite total is **724/742**. What is NOT in that ratchet, and
+says so beside its row: box2dxt's raw `b2*` `.lcb` binding, 376 public handlers
+over 374 foreign declarations, of which **245 are named by no script anywhere in
+that member**. Ratcheting it would mean ~375 assertions written blind against a
+foreign-bound API in one pass; a script-level ratchet for that layer is an OPEN
+item, and `box2dxt/tests/smoke_test.c` under ASan is what covers it today.
 
 The same shape of hole was in **coinxt's own constant gate**, found while fixing this
 one: `check-selftest-vectors.py` re-derived an explicit list and then printed
