@@ -146,13 +146,32 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > b2kEventsReset zeroes the COUNTS and leaves the entry arrays -- an
 > out-of-range index answered the STALE control from the last real event,
 > exactly the hazard the EndContact test's own banner named.
+> **THE THIRD RUN (2026-08-16, later the same day) confirmed the fixes and
+> moved the throw ONE statement, which is the diagnosis:** 353/4 at v25.
+> Every v24/v25 correction above reported green with the engine's numbers
+> (halfW/halfH "got 16 of 32"/"got 26 of 52", the ray-hit pair, the y-DOWN
+> impulse "vy 4000", both cleared-buffer EndContact reads) -- but the
+> player-API section STILL threw error 69, now at the paste line for
+> `b2kSpriteFlipH`'s deref where run 2's was `b2kSpritePlay`'s. That line
+> movement is the whole story: the Play guard worked, the section advanced
+> one statement, and died on the NEXT sprite entry point handed the empty
+> art -- b2kPlayerShowState's facing latch always fires on its first call
+> (sPlayFlipNow starts empty, so `false is not empty`), reaching
+> `b2kSpriteFlipH sPlayArt, tFlip` with no art bound. Fixed at v26 by
+> finishing the thought instead of iterating one deref per engine run:
+> EVERY unguarded sprite entry point now no-ops on an empty ref per the
+> family law (FlipH, Stop, SetFrame, FPS, OnFinish, Bind - both args, it
+> derefs both - Unbind, MoveTo; Play was v25's; Remove/Anim/Frame/Flipped
+> already tolerated it). The player region holds no other sprite calls, so
+> this section has no throw left to find.
 > **STILL OPEN, needing engine investigation rather than a blind guess --
 > three failures in PRE-EXISTING behaviour sections, possibly real Kit
 > defects:** the ghost-layer ball passing the solid-layer platform (y 365 --
 > filtering), gravity after b2kClear (the player landed at y 289 where the
 > test expects a longer fall), and the crawl-under-ceiling stall (x 269
-> against 350 expected). Each has engine-verified history behind it, so
-> suspect a real regression or an environment-order effect before the test.
+> against 350 expected). Unchanged across all three runs. Each has
+> engine-verified history behind it, so suspect a real regression or an
+> environment-order effect before the test.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has

@@ -2747,6 +2747,7 @@ end b2kSpritePlay
 
 command b2kSpriteStop pCtrl
    local tRef
+   if pCtrl is empty then exit b2kSpriteStop   -- family law: empty ref = no-op
    put the long id of pCtrl into tRef
    if sSprKind[tRef] is "gif" then
       try
@@ -2770,6 +2771,7 @@ end b2kSpriteAnim
 -- Show one frame by name/index (stops any running animation first).
 command b2kSpriteSetFrame pCtrl, pFrame
    local tRef
+   if pCtrl is empty then exit b2kSpriteSetFrame   -- family law: empty ref = no-op
    put the long id of pCtrl into tRef
    if sSprKind[tRef] is "gif" then
       try
@@ -2795,6 +2797,7 @@ end b2kSpriteFrame
 -- Per-sprite speed override (empty = use each animation's own fps).
 command b2kSpriteFPS pCtrl, pFPS
    local tRef
+   if pCtrl is empty then exit b2kSpriteFPS   -- family law: empty ref = no-op
    put the long id of pCtrl into tRef
    put pFPS into sSprFPSOver[tRef]
    if pFPS is a number and pFPS > 0 then put pFPS into sSprFPS[tRef]
@@ -2804,6 +2807,12 @@ end b2kSpriteFPS
 -- the first time it is needed, by flip-cloning the sliced frame.
 command b2kSpriteFlipH pCtrl, pFlag
    local tRef
+   -- ENGINE-FOUND 2026-08-16 (the b2kSpritePlay guard's sibling, one engine
+   -- run later): b2kPlayerShowState's facing latch always fires on its first
+   -- call (sPlayFlipNow starts empty, so `false is not empty` is true), so a
+   -- direct call with no art reached this deref and error 69 took the whole
+   -- harness section. Same law, same guard: an empty ref is a no-op.
+   if pCtrl is empty then exit b2kSpriteFlipH
    put the long id of pCtrl into tRef
    if sSprSheet[tRef] is empty then exit b2kSpriteFlipH
    put (pFlag is true) into pFlag
@@ -2823,6 +2832,7 @@ end b2kSpriteFlipped
 -- When a NON-looping animation finishes, send pMessage to the frame target
 -- with the sprite and the animation name (attack/death/effect chaining).
 command b2kSpriteOnFinish pCtrl, pMessage
+   if pCtrl is empty then exit b2kSpriteOnFinish   -- family law: empty ref = no-op
    put pMessage into sSprMsg[the long id of pCtrl]
 end b2kSpriteOnFinish
 
@@ -2831,6 +2841,8 @@ end b2kSpriteOnFinish
 -- invisible control the body, bind the sprite to it.
 command b2kSpriteBind pCtrl, pBodyCtrl, pDX, pDY
    local tRef
+   -- family law: an empty ref on either side is a no-op (both are dereffed)
+   if pCtrl is empty or pBodyCtrl is empty then exit b2kSpriteBind
    put the long id of pCtrl into tRef
    put the long id of pBodyCtrl into sSprBind[tRef]
    put b2kNumberOr(pDX, 0) into sSprBindDX[tRef]
@@ -2839,6 +2851,7 @@ command b2kSpriteBind pCtrl, pBodyCtrl, pDX, pDY
 end b2kSpriteBind
 
 command b2kSpriteUnbind pCtrl
+   if pCtrl is empty then exit b2kSpriteUnbind   -- family law: empty ref = no-op
    delete variable sSprBind[the long id of pCtrl]
    put true into sSprLiveDirty
 end b2kSpriteUnbind
@@ -4843,6 +4856,7 @@ end b2kCamShiftY
 -- path -- outside a camera it is a plain loc set).
 command b2kSpriteMoveTo pCtrl, pX, pY
    local tRef
+   if pCtrl is empty then exit b2kSpriteMoveTo   -- family law: empty ref = no-op
    put the long id of pCtrl into tRef
    set the loc of tRef to round(pX - b2kCamShiftX(tRef)) & comma & round(pY - b2kCamShiftY(tRef))
 end b2kSpriteMoveTo

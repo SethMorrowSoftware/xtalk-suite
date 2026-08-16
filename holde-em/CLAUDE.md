@@ -390,7 +390,22 @@ since v0.23.0, act timers + time-bank, sit-out/return, late-join, onion
 auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Phase
 4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
 bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
-Level 2 yet), at v0.24.1 -- v0.23.0 brought the table inside the suite's 720p
+Level 2 yet), at v0.24.3 -- **THE FOLDED HARNESS RAN ON A REAL ENGINE
+2026-08-16, three suite-paste runs the same day, and the third was FULLY GREEN:
+507/0 (stack v0.24.3, harness v40).** Each red run found a real defect no
+headless gate could reach, both in the v0.23.0 liveness layer and both fixed
+with NO wire change (protocol-kat's 114 pins untouched): run 1's six-failure
+cluster was the forced-post miss reset (v0.24.2 -- a bid is a blind or an ante,
+posted by a seat whose human has walked away, so resetting the miss counter on
+it made "two missed turns" unreachable across hands; only a voluntary ACT is
+presence), and run 2's single failure was the street-blind turnKey (v0.24.3 --
+"act,seat,0" cannot tell one street's turn from the next, so when the seat that
+timed out closing a street was first to act on the new one, the clock and the
+timeoutSent latch went stale and hand 2 sat unsettled; the key now carries
+hand-street as a fourth item the tick never parses, derived identically on
+every client from the folds). Section 20's whole headless slice is
+engine-verified now; the TIMED wall-clock session below is what the label still
+owes -- v0.23.0 brought the table inside the suite's 720p
 budget (1024x640; the check-stack-size SKIP is gone, and since 2026-08-16 the
 control rects inside that window have their own gate,
 tools/check-table-layout.py, because the re-layout's arithmetic was originally
@@ -723,7 +738,14 @@ touching the liveness layer:
     (`act=/bank=/miss=`; heNetCfgVal defaults keep pre-liveness cfgs folding),
     the host-countersigned turn-opening wire starts every clock
     (heNetTurnMark: the clock restarts only when the SUBJECT changes, so
-    redelivery never extends a deadline), and verification is interval-on-
+    redelivery never extends a deadline -- and since v0.24.3 the subject key
+    carries the hand and street as a fourth item the tick never parses,
+    because the second engine run proved "act,seat,0" alone cannot tell one
+    street's turn from the next when the same seat closes a street and then
+    opens the new one: the identical key kept the stale clock and the stale
+    timeoutSent latch, and the table stalled. turnKey never crosses a wire;
+    every client derives it from the same folds, so no consensus surface
+    moved), and verification is interval-on-
     one-clock: refuse a timeout more than kHeActSkewSecs (5 s, transport
     jitter) EARLY -- deliberately not the +-600 s wall-clock precedent. The
     verb/bank checks always run; they are transcript-deterministic.
@@ -753,8 +775,9 @@ touching the liveness layer:
   - **Nothing consensus moves on a fold that did not happen (v0.24.0).**
     heNetEngineFold records gGame["foldApplied"] and every caller that
     writes shared state reads it FIRST: the bank spend and the miss count
-    only move for a timeout heBetApply actually took, and a live act/bid
-    only resets the miss count when the engine took THAT. v0.23.0 wrote all
+    only move for a timeout heBetApply actually took, and a live ACT
+    only resets the miss count when the engine took THAT (a bid never
+    does, since v0.24.2 -- the first engine run's finding, below). v0.23.0 wrote all
     three around a fold that can refuse -- and because every client does it
     identically, the wrong state was CONSENSUS, not a divergence anything
     could detect: a seat lost its one time-bank and gained a miss for an
@@ -773,8 +796,15 @@ touching the liveness layer:
     wire on every client, so interval-on-one-clock survives): a bounded
     retry one act period later instead of a 4 Hz re-emit storm.
   - **Sit-out is transcript-derived**: `stand` (own key) or `miss=`
-    consecutive timeouts (heNetTimeoutMiss); a live act/bid RESETS the miss
-    count; sitting-out seats time out instantly (limit 0) and are dealt out
+    consecutive timeouts (heNetTimeoutMiss); a live ACT resets the miss
+    count -- **and only an act. v0.24.2, THE FIRST ENGINE RUN'S FINDING: a
+    bid is a FORCED post** (a blind or an ante -- a seat whose human has
+    walked away still posts them, that is what "forced" means), so the bid
+    path resetting the counter wiped it at the top of every hand and made
+    "two consecutive missed turns" unreachable across hands: the sit-out
+    could never fire. Presence is a VOLUNTARY act, gated on the engine
+    having taken it (foldApplied's sibling rule above);
+    sitting-out seats time out instantly (limit 0) and are dealt out
     by heNetNextOccList -- the ONE occupant rule heNetHandKick and the
     harness share (v0.24.0: its "seated with chips" half is
     heNetSeatedWithChipsList, which heNetHandKick's parked-vs-over test
@@ -868,7 +898,12 @@ touching the liveness layer:
     latch firing the beat in any phase, the return unparking the table, a
     ghost key not being seated (with a present one still seated beside
     it), a mid-redial dial failure re-arming with online still true, and
-    exhaustion leaving the elected successor on the status line.
+    exhaustion leaving the elected successor on the status line. **v40
+    added the engine-found pair's pins** (the forced-post miss reset and
+    the street-blind turnKey, the status paragraph above), and the whole
+    section ran green on a real engine 2026-08-16 (507/0, the day's third
+    suite-paste run) -- the headless slice is engine-verified; the SKIPped
+    live legs are what remain.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
