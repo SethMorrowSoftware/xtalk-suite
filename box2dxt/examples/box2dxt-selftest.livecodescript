@@ -47,7 +47,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "23"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "24"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
