@@ -270,6 +270,11 @@ constant cx1kBech32Valid = "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
 constant cx1kSegwitTestnet = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
 constant cx1kSegwitTestnetProgram = "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"
 constant cx1kSegwitV0WithBech32m = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T5"
+constant cx1kWifSeckey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d"
+constant cx1kWifUncompressed = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"
+constant cx1kWifCompressed = "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617"
+constant cx1kWifTestnet = "cMzLdeGd5vEqxB8B6VFQoRopQ3sLAAvEzDAoQgvX54xwofSWj1fx"
+constant cx1kWifBadChecksum = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTk"
 constant cx1kEip55Corrupt = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD"
 constant cx1kEip55Flipped = "0x5AaEB6053f3e94c9B9a09F33669435e7eF1bEaEd"
 constant cx1kSegwitErrorProgram = "4552524f52000102030405060708090a0b0c0d0e0f101112131415161718191a"
@@ -399,6 +404,11 @@ constant rs1kRsGoldDmMsgText = "hello, dm"
 constant rs1kRsGoldLanNonce = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanHostName = "laptop"
 constant rs1kRsGoldLanJoinName = "phone"
+constant rs1kRsGoldLanDraftText = "draft: hello mesh"
+constant rs1kRsGoldLanSeq = "5"
+constant rs1kRsGoldLanFeedSeq = "9"
+constant rs1kRsGoldLanReadTs = "1754870700"
+constant rs1kRsGoldLanTick = "3"
 constant rs1kRsGoldHeadSeq = "7"
 constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -433,11 +443,16 @@ constant rs1kRsGoldLanPub = "2008657949f2e06e9786315cde35ecf4aa419152787e4fa1670
 constant rs1kRsGoldLanChallengeHex = "52534c3143066c6170746f705a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 constant rs1kRsGoldLanResponseHex = "52534c31520570686f6e658941d7087e125898cb16acdc61f814e91ea4cd861d133fdd5f38e611ea8416958b2e5a1a96540afdbe6f979f475abf77b235d8c1c06ca8306c3e04f0bec7ae08"
 constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade03ec0a853563c1c506923a042d38473d15abb29761c9699a013070c4f4a24527cafde5fb30ea0375d56ae85e53a1726f91612cf2b805"
+constant rs1kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
+constant rs1kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
+constant rs1kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
 constant rs1kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
 constant rs1kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 constant rs1kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
+constant rs1kRsGoldAnonPageHex = "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d277574662d38273e3c7469746c653e526970746964653c2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c656420444d733a20474554202f7072656b657920286d79207369676e65642052534b31207072656b6579207265636f72642c20686578292c207468656e20504f535420796f7572207365616c656420696e74726f2061732068657820746f202f646d2e3c2f703e3c2f626f64793e3c2f68746d6c3e"
+constant rs1kRsGoldAnonPrekeyBody = "52534b31643465366331343665346333623361383935363265643636396334336634626437363031613065343336316264616133333034663462656562343130616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd6c70ba04"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -461,6 +476,8 @@ constant kCxBip32MasterKey = "Bitcoin seed"
 constant kCxHardenedBase = 2147483648
 constant kCxVersionXprv = 76066276
 constant kCxVersionXpub = 76067358
+constant kCxWifVersionMainnet = 128
+constant kCxWifVersionTestnet = 239
 -- <<< GENERATED EMBED: coinxt script layer declarations <<< --
 
 -- >>> GENERATED EMBED: onionxt script layer declarations >>> --
@@ -504,7 +521,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.7.0"
+constant kRsVersion = "0.9.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -516,8 +533,13 @@ constant kRsLanMagic = "RSL1"
 constant kRsLanDomain = "riptide-lan"
 constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
+constant kRsLanSyncDomain = "riptide-lan-s"
+constant kRsLanMaxDraft = 4096
+constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
+constant kRsAnonDmBodyLen = 632
+constant kRsAnonPageMax = 65536
 constant kRsAnonSubkeyBase = 100
 constant kRsHeadSalt = "riptide-head"
 constant kRsKdfContextText = "riptide"
@@ -768,6 +790,7 @@ end openStack
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
@@ -930,6 +953,7 @@ end stRun
 -- handler" execution error, which try/catch turns into a flag; nothing here is
 -- allowed to abort the run.
 command stProbe
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tVersion, tDigest
 
    stSection "extension probe (an absent member SKIPS, it never FAILS)"
@@ -1347,6 +1371,7 @@ end stCoinSection
 -- The whole section is wrapped so that an older CoinXT install (phase-1 .lcb, or
 -- an ABI-2 library) reports one clear failure rather than aborting the run.
 command stCoinCurveSection
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSeckey, tPubC, tPubU, tDigest, tSig, tBad, tRecovered, tByte
 
    stSection "CoinXT: secp256k1 through the binding (phase 2)"
@@ -1913,6 +1938,7 @@ end stCheckSealed
 -- async phase is terminal or the deadline passes; it never blocks the
 -- interpreter, because nothing in this family may block the one script thread.
 command stPump
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
    if sRunning is not "true" then
       exit stPump
@@ -1983,6 +2009,7 @@ end stPump
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
@@ -2191,6 +2218,7 @@ end stRepeatByte
 -- ==========================================================================
 
 command stRunMemberHarnesses
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
@@ -2889,6 +2917,7 @@ private function cxBech32Const pSpec
 end cxBech32Const
 
 function cxBech32EncodeValues pHrp, pValues, pSpec
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -2967,6 +2996,7 @@ private function cxBech32EncodeValuesInner pHrp, pValues, pSpec
 end cxBech32EncodeValuesInner
 
 function cxBech32DecodeValues pText
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3181,6 +3211,7 @@ private function cxConvert5To8 pValues
 end cxConvert5To8
 
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3222,6 +3253,7 @@ private function cxSegwitAddressEncodeInner pHrp, pVersion, pProgram
 end cxSegwitAddressEncodeInner
 
 function cxSegwitAddressDecode pHrp, pAddress
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3323,6 +3355,7 @@ function cxBtcAddressP2PKH pPubkey
 end cxBtcAddressP2PKH
 
 function cxBtcAddressP2WPKH pPubkey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3348,6 +3381,7 @@ private function cxBtcAddressP2WPKHInner pPubkey
 end cxBtcAddressP2WPKHInner
 
 function cxBtcAddressP2TR pOutputKey
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3730,6 +3764,7 @@ function cxMnemonicFromEntropy pEntropy
 end cxMnemonicFromEntropy
 
 function cxMnemonicToEntropy pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3790,6 +3825,7 @@ private function cxMnemonicToEntropyInner pMnemonic
 end cxMnemonicToEntropyInner
 
 function cxMnemonicValidate pMnemonic
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -3909,6 +3945,7 @@ function cxHdDeriveChild pNode, pIndex
 end cxHdDeriveChild
 
 function cxHdDerivePath pNode, pPath
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4021,6 +4058,85 @@ function cxXpub pNode
    return cxBase58CheckEncode(cxHdSerialize(pNode, kCxVersionXpub, false))
 end cxXpub
 
+function cxWifEncode pSeckeyHex, pNetwork, pCompressed
+   local tKey, tVersion, tPayload, tOut
+   -- The argument checks run before the key is decoded, so no throw below
+   -- them leaves key bytes in a local this handler did not get to clear.
+   if pNetwork is "mainnet" then
+      put kCxWifVersionMainnet into tVersion
+   else if pNetwork is "testnet" then
+      put kCxWifVersionTestnet into tVersion
+   else
+      throw "CoinXT: cxWifEncode: the network must be either mainnet or testnet."
+   end if
+   if pCompressed is not true and pCompressed is not false then
+      throw "CoinXT: cxWifEncode: the compressed flag must be true or false."
+   end if
+   put cxHexDecode(pSeckeyHex) into tKey
+   if the number of bytes of tKey is not 32 then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: a private key is 32 bytes (64 hex characters)."
+   end if
+   -- Range-check through the shim rather than framing blind: the encoding
+   -- itself would happily wrap zero or a value at or above the group order
+   -- into a checksummed, valid-looking WIF of a key no wallet can spend from
+   -- - the wrong-but-plausible answer rule 4 exists to forbid. This is the
+   -- exact question cxSeckeyIsValid was built to answer for an imported key.
+   if cxSeckeyIsValid(tKey) is false then
+      put empty into tKey
+      throw "CoinXT: cxWifEncode: the key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put numToByte(tVersion) & tKey into tPayload
+   if pCompressed is true then
+      put numToByte(1) after tPayload
+   end if
+   put cxBase58CheckEncode(tPayload) into tOut
+   -- The secret-hygiene rule: clear the key copies the moment they are done
+   -- with. Script variables are not locked memory (the documented limit), but
+   -- a wallet's key should not linger in a library's locals either.
+   put empty into tKey
+   put empty into tPayload
+   return tOut
+end cxWifEncode
+
+function cxWifDecode pWif
+   local tBody, tCount, tVersion, tKey, tResult
+   put cxBase58CheckDecode(pWif) into tBody
+   put the number of bytes of tBody into tCount
+   if tCount is not 33 and tCount is not 34 then
+      throw "CoinXT: cxWifDecode: the payload must be 33 bytes (version and key) or 34 (with the compressed marker), so this is not a WIF key."
+   end if
+   put byteToNum(byte 1 of tBody) into tVersion
+   if tVersion is kCxWifVersionMainnet then
+      put "mainnet" into tResult["network"]
+   else if tVersion is kCxWifVersionTestnet then
+      put "testnet" into tResult["network"]
+   else
+      throw "CoinXT: cxWifDecode: the version byte is neither mainnet (0x80) nor testnet (0xEF)."
+   end if
+   -- A 34-byte payload whose trailing byte is anything but 0x01 is refused
+   -- rather than read as uncompressed: it is not a shape any encoder emits,
+   -- and guessing a flag guesses an address.
+   if tCount is 34 then
+      if byteToNum(byte 34 of tBody) is not 1 then
+         throw "CoinXT: cxWifDecode: the trailing byte is not the 0x01 compressed marker."
+      end if
+      put true into tResult["compressed"]
+   else
+      put false into tResult["compressed"]
+   end if
+   put byte 2 to 33 of tBody into tKey
+   -- The same range check as the encoder, for the same reason: a WIF that
+   -- frames an unusable scalar is corrupt even with a valid checksum.
+   if cxSeckeyIsValid(tKey) is false then
+      throw "CoinXT: cxWifDecode: the decoded key is zero or not below the secp256k1 group order, so it is not a usable private key."
+   end if
+   put cxHexEncode(tKey) into tResult["seckey"]
+   put empty into tKey
+   put empty into tBody
+   return tResult
+end cxWifDecode
+
 private function cxUIntToBytesLE pValue, pWidth
    local tOut, tRest, tI
    if pValue < 0 then
@@ -4123,6 +4239,7 @@ function cxBtcOutput pAmountSat, pScriptHex
 end cxBtcOutput
 
 function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4171,6 +4288,7 @@ private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pInde
 end cxBtcSighashLegacyInner
 
 function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4222,6 +4340,7 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
 end cxBtcSighashSegwitInner
 
 function cxBtcWitness pItems
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4254,6 +4373,7 @@ private function cxBtcWitnessInner pItems
 end cxBtcWitnessInner
 
 function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -4353,6 +4473,7 @@ private function cxBtcTxBody pVersion, pOutpoints, pScriptSigs, pSequences, pOut
 end cxBtcTxBody
 
 function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
@@ -8093,6 +8214,326 @@ function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
    return tWelcome["name"]
 end rsLanVerifyWelcome
 
+private function rsLanValidCount pValue
+   if pValue is not an integer then return false
+   if pValue < 0 then return false
+   if pValue >= 9007199254740992 then return false
+   return true
+end rsLanValidCount
+
+private function rsLanSyncSign pBody, pMaster
+   local tKeys, tSig, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanSyncSign: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   return tSig
+end rsLanSyncSign
+
+private function rsLanSyncSigOk pBody, pSig, pMaster
+   local tKeys, tOk, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(pSig, \
+            textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanSyncSigOk: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is true then return "true"
+   return "false"
+end rsLanSyncSigOk
+
+function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
+   local tName, tDraft, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildDraft: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put textEncode(pDraftText, "UTF-8") into tDraft
+   if the number of bytes in tDraft > kRsLanMaxDraft then
+      rsSetError "rsLanBuildDraft: the draft is over the" && \
+            kRsLanMaxDraft & "-byte sync cap (refused, never truncated)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("D", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put rsBEu16(the number of bytes in tDraft) after tOut
+   put tDraft after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildDraft
+
+function rsLanVerifyDraft pBytes, pMaster
+   local tLen, tNameLen, tDraftLen, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 81 then
+      rsSetError "rsLanVerifyDraft: truncated draft record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "D" then
+      rsSetError "rsLanVerifyDraft: not an RSL1 draft record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyDraft: bad device-name length"
+      return empty
+   end if
+   if tLen < 80 + tNameLen then
+      rsSetError "rsLanVerifyDraft: length does not match its name field"
+      return empty
+   end if
+   put rsReadBEu16(byte (15 + tNameLen) to (16 + tNameLen) of pBytes) \
+         into tDraftLen
+   if tDraftLen > kRsLanMaxDraft then
+      rsSetError "rsLanVerifyDraft: the draft field is over the" && \
+            kRsLanMaxDraft & "-byte cap"
+      return empty
+   end if
+   if tLen is not 80 + tNameLen + tDraftLen then
+      rsSetError "rsLanVerifyDraft: length does not match its draft field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyDraft: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   -- decode AFTER the proof; OXT's textDecode is lossy not throwing, so
+   -- UTF-8 validity is a round-trip check (rsBytesAreUtf8), refused clean
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyDraft: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   if tDraftLen is 0 then
+      put empty into tOut["draft"]
+   else
+      if not rsBytesAreUtf8(byte (17 + tNameLen) to \
+            (16 + tNameLen + tDraftLen) of pBytes) then
+         rsSetError "rsLanVerifyDraft: the draft text is not valid UTF-8"
+         return empty
+      end if
+      put textDecode(byte (17 + tNameLen) to (16 + tNameLen + tDraftLen) \
+            of pBytes, "UTF-8") into tOut["draft"]
+   end if
+   return tOut
+end rsLanVerifyDraft
+
+function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
+   local tName, tPeer, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildFeedState: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pFeedSeq) then
+      rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   if pReadPeerHex is empty then
+      put kRsZeroHandle into tPeer
+   else
+      put toLower(pReadPeerHex) into tPeer
+      if not rsIsHexOfLen(tPeer, 64) then
+         rsSetError "rsLanBuildFeedState: the read-receipt peer must be" && \
+               "empty or a 64-hex handle"
+         return empty
+      end if
+   end if
+   if not rsLanValidCount(pReadUpTo) then
+      rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
+            "a non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("F", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pFeedSeq) after tOut
+   put textEncode(tPeer, "ASCII") after tOut
+   put rsBEu64(pReadUpTo) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildFeedState
+
+function rsLanVerifyFeedState pBytes, pMaster
+   local tLen, tNameLen, tPeer, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 151 then
+      rsSetError "rsLanVerifyFeedState: truncated feed-state record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "F" then
+      rsSetError "rsLanVerifyFeedState: not an RSL1 feed-state record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyFeedState: bad device-name length"
+      return empty
+   end if
+   if tLen is not 150 + tNameLen then
+      rsSetError "rsLanVerifyFeedState: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyFeedState: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyFeedState: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the peer travels as 64 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (78 + tNameLen) of pBytes, \
+         "ASCII") into tPeer
+   if not rsIsHexOfLen(tPeer, 64) then
+      rsSetError "rsLanVerifyFeedState: the read-receipt peer is not" && \
+            "64 lowercase hex chars"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["feedSeq"]
+   if tPeer is kRsZeroHandle then
+      put empty into tOut["readPeer"]
+   else
+      put tPeer into tOut["readPeer"]
+   end if
+   put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
+         into tOut["readUpTo"]
+   return tOut
+end rsLanVerifyFeedState
+
+function rsLanBuildPresence pName, pTyping, pTick, pMaster
+   local tName, tFlags, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildPresence: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if pTyping is not true and pTyping is not false then
+      rsSetError "rsLanBuildPresence: typing must be true or false"
+      return empty
+   end if
+   if not rsLanValidCount(pTick) then
+      rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   if pTyping is true then
+      put 1 into tFlags
+   else
+      put 0 into tFlags
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("P", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put numToByte(tFlags) after tOut
+   put rsBEu64(pTick) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildPresence
+
+function rsLanVerifyPresence pBytes, pMaster
+   local tLen, tNameLen, tFlags, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 80 then
+      rsSetError "rsLanVerifyPresence: truncated presence record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "P" then
+      rsSetError "rsLanVerifyPresence: not an RSL1 presence record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyPresence: bad device-name length"
+      return empty
+   end if
+   if tLen is not 79 + tNameLen then
+      rsSetError "rsLanVerifyPresence: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put byteToNum(byte (7 + tNameLen) of pBytes) into tFlags
+   if tFlags is not 0 and tFlags is not 1 then
+      rsSetError "rsLanVerifyPresence: unknown flag bits (refused" && \
+            "fail-closed)"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyPresence: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyPresence: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   if tFlags is 1 then
+      put true into tOut["typing"]
+   else
+      put false into tOut["typing"]
+   end if
+   put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
+         into tOut["tick"]
+   return tOut
+end rsLanVerifyPresence
+
 function rsAnonHandle pMaster, pIndex
    local tSeed
    put rsAnonSeed(pMaster, pIndex) into tSeed
@@ -8158,6 +8599,92 @@ function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
    end if
    return tHandle
 end rsAnonCreateService
+
+function rsAnonFeedPage pTitle, pEntries
+   local tTitleBytes, tEsc, tOut, tList, tLine
+   put textEncode(pTitle, "UTF-8") into tTitleBytes
+   if the number of bytes in tTitleBytes < 1 or \
+         the number of bytes in tTitleBytes > kRsMaxDisplayName then
+      rsSetError "rsAnonFeedPage: the title must be 1 to" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsHtmlEscape(pTitle) into tEsc
+   put "<!doctype html><html><head><meta charset='utf-8'><title>" & \
+         tEsc & "</title></head><body><h1>" & tEsc & "</h1><ul>" into tOut
+   put pEntries into tList
+   replace numToChar(13) & numToChar(10) with numToChar(10) in tList
+   replace numToChar(13) with numToChar(10) in tList
+   set the lineDelimiter to numToChar(10)
+   repeat for each line tLine in tList
+      if tLine is empty then
+         next repeat
+      end if
+      put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
+   end repeat
+   put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
+         "hex), then POST your sealed intro as hex to /dm.</p>" & \
+         "</body></html>" after tOut
+   put textEncode(tOut, "UTF-8") into tOut
+   if the number of bytes in tOut > kRsAnonPageMax then
+      rsSetError "rsAnonFeedPage: the page is over" && kRsAnonPageMax && \
+            "bytes; trim the entries"
+      return empty
+   end if
+   return tOut
+end rsAnonFeedPage
+
+function rsAnonPrekeyBody pMaster, pIndex
+   local tSeed, tKeys, tRec
+   put rsAnonDmSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonPrekeyBody: could not derive the persona's DM" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   put rsDmKeys(tSeed) into tKeys
+   if tKeys is empty then return empty
+   put rsBuildPrekey(tKeys["publicKeyHex"], rsAnonSeed(pMaster, pIndex)) \
+         into tRec
+   if tRec is empty then return empty
+   return rsBinToHexString(tRec)
+end rsAnonPrekeyBody
+
+function rsAnonAcceptDm pBody, pMaster, pIndex
+   local tLen, tI, tB, tSealed, tHandle, tErr
+   put the number of bytes in pBody into tLen
+   if tLen is not kRsAnonDmBodyLen then
+      rsSetError "rsAnonAcceptDm: a sealed-intro body is exactly" && \
+            kRsAnonDmBodyLen && "hex chars"
+      return empty
+   end if
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pBody) into tB
+      if not ((tB >= 48 and tB <= 57) or (tB >= 97 and tB <= 102)) then
+         rsSetError "rsAnonAcceptDm: the body is not strict lowercase hex"
+         return empty
+      end if
+   end repeat
+   try
+      put sxHex2Bin(textEncode(pBody, "ASCII")) into tSealed
+   catch tErr
+      rsSetError "rsAnonAcceptDm: needs SodiumXT (sxHex2Bin):" && tErr
+      return empty
+   end try
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsDmOpenIntro(tSealed, tHandle, rsAnonDmSeed(pMaster, pIndex))
+end rsAnonAcceptDm
+
+private function rsHtmlEscape pText
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   return tOut
+end rsHtmlEscape
 
 function rsBtxoHeader pName, pTotalSize, pFlags
    local tName, tOut
@@ -8943,6 +9470,7 @@ on sx1testRistretto
    local sx1tGen
    local sx1tP0
    local sx1tP1
+   local sx1tP51
    local sx1tK7
    local sx1tKp
    local sx1tKinv
@@ -8954,6 +9482,14 @@ on sx1testRistretto
    local sx1tProbe
    local sx1tErr
    local sx1tCaught
+   local sx1tBase
+   local sx1tSum
+   local sx1tDiff
+   local sx1tConcat
+   local sx1tBatch
+   local sx1tLm2
+   local sx1tInv7
+   local sx1tScalar
    sx1sxSection "ristretto255 (ABI 8)"
    put sxHex2Bin(textEncode("e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76", "ascii")) into sx1tGen
    -- SKIP cleanly on a pre-ABI-8 package: the probe call throws (handler not
@@ -9021,6 +9557,81 @@ on sx1testRistretto
       put true into sx1tCaught
    end try
    sx1sxCheck sx1tCaught, "an invalid point encoding refuses to multiply (throws)"
+   -- ABI 9 (holde-em Phase 5, added 2026-08-15): the DLEQ/batch follow-ons.
+   -- A SECOND probe, so an ABI-8 package (where everything above just ran)
+   -- SKIPs only these newer checks cleanly instead of dying on the first
+   -- handler it does not have.
+   sx1sxSection "ristretto255 (ABI 9: DLEQ/batch follow-ons)"
+   try
+      put sxRistrettoScalarMultBase(sx1tK7) into sx1tBase
+   catch sx1tErr
+      sx1sxCheck true, "SKIP: this SodiumXT package predates the DLEQ/batch surface (ABI 9)"
+      exit sx1testRistretto
+   end try
+   -- base-mult: the pinned vector (== RFC 9496's small-multiples entry B[7],
+   -- a third independent witness) AND agreement with the general scalarmult
+   -- of the generator encoding - both legs, so a wrong base cannot pass.
+   sx1sxCheck (sx1sxHexOf(sx1tBase) is "44f53520926ec81fbd5a387845beb7df85a96a24ece18738bdcfa6a7822a176d"), \
+         "7 * B matches the cross-checked vector (RFC 9496 B[7])"
+   sx1sxCheck (sx1tBase is sxRistrettoScalarMultPoint(sx1tK7, sx1tGen)), \
+         "sxRistrettoScalarMultBase agrees with scalarmult(generator)"
+   -- add/sub: the pinned sum and the roundtrip (P+Q)-Q == P
+   put sxRistrettoAdd(sx1tP0, sx1tP1) into sx1tSum
+   sx1sxCheck (sx1sxHexOf(sx1tSum) is "34722b333ab7982fe4d5e2be2913c316db8f8675de2394a5cfb704abab7c8b4c"), \
+         "card00 + card01 matches the cross-checked vector"
+   put sxRistrettoSub(sx1tSum, sx1tP1) into sx1tDiff
+   sx1sxCheck (sx1tDiff is sx1tP0), "the add/sub roundtrip (P+Q)-Q returns exactly P"
+   -- the batch call: one FFI crossing over three concatenated card points,
+   -- element-for-element equal to the loop of single multiplications
+   put sxRistrettoFromHash(sxHash(sx1sxUtf8("HOLDEM-RISTRETTO-KAT-v1|card-51"), 64)) into sx1tP51
+   put sx1tP0 & sx1tP1 & sx1tP51 into sx1tConcat
+   put sxRistrettoScalarMultBatch(sx1tK7, sx1tConcat) into sx1tBatch
+   sx1sxCheck (the number of bytes in sx1tBatch is 96), \
+         "the batch over 3 points returns 96 concatenated bytes"
+   sx1sxCheck (byte 1 to 32 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP0)), \
+         "batch element 1 equals the single-call multiplication"
+   sx1sxCheck (byte 33 to 64 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP1)), \
+         "batch element 2 equals the single-call multiplication"
+   sx1sxCheck (byte 65 to 96 of sx1tBatch is sxRistrettoScalarMultPoint(sx1tK7, sx1tP51)), \
+         "batch element 3 equals the single-call multiplication"
+   -- the DLEQ-shaped identity the whole surface exists for
+   sx1sxCheck (sxRistrettoScalarMultPoint(sx1tK7, sx1tSum) is \
+         sxRistrettoAdd(byte 1 to 32 of sx1tBatch, byte 33 to 64 of sx1tBatch)), \
+         "k*(P+Q) equals k*P + k*Q (the DLEQ-shaped identity)"
+   -- scalar arithmetic mod L: 7 + (L-2) wraps to 5, and 7 * 7^-1 is 1
+   put sxHex2Bin(textEncode("ebd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010", "ascii")) into sx1tLm2
+   put sxRistrettoScalarAdd(sx1tK7, sx1tLm2) into sx1tScalar
+   sx1sxCheck (sx1sxHexOf(sx1tScalar) is "0500000000000000000000000000000000000000000000000000000000000000"), \
+         "7 + (L-2) wraps to 5 mod L (reduce semantics)"
+   put sxRistrettoScalarInvert(sx1tK7) into sx1tInv7
+   put sxRistrettoScalarMul(sx1tK7, sx1tInv7) into sx1tScalar
+   sx1sxCheck (sx1sxHexOf(sx1tScalar) is "0100000000000000000000000000000000000000000000000000000000000000"), \
+         "7 * 7^-1 is 1 mod L"
+   -- failure paths: one bad point voids the WHOLE batch, and the thrown
+   -- message carries the 1-based failing index (the atomic-void contract)
+   put false into sx1tCaught
+   put empty into sx1tErr
+   try
+      put sxRistrettoScalarMultBatch(sx1tK7, sx1tP0 & sx1tBad & sx1tP51) into sx1tBatch
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck (sx1tCaught and ("point 2 of 3" is in sx1tErr)), \
+         "one bad point fails the whole batch, naming index 2 of 3"
+   put false into sx1tCaught
+   try
+      put sxRistrettoScalarMultBase(sx1tZero) into sx1tBase
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a zero scalar refuses base multiplication (identity result, throws)"
+   put false into sx1tCaught
+   try
+      put sxRistrettoAdd(sx1tP0, sx1tBad) into sx1tSum
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "an invalid operand encoding refuses to add (throws)"
 end sx1testRistretto
 
 on sx1testDiagnostics
@@ -9470,6 +10081,7 @@ command cx1stRun
    cx1stRunAddresses
    cx1stRunEip55
    cx1stRunRlp
+   cx1stRunWif
    cx1stRunBip39
    cx1stRunBip32
    cx1stRunBip44
@@ -9485,6 +10097,7 @@ command cx1stRun
 end cx1stRun
 
 command cx1stRunAbi
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tOK
    cx1stSection "load + ABI guard"
    try
@@ -9501,6 +10114,7 @@ command cx1stRunAbi
 end cx1stRunAbi
 
 command cx1stRunLengths
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "length accessors (UIntSize as a foreign RETURN type)"
    try
       cx1stAssert "cxKeccak256Len() is 32", cxKeccak256Len() is 32
@@ -9526,6 +10140,7 @@ command cx1stRunLengths
 end cx1stRunLengths
 
 command cx1stRunKeccak
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "Keccak-256 (published Ethereum vectors)"
    try
       -- The empty input FIRST, on purpose. It is the MCDataGetBytePtr-on-empty
@@ -9542,6 +10157,7 @@ command cx1stRunKeccak
 end cx1stRunKeccak
 
 command cx1stRunSha3
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "SHA3-256 (NIST) and the aliasing trap"
    try
       cx1stAssert "cxSha3_256 of the empty input", cx1stHex(cxSha3_256(cx1stText(""))) is cx1kSha3Empty
@@ -9559,6 +10175,7 @@ command cx1stRunSha3
 end cx1stRunSha3
 
 command cx1stRunSha2
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "SHA-256 and SHA-512 (FIPS 180-4)"
    try
       cx1stAssert "cxSha256 of the empty input", cx1stHex(cxSha256(cx1stText(""))) is cx1kSha256Empty
@@ -9571,6 +10188,7 @@ command cx1stRunSha2
 end cx1stRunSha2
 
 command cx1stRunRipemd
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "RIPEMD-160 (specification vectors)"
    try
       cx1stAssert "cxRipemd160 of the empty input", cx1stHex(cxRipemd160(cx1stText(""))) is cx1kRipeEmpty
@@ -9585,6 +10203,7 @@ command cx1stRunRipemd
 end cx1stRunRipemd
 
 command cx1stRunHmac
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tKey1, cx1tKey2, cx1tMsg1, cx1tMsg2
    cx1stSection "HMAC-SHA256 / HMAC-SHA512 (RFC 4231 cases 1 and 2)"
    try
@@ -9609,6 +10228,7 @@ command cx1stRunHmac
 end cx1stRunHmac
 
 command cx1stRunPbkdf2
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSeed, cx1tShort
    cx1stSection "PBKDF2-HMAC-SHA512 (the BIP-39 seed vector)"
    try
@@ -9627,6 +10247,7 @@ command cx1stRunPbkdf2
 end cx1stRunPbkdf2
 
 command cx1stRunEmptyInputs
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "empty input marshals for every one-shot digest"
    try
       cx1stAssert "cxKeccak256 empty returns 32 bytes", the number of bytes of cxKeccak256(cx1stText("")) is 32
@@ -9643,6 +10264,7 @@ command cx1stRunEmptyInputs
 end cx1stRunEmptyInputs
 
 command cx1stRunIndependence
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tK, cx1tS3, cx1tS2, cx1tR
    cx1stSection "the digests are independent of each other"
    try
@@ -9665,6 +10287,7 @@ command cx1stRunIndependence
 end cx1stRunIndependence
 
 command cx1stRunFailClosed
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tThrew
    cx1stSection "fail closed on malformed input"
    try
@@ -9689,6 +10312,7 @@ command cx1stRunFailClosed
 end cx1stRunFailClosed
 
 command cx1stRunCurveKeys
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tPubC, cx1tPubU, cx1tTweaked
    cx1stSection "secp256k1 keys"
    try
@@ -9732,6 +10356,7 @@ command cx1stRunCurveKeys
 end cx1stRunCurveKeys
 
 command cx1stRunCurveSign
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tAgain
    cx1stSection "ECDSA signing (RFC 6979, published vector)"
    try
@@ -9753,6 +10378,7 @@ command cx1stRunCurveSign
 end cx1stRunCurveSign
 
 command cx1stRunCurveVerify
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tPubC, cx1tPubU, cx1tBad, cx1tOtherPub
    cx1stSection "ECDSA verification (true, and false)"
    try
@@ -9777,6 +10403,7 @@ command cx1stRunCurveVerify
 end cx1stRunCurveVerify
 
 command cx1stRunCurveRecover
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tSk, cx1tDigest, cx1tSig, cx1tRec, cx1tPubU
    cx1stSection "recoverable signing and ecrecover"
    try
@@ -9799,6 +10426,7 @@ command cx1stRunCurveRecover
 end cx1stRunCurveRecover
 
 command cx1stRunCurveEcdh
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tA, cx1tB, cx1tPubA, cx1tPubB, cx1tShared1, cx1tShared2
    cx1stSection "ECDH"
    try
@@ -9821,6 +10449,7 @@ command cx1stRunCurveEcdh
 end cx1stRunCurveEcdh
 
 command cx1stRunCurveFailClosed
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tThrew, cx1tSk, cx1tDigest
    cx1stSection "the curve fails closed"
    try
@@ -9884,6 +10513,7 @@ command cx1stRunCurveFailClosed
 end cx1stRunCurveFailClosed
 
 command cx1stRunHex
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "hex"
    try
       cx1stAssert "cxHexEncode of 00ff10ab", cxHexEncode(cxHexDecode("00ff10ab")) is "00ff10ab"
@@ -9897,6 +10527,7 @@ command cx1stRunHex
 end cx1stRunHex
 
 command cx1stRunBase58
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tPayload, cx1tI, cx1tPadded
    cx1stSection "Base58Check"
    try
@@ -9924,6 +10555,7 @@ command cx1stRunBase58
 end cx1stRunBase58
 
 command cx1stRunBech32
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tDecoded
    cx1stSection "bech32 and bech32m"
    try
@@ -9941,6 +10573,7 @@ command cx1stRunBech32
 end cx1stRunBech32
 
 command cx1stRunAddresses
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tPubC, cx1tPubU, cx1tSeckey, cx1tDecoded
    cx1stSection "addresses from the generator G"
    try
@@ -9972,6 +10605,7 @@ command cx1stRunAddresses
 end cx1stRunAddresses
 
 command cx1stRunEip55
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    cx1stSection "EIP-55 checksummed Ethereum addresses"
    try
       cx1stAssert "checksums the first specification example", cxEthAddressChecksum(cx1stToLowerText(cx1kEip55A)) is cx1kEip55A
@@ -9987,6 +10621,7 @@ command cx1stRunEip55
 end cx1stRunEip55
 
 command cx1stRunRlp
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tCatDog, cx1tDecoded
    cx1stSection "RLP"
    try
@@ -10008,6 +10643,51 @@ command cx1stRunRlp
       cx1stSectionFailed "RLP", cx1tError
    end try
 end cx1stRunRlp
+
+command cx1stRunWif
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local cx1tDecoded, cx1tThrew
+   cx1stSection "WIF (wallet import format)"
+   try
+      -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
+      -- example; the other forms are oracle-derived (see the constants block).
+      cx1stAssert "encodes the wiki worked example (mainnet, uncompressed)", cxWifEncode(cx1kWifSeckey, "mainnet", false) is cx1kWifUncompressed
+      cx1stAssert "the compressed form is the same key with the 0x01 marker", cxWifEncode(cx1kWifSeckey, "mainnet", true) is cx1kWifCompressed
+      cx1stAssert "the testnet form differs only in its version byte", cxWifEncode(cx1kWifSeckey, "testnet", true) is cx1kWifTestnet
+      -- The three encodings must be three different strings, or the network
+      -- and the flag are not reaching the payload at all.
+      cx1stAssert "compressed and uncompressed forms are distinct", cx1kWifCompressed is not cx1kWifUncompressed
+      cx1stAssert "mainnet and testnet forms are distinct", cx1kWifTestnet is not cx1kWifCompressed
+      put cxWifDecode(cx1kWifCompressed) into cx1tDecoded
+      cx1stAssert "decodes back to the same key", cx1tDecoded["seckey"] is cx1kWifSeckey
+      cx1stAssert "and reports mainnet", cx1tDecoded["network"] is "mainnet"
+      cx1stAssert "and reports the compressed flag", cx1tDecoded["compressed"] is true
+      put cxWifDecode(cx1kWifUncompressed) into cx1tDecoded
+      cx1stAssert "the uncompressed form reports compressed false", cx1tDecoded["compressed"] is false
+      put cxWifDecode(cx1kWifTestnet) into cx1tDecoded
+      cx1stAssert "the testnet form reports testnet", cx1tDecoded["network"] is "testnet"
+      -- The refusals. A typo in a pasted key must never decode to a plausible
+      -- neighbouring wallet, so "it threw" is the assertion.
+      cx1stAssert "a corrupt checksum is refused", cx1stThrows("cxWifDecode", cx1kWifBadChecksum)
+      cx1stAssert "an xprv is refused (wrong payload length)", cx1stThrows("cxWifDecode", cx1kBip32V1Xprv)
+      put "false" into cx1tThrew
+      try
+         get cxWifEncode(cx1kWifSeckey, "regtest", true)
+      catch tInner
+         put "true" into cx1tThrew
+      end try
+      cx1stAssert "an unknown network is refused", cx1tThrew is "true"
+      put "false" into cx1tThrew
+      try
+         get cxWifEncode("deadbeef", "mainnet", true)
+      catch tInner2
+         put "true" into cx1tThrew
+      end try
+      cx1stAssert "a short key is refused", cx1tThrew is "true"
+   catch cx1tError
+      cx1stSectionFailed "WIF", cx1tError
+   end try
+end cx1stRunWif
 
 function cx1stThrows pHandler, pArg
    local cx1tThrew
@@ -10088,6 +10768,7 @@ function cx1stRepeatByte pCode, pCount
 end cx1stRepeatByte
 
 command cx1stRunBip39
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tEnt, cx1tMnemonic
    cx1stSection "BIP-39 mnemonics"
    try
@@ -10132,6 +10813,7 @@ command cx1stRunBip39
 end cx1stRunBip39
 
 command cx1stRunBip32
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tNode, cx1tDeep, cx1tWatch, cx1tChild, cx1tStep
    cx1stSection "BIP-32 derivation"
    try
@@ -10187,6 +10869,7 @@ command cx1stRunBip32
 end cx1stRunBip32
 
 command cx1stRunBip44
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tMaster, cx1tNode
    cx1stSection "BIP-44 / BIP-84 end to end"
    try
@@ -10208,6 +10891,7 @@ command cx1stRunBip44
 end cx1stRunBip44
 
 command cx1stRunTransactions
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tOutpoints, cx1tSequences, cx1tOutputs, cx1tD0, cx1tD1, cx1tSig0, cx1tDer0, cx1tScriptSig0
    local cx1tSig1, cx1tDer1, cx1tPub1, cx1tWit1, cx1tScriptSigs, cx1tWitnesses, cx1tRaw
    local cx1tRecov, cx1tRecid, cx1tRHex, cx1tSHex, cx1tEth, cx1tThrew, cx1tErr2
@@ -10314,6 +10998,7 @@ command cx1stRunTransactions
 end cx1stRunTransactions
 
 command cx1stRunFailOpen
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local cx1tProgram, cx1tDecoded, cx1tKey
    cx1stSection "fail-closed regressions"
    try
@@ -10440,6 +11125,7 @@ function bt1stListHas pList, pNeedle
 end bt1stListHas
 
 command bt1stRun
+   local bt1tRunErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    bt1stResetCounters
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
@@ -10615,8 +11301,8 @@ command bt1stRun
    bt1stNote "btMoveStorage + btRemoveTorrent(deleteFiles=true) are destructive;"
    bt1stNote "btSetFilePriorities needs a binary buffer; btAddTorrentWithResume"
    bt1stNote "needs async resume bytes; btAddMagnet is covered via btAddMagnetEx."
-   catch tRunErr
-      bt1stNote "RUNTIME ERROR - a binding call failed: " & tRunErr
+   catch bt1tRunErr
+      bt1stNote "RUNTIME ERROR - a binding call failed: " & bt1tRunErr
       add 1 to bt1sFailed
    end try
 
@@ -11438,6 +12124,7 @@ function rs1rsSelfTest
       rs1rstSectionIngest
       rs1rstSectionDm rs1tCaps
       rs1rstSectionLan
+      rs1rstSectionLanSync
       rs1rstSectionAnon rs1tCaps
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
@@ -11891,7 +12578,7 @@ private command rs1rstSectionIngest
 end rs1rstSectionIngest
 
 private command rs1rstSectionAnon pCaps
-   local rs1tHeader, rs1tFrame, rs1tParsed, rs1tHandle
+   local rs1tHeader, rs1tFrame, rs1tParsed, rs1tHandle, rs1tPage, rs1tPageText, rs1tPkBody, rs1tHex
    rs1rstSection "phase 7 - the anon persona, the guard, and BTXO framing"
    -- derivations: the anon persona is a real, distinct identity
    rs1rstCheck (rsAnonHandle(rs1rstBin(rs1kRsGoldMasterHex), 0) is rs1kRsGoldAnon0Handle), \
@@ -12013,6 +12700,53 @@ private command rs1rstSectionAnon pCaps
    rs1rstCheck (rsDmOpenIntro(rs1tFrame, rs1kRsGoldHandle, \
          rs1rstBin(rs1kRsGoldDmSeedHex)) is empty), \
          "the PUBLIC identity cannot open the persona's mail"
+   -- 8.2/8.3 SERVING SEAMS: the payloads the persona's onion serves and
+   -- the POST /dm acceptance. All pure, so they run right here; only the
+   -- oxh* wiring and the live onion need tor (the skips below).
+   put rsAnonFeedPage(rs1kRsGoldHeadName, rs1kRsGoldPost1Text & return & \
+         rs1kRsGoldPost2Text) into rs1tPage
+   rs1rstCheck (rs1rstHex(rs1tPage) is rs1kRsGoldAnonPageHex), \
+         "the anon feed page bytes match golden"
+   put textDecode(rsAnonFeedPage(rs1kRsGoldHeadName, \
+         "an <i>entry</i> & " & quote & "q" & quote), "UTF-8") into rs1tPageText
+   rs1rstCheck (offset("<i>", rs1tPageText) is 0 and \
+         offset("&lt;i&gt;entry&lt;/i&gt; &amp; &quot;q&quot;", \
+         rs1tPageText) > 0), \
+         "entries are HTML-escaped (no markup injection into the page)"
+   rs1rstCheck (rsAnonFeedPage("", "x") is empty), \
+         "an empty page title is refused"
+   rs1rstCheck (rsAnonFeedPage(rs1kRsGoldHeadName, empty) is not empty), \
+         "an empty feed still serves a (bare) page"
+   put rsAnonPrekeyBody(rs1rstBin(rs1kRsGoldMasterHex), 0) into rs1tPkBody
+   rs1rstCheck (rs1tPkBody is rs1kRsGoldAnonPrekeyBody), \
+         "the GET /prekey body matches golden"
+   rs1rstCheck (rsVerifyPrekey(rs1rstBin(rs1tPkBody), rs1kRsGoldAnon0Handle) is not \
+         empty), "and decodes to a prekey verifying under the ANON handle"
+   rs1rstCheck (rsAnonPrekeyBody(rs1rstBin(rs1kRsGoldMasterHex), -1) is empty), \
+         "a negative persona index refuses a prekey body"
+   -- the POST /dm ACCEPTANCE, against a sealed blob built with the
+   -- existing 8.3 crypto (rs1tFrame still holds the sealed intro from the
+   -- open checks above) - accept the good body, refuse before decode
+   -- everything else
+   put rs1rstHex(rs1tFrame) into rs1tHex
+   put rsAnonAcceptDm(rs1tHex, rs1rstBin(rs1kRsGoldMasterHex), 0) into rs1tParsed
+   rs1rstCheck (rs1tParsed is not empty), \
+         "rsAnonAcceptDm accepts the hex-posted sealed intro"
+   rs1rstCheck (rs1tParsed["senderHandle"] is rs1kRsGoldHandle), \
+         "and reports the proven sender"
+   rs1rstCheck (rsAnonAcceptDm(char 1 to 630 of rs1tHex, \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a short body is refused before any decode"
+   rs1rstCheck (rsAnonAcceptDm(rs1tHex & "00", rs1rstBin(rs1kRsGoldMasterHex), 0) \
+         is empty), "a long body is refused before any decode"
+   rs1rstCheck (rsAnonAcceptDm(toUpper(rs1tHex), rs1rstBin(rs1kRsGoldMasterHex), 0) \
+         is empty), "a non-canonical (uppercase) body is refused"
+   rs1rstCheck (rsAnonAcceptDm("zz" & char 3 to -1 of rs1tHex, \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a non-hex body of the right length is refused before decode"
+   rs1rstCheck (rsAnonAcceptDm(rs1rstHex(rs1rstFlipByte(rs1tFrame, 20)), \
+         rs1rstBin(rs1kRsGoldMasterHex), 0) is empty), \
+         "a tampered sealed blob is refused by the seal itself"
    rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 0, 8080) is \
          empty), "rsAnonCreateService refuses a bad virtual port"
    rs1rstCheck (rsAnonCreateService(rs1rstBin(rs1kRsGoldMasterHex), 0, 80, 70000) is \
@@ -12022,6 +12756,8 @@ private command rs1rstSectionAnon pCaps
    else
       rs1rstSkip "anon onion service create: needs a live tor daemon"
    end if
+   rs1rstSkip "anon onion SERVING (the / page, /prekey, POST /dm as routes):" && \
+         "needs onion-httpd + a live tor daemon"
 end rs1rstSectionAnon
 
 private command rs1rstSectionLan
@@ -12123,6 +12859,102 @@ private command rs1rstSectionLan
    rs1rstCheck (rsLanParseWelcome(rs1tBadUtf) is empty), \
          "a non-UTF-8 host name in a welcome is refused, not thrown"
 end rs1rstSectionLan
+
+private command rs1rstSectionLanSync
+   local rs1tMaster, rs1tKeys, rs1tRec, rs1tOut, rs1tBytes, rs1tBody
+   rs1rstSection "phase 6 - LAN sync records (drafts, feed state, presence)"
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tMaster
+   put rsLanKeys(rs1tMaster) into rs1tKeys
+   -- the draft record (channel 0, reliable)
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
+         rs1kRsGoldLanDraftText, rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanDraftHex), \
+         "the draft record bytes match golden"
+   put rsLanVerifyDraft(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["name"] is rs1kRsGoldLanJoinName), \
+         "the draft's device name verifies and round-trips"
+   rs1rstCheck (rs1tOut["seq"] is rs1kRsGoldLanSeq + 0), \
+         "the draft's per-device seq round-trips"
+   rs1rstCheck (rs1tOut["draft"] is rs1kRsGoldLanDraftText), \
+         "the draft text round-trips"
+   -- absolute state: an EMPTY draft is legal and means cleared
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, 6, empty, rs1tMaster) into rs1tBytes
+   put rsLanVerifyDraft(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["draft"] is empty), \
+         "an empty draft builds and verifies (cleared state)"
+   -- the stranger: a record signed under a DIFFERENT master is refused
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
+         rs1kRsGoldLanDraftText, rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyDraft(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's draft record is refused"
+   rs1rstCheck (rsLanVerifyDraft(rs1rstFlipByte(rs1tRec, 30), rs1tMaster) is empty), \
+         "a tampered draft record is refused"
+   rs1rstCheck (rsLanVerifyDraft(byte 1 to 40 of rs1tRec, rs1tMaster) is empty), \
+         "a truncated draft record is refused"
+   rs1rstCheck (rsLanBuildDraft(rs1kRsGoldLanJoinName, -1, "x", rs1tMaster) \
+         is empty), "a negative draft seq is refused"
+   -- a hand-signed record with a non-UTF-8 name: the signature is VALID
+   -- (only a master-holder could make it), so this exercises the
+   -- refusal AFTER the proof - refused clean, never thrown, never mangled
+   put rs1rstBin("52534c3144") & numToByte(2) & rs1rstBin("fffe") & \
+         rs1rstBin("0000000000000001") & rs1rstBin("0000") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyDraft(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed draft with a non-UTF-8 name is refused, not thrown"
+   -- the feed-state record (channel 0): feedSeq + an optional read receipt
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, rs1kRsGoldLanFeedSeq, \
+         rs1kRsGoldHandle, rs1kRsGoldLanReadTs, rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanFeedStateHex), \
+         "the feed-state record bytes match golden"
+   put rsLanVerifyFeedState(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["feedSeq"] is rs1kRsGoldLanFeedSeq + 0), \
+         "the feed seq verifies and round-trips"
+   rs1rstCheck (rs1tOut["readPeer"] is rs1kRsGoldHandle), \
+         "the read-receipt peer round-trips"
+   rs1rstCheck (rs1tOut["readUpTo"] is rs1kRsGoldLanReadTs + 0), \
+         "the read-up-to timestamp round-trips"
+   -- an empty peer travels as the all-zeros handle and parses back EMPTY
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, empty, 0, rs1tMaster) \
+         into rs1tBytes
+   put rsLanVerifyFeedState(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["readPeer"] is empty), \
+         "a pure feed-seq claim (no receipt) round-trips the none spelling"
+   put rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, empty, 0, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyFeedState(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's feed-state record is refused"
+   rs1rstCheck (rsLanBuildFeedState(rs1kRsGoldLanJoinName, 1, "zz", 0, rs1tMaster) \
+         is empty), "a malformed read-receipt peer is refused at build"
+   -- the presence record (channel 1, unreliable-unsequenced)
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, true, rs1kRsGoldLanTick, \
+         rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanPresenceHex), \
+         "the presence record bytes match golden"
+   put rsLanVerifyPresence(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["typing"] is true and rs1tOut["tick"] is rs1kRsGoldLanTick + 0), \
+         "typing state and tick verify and round-trip"
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, false, 4, rs1tMaster) into rs1tBytes
+   put rsLanVerifyPresence(rs1tBytes, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut is not empty and rs1tOut["typing"] is false), \
+         "the not-typing absolute state round-trips"
+   put rsLanBuildPresence(rs1kRsGoldLanJoinName, true, 1, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyPresence(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's presence record is refused"
+   -- a hand-signed record with UNKNOWN flag bits (2): a valid signature,
+   -- refused fail-closed - a newer format must never half-parse
+   put rs1rstBin("52534c3150") & numToByte(5) & \
+         textEncode(rs1kRsGoldLanJoinName, "UTF-8") & numToByte(2) & \
+         rs1rstBin("0000000000000001") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyPresence(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed presence record with unknown flags is refused"
+   -- no cross-kind reads: one record kind can never verify as another
+   rs1rstCheck (rsLanVerifyDraft(rs1tRec, rs1tMaster) is empty), \
+         "a presence record fed to the draft verifier is refused"
+end rs1rstSectionLanSync
 
 private command rs1rstSectionDm pCaps
    local rs1tSeed, rs1tMyKeys, rs1tConfKeys, rs1tSess, rs1tSessB, rs1tPrekey, rs1tIntro

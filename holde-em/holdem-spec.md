@@ -189,7 +189,17 @@ to seat N's session box pub. `board` (dealer) carries `street=..,cards=a|b|c`.
 `settle` (host) carries the standard deltas body; every client verifies it against its
 own `heSettleOf` recomputation before folding it. Showdown ranks online are derived
 from the REVEALED seeds (re-derive deck -> holes -> ranks), never from player claims,
-so `show`/`muck` remain display-only niceties (deferred with liveness, 2e).
+so `show`/`muck` are display-only by construction. As-built (v0.21.0, the 2e
+remainder): `ckpt` carries `street=<deal|flop|turn|river|showdown>,head=<64hex>,
+sig=<128hex>` -- the signer's ckpt signature over the chain head the boundary's
+TRANSITION wire produced (the last holeDeliver for "deal", the street's board wire,
+the wire that closed the betting for "showdown"), so every client records the same
+head and a verified ckpt naming a different one is logged as fork evidence, never
+folded as agreement. `show`/`muck` carry `seat=N` from the seat's own key, emitted
+after the verified settle; the showdown display honors them (only shown seats'
+cards paint; a mucked hand is annotated "(mucked)" in History) while the audit is
+untouched. All three wire formats are byte-pinned in `tools/protocol-kat.py`
+(ckpt_body, ckpt_head7/show_head8/muck_head9).
 
 ## 7. The deal protocol ladder
 
@@ -236,6 +246,36 @@ Level 0's exact protocol, but the dealer role is a machine with no stake: a head
 needs no network setup. Entropy is still player-committed (the oracle cannot stack); the
 oracle sees cards but holds no cards, and it never sees the betting (it gets deal-phase
 messages only). Collusion oracle-with-player remains (T3) — that is why Level 2 exists.
+
+**As-built (2026-08-16, v0.21.0 — Phase 3; code wins; verified statically, needs the
+three-machine pass + live tor for the onion oracle):**
+
+- The oracle is the lobby's **"Host: ORACLE"** mode of the same stack — the HOST ROLE
+  minus the seat, bound at Create. `level=1` in the signed table config IS the oracle
+  marker (this section is the deal ladder's Level 1 — no extra field), and the
+  per-hand `dealLevel` wire carries `level=1,dealer=0`. A pre-oracle client refuses
+  the hand readably ("unsupported deal level 1") instead of mis-folding the table.
+- **The oracle contributes its own committed seed** at contributor position
+  dealCount+1: players' entropy still commits the shuffle, the oracle's own seed was
+  committed before it saw anyone's (it cannot stack — the same argument as the L0
+  dealer's), and no player's entropy ever stands alone. It reveals that seed at hand
+  end (the XOR needs it) and emits an audit verdict filed as "oracle". It holds no
+  cards, banks no stack, and signs **no settlement receipt** — receipts stay the
+  seats' multi-signature (8.3).
+- Hole delivery is the EXISTING sealed path authored by the oracle key; players'
+  seedSeals seal to the oracle's session box (its `join` binds one like any peer's).
+- **One divergence from the sketch above, recorded:** as-built the oracle IS the
+  relay host, so it necessarily handles (public, signed) betting wires — "never sees
+  the betting" would require splitting the relay from the dealer, which this build
+  deliberately does not do. What the threat model actually needs from Level 1 is the
+  no-stake property — the peeker holds no cards and no chips — and that holds. A
+  betting-blind oracle daemon remains open work if it ever earns its complexity.
+- Onion hosting derives the service seed under its **own domain tag**
+  (`"HOLDEM-ORACLE-v1|"`, spec 16), so an oracle table's deterministic address can
+  never collide with the same host's playing table on the same table id. Pinned in
+  `tools/protocol-kat.py` (oracle_service_seed vs onion_service_seed).
+- **Oracle loss is host loss by construction** — same role, same spec 9 election
+  path; the oracle, never seated, is never electable.
 
 ### 7.3 Level 2 — ristretto255 mental poker (the value-candidate deal)
 
@@ -318,6 +358,37 @@ table over rp1 (a live dealer's pace; sub-second over the direct-TCP lane). Deal
 card-by-card (cards x N ticks — over a minute at 6-max) is a spec violation, not an
 implementation choice. A batch FFI handler (`sxRistrettoScalarMultBatch`) is an
 optional later optimization, not a prerequisite.
+
+**As-built (2026-08-15, v0.19.0 — the 4a-4c COMPUTE half; code wins).** The deal
+algebra above exists as pure `heL2*` handlers in `src/holdem.livecodescript`,
+KAT-pinned end to end from fixed scalars in `tools/protocol-kat.py` against that
+file's independent RFC 9496 reference (verified statically; needs an OXT pass).
+Transport wiring, void-and-audit sequencing, and played-hand integration stay open
+(plan 4d-4f). Decisions the code made under this section:
+
+- The card-table domain is `"HOLDEM-L2-CARD-v1|" || cardName` — L2-scoped and
+  versioned, superseding this section's illustrative `"HOLDEM-CARD-v1|"` — and the
+  64-byte uniform input is `sxHash(label, 64)` (Workstream U established no separate
+  `sxHash512` is needed).
+- Every seam is lowercase hex text (the H6 corollary): a deck is a 52-item comma
+  list of 64-hex points; sigma is a 52-item comma list of source indices with
+  `out[j] = k * in[sigma[j]]`; an unmask chain is a comma list whose first item is
+  the masked table point and each later item one seat's broadcast value, in chain
+  order (a hole chain carries only the public part — the owner's step is exactly
+  what is absent).
+- Void conditions surface as DISTINCT strings, never throws, so the 4d audit can
+  name what it refuses: `scalar-format` / `point-format` / `invalid-point` /
+  `identity-point` / `deck-size` / `perm-size` / `perm-format` / `duplicate-point`
+  / `chain-short` / `final-not-in-table` / `hole-not-in-table` /
+  `shuffle-mismatch` / `unmask-mismatch` / `scalar-zero` (position-tagged where a
+  position exists). libsodium reports an invalid point and an identity result as
+  ONE scalar-mult failure; the validity predicate runs first, which is what makes
+  `invalid-point` and `identity-point` separable at all.
+- sigma's distinctness is deliberately NOT validated by the masker: a repeated
+  index duplicates a point in the output deck and the free duplicate check refuses
+  the step publicly — exactly this section's "prevented, not just detected".
+- Verification IS the doer re-run: the showdown shuffle re-check calls the same
+  full-deck mask handler that built the step, so doer and verifier cannot drift.
 
 ### 7.4 The ceiling above Level 2 (documented, not built)
 
@@ -406,7 +477,14 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   idempotent for a mid-stream client because replayed wires at or below its seq shed
   silently and it resumes from its head forward. `s?` is a transport control message,
   not a transcript type, and is honored only from an already-admitted, connected
-  peer, rate-limited per peer.
+  peer, rate-limited per peer. As-built (v0.21.0, the 2e street-ckpt work): the
+  `s?` frame carries the requester's applied seq and the host TRIMS the replay to
+  the wires past it — the "transcript since your last ckpt" above, keyed by seq
+  (the street ckpt wires pin the boundaries; a mid-stream client resumes from at
+  worst the last one). A bare `s?` and the reconnect handshake still get the full
+  log (a rebuilt client has nothing to resume from), and the mark is only a trim
+  hint from an admitted peer: dedup keeps any replay safe, a forward lie only
+  starves the liar.
 - **Timeout in betting**: auto check/fold, seat goes to sit-out after (config) misses.
 - **Timeout in dealing** (L2): void-and-audit (7.3). A player who habitually
   "disconnects" when the flop looks bad voids hands but never sees that flop — aborting
@@ -415,7 +493,16 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
 - **Host loss**: any player can call a host election (deterministic: lowest pubkey among
   live seats); the transcript's checkpoints make the handover point unambiguous. Voids
   the in-flight hand at L2 (audit optional — nobody misbehaved), resumes from the last
-  receipt.
+  receipt. As-built (v0.21.0; oracle loss takes the SAME path — the oracle is the host
+  role, spec 7.2): detection is a wire-silence watchdog (no host-countersigned wire for
+  60 s during play — rp1's only honest signal; the onion transport also routes its
+  positive stream-death here), the election needs no calling round at all
+  (`heElectHostOf`: lowest pubkey among live SEATED players, so every client names the
+  same successor independently; pinned as elected_host in protocol-kat), and the void
+  costs nothing at L0 — bets that never reached a verified settle never moved the
+  stacks, so they already stand at the last receipt. The LIVE handover — the elected
+  host re-hosting and peers re-joining — is Phase 3's three-machine exit gate; until
+  that pass, the client fails closed with the successor named.
 
 ## 10. Transport profile
 
@@ -428,7 +515,42 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   join = same from the short code; leave = part message + remove torrent. The DHT
   carries **zero game data** — rendezvous only (plus optional BEP44 standings).
 - Onion tables: identical envelopes over OnionXT streams; the table code becomes the
-  onion address. Latency budget already fits.
+  onion address. Latency budget already fits. **As-built (2026-08-15, v0.20.0 — 2f;
+  code wins; verified statically, needs the two-machine live-tor pass):**
+  - The table code does not literally *become* the address — the invite carries
+    both, extending the short-code UX compatibly: `<64hex-table>@<56base32>.onion`,
+    one word and deliberately non-hex, so a pre-2f client's `word 1` + 64-hex gate
+    refuses the whole invite readably instead of silently joining a DHT table
+    nobody announced (downgrade refusal by format). A joiner's transport comes
+    from the invite; an onion invite on a stack without OnionXT is refused
+    outright — no fallback transport in either direction.
+  - The host's onion is deterministic: service seed =
+    `sxHash("HOLDEM-ONION-v1|" || idSeed || "|" || tableId)` — secret-keyed by the
+    host's identity seed (an invitee holding the public table code cannot derive
+    the service key and impersonate the table endpoint), fresh per table, and
+    re-derivable, so a restarted host republishes the same address and the invite
+    outlives the crash (section 9). The address is computed offline at create time
+    (`sxSignKeypairFromSeed` → `oxAddressFromPublicKey`; needs SodiumXT ABI 7's
+    SHA3 for the checksum, refused with a clear message below that) and
+    cross-checked against `oxServiceAddress` once the descriptor uploads.
+  - Framing: one envelope (or transport frame) per `oxWrite`, LF-terminated —
+    safe by construction, since every free-text field is hex-encoded into the
+    frame and no payload can contain an LF. The receiver reassembles complete
+    lines per stream on the poll tick (the OnionXT callbacks only stash bytes;
+    the 250 ms tick does all protocol work) and feeds the same router the rp1
+    events take.
+  - The handshake: rp1 carries the signed admission token in its transport
+    handshake event; an onion stream has no such event, so the token rides the
+    stream's first wire line (the `h` transport frame, beside `c`/`w`/`r!`/`s?`).
+    The host answers a verified hello with its own hello *before* the transcript
+    replay — the stream is ordered, so the joiner adopts the host key before any
+    host-signed wire arrives. An unverified hello earns nothing, not even the
+    host's identity.
+  - Onion tables touch no DHT at all (this section's "the DHT carries zero game
+    data" becomes "the DHT carries nothing"). Tor is assumed running on the stock
+    ports (SOCKS 9050, control 9051), probed fail-closed through watchdogged
+    states surfaced on a lobby status line (the nocloud/quickshare probe-chain
+    pattern).
 - Direct-TCP upgrade: optional pairwise `btMapPort` + engine sockets for sub-100 ms
   action UX; protocol-equivalent, falls back to rp1 silently.
 

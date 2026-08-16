@@ -497,6 +497,7 @@ command runS3
 end runS3
 
 command runS4
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    if gSpikeTest is not "S3" then
       spikeStatus "Run S3 first - S4 toggles compositing + motion on the S3 sprite."
       exit runS4
@@ -544,6 +545,7 @@ end spikeAnimTick
 -- S5 - animated GIF: frameCount / currentFrame / repeatCount control
 -- =====================================================================
 command runS5
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tN
    if gS5Made is not true then
       if spikeBeginTest("S5", false) is false then exit runS5
@@ -579,6 +581,7 @@ end runS5
 -- S6 - flip image horizontal (mirrored-sheet strategy), self-judging
 -- =====================================================================
 command runS6
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tData, tRed
    if spikeBeginTest("S6", false) is false then exit runS6
    spikeEnsureSheet
@@ -664,6 +667,7 @@ command runS8
 end runS8
 
 command s8Build
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tPts
    try
       try
@@ -716,6 +720,7 @@ command s8Build
 end s8Build
 
 command s8Frame
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tY, tWentAbove, tResting, tSum, tMin, tMax, tLine, tAvg, tVerdict
    try
       set the itemDelimiter to comma
@@ -776,6 +781,7 @@ end s8Frame
 -- and the scroll-corrected mouse grab. (needs the Kit)
 -- =====================================================================
 command runS9
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local i, tX, tY, tSize, tRef
    if spikeBeginTest("S9", true) is false then exit runS9
    b2kSetup
@@ -844,6 +850,7 @@ command runS9
 end runS9
 
 command s9Frame
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tHX, tTarget, tCur, tVel
    try
       set the itemDelimiter to comma
@@ -873,6 +880,7 @@ end s9Frame
 -- (needs the Kit)
 -- =====================================================================
 command runS10
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local i, tCol, tRow, tX, tY, tRef
    if spikeBeginTest("S10", true) is false then exit runS10
    put the milliseconds into gS10T0   -- build-time measurement starts here
@@ -972,6 +980,7 @@ function s10ModeName pMode
 end s10ModeName
 
 command s10Frame
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local i, tNow, tJunk
    put the milliseconds into tNow
    if gS10First is not true then
@@ -1009,6 +1018,7 @@ end s10Frame
 -- This settles whether that syntax works in this engine at all.
 -- =====================================================================
 command runS11
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tRef
    if spikeBeginTest("S11", true) is false then exit runS11
    b2kSetup
@@ -1026,9 +1036,13 @@ command runS11
    catch tErr
       spikeLog "S11 statement + the result THREW: " & tErr & " (very unexpected)"
    end try
-   -- form 2: function syntax on the same command (the kit header's pattern)
+   -- form 2: function syntax on the same command (the kit header's pattern).
+   -- Routed through `do` ON PURPOSE: this probe exists to test the broken
+   -- spelling, which the unified checker (check 16) refuses in literal code -
+   -- and via `do`, an engine that treats it as a COMPILE error reports it
+   -- catchably here instead of taking the whole file down.
    try
-      get b2kSpawnBall(400, 220, 44, "yellow")
+      do "get b2kSpawnBall(400, 220, 44," && quote & "yellow" & quote & ")"
       if it is empty then
          spikeLog "S11 get-command syntax: ran but returned EMPTY"
       else
@@ -1048,6 +1062,7 @@ end runS11
 -- the Phase 2 primary sprite mechanism.
 -- =====================================================================
 command runS12
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local i, tCol, tRow, tX, tY, tRef
    if spikeBeginTest("S12", true) is false then exit runS12
    put the milliseconds into gS10T0   -- reuse the S10 timers; tests are exclusive
@@ -1117,6 +1132,7 @@ command runS12
 end runS12
 
 command s12Frame
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local i, tNow, tJunk
    put the milliseconds into tNow
    if gS10First is not true then
@@ -1317,6 +1333,7 @@ end spikeMakeSprite
 -- and the content bounds start exactly where the viewport expects). Logs
 -- which plan worked - Phase 4 needs to know.
 function spikeNewGroup pName, pLeft, pTop
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tOk, tG
    put false into tOk
    try
@@ -5885,6 +5902,7 @@ end b2kPlayerShowState
 -- b2kCamMouseX/Y. Level coordinates should start at 0,0: an invisible
 -- anchor pins the group's content origin there, so scroll == view corner.
 command b2kCamOn pRect
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tG
    if sCamGroup is not empty then exit b2kCamOn
    put empty into sCamNote
@@ -6231,6 +6249,7 @@ end b2kCamApply
 
 -- Import a WAV/AIFF/AU file as a named sound (replaces any same name).
 command b2kSoundLoad pName, pPath
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tCount
    if pName is empty then exit b2kSoundLoad
    if there is no file pPath then
@@ -6258,6 +6277,7 @@ end b2kSoundLoad
 --   b2kToneMake "coin", "1319,1760", 36          -- a two-note blip
 --   b2kToneMake "win", "523,659,784,1047", 110   -- a little fanfare
 command b2kToneMake pName, pFreqs, pMsPerNote, pVolPct, pShape
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tData, tPath, tCount, tF
    if pName is empty then exit b2kToneMake
    put "b2ksnd_" & pName into tClip
@@ -6341,6 +6361,7 @@ end b2kLE32
 
 -- Play a named sound (cuts whatever is playing -- the audioClip model).
 command b2kSound pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSound
    put sSndClip[pName] into tClip
@@ -6355,6 +6376,7 @@ end b2kSound
 
 -- Loop a named sound until b2kSoundStop / the next play (ambience).
 command b2kSoundLoop pName
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSoundLoop
    put sSndClip[pName] into tClip
@@ -6388,6 +6410,7 @@ end b2kSoundMuted
 -- The engine-GLOBAL output volume (the playLoudness, 0-100): it affects
 -- every stack's audio, so games should expose it, not hardcode it.
 command b2kSoundVolume pPct
+   local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    try
       set the playLoudness to round(b2kClamp(pPct, 0, 100))
    catch tErr

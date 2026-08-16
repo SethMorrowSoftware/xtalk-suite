@@ -53,13 +53,19 @@ script "riptideSocialApp"
 -- each): the CALL (phase 5, built 2026-08-15: a Call button on the
 -- Messages card, one-blob SDP signalling as "O"/"A" messages over the
 -- encrypted DM rail, then a DIRECT dc channel; STUN only, no TURN, by
--- design), the DEVICES card (phase 6 - the admission handshake, now
+-- design - and, since later the same day, the spec-6.2 TYPING LANE: a
+-- second dc channel, unordered + maxRetransmits 0, carrying absolute
+-- typing state), the DEVICES card (phase 6 - the admission handshake,
 -- three-legged: challenge, response, and an RSL1 "W" WELCOME the host
 -- signs over the joiner's own response signature, so the admission is
--- MUTUAL and the joiner finally gets a positive, authenticated verdict),
--- and the ANON card (phase 7, needs tor). The navigation and reference
--- forms are the ones the Feed and Messages cards proved; what has never
--- run is these flows themselves.
+-- MUTUAL - plus, since 2026-08-15, the SYNC PAYLOAD over the admitted
+-- mesh: a draft field debounced on the poll timer and broadcast as
+-- signed channel-0 records, feed-seq claims applied as max, and
+-- channel-1 presence/typing per peer, every inbound record
+-- verify-then-apply with strangers refused and logged), and the ANON
+-- card (phase 7, needs tor). The navigation and reference forms are the
+-- ones the Feed and Messages cards proved; what has never run is these
+-- flows themselves.
 --
 -- SETUP: install sodiumxt (REQUIRED - identity cannot exist without it) and
 -- torrentxt (required for publish/fetch; identity still works without), then
@@ -78,14 +84,21 @@ script "riptideSocialApp"
 --
 -- SCOPE, said loudly: phases 5-7 ARE built in this stack now (the Call
 -- button, the Devices card, the Anon card - built 2026-08-15; see STILL
--- UNEXERCISED above for what has never run), but two pieces are genuinely
--- UNBUILT: the LAN mesh ends at ADMISSION - no feed or DM payload syncs
--- over it yet - and the anon persona's ONION SERVING (the onion-httpd
--- prekey route and sealed-intro drop) does not exist, so a persona cannot
--- yet be reached. The profile-meta head field is still published EMPTY.
--- DMs (phase 4, the Messages card) hold ONE conversation at a time in
--- this demo, in memory only - no history, no offline queue; both ends
--- must be running. Public feeds are PUBLIC: the DHT keeps
+-- UNEXERCISED above for what has never run), and the anon persona's
+-- ONION SERVING is built too (2026-08-15, same day): Publish + serve
+-- registers onion-httpd routes for the feed page at /, the signed
+-- prekey at /prekey, and a POST /dm sealed-intro drop, over the
+-- persona's deterministic onion - verified statically; needs an OXT +
+-- live-Tor pass. The head's profile-meta field now names a display-name
+-- blob (spec 4.1), published at post time. The LAN mesh now carries the
+-- phase-6 SYNC PAYLOAD past admission (drafts, feed seq, presence -
+-- signed records, verify-then-apply); its channel-2 bulk media handoff
+-- stays unbuilt (the channel is allocated, dark). Still genuinely
+-- UNBUILT: the persona's REPLY rail (answering an accepted intro over
+-- an onion stream); answering means a public-side DM to the proven
+-- sender. DMs (phase 4, the Messages card) hold ONE conversation at a
+-- time in this demo, in memory only - no history, no offline queue;
+-- both ends must be running. Public feeds are PUBLIC: the DHT keeps
 -- records until expiry, there is no deletion, and the public rails are not
 -- anonymity (spec section 9) - media rides ORDINARY BitTorrent swarms and
 -- rp1 DM peers connect DIRECTLY, so both show your IP to the other side,
@@ -105,6 +118,15 @@ constant kNameMax = 64
 -- rider carries, so a mismatched app is refused before the crypto handshake
 constant kLanPort = 27099
 constant kLanProto = 1
+-- phase 6 sync cadence: draft edits are read on the poll timer and
+-- broadcast at most once per debounce window (never per keystroke);
+-- presence is ABSOLUTE state re-asserted on a cadence (channel 1 is
+-- deliberately droppable, so it must be re-assertable), and a peer whose
+-- presence goes quiet paints as such instead of lying fresh
+constant kLanDraftDebounceMs = 900
+constant kLanPresenceMs = 1000
+constant kLanPresenceStaleMs = 5000
+constant kLanTypingMs = 3000
 -- phase 7 (anon persona): the onion's virtual + local forward ports
 constant kAnonVirtualPort = 80
 constant kAnonLocalPort = 8734
@@ -117,9 +139,16 @@ constant kDmIce = "stun:stun.l.google.com:19302"
 -- sealed intro replayed later is refused with its age named, bounding the
 -- replay surface the recipient-binding already narrows
 constant kDmIntroWindow = 600
+-- phase 5 typing lane (spec 6.2): a SECOND dc channel opened at call
+-- setup - unordered, maxRetransmits 0, deliberately lossy - carrying
+-- ABSOLUTE typing state ("1"/"0"), re-sent on a cadence and expired
+-- locally so a dropped "0" cannot stick
+constant kDcTypingLabel = "riptide-typing"
+constant kDcTypingMs = 3000
+constant kDcTypingSendMs = 1000
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-6"
+constant kRaUiVersion = "ra-ui-720p-8"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -506,9 +535,33 @@ local sLanChallenges   -- server: peer id -> the challenge bytes I sent it
 local sLanMyResponse   -- joiner: the response I sent (the welcome binds to it)
 local sLanDevices      -- peer id -> the admitted device name
 local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
+-- phase 6 sync state. My side: the per-device counters are seeded from
+-- the clock at Host/Join so a leave-and-rejoin still moves strictly
+-- forward (the receivers' monotonic apply demands it; the phase-3
+-- clock-salt precedent). Their side: everything is per enet peer id,
+-- dropped with the peer.
+local sLanSeq          -- my draft seq (monotonic per device)
+local sLanTick         -- my presence tick (monotonic per device)
+local sLanDraftLast    -- the draft text last BROADCAST (convergence compare)
+local sLanDraftSeen    -- the draft text last SEEN by the tick (typing edge)
+local sLanDraftNextOk  -- ms gate: the earliest next draft broadcast
+local sLanPresenceAt   -- ms of my last presence broadcast
+local sLanTypingUntil  -- ms deadline while my draft edits count as typing
+local sLanFeedLast     -- the feed seq last broadcast (send only on change)
+local sLanPeerSeq      -- peer id -> highest draft seq applied
+local sLanPeerDraft    -- peer id -> that device's latest draft text
+local sLanPeerTick     -- peer id -> highest presence tick applied
+local sLanPeerTyping   -- peer id -> "true" while that device is typing
+local sLanPeerSeen     -- peer id -> ms of its last applied presence
 -- phase 7 (anon persona). A separate onion-only identity; the guard keeps
 -- it from ever touching the DHT, a torrent, or rp1 (spec 9.3).
 local sAnonService     -- the onionxt service handle while published, or empty
+-- 8.2/8.3 serving state: the payloads are built ONCE at publish time (the
+-- route handlers reply from these locals, never from a field read at
+-- request time - a request must not depend on which card is open)
+local sAnonPage        -- the served feed page (UTF-8 Data) while serving
+local sAnonPrekeyBody  -- the served /prekey hex text while serving
+local sAnonServing     -- "true" once the oxh* routes are registered
 -- phase 5 (live sessions). ONE call at a time, riding the ACTIVE DM
 -- conversation: the SDP offer/answer travel as kind-"O"/"A" messages
 -- inside the established secretstream (the phase-4 rail), then the dc
@@ -517,6 +570,14 @@ local sDcInit          -- "true" once dcInit succeeded (teardown guard)
 local sDcPeer          -- the dc peer handle while a call exists, or empty
 local sDcChannel       -- the call's data-channel handle once known
 local sDcAwaitLocal    -- "O"/"A" while waiting to ship our local SDP
+-- the phase-5 typing lane (spec 6.2): a second, lossy dc channel
+local sDcTypingChan    -- the typing channel handle once known, or empty
+local sDcTypingSeen    -- the compose text at the last pump look
+local sDcTypingUntil   -- ms deadline while my compose edits count as typing
+local sDcTypingSent    -- the state last sent ("1"/"0")
+local sDcTypingSentAt  -- ms of my last typing-state send
+local sDcPeerTyping    -- "true" while the far side reports typing
+local sDcPeerTypingAt  -- ms of the far side's last "typing" report
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -740,15 +801,19 @@ command raBuildDmCard
    uiArea "raDmChat", "608,110,1184,498"
    uiInput "raDmMsg", "608,506,1050,528"
    uiButton "raDmSend", "Send", "1056,504,1184,528"
+   -- the phase-5 typing lane paints here during a call (spec 6.2):
+   -- absolute state over a second, deliberately lossy dc channel
+   uiCap "raDmTyping", empty, "608,534,1184,560"
 
    uiFooter \
          "DMs are end-to-end encrypted (a sealed RSI1 intro, then a" \
          & " secretstream in each direction) - but rp1 peers see your IP," \
          & " exactly as any torrent peer does, and this demo holds ONE" \
          & " conversation at a time. Sessions live in memory only: Lock" \
-         & " or close ends them, there is no history. Phase 4 is done" \
-         & " when TWO machines exchange authenticated encrypted DMs" \
-         & " with no server.", \
+         & " or close ends them, there is no history. During a call a" \
+         & " second lossy dc channel carries live typing state (spec" \
+         & " 6.2). Phase 4 is done when TWO machines exchange" \
+         & " authenticated encrypted DMs with no server.", \
          "16,572,1184,632"
 end raBuildDmCard
 
@@ -774,18 +839,31 @@ command raBuildLanCard
    uiLabel "raLanToL", "host address (IP):", "16,108,130,126", 11
    uiInput "raLanTo", "134,108,340,128"
    uiButton "raLanJoinBtn", "Join", "446,108,592,132"
-   uiArea "raLanLog", "16,138,592,562"
+   uiArea "raLanLog", "16,138,592,336"
+
+   -- the phase-6 sync payload: type here and every admitted device sees
+   -- it (debounced on the poll timer, signed per record, absolute state)
+   uiSection "raLanSec3", "3. My draft: synced to every admitted device as I type", "16,342,592,360"
+   uiInput "raLanDraft", "16,366,592,562"
 
    uiSection "raLanSec2", "2. Admitted devices (each proved it shares your master seed)", "608,58,1184,76"
-   uiArea "raLanDevices", "608,80,1184,562"
+   uiArea "raLanDevices", "608,80,1184,268"
+
+   uiSection "raLanSec4", "4. Drafts from your other devices (signature-verified)", "608,274,1184,292"
+   uiArea "raLanDrafts", "608,298,1184,562"
 
    uiFooter \
          "This is your OWN devices only, on one LAN: admission is a" \
          & " signature under a key only a holder of your master seed can" \
-         & " derive, so a stranger on the same Wi-Fi is refused. It never" \
-         & " touches the internet or your followers. Unlock on the Feed" \
-         & " card first. Phase 6 is done when a device that shares the" \
-         & " master joins and a stranger is refused.", \
+         & " derive, and every sync record (drafts + feed state on" \
+         & " channel 0, presence/typing on channel 1) is signed under" \
+         & " that key too - a stranger on the same Wi-Fi is refused at" \
+         & " admission AND per record. Records are authenticated, NOT" \
+         & " encrypted: the LAN sees draft plaintext. It never touches" \
+         & " the internet or your followers. Unlock on the Feed card" \
+         & " first. Phase 6 is done when a draft typed here appears on" \
+         & " another device with a stranger refused. Sync is verified" \
+         & " statically; needs the two-machine pass.", \
          "16,572,1184,632"
 end raBuildLanCard
 
@@ -803,9 +881,14 @@ command raBuildAnonCard
 
    uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
    uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
-   uiButton "raAnonPublishBtn", "Publish onion", "228,80,432,104"
+   uiButton "raAnonPublishBtn", "Publish + serve", "228,80,432,104"
    uiButton "raAnonStopBtn", "Unpublish", "440,80,592,104"
-   uiArea "raAnonOut", "16,110,592,562"
+   -- 8.2: what the persona's onion SERVES as its feed page - typed here,
+   -- never taken from the public feed (cross-posting is the exact
+   -- operator mistake spec 8.4 warns links the personas)
+   uiLabel "raAnonEntriesL", "anon feed entries (one per line; served at / over the onion):", "16,110,592,128", 11
+   uiInput "raAnonEntries", "16,130,592,224"
+   uiArea "raAnonOut", "16,230,592,562"
 
    uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
    uiArea "raAnonGuard", "608,80,1184,562"
@@ -815,8 +898,12 @@ command raBuildAnonCard
          & " reachable ONLY as an onion service - it never publishes to the" \
          & " DHT, seeds a torrent, or opens an rp1 peer (that would leak its" \
          & " IP and link it to your public feed). The guard enforces that at" \
-         & " every transport branch. Publishing needs onionxt + a running" \
-         & " tor daemon. Cross-posting or correlated timing can still link" \
+         & " every transport branch. Publish + serve needs onionxt AND" \
+         & " onion-httpd in use, plus a running tor daemon (control port" \
+         & " enabled); it serves the feed page at /, the signed prekey at" \
+         & " /prekey, and accepts sealed intros POSTed to /dm. Serving is" \
+         & " verified statically; needs an OXT + live-Tor pass." \
+         & " Cross-posting or correlated timing can still link" \
          & " your personas: the tool removes the easy links, not the hard" \
          & " ones (spec 9).", \
          "16,572,1184,632"
@@ -1167,6 +1254,13 @@ command raPoll
       catch tErr
          -- host torn down mid-drain; the next tick sees it gone
       end try
+      -- the phase-6 sync tick (drafts debounced, presence re-asserted);
+      -- guarded on its own so a sync hiccup cannot kill the pump
+      try
+         raLanSyncTick
+      catch tErr
+         -- the next tick retries; the mesh survives one bad tick
+      end try
    end if
    -- the dc call (phase 5): drain its events, and ship our one-blob SDP
    -- the moment gathering completes (non-trickle signalling over the DM
@@ -1186,6 +1280,15 @@ command raPoll
          raDmCallShipLocal
       catch tErr
          -- a failed ship retries next tick; teardown clears the flag
+      end try
+   end if
+   -- the phase-5 typing lane (spec 6.2): absolute state over the lossy
+   -- channel, debounced here on the timer - never per keystroke
+   if sDcPeer is not empty then
+      try
+         raDmTypingTick
+      catch tErr
+         -- the lane is optional; the call carries on without it
       end try
    end if
    raExpire
@@ -1355,7 +1458,7 @@ end raHandleEvent
 
 -- ---- 2. my feed --------------------------------------------------------------
 command raPost
-   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash
+   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash, tProfile
    if sIdSeed is empty then
       uiStatus "Unlock (or create) your identity before posting.", "warn"
       exit raPost
@@ -1396,9 +1499,24 @@ command raPost
       exit raPost
    end if
    add 1 to sSeq
+   -- the head's profileMeta names a display-name blob (spec 4.1): a small
+   -- immutable item carrying the name's UTF-8 bytes, so a reader can show
+   -- a name without parsing the head's own name field out of band. It is
+   -- content-addressed, so republishing the same name is idempotent and a
+   -- rename mints a new target. A refusal is NON-fatal: the head still
+   -- publishes with the none target, and the reason lands in the feed log.
+   put empty into tProfile
+   if tName is not empty then
+      put rsPublishImmutable(sSession, textEncode(tName, "UTF-8")) \
+            into tProfile
+      if tProfile is empty then
+         put "profile-meta publish refused (the head carries the none" && \
+               "target):" && rsLastError() & return before field "raMyFeed"
+      end if
+   end if
    -- since phase 4 the head advertises the prekey target, so a reader can
    -- open a DM to any author whose post they verified
-   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, empty) \
+   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, tProfile) \
          into tHead
    if tHead is empty then
       subtract 1 from sSeq
@@ -1862,6 +1980,7 @@ command raDmCall
       put empty into sDcPeer
       exit raDmCall
    end if
+   raDcTypingReset
    -- the first channel triggers the offer (auto-negotiation)
    put dcCreateChannel(sDcPeer, "riptide-call") into tChan
    if tChan is 0 or tChan is empty then
@@ -1870,6 +1989,18 @@ command raDmCall
       exit raDmCall
    end if
    put tChan into sDcChannel
+   -- the typing lane (spec 6.2), created BEFORE gathering so both
+   -- channels ride the one offer: unordered, maxRetransmits 0 - a
+   -- deliberately lossy sub-stream for absolute state you overwrite.
+   -- A refusal is non-fatal: the call works without the lane.
+   put dcCreateChannelEx(sDcPeer, kDcTypingLabel, "", true, 0, -1, \
+         false, -1) into tChan
+   if tChan is 0 or tChan is empty then
+      raDmChatLine "-- no typing lane (dcCreateChannelEx refused:" && \
+            dcLastError() & "); the call continues without it --"
+   else
+      put tChan into sDcTypingChan
+   end if
    put "O" into sDcAwaitLocal
    raDmChatLine "-- calling: gathering ICE candidates... --"
 end raDmCall
@@ -1890,6 +2021,9 @@ command raDmCallIncoming pSdp
       put empty into sDcPeer
       exit raDmCallIncoming
    end if
+   -- the caller opens BOTH channels (call + typing lane); they arrive
+   -- here as dcChannelIncoming events, routed by label
+   raDcTypingReset
    put dcSetRemoteDescription(sDcPeer, pSdp, "offer") into tR
    if tR is not 0 then
       raDmChatLine "-- their offer was refused:" && dcLastError() && "--"
@@ -1945,8 +2079,14 @@ command raHandleDc pEvent
    local tPair
    switch pEvent["name"]
       case "dcChannelIncoming"
-         -- the callee learns the call channel here; open follows
-         put pEvent["channel"] into sDcChannel
+         -- the callee learns the caller's channels here; TWO arrive since
+         -- the typing lane landed (spec 6.2), so route by LABEL, never by
+         -- arrival order
+         if dcChannelLabel(pEvent["channel"]) is kDcTypingLabel then
+            put pEvent["channel"] into sDcTypingChan
+         else
+            put pEvent["channel"] into sDcChannel
+         end if
          break
       case "dcChannelOpen"
          if pEvent["channel"] is not sDcChannel then
@@ -1961,12 +2101,29 @@ command raHandleDc pEvent
          get dcSendText(sDcChannel, "live from" && raDmShort(sHandle))
          break
       case "dcMessage"
-         if pEvent["text"] is not empty then
+         if sDcTypingChan is not empty and \
+               pEvent["channel"] is sDcTypingChan then
+            -- absolute typing state: "1" typing, anything else not; a
+            -- lost "0" self-heals via the deadline in raDmTypingTick
+            if pEvent["text"] is "1" then
+               put "true" into sDcPeerTyping
+               put the milliseconds into sDcPeerTypingAt
+            else
+               put empty into sDcPeerTyping
+            end if
+            raDmPaintTyping
+         else if pEvent["text"] is not empty then
             raDmChatLine "-- call:" && pEvent["text"] && "--"
          end if
          break
       case "dcChannelClosed"
-         if pEvent["channel"] is sDcChannel then
+         if sDcTypingChan is not empty and \
+               pEvent["channel"] is sDcTypingChan then
+            -- the lane died alone; the call itself survives
+            put empty into sDcTypingChan
+            put empty into sDcPeerTyping
+            raDmPaintTyping
+         else if pEvent["channel"] is sDcChannel then
             raDmChatLine "-- call ended --"
             raDcTeardown
          end if
@@ -1999,15 +2156,92 @@ command raDcTeardown
    put empty into sDcPeer
    put empty into sDcChannel
    put empty into sDcAwaitLocal
+   raDcTypingReset
+   raDmPaintTyping
 end raDcTeardown
+
+-- Reset the typing lane's state (call setup and teardown). Numerics get
+-- 0, not empty: the tick does arithmetic on them every pump pass.
+private command raDcTypingReset
+   put empty into sDcTypingChan
+   put empty into sDcTypingSeen
+   put 0 into sDcTypingUntil
+   put empty into sDcTypingSent
+   put 0 into sDcTypingSentAt
+   put empty into sDcPeerTyping
+   put 0 into sDcPeerTypingAt
+end raDcTypingReset
+
+-- The typing-lane tick (pump-driven, spec 6.2): watch the compose field,
+-- send ABSOLUTE state on the lossy channel - "1" while edits are fresh,
+-- "0" after the deadline - re-sent on a cadence because maxRetransmits-0
+-- drops are expected, and expire the far side's "typing" locally so a
+-- lost "0" cannot stick. Cross-card law: the compose field lives on the
+-- Messages card and the pump runs anywhere - qualify and guard.
+command raDmTypingTick
+   local tNow, tText, tMine, tErr
+   if sDcTypingChan is empty then
+      exit raDmTypingTick
+   end if
+   set the caseSensitive to true
+   put the milliseconds into tNow
+   if there is a field "raDmMsg" of card "raMessages" then
+      put the text of field "raDmMsg" of card "raMessages" into tText
+      if tText is not sDcTypingSeen then
+         put tText into sDcTypingSeen
+         put tNow + kDcTypingMs into sDcTypingUntil
+      end if
+   end if
+   if tNow < sDcTypingUntil then
+      put "1" into tMine
+   else
+      put "0" into tMine
+   end if
+   if tMine is not sDcTypingSent or \
+         tNow - sDcTypingSentAt >= kDcTypingSendMs then
+      try
+         if dcChannelIsOpen(sDcTypingChan) is true then
+            get dcSendText(sDcTypingChan, tMine)
+            put tMine into sDcTypingSent
+            put tNow into sDcTypingSentAt
+         end if
+      catch tErr
+         -- lane hiccup; absolute state means the next send repairs it
+      end try
+   end if
+   if sDcPeerTyping is "true" and \
+         tNow - sDcPeerTypingAt >= kDcTypingMs then
+      put empty into sDcPeerTyping
+      raDmPaintTyping
+   end if
+end raDmTypingTick
+
+-- Paint the far side's typing state on the Messages card (guarded: the
+-- pump runs from every card, and the field only exists once built).
+command raDmPaintTyping
+   local tLine
+   if there is no field "raDmTyping" of card "raMessages" then
+      exit raDmPaintTyping
+   end if
+   if sDcPeerTyping is "true" then
+      put "the far side is typing..." into tLine
+   else
+      put empty into tLine
+   end if
+   if the text of field "raDmTyping" of card "raMessages" is not tLine then
+      set the text of field "raDmTyping" of card "raMessages" to tLine
+   end if
+end raDmPaintTyping
 
 -- ---- phase 6: the LAN device mesh --------------------------------------------
 -- enet, not the DHT: your devices meet on the LAN and prove they share
 -- your master seed. Admission is a first-message challenge/response (the
 -- enConnect rider is only a u32 protocol tag). The host challenges every
 -- new peer; a peer that answers with a signature the host's OWN master
--- verifies is admitted, everyone else is dropped. All the crypto is the
--- gated rsLan* layer; this is the enet transport around it.
+-- verifies is admitted, everyone else is dropped. Past admission the
+-- SYNC PAYLOAD flows (the raLanSync* half further down): signed drafts +
+-- feed state on channel 0, signed presence/typing on channel 1. All the
+-- crypto is the gated rsLan* layer; this is the enet transport around it.
 
 -- Lazily bring enet up once (refcounted global init). Returns "true" on
 -- success; fail-closed with a logged reason.
@@ -2045,9 +2279,11 @@ command raLanHost
    end if
    put raLanMyName() into sLanName
    -- bind on EVERY interface ("" - the proven LAN spelling), a small peer
-   -- cap, two channels, unmetered
+   -- cap, THREE channels (spec section 7: 0 control + drafts + feed
+   -- state, 1 presence/typing, 2 reserved for bulk handoff - unbuilt,
+   -- allocated so both sides already agree when it lands), unmetered
    try
-      put enHostCreateServer("", kLanPort, 32, 2, 0, 0) into tHost
+      put enHostCreateServer("", kLanPort, 32, 3, 0, 0) into tHost
    catch tErr
       raLanLog "could not create the host:" && tErr
       exit raLanHost
@@ -2060,6 +2296,7 @@ command raLanHost
    put "true" into sLanIsServer
    put empty into sLanChallenges
    put empty into sLanDevices
+   raLanSyncReset
    raLanLog "Hosting the mesh on port" && kLanPort & \
          ". On your other devices, Join this device's LAN IP."
    raLanPaintDevices
@@ -2085,7 +2322,7 @@ command raLanJoin
    end if
    put raLanMyName() into sLanName
    try
-      put enHostCreateClient(1, 2, 0, 0) into tHost
+      put enHostCreateClient(1, 3, 0, 0) into tHost
    catch tErr
       raLanLog "could not create the client host:" && tErr
       exit raLanJoin
@@ -2097,10 +2334,11 @@ command raLanJoin
    put tHost into sLanHost
    put "false" into sLanIsServer
    put empty into sLanDevices
+   raLanSyncReset
    -- optimistic peer handle now; the enetConnect event confirms it. The
    -- rider is our u32 protocol tag, checked by the host before the crypto.
    try
-      put enConnect(sLanHost, tIp, kLanPort, 2, kLanProto) into tPeer
+      put enConnect(sLanHost, tIp, kLanPort, 3, kLanProto) into tPeer
    catch tErr
       raLanLog "connect failed:" && tErr
       raLanLeave
@@ -2131,6 +2369,7 @@ command raLanLeave
    put empty into sLanChallenges
    put empty into sLanMyResponse
    put empty into sLanDevices
+   raLanSyncReset
    raLanPaintDevices
 end raLanLeave
 
@@ -2225,6 +2464,10 @@ command raHandleEnet pEvent
                raLanSend tPeer, tChallenge
             end if
             raLanPaintDevices
+         else if tKind is "D" or tKind is "F" or tKind is "P" then
+            -- the phase-6 sync records: verify-then-apply, admitted
+            -- peers only, refusals logged (the runbook's stranger line)
+            raLanSyncReceive tPeer, tKind, pEvent["payload"]
          end if
          break
       case "enetDisconnect"
@@ -2233,6 +2476,14 @@ command raHandleEnet pEvent
             delete variable sLanDevices[tPeer]
             raLanPaintDevices
          end if
+         -- drop the peer's sync state with the peer (a rejoin gets a
+         -- fresh peer id and fresh monotonic tracking)
+         delete variable sLanPeerSeq[tPeer]
+         delete variable sLanPeerDraft[tPeer]
+         delete variable sLanPeerTick[tPeer]
+         delete variable sLanPeerTyping[tPeer]
+         delete variable sLanPeerSeen[tPeer]
+         raLanPaintDrafts
          if tPeer is sLanServerPeer then
             raLanLog "the host went away; Leave and re-Join to reconnect."
             put empty into sLanServerPeer
@@ -2260,6 +2511,242 @@ private command raLanSend pPeer, pBytes
    end try
 end raLanSend
 
+-- ---- the phase-6 sync payload over the admitted mesh -------------------------
+-- Spec section 7's channel discipline on top of the admission above:
+-- drafts + feed state ride channel 0 reliable, presence/typing rides
+-- channel 1 unreliable-unsequenced (flag 2 - the record's own monotonic
+-- tick makes it reorder-proof, so enet sequencing would only mask what
+-- the record must survive anyway). Every record is signed under the
+-- shared LAN key (the rsLan* sync layer); every inbound record is
+-- verify-then-apply, admitted peers only, and every apply is monotonic
+-- or absolute so replays and reorders are no-ops.
+
+-- Reset the sync state (Host, Join, and Leave). The per-device counters
+-- seed from the clock so a leave-and-rejoin still moves strictly forward
+-- past anything a receiver already applied for an earlier session.
+private command raLanSyncReset
+   put the seconds into sLanSeq
+   put the seconds into sLanTick
+   put empty into sLanDraftLast
+   put empty into sLanDraftSeen
+   put 0 into sLanDraftNextOk
+   put 0 into sLanPresenceAt
+   put 0 into sLanTypingUntil
+   put 0 into sLanFeedLast
+   put empty into sLanPeerSeq
+   put empty into sLanPeerDraft
+   put empty into sLanPeerTick
+   put empty into sLanPeerTyping
+   put empty into sLanPeerSeen
+   raLanPaintDrafts
+end raLanSyncReset
+
+-- One sync record to every ADMITTED peer - never enBroadcast: a
+-- broadcast would also reach a connected-but-unadmitted stranger in its
+-- pre-drop window, and drafts are plaintext.
+private command raLanSyncSend pChannel, pBytes, pFlags
+   local tPeer, tErr
+   repeat for each key tPeer in sLanDevices
+      try
+         enSend tPeer, pChannel, pBytes, pFlags
+      catch tErr
+         raLanLog "sync send to peer" && tPeer && "failed:" && tErr
+      end try
+   end repeat
+end raLanSyncSend
+
+-- The host RELAYS a verified record to the other admitted devices, bytes
+-- intact (hub-and-spoke: joiners only ever see the host). The signature
+-- verifies anywhere - which is exactly why the sync signature carries no
+-- per-handshake binder (the recorded library design).
+private command raLanRelay pFromPeer, pKind, pBytes
+   local tPeer, tErr
+   if sLanIsServer is not "true" then
+      exit raLanRelay
+   end if
+   repeat for each key tPeer in sLanDevices
+      if tPeer is pFromPeer then
+         next repeat
+      end if
+      try
+         if pKind is "P" then
+            enSend tPeer, 1, pBytes, 2
+         else
+            enSend tPeer, 0, pBytes, 0
+         end if
+      catch tErr
+         raLanLog "relay to peer" && tPeer && "failed:" && tErr
+      end try
+   end repeat
+end raLanRelay
+
+-- The pump-driven sync tick: the draft field read on the timer and
+-- broadcast at most once per debounce window (never per keystroke), the
+-- feed seq broadcast on change, presence re-asserted on its cadence as
+-- ABSOLUTE state. Cross-card law: the draft field lives on the Devices
+-- card and the pump runs anywhere - qualify and guard every reference.
+command raLanSyncTick
+   local tNow, tText, tTyping, tBytes
+   if sMasterSeed is empty or sLanName is empty then
+      exit raLanSyncTick
+   end if
+   if the number of keys of sLanDevices is 0 then
+      exit raLanSyncTick
+   end if
+   set the caseSensitive to true
+   put the milliseconds into tNow
+   -- the draft (channel 0, reliable): absolute state, converging - the
+   -- record is re-sent on a later tick as long as the field differs from
+   -- the last state actually broadcast
+   if there is a field "raLanDraft" of card "raDevices" then
+      put the text of field "raLanDraft" of card "raDevices" into tText
+      if tText is not sLanDraftSeen then
+         put tText into sLanDraftSeen
+         put tNow + kLanTypingMs into sLanTypingUntil
+      end if
+      if tText is not sLanDraftLast and tNow >= sLanDraftNextOk then
+         add 1 to sLanSeq
+         put rsLanBuildDraft(sLanName, sLanSeq, tText, sMasterSeed) \
+               into tBytes
+         if tBytes is empty then
+            raLanLog "draft sync refused:" && rsLastError()
+            -- adopt the state anyway so one over-cap draft does not log
+            -- on every tick; the next EDIT retries
+            put tText into sLanDraftLast
+         else
+            raLanSyncSend 0, tBytes, 0
+            put tText into sLanDraftLast
+            put tNow + kLanDraftDebounceMs into sLanDraftNextOk
+         end if
+      end if
+   end if
+   -- the feed seq claim (channel 0): two devices must never publish a
+   -- conflicting head, so each broadcasts its latest and adopts the max.
+   -- The demo has no per-conversation read state to publish, so the
+   -- record's read-receipt half travels as the none spelling (received
+   -- receipts are still verified and logged).
+   if sSeq is an integer and sSeq > 0 and sSeq is not sLanFeedLast then
+      put rsLanBuildFeedState(sLanName, sSeq, empty, 0, sMasterSeed) \
+            into tBytes
+      if tBytes is not empty then
+         raLanSyncSend 0, tBytes, 0
+         put sSeq into sLanFeedLast
+      end if
+   end if
+   -- presence/typing (channel 1, flag 2 - droppable by design, so it is
+   -- re-asserted every interval whether or not anything changed)
+   if tNow - sLanPresenceAt >= kLanPresenceMs then
+      put tNow < sLanTypingUntil into tTyping
+      add 1 to sLanTick
+      put rsLanBuildPresence(sLanName, tTyping, sLanTick, sMasterSeed) \
+            into tBytes
+      if tBytes is not empty then
+         raLanSyncSend 1, tBytes, 2
+         put tNow into sLanPresenceAt
+      end if
+   end if
+   raLanPaintDevices
+end raLanSyncTick
+
+-- One inbound sync record. Order of refusals, each logged distinctly:
+-- an unadmitted sender first (nothing from a peer that never proved the
+-- master is even verified), then the library's verify-then-parse (a bad
+-- signature IS the stranger case the runbook watches for), then the
+-- monotonic apply (a replay or reorder is a silent no-op, not an error).
+command raLanSyncReceive pPeer, pKind, pBytes
+   local tRec, tLast
+   if sLanDevices[pPeer] is empty then
+      raLanLog "stranger record refused (unadmitted peer): kind" && pKind
+      exit raLanSyncReceive
+   end if
+   if sMasterSeed is empty then
+      exit raLanSyncReceive
+   end if
+   if pKind is "D" then
+      put rsLanVerifyDraft(pBytes, sMasterSeed) into tRec
+      if tRec is empty then
+         raLanLog "stranger record refused:" && rsLastError()
+         exit raLanSyncReceive
+      end if
+      put sLanPeerSeq[pPeer] into tLast
+      if tLast is empty then
+         put -1 into tLast
+      end if
+      if tRec["seq"] <= tLast then
+         exit raLanSyncReceive
+      end if
+      put tRec["seq"] into sLanPeerSeq[pPeer]
+      put tRec["draft"] into sLanPeerDraft[pPeer]
+      raLanLog "draft from" && tRec["name"] && "seq" && tRec["seq"] && \
+            "applied"
+      raLanPaintDrafts
+      raLanRelay pPeer, pKind, pBytes
+   else if pKind is "F" then
+      put rsLanVerifyFeedState(pBytes, sMasterSeed) into tRec
+      if tRec is empty then
+         raLanLog "stranger record refused:" && rsLastError()
+         exit raLanSyncReceive
+      end if
+      if tRec["feedSeq"] > sSeq then
+         put tRec["feedSeq"] into sSeq
+         put sSeq into sLanFeedLast
+         raLanLog "feed seq" && sSeq && "adopted from" && tRec["name"] & \
+               "; the next post publishes above it"
+      end if
+      if tRec["readPeer"] is not empty then
+         raLanLog "read receipt from" && tRec["name"] & ":" && \
+               (char 1 to 12 of tRec["readPeer"]) & "... up to" && \
+               tRec["readUpTo"]
+      end if
+      raLanRelay pPeer, pKind, pBytes
+   else if pKind is "P" then
+      put rsLanVerifyPresence(pBytes, sMasterSeed) into tRec
+      if tRec is empty then
+         raLanLog "stranger record refused:" && rsLastError()
+         exit raLanSyncReceive
+      end if
+      put sLanPeerTick[pPeer] into tLast
+      if tLast is empty then
+         put -1 into tLast
+      end if
+      if tRec["tick"] <= tLast then
+         exit raLanSyncReceive
+      end if
+      put tRec["tick"] into sLanPeerTick[pPeer]
+      if tRec["typing"] is true then
+         put "true" into sLanPeerTyping[pPeer]
+      else
+         put empty into sLanPeerTyping[pPeer]
+      end if
+      put the milliseconds into sLanPeerSeen[pPeer]
+      raLanPaintDevices
+      raLanRelay pPeer, pKind, pBytes
+   end if
+end raLanSyncReceive
+
+-- The latest draft per device, ABSOLUTE state repainted whole (diffed so
+-- the pump does not churn the field). Guarded: the pump runs anywhere.
+command raLanPaintDrafts
+   local tRows, tPeer
+   if there is no field "raLanDrafts" of card "raDevices" then
+      exit raLanPaintDrafts
+   end if
+   set the caseSensitive to true
+   if the number of keys of sLanPeerDraft is 0 then
+      put "No drafts from your other devices yet." into tRows
+   else
+      put empty into tRows
+      repeat for each key tPeer in sLanPeerDraft
+         put "--" && sLanDevices[tPeer] && "(seq" && \
+               sLanPeerSeq[tPeer] & ") --" & return & \
+               sLanPeerDraft[tPeer] & return after tRows
+      end repeat
+   end if
+   if the text of field "raLanDrafts" of card "raDevices" is not tRows then
+      set the text of field "raLanDrafts" of card "raDevices" to tRows
+   end if
+end raLanPaintDrafts
+
 private function raLanMyName
    local tName
    put word 1 to -1 of field "raLanName" of card "raDevices" into tName
@@ -2274,7 +2761,7 @@ command raLanLog pLine
 end raLanLog
 
 command raLanPaintDevices
-   local tRows, tPeer
+   local tRows, tPeer, tRow, tNow
    if there is no field "raLanDevices" of card "raDevices" then
       exit raLanPaintDevices
    end if
@@ -2287,9 +2774,21 @@ command raLanPaintDevices
          put "Joining. Waiting for admission..." into tRows
       end if
    else
+      put the milliseconds into tNow
       put empty into tRows
       repeat for each key tPeer in sLanDevices
-         put sLanDevices[tPeer] & return after tRows
+         put sLanDevices[tPeer] into tRow
+         -- the channel-1 presence lane: [typing] while fresh, [quiet]
+         -- once its cadence has gone silent (a crashed or wedged device
+         -- must not paint as live forever)
+         if sLanPeerSeen[tPeer] is not empty then
+            if tNow - sLanPeerSeen[tPeer] >= kLanPresenceStaleMs then
+               put "  [quiet]" after tRow
+            else if sLanPeerTyping[tPeer] is "true" then
+               put "  [typing]" after tRow
+            end if
+         end if
+         put tRow & return after tRows
       end repeat
       if the last char of tRows is return then
          delete the last char of tRows
@@ -2379,8 +2878,15 @@ private function rsPadRight pText, pWidth
    return tOut
 end rsPadRight
 
+-- Publish AND serve (spec 8.2/8.3): build the serving payloads first
+-- (pure, fail-closed - a page that cannot build aborts before tor hears
+-- anything), register the onion-httpd routes, then create the persona's
+-- deterministic onion service. The control port must be authenticated
+-- before ADD_ONION and connecting is ASYNC, so the first click may only
+-- kick off oxConnectControl; the status callback re-enters here once
+-- authenticated (idempotent - every early guard still holds).
 command raAnonPublish
-   local tService
+   local tService, tEntries, tPage, tPkBody, tOnion, tErr
    if sMasterSeed is empty then
       uiStatus "Unlock on the Feed card first.", "warn"
       exit raAnonPublish
@@ -2401,6 +2907,55 @@ command raAnonPublish
       raAnonLog "the guard refused an onion publish - this is a bug, not a normal path."
       exit raAnonPublish
    end if
+   -- 8.2: the served payloads, built once and held in locals - a request
+   -- must never depend on which card is open, so the route handlers reply
+   -- from state, not from a field read at request time
+   put empty into tEntries
+   if there is a field "raAnonEntries" of card "raAnon" then
+      put the text of field "raAnonEntries" of card "raAnon" into tEntries
+   end if
+   put rsAnonFeedPage("Riptide anon persona", tEntries) into tPage
+   if tPage is empty then
+      raAnonLog "feed page refused:" && rsLastError()
+      exit raAnonPublish
+   end if
+   put rsAnonPrekeyBody(sMasterSeed, 0) into tPkBody
+   if tPkBody is empty then
+      raAnonLog "prekey body refused:" && rsLastError()
+      exit raAnonPublish
+   end if
+   -- the onion-httpd routes; fail closed when the oxh* library is absent
+   -- (it is a separate file - onionxt alone is not enough to SERVE)
+   try
+      oxSetCallbackOwner the long id of me
+      oxSetStatusCallback "raAnonStatus"
+      oxhInit the long id of me
+      oxhRoute "GET", "/", "raAnonRouteFeed"
+      oxhRoute "GET", "/prekey", "raAnonRoutePrekey"
+      oxhRoute "POST", "/dm", "raAnonRouteDm"
+      oxSetPeerCallback "oxhPeer"
+   catch tErr
+      raAnonLog "onion-httpd is not loaded, so the persona cannot serve." && \
+            "Put onionxt/src/onion-httpd.livecodescript in use (start" && \
+            "using) and click Publish + serve again. (" & tErr & ")"
+      exit raAnonPublish
+   end try
+   put tPage into sAnonPage
+   put tPkBody into sAnonPrekeyBody
+   put "true" into sAnonServing
+   -- ADD_ONION needs an authenticated control port, and connecting is
+   -- async: kick it off and let raAnonStatus finish the publish
+   if oxIsControlAuthenticated() is not true then
+      try
+         oxConnectControl
+      catch tErr
+         raAnonLog "control connect failed:" && tErr
+         exit raAnonPublish
+      end try
+      raAnonLog "connecting to tor's control port (watch the tor: lines);" && \
+            "publishing continues automatically once authenticated."
+      exit raAnonPublish
+   end if
    put rsAnonCreateService(sMasterSeed, 0, kAnonVirtualPort, kAnonLocalPort) \
          into tService
    if tService is empty then
@@ -2408,22 +2963,130 @@ command raAnonPublish
       exit raAnonPublish
    end if
    put tService into sAnonService
-   raAnonLog "onion service requested (handle" && tService & \
-         "); tor publishes the descriptor in a few seconds. Serve your feed at the local port with onion-httpd."
+   raAnonLog "onion service requested (handle" && tService & "); tor" && \
+         "publishes the descriptor in a few seconds. Serving: / (the anon" && \
+         "feed page), GET /prekey (the signed prekey record, hex), and" && \
+         "POST /dm (sealed intros)."
+   put rsAnonOnion(sMasterSeed, 0) into tOnion
+   if tOnion is not empty then
+      raAnonLog "reachable at" && tOnion && "once the descriptor uploads" && \
+            "(Tor Browser on this machine is the cheapest check)."
+   end if
 end raAnonPublish
+
+-- Tor's status stream (oxSetStatusCallback), routed to the anon log.
+-- Bootstrap ticks are already coalesced by onionxt but still chatty, so
+-- only milestones land here; "control authenticated" resumes a publish
+-- that was waiting on the async connect.
+command raAnonStatus pKind, pInfo
+   if pKind is "bootstrap" and pInfo is not 100 then
+      exit raAnonStatus
+   end if
+   raAnonLog "tor:" && pKind && pInfo
+   if pKind is "control" and pInfo is "authenticated" and \
+         sAnonServing is "true" and sAnonService is empty then
+      raAnonPublish
+   end if
+end raAnonStatus
+
+-- The three route handlers (dispatched by onion-httpd's oxhHandle with
+-- pStream, pRequest). They run from ENGINE socket callbacks - off the
+-- raPoll try, on whatever card is open - so they reply from script
+-- locals, write fields only through the guarded raAnonLog, and keep the
+-- oxh reply inside a try (a dead stream must not throw into the accept
+-- loop).
+command raAnonRouteFeed pStream, pRequest
+   local tErr
+   try
+      oxhReply pStream, 200, textDecode(sAnonPage, "UTF-8"), \
+            "Content-Type: text/html; charset=utf-8"
+   catch tErr
+      -- stream already gone; nothing to serve
+   end try
+end raAnonRouteFeed
+
+command raAnonRoutePrekey pStream, pRequest
+   local tErr
+   try
+      oxhReply pStream, 200, sAnonPrekeyBody, \
+            "Content-Type: text/plain; charset=utf-8"
+   catch tErr
+      -- stream already gone
+   end try
+end raAnonRoutePrekey
+
+-- The POST /dm drop (spec 8.3). rsAnonAcceptDm refuses before decoding
+-- and then verify-then-parses with the persona's own subkeys; every
+-- refusal gets the SAME reply, so the route is not an oracle for a
+-- prober. An accepted intro drains into the DM surfaces: the proven
+-- sender is logged here and on the Messages card (the persona replies
+-- over onion streams only - that reply rail is deliberately not built,
+-- so answering means a PUBLIC-side DM to the proven sender).
+command raAnonRouteDm pStream, pRequest
+   local tOpened, tErr
+   put empty into tOpened
+   if sMasterSeed is not empty then
+      put rsAnonAcceptDm(pRequest["__body"], sMasterSeed, 0) into tOpened
+   end if
+   -- the app's freshness policy, the same window as the rp1 inbox path
+   if tOpened is not empty then
+      if tOpened["timestamp"] < the seconds - kDmIntroWindow or \
+            tOpened["timestamp"] > the seconds + kDmIntroWindow then
+         raAnonLog "a STALE sealed intro was refused (replay, or a badly skewed clock)."
+         put empty into tOpened
+      end if
+   end if
+   if tOpened is empty then
+      try
+         oxhReply pStream, 400, "refused", \
+               "Content-Type: text/plain; charset=utf-8"
+      catch tErr
+         -- stream already gone
+      end try
+      exit raAnonRouteDm
+   end if
+   raAnonLog "sealed intro ACCEPTED over the onion from" && \
+         tOpened["senderHandle"] & return & "  its kx public:" && \
+         tOpened["senderKxPub"] & return & \
+         "  the sender PROVED that handle; to answer, open a public-side" && \
+         "DM to it (the persona itself replies over onion streams only)."
+   raDmLog "anon persona: a sealed intro arrived over the onion from" && \
+         raDmShort(tOpened["senderHandle"]) && "- see the Anon card."
+   try
+      oxhReply pStream, 200, "accepted", \
+            "Content-Type: text/plain; charset=utf-8"
+   catch tErr
+      -- stream already gone; the intro is still logged
+   end try
+end raAnonRouteDm
 
 command raAnonStop
    local tErr
-   if sAnonService is empty then
+   if sAnonService is empty and sAnonServing is not "true" then
       exit raAnonStop
    end if
+   if sAnonService is not empty then
+      try
+         oxRemoveService sAnonService
+      catch tErr
+         -- onionxt gone or service already down; nothing to release
+      end try
+   end if
+   -- drop the routes so a later oxh user of this engine cannot serve a
+   -- stale page; unrouting an unregistered route is a no-op, and an
+   -- absent onion-httpd means nothing was ever routed
    try
-      oxRemoveService sAnonService
+      oxhUnroute "GET", "/"
+      oxhUnroute "GET", "/prekey"
+      oxhUnroute "POST", "/dm"
    catch tErr
-      -- onionxt gone or service already down; nothing to release
+      -- onion-httpd not loaded; nothing was routed
    end try
    put empty into sAnonService
-   raAnonLog "anon onion unpublished."
+   put empty into sAnonPage
+   put empty into sAnonPrekeyBody
+   put empty into sAnonServing
+   raAnonLog "anon onion unpublished; the routes are dropped."
 end raAnonStop
 
 command raAnonLog pLine

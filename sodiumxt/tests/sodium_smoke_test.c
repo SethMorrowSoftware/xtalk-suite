@@ -1285,6 +1285,180 @@ static void test_ristretto(void)
           "a null from_hash output buffer is refused");
 }
 
+static void test_ristretto_abi9(void)
+{
+    /* The ABI 9 follow-ons (holde-em Phase 5: DLEQ algebra + the one-crossing
+     * batch). Vectors generated from the pinned libsodium and re-derived by
+     * the independent RFC 9496 reference in holde-em/tools/protocol-kat.py
+     * before being pinned here (both agreed on every value) - and the
+     * base-mult of 7 additionally matches RFC 9496's own small-multiples
+     * table entry B[7], a third independent witness. */
+    static const char *LBLS[3] = {
+        "HOLDEM-RISTRETTO-KAT-v1|card-00",
+        "HOLDEM-RISTRETTO-KAT-v1|card-01",
+        "HOLDEM-RISTRETTO-KAT-v1|card-51"
+    };
+    static const unsigned char gen[32] = {
+        0xe2, 0xf2, 0xae, 0x0a, 0x6a, 0xbc, 0x4e, 0x71,
+        0xa8, 0x84, 0xa9, 0x61, 0xc5, 0x00, 0x51, 0x5f,
+        0x58, 0xe3, 0x0b, 0x6a, 0xa5, 0x82, 0xdd, 0x8d,
+        0xb6, 0xa6, 0x59, 0x45, 0xe0, 0x8d, 0x2d, 0x76
+    };
+    unsigned char h[64], pts[3][32], concat[96];
+    unsigned char k7[32], lm2[32], sum[32], back[32], q[32], q2[32];
+    unsigned char batch[96], loop[32], small[8];
+    char err[256];
+    int i;
+
+    printf("ristretto255 ABI 9 (DLEQ/batch follow-ons: cross-checked KATs + firewall):\n");
+
+    /* Rebuild the three card points (pinned in test_ristretto above). */
+    for (i = 0; i < 3; i++) {
+        CHECK(sxt_generichash(h, (int)sizeof(h), 64,
+                              (const unsigned char *)LBLS[i],
+                              (int)strlen(LBLS[i]), NULL, 0) == 64 &&
+              sxt_ristretto_from_hash(pts[i], 32, h, 64) == 32,
+              "card point rebuilds");
+        memcpy(concat + i * 32, pts[i], 32);
+    }
+    memset(k7, 0, sizeof(k7));
+    k7[0] = 7;
+
+    /* base-mult: the pinned vector, AND the structural identity against the
+     * general scalarmult of the RFC 9496 generator encoding - a base-mult
+     * that used a different base could still produce valid-looking points,
+     * so both legs matter. */
+    CHECK(sxt_ristretto_scalarmult_base(q, (int)sizeof(q), k7, 32) == 32,
+          "scalarmult_base(7) multiplies");
+    CHECK(digest_is(q, 32,
+            "44f53520926ec81fbd5a387845beb7df85a96a24ece18738bdcfa6a7822a176d"),
+          "7*B matches the cross-checked vector (== RFC 9496 B[7])");
+    CHECK(sxt_ristretto_scalarmult(q2, (int)sizeof(q2), k7, 32, gen, 32) == 32 &&
+          memcmp(q, q2, 32) == 0,
+          "scalarmult_base agrees with scalarmult(generator)");
+
+    /* add/sub: the pinned sum, the roundtrip P+Q-Q == P, and P-P == the
+     * identity encoding (32 zero bytes) - legal here, unlike scalarmult. */
+    CHECK(sxt_ristretto_add(sum, (int)sizeof(sum), pts[0], 32, pts[1], 32) == 32,
+          "card00 + card01 adds");
+    CHECK(digest_is(sum, 32,
+            "34722b333ab7982fe4d5e2be2913c316db8f8675de2394a5cfb704abab7c8b4c"),
+          "card00 + card01 matches the cross-checked vector");
+    CHECK(sxt_ristretto_sub(back, (int)sizeof(back), sum, 32, pts[1], 32) == 32 &&
+          memcmp(back, pts[0], 32) == 0,
+          "the add/sub roundtrip (P+Q)-Q returns exactly P");
+    CHECK(sxt_ristretto_sub(q, (int)sizeof(q), pts[0], 32, pts[0], 32) == 32 &&
+          all_equal(q, 32, 0x00),
+          "P - P is the identity encoding (32 zero bytes)");
+
+    /* the batch call: one crossing over the three concatenated card points,
+     * element-for-element equal to the loop of single scalarmults (and the
+     * first element re-pins the ABI 8 k7*card00 vector by construction). */
+    fill_sentinel(batch, (int)sizeof(batch));
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         k7, 32, concat, 96) == 96,
+          "batch over 3 concatenated points fills 96 bytes");
+    for (i = 0; i < 3; i++) {
+        CHECK(sxt_ristretto_scalarmult(loop, (int)sizeof(loop),
+                                       k7, 32, pts[i], 32) == 32 &&
+              memcmp(batch + i * 32, loop, 32) == 0,
+              "batch element equals the single-call scalarmult");
+    }
+    CHECK(digest_is(batch, 32,
+            "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c"),
+          "batch[0] matches the cross-checked 7*card00 vector");
+    CHECK(digest_is(batch + 32, 32,
+            "c4aea78979e6929435b9bfcc4dee30d0dc714c714ae28f5e3c44cc124625a345"),
+          "batch[1] matches the cross-checked 7*card01 vector");
+    CHECK(digest_is(batch + 64, 32,
+            "58907d49b012f75999ae4231e156cdec4432851939532b1e1278f900fbfaaa2d"),
+          "batch[2] matches the cross-checked 7*card51 vector");
+
+    /* the DLEQ-shaped identity the whole surface exists for:
+     * k*(P+Q) == k*P + k*Q. */
+    CHECK(sxt_ristretto_scalarmult(q, (int)sizeof(q), k7, 32, sum, 32) == 32,
+          "7 * (card00 + card01) multiplies");
+    CHECK(sxt_ristretto_add(q2, (int)sizeof(q2),
+                            batch, 32, batch + 32, 32) == 32 &&
+          memcmp(q, q2, 32) == 0,
+          "k*(P+Q) == k*P + k*Q (the DLEQ-shaped identity)");
+
+    /* scalar arithmetic mod L, cross-checked: 7 + (L-2) wraps to 5, and
+     * 7 * 7^-1 is 1 (reusing the ABI 8 pinned inverse). */
+    memcpy(lm2, (const unsigned char *)"\xed\xd3\xf5\x5c\x1a\x63\x12\x58"
+                                       "\xd6\x9c\xf7\xa2\xde\xf9\xde\x14"
+                                       "\x00\x00\x00\x00\x00\x00\x00\x00"
+                                       "\x00\x00\x00\x00\x00\x00\x00\x10", 32);
+    lm2[0] = (unsigned char)(lm2[0] - 2);   /* L - 2, little-endian */
+    CHECK(sxt_ristretto_scalar_add(q, (int)sizeof(q), k7, 32, lm2, 32) == 32,
+          "scalar_add(7, L-2) adds");
+    CHECK(q[0] == 5 && all_equal(q + 1, 31, 0x00),
+          "7 + (L-2) wraps to 5 mod L (reduce semantics)");
+    CHECK(sxt_ristretto_scalar_invert(q2, (int)sizeof(q2), k7, 32) == 32 &&
+          sxt_ristretto_scalar_mul(q, (int)sizeof(q), k7, 32, q2, 32) == 32,
+          "scalar_mul(7, invert(7)) multiplies");
+    CHECK(q[0] == 1 && all_equal(q + 1, 31, 0x00),
+          "7 * 7^-1 is 1 mod L");
+
+    /* firewall + the failure semantics the header promises */
+    memset(q2, 0xff, sizeof(q2));
+    CHECK(sxt_ristretto_add(q, (int)sizeof(q), pts[0], 32, q2, 32)
+              == SXT_ERR_BADARG,
+          "add refuses an invalid operand encoding");
+    CHECK(sxt_ristretto_sub(q, (int)sizeof(q), q2, 32, pts[0], 32)
+              == SXT_ERR_BADARG,
+          "sub refuses an invalid operand encoding");
+    CHECK(sxt_ristretto_add(q, (int)sizeof(q), pts[0], 31, pts[1], 32)
+              == SXT_ERR_BADARG, "a 31-byte add operand is refused");
+    memset(q2, 0, sizeof(q2));
+    CHECK(sxt_ristretto_scalarmult_base(q, (int)sizeof(q), q2, 32)
+              == SXT_ERR_BADARG,
+          "scalarmult_base refuses a zero scalar (identity result)");
+    CHECK(last_error_len() > 0, "the base-mult failure sets a message");
+    /* index-carrying batch failure: corrupt the SECOND point (all-FF is not
+     * a valid encoding), expect the whole call to fail with "2 of 3" in the
+     * error text (the atomic-void contract; a partial success would invite
+     * using half a masked deck). */
+    memset(concat + 32, 0xff, 32);
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         k7, 32, concat, 96)
+              == SXT_ERR_BADARG,
+          "one bad point fails the WHOLE batch call");
+    CHECK(sxt_last_error(err, (int)sizeof(err)) > 0 &&
+          strstr(err, "point 2 of 3") != NULL,
+          "the batch failure names the 1-based failing index");
+    memcpy(concat + 32, pts[1], 32);
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         q2, 32, concat, 96)
+              == SXT_ERR_BADARG,
+          "a zero scalar fails the batch (identity results)");
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         k7, 32, concat, 95)
+              == SXT_ERR_BADARG,
+          "a pointslen that is not a multiple of 32 is refused");
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         k7, 32, concat, 0)
+              == SXT_ERR_BADARG, "an empty points buffer is refused");
+    CHECK(sxt_ristretto_scalarmult_batch(small, (int)sizeof(small),
+                                         k7, 32, concat, 96) == -96,
+          "a short batch buffer -> -needed (count*32)");
+    CHECK(sxt_ristretto_scalarmult_batch(batch, (int)sizeof(batch),
+                                         k7, 31, concat, 96)
+              == SXT_ERR_BADARG, "a 31-byte batch scalar is refused");
+    CHECK(sxt_ristretto_scalarmult_batch(NULL, 96, k7, 32, concat, 96)
+              == SXT_ERR_BADARG, "a null batch output buffer is refused");
+    CHECK(sxt_ristretto_add(small, (int)sizeof(small), pts[0], 32, pts[1], 32)
+              == -32, "a short add buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalarmult_base(small, (int)sizeof(small), k7, 32)
+              == -32, "a short base-mult buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalar_add(small, (int)sizeof(small), k7, 32, lm2, 32)
+              == -32, "a short scalar_add buffer -> -needed (32)");
+    CHECK(sxt_ristretto_scalar_mul(q, (int)sizeof(q), k7, 32, lm2, 31)
+              == SXT_ERR_BADARG, "a 31-byte scalar_mul operand is refused");
+    CHECK(sxt_ristretto_scalar_add(NULL, 32, k7, 32, lm2, 32)
+              == SXT_ERR_BADARG, "a null scalar_add output buffer is refused");
+}
+
 static void test_handle_table_stress(void)
 {
     unsigned char key[32];
@@ -1448,6 +1622,7 @@ int main(void)
     test_phase6();
     test_sha3();
     test_ristretto();
+    test_ristretto_abi9();
     test_handle_table_stress();
 
     printf("-------------------\n");

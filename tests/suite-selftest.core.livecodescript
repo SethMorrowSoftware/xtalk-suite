@@ -446,6 +446,7 @@ end openStack
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Belt and braces: a run that was interrupted (an engine error mid-pump)
    -- can leave a pump armed even though stCleanup never ran.
    stCancelPump
@@ -608,6 +609,7 @@ end stRun
 -- handler" execution error, which try/catch turns into a flag; nothing here is
 -- allowed to abort the run.
 command stProbe
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tVersion, tDigest
 
    stSection "extension probe (an absent member SKIPS, it never FAILS)"
@@ -1025,6 +1027,7 @@ end stCoinSection
 -- The whole section is wrapped so that an older CoinXT install (phase-1 .lcb, or
 -- an ABI-2 library) reports one clear failure rather than aborting the run.
 command stCoinCurveSection
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSeckey, tPubC, tPubU, tDigest, tSig, tBad, tRecovered, tByte
 
    stSection "CoinXT: secp256k1 through the binding (phase 2)"
@@ -1591,6 +1594,7 @@ end stCheckSealed
 -- async phase is terminal or the deadline passes; it never blocks the
 -- interpreter, because nothing in this family may block the one script thread.
 command stPump
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tEvents, tEvent
    if sRunning is not "true" then
       exit stPump
@@ -1661,6 +1665,7 @@ end stPump
 
 -- ---- finish + teardown -------------------------------------------------------
 command stFinish
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    -- Run last: OnionXT's capability advertisement is pure compute, but reading
    -- it here keeps the whole cross-member story in one block at the end of the
    -- report, next to the transports it describes.
@@ -1869,6 +1874,7 @@ end stRepeatByte
 -- ==========================================================================
 
 command stRunMemberHarnesses
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    stSection "deep per-member self-tests (each member's own harness, folded in)"
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."

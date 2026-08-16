@@ -10,6 +10,39 @@ audit. When an item closes, strike it here in the same change (the truth-sync
 discipline), and when this file's date grows old, re-audit or retire it rather
 than trust it.
 
+**CORRECTION (2026-08-15, wave 4): "exhausted" was true at this document's
+ITEM granularity, not absolutely.** With sparse OXT access the right lens is
+"what can the tree gain headlessly", and under it more remains: the ladder
+continues below the audited items (Hold'em 2e-remainder + Phase 3 oracle;
+the SodiumXT DLEQ/batch surface as ABI 9; then 4d/4e's pure adversarial
+harness and Phase 5's DLEQ proofs), the 720p re-layout is designable
+statically with only the confirming eye left to the engine, and preparation
+multiplies engine time (the runbook's sparse-access session plan; decision
+briefs for the E section). Wave 4 is executing these; strikes land per
+chunk.
+
+**THE ENGINE-FREE COLUMN WAS DECLARED EXHAUSTED (2026-08-15, waves 1-3) - see the correction above.** Between the
+morning audit and this line, everything in this document that could be
+finished without an OXT engine, a second machine, a Tor daemon, a Mac, or an
+owner decision WAS finished, committed chunk by chunk with its gates green:
+the holde-em fold; SodiumXT ABI 8 (ristretto255, four binaries rebuilt);
+coinxt WIF; nocloud's redirect hole and ETag/304 dedup; the family template
+sync + drift gate; Model C for DHT-Channels (plan Phases 0/2/3); the ONIONXT
+Phase 4 docs; riptide's onion serving, phase-6 sync payload, phase-5 typing
+lane, and profileMeta; holde-em's Level 2 deal algebra (4a-4c) and 2f onion
+tables; the checker union (checks 13-21, 78 latent traps fixed fleet-wide,
+the idioms gate retired); the hygiene sweep; and the consolidation path
+sweep. Every one of those builds is "verified statically" with machine proof
+(KATs, goldens, mirrors, fixtures, coverage 393/411) and is listed in its
+member's own ledger with exactly what its engine pass owes. What remains in
+this file is now ONLY: the B-section verification backlog (the runbook's
+sessions), the macOS/release lanes (C), the harness-fold integrations that
+themselves want an engine in the same change (C.2, C.4), the E-section owner
+decisions, and the A-section items that are genuinely engine-era or
+owner-gated (the 720p re-layout, Schnorr/Taproot, cnx_memzero's ABI ripple,
+nocloud Phase 3's contract questions, box2dxt's polish passes, and Hold'em's
+2e-remainder/3/4d-f/5).
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
@@ -24,6 +57,17 @@ the one release gap. The rest is label/doc hygiene and recorded owner decisions.
 ---
 
 ## A. Unbuilt phases and features (16)
+
+> **2026-08-15 wave-1 closures (commits `0a1f79d`, `4029e50`, and the WIF
+> commit):** item 11 (coinxt WIF) SHIPPED statically - cxWifEncode/Decode,
+> vectors derived from the independent reference and anchored to the Bitcoin
+> wiki's published string, 272 script-vector checks executing the shipped
+> file, mutation-tested, coverage 80/80 - needs its OXT pass. Item 15 (the
+> token-mount redirect hole) FIXED and golden-mirrored. Item 14 (the
+> ETag/304 duplication) FACTORED into one golden-pinned helper; the Tor
+> keep-alive half stays an owner decision. Section D's item 4 (the family
+> template) also closed - synced and drift-gated.
+
 
 Code that does not exist yet: planned phases, designed-but-unshipped surfaces,
 and one functional hole.
@@ -283,11 +327,18 @@ Built and statically verified; pending under the honesty convention.
    badge, riptide/examples/README's runbook path, and suite-gates.yml's
    "tracked follow-up" header for a port that shipped.
    — root `CLAUDE.md` cross-reference caveat
+   (CLOSED 2026-08-15: the sweep ran - full-tree inventory of every `*.md`,
+   the misleading navigation references fixed or annotated, and both caveats
+   - root `CLAUDE.md` and `docs/README.md` - rewritten to record the
+   residual convention: a member's own docs stay member-root-relative, and
+   dated records keep their original pre-suite spellings.)
 
 3. **nocloud CONTRIBUTING still describes the standalone repo** (small). Names
    only the two member gates; the suite gate set has walked the directory
    since the fold. A contributor following it verbatim misses all of that.
    — `nocloud/CONTRIBUTING.md:5-15,32-58,127-135`
+   (CLOSED 2026-08-15 in the hygiene sweep: CONTRIBUTING opens with the fold
+   preamble and names the suite gates as item 3 of its workflow.)
 
 4. **The family engineering template is stale and ungated** (medium).
    `onionxt/templates/CLAUDE.md` (+ byte-identical coinxt twin): its checker
@@ -311,6 +362,11 @@ Built and statically verified; pending under the honesty convention.
    gate.
    — `holde-em/tools/check-holdem-idioms.py` docstring, root `CLAUDE.md`
    checker-unification passage
+   (CLOSED 2026-08-15: the union shipped - the eight checks are the unified
+   checker's docstring checks 13-21, fixture-tested in every member copy,
+   with two ports narrowed and H6 refused on fleet engine evidence - and
+   `check-holdem-idioms.py` is retired; holde-em/CLAUDE.md's fold record
+   carries the detail.)
 
 6. **nocloud doc surface lagging the newest features** (medium). SECURITY.md's
    unfilled contact placeholder and missing .qsroutes.json model bullet;

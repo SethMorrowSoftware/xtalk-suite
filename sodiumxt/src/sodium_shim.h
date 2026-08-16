@@ -16,9 +16,11 @@
  * ed25519 signatures; key exchange; padding; (ABI 6) an ed25519
  * seed-to-expanded-key helper and HMAC-SHA256 for onion-service support; and
  * (ABI 7) SHA3-256 for the offline v3 onion-address checksum; (ABI 8) the
- * ristretto255 group surface for mental-poker deals (holde-em Workstream U).
- * The ABI is versioned by SXT_ABI_VERSION below; bump it on any signature
- * change.
+ * ristretto255 group surface for mental-poker deals (holde-em Workstream U);
+ * (ABI 9) that plan's recorded Phase 5 follow-ons - ristretto255 point
+ * add/sub, base-point and one-crossing batch scalar multiplication, and
+ * scalar add/mul mod L - the DLEQ-proof algebra. The ABI is versioned by
+ * SXT_ABI_VERSION below; bump it on any signature change.
  */
 #ifndef SODIUMXT_SODIUM_SHIM_H
 #define SODIUMXT_SODIUM_SHIM_H
@@ -48,7 +50,7 @@ extern "C" {
  * clear "reinstall the extension" error on skew, instead of corrupting memory
  * on first use against a mismatched native library.
  */
-#define SXT_ABI_VERSION 8
+#define SXT_ABI_VERSION 9
 
 /*
  * The largest single in-memory out-buffer we will service. The return value of
@@ -604,8 +606,9 @@ SXT_API int SXT_CALL sxt_sha3_256(unsigned char *out, int cap,
  * every valid 32-byte encoding IS a group element, and validity is checkable.
  * The deliberately-small surface is the plan's: hash-to-group, scalar
  * multiplication, scalar random/invert, and point validity. Batch
- * multiplication, point add/sub, and base-point multiplication are the plan's
- * recorded Phase 5 follow-ons (DLEQ proofs), NOT shipped here. The 64-byte
+ * multiplication, point add/sub, and base-point multiplication were the
+ * plan's recorded Phase 5 follow-ons (DLEQ proofs); they SHIPPED as the
+ * ABI 9 section below (2026-08-15). The 64-byte
  * from-hash input comes from any 512-bit hash; sxHash(data, 64) (BLAKE2b-512)
  * already serves it, which is why the plan's conditional "sxHash512 if not
  * already public" adds no new entry point.
@@ -665,6 +668,82 @@ SXT_API int SXT_CALL sxt_ristretto_scalar_invert(unsigned char *out, int cap,
  * SXT_ERR_BADARG - that is a caller bug, not a hostile encoding.
  */
 SXT_API int SXT_CALL sxt_ristretto_is_valid_point(const unsigned char *p, int plen);
+
+/* --- ABI 9: ristretto255 DLEQ/batch follow-ons (holde-em Phase 5) ---------- */
+
+/*
+ * The recorded Phase 5 follow-ons from holde-em's plan (Workstream U "Later"),
+ * shipped 2026-08-15: point add/sub and base-point multiplication are what a
+ * Chaum-Pedersen DLEQ proof computes with (commitments A = w*B, B' = w*P and
+ * the verifier's z*B ?= A + c*Y recombination), and the batch call collapses
+ * the deal's 52-point shuffle-mask step into ONE FFI crossing (the 4f
+ * deal-time budget lever). Same discipline as the ABI 8 section: thin
+ * wrappers over libsodium's crypto_core_ristretto255_* /
+ * crypto_scalarmult_ristretto255_* - expose-only, no new cryptography.
+ */
+
+/*
+ * r = p + q / r = p - q in the group (crypto_core_ristretto255_add / _sub).
+ * p and q must each be exactly sxt_ristretto_bytes(); a p or q that is not a
+ * valid ristretto255 encoding is a hard SXT_ERR_BADARG with text (libsodium
+ * validates both operands). Writes sxt_ristretto_bytes() bytes and returns
+ * that count, or -needed, or a hard error. The identity is a legal operand
+ * and a legal result here (P - P encodes as 32 zero bytes): unlike
+ * scalarmult, addition has no identity-result failure mode in libsodium.
+ */
+SXT_API int SXT_CALL sxt_ristretto_add(unsigned char *out, int cap,
+                                       const unsigned char *p, int plen,
+                                       const unsigned char *q, int qlen);
+SXT_API int SXT_CALL sxt_ristretto_sub(unsigned char *out, int cap,
+                                       const unsigned char *p, int plen,
+                                       const unsigned char *q, int qlen);
+
+/*
+ * q = n * B, the base point multiple (crypto_scalarmult_ristretto255_base;
+ * B is the RFC 9496 generator). n must be exactly
+ * sxt_ristretto_scalarbytes(); fails - a hard SXT_ERR_BADARG with text -
+ * when n is 0 mod L (the identity result), the same merged failure the
+ * general scalarmult reports. Writes sxt_ristretto_bytes() bytes and
+ * returns that count.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalarmult_base(unsigned char *out, int cap,
+                                                   const unsigned char *n, int nlen);
+
+/*
+ * out[i] = n * points[i] for a CONCATENATED buffer of 32-byte points - the
+ * deal's k*P over all 52 card points in ONE FFI crossing. pointslen must be
+ * a positive multiple of sxt_ristretto_bytes(); out fills exactly pointslen
+ * bytes (count * 32) and returns that count, or -pointslen if cap is short.
+ * The call is ATOMIC: any single element failing (an invalid encoding, or
+ * an identity result from a zero scalar) fails the WHOLE call with the
+ * 1-based failing index in the sxt_last_error() text and nothing to trust
+ * in out - a deal that meets one bad point voids the whole shuffle step
+ * anyway (the family's void-and-audit discipline), so a partial success
+ * would only invite a caller to use half a masked deck.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalarmult_batch(unsigned char *out, int outcap,
+                                                    const unsigned char *n, int nlen,
+                                                    const unsigned char *points,
+                                                    int pointslen);
+
+/*
+ * z = x + y mod L / z = x * y mod L (crypto_core_ristretto255_scalar_add /
+ * _mul) - the response arithmetic a DLEQ proof needs (z = w + c*k mod L).
+ * REDUCE SEMANTICS: each 32-byte input is read as a little-endian 256-bit
+ * integer and the result is fully reduced mod L (libsodium widens to 64
+ * bytes and reduces, so even unreduced representatives >= L are handled
+ * deterministically); the output is always the canonical reduced encoding.
+ * These cannot fail on content - a scalar of zero is a legal operand and a
+ * legal result here (only lengths and pointers are firewalled). x and y
+ * must each be exactly sxt_ristretto_scalarbytes(); writes that many bytes
+ * and returns the count, or -needed, or a hard error.
+ */
+SXT_API int SXT_CALL sxt_ristretto_scalar_add(unsigned char *out, int cap,
+                                              const unsigned char *x, int xlen,
+                                              const unsigned char *y, int ylen);
+SXT_API int SXT_CALL sxt_ristretto_scalar_mul(unsigned char *out, int cap,
+                                              const unsigned char *x, int xlen,
+                                              const unsigned char *y, int ylen);
 
 #ifdef __cplusplus
 }

@@ -15,16 +15,17 @@ ever runs script); exceptions never cross the FFI; handles are
 generation-tagged so a stale one is a no-op, never a crash; and anything
 not observed on a real engine is labelled "verified statically; needs an
 OXT pass". The generated `tests/suite-selftest.livecodescript` reaches
-382 of the 400 coverage-counted public handlers (the 18 unreached are all
+384 of the 402 coverage-counted public handlers (the 18 unreached are all
 onionxt's, each with a written reason: engine socket callbacks and
 live-daemon paths).
 
 ## sodiumxt — modern cryptography (`sx*`)
 
-Wraps **libsodium** (1.0.20; the Windows builds carry 1.0.22). 66 public
+Wraps **libsodium** (1.0.20; the Windows builds carry 1.0.22). 72 public
 handlers. Binaries committed for **all five platforms** (Linux and Windows
-x64/x86 at ABI 8, which added the ristretto255 group surface 2026-08-15;
-`universal-mac` two ABIs behind, pending the manual `lipo` build).
+x64/x86 at ABI 9: ABI 8 added the ristretto255 group surface 2026-08-15 and
+ABI 9, the same day, its DLEQ/batch follow-ons;
+`universal-mac` three ABIs behind, pending the manual `lipo` build).
 
 - **Secret-key authenticated encryption** — XChaCha20-Poly1305, with or
   without associated data: `sxSecretBox`, `sxAeadEncrypt`.
@@ -43,7 +44,12 @@ x64/x86 at ABI 8, which added the ristretto255 group surface 2026-08-15;
   scalar multiplication, scalar random/invert, point validity for the
   mental-poker deal: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`,
   `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`,
-  `sxRistrettoPointValid`. Verified statically (cross-checked KATs); needs
+  `sxRistrettoPointValid` — plus the ABI-9 DLEQ/batch follow-ons (the plan's
+  recorded Phase 5 surface, shipped 2026-08-15): `sxRistrettoAdd`,
+  `sxRistrettoSub`, `sxRistrettoScalarMultBase`,
+  `sxRistrettoScalarMultBatch` (52 points, one FFI crossing, atomic on
+  failure with the failing index named), `sxRistrettoScalarAdd`,
+  `sxRistrettoScalarMul`. Verified statically (cross-checked KATs); needs
   an OXT pass.
 - **Key exchange** — `crypto_kx` client/server session keys
   (`sxKeyExchangeClient` / `sxKeyExchangeServer`).
@@ -217,7 +223,7 @@ five platforms**. Ships as `org.openxtalk.box2dxt` (predates the
 
 ## coinxt — Bitcoin + Ethereum primitives (`cx*`)
 
-Wraps **trezor-crypto** (pinned; plain C, no external deps). 78 public
+Wraps **trezor-crypto** (pinned; plain C, no external deps). 80 public
 handlers, ABI 4. Binaries: Linux + Windows x64/x86 (macOS pending).
 
 - **The hash surface both chains need** — Keccak-256 (Ethereum) vs

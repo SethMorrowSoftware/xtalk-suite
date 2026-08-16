@@ -6,7 +6,9 @@ hard way across the sibling repos so it never has to be re-learned here.
 
 > **Folded into the monorepo 2026-08-15.** This directory was copied verbatim (via
 > `git archive`, tracked files only) from the standalone `hold-em` repository, which
-> becomes a mirror; development happens here now, like every other member. The seed
+> becomes a mirror; development happens here now, like every other member. Prose and
+> paths below may still say "this repo" or read as if this directory were its own
+> repo root (the suite's standing consolidation-debt caveat). The seed
 > docs the suite had carried at `docs/holde-em/` (stale at pre-implementation while
 > this repo reached v0.18.0) were REMOVED in the fold - this directory is the one
 > authority. What the fold changed, each per suite law:
@@ -23,12 +25,21 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   whether the PREVIOUS on-engine Level 0 runs dealt from the stepped or the
 >   1-stepped stream is exactly what that re-pass should establish (the Python KAT
 >   mirrors pin the 2-stepped semantics).
-> - The hold-em lineage checker survives as `tools/check-holdem-idioms.py`: eight of
->   its checks (H6 chunk-of-array, H7 bitwise, engine-token names, undeclared catch
->   vars, command-with-parens, dynamic property names, message-box prose, undeclared
->   k-constants) have no unified-checker counterpart and every one has shipped-defect
->   provenance here. It runs IN ADDITION via `tools/build-all.sh`; porting those
->   checks INTO the unified checker (and retiring the file) is recorded follow-up.
+> - The hold-em lineage checker survived the fold as `tools/check-holdem-idioms.py`,
+>   because eight of its checks had no unified-checker counterpart and every one had
+>   shipped-defect provenance here. The recorded follow-up - porting those checks
+>   INTO the unified checker and retiring the file - was KEPT on 2026-08-15, the
+>   same day: the unified `check-livecodescript.py` now carries them as its checks
+>   13-21 (fixture-tested in every member copy), and the file is gone. Two ports
+>   were honestly NARROWED by fleet engine evidence, and one was refused: the
+>   bitwise refusal gates only the function-call form `bitXor(a, b)` (the operator
+>   form stands in engine-passed code in four members - H7's blanket ban stays THIS
+>   member's prose law); the catch-variable check fires only when the catch body
+>   REFERENCES the undeclared variable (onionxt's probes fired the unreferenced
+>   form green on-engine); and the chunk-of-array-element refusal (H6) was NOT
+>   ported at all - riptide/onionxt/box2dxt/nocloud chunk array elements in
+>   engine-passed code, so H6 stays this member's prose law too, with the
+>   reasoning recorded in the unified checker's docstring.
 > - All ten pure-logic gates (the idiom checker, `check-docs.py`, the seven KATs,
 >   `logic-fuzz.py`) are wired into the suite's `tools/build-all.sh --gates`, which
 >   CI runs on every push; this member's own `.github/workflows/ci.yml` stays for
@@ -80,8 +91,13 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online lobby + online play (2d) written at v0.18.0, on Phase 1
-hotseat.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online play (2d) + onion tables (2f) + the 2e remainder (street
+ckpt wires, show/muck, online History folding, host election) + the Phase 3 deck
+oracle written, on Phase 1 hotseat, plus the Phase 4a-4c Level 2 COMPUTE layer
+(pure algebra only; nothing plays on it yet), at v0.21.0. The pending live gates:
+a multi-hand onion table session on two machines with running tor (2f), and the
+Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle, killed
+mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle).** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -116,22 +132,26 @@ checklist) before writing any protocol code, and follow section 16 as law.
 
 ## Commands
 
-**Static verification** (the only automated gate that exists for xTalk; run BOTH after
+**Static verification** (the only automated gate that exists for xTalk; run after
 **every** `.livecodescript` edit, and in CI):
 
 ```sh
 python3 tools/check-livecodescript.py   # the suite's UNIFIED checker (drift-gated copy)
-python3 tools/check-holdem-idioms.py    # this member's extra idiom checks
 ```
 
-Since the 2026-08-15 fold, `check-livecodescript.py` is the suite's unified twelve-check
-gate (ASCII, balance incl. switch/try, constants-before-use, token-shadow, zero-arg
-statement calls, repeat-step and throw-in-catch refusals, and the per-dialect
-antipattern sets) - byte-identical in every member and held so by the suite's
-checker-drift gate: never edit the copy here alone. `check-holdem-idioms.py` is the
-hold-em lineage checker it replaced, kept because eight of its checks (see its
-docstring) exist nowhere in the unified tool and each has caught a real shipped defect
-here. Exit non-zero on any failure, either tool.
+Since the 2026-08-15 fold, `check-livecodescript.py` is the suite's unified gate
+(ASCII, balance incl. switch/try, constants-before-use, token-shadow, zero-arg
+statement calls, repeat-step and throw-in-catch refusals, the per-dialect
+antipattern sets - and, since the same-day checker union, the hold-em lineage
+checks 13-21: bitwise-as-function, engine-token declared names, referenced
+undeclared catch variables, command-with-parens, dynamic property names,
+message-box prose, never-declared k-constants, dangling else, stray backslash) -
+byte-identical in every member and held so by the suite's checker-drift gate:
+never edit the copy here alone. The old lineage checker
+(`check-holdem-idioms.py`) is retired; its two checks the fleet's engine
+evidence would not support fleet-wide (H6's chunk-of-array refusal, H7's
+blanket bitwise ban) remain THIS member's prose law, below. Exit non-zero on
+any failure.
 
 **Pure-logic pinning** (Phase 1+): the evaluator vectors, betting-engine cases, and
 protocol KATs run headless in CI because they are plain algorithms — the one part of
@@ -143,7 +163,7 @@ python3 tools/check-docs.py             # smart-quote scan over *.md
 python3 tools/evaluator-kat.py          # spec 8.2 vectors (mirror of heEval7/heRank5)
 python3 tools/betting-kat.py            # spec 8.1/8.3 cases (mirror of heBetApply/heSettleOf)
 python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShuffleDeck)
-python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal (Phase 2 target)
+python3 tools/protocol-kat.py           # spec 6/7.1 crypto deal + 7.3 L2 algebra
 python3 tools/sounds-kat.py             # vendored casino-audio WAVs <-> stack mapping
 python3 tools/logic-fuzz.py             # INDEPENDENT-reference fuzz (rules, not the port)
 ```
@@ -195,7 +215,119 @@ strings before hashing/signing, `textDecode(..., "ascii")` the hex helpers back 
 text. The crypto seams (`heHash32`, `heHashDomHex`, `heDeriveIdentity`, `heSignDetachedD`,
 `heVerifyDetached`, `heSeal`) now wrap these one place each; `heProbeSodium` exercises
 the full roundtrip. Lesson: **read the sibling's `docs/api-reference.md`, do not guess
-FFI signatures** — the family repos are addable to the session for exactly this.
+FFI signatures** — the family repos are addable to the session for exactly this (and
+since the fold the siblings sit right beside this directory:
+`../sodiumxt/docs/api-reference.md` and so on).
+
+**Level 2 COMPUTE layer (v0.19.0, 2026-08-15 -- Phase 4a-4c, the pure half only).**
+The ristretto255 mental-poker deal algebra (spec 7.3) is the `heL2*` section of the
+stack: base points by domain-separated hash-to-group (`kHeDomainL2Card` -- the
+as-built domain is `"HOLDEM-L2-CARD-v1|"`, spec 7.3 carries the decision marks), one
+full shuffle-mask step (`out[j] = k * in[sigma[j]]`, doer and showdown-verifier are
+the SAME handler), the free duplicate check, public/hole unmask-chain verification,
+and reveal-scalar re-verification. The contracts to keep intact when touching it:
+values in, values out (H5); every seam lowercase hex text (the H6 corollary -- raw
+Data only ever inside sx* call expressions); every failure a DISTINCT `"void:..."`
+string, never a throw (each sx* call in its own try with declared catch locals,
+H4/H8), because Phase 4d's void-and-audit attribution will switch on those exact
+strings -- they are pinned in `tools/protocol-kat.py` (the `l2_*` mirror twins,
+re-derived by its independent RFC 9496 reference; 24 pinned values) and re-checked
+on-engine by `heTestLevel2Run`, which SKIPs behind `heL2HasRistretto` (a pre-ABI-8
+SodiumXT throws "can't find handler" on the first `sxRistretto*` touch; the cached
+probe's catch is the detection). The `sxRistrettoScalarMultPoint` throw conflates
+invalid-point and identity-result (libsodium reports one failure); the validity
+predicate runs FIRST in `heL2MaskPointHex`, which is what makes the two void strings
+separable -- keep that ordering. NOTHING in this layer is wired to a played hand,
+the UI, or the wire: 4d-4f and all orchestration are engine-era work, and the OXT
+pass owes the sx* call shapes plus the 4f deal-time budget (52 mults per shuffle
+step, deal-time only, per the playbook).
+
+**Onion tables (v0.20.0, 2026-08-15 -- Phase 2f).** The plan's bet paid off: 2c/2d
+had already funneled every outbound payload through four netCap-seamed senders and
+every inbound frame through ONE router (heNetOnMessage), so swapping the byte
+transport cost one new live seam -- `heNetTxTo`, routed by `gGame["transport"]`
+("rp1" | "onion") -- plus a poll-tick line-reassembly drain inbound. The envelopes,
+chain, fold, and react engine changed NOT AT ALL. The contracts to keep intact when
+touching the `heNetOnion*` section:
+  - **All protocol work on the poll tick (H2).** The three OnionXT callbacks
+    (`heOnionStatus`/`heOnionPeer`/`heOnionStreamEvt`) only STASH bytes and flags
+    into gGame; `heNetOnionTick` does everything else, one state compare when idle.
+    Every ox* call sits in its own try with a declared catch local (H8), and every
+    silent async wait has a watchdog (the `kHeOnion*Ticks` deadlines).
+  - **Fail closed, never fall back.** Assume-running tor on the stock ports (9050/
+    9051; Tor Browser alone exposes no control port -- say so in the message). An
+    onion invite without OnionXT refuses outright (`heJoinRefusal`, pure and
+    dependency-injected so the harness drives both branches); a DHT invite never
+    goes near tor. The lobby's Tor line walks the quickshare-pill states.
+  - **The invite is the compatibility seam:** `<64hex>@<56base32>.onion`, one word
+    and non-hex ON PURPOSE -- a pre-2f stack's `word 1` + heIsHex gate refuses it
+    readably (downgrade refusal by format). The onion address derives from
+    `heOnionSeedHex` (kHeDomainOnion: secret-keyed by the host identity seed,
+    per-table, deterministic -- restart-stable, spec 9) and is computed OFFLINE at
+    create, then cross-checked against `oxServiceAddress` at publish.
+  - **The "h" hello frame is the rp1 handshake's stand-in**: the same signed
+    admission token as the stream's first wire line, verify-or-drop before any
+    reply; the host's answering hello precedes the replay so the ordered stream
+    delivers host identity before host-signed wires. LF framing is safe because
+    every free-text field is hex-encoded (one wire line per oxWrite; LF as
+    `numToChar(10)`, the OnionXT byte-discipline).
+  - **H1:** streams + service close on leave/stop (`heNetStop`'s onion branch);
+    the control connection deliberately survives between tables and is
+    `oxShutdown` on closeStack (`gOxCtlUp` remembers we opened it).
+  - Deferred with 2e liveness, on purpose: auto-redial after a lost host stream
+    (today it fail-closes naming "Join again"). Host election LANDED (v0.21.0):
+    a lost host stream during play now routes through heNetHostLost before the
+    fail-closed message, so the successor is named (the section below).
+  The whole section is verified statically; the live two-machine tor session is
+  the exit gate (harness section 17 pins the headless slice).
+
+**2e remainder + Phase 3 deck oracle (v0.21.0, 2026-08-16 -- verified statically;
+the three-machine round is the live gate, + live tor for an onion oracle).** The
+contracts to keep intact when touching these:
+  - **Street ckpts sign the TRANSITION wire's head.** Every client records the
+    boundary head at the wire that produced it (last holeDeliver = "deal", the
+    street's board wire, the betting-closing wire = "showdown") -- that is what
+    makes two verified ckpts naming different heads FORK EVIDENCE rather than a
+    timing artifact. Never sign "whatever the head is now". The ckpt body
+    (street/head/sig) and the seq 7-9 wire extension are byte-pinned in
+    protocol-kat; emissions are presence-guarded per street like everything in
+    the react engine.
+  - **The `s?` seq is a trim hint, never an authority.** The host trims the
+    replay to wires past the requester's named seq; dedup keeps every replay
+    idempotent, so a wrong mark can only cost bytes or starve the liar. The
+    reconnect handshake still replays in full -- a rebuilt client has nothing.
+  - **show/muck are display-only BY CONSTRUCTION.** Online ranks derive from
+    the revealed seeds; the wires only gate what PAINTS (heNetShowSeat) and
+    what History annotates ("(mucked)"). Do not let a show/muck wire near the
+    settle or audit paths. Policy lives in react step 11b; the fold annotation
+    is mirrored in fold-kat (keep the twins in step).
+  - **The History translator re-derives, never invents.** heNetLogToHotseat
+    (pure, H5) turns the signed chain into the hotseat shape; sealed
+    holeDeliver wires become card lines ONLY from complete seed reveals --
+    an unrevealed hand honestly gets none and its contested settle is NAMED
+    by the fold. show/muck reposition ahead of their settle (the fold
+    snapshots its history line there).
+  - **The oracle is the host role minus the seat.** level=1 in the signed cfg
+    is the ONLY marker (spec 7.2 is Level 1); dealLevel carries level=1,
+    dealer=0; the dealer-authority seams go through heNetDealerPubHex /
+    heNetWeDeal, and the entropy seams through heNetContribCount /
+    heNetMyContribPos / heNetContribPosOk (the oracle owns exactly position
+    dealCount+1 -- committed before it saw anyone's seed, revealed at hand
+    end because the XOR needs it). No seat, no stack, no receipt signature;
+    its audit files as "oracle" (slot 0). An onion oracle derives its service
+    seed under kHeDomainOracle (never kHeDomainOnion -- the addresses must
+    not collide). Recorded divergence from the spec sketch: the as-built
+    oracle IS the relay, so it sees the (public, signed) betting wires; the
+    no-stake property is what Level 1 actually buys (spec 7.2 as-built).
+  - **Oracle loss IS host loss** -- one watchdog (60 s wire-silence during
+    play; onion stream-death routes in directly), one deterministic election
+    (heElectHostOf: lowest live seated pubkey, pinned as elected_host), one
+    void-to-last-receipt. The elected host is NAMED and the client fails
+    closed; the live handover belongs to the Phase 3 exit gate. Never make
+    the election guess or negotiate -- determinism is the whole point.
+  - Harness: netplay (15) pins ckpts/show-muck/trimmed-resync/History; the
+    oracle section (18) runs THREE loopback contexts (heTNetPump's third
+    seat) and SKIPs the live legs by name.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
@@ -207,7 +339,7 @@ user confirms in the IDE. This discipline is house law across the family.
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
 | **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*` — cross-checked KATs green, handlers still need their OXT pass). |
-| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | optional (onion tables; Phase 3 oracle hosting) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051). Needs SodiumXT ABI >= 6 for deterministic onions. |
+| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
 Install all of them through the OXT **Extension Manager**; each bundles its native
@@ -295,7 +427,7 @@ bug in the family.
    *equals* a token is even worse — it silently evaluates AS the token: `tAb` is read as
    the `tab` constant (found v0.4.2, in `heByteXor` → renamed `tWorkA`). Prefer
    distinctive multi-word stems. The static gate now flags any local/param whose name
-   equals an engine token (check 7).
+   equals an engine token (unified checker check 14).
 3. **Prefix conventions:** `u` = custom property, `g` = script-local global, `t` =
    handler local, `p` = parameter, `k` = constant. Public API prefixes in the family:
    `b2k*`, `bt*`, `sx*`, `ox*`; this repo's public surface will be `he*` (holde-em) —
@@ -316,13 +448,14 @@ bug in the family.
    called `heProbeSodium()` this way and the probe blew up before executing). Only a
    `function` may be invoked with `()`; a command is a statement, or route it through a
    value via `the result`. The static gate flags a locally-declared command used with
-   `()` (check 10) — a parenthesised first argument `heFoo (x), y` is legal and is not
-   flagged.
+   `()` in expression position (unified checker check 16) — a parenthesised first
+   argument `heFoo (x), y` is legal and is not flagged.
 8. **Custom properties are text.** Everything round-trips as strings; booleans are the
    strings `"true"`/`"false"`.
 10. **Dangling else.** A bare `else` on the line after a single-line `if cond then stmt`
     binds to that inner `if`, closes the wrong block, and surfaces as a baffling
-    "missing end if" at handler end. The static gate flags the exact pairing.
+    "missing end if" at handler end. The static gate flags the exact pairing
+    (unified checker check 20).
 11. **Declare `local` only at the top of a handler.** A `local` nested inside an
     `if`/`repeat` block has broken compilation of an entire script.
 13. **Object-type tokens are single words.** `import audioClip from file …` compiles;
@@ -330,7 +463,7 @@ bug in the family.
     tokens are not. Same family (found v0.17.1): the message box CONTAINER is the
     single token `msg` — `put x into msg`; the prose form `put x into the message
     box` throws at runtime. The static gate flags `the message box` in code
-    (check 12).
+    (unified checker check 18).
 14. **Sensor/contact messages go to `b2kContactTarget`, not the frame target.**
     Forgetting it = silent sensors with zero errors. Set both targets if the table ever
     uses Kit sensors.
@@ -352,8 +485,9 @@ bug in the family.
 29. **A `constant` must be declared before its first use, lexically.** OXT resolves
     constant names by file position; a use above the declaration compiles clean and
     silently evaluates to nothing at runtime. Declare constants at the top of the file
-    (this bug shipped a broken feature in the family once already; it is invisible to
-    every static check).
+    (this bug shipped a broken feature in the family once already). The unified
+    checker now gates both halves: use-above-declaration (check 4) and a `k` name
+    with NO declaration at all (check 19, the heTestDealRun defect).
 
 House additions for THIS repo (earned in the siblings, restated as law here):
 
@@ -374,7 +508,11 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   double/binary conversion error at runtime (found on this repo's first OXT pass, in
   the seed-XOR path; the compiler accepts the syntax happily). Copy the element into a
   plain local, then chunk the local. Same rule for `replace ... in tA["k"]` — copy out,
-  modify, or avoid. The static gate flags the chunk pattern (check 5).
+  modify, or avoid. NOT a static gate any more, ON PURPOSE (the 2026-08-15
+  checker union): riptide, onionxt, box2dxt and nocloud all chunk array
+  elements in engine-passed code, so the pattern is not a fleet-wide trap -
+  what threw HERE was FFI-bridged binary meeting the chunk evaluator (see the
+  corollary below). H6 stays this member's law, held by review, not a checker.
   **Corollary (v0.1.1): keep FFI-bridged binary away from the script chunk evaluator
   entirely.** The double/binary error persisted past the copy-to-local fix, so binary
   from `sx*` handlers is now hex-encoded at the edge (`sxBin2Hex` — itself proven by
@@ -386,7 +524,11 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   seed-XOR path — `bitXor(acc, baseConvert(...))`). They are valid LiveCode syntax, so
   no structural check sees them. Do every bit operation with **pure integer arithmetic**
   (`div`, `mod`, `add`, `*`) — the repo carries `heByteXor` (an 8-iteration div/mod XOR)
-  for exactly this. The static gate flags any bitwise operator (check 6).
+  for exactly this. The static gate flags the function-call form `bitXor(a, b)`
+  fleet-wide (unified checker check 13) - which is the exact shape v0.4.1
+  shipped - but NOT the operator form `a bitXor b`, which stands in
+  engine-passed code in four other members; the blanket no-bitwise rule stays
+  THIS member's law, held by review.
 - **H8. Declare the catch variable as a local.** `try … catch tErr` where `tErr` is not in
   the handler's `local` list throws a SECOND error on strict OXT the moment the catch
   fires and its body references the variable — which masks the real failure and surfaces
@@ -395,8 +537,10 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   `heProbeSodium`/`heProbeTorrent`/`heDeckFromStreamKey`/`heNetStart` all shipped this and
   blew up only once SodiumXT/TorrentXT was installed (found v0.10.x — the probe threw
   instead of reporting). Every `catch <var>` must have a matching `local … <var>` (the
-  family pattern; `heTableNew` does it right). The static gate flags any undeclared catch
-  variable (check 9).
+  family pattern; `heTableNew` does it right). The static gate flags an undeclared catch
+  variable whose catch body REFERENCES it (unified checker check 15; the unreferenced
+  form is engine-proven safe in onionxt's probes, so only the reference is gated -
+  declaring every catch variable regardless stays this member's convention).
 - **H9. No parenthesised dynamic property names.** `the (expr) of obj` /
   `set the (expr) of obj to ...` — building a property NAME at runtime — is not
   portable xTalk: property names are compile-time tokens, and the computed-name form
@@ -405,7 +549,7 @@ House additions for THIS repo (earned in the siblings, restated as law here):
   (v0.15.0 fold of PR #33). The portable shape is ONE property holding a line-/item-
   indexed list (`uHeAvatarPaths`, line N = seat N — paths cannot contain a newline,
   so the index is safe); copy the property into a local before chunking it (H6
-  corollary). The static gate flags any `the (` in code (check 11).
+  corollary). The static gate flags any `the (` in code (unified checker check 17).
 
 ## The single-threaded performance playbook (condensed for a card game)
 
@@ -438,8 +582,9 @@ keys only ever sign. When in doubt, the spec's threat model (section 2) decides.
 
 ## Workflow
 
-- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py` AND
-  `python3 tools/check-holdem-idioms.py`.
+- **After every `.livecodescript` edit:** `python3 tools/check-livecodescript.py`
+  (since the 2026-08-15 checker union it carries the hold-em lineage checks too;
+  the separate idiom gate is retired).
 - **The self-test harness** (`heRunSelftest`, embedded in the one stack) follows the
   Box2Dxt pattern: deterministic assertions, a version constant (`kHeHarnessV`) printed
   in the report header and **bumped on every engine-behavior change** so a stale paste
@@ -462,13 +607,16 @@ CLAUDE.md                          you are here
 LICENSE                            MIT (the family default, decided Phase 0)
 holdem-spec.md                     the design contract
 IMPLEMENTATION-PLAN.md             the phased build order
-tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated)
-tools/check-holdem-idioms.py       this member's extra idiom checks (the old lineage)
+tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated;
+                                   since 2026-08-15 it carries the hold-em lineage
+                                   checks as its 13-21 - the old idiom gate is retired)
 tools/check-docs.py                docs smart-quote scan
 tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
 tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)
 tools/shuffle-kat.py               playable integer deal (CI mirror of heShuffleDeck)
-tools/protocol-kat.py              spec 6/7.1 crypto envelope/chain/deal wires
+tools/protocol-kat.py              spec 6/7.1 envelope/chain/deal wires + the
+                                   spec 7.3 Level 2 ristretto algebra (l2_* twins
+                                   over an independent RFC 9496 reference)
 tools/fold-kat.py                  transcript fold + settlement/deal audits (CI mirror)
 tools/atlas-kat.py                 Kenney card atlas <-> frame-name mapping
 tools/sounds-kat.py                vendored casino WAVs <-> stack mapping

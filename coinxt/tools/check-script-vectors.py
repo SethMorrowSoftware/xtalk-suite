@@ -136,6 +136,10 @@ def check_constants(c, text):
     c.ck("the bech32 length cap is 90", int(nums.get("kCxBech32MaxLen", -1)), 90)
     c.ck("the mainnet P2PKH version byte is 0", int(nums.get("kCxVersionP2PKH", -1)), 0)
     c.ck("the mainnet HRP is bc", consts.get("kCxHrpMainnet"), "bc")
+    c.ck("the mainnet WIF version byte is 0x80",
+         int(nums.get("kCxWifVersionMainnet", -1)), REF.WIF_VERSION_MAIN)
+    c.ck("the testnet WIF version byte is 0xef",
+         int(nums.get("kCxWifVersionTestnet", -1)), REF.WIF_VERSION_TEST)
     # The polymod generator constants live inline, not as named constants.
     gen = re.search(r'put\s+"([\d,]+)"\s+into\s+tGen', text)
     want = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3]
@@ -273,12 +277,30 @@ def wire_hashes(lib):
             raise RuntimeError("cnx_bip39_wordlist failed")
         return to_str(out.raw[:n])
 
+    # ---- WIF: the range check both directions make ---------------------------
+    # cxSeckeyIsValid answers false for zero / >= order / a wrong length
+    # (statuses -1, -2, -4) and throws on anything else, mirroring the .lcb
+    # wrapper exactly - the WIF handlers' fail-closed paths depend on that
+    # split, so approximating it would test a different library.
+    lib.cnx_seckey_verify.restype = ctypes.c_int
+    lib.cnx_seckey_verify.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+
+    def seckeyisvalid(args):
+        sk = to_bytes(args[0])
+        rc = lib.cnx_seckey_verify(sk, len(sk))
+        if rc == 0:
+            return True
+        if rc in (-1, -2, -4):
+            return False
+        raise LCS.Thrown(f"CoinXT: cxSeckeyIsValid: status {rc}")
+
     LCS.HASHES["cxhmacsha512"] = hmac512
     LCS.HASHES["cxpbkdf2hmacsha512"] = pbkdf2
     LCS.HASHES["cxpublickey"] = publickey
     LCS.HASHES["cxseckeytweakadd"] = tweak("cnx_seckey_tweak_add", 32)
     LCS.HASHES["cxpubkeytweakadd"] = tweak("cnx_pubkey_tweak_add", 33)
     LCS.HASHES["cxbip39wordlist"] = wordlist
+    LCS.HASHES["cxseckeyisvalid"] = seckeyisvalid
 
 
 def to_bytes(s):
@@ -542,6 +564,46 @@ def check_vectors(c, ip):
         p = bytes(n) + bytes.fromhex("deadbeef")
         c.ck(f"preserves {n} leading zero byte(s) as leading ones",
              call("cxBase58CheckEncode", p), REF.b58check_encode(p))
+
+    c.note("\nWIF (wallet import format)")
+    # The Bitcoin wiki's worked-example key. The expectations are DERIVED from
+    # the reference, whose import self-check anchors the mainnet/uncompressed
+    # form to the wiki's published string - so these four are pinned to a
+    # public artifact, not to the script agreeing with itself.
+    wif_sk = bytes.fromhex("0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d")
+    for network in ("mainnet", "testnet"):
+        for compressed in (False, True):
+            wif = REF.wif_encode(wif_sk, network, compressed)
+            c.ck(f"encodes {network} compressed={str(compressed).lower()}",
+                 call("cxWifEncode", wif_sk.hex(), network, compressed), wif)
+            got = ip.call("cxWifDecode", [wif])
+            c.ck(f"  and decodes back to the key, the network and the flag",
+                 (got["seckey"], got["network"], LCS._disp(got["compressed"])),
+                 (wif_sk.hex(), network, "true" if compressed else "false"))
+    # The refusals, one per failure mode the decoder names. Each malformed body
+    # is CONSTRUCTED through the reference's own b58check encoder so its
+    # checksum is valid and the check under test is provably the one reached
+    # (the _wrong_spec lesson above: a bad checksum masks every later check).
+    c.ck("rejects a corrupt checksum",
+         throws("cxWifDecode", REF.wif_encode(wif_sk, "mainnet", False)[:-1] + "k"), True)
+    c.ck("rejects an xprv (wrong payload length)",
+         throws("cxWifDecode", BIP32_VECTORS[0][1][0][1]), True)
+    c.ck("rejects an unknown version byte",
+         throws("cxWifDecode", REF.b58check_encode(b"\x01" + wif_sk + b"\x01")), True)
+    c.ck("rejects a trailing byte that is not the 0x01 marker",
+         throws("cxWifDecode", REF.b58check_encode(b"\x80" + wif_sk + b"\x02")), True)
+    c.ck("rejects a zero key", throws("cxWifDecode", REF.b58check_encode(b"\x80" + bytes(32))), True)
+    c.ck("rejects a key at or above the group order",
+         throws("cxWifDecode", REF.b58check_encode(b"\x80" + b"\xff" * 32 + b"\x01")), True)
+    c.ck("cxWifEncode refuses a short key",
+         throws("cxWifEncode", wif_sk[:31].hex(), "mainnet", True), True)
+    c.ck("cxWifEncode refuses non-hex", throws("cxWifEncode", "zz" * 32, "mainnet", True), True)
+    c.ck("cxWifEncode refuses a zero key",
+         throws("cxWifEncode", "00" * 32, "mainnet", True), True)
+    c.ck("cxWifEncode refuses an unknown network",
+         throws("cxWifEncode", wif_sk.hex(), "regtest", True), True)
+    c.ck("cxWifEncode refuses a non-boolean compressed flag",
+         throws("cxWifEncode", wif_sk.hex(), "mainnet", "yes"), True)
 
     c.note("\nBIP-173 valid strings")
     for s in BECH32_VALID:
@@ -975,7 +1037,7 @@ def main(argv):
     # ran" look identical on the way out otherwise, and on this surface the
     # second one is indistinguishable from a green build. Raise it when the set
     # grows; it exists to catch collapse, not to track the exact number.
-    floor = 20 if cc is None else 240
+    floor = 20 if cc is None else 260
     if c.count < floor:
         print(f"check-script-vectors: FAILED - only {c.count} checks ran, expected at "
               f"least {floor}. Something stopped the vector set early.")

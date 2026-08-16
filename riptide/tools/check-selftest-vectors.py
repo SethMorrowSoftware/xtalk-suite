@@ -99,6 +99,11 @@ def main(argv):
         "kRsGoldLanNonce": "a chosen 32-byte LAN challenge nonce (0x5a * 32)",
         "kRsGoldLanHostName": "chosen LAN host device name",
         "kRsGoldLanJoinName": "chosen LAN joiner device name",
+        "kRsGoldLanDraftText": "chosen LAN draft-sync text",
+        "kRsGoldLanSeq": "chosen LAN draft per-device seq",
+        "kRsGoldLanFeedSeq": "chosen LAN feed-state seq",
+        "kRsGoldLanReadTs": "chosen LAN read-receipt timestamp",
+        "kRsGoldLanTick": "chosen LAN presence tick",
     }
     for name in inputs:
         if name in k:
@@ -223,6 +228,31 @@ def main(argv):
     if k.get("kRsGoldLanNonce") != "5a" * 32:
         failures.append("kRsGoldLanNonce is not the documented 0x5a * 32")
 
+    # the phase-6 sync records: drafts / feed state / presence, signed
+    # under the same mesh key with the distinct sync domain
+    draft_rec = ref["lan_build_draft"](
+        k["kRsGoldLanJoinName"], int(k["kRsGoldLanSeq"]),
+        k["kRsGoldLanDraftText"], master)
+    want("kRsGoldLanDraftHex", draft_rec.hex())
+    want("kRsGoldLanFeedStateHex", ref["lan_build_feed_state"](
+        k["kRsGoldLanJoinName"], int(k["kRsGoldLanFeedSeq"]), handle,
+        int(k["kRsGoldLanReadTs"]), master).hex())
+    want("kRsGoldLanPresenceHex", ref["lan_build_presence"](
+        k["kRsGoldLanJoinName"], True, int(k["kRsGoldLanTick"]),
+        master).hex())
+    # structural: the golden draft verifies under the mesh public with the
+    # SYNC domain and refuses the ADMISSION domain (the separation the
+    # distinct tag exists for) - a golden that did not would be useless
+    if not ref["_verify_ed25519"](
+            draft_rec[-64:], ref["LAN_SYNC_DOMAIN"] + draft_rec[:-64],
+            lan_pub):
+        failures.append("the golden LAN draft does not verify under the "
+                        "mesh public key")
+    if ref["_verify_ed25519"](
+            draft_rec[-64:], ref["LAN_DOMAIN"] + draft_rec[:-64], lan_pub):
+        failures.append("the golden LAN draft verifies under the ADMISSION "
+                        "domain - the domain separation is broken")
+
     # the phase-7 anon persona + BTXO framing
     want("kRsGoldAnon0Handle", ref["anon_handle"](master, 0))
     want("kRsGoldAnon0Onion", ref["anon_onion"](master, 0))
@@ -232,6 +262,14 @@ def main(argv):
          ref["btxo_header"]("secret.txt", 11, 0).hex())
     want("kRsGoldBtxoFrameHex",
          ref["btxo_data_frame"](b"hello world").hex())
+    # 8.2/8.3 serving: the feed page from the golden title + post texts
+    # (the harness passes them line-delimited; the oracle takes the split
+    # list - one derivation, two spellings of the argument), and the
+    # /prekey body re-derived from the master
+    want("kRsGoldAnonPageHex", ref["anon_feed_page"](
+        k["kRsGoldHeadName"],
+        [k["kRsGoldPost1Text"], k["kRsGoldPost2Text"]]).hex())
+    want("kRsGoldAnonPrekeyBody", ref["anon_prekey_body"](master, 0))
     # the anon onion inverts back to the anon handle (self-authenticating)
     if ref["pubkey_from_onion"](k["kRsGoldAnon0Onion"]).hex() != \
             ref["anon_handle"](master, 0):

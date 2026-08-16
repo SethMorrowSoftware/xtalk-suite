@@ -68,19 +68,17 @@ run_gates() {
     echo "== $m: tools/coin-kat.py --check =="
     ( cd "$m" && python3 tools/coin-kat.py --check )
   fi
-  # holde-em's pure-logic gates: the member-specific idiom checker (the
-  # hold-em lineage checks the unified checker does not carry - see its
-  # docstring), the docs smart-quote scan, seven KAT mirrors of the game's
-  # pure handlers (evaluator, betting/settlement, shuffle, crypto protocol,
-  # transcript fold, card atlas, sounds), and the independent-reference fuzz
-  # (a SECOND evaluator/settlement implementation plus whole-game invariants
-  # - the backing for the member's "verified sound" claim). Probed by exact
-  # name, not a glob: the *-kat.py names would otherwise collide with the
-  # different --check calling convention of onion-kat.py/coin-kat.py above.
-  if [ -f "$m/tools/check-holdem-idioms.py" ]; then
-    echo "== $m: tools/check-holdem-idioms.py =="
-    ( cd "$m" && python3 tools/check-holdem-idioms.py )
-  fi
+  # holde-em's pure-logic gates: the docs smart-quote scan, seven KAT
+  # mirrors of the game's pure handlers (evaluator, betting/settlement,
+  # shuffle, crypto protocol, transcript fold, card atlas, sounds), and the
+  # independent-reference fuzz (a SECOND evaluator/settlement implementation
+  # plus whole-game invariants - the backing for the member's "verified
+  # sound" claim). The member's extra idiom checker (the hold-em lineage)
+  # was RETIRED 2026-08-15: its checks live in the unified
+  # check-livecodescript.py (docstring 13-21), which already ran above.
+  # Probed by exact name, not a glob: the *-kat.py names would otherwise
+  # collide with the different --check calling convention of
+  # onion-kat.py/coin-kat.py above.
   if [ -f "$m/tools/check-docs.py" ]; then
     echo "== $m: tools/check-docs.py =="
     ( cd "$m" && python3 tools/check-docs.py )

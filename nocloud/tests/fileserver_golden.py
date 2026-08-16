@@ -38,6 +38,11 @@ HTTP framing, headers, and conditional GET:
   qsHttpWeakETag  -> http_weak_etag()   (the weak validator, W/"size-seed-gen")
   qsETagCore      -> etag_core()        (RFC weak-comparison core of one ETag token)
   qsIfNoneMatch   -> if_none_match()    (the 304 decision)
+  qsHttpExtraHeaders -> http_extra_headers() (the always-sent header block; Date epoch injected)
+  qsFsLeaf        -> fs_leaf()          (last path segment - the disposition filename)
+  qsHttpDisposition -> http_disposition() (inline vs ?dl attachment Content-Disposition)
+  qsHttpFileHead  -> http_file_head()   (the ONE 304/416/200/206 file-head plan both
+                                         transport twins call - the Phase 2 dedup)
 
 The web editor (the WRITE path):
   qsEditSafePath  -> edit_safe_path()   (write-path confinement - THE linchpin)
@@ -53,6 +58,7 @@ User-declared routes (.qsroutes.json):
   qsRenderTemplate -> render_template() (bounded {{...}} substitution in a route body)
   qsTemplateValue  -> template_value()  (deterministic tokens; clock tokens empty here)
   qsTemplateEscape -> template_escape() (default-deny: json types JSON, all else HTML)
+  qsMountLocation -> mount_location()   (redirect Location re-based onto the /<token>/ mount)
 
 Transfers-row formatting:
   qsRateShort     -> rate_short()
@@ -606,6 +612,77 @@ def if_none_match(header, etag):
     return any(etag_core(tok) == want for tok in header.split(","))
 
 
+# ---- the shared file-response head plan (the deep-dive's Phase 2 dedup) -------
+# qsFsServeFile (Tor) and qsCwServeFile (clearweb) used to each carry the whole
+# conditional-GET + Range + head-assembly block; both now call ONE helper,
+# qsHttpFileHead, and http_file_head() pins that branch once instead of two pasted
+# copies being trusted twice. The LCS side reads the clock inside qsHttpExtraHeaders
+# (`the seconds`); the mirror takes the epoch as a parameter so the vectors stay
+# deterministic (the same convention as template_value's clock tokens).
+
+def fs_leaf(path):
+    """Mirror qsFsLeaf: the last '/'-segment of a path (backslashes normalised).
+    A trailing '/' yields '' - LiveCode's `the last item` of "a/b/" is empty too."""
+    return path.replace("\\", "/").split("/")[-1]
+
+
+def http_disposition(formime, headers):
+    """Mirror qsHttpDisposition: inline by default, attachment when the request
+    carries a non-empty ?dl= value; the filename is the sanitised leaf."""
+    kind = "attachment" if query_param(headers.get("__query", ""), "dl") != "" else "inline"
+    return 'Content-Disposition: %s; filename="%s"\r\n' % (kind, safe_filename(fs_leaf(formime)))
+
+
+def http_extra_headers(epoch):
+    """Mirror qsHttpExtraHeaders: the header block on EVERYTHING served - Server, Date
+    (omitted when the date formatter declines), nosniff, revalidate-caching, and the
+    four privacy headers. Order matters: it is pinned into every head vector below."""
+    crlf = "\r\n"
+    out = "Server: No Cloud Quick Share" + crlf
+    date = http_date(epoch)
+    if date != "":
+        out += "Date: " + date + crlf
+    out += "X-Content-Type-Options: nosniff" + crlf + "Cache-Control: no-cache" + crlf
+    out += "Referrer-Policy: no-referrer" + crlf + "X-Frame-Options: DENY" + crlf
+    out += "X-Robots-Tag: noindex, nofollow" + crlf + "Permissions-Policy: browsing-topics=()" + crlf
+    return out
+
+
+def http_file_head(size, formime, headers, type_override, extra, seed, gen, epoch):
+    """Mirror qsHttpFileHead: the transport-neutral file-head plan. Returns a dict with
+    "kind" ("304"/"416"/"serve"), "head" (the complete head text through the blank
+    line), and for "serve" also "status"/"start"/"length" (the pump window). Every
+    branch says Connection: close - as-built on both transports, kept byte-identical."""
+    crlf = "\r\n"
+    ctype = type_override if type_override != "" else mime(formime)
+    etag = http_weak_etag(size, seed, gen)
+    if headers.get("range", "") == "" and if_none_match(headers.get("if-none-match", ""), etag):
+        head = ("HTTP/1.1 304 Not Modified" + crlf + "ETag: " + etag + crlf
+                + http_extra_headers(epoch) + extra + "Connection: close" + crlf + crlf)
+        return {"kind": "304", "head": head}
+    rng = parse_range(headers.get("range", ""), size)
+    if rng == "unsatisfiable":
+        # deliberately spartan, as both twins always sent it: no ETag, no extra block
+        head = ("HTTP/1.1 416 Range Not Satisfiable" + crlf
+                + "Content-Range: bytes */%d" % size + crlf
+                + "Content-Length: 0" + crlf + "Connection: close" + crlf + crlf)
+        return {"kind": "416", "head": head}
+    if rng == "":
+        start, end, status = 0, size - 1, "200 OK"
+    else:
+        start, end = (int(v) for v in rng.split(","))
+        status = "206 Partial Content"
+    length = end - start + 1
+    head = ("HTTP/1.1 " + status + crlf + "Content-Type: " + ctype + crlf
+            + "Accept-Ranges: bytes" + crlf + "ETag: " + etag + crlf
+            + "Content-Length: %d" % length + crlf)
+    if status.startswith("206"):
+        head += "Content-Range: bytes %d-%d/%d" % (start, end, size) + crlf
+    head += http_extra_headers(epoch) + extra + http_disposition(formime, headers)
+    head += "Connection: close" + crlf + crlf
+    return {"kind": "serve", "head": head, "status": status, "start": start, "length": length}
+
+
 # ---- qsEditLoginWait: editor login brute-force backoff -----------------------
 # ms this peer must still wait before another attempt. First _EDIT_FREE_TRIES fails are
 # free; after that the required gap doubles each fail, capped. Constants mirror the kEdit*
@@ -664,6 +741,26 @@ def sanitize_header_name(n):
         if (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122) or c == "-":
             out += c
     return out
+
+
+# ---- qsMountLocation: user-route redirect Location vs the capability mount ----
+# Over a web link the app is mounted under /<token>/, so a FOLDER-ABSOLUTE redirect
+# Location ("/gallery") must be re-prefixed with the mount or the browser leaves the
+# mount and the token gate 404s the redirected request (the audit's token-mount
+# redirect hole). Everything else passes through verbatim: external URLs (a scheme, or
+# scheme-relative "//host/...") point off-host on purpose, a relative path already
+# resolves against the tokened request URL in the browser, and an empty mount (the Tor
+# root) needs no re-basing. The "//" test must precede the "/" prefixing or a
+# scheme-relative URL would corrupt into "/<token>//host/...". Mirrors qsMountLocation.
+
+def mount_location(location, mount):
+    if mount == "":
+        return location
+    if not location.startswith("/"):
+        return location
+    if location.startswith("//"):
+        return location
+    return mount + location
 
 
 # ---- render_template: {{...}} substitution in a route body (templating's security core) ----
@@ -1086,6 +1183,82 @@ def main():
     ]:
         check("if_none_match(%r)" % header, if_none_match(header, _et), want)
 
+    # -- the shared file-head plan: the ONE 304/416/200/206 decision both twins call --
+    _fh_epoch = 1751812800                                 # fixed clock for the Date line
+    _fh_extra = http_extra_headers(_fh_epoch)
+    check("http_extra_headers block", _fh_extra,
+          "Server: No Cloud Quick Share\r\n"
+          "Date: " + formatdate(_fh_epoch, usegmt=True) + "\r\n"
+          "X-Content-Type-Options: nosniff\r\nCache-Control: no-cache\r\n"
+          "Referrer-Policy: no-referrer\r\nX-Frame-Options: DENY\r\n"
+          "X-Robots-Tag: noindex, nofollow\r\nPermissions-Policy: browsing-topics=()\r\n")
+    for path, want in [
+        ("movie.mp4", "movie.mp4"),                        # bare name is its own leaf
+        ("a/b/c.txt", "c.txt"),
+        ("a\\b\\x.png", "x.png"),                          # backslashes normalise
+        ("/abs/dir/f.pdf", "f.pdf"),
+        ("dir/", ""),                                      # trailing slash -> empty leaf
+    ]:
+        check("fs_leaf(%r)" % path, fs_leaf(path), want)
+    check("http_disposition inline", http_disposition("a/movie.mp4", {"__query": ""}),
+          'Content-Disposition: inline; filename="movie.mp4"\r\n')
+    check("http_disposition ?dl", http_disposition("movie.mp4", {"__query": "dl=1"}),
+          'Content-Disposition: attachment; filename="movie.mp4"\r\n')
+    check("http_disposition sanitised", http_disposition('a"b.txt', {"__query": ""}),
+          'Content-Disposition: inline; filename="ab.txt"\r\n')
+    _fh_get = {"__method": "GET", "__query": "", "range": "", "if-none-match": ""}
+    # a plain full GET: 200, the whole file, the complete head byte-for-byte
+    _fh = http_file_head(1000, "movie.mp4", _fh_get, "", "", 42, 0, _fh_epoch)
+    check("file_head 200 kind", _fh["kind"], "serve")
+    check("file_head 200 window", (_fh["status"], _fh["start"], _fh["length"]),
+          ("200 OK", 0, 1000))
+    check("file_head 200 head", _fh["head"],
+          "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
+          'ETag: W/"1000-42-0"\r\nContent-Length: 1000\r\n' + _fh_extra +
+          'Content-Disposition: inline; filename="movie.mp4"\r\nConnection: close\r\n\r\n')
+    # a Range request: 206 + Content-Range, window honoured
+    _fh = http_file_head(1000, "movie.mp4", dict(_fh_get, range="bytes=500-"),
+                         "", "", 42, 0, _fh_epoch)
+    check("file_head 206 kind+window", (_fh["kind"], _fh["status"], _fh["start"], _fh["length"]),
+          ("serve", "206 Partial Content", 500, 500))
+    check("file_head 206 head", _fh["head"],
+          "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
+          'ETag: W/"1000-42-0"\r\nContent-Length: 500\r\nContent-Range: bytes 500-999/1000\r\n'
+          + _fh_extra +
+          'Content-Disposition: inline; filename="movie.mp4"\r\nConnection: close\r\n\r\n')
+    # a matching If-None-Match on a full request: 304, no pump window
+    _fh_inm = dict(_fh_get)
+    _fh_inm["if-none-match"] = 'W/"1000-42-0"'
+    _fh = http_file_head(1000, "movie.mp4", _fh_inm, "", "", 42, 0, _fh_epoch)
+    check("file_head 304 kind", _fh["kind"], "304")
+    check("file_head 304 head", _fh["head"],
+          'HTTP/1.1 304 Not Modified\r\nETag: W/"1000-42-0"\r\n' + _fh_extra +
+          "Connection: close\r\n\r\n")
+    # a Range request NEVER 304s: the bytes are served even when the validator matches
+    check("file_head range beats 304",
+          http_file_head(1000, "movie.mp4", dict(_fh_inm, range="bytes=0-9"),
+                         "", "", 42, 0, _fh_epoch)["kind"], "serve")
+    # a stale validator (the edit generation moved on) re-serves rather than 304s
+    check("file_head stale gen re-serves",
+          http_file_head(1000, "movie.mp4", _fh_inm, "", "", 42, 1, _fh_epoch)["kind"], "serve")
+    # an unsatisfiable Range: 416, and the head stays deliberately spartan (no ETag,
+    # no extra-header block) exactly as both twins have always sent it
+    _fh = http_file_head(1000, "movie.mp4", dict(_fh_get, range="bytes=5000-"),
+                         "", "", 42, 0, _fh_epoch)
+    check("file_head 416 kind", _fh["kind"], "416")
+    check("file_head 416 head", _fh["head"],
+          "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */1000\r\n"
+          "Content-Length: 0\r\nConnection: close\r\n\r\n")
+    # a user file route: type override + route extra headers land in order, ?dl attaches
+    _fh = http_file_head(10, "data.bin", dict(_fh_get, __query="dl=1"),
+                         "application/json; charset=utf-8", "X-Extra: 1\r\n",
+                         7, 2, _fh_epoch)
+    check("file_head override+extra head", _fh["head"],
+          "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+          'Accept-Ranges: bytes\r\nETag: W/"10-7-2"\r\nContent-Length: 10\r\n' + _fh_extra +
+          "X-Extra: 1\r\n"
+          'Content-Disposition: attachment; filename="data.bin"\r\nConnection: close\r\n\r\n')
+
     # -- editor login brute-force backoff --
     for fails, last_ms, now_ms, want in [
         (0, None, 1000, 0),                     # first attempt: free
@@ -1141,6 +1314,20 @@ def main():
     ]:
         check("sanitize_header_name(%r)" % name, sanitize_header_name(name), want)
 
+    # -- redirect Location vs the /<token>/ capability mount (the redirect hole) --
+    for loc, mount, want in [
+        ("/gallery", "/abc123", "/abc123/gallery"),  # folder-absolute under the mount
+        ("/", "/abc123", "/abc123/"),                # the folder root itself
+        ("/go/x/y", "/abc123", "/abc123/go/x/y"),    # deep folder path
+        ("/gallery", "", "/gallery"),                # Tor / root mount: unchanged
+        ("http://example.org/x", "/abc123", "http://example.org/x"),   # external http
+        ("https://example.org/x", "/abc123", "https://example.org/x"), # external https
+        ("//example.org/x", "/abc123", "//example.org/x"),  # scheme-relative external
+        ("gallery/pics", "/abc123", "gallery/pics"), # relative: browser resolves in-mount
+        ("mailto:a@b.example", "/abc123", "mailto:a@b.example"),  # non-http scheme
+    ]:
+        check("mount_location(%r,%r)" % (loc, mount), mount_location(loc, mount), want)
+
     # -- template rendering ({{...}} reflected request context, escaped per content-type) --
     # raw  = the URL-decoded query value '"<b>"' (a quote, <b>, a quote) - the adversarial input.
     # evil = a reflected <script> payload - the XSS lever a non-html/json type must still defuse.
@@ -1188,7 +1375,8 @@ def main():
           "length, JSON escape, editor confinement, LAN-first gate, query parse, size "
           "probe, filename sanitise, rate + ETA format, HTTP-date, Allow header, "
           "editor login backoff, user-route path + header sanitise, template render + "
-          "escape, CORS preflight, conditional-GET ETag, editor parent-dirs all match)")
+          "escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
+          "redirect mount re-prefix, editor parent-dirs all match)")
     return 0
 
 

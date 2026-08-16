@@ -64,7 +64,9 @@ reserved, header values are sanitised, file routes are confined to the shared fo
 Now `GET /api/hello` (at the onion root over Tor, or under `/<token>/` over a web link)
 returns your JSON with an `Access-Control-Allow-Origin: *` header; `GET /api/echo?msg=hi`
 reflects that back as `{"method":"GET","you_said":"hi"}`; `GET /api/config` streams
-`config.json` from the folder under a friendlier URL; and `/go/gallery` redirects.
+`config.json` from the folder under a friendlier URL; and `/go/gallery` redirects — to
+`/gallery` at the Tor root, and to `/<token>/gallery` over a web link (the mount
+re-prefix described under `redirect` below).
 
 ## Route fields
 
@@ -77,7 +79,7 @@ reflects that back as `{"method":"GET","you_said":"hi"}`; `GET /api/config` stre
 | `file` | Serve this file (path **relative to the shared folder**) instead of an inline `body`. Range-aware and streamed; confined to the folder just like a static file. | — |
 | `type` | `Content-Type` for a `body` or `file` response. For a file, omit to derive it from the extension. | `text/plain; charset=utf-8` |
 | `status` | HTTP status code. | `200` (body) / `302` (redirect) |
-| `redirect` | If present, the route becomes a redirect to this `Location`. `status` may be `301/302/303/307/308`. | — |
+| `redirect` | If present, the route becomes a redirect to this `Location`. `status` may be `301/302/303/307/308`. A **folder-absolute** target (starts with `/`, e.g. `/gallery`) is written relative to *your shared folder* and served relative to wherever the app is mounted: at the Tor root it goes out as-is, and over a web link it is automatically re-prefixed with the `/<token>/` capability mount (so `/gallery` becomes `Location: /<token>/gallery` and the redirect stays inside your share — emitted verbatim it would escape the mount and the token gate would 404 it). External URLs (`http://…`, `https://…`, scheme-relative `//host/…`) and relative paths are never rewritten. *(Mount re-prefix verified statically; needs an OXT pass.)* | — |
 | `cors` | `true` adds `Access-Control-Allow-Origin: *` (so other pages/tools may fetch it), and makes an `OPTIONS` preflight to the path answer with the `Access-Control-Allow-*` headers, so even a preflighted cross-origin request (POST+JSON, `PUT`/`DELETE`, custom headers) works. | `false` |
 | `headers` | An object of extra response headers. Names are limited to letters/digits/`-`; CR/LF/control bytes are stripped from values; framing/server-owned headers (`Content-Length`, `Connection`, `Content-Type`, `Location`, `Date`, …) can't be overridden. | — |
 

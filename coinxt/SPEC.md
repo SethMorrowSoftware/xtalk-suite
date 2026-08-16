@@ -252,6 +252,20 @@ built signatures; the original design sketch differed, see api-reference.md):
                                                                            pAddress)
   cxRlpEncodeBytes(pData) / cxRlpEncodeList(pEncodedItems) / cxRlpDecode(pData)   [built piecewise; xTalk
                                                                            has no nested-list literal]
+  cxWifEncode(pSeckeyHex, pNetwork, pCompressed) / cxWifDecode(pWif)       (AS BUILT 2026-08-15: this
+                                                                           spec only ever NAMED WIF, so
+                                                                           the signatures are as-built
+                                                                           decisions. The key crosses as
+                                                                           64 HEX CHARACTERS both ways -
+                                                                           WIF is the paste format - the
+                                                                           network is "mainnet"/"testnet"
+                                                                           for versions 0x80/0xEF, decode
+                                                                           returns an array (seckey /
+                                                                           network / compressed), and
+                                                                           BOTH directions range-check
+                                                                           the scalar via cxSeckeyIsValid
+                                                                           on top of the section-7
+                                                                           refusals)
 
 Addresses (compose the above) -- one argument each, mainnet:
   cxBtcAddressP2PKH(pPubkey)              -> Base58Check(0x00 || hash160(pubkey))
@@ -276,6 +290,12 @@ test vector (section 9). Implement against the standard, not from memory.
   accepts.
 - **Base58Check**: `base58( payload || first4(sha256(sha256(version||payload))) )`. Decode must recompute
   and compare the 4-byte checksum and fail closed.
+- **WIF** (AS BUILT 2026-08-15; this bullet was missing while the format was only named above):
+  Base58Check over `version || 32-byte private key || optional 0x01 compressed marker`, version 0x80
+  mainnet / 0xEF testnet. Decode fails closed on a bad checksum, a payload that is not 33 or 34 bytes,
+  an unknown version byte, a trailing byte that is not 0x01, and a scalar of zero or >= the group
+  order; the marker is surfaced explicitly because compressed and uncompressed keys pay different
+  addresses. Pinned to the Bitcoin wiki's published worked example.
 - **Bech32 / Bech32m**: the two differ only by the polymod constant (1 vs 0x2bc830a3). SegWit v0 uses
   Bech32; v1+ (Taproot) uses Bech32m. The HRP, the witness-version byte, and the 5-bit squashing must all
   be exact, and the checksum verified on decode.

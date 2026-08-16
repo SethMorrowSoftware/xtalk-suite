@@ -67,7 +67,9 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   engine, so it wants an OXT pass in the same change.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
->   capstone design (Riptide's sibling), not a box2dxt document.
+>   capstone design (Riptide's sibling), not a box2dxt document. (It has
+>   since moved again: the 2026-08-15 hold-em fold removed that seed copy,
+>   and the spec now lives in the `holde-em/` member.)
 >
 > The sweep + loop fixes touch nearly every script file, so the whole member
 > is **verified statically; needs an OXT re-pass** (its prior engine evidence

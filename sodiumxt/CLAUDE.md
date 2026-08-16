@@ -47,16 +47,16 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 
 | platform id | ABI | note |
 |---|---|---|
-| `x86_64-linux` | **8** | rebuilt with the ristretto255 surface (2026-08-15); ctest + the ASan/UBSan lane green on this exact build |
-| `x86_64-win32` | **8** | mingw64 cross-build 2026-08-15 per the PROVEN fallback recipe below; the three checks pass (115/115 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0x8,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
-| `x86-linux` | **8** | rebuilt 2026-08-15 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
-| `x86-win32` | **8** | mingw32 cross-build 2026-08-15, same recipe and checks as the x64 row |
-| `universal-mac` | 6 | STALE, now TWO ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
+| `x86_64-linux` | **9** | rebuilt with the ristretto255 DLEQ/batch follow-ons (2026-08-15, same day as the ABI-8 group surface); ctest + the ASan/UBSan lane green on this exact build |
+| `x86_64-win32` | **9** | mingw64 cross-build 2026-08-15 per the PROVEN fallback recipe below; the three checks pass (121/121 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0x9,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
+| `x86-linux` | **9** | rebuilt 2026-08-15 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
+| `x86-win32` | **9** | mingw32 cross-build 2026-08-15, same recipe and checks as the x64 row |
+| `universal-mac` | 6 | STALE, now THREE ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
 
 Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
 the older ABI-6 package end to end, where `sxSha3_256` and the `sxRistretto*` surface
 simply do not exist and the composing members degrade the way they were written to, or
-(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 8.
+(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 9.
 The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
 canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
 cross-builds the same way run 31551536144 superseded the 2026-08-11 one.

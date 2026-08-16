@@ -84,7 +84,7 @@ pipeline works; real signaling is the only thing left to add.
 > **Honesty note (the suite convention):** the native pipeline (shim +
 > libdatachannel) is proven by the C++ smoke test under ASan/UBSan and TSan.
 > The script layer now has its **first recorded engine evidence**: on
-> **2026-08-08** `tests/suite-selftest.livecodescript` ran green on a real OXT
+> **2026-08-08** the suite's `tests/suite-selftest.livecodescript` ran green on a real OXT
 > engine, and its datachannelxt section drove `dcInit`, a stale-handle no-op,
 > peer and channel creation, a **live in-process loopback that negotiated and
 > opened both ends**, the incoming channel's label, `dcSendData` round-tripping

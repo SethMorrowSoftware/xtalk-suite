@@ -78,6 +78,10 @@ def transcript(tamper=""):
     log(1, "table", "board", "street=river,cards=Tc")
     log(1, "seat3", "act", "verb=bet,amount=20")
     log(1, "seat1", "act", "verb=call,amount=20")
+    # 2e display choice: the winner shows, the caller mucks its losing kings
+    # (annotated "(mucked)" in the history line; mirror of heTKatLog)
+    log(1, "seat1", "show", "seat=1")
+    log(1, "seat3", "muck", "seat=3")
     if tamper == "settle":
         log(1, "table", "settle", "deltas=1:52|2:-16|3:-36")
     else:
@@ -121,6 +125,7 @@ def independent_fold(tx):
     st = None
     holes = {}
     board = []                       # card indices, in dealt order
+    show_choice = {}                 # 2e display choice per seat, per hand
     history = []
     errors = []
     stacks_final = None
@@ -140,6 +145,7 @@ def independent_fold(tx):
             btn = int(d["button"])
             st = bk.new_hand(sb, bb, {s: stacks[s] for s in occ}, occ, btn, ante=ante)
             holes, board = {}, []
+            show_choice = {}
         elif typ == "holeDeliver":
             c = d["cards"].split("|")
             holes[int(d["seat"])] = [ev.card_index(c[0]), ev.card_index(c[1])]
@@ -153,6 +159,10 @@ def independent_fold(tx):
             st = bk.apply_msg(st, "act", int(frm[4:]), d["verb"] + "," + d["amount"])
             if st["err"]:
                 errors.append("engine-rejected:" + st["err"])
+        elif typ in ("show", "muck"):
+            # 2e display choice: recorded ahead of the settle; annotates the
+            # audited showdown, never changes it (mirror of heFoldTranscript)
+            show_choice[int(d["seat"])] = typ
         elif typ == "settle":
             inhand = [s for s in st["occ"] if st["foldedBy"][s] == "false"]
             ranks = {}
@@ -185,7 +195,12 @@ def independent_fold(tx):
                 if s in ranks:
                     n1 = ev.card_name(holes[s][0])
                     n2 = ev.card_name(holes[s][1])
-                    shown.append("%d=%s %s %s" % (s, n1, n2, CATEGORY[ranks[s][0]]))
+                    piece = "%d=%s %s %s" % (s, n1, n2, CATEGORY[ranks[s][0]])
+                    # 2e: a seat that declined to show is annotated -- the
+                    # transcript knows the cards, the table was never shown
+                    if show_choice.get(s) == "muck":
+                        piece += " (mucked)"
+                    shown.append(piece)
             line = ("hand %s: board %s; pot %d; winner seat %s"
                     % (hand, " ".join(ev.card_name(c) for c in board), pot,
                        ",".join(str(w) for w in winners)))
@@ -322,6 +337,8 @@ def main():
              "hand 1: board 3h 2h 5c 4h Tc; pot 78; winner seat 1")
     contains("history: winning hand named", clean["history"][0], "1=3d 5d two pair")
     contains("history: losing showdown named", clean["history"][0], "3=Kc Kh one pair")
+    contains("history: mucked hand annotated (2e)", clean["history"][0],
+             "3=Kc Kh one pair (mucked)")
     contains("history: settlement verified", clean["history"][0], "settle-verified")
 
     tampered = independent_fold(transcript("settle"))
