@@ -977,7 +977,7 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.24.1"
+constant kHeVersion = "0.24.2"
 constant kHeHarnessV = "40"
 constant kUIVersion = "15"
 
@@ -6421,15 +6421,23 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          end if
          put tBodyA["amount"] into tAmt
          heNetEngineFold pTypeTxt, tFromSeat, tAmt
-         if gGame["foldApplied"] is "true" then
-            -- a live post is presence -- but ONLY once the engine took it
-            -- (F5): the unconditional reset let a stalling client hold its
-            -- miss count at zero forever with out-of-turn bids the engine
-            -- threw away, so it never reached the miss threshold, never sat
-            -- out, and every hand still burned the full act timer plus bank
-            -- waiting for it.
-            put 0 into gGame["missCntBy"][tFromSeat]
-         end if
+         -- v0.24.2, FOUND BY THE FIRST ENGINE RUN OF THIS SECTION: a bid does
+         -- NOT reset the miss count, because every wire that reaches here is a
+         -- FORCED post -- a blind or an ante. A seat whose human walked away
+         -- still posts them: that is what "forced" means, and the client does
+         -- it without being asked. So resetting here wiped the counter at the
+         -- top of EVERY hand and made the consecutive-miss auto-sit-out
+         -- unreachable across hands -- which is the only span spec 9's
+         -- "(config) missed turns" can mean. Observed: seat 1 timed out in
+         -- hand 1 (miss 1), posted its blind in hand 2 (reset to 0), timed out
+         -- again (miss 1), and never sat out; six section-20 checks failed on
+         -- that one line and every one of them was right.
+         -- Presence is a VOLUNTARY act, and the act case below is where the
+         -- reset belongs (it already gates on foldApplied, F5, so an
+         -- out-of-turn act the engine throws away cannot hold the count at
+         -- zero either). No WIRE byte changes here, but the miss count is
+         -- transcript-derived consensus, so every client must carry this
+         -- together.
          break
 
       case "act"

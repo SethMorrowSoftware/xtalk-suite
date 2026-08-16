@@ -1477,8 +1477,18 @@ command stTestPlayerHelpers
    b2kPlayerMake 200, 470, 30, 50
    put the result into tRef
    stStep 8
-   stAssert "halfW getter (got " & round(b2kPlayerHalfW()) & " ~ 15)", (round(b2kPlayerHalfW()) is 15)
-   stAssert "halfH getter (got " & round(b2kPlayerHalfH()) & " ~ 25)", (round(b2kPlayerHalfH()) is 25)
+   -- FIXED after the 2026-08-16 engine run, which reported 16/26 against an
+   -- expectation of 15/25. The engine was right and this test was wrong: the
+   -- Kit sets sPlayHalfW/H from `(the width of tRef) / 2` -- the CONTROL's
+   -- real size -- and b2kPlayerMake's 30x50 request lands as a 32x52 control.
+   -- These are probe geometry, so being the control's true half-extents is
+   -- what they are FOR; asserting the requested size was asserting a number
+   -- the Kit never promised. Pin the documented relationship instead, which
+   -- also survives any future change to the control's border.
+   stAssert "halfW getter is half the control's width (got " & round(b2kPlayerHalfW()) \
+         & " of " & the width of tRef & ")", (round(b2kPlayerHalfW()) is round((the width of tRef) / 2))
+   stAssert "halfH getter is half the control's height (got " & round(b2kPlayerHalfH()) \
+         & " of " & the height of tRef & ")", (round(b2kPlayerHalfH()) is round((the height of tRef) / 2))
    stAssert "not in a ladder/water zone yet", \
          (b2kPlayerInLadder() is false and b2kPlayerInWater() is false)
    b2kPlayerAddWater 100, 300, 400, 560
