@@ -199,7 +199,15 @@ folded as agreement. `show`/`muck` carry `seat=N` from the seat's own key, emitt
 after the verified settle; the showdown display honors them (only shown seats'
 cards paint; a mucked hand is annotated "(mucked)" in History) while the audit is
 untouched. All three wire formats are byte-pinned in `tools/protocol-kat.py`
-(ckpt_body, ckpt_head7/show_head8/muck_head9).
+(ckpt_body, ckpt_head7/show_head8/muck_head9). As-built (v0.22.0, Phase 4d — pinned
+in `tools/protocol-kat.py`, l2_shuffle_body_ok/l2_unmask_body1): `shuffleStep`
+carries `pos=<P>,ck=<64hex|empty>,deck=<52 x 64hex "|"-joined>` — `pos` the
+contributor position in the shuffle order, `ck` the Phase 5 DLEQ commitment key
+`k_P * B` (required when the signed config pins `dleq=1`, legal-empty below it) —
+and `unmaskStep` carries `pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>` —
+`slot` the deck position 1..52 being unmasked, `proof` the reserved field 7.4 names,
+filled at Phase 5. The bodies are hex-encoded into the envelope like every other, so
+the "|" separators never reach the wire frame.
 
 ## 7. The deal protocol ladder
 
@@ -390,7 +398,42 @@ Transport wiring, void-and-audit sequencing, and played-hand integration stay op
 - Verification IS the doer re-run: the showdown shuffle re-check calls the same
   full-deck mask handler that built the step, so doer and verifier cannot drift.
 
-### 7.4 The ceiling above Level 2 (documented, not built)
+**As-built (2026-08-16, v0.22.0 — the 4d void-and-audit sequencing; code wins;
+verified statically).** The void-and-audit rule above exists as a PURE,
+transport-agnostic state machine (`heL2Void*`), consuming the section 6
+`shuffleStep`/`unmaskStep` records and mirrored end to end in
+`tools/protocol-kat.py` (the l2_void_* twins; every scenario below is a pinned
+verdict string). Decisions the code made under this section:
+
+- **The machine consumes the deduped, host-sequenced stream** (section 6 kills
+  transport replay at the envelope layer). An identical re-post of the last
+  applied record is tolerated as a harmless `dup` — the state does not move —
+  while a DIFFERENT signed step for an already-filled position is equivocation,
+  named directly (`void:step-equivocation`). That pair is what makes a rollback
+  attempt evidence instead of a race.
+- **Attribution is two-tier, matching this section's text.** A record that is
+  itself publicly refusable (bad format, invalid encoding, duplicate deck, order
+  violation, and — at Phase 5 — a bad or missing DLEQ proof) voids the hand with
+  the signer named at once. A chain that completes OUTSIDE the card table voids
+  with attribution DEFERRED (`named=audit`): only the mandatory full reveal can
+  say whose step lied, exactly as specified.
+- **The audit order is fixed**: per contributor 1..N — reveal present (refusing
+  the audit makes the refuser the named party), the ck binding when a commitment
+  key was posted, the shuffle step re-verified from (k, sigma) — then every
+  opened chain in slot order, each step in chain order. The FIRST bad signed
+  step names the cheater. A deal-phase timeout names the staller PROVISIONALLY;
+  the audit keeps that name only when everything signed re-verifies (an earlier
+  bad signed step outranks the stall — the "first bad one" rule). Reveals travel
+  one line per contributor: `<pos> TAB <kHex> TAB <sigma comma-list>`.
+- **The outcome line is pinned**: `void|<why>|named=<pos|audit>|bets-return|
+  reveal-required` — bets always return and the full reveal is always owed on a
+  void (this section: the hand is void, so the reveal costs nothing); the
+  config-signed forfeit for the named party applies above this layer.
+- The hole slots' owners are declared by the ORCHESTRATOR at machine creation
+  (the deal layout is public and fixed, per "Dealing" above) — never by a
+  record, or a cheater would declare its own.
+
+### 7.4 The ceiling above Level 2 (DLEQ built; Bayer-Groth documented, not built)
 
 Two upgrades exist in the literature if this ever needs to outgrow void-and-audit:
 **Chaum-Pedersen DLEQ proofs** per unmask step (each step ships a ~96-byte proof that
@@ -401,6 +444,42 @@ permutation of its input — closes the last detection-only gap; a genuine resea
 project). Neither blocks value-readiness under this spec's model: void-and-audit with
 attribution and pre-signed forfeit rules is a sound foundation — but DLEQ is the natural
 first hardening pass, and the message envelope reserves a `proof` field for it.
+
+**As-built (2026-08-16, v0.22.0 — the DLEQ half, on SodiumXT ABI 9; code wins;
+verified statically — the sx* DLEQ calls have never run on an engine).**
+`heL2DleqProve`/`heL2DleqVerify`, mirrored and pinned FIRST in
+`tools/protocol-kat.py` from fixed scalars (the l2_dleq_* keys). Decisions:
+
+- **The binding is a per-hand commitment key.** A shuffle step cannot be DLEQ'd
+  directly (the permutation hides which output matches which input — that is
+  Bayer-Groth's job, still not built), so each contributor's `shuffleStep`
+  carries `ck = k*B`, and every unmask step proves the SAME k against it:
+  statement `P2 = k*P1` over (B, ck, P1, P2), with an unmask step proving
+  (k, stepOut, stepIn) since `out = k^-1 * in <=> in = k * out`. A garbage ck
+  still ends attributable through the existing audit (its shuffle step will not
+  re-verify against the revealed k — the binding check runs first in the audit).
+- **Derandomized nonce** (the RFC 6979 / EdDSA pattern): `w =
+  reduce(H32("HOLDEM-L2-DLEQW-v1|" || k || "|" || p1 || "|" || p2))`; challenge
+  `c = reduce(H32("HOLDEM-L2-DLEQ-v1|" || ck || "|" || p1 || "|" || p2 || "|"
+  || a1 || "|" || a2))` over LOWERCASED hex; response `z = w + c*k mod L`;
+  `proof = a1 || a2 || z` (96 bytes — this section's own estimate). `reduce()`
+  is ScalarAdd-zero, applied before any point multiplication, so libsodium's
+  bit-255 masking inside scalarmult and the KAT reference's full mod-L
+  arithmetic can never see different scalars; a NON-CANONICAL z in a received
+  proof is refused outright, never quietly reduced.
+- **Verification** checks `z*B == a1 + c*ck` (equation 1, binds the commitment)
+  and `z*P1 == a2 + c*P2` (equation 2, binds the step values), named distinctly;
+  `c*ck` and `c*P2` ride ONE `sxRistrettoScalarMultBatch` crossing.
+- **Wired into 4d**: under a `dleq=1` table config the machine REQUIRES ck and
+  proof (missing is itself a named refusal) and verifies each proof against the
+  step's own in/out before applying it — a wrong unmask is refused instantly
+  with direct attribution, this section's "impossible rather than attributable".
+  Voids still exist (a cheater can refuse to produce a valid step and eat the
+  stall), but the wrong-step -> garbage-card -> audit round is gone.
+- **Soundness is pinned negatively**: a wrong secret, swapped points, a tampered
+  commitment, and the honest procedure run over a FALSE statement (the
+  wrong-scalar unmasker's only available forgery — it fails equation 2) all
+  verify false, in protocol-kat and re-checked on-engine.
 
 ## 8. Game engine
 
@@ -594,7 +673,13 @@ apply throughout; gotcha numbers below cite the carried-lessons list in `CLAUDE.
    wrong-scalar unmask, duplicate-point shuffle, rollback replayer, timeout staller —
    each must be *detected and correctly attributed*, and the honest table must settle
    or void exactly per config. The harness prints observed-vs-expected per the repo's
-   self-diagnosing-assert rule.
+   self-diagnosing-assert rule. **As-built (v0.22.0): all five bots exist as pure
+   drivers over the 4d machine in harness section 19 (`heTestLevel2VoidRun`), the
+   honest table runs beside them, and every attribution verdict is pinned twice —
+   `tools/protocol-kat.py`'s l2v_/l0_ scenario keys (driven by its independent
+   reference) and the same literals re-asserted on-engine. The wrong-scalar bot runs
+   twice: without DLEQ (void -> audit names its step) and against a dleq=1 machine
+   (refused instantly). Verified statically; the on-engine re-pass rides the harness.**
 5. **On-engine OXT rounds** for everything visual and everything timed (statically
    verified is not verified; the harness cannot see jank).
 
@@ -623,7 +708,7 @@ This spec makes the *game* value-ready; it does not make a *product* value-ready
 | Repo | Item | Size |
 |---|---|---|
 | **SodiumXT** | **SHIPPED 2026-08-15 (suite-internal, SodiumXT ABI 8)**: `sxRistrettoFromHash`, `sxRistrettoScalarMultPoint`, `sxRistrettoScalarRandom`, `sxRistrettoScalarInvert`, `sxRistrettoPointValid` (no `sxHash512` needed - `sxHash(tData, 64)` is the 64-byte hash), with cross-checked KATs (C smoke test + this repo's `tools/protocol-kat.py` independent reference). Verified statically; the `sxRistretto*` handlers need their OXT pass. Was: the only blocking native work |
-| **SodiumXT** (later) | `sxRistrettoScalarMultBatch` (52 points, one crossing); point add/sub + `sxRistrettoScalarMultBase` for DLEQ (7.4) | optimization / hardening pass |
+| **SodiumXT** (later) | **SHIPPED 2026-08-15 (SodiumXT ABI 9)**: `sxRistrettoScalarMultBatch` (52 points, one crossing); point add/sub + `sxRistrettoScalarMultBase` + scalar add/mul for DLEQ (7.4 — built at v0.22.0, riding these). Verified statically; no `sxRistretto*` handler has run on an engine yet | optimization / hardening pass |
 | **TorrentXT** | none — rp1 + BEP44 + phantom swarms suffice as shipped | — |
 | **OnionXT** | none — streams + onion services as shipped (L1 oracle, onion tables) | — |
 | **Box2Dxt** | none — the Kit as shipped covers section 11 | — |

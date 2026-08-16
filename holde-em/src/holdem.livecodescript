@@ -6,6 +6,68 @@ ONE self-contained, paste-and-run stack: the hotseat game plus its own
 self-test harness (call heRunSelftest in the message box). No second stack,
 no required extensions to be playable.
 
+v0.22.0 -- Phase 4d VOID-AND-AUDIT + Phase 4e ADVERSARIAL BOTS (spec 7.3 /
+12.4) + Phase 5 DLEQ PROOFS (spec 7.4) on SodiumXT ABI 9. kHeHarnessV
+36 -> 37. All pure compute (H5) -- still nothing wired to a played hand.
+Verified statically; the sx* DLEQ calls (sxRistrettoScalarMultBase / Add /
+ScalarMultBatch / ScalarAdd / ScalarMul) have never run on an engine.
+  * RECORD FORMATS PINNED (spec 6 body conventions; twinned in
+    protocol-kat): shuffleStep body "pos=<P>,ck=<64hex|empty>,
+    deck=<52x64hex |-joined>" -- ck is the DLEQ commitment key k*B,
+    required under a dleq=1 config, legal-empty below it; unmaskStep body
+    "pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>" -- proof is spec
+    7.4's reserved field, filled at Phase 5. Audit reveals: one line per
+    contributor, "<pos> TAB <kHex> TAB <sigma comma-list>".
+  * THE 4d MACHINE (heL2Void*): a pure, transport-agnostic state machine
+    over one hand's deal -- strict shuffle-step order; an identical
+    re-post of the applied record is a harmless "dup" (the state never
+    moves), a DIFFERENT one is signed equivocation, named; the free
+    public checks run per record; unmask chains per slot in owner-aware
+    contributor order; a completed public chain resolves its card or
+    voids. Attribution is DIRECT (named=pos) when the record itself is
+    refusable, DEFERRED (named=audit) when only the reveals can say
+    whose step lied (final-not-in-table). heL2VoidAudit runs the
+    MANDATORY full-reveal audit in the mandatory order -- ck binding +
+    shuffle re-verification per contributor, then every opened chain in
+    slot order -- and names the FIRST bad signed step; a recorded
+    staller keeps the name only when everything signed re-verifies. The
+    outcome line is "void|<why>|named=<n|audit>|bets-return|
+    reveal-required": bets always return, the reveal is always owed
+    (spec 7.3 -- the hand is void, so it costs nothing).
+  * THE 4e BOTS (harness section 19, spec 12.4): deck-stacker (vs L0 --
+    heAuditDeal names a stacked delivery and a re-chosen seed),
+    duplicate-point shuffler, rollback replayer, wrong-scalar unmasker
+    (chain completes outside the table -> the audit names its step),
+    deal staller. Every attack DETECTED and ATTRIBUTED, every verdict
+    string pinned twice: protocol-kat's l2v_ and l0_ scenario keys
+    (driven by its independent RFC 9496 reference) and re-checked here.
+  * PHASE 5 DLEQ (heL2DleqProve / heL2DleqVerify / heL2CommitKeyHex):
+    Chaum-Pedersen over ristretto255 -- prove P2 = k*P1 for the k behind
+    ck = k*B without revealing k; an unmask step proves (k, stepOut,
+    stepIn), since out = k^-1*in <=> in = k*out. DERANDOMIZED nonce (the
+    RFC 6979 / EdDSA pattern: w hashes the secret + statement under
+    kHeDomainL2DleqW), so the whole proof pins from fixed scalars;
+    challenge c under kHeDomainL2Dleq over the LOWERCASED hex transcript
+    (ck|p1|p2|a1|a2); proof = a1||a2||z, 96 bytes (spec 7.4's size).
+    Every scalar is REDUCED mod L via ScalarAdd-zero before any point
+    mult -- libsodium masks bit 255 inside scalarmult while the KAT
+    reference reduces mod L, and reducing first pins both sides -- and a
+    non-canonical z in a received proof is refused, never quietly
+    reduced. The verifier rides c*ck and c*P2 through ONE
+    sxRistrettoScalarMultBatch crossing (one scalar, two points --
+    exactly the batch shape; z*B and z*P1 have different bases and
+    cannot join it). On a dleq=1 machine a wrong unmask is refused
+    INSTANTLY with direct attribution (spec 7.4's "impossible rather
+    than attributable"); a missing ck or proof is itself a named
+    refusal. Soundness is pinned NEGATIVELY: wrong secret, swapped
+    points, tampered commitment, and the honest procedure over a FALSE
+    statement (the wrong-scalar unmasker's only available forgery) all
+    verify false -- the last via equation 2, the step-value binding.
+  * heL2HasDleq: cached ABI-9 probe (the heL2HasRistretto pattern -- the
+    first sxRistrettoScalarMultBase touch throws on a pre-ABI-9 build
+    and the catch IS the detection); the harness SKIPs the DLEQ half by
+    name below ABI 9 and still runs the 4d machine on ABI 8.
+
 v0.21.0 -- 2e REMAINDER (street ckpts, show/muck, online History) + the
 Phase 3 DECK ORACLE (spec 7.2, Level 1). kHeHarnessV 35 -> 36; kUIVersion
 13 -> 14 (lobby host-mode toggle; the create row re-spaces to four buttons).
@@ -687,8 +749,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.21.0"
-constant kHeHarnessV = "36"
+constant kHeVersion = "0.22.0"
+constant kHeHarnessV = "37"
 constant kUIVersion = "14"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -731,6 +793,21 @@ constant kHeDomainRsig = "HOLDEM-RSIG-v1|"
 -- collide with any other domain in the family and a future re-keying bumps
 -- the version. Pinned in tools/protocol-kat.py (l2_base_deck).
 constant kHeDomainL2Card = "HOLDEM-L2-CARD-v1|"
+
+-- Phase 5 (DLEQ hardening, spec 7.4): the Chaum-Pedersen transcript
+-- domains and the zero scalar. kHeDomainL2Dleq tags the Fiat-Shamir
+-- challenge hash; kHeDomainL2DleqW tags the DERANDOMIZED nonce derivation
+-- (the RFC 6979 / EdDSA pattern -- w hashes the secret and the statement,
+-- so a bad RNG can never reuse a nonce across two different statements,
+-- and the whole proof pins from fixed scalars in tools/protocol-kat.py).
+-- kHeL2ZeroScalar feeds sxRistrettoScalarAdd(x, 0) -- the widen-and-reduce
+-- that pins every scalar to its canonical mod-L form BEFORE any point
+-- multiplication: libsodium masks bit 255 inside scalarmult while the KAT
+-- reference reduces the full value mod L, and reducing first is what keeps
+-- the two from ever seeing different scalars.
+constant kHeDomainL2Dleq = "HOLDEM-L2-DLEQ-v1|"
+constant kHeDomainL2DleqW = "HOLDEM-L2-DLEQW-v1|"
+constant kHeL2ZeroScalar = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kHeGenesisPrev = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kHeTwo32 = 4294967296
 -- Phase 2f (onion tables, spec 10). The onion-SERVICE seed domain: the seed
@@ -868,6 +945,9 @@ local gHasR255Chk      -- cached ABI-8 ristretto probe ("", "true", "false"):
                        -- a pre-ristretto SodiumXT throws "can't find handler"
                        -- on the first sxRistretto* touch, so the probe's catch
                        -- IS the detection (heL2HasRistretto)
+local gHasDleqChk      -- cached ABI-9 DLEQ/batch probe (same pattern:
+                       -- heL2HasDleq's first sxRistrettoScalarMultBase touch
+                       -- throws on a pre-ABI-9 build, the catch detects it)
 local gHasKitChk
 local gUIMode          -- "flat" or "kit"
 local gHudDirty        -- HUD repaints only on change, max 4 Hz (playbook)
@@ -1688,6 +1768,11 @@ end heAuditDealLog
 -- seat's broadcast step value, in chain order. Raw Data exists ONLY inside
 -- expressions passed straight into sx* calls.
 --
+-- The 4d/4e/5 layer further down (heL2ShuffleBodyOf/heL2UnmaskBodyOf record
+-- formats, the heL2Void* machine, heL2Dleq* proofs on the ABI-9 surface)
+-- composes these and stays just as pure; played-hand wiring and the 4f
+-- deal-time budget measurement remain engine-era work.
+--
 -- Failures are DISTINCT "void:..." strings, never throws (every sx* call
 -- try-guarded, H4, with declared catch locals, H8), so Phase 4d's
 -- void-and-audit attribution can name the condition it is refusing on.
@@ -2040,6 +2125,632 @@ function heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
    end if
    return "void:unmask-mismatch"
 end heL2RevealUnmaskHex
+
+--------------------------------------------------------------------------
+-- Phase 4d void-and-audit + Phase 5 DLEQ (spec 7.3/7.4, plan 4d/4e/5).
+-- Everything here is PURE (H5) and twinned line for line by the l2_dleq_*
+-- and l2_void_* mirrors in tools/protocol-kat.py -- the reference was
+-- written and its vectors pinned FIRST, and this side was written to
+-- match. Two contracts are pinned:
+--
+--   * RECORD FORMATS (spec 6 body conventions; the body is UTF-8 text,
+--     hex-encoded into the envelope, so its commas never reach the frame;
+--     multi-value fields join with "|" like seats=1|2|3 does):
+--       shuffleStep  body = pos=<P>,ck=<64hex|empty>,deck=<52x64hex "|">
+--       unmaskStep   body = pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>
+--     P = contributor position in the shuffle order (seat order at L2);
+--     ck = the DLEQ commitment key k_P * B (required when the signed
+--     table config pins dleq=1, legal-empty below it); S = the deck
+--     position 1..52 being unmasked (consumed in the fixed public order);
+--     proof is spec 7.4's reserved field, filled at Phase 5. Audit
+--     reveals: one line per contributor, <pos> TAB <kHex> TAB <sigma>.
+--
+--   * THE DLEQ PROOF (Chaum-Pedersen over ristretto255, spec 7.4): the
+--     statement is P2 = k * P1 for the k behind ck = k*B -- an unmask
+--     step proves (k, stepOut, stepIn), since out = k^-1*in <=> in =
+--     k*out. Derandomized nonce, transcript hashes over LOWERCASED hex,
+--     proof = a1||a2||z (96 bytes); the full derivation is spelled out at
+--     the constants (kHeDomainL2Dleq/W) and in heL2DleqProve below.
+--
+-- The machine consumes the DEDUPED, host-sequenced record stream (spec 6
+-- kills transport replay at the envelope layer); an identical re-post of
+-- the last applied record is tolerated as "dup", any OTHER step for an
+-- already-filled position is signed equivocation, named directly. Every
+-- refusal is a distinct "void:..." string; attribution is DIRECT
+-- (named=pos) when the offending record is itself publicly refusable and
+-- DEFERRED (named=0 -> heL2VoidAudit) when only the reveals can say whose
+-- step lied. Verified statically; needs an OXT pass (the ABI-9 sx* call
+-- shapes have never run on an engine).
+--------------------------------------------------------------------------
+
+function heL2HasDleq
+   -- cached probe for the ABI-9 DLEQ/batch surface (the heL2HasRistretto
+   -- pattern): a pre-ABI-9 SodiumXT has no sxRistrettoScalarMultBase, so
+   -- the first touch throws "can't find handler" -- the catch IS the
+   -- detection (H4). ScalarRandom never returns zero, so a throw here can
+   -- only mean the surface is absent; ABI 9 ships as one unit, so one
+   -- handler witnesses all six.
+   local tProbeErr
+   if gHasDleqChk is empty then
+      if not heL2HasRistretto() then
+         put "false" into gHasDleqChk
+      else
+         try
+            get sxRistrettoScalarMultBase(sxRistrettoScalarRandom())
+            put "true" into gHasDleqChk
+         catch tProbeErr
+            put "false" into gHasDleqChk
+         end try
+      end if
+   end if
+   return gHasDleqChk is "true"
+end heL2HasDleq
+
+function heL2PointOkHex pPointHex
+   -- format + canonical-encoding validity as a verdict string ("ok" /
+   -- "void:..."), the check every 4d record field goes through before any
+   -- group math can throw on it (H4: verify-or-drop never raises)
+   local tOkErr, tValidOk
+   if not heIsHex(pPointHex, 64) then
+      return "void:point-format"
+   end if
+   if not heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      put sxRistrettoPointValid(heHex2BinD(pPointHex)) into tValidOk
+   catch tOkErr
+      return "void:no-ristretto"
+   end try
+   if tValidOk is not true then
+      return "void:invalid-point"
+   end if
+   return "ok"
+end heL2PointOkHex
+
+function heL2CommitKeyHex pScalarHex
+   -- ck = k*B, the per-hand DLEQ commitment key a shuffleStep carries.
+   -- The scalar is REDUCED mod L first (ScalarAdd-zero -- see the
+   -- kHeL2ZeroScalar comment), so a non-canonical k cannot make libsodium
+   -- (bit-255 masking) and the KAT reference (full mod L) disagree.
+   -- k == 0 mod L is the merged identity failure the catch names.
+   local tCkErr
+   if not heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   try
+      return heBin2HexS(sxRistrettoScalarMultBase(sxRistrettoScalarAdd( \
+            heHex2BinD(pScalarHex), heHex2BinD(kHeL2ZeroScalar))))
+   catch tCkErr
+      return "void:scalar-zero"
+   end try
+end heL2CommitKeyHex
+
+function heL2DleqProve pScalarHex, pP1Hex, pP2Hex
+   -- Chaum-Pedersen DLEQ (spec 7.4): prove P2 = k*P1 for the k behind
+   -- ck = k*B, without revealing k. One generic (k, P1, P2) shape serves
+   -- the whole deal: an unmask step calls prove(k, stepOut, stepIn).
+   -- DERANDOMIZED (RFC 6979 / EdDSA pattern): w = reduce(H32(DLEQW-tag ||
+   -- k || "|" || p1 || "|" || p2)) -- deterministic, so protocol-kat pins
+   -- the whole proof from fixed scalars, and nonce reuse across two
+   -- DIFFERENT statements (which forfeits k) is impossible by
+   -- construction. a1 = w*B, a2 = w*P1; c = reduce(H32(DLEQ-tag || ck ||
+   -- "|" || p1 || "|" || p2 || "|" || a1 || "|" || a2)); z = w + c*k mod
+   -- L; proof = a1 || a2 || z (96 bytes -- spec 7.4's "~96-byte proof").
+   -- Hash inputs are LOWERCASED hex (xTalk `is` compares case-blind, but
+   -- hashes see bytes); reduce() is ScalarAdd-zero, applied before any
+   -- point mult (the kHeL2ZeroScalar rationale).
+   local tPrvErr, tOkTxt, tCkHex, tWData, tA1Hex, tA2Hex, tCData, tZHex
+   if not heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   put heL2PointOkHex(pP1Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   put heL2PointOkHex(pP2Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   if not heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   put heL2CommitKeyHex(pScalarHex) into tCkHex
+   if tCkHex begins with "void:" then
+      return tCkHex
+   end if
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(kHeDomainL2DleqW & \
+            toLower(pScalarHex) & "|" & toLower(pP1Hex) & "|" & \
+            toLower(pP2Hex), "utf-8"), 32), \
+            heHex2BinD(kHeL2ZeroScalar)) into tWData
+   catch tPrvErr
+      return "void:no-dleq"
+   end try
+   try
+      put heBin2HexS(sxRistrettoScalarMultBase(tWData)) into tA1Hex
+   catch tPrvErr
+      return "void:scalar-zero"
+   end try
+   try
+      put heBin2HexS(sxRistrettoScalarMultPoint(tWData, \
+            heHex2BinD(pP1Hex))) into tA2Hex
+   catch tPrvErr
+      return "void:identity-point"
+   end try
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(kHeDomainL2Dleq & tCkHex & \
+            "|" & toLower(pP1Hex) & "|" & toLower(pP2Hex) & "|" & tA1Hex & \
+            "|" & tA2Hex, "utf-8"), 32), \
+            heHex2BinD(kHeL2ZeroScalar)) into tCData
+      put heBin2HexS(sxRistrettoScalarAdd(tWData, \
+            sxRistrettoScalarMul(tCData, heHex2BinD(pScalarHex)))) into tZHex
+   catch tPrvErr
+      return "void:no-dleq"
+   end try
+   return tA1Hex & tA2Hex & tZHex
+end heL2DleqProve
+
+function heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
+   -- verify a Chaum-Pedersen proof: z canonical, then z*B == a1 + c*ck
+   -- (equation 1, binds the commitment key) and z*P1 == a2 + c*P2
+   -- (equation 2, binds the step values) -- named distinctly, first
+   -- offence wins. The challenge is RE-DERIVED from the transcript, so a
+   -- tampered (a1, a2) changes c and neither equation can close
+   -- (Fiat-Shamir). c*ck and c*P2 ride ONE sxRistrettoScalarMultBatch
+   -- crossing -- one scalar, two points, exactly the batch call's shape;
+   -- z*B and z*P1 have different bases so they cannot join it. A
+   -- non-canonical z is refused outright: libsodium masks bit 255 inside
+   -- scalarmult while the KAT reference reduces mod L, and an
+   -- attacker-chosen representation must reach neither.
+   local tVfyErr, tA1Hex, tA2Hex, tZHex, tOkTxt, tZRedHex, tCData
+   local tPairHex, tCCkHex, tCP2Hex, tLhsHex, tRhsHex
+   if not heIsHex(pProofHex, 192) then
+      return "void:proof-format"
+   end if
+   put char 1 to 64 of pProofHex into tA1Hex
+   put char 65 to 128 of pProofHex into tA2Hex
+   put char 129 to 192 of pProofHex into tZHex
+   put heL2PointOkHex(pCkHex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   put heL2PointOkHex(pP1Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   put heL2PointOkHex(pP2Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   put heL2PointOkHex(tA1Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   put heL2PointOkHex(tA2Hex) into tOkTxt
+   if tOkTxt is not "ok" then
+      return tOkTxt
+   end if
+   if not heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   try
+      put heBin2HexS(sxRistrettoScalarAdd(heHex2BinD(tZHex), \
+            heHex2BinD(kHeL2ZeroScalar))) into tZRedHex
+   catch tVfyErr
+      return "void:no-dleq"
+   end try
+   if tZRedHex is not tZHex then
+      return "void:scalar-format"
+   end if
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(kHeDomainL2Dleq & \
+            toLower(pCkHex) & "|" & toLower(pP1Hex) & "|" & \
+            toLower(pP2Hex) & "|" & toLower(tA1Hex) & "|" & \
+            toLower(tA2Hex), "utf-8"), 32), \
+            heHex2BinD(kHeL2ZeroScalar)) into tCData
+   catch tVfyErr
+      return "void:no-dleq"
+   end try
+   try
+      put heBin2HexS(sxRistrettoScalarMultBatch(tCData, \
+            heHex2BinD(toLower(pCkHex) & toLower(pP2Hex)))) into tPairHex
+   catch tVfyErr
+      return "void:identity-point"
+   end try
+   put char 1 to 64 of tPairHex into tCCkHex
+   put char 65 to 128 of tPairHex into tCP2Hex
+   try
+      put heBin2HexS(sxRistrettoAdd(heHex2BinD(tA1Hex), \
+            heHex2BinD(tCCkHex))) into tLhsHex
+      put heBin2HexS(sxRistrettoScalarMultBase(heHex2BinD(tZHex))) into tRhsHex
+   catch tVfyErr
+      return "void:dleq-mismatch:1"
+   end try
+   if tLhsHex is not tRhsHex then
+      return "void:dleq-mismatch:1"
+   end if
+   try
+      put heBin2HexS(sxRistrettoAdd(heHex2BinD(tA2Hex), \
+            heHex2BinD(tCP2Hex))) into tLhsHex
+      put heBin2HexS(sxRistrettoScalarMultPoint(heHex2BinD(tZHex), \
+            heHex2BinD(pP1Hex))) into tRhsHex
+   catch tVfyErr
+      return "void:dleq-mismatch:2"
+   end try
+   if tLhsHex is not tRhsHex then
+      return "void:dleq-mismatch:2"
+   end if
+   return "ok"
+end heL2DleqVerify
+
+function heL2ShuffleBodyOf pPos, pCkHex, pDeckList
+   -- the PINNED shuffleStep record format (the section banner): the deck's
+   -- commas become "|" inside the body field, the spec 6 multi-value idiom
+   local tPipeList
+   put pDeckList into tPipeList
+   replace comma with "|" in tPipeList
+   return "pos=" & pPos & ",ck=" & pCkHex & ",deck=" & tPipeList
+end heL2ShuffleBodyOf
+
+function heL2UnmaskBodyOf pPos, pSlot, pValHex, pProofHex
+   -- the PINNED unmaskStep record format; proof is spec 7.4's reserved
+   -- field, empty below Phase 5 hardening
+   return "pos=" & pPos & ",slot=" & pSlot & ",val=" & pValHex & \
+         ",proof=" & pProofHex
+end heL2UnmaskBodyOf
+
+function heL2ChainOrder pCount, pOwner
+   -- the contributor order of one unmask chain: 1..count in seat order,
+   -- the owner removed for a hole slot (spec 7.3: the owner goes LAST and
+   -- its step is exactly what is absent from the public chain)
+   local tPos, tOut
+   put empty into tOut
+   repeat with tPos = 1 to pCount
+      if tPos is pOwner then
+         next repeat
+      end if
+      if tOut is empty then
+         put tPos into tOut
+      else
+         put comma & tPos after tOut
+      end if
+   end repeat
+   return tOut
+end heL2ChainOrder
+
+function heL2VoidMark pStateA, pNamed, pWhy
+   -- latch the machine void. pNamed = 0 means attribution is DEFERRED to
+   -- the mandatory full-reveal audit (heL2VoidAudit); any later record is
+   -- ignored -- a void hand is frozen evidence.
+   put "void" into pStateA["phase"]
+   put pNamed into pStateA["named"]
+   put pWhy into pStateA["why"]
+   put "void" into pStateA["last"]
+   return pStateA
+end heL2VoidMark
+
+function heL2VoidNew pCount, pBaseList, pDleq, pOwnersList
+   -- one hand's 4d deal machine (values in, values out -- the caller
+   -- shuttles the state array through every step). pOwnersList is a comma
+   -- list of <slot>:<ownerPos> pairs naming the hole slots: the deal
+   -- layout is PUBLIC (spec 7.3 fixed order), so the ORCHESTRATOR
+   -- declares it -- a record cannot, or a cheater would.
+   local tStateA, tPair, tColonPos, tSlotF, tOwnF
+   put pCount into tStateA["count"]
+   put pBaseList into tStateA["base"]
+   if pDleq is true then
+      put "true" into tStateA["dleq"]
+   else
+      put "false" into tStateA["dleq"]
+   end if
+   put "shuffle" into tStateA["phase"]
+   put 0 into tStateA["applied"]
+   put 0 into tStateA["named"]
+   put empty into tStateA["why"]
+   put 0 into tStateA["stall"]
+   put empty into tStateA["last"]
+   put pBaseList into tStateA["deckAt"][0]
+   if pCount is not an integer or pCount < 2 or pCount > 9 then
+      return heL2VoidMark(tStateA, 0, "void:count-range")
+   end if
+   set the itemDelimiter to comma
+   if the number of items of pBaseList is not 52 then
+      return heL2VoidMark(tStateA, 0, "void:deck-size")
+   end if
+   if pOwnersList is not empty then
+      repeat for each item tPair in pOwnersList
+         put offset(":", tPair) into tColonPos
+         if tColonPos is 0 then
+            return heL2VoidMark(tStateA, 0, "void:owner-format")
+         end if
+         put char 1 to tColonPos - 1 of tPair into tSlotF
+         put char tColonPos + 1 to -1 of tPair into tOwnF
+         if tSlotF is not an integer or tOwnF is not an integer then
+            return heL2VoidMark(tStateA, 0, "void:owner-format")
+         end if
+         if tSlotF < 1 or tSlotF > 52 or tOwnF < 1 or tOwnF > pCount then
+            return heL2VoidMark(tStateA, 0, "void:owner-format")
+         end if
+         put tSlotF + 0 into tSlotF
+         put tOwnF + 0 into tStateA["owner"][tSlotF]
+      end repeat
+   end if
+   return tStateA
+end heL2VoidNew
+
+function heL2VoidShuffle pStateA, pPos, pBody
+   -- apply one shuffleStep record (signer position pPos comes from the
+   -- VERIFIED envelope, never from the body -- the body's pos must merely
+   -- agree). Strict order (pos = applied + 1); an identical re-post of an
+   -- applied step is "dup" (state unmoved -- rp1 redelivers), a DIFFERENT
+   -- one is signed equivocation, named directly. The free public checks
+   -- run per record: ck validity when present (required under dleq=1),
+   -- then the whole-deck duplicate/validity scan (spec 7.3's free
+   -- integrity check).
+   local tBodyA, tStored, tExpect, tPosF, tCkF, tDeckF, tVerdict
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pStateA["shufBody"][pPos] into tStored
+   if tStored is not empty then
+      if pBody is tStored then
+         put "dup" into pStateA["last"]
+         return pStateA
+      end if
+      return heL2VoidMark(pStateA, pPos, "void:step-equivocation:" & pPos)
+   end if
+   if pStateA["phase"] is not "shuffle" then
+      return heL2VoidMark(pStateA, pPos, "void:step-phase")
+   end if
+   put pStateA["applied"] + 1 into tExpect
+   if pPos is not tExpect then
+      return heL2VoidMark(pStateA, pPos, "void:step-order:" & tExpect & "," & pPos)
+   end if
+   put pBody into tBodyA
+   split tBodyA by comma and "="
+   put tBodyA["pos"] into tPosF
+   put tBodyA["ck"] into tCkF
+   put tBodyA["deck"] into tDeckF
+   if tPosF is not an integer or tDeckF is empty then
+      return heL2VoidMark(pStateA, pPos, "void:body-format")
+   end if
+   if tPosF is not pPos then
+      return heL2VoidMark(pStateA, pPos, "void:body-pos")
+   end if
+   if pStateA["dleq"] is "true" and tCkF is empty then
+      return heL2VoidMark(pStateA, pPos, "void:ck-missing")
+   end if
+   if tCkF is not empty then
+      put heL2PointOkHex(tCkF) into tVerdict
+      if tVerdict is not "ok" then
+         return heL2VoidMark(pStateA, pPos, tVerdict)
+      end if
+   end if
+   replace "|" with comma in tDeckF
+   put heL2DeckCheckHex(tDeckF) into tVerdict
+   if tVerdict is not "ok" then
+      return heL2VoidMark(pStateA, pPos, tVerdict)
+   end if
+   put tDeckF into pStateA["deckAt"][pPos]
+   put tCkF into pStateA["ck"][pPos]
+   put pBody into pStateA["shufBody"][pPos]
+   put pPos into pStateA["applied"]
+   put "applied" into pStateA["last"]
+   if pPos is pStateA["count"] then
+      put "deal" into pStateA["phase"]
+   end if
+   return pStateA
+end heL2VoidShuffle
+
+function heL2VoidUnmask pStateA, pPos, pBody
+   -- apply one unmaskStep record to its slot's chain. Per-record refusals
+   -- (format, validity, chain order, a bad or missing DLEQ proof under
+   -- dleq=1) are named DIRECTLY; a completed public chain landing outside
+   -- the card table voids with attribution DEFERRED to the audit -- only
+   -- the reveals can say whose step lied (spec 7.3's void-and-audit rule).
+   local tBodyA, tPosF, tSlotF, tValF, tProofF, tSlot, tStored, tCount
+   local tChainN, tOwner, tNeed, tOrder, tStep, tExpect, tVerdict
+   local tChainTxt, tFinalDeck, tPrevHex, tCkStored, tCardTxt
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pBody into tBodyA
+   split tBodyA by comma and "="
+   put tBodyA["pos"] into tPosF
+   put tBodyA["slot"] into tSlotF
+   put tBodyA["val"] into tValF
+   put tBodyA["proof"] into tProofF
+   if tPosF is not an integer or tSlotF is not an integer or tValF is empty then
+      return heL2VoidMark(pStateA, pPos, "void:body-format")
+   end if
+   if tPosF is not pPos then
+      return heL2VoidMark(pStateA, pPos, "void:body-pos")
+   end if
+   put tSlotF + 0 into tSlot
+   if tSlot < 1 or tSlot > 52 then
+      return heL2VoidMark(pStateA, pPos, "void:slot-range")
+   end if
+   put pStateA["lastBody"][tSlot] into tStored
+   if tStored is not empty and pBody is tStored then
+      put "dup" into pStateA["last"]
+      return pStateA
+   end if
+   if pStateA["phase"] is not "deal" then
+      return heL2VoidMark(pStateA, pPos, "void:step-phase")
+   end if
+   put pStateA["count"] into tCount
+   put pStateA["chainN"][tSlot] into tChainN
+   if tChainN is empty then
+      put 0 into tChainN
+   end if
+   put pStateA["owner"][tSlot] into tOwner
+   if tOwner is empty then
+      put 0 into tOwner
+   end if
+   if tOwner is 0 then
+      put tCount into tNeed
+   else
+      put tCount - 1 into tNeed
+   end if
+   if tChainN >= tNeed then
+      return heL2VoidMark(pStateA, pPos, "void:chain-done:" & tSlot)
+   end if
+   put heL2ChainOrder(tCount, tOwner) into tOrder
+   set the itemDelimiter to comma
+   put tChainN + 1 into tStep
+   put item tStep of tOrder into tExpect
+   if pPos is not tExpect then
+      return heL2VoidMark(pStateA, pPos, \
+            "void:chain-order:" & tSlot & ":" & tExpect & "," & pPos)
+   end if
+   put heL2PointOkHex(tValF) into tVerdict
+   if tVerdict is not "ok" then
+      return heL2VoidMark(pStateA, pPos, tVerdict)
+   end if
+   put pStateA["chain"][tSlot] into tChainTxt
+   if tChainTxt is empty then
+      put pStateA["deckAt"][tCount] into tFinalDeck
+      put item tSlot of tFinalDeck into tChainTxt
+   end if
+   put item -1 of tChainTxt into tPrevHex
+   if pStateA["dleq"] is "true" and tProofF is empty then
+      return heL2VoidMark(pStateA, pPos, "void:proof-missing:" & tSlot)
+   end if
+   if tProofF is not empty then
+      put pStateA["ck"][pPos] into tCkStored
+      if tCkStored is empty then
+         return heL2VoidMark(pStateA, pPos, "void:ck-missing:" & tSlot)
+      end if
+      put heL2DleqVerify(tCkStored, tValF, tPrevHex, tProofF) into tVerdict
+      if tVerdict is not "ok" then
+         return heL2VoidMark(pStateA, pPos, tVerdict & ":" & tSlot)
+      end if
+   end if
+   put tChainTxt & comma & tValF into pStateA["chain"][tSlot]
+   put tStep into pStateA["chainN"][tSlot]
+   put pBody into pStateA["lastBody"][tSlot]
+   put "applied" into pStateA["last"]
+   if tStep is tNeed then
+      if tOwner is 0 then
+         put pStateA["chain"][tSlot] into tChainTxt
+         put heL2PublicCardHex(tChainTxt, pStateA["base"]) into tCardTxt
+         if tCardTxt begins with "card:" then
+            put tCardTxt into pStateA["card"][tSlot]
+         else
+            return heL2VoidMark(pStateA, 0, tCardTxt & ":" & tSlot)
+         end if
+      else
+         put "true" into pStateA["holeUp"][tSlot]
+      end if
+   end if
+   return pStateA
+end heL2VoidUnmask
+
+function heL2VoidTimeout pStateA, pOwedPos
+   -- the deal-phase timer expired with pOwedPos owing the next step (spec
+   -- 9's timeout-in-dealing). PROVISIONALLY named: the mandatory audit
+   -- keeps the staller's name only when every signed step re-verifies --
+   -- an earlier bad signed step outranks the stall (spec 7.3 names the
+   -- FIRST bad one).
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pOwedPos into pStateA["stall"]
+   return heL2VoidMark(pStateA, pOwedPos, "void:deal-timeout:" & pOwedPos)
+end heL2VoidTimeout
+
+function heL2VoidOutcome pStateA
+   -- the 4d verdict line the orchestrator acts on. A void hand ALWAYS
+   -- returns the bets and ALWAYS owes the full reveal (spec 7.3: the hand
+   -- is void, so the reveal costs nothing; the config-signed forfeit for
+   -- the named party is table policy, applied above this layer);
+   -- named=audit defers attribution to heL2VoidAudit.
+   local tNamed
+   if pStateA["phase"] is not "void" then
+      return pStateA["phase"]
+   end if
+   put pStateA["named"] into tNamed
+   if tNamed > 0 then
+      return "void|" & pStateA["why"] & "|named=" & tNamed & \
+            "|bets-return|reveal-required"
+   end if
+   return "void|" & pStateA["why"] & "|named=audit|bets-return|reveal-required"
+end heL2VoidOutcome
+
+function heL2VoidAudit pStateA, pRevealsText
+   -- the MANDATORY full-reveal audit, in the MANDATORY order: per
+   -- contributor 1..count -- reveal present (refusing the audit makes the
+   -- refuser the named party, spec 7.3), the ck binding when a ck was
+   -- posted (a lying commitment key is caught here, before any algebra),
+   -- the shuffle step re-verified from (k, sigma) -- then every opened
+   -- chain in slot order, each step in chain order, re-verified from the
+   -- stepper's revealed k. The FIRST bad signed step names the cheater; a
+   -- recorded staller keeps the name only when everything signed
+   -- re-verifies; a clean audit is the table agreeing to void. Reveals:
+   -- one line per contributor, <pos> TAB <kHex> TAB <sigma comma-list>.
+   local tLine, tPosF, tRkA, tRsA, tPosI, tCkStored, tInDeck, tOutDeck
+   local tVerdict, tSlot, tChainN, tChainTxt, tOwner, tOrder, tStep
+   local tInHex, tOutHex, tStepPos
+   repeat for each line tLine in pRevealsText
+      if tLine is empty then
+         next repeat
+      end if
+      set the itemDelimiter to tab
+      put item 1 of tLine into tPosF
+      put item 2 of tLine into tRkA[tPosF]
+      put item 3 of tLine into tRsA[tPosF]
+   end repeat
+   repeat with tPosI = 1 to pStateA["count"]
+      if tRkA[tPosI] is empty then
+         return "named=" & tPosI & "|void:audit-refused"
+      end if
+      put pStateA["ck"][tPosI] into tCkStored
+      if tCkStored is not empty and heL2HasDleq() then
+         -- (the KAT mirror always has the algebra; a pre-ABI-9 engine
+         -- cannot compute k*B, so it skips the binding and still audits)
+         if heL2CommitKeyHex(tRkA[tPosI]) is not tCkStored then
+            return "named=" & tPosI & "|void:audit-ck-mismatch"
+         end if
+      end if
+      put pStateA["deckAt"][tPosI - 1] into tInDeck
+      put pStateA["deckAt"][tPosI] into tOutDeck
+      put heL2RevealShuffleHex(tInDeck, tOutDeck, tRkA[tPosI], tRsA[tPosI]) \
+            into tVerdict
+      if tVerdict is not "ok" then
+         return "named=" & tPosI & "|" & tVerdict
+      end if
+   end repeat
+   repeat with tSlot = 1 to 52
+      put pStateA["chainN"][tSlot] into tChainN
+      if tChainN is empty or tChainN is 0 then
+         next repeat
+      end if
+      put pStateA["chain"][tSlot] into tChainTxt
+      put pStateA["owner"][tSlot] into tOwner
+      if tOwner is empty then
+         put 0 into tOwner
+      end if
+      put heL2ChainOrder(pStateA["count"], tOwner) into tOrder
+      set the itemDelimiter to comma
+      repeat with tStep = 1 to tChainN
+         put item tStep of tChainTxt into tInHex
+         put item tStep + 1 of tChainTxt into tOutHex
+         put item tStep of tOrder into tStepPos
+         put heL2RevealUnmaskHex(tInHex, tOutHex, tRkA[tStepPos]) into tVerdict
+         if tVerdict is not "ok" then
+            return "named=" & tStepPos & "|" & tVerdict & ":" & tSlot & ":" & tStep
+         end if
+      end repeat
+   end repeat
+   if pStateA["stall"] > 0 then
+      return "named=" & pStateA["stall"] & "|" & pStateA["why"]
+   end if
+   return "named=0|audit-clean"
+end heL2VoidAudit
 
 --------------------------------------------------------------------------
 -- Online transport (Phase 2a/2b, spec 3/4/5/10). Peers meet on the DHT via
@@ -9992,6 +10703,15 @@ constant kKatL2PublicChain = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e
 constant kKatL2PublicCard = "card:49"
 constant kKatL2HoleChain = "62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,80b56b50f6eea1ab201aaa93c738dd6441f5842f256bb890a5ebc867e5807c70,3a18dfc38fbbce3503f1fa5b45ba7b88c547799f663ecbd38d7474aa2aadff5b"
 constant kKatL2HoleCard = "card:47"
+-- Phase 4d/5 vectors (generated by tools/protocol-kat.py --gen-xtalk): the
+-- DLEQ commitment keys of the three fixed scalars (ck_i = k_i * B) and the
+-- derandomized Chaum-Pedersen proof over the pinned unmask step (statement
+-- c0 = k1 * v1, i.e. prove(k1, v1, c0)). Keep the block complete (the
+-- kKatSeedsXor lesson).
+constant kKatL2Ck1 = "f8aaee2dfe3f251d8726037421fd646a85446b00f132dc37d0792a7e48a08a03"
+constant kKatL2Ck2 = "94d02c9027dffcedbc3fca0569b23d13fc966462b5208b5a25668ddefaa4ea65"
+constant kKatL2Ck3 = "9ce4b6a7337e94a6c60535fccf71ee83a69745b46359fa9bd0a1846864ad1458"
+constant kKatL2DleqProof = "d84b045c40a2d08257ef6907556d4a096a26f0777b2a8c213db9736e403150048634476eb775e61807679da17345da913e9ae89959a0dd3a5ed121483a4de064c838dc1234a84786a24f5c120cf28dc410b59d28213e74c4befbc1992fbb2e04"
 -- KAT INPUTS (not generated): the canonical identity encoding (the one
 -- VALID point scalar mult must still refuse -- 32 zero bytes) and 32 bytes
 -- that are NOT a valid ristretto encoding at all
@@ -10026,6 +10746,7 @@ command heRunSelftest
    heRunSection "heTestLevel2Run"
    heRunSection "heTestOnionRun"
    heRunSection "heTestOracleRun"
+   heRunSection "heTestLevel2VoidRun"
    heRunSection "heProbeSodium"
    put return & "==== " & gPassN & " pass, " & gFailN & " fail, " & gSkipN & " skip ====" \
          & return after gRpt
@@ -11584,6 +12305,223 @@ command heTestOracleRun
    heTSkip "oracle: onion-hosted oracle service (kHeDomainOracle address) over tor", \
          "needs a running tor daemon + a second machine (+ live-tor honesty label)"
 end heTestOracleRun
+
+command heTestLevel2VoidRun
+   -- Phase 4d void-and-audit + the spec 12.4 adversarial bots + Phase 5
+   -- DLEQ: the on-engine mirror of protocol-kat's l2v_*/l0_*/l2_dleq_*
+   -- scenario pins. Every bot's verdict string here is the SAME literal
+   -- the Python twins pinned from the independent reference, so a green
+   -- run pins engine, xTalk, and reference to one attribution answer.
+   -- SKIPs without SodiumXT; the machine half SKIPs below ABI 8; the DLEQ
+   -- half SKIPs by name below ABI 9 (the sx* DLEQ calls have never run on
+   -- an engine -- this section IS their first-contact harness).
+   local tSeedsA, tCommitsA, tTableData, tKeyData, tDeckList, tDealA, tStackA
+   local tBase, tD1, tD2, tD3, tPipe1, tSh1, tC0, tV1, tV2, tV3
+   local tH0, tW1, tW2, tBad2, tBad3, tRevTxt, tStA, tCardTxt, tHoleTxt
+   local tDupDeck, tEqDeck, tLastTxt, tProof, tProofBad, tTampered
+   local tStB, tStC, tStD
+   put return & "-- 19. Level 2 void-and-audit + cheater bots (spec 7.3/12.4, plan 4d/4e; DLEQ 7.4)" & return after gRpt
+   if not heHasSodium() then
+      heTSkip "level2 void: machine + bots", "SodiumXT not installed"
+      exit heTestLevel2VoidRun
+   end if
+   set the itemDelimiter to comma
+   -- bot[deck-stacker], against LEVEL 0 (spec 12.4 lists it there): a
+   -- dealer who deals cards the committed stream never produced, and one
+   -- who re-chooses its seed after seeing the others -- the spec 7.1
+   -- step 5 audit names each (pinned: l0_stacker_holes/l0_stacker_commit)
+   put kKatSeed1 into tSeedsA[1]
+   put kKatSeed2 into tSeedsA[2]
+   put kKatSeed3 into tSeedsA[3]
+   put heSeedCommitHex(kKatSeed1) into tCommitsA[1]
+   put heSeedCommitHex(kKatSeed2) into tCommitsA[2]
+   put heSeedCommitHex(kKatSeed3) into tCommitsA[3]
+   put heHex2BinD(kKatTableHex) into tTableData
+   put heStreamKeyData(tTableData, 1, kKatSeedsXor) into tKeyData
+   put heDeckFromStreamKey(tKeyData) into tDeckList
+   put heDealAssign(tDeckList, "1,2,3", 1) into tDealA
+   put tDealA into tStackA
+   put tDealA["holesBy"][2] into tStackA["holesBy"][1]
+   put tDealA["holesBy"][1] into tStackA["holesBy"][2]
+   heTAssert "bot[deck-stacker]: a stacked delivery is named (L0 audit)", \
+         heAuditDeal(tTableData, 1, tSeedsA, tCommitsA, 3, tStackA, "1,2,3", 1), \
+         "fail:hole-mismatch-seat-1"
+   put kKatCommit2 into tCommitsA[1]
+   heTAssert "bot[deck-stacker]: a re-chosen seed breaks its commit", \
+         heAuditDeal(tTableData, 1, tSeedsA, tCommitsA, 3, tDealA, "1,2,3", 1), \
+         "fail:commit-mismatch-position-1"
+   if not heL2HasRistretto() then
+      heTSkip "level2 void: machine + bots", "SodiumXT pre-ABI-8 (no sxRistretto* surface)"
+      exit heTestLevel2VoidRun
+   end if
+   -- fixtures: the pinned base deck, the three-seat masked decks, and the
+   -- pinned chain values (same constants section 16 verifies)
+   put heL2BaseDeckHex() into tBase
+   put heL2MaskDeckHex(tBase, kKatL2Scalar1, kKatL2Perm1) into tD1
+   put heL2MaskDeckHex(tD1, kKatL2Scalar2, kKatL2Perm2) into tD2
+   put heL2MaskDeckHex(tD2, kKatL2Scalar3, kKatL2Perm3) into tD3
+   put item 1 of tD3 into tC0
+   put heL2MaskPointHex(kKatL2Inv1, tC0) into tV1
+   put heL2MaskPointHex(kKatL2Inv2, tV1) into tV2
+   put heL2MaskPointHex(kKatL2Inv3, tV2) into tV3
+   put item 2 of tD3 into tH0
+   put heL2MaskPointHex(kKatL2Inv1, tH0) into tW1
+   put heL2MaskPointHex(kKatL2Inv3, tW1) into tW2
+   put "1" & tab & kKatL2Scalar1 & tab & kKatL2Perm1 & return & \
+         "2" & tab & kKatL2Scalar2 & tab & kKatL2Perm2 & return & \
+         "3" & tab & kKatL2Scalar3 & tab & kKatL2Perm3 into tRevTxt
+   -- the PINNED record formats (spec 6 body conventions)
+   put tD1 into tPipe1
+   replace comma with "|" in tPipe1
+   put heL2ShuffleBodyOf(1, empty, tD1) into tSh1
+   heTAssert "4d: shuffleStep record format (pinned)", tSh1, \
+         "pos=1,ck=,deck=" & tPipe1
+   heTAssert "4d: unmaskStep record format (pinned)", \
+         heL2UnmaskBodyOf(1, 1, tV1, empty), \
+         "pos=1,slot=1,val=" & tV1 & ",proof="
+   -- the honest table: shuffle -> deal, a public slot resolves its card, a
+   -- hole slot completes without its owner's step, the audit comes back
+   -- clean (a clean audit is the table agreeing to void)
+   put heL2VoidNew(3, tBase, false, "2:2") into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put heL2VoidShuffle(tStA, 2, heL2ShuffleBodyOf(2, empty, tD2)) into tStA
+   put heL2VoidShuffle(tStA, 3, heL2ShuffleBodyOf(3, empty, tD3)) into tStA
+   heTAssert "4d: three honest shuffle steps reach the deal phase", \
+         heL2VoidOutcome(tStA), "deal"
+   put heL2VoidUnmask(tStA, 1, heL2UnmaskBodyOf(1, 1, tV1, empty)) into tStA
+   put heL2VoidUnmask(tStA, 2, heL2UnmaskBodyOf(2, 1, tV2, empty)) into tStA
+   put heL2VoidUnmask(tStA, 3, heL2UnmaskBodyOf(3, 1, tV3, empty)) into tStA
+   put tStA["card"][1] into tCardTxt
+   heTAssert "4d: a completed public chain resolves its card", tCardTxt, kKatL2PublicCard
+   put heL2VoidUnmask(tStA, 1, heL2UnmaskBodyOf(1, 2, tW1, empty)) into tStA
+   put heL2VoidUnmask(tStA, 3, heL2UnmaskBodyOf(3, 2, tW2, empty)) into tStA
+   put tStA["holeUp"][2] into tHoleTxt
+   heTAssert "4d: the hole chain completes without the owner's step", tHoleTxt, "true"
+   heTAssert "4d: the honest table never voids", heL2VoidOutcome(tStA), "deal"
+   heTAssert "4d: a clean audit names nobody", heL2VoidAudit(tStA, tRevTxt), \
+         "named=0|audit-clean"
+   -- bot[duplicate-point shuffler]: the free integrity check refuses the
+   -- posted deck at once -- named directly, no audit needed
+   put heL2VoidNew(3, tBase, false, empty) into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put tD2 into tDupDeck
+   put item 1 of tDupDeck into item 2 of tDupDeck
+   put heL2VoidShuffle(tStA, 2, heL2ShuffleBodyOf(2, empty, tDupDeck)) into tStA
+   heTAssert "bot[duplicate-point shuffler]: refused at post time, named", \
+         heL2VoidOutcome(tStA), \
+         "void|void:duplicate-point:1,2|named=2|bets-return|reveal-required"
+   -- bot[rollback replayer]: an identical re-post is a harmless dup (the
+   -- state does not move -- rp1 redelivers); a DIFFERENT re-post for the
+   -- applied position is signed equivocation, named directly
+   put heL2VoidNew(3, tBase, false, empty) into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put heL2VoidShuffle(tStA, 2, heL2ShuffleBodyOf(2, empty, tD2)) into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put tStA["last"] & comma & tStA["applied"] into tLastTxt
+   heTAssert "bot[rollback replayer]: an identical re-post is a harmless dup", \
+         tLastTxt, "dup,2"
+   put tD1 into tEqDeck
+   put item 2 of tD1 into item 1 of tEqDeck
+   put item 1 of tD1 into item 2 of tEqDeck
+   put heL2VoidShuffle(tStA, 1, heL2ShuffleBodyOf(1, empty, tEqDeck)) into tStA
+   heTAssert "bot[rollback replayer]: a DIFFERENT re-post is equivocation, named", \
+         heL2VoidOutcome(tStA), \
+         "void|void:step-equivocation:1|named=1|bets-return|reveal-required"
+   -- bot[wrong-scalar unmasker], no DLEQ: every step individually
+   -- well-formed, the chain completes OUTSIDE the table -> deferred
+   -- attribution, and the mandatory reveal audit names seat 2's step
+   put heL2VoidNew(3, tBase, false, empty) into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put heL2VoidShuffle(tStA, 2, heL2ShuffleBodyOf(2, empty, tD2)) into tStA
+   put heL2VoidShuffle(tStA, 3, heL2ShuffleBodyOf(3, empty, tD3)) into tStA
+   put heL2MaskPointHex(kKatL2Inv3, tV1) into tBad2
+   put heL2MaskPointHex(kKatL2Inv3, tBad2) into tBad3
+   put heL2VoidUnmask(tStA, 1, heL2UnmaskBodyOf(1, 1, tV1, empty)) into tStA
+   put heL2VoidUnmask(tStA, 2, heL2UnmaskBodyOf(2, 1, tBad2, empty)) into tStA
+   put heL2VoidUnmask(tStA, 3, heL2UnmaskBodyOf(3, 1, tBad3, empty)) into tStA
+   heTAssert "bot[wrong-scalar unmasker]: chain lands outside the table -> audit", \
+         heL2VoidOutcome(tStA), \
+         "void|void:final-not-in-table:1|named=audit|bets-return|reveal-required"
+   heTAssert "bot[wrong-scalar unmasker]: the reveal audit names seat 2's step", \
+         heL2VoidAudit(tStA, tRevTxt), "named=2|void:unmask-mismatch:1:2"
+   -- bot[deal staller]: provisionally named on the timeout; the audit
+   -- re-verifies everything signed and keeps the staller's name
+   put heL2VoidNew(3, tBase, false, empty) into tStA
+   put heL2VoidShuffle(tStA, 1, tSh1) into tStA
+   put heL2VoidShuffle(tStA, 2, heL2ShuffleBodyOf(2, empty, tD2)) into tStA
+   put heL2VoidShuffle(tStA, 3, heL2ShuffleBodyOf(3, empty, tD3)) into tStA
+   put heL2VoidUnmask(tStA, 1, heL2UnmaskBodyOf(1, 1, tV1, empty)) into tStA
+   put heL2VoidTimeout(tStA, 2) into tStA
+   heTAssert "bot[deal staller]: the timeout voids with the ower named", \
+         heL2VoidOutcome(tStA), \
+         "void|void:deal-timeout:2|named=2|bets-return|reveal-required"
+   heTAssert "bot[deal staller]: the audit re-verifies all, keeps the name", \
+         heL2VoidAudit(tStA, tRevTxt), "named=2|void:deal-timeout:2"
+   -- Phase 5 DLEQ, behind its own probe: on a pre-ABI-9 SodiumXT the whole
+   -- half SKIPs by name and the 4d machine above still ran on ABI 8
+   if not heL2HasDleq() then
+      heTSkip "phase5: DLEQ proofs + machine wiring", \
+            "SodiumXT pre-ABI-9 (no DLEQ/batch surface)"
+      exit heTestLevel2VoidRun
+   end if
+   heTAssert "dleq: commitment key ck1 = k1*B (pinned)", \
+         heL2CommitKeyHex(kKatL2Scalar1), kKatL2Ck1
+   heTAssert "dleq: commitment key ck2 = k2*B (pinned)", \
+         heL2CommitKeyHex(kKatL2Scalar2), kKatL2Ck2
+   put heL2DleqProve(kKatL2Scalar1, tV1, tC0) into tProof
+   heTAssert "dleq: derandomized proof matches the reference (pinned)", \
+         tProof, kKatL2DleqProof
+   heTAssert "dleq: the honest proof verifies", \
+         heL2DleqVerify(kKatL2Ck1, tV1, tC0, tProof), "ok"
+   -- soundness, negatively: the honest PROCEDURE over a FALSE statement
+   -- (the wrong-scalar unmasker's only available forgery) fails equation
+   -- 2; a wrong secret, swapped points, and a tampered commitment all
+   -- change the transcript and fail equation 1
+   heTAssert "dleq: honest procedure over a FALSE statement fails (eq 2)", \
+         heL2DleqVerify(kKatL2Ck2, tBad2, tV1, \
+         heL2DleqProve(kKatL2Scalar2, tBad2, tV1)), "void:dleq-mismatch:2"
+   heTAssert "dleq: a wrong secret cannot forge (eq 1)", \
+         heL2DleqVerify(kKatL2Ck2, tV2, tV1, \
+         heL2DleqProve(kKatL2Scalar3, tV2, tV1)), "void:dleq-mismatch:1"
+   heTAssert "dleq: swapped points refuse", \
+         heL2DleqVerify(kKatL2Ck1, tC0, tV1, tProof), "void:dleq-mismatch:1"
+   put tV3 & char 65 to 192 of tProof into tTampered
+   heTAssert "dleq: a tampered commitment changes the challenge", \
+         heL2DleqVerify(kKatL2Ck1, tV1, tC0, tTampered), "void:dleq-mismatch:1"
+   -- the proof wired into the unmaskStep record (spec 7.4's reserved
+   -- field): on a dleq=1 machine an honest proof-carrying step applies,
+   -- the wrong-scalar unmasker is refused INSTANTLY with direct
+   -- attribution (no audit round -- "impossible rather than
+   -- attributable"), and a missing proof is itself a named refusal
+   put heL2VoidNew(3, tBase, true, "2:2") into tStB
+   put heL2VoidShuffle(tStB, 1, heL2ShuffleBodyOf(1, kKatL2Ck1, tD1)) into tStB
+   put heL2VoidShuffle(tStB, 2, heL2ShuffleBodyOf(2, kKatL2Ck2, tD2)) into tStB
+   put heL2VoidShuffle(tStB, 3, heL2ShuffleBodyOf(3, kKatL2Ck3, tD3)) into tStB
+   put heL2VoidUnmask(tStB, 1, heL2UnmaskBodyOf(1, 1, tV1, tProof)) into tStB
+   put tStB["last"] into tLastTxt
+   heTAssert "phase5: a proof-carrying honest step applies", tLastTxt, "applied"
+   put heL2DleqProve(kKatL2Scalar2, tBad2, tV1) into tProofBad
+   put heL2VoidUnmask(tStB, 2, heL2UnmaskBodyOf(2, 1, tBad2, tProofBad)) into tStB
+   heTAssert "phase5: a wrong unmask is refused INSTANTLY, named -- no audit round", \
+         heL2VoidOutcome(tStB), \
+         "void|void:dleq-mismatch:2:1|named=2|bets-return|reveal-required"
+   put heL2VoidNew(3, tBase, true, empty) into tStC
+   put heL2VoidShuffle(tStC, 1, heL2ShuffleBodyOf(1, kKatL2Ck1, tD1)) into tStC
+   put heL2VoidShuffle(tStC, 2, heL2ShuffleBodyOf(2, kKatL2Ck2, tD2)) into tStC
+   put heL2VoidShuffle(tStC, 3, heL2ShuffleBodyOf(3, kKatL2Ck3, tD3)) into tStC
+   put heL2VoidUnmask(tStC, 1, heL2UnmaskBodyOf(1, 1, tV1, empty)) into tStC
+   heTAssert "phase5: a missing proof on a dleq table is itself named", \
+         heL2VoidOutcome(tStC), \
+         "void|void:proof-missing:1|named=1|bets-return|reveal-required"
+   -- a lying commitment key (posted ck3, masked with k1) is caught by the
+   -- audit's binding check, before any chain algebra runs
+   put heL2VoidNew(3, tBase, true, empty) into tStD
+   put heL2VoidShuffle(tStD, 1, heL2ShuffleBodyOf(1, kKatL2Ck3, tD1)) into tStD
+   put heL2VoidShuffle(tStD, 2, heL2ShuffleBodyOf(2, kKatL2Ck2, tD2)) into tStD
+   put heL2VoidShuffle(tStD, 3, heL2ShuffleBodyOf(3, kKatL2Ck3, tD3)) into tStD
+   heTAssert "phase5: a lying commitment key is caught by the audit binding", \
+         heL2VoidAudit(tStD, tRevTxt), "named=1|void:audit-ck-mismatch"
+end heTestLevel2VoidRun
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Protocol known-answer vectors: envelope bytes, hash chain, Level 0 deal.
+"""Protocol known-answer vectors: envelope bytes, hash chain, Level 0 deal,
+the spec 7.3 Level 2 algebra, the 4d void-and-audit machine with its 12.4
+cheater-bot scenarios, and the spec 7.4 Chaum-Pedersen DLEQ proofs.
 
 This is the headless CI pin for everything in spec sections 6 and 7.1 that is
 a plain algorithm: canonical envelope serialization, the transcript hash
@@ -779,6 +781,426 @@ def l2_reveal_unmask(in_hex, out_hex, k_hex):
     return "void:unmask-mismatch"
 
 
+# --------------------------------------------------------------------------
+# Phase 4d void-and-audit + Phase 5 DLEQ (spec 7.3/7.4, plan 4d/4e/5): the
+# l2_dleq_* / l2_void_* functions below are line-for-line mirrors of the
+# heL2Dleq* / heL2Void* handlers in src/holdem.livecodescript, driven by the
+# independent RFC 9496 reference above. Two contracts are PINNED here first
+# and the xTalk side is written to match (the "reference before trust" rule):
+#
+#   * THE RECORD FORMATS (spec 6 body conventions -- the body is UTF-8 text,
+#     hex-encoded into the envelope, so its commas never reach the frame;
+#     multi-value fields join with "|" like seats=1|2|3 does):
+#       shuffleStep  body = pos=<P>,ck=<64hex|empty>,deck=<52 x 64hex "|">
+#       unmaskStep   body = pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>
+#     P = contributor position in the shuffle order (seat order at Level 2);
+#     ck = the DLEQ commitment key k_P * B (required when the signed table
+#     config pins dleq=1; empty is legal below that); S = the deck position
+#     1..52 being unmasked (consumed in the fixed public order); proof is
+#     spec 7.4's reserved field, filled at Phase 5. Audit reveals travel as
+#     one line per contributor: <pos> TAB <kHex> TAB <sigma comma-list>.
+#
+#   * THE DLEQ PROOF (Chaum-Pedersen over ristretto255, spec 7.4): the
+#     statement is P2 = k * P1 for the k behind the commitment ck = k*B --
+#     an unmask step proves (k, P1=stepOut, P2=stepIn), since
+#     out = k^-1 * in <=> in = k * out. Derandomized nonce (the RFC 6979 /
+#     EdDSA pattern, what makes the proof pinnable from fixed scalars):
+#       w  = reduce(H32("HOLDEM-L2-DLEQW-v1|" || k || "|" || p1 || "|" || p2))
+#       a1 = w*B ;  a2 = w*P1
+#       c  = reduce(H32("HOLDEM-L2-DLEQ-v1|" || ck || "|" || p1 || "|" || p2
+#                        || "|" || a1 || "|" || a2))
+#       z  = w + c*k mod L
+#       proof = a1 || a2 || z          (96 bytes = 192 hex, spec 7.4's size)
+#     All hash inputs are the LOWERCASED hex texts joined with "|" (xTalk's
+#     `is` compares case-blind, but hashes see bytes -- canonicalize first).
+#     reduce() is ScalarAdd(x, 0) -- libsodium's widen-and-reduce -- applied
+#     BEFORE any point multiplication, so libsodium's bit-255 masking in
+#     scalarmult and this reference's full mod-L arithmetic can never see
+#     different scalars. Verification checks z canonical (reduce(z) == z),
+#     then  z*B == a1 + c*ck  and  z*P1 == a2 + c*P2 ; c*ck and c*P2 ride
+#     ONE sxRistrettoScalarMultBatch crossing on the engine (one scalar, two
+#     points -- exactly the batch call's shape; z*B and z*P1 have different
+#     bases so they cannot join it).
+#
+# The void machine consumes the DEDUPED, host-sequenced record stream (spec
+# 6 kills transport replay at the envelope layer); an identical re-post of
+# the last applied record is tolerated as "dup", and any OTHER step for an
+# already-filled position is signed equivocation, named directly. Every
+# refusal is a distinct "void:..." string; attribution is DIRECT (named=pos)
+# when the offending record is itself publicly refusable, and DEFERRED
+# (named=0 -> the mandatory full-reveal audit) when only the reveals can
+# say whose step lied (a completed chain landing outside the table).
+# --------------------------------------------------------------------------
+
+L2_DLEQ_DOMAIN = "HOLDEM-L2-DLEQ-v1|"
+L2_DLEQW_DOMAIN = "HOLDEM-L2-DLEQW-v1|"
+
+
+def _l2_scalar_reduce(b32):
+    """The ScalarAdd-zero reduce both sides pin (sxRistrettoScalarAdd(x, 0)):
+    read 32 bytes little-endian, fully reduce mod L."""
+    return r255_scalar_add(b32, b"\x00" * 32)
+
+
+def l2_commit_key(k_hex):
+    """heL2CommitKeyHex twin: ck = k*B, the per-hand DLEQ commitment key a
+    shuffleStep carries. The scalar is reduced first (see the block comment);
+    k == 0 mod L is the merged identity failure."""
+    if not _l2_hex_ok(k_hex):
+        return "void:scalar-format"
+    q = r255_scalarmult_base(_l2_scalar_reduce(bytes.fromhex(k_hex)))
+    if q is None:
+        return "void:scalar-zero"
+    return q.hex()
+
+
+def l2_point_ok(p_hex):
+    """heL2PointOkHex twin: format + canonical-encoding validity as a
+    verdict string ("ok" / "void:...")."""
+    if not _l2_hex_ok(p_hex):
+        return "void:point-format"
+    if not l2_point_valid(p_hex.lower()):
+        return "void:invalid-point"
+    return "ok"
+
+
+def l2_dleq_prove(k_hex, p1_hex, p2_hex):
+    """heL2DleqProve twin: Chaum-Pedersen proof that P2 = k*P1 for the k
+    behind ck = k*B, without revealing k. Deterministic (derandomized w),
+    so the pinned vector below IS the whole prover contract."""
+    if not _l2_hex_ok(k_hex):
+        return "void:scalar-format"
+    vd = l2_point_ok(p1_hex)
+    if vd != "ok":
+        return vd
+    vd = l2_point_ok(p2_hex)
+    if vd != "ok":
+        return vd
+    ck = l2_commit_key(k_hex)
+    if ck.startswith("void:"):
+        return ck
+    w = _l2_scalar_reduce(hashlib.blake2b(
+        (L2_DLEQW_DOMAIN + k_hex.lower() + "|" + p1_hex.lower() + "|" +
+         p2_hex.lower()).encode("utf-8"), digest_size=32).digest())
+    a1 = r255_scalarmult_base(w)
+    if a1 is None:
+        return "void:scalar-zero"
+    a2 = r255_scalarmult(w, bytes.fromhex(p1_hex))
+    if a2 is None or a2 == b"\x00" * 32:
+        return "void:identity-point"
+    c = _l2_scalar_reduce(hashlib.blake2b(
+        (L2_DLEQ_DOMAIN + ck + "|" + p1_hex.lower() + "|" + p2_hex.lower() +
+         "|" + a1.hex() + "|" + a2.hex()).encode("utf-8"),
+        digest_size=32).digest())
+    z = r255_scalar_add(w, r255_scalar_mul(c, bytes.fromhex(k_hex)))
+    return a1.hex() + a2.hex() + z.hex()
+
+
+def l2_dleq_verify(ck_hex, p1_hex, p2_hex, proof_hex):
+    """heL2DleqVerify twin. The challenge is re-derived from the transcript,
+    so a tampered (a1, a2) changes c and neither equation can close
+    (Fiat-Shamir); the two equations are named distinctly (:1 binds the
+    commitment key, :2 binds the step values)."""
+    if not isinstance(proof_hex, str) or len(proof_hex) != 192 or \
+            not all(ch in "0123456789abcdefABCDEF" for ch in proof_hex):
+        return "void:proof-format"
+    a1_hex = proof_hex[0:64]
+    a2_hex = proof_hex[64:128]
+    z_hex = proof_hex[128:192]
+    for p in (ck_hex, p1_hex, p2_hex, a1_hex, a2_hex):
+        vd = l2_point_ok(p)
+        if vd != "ok":
+            return vd
+    # a non-canonical z is refused, never reduced-and-accepted: libsodium
+    # masks bit 255 in scalarmult while the reference reduces mod L, so an
+    # attacker-chosen representation must not reach either
+    if _l2_scalar_reduce(bytes.fromhex(z_hex)).hex() != z_hex.lower():
+        return "void:scalar-format"
+    c = _l2_scalar_reduce(hashlib.blake2b(
+        (L2_DLEQ_DOMAIN + ck_hex.lower() + "|" + p1_hex.lower() + "|" +
+         p2_hex.lower() + "|" + a1_hex.lower() + "|" + a2_hex.lower())
+        .encode("utf-8"), digest_size=32).digest())
+    # engine side: c*ck and c*P2 in ONE sxRistrettoScalarMultBatch crossing;
+    # mirrored per-element (the batch contract IS element-wise scalarmult)
+    c_ck = r255_scalarmult(c, bytes.fromhex(ck_hex))
+    c_p2 = r255_scalarmult(c, bytes.fromhex(p2_hex))
+    if c_ck is None or c_ck == b"\x00" * 32 or c_p2 is None or c_p2 == b"\x00" * 32:
+        return "void:identity-point"
+    lhs1 = r255_point_add(bytes.fromhex(a1_hex), c_ck)
+    rhs1 = r255_scalarmult_base(bytes.fromhex(z_hex))
+    if lhs1 is None or rhs1 is None:
+        return "void:dleq-mismatch:1"
+    if lhs1.hex() != rhs1.hex():
+        return "void:dleq-mismatch:1"
+    lhs2 = r255_point_add(bytes.fromhex(a2_hex), c_p2)
+    rhs2 = r255_scalarmult(bytes.fromhex(z_hex), bytes.fromhex(p1_hex))
+    if lhs2 is None or rhs2 is None or rhs2 == b"\x00" * 32:
+        return "void:dleq-mismatch:2"
+    if lhs2.hex() != rhs2.hex():
+        return "void:dleq-mismatch:2"
+    return "ok"
+
+
+def l2_shuffle_body(pos, ck_hex, deck_txt):
+    """heL2ShuffleBodyOf twin -- the PINNED shuffleStep record format."""
+    return "pos=%d,ck=%s,deck=%s" % (pos, ck_hex, deck_txt.replace(",", "|"))
+
+
+def l2_unmask_body(pos, slot, val_hex, proof_hex):
+    """heL2UnmaskBodyOf twin -- the PINNED unmaskStep record format (proof
+    is spec 7.4's reserved field; empty below Phase 5 hardening)."""
+    return "pos=%d,slot=%d,val=%s,proof=%s" % (pos, slot, val_hex, proof_hex)
+
+
+def _l2_body_parse(body):
+    """The split-by-comma-and-equals idiom the xTalk machine uses."""
+    a = {}
+    for it in body.split(","):
+        if "=" in it:
+            k, v = it.split("=", 1)
+            a[k] = v
+    return a
+
+
+def l2_void_mark(st, named, why):
+    """heL2VoidMark twin: latch the machine void. named=0 means attribution
+    is DEFERRED to the mandatory full-reveal audit."""
+    st["phase"] = "void"
+    st["named"] = named
+    st["why"] = why
+    st["last"] = "void"
+    return st
+
+
+def l2_void_new(count, base_txt, dleq, owners_txt):
+    """heL2VoidNew twin: one hand's deal machine. owners_txt is a comma list
+    of <slot>:<ownerPos> pairs naming the hole slots (the deal layout is
+    public, so the ORCHESTRATOR declares it -- a record cannot)."""
+    st = {"count": count, "base": base_txt,
+          "dleq": "true" if dleq else "false",
+          "phase": "shuffle", "applied": 0, "named": 0, "why": "", "stall": 0,
+          "last": "", "deckAt": {0: base_txt}, "ck": {}, "shufBody": {},
+          "chain": {}, "chainN": {}, "lastBody": {}, "owner": {}, "card": {},
+          "holeUp": {}}
+    if not isinstance(count, int) or count < 2 or count > 9:
+        return l2_void_mark(st, 0, "void:count-range")
+    if len(base_txt.split(",")) != 52:
+        return l2_void_mark(st, 0, "void:deck-size")
+    if owners_txt != "":
+        for pair in owners_txt.split(","):
+            if ":" not in pair:
+                return l2_void_mark(st, 0, "void:owner-format")
+            sj, oj = pair.split(":", 1)
+            if not sj.isdigit() or not oj.isdigit() or int(sj) < 1 or \
+                    int(sj) > 52 or int(oj) < 1 or int(oj) > count:
+                return l2_void_mark(st, 0, "void:owner-format")
+            st["owner"][int(sj)] = int(oj)
+    return st
+
+
+def l2_void_shuffle(st, pos, body):
+    """heL2VoidShuffle twin: apply one shuffleStep record. Order is strict
+    (pos = applied + 1); an identical re-post of an applied step is "dup"
+    (state unmoved), a DIFFERENT one is equivocation, named directly."""
+    if st["phase"] == "void":
+        return st
+    stored = st["shufBody"].get(pos, "")
+    if stored != "":
+        if body.lower() == stored.lower():
+            st["last"] = "dup"
+            return st
+        return l2_void_mark(st, pos, "void:step-equivocation:%d" % pos)
+    if st["phase"] != "shuffle":
+        return l2_void_mark(st, pos, "void:step-phase")
+    if pos != st["applied"] + 1:
+        return l2_void_mark(st, pos, "void:step-order:%d,%d" % (st["applied"] + 1, pos))
+    a = _l2_body_parse(body)
+    posf = a.get("pos", "")
+    ckf = a.get("ck", "")
+    deckf = a.get("deck", "")
+    if not posf.isdigit() or deckf == "":
+        return l2_void_mark(st, pos, "void:body-format")
+    if int(posf) != pos:
+        return l2_void_mark(st, pos, "void:body-pos")
+    if st["dleq"] == "true" and ckf == "":
+        return l2_void_mark(st, pos, "void:ck-missing")
+    if ckf != "":
+        vd = l2_point_ok(ckf)
+        if vd != "ok":
+            return l2_void_mark(st, pos, vd)
+    deck = deckf.replace("|", ",")
+    vd = l2_deck_check(deck)
+    if vd != "ok":
+        return l2_void_mark(st, pos, vd)
+    st["deckAt"][pos] = deck
+    st["ck"][pos] = ckf
+    st["shufBody"][pos] = body
+    st["applied"] = pos
+    st["last"] = "applied"
+    if pos == st["count"]:
+        st["phase"] = "deal"
+    return st
+
+
+def l2_void_unmask(st, pos, body):
+    """heL2VoidUnmask twin: apply one unmaskStep record to its slot's chain.
+    Per-step refusals (format, validity, order, a bad or missing DLEQ proof)
+    are named DIRECTLY; a completed public chain landing outside the card
+    table voids with attribution deferred to the audit."""
+    if st["phase"] == "void":
+        return st
+    a = _l2_body_parse(body)
+    posf = a.get("pos", "")
+    slotf = a.get("slot", "")
+    valf = a.get("val", "")
+    prooff = a.get("proof", "")
+    if not posf.isdigit() or not slotf.isdigit() or valf == "":
+        return l2_void_mark(st, pos, "void:body-format")
+    if int(posf) != pos:
+        return l2_void_mark(st, pos, "void:body-pos")
+    slot = int(slotf)
+    if slot < 1 or slot > 52:
+        return l2_void_mark(st, pos, "void:slot-range")
+    stored = st["lastBody"].get(slot, "")
+    if stored != "" and body.lower() == stored.lower():
+        st["last"] = "dup"
+        return st
+    if st["phase"] != "deal":
+        return l2_void_mark(st, pos, "void:step-phase")
+    chain_n = st["chainN"].get(slot, 0)
+    owner = st["owner"].get(slot, 0)
+    need = st["count"] if owner == 0 else st["count"] - 1
+    if chain_n >= need:
+        return l2_void_mark(st, pos, "void:chain-done:%d" % slot)
+    order = [p for p in range(1, st["count"] + 1) if p != owner]
+    step = chain_n + 1
+    expect = order[step - 1]
+    if pos != expect:
+        return l2_void_mark(st, pos, "void:chain-order:%d:%d,%d" % (slot, expect, pos))
+    vd = l2_point_ok(valf)
+    if vd != "ok":
+        return l2_void_mark(st, pos, vd)
+    chain_txt = st["chain"].get(slot, "")
+    if chain_txt == "":
+        chain_txt = st["deckAt"][st["count"]].split(",")[slot - 1]
+    prev_hex = chain_txt.split(",")[-1]
+    if st["dleq"] == "true" and prooff == "":
+        return l2_void_mark(st, pos, "void:proof-missing:%d" % slot)
+    if prooff != "":
+        ck_stored = st["ck"].get(pos, "")
+        if ck_stored == "":
+            return l2_void_mark(st, pos, "void:ck-missing:%d" % slot)
+        vd = l2_dleq_verify(ck_stored, valf, prev_hex, prooff)
+        if vd != "ok":
+            return l2_void_mark(st, pos, "%s:%d" % (vd, slot))
+    st["chain"][slot] = chain_txt + "," + valf
+    st["chainN"][slot] = step
+    st["lastBody"][slot] = body
+    st["last"] = "applied"
+    if step == need:
+        if owner == 0:
+            card = l2_public_card(st["chain"][slot], st["base"])
+            if card.startswith("card:"):
+                st["card"][slot] = card
+            else:
+                return l2_void_mark(st, 0, "%s:%d" % (card, slot))
+        else:
+            st["holeUp"][slot] = "true"
+    return st
+
+
+def l2_void_timeout(st, owed_pos):
+    """heL2VoidTimeout twin: the deal-phase timer expired with owed_pos owing
+    the next step (spec 9). Provisionally named; the mandatory audit keeps
+    the name only if every signed step re-verifies (an EARLIER bad step
+    outranks the stall -- the spec's "first bad one" rule)."""
+    if st["phase"] == "void":
+        return st
+    st["stall"] = owed_pos
+    return l2_void_mark(st, owed_pos, "void:deal-timeout:%d" % owed_pos)
+
+
+def l2_void_outcome(st):
+    """heL2VoidOutcome twin: the 4d verdict line. A void hand ALWAYS returns
+    the bets and ALWAYS requires the full reveal (spec 7.3: the hand is
+    void, so the reveal costs nothing); named=audit defers attribution to
+    l2_void_audit."""
+    if st["phase"] != "void":
+        return st["phase"]
+    if st["named"] > 0:
+        return "void|%s|named=%d|bets-return|reveal-required" % (st["why"], st["named"])
+    return "void|%s|named=audit|bets-return|reveal-required" % st["why"]
+
+
+def l2_void_audit(st, reveals_txt):
+    """heL2VoidAudit twin: the mandatory full-reveal audit, in the MANDATORY
+    order -- shuffle steps in contributor order first (a missing reveal or a
+    commitment-key lie names its owner outright), then every opened chain in
+    slot order, each step in chain order. The FIRST bad signed step names
+    the cheater; a recorded staller keeps the name only when everything
+    signed re-verifies; a clean audit is the table agreeing to void."""
+    rk = {}
+    rs = {}
+    for line in reveals_txt.split("\n"):
+        if line == "":
+            continue
+        f = line.split("\t")
+        rk[int(f[0])] = f[1]
+        rs[int(f[0])] = f[2]
+    for i in range(1, st["count"] + 1):
+        if rk.get(i, "") == "":
+            return "named=%d|void:audit-refused" % i
+        ck_stored = st["ck"].get(i, "")
+        if ck_stored != "":
+            # engine side also gates on heL2HasDleq (a pre-ABI-9 SodiumXT
+            # cannot compute k*B); the reference always has the algebra
+            if l2_commit_key(rk[i]).lower() != ck_stored.lower():
+                return "named=%d|void:audit-ck-mismatch" % i
+        vd = l2_reveal_shuffle(st["deckAt"].get(i - 1, ""),
+                               st["deckAt"].get(i, ""), rk[i], rs[i])
+        if vd != "ok":
+            return "named=%d|%s" % (i, vd)
+    for slot in range(1, 53):
+        chain_n = st["chainN"].get(slot, 0)
+        if chain_n == 0:
+            continue
+        chain = st["chain"][slot].split(",")
+        owner = st["owner"].get(slot, 0)
+        order = [p for p in range(1, st["count"] + 1) if p != owner]
+        for t in range(1, chain_n + 1):
+            p = order[t - 1]
+            vd = l2_reveal_unmask(chain[t - 1], chain[t], rk[p])
+            if vd != "ok":
+                return "named=%d|%s:%d:%d" % (p, vd, slot, t)
+    if st["stall"] > 0:
+        return "named=%d|%s" % (st["stall"], st["why"])
+    return "named=0|audit-clean"
+
+
+def l0_audit(table, hand, seeds_hex, commits_hex, count, holes, flop, turn,
+             river, occ, button):
+    """heAuditDeal twin (spec 7.1 step 5) -- what the 4e deck-stacker bot
+    runs against: recompute the whole Level 0 deal from the revealed seeds
+    and name the FIRST failing step."""
+    for i in range(1, count + 1):
+        if seed_commit(bytes.fromhex(seeds_hex[i - 1])).hex() != commits_hex[i - 1]:
+            return "fail:commit-mismatch-position-%d" % i
+    seeds = [bytes.fromhex(s) for s in seeds_hex]
+    key = stream_key(table, hand, xor_seeds(seeds))
+    deck = shuffle_from_stream(stream_bytes(key, 16))
+    ch, cf, ct, cr, _ = assign_deal(deck, occ, button)
+    for s in occ:
+        if ch[s] != holes[s]:
+            return "fail:hole-mismatch-seat-%d" % s
+    if cf != flop:
+        return "fail:flop-mismatch"
+    if ct != turn:
+        return "fail:turn-mismatch"
+    if cr != river:
+        return "fail:river-mismatch"
+    return "pass"
+
+
 def compute_all():
     check_ed25519()
     out = {}
@@ -1044,6 +1466,144 @@ def compute_all():
     l2_bad_perm = l2_perms[0].split(",")
     l2_bad_perm[0] = "0"
     out["l2_void_perm"] = l2_mask_deck(l2_base, l2_ks[0], ",".join(l2_bad_perm))
+
+    # -- Phase 4d void-and-audit + Phase 4e bots + Phase 5 DLEQ (spec 7.3 /
+    # 7.4 / 12.4). Every pin below is a whole SCENARIO: the machine (or the
+    # DLEQ verifier) driven by a scripted attacker over the fixed-scalar
+    # fixtures above, with the verdict string pinned -- so the attribution
+    # contract ("this attack is detected AND names this signer") is held
+    # headlessly, and heTestLevel2VoidRun re-checks the same verdicts
+    # on-engine.
+    l2_cks = [l2_commit_key(k) for k in l2_ks]
+    out["l2_cks"] = l2_cks
+    out["l2_shuffle_body_ok"] = (
+        l2_shuffle_body(1, "", l2_d1) ==
+        "pos=1,ck=,deck=" + l2_d1.replace(",", "|"))
+    out["l2_unmask_body1"] = l2_unmask_body(1, 1, l2_v1, "")
+    l2_reveals = "\n".join("%d\t%s\t%s" % (i + 1, l2_ks[i], l2_perms[i])
+                           for i in range(3))
+
+    # the honest table: three shuffle steps, the pinned public chain on slot
+    # 1, the pinned hole chain (owner seat 2) on slot 2 -- and a clean audit
+    st = l2_void_new(3, l2_base, False, "2:2")
+    st = l2_void_shuffle(st, 1, l2_shuffle_body(1, "", l2_d1))
+    st = l2_void_shuffle(st, 2, l2_shuffle_body(2, "", l2_d2))
+    st = l2_void_shuffle(st, 3, l2_shuffle_body(3, "", l2_d3))
+    st = l2_void_unmask(st, 1, l2_unmask_body(1, 1, l2_v1, ""))
+    st = l2_void_unmask(st, 2, l2_unmask_body(2, 1, l2_v2, ""))
+    st = l2_void_unmask(st, 3, l2_unmask_body(3, 1, l2_v3, ""))
+    st = l2_void_unmask(st, 1, l2_unmask_body(1, 2, l2_w1, ""))
+    st = l2_void_unmask(st, 3, l2_unmask_body(3, 2, l2_w2, ""))
+    out["l2v_honest_outcome"] = l2_void_outcome(st)
+    out["l2v_honest_card"] = st["card"][1]
+    out["l2v_honest_hole"] = st["holeUp"][2]
+    out["l2v_honest_audit"] = l2_void_audit(st, l2_reveals)
+
+    # bot: duplicate-point shuffler -- refused at post time, named directly
+    st = l2_void_new(3, l2_base, False, "")
+    st = l2_void_shuffle(st, 1, l2_shuffle_body(1, "", l2_d1))
+    dd = l2_d2.split(",")
+    dd[1] = dd[0]
+    st = l2_void_shuffle(st, 2, l2_shuffle_body(2, "", ",".join(dd)))
+    out["l2v_dup_shuffler"] = l2_void_outcome(st)
+
+    # bot: rollback replayer -- an identical re-post is a harmless dup (the
+    # state does not move), a DIFFERENT re-post for the applied position is
+    # signed equivocation, named directly
+    st = l2_void_new(3, l2_base, False, "")
+    sh1 = l2_shuffle_body(1, "", l2_d1)
+    st = l2_void_shuffle(st, 1, sh1)
+    st = l2_void_shuffle(st, 2, l2_shuffle_body(2, "", l2_d2))
+    st = l2_void_shuffle(st, 1, sh1)
+    out["l2v_rollback_dup"] = "%s,%d" % (st["last"], st["applied"])
+    de = l2_d1.split(",")
+    de[0], de[1] = de[1], de[0]
+    st = l2_void_shuffle(st, 1, l2_shuffle_body(1, "", ",".join(de)))
+    out["l2v_rollback_equiv"] = l2_void_outcome(st)
+
+    # bot: wrong-scalar unmasker, no DLEQ -- every step is individually
+    # well-formed, the chain completes OUTSIDE the table (deferred
+    # attribution), and the mandatory reveal audit names seat 2's step
+    st = l2_void_new(3, l2_base, False, "")
+    st = l2_void_shuffle(st, 1, l2_shuffle_body(1, "", l2_d1))
+    st = l2_void_shuffle(st, 2, l2_shuffle_body(2, "", l2_d2))
+    st = l2_void_shuffle(st, 3, l2_shuffle_body(3, "", l2_d3))
+    st = l2_void_unmask(st, 1, l2_unmask_body(1, 1, l2_v1, ""))
+    st = l2_void_unmask(st, 2, l2_unmask_body(2, 1, l2_b2, ""))
+    st = l2_void_unmask(st, 3, l2_unmask_body(3, 1, l2_b3, ""))
+    out["l2v_wrong_scalar_outcome"] = l2_void_outcome(st)
+    out["l2v_wrong_scalar_audit"] = l2_void_audit(st, l2_reveals)
+
+    # bot: deal staller -- provisionally named on the timeout; the audit
+    # re-verifies everything signed and keeps the staller's name
+    st = l2_void_new(3, l2_base, False, "")
+    st = l2_void_shuffle(st, 1, l2_shuffle_body(1, "", l2_d1))
+    st = l2_void_shuffle(st, 2, l2_shuffle_body(2, "", l2_d2))
+    st = l2_void_shuffle(st, 3, l2_shuffle_body(3, "", l2_d3))
+    st = l2_void_unmask(st, 1, l2_unmask_body(1, 1, l2_v1, ""))
+    st = l2_void_timeout(st, 2)
+    out["l2v_staller_outcome"] = l2_void_outcome(st)
+    out["l2v_staller_audit"] = l2_void_audit(st, l2_reveals)
+
+    # bot: deck-stacker (against LEVEL 0, spec 12.4's own list): a dealer
+    # who deals cards the committed stream never produced, and one who
+    # re-chooses its seed after seeing the others -- the spec 7.1 step 5
+    # audit names each
+    stacked = dict(holes)
+    stacked[1], stacked[2] = holes[2], holes[1]
+    seeds_hex = [s.hex() for s in DEAL_SEEDS]
+    out["l0_stacker_holes"] = l0_audit(TABLE, HAND, seeds_hex, out["commits"],
+                                       3, stacked, flop, turn, river,
+                                       OCCUPIED, BUTTON)
+    bad_commits = list(out["commits"])
+    bad_commits[0] = out["commits"][1]
+    out["l0_stacker_commit"] = l0_audit(TABLE, HAND, seeds_hex, bad_commits,
+                                        3, holes, flop, turn, river,
+                                        OCCUPIED, BUTTON)
+
+    # -- Phase 5 DLEQ: the pinned honest proof (over the pinned unmask step
+    # v1 = k1^-1 * c0, i.e. statement c0 = k1 * v1), then soundness proved
+    # NEGATIVELY: a wrong secret, swapped points, a tampered commitment, and
+    # the honest procedure run over a FALSE statement all verify false --
+    # the last one via equation 2, which is exactly the wrong-scalar
+    # unmasker's only available forgery.
+    l2_proof = l2_dleq_prove(l2_ks[0], l2_v1, l2_c0)
+    out["l2_dleq_proof"] = l2_proof
+    out["l2_dleq_verify_ok"] = l2_dleq_verify(l2_cks[0], l2_v1, l2_c0, l2_proof)
+    out["l2_dleq_forge_wrongval"] = l2_dleq_verify(
+        l2_cks[1], l2_b2, l2_v1, l2_dleq_prove(l2_ks[1], l2_b2, l2_v1))
+    out["l2_dleq_forge_wrongk"] = l2_dleq_verify(
+        l2_cks[1], l2_v2, l2_v1, l2_dleq_prove(l2_ks[2], l2_v2, l2_v1))
+    out["l2_dleq_forge_swap"] = l2_dleq_verify(l2_cks[0], l2_c0, l2_v1, l2_proof)
+    out["l2_dleq_forge_tamper"] = l2_dleq_verify(
+        l2_cks[0], l2_v1, l2_c0, l2_v3 + l2_proof[64:])
+
+    # the proof wired into the unmaskStep record (spec 7.4's reserved field):
+    # on a dleq=1 table a proof-carrying honest step applies, the
+    # wrong-scalar unmasker is refused INSTANTLY with direct attribution (no
+    # audit round -- 7.4's "impossible rather than attributable"), a missing
+    # proof is itself a named refusal, and a lying commitment key is caught
+    # by the audit's binding check
+    stb = l2_void_new(3, l2_base, True, "2:2")
+    stb = l2_void_shuffle(stb, 1, l2_shuffle_body(1, l2_cks[0], l2_d1))
+    stb = l2_void_shuffle(stb, 2, l2_shuffle_body(2, l2_cks[1], l2_d2))
+    stb = l2_void_shuffle(stb, 3, l2_shuffle_body(3, l2_cks[2], l2_d3))
+    stb = l2_void_unmask(stb, 1, l2_unmask_body(1, 1, l2_v1, l2_proof))
+    out["l2v_dleq_applied"] = stb["last"]
+    stb = l2_void_unmask(stb, 2, l2_unmask_body(
+        2, 1, l2_b2, l2_dleq_prove(l2_ks[1], l2_b2, l2_v1)))
+    out["l2v_dleq_outcome"] = l2_void_outcome(stb)
+    stc = l2_void_new(3, l2_base, True, "")
+    stc = l2_void_shuffle(stc, 1, l2_shuffle_body(1, l2_cks[0], l2_d1))
+    stc = l2_void_shuffle(stc, 2, l2_shuffle_body(2, l2_cks[1], l2_d2))
+    stc = l2_void_shuffle(stc, 3, l2_shuffle_body(3, l2_cks[2], l2_d3))
+    stc = l2_void_unmask(stc, 1, l2_unmask_body(1, 1, l2_v1, ""))
+    out["l2v_dleq_missing"] = l2_void_outcome(stc)
+    std = l2_void_new(3, l2_base, True, "")
+    std = l2_void_shuffle(std, 1, l2_shuffle_body(1, l2_cks[2], l2_d1))
+    std = l2_void_shuffle(std, 2, l2_shuffle_body(2, l2_cks[1], l2_d2))
+    std = l2_void_shuffle(std, 3, l2_shuffle_body(3, l2_cks[2], l2_d3))
+    out["l2v_audit_ck"] = l2_void_audit(std, l2_reveals)
     return out
 
 
@@ -1102,6 +1662,45 @@ PINNED = {
  "l2_void_mask_invalid": "void:invalid-point",
  "l2_void_perm": "void:perm-format:1",
  "l2_void_wrong_scalar": "void:unmask-mismatch",
+ # Phase 4d/4e (spec 7.3/12.4): the pinned record formats, the void machine
+ # driven by each scripted cheater bot, and the audit's attribution verdict
+ # per attack -- re-checked on-engine by heTestLevel2VoidRun.
+ "l2_cks": ["f8aaee2dfe3f251d8726037421fd646a85446b00f132dc37d0792a7e48a08a03", "94d02c9027dffcedbc3fca0569b23d13fc966462b5208b5a25668ddefaa4ea65", "9ce4b6a7337e94a6c60535fccf71ee83a69745b46359fa9bd0a1846864ad1458"],
+ "l2_shuffle_body_ok": True,
+ "l2_unmask_body1": "pos=1,slot=1,val=dccce0c6d9e263337316e3487d17796b76d3057c9473c40b95be7b4b78a10069,proof=",
+ "l2v_honest_outcome": "deal",
+ "l2v_honest_card": "card:49",
+ "l2v_honest_hole": "true",
+ "l2v_honest_audit": "named=0|audit-clean",
+ "l2v_dup_shuffler": "void|void:duplicate-point:1,2|named=2|bets-return|reveal-required",
+ "l2v_rollback_dup": "dup,2",
+ "l2v_rollback_equiv": "void|void:step-equivocation:1|named=1|bets-return|reveal-required",
+ "l2v_wrong_scalar_outcome": "void|void:final-not-in-table:1|named=audit|bets-return|reveal-required",
+ "l2v_wrong_scalar_audit": "named=2|void:unmask-mismatch:1:2",
+ "l2v_staller_outcome": "void|void:deal-timeout:2|named=2|bets-return|reveal-required",
+ "l2v_staller_audit": "named=2|void:deal-timeout:2",
+ "l0_stacker_holes": "fail:hole-mismatch-seat-1",
+ "l0_stacker_commit": "fail:commit-mismatch-position-1",
+ # Phase 5 DLEQ (spec 7.4): the derandomized proof from fixed scalars, its
+ # soundness proved negatively, and the proof wired into the unmaskStep
+ # record's reserved field on a dleq=1 machine. Provenance: at authoring
+ # (2026-08-16) the commit keys and the proof below were ALSO recomposed
+ # byte-for-byte against libsodium itself (ctypes over the system library:
+ # scalar_add-reduce, base-mult, point-mult, point-add -- both verify
+ # equations close, and the wrong-scalar forgery passes eq1 / fails eq2
+ # there too), so reference, libsodium, and these pins agree; the xTalk
+ # side composes the same libsodium through SodiumXT, leaving only the sx*
+ # call shapes to its OXT pass.
+ "l2_dleq_proof": "d84b045c40a2d08257ef6907556d4a096a26f0777b2a8c213db9736e403150048634476eb775e61807679da17345da913e9ae89959a0dd3a5ed121483a4de064c838dc1234a84786a24f5c120cf28dc410b59d28213e74c4befbc1992fbb2e04",
+ "l2_dleq_verify_ok": "ok",
+ "l2_dleq_forge_wrongval": "void:dleq-mismatch:2",
+ "l2_dleq_forge_wrongk": "void:dleq-mismatch:1",
+ "l2_dleq_forge_swap": "void:dleq-mismatch:1",
+ "l2_dleq_forge_tamper": "void:dleq-mismatch:1",
+ "l2v_dleq_applied": "applied",
+ "l2v_dleq_outcome": "void|void:dleq-mismatch:2:1|named=2|bets-return|reveal-required",
+ "l2v_dleq_missing": "void|void:proof-missing:1|named=1|bets-return|reveal-required",
+ "l2v_audit_ck": "named=1|void:audit-ck-mismatch",
  "admit_sig": "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b",
  "burns": "Jd,9d,3d",
  # 2e street ckpt + show/muck wires (spec 6 as-built bodies), pinned as the
@@ -1257,6 +1856,10 @@ def main():
         print('constant kKatL2PublicCard = "%s"' % got["l2_public_card"])
         print('constant kKatL2HoleChain = "%s"' % got["l2_hole_chain"])
         print('constant kKatL2HoleCard = "%s"' % got["l2_hole_card"])
+        print('constant kKatL2Ck1 = "%s"' % got["l2_cks"][0])
+        print('constant kKatL2Ck2 = "%s"' % got["l2_cks"][1])
+        print('constant kKatL2Ck3 = "%s"' % got["l2_cks"][2])
+        print('constant kKatL2DleqProof = "%s"' % got["l2_dleq_proof"])
         return 0
 
     got = compute_all()
