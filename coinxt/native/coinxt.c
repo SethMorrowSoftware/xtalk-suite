@@ -11,6 +11,13 @@
  * Phase 2: the secp256k1 curve surface (keys, ECDSA, recoverable ECDSA,
  * recovery, ECDH). HD (BIP-32) and mnemonic (BIP-39) land in later phases; the
  * ABI contract they all follow was fixed in phase 1 and is unchanged.
+ * ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak, over a SECOND vendored
+ * library - upstream bitcoin-core/secp256k1. That is a change to the rule this
+ * file opened with ("wrap trezor-crypto, add no cryptography"), made
+ * deliberately and recorded in CLAUDE.md and SPEC.md section 2: trezor-crypto's
+ * plain-C tree has no BIP-340 implementation, and hand-rolling a signature
+ * scheme is precisely what the rule exists to prevent. See "TWO VENDORED
+ * LIBRARIES" below for which library owns which operation.
  *
  * ABI rules (CLAUDE.md, carried family FFI law):
  *  - byte buffers cross as Pointer + length; sizes are size_t;
@@ -24,6 +31,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h> /* abort(), for the entropy failure path below */
+#include <string.h> /* memcpy(), for the two fixed-size tweak/aux staging
+                    * buffers in the ABI 6 section. Secrets are wiped with
+                    * vendored memzero(), never with memset. */
 
 #include "bip39.h"     /* vendored trezor-crypto: BIP39_WORD_COUNT and the
                         * BIP39_WORDLIST_ENGLISH table (defined in
@@ -39,6 +49,29 @@
 #include "secp256k1.h" /* vendored trezor-crypto: the secp256k1 curve constants  */
 #include "sha2.h"      /* vendored trezor-crypto: sha256_Raw / sha512_Raw        */
 #include "sha3.h"      /* vendored trezor-crypto: keccak_256 / sha3_256 (one-shot) */
+
+/* The SECOND vendored library (ABI 6): upstream bitcoin-core/secp256k1, for
+ * BIP-340 Schnorr and the BIP-341 Taproot tweak. Included by an explicit
+ * subdirectory path rather than by bare name because vendor/ already holds a
+ * DIFFERENT secp256k1.h - trezor-crypto's curve-parameter header, included
+ * above - and -isystem vendor/ puts both on the search path. The two never
+ * collide as identifiers (trezor exports a `secp256k1` struct, upstream a
+ * `secp256k1_*` namespace), but the include lines would, so neither is left to
+ * search order.
+ *
+ * SECP256K1_NO_API_VISIBILITY_ATTRIBUTES is set by the build for every
+ * translation unit, ours and upstream's. It makes SECP256K1_API a bare
+ * `extern`, which is what upstream documents for "a static library which is
+ * linked into a shared library, and the latter should not re-export the
+ * libsecp256k1 API" - exactly our case. Without it, MinGW would decorate these
+ * declarations with __declspec(dllimport) here and __declspec(dllexport) in
+ * upstream's own translation unit, and the shipped DLL would advertise (and
+ * try to import) a libsecp256k1 surface that is nobody's business but ours.
+ * The cnx_* surface stays the only export either way - src/coinxt.map on ELF,
+ * a generated .def on PE - but this settles it one layer earlier.           */
+#include "libsecp256k1/include/secp256k1.h"
+#include "libsecp256k1/include/secp256k1_extrakeys.h"
+#include "libsecp256k1/include/secp256k1_schnorrsig.h"
 
 /* The OS entropy backend for random_buffer(). See the entropy section below for
  * why a curve library that signs deterministically still needs one. Choosing
@@ -64,11 +97,12 @@ do not fall back to anything weaker (see the entropy section in coinxt.c)."
 /* 3: phase 2 added the secp256k1 curve surface. 4: the two BIP-32 curve steps
  * and the BIP-39 wordlist. 5: cnx_memzero, the secret-hygiene export the .lcb
  * header had recorded as future work (it lets the binding wipe its raw
- * out-buffers before freeing them). Additive every time - each bump kept every
- * prior symbol's name and signature - but the rule is to bump on ANY ABI
- * change so cxCheckABI() can refuse a stale binary rather than fail at the
- * first missing bind. */
-#define CNX_ABI_VERSION 5
+ * out-buffers before freeing them). 6: BIP-340 Schnorr and the BIP-341 Taproot
+ * tweak, over the newly vendored upstream libsecp256k1. Additive every time -
+ * each bump kept every prior symbol's name and signature - but the rule is to
+ * bump on ANY ABI change so cxCheckABI() can refuse a stale binary rather than
+ * fail at the first missing bind. */
+#define CNX_ABI_VERSION 6
 
 #define CNX_OK 0
 #define CNX_ERR_NULL (-1)   /* a required buffer pointer was NULL */
@@ -704,5 +738,492 @@ int cnx_bip39_wordlist(unsigned char *out, size_t outlen) {
       j++;
     }
   }
+  return CNX_OK;
+}
+
+/* ==========================================================================
+ * ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak, over upstream
+ * bitcoin-core/secp256k1.
+ * ==========================================================================
+ *
+ * TWO VENDORED LIBRARIES, AND WHY. Everything above this line is
+ * trezor-crypto. Everything below it is upstream libsecp256k1. That split is
+ * a deliberate change to a rule this project held from phase 0 ("every curve
+ * op and hash is trezor-crypto's; CoinXT adds no cipher of its own"), and it
+ * is recorded as a decision in CLAUDE.md and SPEC.md section 2 rather than
+ * edited quietly into the prose. The short form: trezor-crypto's plain-C tree
+ * has NO BIP-340 implementation - it reaches Schnorr only through
+ * zkp_bip340.c, which requires the bundled secp256k1-zkp and its own build
+ * system - so the choice was between a second audited library and writing a
+ * signature scheme here. Rule 1 exists to forbid the second. What did NOT
+ * change is the part that matters: CoinXT still adds no cryptography of its
+ * own; it now composes two upstream libraries instead of one.
+ *
+ * THE TWO DO NOT OVERLAP, and that is enforced by which functions exist here.
+ * ECDSA, recovery, ECDH, the BIP-32 tweaks and every hash stay on
+ * trezor-crypto; Schnorr, x-only keys and the Taproot tweak are upstream's and
+ * are reached ONLY through the five entry points below. Nothing is
+ * reimplemented against the other library, and no result crosses between them
+ * except as opaque 32-byte scalars and serialized keys, which are
+ * library-independent by definition. A future maintainer moving an operation
+ * from one to the other is making an interoperability decision, not a
+ * refactor.
+ *
+ * THE CONTEXT. Upstream needs a secp256k1_context. It is created ONCE, on
+ * first use, and kept in a file-static pointer: creation is not free, and the
+ * family's alternative - a handle through script - is exactly what CLAUDE.md
+ * says not to build for a stateless library. It is never destroyed, which is
+ * correct rather than sloppy: it is one small allocation reachable from a
+ * global for the life of the process (so ASan's leak checker does not report
+ * it), CoinXT has no shutdown call and by design never will, and freeing it
+ * would create a use-after-free window for exactly zero benefit.
+ *
+ * THREADING. The context is created and re-randomized without a lock, which is
+ * sound here for the same reason the rest of this member is: CoinXT is called
+ * only from the xTalk engine's script thread (CLAUDE.md, family rule 1: never
+ * call an xTalk handler from a foreign thread), and every entry point is
+ * synchronous. Upstream states the rule precisely - a constructed context is
+ * safe to SHARE across threads, but secp256k1_context_randomize needs
+ * exclusive access - so a future multi-threaded host would need a lock around
+ * cnx_secp_ready() and nothing else.
+ *
+ * THE DEFAULT ILLEGAL-ARGUMENT CALLBACK IS LEFT IN PLACE, deliberately.
+ * Upstream's default aborts the process on an API misuse (a NULL where the
+ * header says non-NULL). Installing a returning callback instead is possible
+ * and looks safer, but upstream's own header says that if the callback
+ * returns, "the return value and output arguments of the API function call are
+ * undefined" - an undefined return in a money library is strictly worse than a
+ * loud stop. So the firewall below guarantees the callback is unreachable
+ * instead: every pointer upstream is handed is non-NULL and every length is
+ * checked here first, which is the same contract cnx_pubkey_ok already
+ * enforces for trezor-crypto's unlengthed pubkey parser. This mirrors the
+ * abort() in random_buffer above, for the same reason and with the same
+ * pre-flight in front of it.                                                */
+
+/* Every length a caller allocates comes from here, never from a constant in
+ * the binding (SPEC.md section 5: "every length is a function"). */
+size_t cnx_schnorr_sig_len(void) { return 64; }
+size_t cnx_xonly_pubkey_len(void) { return 32; }
+/* The Taproot output record: 32 bytes of x-only key followed by ONE parity
+ * byte (0 = even Y, 1 = odd Y). Packing the parity into the output buffer
+ * rather than into an `int *` out-parameter is this member's existing
+ * convention, not a new one - cnx_ecdsa_sign_recoverable writes a 65-byte
+ * record that is 64 bytes of signature plus a recovery id - and it keeps the
+ * binding on shapes an engine has already marshalled: no .lcb in this suite
+ * has ever declared a scalar `out` parameter against our own C, and a money
+ * library is the wrong place to find out headlessly whether one works. The
+ * parity is what a script-path spend needs for its control byte; a key-path
+ * spend and a P2TR address need only the 32 bytes. */
+size_t cnx_taproot_output_len(void) { return 33; }
+
+/* The one long-lived object in this shim. See "THE CONTEXT" above. */
+static secp256k1_context *cnx_secp_ctx = NULL;
+
+/* Create the context if it does not exist, then randomize it.
+ *
+ * CONTEXT RANDOMIZATION IS THE POINT OF THE CONTEXT. Upstream: "The primary
+ * purpose of context objects is to store randomization data for enhanced
+ * protection against side-channel leakage. This protection is only effective
+ * if the context is randomized after its creation." It blinds the scalar
+ * multiplications that involve a SECRET key, so it is re-done before every
+ * such operation here, which is upstream's own "before every few computations
+ * involving secret keys is recommended as a defense-in-depth measure" taken at
+ * its strongest reading. That costs one OS entropy draw and one blinding
+ * update per secret operation, which is the same order as what trezor-crypto
+ * already spends on this member's ECDSA path (it draws OS entropy on every
+ * scalar multiply, for the same reason - see the entropy section above).
+ *
+ * It FAILS CLOSED. If the OS entropy source is unavailable, the call returns
+ * CNX_ERR_ENTROPY and no signing happens, exactly as the trezor-crypto entry
+ * points above do via cnx_entropy_ok(). A context that could not be randomized
+ * is never used: on the create path it is destroyed again, so the next call
+ * retries from scratch rather than inheriting an unblinded context.
+ *
+ * THE ONE THING THAT IS EASY TO MISREAD, so it is said here rather than left
+ * to a reader's inference: `randomize = 0` skips the RE-randomization, not the
+ * entropy requirement in general. A brand-new context is always randomized
+ * (the flag is forced below), so the FIRST call of any kind - including a
+ * verification or an address computation - needs the OS entropy source once.
+ * That is not a regression this section introduces: cnx_ecdsa_verify above has
+ * required entropy on every call since phase 2, because trezor-crypto
+ * randomizes the projective Z coordinate on every scalar multiply. What
+ * `randomize = 0` buys is that a public-key operation on an ALREADY-created
+ * context spends no entropy and cannot fail for the lack of it. */
+static int cnx_secp_ready(int randomize) {
+  unsigned char seed[32];
+  int fresh = 0;
+  int ok = 0;
+  if (cnx_secp_ctx == NULL) {
+    cnx_secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    if (cnx_secp_ctx == NULL) return CNX_ERR_INTERNAL;
+    fresh = 1;
+    randomize = 1; /* a brand-new context has never been randomized */
+  }
+  if (!randomize) return CNX_OK;
+  if (!cnx_entropy_fill(seed, sizeof seed)) {
+    if (fresh) {
+      secp256k1_context_destroy(cnx_secp_ctx);
+      cnx_secp_ctx = NULL;
+    }
+    return CNX_ERR_ENTROPY;
+  }
+  ok = secp256k1_context_randomize(cnx_secp_ctx, seed);
+  memzero(seed, sizeof seed);
+  if (!ok) {
+    if (fresh) {
+      secp256k1_context_destroy(cnx_secp_ctx);
+      cnx_secp_ctx = NULL;
+    }
+    return CNX_ERR_INTERNAL;
+  }
+  return CNX_OK;
+}
+
+/* The BIP-341 tweak scalar: t = hash_TapTweak(bytes(P) || merkle_root).
+ *
+ * THE MERKLE ROOT IS OPTIONAL AND ITS ABSENCE IS NOT A ZERO ROOT. THIS IS A
+ * CONSENSUS RULE, NOT A CONVENIENCE. BIP-341 defines the tweak over
+ * `bytes(P) || merkle_root` where merkle_root is the EMPTY BYTE STRING when
+ * the output commits to no script tree (a key-path-only spend, the common
+ * case). Hashing 32 zero bytes instead would hash 64 bytes where the spec
+ * hashes 32, producing a different tweak, a different output key, a different
+ * address, and coins nobody can spend. The two cases are therefore carried by
+ * the LENGTH, not by a sentinel value: rootlen 0 means key-path-only and
+ * rootlen 32 means a real root, and any other length is refused. An all-zero
+ * 32-byte root is a legal (if useless) script commitment and is treated as
+ * one, because that is what it is.
+ *
+ * The tagged hash is upstream's secp256k1_tagged_sha256, i.e.
+ * SHA256(SHA256(tag) || SHA256(tag) || msg) with tag = "TapTweak". CoinXT does
+ * not build the tagged-hash construction itself even though it has SHA-256
+ * three feet up this file: composing it here would be re-deriving a
+ * specification detail that the library implementing the rest of BIP-341
+ * already implements and tests. */
+static int cnx_taproot_tweak_scalar(const unsigned char *internal32,
+                                    const unsigned char *root, size_t rootlen,
+                                    unsigned char *out32) {
+  static const unsigned char tag[8] = {'T', 'a', 'p', 'T', 'w', 'e', 'a', 'k'};
+  unsigned char msg[64];
+  size_t msglen = 32;
+  memcpy(msg, internal32, 32);
+  if (rootlen == 32) {
+    memcpy(msg + 32, root, 32);
+    msglen = 64;
+  }
+  if (!secp256k1_tagged_sha256(cnx_secp_ctx, out32, tag, sizeof tag, msg, msglen)) {
+    memzero(msg, sizeof msg);
+    return CNX_ERR_INTERNAL;
+  }
+  memzero(msg, sizeof msg);
+  return CNX_OK;
+}
+
+/* Shared guard for the optional merkle root. Mirrors the in-buffer convention
+ * this shim uses everywhere else: a NULL pointer is tolerated only when the
+ * matching length is 0. */
+static int cnx_root_ok(const unsigned char *root, size_t rootlen) {
+  if (rootlen == 0) return 1;
+  if (rootlen != 32) return 0;
+  return root != NULL;
+}
+
+/* BIP-340: sign a 32-byte message with a 32-byte private key.
+ *
+ * THE MESSAGE IS A 32-BYTE DIGEST AND NOTHING ELSE, which is narrower than
+ * BIP-340 allows (since 2022 it admits messages of any length; the published
+ * vector file exercises 0, 1, 17 and 100 bytes). That is CLAUDE.md rule 3,
+ * applied here as it is to cnx_ecdsa_sign: sign only the exact digest the app
+ * hands you, never a blob it has not decoded. BIP-341 signs a 32-byte sighash,
+ * which is the use this member exists for. VERIFICATION is deliberately NOT
+ * restricted the same way - see cnx_schnorr_verify.
+ *
+ * AUX_RAND, AND WHAT AN ABSENT ONE MEANS HERE. BIP-340's "Default Signing"
+ * takes 32 bytes of fresh randomness and folds them into the nonce derivation;
+ * upstream accepts NULL and treats it as an all-zero aux, while warning that
+ * providing real randomness is recommended. CoinXT does NOT take that default,
+ * because a library that silently picks the least-protected option when the
+ * caller says nothing is the fail-open shape this member exists to refuse.
+ * The rule here is:
+ *
+ *   auxlen == 32  ->  use exactly those bytes. The signature is then a pure
+ *                     function of (key, message, aux) and is KAT-pinnable;
+ *                     this is what the BIP-340 test vectors specify and what
+ *                     tools/coin-kat.py drives.
+ *   auxlen == 0   ->  draw 32 FRESH bytes from the OS entropy source, and fail
+ *                     closed (CNX_ERR_ENTROPY) if it is unavailable. Never an
+ *                     all-zero aux.
+ *   anything else ->  CNX_ERR_BADLEN.
+ *
+ * The second case is the ONE non-deterministic entry point in this shim, and
+ * SPEC.md section 4's "every operation is a pure function of its inputs" now
+ * carries that exception explicitly rather than being quietly false. It is
+ * safe in the sense that matters: BIP-340's nonce is
+ * hash(aux XOR key, P, msg), so it is deterministic in (key, msg) even at
+ * aux = 0 and a bad aux draw can never repeat a nonce across different
+ * messages. Randomness here only ADDS protection (against fault attacks and
+ * against differential power analysis of the nonce derivation); it cannot
+ * subtract any. A caller that wants byte-reproducible signatures supplies the
+ * aux, which is one line and is what the vectors do.
+ *
+ * Upstream's sign32 does not itself verify the signature it produced (its
+ * header says so and suggests verifying manually). This shim does not add that
+ * check either: it would double the cost of every signature to defend against
+ * a fault in code the KATs pin byte for byte, and the caller that wants it can
+ * call cnx_schnorr_verify - which is exported, and which coin-kat.py runs over
+ * every signature this function makes. */
+int cnx_schnorr_sign(const unsigned char *sk, size_t sklen,
+                     const unsigned char *msg, size_t msglen,
+                     const unsigned char *aux, size_t auxlen,
+                     unsigned char *sig, size_t siglen) {
+  secp256k1_keypair kp;
+  unsigned char aux32[32];
+  int rc = CNX_OK;
+  if (sk == NULL || msg == NULL || sig == NULL) return CNX_ERR_NULL;
+  if (sklen != 32 || msglen != 32 || siglen != 64) return CNX_ERR_BADLEN;
+  if (aux == NULL) {
+    if (auxlen != 0) return CNX_ERR_NULL;
+  } else if (auxlen != 0 && auxlen != 32) {
+    return CNX_ERR_BADLEN;
+  }
+  if (auxlen == 32) {
+    memcpy(aux32, aux, 32);
+  } else if (!cnx_entropy_fill(aux32, sizeof aux32)) {
+    return CNX_ERR_ENTROPY;
+  }
+  rc = cnx_secp_ready(1); /* a SECRET-key operation: re-randomize the context */
+  if (rc != CNX_OK) {
+    memzero(aux32, sizeof aux32);
+    return rc;
+  }
+  if (!secp256k1_keypair_create(cnx_secp_ctx, &kp, sk)) {
+    memzero(aux32, sizeof aux32);
+    memzero(&kp, sizeof kp);
+    memzero(sig, siglen);
+    return CNX_ERR_BADKEY;
+  }
+  if (!secp256k1_schnorrsig_sign32(cnx_secp_ctx, sig, msg, &kp, aux32)) {
+    rc = CNX_ERR_INTERNAL;
+    memzero(sig, siglen);
+  }
+  /* kp holds the private key; aux32 is nonce input. Neither stays on the
+   * stack (the same discipline as bignum256 k in cnx_seckey_verify). */
+  memzero(&kp, sizeof kp);
+  memzero(aux32, sizeof aux32);
+  return rc;
+}
+
+/* BIP-340 verification. Reports through the STATUS, on exactly the split
+ * cnx_ecdsa_verify uses: CNX_OK means the signature is good, CNX_ERR_BADSIG
+ * means it is not, and a WRONG BUFFER LENGTH is its own error because that is
+ * a caller bug rather than a verdict about a signature.
+ *
+ * AN X-ONLY KEY THAT DOES NOT PARSE IS "false", NOT AN ERROR, and that is not
+ * a judgement call - BIP-340's published vector set decides it. Index 5 is
+ * "public key not on the curve" and index 14 is "public key is not a valid X
+ * coordinate because it exceeds the field size"; both list their expected
+ * verification result as FALSE. A shim that returned CNX_ERR_BADKEY there
+ * would make cxSchnorrVerify throw where the specification says it must answer
+ * no, and a caller checking a third party's signature would see an exception
+ * for a case that is simply an invalid signature. Note this differs from
+ * cnx_ecdsa_verify's treatment of a bad pubkey, and the difference is real
+ * rather than an inconsistency: there the rejected shapes are wrong LENGTHS
+ * and wrong PREFIX BYTES, which are structural, and the overread guard has to
+ * refuse them before upstream sees them. Here every 32-byte string is
+ * structurally a candidate x-only key and only the curve can say otherwise.
+ *
+ * THE MESSAGE MAY BE ANY LENGTH, unlike cnx_schnorr_sign's. BIP-340 has
+ * admitted arbitrary-length messages since 2022 and its vector file carries
+ * four of them (0, 1, 17 and 100 bytes), so a verifier that insisted on 32
+ * would REJECT VALID SIGNATURES - failing closed in the wrong direction, which
+ * is not safety, it is a wrong answer. Signing stays narrow because signing is
+ * where blind-signing risk lives; verifying is where interoperability lives. */
+int cnx_schnorr_verify(const unsigned char *xonly, size_t xonlylen,
+                       const unsigned char *msg, size_t msglen,
+                       const unsigned char *sig, size_t siglen) {
+  secp256k1_xonly_pubkey pk;
+  int rc = CNX_OK;
+  if (xonly == NULL || sig == NULL) return CNX_ERR_NULL;
+  if (xonlylen != 32 || siglen != 64) return CNX_ERR_BADLEN;
+  if (msg == NULL) {
+    if (msglen != 0) return CNX_ERR_NULL;
+    msg = cnx_empty;
+  }
+  rc = cnx_secp_ready(0); /* public data only: no secret scalar to blind */
+  if (rc != CNX_OK) return rc;
+  if (!secp256k1_xonly_pubkey_parse(cnx_secp_ctx, &pk, xonly)) return CNX_ERR_BADSIG;
+  return secp256k1_schnorrsig_verify(cnx_secp_ctx, sig, msg, msglen, &pk) == 1
+             ? CNX_OK
+             : CNX_ERR_BADSIG;
+}
+
+/* The 32-byte x-only public key for a private key: BIP-340's bytes(P), which
+ * is the X coordinate of the point whose Y is even. This is the INTERNAL key a
+ * Taproot output is built from, and it is also what a BIP-340 verifier needs.
+ *
+ * It is NOT the 33-byte compressed key with its prefix removed, in general:
+ * cnx_pubkey_from_seckey returns the point for THIS private key, whose Y may be
+ * odd, whereas x-only serialization implicitly selects the even-Y point. The
+ * two X coordinates happen to be equal (negating a point keeps X), so in
+ * practice byte 2..33 of the compressed key IS this value - but the reason
+ * they agree is a property of the curve, not of the encoding, and a caller
+ * should not have to know that. Upstream's keypair machinery states it
+ * directly, so this is a call rather than a slice. */
+int cnx_xonly_pubkey_from_seckey(const unsigned char *sk, size_t sklen,
+                                 unsigned char *out, size_t outlen) {
+  secp256k1_keypair kp;
+  secp256k1_xonly_pubkey pk;
+  int rc = CNX_OK;
+  if (sk == NULL || out == NULL) return CNX_ERR_NULL;
+  if (sklen != 32 || outlen != 32) return CNX_ERR_BADLEN;
+  rc = cnx_secp_ready(1); /* derives a point from a SECRET scalar */
+  if (rc != CNX_OK) return rc;
+  if (!secp256k1_keypair_create(cnx_secp_ctx, &kp, sk)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  if (!secp256k1_keypair_xonly_pub(cnx_secp_ctx, &pk, NULL, &kp)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  /* Returns 1 always, per upstream's header; the status is read anyway so a
+   * future change of contract cannot pass silently. */
+  if (!secp256k1_xonly_pubkey_serialize(cnx_secp_ctx, out, &pk)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  memzero(&kp, sizeof kp);
+  return CNX_OK;
+}
+
+/* BIP-341: Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G.
+ *
+ * Writes the 33-byte output record described at cnx_taproot_output_len: 32
+ * bytes of x-only output key (the witness program of a P2TR scriptPubKey, and
+ * the payload of a bc1p... address) followed by the output key's parity byte.
+ *
+ * Every input here is PUBLIC, so the context is not re-randomized: upstream is
+ * explicit that the randomization blinds multiplications of a SECRET scalar
+ * with the base point, and there is no secret in this call. Spending the
+ * entropy draw anyway would buy nothing. (It does not make this call
+ * entropy-free in absolute terms - creating the context in the first place
+ * randomizes it once, whichever entry point gets there first; see
+ * cnx_secp_ready.)
+ *
+ * See cnx_taproot_tweak_scalar for why an absent merkle root is length 0 and
+ * NOT 32 zero bytes. */
+int cnx_taproot_tweak_pubkey(const unsigned char *internal, size_t internallen,
+                             const unsigned char *root, size_t rootlen,
+                             unsigned char *out, size_t outlen) {
+  secp256k1_xonly_pubkey ipk;
+  secp256k1_xonly_pubkey opk;
+  secp256k1_pubkey tweaked;
+  unsigned char tweak[32];
+  int parity = 0;
+  int rc = CNX_OK;
+  if (internal == NULL || out == NULL) return CNX_ERR_NULL;
+  if (internallen != 32 || outlen != 33) return CNX_ERR_BADLEN;
+  if (!cnx_root_ok(root, rootlen)) {
+    if (rootlen == 32) return CNX_ERR_NULL;
+    return CNX_ERR_BADLEN;
+  }
+  rc = cnx_secp_ready(0);
+  if (rc != CNX_OK) return rc;
+  if (!secp256k1_xonly_pubkey_parse(cnx_secp_ctx, &ipk, internal)) {
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  rc = cnx_taproot_tweak_scalar(internal, root, rootlen, tweak);
+  if (rc != CNX_OK) {
+    memzero(out, outlen);
+    return rc;
+  }
+  /* Upstream returns 0 only when the tweak is the negation of the internal
+   * key's scalar (about 1 in 2^128 for a hash output), which BIP-341 treats
+   * the same way BIP-32 treats an invalid child: the commitment is unusable
+   * and the caller must change an input. */
+  if (!secp256k1_xonly_pubkey_tweak_add(cnx_secp_ctx, &tweaked, &ipk, tweak)) {
+    memzero(tweak, sizeof tweak);
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  memzero(tweak, sizeof tweak);
+  if (!secp256k1_xonly_pubkey_from_pubkey(cnx_secp_ctx, &opk, &parity, &tweaked)) {
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  if (!secp256k1_xonly_pubkey_serialize(cnx_secp_ctx, out, &opk)) {
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  out[32] = (unsigned char)(parity ? 1 : 0);
+  return CNX_OK;
+}
+
+/* The spending half of the same tweak: the private key for the output key
+ * cnx_taproot_tweak_pubkey computes from the matching internal key.
+ *
+ * The tagged hash commits to bytes(P), the EVEN-Y serialization of the
+ * internal point - so this function derives P from the private key rather than
+ * being told it, which removes the one way a caller could pair a private key
+ * with somebody else's internal key and get a spendable-looking result for
+ * coins it cannot touch. Upstream's keypair_xonly_tweak_add then handles the
+ * negations BIP-341 requires on both sides (the internal key's, if its Y is
+ * odd, and the output key's), which is the fiddly part of the spec and the
+ * part worth not reimplementing.
+ *
+ * The result is the scalar to hand to cnx_schnorr_sign for a key-path spend.
+ * tools/coin-kat.py closes that loop end to end: tweak the key, sign with it,
+ * and verify against the x-only OUTPUT key that cnx_taproot_tweak_pubkey
+ * produced from the internal key alone. */
+int cnx_taproot_tweak_seckey(const unsigned char *sk, size_t sklen,
+                             const unsigned char *root, size_t rootlen,
+                             unsigned char *out, size_t outlen) {
+  secp256k1_keypair kp;
+  secp256k1_xonly_pubkey ipk;
+  unsigned char internal[32];
+  unsigned char tweak[32];
+  int rc = CNX_OK;
+  if (sk == NULL || out == NULL) return CNX_ERR_NULL;
+  if (sklen != 32 || outlen != 32) return CNX_ERR_BADLEN;
+  if (!cnx_root_ok(root, rootlen)) {
+    if (rootlen == 32) return CNX_ERR_NULL;
+    return CNX_ERR_BADLEN;
+  }
+  rc = cnx_secp_ready(1); /* a SECRET-key operation */
+  if (rc != CNX_OK) return rc;
+  if (!secp256k1_keypair_create(cnx_secp_ctx, &kp, sk)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  if (!secp256k1_keypair_xonly_pub(cnx_secp_ctx, &ipk, NULL, &kp) ||
+      !secp256k1_xonly_pubkey_serialize(cnx_secp_ctx, internal, &ipk)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  rc = cnx_taproot_tweak_scalar(internal, root, rootlen, tweak);
+  if (rc != CNX_OK) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return rc;
+  }
+  if (!secp256k1_keypair_xonly_tweak_add(cnx_secp_ctx, &kp, tweak)) {
+    memzero(tweak, sizeof tweak);
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_BADKEY;
+  }
+  memzero(tweak, sizeof tweak);
+  /* Returns 1 always; read anyway, as above. */
+  if (!secp256k1_keypair_sec(cnx_secp_ctx, out, &kp)) {
+    memzero(&kp, sizeof kp);
+    memzero(out, outlen);
+    return CNX_ERR_INTERNAL;
+  }
+  memzero(&kp, sizeof kp);
   return CNX_OK;
 }

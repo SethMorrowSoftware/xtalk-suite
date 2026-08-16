@@ -14,8 +14,9 @@ House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in 
 > addresses, HD wallets - are built and engine-passed; phase 5, transaction building, is built,
 > executed headlessly, model-verified, engine-passed 2026-08-12, and independently accepted in
 > all four transaction families 2026-08-13 (python-bitcointx + eth-account), with a live
-> testnet broadcast the one open bar; phase 6, packaging/demo, is partly done; Schnorr/
-> Taproot is deferred). Where the as-built code and this document disagree, the code and CLAUDE.md
+> testnet broadcast the one open bar; phase 6, packaging/demo, is partly done; **Schnorr /
+> Taproot is BUILT as of 2026-08-16 (ABI 6) and is no longer deferred** - see section 2's
+> recorded rule change). Where the as-built code and this document disagree, the code and CLAUDE.md
 > win, and the disagreement is
 > marked inline below rather than quietly reconciled. It is the source of
 > truth for WHAT CoinXT is and the contract each layer must meet; the phased HOW is in
@@ -44,8 +45,12 @@ It is **NOT**:
   the app broadcasts them (optionally over Tor via OnionXT, doc-level composition only).
 - A source of consensus truth. It does not validate a chain, a UTXO set, or a nonce. It signs what it is
   told to sign; the app is responsible for constructing the correct sighash / transaction.
-- New cryptography. Every curve op and hash is trezor-crypto's; CoinXT adds no cipher of its own (the
-  same rule SodiumXT and OnionXT hold).
+- New cryptography. Every curve op and hash is upstream, audited code; CoinXT adds no cipher of its
+  own (the same rule SodiumXT and OnionXT hold).
+  > **AS BUILT, and this sentence CHANGED on 2026-08-16.** It used to read "Every curve op and hash
+  > is trezor-crypto's". It now says "upstream", because there are two upstreams: trezor-crypto and
+  > bitcoin-core/secp256k1. The rule that matters is unchanged and is the one stated second - CoinXT
+  > adds no cryptography of its own - and section 2 records what changed, why, and what it costs.
 
 ## 2. Why trezor-crypto, and the license
 
@@ -59,6 +64,63 @@ It is the crypto core of a shipping hardware wallet, so the curve and hash code 
 maintained. CoinXT vendors a **subset** of its `.c` files (the curve, the hashes, BIP-32/39, base58,
 bech32) plus a small shim, and builds one shared library per platform. No autotools, no submodule tree,
 no libtorrent-scale build matrix.
+
+### 2.1 A SECOND library, and the rule change that admitted it (decided 2026-08-16)
+
+**What the rule was.** Section 1 said "Every curve op and hash is trezor-crypto's; CoinXT adds no
+cipher of its own", and this section's argument for trezor-crypto was that it is one MIT,
+dependency-free, plain-C tree that the family's FFI pattern can vendor whole. One library, one
+audit surface, one pin. CLAUDE.md rule 1 stated the operational form: "A missing primitive is a new
+vendored file or an upstream request, never a hand-rolled curve op or hash here."
+
+**What the rule is now.** CoinXT adds no cryptography of its own, and composes **two** upstream
+libraries: trezor-crypto, and **bitcoin-core/secp256k1** (upstream libsecp256k1, MIT, pinned at
+`439278a649d3099d62dde966a76dc04aaca7ccb3`). The two do not overlap. trezor-crypto keeps every
+hash, ECDSA, recoverable ECDSA, recovery, ECDH and the two BIP-32 curve steps. libsecp256k1 owns
+BIP-340 Schnorr, x-only public keys and the BIP-341 Taproot tweak, and is reached only through the
+five `cnx_` entry points that need it.
+
+**Why.** trezor-crypto's plain-C tree has **no BIP-340 implementation at all**. It reaches Schnorr
+only through `zkp_bip340.c`, which requires the bundled `secp256k1-zkp` library and that library's
+own build system - a vendoring an order of magnitude larger than everything CoinXT had, for a
+fork whose extra value (adaptor signatures, rangeproofs) is irrelevant here. So the choice was
+between a second audited library and writing BIP-340 by hand in this repository. **Hand-rolling a
+signature scheme is precisely what rule 1 exists to prevent**, which is why the rule bends here
+rather than breaks: the second library is the rule being obeyed, not waived. Upstream
+libsecp256k1 is also what Bitcoin Core itself ships, which makes it the least surprising possible
+answer to "whose Schnorr is this".
+
+**What the new audit surface is**, stated plainly so nobody has to measure it later:
+
+- **58 vendored files, 3.13 MB of source**, of which one generated table (`precomputed_ecmult.c`)
+  is 2.30 MB. Three translation units compile: `secp256k1.c` (which `#include`s the rest),
+  and the two precomputed tables. Every file is blob-verified against the pinned commit's tree and
+  hashed in `native/MANIFEST.sha256`. The file list, the pin's provenance and the
+  `ECMULT_WINDOW_SIZE` decision are in [`native/vendor/VENDOR.md`](native/vendor/VENDOR.md).
+- **Only two modules are enabled** (`schnorrsig`, `extrakeys`). `ecdh`, `recovery`, `musig`,
+  `ellswift` and `silentpayments` are not compiled and their sources are not vendored.
+- **One long-lived object appears in a shim that previously had none**: a file-static
+  `secp256k1_context`, created on first use and re-randomized before every secret-key operation.
+  That is real state in a member whose architecture section says it holds none, so it is called out
+  here as well as in `native/coinxt.c`: it is process-lifetime, immutable from script, never
+  exposed, and never freed.
+- **One entry point is no longer a pure function of its inputs.** `cnx_schnorr_sign` with an ABSENT
+  aux_rand draws fresh OS randomness (see section 4's amendment). Supplying the aux restores
+  determinism, which is what every vector does.
+- **Licensing gets simpler, not harder**: libsecp256k1 is MIT throughout with no third-party
+  sub-licenses, so it is one row in the suite `LICENSE` and one entry in
+  [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md), against trezor-crypto's six exceptions.
+
+**What this does NOT deliver, stated so nobody plans around a gap.** There is no BIP-341 sighash
+builder: the `SigMsg` algorithm is not `cxBtcSighashSegwit`'s and is not implemented, so CoinXT can
+receive to Taproot end to end and can sign a 32-byte BIP-341 sighash it is handed, but it cannot
+compute one. Script-path spending is also absent - leaf hashes, merkle proofs and control blocks
+are not built, and the merkle root crosses the API as opaque bytes. Both are additive script-layer
+work over the surface this change adds, not another vendoring.
+
+**What is NOT changed.** No cryptography is implemented in CoinXT. No operation moved from one
+library to the other. Nothing is reimplemented against both. A future maintainer moving an
+operation across that line is making an interoperability decision, not a refactor.
 
 ## 3. Architecture: what is C and what is script
 
@@ -104,6 +166,27 @@ This means: no ambient RNG in the shim to get wrong, no non-reproducible outputs
 is pinned by vectors in `tools/coin-kat.py`. It also keeps the trust story honest: CoinXT never invents
 the randomness your keys depend on; you hand it in and can audit where it came from.
 
+> **AS BUILT: two amendments, both of them corrections to the paragraph above.**
+>
+> 1. **"No ambient RNG in the shim" was wrong from phase 2** and is corrected at length in
+>    `native/coinxt.c` and CLAUDE.md: `vendor/ecdsa.c` draws OS entropy on EVERY scalar multiply as
+>    a side-channel countermeasure, and it cancels algebraically, which is why the signatures stay
+>    KAT-pinnable. ABI 6 adds one more consumer of the same source, for the same reason: the
+>    libsecp256k1 context is re-randomized before every secret-key operation, which is upstream's
+>    own recommendation. Neither is nonce generation and neither can weaken a key.
+> 2. **"No non-reproducible outputs" now has exactly ONE exception**, and it is deliberate.
+>    `cnx_schnorr_sign` with an ABSENT aux_rand (a zero-length buffer) draws 32 fresh bytes from the
+>    OS rather than substituting the all-zero aux that upstream's NULL would mean, because a library
+>    that silently picks the least-protected option when the caller says nothing is the fail-open
+>    shape this member refuses. BIP-340's nonce is `hash(aux XOR key, P, msg)`, so it is
+>    deterministic in (key, message) even at aux = 0 and a bad aux draw can never repeat a nonce
+>    across different messages: randomness there only ADDS protection. **Supply the 32-byte aux and
+>    the signature is a pure function of its inputs again**, which is what the BIP-340 vectors
+>    specify and what `tools/coin-kat.py` pins byte for byte. The KAT also asserts the other
+>    direction - two absent-aux signatures must DIFFER, both must verify, and neither may equal the
+>    zero-aux one - because "it was quietly passed through as NULL" and "it drew randomness" produce
+>    identical-looking green runs otherwise.
+
 ## 5. The C ABI contract (`cnx_`)
 
 Carried verbatim from the family's FFI law (see [CLAUDE.md](CLAUDE.md) and the SodiumXT / TorrentXT
@@ -129,6 +212,7 @@ bindings). The shim is intentionally tiny; these are its shapes.
 - **Every length is a function, never a hardcoded LCB constant:** `cnx_seckey_len()` = 32,
   `cnx_pubkey_len_compressed()` = 33, `cnx_pubkey_len_uncompressed()` = 65, `cnx_ecdsa_sig_len()` = 64,
   `cnx_recoverable_sig_len()` = 65, `cnx_schnorr_sig_len()` = 64, `cnx_xonly_pubkey_len()` = 32,
+  `cnx_taproot_output_len()` = 33 (AS BUILT: the x-only output key plus a parity byte),
   `cnx_keccak256_len()` = 32, `cnx_sha256_len()` = 32, `cnx_ripemd160_len()` = 20, `cnx_seed_len()` = 64,
   `cnx_chaincode_len()` = 32.
 - **`cnx_abi_version()`** returns an int; the `.lcb` `cxCheckABI()` throws "reinstall CoinXT" on skew
@@ -157,9 +241,38 @@ Curve (secp256k1):
                                          // reports what upstream writes rather
                                          // than truncating for the caller, who
                                          // must apply their protocol's KDF.
-  cnx_schnorr_sign(sk32, msg32, aux32, out_sig64) -> int            // BIP-340
-  cnx_schnorr_verify(xonly_pub32, msg32, sig64) -> int
-  cnx_xonly_from_seckey(sk32, out32, out_parity) -> int             // BIP-340 / Taproot
+  // BIP-340 / BIP-341 - AS BUILT at ABI 6 (2026-08-16), over upstream
+  // libsecp256k1 rather than trezor-crypto (section 2.1). Every buffer is
+  // pointer + size_t, like everything else here; the two OPTIONAL inputs are
+  // carried BY LENGTH (0 = absent) rather than by a null sentinel.
+  cnx_schnorr_sign(sk, sklen, msg, msglen, aux, auxlen, sig, siglen) -> int
+      // msglen MUST be 32: sign the digest the app hands you, never a blob it
+      // has not decoded (CLAUDE.md rule 3, the same rule cnx_ecdsa_sign obeys).
+      // auxlen 0 = draw fresh OS randomness; auxlen 32 = use exactly these
+      // bytes, and the signature is then reproducible. NEVER an all-zero aux.
+  cnx_schnorr_verify(xonly32, xonlylen, msg, msglen, sig, siglen) -> int
+      // ANY msglen: BIP-340 has admitted arbitrary-length messages since 2022
+      // and its vector file carries 0, 1, 17 and 100 bytes, so a verifier that
+      // required 32 would reject VALID signatures. An x-only key that is not on
+      // the curve is CNX_ERR_BADSIG, i.e. "does not verify" - BIP-340's own
+      // vectors 5 and 14 expect FALSE there, not an error.
+  cnx_xonly_pubkey_from_seckey(sk, sklen, out32, outlen) -> int
+      // AS BUILT, renamed from this section's sketched cnx_xonly_from_seckey,
+      // and with NO out_parity: the parity of an INTERNAL key is not something
+      // any caller here needs (the keypair machinery handles the negations),
+      // and an unused out-parameter is a shape to get wrong for nothing.
+  cnx_taproot_tweak_pubkey(internal32, ilen, root, rootlen, out33, outlen) -> int
+  cnx_taproot_tweak_seckey(sk, sklen, root, rootlen, out32, outlen) -> int
+      // BIP-341: Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G, and the
+      // private key for Q. rootlen 0 is the KEY-PATH-ONLY case, where the spec
+      // hashes the EMPTY BYTE STRING - which is NOT 32 zero bytes, and getting
+      // that wrong produces a valid-looking unspendable address. A consensus
+      // rule, so it is carried by length and not by a sentinel value.
+      // tweak_pubkey writes a 33-byte RECORD: the x-only output key then one
+      // parity byte, the same convention cnx_ecdsa_sign_recoverable already
+      // uses for its recovery id.
+  cnx_schnorr_sig_len() = 64 / cnx_xonly_pubkey_len() = 32
+  cnx_taproot_output_len() = 33
 
 Hashes:
   cnx_sha256(in, len, out32) / cnx_sha512(in, len, out64)
@@ -196,7 +309,9 @@ Secret hygiene - AS BUILT, ABI 5 (2026-08-16), not in the original sketch:
                                   // honest limit stands).
 ```
 
-That is the entire native surface: roughly 25 functions, all buffer-in / buffer-out, all deterministic.
+That is the entire native surface: 43 exports as built (roughly 25 when this section was written;
+the growth is the eight ABI-6 additions above plus the length accessors every group carries), all
+buffer-in / buffer-out, and all deterministic except the one aux-less signing path section 4 names.
 Everything else in CoinXT is livecodescript.
 
 ## 6. The livecodescript API (`cx*`)
@@ -214,7 +329,18 @@ Keys and signatures:
   cxSignRecoverable(pSeckey, pHash32)     -> 65-byte signature (r||s||v)      [Ethereum]
   cxRecover(pSig65, pHash32)              -> 65-byte pubkey                    [ecrecover]
   cxEcdh(pSeckey, pPubkey)                -> 32-byte shared secret
-  cxSchnorrSign / cxSchnorrVerify         -> BIP-340                          [Taproot]
+  cxSchnorrSign(pSeckey, pMessage32, pAuxRand)  -> 64-byte BIP-340 signature  [AS BUILT]
+  cxSchnorrVerify(pXOnlyPubkey, pMessage, pSig) -> boolean
+  cxXOnlyPubkey(pSeckey)                        -> 32-byte x-only public key
+  cxTaprootTweakPubkey(pInternalKey, pMerkleRoot) -> 33 bytes (output key || parity)
+  cxTaprootTweakSeckey(pSeckey, pMerkleRoot)      -> the spending private key
+  cxSchnorrSignatureLen / cxXOnlyPubkeyLen / cxTaprootOutputLen
+
+  pAuxRand and pMerkleRoot are EMPTY when absent. Empty aux means "draw fresh OS
+  randomness" (section 4), and an empty merkle root is BIP-341's empty byte
+  string, i.e. a key-path-only output - NOT 32 zero bytes. The script layer adds
+  cxTaprootTweak(pInternalKey, pMerkleRoot), which returns the same tweak as a
+  named array (outputKey / parity), and cxBtcAddressP2TRFromInternal, below.
 
 Hashes (thin over the shim; Data in, Data out):
   cxSha256, cxSha512, cxSha3_256, cxKeccak256, cxRipemd160,
@@ -279,6 +405,21 @@ Addresses (compose the above) -- one argument each, mainnet:
   cxBtcAddressP2PKH(pPubkey)              -> Base58Check(0x00 || hash160(pubkey))
   cxBtcAddressP2WPKH(pPubkey)             -> Bech32("bc", 0, hash160(pubkey))
   cxBtcAddressP2TR(pOutputKey)            -> Bech32m("bc", 1, output-key); does NOT tweak
+  cxBtcAddressP2TRFromInternal(pInternalKey, pMerkleRoot)
+                                          -> AS BUILT (ABI 6): the full BIP-341 path,
+                                             tweak included. This is the one almost every
+                                             caller wants. It is a SEPARATE handler rather
+                                             than an argument to cxBtcAddressP2TR because
+                                             an absent xTalk parameter is indistinguishable
+                                             from an empty one, so an optional merkle root
+                                             could not tell "encode this output key" from
+                                             "tweak this internal key with no script tree"
+                                             - and those two readings of the same 32 bytes
+                                             give different addresses, one unspendable.
+                                             cxBtcAddressP2TR's meaning is UNCHANGED and
+                                             stays unchanged: making it tweak would turn
+                                             every existing correct call into a double
+                                             tweak, silently.
   cxEthAddress(pPubkey)                   -> "0x" + EIP-55( keccak256(pub65[2..65])[13..32] )
   cxEthAddressChecksum(pAddress)          -> EIP-55 mixed-case form; verify on input
 ```
@@ -352,6 +493,14 @@ before pinning). Sources:
 
 - **secp256k1 / ECDSA**: RFC 6979 test vectors; a fixed privkey -> pubkey; a signed digest -> exact
   signature; `ecrecover` round-trip; a Schnorr vector from the BIP-340 test file.
+  > **AS BUILT, and stronger than "a vector":** the whole of BIP-340's official `test-vectors.csv`
+  > runs, all 19 cases in order, **ten of them NEGATIVE** (the public key off the curve, has_even_y(R)
+  > false, a negated message, a negated s, two infinity cases, an x that is not on the curve, r equal
+  > to the field size, s equal to the group order, and a public key past the field size). BIP-341's
+  > `wallet-test-vectors.json` runs too: all 7 `scriptPubKey` cases and all 7 `keyPathSpending`
+  > inputs, the latter walked private key -> internal x-only key -> tweaked private key -> the
+  > 64-byte witness signature the specification publishes. Both files are transcribed at the top of
+  > `tools/coin-kat.py` with their source URLs; nothing is generated by the library under test.
 - **Hashes**: `keccak256("")` = `c5d2460186f7...`, `sha3_256("")`, a RIPEMD-160 vector, an HMAC-SHA512
   vector, a PBKDF2-HMAC-SHA512 vector.
 - **Ethereum address + EIP-55**: the canonical checksum examples from EIP-55.

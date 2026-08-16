@@ -942,4 +942,183 @@ def _phase5_self_check():
     assert len(dec) == 12 and dec[0] == b"\x01", "EIP-1559 field shape broken"
 
 
+
+# ============================================================================
+# BIP-340 (Schnorr) and BIP-341 (Taproot), the ABI 6 surface.
+#
+# WHY THIS IS HERE AT ALL. tools/coin-kat.py already drives the shipped shim
+# against bitcoin/bips' own vector files, which is the strongest evidence
+# available. What that cannot do is supply an expectation for a value the
+# published vectors do not print - and tests/coin-selftest.livecodescript needs
+# a few of those (a signature over a message the BIP never signs, the output
+# key for a key we chose). tools/check-selftest-vectors.py re-derives every
+# such constant, and it has to re-derive it from something that is NOT the
+# library under test. This is that something: BIP-340's and BIP-341's own
+# reference pseudocode, written out longhand over the affine curve model above,
+# and anchored at import to the published vectors so it cannot drift into
+# agreeing with a defect.
+# ============================================================================
+
+def tagged_hash(tag: str, msg: bytes) -> bytes:
+    """SHA256(SHA256(tag) || SHA256(tag) || msg), BIP-340's domain separator."""
+    t = sha256(tag.encode())
+    return sha256(t + t + msg)
+
+
+def lift_x(x: int):
+    """The point with X = x and an EVEN Y, or None if x is not on the curve.
+
+    This is what an x-only public key MEANS, and the two ways it returns None
+    are precisely BIP-340 vectors 14 (x at or above the field size) and 5 (x is
+    not the abscissa of any curve point)."""
+    if x >= _P:
+        return None
+    y_sq = (pow(x, 3, _P) + 7) % _P
+    y = pow(y_sq, (_P + 1) // 4, _P)
+    if pow(y, 2, _P) != y_sq:
+        return None
+    return (x, y if y % 2 == 0 else _P - y)
+
+
+def xonly_pubkey(sk: bytes) -> bytes:
+    """BIP-340's bytes(P): the X coordinate of the point for this private key."""
+    d0 = int.from_bytes(sk, "big")
+    if not 1 <= d0 <= _N - 1:
+        raise ValueError("private key out of range")
+    return _pt_mul(d0)[0].to_bytes(32, "big")
+
+
+def schnorr_sign(sk: bytes, msg: bytes, aux: bytes) -> bytes:
+    """BIP-340 "Default Signing", transcribed from the BIP's reference code."""
+    d0 = int.from_bytes(sk, "big")
+    if not 1 <= d0 <= _N - 1:
+        raise ValueError("private key out of range")
+    pt = _pt_mul(d0)
+    # The signing scalar is negated when P has an odd Y: an x-only key names
+    # the even-Y point, so that is the key the signature must be for.
+    d = d0 if pt[1] % 2 == 0 else _N - d0
+    px = pt[0].to_bytes(32, "big")
+    t = (d ^ int.from_bytes(tagged_hash("BIP0340/aux", aux), "big")).to_bytes(32, "big")
+    rand = tagged_hash("BIP0340/nonce", t + px + msg)
+    k0 = int.from_bytes(rand, "big") % _N
+    if k0 == 0:
+        raise ValueError("nonce is zero")          # 1 in 2^256; the BIP fails here too
+    r = _pt_mul(k0)
+    k = k0 if r[1] % 2 == 0 else _N - k0
+    rx = r[0].to_bytes(32, "big")
+    e = int.from_bytes(tagged_hash("BIP0340/challenge", rx + px + msg), "big") % _N
+    return rx + ((k + e * d) % _N).to_bytes(32, "big")
+
+
+def schnorr_verify(pk: bytes, msg: bytes, sig: bytes) -> bool:
+    """BIP-340 verification. False - never an exception - for every malformed
+    input the vector file expects to fail, which is what makes it usable as an
+    oracle for the ten NEGATIVE cases."""
+    if len(pk) != 32 or len(sig) != 64:
+        return False
+    pt = lift_x(int.from_bytes(pk, "big"))
+    if pt is None:
+        return False
+    r = int.from_bytes(sig[:32], "big")
+    s = int.from_bytes(sig[32:], "big")
+    if r >= _P or s >= _N:
+        return False
+    e = int.from_bytes(tagged_hash("BIP0340/challenge", sig[:32] + pk + msg), "big") % _N
+    point = _pt_add(_pt_mul(s), _pt_mul(_N - e, pt))
+    if point is None:              # sG - eP is the point at infinity (vectors 9, 10)
+        return False
+    return point[1] % 2 == 0 and point[0] == r
+
+
+def taproot_tweak_pubkey(internal32: bytes, merkle_root):
+    """BIP-341's Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G.
+
+    merkle_root is None for a key-path-only output, and None is the EMPTY BYTE
+    STRING here - NOT 32 zero bytes. Returns (32-byte x-only Q, parity)."""
+    root = b"" if merkle_root is None else merkle_root
+    t = int.from_bytes(tagged_hash("TapTweak", internal32 + root), "big")
+    if t >= _N:
+        raise ValueError("tweak out of range")
+    pt = lift_x(int.from_bytes(internal32, "big"))
+    if pt is None:
+        raise ValueError("internal key is not on the curve")
+    q = _pt_add(pt, _pt_mul(t))
+    if q is None:
+        raise ValueError("tweaked point is infinity")
+    return q[0].to_bytes(32, "big"), q[1] & 1
+
+
+def taproot_tweak_seckey(sk: bytes, merkle_root) -> bytes:
+    """The private key for the output key above. Same empty-vs-zero rule."""
+    root = b"" if merkle_root is None else merkle_root
+    d0 = int.from_bytes(sk, "big")
+    if not 1 <= d0 <= _N - 1:
+        raise ValueError("private key out of range")
+    pt = _pt_mul(d0)
+    d = d0 if pt[1] % 2 == 0 else _N - d0
+    internal = pt[0].to_bytes(32, "big")
+    t = int.from_bytes(tagged_hash("TapTweak", internal + root), "big")
+    if t >= _N:
+        raise ValueError("tweak out of range")
+    return ((d + t) % _N).to_bytes(32, "big")
+
+
+def _bip340_self_check():
+    """Anchor the model above to bitcoin/bips' published vectors. An oracle that
+    is only self-consistent is worth nothing, so this runs at import and takes
+    the whole file down if it fails."""
+    # BIP-340 test-vectors.csv index 0 (sk = 3) and index 1.
+    sk0 = bytes.fromhex("00" * 31 + "03")
+    assert xonly_pubkey(sk0).hex() == \
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9", \
+        "BIP-340 x-only pubkey model broken"
+    assert schnorr_sign(sk0, bytes(32), bytes(32)).hex() == (
+        "e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca8215"
+        "25f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0"), \
+        "BIP-340 signing model broken"
+    sk1 = bytes.fromhex("b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfef")
+    msg1 = bytes.fromhex("243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89")
+    sig1 = bytes.fromhex(
+        "6896bd60eeae296db48a229ff71dfe071bde413e6d43f917dc8dcf8c78de3341"
+        "8906d11ac976abccb20b091292bff4ea897efcb639ea871cfa95f6de339e4b0a")
+    assert schnorr_sign(sk1, msg1, bytes(31) + b"\x01") == sig1, "BIP-340 vector 1 broken"
+    assert schnorr_verify(xonly_pubkey(sk1), msg1, sig1), "BIP-340 verify model broken"
+    # Two of the file's NEGATIVE cases, so the oracle is known to say no:
+    # index 5 (public key not on the curve) and index 6 (has_even_y(R) false).
+    assert not schnorr_verify(
+        bytes.fromhex("eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34"),
+        msg1, sig1), "BIP-340 off-curve key must not verify"
+    assert not schnorr_verify(
+        bytes.fromhex("dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659"),
+        msg1,
+        bytes.fromhex("fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556"
+                      "3cc27944640ac607cd107ae10923d9ef7a73c643e166be5ebeafa34b1ac553e2")), \
+        "BIP-340 odd-y R must not verify"
+    # BIP-341 wallet-test-vectors.json: scriptPubKey 0 (NO merkle root) and 1
+    # (a script-tree root), plus keyPathSpending input 0's tweaked private key.
+    ip0 = bytes.fromhex("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d")
+    q0, _ = taproot_tweak_pubkey(ip0, None)
+    assert q0.hex() == \
+        "53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343", \
+        "BIP-341 key-path-only tweak broken"
+    ip1 = bytes.fromhex("187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27")
+    root1 = bytes.fromhex("5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21")
+    q1, _ = taproot_tweak_pubkey(ip1, root1)
+    assert q1.hex() == \
+        "147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3", \
+        "BIP-341 script-tree tweak broken"
+    # An ABSENT root is the empty string, not 32 zeros: the two must disagree.
+    assert taproot_tweak_pubkey(ip0, bytes(32))[0] != q0, \
+        "BIP-341 empty root must not equal a 32-zero root"
+    isk0 = bytes.fromhex("6b973d88838f27366ed61c9ad6367663045cb456e28335c109e30717ae0c6baa")
+    assert taproot_tweak_seckey(isk0, None).hex() == \
+        "2405b971772ad26915c8dcdf10f238753a9b837e5f8e6a86fd7c0cce5b7296d9", \
+        "BIP-341 seckey tweak broken"
+    # The two halves must meet: the tweaked key signs for the tweaked point.
+    assert xonly_pubkey(taproot_tweak_seckey(isk0, None)) == q0, \
+        "BIP-341 tweak halves disagree"
+
+
+_bip340_self_check()
+
 _phase5_self_check()

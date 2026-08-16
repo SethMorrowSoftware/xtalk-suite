@@ -2,9 +2,16 @@
 
 The coinxt shim (`native/coinxt.c`), the LCB binding, the tools and the docs are
 MIT (see [LICENSE](LICENSE)). The committed per-platform binaries under
-`src/code/` statically link a vendored subset of **trezor-crypto**, and the
-license texts that subset carries are reproduced here in full, as binary
+`src/code/` statically link vendored subsets of **two** upstream libraries -
+**trezor-crypto** and, since 2026-08-16, **bitcoin-core/secp256k1** - and the
+license texts those subsets carry are reproduced here in full, as binary
 distribution requires.
+
+**The libsecp256k1 half is the simple one:** it is MIT throughout. Every file in
+the vendored subset carries the same MIT notice and a libsecp256k1
+contributor's copyright, so it adds one entry to the map below and no per-file
+exceptions. The trezor-crypto half is the complicated one, and the rest of this
+file is about it.
 
 ## Why this file exists, and why "trezor-crypto is MIT" was not enough
 
@@ -55,6 +62,7 @@ no `NOTICE` file is required.
 | `blake256.c`, `blake256.h` | **CC0-1.0** | Jean-Philippe Aumasson (2012) |
 | `blake2b.c`, `blake2b.h`, `blake2_common.h` | **CC0-1.0 / OpenSSL / Apache-2.0, at your option** (coinxt elects CC0) | Samuel Neves (2012) |
 | `groestl.c`, `groestl.h`, `groestl_internal.h` | MIT | Projet RNRT SAPHIR (2007-2010); trezor adaptation by Yura Pakhuchiy |
+| `libsecp256k1/**` (all 58 vendored files) | MIT (libsecp256k1) | Pieter Wuille (2013) and libsecp256k1 contributors: Andrew Poelstra, Jonas Nick, Russell O'Connor, Gregory Maxwell, Peter Dettman, Thomas Daede, Cory Fields |
 
 Every file also carries its own license header verbatim, because the vendored
 sources are copied byte-identical from upstream and are never edited in place
@@ -67,6 +75,25 @@ built library and not only with the source.
 
 The full text is in [`native/vendor/LICENSE`](native/vendor/LICENSE) and covers
 every file marked "MIT (trezor-crypto)" above.
+
+-------------------------------------------------------------------------------
+## libsecp256k1 (`native/vendor/libsecp256k1/`) - MIT
+
+Added 2026-08-16 for BIP-340 Schnorr and the BIP-341 Taproot tweak. Unlike
+trezor-crypto, this tree vendors nothing under other terms - the audit was run
+file by file over every `Copyright` line in the 58 vendored files and every one
+of them is a libsecp256k1 contributor under this one notice. The text ships
+beside the sources as
+[`native/vendor/libsecp256k1/COPYING`](native/vendor/libsecp256k1/COPYING) and
+is reproduced here so it travels with the built library too:
+
+Copyright (c) 2013 Pieter Wuille
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 -------------------------------------------------------------------------------
 ## SHA-2 (`sha2.c`, `sha2.h`) - BSD-3-Clause

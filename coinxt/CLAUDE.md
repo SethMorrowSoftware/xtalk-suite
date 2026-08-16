@@ -28,7 +28,9 @@ CoinXT public API (cx*)   src/coinxt.livecodescript
    |- encodings in SCRIPT: hex, Base58Check, Bech32/Bech32m, RLP, xprv/xpub, WIF, EIP-55, addresses
    |- FFI seam: one .lcb module, unsafe ... end unsafe around every foreign call
 CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto subset
-   |- curve + hashes in C: secp256k1 (ECDSA/recoverable/recover/ECDH/Schnorr),
+                                        +  vendored libsecp256k1 subset (ABI 6)
+   |- curve + hashes in C: secp256k1 (ECDSA/recoverable/recover/ECDH) trezor-crypto;
+      BIP-340 Schnorr, x-only keys and the BIP-341 tweak libsecp256k1;
       SHA2/SHA3/Keccak-256/RIPEMD-160, HMAC, PBKDF2, BIP-32 node math, BIP-39 seed
 ```
 
@@ -49,9 +51,14 @@ CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto subset
 
 ## The rules that make this safe and correct
 
-1. **Add no cryptography. Wrap trezor-crypto.** Every scalar multiply, signature, and hash is upstream,
-   audited code. A missing primitive is a new vendored file or an upstream request, never a hand-rolled
-   curve op or hash here. There is no CoinXT cipher.
+1. **Add no cryptography. Wrap an audited upstream.** Every scalar multiply, signature, and hash is
+   upstream, audited code. A missing primitive is a new vendored file or an upstream request, never a
+   hand-rolled curve op or hash here. There is no CoinXT cipher.
+   > **This rule used to say "Wrap trezor-crypto", singular, and it CHANGED on 2026-08-16.** There
+   > are two vendored libraries now: trezor-crypto and upstream bitcoin-core/secp256k1. The full
+   > text of the change, the reasoning, and the new audit surface are in the ABI 6 as-built entry at
+   > the end of this file and in SPEC.md section 2.1. The part of the rule that matters is unchanged:
+   > CoinXT still implements no cryptography of its own.
 2. **The app owns key custody; CoinXT is a calculator.** CoinXT holds a key only for the microseconds of
    one operation. Storage, backup, and confirm-before-sign are the app's. Document the boundary loudly.
 3. **Sign only the exact digest the app hands you.** `cxSign` takes a 32-byte hash. CoinXT does not build
@@ -162,7 +169,7 @@ round-tripped the `cx*` calls. The shim, by contrast, IS testable headless (the 
 
 Anything that touches a private key or a curve point is **C** (audited trezor-crypto). Anything that is
 checksummed byte-shuffling with no secret-dependent branch is **livecodescript**, pinned by a KAT. This
-keeps the trusted native surface tiny (about 25 buffer-in / buffer-out functions, SPEC section 5.1) and
+keeps the trusted native surface tiny (43 buffer-in / buffer-out functions at ABI 6, SPEC section 5.1) and
 puts hex / Base58Check / Bech32 / RLP / address composition where they are easy to read, diff, and test,
 exactly as OnionXT does base32 in script. Do NOT push encodings into the shim to "keep it together", and
 do NOT re-implement a curve op in script to "avoid the FFI".
@@ -526,7 +533,8 @@ the four address builders and RLP. No shim change; the ABI is untouched at 3.
   phase-3 constants AND asserting the two NEGATIVE vectors are genuinely negative, and
   `tools/check-livecodescript.py` clean.
 
-**Schnorr / BIP-340 is DEFERRED, and phase 0's open question is now answered.** The plan left "which
+**Schnorr / BIP-340 was DEFERRED here, and SHIPPED at ABI 6 on 2026-08-16 - see the entry at the
+end of this file. The reasoning below is what decided the eventual answer, so it stays.** The plan left "which
 upstream path provides it" open. The answer: not this one. trezor-crypto's plain-C tree has no BIP-340
 implementation - it reaches Schnorr only through `zkp_bip340.c`, which requires the bundled
 `secp256k1-zkp` library and its own build system, a vendoring an order of magnitude larger than
@@ -1060,3 +1068,281 @@ the handler name it was missing, and `docs/api-reference.md`'s error table carri
 Verified statically (the gate set is green and only `sFinish` calls `sWipeFree`); needs an OXT pass,
 which still owes the ABI-5 item above - the first `cx*` call proving `_cnx_memzero` binds - plus the
 `String` return of `sWipeNote` concatenating into a throw.
+
+**ABI 6: BIP-340 SCHNORR AND THE BIP-341 TAPROOT TWEAK, over a SECOND vendored library
+(2026-08-16).** ABI 5 -> 6, `CNX_ABI_VERSION` and `kABIVersion` bumped in the same change per the
+rule. Eight new exports (43 now), five new `.lcb` public handlers plus three length accessors, and
+two new script handlers, so the public surface is 90 (43 `.lcb` + 47 script). This is the largest
+decision recorded in this file since the entropy correction, because it is not a feature - it is a
+change to the rule the project opened with.
+
+**THE RULE CHANGE, IN FULL, BECAUSE IT MUST NOT BE A QUIET EDIT.**
+
+- **What the rule WAS.** Rule 1 of this file: *"Add no cryptography. Wrap trezor-crypto. Every
+  scalar multiply, signature, and hash is upstream, audited code. A missing primitive is a new
+  vendored file or an upstream request, never a hand-rolled curve op or hash here. There is no
+  CoinXT cipher."* SPEC.md section 1 said the same in one line: *"Every curve op and hash is
+  trezor-crypto's; CoinXT adds no cipher of its own."* SPEC.md section 2 justified the single
+  library on the grounds that trezor-crypto is one MIT, dependency-free, plain-C tree the family's
+  FFI pattern can vendor whole: one library, one audit surface, one pin.
+- **What the rule IS now.** *Add no cryptography. Wrap an audited upstream.* CoinXT implements no
+  cryptography of its own and composes **two** vendored libraries, which do not overlap:
+  trezor-crypto keeps every hash, ECDSA, recoverable ECDSA, recovery, ECDH and the two BIP-32 curve
+  steps; **upstream bitcoin-core/secp256k1** owns BIP-340 Schnorr, x-only public keys and the
+  BIP-341 tweak, and is reached only through the five `cnx_` entry points that need it.
+- **Why.** trezor-crypto's plain-C tree has **no BIP-340 implementation at all**. It reaches
+  Schnorr only through `zkp_bip340.c`, which requires the bundled `secp256k1-zkp` and that
+  library's own build system. So the real choice was: a second audited library, or write BIP-340
+  in this repository. **Hand-rolling a signature scheme is precisely what rule 1 exists to
+  prevent**, so the second library is the rule being OBEYED rather than waived - which is the whole
+  argument, and the reason this is a rule change and not a rule break. Upstream (not the zkp fork)
+  because its in-tree `schnorrsig` and `extrakeys` modules are everything BIP-340 and single-key
+  BIP-341 need, the fork's extra value is irrelevant here, and upstream is what Bitcoin Core itself
+  ships and audits: the least surprising possible answer to "whose Schnorr is this".
+- **What the new audit surface is.** 58 vendored files, 3.13 MB of source, of which one generated
+  table is 2.30 MB; three translation units compile. Only two upstream modules are enabled
+  (`ecdh`, `recovery`, `musig`, `ellswift`, `silentpayments` are neither vendored nor compiled).
+  One long-lived object appears in a shim whose architecture note says it holds none: a file-static
+  `secp256k1_context`. One entry point stops being a pure function of its inputs
+  (`cnx_schnorr_sign` with an absent aux). Licensing gets SIMPLER: libsecp256k1 is MIT throughout
+  with no third-party sub-licenses, so it is one row in the suite `LICENSE` against
+  trezor-crypto's six exceptions. All of it is written up in `native/vendor/VENDOR.md`, SPEC.md
+  section 2.1 and `THIRD-PARTY-LICENSES.md`.
+
+The rest is the engineering, and the decisions worth knowing before editing any of it:
+
+- **The pin is a COMMIT, `439278a649d3099d62dde966a76dc04aaca7ccb3`, and that was weighed.** It is
+  release `v0.8.0` plus twelve commits: eleven touch only tests, and the twelfth (`3d4340d`)
+  hardens `src/scratch_impl.h`, which IS compiled here. So for the vendored subset the pin is "the
+  last release plus one hardening fix, minus nothing" - a better place to stand than the tag, and
+  small enough to state in a sentence rather than hand-wave. A bare commit hash is also this
+  member's precedent; the trezor-crypto pin is one. Verified the strong way, not the plausible way:
+  every file was extracted with `git cat-file blob <pin>:<path>` from a real clone (so it arrived
+  in an object git had already content-hash-verified), and each installed file's blob id was then
+  re-derived with `git hash-object` and compared against the id the commit's tree lists. 58 of 58.
+- **THE 2.4 MB TABLE IS VENDORED VERBATIM, AND THE BINARY IS SHRUNK BY A DEFINE INSTEAD.** These
+  are two separate decisions and conflating them is the mistake to avoid.
+  `src/precomputed_ecmult.c` is an `#if` ladder over `ECMULT_WINDOW_SIZE`, so a smaller window does
+  NOT shrink the source - the same 2.4 MB file compiles for any window in [2..15].
+  - *Source:* vendored verbatim (option (a)). Generating it at build time (option (b)) would keep
+    the repository smaller and would add a **code-generation step to a build that has none**:
+    `native/build.sh` is POSIX sh and one compiler invocation, and its whole virtue is that a cross
+    build is `CC=x86_64-w64-mingw32-gcc sh native/build.sh pack x86_64-win32`. A generator must be
+    built for the HOST and run before the library is built for the TARGET, which puts a second
+    toolchain concept in that script, breaks on any host that cannot execute its own output, and -
+    the part that settles it - produces a table **nothing in this tree can hash-pin**.
+    `MANIFEST.sha256` proves every vendored byte is upstream's; a generated table is proven by
+    nothing but the fact that a generator ran. For a money library, "it came from the pinned commit
+    and here is its SHA-256" is worth 2.4 MB of history.
+  - *Binary:* `ECMULT_WINDOW_SIZE=12` rather than upstream's 15, which is a documented,
+    range-checked compile-time knob and not a patch. The table is `2^(w-2) * 64 * 2` bytes, so 15
+    costs **1,048,576 bytes of read-only data in every shipped binary** and this member commits
+    four of them. Measured here (gcc 13.3 -O2, x86_64, min of 7 runs of 20,000 BIP-340
+    verifications): w=15 33.26 us / 1,048,576 B; **w=12 33.40 us / 131,072 B**; w=10 35.02 us /
+    32,768 B; w=8 35.33 us / 8,192 B; w=6 37.64 us / 2,048 B. 12 removes 87.5% of the table for
+    0.4%, which is inside the run-to-run spread - no measurable verification cost at all. Going
+    further DOES cost measurable time (5% at w=10) to save a further 96 kB, so 12 is where the free
+    part ends. The absolute numbers are one machine's; the ranking transfers.
+  - *What it actually cost, per platform, in committed bytes:* x86_64-linux 170,216 -> 481,536
+    (+311,320, +183%); x86-linux 144,780 -> 398,744 (+253,964, +175%); x86_64-win32 122,114 ->
+    453,273 (+331,159, +271%); x86-win32 125,920 -> 399,332 (+273,412, +217%). Most of that is
+    libsecp256k1's CODE (~180 kB), not its tables: the ecmult table is 128 kB and the comb table
+    22 kB. At upstream's default window each of those four would have been about 1 MB larger.
+- **`precomputed_ecmult_gen.c` is left at upstream's default (11, 6) comb, deliberately.** Unlike
+  the file above it is generated FOR one configuration and carries no `#if` ladder, so changing
+  `COMB_BLOCKS`/`COMB_TEETH` would require regenerating it - i.e. a locally generated vendored
+  file, which the vendor rules forbid. It is 22 kB and signing is unaffected by the ecmult window
+  anyway.
+- **A REAL BASENAME COLLISION, found while wiring the build.** `vendor/secp256k1.c` is
+  trezor-crypto's curve-parameter file and `vendor/libsecp256k1/src/secp256k1.c` is upstream's
+  entire library. `build.sh pack` derived each object path from `basename "$src" .c`, so the second
+  would have silently overwritten the first and linked a library missing trezor's curve constants.
+  Upstream's objects carry a `secp_` prefix now. The same shape would bite anything else that maps
+  sources to objects by basename; two vendored trees can collide where one never could.
+- **Warnings are scoped, which is why the build compiles two groups.** Upstream's units get
+  `-Wall -Wextra -Wno-unused-function`, which is upstream's OWN flag set (it compiles as one unit
+  and leaves the disabled modules' helpers unused, so the warning fires about fifteen times on a
+  perfectly good build). The `-Wno-` must not reach `native/coinxt.c`, and no single `cc` line can
+  scope a flag per file. `secp_cppflags` (the module defines, the window size and
+  `SECP256K1_NO_API_VISIBILITY_ATTRIBUTES`) DOES reach every unit, because our shim includes the
+  same headers and both sides must agree about them.
+- **`SECP256K1_NO_API_VISIBILITY_ATTRIBUTES` is the flag that makes MinGW behave.** Without it
+  upstream's `secp256k1.c` gets `__declspec(dllexport)` on every entry point and our shim sees
+  `__declspec(dllimport)` on the same declarations - a DLL advertising, and trying to import, a
+  libsecp256k1 surface that is nobody's business but ours. Upstream documents this exact define for
+  "a static library which is linked into a shared library, and the latter should not re-export the
+  libsecp256k1 API". `src/coinxt.map` and the generated `.def` still narrow the surface; this just
+  settles it a layer earlier. Measured: zero `secp256k1_*` symbols in any of the four committed
+  libraries, and the `cnx_*` export set is 43/43 identical across all four.
+- **One `secp256k1_context`, static, created on first use, never freed - and that is correct.** It
+  is one small allocation reachable from a global for the life of the process, so ASan's leak
+  checker does not report it (verified, not assumed: LSan is active in the asan lane and reports an
+  UNREACHABLE malloc in the same run). CoinXT has no shutdown call and by design never will, and
+  freeing it would open a use-after-free window for nothing. Threading is sound for the same reason
+  the rest of this member is: only the engine's script thread calls in. Upstream states the rule
+  precisely - a constructed context is safe to share, but `secp256k1_context_randomize` needs
+  exclusive access - so a multi-threaded host would need a lock around `cnx_secp_ready()` and
+  nothing else.
+- **The context is RE-RANDOMIZED before every secret-key operation, and fails closed.** Upstream:
+  "The primary purpose of context objects is to store randomization data ... This protection is
+  only effective if the context is randomized after its creation", and re-randomizing "before every
+  few computations involving secret keys is recommended as a defense-in-depth measure" - taken at
+  its strongest reading here. It costs one OS entropy draw plus a blinding update per secret
+  operation, which is the same order as what trezor-crypto already spends on this member's ECDSA
+  path. Public-only calls (`cnx_schnorr_verify`, `cnx_taproot_tweak_pubkey`) deliberately do NOT
+  re-randomize: there is no secret scalar to blind, so spending the draw would buy nothing. If
+  entropy is unavailable the call returns `CNX_ERR_ENTROPY` and a context that could not be
+  randomized is destroyed rather than kept. **The easy misreading, stated in the shim too:**
+  skipping the re-randomization is not the same as needing no entropy - CREATING the context
+  randomizes it once, so the first call of any kind needs the OS source. That is not new here;
+  `cnx_ecdsa_verify` has needed entropy on every call since phase 2, because trezor-crypto
+  randomizes the projective Z coordinate on every scalar multiply.
+- **UPSTREAM'S DEFAULT ILLEGAL-ARGUMENT CALLBACK IS LEFT IN PLACE, and that is the safer
+  direction.** It aborts the process on an API misuse. Installing a returning callback looks safer
+  and is not: upstream's own header says that if the callback returns, "the return value and output
+  arguments of the API function call are undefined", and an undefined return in a money library is
+  strictly worse than a loud stop. So the firewall guarantees the callback is unreachable instead -
+  every pointer upstream is handed is non-NULL and every length is checked first, the same contract
+  `cnx_pubkey_ok` already enforces for trezor-crypto's unlengthed pubkey parser. Same shape as the
+  `abort()` in `random_buffer`, same pre-flight in front of it.
+- **AUX_RAND: absent means FRESH, never all-zero. This is the one non-deterministic entry point in
+  the shim and SPEC.md section 4 now says so.** Upstream accepts NULL and treats it as an all-zero
+  aux while warning that real randomness is recommended. CoinXT does not take that default, because
+  a library that silently picks the least-protected option when the caller says nothing is the
+  fail-open shape this member exists to refuse. `auxlen == 32` uses those bytes and the signature is
+  a pure function of (key, message, aux) - which is what the BIP-340 vectors pin; `auxlen == 0`
+  draws 32 fresh OS bytes and fails closed if it cannot; anything else is `CNX_ERR_BADLEN`. It
+  cannot weaken anything: BIP-340's nonce is `hash(aux XOR key, P, msg)`, deterministic in
+  (key, message) even at aux = 0, so a bad aux draw can never repeat a nonce across messages -
+  randomness there only ADDS protection. **The KAT asserts BOTH directions**, because "it was
+  quietly passed through as NULL" and "it drew randomness" otherwise produce identical green runs:
+  two absent-aux signatures must DIFFER, both must verify, and neither may equal the zero-aux one.
+- **SIGNING TAKES A 32-BYTE MESSAGE; VERIFICATION TAKES ANY LENGTH.** That asymmetry is deliberate
+  and each half has its own reason. Signing is narrow because rule 3 says sign only the exact digest
+  the app hands you (`cnx_ecdsa_sign` obeys the same rule, and BIP-341 signs a 32-byte sighash).
+  Verification is wide because BIP-340 has admitted arbitrary-length messages since 2022 and its own
+  vector file carries 0-, 1-, 17- and 100-byte cases: a verifier that demanded 32 would REJECT VALID
+  SIGNATURES, which is not caution, it is a wrong answer. The four variable-length vectors are
+  therefore verified and not re-signed, which is a scope decision and is recorded as one.
+- **AN X-ONLY KEY THAT IS NOT ON THE CURVE IS "false" WHEN VERIFYING AND AN ERROR WHEN TWEAKING**,
+  and BIP-340's own vector file decides the first half: cases 5 ("public key not on the curve") and
+  14 ("not a valid X coordinate ... exceeds the field size") both list their expected verification
+  result as FALSE, so a shim returning `CNX_ERR_BADKEY` there would make `cxSchnorrVerify` throw
+  where the specification says answer no. Tweaking is the other way round: the caller is ASSERTING
+  "this is my internal key", not asking a yes/no question, so an unparseable key is
+  `CNX_ERR_BADKEY`. Note this differs from `cnx_ecdsa_verify`'s treatment of a bad pubkey, and the
+  difference is real rather than sloppy: there the rejected shapes are wrong LENGTHS and wrong
+  PREFIX bytes, which are structural and must be refused before the overread; here every 32-byte
+  string is structurally a candidate and only the curve can say otherwise.
+- **THE MERKLE ROOT IS CARRIED BY LENGTH, AND ABSENT IS NOT ZERO. THIS IS A CONSENSUS RULE.**
+  BIP-341 tweaks with `hash_TapTweak(bytes(P) || merkle_root)` where `merkle_root` is the EMPTY BYTE
+  STRING for a key-path-only output - the common case. Hashing 32 zero bytes instead hashes 64 bytes
+  where the spec hashes 32: a different tweak, a different output key, a different address, and
+  coins nobody can spend. So `rootlen == 0` means key-path-only and `rootlen == 32` means a real
+  root, with no sentinel VALUE anywhere in the stack to get wrong, and an all-zero 32-byte root is
+  treated as the legal (if useless) script commitment it actually is. Asserted at three layers -
+  the ASan self-test, `coin-kat.py` and `check-script-vectors.py` all require the two to produce
+  DIFFERENT output keys - because if they ever agreed, every key-path-only address this library
+  produced would be wrong and would still look like an address.
+- **The parity travels IN THE OUTPUT BUFFER, not in an `int *` out-parameter.**
+  `cnx_taproot_tweak_pubkey` writes 33 bytes: the x-only output key then one parity byte. That is
+  this member's existing convention (`cnx_ecdsa_sign_recoverable` writes 64 bytes of signature plus
+  a recovery id), and it keeps the binding on shapes an engine has already marshalled: **no `.lcb`
+  in this entire suite has ever declared a scalar `out` parameter against our own C** (measured: the
+  only `out` parameters anywhere are `Data`, `String` and `Pointer`, all against engine
+  `<builtin>`s), and a money library is the wrong place to discover headlessly whether one works.
+  The script layer's `cxTaprootTweak` splits the record into a named array, which is where the
+  ergonomics belong.
+- **The optional arguments cross as an EMPTY `Data`, not an `optional Pointer`.** CLAUDE.md's FFI
+  law names `optional Pointer` for exactly this case ("an absent BIP-340 aux_rand"), and it is
+  legal LCB - but it has never been exercised on an engine in this suite, whereas an empty `Data`
+  through a plain `Pointer` slot was settled on 2026-08-08 by `cxKeccak256("")`, and every shim
+  entry already accepts NULL when its length is 0. So "absent" is spelled the way this family has
+  already proven, and the shim reads the LENGTH.
+- **`cxBtcAddressP2TR` IS UNCHANGED AND STAYS UNCHANGED. The tweak is a NEW handler.** REMAINING-WORK
+  A.10 and the old handler comment recorded that it encodes a pre-tweaked key and cannot compute
+  the BIP-341 tweak. The tweak exists now, and the handler still does not apply it, because making
+  it apply one would silently turn every existing CORRECT call - an app that pre-tweaked elsewhere -
+  into a DOUBLE tweak: a different, valid-looking, permanently unspendable address, undetectable by
+  the handler (both arguments are 32 bytes) and unnoticeable by the caller. `cxBtcAddressP2TR`
+  therefore keeps its meaning forever, and `cxBtcAddressP2TRFromInternal(pInternalKey, pMerkleRoot)`
+  is the new handler that does the whole BIP-341 path. It is a separate NAME rather than an optional
+  second argument for a reason worth carrying: **an absent xTalk parameter is indistinguishable from
+  an empty one**, so an optional `pMerkleRoot` could not tell "encode this output key" from "tweak
+  this internal key with no script tree" - and empty is the COMMON case, so the ambiguity would land
+  on the majority of calls. `check-script-vectors.py` asserts the two handlers DISAGREE on the same
+  32 bytes, so a future edit cannot quietly make the old one tweak.
+- **THE VECTORS ARE THE PUBLISHED FILES, IN FULL, AND TEN OF THEM ARE NEGATIVE.** BIP-340's official
+  `test-vectors.csv` (all 19 cases, transcribed in `tools/coin-kat.py` with its source URL) and
+  BIP-341's `wallet-test-vectors.json` (all 7 `scriptPubKey` cases and all 7 `keyPathSpending`
+  inputs). Nothing is generated by the library under test - the standing lesson. The negatives are
+  the point: a public key off the curve, `has_even_y(R)` false, a negated message, a negated s, two
+  infinity cases, an x that is not on the curve, r equal to the field size, s equal to the group
+  order, and a public key past the field size. The BIP-341 half walks private key -> internal x-only
+  key -> tweaked private key -> **the 64-byte witness signature the specification publishes**, which
+  is the strongest single vector this member has: a defect anywhere in that chain is a byte
+  difference against bytes Bitcoin's own specification prints. (The witness signatures reproduce
+  with `aux_rand` = 32 zero bytes, which is what the vector generator used; that is asserted rather
+  than assumed, since a wrong aux gives a different but still-valid signature and a harness that
+  only checked "it verifies" would not notice.)
+- **The two vendored libraries are made to answer the same question once, on purpose.** BIP-341's
+  published `tweak` column would otherwise be transcribed and never read - the exact overstatement
+  shape this file has been bitten by. So for each `scriptPubKey` vector, trezor-crypto's
+  `cnx_pubkey_tweak_add` is handed `0x02 || internal` and the published tweak, and must land on the
+  point upstream's `cnx_taproot_tweak_pubkey` landed on: X byte for byte, with a compressed prefix
+  that agrees with our parity byte. If the two ever disagreed, one of them would be computing a
+  different curve.
+- **The oracle got a BIP-340/341 model too** (`tools/coin_reference.py`), because
+  `check-selftest-vectors.py` must re-derive the harness's constants from something that is not the
+  library under test. It is the BIPs' own reference pseudocode written longhand over the affine
+  curve model already in that file, and its import self-check anchors it to the published vectors -
+  including two of the NEGATIVE ones, so the oracle is known to say no as well as yes.
+- **A MUTATION SURVIVED, AND THE HONEST ANSWER WAS THAT THE GATE WAS RIGHT AND THE CHECK WAS
+  WRONG.** Four defects were reconstructed in the shipped script and run through
+  `check-script-vectors.py`: hashing 32 zero bytes for an absent merkle root, dropping the tweak in
+  `cxBtcAddressP2TRFromInternal`, and slicing the 33-byte record off by one were all CAUGHT.
+  Deleting `cxTaprootTweak`'s merkle-root length guard was NOT - and reconstructing it faithfully
+  (the standing rule: suspect the probe first, but CHECK) showed why. The shim refuses a 31-byte
+  root too, with `CNX_ERR_BADLEN`, so the handler throws either way and a `throws(...) is true`
+  assertion cannot tell the two apart. **The guard is not a safety boundary; the shim is.** What
+  the guard actually buys is a message that names the handler and the argument instead of a generic
+  "a buffer had the wrong length", so that is now what is asserted (`throw_text`, and the mutation
+  is caught). The transferable part: when a defence-in-depth check sits above an independent one
+  that already refuses the same input, "it threw" tests the layer below it. Assert the thing the
+  upper layer is actually for.
+- Verified: `sh native/build.sh asan` clean over the whole new surface (the new code is where the
+  fixed-size stack buffers are - a 64-byte tagged-hash message that is 32 or 64 bytes long, a
+  32-byte aux staging buffer, and a 33-byte record whose last byte is written separately from the 32
+  the library serializes); `tools/coin-kat.py` green with 19 BIP-340 vectors, 14 BIP-341 vectors and
+  18 new fail-closed guards, and mutation-tested (a flipped signature byte, a flipped tweaked
+  seckey, a flipped published tweak, and an inverted expected verdict, all caught);
+  `tools/check-script-vectors.py` green at 290 checks (was 272) with the Taproot script handlers
+  EXECUTED against the published wallet vectors; `tools/check-selftest-vectors.py` green at 78 of
+  120 constants re-derived and mutation-tested (five, all caught); the suite coverage gate at 90/90
+  for coinxt; all four committed binaries rebuilt at ABI 6 with 43 exports each and both manifests
+  refreshed. **NOTHING IN THE `.lcb` OR THE SCRIPT LAYER HAS RUN ON AN ENGINE**: verified statically
+  and executed headlessly, needs an OXT pass. What that pass owes, specifically: `cxSchnorrSign`'s
+  three-argument shape; an EMPTY `Data` reaching the shim as length 0 in the aux and merkle-root
+  slots (proven for an empty INPUT in 2026-08-08, never yet for an OPTIONAL argument);
+  `cxSchnorrVerify`'s Boolean both ways; and `cxTaprootTweak`'s array return read back by name.
+
+**THE WINDOWS DLLs IN THIS CHANGE ARE AGAIN BELOW THIS MEMBER'S OWN BAR, RECORDED THE SAME WAY
+(2026-08-16).** The precedent set by the ABI-5 change applies verbatim: this environment has no
+Windows runner, so the committed `x86_64-win32` and `x86-win32` DLLs at ABI 6 are MinGW cross-builds
+(the exact toolchain-and-recipe rows from `release-binaries.yml`) carrying the three static checks
+instead of the execution proof:
+
+1. export-table parity with the Linux build: 43/43 `cnx_*` names byte-identical to the x86_64-linux
+   `nm -D` set, zero leaked symbols (in particular zero `secp256k1_*`), in BOTH DLLs;
+2. the ABI constant in the disassembly: `cnx_abi_version` at its export RVA disassembles to
+   `mov $0x6,%eax; ret` (`b8 06 00 00 00 c3`) in both;
+3. the import table clean: `KERNEL32.dll`, `msvcrt.dll`, `bcrypt.dll` and nothing else, in both -
+   libsecp256k1 adds no new import.
+
+Static checks prove well-formed, not working - "shipped is not run" is this repo's most expensive
+lesson - so both DLLs are honestly labeled: **needs the Windows execution proof.** The next
+`release-binaries.yml` dispatch supersedes them with `kat-windows`-proven builds, exactly as run
+31551536144 (2026-08-12) superseded the earlier cross-builds. The Linux pair is not in that state:
+the committed x86_64-linux library passed the full KAT suite including all 33 new published vectors
+in this environment (`coin-kat.py --check --lib src/code/x86_64-linux/coinxt.so`), and the x86-linux
+build is the same source through the same gcc at `-m32`, export-parity-checked.

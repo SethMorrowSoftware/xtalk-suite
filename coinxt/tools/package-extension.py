@@ -96,6 +96,10 @@ EXPECTED_EXPORTS = [
     "cnx_bip39_wordlist", "cnx_bip39_wordlist_len",
     # ABI 5: the secret-hygiene wipe the .lcb runs on every out-buffer
     "cnx_memzero",
+    # ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak (upstream libsecp256k1)
+    "cnx_schnorr_sign", "cnx_schnorr_verify", "cnx_xonly_pubkey_from_seckey",
+    "cnx_taproot_tweak_pubkey", "cnx_taproot_tweak_seckey",
+    "cnx_schnorr_sig_len", "cnx_xonly_pubkey_len", "cnx_taproot_output_len",
 ]
 
 

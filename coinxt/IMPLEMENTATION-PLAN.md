@@ -4,7 +4,7 @@ The phased build order for CoinXT (see [SPEC.md](SPEC.md) for WHAT, [CLAUDE.md](
 rules). Each phase has a concrete "done when" bar and states the risk it retires. Build in order: the
 native seam and the KAT harness come first, because everything downstream trusts them.
 
-> Status: **phase 0 done (except the Schnorr/BIP-340 sourcing pin, still open); PHASE 1 CLOSED
+> Status: **phase 0 done, the Schnorr/BIP-340 sourcing pin CLOSED 2026-08-16 (see below); PHASE 1 CLOSED
 > 2026-08-08 by an engine pass.** (See the as-built notes in [CLAUDE.md](CLAUDE.md).) The vendored
 > SHA-3 / SHA-2 / RIPEMD-160 / HMAC / PBKDF2 units, the `cnx_` shim (ABI 2) with Keccak-256, SHA3-256,
 > SHA-256, SHA-512, RIPEMD-160, HMAC-SHA256/512 and PBKDF2-HMAC-SHA512, the ASan + UBSan self-test, and
@@ -39,8 +39,9 @@ native seam and the KAT harness come first, because everything downstream trusts
 > folded harness; both new marshalling shapes - the CInt flag and the Boolean returns - answered on
 > the side the code assumed), which closes the phase outright. Two
 > phase-0 items are also now settled: the entropy decision was WRONG and is corrected (see CLAUDE.md,
-> "Determinism and entropy"), and Schnorr/BIP-340 is deferred to a Taproot phase because
-> trezor-crypto's plain-C tree does not implement it. **PHASE 3 IS ALSO BUILT.** `src/coinxt.livecodescript`
+> "Determinism and entropy"), and Schnorr/BIP-340, deferred here because trezor-crypto's plain-C
+> tree does not implement it, SHIPPED at ABI 6 on 2026-08-16 over a second vendored library
+> (upstream bitcoin-core/secp256k1) - the sourcing question this plan left open, answered. **PHASE 3 IS ALSO BUILT.** `src/coinxt.livecodescript`
 > adds 19 public handlers (hex, Base58Check, bech32/bech32m, SegWit addresses, hash160/hash256,
 > the four address builders, RLP) with no shim change. Its logic is executed headlessly against the
 > published BIP-173 / BIP-350 / EIP-55 / RLP vectors by `tools/check-script-vectors.py`, which runs
@@ -119,14 +120,19 @@ written down and agreed. **Risk retired:** building the wrong thing, or a licens
 - `cx*` API: `cxNewSeckey` (validates caller entropy), `cxSeckeyIsValid`, `cxPublicKey`,
   `cxPubkeyDecompress`, `cxSign` / `cxVerify`, `cxSignRecoverable` / `cxRecover`, `cxEcdh`. **All
   shipped**; `cxVerify` and `cxSeckeyIsValid` return Boolean, everything else returns Data.
-- **Schnorr / BIP-340 is deferred**, which also answers the phase-0 sourcing question left open:
-  trezor-crypto's plain-C tree has no BIP-340: it reaches Schnorr only via `zkp_bip340.c` on the
-  bundled `secp256k1-zkp`, a far larger vendoring. It moves to the Taproot phase, where that cost can
-  be weighed against P2TR as a whole rather than paid for one primitive.
+- **Schnorr / BIP-340 was deferred here, and SHIPPED on 2026-08-16 at ABI 6.** The reason for the
+  deferral stands and is what decided the eventual answer: trezor-crypto's plain-C tree has no
+  BIP-340 - it reaches Schnorr only via `zkp_bip340.c` on the bundled `secp256k1-zkp`, a far larger
+  vendoring. Weighed against P2TR as a whole, the answer was neither of the two this plan imagined:
+  **upstream bitcoin-core/secp256k1**, whose in-tree `schnorrsig` and `extrakeys` modules are
+  everything BIP-340 and single-key BIP-341 need, vendored as three translation units with no second
+  build system. That made a second upstream library part of this project, which is a rule change and
+  is recorded as one in SPEC.md section 2.1 and CLAUDE.md.
 - Secret hygiene: seckey scratch `memzero`ed in the shim; the `cx*` layer documents clearing key
   variables. KATs: four published RFC 6979 deterministic signatures, the `ecrecover` round-trip, low-`s`
   asserted on every vector (upstream enforces it), ECDH from both sides, and the public-key overread
-  guard. The BIP-340 vector moves with Schnorr.
+  guard. The BIP-340 vectors landed with Schnorr on 2026-08-16, and there are nineteen of them, ten
+  negative.
 
 **Done when:** a signature CoinXT makes verifies in an independent library, and `cxRecover` returns the
 signing pubkey. **MET (2026-08-08)**, headless, on every push: see the status note at the top of this

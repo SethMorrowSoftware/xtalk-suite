@@ -6,13 +6,15 @@ CoinXT is being built in phases (see [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATI
 [../SPEC.md](../SPEC.md) describes the *whole designed* API. This file is the opposite
 document: it lists only what is shipped, so you can tell at a glance what you can actually
 call. Hashes, the secp256k1 curve, the encodings and addresses (WIF included since
-2026-08-15), HD wallets and mnemonics, and (phase 5) transaction building are all shipped;
-only Schnorr/Taproot is not.
+2026-08-15), HD wallets and mnemonics, (phase 5) transaction building and (ABI 6, 2026-08-16)
+BIP-340 Schnorr with the BIP-341 Taproot tweak are all shipped. Nothing in SPEC.md is deferred
+any more except SHA3-512 and SLIP-39.
 
-> **Status.** **Eighty** public handlers exist across two layers: **35** in the `.lcb`
-> extension (hashes, the curve, the BIP-32 tweaks and the BIP-39 wordlist) and **45** in
-> `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation and the
-> phase-5 transaction builders). The two load differently - see the phase-3 section.
+> **Status.** **Ninety** public handlers exist across two layers: **43** in the `.lcb`
+> extension (hashes, the curve, the BIP-32 tweaks, the BIP-39 wordlist, and the BIP-340 /
+> BIP-341 surface) and **47** in `src/coinxt.livecodescript` (encodings, addresses,
+> mnemonics, HD derivation, the phase-5 transaction builders and the Taproot address path).
+> The two load differently - see the phase-3 section.
 >
 > **Phase 5 (transaction building) is ENGINE-PASSED (2026-08-12).** The Bitcoin path reproduces
 > the BIP-143 native-P2WPKH worked example byte for byte in `tools/coin_reference.py`, and the
@@ -64,9 +66,14 @@ only Schnorr/Taproot is not.
 > signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
 > the signer.
 >
-> **Not shipped, despite appearing in SPEC.md:** `cxSchnorrSign`/`cxSchnorrVerify` and
-> `cxXonlyFromSeckey` (deferred with Taproot: trezor-crypto's plain-C tree has no BIP-340).
-> Calling any of them is a `handler not found`.
+> **BIP-340 / BIP-341 shipped at ABI 6 on 2026-08-16**, over a SECOND vendored library
+> (upstream bitcoin-core/secp256k1 - trezor-crypto's plain-C tree has no BIP-340; the rule
+> change is recorded in SPEC.md section 2.1). Those handlers postdate every engine pass this
+> file records, so the whole ABI-6 section below is **verified statically and executed
+> headlessly against the published vectors; it needs an OXT pass.**
+>
+> **Still not shipped, despite appearing in SPEC.md:** `cxSha3_512` and SLIP-39. Calling
+> `cxSha3_512` is a `handler not found`.
 
 ## Before anything else
 
@@ -98,9 +105,11 @@ extension is not installed or did not load.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
-  reports ABI 5, and throws if not, so a mismatched library cannot silently produce garbage.
-  (ABI 5, 2026-08-16, is an internal secret-hygiene change - see "Secret hygiene, honestly"
-  below. It adds no public handler and changes no signature.)
+  reports ABI 6, and throws if not, so a mismatched library cannot silently produce garbage.
+  (ABI 5, 2026-08-16, was an internal secret-hygiene change that added no public handler.
+  ABI 6, the same day, added the BIP-340 / BIP-341 surface. Both bumps are additive - no
+  shipped symbol was renamed or changed shape - but the version moves on ANY ABI change so a
+  stale library is refused rather than discovered at the first missing bind.)
 - **An empty `Data` is legal input** for every digest and for both HMAC slots. It returns the
   documented empty-input digest rather than throwing. This was the binding's one genuinely
   open marshalling question and the 2026-08-08 engine pass settled it.
@@ -113,7 +122,7 @@ extension is not installed or did not load.
 cxCheckABI
 ```
 
-A command. Returns nothing. Throws if the loaded native library does not report ABI 5, with
+A command. Returns nothing. Throws if the loaded native library does not report ABI 6, with
 an error telling the user to reinstall the packaged extension. Silence is the pass.
 
 You rarely need to call it explicitly, because every other handler performs the same check
@@ -352,7 +361,8 @@ different network than the `pHrp` you asked for.
 |---|---|---|
 | `cxBtcAddressP2PKH(pPubkey)` | `1...` | a compressed or uncompressed key |
 | `cxBtcAddressP2WPKH(pPubkey)` | `bc1q...` | a **33-byte compressed** key only |
-| `cxBtcAddressP2TR(pOutputKey)` | `bc1p...` | a **32-byte x-only output key** |
+| `cxBtcAddressP2TR(pOutputKey)` | `bc1p...` | a **32-byte x-only OUTPUT key** (does NOT tweak) |
+| `cxBtcAddressP2TRFromInternal(pInternalKey, pMerkleRoot)` | `bc1p...` | a **32-byte x-only INTERNAL key** and an optional root; tweaks for you |
 | `cxEthAddress(pPubkey)` | `0x...` lowercase | a compressed or uncompressed key |
 | `cxEthAddressChecksum(pAddress)` | `0x...` EIP-55 mixed case | any casing, with or without `0x` |
 | `cxEthAddressIsChecksummed(pAddress)` | Boolean | an address to verify |
@@ -362,11 +372,18 @@ lose money:
 
 - **`cxBtcAddressP2WPKH` rejects an uncompressed key.** A v0 SegWit output built
   from one is unspendable by every modern wallet.
-- **`cxBtcAddressP2TR` takes the TWEAKED output key**, not an internal key.
-  BIP-341 defines the output key as `Q = P + int(tagged_hash(P || merkle_root))G`,
-  and computing that needs the BIP-340 surface CoinXT has deferred with Taproot.
-  Handing it a raw internal key produces a valid-looking address nobody can spend
-  from. If you do not already know your key is tweaked, it is not.
+- **`cxBtcAddressP2TR` takes the TWEAKED output key**, not an internal key, and
+  **still does not tweak** - that did not change when ABI 6 made tweaking possible.
+  BIP-341 defines the output key as `Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G`;
+  handing this handler a raw internal key produces a valid-looking address nobody can
+  spend from. **If you hold an internal key, call `cxBtcAddressP2TRFromInternal`. If you
+  are not sure which you hold, you hold an internal key.**
+  Why two handlers rather than an optional second argument: an absent xTalk parameter is
+  indistinguishable from an empty one, so a single handler could not tell "encode this
+  output key" from "tweak this internal key with no script tree" - and those two readings
+  of the same 32 bytes give different addresses, one of them unspendable. Changing what
+  `cxBtcAddressP2TR` means would have silently turned every existing correct call into a
+  DOUBLE tweak, which is the same failure with no way to notice it.
 - **`cxEthAddressIsChecksummed` returns `false` for an all-lowercase address.**
   Such an address carries no checksum at all, and reporting it as valid would
   quietly retire the protection EIP-55 exists to give.
@@ -551,9 +568,100 @@ compact `r`/`s` from `cxSignRecoverable`.
   pValueHex, pDataHex, pRecid, pRHex, pSHex)` - the signed typed transaction;
   returns `["raw"]`, `["txhash"]`.
 
+## BIP-340 Schnorr and BIP-341 Taproot (ABI 6)
+
+New on 2026-08-16, over a SECOND vendored native library (upstream bitcoin-core/secp256k1;
+see [../SPEC.md](../SPEC.md) section 2.1 for why there are now two). **Nothing in this
+section has run on an engine yet** - it is verified statically and executed headlessly
+against BIP-340's and BIP-341's own published vector files.
+
+### `cxXOnlyPubkey(pSeckey)`
+
+The 32-byte **x-only** public key for a 32-byte private key: BIP-340's `bytes(P)`, the X
+coordinate of the point whose Y is even. This is what a BIP-340 verifier needs, and it is
+the **internal** key a Taproot output is built from - it is not an output key until it has
+been through `cxTaprootTweakPubkey`.
+
+### `cxSchnorrSign(pSeckey, pMessage, pAuxRand)`
+
+Returns a 64-byte BIP-340 signature.
+
+- **`pMessage` must be exactly 32 bytes.** BIP-340 itself allows any length, but CoinXT
+  signs only a digest you have computed and can explain - the same rule `cxSign` follows.
+  For Taproot that digest is the BIP-341 sighash.
+- **`pAuxRand` is empty or 32 bytes.** Empty means *draw 32 fresh bytes from the operating
+  system*, which is BIP-340's recommended default and makes each signature different (all
+  of them verify; BIP-340 signatures are not unique). It NEVER means an all-zero aux. Pass
+  32 bytes when you need the signature to be reproducible - which is what the published
+  test vectors specify.
+
+### `cxSchnorrVerify(pXOnlyPubkey, pMessage, pSignature)`
+
+Boolean. **Any message length** is accepted here, unlike signing: BIP-340 has admitted
+arbitrary-length messages since 2022 and its own vector file carries 0-, 1-, 17- and
+100-byte cases, so a verifier that demanded 32 would reject valid signatures.
+
+Answers `false` - it does not throw - when the public key is not a point on the curve.
+That is BIP-340's own verdict: its vector cases 5 and 14 both expect FALSE there. Only a
+wrong-LENGTH key or signature throws, because a length is a caller bug rather than a
+statement about somebody's signature.
+
+### `cxTaprootTweakPubkey(pInternalKey, pMerkleRoot)` / `cxTaprootTweak(pInternalKey, pMerkleRoot)`
+
+BIP-341's `Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G`.
+
+`cxTaprootTweakPubkey` is the `.lcb` handler and returns a **33-byte record**: the 32-byte
+x-only output key followed by one parity byte (0 = even Y, 1 = odd). `cxTaprootTweak` is
+the script-layer wrapper and returns the same thing as a named array:
+
+| key | value |
+|---|---|
+| `outputKey` | the 32-byte x-only output key - the P2TR witness program |
+| `parity` | 0 or 1 |
+
+A key-path spend and a `bc1p...` address need only `outputKey`; the parity is what a
+script-path spend puts in its control block.
+
+> **`pMerkleRoot` EMPTY IS NOT 32 ZERO BYTES, and this is a consensus rule.** BIP-341 hashes
+> `bytes(P) || merkle_root` where `merkle_root` is the **empty byte string** when the output
+> commits to no script tree - the key-path-only case, which is what a single-signature wallet
+> wants. Passing 32 zero bytes instead hashes 64 bytes where the specification hashes 32:
+> a different tweak, a different output key, a different address, and coins only a script
+> nobody has can move. **If you have no script tree, pass empty.**
+
+### `cxTaprootTweakSeckey(pSeckey, pMerkleRoot)`
+
+The private key that spends the output `cxTaprootTweakPubkey` derives from the matching
+internal key. Hand the result to `cxSchnorrSign` over the BIP-341 sighash.
+
+It takes the internal **private** key and derives `bytes(P)` itself, rather than letting you
+supply both halves: the tagged hash commits to the internal public key, so a mismatched pair
+would otherwise produce a spendable-looking key for coins it cannot touch. Pass the SAME
+`pMerkleRoot` you passed to `cxTaprootTweakPubkey`.
+
+### What is NOT here, and you will need it to spend
+
+**There is no BIP-341 sighash builder.** `cxBtcSighashLegacy` and `cxBtcSighashSegwit` cover the
+pre-Taproot algorithms; the BIP-341 signature message (`SigMsg`, with its `sha_prevouts` /
+`sha_amounts` / `sha_scriptpubkeys` / `sha_sequences` / `sha_outputs` and the `0x00` epoch byte) is
+a different algorithm and is not built. So today CoinXT can **receive** to Taproot end to end - key
+to internal key to address - and can sign a 32-byte BIP-341 sighash you computed elsewhere, but it
+cannot compute that sighash for you. Script-path spending (leaf hashes, merkle proofs, control
+blocks) is not here either: only the merkle ROOT crosses the API, as an opaque 32 bytes.
+
+### The whole path, for a single-signature Taproot wallet
+
+```
+put cxXOnlyPubkey(tSeckey) into tInternal
+put cxBtcAddressP2TRFromInternal(tInternal, empty) into tAddress   -- receive here
+-- ... later, to spend:
+put cxTaprootTweakSeckey(tSeckey, empty) into tSpendKey
+put cxSchnorrSign(tSpendKey, tSighash32, empty) into tSignature
+```
+
 ## Length accessors
 
-Fourteen zero-argument handlers returning the sizes the library actually reports.
+Seventeen zero-argument handlers returning the sizes the library actually reports.
 
 | Handler | Returns |
 |---|---|
@@ -571,6 +679,9 @@ Fourteen zero-argument handlers returning the sizes the library actually reports
 | `cxRecoverableSignatureLen()` | 65 |
 | `cxEcdhLen()` | 65 |
 | `cxBip39WordlistLen()` | 16384 (2048 words x 8) |
+| `cxSchnorrSignatureLen()` | 64 |
+| `cxXOnlyPubkeyLen()` | 32 |
+| `cxTaprootOutputLen()` | 33 (a 32-byte output key plus a parity byte) |
 
 These are not decoration. **Do not hardcode 32 or 64 in your own code**; ask. A library is
 entitled to change a digest size across versions, and a hardcoded length is a buffer overflow

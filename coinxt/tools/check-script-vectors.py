@@ -161,18 +161,39 @@ def find_cc():
     return None
 
 
-def vendor_sources():
+def build_var(name):
+    """One shell variable out of native/build.sh - the single source of truth
+    for what the shipped library is made of and how it is compiled."""
     with open(os.path.join(NATIVE, "build.sh"), encoding="utf-8") as fh:
-        m = re.search(r'vendor_src="([^"]*)"', fh.read(), re.S)
+        m = re.search(name + r'="([^"]*)"', fh.read(), re.S)
     if m is None:
-        raise SystemExit("check-script-vectors: could not read vendor_src from native/build.sh")
-    return [os.path.join(VENDOR, p.strip()[len("$ven/"):])
-            for p in m.group(1).replace("\\\n", " ").split() if p.strip()]
+        raise SystemExit(f"check-script-vectors: could not read {name} from native/build.sh")
+    return [p.strip() for p in m.group(1).replace("\\\n", " ").split() if p.strip()]
+
+
+def vendor_sources():
+    return [os.path.join(VENDOR, p[len("$ven/"):]) for p in build_var("vendor_src")]
+
+
+def secp_sources():
+    return [os.path.join(VENDOR, p[len("$ven/"):]) for p in build_var("secp_src")]
 
 
 def build(cc, out):
-    subprocess.run([cc, "-O2", "-isystem", VENDOR, "-fPIC", "-shared",
-                    os.path.join(NATIVE, "coinxt.c"), *vendor_sources(), "-o", out],
+    """Two compile groups, as native/build.sh does it: upstream libsecp256k1's
+    units need their own warning scope, and their secp256k1.c shares a BASENAME
+    with trezor-crypto's, so objects derived from it must not collide."""
+    cflags = build_var("secp_cppflags")
+    objs = []
+    outdir = os.path.dirname(os.path.abspath(out))
+    for src in secp_sources():
+        obj = os.path.join(outdir, "secp_" + os.path.basename(src)[:-2] + ".o")
+        subprocess.run([cc, "-O2", *build_var("secp_warn"), *cflags,
+                        "-fPIC", "-c", src, "-o", obj], check=True)
+        objs.append(obj)
+    subprocess.run([cc, "-O2", *cflags, "-isystem", VENDOR, "-fPIC", "-shared",
+                    os.path.join(NATIVE, "coinxt.c"), *vendor_sources(), *objs,
+                    "-o", out],
                    check=True)
 
 
@@ -294,6 +315,31 @@ def wire_hashes(lib):
             return False
         raise LCS.Thrown(f"CoinXT: cxSeckeyIsValid: status {rc}")
 
+    # ---- ABI 6: what the Taproot script handlers call into the shim ---------
+    # cxTaprootTweak slices a 33-byte record (x-only output key || parity) and
+    # asks the shim for the key width rather than writing 32 down again, so
+    # both the call and the accessor have to be here or the script's own
+    # slicing would not be what runs.
+    lib.cnx_taproot_tweak_pubkey.restype = ctypes.c_int
+    lib.cnx_taproot_tweak_pubkey.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                             ctypes.c_char_p, ctypes.c_size_t,
+                                             ctypes.c_char_p, ctypes.c_size_t]
+    lib.cnx_xonly_pubkey_len.restype = ctypes.c_size_t
+
+    def taproottweakpubkey(args):
+        internal, root = to_bytes(args[0]), to_bytes(args[1])
+        out = ctypes.create_string_buffer(33)
+        rc = lib.cnx_taproot_tweak_pubkey(internal, len(internal),
+                                          root if root else None, len(root), out, 33)
+        if rc != 0:
+            # The .lcb wrapper throws on a non-zero status, so this must too or
+            # the script's refusal paths would never execute.
+            raise LCS.Thrown(f"CoinXT: cxTaprootTweakPubkey: status {rc}")
+        return to_str(out.raw[:33])
+
+    LCS.HASHES["cxtaproottweakpubkey"] = taproottweakpubkey
+    LCS.HASHES["cxxonlypubkeylen"] = lambda _args: lib.cnx_xonly_pubkey_len()
+
     LCS.HASHES["cxhmacsha512"] = hmac512
     LCS.HASHES["cxpbkdf2hmacsha512"] = pbkdf2
     LCS.HASHES["cxpublickey"] = publickey
@@ -310,6 +356,32 @@ def to_bytes(s):
 def to_str(b):
     return "".join(chr(x) for x in b)
 
+
+# BIP-341's published wallet test vectors, the fields this layer can check:
+# (internal x-only key, merkle root or "", expected x-only output key, expected
+# BIP-350 address). Entry 0 is the KEY-PATH-ONLY case - the merkle root is the
+# specification's EMPTY BYTE STRING, not 32 zero bytes - which is the one that
+# separates a correct implementation from a plausible wrong one.
+#   source: https://github.com/bitcoin/bips/blob/master/bip-0341/wallet-test-vectors.json
+TAPROOT_SCRIPT_VECTORS = [
+    ("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d",
+     "",
+     "53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343",
+     "bc1p2wsldez5mud2yam29q22wgfh9439spgduvct83k3pm50fcxa5dps59h4z5"),
+    ("187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27",
+     "5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21",
+     "147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3",
+     "bc1pz37fc4cn9ah8anwm4xqqhvxygjf9rjf2resrw8h8w4tmvcs0863sa2e586"),
+    ("93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820",
+     "c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b",
+     "e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e",
+     "bc1punvppl2stp38f7kwv2u2spltjuvuaayuqsthe34hd2dyy5w4g58qqfuag5"),
+]
+
+# BIP-340 test vector 5's public key: a 32-byte value that is NOT the abscissa
+# of any curve point. Used where an x-only key must be REFUSED rather than
+# quietly tweaked into a plausible address.
+OFF_CURVE_XONLY = "eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34"
 
 G33 = bytes.fromhex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
 G65 = bytes.fromhex("0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
@@ -535,6 +607,22 @@ def check_vectors(c, ip):
         except LCS.Thrown:
             return True
 
+    def throw_text(fn, *args):
+        """The MESSAGE a refusal throws, not just the fact that it threw.
+
+        Added 2026-08-16 after a mutation SURVIVED: deleting cxTaprootTweak's
+        merkle-root length guard changed nothing this gate could see, because
+        the shim refuses the same input a layer down with CNX_ERR_BADLEN and
+        `throws` cannot tell the two apart. The guard is real, but what it
+        actually buys is a message that names the handler and the argument
+        instead of a generic "a buffer had the wrong length" - so that is what
+        has to be asserted, or the guard is untested by construction."""
+        try:
+            call(fn, *args)
+            return "(did not throw)"
+        except LCS.Thrown as exc:
+            return str(exc)
+
     c.note("\nhex")
     c.ck("cxHexEncode", call("cxHexEncode", bytes.fromhex("00ff10ab")), "00ff10ab")
     c.ck("cxHexDecode accepts mixed case",
@@ -633,6 +721,71 @@ def check_vectors(c, ip):
     c.ck("cxBtcAddressP2WPKH refuses an uncompressed key",
          throws("cxBtcAddressP2WPKH", G65), True)
     c.ck("cxBtcAddressP2TR refuses a 33-byte key", throws("cxBtcAddressP2TR", G33), True)
+
+    # ---- BIP-341: the tweak, and the address builder that applies it --------
+    # The ABI-6 additions, executed through the REAL script over the REAL shim.
+    # Every expectation is BIP-341's own published wallet vector or is derived
+    # by tools/coin_reference.py's independent model (itself anchored to those
+    # vectors at import) - never by the library under test.
+    c.note("\nBIP-341 Taproot (cxTaprootTweak, cxBtcAddressP2TRFromInternal)")
+
+    def tweak(internal, root):
+        got = ip.call("cxTaprootTweak", [to_str(internal), to_str(root)])
+        return to_bytes(got["outputKey"]), int(LCS._n(got["parity"]))
+
+    for i, (ipub_hex, root_hex, want_out, want_addr) in enumerate(TAPROOT_SCRIPT_VECTORS):
+        ipub = bytes.fromhex(ipub_hex)
+        root = bytes.fromhex(root_hex) if root_hex else b""
+        out, parity = tweak(ipub, root)
+        label = "no merkle root" if not root_hex else "script-tree root"
+        c.ck(f"vector {i} ({label}): output key", out.hex(), want_out)
+        # The vector file publishes only x-only keys, so the parity byte has no
+        # published expectation; it comes from the independent model instead.
+        c.ck(f"vector {i}: parity byte", parity,
+             REF.taproot_tweak_pubkey(ipub, root or None)[1])
+        c.ck(f"vector {i}: bech32m address",
+             call("cxBtcAddressP2TRFromInternal", ipub, root), want_addr)
+
+    # THE CONSENSUS DISTINCTION, at the script layer this time: an EMPTY merkle
+    # root is the specification's empty byte string and NOT 32 zero bytes. If
+    # the script ever passed one for the other, every key-path-only address it
+    # produced would be wrong and would still look like an address.
+    ipub0 = bytes.fromhex(TAPROOT_SCRIPT_VECTORS[0][0])
+    c.ck("an empty merkle root is not a 32-zero root",
+         tweak(ipub0, b"")[0] != tweak(ipub0, bytes(32))[0], True)
+    c.ck("  the zero root is accepted, not refused (it is a legal commitment)",
+         tweak(ipub0, bytes(32))[0].hex(),
+         REF.taproot_tweak_pubkey(ipub0, bytes(32))[0].hex())
+
+    # cxBtcAddressP2TR is UNCHANGED and must stay unchanged: it encodes the
+    # OUTPUT key it is given and never tweaks. Asserting that the two handlers
+    # disagree on the same 32 bytes is what stops a future edit from quietly
+    # making the old one tweak - which would turn every existing correct call
+    # into a DOUBLE tweak, i.e. a valid-looking unspendable address.
+    c.ck("cxBtcAddressP2TR still does NOT tweak",
+         call("cxBtcAddressP2TR", ipub0) != call("cxBtcAddressP2TRFromInternal", ipub0, b""),
+         True)
+    c.ck("  it still encodes the key it is given, unchanged",
+         call("cxBtcAddressP2TR", ipub0), REF.p2tr(ipub0))
+
+    c.ck("cxTaprootTweak refuses a 33-byte internal key",
+         throws("cxTaprootTweak", G33, b""), True)
+    c.ck("cxTaprootTweak refuses a 31-byte merkle root",
+         throws("cxTaprootTweak", ipub0, bytes(31)), True)
+    # ... and refuses it IN ITS OWN WORDS. Without this the script-level guard
+    # is invisible to the gate: the shim rejects a 31-byte root too, so
+    # deleting the guard leaves a throw either way (measured - that mutation
+    # survived until this check existed). What the guard buys is a message that
+    # names the handler and the argument.
+    c.ck("  in its own words, naming the handler and the merkle root",
+         "cxTaprootTweak" in throw_text("cxTaprootTweak", ipub0, bytes(31))
+         and "merkle root" in throw_text("cxTaprootTweak", ipub0, bytes(31)),
+         True)
+    c.ck("cxTaprootTweak refuses an internal key that is not on the curve",
+         throws("cxTaprootTweak", bytes.fromhex(OFF_CURVE_XONLY), b""), True)
+    c.ck("cxBtcAddressP2TRFromInternal refuses a 33-byte key",
+         throws("cxBtcAddressP2TRFromInternal", G33, b""), True)
+
     c.ck("cxEthAddress from a compressed key", call("cxEthAddress", G33),
          REF.eth_address(G65))
     c.ck("cxEthAddress from an uncompressed key", call("cxEthAddress", G65),
