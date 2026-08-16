@@ -1038,7 +1038,9 @@ constant kHeDefaultMisses = 2
 -- session. 600 s is deliberately generous against the honest case (a joined
 -- but unseated observer emits nothing on its own, so its stamp is usually
 -- just its join wire) and still bounds the ghost. A JUDGEMENT CALL, not a
--- measured number: needs an OXT pass on a real table.
+-- measured number -- ACCEPTED BY THE OWNER FOR THE TEST PASS (2026-08-16),
+-- which settles it for now without making it measured: the live pass should
+-- still report whether a real table's join-to-boundary gap fits inside it.
 constant kHeSeatLiveSecs = 600
 -- the clock-skew tolerance on a host timeout wire, in seconds. NOT the
 -- +-600 s wall-clock freshness window (riptide's rp1-inbox precedent):

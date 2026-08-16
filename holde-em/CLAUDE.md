@@ -509,12 +509,19 @@ touching the liveness layer:
     stamp, gGame["seenMsByPub"], written by heNetApplyWire and
     heNetOnHandshake (the only liveness rp1 has -- it surfaces no
     disconnect event). kHeSeatLiveSecs is a judgement call, not a measured
-    number. **OPEN DECISION: spectator intent.** Spec 4's read-only role is
-    still indistinguishable from a player here -- the admission token has a
-    role field, but every client that can talk to this build sends
-    "player", so refusing on role would refuse real players. Declaring
-    spectator intent needs a wire/UI decision; none was invented in the
-    v0.24.0 pass (also recorded in IMPLEMENTATION-PLAN.md 2e).
+    number -- **the owner ACCEPTED 600 s for the test pass (2026-08-16)**, so
+    it is settled for now and the live pass should still report whether a real
+    table's join-to-boundary gap fits inside it. **DECIDED 2026-08-16:
+    spectators are DEFERRED** (owner: "we do not need spectators at this
+    point"), so this is no longer an open question blocking the 2e live pass.
+    What that means concretely, recorded so nobody re-derives it: joining a
+    table with a free seat SEATS you at the next hand boundary and there is no
+    way to decline, because spec 4's read-only role is indistinguishable from a
+    player here -- the admission token has a role field, but every client that
+    can talk to this build sends "player", so refusing on role would refuse
+    real players. Whoever picks spectators back up needs a wire and/or UI
+    decision (a role a joiner can choose, or a sit-request wire the host
+    answers), not a code fix (also recorded in IMPLEMENTATION-PLAN.md 2e).
   - **The redial must not race the election** -- structurally: the 60 s
     wire-silence watchdog counts through every redial (a dead stream
     delivers no wires), every redial step gates on hostLost, and the

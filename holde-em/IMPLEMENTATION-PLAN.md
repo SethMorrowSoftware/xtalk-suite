@@ -236,7 +236,10 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
       countdown painted over SIT OUT (heSeatFaceLabel, now pure and pinned);
       and heNetHandKick's duplicate occupancy scan collapsed into
       heNetSeatedWithChipsList.
-      **OPEN DECISION carried out of that pass: spectator intent.** The
+      **DECIDED 2026-08-16: spectators are DEFERRED** (owner: "we do not
+      need spectators at this point"). This is no longer blocking; what
+      follows is the record of what deferring MEANS, kept so the question
+      is not re-derived from scratch when someone wants them. The
       late-join gate now requires liveness, but spec 4's read-only
       SPECTATOR is still indistinguishable from a player at a hand
       boundary: the admission token carries a role field, yet every client
@@ -244,8 +247,8 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
       would refuse real players. Declaring spectator intent needs a wire
       and/or UI decision (a role a joiner can choose, or a `sit`-request
       wire the host answers) -- deliberately NOT invented in a pass whose
-      whole constraint was to change no wire. Decide it before the 2e live
-      pass if spectators are wanted at all.
+      whole constraint was to change no wire. Not needed for the 2e live
+      pass; revisit only if spectators are wanted.
     What the LIVE pass still owes 2e: a timed multi-machine session on wall
     clocks (real seats timing out, the bank visibly arming, a sit-out
     rejoining), a real tor host-stream loss -> redial -> trimmed resync
