@@ -207,7 +207,20 @@ contributor position in the shuffle order, `ck` the Phase 5 DLEQ commitment key
 and `unmaskStep` carries `pos=<P>,slot=<S>,val=<64hex>,proof=<192hex|empty>` —
 `slot` the deck position 1..52 being unmasked, `proof` the reserved field 7.4 names,
 filled at Phase 5. The bodies are hex-encoded into the envelope like every other, so
-the "|" separators never reach the wire frame.
+the "|" separators never reach the wire frame. As-built (v0.23.0, the 2e liveness
+remainder — pinned in `tools/protocol-kat.py`, timeout_head10/stand_head11/
+sitback_head12/timeout_bid_head13): the `cfg` body carries the section-9 TIMER
+LENGTHS as `act=<s>,bank=<s>,miss=<n>` (this section's "timer lengths" in message
+zero; a pre-liveness client ignores keys it does not read, so the extension is
+wire-compatible — the lobby_cfg_body/lobby_head2 pins regenerated, a documented
+consensus change). A TIMEOUT is not a new message type: the HOST authors the
+existing `act` wire with `verb=<check|fold>,amount=0,seat=<N>,timeout=1,bank=<1|0>`
+(or a `bid*` wire with `amount=,seat=,timeout=1,bank=` for a pending forced post),
+folded as seat N's action after every client verifies the exact prescription, the
+transcript-derived bank state, and the deadline against its own clock. `stand`
+carries `seat=N` from the seat's own key (sit-out); `sit` WITHOUT a `pub=` field,
+`seat=N` from the seat's own key, is the return — the host-assignment `sit` form
+keeps its `pub=`, so the two never collide.
 
 ## 7. The deal protocol ladder
 
@@ -504,6 +517,15 @@ pin (all classic, all fiddly, all testable without networking):
   muck in turn (Level 2: muck = don't reveal scalars).
 - Timers (from the signed config): act timer with one time-bank per hand; deal-phase
   timer (Level 2 chains); expiry = check/fold in betting, void-and-audit in dealing.
+  As-built (v0.23.0): the lengths ride the signed cfg as `act=/bank=/miss=`; the
+  deadline needs no wire of its own (the host-countersigned turn-opening wire starts
+  every clock; expiry is the host's signed timeout wire, section 6); the one
+  time-bank AUTO-ARMS on a seat's first would-be timeout each hand — a request wire
+  would race the timeout on a lossy transport — and its spend rides the wire as
+  `bank=1`, so bank state is transcript-derived consensus. Forced posts time out the
+  same way once the deal is complete; an L0 deal stall (a contributor never
+  commits/seals/reveals) deliberately has NO timeout prescription — this bullet's
+  dealing timeout is the Level 2 machine's.
 
 ### 8.2 Hand evaluator
 
@@ -565,6 +587,23 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   hint from an admitted peer: dedup keeps any replay safe, a forward lie only
   starves the liar.
 - **Timeout in betting**: auto check/fold, seat goes to sit-out after (config) misses.
+  As-built (v0.23.0): the auto action is the HOST's signed timeout wire (section 6),
+  verified by every client — host authority, the exact check-or-fold prescription (a
+  host may never fold a seat that could check), the transcript-derived bank state,
+  and the deadline genuinely passed on the CLIENT's own clock within a 5 s transport-
+  jitter tolerance (NOT the +-600 s wall-clock window: no timestamp crosses the wire;
+  both sides time the same wire-to-wire interval locally; catch-up replay waives the
+  clock check, the live table already policed it) — then folded as the seat's action,
+  so the transcript stays deterministic. After (config) `miss=` consecutive timeouts
+  the seat sits out AUTOMATICALLY (transcript-derived, every client agrees); a seat
+  may also sit out by its own signed `stand`. A sitting-out seat is DEALT OUT at the
+  next hand boundary and its mid-hand turns time out instantly (auto check/fold, and
+  auto-post for a pending blind); its own `sit` (no pub) re-enters next hand. A table
+  left with fewer than 2 live seats but 2+ chip-holding seats WAITS for a return
+  instead of ending. Late-join rides the same boundary: a mid-session joiner (full
+  replay + `join`) is seated by the host into the lowest empty seat at the next
+  handStart, opening stack from the signed cfg, or stays an observer when the table
+  is full (the spec-4 spectator: a read-only fold over the replay).
 - **Timeout in dealing** (L2): void-and-audit (7.3). A player who habitually
   "disconnects" when the flop looks bad voids hands but never sees that flop — aborting
   gains zero information (the abort happens before any unmask they can read) — and
@@ -581,7 +620,17 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   costs nothing at L0 — bets that never reached a verified settle never moved the
   stacks, so they already stand at the last receipt. The LIVE handover — the elected
   host re-hosting and peers re-joining — is Phase 3's three-machine exit gate; until
-  that pass, the client fails closed with the successor named.
+  that pass, the client fails closed with the successor named. As-built (v0.23.0, the
+  2e remainder): on the ONION transport, positive host-stream death during play now
+  arms a bounded AUTO-REDIAL first — four attempts, 2/4/8/16 s doubling backoff, 10 s
+  per dial; the host's onion address is deterministic (above), so the same invite
+  redials — while the 60 s wire-silence watchdog keeps counting underneath. The
+  redial can never race the election: every redial step gates on the election's
+  verdict and stands down quietly when the watchdog concludes first. A successful
+  redial's hello names the client's applied seq (a compatible trailing token item),
+  so the host's reconnect replay arrives TRIMMED to the tail — this section's "since
+  your last ckpt" resync; a host-signed wire applying is what resets the attempt
+  counter.
 
 ## 10. Transport profile
 

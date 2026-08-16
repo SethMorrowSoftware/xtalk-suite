@@ -64,15 +64,7 @@ CONST_PAIR_RE = re.compile(r'(k[A-Za-z0-9_]+)\s*=\s*([0-9]+)')
 # ADOPTER declares - the gate reads the real numbers there.
 SKIP = {os.path.join("tests", "suite-selftest.livecodescript"),
         os.path.join("tools", "ui-kit.livecodescript"),
-        os.path.join("tools", "harness-scaffold.livecodescript"),
-        # holde-em's table shipped at 1024x690 before the fold brought it
-        # under this gate (its `set the rect` spelling was unparseable until
-        # 2026-08-15). The 50px height overage is real - the status line and
-        # quick-bet row live below y=640 - so the fix is a re-layout needing
-        # an OXT eye, recorded as follow-up work in holde-em/CLAUDE.md's
-        # fold record and the suite remaining-work document, not a number
-        # this gate can simply hold down.
-        os.path.join("holde-em", "src", "holdem.livecodescript")}
+        os.path.join("tools", "harness-scaffold.livecodescript")}
 
 
 def check_file(path, rel, problems):

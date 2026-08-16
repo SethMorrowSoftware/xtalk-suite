@@ -50,10 +50,17 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   gate's window-building regex ended in a literal backspace byte, so the
 >   width/height spelling had never matched; the rect spelling this stack uses was
 >   also unknown to it (and to `tools/check-stack-size.py`, which now parses it).
-> - The stack ships at 1024x690 - 50px over the suite's 720p height budget, with the
->   status line and quick-bet row genuinely below y=640. It carries a written SKIP in
->   `tools/check-stack-size.py`; the 720p re-layout is recorded follow-up work, not a
->   number a gate can hold down.
+> - The stack SHIPPED at 1024x690 - 50px over the suite's 720p height budget, with
+>   the status line and quick-bet row genuinely below y=640 - and carried a written
+>   SKIP in `tools/check-stack-size.py` until the recorded follow-up landed. **The
+>   720p re-layout landed at v0.23.0 (2026-08-16)**: 1024x640, the felt's vertical
+>   rhythm tightened (felt 48..524, board centre 300 -> 286, the pot line moved
+>   below the board, the seat ring pulled in) and the slider/action/status rows
+>   pulled inside the fold. The SKIP entry is GONE - the gate holds this stack to
+>   the budget like everyone else. Verified statically BY ARITHMETIC (every control
+>   rect re-derived from the constants: all within 1024x640, non-layered chrome
+>   pairwise disjoint, the designed layers named); the confirming EYE - nothing
+>   clipped, the felt still reads - is the OXT pass's.
 > - The `he*` prefix is registered in `tools/check-handler-calls.py`, which also
 >   learned to strip `/* */` block comments (this file's header changelog leaked
 >   prose into its candidate set - and 31 phantom "definitions" out of it, suite-wide).
@@ -91,15 +98,20 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online play (2d) + onion tables (2f) + the 2e remainder (street
-ckpt wires, show/muck, online History folding, host election) + the Phase 3 deck
-oracle written, on Phase 1 hotseat, plus the Phase 4a-4d Level 2 layer (compute +
-void-and-audit sequencing), the 4e adversarial bots, and Phase 5's DLEQ proofs on
-SodiumXT ABI 9 (all pure; nothing plays on Level 2 yet), at v0.22.0. The pending
-live gates: a multi-hand onion table session on two machines with running tor (2f),
-and the Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle,
-killed mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle);
-the sx* DLEQ calls have never run on an engine.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online play (2d) + onion tables (2f) + the WHOLE 2e liveness
+layer (street ckpt wires, show/muck, online History folding, host election -- and,
+since v0.23.0, act timers + time-bank, sit-out/return, late-join, onion
+auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Phase
+4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
+bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
+Level 2 yet), at v0.23.0 -- which also brought the table inside the suite's 720p
+budget (1024x640; the check-stack-size SKIP is gone). The pending live gates: a
+TIMED multi-hand session on wall clocks (seats timing out for real), a multi-hand
+onion table session on two machines with running tor (2f, + a real host-stream
+loss -> redial), and the Phase 3 THREE-MACHINE oracle round (two players + a
+non-playing oracle, killed mid-hand and recovered per spec 9; + live tor for an
+onion-hosted oracle); the sx* DLEQ calls have never run on an engine, and the
+re-layout's confirming eye is the OXT pass's.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -318,12 +330,18 @@ touching the `heNetOnion*` section:
   - **H1:** streams + service close on leave/stop (`heNetStop`'s onion branch);
     the control connection deliberately survives between tables and is
     `oxShutdown` on closeStack (`gOxCtlUp` remembers we opened it).
-  - Deferred with 2e liveness, on purpose: auto-redial after a lost host stream
-    (today it fail-closes naming "Join again"). Host election LANDED (v0.21.0):
-    a lost host stream during play now routes through heNetHostLost before the
-    fail-closed message, so the successor is named (the section below).
+  - The 2e deferral CLOSED (v0.23.0): a lost host stream during play now arms
+    the bounded AUTO-REDIAL (heNetOnionRedialArm: 4 attempts, 2/4/8/16 s
+    doubling backoff, 10 s per dial -- the deterministic onion address is what
+    makes redialing the same invite the recovery) while the 60 s election
+    watchdog keeps counting underneath; every redial step gates on hostLost,
+    so the election always concludes and the redial stands down quietly.
+    Outside play the old fail-closed "Join again" message stands. The redial
+    hello carries the applied seq as a compatible trailing token item, so the
+    reconnect replay arrives TRIMMED (the v0.23.0 contracts block below).
   The whole section is verified statically; the live two-machine tor session is
-  the exit gate (harness section 17 pins the headless slice).
+  the exit gate (harness section 17 pins the headless slice; section 20 pins
+  the redial ordering).
 
 **2e remainder + Phase 3 deck oracle (v0.21.0, 2026-08-16 -- verified statically;
 the three-machine round is the live gate, + live tor for an onion oracle).** The
@@ -372,6 +390,68 @@ contracts to keep intact when touching these:
   - Harness: netplay (15) pins ckpts/show-muck/trimmed-resync/History; the
     oracle section (18) runs THREE loopback contexts (heTNetPump's third
     seat) and SKIPs the live legs by name.
+
+**2e liveness remainder + the 720p re-layout (v0.23.0, 2026-08-16 -- verified
+statically; the timed live pass and the re-layout's confirming eye are what the
+OXT pass owes).** The contracts to keep intact when touching the liveness layer:
+  - **The timeout is a FIELD, never a new kind.** The host authors the
+    EXISTING act/bid wire with `seat=/timeout=1/bank=` marks; a pre-liveness
+    client engine-rejects it visibly (out of turn for the host's seat) instead
+    of mis-folding -- that compatibility is why the design refused a new
+    message type. The bodies + heads are pinned (protocol-kat seq 10..13);
+    changing a byte is a consensus break (pins move, kHeHarnessV bumps).
+  - **No deadline ever crosses a wire.** The signed cfg carries the LENGTHS
+    (`act=/bank=/miss=`; heNetCfgVal defaults keep pre-liveness cfgs folding),
+    the host-countersigned turn-opening wire starts every clock
+    (heNetTurnMark: the clock restarts only when the SUBJECT changes, so
+    redelivery never extends a deadline), and verification is interval-on-
+    one-clock: refuse a timeout more than kHeActSkewSecs (5 s, transport
+    jitter) EARLY -- deliberately not the +-600 s wall-clock precedent, and
+    waived during catch-up replay (the live table already policed it; the
+    verb/bank checks still run, they are transcript-deterministic). KNOWN
+    EDGE, recorded not engineered away: a timeout drained out of the
+    REORDER BUFFER (a lost turn-opening wire redelivered in the same burst,
+    with no r! marker) can be early-refused by the one client that only
+    just learned of the turn -- locally indistinguishable from a rushing
+    host, so refusing is the right fail-visible call; its fold then
+    disputes at the settle and a reconnect (full replay, waiver applies)
+    heals it. The live pass should try to hit this.
+  - **Bank state is consensus, never a clock's guess.** The one per-hand
+    time-bank auto-arms on the first would-be timeout (a request wire would
+    race the timeout) and spends ON the wire (`bank=1` -> bankUsedBy); a
+    bank-denying or bank-double-spending host timeout is refused by name.
+  - **Sit-out is transcript-derived**: `stand` (own key) or `miss=`
+    consecutive timeouts (heNetTimeoutMiss); a live act/bid RESETS the miss
+    count; sitting-out seats time out instantly (limit 0) and are dealt out
+    by heNetNextOccList -- the ONE occupant rule heNetHandKick and the
+    harness share. `sit` with no pub (own key) returns; the host-assignment
+    `sit` keeps its pub=, so the forms never collide. A short table WAITS
+    (re-armed beat) instead of declaring game over while 2+ stacks exist.
+  - **Late-join rides the boundary**: heNetSeatLateJoiners seats joined-but-
+    unseated keys (ascending pubkey, lowest empty seat, cfg-capped) as
+    signed sit wires at each kick; full = observer, and the standing replay
+    machinery is what got the joiner current.
+  - **The redial must not race the election** -- structurally: the 60 s
+    wire-silence watchdog counts through every redial (a dead stream
+    delivers no wires), every redial step gates on hostLost, and the
+    stand-down NEVER clobbers the election's status message
+    (heNetOnionRedialGiveup is quiet). Attempts are bounded
+    (kHeRedialMax/kHeRedialBaseTicks, heRedialWaitTicks pure); proof the
+    host answered is a host-signed wire APPLYING (heNetApplyWire resets the
+    counter), nothing weaker. The redial hello's trailing seq is items-1..3
+    compatible with old hosts (heAdmitTokenVerify never reads past item 3).
+  - **The re-layout is arithmetic until an eye confirms it.** Every rect
+    derives from the constants block (kHeStackRect 1024x640); the pot line
+    sits BELOW the board because the centre column above it belongs to seat
+    4's cluster and bet chip -- move anything and re-run the rect
+    arithmetic (bounds + pairwise disjointness with the designed layers
+    named) before trusting it. check-stack-size now gates the budget.
+  - Harness section 20 (heTestLivenessRun) pins all of it headlessly:
+    prescriptions and backoff pure, wire pins, the backdated-clock netsim
+    hand (premature-timeout refusal included), auto-sit-out, the waiting
+    table, stand/sit round-trips, a third context late-joining to identical
+    fold state, and the redial-vs-election ordering; the live legs are
+    SKIPped by name.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
