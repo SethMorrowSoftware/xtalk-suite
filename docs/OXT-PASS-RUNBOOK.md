@@ -39,7 +39,7 @@ S1's hour is the right first hour of every longer session.
 Prerequisites, once: a Linux or Windows engine, x64 or x86 (every native
 member's library is committed for those - section 2.1); all five packaged
 extensions installed from the current tree, with SodiumXT repackaged at
-**ABI 8** (section 3.2 step -1; on a non-mac row, repackage normally). The
+**ABI 9** (section 3.2 step -1; on a non-mac row, repackage normally). The
 coinxt, onionxt and riptide script layers are embedded in the suite paste -
 no `start using` step for item 1. No tor, no second machine. Items 1 and 2,
 and each torrent-flavoured stack in items 3 and 5, want a fresh OXT launch
@@ -126,7 +126,7 @@ Flips: the "needs its Windows engine pass" notes on the two Windows rows of
 the rest of S1 - it counts double as Windows evidence.
 
 **Mac (~3 h build, then S1's hour).** Row 24, in this order: sodiumxt manual
-`lipo` build to ABI 8 (its CLAUDE.md mac row; per step -1, do NOT repackage
+`lipo` build to ABI 9 (its CLAUDE.md mac row; per step -1, do NOT repackage
 SodiumXT on this machine before the build lands); coinxt
 `cd coinxt && sh native/build.sh pack` (2.4; use `tools/package-extension.py
 --lib ... --platform-id universal-mac` for a lipo pair); enetxt and
@@ -362,7 +362,13 @@ kept as pointers so the same fact is never book-kept twice:
 | 21 | **Quick Share Channels anon, #31 / #32 / #33** - POINTERS ONLY: built 2026-08-15, registered in `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3, and ticked THERE per 4.7's rule | #31: the single-machine ON / OFF / tor-absent behaviour; #32: the card-only anon follow with the DHT off; #33: the onion-only release download with a clean capture | the three 12.3 register rows themselves | #31 S2; #32/#33 S4 |
 | 22 | **nocloud HTTP-host checklist** (`nocloud/docs/oxt-pass-checklist.md`: routes, headers, conditional GET, CORS, the editor, shutdown - over BOTH transports) | per that file's own action -> expected lines; it is its own record sheet | the checklist's intro paragraph ("verified statically; needs an OXT pass") | web-link half S1 stretch; Tor half S2 |
 | 23 | **sodiumxt ABI-8 mingw DLLs' Windows re-proof** (`x86_64-win32` + `x86-win32`, cross-built 2026-08-15; the 2026-08-12 ABI-7 pass is the precedent) | the DLLs load and the full SodiumXT section - SHA3 and ristretto included - runs green on a real Windows engine | the "needs its Windows engine pass" notes on the two Windows rows of `sodiumxt/CLAUDE.md`'s ABI table | S5 |
-| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> 8; first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
+| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> **9** (was written as 6 -> 8 before the 2026-08-15 DLEQ bump; the gap grows every bump this row goes unbuilt, and it BLOCKS every crypto-dependent test on a Mac); first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt (coinxt is now ABI 5) | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
+| 25 | **sodiumxt ABI 9 - the DLEQ/batch algebra** (`sxRistrettoAdd` / `Sub` / `ScalarMultBase` / `ScalarMultBatch` / `ScalarAdd` / `ScalarMul`, built 2026-08-15). Row 11 covers ABI 8's five handlers ONLY; these six are a separate never-marshalled surface, and holde-em's Phase 5 proofs sit directly on them | the six handlers marshal on a real engine - in particular `sxRistrettoScalarMultBatch`, whose whole point is ONE FFI crossing for all 52 card points, and whose atomic-failure contract (any bad element fails the call with a 1-based index, nothing usable in out) has never been observed from script | `sodiumxt/docs/api-reference.md`, the ABI 9 section; `sodiumxt/CLAUDE.md`'s ABI table row for 9 | S1 (with row 11) |
+| 26 | **holde-em 4d/4e - void-and-audit + the cheater bots** (v0.22.0, built 2026-08-15; harness sections 18-19) | the void-and-audit state machine runs on-engine: a bad shuffle/unmask step voids the hand, bets return, and the mandatory full-reveal audit NAMES THE SIGNER of the first bad step. The five scripted attacks (deck-stacker, duplicate-point shuffler, rollback replayer, wrong-scalar unmasker, deal staller) are each detected and correctly attributed | `holde-em/IMPLEMENTATION-PLAN.md` Phase 4d/4e blockquotes; `holde-em/CLAUDE.md` v0.22.0 entry | S1 (wants rows 11 + 25 installed) |
+| 27 | **holde-em Phase 5 - Chaum-Pedersen DLEQ proofs** (v0.22.0; derandomized nonce, domain-tagged Fiat-Shamir, batch verification, soundness pinned negatively) | on a `dleq=1` table a wrong unmask step is refused INSTANTLY rather than costing a void-and-audit round - the whole point of the phase - and forged proofs still verify false on a real engine | `holde-em/holdem-spec.md` 7.4; `holde-em/CLAUDE.md` Phase 5 entry | S1 (wants row 25) |
+| 28 | **holde-em 2e liveness** (v0.23.0+, built 2026-08-16: act timers + time-bank on the signed cfg, sit-out/return, late-join seating, bounded onion redial under the election watchdog) | single-machine half: the pure prescriptions, the wire round-trips, and harness section 20. What only a TIMED MULTI-MACHINE session can prove: a seat really timing out on wall clocks, the bank visibly arming once per hand, two misses auto-sitting a seat out, a late joiner seated at a hand boundary reaching identical fold state, and - after the 2026-08-16 review fixes - that a dial failure mid-redial still lets the election CONCLUDE, and that a parked table resumes when a seat returns | `holde-em/CLAUDE.md` v0.23.0/v0.24.0 contracts; `holde-em/IMPLEMENTATION-PLAN.md` 2e completion note | S1 for the static half; **S3/S4** for the timed session |
+| 29 | **the committed-binary execution lanes** (`native-coinxt.yml` since Phase 4, `native-sodiumxt.yml` since 2026-08-16) | NOTHING on an engine - this row is here so the pass does not re-prove it by hand. CI now dlopen()s the COMMITTED Linux libraries and drives coinxt's published vectors + `cnx_memzero`, and sodiumxt's RFC 9496 [1..3]B, group law, scalarmult, batch and point validation. So on Linux the blobs you install are executed artifacts, not merely hashed ones. Windows and macOS blobs get no such lane and remain rows 23 and 24 | `coinxt/CLAUDE.md`, `sodiumxt/CLAUDE.md` (the 2026-08-16 entries) | n/a - read before planning S5 |
+| 30 | **coinxt ABI 6 - BIP-340 Schnorr + the BIP-341 Taproot tweak** (built 2026-08-16 on a second vendored library, upstream bitcoin-core/secp256k1; 19 published BIP-340 vectors incl. 10 negative and 14 BIP-341 wallet vectors green in CI, ASan clean) | the script layer marshals on a real engine - specifically `cxSchnorrSign`'s three-argument shape, an empty `Data` reaching the shim as length 0 in an OPTIONAL slot (proven for an empty INPUT in 2026-08-08, never for an optional argument), `cxSchnorrVerify`'s Boolean in both directions, and `cxTaprootTweak`'s array return read back by name. Also that `cxBtcAddressP2TR` and `cxBtcAddressP2TRFromInternal` really do differ on the same 32 bytes - the double-tweak trap this design exists to avoid | `coinxt/docs/api-reference.md` ABI 6 section; `coinxt/CLAUDE.md`'s dated rule-change entry | S1 |
 
 ---
 
@@ -375,7 +381,7 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 
 | Member | Committed platforms | If your platform is missing |
 |---|---|---|
-| sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` | n/a |
+| sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` — but the mac dylib is **ABI 6, three behind the ABI 9 code**: see the warning under this table before testing sodiumxt on a Mac | n/a on Linux/Windows; on macOS the dylib needs its `lipo` rebuild |
 | torrentxt | four (Linux x64/x86, Windows x64/x86); `universal-mac/` holds only a `README.md` (**no macOS dylib**) | build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
 | enetxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `enetxt/tools/package-extension.py` |
 | datachannelxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `datachannelxt/tools/package-extension.py` |
@@ -386,6 +392,22 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 already in the repo** — the 2026-08-08 release run committed all four platforms for
 all five native members, which is what made that day's suite pass possible on a
 stock checkout.
+
+> **ON A MAC, SODIUMXT WILL THROW ON EVERY CALL, AND THAT IS NOT A BUG TO REPORT.**
+> The committed `universal-mac` dylib is at **ABI 6**; `sodium.lcb` declares
+> `kSXTABIVersion is 9` and `sPrepare()` checks **strict equality**, so every `sx*`
+> handler throws
+> `"SodiumXT: ABI mismatch - the native sodium library does not match this extension"`
+> before it does any work. It is not a broken build and not a bad install: the dylib
+> is simply three ABI bumps stale (7 added the AEAD surface, 8 the ristretto255
+> group, 9 the DLEQ/batch algebra), because macOS is the one platform CI cannot
+> build for and the `lipo` build is done by hand. Consequences for a pass on a Mac:
+> **every sodiumxt test, and everything downstream of it — the sealed lanes, the
+> Level 0 committed shuffle, all of holde-em's online and Level 2 play, riptide's
+> whole crypto layer — cannot run there at all.** Do not spend a Mac session on
+> them; record "blocked: sodiumxt universal-mac at ABI 6" once and move to what a
+> Mac can actually prove (the pure-script layers, onionxt, and the UI passes). The
+> unblock is inventory row 24, and it is a build, not a debug.
 
 **macOS is the one gap left.** Only sodiumxt ships a real `universal-mac` dylib; the
 other four need a manual `lipo` build (and, for torrentxt, codesigning and
@@ -504,7 +526,7 @@ are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
 `c:coinxt>`, so **on Linux and Windows, 32- or 64-bit, there is nothing to build**:
 coinxt installs like any other member and the run below is just a run.
 
-> **All four are current as of the phase-4 change (ABI 4)**, and
+> **All four are current as of the 2026-08-16 memzero change (ABI 5)**, and
 > `coinxt/tools/check-binary-freshness.py` says so on every push. One note on how
 > the `x86-linux` one was produced: the environment that built the other three has
 > no 32-bit libc, so it was cross-compiled with **Zig** (`zig cc -target
@@ -608,12 +630,12 @@ riptide (hard SodiumXT dependency), and onionxt's SAFECOOKIE / deterministic-oni
 offline-address paths with it, and the failure text points at your install rather than
 at the real cause.
 
-As of 2026-08-15 the committed binaries are at **ABI 8 everywhere except
-`universal-mac`**, which stays at **ABI 6** - now two behind - until the manual
+As of 2026-08-16 the committed binaries are at **ABI 9 everywhere except
+`universal-mac`**, which stays at **ABI 6** - now THREE behind - until the manual
 `lipo` build (the currency table with the reasons lives in `sodiumxt/CLAUDE.md`;
-ABI 8 added the ristretto255 surface, and the two Windows rows are mingw
+ABI 8 added the ristretto255 surface and ABI 9 the DLEQ/batch algebra, and the two Windows rows are mingw
 cross-builds per that file's proven fallback recipe, awaiting their Windows
-engine pass like the 2026-08-11 DLL before them). On an ABI-8 row: repackage
+engine pass like the 2026-08-11 DLL before them). On an ABI-9 row: repackage
 normally and the SHA3 / offline onion-address / ristretto checks run - the
 2026-08-12 Windows x64 pass did exactly this at ABI 7, green. On the mac row:
 **do not repackage SodiumXT** - keep the older package, where `sxSha3_256` and
@@ -961,7 +983,7 @@ what a failure would have looked like:
   `true`/`false`.
 
 **A pass looks like:** `stSummary` green, zero failures. Sections in order: the ABI
-guard (**ABI 4** now), the thirteen length accessors, Keccak-256, SHA3-256
+guard (**ABI 5** now), the thirteen length accessors, Keccak-256, SHA3-256
 **and the aliasing trap** (SHA3 and Keccak differ by a padding byte alone, so a
 crossed wire is a plausible wrong answer and on Ethereum a wrong address), SHA-2,
 RIPEMD-160, RFC 4231 HMAC cases 1 and 2, the BIP-39 seed vector, empty-input

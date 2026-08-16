@@ -43,6 +43,7 @@ import argparse
 import hashlib
 import os
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -64,15 +65,41 @@ PLATFORM_SUFFIX = {
 }
 VALID_PLATFORM_IDS = sorted(PLATFORM_SUFFIX)
 
-# The 16 entry points src/coinxt.map narrows the library down to. A library that
-# does not export all of them will fail to bind at load, silently, which is why
-# this is checked here rather than discovered on a user's machine.
+# The 35 entry points src/coinxt.map narrows the library down to (ABI 5). A
+# library that does not export all of them will fail to bind at load, silently,
+# which is why this is checked here rather than discovered on a user's machine.
+# Keep this list equal to the cnx_* definitions in native/coinxt.c; the
+# freshness gate (tools/check-binary-freshness.py) derives the same set from
+# the source and holds the committed ELF libraries to it. That gate reads ELF
+# only, so for a cross-built Windows DLL the check below is the only export
+# gate on the install path, and a stale list here would wave a stale DLL
+# through. (Between commit 55f9130 and 2026-08-16 this was ALSO stated as
+# "the only missing-export check an installed DLL gets", which was false in
+# the direction that matters: the reader underneath it returned "no opinion"
+# for every PE, so the gate did not run at all. See read_exports below and the
+# dated note in CLAUDE.md.)
 EXPECTED_EXPORTS = [
+    # phase 1: the ABI guard + the hash surface
     "cnx_abi_version",
     "cnx_keccak256", "cnx_sha3_256", "cnx_sha256", "cnx_sha512", "cnx_ripemd160",
     "cnx_hmac_sha256", "cnx_hmac_sha512", "cnx_pbkdf2_hmac_sha512",
     "cnx_keccak256_len", "cnx_sha3_256_len", "cnx_sha256_len", "cnx_sha512_len",
     "cnx_ripemd160_len", "cnx_hmac_sha256_len", "cnx_hmac_sha512_len",
+    # phase 2: the secp256k1 curve
+    "cnx_seckey_verify", "cnx_pubkey_from_seckey", "cnx_pubkey_decompress",
+    "cnx_ecdsa_sign", "cnx_ecdsa_verify", "cnx_ecdsa_sign_recoverable",
+    "cnx_ecdsa_recover", "cnx_ecdh",
+    "cnx_seckey_len", "cnx_pubkey_len_compressed", "cnx_pubkey_len_uncompressed",
+    "cnx_ecdsa_sig_len", "cnx_recoverable_sig_len", "cnx_ecdh_len",
+    # phase 4: the BIP-32 curve steps + the BIP-39 wordlist
+    "cnx_seckey_tweak_add", "cnx_pubkey_tweak_add",
+    "cnx_bip39_wordlist", "cnx_bip39_wordlist_len",
+    # ABI 5: the secret-hygiene wipe the .lcb runs on every out-buffer
+    "cnx_memzero",
+    # ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak (upstream libsecp256k1)
+    "cnx_schnorr_sign", "cnx_schnorr_verify", "cnx_xonly_pubkey_from_seckey",
+    "cnx_taproot_tweak_pubkey", "cnx_taproot_tweak_seckey",
+    "cnx_schnorr_sig_len", "cnx_xonly_pubkey_len", "cnx_taproot_output_len",
 ]
 
 
@@ -103,18 +130,178 @@ def strip_in_place(path):
     return "stripped %d -> %d bytes" % (before, os.path.getsize(path))
 
 
-def read_exports(path):
-    """Return the library's exported symbol names, or None if we cannot tell.
+class ExportReadError(Exception):
+    """We recognised the container format and then failed to read it.
 
-    Deliberately best-effort and cross-format tolerant: `nm -D` reads ELF,
-    `nm` reads Mach-O, and neither reads a cross-built Windows DLL on Linux.
-    A None means "no opinion", never "bad library" - refusing to install a
-    perfectly good DLL because this host has no PE reader would be worse than
-    the check is worth.
+    This is NOT the same thing as "no opinion". A file whose format we can
+    parse but whose export table does not parse is malformed, and installing a
+    malformed library is exactly the outcome this whole check exists to
+    prevent. Callers turn this into a refusal, never a warning.
+    """
+
+
+def detect_format(path):
+    """Identify the container by magic: 'pe', 'elf', 'macho' or 'unknown'.
+
+    Magic rather than the file extension, because the extension is chosen by
+    the --platform-id the caller passed and this is precisely where a caller
+    who mismatched the two must be caught.
+    """
+    with open(path, "rb") as handle:
+        head = handle.read(4)
+    if head[:4] == b"\x7fELF":
+        return "elf"
+    if head[:2] == b"MZ":
+        return "pe"
+    if head[:4] in (b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
+                    b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+                    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
+        return "macho"
+    return "unknown"
+
+
+def read_pe_exports(path):
+    """Return the set of names in a PE's EXPORT NAME TABLE. Raises, never shrugs.
+
+    WHY THIS IS PARSED HERE AND NOT SHELLED OUT. The fail-open this replaces
+    came from depending on a tool whose PE support is OPTIONAL: binutils `nm`
+    only reads PE when it was configured with the pe targets, and on a plain
+    Linux binutils it opens a mingw DLL far enough to list the IMPORT thunks
+    (type I) and nothing else. Filtering the thunks out (the 2026-08-16 fix)
+    stopped the false refusal but left an empty set, which the old contract
+    turned into None - "no opinion" - for exactly the artifact class that has
+    no other export gate in the tree. Parsing the header here removes the
+    dependency entirely: any host that can run this script can read a PE, so
+    "cannot check a DLL" stops being a state this tool can be in. `objdump -p`
+    would have worked on THIS host (the repo's Windows checks do use binutils),
+    but it would have re-created the same "works until the host's binutils is
+    plain" hole one layer down, and it would mean parsing a text listing whose
+    shape is a binutils implementation detail rather than the file format.
+    ~60 lines of stdlib struct reading is the cheaper of the two.
+
+    We read the [Ordinal/Name Pointer] table specifically - the loader's own
+    by-name binding table, which is what the engine's `c:coinxt>cnx_*` binds
+    resolve through. Not a scan of the file for `cnx_` strings: a name occurs
+    in a binary for many reasons (a debug string, an unexported static's
+    symbol) and only its presence in THIS table means the loader can find it.
+    Ordinal-only exports have no entry here, correctly: an export the engine
+    cannot name is an export CoinXT cannot use.
+
+    Names are returned VERBATIM, with no underscore stripping. A leading `_`
+    or a trailing `@N` is a real decoration mismatch (the engine resolves the
+    bind string by exact name), so it must read as a missing export, not be
+    normalised away into a pass.
+    """
+    with open(path, "rb") as handle:
+        image = handle.read()
+
+    def u16(off):
+        if off < 0 or off + 2 > len(image):
+            raise ExportReadError("truncated: wanted 2 bytes at 0x%x" % off)
+        return struct.unpack_from("<H", image, off)[0]
+
+    def u32(off):
+        if off < 0 or off + 4 > len(image):
+            raise ExportReadError("truncated: wanted 4 bytes at 0x%x" % off)
+        return struct.unpack_from("<I", image, off)[0]
+
+    # DOS stub -> e_lfanew -> the PE signature.
+    pe_off = u32(0x3c)
+    if image[pe_off:pe_off + 4] != b"PE\x00\x00":
+        raise ExportReadError("no PE signature at e_lfanew (0x%x): this starts "
+                              "with MZ but is not a PE image" % pe_off)
+    coff = pe_off + 4
+    section_count = u16(coff + 2)
+    optional_size = u16(coff + 16)
+    optional = coff + 20
+
+    # The optional header's magic decides where the data directory count and
+    # the directories themselves sit. PE32 and PE32+ differ by the width of
+    # four fields before them, hence the 96 / 112 split; getting this wrong
+    # would read the WRONG directory, so it is a hard branch with no default.
+    magic = u16(optional)
+    if magic == 0x10b:      # PE32 (our x86-win32 build)
+        dir_count_off, dir_off = optional + 92, optional + 96
+    elif magic == 0x20b:    # PE32+ (our x86_64-win32 build)
+        dir_count_off, dir_off = optional + 108, optional + 112
+    else:
+        raise ExportReadError("unknown optional-header magic 0x%x" % magic)
+    if u32(dir_count_off) < 1:
+        raise ExportReadError("the image declares no data directories, so it "
+                              "cannot carry an export table")
+
+    export_rva, export_size = u32(dir_off), u32(dir_off + 4)
+    if export_rva == 0 or export_size == 0:
+        # A real, checkable answer and not an error: this DLL exports nothing.
+        # The caller then reports all 35 names missing and refuses, which is
+        # the correct verdict for a library that would bind none of them.
+        return set()
+
+    # RVA -> file offset needs the section table: an RVA is an offset into the
+    # LOADED image, and the on-disk layout differs from it by each section's
+    # own (VirtualAddress - PointerToRawData).
+    sections = []
+    section_table = optional + optional_size
+    for index in range(section_count):
+        base = section_table + index * 40
+        sections.append((u32(base + 12),    # VirtualAddress
+                         u32(base + 8),     # VirtualSize
+                         u32(base + 20),    # PointerToRawData
+                         u32(base + 16)))   # SizeOfRawData
+
+    def rva_to_offset(rva):
+        for vaddr, vsize, raw_ptr, raw_size in sections:
+            if vaddr <= rva < vaddr + max(vsize, raw_size):
+                delta = rva - vaddr
+                # Past SizeOfRawData the bytes exist only once the loader has
+                # zero-filled them; there is nothing in the FILE to read, so
+                # an export table pointing there is malformed, not empty.
+                if delta >= raw_size:
+                    raise ExportReadError(
+                        "RVA 0x%x lands in a section's virtual-only tail" % rva)
+                return raw_ptr + delta
+        raise ExportReadError("RVA 0x%x is in no section" % rva)
+
+    # IMAGE_EXPORT_DIRECTORY: NumberOfNames at +24, AddressOfNames at +32.
+    directory = rva_to_offset(export_rva)
+    name_count = u32(directory + 24)
+    names_rva = u32(directory + 32)
+    if name_count == 0:
+        return set()
+    if name_count > 65535:
+        # PE ordinals are 16-bit, so a larger count is a corrupt field being
+        # read as a length. Refuse rather than allocate on it.
+        raise ExportReadError("implausible export-name count %d" % name_count)
+
+    name_table = rva_to_offset(names_rva)
+    names = set()
+    for index in range(name_count):
+        start = rva_to_offset(u32(name_table + 4 * index))
+        end = image.find(b"\x00", start)
+        if end < 0:
+            raise ExportReadError("export name %d is not NUL-terminated" % index)
+        names.add(image[start:end].decode("ascii", "replace"))
+    return names
+
+
+def read_nm_exports(path):
+    """ELF / Mach-O exports via `nm`, or None if this host cannot tell.
+
+    None means "no opinion" and is still the contract HERE, for two formats
+    where it is honest: an ELF install is separately gated by
+    tools/check-binary-freshness.py, which reads ELF directly and holds the
+    committed libraries to the same cnx_* set on every gate run, and a Mach-O
+    on a Linux host may genuinely be unreadable (binutils needs the mach-o
+    targets). The caller prints a loud warning on a None; it must never be the
+    quiet normal path, which is what it had become for PEs.
     """
     tool = shutil.which("nm")
     if tool is None:
         return None
+    # `-D` (dynamic symbols) is the ELF form and errors on Mach-O, so try it
+    # first and fall back. Success is judged by nm's EXIT STATUS, not by
+    # whether names came back: a library that really exports nothing is an
+    # answer (and a refusal), not a reason to shrug.
     for args in (["-D", "--defined-only"], ["--defined-only"]):
         try:
             out = subprocess.run([tool] + args + [path], check=True,
@@ -124,10 +311,27 @@ def read_exports(path):
         names = set()
         for line in out.stdout.decode("utf-8", "replace").splitlines():
             parts = line.split()
-            if parts:
-                names.add(parts[-1].lstrip("_"))
-        if names:
-            return names
+            # nm prints "value type name". Type I is an indirect/import thunk,
+            # never a definition this library provides; Mach-O carries the
+            # leading underscore the C name does not have.
+            if len(parts) == 3 and parts[1] != "I":
+                names.add(parts[2].lstrip("_"))
+        return names
+    return None
+
+
+def read_exports(path):
+    """Return the library's exported names, or None only when truly unknowable.
+
+    Dispatches on the container's MAGIC. A PE always produces a real answer or
+    raises ExportReadError; only ELF (separately gated), Mach-O and an
+    unrecognised container can come back None.
+    """
+    fmt = detect_format(path)
+    if fmt == "pe":
+        return read_pe_exports(path)
+    if fmt in ("elf", "macho"):
+        return read_nm_exports(path)
     return None
 
 
@@ -139,21 +343,57 @@ def install_lib(src_lib, platform_id, dry_run):
     dest_dir = os.path.join(CODE_ROOT, platform_id)
     dest = os.path.join(dest_dir, "coinxt" + suffix)
 
-    exports = read_exports(src_lib)
+    fmt = detect_format(src_lib)
+    if fmt == "unknown":
+        # Every platform id this tool knows maps to ELF, PE or Mach-O, so a
+        # container that is none of the three cannot be a shared library for
+        # any of them. Refusing here also means the no-opinion branch below is
+        # reachable only by a format we know and this host merely cannot read.
+        sys.exit("package-extension: %s is not an ELF, PE or Mach-O image "
+                 "(its magic matches none of them), so it cannot be the shared "
+                 "library for any platform id this tool supports. Refusing to "
+                 "install it." % src_lib)
+    try:
+        exports = read_exports(src_lib)
+    except ExportReadError as exc:
+        # Fail CLOSED. We recognised the format, so "could not read it" says
+        # something is wrong with the file, not with this host.
+        sys.exit("package-extension: %s is a %s image whose export table could "
+                 "not be read (%s). A library whose exports cannot be "
+                 "established is exactly what this check exists to stop. "
+                 "Refusing to install it." % (src_lib, fmt.upper(), exc))
     if exports is not None:
         missing = [s for s in EXPECTED_EXPORTS if s not in exports]
         if missing:
-            sys.exit("package-extension: %s is missing %d of the 16 cnx_* exports "
+            sys.exit("package-extension: %s is missing %d of the %d cnx_* exports "
                      "(%s). It would fail to bind at load. Refusing to install it."
-                     % (src_lib, len(missing), ", ".join(missing[:4])))
+                     % (src_lib, len(missing), len(EXPECTED_EXPORTS),
+                        ", ".join(missing[:4])))
         extra = sorted(s for s in exports if s.startswith("cnx_")
                        and s not in EXPECTED_EXPORTS)
         if extra:
             print("  note: %d unexpected cnx_* export(s): %s"
                   % (len(extra), ", ".join(extra[:6])))
-        print("  exports: all 16 cnx_* entry points present")
+        # Name the table the verdict came from. "checked" is worth little if
+        # the reader is silent about WHAT it read, which is how a check that
+        # was reading a PE's import thunks passed unnoticed for a day.
+        source = {"pe": "PE export name table",
+                  "elf": "ELF dynamic symbols",
+                  "macho": "Mach-O symbol table"}[fmt]
+        print("  exports: all %d cnx_* entry points present (%s)"
+              % (len(EXPECTED_EXPORTS), source))
     else:
-        print("  exports: not checked (no usable nm for this object on this host)")
+        # The one surviving no-opinion path, and it is deliberately LOUD. It
+        # can only be reached by a Mach-O or an unrecognised container (a PE
+        # raises, an ELF answers whenever nm exists and is separately held by
+        # tools/check-binary-freshness.py), so it should be rare enough that a
+        # human reads the warning rather than learning to scroll past it.
+        print("  WARNING: exports NOT checked - no usable nm for this %s object "
+              "on this host." % fmt)
+        print("           %s is being installed WITHOUT the missing-export gate."
+              % os.path.basename(src_lib))
+        print("           Re-run this on a host whose nm reads the format, or "
+              "verify the %d cnx_* names by hand." % len(EXPECTED_EXPORTS))
 
     if dry_run:
         print("  would install %s -> %s" % (src_lib, os.path.relpath(dest, REPO_ROOT)))

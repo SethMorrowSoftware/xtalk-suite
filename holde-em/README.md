@@ -18,14 +18,23 @@ Built by composing the OXT extension family:
 
 ## Status
 
-**Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the 2e
-remainder (street checkpoints, show/muck, online History, host election), plus the
-Phase 3 deck oracle, the Phase 4a-4d Level 2 layer (compute + void-and-audit) with
-its 4e adversarial harness, and Phase 5's DLEQ proofs — one paste-and-run stack, at
-v0.22.0.** The live multi-machine passes are the pending exit gates: a
-multi-hand rp1 session on real networks (Phase 2), a two-machine onion table over
-live tor (2f), and a **three-machine oracle round** (Phase 3); the ristretto255
-handlers (SodiumXT ABI 8/9) have never run on an engine.
+**Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the FULL 2e
+liveness layer (street checkpoints, show/muck, online History, host election — and,
+since v0.23.0, act timers with a per-hand time-bank, sit-out/return, late-join
+seating, and onion auto-redial), plus the Phase 3 deck oracle, the Phase 4a-4d
+Level 2 layer (compute + void-and-audit) with its 4e adversarial harness, and Phase
+5's DLEQ proofs — one paste-and-run stack, at v0.24.0, sized 1024x640 inside
+the suite's 720p budget (re-layout verified by rect arithmetic; the confirming eye
+is the OXT pass's). v0.24.0 is a correction pass over that liveness layer: ten
+reviewed defects (a redial that could kill the host election, a catching-up client
+that refused every later timeout, consensus state written around folds the engine
+had refused, a table parked for sit-outs that could never resume, ghost seats for
+departed peers) fixed with **no wire change at all** — the 114 protocol pins are
+untouched, so v0.23.0 and v0.24.0 clients speak the identical protocol.** The live multi-machine passes are the pending exit gates: a
+multi-hand rp1 session on real networks (Phase 2, now including seats timing out on
+real wall clocks), a two-machine onion table over live tor (2f, + a real
+host-stream loss and redial), and a **three-machine oracle round** (Phase 3); the
+ristretto255 handlers (SodiumXT ABI 8/9) have never run on an engine.
 `src/holdem.livecodescript` is the whole thing — the hotseat game, the online lobby, its
 self-test (`heRunSelftest` in the message box), and SodiumXT/TorrentXT diagnostics
 (`heProbeSodium` / `heProbeTorrent`) — in a single self-building stack with no required
@@ -83,7 +92,17 @@ boundary (fork evidence against an equivocating host, and the resync replay resu
 your applied seq instead of genesis), **show/muck** display-choice wires at showdown,
 and **host election** (deterministic: lowest live seated key) when the host goes silent
 mid-game — the in-flight hand voids and stacks stand at the last receipt; the live
-handover is the Phase 3 exit gate.
+handover is the Phase 3 exit gate. Since v0.23.0 the table is also **live against
+slow and vanished players** (spec 9): the signed config carries the **act timer, a
+one-per-hand time-bank, and the sit-out miss count**; the acting seat's countdown
+shows on its plate, and expiry is a **host-signed timeout wire** every client
+verifies (exact check-or-fold prescription, transcript-derived bank state, the
+deadline against its own clock) before folding — so the transcript stays
+deterministic and a rushing host is refused as evidence. Repeated misses (or your
+own **Sit out** button) sit a seat out: dealt out at the next boundary, mid-hand
+turns auto-folded instantly, **Return** re-enters next hand, and a table short of
+live players waits instead of ending. **Late joiners** are seated into empty seats
+at the next hand boundary (or watch as observers when the table is full).
 
 With **OnionXT** also loaded (plus a locally running tor daemon), the host can flip the
 lobby's transport toggle and host an **onion table** (spec 10, built 2026-08-15): the
@@ -95,8 +114,12 @@ host endpoint's identity (a v3 address IS its ed25519 key). Everything fails clo
 with a readable reason — no tor daemon, no OnionXT, a malformed invite, or an onion
 invite pasted into a stack without the library — never a silent fallback to the DHT
 transport; a lobby status line walks the tor probe states (connecting / bootstrapping
-N% / publishing / ready / FAILED-with-why). The invite codec, the refusals, and the
-stream handshake are pinned headlessly in the harness (section 17); the live multi-hand
+N% / publishing / redialing / ready / FAILED-with-why). A host stream lost mid-game
+**auto-redials** (bounded, backing off — the deterministic onion address means the
+same invite still works) and resyncs from a **trimmed** replay when the host answers,
+while the election watchdog keeps counting underneath and always concludes. The
+invite codec, the refusals, the stream handshake, and the redial-vs-election ordering
+are pinned headlessly in the harness (sections 17 and 20); the live multi-hand
 onion session (two machines + tor) is the pending engine-era gate.
 
 The lobby's **"Host: ORACLE"** toggle (Phase 3, spec 7.2) makes the same stack host as a

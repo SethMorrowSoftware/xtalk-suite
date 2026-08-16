@@ -1273,8 +1273,15 @@ def compute_all():
     lobby_members = [(out["id_pubs"][0], "host"), (out["id_pubs"][1], "player")]
     out["roster_body"] = roster_body(lobby_members)
     # ante + stack joined the body in v0.17.0 (the online game folds its full
-    # stakes from the signed cfg); heLobbyCfgBody mirrors this string exactly
-    out["lobby_cfg_body"] = "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1"
+    # stakes from the signed cfg); the 2e liveness TIMER LENGTHS joined in
+    # v0.23.0 (spec 6 "timer lengths" in message zero: act= seconds, bank=
+    # the one per-hand time-bank, miss= consecutive timeouts before
+    # auto-sit-out) -- a documented consensus change (this pin and
+    # lobby_head2 regenerated; kHeHarnessV bumped; a pre-liveness client
+    # ignores keys it does not read, so the wire stays compatible).
+    # heLobbyCfgBody mirrors this string exactly.
+    out["lobby_cfg_body"] = ("v=1,level=0,sb=1,bb=2,ante=0,stack=400,"
+                             "seats=6,button=1,act=30,bank=60,miss=2")
     lw1 = make_wire(1, TABLE, 0, ID_SEEDS[0], "cfg", out["lobby_cfg_body"],
                     1, GENESIS, HOST_SEED)
     lh1 = chain_next(lw1)
@@ -1302,7 +1309,47 @@ def compute_all():
     out["show_head8"] = h8.hex()
     w9 = make_wire(1, TABLE, 1, ID_SEEDS[2], "muck", out["muck_body"],
                    9, h8, HOST_SEED)
-    out["muck_head9"] = chain_next(w9).hex()
+    h9 = chain_next(w9)
+    out["muck_head9"] = h9.hex()
+
+    # -- 2e liveness wires (spec 8.1/9 as-built bodies, v0.23.0), pinned as
+    # the seq 10..13 extension of the same transcript (additive again: no
+    # earlier chain-head pin moves). The TIMEOUT wires are the EXISTING
+    # act/bid wires with seat=/timeout=1/bank= marks, authored by the HOST
+    # (the relay key -- here HOST_SEED, which is also ID_SEEDS[0]): the
+    # spec 9 expiry prescription (check-or-fold; the exact engine amount
+    # for a forced post) folded as the NAMED seat's action, so the
+    # transcript stays deterministic. bank=1 marks the seat's one per-hand
+    # time-bank (spec 8.1) as spent BY this timeout -- bank state is
+    # transcript-derived consensus, never a clock's guess. "stand" is a
+    # seat's own signed sit-out; "sit" WITHOUT a pub= field is its return
+    # (the host-assignment form keeps pub=, so the two forms never collide).
+    out["timeout_act_body"] = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
+    w10 = make_wire(1, TABLE, 1, HOST_SEED, "act", out["timeout_act_body"],
+                    10, h9, HOST_SEED)
+    h10 = chain_next(w10)
+    out["timeout_head10"] = h10.hex()
+    out["stand_body"] = "seat=2"
+    w11 = make_wire(1, TABLE, 1, ID_SEEDS[1], "stand", out["stand_body"],
+                    11, h10, HOST_SEED)
+    h11 = chain_next(w11)
+    out["stand_head11"] = h11.hex()
+    out["sitback_body"] = "seat=2"
+    w12 = make_wire(1, TABLE, 1, ID_SEEDS[1], "sit", out["sitback_body"],
+                    12, h11, HOST_SEED)
+    h12 = chain_next(w12)
+    out["sitback_head12"] = h12.hex()
+    out["timeout_bid_body"] = "amount=2,seat=3,timeout=1,bank=1"
+    w13 = make_wire(1, TABLE, 1, HOST_SEED, "bidBB", out["timeout_bid_body"],
+                    13, h12, HOST_SEED)
+    out["timeout_bid_head13"] = chain_next(w13).hex()
+    # the onion hello's compatible extension (2e auto-redial): the admission
+    # token frame with the sender's APPLIED SEQ as a trailing tab item (the
+    # redial resync mark -- heAdmitTokenVerify reads items 1..3 only, so an
+    # old host ignores it and replays in full; a 2e host trims its
+    # reconnect replay to the tail past the mark)
+    _tok, _ = admit_token(TABLE.hex(), ID_SEEDS[1], "player")
+    out["hello_trim_frame"] = "h\t" + _tok + "\t42"
 
     # -- spec 9 host election (the 2e liveness slice Phase 3 leans on): the
     # successor is DETERMINISTIC -- the lowest pubkey among the live
@@ -1323,7 +1370,8 @@ def compute_all():
     # other byte matches the playing body, so a pre-oracle client refuses
     # the hand at its dealLevel gate ("unsupported deal level") instead of
     # mis-folding an oracle table as a playing one.
-    out["lobby_cfg_body_oracle"] = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1"
+    out["lobby_cfg_body_oracle"] = ("v=1,level=1,sb=1,bb=2,ante=0,stack=400,"
+                                    "seats=6,button=1,act=30,bank=60,miss=2")
 
     # -- ristretto255 (Workstream U shipped in SodiumXT at ABI 8, 2026-08-15).
     # These values are computed by the INDEPENDENT reference below and pinned
@@ -1712,13 +1760,27 @@ PINNED = {
  "show_head8": "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c",
  "muck_body": "seat=3",
  "muck_head9": "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71",
+ # 2e liveness wires (spec 8.1/9 as-built, v0.23.0), the seq 10..13
+ # extension: host-authored timeout act/bid (seat=/timeout=1/bank= on the
+ # EXISTING wires, never a new kind), a seat's own stand (sit-out) and
+ # pub-less sit (return), and the onion hello's compatible trailing-seq
+ # trim mark for the auto-redial resync.
+ "timeout_act_body": "verb=fold,amount=0,seat=3,timeout=1,bank=1",
+ "timeout_head10": "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694",
+ "stand_body": "seat=2",
+ "stand_head11": "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6",
+ "sitback_body": "seat=2",
+ "sitback_head12": "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc",
+ "timeout_bid_body": "amount=2,seat=3,timeout=1,bank=1",
+ "timeout_bid_head13": "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd",
+ "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\td02b1e826f4351264cd3a77a1580921495f9c7df5f0f29a370ebb5fdd69b9a1c5c1c9226ae2865919622a266df124ac755b57141a6d8a77e0eb8b6f7d89de208\t42",
  # spec 9 host election: the deterministic successor (lowest live pubkey)
  "elected_host": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
  # Phase 3 oracle: service-seed domain separation (play vs oracle) + the
  # oracle table's signed cfg (level=1 IS the oracle marker, spec 7.2)
  "onion_service_seed": "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2",
  "oracle_service_seed": "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0",
- "lobby_cfg_body_oracle": "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1",
+ "lobby_cfg_body_oracle": "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2",
  "chain_heads": [
   "a60914c4c335f520aaef3b3a5dace3f9dafc1ab4a26f7e65dde2e880d51ead02",
   "d742f834712a24c4da268dcbc44182e511113370c87302132694faa02cdb3c0e",
@@ -1760,8 +1822,10 @@ PINNED = {
   "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
   "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
  ],
- "lobby_cfg_body": "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1",
- "lobby_head2": "974bbb46cf5c62eabc9d3930446b7748f38139d10b0ed1c0cb37f155b4d1a3e9",
+ # v0.23.0: the 2e timer lengths joined the cfg body (act/bank/miss), a
+ # documented consensus change -- this pin and lobby_head2 regenerated.
+ "lobby_cfg_body": "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2",
+ "lobby_head2": "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa",
  "receipt_head1": "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef",
  "receipt_head2": "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910",
  "receipt_sigs": [
@@ -1836,6 +1900,15 @@ def main():
         print('constant kKatCkptHead7 = "%s"' % got["ckpt_head7"])
         print('constant kKatShowHead8 = "%s"' % got["show_head8"])
         print('constant kKatMuckHead9 = "%s"' % got["muck_head9"])
+        print('constant kKatTimeoutBody = "%s"' % got["timeout_act_body"])
+        print('constant kKatTimeoutHead10 = "%s"' % got["timeout_head10"])
+        print('constant kKatStandHead11 = "%s"' % got["stand_head11"])
+        print('constant kKatSitBackHead12 = "%s"' % got["sitback_head12"])
+        print('constant kKatTimeoutBidBody = "%s"' % got["timeout_bid_body"])
+        print('constant kKatTimeoutBidHead13 = "%s"' % got["timeout_bid_head13"])
+        # the hello frame carries tabs, so it travels as hex of its UTF-8
+        # bytes (the kKatEnv0ContentHex convention)
+        print('constant kKatHelloTrimHex = "%s"' % got["hello_trim_frame"].encode("utf-8").hex())
         print('constant kKatElectedHost = "%s"' % got["elected_host"])
         print('constant kKatOnionSeed = "%s"' % got["onion_service_seed"])
         print('constant kKatOracleSeed = "%s"' % got["oracle_service_seed"])

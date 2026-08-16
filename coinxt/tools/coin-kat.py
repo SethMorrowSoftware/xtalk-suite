@@ -191,6 +191,194 @@ ECDH_POINT = ("04283ac952766cd1d14796687a482fad6f1799c736b2a096ef860c8c4bc2f234b
               "e9b6dab6c944216415d2df49de199ef71e3bad81ac3d72553fd0ce73a1760610")
 
 
+# ---------------------------------------------------------------------------
+# ABI 6: BIP-340 (Schnorr) and BIP-341 (Taproot).
+# ---------------------------------------------------------------------------
+# BIP-340's OFFICIAL test-vectors.csv, transcribed in full and in order.
+#
+#   source: https://github.com/bitcoin/bips/blob/master/bip-0340/test-vectors.csv
+#   fetched: 2026-08-16
+#
+# Fields, in the CSV's own order: index, secret key (empty for a
+# verify-only case), public key (x-only), aux_rand, message, signature,
+# expected verification result, comment.
+#
+# TEN OF THE NINETEEN ARE NEGATIVE, and that is what this file is for. A
+# Schnorr implementation that only ever sees good signatures passes every
+# positive vector while accepting a forged one; indices 5 to 14 are the set
+# that separates the two (a public key off the curve, has_even_y(R) false, a
+# negated message, a negated s, two infinity cases, an x that is not on the
+# curve, an r equal to the field size, an s equal to the group order, and a
+# public key past the field size). Indices 15 to 18 were added in 2022 for
+# messages of length 0, 1, 17 and 100.
+BIP340_VECTORS = [
+    # 0: valid
+    (0, '0000000000000000000000000000000000000000000000000000000000000003', 'f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9', '0000000000000000000000000000000000000000000000000000000000000000', '0000000000000000000000000000000000000000000000000000000000000000',
+     'e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0', True),
+    # 1: valid
+    (1, 'b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfef', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '0000000000000000000000000000000000000000000000000000000000000001', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '6896bd60eeae296db48a229ff71dfe071bde413e6d43f917dc8dcf8c78de33418906d11ac976abccb20b091292bff4ea897efcb639ea871cfa95f6de339e4b0a', True),
+    # 2: valid
+    (2, 'c90fdaa22168c234c4c6628b80dc1cd129024e088a67cc74020bbea63b14e5c9', 'dd308afec5777e13121fa72b9cc1b7cc0139715309b086c960e18fd969774eb8', 'c87aa53824b4d7ae2eb035a2b5bbbccc080e76cdc6d1692c4b0b62d798e6d906', '7e2d58d8b3bcdf1abadec7829054f90dda9805aab56c77333024b9d0a508b75c',
+     '5831aaeed7b44bb74e5eab94ba9d4294c49bcf2a60728d8b4c200f50dd313c1bab745879a5ad954a72c45a91c3a51d3c7adea98d82f8481e0e1e03674a6f3fb7', True),
+    # 3: test fails if msg is reduced modulo p or n
+    (3, '0b432b2677937381aef05bb02a66ecd012773062cf3fa2549e44f58ed2401710', '25d1dff95105f5253c4022f628a996ad3a0d95fbf21d468a1b33f8c160d8f517', 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+     '7eb0509757e246f19449885651611cb965ecc1a187dd51b64fda1edc9637d5ec97582b9cb13db3933705b32ba982af5af25fd78881ebb32771fc5922efc66ea3', True),
+    # 4: valid
+    (4, '', 'd69c3509bb99e412e68b0fe8544e72837dfa30746d8be2aa65975f29d22dc7b9', '', '4df3c3f68fcc83b27e9d42c90431a72499f17875c81a599b566c9889b9696703',
+     '00000000000000000000003b78ce563f89a0ed9414f5aa28ad0d96d6795f9c6376afb1548af603b3eb45c9f8207dee1060cb71c04e80f593060b07d28308d7f4', True),
+    # 5: public key not on the curve
+    (5, '', 'eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e17776969e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b', False),
+    # 6: has_even_y(R) is false
+    (6, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     'fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a14602975563cc27944640ac607cd107ae10923d9ef7a73c643e166be5ebeafa34b1ac553e2', False),
+    # 7: negated message
+    (7, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '1fa62e331edbc21c394792d2ab1100a7b432b013df3f6ff4f99fcb33e0e1515f28890b3edb6e7189b630448b515ce4f8622a954cfe545735aaea5134fccdb2bd', False),
+    # 8: negated s value
+    (8, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e177769961764b3aa9b2ffcb6ef947b6887a226e8d7c93e00c5ed0c1834ff0d0c2e6da6', False),
+    # 9: sG - eP is infinite. Test fails in single verification if has_even_y(inf) is defined as true and x(inf) as 0
+    (9, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '0000000000000000000000000000000000000000000000000000000000000000123dda8328af9c23a94c1feecfd123ba4fb73476f0d594dcb65c6425bd186051', False),
+    # 10: sG - eP is infinite. Test fails in single verification if has_even_y(inf) is defined as true and x(inf) as 1
+    (10, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '00000000000000000000000000000000000000000000000000000000000000017615fbaf5ae28864013c099742deadb4dba87f11ac6754f93780d5a1837cf197', False),
+    # 11: sig[0:32] is not an X coordinate on the curve
+    (11, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '4a298dacae57395a15d0795ddbfd1dcb564da82b0f269bc70a74f8220429ba1d69e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b', False),
+    # 12: sig[0:32] is equal to field size
+    (12, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     'fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f69e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b', False),
+    # 13: sig[32:64] is equal to curve order
+    (13, '', 'dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e177769fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141', False),
+    # 14: public key is not a valid X coordinate because it exceeds the field size
+    (14, '', 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30', '', '243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89',
+     '6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e17776969e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b', False),
+    # 15: message of size 0 (added 2022-12)
+    (15, '0340034003400340034003400340034003400340034003400340034003400340', '778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117', '0000000000000000000000000000000000000000000000000000000000000000', '',
+     '71535db165ecd9fbbc046e5ffaea61186bb6ad436732fccc25291a55895464cf6069ce26bf03466228f19a3a62db8a649f2d560fac652827d1af0574e427ab63', True),
+    # 16: message of size 1 (added 2022-12)
+    (16, '0340034003400340034003400340034003400340034003400340034003400340', '778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117', '0000000000000000000000000000000000000000000000000000000000000000', '11',
+     '08a20a0afef64124649232e0693c583ab1b9934ae63b4c3511f3ae1134c6a303ea3173bfea6683bd101fa5aa5dbc1996fe7cacfc5a577d33ec14564cec2bacbf', True),
+    # 17: message of size 17 (added 2022-12)
+    (17, '0340034003400340034003400340034003400340034003400340034003400340', '778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117', '0000000000000000000000000000000000000000000000000000000000000000', '0102030405060708090a0b0c0d0e0f1011',
+     '5130f39a4059b43bc7cac09a19ece52b5d8699d1a71e3c52da9afdb6b50ac370c4a482b77bf960f8681540e25b6771ece1e5a37fd80e5a51897c5566a97ea5a5', True),
+    # 18: message of size 100 (added 2022-12)
+    (18, '0340034003400340034003400340034003400340034003400340034003400340', '778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117', '0000000000000000000000000000000000000000000000000000000000000000', '99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999',
+     '403b12b0d8555a344175ea7ec746566303321e5dbfa8be6f091635163eca79a8585ed3e3170807e7c03b720fc54c7b23897fcba0e9d0b4a06894cfd249f22367', True),
+]
+
+# BIP-341's OFFICIAL wallet test vectors, the two sections a key-path wallet
+# needs.
+#
+#   source: https://github.com/bitcoin/bips/blob/master/bip-0341/wallet-test-vectors.json
+#   fetched: 2026-08-16
+#
+# TAPROOT_SPK: (internal x-only key, merkle root or None, expected tweak,
+# expected tweaked x-only output key, expected scriptPubKey). Entry 0 is the
+# KEY-PATH-ONLY case - merkle root None, i.e. the specification's EMPTY BYTE
+# STRING - which is the one that separates a correct implementation from one
+# that hashes 32 zero bytes instead.
+TAPROOT_SPK = [
+    ('d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d',
+     None,
+     'b86e7be8f39bab32a6f2c0443abbc210f0edac0e2c53d501b36b64437d9c6c70',
+     '53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343',
+     '512053a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343'),
+    ('187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27',
+     '5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21',
+     'cbd8679ba636c1110ea247542cfbd964131a6be84f873f7f3b62a777528ed001',
+     '147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3',
+     '5120147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3'),
+    ('93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820',
+     'c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b',
+     '6af9e28dbf9d6aaf027696e2598a5b3d056f5fd2355a7fd5a37a0e5008132d30',
+     'e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e',
+     '5120e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e'),
+    ('ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592',
+     '6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef',
+     '9e0517edc8259bb3359255400b23ca9507f2a91cd1e4250ba068b4eafceba4a9',
+     '712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5',
+     '5120712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5'),
+    ('f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd8',
+     'ab179431c28d3b68fb798957faf5497d69c883c6fb1e1cd9f81483d87bac90cc',
+     '639f0281b7ac49e742cd25b7f188657626da1ad169209078e2761cefd91fd65e',
+     '77e30a5522dd9f894c3f8b8bd4c4b2cf82ca7da8a3ea6a239655c39c050ab220',
+     '512077e30a5522dd9f894c3f8b8bd4c4b2cf82ca7da8a3ea6a239655c39c050ab220'),
+    ('e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6f',
+     'ccbd66c6f7e8fdab47b3a486f59d28262be857f30d4773f2d5ea47f7761ce0e2',
+     'b57bfa183d28eeb6ad688ddaabb265b4a41fbf68e5fed2c72c74de70d5a786f4',
+     '91b64d5324723a985170e4dc5a0f84c041804f2cd12660fa5dec09fc21783605',
+     '512091b64d5324723a985170e4dc5a0f84c041804f2cd12660fa5dec09fc21783605'),
+    ('55adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d',
+     '2f6b2c5397b6d68ca18e09a3f05161668ffe93a988582d55c6f07bd5b3329def',
+     '6579138e7976dc13b6a92f7bfd5a2fc7684f5ea42419d43368301470f3b74ed9',
+     '75169f4001aa68f15bbed28b218df1d0a62cbbcf1188c6665110c293c907b831',
+     '512075169f4001aa68f15bbed28b218df1d0a62cbbcf1188c6665110c293c907b831'),
+]
+
+# TAPROOT_KEYPATH: (internal private key, merkle root or None, expected
+# internal x-only pubkey, expected TWEAKED private key, the BIP-341 sighash
+# this input signs, and the 64-byte BIP-340 signature the specification
+# publishes in its expected witness).
+#
+# This is the strongest vector in the file: it walks a private key all the way
+# to a published witness - internal seckey -> x-only internal pubkey ->
+# tweaked seckey -> BIP-340 signature over BIP-341's own sighash - so a defect
+# anywhere in that chain shows up as a byte difference against bytes Bitcoin's
+# own specification prints. The signatures reproduce with aux_rand = 32 zero
+# bytes, which is what the vector generator used; that is asserted rather than
+# assumed (a wrong aux gives a different, still-valid signature, so a harness
+# that only checked "it verifies" would not notice).
+TAPROOT_KEYPATH = [
+    ('6b973d88838f27366ed61c9ad6367663045cb456e28335c109e30717ae0c6baa',
+     None,
+     'd6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d',
+     '2405b971772ad26915c8dcdf10f238753a9b837e5f8e6a86fd7c0cce5b7296d9',
+     '2514a6272f85cfa0f45eb907fcb0d121b808ed37c6ea160a5a9046ed5526d555',
+     'ed7c1647cb97379e76892be0cacff57ec4a7102aa24296ca39af7541246d8ff14d38958d4cc1e2e478e4d4a764bbfd835b16d4e314b72937b29833060b87276c'),
+    ('1e4da49f6aaf4e5cd175fe08a32bb5cb4863d963921255f33d3bc31e1343907f',
+     '5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21',
+     '187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27',
+     'ea260c3b10e60f6de018455cd0278f2f5b7e454be1999572789e6a9565d26080',
+     '325a644af47e8a5a2591cda0ab0723978537318f10e6a63d4eed783b96a71a4d',
+     '052aedffc554b41f52b521071793a6b88d6dbca9dba94cf34c83696de0c1ec35ca9c5ed4ab28059bd606a4f3a657eec0bb96661d42921b5f50a95ad33675b54f'),
+    ('d3c7af07da2d54f7a7735d3d0fc4f0a73164db638b2f2f7c43f711f6d4aa7e64',
+     'c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b',
+     '93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820',
+     '97323385e57015b75b0339a549c56a948eb961555973f0951f555ae6039ef00d',
+     'bf013ea93474aa67815b1b6cc441d23b64fa310911d991e713cd34c7f5d46669',
+     'ff45f742a876139946a149ab4d9185574b98dc919d2eb6754f8abaa59d18b025637a3aa043b91817739554f4ed2026cf8022dbd83e351ce1fabc272841d2510a'),
+    ('f36bb07a11e469ce941d16b63b11b9b9120a84d9d87cff2c84a8d4affb438f4e',
+     'ccbd66c6f7e8fdab47b3a486f59d28262be857f30d4773f2d5ea47f7761ce0e2',
+     'e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6f',
+     'a8e7aa924f0d58854185a490e6c41f6efb7b675c0f3331b7f14b549400b4d501',
+     '4f900a0bae3f1446fd48490c2958b5a023228f01661cda3496a11da502a7f7ef',
+     'b4010dd48a617db09926f729e79c33ae0b4e94b79f04a1ae93ede6315eb3669de185a17d2b0ac9ee09fd4c64b678a0b61a0a86fa888a273c8511be83bfd6810f'),
+    ('415cfe9c15d9cea27d8104d5517c06e9de48e2f986b695e4f5ffebf230e725d8',
+     '2f6b2c5397b6d68ca18e09a3f05161668ffe93a988582d55c6f07bd5b3329def',
+     '55adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d',
+     '241c14f2639d0d7139282aa6abde28dd8a067baa9d633e4e7230287ec2d02901',
+     '15f25c298eb5cdc7eb1d638dd2d45c97c4c59dcaec6679cfc16ad84f30876b85',
+     'a3785919a2ce3c4ce26f298c3d51619bc474ae24014bcdd31328cd8cfbab2eff3395fa0a16fe5f486d12f22a9cedded5ae74feb4bbe5351346508c5405bcfee0'),
+    ('c7b0e81f0a9a0b0499e112279d718cca98e79a12e2f137c72ae5b213aad0d103',
+     '6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef',
+     'ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592',
+     '65b6000cd2bfa6b7cf736767a8955760e62b6649058cbc970b7c0871d786346b',
+     'cd292de50313804dabe4685e83f923d2969577191a3e1d2882220dca88cbeb10',
+     'ea0c6ba90763c2d3a296ad82ba45881abb4f426b3f87af162dd24d5109edc1cdd11915095ba47c3a9963dc1e6c432939872bc49212fe34c632cd3ab9fed429c4'),
+    ('77863416be0d0665e517e1c375fd6f75839544eca553675ef7fdf4949518ebaa',
+     'ab179431c28d3b68fb798957faf5497d69c883c6fb1e1cd9f81483d87bac90cc',
+     'f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd8',
+     'ec18ce6af99f43815db543f47b8af5ff5df3b2cb7315c955aa4a86e8143d2bf5',
+     'cccb739eca6c13a8a89e6e5cd317ffe55669bbda23f2fd37b0f18755e008edd2',
+     'bbc9584a11074e83bc8c6759ec55401f0ae7b03ef290c3139814f545b58a9f8127258000874f44bc46db7646322107d4d86aec8e73b8719a61fff761d75b5dd9'),
+]
+
+
 def find_cc():
     for cc in (os.environ.get("CC"), "cc", "gcc", "clang"):
         if not cc:
@@ -233,10 +421,55 @@ def vendor_sources():
     return out
 
 
+def build_var(name, pattern=r'{}="([^"]*)"'):
+    """Read one shell variable out of native/build.sh.
+
+    Same reasoning as vendor_sources: build.sh is the single source of truth for
+    what the shipped library is made of AND how it is compiled, and a second
+    hand-maintained copy here is a quiet way to test something nobody installs.
+    A parse failure is fatal rather than a fallback."""
+    path = os.path.join(NATIVE, "build.sh")
+    with open(path, encoding="utf-8") as fh:
+        m = re.search(pattern.format(name), fh.read(), re.S)
+    if m is None:
+        raise SystemExit(f"coin-kat: could not read {name} from native/build.sh; "
+                         "the harness refuses to guess how the library is built")
+    return m.group(1).replace("\\\n", " ").split()
+
+
+def secp_sources():
+    """Upstream libsecp256k1's translation units (ABI 6: BIP-340 / BIP-341)."""
+    out = []
+    for f in build_var("secp_src"):
+        if not f.startswith("$ven/"):
+            raise SystemExit(f"coin-kat: unexpected entry {f!r} in build.sh secp_src")
+        p = os.path.join(VENDOR, f[len("$ven/"):])
+        if not os.path.exists(p):
+            raise SystemExit(f"coin-kat: build.sh names {f} but it is not vendored")
+        out.append(p)
+    return out
+
+
 def build_lib(cc, out_path):
+    """Compile the shim, trezor-crypto and libsecp256k1 into one shared object.
+
+    TWO GROUPS, TWO WARNING SCOPES, exactly as native/build.sh does it and for
+    the same two reasons: upstream libsecp256k1 needs -Wno-unused-function
+    (it compiles as one unit and leaves the disabled modules' helpers unused),
+    and vendor/secp256k1.c and vendor/libsecp256k1/src/secp256k1.c share a
+    BASENAME, so object files derived from it collide."""
+    cflags = build_var("secp_cppflags")
+    swarn = build_var("secp_warn")
+    objs = []
+    outdir = os.path.dirname(os.path.abspath(out_path))
+    for src in secp_sources():
+        obj = os.path.join(outdir, "secp_" + os.path.basename(src)[:-2] + ".o")
+        subprocess.run([cc, "-O2", "-Wall", "-Wextra", *swarn, *cflags,
+                        "-fPIC", "-c", src, "-o", obj], check=True)
+        objs.append(obj)
     src = [os.path.join(NATIVE, "coinxt.c"), *vendor_sources()]
-    cmd = [cc, "-O2", "-Wall", "-Wextra", "-isystem", VENDOR,
-           "-fPIC", "-shared", *src, "-o", out_path]
+    cmd = [cc, "-O2", "-Wall", "-Wextra", *cflags, "-isystem", VENDOR,
+           "-fPIC", "-shared", *src, *objs, "-o", out_path]
     # The shim draws blinding entropy from BCryptGenRandom on Windows; every
     # other platform gets it from libc (getrandom / arc4random_buf).
     if sys.platform.startswith("win") or out_path.endswith(".dll"):
@@ -266,6 +499,10 @@ def load(out_path):
         ctypes.c_uint32,                    # iterations
         ctypes.c_char_p, ctypes.c_size_t,   # out, outlen
     ]
+    # ABI 5: the secret-hygiene wipe the .lcb runs on every out-buffer before
+    # freeing it (internal to the binding; no public cx* wrapper exists).
+    lib.cnx_memzero.restype = ctypes.c_int
+    lib.cnx_memzero.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
     # ---- the phase-2 curve surface ------------------------------------------
     # Every buffer crosses as pointer + size_t length, so the pubkey argument
     # carries its own length and the shim can refuse a length that disagrees
@@ -297,12 +534,38 @@ def load(out_path):
     lib.cnx_ecdh.argtypes = [ctypes.c_char_p, ctypes.c_size_t,   # seckey
                              ctypes.c_char_p, ctypes.c_size_t,   # pubkey
                              ctypes.c_char_p, ctypes.c_size_t]   # out
+    # ---- the ABI 6 surface: BIP-340 Schnorr and the BIP-341 tweak ----------
+    # Every buffer is pointer + size_t, like everything above. The two OPTIONAL
+    # inputs (the BIP-340 aux_rand, the BIP-341 merkle root) are carried by
+    # LENGTH: 0 means absent, and absent is NOT an all-zero value in either
+    # case. ctypes passes None for a NULL char_p, which is what a length-0
+    # buffer becomes.
+    lib.cnx_schnorr_sign.restype = ctypes.c_int
+    lib.cnx_schnorr_sign.argtypes = [ctypes.c_char_p, ctypes.c_size_t,   # seckey
+                                     ctypes.c_char_p, ctypes.c_size_t,   # message
+                                     ctypes.c_char_p, ctypes.c_size_t,   # aux_rand
+                                     ctypes.c_char_p, ctypes.c_size_t]   # out
+    lib.cnx_schnorr_verify.restype = ctypes.c_int
+    lib.cnx_schnorr_verify.argtypes = [ctypes.c_char_p, ctypes.c_size_t,  # x-only key
+                                       ctypes.c_char_p, ctypes.c_size_t,  # message
+                                       ctypes.c_char_p, ctypes.c_size_t]  # signature
+    lib.cnx_xonly_pubkey_from_seckey.restype = ctypes.c_int
+    lib.cnx_xonly_pubkey_from_seckey.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
+                                                 ctypes.c_char_p, ctypes.c_size_t]
+    for fn in ("cnx_taproot_tweak_pubkey", "cnx_taproot_tweak_seckey"):
+        f = getattr(lib, fn)
+        f.restype = ctypes.c_int
+        f.argtypes = [ctypes.c_char_p, ctypes.c_size_t,   # internal key / seckey
+                      ctypes.c_char_p, ctypes.c_size_t,   # merkle root (optional)
+                      ctypes.c_char_p, ctypes.c_size_t]   # out
     for fn in ("cnx_sha256_len", "cnx_sha512_len", "cnx_ripemd160_len",
                "cnx_hmac_sha256_len", "cnx_hmac_sha512_len",
                "cnx_keccak256_len", "cnx_sha3_256_len",
                "cnx_seckey_len", "cnx_pubkey_len_compressed",
                "cnx_pubkey_len_uncompressed", "cnx_ecdsa_sig_len",
-               "cnx_recoverable_sig_len", "cnx_ecdh_len"):
+               "cnx_recoverable_sig_len", "cnx_ecdh_len",
+               "cnx_schnorr_sig_len", "cnx_xonly_pubkey_len",
+               "cnx_taproot_output_len"):
         getattr(lib, fn).restype = ctypes.c_size_t
     return lib
 
@@ -406,8 +669,8 @@ def main(argv):
         lib = load(out_path)
 
         abi = lib.cnx_abi_version()
-        if abi != 4:
-            problems.append(f"abi_version = {abi}, expected 4")
+        if abi != 6:
+            problems.append(f"abi_version = {abi}, expected 6")
         elif not check:
             print(f"abi_version: {abi}")
 
@@ -416,7 +679,9 @@ def main(argv):
         for fn, want in (("cnx_keccak256_len", 32), ("cnx_sha3_256_len", 32),
                          ("cnx_sha256_len", 32), ("cnx_sha512_len", 64),
                          ("cnx_ripemd160_len", 20), ("cnx_hmac_sha256_len", 32),
-                         ("cnx_hmac_sha512_len", 64)):
+                         ("cnx_hmac_sha512_len", 64),
+                         ("cnx_schnorr_sig_len", 64), ("cnx_xonly_pubkey_len", 32),
+                         ("cnx_taproot_output_len", 33)):
             got = getattr(lib, fn)()
             if got != want:
                 problems.append(f"{fn}() = {got}, expected {want}")
@@ -530,6 +795,34 @@ def main(argv):
         # the NULL-with-zero-length path the LCB layer can hand us.
         if digest(lib, "cnx_sha256", None) != SHA256[b""]:
             problems.append("sha256(NULL, 0) did not equal sha256 of the empty string")
+
+        # ---- cnx_memzero (ABI 5): the .lcb's out-buffer wipe -----------------
+        # Not a KAT in the digest sense - there is no published vector for
+        # "zero" - but it IS a contract, and this is the file that executes the
+        # committed release binaries (CI's --lib runs), so the wipe every .lcb
+        # call path relies on is proven to run in the exact artifact shipped.
+        # It must wipe EXACTLY len bytes (the 0xAA sentinel past len must
+        # survive), treat len 0 as a successful no-op, tolerate NULL+0 per the
+        # shim's firewall convention, and refuse NULL with a nonzero length.
+        wipe = ctypes.create_string_buffer(b"\xaa" * 33, 33)
+        if lib.cnx_memzero(wipe, 32) != 0:
+            problems.append("cnx_memzero(buf, 32) did not return 0")
+        if wipe.raw != b"\x00" * 32 + b"\xaa":
+            problems.append("cnx_memzero did not wipe exactly len bytes "
+                            f"(got {wipe.raw.hex()})")
+        # A len-0 no-op cannot be probed on a zeroed buffer (a spurious zero
+        # write is invisible there), so repaint byte 0 first.
+        wipe[0] = b"\x55"
+        if lib.cnx_memzero(wipe, 0) != 0:
+            problems.append("cnx_memzero(buf, 0) is not a successful no-op")
+        if wipe.raw[0] != 0x55:
+            problems.append("cnx_memzero(buf, 0) wrote into the buffer")
+        if lib.cnx_memzero(None, 0) != 0:
+            problems.append("cnx_memzero(NULL, 0) is not tolerated")
+        if lib.cnx_memzero(None, 5) != -1:
+            problems.append("cnx_memzero(NULL, nonzero) did not refuse (CNX_ERR_NULL)")
+        if not check:
+            print("  cnx_memzero contract x6 OK")
 
         # ==================================================================
         # Phase 2: secp256k1.
@@ -801,6 +1094,271 @@ def main(argv):
         if not check:
             print(f"  tweak fail-closed guards x{len(tweak_guards)} OK")
 
+        # ==================================================================
+        # ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak.
+        # ==================================================================
+        # These run the OFFICIAL vector files, in full and in order. Nothing
+        # here is derived with the library under test: BIP340_VECTORS is
+        # bitcoin/bips' own test-vectors.csv and TAPROOT_* are its own
+        # wallet-test-vectors.json, both transcribed at the top of this file
+        # with their source URLs. That distinction is the standing lesson of
+        # this repository - an expectation generated by the implementation
+        # proves only that the implementation agrees with itself.
+        h = bytes.fromhex
+
+        def schnorr_sign(sk, msg, aux):
+            out = ctypes.create_string_buffer(64)
+            rc = lib.cnx_schnorr_sign(sk, len(sk), msg, len(msg),
+                                      aux, len(aux) if aux is not None else 0,
+                                      out, 64)
+            return rc, out.raw[:64]
+
+        def schnorr_verify(pk, msg, sig):
+            return lib.cnx_schnorr_verify(pk, 32, msg, len(msg), sig, 64)
+
+        def xonly(sk):
+            out = ctypes.create_string_buffer(32)
+            return lib.cnx_xonly_pubkey_from_seckey(sk, 32, out, 32), out.raw[:32]
+
+        def tweak_pub(internal, root):
+            out = ctypes.create_string_buffer(33)
+            rc = lib.cnx_taproot_tweak_pubkey(internal, 32, root,
+                                              len(root) if root else 0, out, 33)
+            return rc, out.raw[:32], out.raw[32]
+
+        def tweak_sec(sk, root):
+            out = ctypes.create_string_buffer(32)
+            rc = lib.cnx_taproot_tweak_seckey(sk, 32, root,
+                                              len(root) if root else 0, out, 32)
+            return rc, out.raw[:32]
+
+        signed = verified = 0
+        # v_* names ON PURPOSE: this loop lives inside main(), and Python leaks
+        # its loop variables past the loop body. Binding a bare `sk` here
+        # silently rebound the ECDSA section's 32-byte key (line ~875) to a
+        # BIP-340 vector's HEX STRING, which the cross-library check 240 lines
+        # below then handed to `ecdsa`. It only failed where `ecdsa` is
+        # installed - i.e. CI, not this container - so the local gate run was
+        # green and the CI run was red on the same tree.
+        for idx, v_sk, v_pk, v_aux, v_msg, v_sig, v_want_ok in BIP340_VECTORS:
+            sk, pk, aux, msg, sig, want_ok = v_sk, v_pk, v_aux, v_msg, v_sig, v_want_ok
+            got = schnorr_verify(h(pk), h(msg), h(sig))
+            # CNX_OK means valid; CNX_ERR_BADSIG (-5) means "does not verify",
+            # which is what the vector file's FALSE cases expect INCLUDING the
+            # two whose public key is not on the curve (5 and 14). Any other
+            # status would mean this shim turned a verdict into an exception.
+            if got not in (0, -5):
+                problems.append(f"BIP-340 vector {idx}: verify returned {got}, "
+                                "which is neither valid nor 'does not verify'")
+            elif (got == 0) != want_ok:
+                problems.append(f"BIP-340 vector {idx}: verify said "
+                                f"{'valid' if got == 0 else 'invalid'}, expected "
+                                f"{'valid' if want_ok else 'invalid'}")
+            else:
+                verified += 1
+            if not sk:
+                continue
+            rc, x = xonly(h(sk))
+            if rc != 0 or x.hex() != pk:
+                problems.append(f"BIP-340 vector {idx}: x-only pubkey = {x.hex()} "
+                                f"(rc {rc}), expected {pk}")
+            # Signing is 32-byte messages only (CLAUDE.md rule 3, the same rule
+            # cnx_ecdsa_sign follows), so vectors 15-18 - added in 2022 for
+            # messages of 0, 1, 17 and 100 bytes - are VERIFIED here and not
+            # re-signed. That is a scope decision, not a gap: the four exist to
+            # catch a verifier that mishandles a non-32-byte message, and the
+            # verify leg above runs every one of them.
+            if len(msg) != 64:
+                continue
+            rc, out = schnorr_sign(h(sk), h(msg), h(aux))
+            if rc != 0 or out.hex() != sig:
+                problems.append(f"BIP-340 vector {idx}: signature = {out.hex()} "
+                                f"(rc {rc}), expected {sig}")
+            else:
+                signed += 1
+        if not check:
+            neg = sum(1 for v in BIP340_VECTORS if not v[6])
+            print(f"  BIP-340 published vectors: {verified}/{len(BIP340_VECTORS)} "
+                  f"verify legs agree ({neg} of them NEGATIVE), "
+                  f"{signed} signatures reproduced byte for byte")
+
+        # An ABSENT aux_rand means FRESH OS randomness, never an all-zero aux.
+        # Two calls must differ, both must verify, and neither may equal the
+        # aux=0 signature - which is the whole point: a shim that quietly
+        # passed NULL through to upstream would produce the zero-aux signature
+        # here, twice, and this is what notices.
+        sk340 = h(BIP340_VECTORS[0][1])
+        msg340 = h(BIP340_VECTORS[0][4])
+        zero_aux_sig = h(BIP340_VECTORS[0][5])
+        rc_a, sig_a = schnorr_sign(sk340, msg340, None)
+        rc_b, sig_b = schnorr_sign(sk340, msg340, None)
+        _, pk340 = xonly(sk340)
+        if rc_a != 0 or rc_b != 0:
+            problems.append(f"schnorr sign with an absent aux failed ({rc_a}, {rc_b})")
+        elif sig_a == sig_b:
+            problems.append("two signatures with an absent aux were IDENTICAL, so the "
+                            "shim is not drawing fresh randomness")
+        elif sig_a == zero_aux_sig or sig_b == zero_aux_sig:
+            problems.append("an absent aux produced the ALL-ZERO-aux signature, so it "
+                            "was passed through as NULL rather than replaced")
+        elif schnorr_verify(pk340, msg340, sig_a) != 0 or \
+                schnorr_verify(pk340, msg340, sig_b) != 0:
+            problems.append("a signature made with a fresh aux does not verify")
+        elif not check:
+            print("  absent aux_rand: two distinct signatures, both verify, "
+                  "neither is the zero-aux one")
+
+        # BIP-341 scriptPubKey vectors: the tweak, the output key, and the
+        # scriptPubKey the output key goes into.
+        for i, (internal, root, want_tweak, want_out, want_spk) in enumerate(TAPROOT_SPK):
+            rootb = h(root) if root else b""
+            rc, out, parity = tweak_pub(h(internal), rootb)
+            if rc != 0 or out.hex() != want_out:
+                problems.append(f"BIP-341 scriptPubKey vector {i}: output key = "
+                                f"{out.hex()} (rc {rc}), expected {want_out}")
+                continue
+            if not want_spk.endswith(out.hex()) or not want_spk.startswith("5120"):
+                problems.append(f"BIP-341 scriptPubKey vector {i}: the output key is "
+                                f"not the witness program of {want_spk}")
+            # tweak_add_check is upstream's own inverse: it re-derives the
+            # commitment from the internal key, the tweak and OUR parity, so a
+            # wrong parity byte fails here even though every published field
+            # above is x-only and cannot see it.
+            if parity not in (0, 1):
+                problems.append(f"BIP-341 scriptPubKey vector {i}: parity byte is {parity}")
+            # THE PUBLISHED TWEAK, CHECKED AGAINST THE OTHER VENDORED LIBRARY.
+            # Without this the `tweak` column would be transcribed and never
+            # read, which is the shape of overstatement this repository has been
+            # bitten by before. It is also the only place the two vendored
+            # libraries are made to answer the same question: an x-only key IS
+            # the even-Y point, so 0x02 || internal is the same point as a
+            # 33-byte compressed key, and trezor-crypto's cnx_pubkey_tweak_add
+            # must land on the point upstream's cnx_taproot_tweak_pubkey landed
+            # on - X byte for byte, and with a prefix that agrees with our
+            # parity byte. If the two ever disagreed, one of them would be
+            # computing a different curve.
+            comp = ctypes.create_string_buffer(33)
+            rc2 = lib.cnx_pubkey_tweak_add(bytes([2]) + h(internal), 33,
+                                           h(want_tweak), 32, comp, 33)
+            if rc2 != 0:
+                problems.append(f"BIP-341 scriptPubKey vector {i}: trezor-crypto refused "
+                                f"the published tweak (rc {rc2})")
+            elif comp.raw[1:33].hex() != want_out:
+                problems.append(f"BIP-341 scriptPubKey vector {i}: the two vendored "
+                                "libraries disagree about P + tweak*G")
+            elif comp.raw[0] != (3 if parity else 2):
+                problems.append(f"BIP-341 scriptPubKey vector {i}: our parity byte "
+                                f"{parity} contradicts the compressed prefix "
+                                f"0x{comp.raw[0]:02x} trezor-crypto produced")
+        if not check:
+            keypath_only = sum(1 for v in TAPROOT_SPK if v[1] is None)
+            print(f"  BIP-341 scriptPubKey vectors: {len(TAPROOT_SPK)} output keys exact "
+                  f"({keypath_only} with NO merkle root, {len(TAPROOT_SPK) - keypath_only} "
+                  "with a script-tree root), each cross-checked against "
+                  "trezor-crypto's own point addition")
+
+        # THE CONSENSUS DISTINCTION, asserted rather than trusted: an absent
+        # merkle root is the EMPTY BYTE STRING, not 32 zero bytes. If these ever
+        # agreed, every key-path-only address this library produced would be
+        # wrong, and it would look right.
+        kp_internal = h(TAPROOT_SPK[0][0])
+        _, out_empty, _ = tweak_pub(kp_internal, b"")
+        rc_z, out_zeros, _ = tweak_pub(kp_internal, bytes(32))
+        if rc_z != 0:
+            problems.append("a 32-zero-byte merkle root was refused; it is a legal "
+                            "(if useless) script commitment and must be treated as one")
+        elif out_empty == out_zeros:
+            problems.append("an ABSENT merkle root produced the same output key as 32 "
+                            "ZERO BYTES, so the key-path-only case is being hashed wrong")
+        elif not check:
+            print("  an absent merkle root is NOT a zero root (different output keys)")
+
+        # BIP-341 key-path spending: seckey -> internal pubkey -> tweaked
+        # seckey -> the published witness signature over the published sighash.
+        for i, (isk, root, want_ipub, want_tsk, sighash, want_sig) in enumerate(TAPROOT_KEYPATH):
+            rootb = h(root) if root else b""
+            rc, ipub = xonly(h(isk))
+            if rc != 0 or ipub.hex() != want_ipub:
+                problems.append(f"BIP-341 keypath {i}: internal pubkey = {ipub.hex()}")
+                continue
+            rc, tsk = tweak_sec(h(isk), rootb)
+            if rc != 0 or tsk.hex() != want_tsk:
+                problems.append(f"BIP-341 keypath {i}: tweaked seckey = {tsk.hex()} "
+                                f"(rc {rc}), expected {want_tsk}")
+                continue
+            rc, sig = schnorr_sign(tsk, h(sighash), bytes(32))
+            if rc != 0 or sig.hex() != want_sig:
+                problems.append(f"BIP-341 keypath {i}: witness signature = {sig.hex()}")
+                continue
+            # And the loop the specification does not print: the PUBLIC path
+            # must produce the key that PRIVATE signature verifies against.
+            rc, outkey, _ = tweak_pub(ipub, rootb)
+            if rc != 0 or schnorr_verify(outkey, h(sighash), sig) != 0:
+                problems.append(f"BIP-341 keypath {i}: the tweaked private key does not "
+                                "sign for the independently tweaked public key")
+        if not check:
+            print(f"  BIP-341 key-path spending: {len(TAPROOT_KEYPATH)} inputs walked "
+                  "seckey -> internal pubkey -> tweaked seckey -> published witness")
+
+        # ---- the ABI 6 fail-closed guards
+        schnorr_guards = [
+            ("a null seckey", lib.cnx_schnorr_sign(None, 32, msg340, 32, None, 0,
+                                                   ctypes.create_string_buffer(64), 64), -1),
+            ("a 31-byte seckey", lib.cnx_schnorr_sign(bytes(31), 31, msg340, 32, None, 0,
+                                                      ctypes.create_string_buffer(64), 64), -2),
+            ("a 31-byte message", lib.cnx_schnorr_sign(sk340, 32, bytes(31), 31, None, 0,
+                                                       ctypes.create_string_buffer(64), 64), -2),
+            ("a 100-byte message (signing is digests only)",
+             lib.cnx_schnorr_sign(sk340, 32, bytes(100), 100, None, 0,
+                                  ctypes.create_string_buffer(64), 64), -2),
+            ("a 31-byte aux", lib.cnx_schnorr_sign(sk340, 32, msg340, 32, bytes(31), 31,
+                                                   ctypes.create_string_buffer(64), 64), -2),
+            ("a zero seckey", lib.cnx_schnorr_sign(bytes(32), 32, msg340, 32, None, 0,
+                                                   ctypes.create_string_buffer(64), 64), -4),
+            ("a 63-byte signature buffer",
+             lib.cnx_schnorr_sign(sk340, 32, msg340, 32, None, 0,
+                                  ctypes.create_string_buffer(63), 63), -2),
+            ("verify with a 31-byte key",
+             lib.cnx_schnorr_verify(bytes(31), 31, msg340, 32, bytes(64), 64), -2),
+            ("verify with a 63-byte signature",
+             lib.cnx_schnorr_verify(pk340, 32, msg340, 32, bytes(63), 63), -2),
+            ("verify with a null message of nonzero length",
+             lib.cnx_schnorr_verify(pk340, 32, None, 1, bytes(64), 64), -1),
+            ("x-only from a zero seckey",
+             lib.cnx_xonly_pubkey_from_seckey(bytes(32), 32,
+                                              ctypes.create_string_buffer(32), 32), -4),
+            ("x-only into a 31-byte buffer",
+             lib.cnx_xonly_pubkey_from_seckey(sk340, 32,
+                                              ctypes.create_string_buffer(31), 31), -2),
+            ("a 5-byte merkle root",
+             lib.cnx_taproot_tweak_pubkey(kp_internal, 32, bytes(5), 5,
+                                          ctypes.create_string_buffer(33), 33), -2),
+            ("a null merkle root claiming 32 bytes",
+             lib.cnx_taproot_tweak_pubkey(kp_internal, 32, None, 32,
+                                          ctypes.create_string_buffer(33), 33), -1),
+            ("a 32-byte output buffer (the record is 33)",
+             lib.cnx_taproot_tweak_pubkey(kp_internal, 32, None, 0,
+                                          ctypes.create_string_buffer(32), 32), -2),
+            # An x-only value that is not on the curve is a KEY error when the
+            # caller is ASSERTING it is their internal key, and merely "does
+            # not verify" when they are asking about a signature. Both are
+            # asserted, because the two directions are easy to conflate.
+            ("an internal key that is not on the curve",
+             lib.cnx_taproot_tweak_pubkey(h(BIP340_VECTORS[5][2]), 32, None, 0,
+                                          ctypes.create_string_buffer(33), 33), -4),
+            ("a zero seckey to tweak",
+             lib.cnx_taproot_tweak_seckey(bytes(32), 32, None, 0,
+                                          ctypes.create_string_buffer(32), 32), -4),
+            ("a 5-byte merkle root on the private side",
+             lib.cnx_taproot_tweak_seckey(sk340, 32, bytes(5), 5,
+                                          ctypes.create_string_buffer(32), 32), -2),
+        ]
+        for name, rc2, want_rc in schnorr_guards:
+            if rc2 != want_rc:
+                problems.append(f"ABI 6 guard '{name}' returned {rc2}, expected {want_rc}")
+        if not check:
+            print(f"  BIP-340/341 fail-closed guards x{len(schnorr_guards)} OK")
+
         # ---- the independent second opinion, when it is installed
         # The published vectors above already stand on their own. This block is
         # the stronger claim the plan asks for - that a CoinXT signature verifies
@@ -823,7 +1381,11 @@ def main(argv):
                             "is not installed, so the cross-library check could not "
                             "run (pip install ecdsa)")
         if have_ecdsa:
-            key = SigningKey.from_string(sk, curve=SECP256k1)
+            # Bound HERE, not inherited: this check pairs with the sig64/dg/pub33
+            # built from RECOVERABLE_SK far above, and anything that rebinds `sk`
+            # in between silently changes what is being cross-checked.
+            xsk = bytes.fromhex(RECOVERABLE_SK)
+            key = SigningKey.from_string(xsk, curve=SECP256k1)
             if not key.get_verifying_key().verify_digest(
                     sig64, dg, sigdecode=sigdecode_string):
                 problems.append("a CoinXT signature did NOT verify in the `ecdsa` library")

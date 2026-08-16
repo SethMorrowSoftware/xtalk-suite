@@ -22,6 +22,17 @@ library org.openxtalk.library.coin
 -- That is ALL of phase 4 that belongs here: the mnemonic packing, the path
 -- parse and the xprv/xpub framing are byte shuffling and live in
 -- src/coinxt.livecodescript, by the same C-vs-script rule as the encodings.
+-- ABI 5 (2026-08-16): cnx_memzero, INTERNAL secret hygiene only - sWipeFree
+-- below wipes every out-buffer before freeing it. No new public handler; see
+-- "SECRET HYGIENE, HONESTLY" further down.
+-- ABI 6 (2026-08-16): BIP-340 Schnorr and the BIP-341 Taproot tweak -
+-- cxSchnorrSign, cxSchnorrVerify, cxXOnlyPubkey, cxTaprootTweakPubkey,
+-- cxTaprootTweakSeckey and three length accessors. These bind into a SECOND
+-- vendored native library (upstream bitcoin-core/secp256k1) rather than
+-- trezor-crypto; that is a recorded change to this project's "one library"
+-- rule, and the reasoning is in native/coinxt.c, CLAUDE.md and SPEC.md
+-- section 2. Nothing about this seam changes: the shim still presents one
+-- cnx_ ABI and this file still cannot tell which library answered.
 --
 -- ==========================================================================
 -- PHASE 2 AND 4 STATUS: CLOSED ON-ENGINE 2026-08-10 (see below for what the
@@ -121,16 +132,29 @@ library org.openxtalk.library.coin
 -- no size is ever hardcoded in this file (libraries are allowed to change their
 -- digest sizes; a hardcoded 32 is a buffer overflow waiting to happen).
 --
--- SECRET HYGIENE, HONESTLY. cxPbkdf2HmacSha512 derives a BIP-39 seed, which is
--- key material. The shim memzeros its own scratch, but the block we allocate
--- here is freed WITHOUT being wiped: there is no engine <builtin> we can point
--- at that zeroes a raw block, and this file will not invent one it cannot name.
--- The returned Data is likewise ordinary engine memory: OXT script variables
--- are not locked (mlock) memory and can be paged to disk. CoinXT on a
--- general-purpose desktop is not hardware-wallet isolation; the trust boundary
--- is the machine (CLAUDE.md, "Secret hygiene"). A future `cnx_memzero(ptr,len)`
--- export would let this layer wipe the block before freeing it; that is a shim
--- change and therefore an ABI bump, so it is noted here, not smuggled in.
+-- SECRET HYGIENE, HONESTLY. cxPbkdf2HmacSha512 derives a BIP-39 seed, and
+-- cxHmacSha512 (the BIP-32 derivation core: its output splits into a child
+-- key tweak and a chaincode), cxSeckeyTweakAdd (a child PRIVATE key) and
+-- cxEcdh (a shared secret point) likewise write key material into the raw
+-- block this file allocates. The shim memzeros its own scratch, and since
+-- ABI 5 this layer wipes that block too: sFinish routes every out-buffer
+-- through sWipeFree, which calls the shim's cnx_memzero(ptr, len) - the
+-- export an earlier revision of this note recorded as future work; it was a
+-- shim change and therefore an ABI bump (4 -> 5), made together, not smuggled
+-- in - before MCMemoryDeallocate, on the success path and on both error
+-- paths. sWipeFree RETURNS its status rather than throwing it, so the wipe
+-- can never displace the cnx_* error the caller actually needs; sFinish
+-- appends it as a note where there is already a real error and throws it
+-- alone where there is not (see the precedence note on sFinish). The wipe is
+-- UNCONDITIONAL rather than per handler, because deciding
+-- "secret enough to wipe" at each call site is a judgment that fails open
+-- when it is wrong and saves one cheap call when it is right. The honest
+-- residue is unchanged: the returned Data is ordinary engine memory - OXT
+-- script variables are not locked (mlock) memory, can be paged to disk, and
+-- cannot be wiped from here - so the caller still clears its own variable the
+-- moment it is done. CoinXT on a general-purpose desktop is not
+-- hardware-wallet isolation; the trust boundary is the machine (CLAUDE.md,
+-- "Secret hygiene").
 -- ==========================================================================
 
 use com.livecode.foreign
@@ -147,7 +171,7 @@ metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-cryp
 -- be refused with a legible error, not discovered at the first missing bind.
 -- Declared before first use - OXT resolves a constant by lexical position, and
 -- a forward reference silently evaluates to nothing.
-constant kABIVersion is 4
+constant kABIVersion is 6
 
 -- The largest PBKDF2 iteration count this binding will marshal. The shim takes
 -- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
@@ -157,6 +181,13 @@ constant kABIVersion is 4
 -- unsigned foreign slot becomes a huge positive value, and the sign is only
 -- still visible HERE.
 constant kMaxIterations is 2147483647
+
+-- The sentence a refused native wipe gets. It is a constant because TWO throw
+-- sites in sFinish need the identical words (one alone, one appended to a
+-- primary error) and a message that drifts between them would make the same
+-- condition look like two different faults. Declared here for the same reason
+-- as kABIVersion: OXT resolves a constant by lexical position.
+constant kWipeRefused is "the native wipe refused the output buffer this extension allocated, so the loaded coinxt library does not match this binding. Reinstall CoinXT."
 
 -- --------------------------------------------------------------------------
 -- Engine memory + Data bridges. These resolve by NAME against engine symbols,
@@ -183,6 +214,14 @@ private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as
 -- error); every buffer crosses as Pointer + a size_t length (UIntSize).
 -- --------------------------------------------------------------------------
 private foreign handler _cnx_abi_version() returns CInt binds to "c:coinxt>cnx_abi_version"
+
+-- The ABI 5 secret-hygiene export: wipe pLen bytes at pPtr with a wipe the
+-- compiler cannot elide (vendor/memzero.c: SecureZeroMemory / memset_s /
+-- explicit_bzero / a volatile byte loop, per platform). INTERNAL: sWipeFree is
+-- its only caller and there is deliberately no public cx* wrapper - a script
+-- Data cannot be wiped in place, so exposing this to script would only invite
+-- the false belief that it can (see "SECRET HYGIENE, HONESTLY" above).
+private foreign handler _cnx_memzero(in pPtr as Pointer, in pLen as UIntSize) returns CInt binds to "c:coinxt>cnx_memzero"
 
 -- The one-shot digests. `in` may be a NULL pointer when its length is 0 (the
 -- shim substitutes a valid source), so an empty Data is always safe to hash.
@@ -266,6 +305,49 @@ private foreign handler _cnx_bip39_wordlist(in pOut as Pointer, in pOutLen as UI
 private foreign handler _cnx_bip39_wordlist_len() returns UIntSize binds to "c:coinxt>cnx_bip39_wordlist_len"
 
 -- --------------------------------------------------------------------------
+-- ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak.
+--
+-- Same shapes as everything above (Pointer + UIntSize in, a status out), so
+-- nothing new has to be true about marshalling for these to work. Two of the
+-- arguments are OPTIONAL, and both are carried BY LENGTH rather than by a null
+-- pointer, which is deliberate:
+--
+--   * the BIP-340 aux_rand. Length 0 means "the shim draws 32 fresh OS bytes";
+--     length 32 means "use exactly these" and makes the signature reproducible.
+--     It never means an all-zero aux, which is what upstream's NULL would mean.
+--   * the BIP-341 merkle root. Length 0 is the KEY-PATH-ONLY case, where the
+--     specification hashes the empty byte string - which is NOT the same as
+--     hashing 32 zero bytes, and getting that wrong yields a valid-looking
+--     address whose coins nobody can spend. Length 32 is a real script-tree
+--     root.
+--
+-- Carrying both by length rather than by an `optional Pointer` is what keeps
+-- this file on shapes an engine has already run: cxKeccak256("") proved on
+-- 2026-08-08 that an EMPTY Data marshals through a plain Pointer slot (the
+-- engine may pass null, and every shim entry accepts null with length 0), so
+-- an empty Data is already the family's way of saying "absent". `optional
+-- Pointer` is legal LCB and CLAUDE.md names it for exactly this case, but it
+-- has never been exercised on an engine in this suite and a money library is
+-- the wrong place to find out.
+--
+-- cnx_taproot_tweak_pubkey writes a 33-byte RECORD, not a 32-byte key: the
+-- x-only output key followed by one parity byte. That is this member's
+-- existing convention for a small integer travelling with a fixed-size result
+-- (cnx_ecdsa_sign_recoverable writes 64 bytes of signature plus a recovery
+-- id), and it avoids declaring a scalar `out` parameter against our own C -
+-- a shape no .lcb in this suite has ever used.
+-- --------------------------------------------------------------------------
+private foreign handler _cnx_schnorr_sign(in pSk as Pointer, in pSkLen as UIntSize, in pMsg as Pointer, in pMsgLen as UIntSize, in pAux as Pointer, in pAuxLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_schnorr_sign"
+private foreign handler _cnx_schnorr_verify(in pXOnly as Pointer, in pXOnlyLen as UIntSize, in pMsg as Pointer, in pMsgLen as UIntSize, in pSig as Pointer, in pSigLen as UIntSize) returns CInt binds to "c:coinxt>cnx_schnorr_verify"
+private foreign handler _cnx_xonly_pubkey_from_seckey(in pSk as Pointer, in pSkLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_xonly_pubkey_from_seckey"
+private foreign handler _cnx_taproot_tweak_pubkey(in pInternal as Pointer, in pInternalLen as UIntSize, in pRoot as Pointer, in pRootLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_taproot_tweak_pubkey"
+private foreign handler _cnx_taproot_tweak_seckey(in pSk as Pointer, in pSkLen as UIntSize, in pRoot as Pointer, in pRootLen as UIntSize, in pOut as Pointer, in pOutLen as UIntSize) returns CInt binds to "c:coinxt>cnx_taproot_tweak_seckey"
+
+private foreign handler _cnx_schnorr_sig_len() returns UIntSize binds to "c:coinxt>cnx_schnorr_sig_len"
+private foreign handler _cnx_xonly_pubkey_len() returns UIntSize binds to "c:coinxt>cnx_xonly_pubkey_len"
+private foreign handler _cnx_taproot_output_len() returns UIntSize binds to "c:coinxt>cnx_taproot_output_len"
+
+-- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
 -- handlers stay readable and the foreign-call discipline lives in one place.
 -- All declarations sit at the top of their handler.
@@ -299,10 +381,49 @@ private handler sAlloc(in pCap as Integer) returns Pointer
    return tPtr
 end handler
 
-private handler sFree(in pPtr as Pointer) returns nothing
+-- Wipe, then free, one raw out-buffer, and REPORT the wipe status rather than
+-- acting on it. EVERY block this file allocates leaves through here (sFinish
+-- routes all three of its paths this way), so a freed block never re-enters
+-- the allocator still holding a seed, a child private key, a chaincode half or
+-- an ECDH point. The wipe is the shim's cnx_memzero, which the compiler cannot
+-- elide the way it could a store the block never reads again; see "SECRET
+-- HYGIENE, HONESTLY" in the header. Wipe, free, THEN return the status,
+-- deliberately in that order, so even the impossible refusal path leaks
+-- nothing.
+--
+-- WHY THIS RETURNS THE STATUS INSTEAD OF THROWING IT (changed 2026-08-16).
+-- It used to throw here, and that put the belt-and-braces guard in a position
+-- where it could DISPLACE a real diagnostic: sFinish's native-error path wipes
+-- BEFORE it throws, so a wipe refusal there would have replaced, say,
+-- "cxSign: a buffer had the wrong length." with a reinstall-the-library
+-- sentence naming no handler, for a call that failed on a range check. The
+-- decision to check this status at all was the right one - an unchecked status
+-- would be the one silent path in this file - but a check only earns its keep
+-- if it cannot cost the caller the primary error. So the status comes back and
+-- sFinish decides: appended as a note where there is already a real error to
+-- report, thrown on its own where there is not. Nothing is swallowed either
+-- way. (The branch itself is still an impossibility guard: pPtr comes from
+-- sAlloc and is never null, and sPrepare() has already proven the loaded
+-- library speaks this ABI, so cnx_memzero cannot refuse.)
+private handler sWipeFree(in pPtr as Pointer, in pLen as Integer) returns Integer
+   variable tStatus as Integer
    unsafe
+      put _cnx_memzero(pPtr, pLen) into tStatus
       MCMemoryDeallocate(pPtr)
    end unsafe
+   return tStatus
+end handler
+
+-- Render a wipe status as a SUFFIX for an error that already has something
+-- more useful to say. Empty on success, so the primary message is unchanged
+-- byte for byte when the wipe behaved (which is every run that has ever
+-- happened); parenthesised when it did not, because it is secondary
+-- information about the same failure and must not read as its cause.
+private handler sWipeNote(in pWipeStatus as Integer) returns String
+   if pWipeStatus is 0 then
+      return ""
+   end if
+   return " (Additionally," && kWipeRefused & ")"
 end handler
 
 -- The read-only pointer to a Data's own bytes. On an EMPTY Data this may be a
@@ -323,18 +444,6 @@ private handler sDataLen(in pData as Data) returns Integer
       put MCDataGetLength(pData) into tLen
    end unsafe
    return tLen
-end handler
-
-private handler sToData(in pPtr as Pointer, in pLen as Integer) returns Data
-   variable tResult as Data
-   variable tOk as CBool
-   unsafe
-      put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
-   end unsafe
-   if not tOk then
-      throw "CoinXT: could not build the result data."
-   end if
-   return tResult
 end handler
 
 -- Map a native status to a human sentence. The set is closed (the shim defines
@@ -371,19 +480,45 @@ private handler sStatusText(in pStatus as Integer) returns String
    return "an unexpected native status (the loaded library does not match this binding)."
 end handler
 
--- The common tail of a buffer-filling call: on a non-zero status free the block
--- and throw a prefixed, handler-named error a caller can try/catch; on success
--- copy exactly the bytes the shim promised to write, then free. pLen always
--- comes from the shim (a cnx_*_len, or the caller's requested PBKDF2 output),
--- never from a constant in this file.
+-- The common tail of a buffer-filling call: on a non-zero status wipe and free
+-- the block, then throw a prefixed, handler-named error a caller can
+-- try/catch; on success copy exactly the bytes the shim promised to write,
+-- then wipe and free. pLen always comes from the shim (a cnx_*_len, or the
+-- caller's requested PBKDF2 output), never from a constant in this file. The
+-- copy is made inline rather than through a helper that throws, so the block
+-- is wiped and freed BEFORE any throw this handler can raise - the old shape
+-- (a throwing sToData between allocate and free) would have leaked the block
+-- unwiped on the copy-failure path, which for a seed is the exact hole the
+-- wipe exists to close.
+--
+-- THE ERROR PRECEDENCE, and it is the whole point of the tWipe variable. The
+-- cnx_* status is what the CALLER can act on ("the key is not a valid
+-- secp256k1 key", "a buffer had the wrong length"), so it always reaches them
+-- and always names the handler it came from. A refused wipe is a statement
+-- about the INSTALLATION, and it can only be produced by a library that
+-- disagrees with this binding; it rides along as a suffix wherever there is
+-- already a real error, and is thrown by itself only on the path where the
+-- call otherwise succeeded and there is nothing to displace. Discarding a
+-- correct result there is deliberate: a library whose wipe refuses is a
+-- library whose output this file has no reason to trust.
 private handler sFinish(in pName as String, in pPtr as Pointer, in pStatus as Integer, in pLen as Integer) returns Data
    variable tResult as Data
+   variable tOk as CBool
+   variable tWipe as Integer
    if pStatus is not 0 then
-      sFree(pPtr)
-      throw "CoinXT:" && pName & ":" && sStatusText(pStatus)
+      put sWipeFree(pPtr, pLen) into tWipe
+      throw "CoinXT:" && pName & ":" && sStatusText(pStatus) & sWipeNote(tWipe)
    end if
-   put sToData(pPtr, pLen) into tResult
-   sFree(pPtr)
+   unsafe
+      put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
+   end unsafe
+   put sWipeFree(pPtr, pLen) into tWipe
+   if not tOk then
+      throw "CoinXT:" && pName & ": could not build the result data." & sWipeNote(tWipe)
+   end if
+   if tWipe is not 0 then
+      throw "CoinXT:" && pName & ":" && kWipeRefused
+   end if
    return tResult
 end handler
 
@@ -602,8 +737,9 @@ public handler cxPbkdf2HmacSha512(in pPassword as Data, in pSalt as Data, in pIt
    unsafe
       put _cnx_pbkdf2_hmac_sha512(tPwPtr, tPwLen, tSaltPtr, tSaltLen, pIterations, tOut, pOutLen) into tStatus
    end unsafe
-   -- The result is a SEED. See the header: the block is freed unwiped and the
-   -- Data is not locked memory. Clear the caller's variable when done with it.
+   -- The result is a SEED. sFinish wipes the raw block (cnx_memzero) before
+   -- freeing it, but the returned Data is not locked memory - see the header.
+   -- Clear the caller's variable when done with it.
    return sFinish("cxPbkdf2HmacSha512", tOut, tStatus, pOutLen)
 end handler
 
@@ -980,6 +1116,196 @@ public handler cxBip39Wordlist() returns Data
 end handler
 
 -- ==========================================================================
+-- BIP-340 Schnorr and the BIP-341 Taproot tweak (ABI 6).
+--
+-- READ THIS BEFORE USING THE TWO TAPROOT HANDLERS. A Taproot output key is
+-- NOT the public key you started with: BIP-341 spends to
+-- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, and paying to the
+-- untweaked P produces a perfectly valid bc1p... address that NOBODY can ever
+-- spend from. cxTaprootTweakPubkey computes Q from P; cxTaprootTweakSeckey
+-- computes the private key for Q from the private key for P. Use them as a
+-- pair, and pass the SAME merkle root to both.
+--
+-- pMerkleRoot is EMPTY for a key-path-only output, which is the common case
+-- and is what a single-signature wallet wants. Empty is the specification's
+-- empty byte string; it is NOT 32 zero bytes, and the two produce different
+-- addresses. If you have no script tree, pass empty.
+-- ==========================================================================
+
+-- BIP-340 signature over a 32-byte message with a 32-byte private key.
+--
+-- THE MESSAGE MUST BE A 32-BYTE DIGEST. That is narrower than BIP-340 (which
+-- has admitted arbitrary-length messages since 2022) and it is the same rule
+-- cxSign follows: CoinXT signs the exact digest the app hands it and never a
+-- blob the app has not decoded (CLAUDE.md rule 3). For Taproot that digest is
+-- the BIP-341 sighash. cxSchnorrVerify is deliberately NOT restricted this
+-- way - see its note.
+--
+-- pAuxRand is BIP-340's auxiliary randomness. Pass EMPTY and the shim draws 32
+-- fresh bytes from the operating system, which is the recommended default and
+-- makes the signature different every time (BIP-340 signatures are not unique;
+-- all of them verify). Pass 32 bytes and the signature is a pure function of
+-- (key, message, aux), which is what the published test vectors pin and what
+-- you want if you are reproducing one. Empty NEVER means an all-zero aux.
+public handler cxSchnorrSign(in pSeckey as Data, in pMessage as Data, in pAuxRand as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tMsgPtr as Pointer
+   variable tMsgLen as Integer
+   variable tAuxPtr as Pointer
+   variable tAuxLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pMessage) into tMsgLen
+   put sDataPtr(pMessage) into tMsgPtr
+   put sDataLen(pAuxRand) into tAuxLen
+   put sDataPtr(pAuxRand) into tAuxPtr
+   unsafe
+      put _cnx_schnorr_sig_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_schnorr_sign(tSkPtr, tSkLen, tMsgPtr, tMsgLen, tAuxPtr, tAuxLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxSchnorrSign", tOut, tStatus, tLen)
+end handler
+
+-- BIP-340 verification against a 32-byte X-ONLY public key.
+--
+-- ANY MESSAGE LENGTH IS ACCEPTED HERE, unlike cxSchnorrSign's. BIP-340 allows
+-- a message of any length and its own published vector file carries four of
+-- them (0, 1, 17 and 100 bytes), so a verifier that insisted on 32 would
+-- REJECT VALID SIGNATURES. That is not caution, it is a wrong answer.
+--
+-- Answers FALSE - it does not throw - when the public key is not a point on
+-- the curve, because BIP-340's vector set says so: its cases 5 ("public key
+-- not on the curve") and 14 ("not a valid X coordinate ... exceeds the field
+-- size") both list their expected verification result as FALSE. Only a
+-- wrong-LENGTH key or signature throws, because that is a caller bug rather
+-- than a verdict about somebody's signature.
+public handler cxSchnorrVerify(in pXOnlyPubkey as Data, in pMessage as Data, in pSignature as Data) returns Boolean
+   variable tKeyPtr as Pointer
+   variable tKeyLen as Integer
+   variable tMsgPtr as Pointer
+   variable tMsgLen as Integer
+   variable tSigPtr as Pointer
+   variable tSigLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pXOnlyPubkey) into tKeyLen
+   put sDataPtr(pXOnlyPubkey) into tKeyPtr
+   put sDataLen(pMessage) into tMsgLen
+   put sDataPtr(pMessage) into tMsgPtr
+   put sDataLen(pSignature) into tSigLen
+   put sDataPtr(pSignature) into tSigPtr
+   unsafe
+      put _cnx_schnorr_verify(tKeyPtr, tKeyLen, tMsgPtr, tMsgLen, tSigPtr, tSigLen) into tStatus
+   end unsafe
+   if tStatus is 0 then
+      return true
+   end if
+   if tStatus is -5 then
+      return false
+   end if
+   throw "CoinXT: cxSchnorrVerify:" && sStatusText(tStatus)
+end handler
+
+-- The 32-byte X-ONLY public key for a private key: BIP-340's bytes(P), the X
+-- coordinate of the point whose Y is even. This is what a BIP-340 verifier
+-- needs, and it is the INTERNAL key a Taproot output is built from - it is
+-- NOT a Taproot output key until it has been through cxTaprootTweakPubkey.
+public handler cxXOnlyPubkey(in pSeckey as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   unsafe
+      put _cnx_xonly_pubkey_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_xonly_pubkey_from_seckey(tSkPtr, tSkLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxXOnlyPubkey", tOut, tStatus, tLen)
+end handler
+
+-- BIP-341: the Taproot OUTPUT key for an internal x-only key.
+--
+-- Returns 33 bytes: the 32-byte x-only output key followed by ONE parity byte
+-- (0 = the output point has an even Y, 1 = odd). The 32 bytes are the witness
+-- program of the P2TR scriptPubKey and the payload of the bc1p... address; the
+-- parity byte is what a script-path spend puts in its control block, and a
+-- key-path spender can ignore it. cxTaprootTweak in the livecodescript layer
+-- splits this into a named array if you would rather read it that way.
+--
+-- pMerkleRoot: EMPTY for key-path-only, or a 32-byte script-tree root.
+public handler cxTaprootTweakPubkey(in pInternalKey as Data, in pMerkleRoot as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tKeyPtr as Pointer
+   variable tKeyLen as Integer
+   variable tRootPtr as Pointer
+   variable tRootLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pInternalKey) into tKeyLen
+   put sDataPtr(pInternalKey) into tKeyPtr
+   put sDataLen(pMerkleRoot) into tRootLen
+   put sDataPtr(pMerkleRoot) into tRootPtr
+   unsafe
+      put _cnx_taproot_output_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_taproot_tweak_pubkey(tKeyPtr, tKeyLen, tRootPtr, tRootLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxTaprootTweakPubkey", tOut, tStatus, tLen)
+end handler
+
+-- BIP-341: the private key that spends the output cxTaprootTweakPubkey builds
+-- from the matching internal key. Hand the result to cxSchnorrSign over the
+-- BIP-341 sighash for a key-path spend.
+--
+-- It takes the INTERNAL private key, not the internal public key, and derives
+-- bytes(P) itself. That is not a convenience: the tagged hash commits to the
+-- internal public key, so letting a caller supply both halves separately would
+-- let a mismatched pair produce a spendable-looking key for coins it cannot
+-- touch.
+--
+-- pMerkleRoot must be the SAME value passed to cxTaprootTweakPubkey. EMPTY for
+-- key-path-only; it is the specification's empty byte string, not 32 zeros.
+public handler cxTaprootTweakSeckey(in pSeckey as Data, in pMerkleRoot as Data) returns Data
+   variable tLen as Integer
+   variable tOut as Pointer
+   variable tSkPtr as Pointer
+   variable tSkLen as Integer
+   variable tRootPtr as Pointer
+   variable tRootLen as Integer
+   variable tStatus as Integer
+   sPrepare()
+   put sDataLen(pSeckey) into tSkLen
+   put sDataPtr(pSeckey) into tSkPtr
+   put sDataLen(pMerkleRoot) into tRootLen
+   put sDataPtr(pMerkleRoot) into tRootPtr
+   unsafe
+      put _cnx_seckey_len() into tLen
+   end unsafe
+   put sAlloc(tLen) into tOut
+   unsafe
+      put _cnx_taproot_tweak_seckey(tSkPtr, tSkLen, tRootPtr, tRootLen, tOut, tLen) into tStatus
+   end unsafe
+   return sFinish("cxTaprootTweakSeckey", tOut, tStatus, tLen)
+end handler
+
+-- ==========================================================================
 -- Length accessors. Every size an app needs to build a buffer comes FROM the
 -- shim; nothing in the CoinXT stack hardcodes 32 / 64 / 20. The ones that earn
 -- their keep in practice: cxSha256Len and cxRipemd160Len size a hash160 and a
@@ -1120,6 +1446,41 @@ public handler cxBip39WordlistLen() returns Integer
    sPrepare()
    unsafe
       put _cnx_bip39_wordlist_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- 64: a BIP-340 signature (r || s, both 32 bytes). Same size as an ECDSA
+-- signature in this library's raw form, and deliberately a separate accessor:
+-- they are different objects and a future library could size them apart.
+public handler cxSchnorrSignatureLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_schnorr_sig_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- 32: an x-only public key, and therefore also a Taproot output key and the
+-- witness program of a P2TR address.
+public handler cxXOnlyPubkeyLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_xonly_pubkey_len() into tLen
+   end unsafe
+   return tLen
+end handler
+
+-- 33: the record cxTaprootTweakPubkey returns, which is the 32-byte output key
+-- plus one parity byte. Exposed so the script layer can slice it without
+-- writing 32 or 33 down a second time.
+public handler cxTaprootOutputLen() returns Integer
+   variable tLen as Integer
+   sPrepare()
+   unsafe
+      put _cnx_taproot_output_len() into tLen
    end unsafe
    return tLen
 end handler

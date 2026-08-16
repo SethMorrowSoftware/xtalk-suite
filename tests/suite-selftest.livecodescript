@@ -334,6 +334,22 @@ constant cx1kEth1559Value = "016345785d8a0000"
 constant cx1kEth1559Sighash = "bf4c3dfa4164868c98534322ecbbce3c022d6d0dee3580b1504da0a28fff9199"
 constant cx1kEth1559Raw = "02f8730180843b9aca008504a817c80082520894353535353535353535353535353535353535353588016345785d8a000080c001a0180a63d9ea767ab51941f4cb5d3f4f1113ae08861b4a660eb72770967ddc8987a04a41c8877f4e53a06c3a7d6f2787f113d9700bd112168f6714ff3b8957f1b123"
 constant cx1kEth1559Txhash = "1d723f02967119095427907564da7762bd6d3a5d8edb1291db53b97191749e7f"
+constant cx1kSchnorrSk1 = "b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfef"
+constant cx1kSchnorrPub1 = "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659"
+constant cx1kSchnorrAux1 = "0000000000000000000000000000000000000000000000000000000000000001"
+constant cx1kSchnorrMsg1 = "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89"
+constant cx1kSchnorrSig1 = "6896bd60eeae296db48a229ff71dfe071bde413e6d43f917dc8dcf8c78de33418906d11ac976abccb20b091292bff4ea897efcb639ea871cfa95f6de339e4b0a"
+constant cx1kSchnorrPubOffCurve = "eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34"
+constant cx1kSchnorrSigOddR = "fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a14602975563cc27944640ac607cd107ae10923d9ef7a73c643e166be5ebeafa34b1ac553e2"
+constant cx1kTapSeckey0 = "6b973d88838f27366ed61c9ad6367663045cb456e28335c109e30717ae0c6baa"
+constant cx1kTapInternal0 = "d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d"
+constant cx1kTapOutput0 = "53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343"
+constant cx1kTapTweaked0 = "2405b971772ad26915c8dcdf10f238753a9b837e5f8e6a86fd7c0cce5b7296d9"
+constant cx1kTapAddress0 = "bc1p2wsldez5mud2yam29q22wgfh9439spgduvct83k3pm50fcxa5dps59h4z5"
+constant cx1kTapInternal1 = "187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27"
+constant cx1kTapRoot1 = "5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21"
+constant cx1kTapOutput1 = "147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3"
+constant cx1kTapAddress1 = "bc1pz37fc4cn9ah8anwm4xqqhvxygjf9rjf2resrw8h8w4tmvcs0863sa2e586"
 constant cx1kStTitle = "coinxt - API Self-Test"
 constant cx1kStWidth = 660
 constant cx1kStHeight = 620
@@ -3412,6 +3428,53 @@ private function cxBtcAddressP2TRInner pOutputKey
    end if
    return cxSegwitAddressEncode(kCxHrpMainnet, 1, pOutputKey)
 end cxBtcAddressP2TRInner
+
+function cxTaprootTweak pInternalKey, pMerkleRoot
+   local tRecord, tResult, tKeyLen, tRootLen
+   put the number of bytes of pInternalKey into tKeyLen
+   if tKeyLen is not 32 then
+      throw "CoinXT: cxTaprootTweak: the internal key must be a 32-byte x-only public key."
+   end if
+   put the number of bytes of pMerkleRoot into tRootLen
+   if tRootLen is not 0 and tRootLen is not 32 then
+      throw "CoinXT: cxTaprootTweak: the merkle root must be empty (a key-path-only output) or 32 bytes (a script-tree root)."
+   end if
+   -- The .lcb hands back one record so the parity travels with the key it
+   -- belongs to; the slice widths come from the shim, never from a constant
+   -- written down here (the same rule as every other length in this library).
+   put cxTaprootTweakPubkey(pInternalKey, pMerkleRoot) into tRecord
+   put cxXOnlyPubkeyLen() into tKeyLen
+   put byte 1 to tKeyLen of tRecord into tResult["outputKey"]
+   put byteToNum(byte (tKeyLen + 1) of tRecord) into tResult["parity"]
+   return tResult
+end cxTaprootTweak
+
+function cxBtcAddressP2TRFromInternal pInternalKey, pMerkleRoot
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcAddressP2TRFromInternalInner(pInternalKey, pMerkleRoot) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcAddressP2TRFromInternal
+
+private function cxBtcAddressP2TRFromInternalInner pInternalKey, pMerkleRoot
+   local tTweak
+   put cxTaprootTweak(pInternalKey, pMerkleRoot) into tTweak
+   return cxSegwitAddressEncode(kCxHrpMainnet, 1, tTweak["outputKey"])
+end cxBtcAddressP2TRFromInternalInner
 
 function cxEthAddress pPubkey
    local tKey, tHash, tCount
@@ -10206,6 +10269,8 @@ command cx1stRun
    cx1stRunBip32
    cx1stRunBip44
    cx1stRunTransactions
+   cx1stRunSchnorr
+   cx1stRunTaproot
    cx1stRunFailOpen
 
    cx1stSection "summary"
@@ -10809,6 +10874,110 @@ command cx1stRunWif
    end try
 end cx1stRunWif
 
+command cx1stRunSchnorr
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local cx1tSk, cx1tPub, cx1tMsg, cx1tAux, cx1tSig, cx1tFreshA, cx1tFreshB
+   cx1stSection "BIP-340 Schnorr (published vectors, positive and negative)"
+   try
+      put cxHexDecode(cx1kSchnorrSk1) into cx1tSk
+      put cxHexDecode(cx1kSchnorrMsg1) into cx1tMsg
+      put cxHexDecode(cx1kSchnorrAux1) into cx1tAux
+      put cxXOnlyPubkey(cx1tSk) into cx1tPub
+      cx1stAssert "cxXOnlyPubkey reproduces BIP-340 vector 1's x-only key", cx1stSameHex(cxHexEncode(cx1tPub), cx1kSchnorrPub1)
+      put cxSchnorrSign(cx1tSk, cx1tMsg, cx1tAux) into cx1tSig
+      cx1stAssert "cxSchnorrSign reproduces vector 1 byte for byte", cx1stSameHex(cxHexEncode(cx1tSig), cx1kSchnorrSig1)
+      cx1stAssert "cxSchnorrVerify accepts it", cxSchnorrVerify(cx1tPub, cx1tMsg, cx1tSig) is true
+      -- The negatives. A Schnorr verifier that only ever meets good signatures
+      -- passes every positive case above while accepting a forgery.
+      cx1stAssert "cxSchnorrVerify rejects a tampered signature", cxSchnorrVerify(cx1tPub, cx1tMsg, cx1stFlipByte(cx1tSig, 40)) is false
+      cx1stAssert "cxSchnorrVerify rejects the wrong message", cxSchnorrVerify(cx1tPub, cx1tSk, cx1tSig) is false
+      cx1stAssert "cxSchnorrVerify rejects the wrong key", cxSchnorrVerify(cxHexDecode(cx1kTapInternal0), cx1tMsg, cx1tSig) is false
+      -- BIP-340 case 5. The expected result is FALSE, not an error: a verifier
+      -- that threw here would be unusable on a third party's signature.
+      cx1stAssert "a public key that is not on the curve answers false, not an error", cxSchnorrVerify(cxHexDecode(cx1kSchnorrPubOffCurve), cx1tMsg, cx1tSig) is false
+      -- BIP-340 case 6: has_even_y(R) is false.
+      cx1stAssert "a signature whose R has an odd Y is rejected", cxSchnorrVerify(cx1tPub, cx1tMsg, cxHexDecode(cx1kSchnorrSigOddR)) is false
+      -- An ABSENT aux means FRESH randomness, never an all-zero aux. Two calls
+      -- must differ, both must verify, and neither may be the pinned vector -
+      -- which is what would come back if empty were passed through as a null
+      -- and upstream read it as zeros.
+      put cxSchnorrSign(cx1tSk, cx1tMsg, empty) into cx1tFreshA
+      put cxSchnorrSign(cx1tSk, cx1tMsg, empty) into cx1tFreshB
+      cx1stAssert "an absent aux gives two DIFFERENT signatures", not cx1stSameHex(cxHexEncode(cx1tFreshA), cxHexEncode(cx1tFreshB))
+      cx1stAssert "and neither one is the zero-aux signature", not cx1stSameHex(cxHexEncode(cx1tFreshA), cx1kSchnorrSig1)
+      cx1stAssert "both signatures still verify", cxSchnorrVerify(cx1tPub, cx1tMsg, cx1tFreshA) is true and cxSchnorrVerify(cx1tPub, cx1tMsg, cx1tFreshB) is true
+      -- The three new length accessors, called by name.
+      cx1stAssert "cxSchnorrSignatureLen is 64", cxSchnorrSignatureLen() is 64
+      cx1stAssert "cxXOnlyPubkeyLen is 32", cxXOnlyPubkeyLen() is 32
+      cx1stAssert "cxTaprootOutputLen is 33 (key plus a parity byte)", cxTaprootOutputLen() is 33
+      -- Fail closed.
+      cx1stAssert "cxXOnlyPubkey refuses a 33-byte public key", cx1stThrows("cxXOnlyPubkey", cxHexDecode(cx1kPubOneCompressed))
+      cx1stAssert "cxSchnorrVerify refuses a 33-byte key (a length is a caller bug, not a verdict)", cx1stThrows3("cxSchnorrVerify", cxHexDecode(cx1kPubOneCompressed), cx1tMsg, cx1tSig)
+   catch cx1tError
+      cx1stSectionFailed "BIP-340 Schnorr", cx1tError
+   end try
+end cx1stRunSchnorr
+
+command cx1stRunTaproot
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local cx1tInternal, cx1tTweak, cx1tZeroTweak, cx1tSeckey, cx1tTweaked, cx1tOutKey, cx1tSig, cx1tMsg, cx1tRecord
+   cx1stSection "BIP-341 Taproot (published wallet vectors)"
+   try
+      put cxHexDecode(cx1kTapInternal0) into cx1tInternal
+      put cxTaprootTweak(cx1tInternal, empty) into cx1tTweak
+      put cx1tTweak["outputKey"] into cx1tOutKey
+      cx1stAssert "the key-path-only output key matches BIP-341 vector 0", cx1stSameHex(cxHexEncode(cx1tOutKey), cx1kTapOutput0)
+      cx1stAssert "the parity byte is 0 or 1", cx1tTweak["parity"] is 0 or cx1tTweak["parity"] is 1
+      -- cxTaprootTweakPubkey is the .lcb handler cxTaprootTweak is a thin
+      -- slicer over, and it is public API in its own right. Pin it to the
+      -- PUBLISHED key first and only then assert the two agree - the
+      -- cxHdDeriveChild lesson: testing only the wrapper cannot separate "the
+      -- record is right" from "the record and the slicing are wrong in the
+      -- same direction". This also pins the 33-byte layout: 32 bytes of key
+      -- then one parity byte, in that order.
+      put cxTaprootTweakPubkey(cx1tInternal, empty) into cx1tRecord
+      cx1stAssert "cxTaprootTweakPubkey returns a 33-byte record", the number of bytes of cx1tRecord is cxTaprootOutputLen()
+      cx1stAssert "its first 32 bytes are the published output key", cx1stSameHex(cxHexEncode(byte 1 to 32 of cx1tRecord), cx1kTapOutput0)
+      cx1stAssert "and its last byte is the parity cxTaprootTweak reports", byteToNum(byte 33 of cx1tRecord) is cx1tTweak["parity"]
+      cx1stAssert "and the address is BIP-341's published bc1p string", cxBtcAddressP2TRFromInternal(cx1tInternal, empty) is cx1kTapAddress0
+      -- The same operation WITH a script tree, so both lengths of tagged-hash
+      -- input (32 bytes and 64) have a published answer behind them.
+      put cxTaprootTweak(cxHexDecode(cx1kTapInternal1), cxHexDecode(cx1kTapRoot1)) into cx1tTweak
+      cx1stAssert "a script-tree root gives vector 1's output key", cx1stSameHex(cxHexEncode(cx1tTweak["outputKey"]), cx1kTapOutput1)
+      cx1stAssert "and vector 1's published address", cxBtcAddressP2TRFromInternal(cxHexDecode(cx1kTapInternal1), cxHexDecode(cx1kTapRoot1)) is cx1kTapAddress1
+      -- THE CONSENSUS DISTINCTION. An EMPTY merkle root is the specification's
+      -- empty byte string; 32 ZERO BYTES is a script commitment to a zero root.
+      -- They hash different lengths and must give different output keys. If
+      -- these ever agreed, every key-path-only address this library produced
+      -- would be wrong, and it would still look like an address.
+      put cxTaprootTweak(cx1tInternal, cx1stRepeatByte(0, 32)) into cx1tZeroTweak
+      cx1stAssert "an EMPTY merkle root is not a 32-zero root", not cx1stSameHex(cxHexEncode(cx1tZeroTweak["outputKey"]), cx1kTapOutput0)
+      -- The private half, and then the loop closed: the tweaked PRIVATE key
+      -- must sign for the output key the PUBLIC path derived on its own.
+      put cxHexDecode(cx1kTapSeckey0) into cx1tSeckey
+      cx1stAssert "the internal key is the x-only key of its private key", cx1stSameHex(cxHexEncode(cxXOnlyPubkey(cx1tSeckey)), cx1kTapInternal0)
+      put cxTaprootTweakSeckey(cx1tSeckey, empty) into cx1tTweaked
+      cx1stAssert "the tweaked private key matches BIP-341's published value", cx1stSameHex(cxHexEncode(cx1tTweaked), cx1kTapTweaked0)
+      put cxHexDecode(cx1kSchnorrMsg1) into cx1tMsg
+      put cxSchnorrSign(cx1tTweaked, cx1tMsg, cxHexDecode(cx1kSchnorrAux1)) into cx1tSig
+      cx1stAssert "the tweaked private key signs for the tweaked public key", cxSchnorrVerify(cx1tOutKey, cx1tMsg, cx1tSig) is true
+      -- cxBtcAddressP2TR is UNCHANGED and must stay so: it encodes the output
+      -- key it is given and never tweaks. If a future edit made it tweak, every
+      -- existing correct call would silently become a DOUBLE tweak - a
+      -- valid-looking address nobody can spend from - so the two handlers
+      -- disagreeing on the same 32 bytes is the assertion.
+      cx1stAssert "cxBtcAddressP2TR still does NOT tweak", cxBtcAddressP2TR(cx1tInternal) is not cx1kTapAddress0
+      -- Fail closed.
+      cx1stAssert "a 33-byte internal key is refused", cx1stThrows2("cxTaprootTweak", cxHexDecode(cx1kPubOneCompressed), empty)
+      cx1stAssert "an internal key that is not on the curve is refused", cx1stThrows2("cxTaprootTweak", cxHexDecode(cx1kSchnorrPubOffCurve), empty)
+      cx1stAssert "a 31-byte merkle root is refused", cx1stThrows2("cxTaprootTweak", cx1tInternal, cx1stRepeatByte(0, 31))
+      cx1stAssert "cxBtcAddressP2TRFromInternal refuses a 33-byte key", cx1stThrows2("cxBtcAddressP2TRFromInternal", cxHexDecode(cx1kPubOneCompressed), empty)
+      cx1stAssert "cxTaprootTweakSeckey refuses a 31-byte key", cx1stThrows2("cxTaprootTweakSeckey", cx1stRepeatByte(0, 31), empty)
+   catch cx1tError
+      cx1stSectionFailed "BIP-341 Taproot", cx1tError
+   end try
+end cx1stRunTaproot
+
 function cx1stThrows pHandler, pArg
    local cx1tThrew
    put "false" into cx1tThrew
@@ -10830,6 +10999,21 @@ function cx1stThrows2 pHandler, pArgA, pArgB
    end try
    return cx1tThrew is "true"
 end cx1stThrows2
+
+function cx1stThrows3 pHandler, pArgA, pArgB, pArgC
+   local cx1tThrew
+   put "false" into cx1tThrew
+   try
+      do "get" && pHandler & "(pArgA, pArgB, pArgC)"
+   catch cx1tError
+      put "true" into cx1tThrew
+   end try
+   return cx1tThrew is "true"
+end cx1stThrows3
+
+function cx1stSameHex pA, pB
+   return ("h" & pA) is ("h" & pB)
+end cx1stSameHex
 
 function cx1stToLowerText pText
    local cx1tI, cx1tCount, cx1tCode, cx1tOut

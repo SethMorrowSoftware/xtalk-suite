@@ -59,6 +59,70 @@ green. The headless ladder is now at its TRUE ceiling: what remains needs
 an engine (the runbook's S1-S4 sessions), a platform box (S5), a human
 (Phase 5's hostile review + soak), or an owner's five minutes on a brief.
 
+**THE LAST THREE HEADLESS ITEMS CLOSED (2026-08-16, commits `55f9130` and
+`6372cc8`).** A re-ask after the waves-4-5 banner found three items that were
+still genuinely finishable without an engine, two of them owed by earlier
+banners: Hold'em's 2e LIVENESS remainder (the act-timer/time-bank/sit-out/
+late-join/redial list the v0.21.0 change recorded as open - now built to
+spec 9 with the timer lengths riding the signed cfg, timeouts as fields on
+the existing act/bid wires so a pre-liveness client fails visibly rather
+than downgrading, transcript-derived bank state, and the onion redial
+ordered under the election watchdog; protocol-kat 114 pins, harness
+section 20, v0.23.0), the 720p RE-LAYOUT this document's correction
+promised (1024x640 by rect arithmetic - 51 rects in budget, 43-rect
+disjointness set pairwise disjoint - and the `check-stack-size.py` SKIP
+entry REMOVED, so the gate now holds holde-em like every other stack; the
+confirming eye is the OXT pass's), and coinxt's cnx_memzero (ABI 5, every
+`.lcb` allocation wiped before free, a real throw-path leak fixed en
+route, all four non-mac binaries rebuilt with the Windows-bar deviation
+RECORDED in the member's CLAUDE.md). Items A.3 and A.12 are struck below;
+A.1 is rewritten to its as-built state. The ceiling claim of the previous
+banner now holds without residue: everything left in this file needs an
+engine, a second machine, a Tor daemon, a platform box, a human review,
+or an owner decision.
+
+**A REVIEW OF THAT WORK FOUND 14 DEFECTS, AND ALL 14 ARE FIXED (2026-08-16,
+commits `510f904` .. `1a2c9c1`).** The banners above record what was BUILT; this
+one records what reading it found, because a punch list that only ever grows
+green is not being read. A code review of the day's own pull request returned
+thirteen findings, and CI had already caught a fourteenth. Ten were in the
+Hold'em liveness layer written hours earlier - including two that made its
+written contracts false (a mid-redial dial failure cancelled the election
+watchdog, so the election could never conclude; and a client that caught up by
+full replay diverged permanently, which the KNOWN EDGE note claimed a reconnect
+would heal). A cluster of four shared one root cause worth naming: consensus
+state was written around a fold that can refuse, and since every client folds
+identically, that wrote WRONG CONSENSUS rather than a divergence any transcript
+check could detect. The other four were coinxt's export gate silently
+fail-opening for exactly the Windows DLLs it is the only check for, a wipe error
+that could displace a real status, CI asserting a hardcoded ABI that the memzero
+bump invalidated, and this document's own overstated claim about
+`check-stack-size.py`.
+
+Three things were done that the findings did not ask for, because the review
+exposed the SHAPE of the problem rather than one instance: sodiumxt's committed
+binaries are now EXECUTED in CI against published RFC 9496 vectors (they never
+had been, and they are what the Level 2 deal binds to); the runbook's ABI
+numbers were swept current and its inventory extended through wave 5, since a
+tester following it faithfully would have skipped everything built in the last
+two days; and the 720p arithmetic became a committed gate instead of an
+attestation. Full detail in each member's ledger.
+
+**THE FIRST OWNER DECISION CAME BACK, AND IT WAS A BUILD (2026-08-16, commit
+`affdf1c`).** D-01 - the most-blocking of the 21 briefs - was decided "vendor
+it", and coinxt shipped BIP-340 Schnorr and the BIP-341 Taproot tweak the same
+day at ABI 6, closing A.10. Two things are worth carrying out of it. First, the
+brief NAMED THE WRONG LIBRARY: it said `secp256k1-zkp` because coinxt's own
+notes did, and nobody checked until the work started - upstream
+bitcoin-core/secp256k1 carries the modules BIP-340 needs, so the decision was
+cheaper than the brief priced it (the canonical library instead of a fork, and
+no second build system, since coinxt vendors by copying pinned sources).
+A brief is only as good as its evidence, and this one inherited an assumption
+rather than testing it. Second, the brief's own RECOMMENDATION - hold the
+deferral - lost, correctly: it argued from timing ("no consumer needs Taproot
+spends today"), and timing is the owner's to weigh, not the suite's. Both are
+recorded in D-01 rather than tidied away.
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
@@ -88,19 +152,24 @@ the one release gap. The rest is label/doc hygiene and recorded owner decisions.
 Code that does not exist yet: planned phases, designed-but-unshipped surfaces,
 and one functional hole.
 
-1. **Hold'em: the open phases — 2e remainder, 2f, 3, 4, 5** (large).
-   Built and folded home at v0.18.0: the Phase 1 hotseat game (evaluator
-   exhaustively verified over all 2,598,960 hands, settlement fuzzed over ~90k
-   configs), the Phase 2 online lobby and 2d online play (netsim-pinned on one
-   machine), the single-machine half of 2e (reconnect + adversarial hardening),
-   and the auditable Level 0 committed shuffle. Remaining: the rest of 2e
-   (street ckpt wires, show/muck, online-History folding — recorded deferrals),
-   2f onion tables, Phase 3 (the onion deck oracle, host election), Phase 4
-   (ristretto255 mental poker — blocked on item 2), Phase 5 (DLEQ proofs,
-   hostile review, soak). The Level-0 cheating-dealer caveat closes only when
-   online play carries independent per-player seeds.
+1. **Hold'em: the open phases — ~~2e remainder, 2f, 3~~, 4, 5** (was large;
+   rewritten 2026-08-16 to its as-built state). Everything statically
+   buildable is BUILT, at v0.23.0: all of 2e (checkpoints, show/muck,
+   online History, host election, and — closing the last recorded slice —
+   act timers/time-bank/sit-out/late-join/onion-redial, commit `6372cc8`),
+   2f onion tables, the Phase 3 deck oracle, the 4a-4e Level 2 layer
+   (compute + void-and-audit + the five cheater bots, every attack
+   detected and attributed), and Phase 5's DLEQ proofs (a wrong unmask
+   step refused instantly on a dleq=1 table). Genuinely remaining, and
+   none of it headless: Phase 4f (deal-time budget measurement and the
+   played-hand Level 2 wiring — engine-era by definition), the live exit
+   gates (multi-machine rp1 session, two-machine onion table + tor, the
+   three-machine oracle round, the timed liveness session), and Phase 5's
+   hostile review + soak (human-era). The Level-0 cheating-dealer caveat
+   closed in design when online play carried independent per-player seeds;
+   its live confirmation rides the multi-machine pass.
    — `holde-em/IMPLEMENTATION-PLAN.md`, `holde-em/README.md` (Status),
-   `holde-em/CLAUDE.md` (fold record)
+   `holde-em/CLAUDE.md` (fold record + contracts)
 
 2. **~~SodiumXT ristretto255 surface (Workstream U)~~ SHIPPED statically
    2026-08-15** (SodiumXT ABI 8: the five sxRistretto* handlers, no sxHash512
@@ -113,11 +182,28 @@ and one functional hole.
    mult for DLEQ).
    — `sodiumxt/CLAUDE.md` ABI table, `holde-em/IMPLEMENTATION-PLAN.md` (Workstream U)
 
-3. **Hold'em table 720p re-layout (1024x690 -> height <= 640)** (small). The
-   overage is real — the status line (y 632-672) and quick-bet row (y 688) live
-   below the fold — so this is a re-layout needing an OXT eye, not a number
-   trim. Carries a written SKIP in `tools/check-stack-size.py` until it lands.
-   — `tools/check-stack-size.py` SKIP entry, `holde-em/src/holdem.livecodescript:573,652`
+3. **~~Hold'em table 720p re-layout (1024x690 -> height <= 640)~~ SHIPPED
+   statically 2026-08-16** (commit `6372cc8`: 1024x640, the layout reclaimed
+   coherently rather than squeezed — felt 48..524, pot line below the board,
+   re-rhythmed bottom rows — verified by rect ARITHMETIC: 51 control rects
+   in budget, the 43-rect disjointness set pairwise disjoint; the SKIP entry
+   is REMOVED from `tools/check-stack-size.py`).
+   **That sentence overstated its gate, and a review caught it the same day**:
+   `check-stack-size.py` reads ONE number per stack and never looks at a
+   control, so removing the SKIP restored a window check and pinned none of
+   the arithmetic above - which had come from a scratchpad script run once
+   and never committed. It is a gate now: `holde-em/tools/check-table-layout.py`
+   (2026-08-16) re-derives every control rect from the builders on every push.
+   It also corrected the numbers: "51 rects" were 51 SET-THE-RECT SITES, which
+   build **159 controls** (152 in the disjointness set, 5635 pairs), so the
+   original "43-rect" figure was never reproducible from the source. Two
+   further corrections recorded en route:
+   this item's "quick-bet row (y 688)" was a misread (688 was a button's x;
+   the real overage was the status line plus the 690 height), and the
+   original "needing an OXT eye, not a number trim" was half right — the
+   re-layout was designable by arithmetic; only the confirming EYE (nothing
+   clipped, the felt still reads) is the OXT pass's.
+   — `holde-em/src/holdem.livecodescript` (kHeStackRect, kUIVersion 15)
 
 4. **ONIONXT integration plan Phases 2-3: Model C for DHT-Channels** (large).
    The §6 design (identity unification, per-channel onion services, the svc=
@@ -153,19 +239,38 @@ and one functional hole.
    field; the demo never populates it. Demo-side wiring only.
    — `riptide/examples/riptide-social.livecodescript:78-79`
 
-10. **coinxt Schnorr/BIP-340 + the Taproot tweak** (large; deferred with
-    Taproot). Waits on a secp256k1-zkp vendoring decision; today
-    cxBtcAddressP2TR encodes a pre-tweaked key and cannot compute the BIP-341
-    tweak.
-    — `coinxt/CLAUDE.md:528`, `coinxt/SPEC.md:158-160`
+10. **~~coinxt Schnorr/BIP-340 + the Taproot tweak~~ SHIPPED statically
+    2026-08-16** (commit `affdf1c`, coinxt ABI 6). The blocking decision
+    (D-01) was DECIDED "vendor it", and the library this item named was
+    wrong: upstream **bitcoin-core/secp256k1** carries schnorrsig and
+    extrakeys in-tree, so the zkp fork was never needed, and coinxt's
+    copy-pinned-sources model meant no second build system. 58 files
+    hash-verified against the pin; all 19 published BIP-340 vectors (10
+    negative) and all 14 BIP-341 wallet vectors drive it. `cxBtcAddressP2TR`
+    is deliberately UNCHANGED - making it tweak would turn every existing
+    correct call into a permanently unspendable double tweak - so the full
+    BIP-341 path is a separately named handler. **Remaining from this item:**
+    the script layer's OXT pass, the Windows DLLs' execution proof (both
+    already counted in section B), and one genuine gap now recorded in
+    coinxt's docs rather than assumed - there is NO BIP-341 sighash builder;
+    coinxt signs a sighash it is handed and cannot compute one.
+    — `coinxt/CLAUDE.md` (the dated rule-change entry), `coinxt/SPEC.md` 2.1
 
 11. **coinxt WIF encode/decode** (small). Designed in SPEC, "handler not found"
     today; the Base58Check framing already exists.
     — `coinxt/README.md:15-17`
 
-12. **coinxt cnx_memzero export** (small; ABI bump). The PBKDF2 seed out-buffer
-    is freed unwiped; the source records the fix's shape.
-    — `coinxt/src/coinxt.lcb:125-135`
+12. **~~coinxt cnx_memzero export~~ SHIPPED statically 2026-08-16** (commit
+    `55f9130`: ABI 5, the export a thin wrap of the already-vendored
+    trezor-crypto memzero; every `.lcb` allocation now wiped before free —
+    unconditionally, because per-site secrecy classification fails open
+    when wrong — and the audit fixed a real throw-path leak in the old
+    sFinish; all four non-mac binaries rebuilt, the Windows DLLs' below-bar
+    static-checks-only state RECORDED in `coinxt/CLAUDE.md`, superseded by
+    the next release-binaries dispatch). Remaining from this item: the
+    `.lcb` call sites' OXT pass and the DLLs' Windows execution proof —
+    both already counted in section B's backlog, not new items.
+    — `coinxt/CLAUDE.md` (as-built entry), `coinxt/src/coinxt.lcb`
 
 13. **nocloud HTTP-host Phase 3: per-route streaming/params** (large). The
     deep-dive's own ledger names it the one open item; enabler for its §4

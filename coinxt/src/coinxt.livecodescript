@@ -1,7 +1,9 @@
 script "coinxt"
 
 -- coinxt.livecodescript - the CoinXT script layer (phase 3: encodings and
--- addresses; phase 4: BIP-39 mnemonics and BIP-32 HD derivation).
+-- addresses; phase 4: BIP-39 mnemonics and BIP-32 HD derivation; phase 5:
+-- transaction building; ABI 6: the BIP-341 Taproot tweak and the P2TR address
+-- that applies it).
 --
 -- WHAT LIVES HERE AND WHY. Everything in this file is checksummed byte
 -- shuffling with no secret-dependent branch, so it belongs in script where it
@@ -11,9 +13,12 @@ script "coinxt"
 -- bits and verifies checksums.
 --
 -- The inverse rule matters just as much: nothing that touches a private key or
--- a curve point is implemented here. Those are src/coinxt.lcb over
--- trezor-crypto. If you find yourself reaching for modular arithmetic on a
--- 256-bit number in this file, stop; it is in the wrong layer.
+-- a curve point is implemented here. Those are src/coinxt.lcb over the two
+-- vendored native libraries (trezor-crypto for the hashes, ECDSA, ECDH and the
+-- BIP-32 curve steps; upstream libsecp256k1 for BIP-340 Schnorr and the
+-- BIP-341 tweak - see SPEC.md section 2 for why there are now two). If you
+-- find yourself reaching for modular arithmetic on a 256-bit number in this
+-- file, stop; it is in the wrong layer.
 --
 -- ==========================================================================
 -- STATUS: ENGINE-PASSED, twice. This block used to read "NEEDS AN OXT PASS";
@@ -552,7 +557,9 @@ end cxBech32Const
 -- THE ITEM-DELIMITER GUARDS.
 --
 -- Nine public handlers below read comma-separated lists (bech32's 5-bit values,
--- the 8-to-5 converters, the mnemonic word split, the path split), and an
+-- the 8-to-5 converters, the mnemonic word split, the path split) - ten since
+-- ABI 6 added cxBtcAddressP2TRFromInternal, which reaches the bech32m encoder
+-- the same way cxBtcAddressP2TR does - and an
 -- `item` chunk reads whatever the ENGINE's delimiter currently is - which is
 -- GLOBAL MUTABLE STATE in this family (templates/CLAUDE.md rule 5). An app that
 -- did `set the itemDelimiter to tab` and did not put it back would get silently
@@ -1119,12 +1126,27 @@ end cxBtcAddressP2WPKHInner
 -- key.
 --
 -- READ THIS BEFORE USING IT. The argument is the TWEAKED output key, not an
--- internal key: BIP-341 defines the output key as Q = P + int(tagged_hash(P ||
--- merkle_root)) * G, and computing that needs the BIP-340 surface CoinXT has
--- deferred with Taproot (see CLAUDE.md). This handler does the encoding half
--- only. Handing it a raw internal key produces a VALID-LOOKING address that
--- nobody can spend from, so if you do not already know your key is tweaked,
--- it is not.
+-- internal key. BIP-341 defines the output key as
+-- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, and this handler
+-- does the ENCODING HALF ONLY: it takes the Q you already have and spells it
+-- as an address. Handing it a raw internal key P produces a valid-looking
+-- address nobody can spend from.
+--
+-- WHAT CHANGED IN ABI 6, AND WHAT DID NOT. CoinXT can now compute that tweak
+-- (cxTaprootTweak, below, over the BIP-341 surface added with libsecp256k1),
+-- so the limitation this comment used to record - "computing that needs the
+-- BIP-340 surface CoinXT has deferred" - is gone. THIS HANDLER'S MEANING IS
+-- NOT CHANGED BY THAT, deliberately and permanently: it still encodes the key
+-- it is given and still does not tweak. Making it tweak would silently turn
+-- every existing correct call - an app that pre-tweaked its key elsewhere -
+-- into a DOUBLE tweak, i.e. a different, valid-looking, permanently
+-- unspendable address, with no way for the handler to tell the two cases apart
+-- (both arguments are 32 bytes) and no way for the caller to notice. That is
+-- exactly the wrong-but-plausible answer this library refuses to produce.
+--
+-- So: if you hold an internal key, call cxBtcAddressP2TRFromInternal. If you
+-- hold an output key, call this. If you are not sure which you hold, you hold
+-- an internal key.
 function cxBtcAddressP2TR pOutputKey
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1152,6 +1174,97 @@ private function cxBtcAddressP2TRInner pOutputKey
    end if
    return cxSegwitAddressEncode(kCxHrpMainnet, 1, pOutputKey)
 end cxBtcAddressP2TRInner
+
+-- ==============================================================================
+-- BIP-341 Taproot: the tweak, and the address builder that applies it.
+--
+-- STATUS: verified statically and executed headlessly against BIP-341's own
+-- published wallet test vectors (tools/check-script-vectors.py drives the real
+-- script through the real shim); needs an OXT pass. New in ABI 6.
+-- ==============================================================================
+
+-- Q = P + int(hash_TapTweak(bytes(P) || merkle_root)) * G, BIP-341's output
+-- key, as a named array:
+--
+--   outputKey   the 32-byte x-only output key. This is the witness program of
+--               the P2TR scriptPubKey and the payload of the bc1p... address.
+--   parity      0 if the output point has an even Y coordinate, 1 if odd. A
+--               key-path spend does not need it; a script-path spend puts it
+--               in the low bit of its control block's first byte.
+--
+-- pMerkleRoot is EMPTY for a key-path-only output - the single-signature case,
+-- and the one nearly every wallet wants - or the 32-byte root of a script
+-- tree.
+--
+-- EMPTY IS NOT 32 ZERO BYTES, AND THE DIFFERENCE IS CONSENSUS. BIP-341 hashes
+-- `bytes(P) || merkle_root` where merkle_root is the EMPTY BYTE STRING when
+-- there is no script tree, so the key-path-only tweak hashes 32 bytes and a
+-- rooted one hashes 64. Passing 32 zeros instead of empty computes a valid
+-- tweak for a script tree whose root happens to be zero - a different output
+-- key, a different address, and coins that only a script nobody has can move.
+-- The two cases are carried by LENGTH all the way down to the C shim for
+-- exactly this reason; there is no sentinel value to get wrong.
+--
+-- This handler needs no itemDelimiter guard: it is byte slicing over a fixed
+-- 33-byte record and contains no `item` expression. cxBtcAddressP2TRFromInternal
+-- below does need one, because the bech32m encoder it calls moves 5-bit groups
+-- as a comma list.
+function cxTaprootTweak pInternalKey, pMerkleRoot
+   local tRecord, tResult, tKeyLen, tRootLen
+   put the number of bytes of pInternalKey into tKeyLen
+   if tKeyLen is not 32 then
+      throw "CoinXT: cxTaprootTweak: the internal key must be a 32-byte x-only public key."
+   end if
+   put the number of bytes of pMerkleRoot into tRootLen
+   if tRootLen is not 0 and tRootLen is not 32 then
+      throw "CoinXT: cxTaprootTweak: the merkle root must be empty (a key-path-only output) or 32 bytes (a script-tree root)."
+   end if
+   -- The .lcb hands back one record so the parity travels with the key it
+   -- belongs to; the slice widths come from the shim, never from a constant
+   -- written down here (the same rule as every other length in this library).
+   put cxTaprootTweakPubkey(pInternalKey, pMerkleRoot) into tRecord
+   put cxXOnlyPubkeyLen() into tKeyLen
+   put byte 1 to tKeyLen of tRecord into tResult["outputKey"]
+   put byteToNum(byte (tKeyLen + 1) of tRecord) into tResult["parity"]
+   return tResult
+end cxTaprootTweak
+
+-- The full BIP-341 address path: internal x-only key (plus an optional script
+-- tree root) to a mainnet "bc1p..." address, tweak included.
+--
+-- This is the handler almost every caller wants, and it is a SEPARATE handler
+-- from cxBtcAddressP2TR rather than a second argument to it. An absent
+-- parameter in xTalk is indistinguishable from an empty one, so an optional
+-- pMerkleRoot could not tell "encode this output key" from "tweak this
+-- internal key with no script tree" - and those two readings of the same 32
+-- bytes produce different addresses, one of which is unspendable. A separate
+-- name is the only way to make the caller say which they meant.
+function cxBtcAddressP2TRFromInternal pInternalKey, pMerkleRoot
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcAddressP2TRFromInternalInner(pInternalKey, pMerkleRoot) into tResult
+   catch tError
+      -- CAPTURE, DO NOT RE-THROW HERE. See the note above cxBech32EncodeValues:
+      -- a throw issued INSIDE a catch block does not reach the caller on OXT.
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcAddressP2TRFromInternal
+
+private function cxBtcAddressP2TRFromInternalInner pInternalKey, pMerkleRoot
+   local tTweak
+   put cxTaprootTweak(pInternalKey, pMerkleRoot) into tTweak
+   return cxSegwitAddressEncode(kCxHrpMainnet, 1, tTweak["outputKey"])
+end cxBtcAddressP2TRFromInternalInner
 
 -- The lowercase Ethereum address for a public key: the last 20 bytes of
 -- Keccak-256 over the 64 bytes of the UNCOMPRESSED key, without its 0x04 prefix.

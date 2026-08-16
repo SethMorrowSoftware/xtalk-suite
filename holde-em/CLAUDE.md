@@ -50,10 +50,26 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   gate's window-building regex ended in a literal backspace byte, so the
 >   width/height spelling had never matched; the rect spelling this stack uses was
 >   also unknown to it (and to `tools/check-stack-size.py`, which now parses it).
-> - The stack ships at 1024x690 - 50px over the suite's 720p height budget, with the
->   status line and quick-bet row genuinely below y=640. It carries a written SKIP in
->   `tools/check-stack-size.py`; the 720p re-layout is recorded follow-up work, not a
->   number a gate can hold down.
+> - The stack SHIPPED at 1024x690 - 50px over the suite's 720p height budget, with
+>   the status line and quick-bet row genuinely below y=640 - and carried a written
+>   SKIP in `tools/check-stack-size.py` until the recorded follow-up landed. **The
+>   720p re-layout landed at v0.23.0 (2026-08-16)**: 1024x640, the felt's vertical
+>   rhythm tightened (felt 48..524, board centre 300 -> 286, the pot line moved
+>   below the board, the seat ring pulled in) and the slider/action/status rows
+>   pulled inside the fold. The SKIP entry is GONE - `check-stack-size.py` holds
+>   this stack's WINDOW to the budget like every other stack, and that is the whole
+>   of what it holds: it reads one number per stack and never looks at a control.
+>   **What holds the CONTROLS is `tools/check-table-layout.py`, added 2026-08-16.**
+>   The re-layout's arithmetic (every control rect re-derived from the constants:
+>   all within 1024x640, non-layered chrome pairwise disjoint, the designed layers
+>   named) was real, but it came out of a scratchpad script that ran ONCE and was
+>   never committed - an attestation nobody else could re-run, which is the
+>   shipped-is-not-run lesson wearing a different hat. It is a gate now: 159
+>   control rects re-derived from the builders themselves on every push, each
+>   bounds-checked against kHeStackRect, the must-not-overlap set proved pairwise
+>   disjoint against a written exemption list, and an accounting check so no
+>   `set the rect` site can escape it unnamed. It is GEOMETRY only - the confirming
+>   EYE (nothing clipped, the felt still reads) is still the OXT pass's.
 > - The `he*` prefix is registered in `tools/check-handler-calls.py`, which also
 >   learned to strip `/* */` block comments (this file's header changelog leaked
 >   prose into its candidate set - and 31 phantom "definitions" out of it, suite-wide).
@@ -91,15 +107,25 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online play (2d) + onion tables (2f) + the 2e remainder (street
-ckpt wires, show/muck, online History folding, host election) + the Phase 3 deck
-oracle written, on Phase 1 hotseat, plus the Phase 4a-4d Level 2 layer (compute +
-void-and-audit sequencing), the 4e adversarial bots, and Phase 5's DLEQ proofs on
-SodiumXT ABI 9 (all pure; nothing plays on Level 2 yet), at v0.22.0. The pending
-live gates: a multi-hand onion table session on two machines with running tor (2f),
-and the Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle,
-killed mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle);
-the sx* DLEQ calls have never run on an engine.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online play (2d) + onion tables (2f) + the WHOLE 2e liveness
+layer (street ckpt wires, show/muck, online History folding, host election -- and,
+since v0.23.0, act timers + time-bank, sit-out/return, late-join, onion
+auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Phase
+4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
+bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
+Level 2 yet), at v0.24.0 -- v0.23.0 brought the table inside the suite's 720p
+budget (1024x640; the check-stack-size SKIP is gone, and since 2026-08-16 the
+control rects inside that window have their own gate,
+tools/check-table-layout.py, because the re-layout's arithmetic was originally
+an uncommitted scratchpad script) and v0.24.0 corrected ten
+reviewed defects in that liveness layer with NO wire change (the liveness
+contracts block below carries each one). The pending live gates: a
+TIMED multi-hand session on wall clocks (seats timing out for real), a multi-hand
+onion table session on two machines with running tor (2f, + a real host-stream
+loss -> redial), and the Phase 3 THREE-MACHINE oracle round (two players + a
+non-playing oracle, killed mid-hand and recovered per spec 9; + live tor for an
+onion-hosted oracle); the sx* DLEQ calls have never run on an engine, and the
+re-layout's confirming eye is the OXT pass's.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -162,6 +188,7 @@ this project that CAN be fully machine-verified. The gates, in the order CI runs
 ```sh
 python3 tools/check-livecodescript.py   # dialect gates, every .livecodescript
 python3 tools/check-docs.py             # smart-quote scan over *.md
+python3 tools/check-table-layout.py     # the table's control geometry, re-derived
 python3 tools/evaluator-kat.py          # spec 8.2 vectors (mirror of heEval7/heRank5)
 python3 tools/betting-kat.py            # spec 8.1/8.3 cases (mirror of heBetApply/heSettleOf)
 python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShuffleDeck)
@@ -318,12 +345,18 @@ touching the `heNetOnion*` section:
   - **H1:** streams + service close on leave/stop (`heNetStop`'s onion branch);
     the control connection deliberately survives between tables and is
     `oxShutdown` on closeStack (`gOxCtlUp` remembers we opened it).
-  - Deferred with 2e liveness, on purpose: auto-redial after a lost host stream
-    (today it fail-closes naming "Join again"). Host election LANDED (v0.21.0):
-    a lost host stream during play now routes through heNetHostLost before the
-    fail-closed message, so the successor is named (the section below).
+  - The 2e deferral CLOSED (v0.23.0): a lost host stream during play now arms
+    the bounded AUTO-REDIAL (heNetOnionRedialArm: 4 attempts, 2/4/8/16 s
+    doubling backoff, 10 s per dial -- the deterministic onion address is what
+    makes redialing the same invite the recovery) while the 60 s election
+    watchdog keeps counting underneath; every redial step gates on hostLost,
+    so the election always concludes and the redial stands down quietly.
+    Outside play the old fail-closed "Join again" message stands. The redial
+    hello carries the applied seq as a compatible trailing token item, so the
+    reconnect replay arrives TRIMMED (the v0.23.0 contracts block below).
   The whole section is verified statically; the live two-machine tor session is
-  the exit gate (harness section 17 pins the headless slice).
+  the exit gate (harness section 17 pins the headless slice; section 20 pins
+  the redial ordering).
 
 **2e remainder + Phase 3 deck oracle (v0.21.0, 2026-08-16 -- verified statically;
 the three-machine round is the live gate, + live tor for an onion oracle).** The
@@ -372,6 +405,170 @@ contracts to keep intact when touching these:
   - Harness: netplay (15) pins ckpts/show-muck/trimmed-resync/History; the
     oracle section (18) runs THREE loopback contexts (heTNetPump's third
     seat) and SKIPs the live legs by name.
+
+**2e liveness remainder + the 720p re-layout (v0.23.0, 2026-08-16), with the
+v0.24.0 CORRECTIONS folded in below (2026-08-16: ten reviewed defects in this
+layer, all local state-ordering/control-flow -- NO wire changed, protocol-kat's
+114 pins are untouched, so v0.23.0 and v0.24.0 clients speak the identical
+protocol). Verified statically; the timed live pass and the re-layout's
+confirming eye are what the OXT pass owes.** The contracts to keep intact when
+touching the liveness layer:
+  - **The timeout is a FIELD, never a new kind.** The host authors the
+    EXISTING act/bid wire with `seat=/timeout=1/bank=` marks; a pre-liveness
+    client engine-rejects it visibly (out of turn for the host's seat) instead
+    of mis-folding -- that compatibility is why the design refused a new
+    message type. The bodies + heads are pinned (protocol-kat seq 10..13);
+    changing a byte is a consensus break (pins move, kHeHarnessV bumps).
+  - **No deadline ever crosses a wire.** The signed cfg carries the LENGTHS
+    (`act=/bank=/miss=`; heNetCfgVal defaults keep pre-liveness cfgs folding),
+    the host-countersigned turn-opening wire starts every clock
+    (heNetTurnMark: the clock restarts only when the SUBJECT changes, so
+    redelivery never extends a deadline), and verification is interval-on-
+    one-clock: refuse a timeout more than kHeActSkewSecs (5 s, transport
+    jitter) EARLY -- deliberately not the +-600 s wall-clock precedent. The
+    verb/bank checks always run; they are transcript-deterministic.
+    **The waiver keys on the CLOCK, not on the wire's seq (v0.24.0).**
+    heNetTurnClockStart marks a turn's clock REPLAYED when it is started
+    while a host replay is streaming (catchUpTo set), and heNetTimeoutOk
+    waives the deadline for that turn only -- the next live turn mark
+    clears the flag, so a waiver can never shelter a rushing host on a
+    live turn. The seq-keyed waiver (a timeout wire at seq <= catchUpTo is
+    historical) stays as well, for wires whose turn mark predates the
+    replay. **What v0.23.0 got wrong, corrected here:** it had ONLY the
+    seq waiver, so a client that caught up by full replay started the
+    current turn's clock at replay time and then refused the host's LIVE
+    timeout (seq past catchUpTo, ~10 s elapsed against a 90 s limit) as
+    premature. Every other node folded the seat, so that client stayed one
+    action behind for the rest of the session, every later wire
+    engine-rejecting out of turn with no chain-level signal.
+    KNOWN EDGE, recorded not engineered away: a timeout drained out of the
+    REORDER BUFFER (a lost turn-opening wire redelivered in the same burst,
+    with no r! marker) can be early-refused by the one client that only
+    just learned of the turn -- locally indistinguishable from a rushing
+    host, so refusing is the right fail-visible call; its fold then
+    disputes at the settle. A reconnect DOES heal it now -- the replay
+    re-marks the turn's clock as replayed and the waiver applies -- which
+    is exactly what the v0.23.0 text claimed without it being true. The
+    live pass should still try to hit this.
+  - **Nothing consensus moves on a fold that did not happen (v0.24.0).**
+    heNetEngineFold records gGame["foldApplied"] and every caller that
+    writes shared state reads it FIRST: the bank spend and the miss count
+    only move for a timeout heBetApply actually took, and a live act/bid
+    only resets the miss count when the engine took THAT. v0.23.0 wrote all
+    three around a fold that can refuse -- and because every client does it
+    identically, the wrong state was CONSENSUS, not a divergence anything
+    could detect: a seat lost its one time-bank and gained a miss for an
+    action that never applied, and an out-of-turn wire from a stalling
+    client reset its miss count forever, so it never sat out.
+  - **Bank state is consensus, never a clock's guess.** The one per-hand
+    time-bank auto-arms on the first would-be timeout (a request wire would
+    race the timeout) and spends ON the wire (`bank=1` -> bankUsedBy); a
+    bank-denying or bank-double-spending host timeout is refused by name.
+  - **A refused timeout re-arms; it never latches (v0.24.0).** timeoutSent
+    is cleared only by heNetTurnMark, which a rejected fold never reaches
+    (turnKey does not move) -- so v0.23.0's host emitted once and then
+    exited on its guard forever: the seat never acted and the table stalled
+    SILENTLY, the exact failure the timer exists to prevent.
+    heNetTimeoutRearm restarts the interval on the refused wire (the same
+    wire on every client, so interval-on-one-clock survives): a bounded
+    retry one act period later instead of a 4 Hz re-emit storm.
+  - **Sit-out is transcript-derived**: `stand` (own key) or `miss=`
+    consecutive timeouts (heNetTimeoutMiss); a live act/bid RESETS the miss
+    count; sitting-out seats time out instantly (limit 0) and are dealt out
+    by heNetNextOccList -- the ONE occupant rule heNetHandKick and the
+    harness share (v0.24.0: its "seated with chips" half is
+    heNetSeatedWithChipsList, which heNetHandKick's parked-vs-over test
+    reads too -- the duplicate scan it used to carry could have drifted
+    with only one of the two pinned). The seat plate says SIT OUT ahead of
+    any countdown (heSeatFaceLabel, pure and pinned -- the countdown branch
+    used to win and painted "0s", which is what the limit IS for a
+    sitting-out seat). `sit` with no pub (own key) returns; the
+    host-assignment `sit` keeps its pub=, so the forms never collide.
+  - **A parked table can always resume (v0.24.0).** A short table WAITS
+    instead of declaring game over while 2+ stacks exist -- and the park is
+    LATCHED (gGame["handWait"]), so heNetNextHandTick fires from it in any
+    phase, and heNetGameReact kicks the table the moment the folded
+    transcript says two seats are dealable. v0.23.0 re-armed the beat only
+    under autoNext and additionally required phase "between" -- false when
+    the park came from heNetStartGame -- so the beat died on its first
+    firing, and nothing else kicked: the sit-return fold cleared sitOutBy
+    and stopped there, so Return succeeded and the table never dealt again.
+    heNetHandKick clears the latch BEFORE it emits anything, because its
+    own emissions fold re-entrantly through react.
+  - **Late-join rides the boundary, and requires PRESENCE (v0.24.0)**:
+    heNetSeatLateJoiners seats joined-but-unseated keys (ascending pubkey,
+    lowest empty seat, cfg-capped) as signed sit wires at each kick; full =
+    observer, and the standing replay machinery is what got the joiner
+    current. "Has joined" is a historical fact and nothing ever clears
+    boxByPub/admittedA, so it was NOT enough: a peer that joined and closed
+    its stack was seated as a ghost that timed out every turn until two
+    misses sat it out, then held the seat for the session (seats are never
+    released). heNetPubIsLive answers "present now" from state we already
+    keep -- a current transport handle (authoritative on the onion
+    transport: heNetOnionDead clears it at stream death) plus a last-heard
+    stamp, gGame["seenMsByPub"], written by heNetApplyWire and
+    heNetOnHandshake (the only liveness rp1 has -- it surfaces no
+    disconnect event). kHeSeatLiveSecs is a judgement call, not a measured
+    number -- **the owner ACCEPTED 600 s for the test pass (2026-08-16)**, so
+    it is settled for now and the live pass should still report whether a real
+    table's join-to-boundary gap fits inside it. **DECIDED 2026-08-16:
+    spectators are DEFERRED** (owner: "we do not need spectators at this
+    point"), so this is no longer an open question blocking the 2e live pass.
+    What that means concretely, recorded so nobody re-derives it: joining a
+    table with a free seat SEATS you at the next hand boundary and there is no
+    way to decline, because spec 4's read-only role is indistinguishable from a
+    player here -- the admission token has a role field, but every client that
+    can talk to this build sends "player", so refusing on role would refuse
+    real players. Whoever picks spectators back up needs a wire and/or UI
+    decision (a role a joiner can choose, or a sit-request wire the host
+    answers), not a code fix (also recorded in IMPLEMENTATION-PLAN.md 2e).
+  - **The redial must not race the election** -- structurally: the 60 s
+    wire-silence watchdog counts through every redial (a dead stream
+    delivers no wires), every redial step gates on hostLost, and the
+    stand-down NEVER clobbers the election's status message
+    (heNetOnionStandDown is quiet; BOTH exits from the redial state use it
+    since v0.24.0 -- the exhaustion branch used to run the election and
+    then call heNetOnionFail two lines later, whose heUISetStatus
+    overwrote the successor's name with "Join again"). Attempts are bounded
+    (kHeRedialMax/kHeRedialBaseTicks, heRedialWaitTicks pure); proof the
+    host answered is a host-signed wire APPLYING (heNetApplyWire resets the
+    counter), nothing weaker. The redial hello's trailing seq is items-1..3
+    compatible with old hosts (heAdmitTokenVerify never reads past item 3).
+  - **The election always concludes -- so a redial must never call
+    heNetOnionFail (v0.24.0).** heNetOnionFail tears the transport down via
+    heNetStop, which clears gGame["online"] and cancels the poll tick --
+    and heNetHostLossCheck exits on its FIRST line when online is not
+    "true". A mid-redial dial failure therefore killed the watchdog AND
+    attempts 2..4 (the bounded schedule collapsed to one), leaving a dead
+    table with no successor. heNetOnionDialFail owns the fork now: mid-
+    redial re-arms the schedule (heNetOnionRedialArm runs the election
+    itself at exhaustion), join-time still fails closed. When touching this
+    section, the rule is: nothing may tear the transport down while
+    hostLost is false and gameOn is true.
+  - **The re-layout is arithmetic until an eye confirms it.** Every rect
+    derives from the constants block (kHeStackRect 1024x640); the pot line
+    sits BELOW the board because the centre column above it belongs to seat
+    4's cluster and bet chip -- move anything and re-run the rect
+    arithmetic (bounds + pairwise disjointness with the designed layers
+    named) before trusting it -- and re-running it is a command now, not a
+    favour: `tools/check-table-layout.py` (2026-08-16) re-derives every
+    control rect from these constants and the builders that read them, so a
+    moved seat spot or board line fails the build instead of a comment.
+    check-stack-size gates the WINDOW (one number, no controls).
+  - Harness section 20 (heTestLivenessRun) pins all of it headlessly:
+    prescriptions and backoff pure, wire pins, the backdated-clock netsim
+    hand (premature-timeout refusal included), auto-sit-out, the waiting
+    table, stand/sit round-trips, a third context late-joining to identical
+    fold state, and the redial-vs-election ordering; the live legs are
+    SKIPped by name. **Every v0.24.0 correction above got its own pin
+    there** (kHeHarnessV 39), each one written to FAIL against the
+    v0.23.0 behaviour: the seat-plate label order, the replayed-clock
+    waiver and its expiry, an engine-refused timeout leaving bank/miss/
+    latch alone, a rejected act not resetting the miss count, the parked
+    latch firing the beat in any phase, the return unparking the table, a
+    ghost key not being seated (with a present one still seated beside
+    it), a mid-redial dial failure re-arming with online still true, and
+    exhaustion leaving the elected successor on the status line.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
@@ -663,6 +860,11 @@ tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gat
                                    since 2026-08-15 it carries the hold-em lineage
                                    checks as its 13-21 - the old idiom gate is retired)
 tools/check-docs.py                docs smart-quote scan
+tools/check-table-layout.py        the table's CONTROL geometry, re-derived from
+                                   the builders: bounds inside kHeStackRect +
+                                   pairwise disjointness outside a written
+                                   exemption list (the suite's check-stack-size
+                                   holds the WINDOW; this holds what is in it)
 tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
 tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)
 tools/shuffle-kat.py               playable integer deal (CI mirror of heShuffleDeck)

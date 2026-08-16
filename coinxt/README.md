@@ -3,12 +3,13 @@
 **Bitcoin and Ethereum cryptography for OpenXTalk (OXT) / the xTalk family.**
 
 CoinXT gives an xTalk app the primitives a wallet or a dapp client is built from, by wrapping
-**trezor-crypto** (the MIT-licensed, dependency-free C crypto core of the Trezor hardware wallet) behind
-a thin C ABI and a livecodescript API. One wrap covers both chains:
+**trezor-crypto** (the MIT-licensed, dependency-free C crypto core of the Trezor hardware wallet) and
+**bitcoin-core/secp256k1** (upstream libsecp256k1, MIT) behind a thin C ABI and a livecodescript API.
+One wrap covers both chains:
 
 - **secp256k1** keypairs, ECDSA (RFC 6979 deterministic), **recoverable** signatures and public-key
-  recovery (Ethereum's `v` / `ecrecover`), and ECDH - all built (see Status). Schnorr / BIP-340
-  (Taproot) is designed but deferred, because trezor-crypto's plain-C tree does not implement it.
+  recovery (Ethereum's `v` / `ecrecover`), ECDH, and - since 2026-08-16 - **BIP-340 Schnorr and the
+  BIP-341 Taproot tweak**. All built (see Status).
 - **Hashes** both chains need: SHA-256/512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST padding),
   RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512. (SHA3-512 is specced but not shipped - calling
   `cxSha3_512` is a `handler not found`; the vendored `sha3.c` implements it, so ship it or strike it
@@ -27,7 +28,9 @@ CoinXT (cx*)   src/coinxt.livecodescript
    |- encodings in SCRIPT   hex, Base58Check, Bech32/Bech32m, RLP, addresses (pure byte work)
    |- FFI seam              one .lcb module
 CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto (MIT, no external deps)
-   |- curve + hashes in C   secp256k1, SHA2/SHA3/Keccak-256/RIPEMD-160, HMAC, PBKDF2, BIP-32, BIP-39
+                                        +  vendored libsecp256k1 (MIT), for BIP-340 / BIP-341
+   |- curve + hashes in C   secp256k1, SHA2/SHA3/Keccak-256/RIPEMD-160, HMAC, PBKDF2, BIP-32, BIP-39,
+                            Schnorr, x-only keys, the Taproot tweak
 ```
 
 ## What CoinXT is NOT
@@ -35,18 +38,29 @@ CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto (MIT, no exter
 - **Not a wallet, node, or broadcaster.** It produces keys, addresses, and signed bytes. The app owns key
   storage, backup, the confirm-before-sign UX, and putting a signed transaction on the wire (optionally
   through Tor via OnionXT, a documentation-level composition).
-- **Not new cryptography.** Every curve op and hash is trezor-crypto's. CoinXT adds no cipher of its own,
-  the same rule SodiumXT and OnionXT hold.
+- **Not new cryptography.** Every curve op and hash is upstream, audited code. CoinXT adds no cipher of
+  its own, the same rule SodiumXT and OnionXT hold. (That rule used to name ONE upstream. It names two
+  since 2026-08-16, and the change is recorded as a decision in SPEC.md section 2.1 rather than edited
+  quietly into this sentence: trezor-crypto's plain-C tree has no BIP-340, and hand-rolling a signature
+  scheme is exactly what the rule exists to prevent.)
 - **Not hardware-wallet isolation.** It runs in a general-purpose OXT process; script variables are not
   locked memory. It is a strong, correct, self-contained crypto layer, not a secure element.
 
-## Why trezor-crypto
+## Why trezor-crypto, and why a second library beside it
 
 MIT-licensed, plain C, **no external dependencies**, and it bundles secp256k1 (also MIT). That is exactly
 what the family's FFI pattern wants: a self-contained C library with a buffer-in / buffer-out API and a
 permissive license we can vendor and redistribute. It is the crypto core of a shipping hardware wallet,
 so the curve and hash code is battle-tested. CoinXT vendors a subset of its `.c` files plus a small shim
 and builds one shared library per platform. No autotools, no submodule tree.
+
+**Taproot needed a second one.** trezor-crypto's plain-C tree has no BIP-340 implementation at all - it
+reaches Schnorr only through `zkp_bip340.c`, which drags in the whole bundled `secp256k1-zkp` and its
+build system. So since 2026-08-16 CoinXT also vendors **upstream bitcoin-core/secp256k1** (MIT, pinned
+at `439278a6`), compiled the same way: sources copied verbatim, three translation units, one `cc`, no
+second build system. It owns BIP-340 Schnorr, x-only keys and the BIP-341 tweak, and nothing else; the
+two libraries do not overlap. The rule change is written down in SPEC.md section 2.1 and the vendoring
+(the pin, the 58 files, the table-size decision) in `native/vendor/VENDOR.md`.
 
 ## Layout
 
@@ -72,13 +86,14 @@ CoinXT/
                             entries); the four committed release binaries are pinned by
                             src/code/MANIFEST.sha256
     vendor/                 the vendored trezor-crypto subset (MIT) + VENDOR.md + LICENSE.
+      libsecp256k1/         the vendored bitcoin-core/secp256k1 subset (MIT) + COPYING.
                             The curve half is a CLOSURE, not a pick-list: see VENDOR.md for
                             why hasher.c, blake, groestl, base58.c and address.c are in it
   docs/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to all 34 cnx_* exports);
+    coinxt.lcb              the foreign-handler module (binds to all 43 cnx_* exports, ABI 6);
                             engine-proven end to end: phase 1 closed 2026-08-08, phases 2-4
                             closed 2026-08-10 (the folded harness, 207/207 on the re-run)
     coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP
@@ -162,8 +177,8 @@ calls returned 33 and 65 bytes, distinct), and `Boolean` returns work (`cxVerify
 good signature and false for a tampered one). Private key 1 gave the generator G, the published
 RFC 6979 signature reproduced byte for byte, and `cxRecover` returned the signing key.
 
-Schnorr / BIP-340 is deferred to a Taproot phase: trezor-crypto's plain-C tree does not implement it,
-reaching Schnorr only through the bundled `secp256k1-zkp`.
+Schnorr / BIP-340 WAS deferred here for exactly that reason. It shipped at ABI 6 on 2026-08-16 over a
+second vendored library; see the ABI 6 entry at the end of this section.
 
 **Phase 3, encodings and addresses, is BUILT** and adds 19 public handlers in
 `src/coinxt.livecodescript`: hex, Base58Check, bech32/bech32m, SegWit addresses, `cxHash160` /
@@ -229,7 +244,62 @@ the BIP-143 signed transaction byte for byte included. The first half of the ext
 python-bitcointx accept fresh legacy and segwit spends under consensus rules, and eth-account recover
 the exact sender from fresh EIP-155 and EIP-1559 transactions, negative controls firing in every
 family. A live testnet broadcast is the one bar left before any transaction is called broadcastable.
-Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
+Schnorr/BIP-340 shipped at ABI 6 (below).
+
+**ABI 6, BIP-340 Schnorr and the BIP-341 Taproot tweak, is SHIPPED (2026-08-16).** The shim gains
+eight exports (43 now) over a SECOND vendored library, upstream bitcoin-core/secp256k1:
+`cnx_schnorr_sign` / `cnx_schnorr_verify`, `cnx_xonly_pubkey_from_seckey`,
+`cnx_taproot_tweak_pubkey` / `cnx_taproot_tweak_seckey` and three length accessors. `src/coinxt.lcb`
+wraps all of them (`cxSchnorrSign`, `cxSchnorrVerify`, `cxXOnlyPubkey`, `cxTaprootTweakPubkey`,
+`cxTaprootTweakSeckey`, `cxSchnorrSignatureLen`, `cxXOnlyPubkeyLen`, `cxTaprootOutputLen`) and the
+script layer adds `cxTaprootTweak` (the same tweak as a named array) and
+**`cxBtcAddressP2TRFromInternal`**, which is the P2TR address builder that actually tweaks. The
+surface is 90 public handlers (43 `.lcb` + 47 script).
+
+Three things a caller should know before using it:
+
+- **`cxBtcAddressP2TR` is unchanged and stays unchanged.** It encodes the output key it is given and
+  does not tweak, exactly as before. If you hold an INTERNAL key, call
+  `cxBtcAddressP2TRFromInternal`; if you are not sure which you hold, you hold an internal key.
+  Making the old handler tweak would have turned every existing correct call into a double tweak -
+  a valid-looking address nobody can spend from - with no way to tell the two cases apart, so the
+  two are separate handlers.
+- **An empty merkle root is a key-path-only output** (the single-signature case), and that is
+  BIP-341's empty byte string, **not 32 zero bytes**. The two produce different addresses. The
+  distinction is carried by length all the way down to the C, so there is no sentinel to get wrong.
+- **An empty `pAuxRand` means "draw fresh OS randomness"**, never an all-zero aux, so
+  `cxSchnorrSign` returns a different (equally valid) signature each time. Pass 32 bytes to
+  reproduce a published vector byte for byte.
+
+What is NOT in it, so nobody plans around a gap: there is **no BIP-341 sighash builder** (the
+`SigMsg` algorithm is not `cxBtcSighashSegwit`'s), and no script-path machinery - leaf hashes,
+merkle proofs and control blocks are not built, and only the merkle ROOT crosses the API as opaque
+bytes. CoinXT can receive to Taproot end to end and can sign a BIP-341 sighash you computed
+elsewhere; it cannot yet compute one.
+
+Correctness: **all 19 of BIP-340's official test vectors run, ten of them NEGATIVE** (a public key
+off the curve, has_even_y(R) false, a negated message, a negated s, two infinity cases, and the
+field-size / group-order edges), plus all 7 BIP-341 `scriptPubKey` vectors and all 7
+`keyPathSpending` inputs walked private key -> internal key -> tweaked key -> the published witness
+signature. `native/build.sh asan` is clean over the new code. The `.lcb` and script layers are
+verified statically and executed headlessly; they **need an OXT pass**.
+
+**ABI 5, the recorded secret-hygiene fix, is SHIPPED (2026-08-16).** The shim gains one
+export, `cnx_memzero(ptr, len)` - a wrap of the vendored trezor-crypto `memzero.c`
+(SecureZeroMemory / memset_s / explicit_bzero / a volatile loop, per platform; no wiping
+technique of our own) - and `src/coinxt.lcb` now wipes every raw out-buffer through it
+before freeing: the PBKDF2 seed path its header had recorded as the known gap, plus the
+other secret outputs the audit named (the BIP-32 HMAC-SHA512 block, the tweaked child
+private key, the ECDH point) and, unconditionally, every non-secret output too. No new
+public handler; the surface stays 80 (35 in the `.lcb`, 45 in the script layer), and the
+export is deliberately not script-visible - a script `Data` cannot be wiped in place, and
+that honest limit stands documented rather than papered over. The wipe contract is
+EXECUTED by the native gates on Linux (the ASan/UBSan self-test and `coin-kat.py`, which
+also drives the committed x86_64 library); the `.lcb` call sites are verified statically
+and need an OXT pass; the two Windows DLLs are MinGW cross-builds carrying the
+sodiumxt-precedent static checks (export parity, ABI-in-disassembly, clean imports) and
+need their Windows execution proof - the next `release-binaries.yml` dispatch supersedes
+them with `kat-windows`-proven builds (see CLAUDE.md for the recorded deviation).
 
 **WIF, the last designed encoding, is BUILT (2026-08-15)**: `cxWifEncode` / `cxWifDecode` in the
 script layer, no shim change, for **80** public handlers (35 in the `.lcb`, 45 in the script layer).
@@ -260,7 +330,7 @@ the current plan.
 ## A note on handling money
 
 CoinXT deals with private keys and real funds, so the family's "compose an audited library, never
-hand-roll crypto" rule counts double: the curve and hashes are trezor-crypto's, the app owns custody and
+hand-roll crypto" rule counts double: the curve and hashes are upstream's, the app owns custody and
 confirm-before-sign, and every checksum is verified on decode with a fail-closed error. See the security
 model in [SPEC.md](SPEC.md) section 8 and the rules in [CLAUDE.md](CLAUDE.md).
 

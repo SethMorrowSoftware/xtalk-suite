@@ -30,7 +30,38 @@ plainly.
 
 ---
 
-## D-01. Vendor secp256k1-zkp for coinxt Schnorr/BIP-340 + the Taproot tweak, or strike Taproot signing?
+## D-01. ~~Vendor secp256k1-zkp for coinxt Schnorr/BIP-340 + the Taproot tweak, or strike Taproot signing?~~ DECIDED 2026-08-16: VENDOR (and the library named here was WRONG)
+
+> **DECIDED: vendor it** (owner: "we would definitely like to vendor the required
+> software for taproot/schnorr"). SHIPPED the same day in commit `affdf1c`:
+> coinxt ABI 6, BIP-340 Schnorr and the BIP-341 tweak, driven by all 19 published
+> BIP-340 vectors (10 negative) and all 14 BIP-341 wallet vectors.
+>
+> **This brief named the wrong library, and the correction made the decision
+> cheaper.** It says `secp256k1-zkp` throughout because coinxt's own notes said
+> so, and the brief followed the note instead of checking. Upstream
+> **bitcoin-core/secp256k1** carries the `schnorrsig` and `extrakeys` modules
+> in-tree, which is everything BIP-340 and single-key BIP-341 need; the zkp fork's
+> extra value is adaptor signatures and rangeproofs coinxt does not use. So the
+> shipped answer is the canonical library Bitcoin Core itself ships rather than a
+> fork - a better audit story on the highest-stakes member, at the same cost.
+> The "second build system" cost this brief weighed was also overstated: coinxt
+> vendors by copying pinned sources and compiling them directly, and
+> libsecp256k1 supports that, so no build system was imported.
+>
+> **The option this brief recommended - hold the deferral - was NOT taken**, and
+> that is the owner's call, correctly. Recorded because a recommendation that
+> loses should stay visible: the reasoning was "no consumer needs Taproot spends
+> today", which is an argument about timing, not about cost, and the owner
+> weighed timing differently.
+>
+> What did NOT ship, and is now recorded in coinxt's own docs rather than here:
+> there is no BIP-341 sighash builder. coinxt can receive to Taproot end to end
+> and sign a sighash it is handed; it cannot compute one.
+
+**(original brief follows, unedited)**
+
+### D-01 (as written 2026-08-16, before the decision)
 
 **Why it is the owner's:** vendoring `secp256k1-zkp` is "an order of magnitude
 larger than everything above" (coinxt's words): a second library with its own

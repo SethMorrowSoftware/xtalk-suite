@@ -10,12 +10,12 @@ taskbar (~48) and the window title bar (~32) are gone, and a shade under
     width  <= 1200
     height <= 640
 
-and this gate holds every stack to it. The closing-pass stack shipped at
-780x1010 - its Tor section sat BELOW the bottom edge of exactly the
-screens it was meant to close legs on - which is how rules earn gates
+and this gate holds every stack's WINDOW to it. The closing-pass stack
+shipped at 780x1010 - its Tor section sat BELOW the bottom edge of exactly
+the screens it was meant to close legs on - which is how rules earn gates
 here (the checker-drift lesson: a rule without a gate rots).
 
-What is checked: literal stack sizes in the four spellings the family
+What IS checked: the stack's own size, in the four spellings the family
 uses -
 
     set the width of this stack to 820
@@ -24,6 +24,23 @@ uses -
     set the rect of this stack to kStackRect       (a "L,T,R,B" constant;
                                                     holde-em's spelling,
                                                     learned in the fold)
+
+What is NOT checked, and never has been: the CONTROLS inside that window.
+This gate reads ONE number per axis per stack and stops. It cannot tell
+whether a field, a button or a card slot sits inside the window it just
+measured, so a control pushed past the bottom edge passes here in silence
+- the same shape of failure as the 780x1010 stack, one level down. Nothing
+about a green run here says a demo's chrome fits, only that its window
+does.
+
+Closing that for the one stack whose layout is dense enough to need it:
+holde-em/tools/check-table-layout.py (2026-08-16) re-derives every control
+rect from holde-em's own builders, bounds-checks each against the stack
+rect this gate reads, and proves the must-not-overlap set pairwise
+disjoint against a written exemption list. It runs in the same
+`build-all.sh --gates` set. Neither gate subsumes the other: that one
+takes the stack rect as its frame and says nothing about the budget, this
+one owns the budget and says nothing about what is inside the frame.
 
 A size taken from a custom property (torrent-client restores the user's
 chosen height) is the USER's choice, not a shipped default, and is out of
@@ -64,15 +81,7 @@ CONST_PAIR_RE = re.compile(r'(k[A-Za-z0-9_]+)\s*=\s*([0-9]+)')
 # ADOPTER declares - the gate reads the real numbers there.
 SKIP = {os.path.join("tests", "suite-selftest.livecodescript"),
         os.path.join("tools", "ui-kit.livecodescript"),
-        os.path.join("tools", "harness-scaffold.livecodescript"),
-        # holde-em's table shipped at 1024x690 before the fold brought it
-        # under this gate (its `set the rect` spelling was unparseable until
-        # 2026-08-15). The 50px height overage is real - the status line and
-        # quick-bet row live below y=640 - so the fix is a re-layout needing
-        # an OXT eye, recorded as follow-up work in holde-em/CLAUDE.md's
-        # fold record and the suite remaining-work document, not a number
-        # this gate can simply hold down.
-        os.path.join("holde-em", "src", "holdem.livecodescript")}
+        os.path.join("tools", "harness-scaffold.livecodescript")}
 
 
 def check_file(path, rel, problems):
@@ -169,8 +178,12 @@ def main():
         for p in problems:
             print("  - %s" % p)
         return 1
-    print("check-stack-size: OK (%d stack dimension(s) in %d file(s) "
-          "within %dx%d)" % (sized, files, MAX_WIDTH, MAX_HEIGHT))
+    # the count is of WINDOW dimensions, and the message says so: an "OK"
+    # here has never been a statement about any control inside those windows
+    print("check-stack-size: OK (%d stack window dimension(s) in %d file(s) "
+          "within %dx%d; controls inside them are out of scope - holde-em's "
+          "are held by holde-em/tools/check-table-layout.py)"
+          % (sized, files, MAX_WIDTH, MAX_HEIGHT))
     return 0
 
 

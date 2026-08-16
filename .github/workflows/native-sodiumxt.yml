@@ -91,6 +91,167 @@ jobs:
         if: matrix.multilib
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib
 
+      # RUN the library that is actually COMMITTED, before the build below
+      # overwrites it. This member had no such step until 2026-08-16, which
+      # left a real hole: every other lane here builds fresh from source and
+      # asks whether THAT is correct, so the blobs under src/code/ - the ones
+      # an OXT user actually binds against - were verified only by their
+      # export list and their hash. coinxt has executed its committed
+      # libraries since Phase 4; sodiumxt is the member where it matters most
+      # right now, because ABI 8/9 added the ristretto255 and DLEQ surface
+      # that holde-em's Level 2 deal binds to and NOTHING had ever executed
+      # the committed copies of it.
+      #
+      # The expected ABI is read from the shim header, never written here as
+      # a literal (native-coinxt.yml carried one and the 4 -> 5 bump duly
+      # turned its lanes red for no reason but the workflow file).
+      #
+      # The vectors are the load-bearing ones and no more: the three
+      # published RFC 9496 Appendix A.1 basepoint multiples (which pin the
+      # encoding and would catch a miscompiled field), then the group law and
+      # the ABI 9 follow-ons checked AGAINST those - add/sub, general
+      # scalarmult agreeing with scalarmult_base, and the batch crossing
+      # agreeing with the single one. A bad point is refused.
+      #
+      # Linux .so lanes only. universal-mac is deliberately NOT driven: that
+      # blob is a hand-made lipo build still recorded at ABI 6, three behind
+      # this header, so an ABI assertion there would fail on a KNOWN and
+      # documented state rather than on a regression. It goes green when the
+      # manual mac build lands, not before.
+      - name: Execute the COMMITTED library's ristretto vectors
+        if: matrix.ext == 'so'
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="src/code/${{ matrix.platform }}/sodiumxt.so"
+          if [ ! -f "$lib" ]; then
+            echo "no committed library for ${{ matrix.platform }}; nothing to execute"
+            exit 0
+          fi
+          want_abi="$(sed -n 's/^#define SXT_ABI_VERSION \([0-9][0-9]*\).*/\1/p' src/sodium_shim.h)"
+          if [ -z "$want_abi" ]; then
+            echo "FAIL: could not read SXT_ABI_VERSION from src/sodium_shim.h"
+            exit 1
+          fi
+          echo "  the shim header declares ABI $want_abi"
+          cat > /tmp/rdrive.c <<'DRIVER'
+          #include <dlfcn.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          /* RFC 9496 Appendix A.1: the encodings of [1]B, [2]B and [3]B. */
+          static const char *kB1 =
+            "e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76";
+          static const char *kB2 =
+            "6a493210f7499cd17fecb510ae0cea23a110e8d5b901f8acadd3095c73a3b919";
+          static const char *kB3 =
+            "94741f5d5d52755ece4f23f044ee27d5d1ea1e2bd196b462166b16152a9d0259";
+          static int hexeq(const unsigned char *b, int n, const char *want) {
+            char h[160]; int i;
+            for (i = 0; i < n; i++) sprintf(h + 2 * i, "%02x", b[i]);
+            return strcmp(h, want) == 0;
+          }
+          static void unhex(const char *h, unsigned char *out, int n) {
+            int i; unsigned v;
+            for (i = 0; i < n; i++) { sscanf(h + 2 * i, "%2x", &v); out[i] = (unsigned char)v; }
+          }
+          int main(int argc, char **argv) {
+            void *so; int want_abi, rc;
+            int (*abi)(void);
+            int (*pbytes)(void);
+            int (*sbytes)(void);
+            int (*multbase)(unsigned char *, int, const unsigned char *, int);
+            int (*mult)(unsigned char *, int, const unsigned char *, int,
+                        const unsigned char *, int);
+            int (*padd)(unsigned char *, int, const unsigned char *, int,
+                        const unsigned char *, int);
+            int (*psub)(unsigned char *, int, const unsigned char *, int,
+                        const unsigned char *, int);
+            int (*valid)(const unsigned char *, int);
+            int (*batch)(unsigned char *, int, const unsigned char *, int,
+                         const unsigned char *, int);
+            unsigned char b1[32], b2[32], b3[32], out[64], sc[32], pts[64], bad[32];
+            if (argc < 3) return 2;
+            want_abi = atoi(argv[2]);
+            so = dlopen(argv[1], RTLD_NOW);
+            if (!so) { printf("dlopen failed: %s\n", dlerror()); return 1; }
+            *(void **)&abi      = dlsym(so, "sxt_abi_version");
+            *(void **)&pbytes   = dlsym(so, "sxt_ristretto_bytes");
+            *(void **)&sbytes   = dlsym(so, "sxt_ristretto_scalarbytes");
+            *(void **)&multbase = dlsym(so, "sxt_ristretto_scalarmult_base");
+            *(void **)&mult     = dlsym(so, "sxt_ristretto_scalarmult");
+            *(void **)&padd     = dlsym(so, "sxt_ristretto_add");
+            *(void **)&psub     = dlsym(so, "sxt_ristretto_sub");
+            *(void **)&valid    = dlsym(so, "sxt_ristretto_is_valid_point");
+            *(void **)&batch    = dlsym(so, "sxt_ristretto_scalarmult_batch");
+            if (!abi || !pbytes || !sbytes || !multbase || !mult || !padd ||
+                !psub || !valid || !batch) {
+              printf("a required sxt_ symbol is missing\n"); return 1;
+            }
+            printf("  abi_version = %d (the shim header says %d)\n", abi(), want_abi);
+            if (abi() != want_abi) {
+              printf("FAIL: the committed library answers ABI %d, src/sodium_shim.h"
+                     " declares %d -- rebuild and re-commit the binary in the same"
+                     " change\n", abi(), want_abi);
+              return 1;
+            }
+            if (pbytes() != 32 || sbytes() != 32) {
+              printf("FAIL: ristretto point/scalar widths are %d/%d, not 32/32\n",
+                     pbytes(), sbytes());
+              return 1;
+            }
+            unhex(kB1, b1, 32); unhex(kB2, b2, 32); unhex(kB3, b3, 32);
+            /* [k]B for k = 1,2,3 against the published encodings. */
+            memset(sc, 0, sizeof sc); sc[0] = 1;
+            if (multbase(out, 32, sc, 32) != 32 || !hexeq(out, 32, kB1)) {
+              printf("FAIL: [1]B did not match RFC 9496\n"); return 1;
+            }
+            sc[0] = 2;
+            if (multbase(out, 32, sc, 32) != 32 || !hexeq(out, 32, kB2)) {
+              printf("FAIL: [2]B did not match RFC 9496\n"); return 1;
+            }
+            sc[0] = 3;
+            if (multbase(out, 32, sc, 32) != 32 || !hexeq(out, 32, kB3)) {
+              printf("FAIL: [3]B did not match RFC 9496\n"); return 1;
+            }
+            /* The group law, anchored to those same published points. */
+            if (padd(out, 32, b1, 32, b1, 32) != 32 || !hexeq(out, 32, kB2)) {
+              printf("FAIL: B + B was not [2]B\n"); return 1;
+            }
+            if (psub(out, 32, b3, 32, b1, 32) != 32 || !hexeq(out, 32, kB2)) {
+              printf("FAIL: [3]B - B was not [2]B\n"); return 1;
+            }
+            /* General scalarmult must agree with the base-point one. */
+            memset(sc, 0, sizeof sc); sc[0] = 2;
+            if (mult(out, 32, sc, 32, b1, 32) != 32 || !hexeq(out, 32, kB2)) {
+              printf("FAIL: scalarmult(2, B) disagreed with scalarmult_base(2)\n");
+              return 1;
+            }
+            /* The ABI 9 batch crossing must agree with the single one. */
+            memcpy(pts, b1, 32); memcpy(pts + 32, b1, 32);
+            rc = batch(out, 64, sc, 32, pts, 64);
+            if (rc != 64 || !hexeq(out, 32, kB2) || !hexeq(out + 32, 32, kB2)) {
+              printf("FAIL: batch scalarmult (rc=%d) disagreed with the single one\n", rc);
+              return 1;
+            }
+            /* A good point is accepted and a bad one refused. */
+            memset(bad, 0xFF, sizeof bad);
+            if (valid(b1, 32) != 1 || valid(bad, 32) != 0) {
+              printf("FAIL: is_valid_point accepted a bad encoding or refused a good one\n");
+              return 1;
+            }
+            printf("  committed library executed OK (ABI %d, RFC 9496 [1..3]B,"
+                   " group law, scalarmult, batch, point validation)\n", abi());
+            dlclose(so);
+            return 0;
+          }
+          DRIVER
+          bits=""
+          if [ "${{ matrix.multilib }}" = "true" ]; then bits="-m32"; fi
+          gcc $bits -O1 -o /tmp/rdrive /tmp/rdrive.c -ldl
+          file /tmp/rdrive "$lib"
+          /tmp/rdrive "$(pwd)/$lib" "$want_abi"
+
       - name: Install libsodium via vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

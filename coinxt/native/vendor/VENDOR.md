@@ -1,5 +1,17 @@
 # Vendored third-party sources
 
+**TWO upstream libraries live here**, and that is a decision rather than an accident. Everything
+directly under `vendor/` is **trezor-crypto**; everything under `vendor/libsecp256k1/` is
+**upstream bitcoin-core/secp256k1**, added 2026-08-16 for BIP-340 Schnorr and the BIP-341 Taproot
+tweak. See [`../../SPEC.md`](../../SPEC.md) section 2 and the dated entry in
+[`../../CLAUDE.md`](../../CLAUDE.md) for why the "one library" rule changed; the operational summary
+is that trezor-crypto's plain-C tree has no BIP-340 implementation at all, and the alternative to a
+second audited library was writing a signature scheme by hand.
+
+Both trees are copied verbatim. No local patches, in either.
+
+## trezor-crypto
+
 These files are copied verbatim (no local patches) from **trezor-firmware**, directory `crypto/`.
 
 - Upstream: https://github.com/trezor/trezor-firmware  (directory `crypto/`)
@@ -115,6 +127,113 @@ though signing is deterministic; it is not the reason phase 0 assumed.
   are BSD-3-Clause, public domain, CC0 or separately-held MIT. Adding a vendored file means checking
   its header for terms the MIT text does not cover, and adding it there if so.
 
+## libsecp256k1 (bitcoin-core/secp256k1) - BIP-340 and BIP-341, added 2026-08-16
+
+- Upstream: https://github.com/bitcoin-core/secp256k1
+- License: **MIT throughout.** Unlike trezor-crypto, this tree vendors nothing under other terms:
+  every file header carries the same MIT notice and a libsecp256k1 contributor's copyright, so it
+  adds ONE row to the suite `LICENSE` and no per-file exceptions. `COPYING` ships beside the sources
+  here (redistribution requirement) and the text is also in
+  [`../../THIRD-PARTY-LICENSES.md`](../../THIRD-PARTY-LICENSES.md).
+- Pinned commit: `439278a649d3099d62dde966a76dc04aaca7ccb3` (branch `master`, fetched 2026-08-16)
+
+**Why a commit and not the release tag.** The pin is `v0.8.0` plus twelve commits. Eleven of them
+touch only tests; the twelfth (`3d4340d`, "scratch: reject sizes that overflow when added to
+header") hardens `src/scratch_impl.h`, which IS one of the files compiled here. So for the subset
+vendored below, the pin is exactly "the last release, plus one hardening fix, minus nothing" - which
+is a better place to stand than the tag, and the delta is small enough to state in a sentence rather
+than to hand-wave. A plain commit hash is also this member's existing precedent: the trezor-crypto
+pin above is one.
+
+**Not the `secp256k1-zkp` fork.** Upstream carries the `schnorrsig` and `extrakeys` modules in
+tree, which is everything BIP-340 and single-key BIP-341 need; the fork's extra value (adaptor
+signatures, rangeproofs, MuSig2 history) is irrelevant here, and upstream is what Bitcoin Core
+itself ships and audits.
+
+### What was taken (58 files, and nothing else)
+
+Only what compiles. No `tests*`, no `bench*`, no `ci/`, no `contrib/`, no `sage/`, no `doc/`, no
+build system, and none of the modules that are not enabled (`ecdh`, `recovery`, `musig`,
+`ellswift`, `silentpayments` - CoinXT already has ECDH and recovery from trezor-crypto, and the
+rest is surface we would ship, license and never call).
+
+| path | count | purpose |
+|---|---|---|
+| `COPYING` | 1 | the MIT text |
+| `include/secp256k1.h`, `secp256k1_preallocated.h`, `secp256k1_extrakeys.h`, `secp256k1_schnorrsig.h` | 4 | the public headers the shim includes. `secp256k1_preallocated.h` is not used by CoinXT but IS included by `src/secp256k1.c` |
+| `src/secp256k1.c` | 1 | the library. libsecp256k1 compiles as ONE translation unit: this file `#include`s every `*_impl.h` and, under the two module defines, the module bodies |
+| `src/precomputed_ecmult.c` | 1 | the generated table of odd multiples of G and 2^128*G, used for VERIFICATION (see the size decision below) |
+| `src/precomputed_ecmult_gen.c` | 1 | the generated signed-digit comb table for k*G, 22 kB at upstream's default (11, 6) configuration |
+| `src/*.h` | 48 | the implementation headers `src/secp256k1.c` includes, transitively - the closure, computed with `gcc -MM` for both a 64-bit and a 32-bit target so the 32-bit-only files (`field_10x26*`, `scalar_8x32*`, `modinv32*`) are present |
+| `src/modules/extrakeys/main_impl.h`, `src/modules/schnorrsig/main_impl.h` | 2 | the two enabled modules |
+
+Two of those 48 headers, `int128_struct.h` and `int128_struct_impl.h`, are not reached by any build
+CoinXT currently makes: `int128_impl.h` includes them only under `SECP256K1_INT128_STRUCT`, which
+MSVC x64 selects and gcc/MinGW never do. They are vendored anyway, because a vendored file with a
+dangling `#include` is a subset that cannot be built on a platform we might add, and the two of them
+together are under 6 kB.
+
+### The compile-time configuration (`native/build.sh`, `secp_cppflags`)
+
+Configuration, not patches - every one is a knob upstream's own `configure.ac` / `CMakeLists.txt`
+sets:
+
+- `-DENABLE_MODULE_SCHNORRSIG -DENABLE_MODULE_EXTRAKEYS` - compile in the two modules, and only
+  those two.
+- `-DECMULT_WINDOW_SIZE=12` - **the one real tradeoff.** Upstream's default is 15, tuned for a node
+  verifying blocks, and the table is `2^(w-2) * 64 * 2` bytes, i.e. **1,048,576 bytes of read-only
+  data in every shipped binary** - and this member commits four of them. Measured here (gcc 13.3
+  -O2, x86_64, min of 7 runs of 20,000 BIP-340 verifications):
+
+  | window | verify | table |
+  |---|---|---|
+  | 15 (upstream default) | 33.26 us | 1,048,576 B |
+  | **12 (chosen)** | **33.40 us** | **131,072 B** |
+  | 10 | 35.02 us | 32,768 B |
+  | 8 | 35.33 us | 8,192 B |
+  | 6 | 37.64 us | 2,048 B |
+
+  12 removes 87.5% of the table for 0.4%, which is inside the run-to-run spread - no measurable
+  verification cost at all. Going further DOES cost measurable time (5% at w=10) to save a further
+  96 kB, which is not worth paying once the free part has been taken. `precomputed_ecmult.c` is an
+  `#if` ladder over the window, so any value in [2..15] compiles from the SAME vendored file: this
+  is a define, not a regenerated table. The absolute numbers are one machine's; the ranking is what
+  transfers.
+- `-DSECP256K1_NO_API_VISIBILITY_ATTRIBUTES` - makes `SECP256K1_API` a bare `extern`. Upstream
+  documents this define for exactly our case ("a static library which is linked into a shared
+  library, and the latter should not re-export the libsecp256k1 API"). Without it MinGW would put
+  `__declspec(dllexport)` on every `secp256k1_*` entry point.
+
+Upstream's units are compiled with `-Wall -Wextra -Wno-unused-function`, which is upstream's OWN
+flag set: it compiles as one unit and leaves the disabled modules' helpers unused, so the warning
+fires about fifteen times on a perfectly good build. The `-Wno-` is scoped to upstream's translation
+units and never reaches `native/coinxt.c` - which is why `build.sh` compiles the two groups
+separately. That separation is load-bearing for a second reason: `vendor/secp256k1.c`
+(trezor-crypto's curve parameters) and `vendor/libsecp256k1/src/secp256k1.c` share a BASENAME, so
+any build deriving an object name from `basename` alone silently overwrites one with the other.
+
+### Why the 2.4 MB table is vendored rather than generated
+
+`src/precomputed_ecmult.c` is 2,409,168 bytes, 73% of everything vendored here. The three options
+were (a) vendor it verbatim, (b) run upstream's `precompute_ecmult` generator at build time, (c)
+shrink it. (c) is not an alternative to the other two - the file is an `#if` ladder, so a smaller
+window still compiles the same 2.4 MB source - and it is taken anyway, above, because it shrinks the
+BINARY.
+
+(a) is chosen. (b) would keep the repository smaller and would add a **code-generation step to a
+build that has none**: `native/build.sh` is POSIX sh and one compiler invocation, and its whole
+virtue is that a cross build is `CC=x86_64-w64-mingw32-gcc sh native/build.sh pack x86_64-win32`. A
+generator has to be built for the HOST and run before the library is built for the TARGET, which
+introduces a second toolchain concept into that script, breaks on any host that cannot execute its
+own output, and - the part that actually settles it - produces a table that **nothing in this tree
+can hash-pin**. `MANIFEST.sha256` proves every vendored byte is upstream's; a generated table is
+proven by nothing except that the generator ran. For a library that handles money, "the table came
+from the pinned commit and here is its SHA-256" is worth more than 2.4 MB of repository.
+
+What (a) costs, stated plainly: 3,285,330 bytes of vendored source (2.4 MB of it this one file),
+paid once in history, and the four committed binaries grow as recorded in `../../CLAUDE.md`'s
+as-built entry.
+
 ## Integrity
 
 Every vendored file (and, from the packaging phase on, every shipped release binary) is pinned in
@@ -125,4 +244,13 @@ cd native && sha256sum -c MANIFEST.sha256
 ```
 
 Any legitimate change to a vendored file (a re-pin, a recorded patch) refreshes the manifest in the
-SAME change; a mismatch anywhere else means the tree is not what was reviewed.
+SAME change; a mismatch anywhere else means the tree is not what was reviewed. It pins 104 files
+now (46 trezor-crypto plus this directory's two metadata files, and 58 libsecp256k1).
+
+**How the libsecp256k1 files were verified, and it is the stronger of the two methods used here.**
+Each one was extracted with `git cat-file blob <pin>:<path>` from a real clone of the pinned commit,
+so it arrived inside a git object whose content hash git had already verified on receipt; the
+installed file's blob id was then re-derived locally with `git hash-object` and compared against the
+id the commit's tree lists. 58 of 58 matched. That is the same method the phase-2 trezor-crypto
+files got, and it is what "verbatim" means here: not "looks the same", but "the same object git
+names".

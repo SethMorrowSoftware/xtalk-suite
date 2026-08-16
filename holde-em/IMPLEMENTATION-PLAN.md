@@ -139,10 +139,15 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
   landed there (v0.21.0, below); online History folding likewise.
 - **2e. Liveness** (spec 9): act timers + time-bank, sit-out, reconnect via
   transcript replay from last checkpoint, host election.
-  **Status: the reconnect/hardening half was built at v0.18.0 (deterministic
-  per-hand seeds, replay-proof emissions, catch-up suppression, the crash-and-
-  reconnect sim); the deferred sub-items and the election landed at v0.21.0,
-  verified statically.** As-built:
+  **Status: BUILT in three increments, all verified statically -- the
+  reconnect/hardening half at v0.18.0 (deterministic per-hand seeds,
+  replay-proof emissions, catch-up suppression, the crash-and-reconnect sim);
+  street ckpts, show/muck, online History, and the election at v0.21.0; and
+  the liveness remainder (act timers + time-bank, sit-out/return, late-join,
+  onion auto-redial) at v0.23.0, corrected by the v0.24.0 review pass (ten
+  local defects in that layer, no wire changed -- the last bullet below).
+  The timed live pass is what 2e still owes (the closing note below).**
+  As-built:
   - **Street ckpt wires** (spec 6): at each boundary (deal/flop/turn/river/
     showdown) every seated client signs the head the boundary's TRANSITION wire
     produced -- body `street=..,head=..,sig=..`, so the head rides the wire and
@@ -174,9 +179,84 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
     of the in-flight hand with stacks standing at the last receipt, and the
     successor NAMED on every client. The LIVE handover (elected host re-hosts,
     peers re-join) is exercised by Phase 3's exit gate, not faked here.
-  - **Still open in 2e**: act timers + time-bank, sit-out, late-join seating,
-    auto-redial after a lost onion stream. They remain this phase's exit
-    criteria work.
+  - **The 2e remainder CLOSED at v0.23.0 (2026-08-16, verified statically;
+    harness section 20 pins the headless slice).** As-built:
+    - **Act timers + time-bank** (spec 8.1/9): timer lengths ride the signed
+      cfg (`act=/bank=/miss=` -- lobby_cfg_body/lobby_head2 pins regenerated,
+      a documented consensus change; wire-compatible, unknown keys are
+      ignored); no deadline wire exists -- the host-countersigned
+      turn-opening wire starts every clock, and expiry is the HOST's signed
+      timeout wire: the EXISTING act/bid wire with `seat=/timeout=1/bank=`
+      marks, verified by every client (exact check-or-fold prescription,
+      transcript-derived bank state, deadline passed on its own clock within
+      5 s of transport jitter -- deliberately NOT the +-600 s wall-clock
+      window, no timestamp crosses the wire; catch-up replay waives the
+      clock check) and folded as the named seat's action. The one per-hand
+      bank auto-arms on the first would-be timeout and spends ON the wire
+      (`bank=1` -- consensus, not clocks). Forced posts get the same
+      treatment once the deal completes; an L0 deal stall stays honestly
+      unprescribed (spec 9's dealing timeout is the L2 machine's).
+    - **Sit-out/return** (spec 9): auto after `miss=` consecutive timeouts
+      (transcript-derived), or by the seat's own signed `stand`; a
+      sitting-out seat times out instantly mid-hand and is dealt out at the
+      boundary (`heNetNextOccList`); its own `sit` (no pub) re-enters next
+      hand; a short table WAITS for returns instead of ending.
+    - **Late-join**: the existing full-replay machinery stands; the host now
+      seats joined-but-unseated keys into empty seats at each hand boundary
+      (ascending pubkey, cfg-capped, signed sit wires, cfg opening stack) --
+      or the joiner stays an observer when full. Since v0.24.0 the key must
+      also be PRESENT (heNetPubIsLive), not merely have joined once.
+    - **Onion auto-redial**: bounded (4 attempts, 2/4/8/16 s backoff, 10 s
+      per dial) on host-stream death during play, BEFORE the 60 s election
+      watchdog concludes; every step gates on the election (it always
+      concludes; the redial stands down quietly), and a successful redial
+      resyncs via the TRIMMED replay (the hello's compatible trailing-seq
+      item; a host wire applying resets the counter).
+    - **The v0.24.0 CORRECTION PASS (2026-08-16, verified statically).** A
+      review of the layer above found ten defects, every one of them local
+      state-ordering or control-flow -- **no wire changed** (protocol-kat's
+      114 pins are untouched, so a v0.23.0 and a v0.24.0 client speak the
+      identical protocol). Fixed, each with its own harness pin in section
+      20 (kHeHarnessV 39), each pin written to fail against the old
+      behaviour: a mid-redial dial failure took the fail-closed path and
+      cancelled the poll tick, which killed the election watchdog and
+      attempts 2..4 (heNetOnionDialFail); redial exhaustion overwrote the
+      elected successor's status line (heNetOnionStandDown, one quiet exit
+      for both paths); a full-replay client's act clock started at replay
+      time and then refused the host's live timeout forever
+      (heNetTurnClockStart marks the clock replayed; the waiver keys on
+      that and dies with the turn); the timeoutSent latch never cleared on
+      an engine-refused timeout, so the host silently stopped re-emitting
+      (heNetTimeoutRearm); the time-bank spend, the miss count and the
+      miss RESET all ran around a fold that can refuse (gGame["foldApplied"]
+      gates all three -- and being identical on every client made the wrong
+      state consensus rather than a detectable divergence); a table parked
+      for sit-outs could never resume (the park is latched and the react
+      engine unparks it on the returning seat's own wire); the plate's
+      countdown painted over SIT OUT (heSeatFaceLabel, now pure and pinned);
+      and heNetHandKick's duplicate occupancy scan collapsed into
+      heNetSeatedWithChipsList.
+      **DECIDED 2026-08-16: spectators are DEFERRED** (owner: "we do not
+      need spectators at this point"). This is no longer blocking; what
+      follows is the record of what deferring MEANS, kept so the question
+      is not re-derived from scratch when someone wants them. The
+      late-join gate now requires liveness, but spec 4's read-only
+      SPECTATOR is still indistinguishable from a player at a hand
+      boundary: the admission token carries a role field, yet every client
+      that can talk to this build sends "player" in it, so refusing on role
+      would refuse real players. Declaring spectator intent needs a wire
+      and/or UI decision (a role a joiner can choose, or a `sit`-request
+      wire the host answers) -- deliberately NOT invented in a pass whose
+      whole constraint was to change no wire. Not needed for the 2e live
+      pass; revisit only if spectators are wanted.
+    What the LIVE pass still owes 2e: a timed multi-machine session on wall
+    clocks (real seats timing out, the bank visibly arming, a sit-out
+    rejoining), a real tor host-stream loss -> redial -> trimmed resync
+    (plus the standing 2f two-machine onion exit), and a try at the one
+    RECORDED edge -- a timeout redelivered inside a reorder-buffer burst is
+    early-refused by the client that just caught up (fail-visible, healed
+    by reconnect; holde-em/CLAUDE.md's liveness contracts name it). Until
+    then everything above is "verified statically; needs an OXT pass".
 - **2f. Onion tables** (spec 10): the same envelopes over OnionXT streams — expected
   to fall out nearly free once 2c is honest about its transport seam.
   **Status: built 2026-08-15 (v0.20.0), verified statically; the exit — a

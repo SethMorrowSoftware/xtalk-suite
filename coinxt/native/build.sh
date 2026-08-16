@@ -52,6 +52,79 @@ $ven/ecdsa.c $ven/bignum.c $ven/secp256k1.c $ven/rfc6979.c $ven/hmac_drbg.c $ven
 $ven/blake256.c $ven/blake2b.c $ven/groestl.c $ven/base58.c $ven/address.c \
 $ven/bip39_english.c"
 
+# The SECOND vendored library (ABI 6): upstream bitcoin-core/secp256k1, which
+# supplies BIP-340 Schnorr and the BIP-341 Taproot tweak. Three translation
+# units, and that is the whole of it - libsecp256k1 is written as ONE compiled
+# unit (src/secp256k1.c #includes every *_impl.h and, under the two module
+# defines below, the schnorrsig and extrakeys module bodies), plus two files
+# that are nothing but generated constant tables.
+#
+#   src/secp256k1.c              the library
+#   src/precomputed_ecmult.c     odd multiples of G and of 2^128*G, for
+#                                verification (see ECMULT_WINDOW_SIZE below)
+#   src/precomputed_ecmult_gen.c the signed-digit comb table for k*G, 22 kB at
+#                                upstream's default (11, 6) comb configuration,
+#                                which is left alone: unlike the file above,
+#                                this one is generated FOR one configuration
+#                                and carries no #if ladder, so changing
+#                                COMB_BLOCKS/COMB_TEETH would require
+#                                regenerating it - i.e. a locally generated
+#                                vendored file, which the vendor rules forbid.
+secp_src="$ven/libsecp256k1/src/secp256k1.c $ven/libsecp256k1/src/precomputed_ecmult.c \
+$ven/libsecp256k1/src/precomputed_ecmult_gen.c"
+
+# The compile-time configuration upstream expects an integrator to supply. It
+# is CONFIGURATION, not a patch: every one of these is a documented knob that
+# upstream's own configure.ac / CMakeLists.txt sets, and no vendored file is
+# edited.
+#
+#   ENABLE_MODULE_SCHNORRSIG / ENABLE_MODULE_EXTRAKEYS
+#       compile in the two modules BIP-340 and BIP-341 need, and NOTHING else:
+#       ecdh, recovery, musig, ellswift and silentpayments stay out (CoinXT
+#       already has ECDH and recovery from trezor-crypto, and the rest is
+#       surface we would ship, license and never call).
+#
+#   ECMULT_WINDOW_SIZE=12
+#       the size of the precomputed table used for VERIFICATION, and the one
+#       real tradeoff in this vendoring. Upstream's default is 15, which is
+#       tuned for a node verifying blocks; the table is 2^(w-2) * 64 * 2 bytes,
+#       so 15 costs 1,048,576 bytes of read-only data IN EVERY SHIPPED BINARY,
+#       and this member commits four of them. Measured here (gcc 13.3 -O2,
+#       x86_64, min of 7 runs of 20,000 BIP-340 verifications):
+#           w=15  33.26 us/verify   1,048,576 B table
+#           w=12  33.40 us/verify     131,072 B table
+#           w=10  35.02 us/verify      32,768 B table
+#           w= 8  35.33 us/verify       8,192 B table
+#           w= 6  37.64 us/verify       2,048 B table
+#       12 removes 87.5% of the table for 0.4% - inside the run-to-run spread,
+#       i.e. no measurable verification cost at all. Going further does cost
+#       measurable time (5% at w=10) to save 96 kB, which is not a trade worth
+#       making after the free part has been taken. The absolute numbers are
+#       this machine's; the RANKING is what transfers.
+#       precomputed_ecmult.c is a #if ladder over w, so any value in [2..15]
+#       compiles from the SAME vendored file - no regeneration, no local
+#       patch. Raising it above 15 would need a regenerated table and is
+#       refused by upstream's own #error.
+#
+#   SECP256K1_NO_API_VISIBILITY_ATTRIBUTES
+#       makes SECP256K1_API a bare `extern` instead of a visibility or
+#       __declspec attribute. Upstream documents this exact define for "a
+#       static library which is linked into a shared library, and the latter
+#       should not re-export the libsecp256k1 API". Without it a MinGW build
+#       would put __declspec(dllexport) on every secp256k1_* entry point and
+#       __declspec(dllimport) on the copies our shim sees. See native/coinxt.c.
+secp_cppflags="-DENABLE_MODULE_SCHNORRSIG -DENABLE_MODULE_EXTRAKEYS \
+-DECMULT_WINDOW_SIZE=12 -DSECP256K1_NO_API_VISIBILITY_ATTRIBUTES"
+
+# Upstream's own warning set, minus what it itself disables. libsecp256k1
+# compiles its whole library as one unit and leaves entry points for modules
+# that are not enabled unused, so -Wunused-function fires ~15 times on a
+# perfectly good build; upstream's configure.ac and CMakeLists.txt both append
+# -Wno-unused-function for exactly this reason. It is scoped to UPSTREAM'S
+# translation units only - the shim keeps the full -Wall -Wextra - which is why
+# the build compiles the two groups separately instead of in one command.
+secp_warn="-Wno-unused-function"
+
 # Third-party headers are -isystem so their warnings do not pollute -Wall -Wextra.
 warn="-Wall -Wextra"
 inc="-isystem $ven"
@@ -68,6 +141,32 @@ platform_libs() {
   esac
 }
 
+# Compile upstream libsecp256k1's translation units into the directory named by
+# $1, using the compiler word(s) in $2 and any extra flags after that, and echo
+# the resulting object list.
+#
+# TWO REASONS this exists instead of one big cc line:
+#   1. WARNINGS. secp_warn must reach upstream's units and must NOT reach ours
+#      (see its definition). A single command cannot scope a flag per file.
+#   2. A REAL NAME COLLISION. vendor/secp256k1.c (trezor-crypto's curve
+#      parameters) and vendor/libsecp256k1/src/secp256k1.c (upstream's whole
+#      library) have the SAME BASENAME. Anything deriving an object path from
+#      `basename` alone silently overwrites one with the other and links a
+#      library missing half its symbols, so upstream's objects carry a secp_
+#      prefix here and in the pack target.
+compile_secp() {
+  _dir="$1"
+  _cc="$2"
+  shift 2
+  _objs=""
+  for _s in $secp_src; do
+    _o="$_dir/secp_$(basename "$_s" .c).o"
+    $_cc -O2 $warn $secp_warn $secp_cppflags "$@" -fPIC -c "$_s" -o "$_o"
+    _objs="$_objs $_o"
+  done
+  echo "$_objs"
+}
+
 case "${1:-lib}" in
   lib)
     # Pick the platform extension (best effort; default .so).
@@ -77,8 +176,11 @@ case "${1:-lib}" in
       MINGW*|MSYS*|CYGWIN*) ext=dll ;;
     esac
     out="$here/libcoinxt.$ext"
-    cc -O2 $warn $inc -fPIC -shared "$here/coinxt.c" $vendor_src -o "$out" \
-       $(platform_libs "$ext")
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    secp_objs=$(compile_secp "$stage" cc)
+    cc -O2 $warn $secp_cppflags $inc -fPIC -shared "$here/coinxt.c" $vendor_src \
+       $secp_objs -o "$out" $(platform_libs "$ext")
     echo "built $out"
     ;;
   pack)
@@ -92,8 +194,8 @@ case "${1:-lib}" in
     #     ships the same way (sodiumxt.so, enetxt.so, datachannelxt.so).
     #  2. THE PATH. src/code/<arch>-<platform>/ is where the engine looks, and
     #     the directory names are the engine's spelling, not uname's.
-    #  3. THE SURFACE. src/coinxt.map narrows the exports from 77 symbols to the
-    #     16 cnx_* entry points; see that file for why shipping the vendored
+    #  3. THE SURFACE. src/coinxt.map narrows the exports to the cnx_* entry
+    #     points; see that file for why shipping the vendored
     #     trezor-crypto names into an engine process is not acceptable. If the
     #     linker will not take a version script we say so loudly and continue,
     #     because a wide-surface library that WORKS beats no library at all - but
@@ -145,7 +247,7 @@ case "${1:-lib}" in
     staged="$stage/coinxt.$ext"
 
     # ---- the export surface, per object format ------------------------------
-    # Same goal on every platform: ship the 16 cnx_* entry points and NOTHING
+    # Same goal on every platform: ship the cnx_* entry points and NOTHING
     # else (see src/coinxt.map for why a wide surface is unacceptable here). The
     # MECHANISM differs by object format, and picking the wrong one fails OPEN -
     # you get a working library with 77 exports - so each is handled explicitly
@@ -169,9 +271,12 @@ case "${1:-lib}" in
     objs=""
     for src in "$here/coinxt.c" $vendor_src; do
       obj="$stage/$(basename "$src" .c).o"
-      $CC_TOOL -O2 $warn $inc -fPIC -c "$src" -o "$obj"
+      $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -c "$src" -o "$obj"
       objs="$objs $obj"
     done
+    # Upstream libsecp256k1, with its own warning scope and a secp_ object
+    # prefix - see compile_secp above for both reasons.
+    objs="$objs $(compile_secp "$stage" "$CC_TOOL")"
 
     # Every global cnx_* the objects actually define. `nm -g --defined-only`
     # spells a defined global as a T/D/R/B code in column 2.
@@ -277,6 +382,33 @@ extern int cnx_pubkey_tweak_add(const unsigned char *, size_t, const unsigned ch
                                 unsigned char *, size_t);
 extern int cnx_bip39_wordlist(unsigned char *, size_t);
 extern size_t cnx_bip39_wordlist_len(void);
+extern int cnx_memzero(unsigned char *, size_t);
+/* ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak (upstream libsecp256k1). */
+extern int cnx_schnorr_sign(const unsigned char *, size_t, const unsigned char *, size_t,
+                            const unsigned char *, size_t, unsigned char *, size_t);
+extern int cnx_schnorr_verify(const unsigned char *, size_t, const unsigned char *, size_t,
+                              const unsigned char *, size_t);
+extern int cnx_xonly_pubkey_from_seckey(const unsigned char *, size_t, unsigned char *, size_t);
+extern int cnx_taproot_tweak_pubkey(const unsigned char *, size_t, const unsigned char *, size_t,
+                                    unsigned char *, size_t);
+extern int cnx_taproot_tweak_seckey(const unsigned char *, size_t, const unsigned char *, size_t,
+                                    unsigned char *, size_t);
+extern size_t cnx_schnorr_sig_len(void);
+extern size_t cnx_xonly_pubkey_len(void);
+extern size_t cnx_taproot_output_len(void);
+/* Parse a hex string into bytes; returns the byte count. The ABI-6 vectors are
+ * published as hex, and re-spelling them as C initialisers by hand is exactly
+ * the transcription error a vector is supposed to catch. */
+static int unhex(const char *h, unsigned char *out) {
+  int n = 0;
+  while (h[2 * n] != 0 && h[2 * n + 1] != 0) {
+    unsigned int b = 0;
+    sscanf(h + 2 * n, "%2x", &b);
+    out[n] = (unsigned char)b;
+    n++;
+  }
+  return n;
+}
 /* Compare the first `n` bytes of a digest against its hex spelling. */
 static int eqn(const unsigned char *b, int n, const char *hexexp) {
   char h[129];
@@ -286,7 +418,7 @@ static int eqn(const unsigned char *b, int n, const char *hexexp) {
 static int eq(const unsigned char *b, const char *hexexp) { return eqn(b, 32, hexexp); }
 int main(void) {
   unsigned char o[64];
-  if (cnx_abi_version() != 4) { printf("ABI FAIL\n"); return 1; }
+  if (cnx_abi_version() != 6) { printf("ABI FAIL\n"); return 1; }
   cnx_keccak256((const unsigned char *)"", 0, o);
   if (!eq(o, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) { printf("keccak empty FAIL\n"); return 1; }
   cnx_keccak256(NULL, 0, o); /* NULL-with-zero guard path */
@@ -401,11 +533,143 @@ int main(void) {
     for (i = 0; i < 32; i++) tw[i] = 0;
     if (cnx_seckey_tweak_add(sk, 32, tw, 32, child, 32) != -4) { printf("zero tweak guard FAIL\n"); return 1; }
   }
-  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39)\n");
+  /* ABI 5: cnx_memzero, the wipe the .lcb runs on every out-buffer before it
+   * frees it. The bounds are what matter here: it must wipe EXACTLY len bytes
+   * (a one-past write - the classic off-by-one - lands on the 0xAA sentinel at
+   * wz[32] and is reported by name; anything further is ASan's), tolerate a
+   * zero length as a no-op, tolerate NULL+0 per the shim's firewall
+   * convention, and refuse NULL with a nonzero length rather than crash. */
+  {
+    unsigned char wz[33];
+    int i;
+    for (i = 0; i < 33; i++) wz[i] = 0xAA;
+    if (cnx_memzero(wz, 32) != 0) { printf("memzero rc FAIL\n"); return 1; }
+    for (i = 0; i < 32; i++) {
+      if (wz[i] != 0) { printf("memzero did not wipe byte %d FAIL\n", i); return 1; }
+    }
+    if (wz[32] != 0xAA) { printf("memzero wiped past len FAIL\n"); return 1; }
+    wz[0] = 0x55;
+    if (cnx_memzero(wz, 0) != 0) { printf("memzero len-0 rc FAIL\n"); return 1; }
+    if (wz[0] != 0x55) { printf("memzero len-0 wrote FAIL\n"); return 1; }
+    if (cnx_memzero(NULL, 0) != 0) { printf("memzero NULL+0 FAIL\n"); return 1; }
+    if (cnx_memzero(NULL, 5) != -1) { printf("memzero NULL+len guard FAIL\n"); return 1; }
+  }
+  /* ---- ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak ---------------
+   * The exhaustive vector run lives in tools/coin-kat.py (all 19 published
+   * BIP-340 cases including the 10 negatives, and all 14 BIP-341 wallet
+   * cases). What THIS lane adds is the same code under ASan + UBSan, because
+   * the new surface is where the fixed-size stack buffers are: a 64-byte
+   * tagged-hash message that is 32 or 64 bytes long depending on the merkle
+   * root, a 32-byte aux staging buffer, and a 33-byte output record whose last
+   * byte is written separately from the 32 the library serializes. Each of
+   * those is one off-by-one away from a report here. */
+  {
+    unsigned char sk[32], msg[32], aux[32], sig[64], sig2[64], xo[32], want[64];
+    unsigned char ipub[32], tout[33], tout0[33], tsk[32], zeros[32];
+    int i;
+    if (cnx_schnorr_sig_len() != 64 || cnx_xonly_pubkey_len() != 32 ||
+        cnx_taproot_output_len() != 33) { printf("abi6 len FAIL\n"); return 1; }
+    /* BIP-340 test vector index 0: sk = 3, msg = 0^32, aux = 0^32. */
+    for (i = 0; i < 32; i++) { sk[i] = 0; msg[i] = 0; aux[i] = 0; zeros[i] = 0; }
+    sk[31] = 3;
+    if (cnx_xonly_pubkey_from_seckey(sk, 32, xo, 32) != 0) { printf("xonly FAIL\n"); return 1; }
+    if (!eq(xo, "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")) {
+      printf("xonly value FAIL\n"); return 1;
+    }
+    if (cnx_schnorr_sign(sk, 32, msg, 32, aux, 32, sig, 64) != 0) { printf("schnorr sign FAIL\n"); return 1; }
+    unhex("e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca8215"
+          "25f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0", want);
+    if (memcmp(sig, want, 64) != 0) { printf("schnorr vector 0 FAIL\n"); return 1; }
+    if (cnx_schnorr_verify(xo, 32, msg, 32, sig, 64) != 0) { printf("schnorr verify FAIL\n"); return 1; }
+    sig[7] ^= 0x01;
+    if (cnx_schnorr_verify(xo, 32, msg, 32, sig, 64) != -5) { printf("schnorr tamper FAIL\n"); return 1; }
+    sig[7] ^= 0x01;
+    /* BIP-340 index 5: a public key that is not on the curve must be FALSE
+     * (-5), not an error - the vector file says so, and a throwing verifier
+     * would be unusable on a third party's signature. */
+    {
+      unsigned char offcurve[32];
+      unhex("eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34", offcurve);
+      if (cnx_schnorr_verify(offcurve, 32, msg, 32, sig, 64) != -5) {
+        printf("schnorr off-curve-key FAIL\n"); return 1;
+      }
+    }
+    /* Message length: signing is 32 bytes ONLY (rule 3), verification is any
+     * length (BIP-340 admits it and the published vectors use 0/1/17/100). */
+    if (cnx_schnorr_sign(sk, 32, msg, 31, aux, 32, sig2, 64) != -2) { printf("sign msglen guard FAIL\n"); return 1; }
+    if (cnx_schnorr_verify(xo, 32, NULL, 0, sig, 64) != -5) { printf("verify empty-msg FAIL\n"); return 1; }
+    if (cnx_schnorr_verify(xo, 32, NULL, 1, sig, 64) != -1) { printf("verify null-msg guard FAIL\n"); return 1; }
+    /* An ABSENT aux (length 0) means "draw fresh OS entropy", never all-zero:
+     * two signatures over the same key and message must DIFFER, and both must
+     * verify. This is the one non-deterministic entry point in the shim. */
+    if (cnx_schnorr_sign(sk, 32, msg, 32, NULL, 0, sig, 64) != 0) { printf("sign no-aux FAIL\n"); return 1; }
+    if (cnx_schnorr_sign(sk, 32, msg, 32, NULL, 0, sig2, 64) != 0) { printf("sign no-aux 2 FAIL\n"); return 1; }
+    if (memcmp(sig, sig2, 64) == 0) { printf("no-aux signatures identical FAIL\n"); return 1; }
+    if (memcmp(sig, want, 64) == 0) { printf("no-aux aliased the zero aux FAIL\n"); return 1; }
+    if (cnx_schnorr_verify(xo, 32, msg, 32, sig, 64) != 0 ||
+        cnx_schnorr_verify(xo, 32, msg, 32, sig2, 64) != 0) { printf("no-aux verify FAIL\n"); return 1; }
+    if (cnx_schnorr_sign(sk, 32, msg, 32, aux, 31, sig2, 64) != -2) { printf("aux len guard FAIL\n"); return 1; }
+    /* BIP-341 scriptPubKey vector 0: a key-path-only output (NO merkle root). */
+    unhex("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d", ipub);
+    if (cnx_taproot_tweak_pubkey(ipub, 32, NULL, 0, tout, 33) != 0) { printf("taproot tweak FAIL\n"); return 1; }
+    if (!eq(tout, "53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343")) {
+      printf("taproot output key FAIL\n"); return 1;
+    }
+    if (tout[32] != 1) { printf("taproot parity FAIL\n"); return 1; }
+    /* THE CONSENSUS DISTINCTION, asserted rather than assumed: an ABSENT
+     * merkle root is the empty byte string, NOT 32 zero bytes. The two hash
+     * different lengths and must produce different output keys; if these ever
+     * agreed, one of the two spends would be to an address nobody can sweep. */
+    if (cnx_taproot_tweak_pubkey(ipub, 32, zeros, 32, tout0, 33) != 0) { printf("taproot zero-root FAIL\n"); return 1; }
+    if (memcmp(tout, tout0, 32) == 0) { printf("absent root aliased a zero root FAIL\n"); return 1; }
+    /* BIP-341 keyPathSpending input 0: the private half of the same output. */
+    {
+      unsigned char isk[32], twant[32];
+      unhex("6b973d88838f27366ed61c9ad6367663045cb456e28335c109e30717ae0c6baa", isk);
+      unhex("2405b971772ad26915c8dcdf10f238753a9b837e5f8e6a86fd7c0cce5b7296d9", twant);
+      if (cnx_xonly_pubkey_from_seckey(isk, 32, xo, 32) != 0 || memcmp(xo, ipub, 32) != 0) {
+        printf("taproot internal pubkey FAIL\n"); return 1;
+      }
+      if (cnx_taproot_tweak_seckey(isk, 32, NULL, 0, tsk, 32) != 0) { printf("taproot tweak seckey FAIL\n"); return 1; }
+      if (memcmp(tsk, twant, 32) != 0) { printf("taproot tweaked seckey value FAIL\n"); return 1; }
+      /* Close the loop: the tweaked PRIVATE key must sign for the output key
+       * the PUBLIC path derived from the internal key alone. */
+      if (cnx_schnorr_sign(tsk, 32, msg, 32, aux, 32, sig, 64) != 0) { printf("taproot sign FAIL\n"); return 1; }
+      if (cnx_schnorr_verify(tout, 32, msg, 32, sig, 64) != 0) { printf("taproot key-path spend FAIL\n"); return 1; }
+    }
+    /* Fail-closed guards on the new surface. */
+    if (cnx_schnorr_sign(NULL, 32, msg, 32, aux, 32, sig, 64) != -1) { printf("sign null-key guard FAIL\n"); return 1; }
+    if (cnx_schnorr_sign(sk, 32, msg, 32, aux, 32, sig, 63) != -2) { printf("sign siglen guard FAIL\n"); return 1; }
+    if (cnx_xonly_pubkey_from_seckey(sk, 32, xo, 31) != -2) { printf("xonly outlen guard FAIL\n"); return 1; }
+    if (cnx_taproot_tweak_pubkey(ipub, 32, NULL, 0, tout, 32) != -2) { printf("taproot outlen guard FAIL\n"); return 1; }
+    if (cnx_taproot_tweak_pubkey(ipub, 32, zeros, 5, tout, 33) != -2) { printf("taproot rootlen guard FAIL\n"); return 1; }
+    if (cnx_taproot_tweak_pubkey(ipub, 32, NULL, 32, tout, 33) != -1) { printf("taproot null-root guard FAIL\n"); return 1; }
+    if (cnx_taproot_tweak_seckey(sk, 32, zeros, 5, tsk, 32) != -2) { printf("tweak-seckey rootlen guard FAIL\n"); return 1; }
+    for (i = 0; i < 32; i++) sk[i] = 0;
+    if (cnx_schnorr_sign(sk, 32, msg, 32, aux, 32, sig, 64) != -4) { printf("sign zero-key guard FAIL\n"); return 1; }
+    if (cnx_xonly_pubkey_from_seckey(sk, 32, xo, 32) != -4) { printf("xonly zero-key guard FAIL\n"); return 1; }
+    if (cnx_taproot_tweak_seckey(sk, 32, NULL, 0, tsk, 32) != -4) { printf("tweak-seckey zero-key guard FAIL\n"); return 1; }
+    /* An x-only value that is not on the curve is a KEY error here, unlike in
+     * verification: the caller is asserting "this is my internal key", not
+     * asking a yes/no question about somebody's signature. */
+    {
+      unsigned char offcurve[32];
+      unhex("eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34", offcurve);
+      if (cnx_taproot_tweak_pubkey(offcurve, 32, NULL, 0, tout, 33) != -4) {
+        printf("taproot off-curve internal key guard FAIL\n"); return 1;
+      }
+    }
+  }
+  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39 + memzero"
+         " + BIP-340/341)\n");
   return 0;
 }
 EOF
-    cc $warn -fsanitize=address,undefined $inc "$tmp/selftest.c" "$here/coinxt.c" $vendor_src -o "$tmp/cnx_selftest"
+    # Upstream's units are instrumented too: the point of this lane is that the
+    # NEW code runs under ASan + UBSan, and half of it is upstream's.
+    secp_objs=$(compile_secp "$tmp" cc -fsanitize=address,undefined)
+    cc $warn $secp_cppflags -fsanitize=address,undefined $inc "$tmp/selftest.c" \
+       "$here/coinxt.c" $vendor_src $secp_objs -o "$tmp/cnx_selftest"
     "$tmp/cnx_selftest"
     rm -rf "$tmp"
     ;;

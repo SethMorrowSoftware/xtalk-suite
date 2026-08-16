@@ -169,6 +169,14 @@ jobs:
       # number the binding checks, a published Keccak-256 answer (the hash
       # surface), and the published RFC 6979 signature plus its verification
       # (the curve surface, and the one that would catch a miscompiled bignum).
+      #
+      # The expected ABI is READ FROM THE SHIM SOURCE, never written here as a
+      # literal. It was a literal until 2026-08-16, and the ABI 4 -> 5 bump for
+      # cnx_memzero duly turned both Linux lanes red for no reason but this
+      # file: the assertion tracked a number that lives somewhere else. Reading
+      # native/coinxt.c is also the STRONGER check - "the committed binary
+      # answers what this source says" is the question an installer cares
+      # about, and it cannot go stale on the next bump.
       - name: Execute the COMMITTED library's vectors
         shell: bash
         run: |
@@ -178,9 +186,16 @@ jobs:
             echo "no committed library for ${{ matrix.platform_id }}; nothing to execute"
             exit 0
           fi
+          want_abi="$(sed -n 's/^#define CNX_ABI_VERSION \([0-9][0-9]*\).*/\1/p' native/coinxt.c)"
+          if [ -z "$want_abi" ]; then
+            echo "FAIL: could not read CNX_ABI_VERSION from native/coinxt.c"
+            exit 1
+          fi
+          echo "  the shim source declares ABI $want_abi"
           cat > /tmp/drive.c <<'DRIVER'
           #include <dlfcn.h>
           #include <stdio.h>
+          #include <stdlib.h>
           #include <string.h>
           #include <stddef.h>
           static int hexeq(const unsigned char *b, int n, const char *want) {
@@ -189,8 +204,9 @@ jobs:
             return strcmp(h, want) == 0;
           }
           int main(int argc, char **argv) {
-            void *so; int rc; unsigned char out[65], sk[32], dg[32], sig[64], pub[33];
+            void *so; int rc, want_abi; unsigned char out[65], sk[32], dg[32], sig[64], pub[33];
             int (*abi)(void);
+            int (*wipe)(void *, size_t);
             int (*keccak)(const unsigned char *, size_t, unsigned char *);
             int (*sha256)(const unsigned char *, size_t, unsigned char *);
             int (*sign)(const unsigned char *, size_t, const unsigned char *, size_t,
@@ -204,10 +220,12 @@ jobs:
             size_t (*wordlist_len)(void);
             static unsigned char wl[2048 * 8];
             unsigned char kid[32];
-            if (argc < 2) return 2;
+            if (argc < 3) return 2;
+            want_abi = atoi(argv[2]);
             so = dlopen(argv[1], RTLD_NOW);
             if (!so) { printf("dlopen failed: %s\n", dlerror()); return 1; }
             *(void **)&abi = dlsym(so, "cnx_abi_version");
+            *(void **)&wipe = dlsym(so, "cnx_memzero");
             *(void **)&keccak = dlsym(so, "cnx_keccak256");
             *(void **)&sha256 = dlsym(so, "cnx_sha256");
             *(void **)&sign = dlsym(so, "cnx_ecdsa_sign");
@@ -217,11 +235,16 @@ jobs:
             *(void **)&wordlist = dlsym(so, "cnx_bip39_wordlist");
             *(void **)&wordlist_len = dlsym(so, "cnx_bip39_wordlist_len");
             if (!abi || !keccak || !sha256 || !sign || !verify || !pubkey ||
-                !tweak || !wordlist || !wordlist_len) {
+                !tweak || !wordlist || !wordlist_len || !wipe) {
               printf("a required cnx_ symbol is missing\n"); return 1;
             }
-            printf("  abi_version = %d\n", abi());
-            if (abi() != 4) { printf("FAIL: expected ABI 4\n"); return 1; }
+            printf("  abi_version = %d (the shim source says %d)\n", abi(), want_abi);
+            if (abi() != want_abi) {
+              printf("FAIL: the committed library answers ABI %d, native/coinxt.c declares %d"
+                     " -- rebuild and re-commit the binary in the same change\n",
+                     abi(), want_abi);
+              return 1;
+            }
             if (keccak((const unsigned char *)"", 0, out) != 0 ||
                 !hexeq(out, 32,
                   "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) {
@@ -266,14 +289,41 @@ jobs:
                 printf("FAIL: a zero tweak was not refused\n"); return 1;
               }
             }
-            printf("  committed library executed OK (ABI 4, keccak, G, RFC 6979, verify, BIP-32/39)\n");
+            /* cnx_memzero is the ABI 5 addition, so the same Phase 4 rule
+             * applies to it. It matters most on THIS lane: the Python KAT
+             * harness covers the wipe on x86_64 only (a 64-bit interpreter
+             * cannot ctypes a 32-bit object - the reason this driver exists),
+             * so without these lines the x86 library ships a secret-wiping
+             * function nothing ever ran. Sentinel, then the NULL refusal. */
+            {
+              unsigned char buf[64]; int i;
+              memset(buf, 0xAA, sizeof buf);
+              if (wipe(buf, sizeof buf) != 0) {
+                printf("FAIL: cnx_memzero refused a good buffer\n"); return 1;
+              }
+              for (i = 0; i < (int)sizeof buf; i++) {
+                if (buf[i] != 0) { printf("FAIL: cnx_memzero left byte %d\n", i); return 1; }
+              }
+              memset(buf, 0xAA, sizeof buf);
+              if (wipe(buf, 0) != 0 || buf[0] != 0xAA) {
+                printf("FAIL: cnx_memzero(ptr, 0) was not a successful no-op\n"); return 1;
+              }
+              if (wipe(NULL, 0) != 0) {
+                printf("FAIL: cnx_memzero(NULL, 0) was not tolerated\n"); return 1;
+              }
+              if (wipe(NULL, 32) != -1) {
+                printf("FAIL: cnx_memzero(NULL, 32) was not refused\n"); return 1;
+              }
+            }
+            printf("  committed library executed OK (ABI %d, keccak, G, RFC 6979,"
+                   " verify, BIP-32/39, memzero)\n", abi());
             dlclose(so);
             return 0;
           }
           DRIVER
           cc -O1 -o /tmp/drive /tmp/drive.c -ldl
           file /tmp/drive "$lib"
-          /tmp/drive "$(pwd)/$lib"
+          /tmp/drive "$(pwd)/$lib" "$want_abi"
 
       # The platform id is passed EXPLICITLY. build.sh derives it from `uname`
       # when you do not, and uname describes the machine, not the output - the

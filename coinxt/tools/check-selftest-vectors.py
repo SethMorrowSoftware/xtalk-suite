@@ -493,6 +493,68 @@ def main(argv):
         want("kEth1559Raw", raw1559.hex(), "coin_reference")
         want("kEth1559Txhash", txh1559.hex(), "coin_reference")
 
+    # --- ABI 6: BIP-340 Schnorr and the BIP-341 Taproot tweak ----------------
+    # coin_reference's model of both is BIP-340's and BIP-341's own reference
+    # pseudocode written longhand, and its import self-check anchors it to the
+    # published vector files - so "re-derived" here means "derived by something
+    # that is independently known to reproduce bitcoin/bips' own numbers", not
+    # "agrees with the library under test".
+    if ref is not None:
+        sk1 = bytes.fromhex(k.get("kSchnorrSk1", ""))
+        msg1 = bytes.fromhex(k.get("kSchnorrMsg1", ""))
+        aux1 = bytes.fromhex(k.get("kSchnorrAux1", ""))
+        want("kSchnorrPub1", ref.xonly_pubkey(sk1).hex(), "coin_reference")
+        want("kSchnorrSig1", ref.schnorr_sign(sk1, msg1, aux1).hex(), "coin_reference")
+
+        # The two NEGATIVES have to stay genuinely negative, or the assertions
+        # that use them silently stop testing anything - the standing lesson
+        # from kBase58Corrupt and kSegwitErrorProgram, applied on arrival this
+        # time instead of a year later.
+        checked.add("kSchnorrPubOffCurve")
+        offcurve = bytes.fromhex(k.get("kSchnorrPubOffCurve", ""))
+        if ref.lift_x(int.from_bytes(offcurve, "big")) is not None:
+            problems.append("kSchnorrPubOffCurve is supposed to be a value that is NOT "
+                            "on the curve, and it IS on the curve, so the check that "
+                            "uses it proves nothing")
+        elif not terse:
+            print("  OK  kSchnorrPubOffCurve is genuinely not a curve point")
+
+        checked.add("kSchnorrSigOddR")
+        oddr = bytes.fromhex(k.get("kSchnorrSigOddR", ""))
+        pub1 = bytes.fromhex(k.get("kSchnorrPub1", ""))
+        if ref.schnorr_verify(pub1, msg1, oddr):
+            problems.append("kSchnorrSigOddR is supposed to be an INVALID signature "
+                            "for kSchnorrPub1 over kSchnorrMsg1, and it verifies")
+        elif len(oddr) != 64:
+            problems.append("kSchnorrSigOddR is not 64 bytes, so the harness would be "
+                            "refused on a length rather than rejected on the signature")
+        elif not terse:
+            print("  OK  kSchnorrSigOddR is a well-formed but INVALID signature")
+
+        # BIP-341. The internal key is derived from the private key rather than
+        # taken on trust, which is what makes the pair meaningful: a mismatched
+        # pair would still produce a tidy-looking address.
+        tsk0 = bytes.fromhex(k.get("kTapSeckey0", ""))
+        want("kTapInternal0", ref.xonly_pubkey(tsk0).hex(), "coin_reference")
+        out0, _ = ref.taproot_tweak_pubkey(bytes.fromhex(k.get("kTapInternal0", "")), None)
+        want("kTapOutput0", out0.hex(), "coin_reference")
+        want("kTapTweaked0", ref.taproot_tweak_seckey(tsk0, None).hex(), "coin_reference")
+        want("kTapAddress0", ref.p2tr(out0), "coin_reference")
+        out1, _ = ref.taproot_tweak_pubkey(bytes.fromhex(k.get("kTapInternal1", "")),
+                                           bytes.fromhex(k.get("kTapRoot1", "")))
+        want("kTapOutput1", out1.hex(), "coin_reference")
+        want("kTapAddress1", ref.p2tr(out1), "coin_reference")
+
+        # The harness asserts that an EMPTY merkle root is not a 32-zero root.
+        # If those two ever produced the same output key the assertion would
+        # pass vacuously, so the claim is checked here against the model.
+        if ref.taproot_tweak_pubkey(bytes.fromhex(k.get("kTapInternal0", "")),
+                                    bytes(32))[0] == out0:
+            problems.append("the harness asserts an empty merkle root differs from a "
+                            "32-zero root, and for kTapInternal0 they agree")
+        elif not terse:
+            print("  OK  an empty merkle root really does differ from a zero root")
+
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()
     if short != k.get("kBip39Seed", "")[:40]:
@@ -558,6 +620,19 @@ def main(argv):
         "kEth1559MaxPrio": "a chosen EIP-1559 max priority fee (hex)",
         "kEth1559MaxFee": "a chosen EIP-1559 max fee (hex)",
         "kEth1559Value": "a chosen EIP-1559 value (hex)",
+        # ABI 6 inputs (published BIP-340 / BIP-341 fixtures the derived
+        # vectors above are built from)
+        "kSchnorrSk1": "BIP-340 test vector 1's private key (a published, "
+                       "burned test key); its x-only pubkey and signature are "
+                       "re-derived",
+        "kSchnorrMsg1": "BIP-340 test vector 1's message, i.e. an input",
+        "kSchnorrAux1": "BIP-340 test vector 1's aux_rand, i.e. an input",
+        "kTapSeckey0": "BIP-341 keyPathSpending input 0's private key (a "
+                       "published test key); the internal key, the tweaked key "
+                       "and the address are all re-derived from it",
+        "kTapInternal1": "BIP-341 scriptPubKey vector 1's internal key, an "
+                         "input; the output key and address are re-derived",
+        "kTapRoot1": "BIP-341 scriptPubKey vector 1's merkle root, i.e. an input",
     }
     uncovered = sorted(set(k) - checked - set(inputs))
     if uncovered:

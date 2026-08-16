@@ -83,6 +83,23 @@ available. The committed row has since been refreshed by `release-binaries.yml` 
 31551536144 with its own build, verified by `tools/install-release-binaries.py` and the
 full gate set; the mingw episode stands as the record that the fallback works.
 
+**THE COMMITTED BINARIES ARE EXECUTED IN CI NOW, NOT ONLY INSPECTED (2026-08-16).**
+Until this date every lane in `native-sodiumxt.yml` built fresh from source and asked
+whether THAT was correct; the blobs under `src/code/` - the ones an OXT user actually
+binds against - were verified only by their export list and their hash. That hole was
+worth closing here before anywhere else, because ABI 8/9 added the ristretto255 and
+DLEQ surface that holde-em's Level 2 deal binds to, and nothing had ever executed the
+committed copies of it. The `pack` job now dlopen()s the committed `.so` BEFORE the
+build overwrites it and drives the published **RFC 9496 Appendix A.1** encodings of
+[1]B, [2]B and [3]B, then the group law, general `scalarmult` against
+`scalarmult_base`, the ABI 9 batch crossing against the single one, and a refused bad
+point. The expected ABI is READ FROM `src/sodium_shim.h`, never a literal (coinxt's
+lane carried a literal and the 4 -> 5 bump turned it red for no reason but the
+workflow file). Linux `.so` lanes only: `universal-mac` is deliberately not driven
+because that hand-lipo'd blob is still recorded at ABI 6, three behind this header, so
+an assertion there would fail on a known documented state rather than on a regression.
+It starts being driven when the manual mac build lands.
+
 The C ABI is **engine-agnostic**: if we ever swap libsodium for monocypher (single-file,
 smaller), the same `sxt_*` surface is reproduced and the LCB layer is untouched.
 

@@ -54,6 +54,12 @@ licenses, reproduced with their sources:
                   converted OGG->PCM16 per
                   NOTICE.md)
   coinxt          trezor-crypto                 MIT
+                  libsecp256k1 (bitcoin-core)   MIT
+                  (BIP-340 Schnorr and the
+                  BIP-341 Taproot tweak; a
+                  SECOND upstream library,
+                  added 2026-08-16 - see
+                  coinxt/SPEC.md section 2)
                   SHA-2 (Gifford)               BSD-3-Clause
                   SHA-3/Keccak (RHash)          MIT
                   RIPEMD-160 (Litzenberger)     public domain
@@ -61,6 +67,9 @@ licenses, reproduced with their sources:
                   BLAKE2b (Neves)               CC0-1.0 / OpenSSL / Apache-2.0
                                                 (coinxt elects CC0-1.0)
                   Groestl (Projet RNRT SAPHIR)  MIT
+
+libsecp256k1 is MIT throughout - it vendors nothing under other terms, so it
+adds one row and no per-file exceptions.
 
 trezor-crypto is MIT as a project, but the subset coinxt vendors includes
 third-party implementations that keep their own terms — the six rows above it.
