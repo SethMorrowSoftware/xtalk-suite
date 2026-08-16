@@ -974,7 +974,9 @@ smuggled in." This is that change, made with the bump. The decisions worth knowi
   binds and `sWipeFree` does not disturb a result. `package-extension.py`'s stale 16-name
   EXPECTED_EXPORTS list was brought up to the full 35 in the same change, because for a cross-built
   DLL that install check is the only missing-export gate in the tree (the freshness gate reads ELF
-  only).
+  only). **That last sentence was true about the list and FALSE about the gate**: the reader under
+  it had no opinion about any PE, so the gate it describes did not run. See the correction at the
+  end of this section.
 
 **THE WINDOWS DLLs IN THIS CHANGE ARE BELOW THIS MEMBER'S OWN BAR, AND THAT IS RECORDED, NOT
 BLURRED (2026-08-16).** coinxt's bar for a bundled Windows binary is EXECUTION: since the
@@ -1001,3 +1003,60 @@ lesson - so both DLLs are honestly labeled: needs the Windows execution proof. T
 the committed x86_64-linux library passed the full KAT suite including the new memzero contract in
 this environment, and the x86-linux build is the same source through the same gcc at `-m32`,
 export-parity-checked, with CI executing the committed x86_64 library's vectors on every push.
+
+**THE 2026-08-16 EXPORT CHECK WAS FAIL-OPEN FOR EVERY WINDOWS DLL, WHICH IS THE OPPOSITE OF WHAT ITS
+OWN COMMIT MESSAGE CLAIMED (found and fixed 2026-08-16, same day).** Pushed commit `55f9130` states
+that `tools/package-extension.py`'s export check "is the only missing-export check an installed DLL
+gets", and the comment it added above `EXPECTED_EXPORTS` said the same. The claim about the tree was
+right and the claim about the check was **false as shipped**: between that commit and this fix, the
+check had no opinion about any PE at all, so on the artifact class it was written to protect it did
+not run.
+
+- **The mechanism.** `read_exports` shelled out to `nm`. The same commit added a type-letter filter
+  (`len(parts) == 3 and parts[1] != "I"`) because a plain Linux binutils `nm` opens a mingw DLL far
+  enough to list its IMPORT thunks (`__imp_BCryptGenRandom` and friends) and nothing else, and the
+  old any-line parse had counted those thunks as "the exports" and refused a good DLL for missing
+  every `cnx_*` name. The filter fixed that false refusal and created a worse failure: with every
+  line filtered out the name set was empty, and the function treated an empty set as the documented
+  `None`, "no opinion". `--lib` then printed `exports: not checked` and proceeded.
+- **The consequence.** For `src/code/x86_64-win32/coinxt.dll` and `src/code/x86-win32/coinxt.dll`
+  there is no second gate: `check-binary-freshness.py` reads ELF and SKIPS both. So a MinGW build
+  that had genuinely lost `cnx_memzero` (or any of the other 34) would have installed silently and
+  failed at bind time on a user's machine, which is the exact outcome the check exists to stop.
+- **What made it easy to miss**, and it is worth carrying: the DLL has 35 import thunks AND 35 real
+  exports, so no count ever looked wrong, and the identical command on the two Linux `.so` files
+  printed a correct "all 35 present" in the same session. A gate that is green on the artifacts you
+  happen to look at is not evidence about the artifacts it was written for.
+- **What holds now.** `read_exports` dispatches on the container's MAGIC, not on the platform id and
+  not on what a tool happens to support. A PE is parsed against the file format with `struct` (DOS
+  stub, optional header PE32/PE32+, data directory 0, the section table for RVA to file offset, then
+  IMAGE_EXPORT_DIRECTORY's [Ordinal/Name Pointer] table), so no external tool is in the path and a
+  host whose binutils lacks the PE targets can no longer make the check evaporate. `objdump -p`
+  would have read this tree fine, but it would have rebuilt the same "works until the host's
+  binutils is plain" hole one layer down. A PE now yields a real answer or raises `ExportReadError`,
+  which `--lib` turns into a refusal; a container that is not ELF, PE or Mach-O is refused outright;
+  the one surviving no-opinion path is a Mach-O with no usable `nm`, and it prints a three-line
+  WARNING that names the file being installed unchecked instead of a single quiet line.
+- **The gate is proven to FAIL, not just to pass** (the standing lesson, applied to the fix itself):
+  a copy of the committed x64 DLL with `cnx_memzero` surgically deleted from its export name table
+  (name pointer and ordinal entry removed, `NumberOfNames` decremented; `objdump -p` confirms 34
+  names and no `cnx_memzero`) is refused with "missing 1 of the 35 cnx_* exports (cnx_memzero)"; a
+  copy whose export-directory RVA points into no section is refused as unreadable rather than
+  waved through; a copy with the export data directory zeroed is refused as missing all 35; and all
+  four committed libraries still pass, the two DLLs now reading "35 present (PE export name table)".
+
+**`sWipeFree` no longer throws, because a belt-and-braces guard must not be able to cost the caller
+the real error (2026-08-16, same pass).** ABI 5's `sFinish` wiped and freed the out-buffer BEFORE
+throwing the `cnx_*` status, so a wipe refusal on that path would have replaced a diagnostic the
+caller can act on ("cxSign: a buffer had the wrong length.") with a reinstall-the-library sentence
+naming no handler. Checking that status was the right call - an unchecked status would be the one
+silent path in the file - but checking it where it can displace the primary error gives the benefit
+straight back. `sWipeFree` now RETURNS the status; `sFinish` appends it in parentheses where there
+is already a real error to report (`sWipeNote`, empty on success, so every existing message is
+unchanged byte for byte), and throws it alone on the success path where there is nothing to
+displace. Discarding a correct result there is deliberate: a library whose wipe refuses is a library
+whose output this file has no reason to trust. The "could not build the result data" throw gained
+the handler name it was missing, and `docs/api-reference.md`'s error table carries both new forms.
+Verified statically (the gate set is green and only `sFinish` calls `sWipeFree`); needs an OXT pass,
+which still owes the ABI-5 item above - the first `cx*` call proving `_cnx_memzero` binds - plus the
+`String` return of `sWipeNote` concatenating into a throw.

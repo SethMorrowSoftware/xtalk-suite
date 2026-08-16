@@ -134,7 +134,11 @@ library org.openxtalk.library.coin
 -- export an earlier revision of this note recorded as future work; it was a
 -- shim change and therefore an ABI bump (4 -> 5), made together, not smuggled
 -- in - before MCMemoryDeallocate, on the success path and on both error
--- paths. The wipe is UNCONDITIONAL rather than per handler, because deciding
+-- paths. sWipeFree RETURNS its status rather than throwing it, so the wipe
+-- can never displace the cnx_* error the caller actually needs; sFinish
+-- appends it as a note where there is already a real error and throws it
+-- alone where there is not (see the precedence note on sFinish). The wipe is
+-- UNCONDITIONAL rather than per handler, because deciding
 -- "secret enough to wipe" at each call site is a judgment that fails open
 -- when it is wrong and saves one cheap call when it is right. The honest
 -- residue is unchanged: the returned Data is ordinary engine memory - OXT
@@ -169,6 +173,13 @@ constant kABIVersion is 5
 -- unsigned foreign slot becomes a huge positive value, and the sign is only
 -- still visible HERE.
 constant kMaxIterations is 2147483647
+
+-- The sentence a refused native wipe gets. It is a constant because TWO throw
+-- sites in sFinish need the identical words (one alone, one appended to a
+-- primary error) and a message that drifts between them would make the same
+-- condition look like two different faults. Declared here for the same reason
+-- as kABIVersion: OXT resolves a constant by lexical position.
+constant kWipeRefused is "the native wipe refused the output buffer this extension allocated, so the loaded coinxt library does not match this binding. Reinstall CoinXT."
 
 -- --------------------------------------------------------------------------
 -- Engine memory + Data bridges. These resolve by NAME against engine symbols,
@@ -319,27 +330,49 @@ private handler sAlloc(in pCap as Integer) returns Pointer
    return tPtr
 end handler
 
--- Wipe, then free, one raw out-buffer. EVERY block this file allocates leaves
--- through here (sFinish routes all three of its paths this way), so a freed
--- block never re-enters the allocator still holding a seed, a child private
--- key, a chaincode half or an ECDH point. The wipe is the shim's cnx_memzero,
--- which the compiler cannot elide the way it could a store the block never
--- reads again; see "SECRET HYGIENE, HONESTLY" in the header. The status check
--- is a belt-and-braces impossibility guard, not a real branch: pPtr comes from
--- sAlloc (never null) and sPrepare() has already proven the loaded library
--- speaks this ABI, so cnx_memzero cannot refuse - but a status this file did
--- not check would be the one silent path in it, so it is checked. The free has
--- already happened by then, deliberately: wipe, free, THEN judge, so even the
--- impossible path leaks nothing.
-private handler sWipeFree(in pPtr as Pointer, in pLen as Integer) returns nothing
+-- Wipe, then free, one raw out-buffer, and REPORT the wipe status rather than
+-- acting on it. EVERY block this file allocates leaves through here (sFinish
+-- routes all three of its paths this way), so a freed block never re-enters
+-- the allocator still holding a seed, a child private key, a chaincode half or
+-- an ECDH point. The wipe is the shim's cnx_memzero, which the compiler cannot
+-- elide the way it could a store the block never reads again; see "SECRET
+-- HYGIENE, HONESTLY" in the header. Wipe, free, THEN return the status,
+-- deliberately in that order, so even the impossible refusal path leaks
+-- nothing.
+--
+-- WHY THIS RETURNS THE STATUS INSTEAD OF THROWING IT (changed 2026-08-16).
+-- It used to throw here, and that put the belt-and-braces guard in a position
+-- where it could DISPLACE a real diagnostic: sFinish's native-error path wipes
+-- BEFORE it throws, so a wipe refusal there would have replaced, say,
+-- "cxSign: a buffer had the wrong length." with a reinstall-the-library
+-- sentence naming no handler, for a call that failed on a range check. The
+-- decision to check this status at all was the right one - an unchecked status
+-- would be the one silent path in this file - but a check only earns its keep
+-- if it cannot cost the caller the primary error. So the status comes back and
+-- sFinish decides: appended as a note where there is already a real error to
+-- report, thrown on its own where there is not. Nothing is swallowed either
+-- way. (The branch itself is still an impossibility guard: pPtr comes from
+-- sAlloc and is never null, and sPrepare() has already proven the loaded
+-- library speaks this ABI, so cnx_memzero cannot refuse.)
+private handler sWipeFree(in pPtr as Pointer, in pLen as Integer) returns Integer
    variable tStatus as Integer
    unsafe
       put _cnx_memzero(pPtr, pLen) into tStatus
       MCMemoryDeallocate(pPtr)
    end unsafe
-   if tStatus is not 0 then
-      throw "CoinXT: the native wipe refused a buffer this extension allocated - the loaded coinxt library does not match this binding. Reinstall CoinXT."
+   return tStatus
+end handler
+
+-- Render a wipe status as a SUFFIX for an error that already has something
+-- more useful to say. Empty on success, so the primary message is unchanged
+-- byte for byte when the wipe behaved (which is every run that has ever
+-- happened); parenthesised when it did not, because it is secondary
+-- information about the same failure and must not read as its cause.
+private handler sWipeNote(in pWipeStatus as Integer) returns String
+   if pWipeStatus is 0 then
+      return ""
    end if
+   return " (Additionally," && kWipeRefused & ")"
 end handler
 
 -- The read-only pointer to a Data's own bytes. On an EMPTY Data this may be a
@@ -406,19 +439,34 @@ end handler
 -- (a throwing sToData between allocate and free) would have leaked the block
 -- unwiped on the copy-failure path, which for a seed is the exact hole the
 -- wipe exists to close.
+--
+-- THE ERROR PRECEDENCE, and it is the whole point of the tWipe variable. The
+-- cnx_* status is what the CALLER can act on ("the key is not a valid
+-- secp256k1 key", "a buffer had the wrong length"), so it always reaches them
+-- and always names the handler it came from. A refused wipe is a statement
+-- about the INSTALLATION, and it can only be produced by a library that
+-- disagrees with this binding; it rides along as a suffix wherever there is
+-- already a real error, and is thrown by itself only on the path where the
+-- call otherwise succeeded and there is nothing to displace. Discarding a
+-- correct result there is deliberate: a library whose wipe refuses is a
+-- library whose output this file has no reason to trust.
 private handler sFinish(in pName as String, in pPtr as Pointer, in pStatus as Integer, in pLen as Integer) returns Data
    variable tResult as Data
    variable tOk as CBool
+   variable tWipe as Integer
    if pStatus is not 0 then
-      sWipeFree(pPtr, pLen)
-      throw "CoinXT:" && pName & ":" && sStatusText(pStatus)
+      put sWipeFree(pPtr, pLen) into tWipe
+      throw "CoinXT:" && pName & ":" && sStatusText(pStatus) & sWipeNote(tWipe)
    end if
    unsafe
       put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
    end unsafe
-   sWipeFree(pPtr, pLen)
+   put sWipeFree(pPtr, pLen) into tWipe
    if not tOk then
-      throw "CoinXT: could not build the result data."
+      throw "CoinXT:" && pName & ": could not build the result data." & sWipeNote(tWipe)
+   end if
+   if tWipe is not 0 then
+      throw "CoinXT:" && pName & ":" && kWipeRefused
    end if
    return tResult
 end handler

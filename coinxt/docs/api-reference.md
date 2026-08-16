@@ -613,8 +613,10 @@ Every failure is a thrown string starting `"CoinXT:"`. The forms you can encount
 | `CoinXT: <handler>: an unexpected native status ...` | The loaded library does not match this binding. |
 | `CoinXT: cxPbkdf2HmacSha512: the output length must be at least 1 byte ...` | `pOutLen` below 1. |
 | `CoinXT: cxPbkdf2HmacSha512: the iteration count must be at least 1 ...` | `pIterations` below 1. |
+| `CoinXT: <handler>: could not build the result data.` | The engine refused to build the result `Data`. The buffer was wiped and freed first. |
 | `CoinXT: out of memory allocating an output buffer.` | The engine could not allocate the output. |
-| `CoinXT: the native wipe refused a buffer this extension allocated ...` | Should be unreachable: the ABI guard has already matched, so `cnx_memzero` cannot refuse a live buffer. Seeing it means the loaded library changed underneath the extension. |
+| `CoinXT: <handler>: the native wipe refused the output buffer ...` | Should be unreachable: the ABI guard has already matched, so `cnx_memzero` cannot refuse a live buffer. Seeing it means the loaded library changed underneath the extension. |
+| `... (Additionally, the native wipe refused the output buffer ...)` | The same condition, appended to one of the errors above. A refused wipe never REPLACES the status you can act on: the `cnx_*` error is reported first and this rides along as a suffix. |
 
 ```
 try
