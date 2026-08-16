@@ -266,6 +266,10 @@ def load(out_path):
         ctypes.c_uint32,                    # iterations
         ctypes.c_char_p, ctypes.c_size_t,   # out, outlen
     ]
+    # ABI 5: the secret-hygiene wipe the .lcb runs on every out-buffer before
+    # freeing it (internal to the binding; no public cx* wrapper exists).
+    lib.cnx_memzero.restype = ctypes.c_int
+    lib.cnx_memzero.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
     # ---- the phase-2 curve surface ------------------------------------------
     # Every buffer crosses as pointer + size_t length, so the pubkey argument
     # carries its own length and the shim can refuse a length that disagrees
@@ -406,8 +410,8 @@ def main(argv):
         lib = load(out_path)
 
         abi = lib.cnx_abi_version()
-        if abi != 4:
-            problems.append(f"abi_version = {abi}, expected 4")
+        if abi != 5:
+            problems.append(f"abi_version = {abi}, expected 5")
         elif not check:
             print(f"abi_version: {abi}")
 
@@ -530,6 +534,34 @@ def main(argv):
         # the NULL-with-zero-length path the LCB layer can hand us.
         if digest(lib, "cnx_sha256", None) != SHA256[b""]:
             problems.append("sha256(NULL, 0) did not equal sha256 of the empty string")
+
+        # ---- cnx_memzero (ABI 5): the .lcb's out-buffer wipe -----------------
+        # Not a KAT in the digest sense - there is no published vector for
+        # "zero" - but it IS a contract, and this is the file that executes the
+        # committed release binaries (CI's --lib runs), so the wipe every .lcb
+        # call path relies on is proven to run in the exact artifact shipped.
+        # It must wipe EXACTLY len bytes (the 0xAA sentinel past len must
+        # survive), treat len 0 as a successful no-op, tolerate NULL+0 per the
+        # shim's firewall convention, and refuse NULL with a nonzero length.
+        wipe = ctypes.create_string_buffer(b"\xaa" * 33, 33)
+        if lib.cnx_memzero(wipe, 32) != 0:
+            problems.append("cnx_memzero(buf, 32) did not return 0")
+        if wipe.raw != b"\x00" * 32 + b"\xaa":
+            problems.append("cnx_memzero did not wipe exactly len bytes "
+                            f"(got {wipe.raw.hex()})")
+        # A len-0 no-op cannot be probed on a zeroed buffer (a spurious zero
+        # write is invisible there), so repaint byte 0 first.
+        wipe[0] = b"\x55"
+        if lib.cnx_memzero(wipe, 0) != 0:
+            problems.append("cnx_memzero(buf, 0) is not a successful no-op")
+        if wipe.raw[0] != 0x55:
+            problems.append("cnx_memzero(buf, 0) wrote into the buffer")
+        if lib.cnx_memzero(None, 0) != 0:
+            problems.append("cnx_memzero(NULL, 0) is not tolerated")
+        if lib.cnx_memzero(None, 5) != -1:
+            problems.append("cnx_memzero(NULL, nonzero) did not refuse (CNX_ERR_NULL)")
+        if not check:
+            print("  cnx_memzero contract x6 OK")
 
         # ==================================================================
         # Phase 2: secp256k1.

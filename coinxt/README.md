@@ -78,7 +78,7 @@ CoinXT/
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
-    coinxt.lcb              the foreign-handler module (binds to all 34 cnx_* exports);
+    coinxt.lcb              the foreign-handler module (binds to all 35 cnx_* exports, ABI 5);
                             engine-proven end to end: phase 1 closed 2026-08-08, phases 2-4
                             closed 2026-08-10 (the folded harness, 207/207 on the re-run)
     coinxt.livecodescript   the phase-3 script layer: hex, Base58Check, bech32/bech32m, RLP
@@ -230,6 +230,23 @@ python-bitcointx accept fresh legacy and segwit spends under consensus rules, an
 the exact sender from fresh EIP-155 and EIP-1559 transactions, negative controls firing in every
 family. A live testnet broadcast is the one bar left before any transaction is called broadcastable.
 Schnorr/BIP-340 stays deferred with Taproot (trezor-crypto's plain-C tree has no BIP-340).
+
+**ABI 5, the recorded secret-hygiene fix, is SHIPPED (2026-08-16).** The shim gains one
+export, `cnx_memzero(ptr, len)` - a wrap of the vendored trezor-crypto `memzero.c`
+(SecureZeroMemory / memset_s / explicit_bzero / a volatile loop, per platform; no wiping
+technique of our own) - and `src/coinxt.lcb` now wipes every raw out-buffer through it
+before freeing: the PBKDF2 seed path its header had recorded as the known gap, plus the
+other secret outputs the audit named (the BIP-32 HMAC-SHA512 block, the tweaked child
+private key, the ECDH point) and, unconditionally, every non-secret output too. No new
+public handler; the surface stays 80 (35 in the `.lcb`, 45 in the script layer), and the
+export is deliberately not script-visible - a script `Data` cannot be wiped in place, and
+that honest limit stands documented rather than papered over. The wipe contract is
+EXECUTED by the native gates on Linux (the ASan/UBSan self-test and `coin-kat.py`, which
+also drives the committed x86_64 library); the `.lcb` call sites are verified statically
+and need an OXT pass; the two Windows DLLs are MinGW cross-builds carrying the
+sodiumxt-precedent static checks (export parity, ABI-in-disassembly, clean imports) and
+need their Windows execution proof - the next `release-binaries.yml` dispatch supersedes
+them with `kat-windows`-proven builds (see CLAUDE.md for the recorded deviation).
 
 **WIF, the last designed encoding, is BUILT (2026-08-15)**: `cxWifEncode` / `cxWifDecode` in the
 script layer, no shim change, for **80** public handlers (35 in the `.lcb`, 45 in the script layer).

@@ -98,7 +98,9 @@ extension is not installed or did not load.
 - **Errors throw.** A failure raises a string beginning `"CoinXT:"` and naming the handler.
   There is no error-code return and no partial result. Catch with `try ... catch tError`.
 - **Every call re-checks the ABI.** Each handler begins by verifying the loaded library
-  reports ABI 4, and throws if not, so a mismatched library cannot silently produce garbage.
+  reports ABI 5, and throws if not, so a mismatched library cannot silently produce garbage.
+  (ABI 5, 2026-08-16, is an internal secret-hygiene change - see "Secret hygiene, honestly"
+  below. It adds no public handler and changes no signature.)
 - **An empty `Data` is legal input** for every digest and for both HMAC slots. It returns the
   documented empty-input digest rather than throwing. This was the binding's one genuinely
   open marshalling question and the 2026-08-08 engine pass settled it.
@@ -111,7 +113,7 @@ extension is not installed or did not load.
 cxCheckABI
 ```
 
-A command. Returns nothing. Throws if the loaded native library does not report ABI 4, with
+A command. Returns nothing. Throws if the loaded native library does not report ABI 5, with
 an error telling the user to reinstall the packaged extension. Silence is the pass.
 
 You rarely need to call it explicitly, because every other handler performs the same check
@@ -612,6 +614,7 @@ Every failure is a thrown string starting `"CoinXT:"`. The forms you can encount
 | `CoinXT: cxPbkdf2HmacSha512: the output length must be at least 1 byte ...` | `pOutLen` below 1. |
 | `CoinXT: cxPbkdf2HmacSha512: the iteration count must be at least 1 ...` | `pIterations` below 1. |
 | `CoinXT: out of memory allocating an output buffer.` | The engine could not allocate the output. |
+| `CoinXT: the native wipe refused a buffer this extension allocated ...` | Should be unreachable: the ABI guard has already matched, so `cnx_memzero` cannot refuse a live buffer. Seeing it means the loaded library changed underneath the extension. |
 
 ```
 try
@@ -623,7 +626,23 @@ end try
 
 ## Secret hygiene, honestly
 
-CoinXT zeroes its own scratch buffers in C. It cannot protect the `Data` it hands back.
+CoinXT zeroes its own scratch buffers in C, and since **ABI 5 (2026-08-16)** the binding
+layer wipes its raw out-buffers too. Every block `src/coinxt.lcb` allocates for a result
+used to be freed unwiped (the file said so rather than hiding it); it is now wiped through a
+new shim export, `cnx_memzero(ptr, len)` - a wrap of the vendored trezor-crypto `memzero.c`,
+the platform wipe a compiler cannot elide - before every `MCMemoryDeallocate`, on the
+success path and on both error paths. That covers the outputs that are genuinely key
+material (the `cxPbkdf2HmacSha512` seed, the `cxHmacSha512` output BIP-32 splits into a
+child-key tweak and a chaincode, the `cxSeckeyTweakAdd` child private key, the `cxEcdh`
+shared point) and, deliberately, every other out-buffer as well: classifying "secret enough
+to wipe" per handler is a judgment that fails open when it is wrong. `cnx_memzero` is
+internal to the binding - there is no public `cx*` wrapper, because a script `Data` cannot
+be wiped in place and a handler that pretended otherwise would only invite false
+confidence. The wipe contract is executed by the native gates (the ASan self-test and
+`coin-kat.py`, including against the committed Linux x86_64 library); the `.lcb` call sites
+that route through it are verified statically and await an OXT pass.
+
+What none of that can protect is the `Data` CoinXT hands back.
 
 An OXT script variable is not locked memory: it can be paged to disk, it is not reliably
 zeroed when it goes out of scope, and the engine may copy it. So a seed returned by

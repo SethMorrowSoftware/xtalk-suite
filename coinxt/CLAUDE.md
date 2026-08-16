@@ -120,12 +120,13 @@ Three things `pack` does that a plain `-shared` does not, all of them load-beari
   file named `coinxt.<ext>` - NOT `libcoinxt.<ext>`. The Unix `lib` prefix is exactly wrong here. Every
   sibling ships the same way (`sodiumxt.so`, `enetxt.so`, `datachannelxt.so`).
 - **the surface.** We compile the vendored trezor-crypto units straight in, so an unfiltered build
-  exports 77 symbols, only 16 of them ours - the other 61 are upstream's `sha256_Init`, `hmac_sha512`,
-  `keccak_256`, `ripemd160`, and (worst) plain `memzero`. Those are generic names another extension in
+  exports 238 symbols today, only 35 of them ours (77 and 16 when this was first measured, in phase
+  1) - the rest are upstream's `sha256_Init`, `hmac_sha512`, `keccak_256`, `ripemd160`, and (worst)
+  plain `memzero`. Those are generic names another extension in
   the same engine process could also export, and the dynamic loader would pick one for both. Silently
   running a stranger's `sha256_Final` inside a money library is not a risk worth carrying for zero
   benefit, so `src/coinxt.map` narrows the exports to `cnx_*`. `pack` prints the symbol list it actually
-  shipped; if it is longer than 16 names your linker refused the version script (it says so) - the
+  shipped; if it is longer than 35 names your linker refused the version script (it says so) - the
   library still works, but do not commit that one.
 - **stripping**, so the committed artifact is small and reproducible. It is: rebuilding on the same
   toolchain reproduces the committed file byte for byte, so `pack` never dirties the manifest gate the
@@ -934,3 +935,69 @@ surface now 80 public handlers (35 `.lcb` + 45 script). Base58Check over `versio
 - **No engine has run these two handlers** - they postdate the 2026-08-10/12 passes, and the README,
   api-reference and the script's section header all say so. The OXT pass owes: the three-argument
   call shape, the boolean flag both ways, the array return, and both refusal paths.
+
+**ABI 5, cnx_memzero - the recorded secret-hygiene fix, SHIPPED 2026-08-16.** ABI 4 -> 5, shim and
+`kABIVersion` bumped in the same change, per the rule. `src/coinxt.lcb`'s header had carried the gap
+honestly since phase 1: the raw out-buffer this layer allocates was freed WITHOUT being wiped,
+because no engine `<builtin>` zeroes a block, with the fix recorded as "a future
+`cnx_memzero(ptr, len)` export ... a shim change and therefore an ABI bump, so it is noted here, not
+smuggled in." This is that change, made with the bump. The decisions worth knowing:
+
+- **The wipe is vendored, not invented (rule 1).** `cnx_memzero` is a thin status-returning wrap of
+  `vendor/memzero.c` - the trezor-crypto routine every in-shim secret already goes through
+  (SecureZeroMemory / memset_s / explicit_bzero / a volatile-pointer byte loop, chosen per platform
+  at compile time, none of which the compiler may elide the way it can a plain memset before free).
+  The firewall contract mirrors the in-buffer convention: NULL+0 is a tolerated no-op, NULL with a
+  nonzero length is `CNX_ERR_NULL`, len 0 with a valid pointer succeeds having done nothing.
+- **The `.lcb` wipes EVERY out-buffer, not a classified subset.** `sFree` became
+  `sWipeFree(ptr, len)` (wipe, free, THEN judge the status, so even the impossible refusal path
+  leaks nothing), and `sFinish` routes all three of its paths through it. The audit of the
+  `MCMemoryDeallocate` sites found the secret material beyond the known seed path:
+  `cxPbkdf2HmacSha512` (the BIP-39 seed), `cxHmacSha512` (the BIP-32 I that splits into a child-key
+  tweak and a chaincode), `cxSeckeyTweakAdd` (a child PRIVATE key), `cxEcdh` (a shared secret
+  point). Rather than wiping those four and judging the rest harmless, the wipe is UNCONDITIONAL:
+  per-site classification fails open when it is wrong and saves one cheap call when it is right.
+- **Fixing the free path surfaced a latent leak on it.** Old `sFinish` called a throwing `sToData`
+  BETWEEN allocate and free, so an engine refusal to build the result `Data` (unreachable OOM, but
+  still a path) would have leaked the block unwiped - for a seed, the exact hole the wipe closes.
+  The copy is now inline in `sFinish` and the block is wiped and freed before any throw it raises.
+- **cnx_memzero is deliberately NOT public script surface.** No `cx*` wrapper: a script `Data`
+  cannot be wiped in place (the honest-limit paragraph stands unchanged in the header, the README
+  and the api-reference), so exposing the export would only invite the false belief that it can.
+  The suite coverage gate is untouched: no new public handler exists to cover.
+- **Verified where this environment can verify.** The wipe contract executes for real on Linux:
+  `sh native/build.sh asan` clean with new cases (wipes exactly len - a 0xAA sentinel one past the
+  wipe must survive - len 0 a no-op, NULL+0 tolerated, NULL+len refused), and `coin-kat.py` carries
+  the same six-check contract, which its `--lib` mode also ran against the committed x86_64-linux
+  binary. The `.lcb` call sites are verified statically (the bind diffed against the C signature,
+  the gate set green); needs an OXT pass - specifically the first `cx*` call proving `_cnx_memzero`
+  binds and `sWipeFree` does not disturb a result. `package-extension.py`'s stale 16-name
+  EXPECTED_EXPORTS list was brought up to the full 35 in the same change, because for a cross-built
+  DLL that install check is the only missing-export gate in the tree (the freshness gate reads ELF
+  only).
+
+**THE WINDOWS DLLs IN THIS CHANGE ARE BELOW THIS MEMBER'S OWN BAR, AND THAT IS RECORDED, NOT
+BLURRED (2026-08-16).** coinxt's bar for a bundled Windows binary is EXECUTION: since the
+2026-08-12 release run, `release-binaries.yml`'s `kat-windows` job drives the cross-built DLL
+through the published vectors on a real Windows runner before it is bundled. This environment has
+no Windows runner, so the committed `x86_64-win32` and `x86-win32` DLLs at ABI 5 are MinGW
+cross-builds (the exact toolchain-and-recipe rows from `release-binaries.yml`: `CC/NM/STRIP` set to
+the `x86_64-w64-mingw32-*` / `i686-w64-mingw32-*` tools, `pack` with the explicit platform id, the
+generated `.def` narrowing the PE surface) carrying the THREE STATIC CHECKS of the sodiumxt
+precedent instead - the state sodiumxt's 2026-08-11 mingw64 DLL was in before its 2026-08-12
+Windows engine proof, and the same checks its 2026-08-15 DLLs carry while awaiting theirs:
+
+1. export-table parity with the Linux build: 35/35 `cnx_*` names byte-identical to the x86_64-linux
+   `nm -D` set, zero leaked upstream symbols, in BOTH DLLs;
+2. the ABI constant in the disassembly: `cnx_abi_version` at its export RVA disassembles to
+   `mov $0x5,%eax; ret` in both;
+3. the import table clean: `KERNEL32.dll`, `msvcrt.dll`, `bcrypt.dll` (BCryptGenRandom, the blinding
+   entropy source) and nothing else, in both.
+
+Static checks prove well-formed, not working - "shipped is not run" is this repo's most expensive
+lesson - so both DLLs are honestly labeled: needs the Windows execution proof. The next
+`release-binaries.yml` dispatch supersedes them with `kat-windows`-proven builds, exactly as run
+31551536144 (2026-08-12) superseded the earlier cross-builds. The Linux pair is not in that state:
+the committed x86_64-linux library passed the full KAT suite including the new memzero contract in
+this environment, and the x86-linux build is the same source through the same gcc at `-m32`,
+export-parity-checked, with CI executing the committed x86_64 library's vectors on every push.

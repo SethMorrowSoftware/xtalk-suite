@@ -186,6 +186,14 @@ Mnemonic (BIP-39) - AS BUILT. cnx_bip39_seed was not needed: it is PBKDF2-HMAC-S
   cnx_bip39_wordlist(out, outlen) -> int      // 2048 fixed-width 8-byte slots, space padded
   cnx_bip39_wordlist_len(void) -> size_t      // 16384
   // entropy<->words and the checksum word live in script (pure bytes + a SHA-256 call)
+
+Secret hygiene - AS BUILT, ABI 5 (2026-08-16), not in the original sketch:
+  cnx_memzero(buf, len) -> int    // a status-returning wrap of vendored memzero.c (a wipe
+                                  // the compiler cannot elide). INTERNAL to the binding:
+                                  // src/coinxt.lcb wipes every raw out-buffer through it
+                                  // before MCMemoryDeallocate. Deliberately no cx* wrapper
+                                  // (a script Data cannot be wiped in place; section 8's
+                                  // honest limit stands).
 ```
 
 That is the entire native surface: roughly 25 functions, all buffer-in / buffer-out, all deterministic.
@@ -317,10 +325,12 @@ test vector (section 9). Implement against the standard, not from memory.
    responsible for where seeds and seckeys are stored, how they are backed up, and for a
    confirm-before-sign step. Document the boundary loudly.
 3. **Secret hygiene across the FFI.** Private keys, seeds, and chaincodes cross as `Data` / `Pointer`,
-   are `memzero`ed in the shim after use, and are NEVER returned as a bridged C string. The livecodescript
-   layer clears its own key variables (`put empty into tSeckey`) as soon as it is done. Note the honest
-   limit: OXT script variables are not locked memory, so a seed in script can be paged; treat the desktop
-   as the trust boundary and say so.
+   are `memzero`ed in the shim after use, and are NEVER returned as a bridged C string. Since ABI 5 the
+   `.lcb` binding also wipes every raw out-buffer it allocates (through `cnx_memzero`) before freeing
+   it, so a freed engine block never re-enters the allocator still holding key material. The
+   livecodescript layer clears its own key variables (`put empty into tSeckey`) as soon as it is done.
+   Note the honest limit: OXT script variables are not locked memory, so a seed in script can be paged;
+   treat the desktop as the trust boundary and say so.
 4. **Fail closed on every malformed input.** A bad checksum (Base58Check / Bech32 / EIP-55), an
    out-of-range scalar, a wrong-length buffer, a non-canonical signature: clean error, never a
    wrong-but-plausible key or address. Verify every checksum on decode.

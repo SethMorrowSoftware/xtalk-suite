@@ -64,15 +64,32 @@ PLATFORM_SUFFIX = {
 }
 VALID_PLATFORM_IDS = sorted(PLATFORM_SUFFIX)
 
-# The 16 entry points src/coinxt.map narrows the library down to. A library that
-# does not export all of them will fail to bind at load, silently, which is why
-# this is checked here rather than discovered on a user's machine.
+# The 35 entry points src/coinxt.map narrows the library down to (ABI 5). A
+# library that does not export all of them will fail to bind at load, silently,
+# which is why this is checked here rather than discovered on a user's machine.
+# Keep this list equal to the cnx_* definitions in native/coinxt.c; the
+# freshness gate (tools/check-binary-freshness.py) derives the same set from
+# the source and holds the committed ELF libraries to it, but THIS check is the
+# only export check a cross-built Windows DLL gets on install (that gate reads
+# ELF only), so a stale list here would wave a stale DLL through.
 EXPECTED_EXPORTS = [
+    # phase 1: the ABI guard + the hash surface
     "cnx_abi_version",
     "cnx_keccak256", "cnx_sha3_256", "cnx_sha256", "cnx_sha512", "cnx_ripemd160",
     "cnx_hmac_sha256", "cnx_hmac_sha512", "cnx_pbkdf2_hmac_sha512",
     "cnx_keccak256_len", "cnx_sha3_256_len", "cnx_sha256_len", "cnx_sha512_len",
     "cnx_ripemd160_len", "cnx_hmac_sha256_len", "cnx_hmac_sha512_len",
+    # phase 2: the secp256k1 curve
+    "cnx_seckey_verify", "cnx_pubkey_from_seckey", "cnx_pubkey_decompress",
+    "cnx_ecdsa_sign", "cnx_ecdsa_verify", "cnx_ecdsa_sign_recoverable",
+    "cnx_ecdsa_recover", "cnx_ecdh",
+    "cnx_seckey_len", "cnx_pubkey_len_compressed", "cnx_pubkey_len_uncompressed",
+    "cnx_ecdsa_sig_len", "cnx_recoverable_sig_len", "cnx_ecdh_len",
+    # phase 4: the BIP-32 curve steps + the BIP-39 wordlist
+    "cnx_seckey_tweak_add", "cnx_pubkey_tweak_add",
+    "cnx_bip39_wordlist", "cnx_bip39_wordlist_len",
+    # ABI 5: the secret-hygiene wipe the .lcb runs on every out-buffer
+    "cnx_memzero",
 ]
 
 
@@ -124,8 +141,17 @@ def read_exports(path):
         names = set()
         for line in out.stdout.decode("utf-8", "replace").splitlines():
             parts = line.split()
-            if parts:
-                names.add(parts[-1].lstrip("_"))
+            # nm prints "value type name", and the TYPE letter matters: a
+            # multi-target binutils nm can open a mingw DLL and report only
+            # its import thunks (type I, `__imp_*`) - the IMPORT table, not
+            # the exports. The old any-line parse counted those as "the
+            # exports" and refused a perfectly good DLL for missing every
+            # cnx_* name (found 2026-08-16, dry-running the ABI 5 install).
+            # So: keep real defined symbols, drop import thunks, and when
+            # nothing survives fall through to "no opinion" (None), which is
+            # the contract the docstring states.
+            if len(parts) == 3 and parts[1] != "I":
+                names.add(parts[2].lstrip("_"))
         if names:
             return names
     return None
@@ -143,15 +169,16 @@ def install_lib(src_lib, platform_id, dry_run):
     if exports is not None:
         missing = [s for s in EXPECTED_EXPORTS if s not in exports]
         if missing:
-            sys.exit("package-extension: %s is missing %d of the 16 cnx_* exports "
+            sys.exit("package-extension: %s is missing %d of the %d cnx_* exports "
                      "(%s). It would fail to bind at load. Refusing to install it."
-                     % (src_lib, len(missing), ", ".join(missing[:4])))
+                     % (src_lib, len(missing), len(EXPECTED_EXPORTS),
+                        ", ".join(missing[:4])))
         extra = sorted(s for s in exports if s.startswith("cnx_")
                        and s not in EXPECTED_EXPORTS)
         if extra:
             print("  note: %d unexpected cnx_* export(s): %s"
                   % (len(extra), ", ".join(extra[:6])))
-        print("  exports: all 16 cnx_* entry points present")
+        print("  exports: all %d cnx_* entry points present" % len(EXPECTED_EXPORTS))
     else:
         print("  exports: not checked (no usable nm for this object on this host)")
 

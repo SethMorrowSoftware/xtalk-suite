@@ -61,11 +61,14 @@ do not fall back to anything weaker (see the entropy section in coinxt.c)."
 
 /* ---- ABI version + status codes (stable; never renumber a shipped code) ---- */
 
-/* 3: phase 2 added the secp256k1 curve surface. Additive again - every ABI 2
- * symbol kept its name and signature - but the rule is to bump on ANY ABI
+/* 3: phase 2 added the secp256k1 curve surface. 4: the two BIP-32 curve steps
+ * and the BIP-39 wordlist. 5: cnx_memzero, the secret-hygiene export the .lcb
+ * header had recorded as future work (it lets the binding wipe its raw
+ * out-buffers before freeing them). Additive every time - each bump kept every
+ * prior symbol's name and signature - but the rule is to bump on ANY ABI
  * change so cxCheckABI() can refuse a stale binary rather than fail at the
  * first missing bind. */
-#define CNX_ABI_VERSION 4
+#define CNX_ABI_VERSION 5
 
 #define CNX_OK 0
 #define CNX_ERR_NULL (-1)   /* a required buffer pointer was NULL */
@@ -246,6 +249,33 @@ int cnx_pbkdf2_hmac_sha512(const unsigned char *pw, size_t plen, const unsigned 
   if (!cnx_fits_int(plen) || !cnx_fits_int(slen) || !cnx_fits_int(outlen))
     return CNX_ERR_RANGE;
   pbkdf2_hmac_sha512(pw, (int)plen, salt, (int)slen, iterations, out, (int)outlen);
+  return CNX_OK;
+}
+
+/* ---- secret hygiene: the wipe the binding layer needs (ABI 5) ---------------
+ * src/coinxt.lcb allocates every out-buffer as a raw engine block
+ * (MCMemoryAllocate) and, until this export existed, freed it UNWIPED: there
+ * is no engine <builtin> the binding can name that zeroes a block, and that
+ * file refuses to invent one. Its header recorded the fix - "a future
+ * cnx_memzero(ptr, len) export ... a shim change and therefore an ABI bump,
+ * so it is noted here, not smuggled in" - and this is that change, made with
+ * the bump. The binding now wipes every out-buffer through this before
+ * MCMemoryDeallocate, so a freed block never re-enters the allocator still
+ * holding a seed, a child private key, a chaincode half or an ECDH point.
+ *
+ * The wipe itself is vendor/memzero.c's, the routine every other secret in
+ * this shim already goes through: SecureZeroMemory / memset_s /
+ * explicit_bzero / a volatile-pointer byte loop, chosen per platform at
+ * compile time, none of which the compiler may elide the way it can a plain
+ * memset before free. No wiping technique is invented here (rule 1: wrap).
+ *
+ * The NULL contract mirrors the in-buffer convention above: NULL with len 0
+ * is a tolerated no-op (an empty buffer has nothing to wipe), NULL with a
+ * nonzero length is a caller bug and is refused rather than dereferenced,
+ * and len 0 with a valid pointer succeeds having done nothing. */
+int cnx_memzero(unsigned char *buf, size_t len) {
+  if (buf == NULL) return len == 0 ? CNX_OK : CNX_ERR_NULL;
+  memzero(buf, len);
   return CNX_OK;
 }
 

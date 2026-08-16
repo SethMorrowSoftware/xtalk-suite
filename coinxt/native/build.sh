@@ -92,8 +92,8 @@ case "${1:-lib}" in
     #     ships the same way (sodiumxt.so, enetxt.so, datachannelxt.so).
     #  2. THE PATH. src/code/<arch>-<platform>/ is where the engine looks, and
     #     the directory names are the engine's spelling, not uname's.
-    #  3. THE SURFACE. src/coinxt.map narrows the exports from 77 symbols to the
-    #     16 cnx_* entry points; see that file for why shipping the vendored
+    #  3. THE SURFACE. src/coinxt.map narrows the exports to the cnx_* entry
+    #     points; see that file for why shipping the vendored
     #     trezor-crypto names into an engine process is not acceptable. If the
     #     linker will not take a version script we say so loudly and continue,
     #     because a wide-surface library that WORKS beats no library at all - but
@@ -145,7 +145,7 @@ case "${1:-lib}" in
     staged="$stage/coinxt.$ext"
 
     # ---- the export surface, per object format ------------------------------
-    # Same goal on every platform: ship the 16 cnx_* entry points and NOTHING
+    # Same goal on every platform: ship the cnx_* entry points and NOTHING
     # else (see src/coinxt.map for why a wide surface is unacceptable here). The
     # MECHANISM differs by object format, and picking the wrong one fails OPEN -
     # you get a working library with 77 exports - so each is handled explicitly
@@ -277,6 +277,7 @@ extern int cnx_pubkey_tweak_add(const unsigned char *, size_t, const unsigned ch
                                 unsigned char *, size_t);
 extern int cnx_bip39_wordlist(unsigned char *, size_t);
 extern size_t cnx_bip39_wordlist_len(void);
+extern int cnx_memzero(unsigned char *, size_t);
 /* Compare the first `n` bytes of a digest against its hex spelling. */
 static int eqn(const unsigned char *b, int n, const char *hexexp) {
   char h[129];
@@ -286,7 +287,7 @@ static int eqn(const unsigned char *b, int n, const char *hexexp) {
 static int eq(const unsigned char *b, const char *hexexp) { return eqn(b, 32, hexexp); }
 int main(void) {
   unsigned char o[64];
-  if (cnx_abi_version() != 4) { printf("ABI FAIL\n"); return 1; }
+  if (cnx_abi_version() != 5) { printf("ABI FAIL\n"); return 1; }
   cnx_keccak256((const unsigned char *)"", 0, o);
   if (!eq(o, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")) { printf("keccak empty FAIL\n"); return 1; }
   cnx_keccak256(NULL, 0, o); /* NULL-with-zero guard path */
@@ -401,7 +402,28 @@ int main(void) {
     for (i = 0; i < 32; i++) tw[i] = 0;
     if (cnx_seckey_tweak_add(sk, 32, tw, 32, child, 32) != -4) { printf("zero tweak guard FAIL\n"); return 1; }
   }
-  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39)\n");
+  /* ABI 5: cnx_memzero, the wipe the .lcb runs on every out-buffer before it
+   * frees it. The bounds are what matter here: it must wipe EXACTLY len bytes
+   * (a one-past write - the classic off-by-one - lands on the 0xAA sentinel at
+   * wz[32] and is reported by name; anything further is ASan's), tolerate a
+   * zero length as a no-op, tolerate NULL+0 per the shim's firewall
+   * convention, and refuse NULL with a nonzero length rather than crash. */
+  {
+    unsigned char wz[33];
+    int i;
+    for (i = 0; i < 33; i++) wz[i] = 0xAA;
+    if (cnx_memzero(wz, 32) != 0) { printf("memzero rc FAIL\n"); return 1; }
+    for (i = 0; i < 32; i++) {
+      if (wz[i] != 0) { printf("memzero did not wipe byte %d FAIL\n", i); return 1; }
+    }
+    if (wz[32] != 0xAA) { printf("memzero wiped past len FAIL\n"); return 1; }
+    wz[0] = 0x55;
+    if (cnx_memzero(wz, 0) != 0) { printf("memzero len-0 rc FAIL\n"); return 1; }
+    if (wz[0] != 0x55) { printf("memzero len-0 wrote FAIL\n"); return 1; }
+    if (cnx_memzero(NULL, 0) != 0) { printf("memzero NULL+0 FAIL\n"); return 1; }
+    if (cnx_memzero(NULL, 5) != -1) { printf("memzero NULL+len guard FAIL\n"); return 1; }
+  }
+  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39 + memzero)\n");
   return 0;
 }
 EOF

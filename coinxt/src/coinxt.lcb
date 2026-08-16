@@ -22,6 +22,9 @@ library org.openxtalk.library.coin
 -- That is ALL of phase 4 that belongs here: the mnemonic packing, the path
 -- parse and the xprv/xpub framing are byte shuffling and live in
 -- src/coinxt.livecodescript, by the same C-vs-script rule as the encodings.
+-- ABI 5 (2026-08-16): cnx_memzero, INTERNAL secret hygiene only - sWipeFree
+-- below wipes every out-buffer before freeing it. No new public handler; see
+-- "SECRET HYGIENE, HONESTLY" further down.
 --
 -- ==========================================================================
 -- PHASE 2 AND 4 STATUS: CLOSED ON-ENGINE 2026-08-10 (see below for what the
@@ -121,16 +124,25 @@ library org.openxtalk.library.coin
 -- no size is ever hardcoded in this file (libraries are allowed to change their
 -- digest sizes; a hardcoded 32 is a buffer overflow waiting to happen).
 --
--- SECRET HYGIENE, HONESTLY. cxPbkdf2HmacSha512 derives a BIP-39 seed, which is
--- key material. The shim memzeros its own scratch, but the block we allocate
--- here is freed WITHOUT being wiped: there is no engine <builtin> we can point
--- at that zeroes a raw block, and this file will not invent one it cannot name.
--- The returned Data is likewise ordinary engine memory: OXT script variables
--- are not locked (mlock) memory and can be paged to disk. CoinXT on a
--- general-purpose desktop is not hardware-wallet isolation; the trust boundary
--- is the machine (CLAUDE.md, "Secret hygiene"). A future `cnx_memzero(ptr,len)`
--- export would let this layer wipe the block before freeing it; that is a shim
--- change and therefore an ABI bump, so it is noted here, not smuggled in.
+-- SECRET HYGIENE, HONESTLY. cxPbkdf2HmacSha512 derives a BIP-39 seed, and
+-- cxHmacSha512 (the BIP-32 derivation core: its output splits into a child
+-- key tweak and a chaincode), cxSeckeyTweakAdd (a child PRIVATE key) and
+-- cxEcdh (a shared secret point) likewise write key material into the raw
+-- block this file allocates. The shim memzeros its own scratch, and since
+-- ABI 5 this layer wipes that block too: sFinish routes every out-buffer
+-- through sWipeFree, which calls the shim's cnx_memzero(ptr, len) - the
+-- export an earlier revision of this note recorded as future work; it was a
+-- shim change and therefore an ABI bump (4 -> 5), made together, not smuggled
+-- in - before MCMemoryDeallocate, on the success path and on both error
+-- paths. The wipe is UNCONDITIONAL rather than per handler, because deciding
+-- "secret enough to wipe" at each call site is a judgment that fails open
+-- when it is wrong and saves one cheap call when it is right. The honest
+-- residue is unchanged: the returned Data is ordinary engine memory - OXT
+-- script variables are not locked (mlock) memory, can be paged to disk, and
+-- cannot be wiped from here - so the caller still clears its own variable the
+-- moment it is done. CoinXT on a general-purpose desktop is not
+-- hardware-wallet isolation; the trust boundary is the machine (CLAUDE.md,
+-- "Secret hygiene").
 -- ==========================================================================
 
 use com.livecode.foreign
@@ -147,7 +159,7 @@ metadata summary is "Bitcoin and Ethereum cryptography for xTalk via trezor-cryp
 -- be refused with a legible error, not discovered at the first missing bind.
 -- Declared before first use - OXT resolves a constant by lexical position, and
 -- a forward reference silently evaluates to nothing.
-constant kABIVersion is 4
+constant kABIVersion is 5
 
 -- The largest PBKDF2 iteration count this binding will marshal. The shim takes
 -- a uint32_t, so 2^32-1 would technically fit, but 2^31-1 is the largest value
@@ -183,6 +195,14 @@ private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as
 -- error); every buffer crosses as Pointer + a size_t length (UIntSize).
 -- --------------------------------------------------------------------------
 private foreign handler _cnx_abi_version() returns CInt binds to "c:coinxt>cnx_abi_version"
+
+-- The ABI 5 secret-hygiene export: wipe pLen bytes at pPtr with a wipe the
+-- compiler cannot elide (vendor/memzero.c: SecureZeroMemory / memset_s /
+-- explicit_bzero / a volatile byte loop, per platform). INTERNAL: sWipeFree is
+-- its only caller and there is deliberately no public cx* wrapper - a script
+-- Data cannot be wiped in place, so exposing this to script would only invite
+-- the false belief that it can (see "SECRET HYGIENE, HONESTLY" above).
+private foreign handler _cnx_memzero(in pPtr as Pointer, in pLen as UIntSize) returns CInt binds to "c:coinxt>cnx_memzero"
 
 -- The one-shot digests. `in` may be a NULL pointer when its length is 0 (the
 -- shim substitutes a valid source), so an empty Data is always safe to hash.
@@ -299,10 +319,27 @@ private handler sAlloc(in pCap as Integer) returns Pointer
    return tPtr
 end handler
 
-private handler sFree(in pPtr as Pointer) returns nothing
+-- Wipe, then free, one raw out-buffer. EVERY block this file allocates leaves
+-- through here (sFinish routes all three of its paths this way), so a freed
+-- block never re-enters the allocator still holding a seed, a child private
+-- key, a chaincode half or an ECDH point. The wipe is the shim's cnx_memzero,
+-- which the compiler cannot elide the way it could a store the block never
+-- reads again; see "SECRET HYGIENE, HONESTLY" in the header. The status check
+-- is a belt-and-braces impossibility guard, not a real branch: pPtr comes from
+-- sAlloc (never null) and sPrepare() has already proven the loaded library
+-- speaks this ABI, so cnx_memzero cannot refuse - but a status this file did
+-- not check would be the one silent path in it, so it is checked. The free has
+-- already happened by then, deliberately: wipe, free, THEN judge, so even the
+-- impossible path leaks nothing.
+private handler sWipeFree(in pPtr as Pointer, in pLen as Integer) returns nothing
+   variable tStatus as Integer
    unsafe
+      put _cnx_memzero(pPtr, pLen) into tStatus
       MCMemoryDeallocate(pPtr)
    end unsafe
+   if tStatus is not 0 then
+      throw "CoinXT: the native wipe refused a buffer this extension allocated - the loaded coinxt library does not match this binding. Reinstall CoinXT."
+   end if
 end handler
 
 -- The read-only pointer to a Data's own bytes. On an EMPTY Data this may be a
@@ -323,18 +360,6 @@ private handler sDataLen(in pData as Data) returns Integer
       put MCDataGetLength(pData) into tLen
    end unsafe
    return tLen
-end handler
-
-private handler sToData(in pPtr as Pointer, in pLen as Integer) returns Data
-   variable tResult as Data
-   variable tOk as CBool
-   unsafe
-      put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
-   end unsafe
-   if not tOk then
-      throw "CoinXT: could not build the result data."
-   end if
-   return tResult
 end handler
 
 -- Map a native status to a human sentence. The set is closed (the shim defines
@@ -371,19 +396,30 @@ private handler sStatusText(in pStatus as Integer) returns String
    return "an unexpected native status (the loaded library does not match this binding)."
 end handler
 
--- The common tail of a buffer-filling call: on a non-zero status free the block
--- and throw a prefixed, handler-named error a caller can try/catch; on success
--- copy exactly the bytes the shim promised to write, then free. pLen always
--- comes from the shim (a cnx_*_len, or the caller's requested PBKDF2 output),
--- never from a constant in this file.
+-- The common tail of a buffer-filling call: on a non-zero status wipe and free
+-- the block, then throw a prefixed, handler-named error a caller can
+-- try/catch; on success copy exactly the bytes the shim promised to write,
+-- then wipe and free. pLen always comes from the shim (a cnx_*_len, or the
+-- caller's requested PBKDF2 output), never from a constant in this file. The
+-- copy is made inline rather than through a helper that throws, so the block
+-- is wiped and freed BEFORE any throw this handler can raise - the old shape
+-- (a throwing sToData between allocate and free) would have leaked the block
+-- unwiped on the copy-failure path, which for a seed is the exact hole the
+-- wipe exists to close.
 private handler sFinish(in pName as String, in pPtr as Pointer, in pStatus as Integer, in pLen as Integer) returns Data
    variable tResult as Data
+   variable tOk as CBool
    if pStatus is not 0 then
-      sFree(pPtr)
+      sWipeFree(pPtr, pLen)
       throw "CoinXT:" && pName & ":" && sStatusText(pStatus)
    end if
-   put sToData(pPtr, pLen) into tResult
-   sFree(pPtr)
+   unsafe
+      put MCDataCreateWithBytes(pPtr, pLen, tResult) into tOk
+   end unsafe
+   sWipeFree(pPtr, pLen)
+   if not tOk then
+      throw "CoinXT: could not build the result data."
+   end if
    return tResult
 end handler
 
@@ -602,8 +638,9 @@ public handler cxPbkdf2HmacSha512(in pPassword as Data, in pSalt as Data, in pIt
    unsafe
       put _cnx_pbkdf2_hmac_sha512(tPwPtr, tPwLen, tSaltPtr, tSaltLen, pIterations, tOut, pOutLen) into tStatus
    end unsafe
-   -- The result is a SEED. See the header: the block is freed unwiped and the
-   -- Data is not locked memory. Clear the caller's variable when done with it.
+   -- The result is a SEED. sFinish wipes the raw block (cnx_memzero) before
+   -- freeing it, but the returned Data is not locked memory - see the header.
+   -- Clear the caller's variable when done with it.
    return sFinish("cxPbkdf2HmacSha512", tOut, tStatus, pOutLen)
 end handler
 
