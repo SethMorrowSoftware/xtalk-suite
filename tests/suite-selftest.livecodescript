@@ -409,6 +409,9 @@ constant rs1kRsGoldLanSeq = "5"
 constant rs1kRsGoldLanFeedSeq = "9"
 constant rs1kRsGoldLanReadTs = "1754870700"
 constant rs1kRsGoldLanTick = "3"
+constant rs1kRsGoldLanMediaSeq = "7"
+constant rs1kRsGoldLanFileName = "clip.mp4"
+constant rs1kRsGoldLanFileSize = "1048576"
 constant rs1kRsGoldHeadSeq = "7"
 constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
@@ -446,6 +449,7 @@ constant rs1kRsGoldLanWelcomeHex = "52534c3157066c6170746f7006c1a710d7dd13ac6ade
 constant rs1kRsGoldLanDraftHex = "52534c31440570686f6e650000000000000005001164726166743a2068656c6c6f206d65736874cf0ede5c356853d97eb42b76b44ad279c5ac4622ef48738675ee26fd58cfa6fb672a60196700cda0ceabf81900d3b335ff85c1d0a8d318fef53ae05ec0bc0b"
 constant rs1kRsGoldLanFeedStateHex = "52534c31460570686f6e6500000000000000093561353436653466656635643162373666393464633162326564656437356334346266666339303061663734363161323664383432373435336139326632326400000000689933ac685240060b5fdf7539152e57b472e039f1b5c7eee3680cebfa94b43ae5209d81c45c83ae72ff10e355fc1cf1abcbc1c3664cd5d25e27efda7f169375b831ca09"
 constant rs1kRsGoldLanPresenceHex = "52534c31500570686f6e650100000000000000036c788687ae09387aa6195fd6132a06c72fc80a84d404feafe27d433cc4d12e153cb20ef814b592af8ec9ebb92ac70ae87d2aea6e71d9bf911ce2c4f60962ef0f"
+constant rs1kRsGoldLanHandoffHex = "52534c314d0570686f6e6500000000000000076565656565656565656565656565656565656565656565656565656565656565656565656565656508636c69702e6d70340000000000100000d769b6b0853772c7fd7a8050f12115c559ad663257ea5eb11bd8e808d4f9ef1e55ff92f63f690b30d598408fa6d2a48d93c92896d75f9418a1594e6af580e60b"
 constant rs1kRsGoldAnon0Handle = "e051209271559dbd241ae6d14d60cd8e6ffd84f682ee96129146e6209d0106e9"
 constant rs1kRsGoldAnon0Onion = "4bisbetrkwo32ja243iu2ygnrzx73bhwqlxjmeuri3tcbhiba3u2abyd.onion"
 constant rs1kRsGoldBtxoHeaderHex = "4254584f0100000a7365637265742e747874000000000000000b"
@@ -521,7 +525,7 @@ local sNextHandle            -- monotonic handle allocator (0 is never valid)
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.9.0"
+constant kRsVersion = "0.10.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -535,6 +539,7 @@ constant kRsLanNonceLen = 32
 constant kRsLanMaxName = 32
 constant kRsLanSyncDomain = "riptide-lan-s"
 constant kRsLanMaxDraft = 4096
+constant kRsLanMaxFile = 255
 constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
@@ -8534,6 +8539,121 @@ function rsLanVerifyPresence pBytes, pMaster
    return tOut
 end rsLanVerifyPresence
 
+function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
+   local tName, tHash, tFile, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildHandoff: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildHandoff: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put toLower(pInfoHash) into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanBuildHandoff: the info-hash must be 40 non-zero" && \
+            "hex chars (what rsMediaCreate returned)"
+      return empty
+   end if
+   put textEncode(pFileName, "UTF-8") into tFile
+   if the number of bytes in tFile < 1 or \
+         the number of bytes in tFile > kRsLanMaxFile then
+      rsSetError "rsLanBuildHandoff: the file name must be 1 to" && \
+            kRsLanMaxFile && "bytes (refused, never truncated)"
+      return empty
+   end if
+   if not rsLanValidCount(pFileSize) then
+      rsSetError "rsLanBuildHandoff: the file size must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("M", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put textEncode(tHash, "ASCII") after tOut
+   put numToByte(the number of bytes in tFile) after tOut
+   put tFile after tOut
+   put rsBEu64(pFileSize) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildHandoff
+
+function rsLanVerifyHandoff pBytes, pMaster
+   local tLen, tNameLen, tFileLen, tHash, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 129 then
+      rsSetError "rsLanVerifyHandoff: truncated handoff record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "M" then
+      rsSetError "rsLanVerifyHandoff: not an RSL1 media-handoff record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyHandoff: bad device-name length"
+      return empty
+   end if
+   if tLen < 128 + tNameLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its name field"
+      return empty
+   end if
+   put byteToNum(byte (55 + tNameLen) of pBytes) into tFileLen
+   if tFileLen < 1 then
+      rsSetError "rsLanVerifyHandoff: bad file-name length"
+      return empty
+   end if
+   if tLen is not 127 + tNameLen + tFileLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its" && \
+            "file-name field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyHandoff: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the hash travels as 40 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (54 + tNameLen) of pBytes, \
+         "ASCII") into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanVerifyHandoff: the info-hash is not 40 non-zero" && \
+            "lowercase hex chars"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte (56 + tNameLen) to \
+         (55 + tNameLen + tFileLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the file name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   put tHash into tOut["infoHash"]
+   put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
+         of pBytes, "UTF-8") into tOut["fileName"]
+   put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
+         (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   return tOut
+end rsLanVerifyHandoff
+
 function rsAnonHandle pMaster, pIndex
    local tSeed
    put rsAnonSeed(pMaster, pIndex) into tSeed
@@ -12954,6 +13074,82 @@ private command rs1rstSectionLanSync
    -- no cross-kind reads: one record kind can never verify as another
    rs1rstCheck (rsLanVerifyDraft(rs1tRec, rs1tMaster) is empty), \
          "a presence record fed to the draft verifier is refused"
+   -- the media-handoff record (channel 0: the channel-2 decision - a
+   -- signed POINTER at the phase-3 torrent path; the pointed-at hash is
+   -- the same placeholder info-hash the golden post-2 media list names)
+   put rsLanBuildHandoff(rs1kRsGoldLanJoinName, rs1kRsGoldLanMediaSeq, \
+         rs1kRsGoldMediaTarget, rs1kRsGoldLanFileName, rs1kRsGoldLanFileSize, \
+         rs1tMaster) into rs1tRec
+   rs1rstCheck (rs1rstHex(rs1tRec) is rs1kRsGoldLanHandoffHex), \
+         "the media-handoff record bytes match golden"
+   put rsLanVerifyHandoff(rs1tRec, rs1tMaster) into rs1tOut
+   rs1rstCheck (rs1tOut["name"] is rs1kRsGoldLanJoinName), \
+         "the handoff's device name verifies and round-trips"
+   rs1rstCheck (rs1tOut["seq"] is rs1kRsGoldLanMediaSeq + 0), \
+         "the handoff's per-device seq round-trips"
+   rs1rstCheck (rs1tOut["infoHash"] is rs1kRsGoldMediaTarget), \
+         "the handoff's info-hash round-trips"
+   rs1rstCheck (rs1tOut["fileName"] is rs1kRsGoldLanFileName), \
+         "the handoff's file name round-trips"
+   rs1rstCheck (rs1tOut["fileSize"] is rs1kRsGoldLanFileSize + 0), \
+         "the handoff's file size round-trips"
+   -- the build normalizes hash case; the WIRE stays strict lowercase.
+   -- Compared as HEX against the golden, not with `is` on the Data -
+   -- `is` folds case, so a non-normalizing build could pass a bytes
+   -- compare (the vacuous-check trap)
+   put rsLanBuildHandoff(rs1kRsGoldLanJoinName, rs1kRsGoldLanMediaSeq, \
+         toUpper(rs1kRsGoldMediaTarget), rs1kRsGoldLanFileName, \
+         rs1kRsGoldLanFileSize, rs1tMaster) into rs1tBytes
+   rs1rstCheck (rs1rstHex(rs1tBytes) is rs1kRsGoldLanHandoffHex), \
+         "an uppercase info-hash normalizes to the same handoff bytes"
+   rs1rstCheck (rsLanBuildHandoff(rs1kRsGoldLanJoinName, 1, \
+         rsZeroTarget(), "f", 1, rs1tMaster) is empty), \
+         "the all-zeros info-hash is refused at build (no empty handoff)"
+   rs1rstCheck (rsLanBuildHandoff(rs1kRsGoldLanJoinName, 1, "zz", "f", 1, \
+         rs1tMaster) is empty), "a malformed info-hash is refused at build"
+   rs1rstCheck (rsLanBuildHandoff(rs1kRsGoldLanJoinName, 1, \
+         rs1kRsGoldMediaTarget, empty, 1, rs1tMaster) is empty), \
+         "an empty file name is refused at build"
+   put rsLanBuildHandoff(rs1kRsGoldLanJoinName, rs1kRsGoldLanMediaSeq, \
+         rs1kRsGoldMediaTarget, rs1kRsGoldLanFileName, rs1kRsGoldLanFileSize, \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) into rs1tBytes
+   rs1rstCheck (rsLanVerifyHandoff(rs1tBytes, rs1tMaster) is empty), \
+         "a stranger's handoff record is refused"
+   rs1rstCheck (rsLanVerifyHandoff(rs1rstFlipByte(rs1tRec, 25), rs1tMaster) is empty), \
+         "a tampered handoff record is refused"
+   rs1rstCheck (rsLanVerifyHandoff(byte 1 to 60 of rs1tRec, rs1tMaster) is empty), \
+         "a truncated handoff record is refused"
+   -- a hand-signed record with a non-UTF-8 FILE name: the signature is
+   -- VALID, so this exercises the refusal AFTER the proof (the draft
+   -- forgery's discipline, on the handoff's second text field)
+   put rs1rstBin("52534c314d") & numToByte(5) & \
+         textEncode(rs1kRsGoldLanJoinName, "UTF-8") & \
+         rs1rstBin("0000000000000001") & \
+         textEncode(rs1kRsGoldMediaTarget, "ASCII") & numToByte(2) & \
+         rs1rstBin("fffe") & rs1rstBin("0000000000000001") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyHandoff(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed handoff with a non-UTF-8 file name is refused"
+   -- a hand-signed record with an UPPERCASE hash on the wire: valid
+   -- signature, non-canonical spelling - refused (the coinxt lesson)
+   put rs1rstBin("52534c314d") & numToByte(5) & \
+         textEncode(rs1kRsGoldLanJoinName, "UTF-8") & \
+         rs1rstBin("0000000000000001") & \
+         textEncode(toUpper(rs1kRsGoldMediaTarget), "ASCII") & \
+         numToByte(1) & textEncode("f", "UTF-8") & \
+         rs1rstBin("0000000000000001") into rs1tBody
+   put rs1tBody & sxSignDetached(textEncode("riptide-lan-s", "ASCII") & \
+         rs1tBody, rs1tKeys["secretKey"]) into rs1tBytes
+   rs1rstCheck (rsLanVerifyHandoff(rs1tBytes, rs1tMaster) is empty), \
+         "a validly signed handoff with an uppercase hash is refused"
+   -- cross-kind, both directions for the new kind
+   rs1rstCheck (rsLanVerifyDraft(rs1tRec, rs1tMaster) is empty), \
+         "a handoff record fed to the draft verifier is refused"
+   put rsLanBuildDraft(rs1kRsGoldLanJoinName, rs1kRsGoldLanSeq, \
+         rs1kRsGoldLanDraftText, rs1tMaster) into rs1tBytes
+   rs1rstCheck (rsLanVerifyHandoff(rs1tBytes, rs1tMaster) is empty), \
+         "a draft record fed to the handoff verifier is refused"
 end rs1rstSectionLanSync
 
 private command rs1rstSectionDm pCaps

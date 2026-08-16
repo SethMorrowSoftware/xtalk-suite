@@ -21,8 +21,10 @@ is knowing their key, and reaching them is verifying them.
 > **Phases 5-7 are BUILT and statically verified, their live passes
 > pending**: the dc call with its spec-6.2 typing lane (phase 5), the
 > LAN mesh with its mutual welcome AND its sync payload - drafts, feed
-> seq, presence over the admitted mesh (phase 6, built 2026-08-15) - and
-> the anon persona over live Tor (phase 7).
+> seq, presence over the admitted mesh (phase 6, built 2026-08-15),
+> plus the channel-2 decision settled 2026-08-16 (media handoff as a
+> signed channel-0 pointer at the torrent rail; channel 2 reserved,
+> dark) - and the anon persona over live Tor (phase 7).
 > `docs/two-machine-runbook.md` scripts what remains.
 >
 > The flagship stack is `examples/riptide-social.livecodescript` (on the
@@ -68,6 +70,14 @@ What ships today, per the spec's phased roadmap (section 10.3):
     under the shared LAN key with a distinct domain tag,
     verify-then-parse on every inbound record; authenticated, not
     encrypted (the LAN sees draft plaintext, said loudly in the UI)
+  - **the phase-6 media handoff** (2026-08-16, the channel-2 decision):
+    spec section 7's bulk media lane, settled as a fourth signed record
+    kind on channel 0 - a small POINTER (info-hash + file name + size)
+    at the phase-3 torrent path, because media essentially never fits
+    enet's 60000-byte packet budget and bulk over that seam is a
+    torrent in this suite. Channel 2 itself stays reserved, dark; the
+    pointed-at bytes ride the ordinary torrent rail (swarm visibility
+    and DHT discovery, recorded honestly)
   - **the anon persona (phase 7)**: onion-only identities
     (`rsAnonHandle`/`rsAnonOnion`), the sealed-DM prekey subkey
     (`rsAnonDmSeed`, spec 8.3), BTXO framing, and `rsPersonaAllows` - the

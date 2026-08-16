@@ -18,8 +18,8 @@ adds native surface, and `rs*` never becomes a library other members may
 call.
 
 **All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.9.0; 81 public handlers,
-81/81 exercised by the suite harness):
+machines, done-criteria included** (library 0.10.0; 83 public handlers,
+83/83 exercised by the suite harness):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -58,8 +58,12 @@ machines, done-criteria included** (library 0.9.0; 81 public handlers,
   domain, golden-pinned, refusals harness-proven offline, plus the
   demo's Devices-card wiring (a debounced draft field, per-peer
   presence, verified drafts rendered with their origin, strangers
-  refused and logged). Verified statically; the live two-machine mesh
-  pass - now the full draft-appears done-criterion - is what remains.
+  refused and logged). **Channel 2 SETTLED 2026-08-16**: bulk media
+  handoff is a fourth RSL1 kind, "M", on CHANNEL 0 - a signed POINTER
+  (info-hash + file name + size) at the phase-3 torrent path - and
+  channel 2 stays reserved, dark (the decision record below). Verified
+  statically; the live two-machine mesh pass - now the full
+  draft-appears done-criterion plus the media handoff - is what remains.
 - **Phase 7 (anon persona): BUILT, awaiting OXT + live-Tor.** The
   `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
   §9.3 guard, the app's highest-severity invariant) - compute engine-green
@@ -384,6 +388,58 @@ docs/two-machine-runbook.md.
   already scopes and authenticates the lane, and a one-byte absolute
   state has nothing to parse. A lane refusal is non-fatal - the call
   continues without it, logged.
+
+## Things decided settling channel 2 - the media handoff (2026-08-16; do not re-litigate)
+
+- **Channel 2 gets NO new wire; the handoff is a channel-0 POINTER.**
+  The question was "does bulk media handoff need a chunked channel-2
+  lane, or a record that points at the media rail riptide already
+  has?", and the tree's own laws answer it. enet's 60000-byte packet
+  budget is the suite's message/bulk seam ("when a payload stops being
+  a message it becomes a torrent" - enetxt's README), and a draft's
+  media - a photo, a video - essentially never fits it. A chunked enet
+  lane would reimplement libtorrent's per-piece integrity, resume, and
+  backpressure with none of its proof, while the phase-3 machinery
+  (rsMediaCreate seeds in place; rsMediaFetch finds-before-adds and
+  co-seeds) is the ONE rail of this app already proven end to end on
+  two machines - on one LAN, near instantly, which is exactly the
+  handoff's shape. So: the RSL1 "M" record (channel 0, reliable) is a
+  signed pointer, and channel 2 stays RESERVED, dark, until a genuinely
+  sub-budget bulk case mints its own record kind (none exists today -
+  drafts already ride channel 0, capped at 4096).
+- **The info-hash is deliberately BOTH fields the design asked for.**
+  "Content hash" and "torrent linkage" are one value in the phase-3
+  design: the 40-hex v1 info-hash is the content address libtorrent
+  verifies piece-by-piece against (a receiver cannot be fed different
+  bytes than the hash names) AND what a magnet fetch takes. fileName
+  and fileSize ride along for the receiving UI only; the torrent's own
+  metadata is the authority once fetched.
+- **The record follows the sync discipline exactly, nothing new.** Same
+  shared LAN key, same "riptide-lan-s" domain, kind byte inside the
+  signed span (no cross-kind reads), absolute state (the device's
+  LATEST offer), the draft record's strictly-increasing per-device seq
+  as the replay guard - and a duplicate apply is harmless anyway,
+  because rsMediaFetch is idempotent. The wire hash is strict lowercase
+  (a validly SIGNED record with an uppercase hash is refused - the
+  coinxt canonical-form lesson, harness-proven), and the all-zeros hash
+  is refused at build and parse: a handoff must name real content.
+- **The honest limit is the transport's, and it is recorded, not
+  hidden.** The pointer record never leaves the LAN; the pointed-at
+  bytes ride the ORDINARY torrent rail - swarm peers see your IP, and
+  peer discovery is the DHT, so a fully offline LAN may not find its
+  swarm even though both devices sit on it. Said in the spec's
+  section-7 as-built note, the demo's Devices-card footer, and the
+  runbook's phase-6 step 7 (report it as the recorded limit, not a
+  defect).
+- **The demo's offer is one slot, and it outlives the mesh.** The
+  Devices card keeps the LATEST verified offer (the one-conversation
+  pattern); per-peer seq tracking drops with the enet peer, but the
+  offer and its watched fetch deliberately survive Leave/disconnect -
+  the swarm outlives the mesh, and a mid-download must not lose its
+  Fetch button. The sender reads the true file size from its own seed's
+  metadata (rsMediaFetch on its own hash lands on the find path - no
+  download, no copy), and the receive path only REMEMBERS a verified
+  offer; fetching is the user's click.
 
 ## Things decided building phase 7 (do not re-litigate)
 
