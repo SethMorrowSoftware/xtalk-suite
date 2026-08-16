@@ -426,7 +426,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "24"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "25"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -502,7 +502,7 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.24.2"
+constant he1kHeVersion = "0.24.3"
 constant he1kHeHarnessV = "40"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
@@ -7928,10 +7928,22 @@ function b2kContactCount
 end b2kContactCount
 
 function b2kContactA pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtCN then return empty
    return sCtrl[sEvtCA[pIndex]]
 end b2kContactA
 
 function b2kContactB pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtCN then return empty
    return sCtrl[sEvtCB[pIndex]]
 end b2kContactB
 
@@ -7941,10 +7953,22 @@ function b2kEndContactCount
 end b2kEndContactCount
 
 function b2kEndContactA pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtEN then return empty
    return sCtrl[sEvtEA[pIndex]]
 end b2kEndContactA
 
 function b2kEndContactB pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtEN then return empty
    return sCtrl[sEvtEB[pIndex]]
 end b2kEndContactB
 
@@ -8195,10 +8219,22 @@ function b2kSensorCount
 end b2kSensorCount
 
 function b2kSensorEnterSensor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSS[pIndex]]
 end b2kSensorEnterSensor
 
 function b2kSensorEnterVisitor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSV[pIndex]]
 end b2kSensorEnterVisitor
 
@@ -8208,10 +8244,22 @@ function b2kSensorExitCount
 end b2kSensorExitCount
 
 function b2kSensorExitSensor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtXN then return empty
    return sCtrl[sEvtXS[pIndex]]
 end b2kSensorExitSensor
 
 function b2kSensorExitVisitor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtXN then return empty
    return sCtrl[sEvtXV[pIndex]]
 end b2kSensorExitVisitor
 
@@ -8923,6 +8971,14 @@ end b2kSpriteFromGIF
 
 command b2kSpritePlay pCtrl, pAnim, pRestart
    local tRef, tKey
+   -- ENGINE-FOUND 2026-08-16: an empty control is a harmless no-op, per the
+   -- family law (stale handles never crash). `the long id of <empty>` THROWS,
+   -- and the player path can legally reach here with no art: b2kPlayerAnims
+   -- maps state names independently of art, and b2kPlayerShowState is a
+   -- public entry point whose tick-side caller guards sPlayArt but whose
+   -- direct callers cannot be expected to. The throw took a whole harness
+   -- section down as error 69 with no useful name.
+   if pCtrl is empty then exit b2kSpritePlay
    put the long id of pCtrl into tRef
    if sSprKind[tRef] is "gif" then
       try
@@ -19010,7 +19066,13 @@ command b21stTestKitForces
    b2kImpulse b21tRef, 0, 4000
    b21stStep 1
    put b21stVY(b21tRef) into b21tVy
-   b21stAssert "b2kImpulse pushes UP for a positive y (vy " & round(b21tVy) & ")", (b21tVy < -1)
+   -- FIXED after the 2026-08-16 engine run, which reported vy +4000: the
+   -- Kit is PIXELS/DEGREES, Y-DOWN (its first law), and b2kImpulse negates
+   -- the y into Box2D's y-up world -- so a positive y impulse kicks the
+   -- body DOWN the screen, exactly like every other y in the Kit. The old
+   -- assert imported the physics-engine convention over the Kit's own.
+   b21stAssert "b2kImpulse pushes DOWN for a positive y (vy " & round(b21tVy) & ")", \
+         (b21tVy > 0)
    b2kSetVelocity b21tRef, 0, 0
    b2kForce b21tRef, 60000, 0
    b21stStep 3
@@ -19286,7 +19348,12 @@ command b21stTestKitQueryApi
    b2kSetStatic b21tRef
    b21stStep 2
    put b2kRayHit(300, 100, 300, 520) into b21tHit
-   b21stAssert "b2kRayHit reports a hit on the ball", (b21tHit is true)
+   -- FIXED after the 2026-08-16 engine run: b2kRayHit returns the HIT
+   -- CONTROL (so the caller can classify what it hit without a second
+   -- query), or empty on a miss -- never a boolean. The old assert compared
+   -- a long id against true, which is false even when the accessors right
+   -- below prove the hit landed (they did: y 285, dist 185).
+   b21stAssert "b2kRayHit answers the hit control", (b21tHit is not empty)
    b21stAssert "b2kRayHitX is the ray's own x (got " & b2kRayHitX() & ")", \
          (abs(b2kRayHitX() - 300) < 6)
    b21stAssert "b2kRayHitY stops at the ball's top (got " & b2kRayHitY() & ")", \
@@ -19296,7 +19363,7 @@ command b21stTestKitQueryApi
    b21stAssert "b2kRayHitNormalX is a number", (b2kRayHitNormalX() is a number)
    b21stAssert "b2kRayDist is the distance travelled (got " \
          & round(b2kRayDist()) & "px)", (b2kRayDist() > 100 and b2kRayDist() < 250)
-   b21stAssert "a ray into empty space misses", (b2kRayHit(60, 60, 90, 60) is false)
+   b21stAssert "a ray into empty space answers empty", (b2kRayHit(60, 60, 90, 60) is empty)
    -- the query-buffer translator the overlap helpers route through
    b21stAssert "b2kQueryToControls of zero hits is empty", (b2kQueryToControls(0) is empty)
    b21stAssert "b2kOverlapCircle routes through it and finds the ball", \
@@ -24802,7 +24869,24 @@ command he1heNetTurnMark
    put he1gGame["state"] into he1tStateA
    put empty into he1tKeyTxt
    if he1tStateA["phase"] is "acting" and he1tStateA["toAct"] > 0 then
-      put "act" & comma & he1tStateA["toAct"] & comma & 0 into he1tKeyTxt
+      -- v0.24.3, FOUND BY THE SECOND ENGINE RUN: the key carries the HAND
+      -- AND STREET, because "the clock restarts only when the SUBJECT
+      -- changes" was comparing a key that could not tell one street's turn
+      -- from the next. he1heBetApply advances the street SYNCHRONOUSLY at the
+      -- closing act, so when the seat that timed out closing a street is
+      -- also first to act on the new one (heads-up postflop, exactly the
+      -- sat-out seat's shape), the mark re-derived the identical
+      -- "act,seat,0" key, kept the stale clock AND the stale timeoutSent
+      -- latch, and the host could never emit the next timeout: the table
+      -- stalled with hand 2 unsettled on every client. Items 1..3 keep
+      -- their meaning (the tick parses only those); item 4 is purely the
+      -- restart discriminator. turnKey never crosses the wire and every
+      -- client derives it from the same folds, so this is not a consensus
+      -- change. Mid-turn non-action folds (a ckpt) still re-derive the
+      -- SAME key -- same hand, same street, same seat -- so a redelivered
+      -- or interleaved wire still never extends a deadline.
+      put "act" & comma & he1tStateA["toAct"] & comma & 0 & comma \
+            & he1gGame["handNum"] & "-" & he1tStateA["street"] into he1tKeyTxt
    else if he1tStateA["phase"] is "blinds" \
          and he1gGame["oDeal"]["dealCount"] is a number \
          and he1gGame["oDeal"]["holeN"] >= he1gGame["oDeal"]["dealCount"] then
@@ -24812,7 +24896,12 @@ command he1heNetTurnMark
       -- deal-phase timeout is the L2 void-and-audit machine's
       put he1heTimeoutPostOf(he1tStateA) into he1tPostTxt
       if he1tPostTxt is not empty then
-         put he1tPostTxt into he1tKeyTxt
+         -- the same discriminator on the post key, for the same reason --
+         -- consecutive identical post keys cannot happen inside one hand
+         -- (each post moves kind or seat), but hand N's last post and hand
+         -- N+k's first could collide if the between-hands empty key ever
+         -- stopped intervening, and item 4 costs nothing
+         put he1tPostTxt & comma & he1gGame["handNum"] & "-blinds" into he1tKeyTxt
       end if
    end if
    if he1tKeyTxt is not he1gGame["turnKey"] then

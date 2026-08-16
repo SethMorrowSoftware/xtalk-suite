@@ -1484,10 +1484,22 @@ function b2kContactCount
 end b2kContactCount
 
 function b2kContactA pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtCN then return empty
    return sCtrl[sEvtCA[pIndex]]
 end b2kContactA
 
 function b2kContactB pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtCN then return empty
    return sCtrl[sEvtCB[pIndex]]
 end b2kContactB
 
@@ -1497,10 +1509,22 @@ function b2kEndContactCount
 end b2kEndContactCount
 
 function b2kEndContactA pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtEN then return empty
    return sCtrl[sEvtEA[pIndex]]
 end b2kEndContactA
 
 function b2kEndContactB pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtEN then return empty
    return sCtrl[sEvtEB[pIndex]]
 end b2kEndContactB
 
@@ -1781,9 +1805,21 @@ function b2kSensorCount
    return sEvtSN
 end b2kSensorCount
 function b2kSensorEnterSensor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSS[pIndex]]
 end b2kSensorEnterSensor
 function b2kSensorEnterVisitor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSV[pIndex]]
 end b2kSensorEnterVisitor
 function b2kSensorExitCount
@@ -1791,9 +1827,21 @@ function b2kSensorExitCount
    return sEvtXN
 end b2kSensorExitCount
 function b2kSensorExitSensor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtXN then return empty
    return sCtrl[sEvtXS[pIndex]]
 end b2kSensorExitSensor
 function b2kSensorExitVisitor pIndex
+   -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
+   -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
+   -- out-of-range index answered the STALE control from the last real
+   -- event instead of empty. The count is the contract; hold it here so
+   -- every path that zeroes a count is covered at once.
+   if pIndex < 1 or pIndex > sEvtXN then return empty
    return sCtrl[sEvtXV[pIndex]]
 end b2kSensorExitVisitor
 
@@ -2664,6 +2712,14 @@ end b2kSpriteFromGIF
 -- every frame from a state machine is free) unless pRestart forces frame 1.
 command b2kSpritePlay pCtrl, pAnim, pRestart
    local tRef, tKey
+   -- ENGINE-FOUND 2026-08-16: an empty control is a harmless no-op, per the
+   -- family law (stale handles never crash). `the long id of <empty>` THROWS,
+   -- and the player path can legally reach here with no art: b2kPlayerAnims
+   -- maps state names independently of art, and b2kPlayerShowState is a
+   -- public entry point whose tick-side caller guards sPlayArt but whose
+   -- direct callers cannot be expected to. The throw took a whole harness
+   -- section down as error 69 with no useful name.
+   if pCtrl is empty then exit b2kSpritePlay
    put the long id of pCtrl into tRef
    if sSprKind[tRef] is "gif" then
       try

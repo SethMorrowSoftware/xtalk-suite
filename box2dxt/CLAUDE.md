@@ -126,6 +126,33 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > - None of this is runtime-verifiable here: **verified statically; needs an
 >   OXT pass**, and the v23 sections are first-contact code, so expect the
 >   usual arithmetic slips on the first run.
+>
+> **THE FIRST TWO ENGINE RUNS CAME BACK (2026-08-16, same day), and the
+> prediction held: of the eleven first-run failures, EIGHT were in the
+> first-contact v23 sections and the engine was right each time.** Fixed
+> across v24/v25 with the engine's numbers as the evidence: the half-extent
+> getters return half the CONTROL's real size (a 30x50 request lands as a
+> 32x52 control -- the test asserted a number the Kit never promised, and
+> now pins the documented relationship); b2kRayHit returns the HIT CONTROL
+> or empty, never a boolean (the accessors beside the failing assert were
+> proving the hit landed the whole time); b2kImpulse is y-DOWN like every
+> other y in the Kit (the test had imported the physics engine's y-up); and
+> the player-API section's throw (error 69) was b2kSpritePlay being handed
+> an empty control -- which exposed TWO REAL KIT DEFECTS the run gets credit
+> for: b2kSpritePlay now no-ops on an empty control per the family's
+> stale-handles-never-crash law (b2kPlayerAnims maps states independently
+> of art, so a direct b2kPlayerShowState with no art bound reached the
+> throw), and ALL EIGHT event-buffer readers are count-guarded, because
+> b2kEventsReset zeroes the COUNTS and leaves the entry arrays -- an
+> out-of-range index answered the STALE control from the last real event,
+> exactly the hazard the EndContact test's own banner named.
+> **STILL OPEN, needing engine investigation rather than a blind guess --
+> three failures in PRE-EXISTING behaviour sections, possibly real Kit
+> defects:** the ghost-layer ball passing the solid-layer platform (y 365 --
+> filtering), gravity after b2kClear (the player landed at y 289 where the
+> test expects a longer fall), and the crawl-under-ceiling stall (x 269
+> against 350 expected). Each has engine-verified history behind it, so
+> suspect a real regression or an environment-order effect before the test.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
