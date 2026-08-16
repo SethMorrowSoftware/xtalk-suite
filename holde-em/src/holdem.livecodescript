@@ -977,7 +977,7 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.24.2"
+constant kHeVersion = "0.24.3"
 constant kHeHarnessV = "40"
 constant kUIVersion = "15"
 
@@ -5601,7 +5601,24 @@ command heNetTurnMark
    put gGame["state"] into tStateA
    put empty into tKeyTxt
    if tStateA["phase"] is "acting" and tStateA["toAct"] > 0 then
-      put "act" & comma & tStateA["toAct"] & comma & 0 into tKeyTxt
+      -- v0.24.3, FOUND BY THE SECOND ENGINE RUN: the key carries the HAND
+      -- AND STREET, because "the clock restarts only when the SUBJECT
+      -- changes" was comparing a key that could not tell one street's turn
+      -- from the next. heBetApply advances the street SYNCHRONOUSLY at the
+      -- closing act, so when the seat that timed out closing a street is
+      -- also first to act on the new one (heads-up postflop, exactly the
+      -- sat-out seat's shape), the mark re-derived the identical
+      -- "act,seat,0" key, kept the stale clock AND the stale timeoutSent
+      -- latch, and the host could never emit the next timeout: the table
+      -- stalled with hand 2 unsettled on every client. Items 1..3 keep
+      -- their meaning (the tick parses only those); item 4 is purely the
+      -- restart discriminator. turnKey never crosses the wire and every
+      -- client derives it from the same folds, so this is not a consensus
+      -- change. Mid-turn non-action folds (a ckpt) still re-derive the
+      -- SAME key -- same hand, same street, same seat -- so a redelivered
+      -- or interleaved wire still never extends a deadline.
+      put "act" & comma & tStateA["toAct"] & comma & 0 & comma \
+            & gGame["handNum"] & "-" & tStateA["street"] into tKeyTxt
    else if tStateA["phase"] is "blinds" \
          and gGame["oDeal"]["dealCount"] is a number \
          and gGame["oDeal"]["holeN"] >= gGame["oDeal"]["dealCount"] then
@@ -5611,7 +5628,12 @@ command heNetTurnMark
       -- deal-phase timeout is the L2 void-and-audit machine's
       put heTimeoutPostOf(tStateA) into tPostTxt
       if tPostTxt is not empty then
-         put tPostTxt into tKeyTxt
+         -- the same discriminator on the post key, for the same reason --
+         -- consecutive identical post keys cannot happen inside one hand
+         -- (each post moves kind or seat), but hand N's last post and hand
+         -- N+k's first could collide if the between-hands empty key ever
+         -- stopped intervening, and item 4 costs nothing
+         put tPostTxt & comma & gGame["handNum"] & "-blinds" into tKeyTxt
       end if
    end if
    if tKeyTxt is not gGame["turnKey"] then
