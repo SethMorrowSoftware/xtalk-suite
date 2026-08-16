@@ -56,11 +56,20 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   720p re-layout landed at v0.23.0 (2026-08-16)**: 1024x640, the felt's vertical
 >   rhythm tightened (felt 48..524, board centre 300 -> 286, the pot line moved
 >   below the board, the seat ring pulled in) and the slider/action/status rows
->   pulled inside the fold. The SKIP entry is GONE - the gate holds this stack to
->   the budget like everyone else. Verified statically BY ARITHMETIC (every control
->   rect re-derived from the constants: all within 1024x640, non-layered chrome
->   pairwise disjoint, the designed layers named); the confirming EYE - nothing
->   clipped, the felt still reads - is the OXT pass's.
+>   pulled inside the fold. The SKIP entry is GONE - `check-stack-size.py` holds
+>   this stack's WINDOW to the budget like every other stack, and that is the whole
+>   of what it holds: it reads one number per stack and never looks at a control.
+>   **What holds the CONTROLS is `tools/check-table-layout.py`, added 2026-08-16.**
+>   The re-layout's arithmetic (every control rect re-derived from the constants:
+>   all within 1024x640, non-layered chrome pairwise disjoint, the designed layers
+>   named) was real, but it came out of a scratchpad script that ran ONCE and was
+>   never committed - an attestation nobody else could re-run, which is the
+>   shipped-is-not-run lesson wearing a different hat. It is a gate now: 159
+>   control rects re-derived from the builders themselves on every push, each
+>   bounds-checked against kHeStackRect, the must-not-overlap set proved pairwise
+>   disjoint against a written exemption list, and an accounting check so no
+>   `set the rect` site can escape it unnamed. It is GEOMETRY only - the confirming
+>   EYE (nothing clipped, the felt still reads) is still the OXT pass's.
 > - The `he*` prefix is registered in `tools/check-handler-calls.py`, which also
 >   learned to strip `/* */` block comments (this file's header changelog leaked
 >   prose into its candidate set - and 31 phantom "definitions" out of it, suite-wide).
@@ -105,7 +114,10 @@ auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Pha
 4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
 bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
 Level 2 yet), at v0.24.0 -- v0.23.0 brought the table inside the suite's 720p
-budget (1024x640; the check-stack-size SKIP is gone) and v0.24.0 corrected ten
+budget (1024x640; the check-stack-size SKIP is gone, and since 2026-08-16 the
+control rects inside that window have their own gate,
+tools/check-table-layout.py, because the re-layout's arithmetic was originally
+an uncommitted scratchpad script) and v0.24.0 corrected ten
 reviewed defects in that liveness layer with NO wire change (the liveness
 contracts block below carries each one). The pending live gates: a
 TIMED multi-hand session on wall clocks (seats timing out for real), a multi-hand
@@ -176,6 +188,7 @@ this project that CAN be fully machine-verified. The gates, in the order CI runs
 ```sh
 python3 tools/check-livecodescript.py   # dialect gates, every .livecodescript
 python3 tools/check-docs.py             # smart-quote scan over *.md
+python3 tools/check-table-layout.py     # the table's control geometry, re-derived
 python3 tools/evaluator-kat.py          # spec 8.2 vectors (mirror of heEval7/heRank5)
 python3 tools/betting-kat.py            # spec 8.1/8.3 cases (mirror of heBetApply/heSettleOf)
 python3 tools/shuffle-kat.py            # playable integer deal (mirror of heShuffleDeck)
@@ -530,7 +543,11 @@ touching the liveness layer:
     sits BELOW the board because the centre column above it belongs to seat
     4's cluster and bet chip -- move anything and re-run the rect
     arithmetic (bounds + pairwise disjointness with the designed layers
-    named) before trusting it. check-stack-size now gates the budget.
+    named) before trusting it -- and re-running it is a command now, not a
+    favour: `tools/check-table-layout.py` (2026-08-16) re-derives every
+    control rect from these constants and the builders that read them, so a
+    moved seat spot or board line fails the build instead of a comment.
+    check-stack-size gates the WINDOW (one number, no controls).
   - Harness section 20 (heTestLivenessRun) pins all of it headlessly:
     prescriptions and backoff pure, wire pins, the backdated-clock netsim
     hand (premature-timeout refusal included), auto-sit-out, the waiting
@@ -836,6 +853,11 @@ tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gat
                                    since 2026-08-15 it carries the hold-em lineage
                                    checks as its 13-21 - the old idiom gate is retired)
 tools/check-docs.py                docs smart-quote scan
+tools/check-table-layout.py        the table's CONTROL geometry, re-derived from
+                                   the builders: bounds inside kHeStackRect +
+                                   pairwise disjointness outside a written
+                                   exemption list (the suite's check-stack-size
+                                   holds the WINDOW; this holds what is in it)
 tools/evaluator-kat.py             spec 8.2 evaluator vectors (CI mirror of heEval7)
 tools/betting-kat.py               spec 8.1/8.3 betting + settlement cases (CI mirror)
 tools/shuffle-kat.py               playable integer deal (CI mirror of heShuffleDeck)

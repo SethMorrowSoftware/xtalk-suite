@@ -81,6 +81,33 @@ banner now holds without residue: everything left in this file needs an
 engine, a second machine, a Tor daemon, a platform box, a human review,
 or an owner decision.
 
+**A REVIEW OF THAT WORK FOUND 14 DEFECTS, AND ALL 14 ARE FIXED (2026-08-16,
+commits `510f904` .. `1a2c9c1`).** The banners above record what was BUILT; this
+one records what reading it found, because a punch list that only ever grows
+green is not being read. A code review of the day's own pull request returned
+thirteen findings, and CI had already caught a fourteenth. Ten were in the
+Hold'em liveness layer written hours earlier - including two that made its
+written contracts false (a mid-redial dial failure cancelled the election
+watchdog, so the election could never conclude; and a client that caught up by
+full replay diverged permanently, which the KNOWN EDGE note claimed a reconnect
+would heal). A cluster of four shared one root cause worth naming: consensus
+state was written around a fold that can refuse, and since every client folds
+identically, that wrote WRONG CONSENSUS rather than a divergence any transcript
+check could detect. The other four were coinxt's export gate silently
+fail-opening for exactly the Windows DLLs it is the only check for, a wipe error
+that could displace a real status, CI asserting a hardcoded ABI that the memzero
+bump invalidated, and this document's own overstated claim about
+`check-stack-size.py`.
+
+Three things were done that the findings did not ask for, because the review
+exposed the SHAPE of the problem rather than one instance: sodiumxt's committed
+binaries are now EXECUTED in CI against published RFC 9496 vectors (they never
+had been, and they are what the Level 2 deal binds to); the runbook's ABI
+numbers were swept current and its inventory extended through wave 5, since a
+tester following it faithfully would have skipped everything built in the last
+two days; and the 720p arithmetic became a committed gate instead of an
+attestation. Full detail in each member's ledger.
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
@@ -145,8 +172,17 @@ and one functional hole.
    coherently rather than squeezed — felt 48..524, pot line below the board,
    re-rhythmed bottom rows — verified by rect ARITHMETIC: 51 control rects
    in budget, the 43-rect disjointness set pairwise disjoint; the SKIP entry
-   is REMOVED from `tools/check-stack-size.py`, which now holds this stack
-   to the 720p budget like every other). Two corrections recorded en route:
+   is REMOVED from `tools/check-stack-size.py`).
+   **That sentence overstated its gate, and a review caught it the same day**:
+   `check-stack-size.py` reads ONE number per stack and never looks at a
+   control, so removing the SKIP restored a window check and pinned none of
+   the arithmetic above - which had come from a scratchpad script run once
+   and never committed. It is a gate now: `holde-em/tools/check-table-layout.py`
+   (2026-08-16) re-derives every control rect from the builders on every push.
+   It also corrected the numbers: "51 rects" were 51 SET-THE-RECT SITES, which
+   build **159 controls** (152 in the disjointness set, 5635 pairs), so the
+   original "43-rect" figure was never reproducible from the source. Two
+   further corrections recorded en route:
    this item's "quick-bet row (y 688)" was a misread (688 was a button's x;
    the real overage was the status line plus the 690 height), and the
    original "needing an OXT eye, not a number trim" was half right — the

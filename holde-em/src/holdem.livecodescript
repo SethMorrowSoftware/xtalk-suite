@@ -168,13 +168,16 @@ clipped, the felt still reads) is the OXT pass's.
     seat ring pulled in, the pot line moved BELOW the board where the
     centre column is clear of every bet cluster), slider/action/status
     rows pulled inside the fold, the header narrowed clear of the new
-    Sit out button. Verified BY ARITHMETIC (a script re-derives every
-    control rect from the constants: all within 1024x640, non-layered
+    Sit out button. Verified BY ARITHMETIC (every control rect
+    re-derived from the constants: all within 1024x640, non-layered
     chrome pairwise disjoint, the designed layers -- felt, logo
     watermark, card slots, per-seat clusters, own-seat bet chips --
     recorded as layers); the suite's check-stack-size gate now holds
-    this stack to the budget like everyone else (its SKIP entry is
-    GONE). The confirming eye is the OXT pass's.
+    the WINDOW to the budget (its SKIP entry is GONE) and, since
+    2026-08-16, tools/check-table-layout.py re-runs that whole rect
+    arithmetic off THIS file on every push -- it began as a scratchpad
+    script that ran once and was never committed, which made the claim
+    above true and unrepeatable. The confirming eye is the OXT pass's.
   * HARNESS section 20 (heTestLivenessRun): timeout verdict + forced-post
     prescriptions (pure), the redial backoff schedule (pure), the
     next-hand occupant rule, the seq 10..13 wire-format pins (timeout
