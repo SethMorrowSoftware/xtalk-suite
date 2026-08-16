@@ -106,6 +106,53 @@ MEMBERS = [
     # What it does NOT have is a script-level ratchet, and that is an open
     # item, not a closed one.
     ("box2dxt (kit)", "b2k", ["box2dxt/src/box2dxt-kit.livecodescript"]),
+    #
+    # HOLDE-EM HAS NO ROW HERE, AND THAT IS A DECISION WITH NUMBERS BEHIND IT
+    # rather than an omission. It was folded into the suite harness on
+    # 2026-08-16; what follows is what a `("holde-em", "he", [...])` row would
+    # actually measure, so the next reader can re-take the call instead of
+    # inheriting it.
+    #
+    #   holde-em/src/holdem.livecodescript   ONE 15,276-line paste-and-run stack
+    #     holding 379 public he* handlers - the game AND its 21-section harness
+    #     in the same file. There is no second file, so there is no glob that
+    #     isolates a subset either.
+    #
+    # Measured against the harness this gate actually scans:
+    #
+    #   0 / 379   as this gate is written. The fold prefixes every name the
+    #             file defines, so the shipped spelling is he1heShuffleDeck and
+    #             `\bheShuffleDeck\b` matches nothing inside it. A row added
+    #             blind would fail with 379 phantom gaps on the day it landed.
+    #   379 / 379 with the scan taught about the he1 prefix. Permanently, and
+    #             on the day the row is added - because the folded section is
+    #             the GAME, and the game names its own API: heHandStart calls
+    #             heShuffleDeck, the react engine names every wire handler. Not
+    #             one of those mentions is a test.
+    #   163 / 379 counting only the names a heTest*/heProbe* body mentions
+    #             directly - the closest thing to an honest number, and not one
+    #             this gate can compute, because it has no way to tell a test
+    #             from the code under test inside one file.
+    #
+    # That 379/379 is the whole reason the row is absent. It is exactly the
+    # failure the embedded-span cut above exists to prevent ("a library's body
+    # names nearly its whole own API"), arriving where there is nothing to cut:
+    # coinxt, onionxt, riptide and the b2k Kit keep their library in a SEPARATE
+    # file that is embedded (and cut) while their tests are folded, so the
+    # scan sees tests naming a library. holde-em's tests and its library are
+    # the same handlers' neighbours in the same file. A row here would be a
+    # gate that answers a question nobody asks twice - the coinxt-constant-gate
+    # lesson in root CLAUDE.md, and worse than no gate because the number would
+    # read as proof.
+    #
+    # What that layer HAS instead, all of it in tools/build-all.sh --gates:
+    # seven KAT mirrors (evaluator, betting/settlement, shuffle, protocol
+    # incl. the Level 2 ristretto twins, fold, atlas, sounds) plus
+    # tools/logic-fuzz.py, which checks the same logic against a SECOND,
+    # independently written evaluator and settlement rather than against the
+    # port. What it does NOT have is a name-level ratchet, and that is an open
+    # item: closing it needs a way to scan the harness REGION of a
+    # single-file member, which no mechanism in this suite has today.
 ]
 
 # The handlers an offline harness genuinely cannot reach, and why. Keep the

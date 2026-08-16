@@ -501,6 +501,195 @@ local rs1sFail
 local rs1sSkip
 local rs1sRsTestSession
 
+-- ---- holde-em: the full he* self-test ----
+constant he1kHeVersion = "0.24.1"
+constant he1kHeHarnessV = "40"
+constant he1kUIVersion = "15"
+constant he1kHeRankChars = "23456789TJQKA"
+constant he1kHeSuitChars = "cdhs"
+constant he1kHeCardBackFrame = "cardBack_red2"
+constant he1kHeRngMul = 16807
+constant he1kHeRngMod = 2147483647
+constant he1kHeRngMax = 2147483646
+constant he1kHeEnvV = "1"
+constant he1kHeDomainSeedC = "HOLDEM-SEEDC-v1|"
+constant he1kHeDomainShuf = "HOLDEM-SHUF-v1|"
+constant he1kHeDomainChain = "HOLDEM-CHAIN-v1|"
+constant he1kHeDomainSettle = "HOLDEM-SETL-v1|"
+constant he1kHeDomainSess = "HOLDEM-SESS-v1|"
+constant he1kHeDomainSeedP = "HOLDEM-SEEDP-v1|"
+constant he1kHeDomainCkpt = "HOLDEM-CKPT-v1|"
+constant he1kHeDomainRcpt = "HOLDEM-RCPT-v1|"
+constant he1kHeDomainRsig = "HOLDEM-RSIG-v1|"
+constant he1kHeDomainL2Card = "HOLDEM-L2-CARD-v1|"
+constant he1kHeDomainL2Dleq = "HOLDEM-L2-DLEQ-v1|"
+constant he1kHeDomainL2DleqW = "HOLDEM-L2-DLEQW-v1|"
+constant he1kHeL2ZeroScalar = "0000000000000000000000000000000000000000000000000000000000000000"
+constant he1kHeGenesisPrev = "0000000000000000000000000000000000000000000000000000000000000000"
+constant he1kHeTwo32 = 4294967296
+constant he1kHeDomainOnion = "HOLDEM-ONION-v1|"
+constant he1kHeDomainOracle = "HOLDEM-ORACLE-v1|"
+constant he1kHeCkptStreets = "deal,flop,turn,river,showdown"
+constant he1kHeHostLossTicks = 240
+constant he1kHeDefaultActSecs = 30
+constant he1kHeDefaultBankSecs = 60
+constant he1kHeDefaultMisses = 2
+constant he1kHeSeatLiveSecs = 600
+constant he1kHeActSkewSecs = 5
+constant he1kHeRedialMax = 4
+constant he1kHeRedialBaseTicks = 8
+constant he1kHeRedialDialTicks = 40
+constant he1kHeOnionVirtPort = 4653
+constant he1kHeOnionLocalPort = 46530
+constant he1kHeOnionCtlTicks = 80
+constant he1kHeOnionBootTicks = 720
+constant he1kHeOnionPubTicks = 480
+constant he1kHeOnionDialTicks = 240
+constant he1kHeOnionBufMax = 131072
+constant he1kHeDefaultSeats = 6
+constant he1kHeMinSeats = 2
+constant he1kHeMaxSeats = 6
+constant he1kHeDefaultSB = 1
+constant he1kHeDefaultBB = 2
+constant he1kHeDefaultAnte = 0
+constant he1kHeDefaultStack = 400
+constant he1kHeWireBufMax = 64
+constant he1kHeDefaultLevels = "1/2/0;2/4/0;3/6/0;5/10/0;10/20/0;15/30/0;25/50/0;50/100/10"
+constant he1kHeDefaultLevelEvery = 8
+constant he1kHeDefaultLevelMinutes = 10
+constant he1kHeNextHandDelayMs = 2600  -- result shown, then the next hand deals
+constant he1kHeStreetRevealMs = 750    -- beat after betting closes before a street lands
+constant he1kHeRunoutStepMs = 1050     -- beat between streets when an all-in runs out
+constant he1kHeShowdownHoldMs = 2900   -- hold on the revealed showdown before settling
+constant he1kHeFoldHoldMs = 1400       -- shorter beat on a fold-win (no cards to read)
+constant he1kHeStackRect = "0,0,1024,640"
+constant he1kHeFeltRect = "40,48,984,524"
+constant he1kHeSeatSpots = "512,474;196,428;150,254;512,124;874,254;828,428"
+constant he1kHeBoardY = 286
+constant he1kHeBoardX0 = 368
+constant he1kHeBoardDX = 72
+constant he1kHeCardW = 62
+constant he1kHeCardH = 84
+constant he1kHeHudMs = 250
+constant he1kHeTableCenter = "512,286"
+constant he1kHeSeatNames = "You,Ada,Boris,Cleo,Dax,Eve"
+constant he1kHeFeltColor = "18,104,66"
+constant he1kHeFeltRim = "116,74,38"
+constant he1kHePanelColor = "14,64,44"
+constant he1kHePanelActive = "196,150,44"
+constant he1kHeChipColor = "196,58,58"
+constant he1kHeGoldColor = "244,206,96"
+constant he1kHeInk = "24,24,24"
+constant he1kHeRed = "196,36,36"
+constant he1kHeWhite = "246,246,246"
+constant he1kHeAvatarSize = 46            -- seat portrait diameter (px); fits the name plate
+constant he1kHeLogoBox = 240              -- table-centre host-logo square (px)
+constant he1kHeLogoDim = 60               -- logo blendLevel (0 opaque..100 gone): a faint watermark
+constant he1kHeGlowColor = "248,224,120"  -- acting-seat ring colour
+constant he1kHeAvatarFills = "196,58,58;58,120,196;72,168,96;198,150,44;150,96,196;54,170,180"
+constant he1kHeSoundFiles = "cardShuffle.wav,cardSlide1.wav,cardSlide2.wav,cardPlace1.wav,cardPlace2.wav,cardShove1.wav,chipLay1.wav,chipsHandle1.wav,chipsHandle2.wav,chipsCollide1.wav,chipsStack1.wav"
+local he1gGame            -- the whole table: see he1heTableNew for the key map
+local he1gCfg             -- persistent table configuration: survives he1heTableNew so
+local he1gHasSodiumChk    -- cached extension probe ("", "true", "false")
+local he1gHasR255Chk      -- cached ABI-8 ristretto probe ("", "true", "false"):
+local he1gHasDleqChk      -- cached ABI-9 DLEQ/batch probe (same pattern:
+local he1gHasKitChk
+local he1gUIMode          -- "flat" or "kit"
+local he1gHudDirty        -- HUD repaints only on change, max 4 Hz (playbook)
+local he1gHudTickOn
+local he1gAnimBusy        -- deal-slide / flip bookkeeping counter (he1b2kFrame).
+local he1gSlotCenter
+local he1gCardSpr
+local he1gKitSuffix
+local he1gKitBackSuffix   -- the BACKS sheet's own frame-name suffix (gotcha 24: per-sheet)
+local he1gKitLastErr      -- why the last he1heKitTryInit dropped to flat (for he1heProbeKit)
+local he1gAvatarOn
+local he1gSndChk
+local he1gSndOk
+local he1gSndTick
+local he1gOxCtlUp
+local he1gRpt, he1gPassN, he1gFailN, he1gSkipN
+local he1gTNetHostG, he1gTNetPlayG, he1gTNetPlay2G
+constant he1kKatSeed1Deck = "8h,4d,6s,Qd,2c,2d,6d,7d,Ad,Jd,8d,5c,5d,Ts,Tc,7c,8c,Ac,3c,Js,6c,Ah,9d,Jh,2h,As,9s,Kc,8s,4c,Qc,5h,Th,7s,2s,Kh,5s,Qh,9c,4s,Jc,3d,Kd,9h,3s,Qs,3h,Td,Ks,7h,6h,4h"
+constant he1kKatHashEmpty = "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
+constant he1kKatTableHex = "e52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3"
+constant he1kKatSeed1 = "6c10d2dcff41a1a7e8bd9c7530052c7eb91b91808ee5d935e5f56098539eea3c"
+constant he1kKatSeed2 = "f7badd5dc86a8a5dce0984ef43bcb7ec228398e08a854a8a8c455ff895dc8a49"
+constant he1kKatSeed3 = "e848bf12b0bf2708b52c20053ef674e603e7f3a3c7092533dc92e1b0828960cd"
+constant he1kKatCommit1 = "7623721b5a6372fa974ed62f558fce9992259eb2a834ece7bcea66bce970c0e3"
+constant he1kKatCommit2 = "83726c97707155ba2e81f0e5f673dd9e10dfde06e1c8f643bdd8539403aace51"
+constant he1kKatCommit3 = "5f043c34bfb7a626581eb8653c88503a5a8524c9b47bdc2e09e37780005e0308"
+constant he1kKatSeedsXor = "73e2b09387940cf29398389f4d4fef74987ffac3c369b68cb522ded044cb00b8"
+constant he1kKatStreamKey = "e4d91a49ee23982afb804fd386cbd3d2df6370ae0a743b0f461325b94818e40f"
+constant he1kKatDeck = "Ks,4d,3c,Tc,9h,8c,Jd,4h,2c,6d,9d,Th,3d,9s,5s,3h,Qc,2h,9c,8h,7c,Js,7s,2d,6s,Ac,8s,As,Kh,2s,Ah,5h,Jh,Jc,4c,7h,6c,8d,Ad,Kd,Qs,Kc,6h,Qd,7d,5d,Qh,Ts,5c,3s,4s,Td"
+constant he1kKatHole1 = "3c,8c"
+constant he1kKatHole2 = "Ks,Tc"
+constant he1kKatHole3 = "4d,9h"
+constant he1kKatFlop = "4h,2c,6d"
+constant he1kKatTurn = "Th"
+constant he1kKatRiver = "9s"
+constant he1kKatSynthStream = "8eaba859db2f1a2a3bce5e381fc1afa1339dc9b7a8a1bbc550277e756dabdffcf7390d23167268d1523ac24f71f476cd47cd1fcd31cfa7ec51ef45c7853978859f7a10230ff86f287f1ead8ec6ac797f6f3d3a1eb75bcb435b5f491b81077775b47c0dcf3cc1d1c8f329c4e1cdae9c6e21f3825454f5c04a21fde75572ef04e25e36672b9e4ce78b4333da7090746ff00b8e32e7ad161f033523cb6f5ba2b10af1a1ebf6c815e54e4fe5efed623198c302732bf6e40ed8856a89e15d78f564614531b8f684aa727e51ea968727a22eb6e14bd588d502b2637bd73d59a8518eaf7a2311d555dd86147e83af7f1e9ef7c9baf253b851bbb48abecdea0b27f90761a67fb810022c6eae480866f19839deb884a4ec819be41bcb605df7dd1ee2efcdaab49eef76d4a98b6be858d3324ac616f2b1f58fc9a1749a6164e2a0e276d62d1815d6a042c78b82f3b0d1ff78852cf8778ba3e127411f0121775056de9e5f8e4253f98b54e627e74cf8c2a38c83edd7d6272de4eb6bd645ebcae1f1701bda866beadc5968e757a8f902e2be46933346dcb794676fd609e14f67d20432796eb492a0c86910f10e51c5c02e5a9fa95f407283b3d0abfb8357cc5f94fe4416b5984eb07e046975e1c15edece5c9e80fd6de3d43d6831a310fe9d74e0c5bb9e438da44bffd728a284795046da833ffb8fdd16128b7fdee7ef76e434e035c7471d52"
+constant he1kKatSynthDeck = "Ac,Kc,3d,5h,Kh,5d,Qc,3h,2h,5c,8c,4h,4d,Tc,7h,Qs,6c,Ts,6h,7d,Th,6s,Kd,3c,Jc,9s,4c,Ah,5s,2d,8s,As,2s,Ad,9d,Qh,8d,Jh,Qd,Jd,2c,6d,7s,Ks,7c,Js,8h,3s,4s,9h,9c,Td"
+constant he1kKatIdSeed1 = "629a089485b96c24fef651012c8deae57aa438a7a11c81f3e6a99b5e22f83b38"
+constant he1kKatIdSeed2 = "fa645b9f3778a3b162514e3a00436568aef46b726e10ef563c94e73b2c2cb448"
+constant he1kKatIdSeed3 = "7833fb1675dbb196e2222ad6f93ff30aacd313faf7a7818078e30a47f6890083"
+constant he1kKatIdPub1 = "b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566"
+constant he1kKatCfgBody = "v=1,level=0,sb=1,bb=2,seats=3,button=1"
+constant he1kKatEnv0ContentHex = "31096535323637353635306437616434386337313239313835656664616563316532623839636334313064386534633865303835626364363532313837623237643309300962366566316131396437383963323762656133663663313237646236333539323935343166333439303737353065653132643062373135633031306337353636096366670937363364333132633663363537363635366333643330326337333632336433313263363236323364333232633733363536313734373333643333326336323735373437343666366533643331"
+constant he1kKatEnv0SenderSig = "c1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b"
+constant he1kKatChainHead6 = "62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778"
+constant he1kKatSettleHash = "68095dcf5a74fac1e1340a1073a466dcf117024257f5c265de21698257b34b6f"
+constant he1kKatAdmitSig = "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b"
+constant he1kKatIdPub2 = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+constant he1kKatLobbyCfgBody = "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
+constant he1kKatRosterBody = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10:player,b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566:host"
+constant he1kKatLobbyHead2 = "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa"
+constant he1kKatCkptSig = "08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
+constant he1kKatSettleHash2 = "5e716ce9022f4c47d99e081b52be3a8bb5f9f1f56d3def18577c2f7ac9de8df5"
+constant he1kKatRcptHead1 = "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef"
+constant he1kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910"
+constant he1kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
+constant he1kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
+constant he1kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+constant he1kKatCkptBody = "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
+constant he1kKatCkptHead7 = "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497"
+constant he1kKatShowHead8 = "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c"
+constant he1kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71"
+constant he1kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
+constant he1kKatTimeoutHead10 = "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694"
+constant he1kKatStandHead11 = "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6"
+constant he1kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc"
+constant he1kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
+constant he1kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
+constant he1kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
+constant he1kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+constant he1kKatOnionSeed = "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2"
+constant he1kKatOracleSeed = "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0"
+constant he1kKatLobbyCfgBodyOracle = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
+constant he1kKatOnionAddr = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
+constant he1kKatL2Scalar1 = "38f967b55df92422303a885e0bdd8400e52e6ca53623f2c816bc08ce6b7d480a"
+constant he1kKatL2Scalar2 = "04db114cfbf9228a88b8533a2fd8f7b3d023db8adb22abf3ce804a33d105e804"
+constant he1kKatL2Scalar3 = "380b4308d6301ffd7c124b79b15ae31343e221dfc77d6bb4c1ea48de8f34810a"
+constant he1kKatL2Inv1 = "05e469c6d0880a9b8e27c9cfc6b887171837d1c5b5e01a9bc0320fe70a64bc0f"
+constant he1kKatL2Inv2 = "5211b8e991092be89603c8b33eb590833774d63832f1294b7f3dc2b312112b0a"
+constant he1kKatL2Inv3 = "8cf1653acb11f8ea598fe0918c83210d1282a4218f4cf9546a5907f3401c6403"
+constant he1kKatL2Perm1 = "35,31,39,27,36,51,26,11,7,49,18,9,28,24,40,50,25,44,45,34,15,2,13,5,41,3,23,12,33,6,29,52,20,10,21,42,17,46,8,22,38,19,32,47,16,37,30,14,48,1,43,4"
+constant he1kKatL2Perm2 = "30,35,31,18,7,33,4,50,38,19,15,2,29,44,49,16,22,51,47,9,5,10,25,12,6,21,52,24,14,39,8,3,20,37,43,36,46,34,40,26,23,48,28,11,41,42,27,32,1,45,13,17"
+constant he1kKatL2Perm3 = "22,14,28,2,48,29,37,23,52,32,38,25,30,47,43,5,11,3,39,20,1,45,50,21,51,27,15,4,9,26,24,8,19,36,41,35,18,49,7,13,46,6,31,34,44,16,12,33,42,17,10,40"
+constant he1kKatL2BaseDeck = "f43e364e1c1a4da57953b755e62e4a21c6ca54dad6c8afdd4fe527d1fa0f1471,e2b5c63bf1cb966f79bb5dd8049eb0fca145588b5128a6f7322acd1012e45b7c,ca68072db08307f62268023fb580e8148aea78f8b87e7b1d2691a922b5245446,b6e6777a5bf7657fd842629a537b02f06bc9e9c202d51b27cdd550b61c8a8a18,d68850b61f37953e920659d48ee504a51addd0e26996f0719188dad7f37fa52b,0c4a3a1a25314e3144391e6133bc6c7b135fae6673fbe9a0889dd5ed477c171a,4acd93b546fc640606953a84123707ad9a1617357d00e5f763084daa6a0d3840,dcfd9215cf8a022e2198e87af9f4c08059504ffb309a6dd1ff97917b6012902f,a825c649a65028cfa090453b8f8d7c91b5761a4df3c3a099105f764d05bbfc79,a2751a23688be97fee506a367e917f2d1b0b8445d56679fb66af2aca3f1dbc04,e2fd88a0a2bf8ec954e1bd7c637e9c5e810195e3614a09ee400adf6d8cb8c856,78f3c83c94a84614c0589b3f58269687a539de6a4cae5c02449f95bf6a46a46b,a40fdc57edfa2dc321608b50e782cc6f0907f65eada0ad48a25a00f546d0987a,22830c692615fc4b2a8ef1e3f8fbedc51a720107e359f9d2c1af737699af733b,d8ee75f4266debe97bcb495971922583ebb97ad60b78f5e9c1d187972bb1ec1b,44744fa706cee62e39546bb3f60b86c8563625be486dd73ae41bab0fd1a7cb00,4cd2d796f2e9e21c10b4db346d08ec53bbc7af1338f605d1d7e9a5244500af74,4aad6f63cff471e83ab8abbfefc7c52c4ac7e38eec8bab874a98db796b69f710,6ab24c9cd511a4fed28e34f86a40198700626511d05fc986eb5c4e0ac0688245,1a815ccb611b5b5fdcece3e811bf479e6d866f5211c4222766008c7de0b3fd77,40ebc4540b298dec8b107d3465bae5b4298c0d9dd0b052b6ee35085a15967043,1e7bb71f06a5a72d4f6dc5f0e5131b3ed38f344ae8afe4ab6325bd71d97eb770,0e6ac715b89c1b7350d1216965122c5565009b7d9140e0090c4041932c8a5a35,72edfa2243b1b418c24d89f6c7cc3444367945ead40cc152c1a02ed74b894d73,1af2d8904604eb9de539209d048932660026be3e09f1591deed8475b466d9c1d,98afeba72c1aad9ef62bb78730b25e81fb8c0f0aa496f5f558d4a401fb08dc32,2436bc86ba0f7a7a065a61e572021e4ba2f58edba7cf529d0f2fd9c852938d6b,36ff7c85101d8f18a8a98e16d225b56904ae11e5d4b3d441b0213237d274ee1f,9e3d2f7ba70b89df9fbeb9be41281e3738937f124195772e032c3d1fdb78f855,1cd179e72cb1b79eec94f4a249cb7ca303be533cf60004d22d18847ea06b6f74,ee9bf366559e64e3120c89a71b3a3f5157e901b52035c77add57f1e77631c621,62bb8617c9d4a3868b2685d0b68251a7ed77a438835f3955a809cdf991da5144,64b530ce023f8108b30706674fb1d50bcaec450e24b2eebebde1d0039be87b3f,6a88be3b6e714f8c47eb879456ee5343a54ad0090b1f8efa2ee3c55654b7cc16,146f81383fd8305ceec4ca6d3d59cf1358ef3333c708b6e6bb4d5dbd7cebb335,ccdf0af1f4608a4186a2ebddd4729174fb696a72606c0205bc237a181be2e006,248e4956f6625bc4e38f1025413893827006ec904f1d9e48f5bd8b9e8cfe622e,569050be976d1b9f7c3bb79534202819d33b2f747a04b34b00f74e4533f3d534,e686afeda75fbafe47f550a9914e5872f867fd144be9727906844fd7a5efba76,46f0ee3869ccfbd02973504688e82360867cead0540237b88cca8dd64ab8653e,feaa1f3bbfcd9f3e3428dc887d61612bab06635b7991abdd34ec69e01cd21a09,7ac0547ac2ae5c08f7b7dd14e1f2fd46d4110cc464c54379ed738e877bcdb42d,0ad5483deee6ec96989b844a54a52d93fdf9d61aa1c8bad49de64001e0aa7e42,7228ec86b2507b1f73de6668f23b68b01af1cbd1a18bc74b56bb98e0d1044d32,d070da71ae4c8f56464e6a9f0c0a7265f062de5047bce758957a37c3c06b4272,18b94704378b8065af2d9603b0e7a350105628025c8093ad9d6991c8efcd747b,967b07c684c6865789f35f3d3aaa16fae3f7d16d82b13dfe9c06fe79cf6f8578,a4467ecf421b21ff1783d95a45790c51a5904d0da89edfccf0c142e07b558901,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b,d0f0a3ca37ae84285a38836c0abba3536af53cfc32ca1681347baec559f47b7b,88ce578d9d4f057a76486e5f2e15fce75b1d07ea6d23efcb5d0ed421e1d35c37,50532c4ee88d1439e01a61f151c2f25f1ba2319c2d32f943ecfb1264d03ed72e"
+constant he1kKatL2Deck1 = "a8de3428db2d1cb591341ac375bbdb0581bd46f80d2804e94e71710a3b48541f,6208a4235f8ae00a67e3c8f0ebbbf2c97fbcded0363569d684a174c9f9c33472,d80f7d6653463748864517be750974916e0139fe3afcbd1a5e05481471d1e71e,0cb1f4e9cc67e1d58c88b5141f12c64caad25c5cbd5641ed6eb7433ffd9b236f,aca2977971dfa44ef40e9086ab5b58f635f25993d91d1c9eebec806b42e2084d,b42c199b8688e4fa95be56db11c0f269defd692ec3d56726055f4f2e3bf15c22,be8fd78c93e5096e7f156a4b6401874965065c9a39abdb57d2e278b5252cae03,b83bf82a7d4192df111443cde252d748245569be844c373078c97b3c5c21d042,380662f5a44beb9168bad94af183a145d6aa68330087e47c2413e1c02255ce7b,880321e01b402cab8e58739e24b8650502e87a1e53a728f4c7120f85cd79ec31,c4a33acbf3a9748e75320863de31088d2c156358797f55c1992e11ea95a5e768,a610eeaa66e3a4f799ab05ad0a5791ccf155fe9105815c8a5a27341cf00c3e20,ac94ae783e70f5b4db4e723283815cc2266fd5def3d0063ac58f50444e6e6620,ccf2a5e4813136eebc70cc00c8452d587701f378214aaedd1ed577a7f1c1020f,2ad863fc5aa197b4c35efccdb87379ebcc84a15a046bdf7fab33ffb9acd1f759,9ac91cad66318f80906c50bc9c2161ff4204fdd5e573a71c9409b5e92ecfc446,06c97bc904c39b8f2f13833ca41b376d0a70df99c3f48ce81c63e827c700b135,82c2bb912824f452cb8d62f5acad8b700324d13083016ade60dbebd0e24adf16,4cbdb1a1a87e1b2087df92f229a7e3d646f841a730275f3a355647b79d4c726f,202a2868ad6d3b99b4646a08f4f571e2373221ff58df7af32ce2801d1d725770,dc1d10c111206bc0e777e46a9fd5a56a2df56f37cec67f5261c26aa12a2aa937,9ef54cb33db9d77c664069f15bf54061ed01e075b5a5846bff366acb7f477d37,30dec7a12b6fd2f973683dfa053865fa8aa3f08ea5325a10e27aad97020bb729,6aae1939f32cc599e76e968455a30ce4d82280274ddaa3da099226aee642b57a,cac50035ec7bfe2a6f0091969ce08045b28b5fcaf6502d8aae107557e3c3e109,70337dc2f81c273be97d83f42e8f36ea03acec7451c0f6472155ffc4ac0f3518,02bbda5b5f1987ec365739fb37c2a599d2b725bedc0c204deb31fea49b5a9c4b,b4eb5d98403b1e5276994305fca33f4aa508978ed4edd923f18616783458b118,90f8bce01a01e5b30373962182b648c731452a2ccbfec2dba91de8fb022c193a,12cf3f7c4cd5cbc9b1fac833454ef6dbbd7ddd139bfa3812ee19b2bc3a34753f,24fc8edd6bcccf04c49b2b4b337131f6d4fd4d36d1b1c4ba6ed1a24ebeaf581b,98063c80c1bfa451e791f19fbb52723a302c94d16dd01f52425b6a496413785f,6e161fd50766cbd972d31ea5fc0b90807a4a103bf79b9766427cdd7fc4e3521b,8a835b4edd4375f1e2e908f14f1a47ba48e2cd499dc90a64040333d9c9344a74,94deccd57786903f49e7783e30b373781ffd162eab5f095ebdf99f088a048e4c,f0e6fd4c43e8647095384db6e110202c691408d6c9be53f00b4b13023a24d217,b61e937b2825e50de783985a69279b1e07cf45b2113c4ada5a78b8951f57ae0d,2239b5510058e2962e0bd9cf17f54fde38cb3d76f0503ce5ec4e132887c9a571,10135c31a39b36a2af83c0a0ff759facde77bce17b6350579c706f656486a10f,acdee51d73bdf6ee8613c73739d7c897d97a52fb9c6c4a0104395ea4806f2047,6ad5cc0f70a07befcbfbd6abcdb0279a579968e51555c36af6bc6b2bb0f6a010,aa66031a9585d3487f62170ad6bc236d81dbdeff4e0287dcce6e971afcfd4150,205f6e66b3d54d4e23e7be0512194444a13e76ef53bc032773e3eb1ba615015f,1cad41fa4896a2192cb96763568fd7b0b1a17a641235c571d6b9f735f970d800,fa91391acee3da6ce5beb220842c6d3a89b127d898915d78569becf98e42c405,92fd398554c27e6d525f6ab451a60bd34773fb627f5ac5e335ba26ba01d30c39,c202fb60a22eebdf70b871f93f0c871b97a602f2c46e77c9bf6517e5eac87677,2ef2dc398f3c20aa0d472c7be964b1450c8aea652cbc950a0684559328771371,e6ac5b83882b4f694775463dcfa35b30e269be84200826242615191af8072b7a,d4e11d4f0dba15abe5ec94e448871bd11e00e7c5f8c301a5573fbccd3ea2cc04,e4e0dfcd6cf502920991dd5789504d3b4764db3ca8b5a7356d6e1fdd70ffc274,d69d1e07c98931eea27cdd197eee2dd78d2d787adfc8c21dfef0968b9aed5d07"
+constant he1kKatL2MaskedDeck = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,ccbd8b67ded62a4c617adaf2661b6a5f3b321f8ac82d4ed631e174f17e016872,9087ea23c9a04974739041651d08ffaa60c83fe30e93c37ead172ddaeecea577,520321aa5411f0102d9854d7c36d0d9c0d218634c44655b99a3a78256178e774,8c155652fd2bdc7f3b1bbb3e960d9eb5097366f62c924b1c92bed58e945f9f19,1ed3f96f1a7d03fe3da78c54c209ed98aa2f2260bc5ff290ab9cb8ce1391ac0c,b632f200ca5decad5e041fa1d2411ea3555cd46a4b64790ccfe0c70c4de34a0f,9a4602b46bde2c6c860f9e7b9562ce87b62053c75daefeda0ffa3d72e13c4a05,4476b7e54b72b9abda47c42c7a0b55676acb865a9949119d2814a028b381bd10,4a0bb09499996a33d379909b8b7f1c6b48f276c76d7213abc82e920b2155872d,1ce9352e0a5505d7a67c00e0139bcd32ba585c84e416310e92eaccd4ff10245d,dca2411b332e647eec34df62d5fb8162d850bb831a115d1e71d51dce55eed626,56ba017c3ad1ea1126093efca04c749d085112132a578ec755d23a777f982f23,6edb77fbda06a59d0afa90686f9945efa863434424f74a1739c3d5153015f357,fa8273b7c9a231dfeb3ef71bc77788e7d357f292731c79cd2c52ef76acf47a29,c0ba5d3b244be2b869252cf23988a8063908520ff3e34ceca71cda4bbbc84b04,a8c3d44a17fbe150dedf35fadb9f3d5a3fbcf400f20994b4f0e1620478301a15,5e3168d6f5106aca4fea6916765ad28931aeba746d4e5c438e7257a053ec255b,3e59ef03c2f78b1c0be06501b254cee66608e3570dd08c9f16a2256f0585e476,20c2fcd252741106fc6bac82a30dccb3d9bb05f4c65891ebdc81d20cf4c6831a,5a954722e48f2a0534a26271ee77809fe27111152e77c161091d5c78476f6819,b42ba308571bd4f27052bf38ec82b50755dd22d97832cc4eb784630264d99638,a871a574b10e19d6431ae82e6f3d67571e29225e137d44821e887e1efceef715,a2d8ab119c8a7c9f2746cff786f8514fee315631e54c1850a20389b2e2d57e0b,6cc6bbf761404aca110b92e36e637dd5a8bca799e5680077654b0d0f192fa554,7cb1aeacfd37b1d7809c7d269c15737c7f746507c4358a30291c40a0efcfc13f,603aa0b85684a71fe8be7edbaa26cab094c4633df389f818faa6d1dbe69a4a51,2af6de55fc37181ad678f8dcb141c365f875d9a571b8e9727f8c963066792e62,38b0fbfdf0cdb815094dae6ae1ebe102125d5fc5933d2bf42ce9bc2bddd4eb0b,38f162c482282626597a32d0eff26dcadc22ea38b1e107c1934b905397d8b973,9c5f3d94578d122f329b825a8563b03d12b2e5b96916e83f1ff00264df8e9c67,767ac5e92db1ea84be5cf73dd70a39c61a7024e3464e109e36ff2c62b14a7235,308cdbdc2f3334271ef4d25e7f7ecc8933b5918ddbe819bb3484d3fa02325c27,8e8544127ae68c2a8d18a9c8cb8d37a76758916286ebf17597b17b9283b5f909,c0ddddd1e00241611d3c045b85d45b0fbf3ac2ae0078fd928da2955579339920,48c8be8d6374e2763cf6ab51e9a84863ad9d322098006243c8e1eaa318479e78,b49934b95c8748348fe21a30f191d080c805aae4e3505555f324b6974379ab68,bc2c0a3edf2c8f9c761980bcf13d444455d846c2a137a582ca8679ead71ee604,b463da981cfef69817ab80245630bf70deb604820fc87265719410f72462de35,6c7dc076178538735f5e1a890a21f054a9d81039f72424b65be5b041b5c3fa4f,8015469fa91721b299a3b6f7522478398820085127429312e17d42e5a40a462a,9abd2266d21ee49b0a6fc227a6ae21a8a18e8f0019eaf35933518d61f71c4052,d4a31d2d53796a3ffa6f12de5ed0de6cc2131a5d811c6b55505a5e58317af20e,b4e06f3351546a873220664a0585c506524e605453d9ea7d0de46bae5c90ea24,f4383b63dcb04aa7d70595c1450cad7842552095c31328d1c2ff3a5b3469067b,4876092cf6739c17bab348b6ff2d05feb8d00ecdcc865c5c17154b80f157c301,f4bb4c89cacaf8727fd11878f03b9fa47cb1645f5db293a656d3ba3b2641bf3b,da8fba36a6c821b0125984a1b9432c0911849f7fe6183c98abd940dad8d41b41,7247827e28f0b6116ec614a4d713f49ac291b6112f4ad0dd5f3a4f92bc331c02,feef6df7bf025f0f0b77c2fd40da954c44be8b85ccf943301e888e783a312307,e625479c6e3b0e1f1bafbe6f7e7630bd8c7c8c583e802b9282255bfe27574136"
+constant he1kKatL2PublicChain = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,dccce0c6d9e263337316e3487d17796b76d3057c9473c40b95be7b4b78a10069,54a040c81ab1aca13bf76c725416660af35c171209001e3abfb7aa6f56e2ce24,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b"
+constant he1kKatL2PublicCard = "card:49"
+constant he1kKatL2HoleChain = "62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,80b56b50f6eea1ab201aaa93c738dd6441f5842f256bb890a5ebc867e5807c70,3a18dfc38fbbce3503f1fa5b45ba7b88c547799f663ecbd38d7474aa2aadff5b"
+constant he1kKatL2HoleCard = "card:47"
+constant he1kKatL2Ck1 = "f8aaee2dfe3f251d8726037421fd646a85446b00f132dc37d0792a7e48a08a03"
+constant he1kKatL2Ck2 = "94d02c9027dffcedbc3fca0569b23d13fc966462b5208b5a25668ddefaa4ea65"
+constant he1kKatL2Ck3 = "9ce4b6a7337e94a6c60535fccf71ee83a69745b46359fa9bd0a1846864ad1458"
+constant he1kKatL2DleqProof = "d84b045c40a2d08257ef6907556d4a096a26f0777b2a8c213db9736e403150048634476eb775e61807679da17345da913e9ae89959a0dd3a5ed121483a4de064c838dc1234a84786a24f5c120cf28dc410b59d28213e74c4befbc1992fbb2e04"
+constant he1kKatL2Identity = "0000000000000000000000000000000000000000000000000000000000000000"
+constant he1kKatL2BadPoint = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
 -- >>> GENERATED EMBED: coinxt script layer declarations >>> --
 -- ---- CoinXT script layer (the real library, embedded) ----
 constant kCxBase58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -2532,8 +2721,8 @@ command stRunMemberHarnesses
             "Kit is embedded in this paste, but the physics is native)"
    end if
 
-   -- Riptide is an APP layer over the extensions above, so it runs LAST: by
-   -- here every extension it probes has already shown its own colours. Its
+   -- Riptide is an APP layer over the extensions above, so it runs after them:
+   -- by here every extension it probes has already shown its own colours. Its
    -- harness handles a missing optional extension itself (sections SKIP), and
    -- refuses cleanly without SodiumXT, so the only gate here is the embedded
    -- layer being present at all.
@@ -2547,6 +2736,36 @@ command stRunMemberHarnesses
       stSkip "Riptide deep self-test", \
             "the riptide script layer is not present; the paste is damaged"
    end if
+
+   -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to
+   -- probe for first. It is the second capstone APP and it is pure script, so
+   -- the whole game folds in with its harness (one file: tools/build-suite-
+   -- selftest.py prefixes both together) and he1heSelfTest always exists. Its
+   -- 21 sections do their own probing and SKIP by name when SodiumXT,
+   -- TorrentXT or OnionXT is absent, so an unconditional call reports honestly
+   -- on a bare engine instead of hiding behind a guard the member does not
+   -- need.
+   --
+   -- LAST for a reason, not for tidiness. It is the only folded harness that
+   -- ARMS TIMERS of its own: several sections drive the between-hands beat on
+   -- synthetic online contexts, and the paced hand steps can arm too. Its quiet
+   -- entry point sweeps every pending message carrying this member's prefix
+   -- before it returns (the fold widens that sweep - see the rewrite in the
+   -- generator), so nothing it armed can still be ticking when stRun arms the
+   -- cross-member ENet/DataChannel loopbacks a few lines below. Running it here
+   -- keeps the gap between "the last thing holde-em armed" and "the sweep" as
+   -- small as this file can make it.
+   --
+   -- The entry point is heSelfTest, NOT heRunSelftest: the interactive one
+   -- builds an 800x560 report overlay on the card, overwrites
+   -- clipboardData["text"] (this scaffold's own Copy-results channel) and
+   -- writes to msg, and its "==== n pass, m fail ====" summary is a line
+   -- stSummaryCounts refuses on purpose.
+   try
+      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest()
+   catch tError
+      stSectionFailed "holde-em deep self-test", tError
+   end try
 end stRunMemberHarnesses
 
 -- Strip the punctuation a report hangs off its words, so "PASSED:" and
@@ -20614,3 +20833,13298 @@ private command rs1rstSectionMedia pCaps
    end try
    rs1rstCheck (rs1tCode is 0), "cleanup: the media torrent removes"
 end rs1rstSectionMedia
+
+
+-- ==========================================================================
+-- holde-em: the full he* self-test
+--
+-- 21 sections over the whole game, driven through heSelfTest - the QUIET
+-- entry point (report returned as a value, no control built, no clipboard,
+-- no overlay), not the interactive heRunSelftest. The 7-card evaluator and
+-- the betting engine and side-pot settlement; the deal ladder (integer PRNG,
+-- the Level 0 commit-reveal keyed stream, the Level 2 ristretto mental-poker
+-- algebra and its void-and-audit machine with DLEQ proofs); the signed
+-- transcript wire, the lobby, three-context netplay and deck-oracle
+-- loopbacks, the onion transport's headless slice, and the whole liveness
+-- layer. Every section that needs SodiumXT, TorrentXT or OnionXT SKIPs by
+-- name when it is absent, and every live leg (a tor daemon, a second
+-- machine) SKIPs too, so the folded run is offline and synchronous
+-- throughout.
+--
+-- GENERATED from holde-em/src/holdem.livecodescript by
+-- tools/build-suite-selftest.py. DO NOT EDIT HERE - edit that file and
+-- rebuild, or the next build will overwrite you. Every name below is
+-- prefixed `he1` so this harness cannot collide with, or be
+-- perturbed by, any other member's copy of the same scaffolding.
+-- ==========================================================================
+
+function he1heHasSodium
+   local he1tProbeErr
+   if he1gHasSodiumChk is empty then
+      try
+         get sxRandomUniform(2)
+         put "true" into he1gHasSodiumChk
+      catch he1tProbeErr
+         put "false" into he1gHasSodiumChk
+      end try
+   end if
+   return he1gHasSodiumChk is "true"
+end he1heHasSodium
+
+function he1heHash32 pData
+   -- 32-byte BLAKE2b digest as Data (the output-length arg is mandatory)
+   return sxHash(pData, 32)
+end he1heHash32
+
+function he1heHashHex pData
+   -- lowercase-hex string of the 32-byte digest, for transcript text fields
+   return textDecode(sxBin2Hex(sxHash(pData, 32)), "ascii")
+end he1heHashHex
+
+function he1heHashDomHex pTagTxt, pData
+   -- domain-separated digest, hex: H(utf8(tag) || data). pData is Data.
+   return textDecode(sxBin2Hex(sxHash(textEncode(pTagTxt, "utf-8") & pData, 32)), "ascii")
+end he1heHashDomHex
+
+function he1heBin2HexS pData
+   -- Data -> lowercase-hex String (sxBin2Hex returns ASCII Data)
+   return textDecode(sxBin2Hex(pData), "ascii")
+end he1heBin2HexS
+
+function he1heHex2BinD pHexTxt
+   -- hex String -> Data
+   return sxHex2Bin(textEncode(pHexTxt, "ascii"))
+end he1heHex2BinD
+
+function he1heIsHex pTxt, pLen
+   -- true iff pTxt is even-length hex (optionally exactly pLen chars). PURE --
+   -- no FFI -- so it can gate sxHex2Bin, which THROWS on malformed input. Every
+   -- hex field lifted off an untrusted wire must pass this before he1heHex2BinD, or
+   -- one hostile/corrupt frame throws uncaught in the poll loop (house law H4:
+   -- verify-or-drop must never raise). pLen 0 = "any even length".
+   local he1tLen, he1tCh
+   put the number of chars of pTxt into he1tLen
+   if he1tLen is 0 or (he1tLen mod 2) is not 0 then
+      return false
+   end if
+   if pLen is not empty and pLen is not 0 and he1tLen is not pLen then
+      return false
+   end if
+   repeat for each char he1tCh in pTxt
+      if offset(he1tCh, "0123456789abcdefABCDEF") is 0 then
+         return false
+      end if
+   end repeat
+   return true
+end he1heIsHex
+
+function he1heSignDetachedD pMsgData, pSecData
+   return sxSignDetached(pMsgData, pSecData)
+end he1heSignDetachedD
+
+function he1heVerifyDetached pSigData, pMsgData, pPubData
+   -- never throws; a bad signature is false (spec 6 verify-or-drop)
+   return sxSignVerifyDetached(pSigData, pMsgData, pPubData)
+end he1heVerifyDetached
+
+function he1heFingerprintOf pPubData
+   -- display handle: first 8 hex chars of H(pubkey) (spec 5)
+   return char 1 to 8 of he1heHashHex(pPubData)
+end he1heFingerprintOf
+
+command he1heProbeSodium
+   -- diagnostic: exercise every crypto seam the online protocol needs, each
+   -- in its own try, reporting ok / THREW. Prints to the message box. With
+   -- the corrected signatures this should be all-ok on an engine with
+   -- SodiumXT installed; run it once to confirm the Phase 2 surface is live.
+   -- he1tErr and he1tOuterErr MUST be declared: an undeclared catch variable throws on
+   -- strict OXT, which is why this probe blew up only once SodiumXT was installed
+   -- (with it absent the handler returns before any catch can fire).
+   local he1tRpt, he1tData, he1tPub, he1tSec, he1tSig, he1tSealed, he1tOpened, he1tMsg, he1tRecPub, he1tRecSec
+   local he1tErr, he1tOuterErr
+   -- the version is stamped in so a STALE paste identifies itself: if the line
+   -- below does not say "v0.10.1" (or later) in OXT, the running stack is an old
+   -- paste and needs re-pasting -- that alone explains a probe that still throws.
+   put "SodiumXT probe (holde-em " & he1kHeVersion & ", harness v" & he1kHeHarnessV & "):" & return into he1tRpt
+   -- ONE outer guard around the whole body -- including the he1heHasSodium check --
+   -- so nothing here can ever escape and abort a harness run; whatever throws is
+   -- reported into the probe text instead of killing it
+   try
+      if not he1heHasSodium() then
+         put "  SodiumXT not installed (sxRandomUniform threw)." & return after he1tRpt
+         put he1tRpt
+         return he1tRpt
+      end if
+      put textEncode("holde-em probe", "utf-8") into he1tMsg
+
+      try
+         put he1heBin2HexS(he1heHash32(textEncode("", "utf-8"))) into he1tData
+         put "  sxHash(empty,32) -> " & he1tData & return after he1tRpt
+      catch he1tErr
+         put "  sxHash: THREW: " & he1tErr & return after he1tRpt
+      end try
+      try
+         sxSignKeypairFromSeed he1heHash32(textEncode("seed", "utf-8")), he1tPub, he1tSec
+         put "  sxSignKeypairFromSeed: ok  pub=" & char 1 to 16 of he1heBin2HexS(he1tPub) & "..." & return after he1tRpt
+      catch he1tErr
+         put "  sxSignKeypairFromSeed: THREW: " & he1tErr & return after he1tRpt
+      end try
+      try
+         put he1heSignDetachedD(he1tMsg, he1tSec) into he1tSig
+         if he1heVerifyDetached(he1tSig, he1tMsg, he1tPub) then
+            put "  sxSignDetached + verify: ok (roundtrip verified)" & return after he1tRpt
+         else
+            put "  sxSignDetached: FAILED verify (unexpected)" & return after he1tRpt
+         end if
+         if not he1heVerifyDetached(he1tSig, textEncode("tampered", "utf-8"), he1tPub) then
+            put "  verify rejects a tampered message: ok" & return after he1tRpt
+         else
+            put "  verify accepted a tampered message: BAD" & return after he1tRpt
+         end if
+      catch he1tErr
+         put "  sxSignDetached/verify: THREW: " & he1tErr & return after he1tRpt
+      end try
+      -- the sealed-box surface (sxBoxKeypairFromSeed / sxSeal / sxSealOpen) is
+      -- SodiumXT Phase 4; a build that ships sign+hash but not box makes these
+      -- "can't find handler". That is EXPECTED on such a build and does not break
+      -- the game -- hole-card sealing is future work, and he1heIdentitySetup guards
+      -- the box key so a join still succeeds.
+      try
+         sxBoxKeypairFromSeed he1heHash32(textEncode("box", "utf-8")), he1tRecPub, he1tRecSec
+         put sxSeal(he1tMsg, he1tRecPub) into he1tSealed
+         put sxSealOpen(he1tSealed, he1tRecPub, he1tRecSec) into he1tOpened
+         if sxMemEqual(he1tOpened, he1tMsg) then
+            put "  sxSeal + sxSealOpen: ok (sealed-box roundtrip)" & return after he1tRpt
+         else
+            put "  sxSeal/Open: roundtrip mismatch" & return after he1tRpt
+         end if
+      catch he1tErr
+         put "  box surface (sxBoxKeypairFromSeed/sxSeal/sxSealOpen): THREW: " & he1tErr \
+               & " -- ok if this SodiumXT build has no Phase 4 box handlers yet" & return after he1tRpt
+      end try
+   catch he1tOuterErr
+      put "  probe aborted (unguarded): " & he1tOuterErr & return after he1tRpt
+   end try
+
+   -- he1heProbeSodium is a COMMAND, so it must NOT be called with function-call
+   -- syntax he1heProbeSodium() -- that throws (the harness hit exactly this). Like
+   -- the test sections, it appends its report to he1gRpt; the harness runs it via
+   -- he1heRunSection, and a standalone `he1heProbeSodium` echoes the report too.
+   put return & he1tRpt after he1gRpt
+   put he1tRpt
+   return he1tRpt
+end he1heProbeSodium
+
+command he1heProbeTorrent
+   -- capture "the result" immediately after each bt* command (gotcha 27):
+   -- per the docs only btStartSession throws, the rest report via the result
+   local he1tRpt, he1tSession, he1tHash, he1tHandle, he1tRC, he1tErr
+   put "TorrentXT probe (holde-em " & he1kHeVersion & "):" & return into he1tRpt
+   try
+      put btStartSession() into he1tSession
+   catch he1tErr
+      put "  btStartSession THREW (ABI mismatch?): " & he1tErr & return after he1tRpt
+      put he1tRpt
+      return he1tRpt
+   end try
+   if he1tSession is 0 or he1tSession is empty then
+      put "  btStartSession failed: " & btLastError() & return after he1tRpt
+      put he1tRpt
+      return he1tRpt
+   end if
+   put "  btStartSession -> session " & he1tSession & return after he1tRpt
+   try
+      btSetBool he1tSession, "enable_dht", true
+      put the result into he1tRC
+      put "  btSetBool enable_dht -> " & he1heRcTxt(he1tRC) & return after he1tRpt
+      btRp1Enable he1tSession
+      put the result into he1tRC
+      put "  btRp1Enable -> " & he1heRcTxt(he1tRC) & return after he1tRpt
+      if he1heHasSodium() then
+         put char 1 to 40 of he1heHashHex(textEncode("holde-em-probe-table", "utf-8")) into he1tHash
+      else
+         put "0123456789abcdef0123456789abcdef01234567" into he1tHash
+      end if
+      put btAddInfohash(he1tSession, he1tHash, he1heTempPath()) into he1tHandle
+      if he1tHandle > 0 then
+         put "  btAddInfohash(" & char 1 to 10 of he1tHash & "...) -> handle " & he1tHandle & return after he1tRpt
+      else
+         put "  btAddInfohash FAILED: " & btLastError() & return after he1tRpt
+      end if
+      btDhtAnnounce he1tSession, he1tHash, 0
+      put the result into he1tRC
+      put "  btDhtAnnounce -> " & he1heRcTxt(he1tRC) & return after he1tRpt
+   catch he1tErr
+      put "  transport call THREW: " & he1tErr & return after he1tRpt
+   end try
+   btStopSession he1tSession
+   put "  btStopSession: ok (session torn down)" & return after he1tRpt
+   put he1tRpt
+   return he1tRpt
+end he1heProbeTorrent
+
+function he1heTempPath
+   -- a scratch save path for the phantom swarm (no content is stored)
+   return "he_rendezvous"
+end he1heTempPath
+
+function he1heRcTxt pRC
+   -- a bt* command reports 0/negative via the result; label it for the probe
+   if pRC is empty or pRC is 0 then
+      return "ok"
+   end if
+   if pRC < 0 then
+      return "FAILED (" & pRC & "): " & btLastError()
+   end if
+   return "rc=" & pRC
+end he1heRcTxt
+
+function he1heEnvContentLine pTableHex, pHandNum, pFromHex, pTypeTxt, pBodyTxt
+   return he1kHeEnvV & tab & pTableHex & tab & pHandNum & tab & pFromHex \
+         & tab & pTypeTxt & tab & he1heBin2HexS(textEncode(pBodyTxt, "utf-8"))
+end he1heEnvContentLine
+
+function he1heEnvSenderSigHex pContentLine, pSenderSecData
+   return he1heBin2HexS(he1heSignDetachedD(textEncode(pContentLine, "utf-8"), pSenderSecData))
+end he1heEnvSenderSigHex
+
+function he1heWireBuild pContentLine, pSenderSecData, pSeqNum, pPrevHex, pHostSecData
+   -- the host's send path: countersign the sequenced envelope
+   local he1tSenderSig, he1tEnvLine, he1tHostSig
+   put he1heEnvSenderSigHex(pContentLine, pSenderSecData) into he1tSenderSig
+   put pContentLine & tab & he1tSenderSig & tab & pSeqNum & tab & pPrevHex into he1tEnvLine
+   put he1heBin2HexS(he1heSignDetachedD(textEncode(he1tEnvLine, "utf-8"), pHostSecData)) into he1tHostSig
+   return he1tEnvLine & tab & he1tHostSig
+end he1heWireBuild
+
+function he1heChainNextHex pWireLine
+   return he1heHashHex(textEncode(he1kHeDomainChain & pWireLine, "utf-8"))
+end he1heChainNextHex
+
+function he1heSettleHashHex pDeltasCSV, pChainHeadData
+   -- H("HOLDEM-SETL-v1|" || deltas || "|" || chainHead); chainHead is Data
+   return he1heBin2HexS(he1heHash32(textEncode(he1kHeDomainSettle & pDeltasCSV & "|", "utf-8") & pChainHeadData))
+end he1heSettleHashHex
+
+function he1heCkptSigHex pChainHeadHex, pSecData
+   -- a player signs "HOLDEM-CKPT-v1|<chainHead>" to checkpoint the transcript
+   return he1heBin2HexS(he1heSignDetachedD(textEncode(he1kHeDomainCkpt & pChainHeadHex, "utf-8"), pSecData))
+end he1heCkptSigHex
+
+function he1heCkptVerify pSigHex, pChainHeadHex, pPubHex
+   if not he1heIsHex(pSigHex, 128) or not he1heIsHex(pPubHex, 64) then
+      return false
+   end if
+   return he1heVerifyDetached(he1heHex2BinD(pSigHex), textEncode(he1kHeDomainCkpt & pChainHeadHex, "utf-8"), he1heHex2BinD(pPubHex))
+end he1heCkptVerify
+
+function he1heCkptBodyTxt pStreetTxt, pHeadHex, pSecData
+   -- the street ckpt WIRE body (2e as-built, spec 6): the boundary name, the
+   -- head being checkpointed, and the player's ckpt signature over that head,
+   -- packaged so a verifier needs nothing but the wire (the head rides along
+   -- rather than being inferred, which is what makes a FORK visible: two
+   -- verified ckpts for one boundary naming different heads). Pinned as
+   -- ckpt_body in tools/protocol-kat.py.
+   return "street=" & pStreetTxt & ",head=" & pHeadHex \
+         & ",sig=" & he1heCkptSigHex(pHeadHex, pSecData)
+end he1heCkptBodyTxt
+
+function he1heReceiptHeadHex pSettleHashHex, pPrevRcptHex
+   -- H("HOLDEM-RCPT-v1|" || settleHash || "|" || prevReceipt) -- receipts chain
+   -- hand to hand; the genesis predecessor is he1kHeGenesisPrev (64 zeros)
+   return he1heHashDomHex(he1kHeDomainRcpt, textEncode(pSettleHashHex & "|" & pPrevRcptHex, "utf-8"))
+end he1heReceiptHeadHex
+
+function he1heReceiptSigHex pRcptHeadHex, pSecData
+   -- a seated player signs "HOLDEM-RSIG-v1|<receiptHead>"; the collected
+   -- signatures over one receipt head form the settlement receipt (spec 8.3)
+   return he1heBin2HexS(he1heSignDetachedD(textEncode(he1kHeDomainRsig & pRcptHeadHex, "utf-8"), pSecData))
+end he1heReceiptSigHex
+
+function he1heReceiptSigVerify pSigHex, pRcptHeadHex, pPubHex
+   if not he1heIsHex(pSigHex, 128) or not he1heIsHex(pPubHex, 64) then
+      return false
+   end if
+   return he1heVerifyDetached(he1heHex2BinD(pSigHex), textEncode(he1kHeDomainRsig & pRcptHeadHex, "utf-8"), he1heHex2BinD(pPubHex))
+end he1heReceiptSigVerify
+
+function he1heEnvWireParse pWireLine
+   -- split a wire line into its fields and rebuild the two signed spans
+   local he1tA, he1tSaved, he1tLine
+   put pWireLine into he1tLine
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item 1 of he1tLine into he1tA["v"]
+   put item 2 of he1tLine into he1tA["table"]
+   put item 3 of he1tLine into he1tA["hand"]
+   put item 4 of he1tLine into he1tA["from"]
+   put item 5 of he1tLine into he1tA["type"]
+   put item 6 of he1tLine into he1tA["bodyHex"]
+   put item 7 of he1tLine into he1tA["senderSig"]
+   put item 8 of he1tLine into he1tA["seq"]
+   put item 9 of he1tLine into he1tA["prev"]
+   put item 10 of he1tLine into he1tA["hostSig"]
+   put item 1 to 6 of he1tLine into he1tA["contentLine"]
+   put item 1 to 9 of he1tLine into he1tA["envLine"]
+   set the itemDelimiter to he1tSaved
+   return he1tA
+end he1heEnvWireParse
+
+function he1heEnvBodyText pBodyHex
+   -- an empty body is empty text; a malformed (non-hex) body drops to empty
+   -- rather than throwing in sxHex2Bin. he1heEnvVerify lets an empty bodyHex pass,
+   -- so this is the last guard before a host-crafted body reaches the decoder
+   -- (H4: inbound bytes are untrusted, verify-or-drop must never raise).
+   if pBodyHex is empty or not he1heIsHex(pBodyHex, 0) then
+      return ""
+   end if
+   return textDecode(he1heHex2BinD(pBodyHex), "utf-8")
+end he1heEnvBodyText
+
+function he1heEnvVerify pWireLine, pFromPubHex, pHostPubHex, pExpectedPrevHex
+   -- spec 6 verify-or-drop: bad sig / unknown from / chain break => dropped
+   -- and logged, no exceptions (including from the host). pFromPubHex is the
+   -- admitted pubkey the caller expects for this sender ("" to skip that
+   -- check); pExpectedPrevHex is the local chain head ("" to skip).
+   local he1tA, he1tFrom, he1tSenderSig, he1tHostSig, he1tBodyHex
+   put he1heEnvWireParse(pWireLine) into he1tA
+   -- shape-check every hex field BEFORE any decode: he1heHex2BinD (sxHex2Bin)
+   -- throws on malformed hex, and this path runs on untrusted inbound bytes,
+   -- so a bad frame must become a clean drop, never an uncaught throw (H4).
+   put he1tA["from"] into he1tFrom
+   put he1tA["senderSig"] into he1tSenderSig
+   put he1tA["hostSig"] into he1tHostSig
+   put he1tA["bodyHex"] into he1tBodyHex
+   if not he1heIsHex(he1tFrom, 64) or not he1heIsHex(pHostPubHex, 64) \
+         or not he1heIsHex(he1tSenderSig, 128) or not he1heIsHex(he1tHostSig, 128) then
+      return "drop:malformed"
+   end if
+   if he1tBodyHex is not empty and not he1heIsHex(he1tBodyHex, 0) then
+      return "drop:malformed"
+   end if
+   if pFromPubHex is not empty and he1tA["from"] is not pFromPubHex then
+      return "drop:unknown-from"
+   end if
+   if not he1heVerifyDetached(he1heHex2BinD(he1tA["senderSig"]), \
+         textEncode(he1tA["contentLine"], "utf-8"), he1heHex2BinD(he1tA["from"])) then
+      return "drop:bad-sender-sig"
+   end if
+   if not he1heVerifyDetached(he1heHex2BinD(he1tA["hostSig"]), \
+         textEncode(he1tA["envLine"], "utf-8"), he1heHex2BinD(pHostPubHex)) then
+      return "drop:bad-host-sig"
+   end if
+   if pExpectedPrevHex is not empty and he1tA["prev"] is not pExpectedPrevHex then
+      return "drop:chain-break"
+   end if
+   return "ok"
+end he1heEnvVerify
+
+function he1heByteXor pA, pB
+   -- XOR of two byte values (0..255) using ONLY integer arithmetic (div, mod,
+   -- add, multiply) -- no bitwise operator, so nothing can trip the engine's
+   -- double/binary conversion. Walks the 8 bits low to high.
+   -- (locals are he1tWorkA/he1tWorkB, NOT tAb -- "tAb" is the tab constant, gotcha 2.)
+   local he1tResult, he1tBitVal, he1tWorkA, he1tWorkB
+   put 0 into he1tResult
+   put 1 into he1tBitVal
+   put pA into he1tWorkA
+   put pB into he1tWorkB
+   repeat 8 times
+      if (he1tWorkA mod 2) is not (he1tWorkB mod 2) then
+         add he1tBitVal to he1tResult
+      end if
+      put he1tWorkA div 2 into he1tWorkA
+      put he1tWorkB div 2 into he1tWorkB
+      put he1tBitVal * 2 into he1tBitVal
+   end repeat
+   return he1tResult
+end he1heByteXor
+
+function he1heXorSeedsHex pSeedsHexA, pCount
+   -- XOR of pCount 32-byte seeds (each a 64-hex string), done in hex; returns hex.
+   -- The pair walk is a repeat-while because OXT does not honour the increment
+   -- of `repeat with ... step N` (family lesson; the suite checker refuses it) -
+   -- a stepped loop here would XOR 63 OVERLAPPING pairs instead of 32 aligned
+   -- ones and derive a wrong-but-internally-consistent deck.
+   local he1tPairPos, he1tSeatPos, he1tAcc, he1tHexTxt, he1tOutHex, he1tPairHex, he1tByteVal
+   put empty into he1tOutHex
+   put 1 into he1tPairPos
+   repeat while he1tPairPos <= 63
+      put 0 into he1tAcc
+      repeat with he1tSeatPos = 1 to pCount
+         put pSeedsHexA[he1tSeatPos] into he1tHexTxt
+         put baseConvert(char he1tPairPos to (he1tPairPos + 1) of he1tHexTxt, 16, 10) into he1tByteVal
+         put he1heByteXor(he1tAcc, he1tByteVal) into he1tAcc
+      end repeat
+      put toLower(baseConvert(he1tAcc, 10, 16)) into he1tPairHex
+      if the number of chars of he1tPairHex is 1 then
+         put "0" & he1tPairHex into he1tPairHex
+      end if
+      put he1tPairHex after he1tOutHex
+      add 2 to he1tPairPos
+   end repeat
+   return he1tOutHex
+end he1heXorSeedsHex
+
+function he1heU32BEData pNum
+   -- 4-byte big-endian Data (built from arithmetic, fed straight into sxHash)
+   return numToByte(pNum div 16777216 mod 256) & numToByte(pNum div 65536 mod 256) \
+         & numToByte(pNum div 256 mod 256) & numToByte(pNum mod 256)
+end he1heU32BEData
+
+function he1heStreamKeyData pTableData, pHandNum, pXorHex
+   -- H("HOLDEM-SHUF-v1|" || table || "|" || decimal(hand) || "|" || seedsXor)
+   return he1heHash32(textEncode(he1kHeDomainShuf, "utf-8") & pTableData \
+         & textEncode("|" & pHandNum & "|", "utf-8") & he1heHex2BinD(pXorHex))
+end he1heStreamKeyData
+
+function he1heStreamBlocksHex pKeyData, pBlockCount
+   -- hex text of block_j = H(key || uint32be(j)), j = 0 .. pBlockCount-1
+   local he1tOut, he1tBlockPos
+   put empty into he1tOut
+   repeat with he1tBlockPos = 0 to pBlockCount - 1
+      put he1heBin2HexS(he1heHash32(pKeyData & he1heU32BEData(he1tBlockPos))) after he1tOut
+   end repeat
+   return he1tOut
+end he1heStreamBlocksHex
+
+function he1heDrawUniform pStreamHex, pOffset, pRangeN
+   -- uniform 1..pRangeN via 32-bit BE words (8 hex chars each), rejection
+   -- sampled (no modulo bias). The word is two 16-bit halves so baseConvert's
+   -- 32-bit signedness is never a factor. Returns "value,nextOffset".
+   local he1tLimit, he1tWordVal
+   put (he1kHeTwo32 div pRangeN) * pRangeN into he1tLimit
+   repeat forever
+      if pOffset + 7 > the number of chars of pStreamHex then
+         throw "he-stream-exhausted"
+      end if
+      put baseConvert(char pOffset to (pOffset + 3) of pStreamHex, 16, 10) * 65536 \
+            + baseConvert(char (pOffset + 4) to (pOffset + 7) of pStreamHex, 16, 10) into he1tWordVal
+      add 8 to pOffset
+      if he1tWordVal < he1tLimit then
+         return (he1tWordVal mod pRangeN) + 1 & comma & pOffset
+      end if
+   end repeat
+end he1heDrawUniform
+
+function he1heShuffleFromStreamHex pStreamHex
+   -- Fisher-Yates over deck[1..52]; deck 1 is the top, dealt first
+   local he1tDeckA, he1tPos, he1tSwapPos, he1tDrawPair, he1tHold, he1tOut, he1tOffset, he1tLoopI
+   set the itemDelimiter to comma
+   repeat with he1tPos = 1 to 52
+      put he1tPos into he1tDeckA[he1tPos]
+   end repeat
+   put 1 into he1tOffset
+   repeat with he1tLoopI = 52 down to 2
+      put he1heDrawUniform(pStreamHex, he1tOffset, he1tLoopI) into he1tDrawPair
+      put item 1 of he1tDrawPair into he1tSwapPos
+      put item 2 of he1tDrawPair into he1tOffset
+      put he1tDeckA[he1tLoopI] into he1tHold
+      put he1tDeckA[he1tSwapPos] into he1tDeckA[he1tLoopI]
+      put he1tHold into he1tDeckA[he1tSwapPos]
+   end repeat
+   put empty into he1tOut
+   repeat with he1tPos = 1 to 52
+      put he1tDeckA[he1tPos] & comma after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heShuffleFromStreamHex
+
+function he1heDeckFromStreamKey pKeyData
+   -- 16 blocks (1024 hex chars) covers 51 draws with slack; extend on the
+   -- astronomically-unlikely stream exhaustion rather than fail. The terminal
+   -- error is captured and re-thrown AFTER `end try`: a `throw` inside a
+   -- `catch` never reaches the caller on OXT (family lesson; the suite
+   -- checker refuses the in-catch form).
+   local he1tBlockCount, he1tDeckList, he1tShufErr, he1tFatal
+   put 16 into he1tBlockCount
+   repeat forever
+      put empty into he1tFatal
+      try
+         put he1heShuffleFromStreamHex(he1heStreamBlocksHex(pKeyData, he1tBlockCount)) into he1tDeckList
+         return he1tDeckList
+      catch he1tShufErr
+         if he1tShufErr contains "he-stream-exhausted" and he1tBlockCount < 256 then
+            put he1tBlockCount * 2 into he1tBlockCount
+         else
+            put he1tShufErr into he1tFatal
+         end if
+      end try
+      if he1tFatal is not empty then
+         throw he1tFatal
+      end if
+   end repeat
+end he1heDeckFromStreamKey
+
+function he1heLevel0Deck pTableData, pHandNum, pSeedsHexA, pCount
+   -- the full Level 0 shuffled deck from committed seeds
+   return he1heDeckFromStreamKey(he1heStreamKeyData(pTableData, pHandNum, he1heXorSeedsHex(pSeedsHexA, pCount)))
+end he1heLevel0Deck
+
+function he1heSeedCommitHex pSeedHex
+   -- H("HOLDEM-SEEDC-v1|" || seed bytes), hex (spec 7.1 step 1)
+   return he1heHashDomHex(he1kHeDomainSeedC, he1heHex2BinD(pSeedHex))
+end he1heSeedCommitHex
+
+function he1heAuditDeal pTableData, pHandNum, pSeedsHexA, pCommitsA, pCount, pDealA, pOccList, pButton
+   -- end-of-hand audit (spec 7.1 step 5): recompute the whole deal from the
+   -- revealed seeds and name the FIRST failing step. Returns "pass"/"fail:..".
+   local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum
+   set the itemDelimiter to comma
+   repeat with he1tSeatPos = 1 to pCount
+      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+         return "fail:commit-mismatch-position-" & he1tSeatPos
+      end if
+   end repeat
+   put he1heLevel0Deck(pTableData, pHandNum, pSeedsHexA, pCount) into he1tDeckList
+   put he1heDealAssign(he1tDeckList, pOccList, pButton) into he1tCheckA
+   repeat for each item he1tSeatNum in pOccList
+      if he1tCheckA["holesBy"][he1tSeatNum] is not pDealA["holesBy"][he1tSeatNum] then
+         return "fail:hole-mismatch-seat-" & he1tSeatNum
+      end if
+   end repeat
+   if he1tCheckA["flopList"] is not pDealA["flopList"] then
+      return "fail:flop-mismatch"
+   end if
+   if he1tCheckA["turnIx"] is not pDealA["turnIx"] then
+      return "fail:turn-mismatch"
+   end if
+   if he1tCheckA["riverIx"] is not pDealA["riverIx"] then
+      return "fail:river-mismatch"
+   end if
+   return "pass"
+end he1heAuditDeal
+
+function he1heAuditDealsFromLog pLogTxt
+   -- replay a transcript and RE-DERIVE every Level 0 deal from the revealed
+   -- seeds, confirming the committed keyed-stream shuffle produced exactly the
+   -- cards that were dealt -- so the deal is provably CONSISTENT with the revealed
+   -- seeds (tamper-evident), checkable by anyone holding the log. (Unstackability
+   -- against a cheating dealer needs independent per-player seeds -- spec 7.1 online
+   -- deal -- not the single-party seeds generated here.) Only the dealt streets are
+   -- compared (a hand folded pre-flop has no board to check). Needs SodiumXT
+   -- (recomputes commitments + shuffle). Returns "N/M deals verified" then one
+   -- line per Level 0 hand; "no Level 0 deals in this transcript" if none.
+   local he1tLine, he1tType, he1tBodyTxt, he1tBodyA, he1tOut, he1tVerified, he1tTotal
+   local he1tHandNum, he1tOccList, he1tButton, he1tTableHex, he1tCount, he1tSeedsA, he1tCommitsA
+   local he1tHolesA, he1tBoardList, he1tPos, he1tSeatNum, he1tLevel0, he1tCardTxt, he1tOneCard
+   local he1tDeckList, he1tCheckA, he1tVerdict, he1tBoardN
+   if not he1heHasSodium() then
+      return "deal audit needs SodiumXT (it recomputes the committed shuffle)."
+   end if
+   set the itemDelimiter to comma
+   put 0 into he1tVerified
+   put 0 into he1tTotal
+   put empty into he1tOut
+   put "false" into he1tLevel0
+   repeat for each line he1tLine in pLogTxt
+      if he1tLine is empty then
+         next repeat
+      end if
+      put he1heLogField(he1tLine, 3) into he1tType
+      put he1heLogField(he1tLine, 4) into he1tBodyTxt
+      set the itemDelimiter to comma
+      switch he1tType
+         case "handStart"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["seats"] into he1tOccList
+            replace "|" with comma in he1tOccList
+            put he1tBodyA["button"] into he1tButton
+            put he1heLogField(he1tLine, 1) into he1tHandNum
+            put "false" into he1tLevel0
+            put empty into he1tSeedsA
+            put empty into he1tCommitsA
+            put empty into he1tHolesA
+            put empty into he1tBoardList
+            break
+         case "dealLevel"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put "true" into he1tLevel0
+            put he1tBodyA["table"] into he1tTableHex
+            put he1tBodyA["count"] into he1tCount
+            break
+         case "seedCommit"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["commit"] into he1tCommitsA[he1tBodyA["pos"]]
+            break
+         case "seedReveal"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["seed"] into he1tSeedsA[he1tBodyA["pos"]]
+            break
+         case "holeDeliver"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["cards"] into he1tCardTxt
+            replace "|" with comma in he1tCardTxt
+            put he1heCardIndex(item 1 of he1tCardTxt) & comma & he1heCardIndex(item 2 of he1tCardTxt) into he1tHolesA[he1tBodyA["seat"]]
+            break
+         case "board"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["cards"] into he1tCardTxt
+            replace "|" with comma in he1tCardTxt
+            repeat for each item he1tOneCard in he1tCardTxt
+               if he1tBoardList is empty then
+                  put he1heCardIndex(he1tOneCard) into he1tBoardList
+               else
+                  put he1tBoardList & comma & he1heCardIndex(he1tOneCard) into he1tBoardList
+               end if
+            end repeat
+            break
+         case "settle"
+            if he1tLevel0 is "true" then
+               add 1 to he1tTotal
+               put he1heAuditDealLog(he1tTableHex, he1tHandNum, he1tSeedsA, he1tCommitsA, he1tCount, he1tOccList, he1tButton, he1tHolesA, he1tBoardList) into he1tVerdict
+               if he1tVerdict is "pass" then
+                  add 1 to he1tVerified
+                  put "hand " & he1tHandNum & ": deal-verified (committed shuffle re-derived)" & return after he1tOut
+               else
+                  put "hand " & he1tHandNum & ": deal-FAILED " & he1tVerdict & return after he1tOut
+               end if
+            end if
+            break
+      end switch
+   end repeat
+   if he1tTotal is 0 then
+      return "no Level 0 deals in this transcript (practice PRNG deal)."
+   end if
+   return he1tVerified & "/" & he1tTotal & " deals verified" & return & he1tOut
+end he1heAuditDealsFromLog
+
+function he1heAuditDealLog pTableHex, pHandNum, pSeedsHexA, pCommitsA, pCount, pOccList, pButton, pHolesA, pBoardList
+   -- verify one Level 0 hand from the log: commits bind the seeds, the deck
+   -- re-derives, and the dealt holes (always) plus whatever board streets were
+   -- revealed match. Returns "pass" or "fail:...".
+   local he1tSeatPos, he1tDeckList, he1tCheckA, he1tSeatNum, he1tBoardN
+   set the itemDelimiter to comma
+   repeat with he1tSeatPos = 1 to pCount
+      if he1heSeedCommitHex(pSeedsHexA[he1tSeatPos]) is not pCommitsA[he1tSeatPos] then
+         return "fail:commit-mismatch-position-" & he1tSeatPos
+      end if
+   end repeat
+   put he1heLevel0Deck(he1heHex2BinD(pTableHex), pHandNum, pSeedsHexA, pCount) into he1tDeckList
+   put he1heDealAssign(he1tDeckList, pOccList, pButton) into he1tCheckA
+   repeat for each item he1tSeatNum in pOccList
+      if he1tCheckA["holesBy"][he1tSeatNum] is not pHolesA[he1tSeatNum] then
+         return "fail:hole-mismatch-seat-" & he1tSeatNum
+      end if
+   end repeat
+   put the number of items of pBoardList into he1tBoardN
+   if he1tBoardN >= 3 and (item 1 to 3 of pBoardList) is not he1tCheckA["flopList"] then
+      return "fail:flop-mismatch"
+   end if
+   if he1tBoardN >= 4 and (item 4 of pBoardList) is not he1tCheckA["turnIx"] then
+      return "fail:turn-mismatch"
+   end if
+   if he1tBoardN >= 5 and (item 5 of pBoardList) is not he1tCheckA["riverIx"] then
+      return "fail:river-mismatch"
+   end if
+   return "pass"
+end he1heAuditDealLog
+
+function he1heL2HasRistretto
+   -- cached probe (the he1heHasSodium pattern): a pre-ABI-8 SodiumXT has no
+   -- sxRistretto* handlers at all, so the FIRST touch throws ("can't find
+   -- handler") -- the catch IS the detection (H4). sxRistrettoPointValid is
+   -- a predicate that never throws on any input and sxRistrettoScalarRandom
+   -- takes none, so a throw here can only mean the surface is absent.
+   local he1tProbeErr
+   if he1gHasR255Chk is empty then
+      try
+         get sxRistrettoPointValid(sxRistrettoScalarRandom())
+         put "true" into he1gHasR255Chk
+      catch he1tProbeErr
+         put "false" into he1gHasR255Chk
+      end try
+   end if
+   return he1gHasR255Chk is "true"
+end he1heL2HasRistretto
+
+function he1heL2CardPointHex pCardIdx
+   -- base point P_c for card index 1..52 (spec 7.3 setup): domain-separated
+   -- hash-to-group, so no party knows any discrete-log relation between two
+   -- card points -- the unknowability the whole construction leans on. The
+   -- 64-byte uniform input sxRistrettoFromHash wants is sxHash(label, 64)
+   -- (BLAKE2b-512); the label is he1kHeDomainL2Card & the card name.
+   local he1tCardErr
+   if pCardIdx is not an integer or pCardIdx < 1 or pCardIdx > 52 then
+      return "void:card-range"
+   end if
+   if not he1heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return he1heBin2HexS(sxRistrettoFromHash(sxHash(textEncode( \
+            he1kHeDomainL2Card & he1heCardName(pCardIdx), "utf-8"), 64)))
+   catch he1tCardErr
+      return "void:no-ristretto"
+   end try
+end he1heL2CardPointHex
+
+function he1heL2BaseDeckHex
+   -- the public 52-point card table, built once per hand at deal time
+   -- (52 hash+map FFI crossings -- deal-time only, never per-frame, per
+   -- the playbook). Position j = card index j (1..52); the SHUFFLED order
+   -- comes from the mask steps, never from this table.
+   local he1tCardIdx, he1tPointHex, he1tOutList
+   put empty into he1tOutList
+   repeat with he1tCardIdx = 1 to 52
+      put he1heL2CardPointHex(he1tCardIdx) into he1tPointHex
+      if he1tPointHex begins with "void:" then
+         return he1tPointHex
+      end if
+      if he1tOutList is empty then
+         put he1tPointHex into he1tOutList
+      else
+         put comma & he1tPointHex after he1tOutList
+      end if
+   end repeat
+   return he1tOutList
+end he1heL2BaseDeckHex
+
+function he1heL2ScalarRandomHex
+   -- one fresh per-hand masking scalar: uniform nonzero mod L, from
+   -- libsodium's CSPRNG (spec 16: engine random() never touches dealing)
+   local he1tRndErr
+   if not he1heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return he1heBin2HexS(sxRistrettoScalarRandom())
+   catch he1tRndErr
+      return "void:no-ristretto"
+   end try
+end he1heL2ScalarRandomHex
+
+function he1heL2ScalarInvertHex pScalarHex
+   -- k^-1 mod L, the unmask scalar. sxRistrettoScalarInvert throws only on
+   -- a zero scalar (surface presence is gated first), so the catch names it.
+   local he1tInvErr
+   if not he1heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not he1heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      return he1heBin2HexS(sxRistrettoScalarInvert(he1heHex2BinD(pScalarHex)))
+   catch he1tInvErr
+      return "void:scalar-zero"
+   end try
+end he1heL2ScalarInvertHex
+
+function he1heL2MaskPointHex pScalarHex, pPointHex
+   -- q = k * P on ristretto255, hex in / hex out: the atomic op every mask
+   -- and unmask step is made of. The validity predicate runs FIRST, so the
+   -- scalar-mult throw after it can only be the identity result (a zero
+   -- scalar, or P itself the identity) -- the invalid/identity split 4d
+   -- attribution needs.
+   local he1tMaskErr, he1tValidOk
+   if not he1heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not he1heIsHex(pPointHex, 64) then
+      return "void:point-format"
+   end if
+   if not he1heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      put sxRistrettoPointValid(he1heHex2BinD(pPointHex)) into he1tValidOk
+   catch he1tMaskErr
+      return "void:no-ristretto"
+   end try
+   if he1tValidOk is not true then
+      return "void:invalid-point"
+   end if
+   try
+      return he1heBin2HexS(sxRistrettoScalarMultPoint(he1heHex2BinD(pScalarHex), \
+            he1heHex2BinD(pPointHex)))
+   catch he1tMaskErr
+      return "void:identity-point"
+   end try
+end he1heL2MaskPointHex
+
+function he1heL2DeckCheckHex pDeckList
+   -- spec 7.3's FREE integrity check: the same card under the same
+   -- composite mask is an IDENTICAL 32-byte point, publicly visible, so
+   -- every client asserts all 52 points of every shuffle step are distinct
+   -- valid encodings and refuses the step otherwise -- duplication is
+   -- prevented, not detected after the fact. One pass in position order:
+   -- format, then encoding validity, then the duplicate lookup, so the
+   -- first offence names its position(s). Keys are lowercased so the
+   -- verdict never depends on engine case rules.
+   local he1tPos, he1tPointHex, he1tKeyHex, he1tSeenA, he1tValidOk, he1tChkErr
+   set the itemDelimiter to comma
+   if the number of items of pDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   put 0 into he1tPos
+   repeat for each item he1tPointHex in pDeckList
+      add 1 to he1tPos
+      if not he1heIsHex(he1tPointHex, 64) then
+         return "void:point-format:" & he1tPos
+      end if
+      try
+         put sxRistrettoPointValid(he1heHex2BinD(he1tPointHex)) into he1tValidOk
+      catch he1tChkErr
+         return "void:no-ristretto"
+      end try
+      if he1tValidOk is not true then
+         return "void:invalid-point:" & he1tPos
+      end if
+      put toLower(he1tPointHex) into he1tKeyHex
+      if he1tSeenA[he1tKeyHex] is not empty then
+         return "void:duplicate-point:" & he1tSeenA[he1tKeyHex] & "," & he1tPos
+      end if
+      put he1tPos into he1tSeenA[he1tKeyHex]
+   end repeat
+   return "ok"
+end he1heL2DeckCheckHex
+
+function he1heL2MaskDeckHex pDeckList, pScalarHex, pPermList
+   -- one full shuffle-mask step (spec 7.3): out[j] = k * in[sigma[j]] for
+   -- j = 1..52 -- 52 scalar-mult FFI crossings, deal-time only. Reused
+   -- verbatim by showdown re-verification (he1heL2RevealShuffleHex), so the
+   -- doer and the verifier can never drift. sigma is validated for
+   -- range/format ONLY, deliberately not distinctness: a repeated index
+   -- duplicates a point in the OUTPUT deck, which the public duplicate
+   -- check catches on every client. A void from the point mask comes back
+   -- with the output position appended.
+   local he1tOutPos, he1tSrcPos, he1tSrcHex, he1tMaskedHex, he1tOutList
+   set the itemDelimiter to comma
+   if the number of items of pDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   if the number of items of pPermList is not 52 then
+      return "void:perm-size"
+   end if
+   put empty into he1tOutList
+   put 0 into he1tOutPos
+   repeat for each item he1tSrcPos in pPermList
+      add 1 to he1tOutPos
+      if he1tSrcPos is not an integer or he1tSrcPos < 1 or he1tSrcPos > 52 then
+         return "void:perm-format:" & he1tOutPos
+      end if
+      put item he1tSrcPos of pDeckList into he1tSrcHex
+      put he1heL2MaskPointHex(pScalarHex, he1tSrcHex) into he1tMaskedHex
+      if he1tMaskedHex begins with "void:" then
+         return he1tMaskedHex & ":" & he1tOutPos
+      end if
+      if he1tOutList is empty then
+         put he1tMaskedHex into he1tOutList
+      else
+         put comma & he1tMaskedHex after he1tOutList
+      end if
+   end repeat
+   return he1tOutList
+end he1heL2MaskDeckHex
+
+function he1heL2CardOfPointHex pPointHex, pBaseDeckList
+   -- card index 1..52 of a point in the base table, 0 when absent. PURE
+   -- text scan, no FFI, so table lookups can never throw on hostile input;
+   -- `is` compares case-insensitively, which the Python twin mirrors by
+   -- lowercasing both sides.
+   local he1tIdx, he1tBaseHex
+   set the itemDelimiter to comma
+   put 0 into he1tIdx
+   repeat for each item he1tBaseHex in pBaseDeckList
+      add 1 to he1tIdx
+      if he1tBaseHex is pPointHex then
+         return he1tIdx
+      end if
+   end repeat
+   return 0
+end he1heL2CardOfPointHex
+
+function he1heL2PublicCardHex pChainList, pBaseDeckList
+   -- verify a COMPLETED public unmask chain (spec 7.3 dealing): every
+   -- value must be well-formed and a valid encoding, and the FINAL value
+   -- must hit the 52-point table -- that point IS the card. Landing
+   -- outside the table is proof of a wrong step somewhere: the
+   -- void-and-audit condition, named distinctly for 4d.
+   local he1tPos, he1tStepHex, he1tLastHex, he1tValidOk, he1tPubErr, he1tCardIdx
+   set the itemDelimiter to comma
+   if the number of items of pChainList < 2 then
+      return "void:chain-short"
+   end if
+   put 0 into he1tPos
+   repeat for each item he1tStepHex in pChainList
+      add 1 to he1tPos
+      if not he1heIsHex(he1tStepHex, 64) then
+         return "void:point-format:" & he1tPos
+      end if
+      try
+         put sxRistrettoPointValid(he1heHex2BinD(he1tStepHex)) into he1tValidOk
+      catch he1tPubErr
+         return "void:no-ristretto"
+      end try
+      if he1tValidOk is not true then
+         return "void:invalid-point:" & he1tPos
+      end if
+      put he1tStepHex into he1tLastHex
+   end repeat
+   put he1heL2CardOfPointHex(he1tLastHex, pBaseDeckList) into he1tCardIdx
+   if he1tCardIdx is 0 then
+      return "void:final-not-in-table"
+   end if
+   return "card:" & he1tCardIdx
+end he1heL2PublicCardHex
+
+function he1heL2HoleCardHex pChainList, pInvScalarHex, pBaseDeckList
+   -- the owner's last, PRIVATE step of a hole chain (spec 7.3): pChainList
+   -- is the PUBLIC part (masked table point first, the other seats' steps
+   -- in chain order -- the owner's step is exactly what is absent), and
+   -- its final value V = k_owner * P_c is publicly visible but CDH-useless
+   -- to everyone else. Strip the own mask off V and resolve the card.
+   -- Showdown reuses this with the REVEALED inverse, so A's holes fall out
+   -- of V * kA^-1 for the whole table.
+   local he1tPos, he1tStepHex, he1tLastHex, he1tValidOk, he1tHoleErr, he1tOwnHex, he1tCardIdx
+   set the itemDelimiter to comma
+   if the number of items of pChainList < 1 then
+      return "void:chain-short"
+   end if
+   put 0 into he1tPos
+   repeat for each item he1tStepHex in pChainList
+      add 1 to he1tPos
+      if not he1heIsHex(he1tStepHex, 64) then
+         return "void:point-format:" & he1tPos
+      end if
+      try
+         put sxRistrettoPointValid(he1heHex2BinD(he1tStepHex)) into he1tValidOk
+      catch he1tHoleErr
+         return "void:no-ristretto"
+      end try
+      if he1tValidOk is not true then
+         return "void:invalid-point:" & he1tPos
+      end if
+      put he1tStepHex into he1tLastHex
+   end repeat
+   put he1heL2MaskPointHex(pInvScalarHex, he1tLastHex) into he1tOwnHex
+   if he1tOwnHex begins with "void:" then
+      return he1tOwnHex
+   end if
+   put he1heL2CardOfPointHex(he1tOwnHex, pBaseDeckList) into he1tCardIdx
+   if he1tCardIdx is 0 then
+      return "void:hole-not-in-table"
+   end if
+   return "card:" & he1tCardIdx
+end he1heL2HoleCardHex
+
+function he1heL2RevealShuffleHex pInDeckList, pOutDeckList, pScalarHex, pPermList
+   -- spec 7.3 showdown: recompute the revealer's whole shuffle-mask step
+   -- from the revealed (k, sigma) and compare it against the deck it
+   -- broadcast that hand; the first mismatching position is named (4d
+   -- attribution). Verification IS the doer function re-run, so there is
+   -- no second implementation to drift.
+   local he1tRedoneList, he1tPos, he1tOutHex, he1tRedoneHex
+   set the itemDelimiter to comma
+   put he1heL2MaskDeckHex(pInDeckList, pScalarHex, pPermList) into he1tRedoneList
+   if he1tRedoneList begins with "void:" then
+      return he1tRedoneList
+   end if
+   if the number of items of pOutDeckList is not 52 then
+      return "void:deck-size"
+   end if
+   repeat with he1tPos = 1 to 52
+      put item he1tPos of pOutDeckList into he1tOutHex
+      put item he1tPos of he1tRedoneList into he1tRedoneHex
+      if he1tRedoneHex is not he1tOutHex then
+         return "void:shuffle-mismatch:" & he1tPos
+      end if
+   end repeat
+   return "ok"
+end he1heL2RevealShuffleHex
+
+function he1heL2RevealUnmaskHex pInHex, pOutHex, pScalarHex
+   -- spec 7.3 showdown: one broadcast unmask step re-verified from the
+   -- revealed scalar -- the step value must equal k^-1 * (its input).
+   -- A wrong revealed scalar and a wrong original step are the same
+   -- verdict by design: either way the revealer's claim does not recompute.
+   local he1tInvHex, he1tRedoneHex
+   put he1heL2ScalarInvertHex(pScalarHex) into he1tInvHex
+   if he1tInvHex begins with "void:" then
+      return he1tInvHex
+   end if
+   put he1heL2MaskPointHex(he1tInvHex, pInHex) into he1tRedoneHex
+   if he1tRedoneHex begins with "void:" then
+      return he1tRedoneHex
+   end if
+   if not he1heIsHex(pOutHex, 64) then
+      return "void:point-format"
+   end if
+   if he1tRedoneHex is pOutHex then
+      return "ok"
+   end if
+   return "void:unmask-mismatch"
+end he1heL2RevealUnmaskHex
+
+function he1heL2HasDleq
+   -- cached probe for the ABI-9 DLEQ/batch surface (the he1heL2HasRistretto
+   -- pattern): a pre-ABI-9 SodiumXT has no sxRistrettoScalarMultBase, so
+   -- the first touch throws "can't find handler" -- the catch IS the
+   -- detection (H4). ScalarRandom never returns zero, so a throw here can
+   -- only mean the surface is absent; ABI 9 ships as one unit, so one
+   -- handler witnesses all six.
+   local he1tProbeErr
+   if he1gHasDleqChk is empty then
+      if not he1heL2HasRistretto() then
+         put "false" into he1gHasDleqChk
+      else
+         try
+            get sxRistrettoScalarMultBase(sxRistrettoScalarRandom())
+            put "true" into he1gHasDleqChk
+         catch he1tProbeErr
+            put "false" into he1gHasDleqChk
+         end try
+      end if
+   end if
+   return he1gHasDleqChk is "true"
+end he1heL2HasDleq
+
+function he1heL2PointOkHex pPointHex
+   -- format + canonical-encoding validity as a verdict string ("ok" /
+   -- "void:..."), the check every 4d record field goes through before any
+   -- group math can throw on it (H4: verify-or-drop never raises)
+   local he1tOkErr, he1tValidOk
+   if not he1heIsHex(pPointHex, 64) then
+      return "void:point-format"
+   end if
+   if not he1heL2HasRistretto() then
+      return "void:no-ristretto"
+   end if
+   try
+      put sxRistrettoPointValid(he1heHex2BinD(pPointHex)) into he1tValidOk
+   catch he1tOkErr
+      return "void:no-ristretto"
+   end try
+   if he1tValidOk is not true then
+      return "void:invalid-point"
+   end if
+   return "ok"
+end he1heL2PointOkHex
+
+function he1heL2CommitKeyHex pScalarHex
+   -- ck = k*B, the per-hand DLEQ commitment key a shuffleStep carries.
+   -- The scalar is REDUCED mod L first (ScalarAdd-zero -- see the
+   -- he1kHeL2ZeroScalar comment), so a non-canonical k cannot make libsodium
+   -- (bit-255 masking) and the KAT reference (full mod L) disagree.
+   -- k == 0 mod L is the merged identity failure the catch names.
+   local he1tCkErr
+   if not he1heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   if not he1heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   try
+      return he1heBin2HexS(sxRistrettoScalarMultBase(sxRistrettoScalarAdd( \
+            he1heHex2BinD(pScalarHex), he1heHex2BinD(he1kHeL2ZeroScalar))))
+   catch he1tCkErr
+      return "void:scalar-zero"
+   end try
+end he1heL2CommitKeyHex
+
+function he1heL2DleqProve pScalarHex, pP1Hex, pP2Hex
+   -- Chaum-Pedersen DLEQ (spec 7.4): prove P2 = k*P1 for the k behind
+   -- ck = k*B, without revealing k. One generic (k, P1, P2) shape serves
+   -- the whole deal: an unmask step calls prove(k, stepOut, stepIn).
+   -- DERANDOMIZED (RFC 6979 / EdDSA pattern): w = reduce(H32(DLEQW-tag ||
+   -- k || "|" || p1 || "|" || p2)) -- deterministic, so protocol-kat pins
+   -- the whole proof from fixed scalars, and nonce reuse across two
+   -- DIFFERENT statements (which forfeits k) is impossible by
+   -- construction. a1 = w*B, a2 = w*P1; c = reduce(H32(DLEQ-tag || ck ||
+   -- "|" || p1 || "|" || p2 || "|" || a1 || "|" || a2)); z = w + c*k mod
+   -- L; proof = a1 || a2 || z (96 bytes -- spec 7.4's "~96-byte proof").
+   -- Hash inputs are LOWERCASED hex (xTalk `is` compares case-blind, but
+   -- hashes see bytes); reduce() is ScalarAdd-zero, applied before any
+   -- point mult (the he1kHeL2ZeroScalar rationale).
+   local he1tPrvErr, he1tOkTxt, he1tCkHex, he1tWData, he1tA1Hex, he1tA2Hex, he1tCData, he1tZHex
+   if not he1heIsHex(pScalarHex, 64) then
+      return "void:scalar-format"
+   end if
+   put he1heL2PointOkHex(pP1Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   put he1heL2PointOkHex(pP2Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   if not he1heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   put he1heL2CommitKeyHex(pScalarHex) into he1tCkHex
+   if he1tCkHex begins with "void:" then
+      return he1tCkHex
+   end if
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(he1kHeDomainL2DleqW & \
+            toLower(pScalarHex) & "|" & toLower(pP1Hex) & "|" & \
+            toLower(pP2Hex), "utf-8"), 32), \
+            he1heHex2BinD(he1kHeL2ZeroScalar)) into he1tWData
+   catch he1tPrvErr
+      return "void:no-dleq"
+   end try
+   try
+      put he1heBin2HexS(sxRistrettoScalarMultBase(he1tWData)) into he1tA1Hex
+   catch he1tPrvErr
+      return "void:scalar-zero"
+   end try
+   try
+      put he1heBin2HexS(sxRistrettoScalarMultPoint(he1tWData, \
+            he1heHex2BinD(pP1Hex))) into he1tA2Hex
+   catch he1tPrvErr
+      return "void:identity-point"
+   end try
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(he1kHeDomainL2Dleq & he1tCkHex & \
+            "|" & toLower(pP1Hex) & "|" & toLower(pP2Hex) & "|" & he1tA1Hex & \
+            "|" & he1tA2Hex, "utf-8"), 32), \
+            he1heHex2BinD(he1kHeL2ZeroScalar)) into he1tCData
+      put he1heBin2HexS(sxRistrettoScalarAdd(he1tWData, \
+            sxRistrettoScalarMul(he1tCData, he1heHex2BinD(pScalarHex)))) into he1tZHex
+   catch he1tPrvErr
+      return "void:no-dleq"
+   end try
+   return he1tA1Hex & he1tA2Hex & he1tZHex
+end he1heL2DleqProve
+
+function he1heL2DleqVerify pCkHex, pP1Hex, pP2Hex, pProofHex
+   -- verify a Chaum-Pedersen proof: z canonical, then z*B == a1 + c*ck
+   -- (equation 1, binds the commitment key) and z*P1 == a2 + c*P2
+   -- (equation 2, binds the step values) -- named distinctly, first
+   -- offence wins. The challenge is RE-DERIVED from the transcript, so a
+   -- tampered (a1, a2) changes c and neither equation can close
+   -- (Fiat-Shamir). c*ck and c*P2 ride ONE sxRistrettoScalarMultBatch
+   -- crossing -- one scalar, two points, exactly the batch call's shape;
+   -- z*B and z*P1 have different bases so they cannot join it. A
+   -- non-canonical z is refused outright: libsodium masks bit 255 inside
+   -- scalarmult while the KAT reference reduces mod L, and an
+   -- attacker-chosen representation must reach neither.
+   local he1tVfyErr, he1tA1Hex, he1tA2Hex, he1tZHex, he1tOkTxt, he1tZRedHex, he1tCData
+   local he1tPairHex, he1tCCkHex, he1tCP2Hex, he1tLhsHex, he1tRhsHex
+   if not he1heIsHex(pProofHex, 192) then
+      return "void:proof-format"
+   end if
+   put char 1 to 64 of pProofHex into he1tA1Hex
+   put char 65 to 128 of pProofHex into he1tA2Hex
+   put char 129 to 192 of pProofHex into he1tZHex
+   put he1heL2PointOkHex(pCkHex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   put he1heL2PointOkHex(pP1Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   put he1heL2PointOkHex(pP2Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   put he1heL2PointOkHex(he1tA1Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   put he1heL2PointOkHex(he1tA2Hex) into he1tOkTxt
+   if he1tOkTxt is not "ok" then
+      return he1tOkTxt
+   end if
+   if not he1heL2HasDleq() then
+      return "void:no-dleq"
+   end if
+   try
+      put he1heBin2HexS(sxRistrettoScalarAdd(he1heHex2BinD(he1tZHex), \
+            he1heHex2BinD(he1kHeL2ZeroScalar))) into he1tZRedHex
+   catch he1tVfyErr
+      return "void:no-dleq"
+   end try
+   if he1tZRedHex is not he1tZHex then
+      return "void:scalar-format"
+   end if
+   try
+      put sxRistrettoScalarAdd(sxHash(textEncode(he1kHeDomainL2Dleq & \
+            toLower(pCkHex) & "|" & toLower(pP1Hex) & "|" & \
+            toLower(pP2Hex) & "|" & toLower(he1tA1Hex) & "|" & \
+            toLower(he1tA2Hex), "utf-8"), 32), \
+            he1heHex2BinD(he1kHeL2ZeroScalar)) into he1tCData
+   catch he1tVfyErr
+      return "void:no-dleq"
+   end try
+   try
+      put he1heBin2HexS(sxRistrettoScalarMultBatch(he1tCData, \
+            he1heHex2BinD(toLower(pCkHex) & toLower(pP2Hex)))) into he1tPairHex
+   catch he1tVfyErr
+      return "void:identity-point"
+   end try
+   put char 1 to 64 of he1tPairHex into he1tCCkHex
+   put char 65 to 128 of he1tPairHex into he1tCP2Hex
+   try
+      put he1heBin2HexS(sxRistrettoAdd(he1heHex2BinD(he1tA1Hex), \
+            he1heHex2BinD(he1tCCkHex))) into he1tLhsHex
+      put he1heBin2HexS(sxRistrettoScalarMultBase(he1heHex2BinD(he1tZHex))) into he1tRhsHex
+   catch he1tVfyErr
+      return "void:dleq-mismatch:1"
+   end try
+   if he1tLhsHex is not he1tRhsHex then
+      return "void:dleq-mismatch:1"
+   end if
+   try
+      put he1heBin2HexS(sxRistrettoAdd(he1heHex2BinD(he1tA2Hex), \
+            he1heHex2BinD(he1tCP2Hex))) into he1tLhsHex
+      put he1heBin2HexS(sxRistrettoScalarMultPoint(he1heHex2BinD(he1tZHex), \
+            he1heHex2BinD(pP1Hex))) into he1tRhsHex
+   catch he1tVfyErr
+      return "void:dleq-mismatch:2"
+   end try
+   if he1tLhsHex is not he1tRhsHex then
+      return "void:dleq-mismatch:2"
+   end if
+   return "ok"
+end he1heL2DleqVerify
+
+function he1heL2ShuffleBodyOf pPos, pCkHex, pDeckList
+   -- the PINNED shuffleStep record format (the section banner): the deck's
+   -- commas become "|" inside the body field, the spec 6 multi-value idiom
+   local he1tPipeList
+   put pDeckList into he1tPipeList
+   replace comma with "|" in he1tPipeList
+   return "pos=" & pPos & ",ck=" & pCkHex & ",deck=" & he1tPipeList
+end he1heL2ShuffleBodyOf
+
+function he1heL2UnmaskBodyOf pPos, pSlot, pValHex, pProofHex
+   -- the PINNED unmaskStep record format; proof is spec 7.4's reserved
+   -- field, empty below Phase 5 hardening
+   return "pos=" & pPos & ",slot=" & pSlot & ",val=" & pValHex & \
+         ",proof=" & pProofHex
+end he1heL2UnmaskBodyOf
+
+function he1heL2ChainOrder pCount, pOwner
+   -- the contributor order of one unmask chain: 1..count in seat order,
+   -- the owner removed for a hole slot (spec 7.3: the owner goes LAST and
+   -- its step is exactly what is absent from the public chain)
+   local he1tPos, he1tOut
+   put empty into he1tOut
+   repeat with he1tPos = 1 to pCount
+      if he1tPos is pOwner then
+         next repeat
+      end if
+      if he1tOut is empty then
+         put he1tPos into he1tOut
+      else
+         put comma & he1tPos after he1tOut
+      end if
+   end repeat
+   return he1tOut
+end he1heL2ChainOrder
+
+function he1heL2VoidMark pStateA, pNamed, pWhy
+   -- latch the machine void. pNamed = 0 means attribution is DEFERRED to
+   -- the mandatory full-reveal audit (he1heL2VoidAudit); any later record is
+   -- ignored -- a void hand is frozen evidence.
+   put "void" into pStateA["phase"]
+   put pNamed into pStateA["named"]
+   put pWhy into pStateA["why"]
+   put "void" into pStateA["last"]
+   return pStateA
+end he1heL2VoidMark
+
+function he1heL2VoidNew pCount, pBaseList, pDleq, pOwnersList
+   -- one hand's 4d deal machine (values in, values out -- the caller
+   -- shuttles the state array through every step). pOwnersList is a comma
+   -- list of <slot>:<ownerPos> pairs naming the hole slots: the deal
+   -- layout is PUBLIC (spec 7.3 fixed order), so the ORCHESTRATOR
+   -- declares it -- a record cannot, or a cheater would.
+   local he1tStateA, he1tPair, he1tColonPos, he1tSlotF, he1tOwnF
+   put pCount into he1tStateA["count"]
+   put pBaseList into he1tStateA["base"]
+   if pDleq is true then
+      put "true" into he1tStateA["dleq"]
+   else
+      put "false" into he1tStateA["dleq"]
+   end if
+   put "shuffle" into he1tStateA["phase"]
+   put 0 into he1tStateA["applied"]
+   put 0 into he1tStateA["named"]
+   put empty into he1tStateA["why"]
+   put 0 into he1tStateA["stall"]
+   put empty into he1tStateA["last"]
+   put pBaseList into he1tStateA["deckAt"][0]
+   if pCount is not an integer or pCount < 2 or pCount > 9 then
+      return he1heL2VoidMark(he1tStateA, 0, "void:count-range")
+   end if
+   set the itemDelimiter to comma
+   if the number of items of pBaseList is not 52 then
+      return he1heL2VoidMark(he1tStateA, 0, "void:deck-size")
+   end if
+   if pOwnersList is not empty then
+      repeat for each item he1tPair in pOwnersList
+         put offset(":", he1tPair) into he1tColonPos
+         if he1tColonPos is 0 then
+            return he1heL2VoidMark(he1tStateA, 0, "void:owner-format")
+         end if
+         put char 1 to he1tColonPos - 1 of he1tPair into he1tSlotF
+         put char he1tColonPos + 1 to -1 of he1tPair into he1tOwnF
+         if he1tSlotF is not an integer or he1tOwnF is not an integer then
+            return he1heL2VoidMark(he1tStateA, 0, "void:owner-format")
+         end if
+         if he1tSlotF < 1 or he1tSlotF > 52 or he1tOwnF < 1 or he1tOwnF > pCount then
+            return he1heL2VoidMark(he1tStateA, 0, "void:owner-format")
+         end if
+         put he1tSlotF + 0 into he1tSlotF
+         put he1tOwnF + 0 into he1tStateA["owner"][he1tSlotF]
+      end repeat
+   end if
+   return he1tStateA
+end he1heL2VoidNew
+
+function he1heL2VoidShuffle pStateA, pPos, pBody
+   -- apply one shuffleStep record (signer position pPos comes from the
+   -- VERIFIED envelope, never from the body -- the body's pos must merely
+   -- agree). Strict order (pos = applied + 1); an identical re-post of an
+   -- applied step is "dup" (state unmoved -- rp1 redelivers), a DIFFERENT
+   -- one is signed equivocation, named directly. The free public checks
+   -- run per record: ck validity when present (required under dleq=1),
+   -- then the whole-deck duplicate/validity scan (spec 7.3's free
+   -- integrity check).
+   local he1tBodyA, he1tStored, he1tExpect, he1tPosF, he1tCkF, he1tDeckF, he1tVerdict
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pStateA["shufBody"][pPos] into he1tStored
+   if he1tStored is not empty then
+      if pBody is he1tStored then
+         put "dup" into pStateA["last"]
+         return pStateA
+      end if
+      return he1heL2VoidMark(pStateA, pPos, "void:step-equivocation:" & pPos)
+   end if
+   if pStateA["phase"] is not "shuffle" then
+      return he1heL2VoidMark(pStateA, pPos, "void:step-phase")
+   end if
+   put pStateA["applied"] + 1 into he1tExpect
+   if pPos is not he1tExpect then
+      return he1heL2VoidMark(pStateA, pPos, "void:step-order:" & he1tExpect & "," & pPos)
+   end if
+   put pBody into he1tBodyA
+   split he1tBodyA by comma and "="
+   put he1tBodyA["pos"] into he1tPosF
+   put he1tBodyA["ck"] into he1tCkF
+   put he1tBodyA["deck"] into he1tDeckF
+   if he1tPosF is not an integer or he1tDeckF is empty then
+      return he1heL2VoidMark(pStateA, pPos, "void:body-format")
+   end if
+   if he1tPosF is not pPos then
+      return he1heL2VoidMark(pStateA, pPos, "void:body-pos")
+   end if
+   if pStateA["dleq"] is "true" and he1tCkF is empty then
+      return he1heL2VoidMark(pStateA, pPos, "void:ck-missing")
+   end if
+   if he1tCkF is not empty then
+      put he1heL2PointOkHex(he1tCkF) into he1tVerdict
+      if he1tVerdict is not "ok" then
+         return he1heL2VoidMark(pStateA, pPos, he1tVerdict)
+      end if
+   end if
+   replace "|" with comma in he1tDeckF
+   put he1heL2DeckCheckHex(he1tDeckF) into he1tVerdict
+   if he1tVerdict is not "ok" then
+      return he1heL2VoidMark(pStateA, pPos, he1tVerdict)
+   end if
+   put he1tDeckF into pStateA["deckAt"][pPos]
+   put he1tCkF into pStateA["ck"][pPos]
+   put pBody into pStateA["shufBody"][pPos]
+   put pPos into pStateA["applied"]
+   put "applied" into pStateA["last"]
+   if pPos is pStateA["count"] then
+      put "deal" into pStateA["phase"]
+   end if
+   return pStateA
+end he1heL2VoidShuffle
+
+function he1heL2VoidUnmask pStateA, pPos, pBody
+   -- apply one unmaskStep record to its slot's chain. Per-record refusals
+   -- (format, validity, chain order, a bad or missing DLEQ proof under
+   -- dleq=1) are named DIRECTLY; a completed public chain landing outside
+   -- the card table voids with attribution DEFERRED to the audit -- only
+   -- the reveals can say whose step lied (spec 7.3's void-and-audit rule).
+   local he1tBodyA, he1tPosF, he1tSlotF, he1tValF, he1tProofF, he1tSlot, he1tStored, he1tCount
+   local he1tChainN, he1tOwner, he1tNeed, he1tOrder, he1tStep, he1tExpect, he1tVerdict
+   local he1tChainTxt, he1tFinalDeck, he1tPrevHex, he1tCkStored, he1tCardTxt
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pBody into he1tBodyA
+   split he1tBodyA by comma and "="
+   put he1tBodyA["pos"] into he1tPosF
+   put he1tBodyA["slot"] into he1tSlotF
+   put he1tBodyA["val"] into he1tValF
+   put he1tBodyA["proof"] into he1tProofF
+   if he1tPosF is not an integer or he1tSlotF is not an integer or he1tValF is empty then
+      return he1heL2VoidMark(pStateA, pPos, "void:body-format")
+   end if
+   if he1tPosF is not pPos then
+      return he1heL2VoidMark(pStateA, pPos, "void:body-pos")
+   end if
+   put he1tSlotF + 0 into he1tSlot
+   if he1tSlot < 1 or he1tSlot > 52 then
+      return he1heL2VoidMark(pStateA, pPos, "void:slot-range")
+   end if
+   put pStateA["lastBody"][he1tSlot] into he1tStored
+   if he1tStored is not empty and pBody is he1tStored then
+      put "dup" into pStateA["last"]
+      return pStateA
+   end if
+   if pStateA["phase"] is not "deal" then
+      return he1heL2VoidMark(pStateA, pPos, "void:step-phase")
+   end if
+   put pStateA["count"] into he1tCount
+   put pStateA["chainN"][he1tSlot] into he1tChainN
+   if he1tChainN is empty then
+      put 0 into he1tChainN
+   end if
+   put pStateA["owner"][he1tSlot] into he1tOwner
+   if he1tOwner is empty then
+      put 0 into he1tOwner
+   end if
+   if he1tOwner is 0 then
+      put he1tCount into he1tNeed
+   else
+      put he1tCount - 1 into he1tNeed
+   end if
+   if he1tChainN >= he1tNeed then
+      return he1heL2VoidMark(pStateA, pPos, "void:chain-done:" & he1tSlot)
+   end if
+   put he1heL2ChainOrder(he1tCount, he1tOwner) into he1tOrder
+   set the itemDelimiter to comma
+   put he1tChainN + 1 into he1tStep
+   put item he1tStep of he1tOrder into he1tExpect
+   if pPos is not he1tExpect then
+      return he1heL2VoidMark(pStateA, pPos, \
+            "void:chain-order:" & he1tSlot & ":" & he1tExpect & "," & pPos)
+   end if
+   put he1heL2PointOkHex(he1tValF) into he1tVerdict
+   if he1tVerdict is not "ok" then
+      return he1heL2VoidMark(pStateA, pPos, he1tVerdict)
+   end if
+   put pStateA["chain"][he1tSlot] into he1tChainTxt
+   if he1tChainTxt is empty then
+      put pStateA["deckAt"][he1tCount] into he1tFinalDeck
+      put item he1tSlot of he1tFinalDeck into he1tChainTxt
+   end if
+   put item -1 of he1tChainTxt into he1tPrevHex
+   if pStateA["dleq"] is "true" and he1tProofF is empty then
+      return he1heL2VoidMark(pStateA, pPos, "void:proof-missing:" & he1tSlot)
+   end if
+   if he1tProofF is not empty then
+      put pStateA["ck"][pPos] into he1tCkStored
+      if he1tCkStored is empty then
+         return he1heL2VoidMark(pStateA, pPos, "void:ck-missing:" & he1tSlot)
+      end if
+      put he1heL2DleqVerify(he1tCkStored, he1tValF, he1tPrevHex, he1tProofF) into he1tVerdict
+      if he1tVerdict is not "ok" then
+         return he1heL2VoidMark(pStateA, pPos, he1tVerdict & ":" & he1tSlot)
+      end if
+   end if
+   put he1tChainTxt & comma & he1tValF into pStateA["chain"][he1tSlot]
+   put he1tStep into pStateA["chainN"][he1tSlot]
+   put pBody into pStateA["lastBody"][he1tSlot]
+   put "applied" into pStateA["last"]
+   if he1tStep is he1tNeed then
+      if he1tOwner is 0 then
+         put pStateA["chain"][he1tSlot] into he1tChainTxt
+         put he1heL2PublicCardHex(he1tChainTxt, pStateA["base"]) into he1tCardTxt
+         if he1tCardTxt begins with "card:" then
+            put he1tCardTxt into pStateA["card"][he1tSlot]
+         else
+            return he1heL2VoidMark(pStateA, 0, he1tCardTxt & ":" & he1tSlot)
+         end if
+      else
+         put "true" into pStateA["holeUp"][he1tSlot]
+      end if
+   end if
+   return pStateA
+end he1heL2VoidUnmask
+
+function he1heL2VoidTimeout pStateA, pOwedPos
+   -- the deal-phase timer expired with pOwedPos owing the next step (spec
+   -- 9's timeout-in-dealing). PROVISIONALLY named: the mandatory audit
+   -- keeps the staller's name only when every signed step re-verifies --
+   -- an earlier bad signed step outranks the stall (spec 7.3 names the
+   -- FIRST bad one).
+   if pStateA["phase"] is "void" then
+      return pStateA
+   end if
+   put pOwedPos into pStateA["stall"]
+   return he1heL2VoidMark(pStateA, pOwedPos, "void:deal-timeout:" & pOwedPos)
+end he1heL2VoidTimeout
+
+function he1heL2VoidOutcome pStateA
+   -- the 4d verdict line the orchestrator acts on. A void hand ALWAYS
+   -- returns the bets and ALWAYS owes the full reveal (spec 7.3: the hand
+   -- is void, so the reveal costs nothing; the config-signed forfeit for
+   -- the named party is table policy, applied above this layer);
+   -- named=audit defers attribution to he1heL2VoidAudit.
+   local he1tNamed
+   if pStateA["phase"] is not "void" then
+      return pStateA["phase"]
+   end if
+   put pStateA["named"] into he1tNamed
+   if he1tNamed > 0 then
+      return "void|" & pStateA["why"] & "|named=" & he1tNamed & \
+            "|bets-return|reveal-required"
+   end if
+   return "void|" & pStateA["why"] & "|named=audit|bets-return|reveal-required"
+end he1heL2VoidOutcome
+
+function he1heL2VoidAudit pStateA, pRevealsText
+   -- the MANDATORY full-reveal audit, in the MANDATORY order: per
+   -- contributor 1..count -- reveal present (refusing the audit makes the
+   -- refuser the named party, spec 7.3), the ck binding when a ck was
+   -- posted (a lying commitment key is caught here, before any algebra),
+   -- the shuffle step re-verified from (k, sigma) -- then every opened
+   -- chain in slot order, each step in chain order, re-verified from the
+   -- stepper's revealed k. The FIRST bad signed step names the cheater; a
+   -- recorded staller keeps the name only when everything signed
+   -- re-verifies; a clean audit is the table agreeing to void. Reveals:
+   -- one line per contributor, <pos> TAB <kHex> TAB <sigma comma-list>.
+   local he1tLine, he1tPosF, he1tRkA, he1tRsA, he1tPosI, he1tCkStored, he1tInDeck, he1tOutDeck
+   local he1tVerdict, he1tSlot, he1tChainN, he1tChainTxt, he1tOwner, he1tOrder, he1tStep
+   local he1tInHex, he1tOutHex, he1tStepPos
+   repeat for each line he1tLine in pRevealsText
+      if he1tLine is empty then
+         next repeat
+      end if
+      set the itemDelimiter to tab
+      put item 1 of he1tLine into he1tPosF
+      put item 2 of he1tLine into he1tRkA[he1tPosF]
+      put item 3 of he1tLine into he1tRsA[he1tPosF]
+   end repeat
+   repeat with he1tPosI = 1 to pStateA["count"]
+      if he1tRkA[he1tPosI] is empty then
+         return "named=" & he1tPosI & "|void:audit-refused"
+      end if
+      put pStateA["ck"][he1tPosI] into he1tCkStored
+      if he1tCkStored is not empty and he1heL2HasDleq() then
+         -- (the KAT mirror always has the algebra; a pre-ABI-9 engine
+         -- cannot compute k*B, so it skips the binding and still audits)
+         if he1heL2CommitKeyHex(he1tRkA[he1tPosI]) is not he1tCkStored then
+            return "named=" & he1tPosI & "|void:audit-ck-mismatch"
+         end if
+      end if
+      put pStateA["deckAt"][he1tPosI - 1] into he1tInDeck
+      put pStateA["deckAt"][he1tPosI] into he1tOutDeck
+      put he1heL2RevealShuffleHex(he1tInDeck, he1tOutDeck, he1tRkA[he1tPosI], he1tRsA[he1tPosI]) \
+            into he1tVerdict
+      if he1tVerdict is not "ok" then
+         return "named=" & he1tPosI & "|" & he1tVerdict
+      end if
+   end repeat
+   repeat with he1tSlot = 1 to 52
+      put pStateA["chainN"][he1tSlot] into he1tChainN
+      if he1tChainN is empty or he1tChainN is 0 then
+         next repeat
+      end if
+      put pStateA["chain"][he1tSlot] into he1tChainTxt
+      put pStateA["owner"][he1tSlot] into he1tOwner
+      if he1tOwner is empty then
+         put 0 into he1tOwner
+      end if
+      put he1heL2ChainOrder(pStateA["count"], he1tOwner) into he1tOrder
+      set the itemDelimiter to comma
+      repeat with he1tStep = 1 to he1tChainN
+         put item he1tStep of he1tChainTxt into he1tInHex
+         put item he1tStep + 1 of he1tChainTxt into he1tOutHex
+         put item he1tStep of he1tOrder into he1tStepPos
+         put he1heL2RevealUnmaskHex(he1tInHex, he1tOutHex, he1tRkA[he1tStepPos]) into he1tVerdict
+         if he1tVerdict is not "ok" then
+            return "named=" & he1tStepPos & "|" & he1tVerdict & ":" & he1tSlot & ":" & he1tStep
+         end if
+      end repeat
+   end repeat
+   if pStateA["stall"] > 0 then
+      return "named=" & pStateA["stall"] & "|" & pStateA["why"]
+   end if
+   return "named=0|audit-clean"
+end he1heL2VoidAudit
+
+function he1heIdentitySeedHex
+   -- persistent identity seed (32 bytes, hex), generated once and stored in a
+   -- stack custom property; long-term keys only ever sign (spec 5)
+   local he1tSeedHex
+   put the uHeIdentitySeed of this stack into he1tSeedHex
+   if the number of chars of he1tSeedHex is not 64 then
+      if he1heHasSodium() then
+         put he1heBin2HexS(sxRandomBytes(32)) into he1tSeedHex
+      else
+         put he1heHexId(64) into he1tSeedHex
+      end if
+      set the uHeIdentitySeed of this stack to he1tSeedHex
+   end if
+   return he1tSeedHex
+end he1heIdentitySeedHex
+
+command he1heIdentitySetup
+   -- derive and cache the long-term ed25519 identity and a fresh per-table
+   -- X25519 session box key (private hole-card lanes seal to the box key)
+   local he1tSeedData, he1tSeedHex, he1tPub, he1tSec, he1tBoxPub, he1tBoxSec, he1tBoxErr
+   put he1heIdentitySeedHex() into he1tSeedHex
+   put he1heHex2BinD(he1tSeedHex) into he1tSeedData
+   sxSignKeypairFromSeed he1tSeedData, he1tPub, he1tSec
+   put he1heBin2HexS(he1tPub) into he1gGame["idPubHex"]
+   put he1tSec into he1gGame["idSecData"]
+   put he1tSeedHex into he1gGame["idSeedHex"]   -- the per-hand deal-seed PRF key
+   put he1heFingerprintOf(he1tPub) into he1gGame["idFingerprint"]
+   -- The per-table X25519 box key is for the FUTURE sealed hole-card lanes; the
+   -- current lobby (ed25519 identity + admission tokens) never reads it. It is
+   -- derived best-effort and GUARDED: sxBoxKeypairFromSeed is a SodiumXT Phase 4
+   -- (public-key box) handler, and a build that ships the sign/hash surface but
+   -- not the box surface yet makes it "can't find handler" -- which must not break
+   -- a guest join (H4: an unbuilt/absent seam never breaks the working path). The
+   -- signature is correct per SodiumXT docs/api-reference.md
+   -- (sxBoxKeypairFromSeed pSeed, out rPub, out rSec); it simply may be absent.
+   -- NB: the seed is hashed from a TEXT input (domain + seed hex), never a binary
+   -- & of two Data values (H6 corollary).
+   put empty into he1gGame["boxPubData"]
+   put empty into he1gGame["boxSecData"]
+   try
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1tSeedHex, "utf-8")), he1tBoxPub, he1tBoxSec
+      put he1tBoxPub into he1gGame["boxPubData"]
+      put he1tBoxSec into he1gGame["boxSecData"]
+   catch he1tBoxErr
+      -- box lane unavailable on this SodiumXT build; not needed by the lobby yet
+   end try
+end he1heIdentitySetup
+
+function he1heAdmitTokenData pTableHex, pPubHex, pSecData, pRole
+   -- signed admission claim (spec 5): sign over
+   -- "HOLDEM-SESS-v1|<table>|<pub>|<role>", framed pubHex TAB role TAB sigHex,
+   -- published in btRp1SetToken so peers drop strangers at handshake and a
+   -- joining player adopts only a self-declared host (role "host")
+   local he1tSigHex
+   put he1heBin2HexS(he1heSignDetachedD(textEncode(he1kHeDomainSess & pTableHex & "|" & pPubHex & "|" & pRole, "utf-8"), pSecData)) into he1tSigHex
+   return textEncode(pPubHex & tab & pRole & tab & he1tSigHex, "utf-8")
+end he1heAdmitTokenData
+
+function he1heAdmitTokenVerify pTokenData, pTableHex
+   -- returns the admitted pubHex if the token is well-formed and its signature
+   -- verifies, else "" (the peer is a stranger and is ignored)
+   local he1tTok, he1tPubHex, he1tRole, he1tSigHex, he1tSaved
+   put textDecode(pTokenData, "utf-8") into he1tTok
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item 1 of he1tTok into he1tPubHex
+   put item 2 of he1tTok into he1tRole
+   put item 3 of he1tTok into he1tSigHex
+   set the itemDelimiter to he1tSaved
+   -- a stranger's token is untrusted: reject malformed hex before decoding it
+   -- (sxHex2Bin throws) -- 64-char pub and 128-char detached sig (H4)
+   if not he1heIsHex(he1tPubHex, 64) or not he1heIsHex(he1tSigHex, 128) then
+      return ""
+   end if
+   if he1heVerifyDetached(he1heHex2BinD(he1tSigHex), \
+         textEncode(he1kHeDomainSess & pTableHex & "|" & he1tPubHex & "|" & he1tRole, "utf-8"), he1heHex2BinD(he1tPubHex)) then
+      return he1tPubHex
+   end if
+   return ""
+end he1heAdmitTokenVerify
+
+function he1heAdmitTokenRole pTokenData
+   -- the role field of a token ("host"/"player"), for host adoption
+   local he1tTok, he1tRole, he1tSaved
+   put textDecode(pTokenData, "utf-8") into he1tTok
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item 2 of he1tTok into he1tRole
+   set the itemDelimiter to he1tSaved
+   return he1tRole
+end he1heAdmitTokenRole
+
+function he1heRosterBody pMembersList
+   -- canonical lobby-presence body (spec 9): each member as "pubHex:role",
+   -- sorted ascending, comma-joined -- the exact mirror of roster_body in
+   -- tools/protocol-kat.py. pMembersList is return-delimited "pubHex TAB role"
+   -- lines; sorting makes every peer sign/verify identical bytes. All chunks
+   -- are of plain locals (H6-safe); the body is hex-encoded into the envelope
+   -- so its commas never reach the tab-framed wire.
+   local he1tLine, he1tPubHex, he1tRoleTxt, he1tPairs, he1tSaved
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put empty into he1tPairs
+   repeat for each line he1tLine in pMembersList
+      put item 1 of he1tLine into he1tPubHex
+      put item 2 of he1tLine into he1tRoleTxt
+      put he1tPubHex & ":" & he1tRoleTxt & return after he1tPairs
+   end repeat
+   set the itemDelimiter to he1tSaved
+   if he1tPairs is not empty then
+      delete char -1 of he1tPairs
+   end if
+   sort lines of he1tPairs
+   replace return with comma in he1tPairs
+   return he1tPairs
+end he1heRosterBody
+
+function he1heLobbyCfgBody
+   -- the table cfg the host signs into the transcript at create time; a clean,
+   -- canonical string (pinned as he1kKatLobbyCfgBody) so joiners verify it byte
+   -- for byte. Level 0 is the online deal ladder rung this build targets.
+   -- ante + stack joined the body in v0.17.0 (the online game needs the full
+   -- stakes to fold deterministically on every client); the pinned constants
+   -- in tools/protocol-kat.py were regenerated for the new bytes. Phase 3:
+   -- level=1 IS the oracle marker (spec 7.2 is Level 1, the non-playing
+   -- dealer) -- no new field, so a playing table's body stays byte-identical
+   -- to the v0.17.0 pin, and a pre-oracle client refuses an oracle hand
+   -- readably at its dealLevel gate instead of mis-folding the table.
+   -- 2e liveness (v0.23.0): the TIMER LENGTHS join the body -- act= (act
+   -- timer seconds), bank= (the one per-hand time-bank), miss= (consecutive
+   -- timeouts before auto-sit-out) -- per spec 6's "timer lengths" in
+   -- message zero. A pre-liveness client ignores keys it does not read
+   -- (he1heNetCfgVal is name-keyed), so the extension is wire-compatible; the
+   -- protocol-kat pins (lobby_cfg_body/lobby_head2) were regenerated for
+   -- the new bytes, a documented consensus change (he1kHeHarnessV bumped).
+   local he1tLevelTxt
+   put "0" into he1tLevelTxt
+   if he1gGame["oracleHost"] is "true" then
+      put "1" into he1tLevelTxt
+   end if
+   return "v=1,level=" & he1tLevelTxt & ",sb=" & he1gGame["sb"] & ",bb=" & he1gGame["bb"] \
+         & ",ante=" & he1gGame["ante"] & ",stack=" & he1gGame["startStack"] \
+         & ",seats=" & he1kHeDefaultSeats & ",button=1" \
+         & ",act=" & he1kHeDefaultActSecs & ",bank=" & he1kHeDefaultBankSecs \
+         & ",miss=" & he1kHeDefaultMisses
+end he1heLobbyCfgBody
+
+function he1heReadableErr pErr
+   -- pull the human-readable message out of a LiveCode execution-error struct
+   -- (lines of errNo,line,col[,text]); a thrown extension error carries the real
+   -- reason as the text field of one of those lines. Returns the first line's
+   -- text that reads like a sentence, else the raw error unchanged.
+   local he1tLine, he1tTxt
+   set the itemDelimiter to comma
+   repeat for each line he1tLine in pErr
+      if the number of items of he1tLine >= 4 then
+         put item 4 to -1 of he1tLine into he1tTxt
+         if the number of chars of he1tTxt > 10 and he1tTxt contains space then
+            return he1tTxt
+         end if
+      end if
+   end repeat
+   return pErr
+end he1heReadableErr
+
+function he1heHasOnion
+   -- OnionXT presence, probed LIVE at each use (a user can `start using
+   -- onionxt` mid-session; a cached false would wedge until reopen -- the
+   -- he1heKitReload lesson). A guarded oxVersion() call is the family probe
+   -- (nocloud's qsHasOnion). Message-rate only, never per-frame.
+   local he1tProbeErr, he1tVerTxt
+   try
+      put oxVersion() into he1tVerTxt
+   catch he1tProbeErr
+      return false
+   end try
+   return he1tVerTxt is not empty
+end he1heHasOnion
+
+function he1heOnionSeedHex pIdSeedHex, pTableHex, pModeTxt
+   -- the onion-SERVICE seed (see he1kHeDomainOnion for the derivation's three
+   -- properties: secret-keyed, per-table, deterministic). Hex text in and
+   -- out; the only Data lives inside the sx* call (H6 corollary). Phase 3:
+   -- an ORACLE table (pModeTxt "oracle") derives under its OWN domain tag
+   -- (he1kHeDomainOracle), so the oracle address never collides with the same
+   -- host's playing table on the same table id; any other mode (empty,
+   -- "play") keeps the 2f playing-table derivation byte-identical. Both
+   -- pinned in tools/protocol-kat.py (onion_service_seed /
+   -- oracle_service_seed).
+   if pModeTxt is "oracle" then
+      return he1heHashDomHex(he1kHeDomainOracle, textEncode(pIdSeedHex & "|" & pTableHex, "utf-8"))
+   end if
+   return he1heHashDomHex(he1kHeDomainOnion, textEncode(pIdSeedHex & "|" & pTableHex, "utf-8"))
+end he1heOnionSeedHex
+
+function he1heInviteTxt
+   -- the shareable invite for the CURRENT table (2f as-built): DHT tables
+   -- keep the bare 64-hex code; an onion table appends "@" and the host's
+   -- derived onion address, so one pasteable string carries the transport,
+   -- the rendezvous, and -- because a v3 address IS the service's ed25519
+   -- public key -- the host endpoint's identity.
+   local he1tAddrTxt
+   put he1gGame["onionAddrTxt"] into he1tAddrTxt
+   if he1gGame["transport"] is "onion" and he1tAddrTxt is not empty then
+      return he1gGame["tableIdHex"] & "@" & he1tAddrTxt
+   end if
+   return he1gGame["tableIdHex"]
+end he1heInviteTxt
+
+function he1heInviteParse pInviteTxt
+   -- parse an invite into transport/table/onion (2f). A COMPATIBLE extension
+   -- of the original invite: a bare 64-hex code stays the DHT invite; an
+   -- onion invite is "<64hex>@<56-base32>.onion" -- ONE word, "@"-joined,
+   -- deliberately NOT hex, so a pre-2f stack's `word 1` + he1heIsHex gate
+   -- refuses the WHOLE invite with its readable message instead of silently
+   -- joining a DHT table nobody announced (downgrade refusal by format).
+   -- Structural validation only (pure, harness-pinned); OnionXT's checksum
+   -- validator runs as a belt at join time. Case is normalized: an uppercase
+   -- paste would otherwise bind a mismatching table id and every wire would
+   -- drop as wrong-table. Returns an array: "err" (empty, or the readable
+   -- refusal), "transport", "table", "onion".
+   local he1tA, he1tTxt, he1tAtPos, he1tTableTxt, he1tAddrTxt, he1tCore, he1tI, he1tCh
+   put empty into he1tA["err"]
+   put empty into he1tA["transport"]
+   put empty into he1tA["table"]
+   put empty into he1tA["onion"]
+   put word 1 of pInviteTxt into he1tTxt
+   if he1tTxt is empty then
+      put "Paste an invite code first." into he1tA["err"]
+      return he1tA
+   end if
+   put toLower(he1tTxt) into he1tTxt
+   put offset("@", he1tTxt) into he1tAtPos
+   if he1tAtPos is 0 then
+      if not he1heIsHex(he1tTxt, 64) then
+         put "Invite code must be 64 hex characters (or 64hex@<address>.onion for an onion table)." into he1tA["err"]
+         return he1tA
+      end if
+      put "rp1" into he1tA["transport"]
+      put he1tTxt into he1tA["table"]
+      return he1tA
+   end if
+   put char 1 to (he1tAtPos - 1) of he1tTxt into he1tTableTxt
+   put char (he1tAtPos + 1) to -1 of he1tTxt into he1tAddrTxt
+   if not he1heIsHex(he1tTableTxt, 64) then
+      put "Onion invite: the part before the @ must be the 64-hex table code." into he1tA["err"]
+      return he1tA
+   end if
+   if not (he1tAddrTxt ends with ".onion") then
+      put "Onion invite: the part after the @ must be a .onion address." into he1tA["err"]
+      return he1tA
+   end if
+   put char 1 to -7 of he1tAddrTxt into he1tCore
+   if the number of chars of he1tCore is not 56 then
+      put "Onion invite: a v3 onion address is 56 characters before .onion (got " \
+            & the number of chars of he1tCore & ")." into he1tA["err"]
+      return he1tA
+   end if
+   repeat with he1tI = 1 to 56
+      put char he1tI of he1tCore into he1tCh
+      if offset(he1tCh, "abcdefghijklmnopqrstuvwxyz234567") is 0 then
+         put "Onion invite: the address carries a character no onion address can (" & he1tCh & ")." into he1tA["err"]
+         return he1tA
+      end if
+   end repeat
+   put "onion" into he1tA["transport"]
+   put he1tTableTxt into he1tA["table"]
+   put he1tAddrTxt into he1tA["onion"]
+   return he1tA
+end he1heInviteParse
+
+function he1heJoinRefusal pInvA, pHasOnion
+   -- the join-side fail-closed gate (2f), PURE so the harness drives both
+   -- branches headlessly: OnionXT presence is a PARAMETER, not a probe. A
+   -- malformed invite refuses with the parser's reason; an onion invite on
+   -- a stack without OnionXT refuses OUTRIGHT -- never a silent downgrade
+   -- to the DHT transport, so "onion table" keeps meaning what the host
+   -- chose. Returns "" (join may proceed) or the readable refusal.
+   local he1tErrTxt
+   put pInvA["err"] into he1tErrTxt
+   if he1tErrTxt is not empty then
+      return he1tErrTxt
+   end if
+   if pInvA["transport"] is "onion" and pHasOnion is not true then
+      return "This is an ONION table invite: it needs the OnionXT library loaded (start using onionxt) and a running tor daemon. There is no fallback transport -- load OnionXT and Join again, or ask the host for a DHT-table invite."
+   end if
+   return empty
+end he1heJoinRefusal
+
+command he1heNetStart
+   -- start the table's transport and arm the poll drain. NEEDS AN OXT PASS.
+   -- Requires tableIdHex + identity already set (he1heTableCreate/he1heTableJoin
+   -- do that first). 2f: he1gGame["transport"] routes -- "onion" brings up the
+   -- tor transport, anything else the TorrentXT session + rp1 below.
+   local he1tSession, he1tRole, he1tErr, he1tRp1Err
+   if he1gGame["online"] is "true" then
+      exit he1heNetStart
+   end if
+   if he1gGame["transport"] is "onion" then
+      he1heNetStartOnion
+      exit he1heNetStart
+   end if
+   try
+      put btStartSession() into he1tSession
+   catch he1tErr
+      -- btStartSession is the one bt* handler that throws, and the usual cause is
+      -- an ABI mismatch between TorrentXT's bundled native library and its .lcb
+      -- binding (reinstall/repackage TorrentXT so they match). Surface the
+      -- readable reason, not the raw LiveCode error struct.
+      he1heUISetStatus "TorrentXT session failed to start: " & he1heReadableErr(he1tErr) \
+            & "  --  reinstall/rebuild TorrentXT so its native library matches its binding. Hotseat still works."
+      exit he1heNetStart
+   end try
+   if he1tSession is 0 or he1tSession is empty then
+      he1heUISetStatus "Network start failed: " & btLastError()
+      exit he1heNetStart
+   end if
+   put he1tSession into he1gGame["session"]
+   if he1gGame["isHost"] is "true" then
+      put "host" into he1tRole
+   else
+      put "player" into he1tRole
+   end if
+   -- rp1 is TorrentXT's peer-wire messaging plugin (ABI v8+); a build that ships
+   -- the session/DHT surface but not rp1 makes btRp1Enable "can't find handler".
+   -- The online game needs rp1, so if the transport setup can't complete, tear the
+   -- session back down and report it clearly rather than crash the join (H4/H1).
+   try
+      btSetBool he1tSession, "enable_dht", true
+      btRp1Enable he1tSession
+      btRp1SetToken he1tSession, he1heAdmitTokenData(he1gGame["tableIdHex"], he1gGame["idPubHex"], he1gGame["idSecData"], he1tRole)
+   catch he1tRp1Err
+      he1heUISetStatus "This TorrentXT build has no rp1 peer messaging (needs the rp1 plugin, ABI v8+): " \
+            & he1tRp1Err & ".  Online is unavailable on this build; hotseat still works."
+      try
+         btStopSession he1tSession
+      catch he1tErr
+      end try
+      put empty into he1gGame["session"]
+      exit he1heNetStart
+   end try
+   put "true" into he1gGame["online"]
+   send "he1heNetPollTick" to me in 250 milliseconds
+end he1heNetStart
+
+command he1heNetStop
+   local he1tMsgLine, he1tKeyTxt, he1tCloseErr
+   if he1gGame["online"] is not "true" then
+      exit he1heNetStop
+   end if
+   put "false" into he1gGame["online"]
+   -- cancel the outstanding poll tick before tearing the session down: the online
+   -- flag alone let a stale tick (scheduled before the stop) revive itself, so a
+   -- re-create/re-join forked a SECOND poll loop that never died (H2). Sweep our
+   -- own poll send. (gotcha 5: pendingMessages is comma-delimited id,time,name,..)
+   set the itemDelimiter to comma
+   repeat for each line he1tMsgLine in the pendingMessages
+      if item 3 of he1tMsgLine is "he1heNetPollTick" then
+         cancel item 1 of he1tMsgLine
+      end if
+   end repeat
+   if he1gGame["transport"] is "onion" then
+      -- H1: close every stream this table owns (a peer's handle IS its
+      -- stream here; oxCloseStream is idempotent, so the overlap between the
+      -- maps is harmless) and DEL_ONION the service. The control connection
+      -- deliberately STAYS up -- re-creating a table reuses it, and
+      -- he1closeStack's oxShutdown is the final teardown. Every ox* touch is
+      -- guarded (H8): a mid-session library unload must not wedge the stop.
+      try
+         repeat for each key he1tKeyTxt in he1gGame["peerPubA"]
+            oxCloseStream he1tKeyTxt
+         end repeat
+      catch he1tCloseErr
+      end try
+      try
+         repeat for each key he1tKeyTxt in he1gGame["oxSeenA"]
+            oxCloseStream he1tKeyTxt
+         end repeat
+      catch he1tCloseErr
+      end try
+      try
+         if he1gGame["oxStream"] is not empty then
+            oxCloseStream he1gGame["oxStream"]
+         end if
+      catch he1tCloseErr
+      end try
+      try
+         if he1gGame["oxService"] is not empty then
+            oxRemoveService he1gGame["oxService"]
+         end if
+      catch he1tCloseErr
+      end try
+      put empty into he1gGame["oxService"]
+      put empty into he1gGame["oxStream"]
+      put empty into he1gGame["oxBufA"]
+      put empty into he1gGame["oxSeenA"]
+   else
+      btStopSession he1gGame["session"]
+   end if
+end he1heNetStop
+
+command he1heNetParkHotseat
+   -- Going online CLOBBERS he1gGame["log"] (he1heTableCreate/he1heTableJoin empty it and
+   -- refill it with signed wires), but the hotseat game is driven by paced timer
+   -- sends that only gate on he1gGame["phase"]. Pressing Lobby -> Create/Join mid-hand
+   -- therefore left he1heRevealStep / he1heRunoutStep / he1heSettleStep / he1heNextHandTick
+   -- armed with their phase still matching: they would fire into the online table,
+   -- append raw 4-field hotseat lines (settle, handStart, holeDeliver, bids...)
+   -- into the signed wire log, and he1heNetReplayLogTo would then ship those junk
+   -- lines to every joining peer as "w" frames. Park the hand first: sweep the
+   -- paced sends and drop the phase to "idle" so any send that already escaped the
+   -- sweep hits its own stale-guard and exits. The hand in progress is abandoned
+   -- (its transcript is about to be replaced), which is what going online means.
+   he1heCancelPacedSteps
+   put "idle" into he1gGame["phase"]
+   he1heDisableActions
+   he1heUIClearCards
+end he1heNetParkHotseat
+
+command he1heNetJoinSwarm pIsHost
+   -- add the phantom swarm on the table's rendezvous id, then announce (host)
+   -- or discover (player) on the DHT (spec 10). The DHT carries zero game data.
+   -- Only runs when he1heNetStart brought the transport fully up (online true), so a
+   -- build that failed the rp1 setup never reaches these DHT calls; guarded anyway.
+   local he1tSession, he1tSwarmErr
+   if he1gGame["online"] is not "true" then
+      exit he1heNetJoinSwarm
+   end if
+   if he1gGame["transport"] is "onion" then
+      -- onion tables never touch the DHT: the invite carries the rendezvous
+      -- (the host's onion address), and spec 10's "the DHT carries zero game
+      -- data" becomes "the DHT carries nothing at all"
+      exit he1heNetJoinSwarm
+   end if
+   put he1gGame["session"] into he1tSession
+   try
+      get btAddInfohash(he1tSession, he1gGame["infohashHex"], he1heTempPath())
+      if pIsHost then
+         btDhtAnnounce he1tSession, he1gGame["infohashHex"], 0
+      else
+         btDhtGetPeers he1tSession, he1gGame["infohashHex"]
+      end if
+   catch he1tSwarmErr
+      he1heUISetStatus "DHT rendezvous unavailable on this TorrentXT build: " & he1tSwarmErr
+   end try
+end he1heNetJoinSwarm
+
+function he1heTableInfohash pTableHex
+   -- the DHT rendezvous id is the first 40 hex (20 bytes) of H(tableId) (spec 10)
+   return char 1 to 40 of he1heHashHex(he1heHex2BinD(pTableHex))
+end he1heTableInfohash
+
+command he1heTableCreate
+   -- become the host of a fresh table; the table code IS the invite (2f: an
+   -- onion table's invite appends the derived onion address -- he1heInviteTxt).
+   -- online play needs the crypto -- guard so a Sodium-less engine gets a
+   -- friendly status, not a hard throw out of he1heIdentitySetup (H4/UX)
+   local he1tTransport, he1tTableHex, he1tOnionSeedHex, he1tSvcPub, he1tSvcSec, he1tAddrTxt, he1tKeyErr
+   if not he1heHasSodium() then
+      he1heUISetStatus "Online tables need SodiumXT installed. You can still play hotseat."
+      exit he1heTableCreate
+   end if
+   he1heCfgEnsure
+   put he1gCfg["transport"] into he1tTransport
+   -- ONION PRE-FLIGHT, before any teardown: every refusal below leaves a
+   -- running hotseat game untouched (fail closed, the nocloud pattern; no
+   -- silent fallback to the DHT transport -- the host chose onion).
+   if he1tTransport is "onion" then
+      if not he1heHasOnion() then
+         he1heUISetStatus "Onion tables need the OnionXT library loaded (start using onionxt) plus a locally running tor daemon (SOCKS 9050, control 9051). No silent fallback -- switch Host over to DHT, or load OnionXT and try again."
+         exit he1heTableCreate
+      end if
+      -- the table id is minted EARLY so the onion address -- a pure function
+      -- of identity seed + table id (he1kHeDomainOnion) -- can be derived and
+      -- refused OFFLINE before anything is torn down. The v3 address IS the
+      -- service's ed25519 public key: sxSignKeypairFromSeed and OnionXT's
+      -- expanded-key publish path share ed25519's seed->pub derivation, and
+      -- the published address is cross-checked against this one when the
+      -- descriptor uploads (he1heNetOnionTick's "pub" state).
+      put he1heBin2HexS(sxRandomBytes(32)) into he1tTableHex
+      -- Phase 3: an oracle table derives its service seed under its own
+      -- domain tag (he1heOnionSeedHex's third argument)
+      put he1heOnionSeedHex(he1heIdentitySeedHex(), he1tTableHex, he1gCfg["hostMode"]) into he1tOnionSeedHex
+      try
+         sxSignKeypairFromSeed he1heHex2BinD(he1tOnionSeedHex), he1tSvcPub, he1tSvcSec
+         put oxAddressFromPublicKey(he1tSvcPub) into he1tAddrTxt
+      catch he1tKeyErr
+         he1heUISetStatus "Onion address derivation failed: " & he1heReadableErr(he1tKeyErr)
+         exit he1heTableCreate
+      end try
+      if not (he1tAddrTxt ends with ".onion") then
+         -- oxAddressFromPublicKey surfaces its capability error verbatim:
+         -- the offline checksum needs SodiumXT ABI 7+ (sxSha3_256)
+         he1heUISetStatus "Onion tables need SodiumXT ABI 7+ for the offline onion address: " & he1tAddrTxt
+         exit he1heTableCreate
+      end if
+   end if
+   -- tear down any prior session first so a re-create starts a clean swarm
+   he1heNetStop
+   he1heNetParkHotseat
+   he1heIdentitySetup
+   if he1tTransport is "onion" then
+      put he1tTableHex into he1gGame["tableIdHex"]
+   else if he1heHasSodium() then
+      put he1heBin2HexS(sxRandomBytes(32)) into he1gGame["tableIdHex"]
+   else
+      put he1heHexId(64) into he1gGame["tableIdHex"]
+   end if
+   put he1heTableInfohash(he1gGame["tableIdHex"]) into he1gGame["infohashHex"]
+   put "true" into he1gGame["isHost"]
+   -- Phase 3: bind the host MODE at create time (a Settings change mid-table
+   -- must never flip a live table's deal level) -- "oracle" makes this host
+   -- deal every hand and take no seat; the signed cfg carries it as level=1
+   put empty into he1gGame["oracleHost"]
+   if he1gCfg["hostMode"] is "oracle" then
+      put "true" into he1gGame["oracleHost"]
+   end if
+   put he1gGame["idPubHex"] into he1gGame["hostPubHex"]
+   put 0 into he1gGame["handNum"]
+   put 0 into he1gGame["seqCounter"]
+   put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+   put 0 into he1gGame["lastSeq"]
+   put empty into he1gGame["wireBuf"]
+   put 0 into he1gGame["wireBufN"]
+   put empty into he1gGame["peerPubA"]
+   put empty into he1gGame["peerByPub"]
+   put empty into he1gGame["admittedA"]
+   put empty into he1gGame["roleByPub"]
+   put empty into he1gGame["log"]
+   put empty into he1gGame["netLog"]
+   put 0 into he1gGame["syncCooldown"]
+   -- the host must admit ITSELF so he1heHostRelay accepts the host's own actions
+   put "true" into he1gGame["admittedA"][he1gGame["idPubHex"]]
+   put "host" into he1gGame["roleByPub"][he1gGame["idPubHex"]]
+   he1heNetGameInit
+   put he1tTransport into he1gGame["transport"]
+   he1heNetOnionReset
+   if he1tTransport is "onion" then
+      put he1tAddrTxt into he1gGame["onionAddrTxt"]
+      put he1tOnionSeedHex into he1gGame["oxSeedHex"]
+   end if
+   he1heNetStart
+   if he1gGame["online"] is not "true" then
+      exit he1heTableCreate   -- transport unavailable; he1heNetStart set the status
+   end if
+   he1heNetJoinSwarm true
+   -- seed the transcript with a signed table cfg (seq 1, from genesis); late
+   -- joiners replay it and verify the host's key before anything else
+   he1heNetSendAction "cfg", he1heLobbyCfgBody()
+   if he1tTransport is "onion" then
+      he1heUISetStatus "Onion table created -- publishing over tor (watch the Tor line). Share this invite: " & he1heInviteTxt()
+   else
+      he1heUISetStatus "Table created. Share this invite code: " & he1heInviteTxt()
+   end if
+end he1heTableCreate
+
+command he1heTableJoin pCodeTxt
+   -- join an existing table from its invite code. 2f: the INVITE names the
+   -- transport (he1heInviteParse), so there is nothing to toggle on the join
+   -- side -- and every refusal fires BEFORE any teardown, so a bad paste
+   -- leaves a running hotseat game untouched.
+   local he1tCode, he1tInvA, he1tRefusalTxt, he1tValidOk, he1tValidErr
+   put he1heInviteParse(pCodeTxt) into he1tInvA
+   put he1heJoinRefusal(he1tInvA, he1heHasOnion()) into he1tRefusalTxt
+   if he1tRefusalTxt is not empty then
+      he1heUISetStatus he1tRefusalTxt
+      exit he1heTableJoin
+   end if
+   if not he1heHasSodium() then
+      he1heUISetStatus "Online tables need SodiumXT installed. You can still play hotseat."
+      exit he1heTableJoin
+   end if
+   put he1tInvA["table"] into he1tCode
+   if he1tInvA["transport"] is "onion" then
+      -- belt over the structural parse: OnionXT's own validator (checksum-
+      -- checking when SodiumXT ships SHA3-256) refuses a corrupted paste
+      -- HERE instead of after a 60 s dial timeout. Guarded (H8): the belt
+      -- must never itself throw a join; the dial still authenticates the
+      -- address either way (a v3 onion IS its key).
+      put true into he1tValidOk
+      try
+         put oxIsValidAddress(he1tInvA["onion"]) into he1tValidOk
+      catch he1tValidErr
+         put true into he1tValidOk
+      end try
+      if he1tValidOk is not true then
+         he1heUISetStatus "That onion invite's address does not validate (corrupted paste?). Ask the host to copy the invite again."
+         exit he1heTableJoin
+      end if
+   end if
+   -- tear down any prior session first so a re-join starts clean
+   he1heNetStop
+   he1heNetParkHotseat
+   he1heIdentitySetup
+   put he1tCode into he1gGame["tableIdHex"]
+   put he1heTableInfohash(he1tCode) into he1gGame["infohashHex"]
+   put "false" into he1gGame["isHost"]
+   put empty into he1gGame["oracleHost"]
+   put empty into he1gGame["hostPubHex"]
+   put 0 into he1gGame["handNum"]
+   put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+   put 0 into he1gGame["lastSeq"]
+   put empty into he1gGame["wireBuf"]
+   put 0 into he1gGame["wireBufN"]
+   put empty into he1gGame["peerPubA"]
+   put empty into he1gGame["peerByPub"]
+   put empty into he1gGame["admittedA"]
+   put empty into he1gGame["roleByPub"]
+   put empty into he1gGame["log"]
+   put empty into he1gGame["netLog"]
+   put 0 into he1gGame["syncCooldown"]
+   -- admit ourselves as a player so the local roster shows our own seat
+   put "true" into he1gGame["admittedA"][he1gGame["idPubHex"]]
+   put "player" into he1gGame["roleByPub"][he1gGame["idPubHex"]]
+   he1heNetGameInit
+   put he1tInvA["transport"] into he1gGame["transport"]
+   he1heNetOnionReset
+   if he1tInvA["transport"] is "onion" then
+      put he1tInvA["onion"] into he1gGame["onionAddrTxt"]
+   end if
+   he1heNetStart
+   if he1gGame["online"] is not "true" then
+      exit he1heTableJoin   -- transport unavailable; he1heNetStart set the status
+   end if
+   he1heNetJoinSwarm false
+   if he1tInvA["transport"] is "onion" then
+      he1heUISetStatus "Joining onion table " & char 1 to 12 of he1tCode & "... connecting through tor (watch the Tor line)."
+   else
+      he1heUISetStatus "Joining table " & char 1 to 12 of he1tCode & "... waiting for the host."
+   end if
+end he1heTableJoin
+
+on he1heNetPollTick
+   -- one poll drain per tick (H2): rp1 events for gameplay, plus btPoll to
+   -- keep the engine's own event queue clear. Never per-frame. 2f: for an
+   -- onion table the tick instead runs the tor transport's whole budget --
+   -- the bring-up state machine plus the stream-buffer drain -- guarded the
+   -- same way, and the re-arm below ALWAYS runs either way.
+   local he1tEvents, he1tEv, he1tPollErr
+   if he1gGame["online"] is not "true" then
+      exit he1heNetPollTick
+   end if
+   -- age the resync debounce one tick (he1heNetRequestSync sets it to 8)
+   if he1gGame["syncCooldown"] > 0 then
+      subtract 1 from he1gGame["syncCooldown"]
+   end if
+   -- spec 9 host-loss watchdog (2e/Phase 3): one compare per tick when idle;
+   -- guarded so a first-contact fault can never kill the poll loop (H4)
+   try
+      he1heNetHostLossCheck
+   catch he1tPollErr
+      put "poll   host-loss check threw: " & he1tPollErr & return after he1gGame["netLog"]
+   end try
+   -- 2e act timers (spec 8.1/9), both transports: the countdown + the
+   -- host's timeout emission live on the SAME tick (H2), guarded so a
+   -- first-contact fault can never kill the poll loop (H4)
+   try
+      he1heNetActTimerTick
+   catch he1tPollErr
+      put "poll   act-timer tick threw: " & he1tPollErr & return after he1gGame["netLog"]
+   end try
+   if he1gGame["transport"] is "onion" then
+      try
+         he1heNetOnionTick
+      catch he1tPollErr
+         put "poll   onion tick threw: " & he1tPollErr & return after he1gGame["netLog"]
+      end try
+      send "he1heNetPollTick" to me in 250 milliseconds
+      exit he1heNetPollTick
+   end if
+   -- The DRAIN ITSELF has to be guarded too, not just the per-event dispatch: a
+   -- throw out of btRp1Poll/btPoll (a torn-down or stale session handle, an
+   -- extension-side fault) escaped this handler entirely, so the re-arm below never
+   -- ran and the poll loop died silently -- online play just stopped receiving,
+   -- with no error anywhere. Empty events on a failed drain, then carry on (H4).
+   put empty into he1tEvents
+   try
+      put btRp1Poll(he1gGame["session"]) into he1tEvents
+   catch he1tPollErr
+      put "poll   btRp1Poll threw: " & he1tPollErr & return after he1gGame["netLog"]
+   end try
+   -- an inbound rp1 event is attacker-controlled: a single throwing dispatch must
+   -- drop-and-log (H4), never abort the drain or -- worse -- skip the re-arm below
+   -- and silently kill the poll loop (deep-dive transport). The re-arm always runs.
+   repeat for each element he1tEv in he1tEvents
+      try
+         he1heNetOnRp1 he1tEv
+      catch he1tPollErr
+         put "poll   dropped a throwing rp1 event: " & he1tPollErr & return after he1gGame["netLog"]
+      end try
+   end repeat
+   try
+      get btPoll(he1gGame["session"])
+   catch he1tPollErr
+      put "poll   btPoll threw: " & he1tPollErr & return after he1gGame["netLog"]
+   end try
+   send "he1heNetPollTick" to me in 250 milliseconds
+end he1heNetPollTick
+
+command he1heNetOnRp1 pEvA
+   -- dispatch one drained rp1 event (an array with name/peer/payload/token)
+   switch pEvA["name"]
+      case "rp1Handshake"
+         he1heNetOnHandshake pEvA["peer"], pEvA["token"]
+         break
+      case "rp1Message"
+         he1heNetOnMessage pEvA["peer"], pEvA["payload"]
+         break
+   end switch
+end he1heNetOnRp1
+
+command he1heNetOnHandshake pPeer, pTokenData, pFromSeq
+   -- admit-or-drop (spec 5): a peer whose token does not verify against this
+   -- table is ignored, before any game message is accepted from it.
+   -- pFromSeq (2e, optional): the peer's self-named applied seq from an
+   -- onion hello -- honored as a TRIM HINT on a RECONNECT only (a first
+   -- join always gets the full log; a rebuilt client's mark is 0 = full).
+   local he1tPubHex, he1tRoleTxt, he1tIsNew, he1tOldPeer, he1tReconnect, he1tPeersA, he1tHostShort
+   put he1heAdmitTokenVerify(pTokenData, he1gGame["tableIdHex"]) into he1tPubHex
+   if he1tPubHex is empty then
+      put "drop   handshake from an unadmitted peer" & return after he1gGame["netLog"]
+      he1heLobbyRefresh
+      exit he1heNetOnHandshake
+   end if
+   put he1heAdmitTokenRole(pTokenData) into he1tRoleTxt
+   put (he1gGame["admittedA"][he1tPubHex] is not "true") into he1tIsNew
+   -- a known key handshaking on a NEW peer handle is a reconnect: it needs the
+   -- transcript replayed too, not just first-time joiners (spec 9)
+   put he1gGame["peerByPub"][he1tPubHex] into he1tOldPeer
+   put (he1tOldPeer is not empty and he1tOldPeer is not pPeer) into he1tReconnect
+   -- on reconnect, drop the stale handle so peerPubA holds only live peers and
+   -- he1heNetBroadcast never sends to a dead handle (deep-dive transport). Delete via
+   -- a plain local array (the supported form; avoids a nested-subscript delete).
+   if he1tReconnect then
+      put he1gGame["peerPubA"] into he1tPeersA
+      delete variable he1tPeersA[he1tOldPeer]
+      put he1tPeersA into he1gGame["peerPubA"]
+   end if
+   put he1tPubHex into he1gGame["peerPubA"][pPeer]
+   put pPeer into he1gGame["peerByPub"][he1tPubHex]
+   put "true" into he1gGame["admittedA"][he1tPubHex]
+   put he1tRoleTxt into he1gGame["roleByPub"][he1tPubHex]
+   -- a verified handshake is positive presence: stamp it like an applied wire
+   -- (v0.24.0, F7 -- he1heNetPubIsLive). This is what makes a RECONNECTING peer
+   -- immediately seatable again after its last wire went stale.
+   put the milliseconds into he1gGame["seenMsByPub"][he1tPubHex]
+   -- adopt as host only a peer whose token DECLARES role "host" -- the phantom
+   -- swarm connects players to each other too, so "first peer" is not the host.
+   -- Trust-on-first-use: pin the first host key and surface (do NOT silently
+   -- swap to) any later, DIFFERENT host-declaring key -- attributable, and the
+   -- seam where a real invite<->host binding will reject it outright. Full host
+   -- election / host loss is spec 9 / a later increment.
+   if he1gGame["isHost"] is not "true" and he1tRoleTxt is "host" then
+      if he1gGame["hostPubHex"] is empty then
+         put he1tPubHex into he1gGame["hostPubHex"]
+      else if he1gGame["hostPubHex"] is not he1tPubHex then
+         -- copy the trusted host key out before chunking it (H6: never chunk an
+         -- array element directly)
+         put he1gGame["hostPubHex"] into he1tHostShort
+         put "WARN   ignored a second host-declaring key " & char 1 to 12 of he1tPubHex \
+               & " (already trust " & char 1 to 12 of he1tHostShort & ")" & return after he1gGame["netLog"]
+      end if
+   end if
+   if he1tIsNew then
+      put "+peer  " & char 1 to 12 of he1tPubHex & "  (" & he1tRoleTxt & ")" & return after he1gGame["netLog"]
+   end if
+   -- host: catch a peer up on the transcript (spec 9 replay) on first join
+   -- OR reconnect, then re-sign and broadcast the roster so presence agrees.
+   -- 2e: a reconnecting peer that named its applied seq (the onion hello's
+   -- trailing item; a redial) gets the TRIMMED tail -- dedup keeps either
+   -- replay idempotent, and a first join always replays in full.
+   if he1gGame["isHost"] is "true" and (he1tIsNew or he1tReconnect) then
+      if he1tReconnect and pFromSeq is a number and pFromSeq > 0 then
+         he1heNetReplayLogTo pPeer, pFromSeq
+      else
+         he1heNetReplayLogTo pPeer
+      end if
+      if he1tIsNew then
+         he1heHostEmitRoster
+      end if
+   end if
+   he1heLobbyRefresh
+end he1heNetOnHandshake
+
+command he1heNetOnMessage pPeer, pPayloadData
+   -- payload kinds (tab-framed): "c" = a player's signed content line to the
+   -- host; "w" = a host-relayed sequenced wire to everyone. Verify-or-drop.
+   local he1tPayload, he1tKind, he1tRest, he1tSaved, he1tPeerPub
+   put textDecode(pPayloadData, "utf-8") into he1tPayload
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item 1 of he1tPayload into he1tKind
+   put item 2 to -1 of he1tPayload into he1tRest
+   set the itemDelimiter to he1tSaved
+   switch he1tKind
+      case "c"
+         if he1gGame["isHost"] is "true" then
+            he1heHostRelay pPeer, he1tRest
+         end if
+         break
+      case "w"
+         he1heNetIngestWire he1tRest
+         break
+      case "h"
+         -- 2f: the onion-stream hello. rp1 carries the signed admission
+         -- token in its transport handshake event; an onion stream has no
+         -- such event, so the token rides the stream's first wire line and
+         -- lands here (he1tRest is the whole token, tabs included).
+         he1heNetOnionHello pPeer, he1tRest
+         break
+      case "r!"
+         -- the host announces a catch-up replay up to head seq (the frame's
+         -- payload, already split off as he1tRest): suspend react emissions
+         -- until our applied seq reaches it (see he1heNetReplayLogTo). Honored
+         -- only from the HOST's live handle -- an unsigned control frame from
+         -- anyone else could otherwise suppress a victim's emissions
+         -- indefinitely (transport DoS).
+         put he1gGame["hostPubHex"] into he1tPeerPub
+         if pPeer is he1gGame["peerByPub"][he1tPeerPub] and he1tRest is a number \
+               and he1tRest > he1gGame["lastSeq"] then
+            -- v0.24.0: a marker announcing a head we ALREADY hold is not a
+            -- catch-up at all -- every wire that follows it is a duplicate we
+            -- shed by seq, so nothing would ever fold to clear the mark. It
+            -- used to suspend our react emissions until the next LIVE wire,
+            -- and since the turn clock now records whether it started under a
+            -- replay, it would also have marked that wire's turn replayed and
+            -- waived one deadline check for nothing. Only a real gap suspends.
+            put he1tRest into he1gGame["catchUpTo"]
+            put "catch  replay to seq " & he1tRest & " announced" & return after he1gGame["netLog"]
+         end if
+         break
+      case "s?"
+         -- a peer asks us (the host) to replay the transcript so it can catch
+         -- up from a chain gap (spec 9). Only honor it from an admitted,
+         -- connected peer, so an unknown socket cannot trigger a replay.
+         -- 2e: the frame may carry the requester's APPLIED SEQ (a bare "s?"
+         -- is the pre-2e form and still gets the full log): the replay is
+         -- then TRIMMED to the wires past it, so a mid-hand client resumes
+         -- from its last applied wire -- at worst the last street ckpt
+         -- boundary -- instead of shedding the whole chain from genesis.
+         -- The mark is only a trim hint from an already-admitted peer: a
+         -- lie forward just starves the liar (dedup makes a later full
+         -- replay safe), a lie backward costs bytes, never correctness.
+         put he1gGame["peerPubA"][pPeer] into he1tPeerPub
+         if he1gGame["isHost"] is "true" and he1tPeerPub is not empty then
+            -- rate-limit replays PER PEER: at most one per ~2s, so a flood of "s?"
+            -- cannot amplify into unbounded full-transcript replays (deep-dive DoS).
+            -- Keyed by the peer's pubkey (stable across handle churn), timed off the
+            -- engine clock so no per-tick decrement is needed.
+            if he1gGame["replayMsByPub"][he1tPeerPub] is not empty \
+                  and (the milliseconds - he1gGame["replayMsByPub"][he1tPeerPub]) < 2000 then
+               exit he1heNetOnMessage
+            end if
+            put the milliseconds into he1gGame["replayMsByPub"][he1tPeerPub]
+            if he1tRest is not a number then
+               put 0 into he1tRest
+            end if
+            put "sync!  replaying transcript to " & char 1 to 8 of he1tPeerPub \
+                  & " (from seq " & he1tRest & ")" & return after he1gGame["netLog"]
+            he1heNetReplayLogTo pPeer, he1tRest
+            he1heLobbyRefresh
+         end if
+         break
+   end switch
+end he1heNetOnMessage
+
+command he1heHostRelay pPeer, pContentAndSig
+   -- host path: take a player's (contentLine TAB senderSig), assign seq + prev,
+   -- countersign, advance the chain, and broadcast the sequenced wire to all.
+   -- The content's own sender signature is checked before it is relayed.
+   local he1tContent, he1tSenderSig, he1tSaved, he1tFromHex, he1tEnvLine, he1tHostSig, he1tWire, he1tTypeTxt
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   -- contentLine is items 1..6, senderSig is item 7 of pContentAndSig
+   put item 1 to 6 of pContentAndSig into he1tContent
+   put item 7 of pContentAndSig into he1tSenderSig
+   put item 4 of he1tContent into he1tFromHex
+   put item 5 of he1tContent into he1tTypeTxt
+   set the itemDelimiter to he1tSaved
+   -- a player packet is untrusted: reject malformed hex before decoding it
+   -- (sxHex2Bin throws) so a corrupt "c" frame cannot kill the host relay (H4)
+   if not he1heIsHex(he1tFromHex, 64) or not he1heIsHex(he1tSenderSig, 128) then
+      exit he1heHostRelay
+   end if
+   -- host-authority: cfg/roster are host-authored presence; never sequence and
+   -- relay them for a non-host sender, so an admitted player cannot forge table
+   -- config or roster through the relay (deep-dive transport). The host emits
+   -- these from its own key (he1heNetSendAction uses he1gGame["idPubHex"]).
+   if (he1tTypeTxt is "cfg" or he1tTypeTxt is "roster") and he1tFromHex is not he1gGame["hostPubHex"] then
+      exit he1heHostRelay
+   end if
+   -- verify the sender actually signed this content (host cannot forge content)
+   if not he1heVerifyDetached(he1heHex2BinD(he1tSenderSig), textEncode(he1tContent, "utf-8"), he1heHex2BinD(he1tFromHex)) then
+      exit he1heHostRelay
+   end if
+   if he1gGame["admittedA"][he1tFromHex] is not "true" then
+      exit he1heHostRelay
+   end if
+   add 1 to he1gGame["seqCounter"]
+   put he1tContent & tab & he1tSenderSig & tab & he1gGame["seqCounter"] & tab & he1gGame["chainHeadHex"] into he1tEnvLine
+   put he1heBin2HexS(he1heSignDetachedD(textEncode(he1tEnvLine, "utf-8"), he1gGame["idSecData"])) into he1tHostSig
+   put he1tEnvLine & tab & he1tHostSig into he1tWire
+   he1heNetBroadcast "w" & tab & he1tWire
+   he1heNetIngestWire he1tWire
+end he1heHostRelay
+
+command he1heNetIngestWire pWire
+   -- everyone's inbound path. rp1 is lossy AND redelivers/reorders wires, so a
+   -- verified wire is classified by its host-signed seq against the last we
+   -- applied (he1gGame["lastSeq"]), NOT by a bare prev==head test:
+   --   seq <= lastSeq     : already applied -> drop SILENTLY. This is the fix
+   --                        for the networked chain-break storm -- the host
+   --                        re-broadcasts and rp1 redelivers constantly, and
+   --                        treating every duplicate as a "chain gap" made the
+   --                        client resync-loop forever and the game never start.
+   --                        It also makes the full-log replay idempotent: a
+   --                        caught-up client just sheds the replayed prefix.
+   --   seq  = lastSeq + 1 : the expected next wire -> chain-check + apply, then
+   --                        drain any buffered successors now in order.
+   --   seq  > lastSeq + 1 : a real gap -> buffer it and ask the host to replay.
+   -- Signatures/shape are verified FIRST, and the table/version binding is
+   -- enforced BEFORE the seq is even read (a wire for another table must never
+   -- touch the buffer or lastSeq), so a duplicate/reordered wire is judged by
+   -- its seq, never mistaken for a signature failure. Never raises (H4).
+   local he1tVerdict, he1tA, he1tSeq
+   if he1gGame["lastSeq"] is not a number then
+      put 0 into he1gGame["lastSeq"]   -- unset on old saves / hand-rolled contexts
+   end if
+   if he1gGame["wireBufN"] is not a number then
+      put 0 into he1gGame["wireBufN"]
+   end if
+   put he1heEnvVerify(pWire, empty, he1gGame["hostPubHex"], empty) into he1tVerdict
+   if he1tVerdict is not "ok" then
+      -- drop and log; a bad/forged message is a real rejection, never a resync
+      put he1tVerdict && char 1 to 24 of pWire & return after he1gGame["netLog"]
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   put he1heEnvWireParse(pWire) into he1tA
+   -- bind the envelope to THIS table and protocol version before folding it. Both
+   -- fields sit inside the host-signed span, but a receiver still has to ENFORCE
+   -- them: otherwise a host-signed wire for another table, or a downgraded envelope
+   -- version, would be accepted onto our chain (deep-dive transport). A mismatch is
+   -- a hard drop, NOT a chain gap, so it never triggers a resync.
+   if he1tA["table"] is not he1gGame["tableIdHex"] then
+      put "drop:wrong-table " & char 1 to 24 of pWire & return after he1gGame["netLog"]
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   if he1tA["v"] is not he1kHeEnvV then
+      put "drop:bad-version " & char 1 to 24 of pWire & return after he1gGame["netLog"]
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   put he1tA["seq"] into he1tSeq
+   if he1tSeq is not a number then
+      put "drop:bad-seq " & char 1 to 24 of pWire & return after he1gGame["netLog"]
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   if he1tSeq <= he1gGame["lastSeq"] then
+      exit he1heNetIngestWire   -- duplicate / already applied: drop, no resync loop
+   end if
+   if he1tSeq > he1gGame["lastSeq"] + 1 then
+      he1heNetBufferWire he1tSeq, pWire
+      put "gap    seq " & he1tSeq & " held (need " & (he1gGame["lastSeq"] + 1) & ")" \
+            & return after he1gGame["netLog"]
+      he1heNetRequestSync
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   -- he1tSeq is exactly lastSeq+1: it must chain onto our head, or the host's stream
+   -- is inconsistent (should not happen) -- ask for a replay rather than wedge.
+   if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+      put "drop:chain-break" && char 1 to 24 of pWire & return after he1gGame["netLog"]
+      he1heNetRequestSync
+      he1heLobbyRefresh
+      exit he1heNetIngestWire
+   end if
+   he1heNetApplyWire pWire, he1tA
+   he1heNetDrainBuffer
+   he1heLobbyRefresh
+end he1heNetIngestWire
+
+command he1heNetApplyWire pWire, pA
+   -- apply one verified, in-order wire: advance the chain head, record the seq,
+   -- append to the transcript, and fold presence bodies into the display. pA is
+   -- a parsed wire (he1heEnvWireParse); its fields are copied into plain locals
+   -- first, so he1heEnvBodyText and the log lines chunk only plain text (H6-safe).
+   local he1tTypeTxt, he1tSeqTxt, he1tFromHex, he1tBodyHex
+   put pA["type"] into he1tTypeTxt
+   put pA["seq"] into he1tSeqTxt
+   put pA["from"] into he1tFromHex
+   put pA["bodyHex"] into he1tBodyHex
+   put he1heChainNextHex(pWire) into he1gGame["chainHeadHex"]
+   put he1tSeqTxt into he1gGame["lastSeq"]
+   -- every applied wire is host-countersigned: the relay is alive, so the
+   -- spec 9 host-loss watchdog rewinds (he1heNetHostLossCheck) -- and a
+   -- completed onion redial's attempt counter resets with it (2e: proof the
+   -- host answered is a host-signed wire applying, nothing weaker)
+   put 0 into he1gGame["hostQuietTicks"]
+   if he1gGame["oxRedialN"] > 0 then
+      put 0 into he1gGame["oxRedialN"]
+   end if
+   -- v0.24.0 (F7): stamp when we last had positive evidence of this sender.
+   -- It is the only liveness rp1 can offer (it surfaces no disconnect event),
+   -- and he1heNetPubIsLive reads it so the host never seats a departed peer as a
+   -- ghost. Per KEY, not per handle: a reconnect changes the handle.
+   put the milliseconds into he1gGame["seenMsByPub"][he1tFromHex]
+   put pWire & return after he1gGame["log"]
+   put "ok     " & he1tTypeTxt & " seq " & he1tSeqTxt & return after he1gGame["netLog"]
+   -- spec 6: an unknown "from" is never ACTED on -- no exceptions, including
+   -- via the host. The relay refuses unadmitted senders, so a sequenced wire
+   -- whose sender is neither the host nor in the host-signed roster can only
+   -- mean a malicious or corrupted host stream. The chain still advances (the
+   -- link is host-authentic and refusing it would wedge the table), but the
+   -- body is marked and NOTHING folds from it -- the same accept-the-link,
+   -- ignore-the-body treatment a non-host cfg gets. In-order apply guarantees
+   -- the roster wire admitting a sender lands before that sender's first
+   -- relayed action, so an honest stream never trips this.
+   if he1tFromHex is not he1gGame["hostPubHex"] and not he1heRosterHasKey(he1tFromHex) then
+      put "note   unrostered sender " & char 1 to 8 of he1tFromHex \
+            & " -- body ignored (seq " & he1tSeqTxt & ")" & return after he1gGame["netLog"]
+      exit he1heNetApplyWire
+   end if
+   -- lobby presence bodies drive the roster/cfg display; gameplay wires drive
+   -- the betting engine (the deal increment). roster/cfg are HOST-authored
+   -- presence (spec 9): fold them only when the wire's own sender is the host,
+   -- so an admitted player cannot forge table config/roster by getting a
+   -- content line relayed (the host relays any admitted sender's content).
+   if he1tTypeTxt is "roster" or he1tTypeTxt is "cfg" then
+      if he1tFromHex is he1gGame["hostPubHex"] then
+         if he1tTypeTxt is "roster" then
+            put he1heEnvBodyText(he1tBodyHex) into he1gGame["rosterBody"]
+         else
+            put he1heEnvBodyText(he1tBodyHex) into he1gGame["cfgBody"]
+            -- adopt the signed stakes so every client folds the same game
+            -- (the host's own values are identical; this is a no-op there)
+            put he1heNetCfgVal("sb", he1gGame["sb"]) into he1gGame["sb"]
+            put he1heNetCfgVal("bb", he1gGame["bb"]) into he1gGame["bb"]
+            put he1heNetCfgVal("ante", 0) into he1gGame["ante"]
+            put he1heNetCfgVal("stack", he1kHeDefaultStack) into he1gGame["startStack"]
+         end if
+         he1heNetGameReact
+      else
+         put "drop   non-host " & he1tTypeTxt & " body ignored" & return after he1gGame["netLog"]
+      end if
+      exit he1heNetApplyWire
+   end if
+   -- the online game vocabulary folds through its own dispatcher (authority
+   -- checks per type live there); everything else is future/unknown -- the
+   -- chain carries it, nothing acts on it
+   if he1tTypeTxt is "join" or he1tTypeTxt is "sit" or he1tTypeTxt is "handStart" \
+         or he1tTypeTxt is "dealLevel" or he1tTypeTxt is "seedCommit" or he1tTypeTxt is "seedSeal" \
+         or he1tTypeTxt is "holeDeliver" or he1tTypeTxt is "board" or he1tTypeTxt is "bidAnte" \
+         or he1tTypeTxt is "bidSB" or he1tTypeTxt is "bidBB" or he1tTypeTxt is "act" \
+         or he1tTypeTxt is "seedReveal" or he1tTypeTxt is "settle" or he1tTypeTxt is "receipt" \
+         or he1tTypeTxt is "audit" or he1tTypeTxt is "ckpt" or he1tTypeTxt is "show" \
+         or he1tTypeTxt is "muck" or he1tTypeTxt is "stand" then
+      he1heNetFoldGameWire he1tTypeTxt, he1tFromHex, he1heEnvBodyText(he1tBodyHex), pA["hand"]
+   end if
+end he1heNetApplyWire
+
+function he1heRosterHasKey pPubHex
+   -- TRUE when the host-signed roster body (he1heRosterBody format: "pub:role"
+   -- comma-items) lists pPubHex as a member. Membership is judged on the pub
+   -- field alone; an empty roster has no members (the host itself is exempted
+   -- at the call site, so the pre-roster cfg wire still folds).
+   local he1tRoster, he1tItem, he1tColonPos, he1tPub
+   set the itemDelimiter to comma
+   put he1gGame["rosterBody"] into he1tRoster
+   repeat for each item he1tItem in he1tRoster
+      put offset(":", he1tItem) into he1tColonPos
+      if he1tColonPos > 0 then
+         put char 1 to (he1tColonPos - 1) of he1tItem into he1tPub
+      else
+         put he1tItem into he1tPub
+      end if
+      if he1tPub is pPubHex then
+         return true
+      end if
+   end repeat
+   return false
+end he1heRosterHasKey
+
+command he1heNetBufferWire pSeq, pWire
+   -- hold an out-of-order future wire until the gap before it fills. Bounded: a
+   -- wire more than he1kHeWireBufMax ahead of what we have applied is left to the
+   -- full-log replay, so a flood of far-future seqs cannot grow the buffer.
+   if pSeq <= he1gGame["lastSeq"] + he1kHeWireBufMax and he1gGame["wireBuf"][pSeq] is empty then
+      put pWire into he1gGame["wireBuf"][pSeq]
+      add 1 to he1gGame["wireBufN"]
+   end if
+end he1heNetBufferWire
+
+command he1heNetDrainBuffer
+   -- after applying a wire, apply any buffered wires that are now consecutive.
+   -- Each is emptied as it is applied; when none remain (wireBufN back to 0) the
+   -- whole buffer is reset so emptied keys never accumulate across a long game.
+   -- Buffered wires were signature-verified and table/version-bound at ingest;
+   -- the prev link is re-checked here because the head has moved since.
+   local he1tNext, he1tWire, he1tA
+   repeat forever
+      put he1gGame["lastSeq"] + 1 into he1tNext
+      if he1gGame["wireBuf"][he1tNext] is empty then
+         exit repeat
+      end if
+      put he1gGame["wireBuf"][he1tNext] into he1tWire
+      put empty into he1gGame["wireBuf"][he1tNext]
+      subtract 1 from he1gGame["wireBufN"]
+      put he1heEnvWireParse(he1tWire) into he1tA
+      if he1tA["prev"] is not he1gGame["chainHeadHex"] then
+         exit repeat   -- a buffered wire that no longer chains: leave it for replay
+      end if
+      he1heNetApplyWire he1tWire, he1tA
+   end repeat
+   if he1gGame["wireBufN"] <= 0 then
+      put empty into he1gGame["wireBuf"]
+      put 0 into he1gGame["wireBufN"]
+   end if
+end he1heNetDrainBuffer
+
+command he1heNetSendAction pTypeTxt, pBodyTxt
+   -- a player emits a signed content line to the host (or, if we are the host,
+   -- straight into the relay). The host sequences and countersigns it.
+   local he1tContent, he1tSenderSig, he1tPacket
+   put he1heEnvContentLine(he1gGame["tableIdHex"], he1gGame["handNum"], he1gGame["idPubHex"], pTypeTxt, pBodyTxt) into he1tContent
+   put he1heEnvSenderSigHex(he1tContent, he1gGame["idSecData"]) into he1tSenderSig
+   put he1tContent & tab & he1tSenderSig into he1tPacket
+   if he1gGame["isHost"] is "true" then
+      he1heHostRelay 0, he1tPacket
+   else
+      he1heNetSendToHost "c" & tab & he1tPacket
+   end if
+end he1heNetSendAction
+
+command he1heNetSendToHost pPayloadTxt
+   local he1tHostPeer
+   -- netsim capture seam: the loopback harness has no rp1, so outbound
+   -- payloads are collected in he1gGame["netOutbox"] for the sim to shuttle by
+   -- hand. Off (empty) in production; the real send path below is untouched.
+   if he1gGame["netCap"] is "true" then
+      put pPayloadTxt & return after he1gGame["netOutbox"]
+      exit he1heNetSendToHost
+   end if
+   put he1gGame["peerByPub"][he1gGame["hostPubHex"]] into he1tHostPeer
+   if he1tHostPeer is empty then
+      exit he1heNetSendToHost
+   end if
+   he1heNetTxTo he1tHostPeer, pPayloadTxt
+end he1heNetSendToHost
+
+command he1heNetRequestSync
+   -- recover from a chain gap: ask the host to replay the transcript (spec 9)
+   -- instead of wedging on drop:chain-break forever. Debounced by a tick
+   -- cooldown so a burst of dropped wires -- or a lost request -- re-asks at
+   -- most once every ~2 s, never floods the host. The host never self-syncs.
+   if he1gGame["isHost"] is "true" then
+      exit he1heNetRequestSync
+   end if
+   if he1gGame["syncCooldown"] > 0 then
+      exit he1heNetRequestSync
+   end if
+   if he1gGame["hostPubHex"] is empty then
+      exit he1heNetRequestSync
+   end if
+   put 8 into he1gGame["syncCooldown"]
+   put "sync?  requested transcript replay (chain gap)" & return after he1gGame["netLog"]
+   -- 2e: name our applied seq so the host can trim the replay to the tail
+   -- we are actually missing (spec 9 "since your last ckpt", keyed by seq)
+   he1heNetSendToHost "s?" & tab & he1gGame["lastSeq"]
+end he1heNetRequestSync
+
+command he1heNetBroadcast pPayloadTxt
+   -- host sends to every admitted peer (star topology, spec 4). The netCap
+   -- capture stays HERE (one captured copy per broadcast, not one per peer)
+   -- so the loopback harnesses see exactly the frames they always did.
+   local he1tPeer
+   if he1gGame["netCap"] is "true" then
+      put pPayloadTxt & return after he1gGame["netOutbox"]
+      exit he1heNetBroadcast
+   end if
+   repeat for each key he1tPeer in he1gGame["peerPubA"]
+      he1heNetTxTo he1tPeer, pPayloadTxt
+   end repeat
+end he1heNetBroadcast
+
+command he1heNetSendWireTo pPeer, pWire
+   -- targeted replay of one sequenced wire to a single peer (star topology).
+   -- Same "w" framing as a broadcast so the receiver's he1heNetOnMessage path is
+   -- identical whether the wire arrived live or as catch-up.
+   if he1gGame["netCap"] is "true" then
+      put "w" & tab & pWire & return after he1gGame["netOutbox"]
+      exit he1heNetSendWireTo
+   end if
+   he1heNetTxTo pPeer, "w" & tab & pWire
+end he1heNetSendWireTo
+
+command he1heNetReplayLogTo pPeer, pFromSeq
+   -- spec 9 reconnect seam: replay the signed wire log to a peer, in order,
+   -- so it advances its chain and catches up. Turn-rate, not frame-rate; a
+   -- lobby log is a few lines.
+   -- The replay is PREFIXED with an "r!" catch-up marker carrying our head
+   -- seq: the client suspends its react emissions until its applied seq
+   -- reaches the mark, THEN reacts once against the complete transcript --
+   -- without this, react fired after every replayed wire against a chain
+   -- state that predates the client's own historical messages, re-emitting
+   -- join/commit/seal/reveal for every hand replayed and polluting the live
+   -- chain with host-sequenced duplicates (Codex review on PR #39). A lost
+   -- marker degrades to the old noisy behavior; it can never wedge.
+   -- 2e: pFromSeq (empty = 0 = everything) trims the replay to the wires
+   -- PAST the requester's applied seq -- the resume-from-the-last-street
+   -- half of the street-ckpt work. A reconnect handshake still replays in
+   -- full (a rebuilt client has nothing); dedup keeps either idempotent.
+   local he1tWireLine, he1tLog, he1tFromSeq, he1tSeqTxt, he1tSaved
+   put pFromSeq into he1tFromSeq
+   if he1tFromSeq is not a number then
+      put 0 into he1tFromSeq
+   end if
+   if he1gGame["netCap"] is "true" then
+      put "r!" & tab & he1gGame["lastSeq"] & return after he1gGame["netOutbox"]
+   else
+      he1heNetTxTo pPeer, "r!" & tab & he1gGame["lastSeq"]
+   end if
+   put he1gGame["log"] into he1tLog
+   put the itemDelimiter into he1tSaved
+   repeat for each line he1tWireLine in he1tLog
+      if he1tWireLine is empty then
+         next repeat
+      end if
+      if he1tFromSeq > 0 then
+         -- the host-assigned seq is wire field 8 (gotcha 5: set the
+         -- delimiter at each use; restored below)
+         set the itemDelimiter to tab
+         put item 8 of he1tWireLine into he1tSeqTxt
+         set the itemDelimiter to he1tSaved
+         if he1tSeqTxt is a number and he1tSeqTxt <= he1tFromSeq then
+            next repeat
+         end if
+      end if
+      he1heNetSendWireTo pPeer, he1tWireLine
+   end repeat
+   set the itemDelimiter to he1tSaved
+end he1heNetReplayLogTo
+
+command he1heHostEmitRoster
+   -- host-only: re-sign and broadcast the current roster whenever the admitted
+   -- set changes (spec 9 presence). Every client sorts the members identically
+   -- (he1heRosterBody), so the signed bytes match everywhere.
+   local he1tKeyPub, he1tRoleTxt, he1tMembers
+   if he1gGame["isHost"] is not "true" then
+      exit he1heHostEmitRoster
+   end if
+   put empty into he1tMembers
+   repeat for each key he1tKeyPub in he1gGame["admittedA"]
+      put he1gGame["roleByPub"][he1tKeyPub] into he1tRoleTxt
+      if he1tRoleTxt is empty then
+         put "player" into he1tRoleTxt
+      end if
+      put he1tKeyPub & tab & he1tRoleTxt & return after he1tMembers
+   end repeat
+   if he1tMembers is not empty then
+      delete char -1 of he1tMembers
+   end if
+   he1heNetSendAction "roster", he1heRosterBody(he1tMembers)
+end he1heHostEmitRoster
+
+function he1heElectHostOf pPubsLines
+   -- deterministic host election (spec 9): the LOWEST pubkey among the
+   -- candidate lines (64-hex, one per line). A text sort over equal-length
+   -- lowercase hex IS byte order, so this matches protocol-kat's
+   -- elected_host (min over the same strings). Pure: values in, value out.
+   local he1tLines, he1tLineTxt
+   put pPubsLines into he1tLines
+   sort lines of he1tLines
+   repeat for each line he1tLineTxt in he1tLines
+      if he1tLineTxt is not empty then
+         return he1tLineTxt
+      end if
+   end repeat
+   return empty
+end he1heElectHostOf
+
+function he1heNetElectablePubs
+   -- election candidates: seated players still holding chips, EXCLUDING the
+   -- (lost) host key. An oracle host was never seated, so oracle tables
+   -- need no special case here.
+   local he1tOut, he1tSeatNum, he1tPub, he1tSeatedList
+   set the itemDelimiter to comma
+   put empty into he1tOut
+   put he1gGame["seatedList"] into he1tSeatedList
+   repeat for each item he1tSeatNum in he1tSeatedList
+      if he1gGame["stacksBy"][he1tSeatNum] > 0 then
+         put he1gGame["pubBySeat"][he1tSeatNum] into he1tPub
+         if he1tPub is not empty and he1tPub is not he1gGame["hostPubHex"] then
+            put he1tPub & return after he1tOut
+         end if
+      end if
+   end repeat
+   return he1tOut
+end he1heNetElectablePubs
+
+command he1heNetHostLossCheck
+   -- the spec 9 liveness watchdog, one compare per poll tick when idle:
+   -- during PLAY, a client that sees no host-countersigned wire for
+   -- he1kHeHostLossTicks ticks declares the host lost. Wire-silence is the
+   -- only honest signal on rp1 (no disconnect events surface here); the
+   -- onion transport ALSO gets positive stream-death (he1heNetOnionDead
+   -- routes into he1heNetHostLost directly). The host never self-elects; an
+   -- idle lobby (gameOn false) is legitimately silent and never trips.
+   if he1gGame["online"] is not "true" or he1gGame["isHost"] is "true" then
+      exit he1heNetHostLossCheck
+   end if
+   if he1gGame["gameOn"] is not "true" or he1gGame["hostLost"] is "true" then
+      exit he1heNetHostLossCheck
+   end if
+   if he1gGame["hostQuietTicks"] is not a number then
+      put 0 into he1gGame["hostQuietTicks"]
+   end if
+   add 1 to he1gGame["hostQuietTicks"]
+   if he1gGame["hostQuietTicks"] > he1kHeHostLossTicks then
+      he1heNetHostLost "no host wire for " & (he1kHeHostLossTicks div 4) & " s"
+   end if
+end he1heNetHostLossCheck
+
+command he1heNetHostLost pWhyTxt
+   -- spec 9 host loss (and ORACLE loss -- same role, same path). VOID the
+   -- in-flight hand: bets that never reached a verified settle never moved
+   -- he1gGame["stacksBy"], so the stacks already stand at the last receipt --
+   -- "resumes from the last receipt" costs nothing here. Then name the
+   -- deterministic successor and fail closed: the live handover is the
+   -- Phase 3 exit gate, not something to fake with a guess.
+   local he1tElected, he1tMsgTxt
+   if he1gGame["hostLost"] is "true" then
+      exit he1heNetHostLost
+   end if
+   put "true" into he1gGame["hostLost"]
+   put he1heElectHostOf(he1heNetElectablePubs()) into he1tElected
+   put he1tElected into he1gGame["electedHostPubHex"]
+   put "idle" into he1gGame["phase"]
+   put empty into he1gGame["oDeal"]
+   put "false" into he1gGame["gameOn"]
+   he1heDisableActions
+   if he1tElected is empty then
+      put "HOST LOST (" & pWhyTxt & ") -- no live seated player to elect. The table is over; stacks stand at the last receipt." into he1tMsgTxt
+   else if he1tElected is he1gGame["idPubHex"] then
+      put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. YOU are the elected host (lowest live key): Create a table and share the new invite." into he1tMsgTxt
+   else
+      put "HOST LOST (" & pWhyTxt & ") -- the in-flight hand is void; stacks stand at the last receipt. Elected host: " & char 1 to 12 of he1tElected & " -- join its new invite when it re-hosts." into he1tMsgTxt
+   end if
+   put "elect  " & he1tMsgTxt & return after he1gGame["netLog"]
+   he1heUISetStatus he1tMsgTxt
+   he1heHudMark
+   he1heLobbyRefresh
+end he1heNetHostLost
+
+command he1heNetTxTo pPeer, pPayloadTxt
+   -- THE one live byte-out seam (2f): every payload that used to end in a
+   -- hard-coded btRp1Send routes here by the table's transport. Same frames
+   -- either way; over an onion stream each payload goes out as ONE
+   -- LF-terminated wire line (LF framing is safe by construction: every
+   -- free-text field is hex-encoded into the frame, so no payload can carry
+   -- an LF). The netCap branch keeps direct callers -- the hello path --
+   -- loopback-testable; the four senders capture before reaching here.
+   local he1tTxErr, he1tTxRes
+   if he1gGame["netCap"] is "true" then
+      put pPayloadTxt & return after he1gGame["netOutbox"]
+      exit he1heNetTxTo
+   end if
+   if he1gGame["transport"] is "onion" then
+      try
+         -- LF as an explicit byte value (the OnionXT oxCrlf discipline: the
+         -- wire terminator never depends on how the engine defines a
+         -- line constant)
+         oxWrite pPeer, textEncode(pPayloadTxt & numToChar(10), "utf-8")
+         put the result into he1tTxRes
+         if he1tTxRes is not empty then
+            put "drop   onion write failed (stream " & pPeer & "): " & he1tTxRes \
+                  & return after he1gGame["netLog"]
+         end if
+      catch he1tTxErr
+         put "drop   onion write threw: " & he1tTxErr & return after he1gGame["netLog"]
+      end try
+      exit he1heNetTxTo
+   end if
+   get btRp1Send(he1gGame["session"], pPeer, textEncode(pPayloadTxt, "utf-8"))
+end he1heNetTxTo
+
+command he1heNetOnionReset
+   -- fresh transport state for a create/join. Deliberately does NOT touch
+   -- the control connection (it survives between tables; he1gOxCtlUp).
+   put empty into he1gGame["oxState"]
+   put 0 into he1gGame["oxTicks"]
+   put empty into he1gGame["oxBufA"]
+   put empty into he1gGame["oxSeenA"]
+   put empty into he1gGame["oxDeadList"]
+   put empty into he1gGame["oxCtlErr"]
+   put empty into he1gGame["oxDialErr"]
+   put empty into he1gGame["oxDialOpen"]
+   put empty into he1gGame["oxFailTxt"]
+   put empty into he1gGame["oxService"]
+   put empty into he1gGame["oxStream"]
+   put empty into he1gGame["oxSeedHex"]
+   put empty into he1gGame["onionAddrTxt"]
+   put -1 into he1gGame["oxProgShown"]
+   -- 2e auto-redial state (bounded; he1heNetOnionRedialArm owns the schedule)
+   put 0 into he1gGame["oxRedialN"]
+   put 0 into he1gGame["oxRedialWait"]
+   put empty into he1gGame["oxRedialProbe"]
+end he1heNetOnionReset
+
+command he1heNetStartOnion
+   -- bring the tor transport up: register the OnionXT callbacks, ensure a
+   -- control connection, arm the poll tick. The rest of the bring-up (auth,
+   -- bootstrap, publish/dial) is asynchronous and lives in he1heNetOnionTick's
+   -- watchdogged states.
+   local he1tErr, he1tRes, he1tAuthTxt
+   if he1gGame["online"] is "true" then
+      exit he1heNetStartOnion
+   end if
+   if not he1heHasOnion() then
+      -- belt: he1heTableCreate/he1heTableJoin already refused; a direct caller
+      -- still fails closed with the same story
+      he1heUISetStatus "OnionXT is not loaded (start using onionxt). Onion table unavailable; hotseat still works."
+      exit he1heNetStartOnion
+   end if
+   try
+      oxSetCallbackOwner the long id of this stack
+      oxSetStatusCallback "he1heOnionStatus"
+      oxSetPeerCallback "he1heOnionPeer"
+   catch he1tErr
+      he1heUISetStatus "OnionXT callback setup failed: " & he1heReadableErr(he1tErr)
+      exit he1heNetStartOnion
+   end try
+   put "false" into he1tAuthTxt
+   try
+      if oxIsControlAuthenticated() then
+         put "true" into he1tAuthTxt
+      end if
+   catch he1tErr
+   end try
+   if he1tAuthTxt is not "true" then
+      try
+         -- clear any half-open control socket from an earlier failed attempt
+         -- (oxConnectControl refuses a second concurrent connect; disconnect
+         -- is idempotent), then connect. Auth completes asynchronously; the
+         -- "ctl" state below watches it.
+         oxDisconnectControl
+         oxConnectControl
+         put the result into he1tRes
+      catch he1tErr
+         he1heUISetStatus "Tor control connect threw: " & he1heReadableErr(he1tErr) & "  Hotseat still works."
+         exit he1heNetStartOnion
+      end try
+      if he1tRes is not empty then
+         he1heUISetStatus "Tor control connect refused: " & he1tRes & "  Hotseat still works."
+         exit he1heNetStartOnion
+      end if
+   end if
+   put "true" into he1gOxCtlUp
+   put "ctl" into he1gGame["oxState"]
+   put 0 into he1gGame["oxTicks"]
+   put "true" into he1gGame["online"]
+   send "he1heNetPollTick" to me in 250 milliseconds
+   he1heLobbyRefresh
+end he1heNetStartOnion
+
+command he1heNetOnionTick
+   -- the onion transport's per-tick budget (H2: ALL protocol work on the
+   -- poll timer; the callbacks only stash). Steady state costs one compare
+   -- per concern; the bring-up walks ctl -> boot -> pub|dial -> ready, each
+   -- state watchdogged so no silent async wait can hang forever.
+   local he1tStateTxt, he1tErr, he1tProg, he1tOkTxt, he1tAddrTxt, he1tStreamState
+   he1heNetOnionDead
+   he1heNetOnionDrain
+   put he1gGame["oxState"] into he1tStateTxt
+   if he1tStateTxt is "ready" or he1tStateTxt is empty or he1tStateTxt is "failed" then
+      exit he1heNetOnionTick
+   end if
+   add 1 to he1gGame["oxTicks"]
+   switch he1tStateTxt
+      case "ctl"
+         put "false" into he1tOkTxt
+         try
+            if oxIsControlAuthenticated() then
+               put "true" into he1tOkTxt
+            end if
+         catch he1tErr
+            he1heNetOnionFail "OnionXT went away mid-connect: " & he1tErr
+            exit he1heNetOnionTick
+         end try
+         if he1tOkTxt is "true" then
+            put "boot" into he1gGame["oxState"]
+            put 0 into he1gGame["oxTicks"]
+            he1heLobbyRefresh
+            exit he1heNetOnionTick
+         end if
+         if he1gGame["oxCtlErr"] is not empty then
+            -- the status callback stashed tor's real reason: fail fast with
+            -- it instead of waiting out the deadline
+            he1heNetOnionFail "No tor daemon reachable on 127.0.0.1:9051 (" & he1gGame["oxCtlErr"] \
+                  & "). Start tor with ControlPort 9051 and cookie or password auth, then Create/Join again."
+            exit he1heNetOnionTick
+         end if
+         if he1gGame["oxTicks"] > he1kHeOnionCtlTicks then
+            he1heNetOnionFail "Tor control connect timed out. Is a tor daemon running with its control port enabled (torrc: ControlPort 9051 + CookieAuthentication 1)? Tor Browser alone exposes no control port."
+         end if
+         break
+      case "boot"
+         put -1 into he1tProg
+         try
+            put oxBootstrapProgress() into he1tProg
+         catch he1tErr
+            he1heNetOnionFail "OnionXT went away mid-bootstrap: " & he1tErr
+            exit he1heNetOnionTick
+         end try
+         if he1tProg is 100 then
+            -- hand off: the host publishes its deterministic service, a
+            -- player dials the invite's address
+            if he1gGame["isHost"] is "true" then
+               he1heNetOnionPublish
+            else
+               he1heNetOnionDial
+            end if
+            exit he1heNetOnionTick
+         end if
+         -- status repaints on CHANGE only (the <= 4 Hz discipline)
+         if he1tProg is not he1gGame["oxProgShown"] then
+            put he1tProg into he1gGame["oxProgShown"]
+            he1heLobbyRefresh
+         end if
+         if he1gGame["oxTicks"] > he1kHeOnionBootTicks then
+            he1heNetOnionFail "Tor never finished bootstrapping (stuck at " & he1tProg \
+                  & "%). Check the daemon's network access, then Create/Join again."
+         end if
+         break
+      case "pub"
+         put "false" into he1tOkTxt
+         try
+            if oxServiceIsReady(he1gGame["oxService"]) then
+               put "true" into he1tOkTxt
+            end if
+         catch he1tErr
+            he1heNetOnionFail "OnionXT went away mid-publish: " & he1tErr
+            exit he1heNetOnionTick
+         end try
+         if he1tOkTxt is "true" then
+            -- belt: the PUBLISHED address must be the derived one the invite
+            -- carries; a drift here would hand out an invite nobody can dial
+            put empty into he1tAddrTxt
+            try
+               put oxServiceAddress(he1gGame["oxService"]) into he1tAddrTxt
+            catch he1tErr
+            end try
+            if he1tAddrTxt is not empty and he1tAddrTxt is not he1gGame["onionAddrTxt"] then
+               he1heNetOnionFail "published onion address does not match the invite (derivation drift: " \
+                     & he1tAddrTxt & " vs " & he1gGame["onionAddrTxt"] & ")"
+               exit he1heNetOnionTick
+            end if
+            put "ready" into he1gGame["oxState"]
+            he1heLobbyRefresh
+            he1heUISetStatus "Onion table live. Share this invite: " & he1heInviteTxt()
+            exit he1heNetOnionTick
+         end if
+         if he1gGame["oxTicks"] > he1kHeOnionPubTicks then
+            he1heNetOnionFail "Publishing the table's onion service timed out (descriptor never uploaded). Try again -- a freshly bootstrapped tor can take a minute more."
+         end if
+         break
+      case "dial"
+         if he1gGame["oxDialErr"] is not empty then
+            he1heNetOnionDialFail "Could not reach the host's onion: " & he1gGame["oxDialErr"] \
+                  & "  Is the host's table still open?"
+            exit he1heNetOnionTick
+         end if
+         put empty into he1tStreamState
+         try
+            put oxStreamState(he1gGame["oxStream"]) into he1tStreamState
+         catch he1tErr
+            -- v0.24.0: this exit is inside the DIAL state, which a redial
+            -- also passes through, so it takes the redial-aware handler like
+            -- every other dial failure. Fail-closed here would cancel the
+            -- poll tick and with it the election watchdog (see
+            -- he1heNetOnionDialFail); a gone OnionXT just exhausts the four
+            -- bounded attempts instead, and the election concludes.
+            he1heNetOnionDialFail "OnionXT went away mid-dial: " & he1tErr
+            exit he1heNetOnionTick
+         end try
+         if he1gGame["oxDialOpen"] is "open" or he1tStreamState is "connected" then
+            -- introduce ourselves: the admission token that rides rp1's
+            -- handshake event rides the stream's first wire line here.
+            -- 2e: the frame carries our APPLIED SEQ as a trailing item --
+            -- he1heAdmitTokenVerify reads items 1..3 only, so an old host
+            -- ignores it (full replay, dedup-shed) while a 2e host TRIMS
+            -- its reconnect replay to the wires past the mark ("since your
+            -- last ckpt", spec 9). A fresh joiner's mark is 0 = everything.
+            he1heNetTxTo he1gGame["oxStream"], "h" & tab & textDecode( \
+                  he1heAdmitTokenData(he1gGame["tableIdHex"], he1gGame["idPubHex"], he1gGame["idSecData"], "player"), "utf-8") \
+                  & tab & he1gGame["lastSeq"]
+            put "ready" into he1gGame["oxState"]
+            he1heLobbyRefresh
+            he1heUISetStatus "Connected to the host's onion -- waiting for the table."
+            exit he1heNetOnionTick
+         end if
+         if he1tStreamState is "unknown" then
+            -- the stream failed and OnionXT already forgot the handle; the
+            -- stashed oxDialErr usually carries why (checked above) -- this
+            -- is the catch-all
+            he1heNetOnionDialFail "The tor stream to the host closed during the dial. Check the invite and Join again."
+            exit he1heNetOnionTick
+         end if
+         -- a redial attempt gets a SHORT dial deadline (the watchdog is 60 s
+         -- away and a hung SOCKS dial must not eat the whole recovery window)
+         if he1gGame["oxRedialN"] > 0 then
+            if he1gGame["oxTicks"] > he1kHeRedialDialTicks then
+               he1heNetOnionDialFail "the redial dial deadline passed"
+            end if
+            exit he1heNetOnionTick
+         end if
+         if he1gGame["oxTicks"] > he1kHeOnionDialTicks then
+            he1heNetOnionDialFail "Dialing the host's onion timed out. The host may be offline, or its descriptor not yet published -- try again in a minute."
+         end if
+         break
+      case "redial"
+         -- 2e auto-redial (spec 9): waiting out the backoff before the next
+         -- attempt. Every step gates on hostLost -- if the 60 s wire-silence
+         -- watchdog concluded the election first, the redial stands down and
+         -- the transport closes without clobbering the election's status.
+         if he1gGame["hostLost"] is "true" then
+            he1heNetOnionRedialGiveup
+            exit he1heNetOnionTick
+         end if
+         subtract 1 from he1gGame["oxRedialWait"]
+         if he1gGame["oxRedialWait"] > 0 then
+            break
+         end if
+         put "redial attempt " & he1gGame["oxRedialN"] & " of " & he1kHeRedialMax \
+               & " -- dialing the host's onion again" & return after he1gGame["netLog"]
+         if he1gGame["netCap"] is "true" then
+            -- loopback harness: the dial itself needs a tor daemon; record
+            -- that the attempt fired so the sim can assert the schedule
+            put he1gGame["oxRedialN"] into he1gGame["oxRedialProbe"]
+            break
+         end if
+         put empty into he1gGame["oxDialErr"]
+         put empty into he1gGame["oxDialOpen"]
+         he1heNetOnionDial
+         break
+   end switch
+end he1heNetOnionTick
+
+command he1heNetOnionRedialArm
+   -- schedule the NEXT redial attempt after a lost host stream (2e, spec 9):
+   -- bounded attempts, doubling backoff, never past the election. The
+   -- watchdog keeps counting the whole time (a dead stream delivers no
+   -- wires), so "the redial must not race the election" is structural: the
+   -- election concludes on schedule and every redial step defers to it.
+   if he1gGame["hostLost"] is "true" then
+      he1heNetOnionRedialGiveup
+      exit he1heNetOnionRedialArm
+   end if
+   if he1gGame["oxRedialN"] >= he1kHeRedialMax then
+      -- exhausted with the host still gone: run the election NOW (the
+      -- pre-redial path did exactly this on stream death -- exhaustion is
+      -- the same positive signal, just retried), then stand down QUIETLY
+      -- behind it. The watchdog would conclude the same way; this just
+      -- never leaves a dead table election-less when the backoffs run out
+      -- first. Only the no-election exit (below) fails closed with a
+      -- status message of its own -- there is nothing there to overwrite.
+      put "redial gave up after " & he1kHeRedialMax & " attempts" & return after he1gGame["netLog"]
+      if he1gGame["gameOn"] is "true" then
+         he1heNetHostLost "the tor stream to the host stayed dead through " \
+               & he1kHeRedialMax & " redials"
+         -- v0.24.0: he1heNetHostLost has just NAMED the elected successor on the
+         -- status line, and that is the one message the player needs. The old
+         -- code called he1heNetOnionFail two lines later, whose he1heUISetStatus
+         -- overwrote it -- exactly what he1heNetOnionRedialGiveup's comment says
+         -- must never happen. BOTH exits from the redial state are quiet now
+         -- (one shape, one handler); the fail-CLOSED spelling below is only
+         -- for the exit where no election ran, so no status is being lost.
+         he1heNetOnionStandDown "Tor: host stream lost -- " & he1kHeRedialMax \
+               & " redials failed, election concluded (see the status line)"
+         exit he1heNetOnionRedialArm
+      end if
+      he1heNetOnionFail "Lost the tor stream to the host and " & he1kHeRedialMax \
+            & " redials failed. Join again with the same invite (if a host was elected, the net feed names it)."
+      exit he1heNetOnionRedialArm
+   end if
+   add 1 to he1gGame["oxRedialN"]
+   put he1heRedialWaitTicks(he1gGame["oxRedialN"]) into he1gGame["oxRedialWait"]
+   put "redial" into he1gGame["oxState"]
+   put 0 into he1gGame["oxTicks"]
+   put "redial host stream lost -- attempt " & he1gGame["oxRedialN"] & " in " \
+         & (he1gGame["oxRedialWait"] div 4) & " s" & return after he1gGame["netLog"]
+   he1heLobbyRefresh
+end he1heNetOnionRedialArm
+
+command he1heNetOnionRedialGiveup
+   -- the election concluded while we were redialing: stand down QUIETLY --
+   -- he1heNetHostLost already named the successor on the status line, and a
+   -- he1heNetOnionFail here would overwrite exactly the message the player
+   -- needs. Tear the transport down (H1) and keep the tor line honest.
+   put "redial stood down -- the election concluded first" & return after he1gGame["netLog"]
+   he1heNetOnionStandDown "Tor: host stream lost -- election concluded (see the status line)"
+end he1heNetOnionRedialGiveup
+
+command he1heNetOnionStandDown pTorLineTxt
+   -- the QUIET exit from the redial state (v0.24.0): tear the transport down
+   -- (H1) and keep the tor line honest, but NEVER touch the status line.
+   -- Both ways out of a redial -- the watchdog election concluding first
+   -- (he1heNetOnionRedialGiveup) and the attempts running out
+   -- (he1heNetOnionRedialArm's exhaustion branch) -- reach here only AFTER
+   -- he1heNetHostLost has named the elected successor there, and the two used to
+   -- disagree: the giveup path was quiet, the exhaustion path called
+   -- he1heNetOnionFail and clobbered the election's message with "Hotseat still
+   -- works". One handler, one behaviour: the player always ends up seeing who
+   -- was elected. he1heNetOnionFail stays the fail-CLOSED spelling for the paths
+   -- where no election ran (join time, an idle table).
+   put "failed" into he1gGame["oxState"]
+   put pTorLineTxt into he1gGame["oxFailTxt"]
+   if he1gGame["netCap"] is not "true" then
+      he1heNetStop
+   end if
+   he1heLobbyRefresh
+end he1heNetOnionStandDown
+
+command he1heNetOnionDialFail pWhyTxt
+   -- a dial failure means two DIFFERENT things depending on where we are, and
+   -- v0.23.0 served both with one handler -- the F1 defect. At JOIN time it is
+   -- fatal and he1heNetOnionFail (fail closed, "Join again") is right. MID-REDIAL
+   -- it is just this ATTEMPT failing, and he1heNetOnionFail would be catastrophic:
+   -- it calls he1heNetStop, which sets he1gGame["online"] to "false" and cancels the
+   -- pending he1heNetPollTick -- and he1heNetHostLossCheck exits on its FIRST line
+   -- when online is not "true", so the 60 s election watchdog would never
+   -- conclude and attempts 2..4 would never fire. The bounded 4-attempt
+   -- schedule collapsed to one, and the table was left with no host and no
+   -- successor -- against this member's written contract that the election
+   -- always concludes. So a redial-time failure re-arms the schedule instead:
+   -- he1heNetOnionRedialArm owns every decision from here (it stands down quietly
+   -- when the election already concluded, and runs the election ITSELF at
+   -- exhaustion), and the transport comes down only when something has decided
+   -- the table is over. Verified statically; needs an OXT pass (+ live tor).
+   --
+   -- This is the ONLY spelling of that fork. The first cut of the fix left
+   -- three dial-state sites testing oxRedialN inline beside this handler --
+   -- correct, but four copies of one rule, which is the exact shape that
+   -- produced F1: a later edit fixes the copy it can see. Every dial-state
+   -- failure calls here now, so the join-vs-redial decision has one home.
+   if he1gGame["oxRedialN"] > 0 then
+      put "tor    redial attempt " & he1gGame["oxRedialN"] & " failed: " & pWhyTxt \
+            & return after he1gGame["netLog"]
+      he1heNetOnionRedialArm
+      exit he1heNetOnionDialFail
+   end if
+   he1heNetOnionFail pWhyTxt
+end he1heNetOnionDialFail
+
+function he1heRedialWaitTicks pAttemptN
+   -- the redial backoff, PURE (H5) so the harness pins the schedule: attempt
+   -- N waits he1kHeRedialBaseTicks * 2^(N-1) poll ticks (8/16/32/64 = 2/4/8/16
+   -- s). Integer doubling, never a bit operator (H7).
+   local he1tTicks, he1tStep
+   put he1kHeRedialBaseTicks into he1tTicks
+   put 1 into he1tStep
+   repeat while he1tStep < pAttemptN
+      put he1tTicks * 2 into he1tTicks
+      add 1 to he1tStep
+   end repeat
+   return he1tTicks
+end he1heRedialWaitTicks
+
+command he1heNetOnionPublish
+   -- host, at bootstrap-done: publish the deterministic service. The
+   -- address was derived and shown at create time; oxServiceIsReady (the
+   -- "pub" state) gates "live".
+   local he1tSvc, he1tErr
+   try
+      oxCreateServiceFromSeed he1heHex2BinD(he1gGame["oxSeedHex"]), he1kHeOnionVirtPort, he1kHeOnionLocalPort
+      put the result into he1tSvc
+   catch he1tErr
+      he1heNetOnionFail "creating the onion service threw: " & he1heReadableErr(he1tErr)
+      exit he1heNetOnionPublish
+   end try
+   if he1tSvc is not an integer then
+      -- a bind failure on the local forward port, a control refusal, or a
+      -- missing SodiumXT expansion -- OnionXT's result says which
+      he1heNetOnionFail "could not publish the onion service: " & he1tSvc
+      exit he1heNetOnionPublish
+   end if
+   put he1tSvc into he1gGame["oxService"]
+   put "pub" into he1gGame["oxState"]
+   put 0 into he1gGame["oxTicks"]
+   he1heLobbyRefresh
+end he1heNetOnionPublish
+
+command he1heNetOnionDial
+   -- player, at bootstrap-done: SOCKS-dial the invite's onion. Completes
+   -- asynchronously; the "dial" state watches for open/failed. Every
+   -- SYNCHRONOUS failure below goes through he1heNetOnionDialFail, never
+   -- he1heNetOnionFail directly (v0.24.0): this handler is also the redial's
+   -- dialer, and tearing the transport down mid-redial cancels the poll tick
+   -- that the election watchdog rides on -- see he1heNetOnionDialFail.
+   local he1tStream, he1tErr, he1tCbRes
+   try
+      oxDial he1gGame["onionAddrTxt"], he1kHeOnionVirtPort
+      put the result into he1tStream
+   catch he1tErr
+      he1heNetOnionDialFail "dialing the host's onion threw: " & he1heReadableErr(he1tErr)
+      exit he1heNetOnionDial
+   end try
+   if he1tStream is not an integer then
+      he1heNetOnionDialFail "could not dial the host's onion: " & he1tStream
+      exit he1heNetOnionDial
+   end if
+   put he1tStream into he1gGame["oxStream"]
+   try
+      oxSetStreamCallback he1tStream, "he1heOnionStreamEvt"
+      put the result into he1tCbRes
+   catch he1tErr
+      put he1tErr into he1tCbRes
+   end try
+   if he1tCbRes is not empty then
+      he1heNetOnionDialFail "could not register the stream callback: " & he1tCbRes
+      exit he1heNetOnionDial
+   end if
+   put "dial" into he1gGame["oxState"]
+   put 0 into he1gGame["oxTicks"]
+   he1heLobbyRefresh
+end he1heNetOnionDial
+
+command he1heNetOnionHello pPeer, pTokenTxt
+   -- the onion-transport handshake: the SAME signed admission token that
+   -- rides rp1's handshake event arrives as the stream's first wire line
+   -- (the "h" frame). Verify-or-drop BEFORE any reply: a stranger's dial
+   -- earns nothing, not even the host's identity. On the host, a verified
+   -- hello is answered with OUR hello -- the stream is ordered, so the
+   -- joiner adopts the host key before the replayed wires reach it -- and
+   -- then the shared handshake path runs (admission, replay, roster),
+   -- identical to rp1's. 2e: the frame may carry the sender's APPLIED SEQ
+   -- as a fourth tab item (the redial resync mark, pinned as
+   -- hello_trim_frame in protocol-kat) -- he1heAdmitTokenVerify reads items
+   -- 1..3 only, so the extension is compatible both ways; the mark trims
+   -- the host's reconnect replay to the wires past it (spec 9 "since your
+   -- last ckpt"; a lie only starves the liar, dedup keeps any replay safe).
+   local he1tPubHex, he1tFromSeq, he1tSaved
+   put he1heAdmitTokenVerify(textEncode(pTokenTxt, "utf-8"), he1gGame["tableIdHex"]) into he1tPubHex
+   if he1tPubHex is empty then
+      put "drop   onion hello failed verification (stream " & pPeer & ")" & return after he1gGame["netLog"]
+      he1heNetOnionCloseStream pPeer
+      he1heLobbyRefresh
+      exit he1heNetOnionHello
+   end if
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item 4 of pTokenTxt into he1tFromSeq
+   set the itemDelimiter to he1tSaved
+   if he1tFromSeq is not a number then
+      put 0 into he1tFromSeq
+   end if
+   if he1gGame["isHost"] is "true" then
+      he1heNetTxTo pPeer, "h" & tab & textDecode( \
+            he1heAdmitTokenData(he1gGame["tableIdHex"], he1gGame["idPubHex"], he1gGame["idSecData"], "host"), "utf-8")
+   end if
+   he1heNetOnHandshake pPeer, textEncode(pTokenTxt, "utf-8"), he1tFromSeq
+end he1heNetOnionHello
+
+command he1heNetOnionCloseStream pStream
+   -- fail one stream closed and forget its buffer. netCap-guarded so the
+   -- loopback harness can drive the refusal path with no OnionXT loaded.
+   local he1tErr, he1tBufA
+   if he1gGame["netCap"] is not "true" then
+      try
+         oxCloseStream pStream
+      catch he1tErr
+      end try
+   end if
+   -- delete via a plain local copy (the he1heNetOnHandshake reconnect pattern),
+   -- and only when there IS an array: deleting a key of a never-filled
+   -- (empty, non-array) store is the kind of edge that throws on strict OXT
+   put he1gGame["oxBufA"] into he1tBufA
+   if he1tBufA is an array then
+      delete variable he1tBufA[pStream]
+      put he1tBufA into he1gGame["oxBufA"]
+   end if
+   put he1gGame["oxSeenA"] into he1tBufA
+   if he1tBufA is an array then
+      delete variable he1tBufA[pStream]
+      put he1tBufA into he1gGame["oxSeenA"]
+   end if
+end he1heNetOnionCloseStream
+
+command he1heNetOnionDrain
+   -- reassemble LF-framed wire lines from the per-stream byte buffers the
+   -- stream callback fills, and dispatch each through the SAME router the
+   -- rp1 events take (he1heNetOnMessage). Chunking is on a plain local copy of
+   -- each element (H6), written back after.
+   local he1tKeysTxt, he1tKey, he1tBuf, he1tNL, he1tLine, he1tDispErr
+   if he1gGame["oxBufA"] is not an array then
+      exit he1heNetOnionDrain
+   end if
+   put the keys of he1gGame["oxBufA"] into he1tKeysTxt
+   repeat for each line he1tKey in he1tKeysTxt
+      put he1gGame["oxBufA"][he1tKey] into he1tBuf
+      if he1tBuf is empty then
+         next repeat
+      end if
+      -- a peer streaming bytes with no line break is not speaking this
+      -- protocol: fail the stream closed rather than grow forever (bounded,
+      -- like the reorder buffer)
+      if the number of chars of he1tBuf > he1kHeOnionBufMax then
+         put "drop   oversized unframed buffer from stream " & he1tKey & return after he1gGame["netLog"]
+         he1heNetOnionCloseStream he1tKey
+         next repeat
+      end if
+      repeat forever
+         put offset(numToChar(10), he1tBuf) into he1tNL
+         if he1tNL is 0 then
+            exit repeat
+         end if
+         put char 1 to (he1tNL - 1) of he1tBuf into he1tLine
+         delete char 1 to he1tNL of he1tBuf
+         if he1tLine is not empty then
+            -- an inbound frame is attacker-controlled: one throwing dispatch
+            -- drops-and-logs (H4), never aborts the drain
+            try
+               he1heNetOnMessage he1tKey, textEncode(he1tLine, "utf-8")
+            catch he1tDispErr
+               put "poll   dropped a throwing onion frame: " & he1tDispErr & return after he1gGame["netLog"]
+            end try
+         end if
+      end repeat
+      -- write the remainder back ONLY if the stream survived its own frames:
+      -- a refused hello closes the stream mid-drain, and an unconditional
+      -- write-back would resurrect the deleted buffer key as an orphan
+      if he1tKey is among the keys of he1gGame["oxBufA"] then
+         put he1tBuf into he1gGame["oxBufA"][he1tKey]
+      end if
+   end repeat
+end he1heNetOnionDrain
+
+command he1heNetOnionDead
+   -- process stream deaths the callback recorded (poll-tick work, H2): drop
+   -- the peer mappings; a PLAYER losing its host stream is offline -- 2e's
+   -- liveness pass owes auto-reconnect, so today the honest answer is a
+   -- fail-closed message naming the Join-again recovery.
+   local he1tDead, he1tLine, he1tPub, he1tPeersA
+   put he1gGame["oxDeadList"] into he1tDead
+   if he1tDead is empty then
+      exit he1heNetOnionDead
+   end if
+   put empty into he1gGame["oxDeadList"]
+   repeat for each line he1tLine in he1tDead
+      if he1tLine is empty then
+         next repeat
+      end if
+      put he1gGame["peerPubA"][he1tLine] into he1tPub
+      if he1tPub is not empty then
+         put he1gGame["peerPubA"] into he1tPeersA
+         delete variable he1tPeersA[he1tLine]
+         put he1tPeersA into he1gGame["peerPubA"]
+         if he1gGame["peerByPub"][he1tPub] is he1tLine then
+            put empty into he1gGame["peerByPub"][he1tPub]
+         end if
+         put "-peer  " & char 1 to 12 of he1tPub & "  (stream closed)" & return after he1gGame["netLog"]
+      end if
+      he1heNetOnionCloseStream he1tLine
+      if he1gGame["isHost"] is not "true" and he1tLine is he1gGame["oxStream"] then
+         -- onion gives POSITIVE stream-death. 2e (v0.23.0): during play this
+         -- now arms the bounded AUTO-REDIAL first -- the host's onion address
+         -- is deterministic (spec 9: a restarted host keeps it), so redialing
+         -- the same invite is exactly the recovery -- while the 60 s
+         -- wire-silence watchdog keeps counting underneath; if the watchdog
+         -- concludes first, the election proceeds and the redial stands down
+         -- (he1heNetOnionRedialArm/he1heNetOnionTick gate on hostLost). Oracle
+         -- tables take exactly this path too -- the oracle IS the host role.
+         -- Outside play there is no hand to save: fail closed as before.
+         if he1gGame["gameOn"] is "true" and he1gGame["hostLost"] is not "true" then
+            put empty into he1gGame["oxStream"]
+            he1heNetOnionRedialArm
+            exit he1heNetOnionDead
+         end if
+         he1heNetOnionFail "Lost the tor stream to the host. Join again with the same invite to reconnect (if a host was elected, the net feed names it)."
+         exit he1heNetOnionDead
+      end if
+   end repeat
+   he1heLobbyRefresh
+end he1heNetOnionDead
+
+command he1heNetOnionFail pWhyTxt
+   -- fail CLOSED with a readable reason (the nocloud pattern): tear the
+   -- transport down, keep the reason on the tor line, never fall back to
+   -- another transport silently.
+   put "failed" into he1gGame["oxState"]
+   put "Tor: FAILED -- " & pWhyTxt into he1gGame["oxFailTxt"]
+   put "tor    " & pWhyTxt & return after he1gGame["netLog"]
+   he1heNetStop
+   he1heUISetStatus pWhyTxt & "  Hotseat still works."
+   he1heLobbyRefresh
+end he1heNetOnionFail
+
+function he1heNetOnionStatusTxt
+   -- the lobby's tor status line: the quickshare-pill states in holde-em
+   -- spelling. Empty when the DHT transport is selected and no onion state
+   -- lingers, so the line vanishes rather than nagging.
+   local he1tStateTxt, he1tProg, he1tErr
+   if he1gGame["transport"] is not "onion" \
+         and not (he1gCfg["transport"] is "onion" and he1gGame["online"] is not "true") then
+      return empty
+   end if
+   put he1gGame["oxState"] into he1tStateTxt
+   if he1tStateTxt is "failed" then
+      return he1gGame["oxFailTxt"]
+   end if
+   if not he1heHasOnion() then
+      return "Tor: OnionXT library not loaded (start using onionxt)"
+   end if
+   switch he1tStateTxt
+      case "ctl"
+         return "Tor: connecting to the control port (9051)..."
+      case "boot"
+         put 0 into he1tProg
+         try
+            put oxBootstrapProgress() into he1tProg
+         catch he1tErr
+         end try
+         return "Tor: bootstrapping " & he1tProg & "%..."
+      case "pub"
+         return "Tor: publishing the table's onion address..."
+      case "dial"
+         return "Tor: connecting to the host's onion..."
+      case "redial"
+         return "Tor: host stream lost -- redial attempt " & he1gGame["oxRedialN"] \
+               & " of " & he1kHeRedialMax & "..."
+      case "ready"
+         return "Tor: ready"
+   end switch
+   return "Tor: idle -- Create hosts an onion table; Join takes a 64hex@...onion invite"
+end he1heNetOnionStatusTxt
+
+on he1heOnionStatus pKind, pInfo
+   -- OnionXT status callback: STASH only -- every reaction happens on the
+   -- poll tick (H2). The control-error stash lets the "ctl" state fail fast
+   -- with tor's real reason instead of waiting out the deadline.
+   if he1gGame["transport"] is not "onion" then
+      exit he1heOnionStatus
+   end if
+   if pKind is "control" and pInfo begins with "error" then
+      put pInfo into he1gGame["oxCtlErr"]
+   end if
+end he1heOnionStatus
+
+on he1heOnionPeer pStream, pService, pPeerHost
+   -- a peer connected to our onion service (host side). Register the stream
+   -- callback NOW -- OnionXT's dispatch is synchronous and it arms the
+   -- first read right after this returns -- and note the stream so teardown
+   -- can close it (H1) even if its hello never verifies. The peer stays a
+   -- stranger until that hello does (he1heNetOnionHello).
+   local he1tCbErr
+   if he1gGame["online"] is not "true" or he1gGame["transport"] is not "onion" then
+      exit he1heOnionPeer
+   end if
+   try
+      oxSetStreamCallback pStream, "he1heOnionStreamEvt"
+   catch he1tCbErr
+      exit he1heOnionPeer
+   end try
+   put "true" into he1gGame["oxSeenA"][pStream]
+end he1heOnionPeer
+
+on he1heOnionStreamEvt pStream, pEvent, pData
+   -- per-stream OnionXT events: STASH bytes and flags only; the poll tick
+   -- does the protocol work (H2). pData is engine-socket Data -- decoded at
+   -- this edge (payloads are ASCII by construction, hex-framed fields, so a
+   -- chunk boundary can never split a multi-byte character). For "error"
+   -- events pData is OnionXT's error TEXT.
+   local he1tTxt
+   if he1gGame["transport"] is not "onion" then
+      exit he1heOnionStreamEvt
+   end if
+   switch pEvent
+      case "data"
+         put textDecode(pData, "utf-8") into he1tTxt
+         put he1tTxt after he1gGame["oxBufA"][pStream]
+         break
+      case "open"
+         if pStream is he1gGame["oxStream"] then
+            put "open" into he1gGame["oxDialOpen"]
+         end if
+         break
+      case "error"
+         if pStream is he1gGame["oxStream"] then
+            put pData into he1gGame["oxDialErr"]
+         end if
+         put pStream & return after he1gGame["oxDeadList"]
+         break
+      case "closed"
+         put pStream & return after he1gGame["oxDeadList"]
+         break
+   end switch
+end he1heOnionStreamEvt
+
+command he1heNetGameInit
+   -- reset the online-game store (he1heTableCreate/he1heTableJoin + netsim contexts).
+   -- stacksBy is cleared deliberately: the parked hotseat table leaves its own
+   -- stack numbers behind, and the sit fold seeds a seat's stack only when the
+   -- slot is EMPTY -- online stacks must come from the signed cfg, never from
+   -- a leftover hotseat game (Leave rebuilds the hotseat table anyway).
+   put empty into he1gGame["boxByPub"]
+   put empty into he1gGame["seatByPub"]
+   put empty into he1gGame["pubBySeat"]
+   put empty into he1gGame["seatedList"]
+   put empty into he1gGame["stacksBy"]
+   put 0 into he1gGame["lastBB"]
+   put "false" into he1gGame["joinSent"]
+   put "false" into he1gGame["gameOn"]
+   put "true" into he1gGame["autoNext"]
+   put empty into he1gGame["catchUpTo"]
+   put he1kHeGenesisPrev into he1gGame["rcptHeadHex"]
+   put empty into he1gGame["oDeal"]
+   -- spec 9 host-loss election state (2e/Phase 3)
+   put "false" into he1gGame["hostLost"]
+   put 0 into he1gGame["hostQuietTicks"]
+   put empty into he1gGame["electedHostPubHex"]
+   -- 2e liveness: sit-out + consecutive-miss state (game-scoped; the
+   -- per-hand bank lives under oDeal) and the act-timer's turn mark
+   put empty into he1gGame["sitOutBy"]
+   put empty into he1gGame["missCntBy"]
+   put empty into he1gGame["turnKey"]
+   put 0 into he1gGame["turnStartMs"]
+   put "false" into he1gGame["timeoutSent"]
+   put "false" into he1gGame["turnStale"]
+   put empty into he1gGame["turnClockTxt"]
+   -- v0.24.0: the engine-fold outcome the timeout/act folds read back
+   -- (he1heNetEngineFold), and the "table parked for sit-outs" latch that makes
+   -- the between-hands beat re-armable from any path (he1heNetHandKick)
+   put "false" into he1gGame["foldApplied"]
+   put "false" into he1gGame["handWait"]
+   put empty into he1gGame["seenMsByPub"]
+end he1heNetGameInit
+
+command he1heNetHandReset
+   -- per-hand deal store; runs when a handStart wire folds. Sent-flags are the
+   -- redelivery/replay debounce for every emission this hand.
+   put empty into he1gGame["oDeal"]
+   put "false" into he1gGame["oDeal"]["commitSent"]
+   put "false" into he1gGame["oDeal"]["sealSent"]
+   put "false" into he1gGame["oDeal"]["holesSent"]
+   put "false" into he1gGame["oDeal"]["anteSent"]
+   put "false" into he1gGame["oDeal"]["sbSent"]
+   put "false" into he1gGame["oDeal"]["bbSent"]
+   put "false" into he1gGame["oDeal"]["revealSent"]
+   put "false" into he1gGame["oDeal"]["settleSent"]
+   put "false" into he1gGame["oDeal"]["receiptSent"]
+   put "false" into he1gGame["oDeal"]["auditSent"]
+   put "false" into he1gGame["oDeal"]["settleDone"]
+   put "false" into he1gGame["oDeal"]["nextArmed"]
+   put 0 into he1gGame["oDeal"]["commitN"]
+   put 0 into he1gGame["oDeal"]["sealN"]
+   put 0 into he1gGame["oDeal"]["holeN"]
+   put 0 into he1gGame["oDeal"]["revealN"]
+   put 0 into he1gGame["oDeal"]["receiptN"]
+   put 0 into he1gGame["oDeal"]["dealerSeat"]
+   put 0 into he1gGame["oDeal"]["dealCount"]
+   put empty into he1gGame["oDeal"]["boardList"]
+   put empty into he1gGame["oDeal"]["myHoles"]
+   put empty into he1gGame["oDeal"]["mySeedHex"]
+   -- 2e liveness: ONE time-bank per hand per seat (spec 8.1); the act
+   -- timer's turn mark resets with the hand
+   put empty into he1gGame["oDeal"]["bankUsedBy"]
+   put empty into he1gGame["turnKey"]
+   put 0 into he1gGame["turnStartMs"]
+   put "false" into he1gGame["timeoutSent"]
+   put "false" into he1gGame["turnStale"]
+   put empty into he1gGame["turnClockTxt"]
+end he1heNetHandReset
+
+function he1heNetMySeat
+   local he1tSeat
+   put he1gGame["seatByPub"][he1gGame["idPubHex"]] into he1tSeat
+   if he1tSeat is not a number then
+      return 0
+   end if
+   return he1tSeat
+end he1heNetMySeat
+
+function he1heNetSeatPos pSeatNum
+   -- a seat's CONTRIBUTOR position = its 1-based index in the hand's ascending
+   -- occupied-seat list (sparse seats pack down to 1..count; the seed XOR and
+   -- commit arrays are position-indexed, spec 7.1)
+   local he1tOccList, he1tPos, he1tSeatNum
+   set the itemDelimiter to comma
+   put he1gGame["state"]["occ"] into he1tOccList
+   put 0 into he1tPos
+   repeat for each item he1tSeatNum in he1tOccList
+      add 1 to he1tPos
+      if he1tSeatNum is pSeatNum then
+         return he1tPos
+      end if
+   end repeat
+   return 0
+end he1heNetSeatPos
+
+function he1heNetSeatAtPos pPos
+   local he1tOccList
+   set the itemDelimiter to comma
+   put he1gGame["state"]["occ"] into he1tOccList
+   return item pPos of he1tOccList
+end he1heNetSeatAtPos
+
+function he1heNetOracleDeal
+   -- TRUE when the folded dealLevel named the oracle as this hand's dealer
+   return (he1gGame["oDeal"]["oracleDeal"] is "true")
+end he1heNetOracleDeal
+
+function he1heNetDealerPubHex
+   -- the key that deals THIS hand: the oracle (host) at Level 1, the
+   -- button seat's key at Level 0
+   if he1heNetOracleDeal() then
+      return he1gGame["hostPubHex"]
+   end if
+   return he1gGame["pubBySeat"][he1gGame["oDeal"]["dealerSeat"]]
+end he1heNetDealerPubHex
+
+function he1heNetWeDeal
+   -- do WE run the dealer side of this hand?
+   local he1tSeat
+   if he1heNetOracleDeal() then
+      return (he1gGame["isHost"] is "true")
+   end if
+   put he1heNetMySeat() into he1tSeat
+   return (he1tSeat > 0 and he1tSeat is he1gGame["oDeal"]["dealerSeat"])
+end he1heNetWeDeal
+
+function he1heNetContribCount
+   -- how many positions contribute commit/seal/reveal entropy this hand:
+   -- every dealt seat, plus the oracle's extra position at Level 1
+   local he1tCount
+   put he1gGame["oDeal"]["dealCount"] into he1tCount
+   if he1tCount is not a number then
+      return 0
+   end if
+   if he1heNetOracleDeal() then
+      return he1tCount + 1
+   end if
+   return he1tCount
+end he1heNetContribCount
+
+function he1heNetMyContribPos
+   -- OUR contributor position: a seat's packed position; the dealing oracle
+   -- takes dealCount+1; everyone else (a spectator, a pre-sit joiner) is 0
+   local he1tSeat, he1tCount
+   put he1heNetMySeat() into he1tSeat
+   if he1tSeat > 0 then
+      return he1heNetSeatPos(he1tSeat)
+   end if
+   if he1heNetOracleDeal() and he1gGame["isHost"] is "true" then
+      put he1gGame["oDeal"]["dealCount"] into he1tCount
+      if he1tCount is a number and he1tCount > 0 then
+         return he1tCount + 1
+      end if
+   end if
+   return 0
+end he1heNetMyContribPos
+
+function he1heNetContribPosOk pPos, pFromSeat, pFromHex
+   -- a wire's contributor-position claim is trusted only when its SENDER
+   -- owns the position: seats own their packed positions (seatByPub is the
+   -- authority, never the body); the oracle -- the host key, dealing at
+   -- Level 1 with no seat -- owns exactly position dealCount+1.
+   local he1tCount
+   if pPos is not a number then
+      return false
+   end if
+   if pFromSeat > 0 then
+      return (he1heNetSeatAtPos(pPos) is pFromSeat)
+   end if
+   if he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"] then
+      put he1gGame["oDeal"]["dealCount"] into he1tCount
+      if he1tCount is a number and pPos is (he1tCount + 1) then
+         return true
+      end if
+   end if
+   return false
+end he1heNetContribPosOk
+
+function he1heTimeoutVerbOf pStateA, pSeatNum
+   -- the spec 9 expiry prescription, PURE (H5): check when the seat owes
+   -- nothing this street, fold otherwise. Every client re-derives this and
+   -- refuses a host timeout naming any other verb (a host may never fold a
+   -- seat that could check).
+   local he1tOwe
+   put pStateA["betCur"] - pStateA["streetBy"][pSeatNum] into he1tOwe
+   if he1tOwe > 0 then
+      return "fold"
+   end if
+   return "check"
+end he1heTimeoutVerbOf
+
+function he1heTimeoutPostOf pStateA
+   -- the pending FORCED post in the blinds phase, PURE (H5): antes first
+   -- (lowest unposted occupied seat -- deterministic), then the SB, then
+   -- the BB, each at exactly the amount the engine will accept
+   -- (min(due, stack) -- he1heBetApply's own rule). Empty when nothing is
+   -- owed or the phase is not blinds. This is what lets the host unwedge
+   -- a hand whose seat went dark BEFORE its blind posted: the timeout bid
+   -- posts it (spec 9's "auto ... posts" for a sitting-out seat).
+   local he1tOccList, he1tSeatNum
+   if pStateA["phase"] is not "blinds" then
+      return empty
+   end if
+   set the itemDelimiter to comma
+   if pStateA["ante"] > 0 then
+      put pStateA["occ"] into he1tOccList
+      repeat for each item he1tSeatNum in he1tOccList
+         if pStateA["antePostedBy"][he1tSeatNum] is not "true" then
+            return "bidAnte" & comma & he1tSeatNum & comma \
+                  & min(pStateA["ante"], pStateA["stackBy"][he1tSeatNum])
+         end if
+      end repeat
+   end if
+   if pStateA["sbPosted"] is not "true" then
+      return "bidSB" & comma & pStateA["sbSeat"] & comma \
+            & min(pStateA["sb"], pStateA["stackBy"][pStateA["sbSeat"]])
+   end if
+   return "bidBB" & comma & pStateA["bbSeat"] & comma \
+         & min(pStateA["bb"], pStateA["stackBy"][pStateA["bbSeat"]])
+end he1heTimeoutPostOf
+
+command he1heNetTurnMark
+   -- (re)aim the act timer at whoever the folded engine state says is due:
+   -- the acting seat, or -- once the deal is complete -- the next forced
+   -- post in the blinds phase. Called after every fold that can move the
+   -- action; the clock restarts only when the SUBJECT changes, so a
+   -- redelivered wire never extends a deadline. All clients run this off
+   -- the same wires, so every clock starts at the same wire (transport
+   -- jitter apart -- he1kHeActSkewSecs is the tolerance).
+   local he1tStateA, he1tKeyTxt, he1tPostTxt
+   put he1gGame["state"] into he1tStateA
+   put empty into he1tKeyTxt
+   if he1tStateA["phase"] is "acting" and he1tStateA["toAct"] > 0 then
+      put "act" & comma & he1tStateA["toAct"] & comma & 0 into he1tKeyTxt
+   else if he1tStateA["phase"] is "blinds" \
+         and he1gGame["oDeal"]["dealCount"] is a number \
+         and he1gGame["oDeal"]["holeN"] >= he1gGame["oDeal"]["dealCount"] then
+      -- the forced-post timer arms only once the deal is COMPLETE: a
+      -- stalled L0 deal (a contributor never commits/seals) has no timeout
+      -- prescription at Level 0 -- recorded, not invented; spec 9's
+      -- deal-phase timeout is the L2 void-and-audit machine's
+      put he1heTimeoutPostOf(he1tStateA) into he1tPostTxt
+      if he1tPostTxt is not empty then
+         put he1tPostTxt into he1tKeyTxt
+      end if
+   end if
+   if he1tKeyTxt is not he1gGame["turnKey"] then
+      put he1tKeyTxt into he1gGame["turnKey"]
+      he1heNetTurnClockStart
+      if he1tKeyTxt is empty and he1gGame["turnClockTxt"] is not empty then
+         put empty into he1gGame["turnClockTxt"]
+         he1heHudMark
+      end if
+   end if
+end he1heNetTurnMark
+
+command he1heNetTurnClockStart
+   -- start the CURRENT turn's interval on this client's own clock. One place
+   -- (v0.24.0) because two callers need the same three decisions, and the
+   -- third one is the F2 fix: whether this clock is a REPLAYED one.
+   -- A client catching up by full replay folds the turn-opening wire NOW, so
+   -- turnStartMs becomes "now" for a turn that opened minutes ago at every
+   -- other node. When the host's live timeout wire then arrives -- past the
+   -- replay's announced head, so the seq-keyed waiver in he1heNetTimeoutOk does
+   -- NOT apply -- this client compares ~10 s elapsed against a 90 s limit and
+   -- refuses it as premature. Every other node folded the seat; this one is
+   -- one action behind FOREVER and every later wire engine-rejects out of
+   -- turn, with no chain-level signal. So the clock REMEMBERS that it was
+   -- started during catch-up, and he1heNetTimeoutOk waives the deadline for that
+   -- turn ONLY -- the next live turn mark clears the flag, because a waiver
+   -- that outlived its turn would let a rushing host fold a live seat early.
+   put the milliseconds into he1gGame["turnStartMs"]
+   put "false" into he1gGame["timeoutSent"]
+   if he1gGame["catchUpTo"] is a number then
+      put "true" into he1gGame["turnStale"]
+   else
+      put "false" into he1gGame["turnStale"]
+   end if
+end he1heNetTurnClockStart
+
+command he1heNetTimeoutRearm
+   -- a host timeout wire the ENGINE refused (he1heBetApply rejected it: a raced
+   -- prescription, a stale seat) leaves turnKey untouched, so he1heNetTurnMark
+   -- never runs -- and he1heNetTurnMark is the ONLY thing that clears
+   -- timeoutSent. The host's own guard then exited on every later tick, it
+   -- never re-emitted, the seat never acted and the table stalled SILENTLY:
+   -- exactly the failure the timer exists to prevent (F3). Restart the
+   -- interval instead. Every client folded the SAME refused wire, so every
+   -- clock restarts on the same wire and the interval-on-one-clock property
+   -- survives; the host re-emits one full act period later, which is a
+   -- BOUNDED retry -- clearing the latch alone would have re-emitted the same
+   -- refused wire at 4 Hz forever.
+   he1heNetTurnClockStart
+end he1heNetTimeoutRearm
+
+function he1heNetTurnLimitSecs pSeatNum
+   -- the CURRENT subject's full allowance in seconds: 0 for a sitting-out
+   -- seat (it times out instantly -- spec 9's auto fold/post), else the
+   -- cfg's act timer plus the one per-hand time-bank while unspent
+   local he1tLimit
+   if he1gGame["sitOutBy"][pSeatNum] is "true" then
+      return 0
+   end if
+   put he1heNetCfgVal("act", he1kHeDefaultActSecs) into he1tLimit
+   if he1gGame["oDeal"]["bankUsedBy"][pSeatNum] is not "true" then
+      add he1heNetCfgVal("bank", he1kHeDefaultBankSecs) to he1tLimit
+   end if
+   return he1tLimit
+end he1heNetTurnLimitSecs
+
+command he1heNetActTimerTick
+   -- the per-tick act-timer budget (H2: poll tick, never per-frame). Every
+   -- client runs the countdown for the HUD (repaint only when the shown
+   -- second changes -- well under the 4 Hz ceiling); the HOST additionally
+   -- emits the signed timeout wire at expiry, once per turn (timeoutSent),
+   -- with the bank flag that makes the spend transcript-visible.
+   local he1tKeyTxt, he1tKindTxt, he1tSeatNum, he1tAmt, he1tLimit, he1tRemain, he1tShowTxt, he1tVerb
+   local he1tBankTxt
+   if he1gGame["online"] is not "true" or he1gGame["gameOn"] is not "true" \
+         or he1gGame["hostLost"] is "true" then
+      exit he1heNetActTimerTick
+   end if
+   put he1gGame["turnKey"] into he1tKeyTxt
+   if he1tKeyTxt is empty then
+      exit he1heNetActTimerTick
+   end if
+   set the itemDelimiter to comma
+   put item 1 of he1tKeyTxt into he1tKindTxt
+   put item 2 of he1tKeyTxt into he1tSeatNum
+   put item 3 of he1tKeyTxt into he1tAmt
+   put he1heNetTurnLimitSecs(he1tSeatNum) into he1tLimit
+   put he1tLimit - ((the milliseconds - he1gGame["turnStartMs"]) div 1000) into he1tRemain
+   if he1tRemain < 0 then
+      put 0 into he1tRemain
+   end if
+   -- HUD: the acting seat's remaining seconds, on-change only (<= 1 Hz in
+   -- practice; the blinds-phase post timer stays un-painted -- it exists to
+   -- unwedge, not to pressure)
+   put empty into he1tShowTxt
+   if he1tKindTxt is "act" then
+      put he1tRemain & "s" into he1tShowTxt
+   end if
+   if he1tShowTxt is not he1gGame["turnClockTxt"] then
+      put he1tShowTxt into he1gGame["turnClockTxt"]
+      he1heHudMark
+   end if
+   -- host: emit the timeout wire at expiry (the seat's bank rides as
+   -- bank=1 exactly when this deadline included it)
+   if he1gGame["isHost"] is not "true" or he1tRemain > 0 \
+         or he1gGame["timeoutSent"] is "true" then
+      exit he1heNetActTimerTick
+   end if
+   put "true" into he1gGame["timeoutSent"]
+   if he1gGame["oDeal"]["bankUsedBy"][he1tSeatNum] is "true" \
+         or he1gGame["sitOutBy"][he1tSeatNum] is "true" then
+      put ",bank=0" into he1tBankTxt
+   else
+      put ",bank=1" into he1tBankTxt
+   end if
+   if he1tKindTxt is "act" then
+      put he1heTimeoutVerbOf(he1gGame["state"], he1tSeatNum) into he1tVerb
+      he1heNetSendAction "act", "verb=" & he1tVerb & ",amount=0,seat=" & he1tSeatNum \
+            & ",timeout=1" & he1tBankTxt
+   else
+      he1heNetSendAction he1tKindTxt, "amount=" & he1tAmt & ",seat=" & he1tSeatNum \
+            & ",timeout=1" & he1tBankTxt
+   end if
+end he1heNetActTimerTick
+
+command he1heNetTimeoutMiss pSeatNum
+   -- consecutive-miss bookkeeping after a folded timeout (spec 9: "seat
+   -- goes to sit-out after (config) misses"). Derived from the transcript
+   -- alone -- every client counts the same wires -- so the auto-sit-out is
+   -- consensus, not a clock call.
+   if he1gGame["missCntBy"][pSeatNum] is not a number then
+      put 0 into he1gGame["missCntBy"][pSeatNum]
+   end if
+   add 1 to he1gGame["missCntBy"][pSeatNum]
+   if he1gGame["missCntBy"][pSeatNum] >= he1heNetCfgVal("miss", he1kHeDefaultMisses) \
+         and he1gGame["sitOutBy"][pSeatNum] is not "true" then
+      put "true" into he1gGame["sitOutBy"][pSeatNum]
+      put "sitout seat " & pSeatNum & " sits out after " \
+            & he1gGame["missCntBy"][pSeatNum] & " missed turns" & return after he1gGame["netLog"]
+      he1heHudMark
+   end if
+end he1heNetTimeoutMiss
+
+function he1heNetTimeoutOk pBodyA, pSeatNum, pKindTxt, pAmt
+   -- verify a host-authored timeout wire before folding it (every client,
+   -- spec 9): the verb/amount must be EXACTLY the prescription our own
+   -- engine state derives, the bank flag must match the transcript-derived
+   -- bank state, and the deadline must genuinely have passed on OUR clock
+   -- (he1kHeActSkewSecs tolerance; waived for a sitting-out seat -- the seat
+   -- itself asked -- and during catch-up replay, where the live table
+   -- already policed it). Returns empty when the wire folds, else the
+   -- refusal reason (logged loudly: a rushing host is EVIDENCE).
+   local he1tLimit, he1tElapsed, he1tPostTxt
+   if pKindTxt is "act" then
+      if pBodyA["verb"] is not he1heTimeoutVerbOf(he1gGame["state"], pSeatNum) \
+            or pAmt is not 0 then
+         return "wrong prescription (" & pBodyA["verb"] & ")"
+      end if
+   else
+      put he1heTimeoutPostOf(he1gGame["state"]) into he1tPostTxt
+      if he1tPostTxt is not (pKindTxt & comma & pSeatNum & comma & pAmt) then
+         return "wrong forced post"
+      end if
+   end if
+   if pBodyA["bank"] is "1" then
+      if he1gGame["oDeal"]["bankUsedBy"][pSeatNum] is "true" \
+            or he1gGame["sitOutBy"][pSeatNum] is "true" then
+         return "bank already spent"
+      end if
+   else
+      if he1gGame["oDeal"]["bankUsedBy"][pSeatNum] is not "true" \
+            and he1gGame["sitOutBy"][pSeatNum] is not "true" then
+         return "bank denied (unspent bank needs bank=1)"
+      end if
+   end if
+   if he1gGame["sitOutBy"][pSeatNum] is "true" then
+      return empty   -- instant by construction; no clock to check
+   end if
+   if he1gGame["catchUpTo"] is a number and he1gGame["lastSeq"] <= he1gGame["catchUpTo"] then
+      return empty   -- historical: the live table policed the clock
+   end if
+   if he1gGame["turnStale"] is "true" then
+      -- v0.24.0 (F2): THIS turn's clock was started while a replay was
+      -- streaming, so it times the replay, not the table -- the turn really
+      -- opened long before we heard about it. The wire's seq cannot express
+      -- that (the live timeout arrives PAST the replay's head, so the waiver
+      -- above never fires), and refusing it left this client one action
+      -- behind for the rest of the session with nothing on the chain to say
+      -- so. Waive the deadline for this turn only; he1heNetTurnClockStart clears
+      -- the flag at the next live turn mark. The verb/amount and bank checks
+      -- above still run -- those are transcript-deterministic, so a catching-
+      -- up client polices them exactly as well as a live one.
+      return empty
+   end if
+   put he1heNetTurnLimitSecs(pSeatNum) into he1tLimit
+   put (the milliseconds - he1gGame["turnStartMs"]) div 1000 into he1tElapsed
+   if he1tElapsed < he1tLimit - he1kHeActSkewSecs then
+      return "deadline not passed (" & he1tElapsed & "s of " & he1tLimit & "s)"
+   end if
+   return empty
+end he1heNetTimeoutOk
+
+function he1heNetSeatedWithChipsList
+   -- the seats that are SEATED and still hold chips, ascending. The base of
+   -- the occupancy rule, factored out at v0.24.0 (F10): he1heNetHandKick had its
+   -- own copy of this scan to tell an over table (one stack left) from a
+   -- parked one, and the copy had already drifted -- it omitted nothing yet,
+   -- but only he1heNetNextOccList was pinned by the harness, so a change to the
+   -- rule could have silently held in one place and not the other. One
+   -- definition, two readers.
+   local he1tOut, he1tSeatNum, he1tSeatedList
+   set the itemDelimiter to comma
+   put he1gGame["seatedList"] into he1tSeatedList
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in he1tSeatedList
+      if he1gGame["stacksBy"][he1tSeatNum] > 0 then
+         put he1tSeatNum & comma after he1tOut
+      end if
+   end repeat
+   if he1tOut is not empty then
+      delete char -1 of he1tOut
+   end if
+   return he1tOut
+end he1heNetSeatedWithChipsList
+
+function he1heNetNextOccList
+   -- the seats the NEXT hand deals to: seated, holding chips, and not
+   -- sitting out (spec 9: a sitting-out seat is dealt out until its signed
+   -- return). One place, so the host's he1heNetHandKick and the harness pin
+   -- the same rule -- and since v0.24.0 the "seated with chips" half is
+   -- he1heNetSeatedWithChipsList, the same scan the parked-table test reads.
+   local he1tOut, he1tSeatNum, he1tChipList
+   set the itemDelimiter to comma
+   put he1heNetSeatedWithChipsList() into he1tChipList
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in he1tChipList
+      if he1gGame["sitOutBy"][he1tSeatNum] is not "true" then
+         put he1tSeatNum & comma after he1tOut
+      end if
+   end repeat
+   if he1tOut is not empty then
+      delete char -1 of he1tOut
+   end if
+   return he1tOut
+end he1heNetNextOccList
+
+function he1heNetPubIsLive pPubHex
+   -- is this admitted key present RIGHT NOW? Answered from state we already
+   -- keep -- no new wire, no new frame kind (v0.24.0, F7). he1heNetSeatLateJoiners
+   -- used to seat every admitted key that had ever emitted a join wire, and a
+   -- peer that joined and then closed its stack stays in boxByPub/admittedA
+   -- forever: at the next hand boundary the ghost was handed the lowest empty
+   -- seat and a full opening stack, timed out every turn until two misses sat
+   -- it out, and held the seat for the rest of the session (seats are never
+   -- released).
+   -- The two signals, and exactly what each proves:
+   --   * a CURRENT transport handle (peerByPub). On the ONION transport this
+   --     is authoritative: stream death is a positive event and
+   --     he1heNetOnionDead clears the mapping within a poll tick, so a closed
+   --     stack stops being live immediately.
+   --   * recency of the last wire or handshake from that key (seenMsByPub,
+   --     stamped in he1heNetApplyWire and he1heNetOnHandshake). rp1 surfaces NO
+   --     disconnect event -- wire-silence is the only honest signal it has,
+   --     which is why the host-loss watchdog is built on silence too -- so on
+   --     rp1 a handle alone would keep a departed peer "live" forever, i.e.
+   --     would not fix the ghost at all.
+   -- The rp1 window is deliberately generous (he1kHeSeatLiveSecs): a joined but
+   -- unseated observer emits nothing on its own, so its stamp is usually just
+   -- its join wire, and the boundary that would seat it is normally seconds
+   -- to a couple of minutes later. An observer that has waited out the whole
+   -- window is treated as gone and stays an observer -- a fail-SAFE guess
+   -- (reconnecting re-stamps it), and the honest limit of what rp1 can prove.
+   -- Verified statically; needs an OXT pass.
+   local he1tSeenMs
+   if pPubHex is he1gGame["idPubHex"] then
+      return true   -- ourselves: the host running this check is present
+   end if
+   if he1gGame["peerByPub"][pPubHex] is empty then
+      return false
+   end if
+   if he1gGame["transport"] is "onion" then
+      return true
+   end if
+   put he1gGame["seenMsByPub"][pPubHex] into he1tSeenMs
+   if he1tSeenMs is not a number then
+      return false
+   end if
+   return ((the milliseconds - he1tSeenMs) <= (he1kHeSeatLiveSecs * 1000))
+end he1heNetPubIsLive
+
+command he1heNetSeatLateJoiners
+   -- HOST, at each hand boundary (2e late-join, spec 9's reconnect family):
+   -- any admitted key that has JOINED (bound a session box on-chain) but
+   -- holds no seat is assigned the lowest empty seat, ascending-pubkey
+   -- order (deterministic, like the game-start seating), up to the signed
+   -- cfg's seat count -- each as a signed sit wire, so every client folds
+   -- the same seating. No empty seat = the joiner stays an OBSERVER (it
+   -- folds the whole game already; the replay machinery carried it here).
+   -- v0.24.0 (F7): "has joined" is a HISTORICAL fact and was the only test --
+   -- so a departed peer was seated as a ghost. Current liveness is now
+   -- required (he1heNetPubIsLive, which carries what each transport can prove).
+   -- OPEN DECISION, deliberately not invented here: a SPECTATOR (spec 4's
+   -- read-only role) is still indistinguishable from a player at this point.
+   -- The admission token has a role field, but every client this build can
+   -- talk to sends "player" in it, so refusing on role would refuse real
+   -- players; declaring spectator intent needs a wire/UI decision, and this
+   -- change was scoped to introduce none. Recorded in CLAUDE.md and
+   -- IMPLEMENTATION-PLAN.md.
+   local he1tPubHex, he1tPubsTxt, he1tSeatNum, he1tMaxSeats
+   if he1gGame["isHost"] is not "true" then
+      exit he1heNetSeatLateJoiners
+   end if
+   put empty into he1tPubsTxt
+   repeat for each key he1tPubHex in he1gGame["boxByPub"]
+      if he1gGame["admittedA"][he1tPubHex] is "true" \
+            and he1gGame["seatByPub"][he1tPubHex] is empty then
+         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+            next repeat   -- the oracle never takes a seat
+         end if
+         if not he1heNetPubIsLive(he1tPubHex) then
+            put "join   not seating " & char 1 to 8 of he1tPubHex \
+                  & " -- joined but not present now" & return after he1gGame["netLog"]
+            next repeat
+         end if
+         put he1tPubHex & return after he1tPubsTxt
+      end if
+   end repeat
+   if he1tPubsTxt is empty then
+      exit he1heNetSeatLateJoiners
+   end if
+   sort lines of he1tPubsTxt
+   put he1heNetCfgVal("seats", he1kHeDefaultSeats) into he1tMaxSeats
+   repeat for each line he1tPubHex in he1tPubsTxt
+      if he1tPubHex is empty then
+         next repeat
+      end if
+      repeat with he1tSeatNum = 1 to he1tMaxSeats
+         if he1gGame["pubBySeat"][he1tSeatNum] is empty then
+            put "join   seating late joiner " & char 1 to 8 of he1tPubHex \
+                  & " at seat " & he1tSeatNum & return after he1gGame["netLog"]
+            he1heNetSendAction "sit", "seat=" & he1tSeatNum & ",pub=" & he1tPubHex
+            exit repeat
+         end if
+      end repeat
+   end repeat
+end he1heNetSeatLateJoiners
+
+command he1heNetStartGame
+   -- HOST only: seat everyone who has joined (published a session box pub) and
+   -- kick off hand 1. Seats are assigned in ascending-pubkey order, so the
+   -- assignment is deterministic and every client could re-derive it; the sit
+   -- wires make it explicit and signed. Late joiners sit out until the sit-in
+   -- flow arrives with liveness (2e).
+   local he1tPubHex, he1tPubsTxt, he1tSeatNum, he1tJoinedN
+   if he1gGame["online"] is not "true" or he1gGame["isHost"] is not "true" then
+      exit he1heNetStartGame
+   end if
+   if he1gGame["gameOn"] is "true" then
+      exit he1heNetStartGame
+   end if
+   put empty into he1tPubsTxt
+   put 0 into he1tJoinedN
+   repeat for each key he1tPubHex in he1gGame["boxByPub"]
+      if he1gGame["admittedA"][he1tPubHex] is "true" then
+         -- Phase 3: the ORACLE hosts and deals but never takes a seat --
+         -- its join still bound a session box (the seedSeals seal to it)
+         if he1gGame["oracleHost"] is "true" and he1tPubHex is he1gGame["idPubHex"] then
+            next repeat
+         end if
+         put he1tPubHex & return after he1tPubsTxt
+         add 1 to he1tJoinedN
+      end if
+   end repeat
+   if he1tJoinedN < 2 then
+      he1heUISetStatus "Need at least 2 joined players to start (have " & he1tJoinedN & ")."
+      exit he1heNetStartGame
+   end if
+   if he1tJoinedN > he1kHeMaxSeats then
+      he1heUISetStatus "Too many joined players for the table (" & he1tJoinedN & ")."
+      exit he1heNetStartGame
+   end if
+   sort lines of he1tPubsTxt
+   put 0 into he1tSeatNum
+   repeat for each line he1tPubHex in he1tPubsTxt
+      add 1 to he1tSeatNum
+      he1heNetSendAction "sit", "seat=" & he1tSeatNum & ",pub=" & he1tPubHex
+   end repeat
+   he1heNetHandKick
+end he1heNetStartGame
+
+command he1heNetHandKick
+   -- HOST only: open the next hand -- emit handStart (+ dealLevel naming the
+   -- dealer = the button seat) for the seats that still have chips and are
+   -- not sitting out (he1heNetNextOccList, the one shared rule). 2e: the hand
+   -- boundary is ALSO where late joiners take empty seats (signed sit
+   -- wires, deterministic order) and where a table short of live players
+   -- WAITS instead of ending -- a sitting-out seat still holding chips is a
+   -- player who can return, so the beat re-arms until one does.
+   local he1tOccList, he1tButtonSeat, he1tCount, he1tStacksTxt
+   local he1tChipCount
+   if he1gGame["online"] is not "true" or he1gGame["isHost"] is not "true" then
+      exit he1heNetHandKick
+   end if
+   -- clear the parked latch FIRST, before anything below emits (v0.24.0).
+   -- Both he1heNetSeatLateJoiners and the handStart emission fold their own
+   -- wires re-entrantly (he1heNetFoldGameWire ends in he1heNetGameReact), and
+   -- react's unpark step reads this latch -- leaving it set while a kick is
+   -- already in flight would let a nested react kick again and deal two
+   -- hands. The park branch below sets it back on if the table stays short.
+   put "false" into he1gGame["handWait"]
+   he1heNetSeatLateJoiners
+   set the itemDelimiter to comma
+   put he1heNetNextOccList() into he1tOccList
+   put the number of items of he1tOccList into he1tCount
+   if he1tCount < 2 then
+      -- fewer than 2 DEALT seats: distinguish an over table (one stack
+      -- left) from a parked one (sitting-out players still hold chips).
+      -- The scan is he1heNetSeatedWithChipsList (v0.24.0, F10) -- the same one
+      -- he1heNetNextOccList filters, so the two can no longer drift.
+      put the number of items of he1heNetSeatedWithChipsList() into he1tChipCount
+      if he1tChipCount >= 2 then
+         -- PARK the table and LATCH it (v0.24.0, F6). The latch is what makes
+         -- the parked state re-armable no matter which path parked it: the
+         -- between-hands beat used to require phase "between", which is true
+         -- after a settle but NOT when the park came from he1heNetStartGame, so
+         -- the beat died on its first firing and the table never dealt again
+         -- however many players returned. he1heNetNextHandTick now accepts the
+         -- latch, and he1heNetGameReact kicks the table the moment a signed sit
+         -- return makes two seats dealable -- which is what actually heals a
+         -- table parked with autoNext off, where no beat exists at all.
+         put "true" into he1gGame["handWait"]
+         he1heUISetStatus "Waiting for sitting-out players to return..."
+         if he1gGame["autoNext"] is "true" then
+            send "he1heNetNextHandTick" to me in he1hePaceMs("paceNext", he1kHeNextHandDelayMs) milliseconds
+         end if
+      else
+         he1heUISetStatus "Game over -- one stack left."
+      end if
+      exit he1heNetHandKick
+   end if
+   put he1heScheduleButton(he1tOccList, he1gGame["lastBB"]) into he1tButtonSeat
+   add 1 to he1gGame["handNum"]
+   put he1tOccList into he1tStacksTxt
+   replace comma with "|" in he1tStacksTxt
+   he1heNetSendAction "handStart", "seats=" & he1tStacksTxt & ",button=" & he1tButtonSeat
+   -- Phase 3: at Level 1 the ORACLE deals (dealer=0 -- no seat); at Level 0
+   -- the dealer is the button seat (the L0 rotation). count stays the number
+   -- of dealt SEATS either way; the oracle's extra entropy position is
+   -- count+1 by convention (he1heNetContribCount).
+   if he1gGame["oracleHost"] is "true" then
+      he1heNetSendAction "dealLevel", "level=1,dealer=0,count=" & he1tCount
+   else
+      he1heNetSendAction "dealLevel", "level=0,dealer=" & he1tButtonSeat & ",count=" & he1tCount
+   end if
+end he1heNetHandKick
+
+on he1heNetNextHandTick
+   -- host's between-hands beat; guarded so a stale send can never double-kick.
+   -- v0.24.0 (F6): a PARKED table (he1heNetHandKick found fewer than 2 dealable
+   -- seats while 2+ stacks remain) counts as a legal state to fire in, whether
+   -- it was parked from the between-hands pause or straight from
+   -- he1heNetStartGame -- the phase-only guard let the re-armed beat die on its
+   -- first firing in the second case, and the table could never resume.
+   if he1gGame["online"] is not "true" or he1gGame["isHost"] is not "true" then
+      exit he1heNetNextHandTick
+   end if
+   if he1gGame["phase"] is not "between" and he1gGame["handWait"] is not "true" then
+      exit he1heNetNextHandTick
+   end if
+   he1heNetHandKick
+end he1heNetNextHandTick
+
+command he1heNetEngineFold pMsgType, pSeatNum, pAmount
+   -- fold one gameplay message into the SAME pure engine the hotseat uses.
+   -- No he1heLogAppend (online, he1gGame["log"] is the signed wire chain itself) and
+   -- no paced hotseat scheduling -- consequences are wire-driven via react.
+   -- v0.24.0: the outcome is RECORDED in he1gGame["foldApplied"] for the caller.
+   -- he1heBetApply can refuse (out of turn, wrong amount, a raced prescription),
+   -- and three call sites were writing consensus state -- the seat's one
+   -- per-hand time-bank, its consecutive-miss count, and the reset of that
+   -- count -- around a fold that might never have happened (F4/F5). A command
+   -- cannot return a value to a statement-position caller, and `the result` is
+   -- consumed by the next command (gotcha 27), so the flag is a store field:
+   -- set on every path, read IMMEDIATELY by the caller, and inspectable by the
+   -- harness. Nothing this handler calls afterwards folds again, so there is
+   -- no nesting that could overwrite it before the caller looks.
+   local he1tStateA, he1tVerb
+   put "false" into he1gGame["foldApplied"]
+   put he1heBetApply(he1gGame["state"], pMsgType, pSeatNum, pAmount) into he1tStateA
+   if he1tStateA["err"] is not empty then
+      put "drop   engine-rejected " & pMsgType && he1tStateA["err"] & return after he1gGame["netLog"]
+      exit he1heNetEngineFold
+   end if
+   put he1tStateA into he1gGame["state"]
+   put "true" into he1gGame["foldApplied"]
+   if pMsgType is "act" then
+      set the itemDelimiter to comma
+      put item 1 of pAmount into he1tVerb
+      he1heSndVerb he1tVerb
+   end if
+   -- mirror the engine phase into the table phase the HUD renders (the paced
+   -- hotseat equivalents live in he1heReactToNotes; online is turn-rate)
+   if he1tStateA["phase"] is "runout" then
+      put "runout" into he1gGame["phase"]
+   else if he1tStateA["phase"] is "showdown" or he1tStateA["phase"] is "handdone" then
+      put "showdown" into he1gGame["phase"]
+      -- 2e street ckpts: the wire that CLOSED the betting is the showdown
+      -- boundary's transition wire -- record its head once (he1heNetApplyWire
+      -- already advanced the chain before folding, so the head includes it;
+      -- every client sees the same wire at the same seq, so every client
+      -- records the same head)
+      if he1gGame["oDeal"]["ckptHeadBy"]["showdown"] is empty then
+         put he1gGame["chainHeadHex"] into he1gGame["oDeal"]["ckptHeadBy"]["showdown"]
+      end if
+   end if
+   -- 2e act timers: every fold that can move the action re-aims the clock
+   -- (the mark restarts only when the SUBJECT changes)
+   he1heNetTurnMark
+   he1heHudMark
+end he1heNetEngineFold
+
+command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
+   -- fold one verified, in-order, ROSTERED game wire into the client game
+   -- store + engine. From-authority per type: sit/handStart/dealLevel/settle
+   -- must be host-authored; holeDeliver/board must come from this hand's
+   -- dealer; everything seat-scoped must come from the key that OWNS the seat
+   -- (a seat claim in a body is never trusted over seatByPub). Anything
+   -- malformed is a logged drop, never a throw (H4).
+   local he1tBodyA, he1tSeat, he1tPos, he1tHex, he1tAmt, he1tVerb, he1tCardsTxt, he1tOneCard, he1tIdxList
+   local he1tFromSeat, he1tDealerPub, he1tOccList, he1tCount, he1tStackAmt, he1tOpenErr, he1tOpenTxt
+   local he1tDeltasTxt, he1tMineTxt, he1tHeadHex, he1tSigHex, he1tResultTxt, he1tPrevBad
+   local he1tStreetName, he1tBoardHeld, he1tBoardN, he1tCkptHead
+   set the itemDelimiter to comma
+   put pBodyTxt into he1tBodyA
+   split he1tBodyA by comma and "="
+   put he1gGame["seatByPub"][pFromHex] into he1tFromSeat
+   switch pTypeTxt
+
+      case "join"
+         -- spec 5 session binding: the signed contentLine covers table + from
+         -- + box pub, which IS the binding tuple. Store the box lane.
+         put he1tBodyA["box"] into he1tHex
+         if he1heIsHex(he1tHex, 64) then
+            put he1tHex into he1gGame["boxByPub"][pFromHex]
+            put "join   " & char 1 to 8 of pFromHex & " bound a session box key" & return after he1gGame["netLog"]
+         else
+            put "drop   join with a malformed box key" & return after he1gGame["netLog"]
+         end if
+         break
+
+      case "sit"
+         -- two forms share the name (spec 6's fixed vocabulary): the
+         -- HOST-authored assignment ("seat=N,pub=<64hex>"), and -- 2e -- a
+         -- seat's OWN return from sit-out ("seat=N", no pub, from the key
+         -- that already owns the seat): re-enters at the next hand boundary
+         -- (he1heNetNextOccList reads sitOutBy; the host's next kick deals it).
+         if he1tBodyA["pub"] is empty then
+            put he1tBodyA["seat"] into he1tSeat
+            if he1tFromSeat is 0 or he1tSeat is not he1tFromSeat then
+               put "drop   sit-return for a seat the sender does not own" & return after he1gGame["netLog"]
+               break
+            end if
+            put empty into he1gGame["sitOutBy"][he1tFromSeat]
+            put 0 into he1gGame["missCntBy"][he1tFromSeat]
+            put "sitout seat " & he1tFromSeat & " returns next hand" & return after he1gGame["netLog"]
+            he1heHudMark
+            break
+         end if
+         if pFromHex is not he1gGame["hostPubHex"] then
+            put "drop   non-host sit ignored" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["seat"] into he1tSeat
+         put he1tBodyA["pub"] into he1tHex
+         if he1tSeat is not a number or he1tSeat < 1 or he1tSeat > he1kHeMaxSeats or not he1heIsHex(he1tHex, 64) then
+            put "drop   malformed sit" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tSeat into he1gGame["seatByPub"][he1tHex]
+         put he1tHex into he1gGame["pubBySeat"][he1tSeat]
+         put he1gGame["seatedList"] into he1tOccList
+         if he1tSeat is not among the items of he1tOccList then
+            if he1tOccList is empty then
+               put he1tSeat into he1tOccList
+            else
+               put comma & he1tSeat after he1tOccList
+            end if
+            sort items of he1tOccList ascending numeric
+            put he1tOccList into he1gGame["seatedList"]
+         end if
+         -- opening stack from the signed table cfg
+         put he1heNetCfgVal("stack", he1kHeDefaultStack) into he1tStackAmt
+         if he1gGame["stacksBy"][he1tSeat] is not a number then
+            put he1tStackAmt into he1gGame["stacksBy"][he1tSeat]
+         end if
+         put "true" into he1gGame["gameOn"]
+         if he1tHex is he1gGame["idPubHex"] then
+            he1heUISetStatus "You are seated at seat " & he1tSeat & ". The game is starting."
+         end if
+         break
+
+      case "handStart"
+         if pFromHex is not he1gGame["hostPubHex"] then
+            put "drop   non-host handStart ignored" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["seats"] into he1tOccList
+         replace "|" with comma in he1tOccList
+         put he1tBodyA["button"] into he1tSeat
+         if he1tOccList is empty or he1tSeat is not a number then
+            put "drop   malformed handStart" & return after he1gGame["netLog"]
+            break
+         end if
+         he1heNetHandReset
+         put pHandTxt into he1gGame["handNum"]
+         put he1tSeat into he1gGame["buttonSeat"]
+         put he1heBetNewHand(he1gGame["sb"], he1gGame["bb"], he1gGame["ante"], he1gGame["stacksBy"], \
+               he1tOccList, he1tSeat) into he1gGame["state"]
+         put he1gGame["state"]["bbSeat"] into he1gGame["lastBB"]
+         put "hand" into he1gGame["phase"]
+         he1heNetTurnMark
+         he1heUIClearCards
+         he1heHudMark
+         put "hand   #" & pHandTxt & " begins (button seat " & he1tSeat & ")" & return after he1gGame["netLog"]
+         break
+
+      case "dealLevel"
+         if pFromHex is not he1gGame["hostPubHex"] then
+            put "drop   non-host dealLevel ignored" & return after he1gGame["netLog"]
+            break
+         end if
+         -- level 0 = the button seat deals; level 1 = the ORACLE deals
+         -- (Phase 3, spec 7.2: dealer=0, no seat). Anything else is refused
+         -- readably -- which is ALSO how a pre-oracle client refuses an
+         -- oracle table instead of mis-folding it (downgrade refusal).
+         if he1tBodyA["level"] is not "0" and he1tBodyA["level"] is not "1" then
+            put "drop   unsupported deal level " & he1tBodyA["level"] & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["dealer"] into he1tSeat
+         put he1tBodyA["count"] into he1tCount
+         if he1tSeat is not a number or he1tCount is not a number then
+            put "drop   malformed dealLevel" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1tBodyA["level"] is "1" and he1tSeat is not 0 then
+            put "drop   level-1 dealLevel must name the oracle (dealer=0)" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tSeat into he1gGame["oDeal"]["dealerSeat"]
+         put he1tCount into he1gGame["oDeal"]["dealCount"]
+         if he1tBodyA["level"] is "1" then
+            put "true" into he1gGame["oDeal"]["oracleDeal"]
+            put "deal   the ORACLE deals this hand (level 1; it holds no seat)" & return after he1gGame["netLog"]
+         end if
+         break
+
+      case "seedCommit"
+         -- position ownership via he1heNetContribPosOk: seats own their packed
+         -- positions; the ORACLE (host, level 1, no seat) owns dealCount+1
+         put he1tBodyA["pos"] into he1tPos
+         put he1tBodyA["commit"] into he1tHex
+         if not he1heIsHex(he1tHex, 64) or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
+            put "drop   bad seedCommit" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["commitsBy"][he1tPos] is empty then
+            put he1tHex into he1gGame["oDeal"]["commitsBy"][he1tPos]
+            add 1 to he1gGame["oDeal"]["commitN"]
+         end if
+         break
+
+      case "seedSeal"
+         put he1tBodyA["pos"] into he1tPos
+         put he1tBodyA["sealed"] into he1tHex
+         if he1tHex is empty or not he1heIsHex(he1tHex, 0) \
+               or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
+            put "drop   bad seedSeal" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["sealsBy"][he1tPos] is empty then
+            put he1tHex into he1gGame["oDeal"]["sealsBy"][he1tPos]
+            add 1 to he1gGame["oDeal"]["sealN"]
+         end if
+         break
+
+      case "holeDeliver"
+         -- Phase 3: at level 1 the dealer key is the ORACLE's (host), no
+         -- seat behind it -- he1heNetDealerPubHex names it either way
+         put he1heNetDealerPubHex() into he1tDealerPub
+         if pFromHex is not he1tDealerPub then
+            put "drop   holeDeliver not from the dealer" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["seat"] into he1tSeat
+         put he1tBodyA["sealed"] into he1tHex
+         if he1tSeat is not a number or he1tHex is empty or not he1heIsHex(he1tHex, 0) then
+            put "drop   malformed holeDeliver" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["holeSealedBy"][he1tSeat] is empty then
+            put he1tHex into he1gGame["oDeal"]["holeSealedBy"][he1tSeat]
+            add 1 to he1gGame["oDeal"]["holeN"]
+            -- 2e street ckpts: the LAST sealed delivery is the "deal"
+            -- boundary's transition wire -- record its head once
+            if he1gGame["oDeal"]["dealCount"] is a number \
+                  and he1gGame["oDeal"]["holeN"] >= he1gGame["oDeal"]["dealCount"] \
+                  and he1gGame["oDeal"]["ckptHeadBy"]["deal"] is empty then
+               put he1gGame["chainHeadHex"] into he1gGame["oDeal"]["ckptHeadBy"]["deal"]
+            end if
+            -- 2e act timers: the completed deal is what ARMS the forced-post
+            -- timer (he1heNetTurnMark gates the blinds subject on holeN)
+            he1heNetTurnMark
+         end if
+         if he1tSeat is he1heNetMySeat() and he1gGame["oDeal"]["myHoles"] is empty then
+            -- our private lane: open the sealed box with the session key (H4:
+            -- a bad blob is a logged drop; the audit names the dealer later)
+            try
+               put textDecode(sxSealOpen(he1heHex2BinD(he1tHex), he1gGame["boxPubData"], \
+                     he1gGame["boxSecData"]), "utf-8") into he1tOpenTxt
+               if he1heIsCardList(he1tOpenTxt, 2) then
+                  put he1tOpenTxt into he1gGame["oDeal"]["myHoles"]
+                  he1heUISetStatus "Your cards: " & he1heCardName(item 1 of he1tOpenTxt) \
+                        && he1heCardName(item 2 of he1tOpenTxt)
+               else
+                  put "drop   holeDeliver opened to garbage" & return after he1gGame["netLog"]
+               end if
+            catch he1tOpenErr
+               put "drop   holeDeliver would not open" & return after he1gGame["netLog"]
+            end try
+         end if
+         break
+
+      case "stand"
+         -- 2e sit-out (spec 9): a seat's OWN signed declaration, seat-scoped
+         -- like show/muck. Effective immediately: the seat is dealt out at
+         -- the next boundary (he1heNetNextOccList), and mid-hand its turns
+         -- time out INSTANTLY (he1heNetTurnLimitSecs reads sitOutBy) -- the
+         -- spec's auto check/fold, just without the wait.
+         if he1tFromSeat is 0 then
+            put "drop   stand from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["seat"] into he1tSeat
+         if he1tSeat is not a number or he1tSeat is not he1tFromSeat then
+            put "drop   stand for a seat the sender does not own" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["sitOutBy"][he1tFromSeat] is not "true" then
+            put "true" into he1gGame["sitOutBy"][he1tFromSeat]
+            put "sitout seat " & he1tFromSeat & " sits out (own request)" & return after he1gGame["netLog"]
+            he1heHudMark
+         end if
+         break
+
+      case "bidAnte"
+      case "bidSB"
+      case "bidBB"
+         -- 2e: a HOST-authored timeout post ("amount=..,seat=N,timeout=1,
+         -- bank=..") folds as seat N's forced bet once it verifies -- this
+         -- is what unwedges a hand whose seat went dark before its blind
+         -- posted (spec 9 "auto ... posts"). A pre-liveness client
+         -- engine-rejects it visibly (wrong seat for the sender) and
+         -- stalls where it always stalled -- never mis-folds.
+         if he1tBodyA["timeout"] is "1" then
+            if pFromHex is not he1gGame["hostPubHex"] then
+               put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
+               break
+            end if
+            put he1tBodyA["seat"] into he1tSeat
+            put he1tBodyA["amount"] into he1tAmt
+            if he1tSeat is not a number or he1tAmt is not a number then
+               put "drop   malformed timeout " & pTypeTxt & return after he1gGame["netLog"]
+               break
+            end if
+            put he1heNetTimeoutOk(he1tBodyA, he1tSeat, pTypeTxt, he1tAmt) into he1tResultTxt
+            if he1tResultTxt is not empty then
+               put "TIMEOUT-REFUSED " & pTypeTxt & " seat " & he1tSeat & ": " \
+                     & he1tResultTxt & return after he1gGame["netLog"]
+               break
+            end if
+            put "t-out  seat " & he1tSeat & " timed out -- auto " & pTypeTxt & return after he1gGame["netLog"]
+            he1heNetEngineFold pTypeTxt, he1tSeat, he1tAmt
+            if he1gGame["foldApplied"] is "true" then
+               -- v0.24.0 (F4): the bank spend and the miss count are CONSENSUS
+               -- state, so they may only move for an action that actually
+               -- applied. Writing them before the fold spent the seat's one
+               -- per-hand time-bank and charged it a miss for a bet that never
+               -- happened -- and since every client did it identically, the
+               -- wrong state was consensus too, invisible as a divergence.
+               -- Two of those miss counts sit the seat out for turns it was
+               -- never given.
+               if he1tBodyA["bank"] is "1" then
+                  put "true" into he1gGame["oDeal"]["bankUsedBy"][he1tSeat]
+               end if
+               he1heNetTimeoutMiss he1tSeat
+            else
+               put "t-out  the engine refused that timeout -- interval re-armed" \
+                     & return after he1gGame["netLog"]
+               he1heNetTimeoutRearm
+            end if
+            break
+         end if
+         if he1tFromSeat is 0 then
+            put "drop   bid from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["amount"] into he1tAmt
+         he1heNetEngineFold pTypeTxt, he1tFromSeat, he1tAmt
+         if he1gGame["foldApplied"] is "true" then
+            -- a live post is presence -- but ONLY once the engine took it
+            -- (F5): the unconditional reset let a stalling client hold its
+            -- miss count at zero forever with out-of-turn bids the engine
+            -- threw away, so it never reached the miss threshold, never sat
+            -- out, and every hand still burned the full act timer plus bank
+            -- waiting for it.
+            put 0 into he1gGame["missCntBy"][he1tFromSeat]
+         end if
+         break
+
+      case "act"
+         -- 2e: the HOST-authored timeout act -- the spec 9 expiry
+         -- prescription (check-or-fold) as a field on the EXISTING act
+         -- wire ("verb=..,amount=0,seat=N,timeout=1,bank=.."), never a new
+         -- kind: verified (host authority, exact prescription, bank state,
+         -- the deadline genuinely passed on OUR clock) and folded as seat
+         -- N's action, so the transcript stays deterministic. A
+         -- pre-liveness client engine-rejects it (out of turn for the
+         -- host's seat) and stalls visibly -- except a host self-timeout,
+         -- which folds identically to a voluntary check/fold there.
+         if he1tBodyA["timeout"] is "1" then
+            if pFromHex is not he1gGame["hostPubHex"] then
+               put "drop   non-host timeout ignored" & return after he1gGame["netLog"]
+               break
+            end if
+            put he1tBodyA["seat"] into he1tSeat
+            put he1tBodyA["verb"] into he1tVerb
+            if he1tSeat is not a number then
+               put "drop   malformed timeout act" & return after he1gGame["netLog"]
+               break
+            end if
+            put he1heNetTimeoutOk(he1tBodyA, he1tSeat, "act", 0) into he1tResultTxt
+            if he1tResultTxt is not empty then
+               put "TIMEOUT-REFUSED act seat " & he1tSeat & ": " & he1tResultTxt \
+                     & return after he1gGame["netLog"]
+               break
+            end if
+            put "t-out  seat " & he1tSeat & " timed out -- auto " & he1tVerb & return after he1gGame["netLog"]
+            he1heNetEngineFold "act", he1tSeat, he1tVerb & comma & 0
+            if he1gGame["foldApplied"] is "true" then
+               -- F4, the act twin of the forced-post site above: bank and miss
+               -- only move when the fold moved.
+               if he1tBodyA["bank"] is "1" then
+                  put "true" into he1gGame["oDeal"]["bankUsedBy"][he1tSeat]
+               end if
+               he1heNetTimeoutMiss he1tSeat
+            else
+               put "t-out  the engine refused that timeout -- interval re-armed" \
+                     & return after he1gGame["netLog"]
+               he1heNetTimeoutRearm
+            end if
+            break
+         end if
+         if he1tFromSeat is 0 then
+            put "drop   act from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["verb"] into he1tVerb
+         put he1tBodyA["amount"] into he1tAmt
+         he1heNetEngineFold "act", he1tFromSeat, he1tVerb & comma & he1tAmt
+         if he1gGame["foldApplied"] is "true" then
+            put 0 into he1gGame["missCntBy"][he1tFromSeat]   -- a live act is presence (F5)
+         end if
+         break
+
+      case "board"
+         put he1heNetDealerPubHex() into he1tDealerPub
+         if pFromHex is not he1tDealerPub then
+            put "drop   board not from the dealer" & return after he1gGame["netLog"]
+            break
+         end if
+         -- street-vs-count dedupe: a redelivered or reconnect-burst board wire
+         -- must not append twice (a doubled flop would shift every later slot
+         -- and corrupt the audit's board compare). Each street lands exactly
+         -- once, in order.
+         put he1tBodyA["street"] into he1tStreetName
+         put he1gGame["oDeal"]["boardList"] into he1tBoardHeld
+         put the number of items of he1tBoardHeld into he1tBoardN
+         if not ((he1tStreetName is "flop" and he1tBoardN is 0) \
+               or (he1tStreetName is "turn" and he1tBoardN is 3) \
+               or (he1tStreetName is "river" and he1tBoardN is 4)) then
+            put "drop   out-of-order/duplicate board (" & he1tStreetName & ")" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["cards"] into he1tCardsTxt
+         replace "|" with comma in he1tCardsTxt
+         put empty into he1tIdxList
+         repeat for each item he1tOneCard in he1tCardsTxt
+            put he1heCardIndex(he1tOneCard) & comma after he1tIdxList
+         end repeat
+         if he1tIdxList is not empty then
+            delete char -1 of he1tIdxList
+         end if
+         if he1tStreetName is "flop" then
+            if not he1heIsCardList(he1tIdxList, 3) then
+               put "drop   malformed board" & return after he1gGame["netLog"]
+               break
+            end if
+         else
+            if not he1heIsCardList(he1tIdxList, 1) then
+               put "drop   malformed board" & return after he1gGame["netLog"]
+               break
+            end if
+         end if
+         if he1gGame["oDeal"]["boardList"] is empty then
+            put he1tIdxList into he1gGame["oDeal"]["boardList"]
+         else
+            put comma & he1tIdxList after he1gGame["oDeal"]["boardList"]
+         end if
+         he1heNetEngineFold "board", 0, 0
+         he1heNetShowBoard
+         -- 2e street ckpts: the accepted board wire IS its street's
+         -- transition wire -- record the boundary head once
+         if he1gGame["oDeal"]["ckptHeadBy"][he1tStreetName] is empty then
+            put he1gGame["chainHeadHex"] into he1gGame["oDeal"]["ckptHeadBy"][he1tStreetName]
+         end if
+         break
+
+      case "seedReveal"
+         put he1tBodyA["pos"] into he1tPos
+         put he1tBodyA["seed"] into he1tHex
+         if not he1heIsHex(he1tHex, 64) or not he1heNetContribPosOk(he1tPos, he1tFromSeat, pFromHex) then
+            put "drop   bad seedReveal" & return after he1gGame["netLog"]
+            break
+         end if
+         -- the reveal must open the commitment made before the deal (spec 7.1)
+         if he1heSeedCommitHex(he1tHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+            put "AUDIT  seedReveal pos " & he1tPos & " does not match its commit" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["revealsBy"][he1tPos] is empty then
+            put he1tHex into he1gGame["oDeal"]["revealsBy"][he1tPos]
+            add 1 to he1gGame["oDeal"]["revealN"]
+         end if
+         break
+
+      case "settle"
+         if pFromHex is not he1gGame["hostPubHex"] then
+            put "drop   non-host settle ignored" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["settleDone"] is "true" then
+            break
+         end if
+         put he1tBodyA["deltas"] into he1tDeltasTxt
+         put he1heNetComputeSettleTxt() into he1tMineTxt
+         if he1tMineTxt is empty then
+            put "drop   settle before the reveals completed" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1tDeltasTxt is not he1tMineTxt then
+            -- a host settle that disagrees with our own deterministic
+            -- recomputation is refused outright -- deliberate: following it
+            -- would mean following a provably wrong (or hostile) host
+            put "SETTLE-MISMATCH host=" & he1tDeltasTxt & " ours=" & he1tMineTxt & return after he1gGame["netLog"]
+            he1heUISetStatus "Settlement mismatch -- this hand is disputed. See the net feed."
+            break
+         end if
+         he1heNetApplySettle he1tDeltasTxt
+         break
+
+      case "receipt"
+         if he1tFromSeat is 0 then
+            put "drop   receipt from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["head"] into he1tHeadHex
+         put he1tBodyA["sig"] into he1tSigHex
+         if not he1heIsHex(he1tHeadHex, 64) or not he1heIsHex(he1tSigHex, 128) \
+               or he1tHeadHex is not he1gGame["rcptHeadHex"] \
+               or not he1heReceiptSigVerify(he1tSigHex, he1tHeadHex, pFromHex) then
+            put "drop   bad receipt from seat " & he1tFromSeat & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["receiptsBy"][he1tFromSeat] is empty then
+            put he1tSigHex into he1gGame["oDeal"]["receiptsBy"][he1tFromSeat]
+            add 1 to he1gGame["oDeal"]["receiptN"]
+         end if
+         if he1gGame["oDeal"]["receiptN"] >= he1gGame["oDeal"]["dealCount"] then
+            put "rcpt   hand " & he1gGame["handNum"] & " receipt co-signed by all " \
+                  & he1gGame["oDeal"]["receiptN"] & " seats" & return after he1gGame["netLog"]
+         end if
+         break
+
+      case "audit"
+         -- Phase 3: the ORACLE audits too (it witnessed the whole deal it
+         -- ran); its verdict files under contributor slot 0, logged by name
+         if he1tFromSeat is 0 and not (he1heNetOracleDeal() and pFromHex is he1gGame["hostPubHex"]) then
+            put "drop   audit from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1tFromSeat is not a number then
+            put 0 into he1tFromSeat   -- the oracle's verdict files under slot 0
+         end if
+         put he1tBodyA["result"] into he1tResultTxt
+         if he1gGame["oDeal"]["auditsBy"][he1tFromSeat] is empty then
+            put he1tResultTxt into he1gGame["oDeal"]["auditsBy"][he1tFromSeat]
+         end if
+         if he1tFromSeat is 0 then
+            put "audit  oracle: " & he1tResultTxt & return after he1gGame["netLog"]
+         else
+            put "audit  seat " & he1tFromSeat & ": " & he1tResultTxt & return after he1gGame["netLog"]
+         end if
+         break
+
+      case "ckpt"
+         -- 2e street checkpoint (spec 6): a SEATED player's signature over
+         -- the boundary head it observed. Verify-or-drop; then compare the
+         -- named head against the one WE recorded at that boundary -- every
+         -- client recorded the transition wire's head, so a verified ckpt
+         -- naming a different one is host-fork EVIDENCE (attributable
+         -- equivocation), logged loudly and never folded as agreement.
+         if he1tFromSeat is 0 then
+            put "drop   ckpt from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["street"] into he1tStreetName
+         put he1tBodyA["head"] into he1tHeadHex
+         put he1tBodyA["sig"] into he1tSigHex
+         if he1tStreetName is not among the items of he1kHeCkptStreets \
+               or not he1heIsHex(he1tHeadHex, 64) \
+               or not he1heCkptVerify(he1tSigHex, he1tHeadHex, pFromHex) then
+            put "drop   bad ckpt from seat " & he1tFromSeat & return after he1gGame["netLog"]
+            break
+         end if
+         put he1gGame["oDeal"]["ckptHeadBy"][he1tStreetName] into he1tCkptHead
+         if he1tCkptHead is not empty and he1tHeadHex is not he1tCkptHead then
+            put "CKPT-FORK seat " & he1tFromSeat & " signed a different " & he1tStreetName \
+                  & " head -- host equivocation evidence" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["ckptsBy"][he1tStreetName & ":" & he1tFromSeat] is empty then
+            put he1tSigHex into he1gGame["oDeal"]["ckptsBy"][he1tStreetName & ":" & he1tFromSeat]
+         end if
+         break
+
+      case "show"
+      case "muck"
+         -- 2e showdown display choice (spec 6/8.1): first-class wires, but
+         -- DISPLAY only by construction -- online ranks derive from the
+         -- revealed seeds, so a muck hides nothing from the audit, only
+         -- from the felt. Seat-scoped: the sender must own the seat it
+         -- declares for.
+         if he1tFromSeat is 0 then
+            put "drop   " & pTypeTxt & " from an unseated key" & return after he1gGame["netLog"]
+            break
+         end if
+         put he1tBodyA["seat"] into he1tSeat
+         if he1tSeat is not a number or he1tSeat is not he1tFromSeat then
+            put "drop   " & pTypeTxt & " for a seat the sender does not own" & return after he1gGame["netLog"]
+            break
+         end if
+         if he1gGame["oDeal"]["showBy"][he1tFromSeat] is empty then
+            put pTypeTxt into he1gGame["oDeal"]["showBy"][he1tFromSeat]
+            if pTypeTxt is "show" then
+               put "show   seat " & he1tFromSeat & " shows its hand" & return after he1gGame["netLog"]
+               he1heNetShowSeat he1tFromSeat
+            else
+               put "muck   seat " & he1tFromSeat & " mucks (cards stay down)" & return after he1gGame["netLog"]
+            end if
+         end if
+         break
+
+   end switch
+   he1heNetGameReact
+end he1heNetFoldGameWire
+
+function he1heNetCfgVal pKey, pDefault
+   -- one numeric value out of the signed table cfg body ("k=v,k=v" text);
+   -- copy-then-split keeps every chunk on a plain local (H6)
+   local he1tBodyA, he1tVal
+   set the itemDelimiter to comma
+   put he1gGame["cfgBody"] into he1tBodyA
+   split he1tBodyA by comma and "="
+   put he1tBodyA[pKey] into he1tVal
+   if he1tVal is not a number then
+      return pDefault
+   end if
+   return he1tVal
+end he1heNetCfgVal
+
+command he1heNetGameReact
+   -- the per-client reaction to the folded transcript: emit ONLY what our
+   -- seat owes next, each emission behind a per-hand sent-flag so redelivery
+   -- and replay never double-send. Runs after every applied wire.
+   local he1tMySeat, he1tOccList, he1tStateA, he1tCount, he1tPos, he1tSeedHex, he1tSealedHex, he1tRndErr
+   local he1tDealerSeat, he1tDealerPubHex, he1tDealerBoxHex, he1tBoardTxt, he1tBoardN, he1tStreetTxt
+   local he1tDeltasTxt, he1tHeadHex, he1tSigHex, he1tResultTxt, he1tSealErr, he1tAllPosted, he1tSeatNum
+   local he1tMyPubHex, he1tContribN, he1tCkStreet, he1tCkHead, he1tInList, he1tMyDelta, he1tChoiceTxt
+   if he1gGame["online"] is not "true" then
+      exit he1heNetGameReact
+   end if
+   -- CATCH-UP SUPPRESSION: while a host replay is streaming (announced by the
+   -- "r!" marker), every mid-replay state is HISTORICAL -- reacting to it
+   -- would re-emit join/commit/seal/reveal for every hand replayed and
+   -- pollute the live chain with sequenced duplicates. Stay silent until our
+   -- applied seq reaches the announced head, then react once against the
+   -- complete transcript, where the presence guards see the whole truth.
+   if he1gGame["catchUpTo"] is a number then
+      if he1gGame["lastSeq"] < he1gGame["catchUpTo"] then
+         exit he1heNetGameReact
+      end if
+      put empty into he1gGame["catchUpTo"]
+   end if
+   -- 1. bind our session box key once the roster lists us (spec 5): the signed
+   -- contentLine over table + from + box IS the binding tuple. Presence-guarded
+   -- (the transcript already carrying our box means a reconnect replay, not a
+   -- first join).
+   put he1gGame["idPubHex"] into he1tMyPubHex
+   if he1gGame["joinSent"] is not "true" and he1gGame["boxPubData"] is not empty \
+         and he1gGame["boxByPub"][he1tMyPubHex] is empty \
+         and he1gGame["rosterBody"] contains he1tMyPubHex then
+      put "true" into he1gGame["joinSent"]
+      he1heNetSendAction "join", "box=" & he1heBin2HexS(he1gGame["boxPubData"])
+   end if
+   if he1gGame["gameOn"] is not "true" then
+      exit he1heNetGameReact
+   end if
+   -- 1b. HOST: a table PARKED for sit-outs resumes the moment the transcript
+   -- says two seats are dealable again (v0.24.0, F6). This is the half that
+   -- actually heals the parked table: the sit-return fold only cleared
+   -- sitOutBy/missCntBy, so with autoNext off (or after the between-hands
+   -- beat had died on a park that came from he1heNetStartGame) the returning
+   -- player saw Return succeed and the table simply never dealt again.
+   -- Reacting is the house shape for this -- it runs after every applied
+   -- wire, on the same pass that folded the return, so no timer has to be
+   -- alive -- and the latch is its own debounce: he1heNetHandKick clears
+   -- handWait as soon as it deals, and leaves it set if the table is still
+   -- short, so this can never loop.
+   if he1gGame["isHost"] is "true" and he1gGame["handWait"] is "true" then
+      set the itemDelimiter to comma
+      if the number of items of he1heNetNextOccList() >= 2 then
+         put "hand   a returning player unparks the table" & return after he1gGame["netLog"]
+         he1heNetHandKick
+      end if
+   end if
+   put he1heNetMySeat() into he1tMySeat
+   put he1gGame["oDeal"]["dealerSeat"] into he1tDealerSeat
+   put he1gGame["oDeal"]["dealCount"] into he1tCount
+   set the itemDelimiter to comma
+   put he1gGame["state"]["occ"] into he1tOccList
+   if he1tOccList is empty or he1tCount is not a number or he1tCount is 0 then
+      exit he1heNetGameReact   -- no hand open, or dealLevel not folded yet
+   end if
+   -- Phase 3: he1tPos is our CONTRIBUTOR position (a seat's packed position;
+   -- the dealing oracle takes the extra slot dealCount+1) and he1tContribN the
+   -- number of contributors the commit/seal/reveal thresholds wait for
+   put he1heNetMyContribPos() into he1tPos
+   put he1heNetContribCount() into he1tContribN
+   -- 2. our deal entropy (spec 7.1 step 1; freshness law, spec 5). The seed is
+   -- DERIVED, not drawn: H(domain || idSeed || table || hand) -- secret-keyed
+   -- and fresh per hand, but reconstructible, so a client that crashed and
+   -- reconnected mid-hand re-derives the exact seed it committed and can
+   -- still reveal at hand end (spec 9). The commit is only EMITTED when the
+   -- transcript does not already carry it (presence guard: replay-proof) and
+   -- this run has not just sent it (flag: redelivery debounce).
+   if he1tPos > 0 and he1gGame["oDeal"]["mySeedHex"] is empty then
+      try
+         put he1heNetHandSeedHex() into he1tSeedHex
+         put he1tSeedHex into he1gGame["oDeal"]["mySeedHex"]
+      catch he1tRndErr
+         put "ERROR  could not derive deal entropy" & return after he1gGame["netLog"]
+      end try
+   end if
+   if he1tPos > 0 and he1gGame["oDeal"]["mySeedHex"] is not empty \
+         and he1gGame["oDeal"]["commitSent"] is not "true" \
+         and he1gGame["oDeal"]["commitsBy"][he1tPos] is empty then
+      put "true" into he1gGame["oDeal"]["commitSent"]
+      he1heNetSendAction "seedCommit", "pos=" & he1tPos & ",commit=" \
+            & he1heSeedCommitHex(he1gGame["oDeal"]["mySeedHex"])
+   end if
+   -- 3. seal our seed to the dealer (spec 7.1 step 2) once every commit is in
+   -- (committing BEFORE any seed travels is what stops the dealer stacking).
+   -- At level 1 the dealer is the ORACLE: seats seal to its session box, and
+   -- the oracle "seals to itself" too, so the transcript carries every
+   -- contributor's seal uniformly and the counts stay simple.
+   if he1tPos > 0 and he1gGame["oDeal"]["commitN"] >= he1tContribN \
+         and he1gGame["oDeal"]["sealSent"] is not "true" \
+         and he1gGame["oDeal"]["sealsBy"][he1tPos] is empty then
+      put he1heNetDealerPubHex() into he1tDealerPubHex
+      put he1gGame["boxByPub"][he1tDealerPubHex] into he1tDealerBoxHex
+      if he1heIsHex(he1tDealerBoxHex, 64) then
+         put "true" into he1gGame["oDeal"]["sealSent"]
+         try
+            put he1heBin2HexS(sxSeal(textEncode(he1gGame["oDeal"]["mySeedHex"], "utf-8"), \
+                  he1heHex2BinD(he1tDealerBoxHex))) into he1tSealedHex
+            he1heNetSendAction "seedSeal", "pos=" & he1tPos & ",sealed=" & he1tSealedHex
+         catch he1tSealErr
+            put "ERROR  could not seal the seed to the dealer" & return after he1gGame["netLog"]
+         end try
+      end if
+   end if
+   -- 4. we deal this hand: open the seals, verify, derive, deliver. Runs
+   -- whenever the derived deck is missing -- covers the fresh deal AND a
+   -- dealer that reconnected mid-hand (it re-opens the replayed seals and
+   -- re-derives; per-seat delivery inside is presence-guarded, so seats the
+   -- transcript already served are never re-sent). he1heNetWeDeal: the button
+   -- seat at level 0, the seatless ORACLE at level 1.
+   if he1heNetWeDeal() and he1gGame["oDeal"]["sealN"] >= he1tContribN \
+         and he1gGame["oDeal"]["dealerDealA"] is not an array then
+      he1heNetDealerDeal
+   end if
+   -- 5. blinds once every seat has its (sealed) holes. Antes first (dead
+   -- money), then the SB, and the BB only after it SEES the SB fold -- so the
+   -- two forced posts can never race in the relay's ordering. Seats only
+   -- (he1tMySeat > 0): the oracle contributes entropy, never chips.
+   if he1gGame["oDeal"]["holeN"] >= he1tCount and he1tPos > 0 and he1tMySeat > 0 then
+      put he1gGame["state"] into he1tStateA
+      if he1tStateA["phase"] is "blinds" then
+         if he1gGame["ante"] > 0 and he1gGame["oDeal"]["anteSent"] is not "true" \
+               and he1tStateA["antePostedBy"][he1tMySeat] is not "true" then
+            put "true" into he1gGame["oDeal"]["anteSent"]
+            he1heNetSendAction "bidAnte", "amount=" & min(he1gGame["ante"], he1tStateA["stackBy"][he1tMySeat])
+         end if
+         put "true" into he1tAllPosted
+         if he1gGame["ante"] > 0 then
+            repeat for each item he1tSeatNum in he1tOccList
+               if he1tStateA["antePostedBy"][he1tSeatNum] is not "true" then
+                  put "false" into he1tAllPosted
+               end if
+            end repeat
+         end if
+         if he1tAllPosted is "true" and he1tMySeat is he1tStateA["sbSeat"] \
+               and he1tStateA["sbPosted"] is not "true" and he1gGame["oDeal"]["sbSent"] is not "true" then
+            put "true" into he1gGame["oDeal"]["sbSent"]
+            he1heNetSendAction "bidSB", "amount=" & min(he1tStateA["sb"], he1tStateA["stackBy"][he1tMySeat])
+         end if
+         if he1tStateA["sbPosted"] is "true" and he1tMySeat is he1tStateA["bbSeat"] \
+               and he1gGame["oDeal"]["bbSent"] is not "true" then
+            put "true" into he1gGame["oDeal"]["bbSent"]
+            he1heNetSendAction "bidBB", "amount=" & min(he1tStateA["bb"], he1tStateA["stackBy"][he1tMySeat])
+         end if
+      end if
+   end if
+   -- 6. we deal this hand and a street is due (live close or runout)
+   if he1heNetWeDeal() then
+      put he1gGame["state"] into he1tStateA
+      put he1gGame["oDeal"]["boardList"] into he1tBoardTxt
+      put the number of items of he1tBoardTxt into he1tBoardN
+      put empty into he1tStreetTxt
+      if he1tStateA["phase"] is "acting" or he1tStateA["phase"] is "runout" then
+         if he1tBoardN is 0 and (he1tStateA["street"] is not "preflop" or he1tStateA["phase"] is "runout") then
+            put "flop" into he1tStreetTxt
+         else if he1tBoardN is 3 and (he1tStateA["street"] is "turn" or he1tStateA["street"] is "river" \
+               or he1tStateA["phase"] is "runout") then
+            put "turn" into he1tStreetTxt
+         else if he1tBoardN is 4 and (he1tStateA["street"] is "river" or he1tStateA["phase"] is "runout") then
+            put "river" into he1tStreetTxt
+         end if
+      end if
+      if he1tStreetTxt is not empty then
+         he1heNetDealerBoard he1tStreetTxt
+      end if
+   end if
+   -- 6b. street checkpoints (2e, spec 6): each SEATED client signs the head
+   -- every recorded boundary produced -- the transition wire's head, so
+   -- every honest ckpt for one boundary names the same bytes and a
+   -- disagreement is fork evidence, not timing. One wire per street per
+   -- seat, presence-guarded against the transcript like every emission.
+   if he1tMySeat > 0 and he1tPos > 0 then
+      set the itemDelimiter to comma   -- gotcha 5: set before every parse
+      repeat for each item he1tCkStreet in he1kHeCkptStreets
+         put he1gGame["oDeal"]["ckptHeadBy"][he1tCkStreet] into he1tCkHead
+         if he1tCkHead is not empty \
+               and he1gGame["oDeal"]["ckptSentBy"][he1tCkStreet] is not "true" \
+               and he1gGame["oDeal"]["ckptsBy"][he1tCkStreet & ":" & he1tMySeat] is empty then
+            put "true" into he1gGame["oDeal"]["ckptSentBy"][he1tCkStreet]
+            he1heNetSendAction "ckpt", he1heCkptBodyTxt(he1tCkStreet, he1tCkHead, he1gGame["idSecData"])
+         end if
+      end repeat
+   end if
+   -- 7. the action display (wires do the state; this is only the prompt)
+   put he1gGame["state"] into he1tStateA
+   if he1tStateA["phase"] is "acting" then
+      if he1tStateA["toAct"] is he1tMySeat then
+         he1heUIPromptToAct
+      else
+         he1heDisableActions
+         he1heUISetStatus "Waiting for seat " & he1tStateA["toAct"] & " to act..."
+      end if
+   end if
+   -- 8. hand over: reveal our seed so everyone can audit (spec 7.1 step 5)
+   if (he1tStateA["phase"] is "showdown" or he1tStateA["phase"] is "handdone") \
+         and he1tPos > 0 and he1gGame["oDeal"]["revealSent"] is not "true" \
+         and he1gGame["oDeal"]["revealsBy"][he1tPos] is empty \
+         and he1gGame["oDeal"]["mySeedHex"] is not empty then
+      put "true" into he1gGame["oDeal"]["revealSent"]
+      he1heNetSendAction "seedReveal", "pos=" & he1tPos & ",seed=" & he1gGame["oDeal"]["mySeedHex"]
+   end if
+   -- 9. host: emit the settle once every seed is revealed (the oracle's own
+   -- reveal included); every client will verify it against its own
+   -- recomputation before folding it
+   if he1gGame["isHost"] is "true" and he1gGame["oDeal"]["revealN"] >= he1tContribN \
+         and he1gGame["oDeal"]["settleSent"] is not "true" \
+         and (he1tStateA["phase"] is "showdown" or he1tStateA["phase"] is "handdone") then
+      put he1heNetComputeSettleTxt() into he1tDeltasTxt
+      if he1tDeltasTxt is not empty then
+         put "true" into he1gGame["oDeal"]["settleSent"]
+         he1heNetSendAction "settle", "deltas=" & he1tDeltasTxt
+      end if
+   end if
+   -- 10. co-sign the settlement receipt (spec 8.3, chained hand to hand).
+   -- SEATED players only: a receipt is the seats' multi-signature over the
+   -- ledger; the stakeless oracle signs no receipts.
+   if he1gGame["oDeal"]["settleDone"] is "true" and he1tPos > 0 and he1tMySeat > 0 \
+         and he1gGame["oDeal"]["receiptSent"] is not "true" \
+         and he1gGame["oDeal"]["receiptsBy"][he1tMySeat] is empty then
+      put "true" into he1gGame["oDeal"]["receiptSent"]
+      put he1gGame["rcptHeadHex"] into he1tHeadHex
+      put he1heReceiptSigHex(he1tHeadHex, he1gGame["idSecData"]) into he1tSigHex
+      he1heNetSendAction "receipt", "head=" & he1tHeadHex & ",sig=" & he1tSigHex
+   end if
+   -- 11. our audit verdict (spec 7.1 step 5)
+   if he1gGame["oDeal"]["settleDone"] is "true" and he1tPos > 0 \
+         and he1gGame["oDeal"]["auditSent"] is not "true" \
+         and he1gGame["oDeal"]["auditsBy"][he1tMySeat] is empty then
+      put "true" into he1gGame["oDeal"]["auditSent"]
+      put he1heNetAuditHand() into he1tResultTxt
+      he1heNetSendAction "audit", "result=" & he1tResultTxt
+   end if
+   -- 11b. show/muck (2e): our showdown display CHOICE, once the verified
+   -- settle told us the outcome. As-built policy: a contested seat with a
+   -- non-negative delta SHOWS (a claimed pot is a shown hand -- and at L0
+   -- the seeds already proved it), a contested loser MUCKS, an uncontested
+   -- winner MUCKS (a fold-win owes nobody a look), and a seat that folded
+   -- earlier emits nothing (it already mucked face-down). Display only:
+   -- ranks and settlement derive from the revealed seeds either way.
+   if he1gGame["oDeal"]["settleDone"] is "true" and he1tMySeat > 0 \
+         and he1gGame["oDeal"]["showSent"] is not "true" \
+         and he1gGame["oDeal"]["showBy"][he1tMySeat] is empty then
+      set the itemDelimiter to comma   -- gotcha 5: set before every parse
+      put he1heBetInHandList(he1gGame["state"]) into he1tInList
+      if he1tMySeat is among the items of he1tInList then
+         put "true" into he1gGame["oDeal"]["showSent"]
+         put he1heDeltaOfTxt(he1gGame["oDeal"]["settleDeltas"], he1tMySeat) into he1tMyDelta
+         if he1heCountItems(he1tInList) > 1 and he1tMyDelta >= 0 then
+            put "show" into he1tChoiceTxt
+         else
+            put "muck" into he1tChoiceTxt
+         end if
+         he1heNetSendAction he1tChoiceTxt, "seat=" & he1tMySeat
+      end if
+   end if
+   -- 12. host: the between-hands beat, then the next hand deals itself
+   if he1gGame["isHost"] is "true" and he1gGame["autoNext"] is "true" \
+         and he1gGame["oDeal"]["settleDone"] is "true" \
+         and he1gGame["oDeal"]["nextArmed"] is not "true" then
+      put "true" into he1gGame["oDeal"]["nextArmed"]
+      send "he1heNetNextHandTick" to me in he1hePaceMs("paceNext", he1kHeNextHandDelayMs) milliseconds
+   end if
+end he1heNetGameReact
+
+command he1heNetDealerDeal
+   -- we are this hand's dealer: open every sealed seed with our session key,
+   -- verify each against its commitment (a mismatch aborts the deal, named),
+   -- derive the committed deck, and send each seat its two hole cards sealed
+   -- to ITS session key (spec 7.1 steps 3-4)
+   local he1tPos, he1tCount, he1tSeedsA, he1tSealedHex, he1tSeedHex, he1tOpenErr, he1tBad
+   local he1tDealA, he1tOccList, he1tSeatNum, he1tHolePair, he1tPeerPubHex, he1tPeerBoxHex
+   local he1tSealErr, he1tSealedOut
+   set the itemDelimiter to comma
+   -- Phase 3: the loop runs over CONTRIBUTOR positions -- every seat plus,
+   -- at level 1, the oracle's own seal at dealCount+1 (it opens its own box)
+   put he1heNetContribCount() into he1tCount
+   put "false" into he1tBad
+   repeat with he1tPos = 1 to he1tCount
+      put he1gGame["oDeal"]["sealsBy"][he1tPos] into he1tSealedHex
+      put empty into he1tSeedHex
+      try
+         put textDecode(sxSealOpen(he1heHex2BinD(he1tSealedHex), he1gGame["boxPubData"], \
+               he1gGame["boxSecData"]), "utf-8") into he1tSeedHex
+      catch he1tOpenErr
+         put empty into he1tSeedHex
+      end try
+      if not he1heIsHex(he1tSeedHex, 64) \
+            or he1heSeedCommitHex(he1tSeedHex) is not he1gGame["oDeal"]["commitsBy"][he1tPos] then
+         put "AUDIT  seal at pos " & he1tPos & " bad or commit-mismatched -- deal aborted" & return after he1gGame["netLog"]
+         put "true" into he1tBad
+      end if
+      put he1tSeedHex into he1tSeedsA[he1tPos]
+   end repeat
+   if he1tBad is "true" then
+      he1heUISetStatus "Deal aborted: a sealed seed failed its commitment. See the net feed."
+      exit he1heNetDealerDeal
+   end if
+   put he1heNetDealFromSeeds(he1tSeedsA, he1tCount) into he1tDealA
+   put he1tDealA into he1gGame["oDeal"]["dealerDealA"]
+   put he1gGame["state"]["occ"] into he1tOccList
+   repeat for each item he1tSeatNum in he1tOccList
+      -- presence-guarded per seat: a reconnected dealer re-derives the deck
+      -- above but never re-sends a delivery the transcript already carries
+      if he1gGame["oDeal"]["holeSealedBy"][he1tSeatNum] is empty then
+         put he1tDealA["holesBy"][he1tSeatNum] into he1tHolePair
+         put he1gGame["pubBySeat"][he1tSeatNum] into he1tPeerPubHex
+         put he1gGame["boxByPub"][he1tPeerPubHex] into he1tPeerBoxHex
+         try
+            put he1heBin2HexS(sxSeal(textEncode(he1tHolePair, "utf-8"), he1heHex2BinD(he1tPeerBoxHex))) into he1tSealedOut
+            he1heNetSendAction "holeDeliver", "seat=" & he1tSeatNum & ",sealed=" & he1tSealedOut
+         catch he1tSealErr
+            put "ERROR  could not seal holes for seat " & he1tSeatNum & return after he1gGame["netLog"]
+         end try
+      end if
+   end repeat
+end he1heNetDealerDeal
+
+function he1heNetHandSeedHex
+   -- the per-hand deal seed: H(domain || idSeed || "|" || table || "|" ||
+   -- hand), hex end to end through the standing crypto seams. Secret-keyed by
+   -- the identity seed (it never leaves the machine), fresh per hand (the
+   -- hand number is in the input, spec 5 freshness law), and DETERMINISTIC --
+   -- a reconnecting client re-derives the exact seed it committed, so it can
+   -- still seal and reveal after a crash (spec 9).
+   return he1heHashDomHex(he1kHeDomainSeedP, textEncode(he1gGame["idSeedHex"] & "|" \
+         & he1gGame["tableIdHex"] & "|" & he1gGame["handNum"], "utf-8"))
+end he1heNetHandSeedHex
+
+function he1heNetDealFromSeeds pSeedsA, pCount
+   -- the committed keyed-stream deal (spec 7.1 step 3) from position-indexed
+   -- seed hex: XOR -> stream key -> deck -> assignment. Same code whether the
+   -- seeds came out of sealed boxes (dealer, at deal time) or public reveals
+   -- (every client, at audit/settle time) -- which is the point: one pinned
+   -- derivation, two moments.
+   local he1tXorHex, he1tKeyData, he1tDeckList
+   put he1heXorSeedsHex(pSeedsA, pCount) into he1tXorHex
+   put he1heStreamKeyData(he1heHex2BinD(he1gGame["tableIdHex"]), he1gGame["handNum"], he1tXorHex) into he1tKeyData
+   put he1heDeckFromStreamKey(he1tKeyData) into he1tDeckList
+   return he1heDealAssign(he1tDeckList, he1gGame["state"]["occ"], he1gGame["buttonSeat"])
+end he1heNetDealFromSeeds
+
+command he1heNetDealerBoard pStreetTxt
+   -- dealer: broadcast one street from the deck derived at deal time
+   local he1tDealA, he1tIdxList, he1tNamesTxt, he1tOneCard
+   set the itemDelimiter to comma
+   put he1gGame["oDeal"]["dealerDealA"] into he1tDealA
+   if he1tDealA is not an array then
+      exit he1heNetDealerBoard
+   end if
+   switch pStreetTxt
+      case "flop"
+         put he1tDealA["flopList"] into he1tIdxList
+         break
+      case "turn"
+         put he1tDealA["turnIx"] into he1tIdxList
+         break
+      case "river"
+         put he1tDealA["riverIx"] into he1tIdxList
+         break
+      default
+         exit he1heNetDealerBoard
+   end switch
+   put empty into he1tNamesTxt
+   repeat for each item he1tOneCard in he1tIdxList
+      put he1heCardName(he1tOneCard) & "|" after he1tNamesTxt
+   end repeat
+   if he1tNamesTxt is not empty then
+      delete char -1 of he1tNamesTxt
+   end if
+   he1heNetSendAction "board", "street=" & pStreetTxt & ",cards=" & he1tNamesTxt
+end he1heNetDealerBoard
+
+function he1heNetRevealedDealA
+   -- after every seed is revealed: re-derive the whole committed deal.
+   -- Empty until the reveals are complete. Contributor positions, not
+   -- seats: at level 1 the oracle's reveal at dealCount+1 is part of the
+   -- XOR, so the audit covers it too.
+   local he1tCount, he1tPos, he1tSeedsA, he1tSeedHex
+   put he1heNetContribCount() into he1tCount
+   if he1tCount is not a number or he1tCount is 0 then
+      return empty
+   end if
+   if he1gGame["oDeal"]["revealN"] < he1tCount then
+      return empty
+   end if
+   repeat with he1tPos = 1 to he1tCount
+      put he1gGame["oDeal"]["revealsBy"][he1tPos] into he1tSeedHex
+      put he1tSeedHex into he1tSeedsA[he1tPos]
+   end repeat
+   return he1heNetDealFromSeeds(he1tSeedsA, he1tCount)
+end he1heNetRevealedDealA
+
+function he1heNetComputeSettleTxt
+   -- the deterministic settlement every client computes for itself: showdown
+   -- ranks come from the REVEALED deck (a player cannot lie about its holes),
+   -- deltas from the same pure he1heSettleOf the hotseat uses. Standard
+   -- "seat:delta|..." format over the hand's occupied seats.
+   local he1tDealA, he1tStateA, he1tRanksA, he1tDeltasA, he1tInList, he1tSeatNum, he1tHolePair
+   local he1tSevenList, he1tOutTxt, he1tOccList
+   set the itemDelimiter to comma
+   put he1heNetRevealedDealA() into he1tDealA
+   if he1tDealA is not an array then
+      return empty
+   end if
+   put he1gGame["state"] into he1tStateA
+   put he1heBetInHandList(he1tStateA) into he1tInList
+   put empty into he1tRanksA
+   if he1heCountItems(he1tInList) > 1 then
+      repeat for each item he1tSeatNum in he1tInList
+         put he1tDealA["holesBy"][he1tSeatNum] into he1tHolePair
+         put he1tHolePair & comma & he1tDealA["flopList"] & comma & he1tDealA["turnIx"] \
+               & comma & he1tDealA["riverIx"] into he1tSevenList
+         put he1heEval7(he1tSevenList) into he1tRanksA[he1tSeatNum]
+      end repeat
+   end if
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   put empty into he1tOutTxt
+   put he1tStateA["occ"] into he1tOccList
+   repeat for each item he1tSeatNum in he1tOccList
+      put he1tSeatNum & ":" & he1tDeltasA[he1tSeatNum] & "|" after he1tOutTxt
+   end repeat
+   if he1tOutTxt is not empty then
+      delete char -1 of he1tOutTxt
+   end if
+   return he1tOutTxt
+end he1heNetComputeSettleTxt
+
+command he1heNetApplySettle pDeltasTxt
+   -- fold the verified settle: move the stacks, advance the receipt chain
+   -- (spec 8.3: settleHash binds the deltas to the settle wire's own chain
+   -- head; the receipt head chains hand to hand), show the showdown, and
+   -- drop to the between-hands phase
+   local he1tPairTxt, he1tSeatNum, he1tDeltaAmt, he1tDeltasCSV, he1tSettleHash, he1tColonPos
+   set the itemDelimiter to "|"
+   put empty into he1tDeltasCSV
+   repeat for each item he1tPairTxt in pDeltasTxt
+      put offset(":", he1tPairTxt) into he1tColonPos
+      if he1tColonPos > 0 then
+         put char 1 to (he1tColonPos - 1) of he1tPairTxt into he1tSeatNum
+         put char (he1tColonPos + 1) to -1 of he1tPairTxt into he1tDeltaAmt
+         if he1tSeatNum is a number and he1tDeltaAmt is a number then
+            add he1tDeltaAmt to he1gGame["stacksBy"][he1tSeatNum]
+         end if
+         put he1tSeatNum & ":" & he1tDeltaAmt & comma after he1tDeltasCSV
+      end if
+   end repeat
+   set the itemDelimiter to comma
+   if he1tDeltasCSV is not empty then
+      delete char -1 of he1tDeltasCSV
+   end if
+   put he1heSettleHashHex(he1tDeltasCSV, he1heHex2BinD(he1gGame["chainHeadHex"])) into he1tSettleHash
+   put he1heReceiptHeadHex(he1tSettleHash, he1gGame["rcptHeadHex"]) into he1gGame["rcptHeadHex"]
+   put "true" into he1gGame["oDeal"]["settleDone"]
+   -- 2e show/muck: keep the verified deltas so the react engine can decide
+   -- our display choice (winner shows, contested loser mucks)
+   put pDeltasTxt into he1gGame["oDeal"]["settleDeltas"]
+   put "between" into he1gGame["phase"]
+   he1heNetShowdownShow
+   he1heUISetStatus "Hand " & he1gGame["handNum"] & " settled: " & pDeltasTxt
+   he1heHudMark
+end he1heNetApplySettle
+
+function he1heNetAuditHand
+   -- our per-client audit verdict (spec 7.1 step 5): re-derive the committed
+   -- deal from the reveals and check it against what we WITNESSED -- the
+   -- commitments, the wired board, and OUR OWN delivered holes. (Another
+   -- seat's sealed delivery can only be checked by that seat; its own audit
+   -- covers it.)
+   local he1tDealA, he1tMySeat, he1tMyHoles, he1tBoardTxt, he1tCommitsA, he1tSeedsA, he1tPos, he1tCount
+   local he1tBoardN
+   set the itemDelimiter to comma
+   put he1heNetRevealedDealA() into he1tDealA
+   if he1tDealA is not an array then
+      return "fail:reveals-incomplete"
+   end if
+   put he1heNetMySeat() into he1tMySeat
+   put he1gGame["oDeal"]["myHoles"] into he1tMyHoles
+   if he1tMySeat > 0 and he1tMyHoles is not empty then
+      put he1tMyHoles into he1tDealA["holesBy"][he1tMySeat]
+   end if
+   put he1gGame["oDeal"]["boardList"] into he1tBoardTxt
+   put the number of items of he1tBoardTxt into he1tBoardN
+   if he1tBoardN >= 3 then
+      put item 1 to 3 of he1tBoardTxt into he1tDealA["flopList"]
+   end if
+   if he1tBoardN >= 4 then
+      put item 4 of he1tBoardTxt into he1tDealA["turnIx"]
+   end if
+   if he1tBoardN >= 5 then
+      put item 5 of he1tBoardTxt into he1tDealA["riverIx"]
+   end if
+   put he1heNetContribCount() into he1tCount
+   repeat with he1tPos = 1 to he1tCount
+      put he1gGame["oDeal"]["commitsBy"][he1tPos] into he1tCommitsA[he1tPos]
+      put he1gGame["oDeal"]["revealsBy"][he1tPos] into he1tSeedsA[he1tPos]
+   end repeat
+   return he1heAuditDeal(he1heHex2BinD(he1gGame["tableIdHex"]), he1gGame["handNum"], he1tSeedsA, \
+         he1tCommitsA, he1tCount, he1tDealA, he1gGame["state"]["occ"], he1gGame["buttonSeat"])
+end he1heNetAuditHand
+
+command he1heNetShowBoard
+   -- render the wired board through the hotseat board display path
+   local he1tBoardTxt, he1tBoardN
+   set the itemDelimiter to comma
+   put he1gGame["oDeal"]["boardList"] into he1tBoardTxt
+   put the number of items of he1tBoardTxt into he1tBoardN
+   if he1tBoardN >= 3 then
+      he1heUIShowBoardStreet "flop", (item 1 to 3 of he1tBoardTxt)
+   end if
+   if he1tBoardN >= 4 then
+      he1heUIShowBoardStreet "turn", (item 4 of he1tBoardTxt)
+   end if
+   if he1tBoardN >= 5 then
+      he1heUIShowBoardStreet "river", (item 5 of he1tBoardTxt)
+   end if
+end he1heNetShowBoard
+
+command he1heNetShowdownShow
+   -- at settle time only OUR OWN cards go up (they were always ours to
+   -- look at); every OTHER contested seat's cards appear when ITS show wire
+   -- folds (he1heNetShowSeat) -- the 2e show/muck display choice made real. A
+   -- mucked seat's cards simply never paint; the audit saw them anyway
+   -- (ranks derive from the revealed seeds -- display, not correctness).
+   local he1tMySeat, he1tMyHoles
+   put he1heNetMySeat() into he1tMySeat
+   put he1gGame["oDeal"]["myHoles"] into he1tMyHoles
+   if he1tMySeat > 0 and he1tMyHoles is not empty then
+      he1heUIShowHole he1tMySeat, he1tMyHoles
+   end if
+end he1heNetShowdownShow
+
+command he1heNetShowSeat pSeatNum
+   -- reveal ONE seat's cards on its folded show wire, derived from the
+   -- revealed seeds (the transcript's truth, never the seat's claim)
+   local he1tDealA, he1tHolePair
+   set the itemDelimiter to comma
+   put he1heNetRevealedDealA() into he1tDealA
+   if he1tDealA is not an array then
+      exit he1heNetShowSeat
+   end if
+   put he1tDealA["holesBy"][pSeatNum] into he1tHolePair
+   if he1tHolePair is not empty then
+      he1heUIShowHole pSeatNum, he1tHolePair
+   end if
+end he1heNetShowSeat
+
+function he1heDeltaOfTxt pDeltasTxt, pSeatNum
+   -- one seat's delta out of the settle body's "seat:delta|..." text; 0 when
+   -- absent/malformed. Pure; every chunk is of a plain local (H6).
+   local he1tPairTxt, he1tColonPos, he1tSeatTxt, he1tAmtTxt, he1tSaved
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to "|"
+   repeat for each item he1tPairTxt in pDeltasTxt
+      put offset(":", he1tPairTxt) into he1tColonPos
+      if he1tColonPos > 0 then
+         put char 1 to (he1tColonPos - 1) of he1tPairTxt into he1tSeatTxt
+         put char (he1tColonPos + 1) to -1 of he1tPairTxt into he1tAmtTxt
+         if he1tSeatTxt is pSeatNum and he1tAmtTxt is a number then
+            set the itemDelimiter to he1tSaved
+            return he1tAmtTxt
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to he1tSaved
+   return 0
+end he1heDeltaOfTxt
+
+function he1heTwoDigits pNum
+   if pNum < 10 then
+      return "0" & pNum
+   end if
+   return pNum
+end he1heTwoDigits
+
+function he1heCountItems pList
+   set the itemDelimiter to comma
+   if pList is empty then
+      return 0
+   end if
+   return the number of items of pList
+end he1heCountItems
+
+function he1heNextInList pList, pEntry
+   -- circular successor of pEntry in a comma list
+   local he1tPos, he1tCount
+   set the itemDelimiter to comma
+   put the number of items of pList into he1tCount
+   repeat with he1tPos = 1 to he1tCount
+      if item he1tPos of pList is pEntry then
+         if he1tPos is he1tCount then
+            return item 1 of pList
+         end if
+         return item (he1tPos + 1) of pList
+      end if
+   end repeat
+   return item 1 of pList
+end he1heNextInList
+
+function he1heRotateAfter pList, pEntry
+   -- the list re-ordered to start just after pEntry (deal / action order)
+   local he1tPos, he1tCount, he1tOut
+   set the itemDelimiter to comma
+   put the number of items of pList into he1tCount
+   repeat with he1tPos = 1 to he1tCount
+      if item he1tPos of pList is pEntry then
+         if he1tPos is he1tCount then
+            return pList
+         end if
+         put item (he1tPos + 1) to he1tCount of pList & comma & item 1 to he1tPos of pList into he1tOut
+         return he1tOut
+      end if
+   end repeat
+   return pList
+end he1heRotateAfter
+
+function he1heNextLiveAfterPos pLiveList, pPos
+   -- next live seat strictly after physical position pPos, circular over the
+   -- live seats -- works even when pPos itself is not live (a busted seat).
+   -- pLiveList must be ascending.
+   local he1tSeatNum
+   set the itemDelimiter to comma
+   repeat for each item he1tSeatNum in pLiveList
+      if he1tSeatNum > pPos then
+         return he1tSeatNum
+      end if
+   end repeat
+   return item 1 of pLiveList
+end he1heNextLiveAfterPos
+
+function he1hePrevLiveBeforePos pLiveList, pPos
+   -- previous live seat strictly before physical position pPos, circular
+   local he1tSeatNum, he1tPrev
+   set the itemDelimiter to comma
+   put item -1 of pLiveList into he1tPrev
+   repeat for each item he1tSeatNum in pLiveList
+      if he1tSeatNum < pPos then
+         put he1tSeatNum into he1tPrev
+      end if
+   end repeat
+   return he1tPrev
+end he1hePrevLiveBeforePos
+
+function he1heScheduleButton pLiveList, pLastBB
+   -- dead-button-aware blind schedule (TDA rule 10, simplified to always post
+   -- a live small blind): the big blind ALWAYS advances to the next live seat
+   -- clockwise from the previous big blind, so nobody posts it twice running
+   -- and no live seat skips it across an elimination. Returns the button seat;
+   -- he1heBetNewHand then derives SB = next live after button, BB = next after SB
+   -- (heads-up: button IS the SB), which reproduces this schedule exactly.
+   local he1tBB, he1tSB
+   set the itemDelimiter to comma
+   if pLastBB is 0 then
+      return item 1 of pLiveList
+   end if
+   put he1heNextLiveAfterPos(pLiveList, pLastBB) into he1tBB
+   put he1hePrevLiveBeforePos(pLiveList, he1tBB) into he1tSB
+   if he1heCountItems(pLiveList) is 2 then
+      return he1tSB
+   end if
+   return he1hePrevLiveBeforePos(pLiveList, he1tSB)
+end he1heScheduleButton
+
+function he1heHexId pLen
+   -- a random lowercase-hex id built char by char (no binary, no FFI): a
+   -- display/table handle only, not dealing- or key-related
+   local he1tOut, he1tI
+   put empty into he1tOut
+   repeat pLen times
+      put char (random(16)) of "0123456789abcdef" after he1tOut
+   end repeat
+   return he1tOut
+end he1heHexId
+
+function he1heCardRankVal pIdx
+   return (pIdx - 1) div 4 + 2
+end he1heCardRankVal
+
+function he1heCardSuitVal pIdx
+   return (pIdx - 1) mod 4 + 1
+end he1heCardSuitVal
+
+function he1heCardName pIdx
+   local he1tRankPos, he1tSuitPos
+   put (pIdx - 1) div 4 + 1 into he1tRankPos
+   put (pIdx - 1) mod 4 + 1 into he1tSuitPos
+   return char he1tRankPos of he1kHeRankChars & char he1tSuitPos of he1kHeSuitChars
+end he1heCardName
+
+function he1heCardIndex pName
+   local he1tRankVal, he1tSuitVal, he1tNameTxt
+   put pName into he1tNameTxt
+   put offset(char 1 of he1tNameTxt, he1kHeRankChars) + 1 into he1tRankVal
+   put offset(char 2 of he1tNameTxt, he1kHeSuitChars) into he1tSuitVal
+   return (he1tRankVal - 2) * 4 + he1tSuitVal
+end he1heCardIndex
+
+function he1heRank5 pFive
+   -- pFive: comma list of exactly five card indices
+   local he1tRankList, he1tSuitList, he1tPos, he1tIdx, he1tFlush, he1tDistinct, he1tHighStraight
+   local he1tCountA, he1tRankVal, he1tGroupLines, he1tSizes, he1tGRanks, he1tOut
+   set the itemDelimiter to comma
+   put empty into he1tRankList
+   put empty into he1tSuitList
+   repeat for each item he1tIdx in pFive
+      put he1heCardRankVal(he1tIdx) & comma after he1tRankList
+      put he1heCardSuitVal(he1tIdx) & comma after he1tSuitList
+   end repeat
+   delete char -1 of he1tRankList
+   delete char -1 of he1tSuitList
+   sort items of he1tRankList numeric descending
+
+   -- flush: all five suits equal
+   put true into he1tFlush
+   repeat with he1tPos = 2 to 5
+      if item he1tPos of he1tSuitList is not item 1 of he1tSuitList then
+         put false into he1tFlush
+      end if
+   end repeat
+
+   -- straight: five distinct ranks spanning 4, or the wheel (A-5-4-3-2)
+   put empty into he1tDistinct
+   repeat with he1tPos = 1 to 5
+      if item he1tPos of he1tRankList is not among the items of he1tDistinct then
+         put item he1tPos of he1tRankList & comma after he1tDistinct
+      end if
+   end repeat
+   delete char -1 of he1tDistinct
+   put 0 into he1tHighStraight
+   if the number of items of he1tDistinct is 5 then
+      if (item 1 of he1tDistinct) - (item 5 of he1tDistinct) is 4 then
+         put item 1 of he1tDistinct into he1tHighStraight
+      else if he1tDistinct is "14,5,4,3,2" then
+         put 5 into he1tHighStraight
+      end if
+   end if
+
+   if he1tFlush and he1tHighStraight > 0 then
+      return "08" & he1heTwoDigits(he1tHighStraight) & "00000000"
+   end if
+
+   -- histogram: sort groups by (count, rank) descending in ONE pass. The sort
+   -- key is PRECOMPUTED as item 1 (count * 100 + rank; rank <= 14 < 100, so
+   -- count dominates and rank breaks ties), then we sort by that single field
+   -- with the proven "by item 1 of each" form. So correctness depends neither
+   -- on LiveCode's sort being stable NOR on an arithmetic sort-by expression --
+   -- both are removed. Each line is "sortKey,count,rank" (frequencies +
+   -- order-isomorphism pinned in tools/logic-fuzz.py).
+   repeat with he1tPos = 1 to 5
+      put item he1tPos of he1tRankList into he1tRankVal
+      if he1tCountA[he1tRankVal] is empty then
+         put 0 into he1tCountA[he1tRankVal]
+      end if
+      add 1 to he1tCountA[he1tRankVal]
+   end repeat
+   put empty into he1tGroupLines
+   repeat for each key he1tRankVal in he1tCountA
+      put (he1tCountA[he1tRankVal] * 100 + he1tRankVal) & comma & he1tCountA[he1tRankVal] & comma & he1tRankVal & return after he1tGroupLines
+   end repeat
+   delete char -1 of he1tGroupLines
+   sort lines of he1tGroupLines numeric descending by item 1 of each
+   put empty into he1tSizes
+   put empty into he1tGRanks
+   repeat for each line he1tOut in he1tGroupLines
+      put item 2 of he1tOut & comma after he1tSizes
+      put item 3 of he1tOut & comma after he1tGRanks
+   end repeat
+   delete char -1 of he1tSizes
+   delete char -1 of he1tGRanks
+
+   if item 1 of he1tSizes is 4 then
+      return "07" & he1heTwoDigits(item 1 of he1tGRanks) & he1heTwoDigits(item 2 of he1tGRanks) & "000000"
+   end if
+   if item 1 of he1tSizes is 3 and item 2 of he1tSizes is 2 then
+      return "06" & he1heTwoDigits(item 1 of he1tGRanks) & he1heTwoDigits(item 2 of he1tGRanks) & "000000"
+   end if
+   if he1tFlush then
+      put "05" into he1tOut
+      repeat with he1tPos = 1 to 5
+         put he1heTwoDigits(item he1tPos of he1tRankList) after he1tOut
+      end repeat
+      return he1tOut
+   end if
+   if he1tHighStraight > 0 then
+      return "04" & he1heTwoDigits(he1tHighStraight) & "00000000"
+   end if
+   if item 1 of he1tSizes is 3 then
+      return "03" & he1heTwoDigits(item 1 of he1tGRanks) & he1heTwoDigits(item 2 of he1tGRanks) \
+            & he1heTwoDigits(item 3 of he1tGRanks) & "0000"
+   end if
+   if item 1 of he1tSizes is 2 and item 2 of he1tSizes is 2 then
+      return "02" & he1heTwoDigits(item 1 of he1tGRanks) & he1heTwoDigits(item 2 of he1tGRanks) \
+            & he1heTwoDigits(item 3 of he1tGRanks) & "0000"
+   end if
+   if item 1 of he1tSizes is 2 then
+      return "01" & he1heTwoDigits(item 1 of he1tGRanks) & he1heTwoDigits(item 2 of he1tGRanks) \
+            & he1heTwoDigits(item 3 of he1tGRanks) & he1heTwoDigits(item 4 of he1tGRanks) & "00"
+   end if
+   put "00" into he1tOut
+   repeat with he1tPos = 1 to 5
+      put he1heTwoDigits(item he1tPos of he1tRankList) after he1tOut
+   end repeat
+   return he1tOut
+end he1heRank5
+
+function he1heEval7 pSeven
+   -- best 5 of 7 by exhaustive 21-combination scan: the dumbest correct
+   -- algorithm, identical to the CI mirror, nothing clever to get wrong
+   local he1tSkipA, he1tSkipB, he1tPos, he1tFive, he1tRank, he1tBest
+   set the itemDelimiter to comma
+   put empty into he1tBest
+   repeat with he1tSkipA = 1 to 6
+      repeat with he1tSkipB = he1tSkipA + 1 to 7
+         put empty into he1tFive
+         repeat with he1tPos = 1 to 7
+            if he1tPos is not he1tSkipA and he1tPos is not he1tSkipB then
+               put item he1tPos of pSeven & comma after he1tFive
+            end if
+         end repeat
+         delete char -1 of he1tFive
+         put he1heRank5(he1tFive) into he1tRank
+         if he1tBest is empty or he1tRank > he1tBest then
+            put he1tRank into he1tBest
+         end if
+      end repeat
+   end repeat
+   return he1tBest
+end he1heEval7
+
+function he1heFreshPrngState
+   -- returns a MINSTD seed in 1..he1kHeRngMax
+   local he1tSeed, he1tErr
+   put 0 into he1tSeed
+   if he1heHasSodium() then
+      try
+         repeat 3 times
+            put (he1tSeed * 32768 + (sxRandomUniform(32768) mod 32768)) mod he1kHeRngMod into he1tSeed
+         end repeat
+      catch he1tErr
+         put 0 into he1tSeed
+      end try
+   end if
+   if he1tSeed <= 0 then
+      -- practice entropy: engine time + random(), non-cryptographic
+      put (the milliseconds) mod he1kHeRngMod into he1tSeed
+      repeat 3 times
+         put (he1tSeed * 131 + random(32768)) mod he1kHeRngMod into he1tSeed
+      end repeat
+   end if
+   return (he1tSeed mod he1kHeRngMax) + 1
+end he1heFreshPrngState
+
+function he1heRngStep pState
+   return (he1kHeRngMul * pState) mod he1kHeRngMod
+end he1heRngStep
+
+function he1heDrawInt pState, pRangeN
+   -- uniform 1..pRangeN with rejection sampling (no modulo bias); returns
+   -- "value,newState". Pure integer arithmetic, all products < 2^53.
+   local he1tLimit, he1tS, he1tV
+   put (he1kHeRngMax div pRangeN) * pRangeN into he1tLimit
+   put pState into he1tS
+   repeat forever
+      put he1heRngStep(he1tS) into he1tS
+      put he1tS - 1 into he1tV
+      if he1tV < he1tLimit then
+         return ((he1tV mod pRangeN) + 1) & comma & he1tS
+      end if
+   end repeat
+end he1heDrawInt
+
+function he1heShuffleDeck pState
+   -- Fisher-Yates over deck[1..52]; deck 1 is the top, dealt first
+   local he1tDeckA, he1tPos, he1tSwapPos, he1tDrawPair, he1tHold, he1tOut, he1tState
+   set the itemDelimiter to comma
+   repeat with he1tPos = 1 to 52
+      put he1tPos into he1tDeckA[he1tPos]
+   end repeat
+   put pState into he1tState
+   -- defensive: MINSTD has no 0 state (0 maps to 0 forever, and the -1 draw
+   -- value under LiveCode's sign-of-dividend mod then yields swap position 0,
+   -- corrupting the deck where the Python mirror would wrap to n). Every
+   -- caller seeds via he1heFreshPrngState (already >= 1); clamp so a raw future
+   -- caller cannot silently diverge from the mirror. Mirrored in
+   -- tools/shuffle-kat.py.
+   if he1tState is not a number or he1tState < 1 then
+      put 1 into he1tState
+   end if
+   repeat with he1tPos = 52 down to 2
+      put he1heDrawInt(he1tState, he1tPos) into he1tDrawPair
+      put item 1 of he1tDrawPair into he1tSwapPos
+      put item 2 of he1tDrawPair into he1tState
+      put he1tDeckA[he1tPos] into he1tHold
+      put he1tDeckA[he1tSwapPos] into he1tDeckA[he1tPos]
+      put he1tHold into he1tDeckA[he1tSwapPos]
+   end repeat
+   put empty into he1tOut
+   repeat with he1tPos = 1 to 52
+      put he1tDeckA[he1tPos] & comma after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heShuffleDeck
+
+function he1heDealAssign pDeckList, pOccupiedList, pButtonSeat
+   -- fixed public consumption order (spec 7.3, adopted at every level):
+   -- one card per occupied seat starting left of the button, two rounds,
+   -- then burn, flop x3, burn, turn, burn, river
+   local he1tOrder, he1tPos, he1tSeatNum, he1tOutA, he1tRound, he1tHoleTxt
+   set the itemDelimiter to comma
+   put he1heRotateAfter(pOccupiedList, pButtonSeat) into he1tOrder
+   put 0 into he1tPos
+   repeat with he1tRound = 1 to 2
+      repeat for each item he1tSeatNum in he1tOrder
+         add 1 to he1tPos
+         put he1tOutA["holesBy"][he1tSeatNum] into he1tHoleTxt
+         if he1tHoleTxt is empty then
+            put item he1tPos of pDeckList into he1tOutA["holesBy"][he1tSeatNum]
+         else
+            put he1tHoleTxt & comma & item he1tPos of pDeckList into he1tOutA["holesBy"][he1tSeatNum]
+         end if
+      end repeat
+   end repeat
+   put item (he1tPos + 1) of pDeckList into he1tOutA["burnsList"]
+   put item (he1tPos + 2) to (he1tPos + 4) of pDeckList into he1tOutA["flopList"]
+   put he1tOutA["burnsList"] & comma & item (he1tPos + 5) of pDeckList into he1tOutA["burnsList"]
+   put item (he1tPos + 6) of pDeckList into he1tOutA["turnIx"]
+   put he1tOutA["burnsList"] & comma & item (he1tPos + 7) of pDeckList into he1tOutA["burnsList"]
+   put item (he1tPos + 8) of pDeckList into he1tOutA["riverIx"]
+   return he1tOutA
+end he1heDealAssign
+
+function he1heBetNewHand pSB, pBB, pAnte, pStacksA, pOccupiedList, pButtonSeat
+   local he1tStateA, he1tSeatNum, he1tCount
+   set the itemDelimiter to comma
+   put pSB into he1tStateA["sb"]
+   put pBB into he1tStateA["bb"]
+   put pAnte into he1tStateA["ante"]
+   put pOccupiedList into he1tStateA["occ"]
+   put pButtonSeat into he1tStateA["buttonSeat"]
+   put "preflop" into he1tStateA["street"]
+   put "blinds" into he1tStateA["phase"]
+   put 0 into he1tStateA["toAct"]
+   put 0 into he1tStateA["betCur"]
+   put pBB into he1tStateA["raiseFull"]
+   put 0 into he1tStateA["aggressor"]
+   put 0 into he1tStateA["sdFirst"]
+   put empty into he1tStateA["err"]
+   put empty into he1tStateA["note"]
+   repeat for each item he1tSeatNum in pOccupiedList
+      put pStacksA[he1tSeatNum] into he1tStateA["stackBy"][he1tSeatNum]
+      put 0 into he1tStateA["streetBy"][he1tSeatNum]
+      put 0 into he1tStateA["handBy"][he1tSeatNum]
+      put "false" into he1tStateA["foldedBy"][he1tSeatNum]
+      put "false" into he1tStateA["allinBy"][he1tSeatNum]
+      put "false" into he1tStateA["actedBy"][he1tSeatNum]
+   end repeat
+   put he1heCountItems(pOccupiedList) into he1tCount
+   if he1tCount is 2 then
+      -- heads-up: the button IS the small blind (spec 8.1)
+      put pButtonSeat into he1tStateA["sbSeat"]
+   else
+      put he1heNextInList(pOccupiedList, pButtonSeat) into he1tStateA["sbSeat"]
+   end if
+   put he1heNextInList(pOccupiedList, he1tStateA["sbSeat"]) into he1tStateA["bbSeat"]
+   return he1tStateA
+end he1heBetNewHand
+
+function he1heBetInHandList pStateA
+   local he1tOut, he1tSeatNum
+   set the itemDelimiter to comma
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in pStateA["occ"]
+      if pStateA["foldedBy"][he1tSeatNum] is "false" then
+         put he1tSeatNum & comma after he1tOut
+      end if
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heBetInHandList
+
+function he1heBetSeatPending pStateA, pSeatNum
+   -- a seat owes action if it is in hand, has chips, and either faces a
+   -- bigger bet or has not acted since the last full raise
+   if pStateA["foldedBy"][pSeatNum] is "true" then
+      return false
+   end if
+   if pStateA["allinBy"][pSeatNum] is "true" then
+      return false
+   end if
+   if pStateA["streetBy"][pSeatNum] < pStateA["betCur"] then
+      return true
+   end if
+   return pStateA["actedBy"][pSeatNum] is "false"
+end he1heBetSeatPending
+
+function he1heBetNextPending pStateA, pAfterSeat
+   local he1tOrder, he1tSeatNum
+   set the itemDelimiter to comma
+   put he1heRotateAfter(pStateA["occ"], pAfterSeat) into he1tOrder
+   repeat for each item he1tSeatNum in he1tOrder
+      if he1heBetSeatPending(pStateA, he1tSeatNum) then
+         return he1tSeatNum
+      end if
+   end repeat
+   return 0
+end he1heBetNextPending
+
+function he1heBetLiveCount pStateA
+   -- in-hand seats that still have chips behind (can still bet)
+   local he1tCount, he1tSeatNum
+   set the itemDelimiter to comma
+   put 0 into he1tCount
+   repeat for each item he1tSeatNum in pStateA["occ"]
+      if pStateA["foldedBy"][he1tSeatNum] is "false" and pStateA["allinBy"][he1tSeatNum] is "false" then
+         add 1 to he1tCount
+      end if
+   end repeat
+   return he1tCount
+end he1heBetLiveCount
+
+function he1heBetPay pStateA, pSeatNum, pAmount
+   -- move pAmount from behind to the street; flags all-in at zero behind
+   local he1tStateA
+   put pStateA into he1tStateA
+   subtract pAmount from he1tStateA["stackBy"][pSeatNum]
+   add pAmount to he1tStateA["streetBy"][pSeatNum]
+   add pAmount to he1tStateA["handBy"][pSeatNum]
+   if he1tStateA["stackBy"][pSeatNum] is 0 then
+      put "true" into he1tStateA["allinBy"][pSeatNum]
+   end if
+   return he1tStateA
+end he1heBetPay
+
+function he1heBetPayDead pStateA, pSeatNum, pAmount
+   -- post dead money (antes): into the pot (handBy) only, NEVER the street bet,
+   -- so an ante does not reduce what a seat still owes to call the blind. A seat
+   -- short of the full ante posts what it has and is all-in for it (side-pot
+   -- eligible up to its contribution, exactly like a short blind).
+   local he1tStateA
+   put pStateA into he1tStateA
+   subtract pAmount from he1tStateA["stackBy"][pSeatNum]
+   add pAmount to he1tStateA["handBy"][pSeatNum]
+   if he1tStateA["stackBy"][pSeatNum] is 0 then
+      put "true" into he1tStateA["allinBy"][pSeatNum]
+   end if
+   return he1tStateA
+end he1heBetPayDead
+
+function he1heBetFirstInHandAfter pStateA, pAfterSeat
+   local he1tOrder, he1tSeatNum
+   set the itemDelimiter to comma
+   put he1heRotateAfter(pStateA["occ"], pAfterSeat) into he1tOrder
+   repeat for each item he1tSeatNum in he1tOrder
+      if pStateA["foldedBy"][he1tSeatNum] is "false" then
+         return he1tSeatNum
+      end if
+   end repeat
+   return 0
+end he1heBetFirstInHandAfter
+
+function he1heBetCloseStreet pStateA
+   -- action closed: reset street bookkeeping and advance, or hand over
+   local he1tStateA, he1tSeatNum
+   set the itemDelimiter to comma
+   put pStateA into he1tStateA
+   -- remember who shows first if this closes the final betting round
+   if he1tStateA["aggressor"] > 0 then
+      put he1tStateA["aggressor"] into he1tStateA["sdFirst"]
+   else
+      put he1heBetFirstInHandAfter(he1tStateA, he1tStateA["buttonSeat"]) into he1tStateA["sdFirst"]
+   end if
+   repeat for each item he1tSeatNum in he1tStateA["occ"]
+      put 0 into he1tStateA["streetBy"][he1tSeatNum]
+      put "false" into he1tStateA["actedBy"][he1tSeatNum]
+   end repeat
+   put 0 into he1tStateA["betCur"]
+   put he1tStateA["bb"] into he1tStateA["raiseFull"]
+   put 0 into he1tStateA["aggressor"]
+   if he1tStateA["street"] is "river" then
+      put "showdown" into he1tStateA["phase"]
+      put 0 into he1tStateA["toAct"]
+      put "showdown" & return after he1tStateA["note"]
+      return he1tStateA
+   end if
+   if he1heBetLiveCount(he1tStateA) <= 1 then
+      -- nobody left who can bet: the board runs out with no more action
+      put "runout" into he1tStateA["phase"]
+      put 0 into he1tStateA["toAct"]
+      put "runout" & return after he1tStateA["note"]
+      return he1tStateA
+   end if
+   switch he1tStateA["street"]
+      case "preflop"
+         put "flop" into he1tStateA["street"]
+         break
+      case "flop"
+         put "turn" into he1tStateA["street"]
+         break
+      case "turn"
+         put "river" into he1tStateA["street"]
+         break
+   end switch
+   put he1heBetNextPending(he1tStateA, he1tStateA["buttonSeat"]) into he1tStateA["toAct"]
+   put "acting" into he1tStateA["phase"]
+   put "advance:" & he1tStateA["street"] & return after he1tStateA["note"]
+   return he1tStateA
+end he1heBetCloseStreet
+
+function he1heBetAfterAction pStateA, pSeatNum
+   -- find the next actor after pSeatNum, or close the street
+   local he1tStateA, he1tNextSeat
+   put pStateA into he1tStateA
+   put he1heBetNextPending(he1tStateA, pSeatNum) into he1tNextSeat
+   if he1tNextSeat is 0 then
+      return he1heBetCloseStreet(he1tStateA)
+   end if
+   put he1tNextSeat into he1tStateA["toAct"]
+   return he1tStateA
+end he1heBetAfterAction
+
+function he1heBetApply pStateA, pMsgType, pSeatNum, pAmount
+   -- THE transition function: every blind, action, and board message
+   local he1tStateA, he1tOwe, he1tPay, he1tTargetAmt, he1tIncrement, he1tSeatNum, he1tIsAllin
+   local he1tVerb, he1tAmt, he1tOccList
+   set the itemDelimiter to comma
+   put pStateA into he1tStateA
+   put empty into he1tStateA["err"]
+   put empty into he1tStateA["note"]
+
+   switch pMsgType
+
+      case "bidAnte"
+         -- every seat posts the ante as dead money before the blinds; a seat
+         -- short of the ante posts what it has (all-in for the ante)
+         if he1tStateA["phase"] is not "blinds" then
+            put "bidAnte-out-of-phase" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         -- replay-as-audit hardening: a seat outside the hand, or a REPEATED
+         -- ante from the same seat, must be engine-rejected -- without these a
+         -- hand-edited transcript replays an illegal posting sequence clean
+         -- (and the foreign-seat case does arithmetic on an absent stack)
+         put he1tStateA["occ"] into he1tOccList   -- copy before chunking (H6)
+         if pSeatNum is not among the items of he1tOccList then
+            put "bidAnte-wrong-seat" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         if he1tStateA["antePostedBy"][pSeatNum] is "true" then
+            put "bidAnte-duplicate" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put min(he1tStateA["ante"], he1tStateA["stackBy"][pSeatNum]) into he1tPay
+         if pAmount is not he1tPay then
+            put "bidAnte-wrong-amount" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1heBetPayDead(he1tStateA, pSeatNum, he1tPay) into he1tStateA
+         put "true" into he1tStateA["antePostedBy"][pSeatNum]
+         return he1tStateA
+
+      case "bidSB"
+         if he1tStateA["phase"] is not "blinds" then
+            put "bidSB-out-of-phase" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         if pSeatNum is not he1tStateA["sbSeat"] then
+            put "bidSB-wrong-seat" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         -- phase stays "blinds" until the BB posts, so without this flag a
+         -- transcript with two bidSB lines double-charged the small blind and
+         -- still audited clean
+         if he1tStateA["sbPosted"] is "true" then
+            put "bidSB-duplicate" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put min(he1tStateA["sb"], he1tStateA["stackBy"][pSeatNum]) into he1tPay
+         if pAmount is not he1tPay then
+            put "bidSB-wrong-amount" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1heBetPay(he1tStateA, pSeatNum, he1tPay) into he1tStateA
+         put "true" into he1tStateA["sbPosted"]
+         return he1tStateA
+
+      case "bidBB"
+         if he1tStateA["phase"] is not "blinds" then
+            put "bidBB-out-of-phase" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         if pSeatNum is not he1tStateA["bbSeat"] then
+            put "bidBB-wrong-seat" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put min(he1tStateA["bb"], he1tStateA["stackBy"][pSeatNum]) into he1tPay
+         if pAmount is not he1tPay then
+            put "bidBB-wrong-amount" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1heBetPay(he1tStateA, pSeatNum, he1tPay) into he1tStateA
+         -- the big blind is the opening bet even when posted short
+         put he1tStateA["bb"] into he1tStateA["betCur"]
+         put he1tStateA["bb"] into he1tStateA["raiseFull"]
+         put "acting" into he1tStateA["phase"]
+         put he1heBetAfterAction(he1tStateA, pSeatNum) into he1tStateA
+         return he1tStateA
+
+      case "board"
+         -- board messages only move state during a runout; in normal play
+         -- the engine advanced at street close and this is just the record
+         if he1tStateA["phase"] is "runout" then
+            switch he1tStateA["street"]
+               case "preflop"
+                  put "flop" into he1tStateA["street"]
+                  break
+               case "flop"
+                  put "turn" into he1tStateA["street"]
+                  break
+               case "turn"
+                  put "river" into he1tStateA["street"]
+                  break
+            end switch
+            if he1tStateA["street"] is "river" then
+               put "showdown" into he1tStateA["phase"]
+               put "showdown" & return after he1tStateA["note"]
+            end if
+         end if
+         return he1tStateA
+
+      case "act"
+         break
+
+      default
+         put "unknown-message:" & pMsgType into he1tStateA["err"]
+         return he1tStateA
+   end switch
+
+   -- act messages: pAmount item 1 is the verb, item 2 the amount
+   put item 1 of pAmount into he1tVerb
+   put item 2 of pAmount into he1tAmt
+   if he1tAmt is empty then
+      put 0 into he1tAmt
+   end if
+   if he1tStateA["phase"] is not "acting" then
+      put "act-out-of-phase" into he1tStateA["err"]
+      return he1tStateA
+   end if
+   if pSeatNum is not he1tStateA["toAct"] then
+      put "act-out-of-turn" into he1tStateA["err"]
+      return he1tStateA
+   end if
+
+   switch he1tVerb
+
+      case "fold"
+         put "true" into he1tStateA["foldedBy"][pSeatNum]
+         put "true" into he1tStateA["actedBy"][pSeatNum]
+         if he1heCountItems(he1heBetInHandList(he1tStateA)) is 1 then
+            put "handdone" into he1tStateA["phase"]
+            put 0 into he1tStateA["toAct"]
+            put "foldwin:" & he1heBetInHandList(he1tStateA) & return after he1tStateA["note"]
+            return he1tStateA
+         end if
+         return he1heBetAfterAction(he1tStateA, pSeatNum)
+
+      case "check"
+         if he1tStateA["streetBy"][pSeatNum] < he1tStateA["betCur"] then
+            put "check-facing-bet" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put "true" into he1tStateA["actedBy"][pSeatNum]
+         return he1heBetAfterAction(he1tStateA, pSeatNum)
+
+      case "call"
+         put he1tStateA["betCur"] - he1tStateA["streetBy"][pSeatNum] into he1tOwe
+         if he1tOwe <= 0 then
+            put "call-nothing-to-call" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put min(he1tOwe, he1tStateA["stackBy"][pSeatNum]) into he1tPay
+         if he1tAmt is not he1tPay then
+            put "call-wrong-amount" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1heBetPay(he1tStateA, pSeatNum, he1tPay) into he1tStateA
+         put "true" into he1tStateA["actedBy"][pSeatNum]
+         return he1heBetAfterAction(he1tStateA, pSeatNum)
+
+      case "bet"
+      case "raise"
+      case "allin"
+         -- unified aggressive path; "allin" resolves its own target
+         if he1tVerb is "allin" then
+            put he1tStateA["streetBy"][pSeatNum] + he1tStateA["stackBy"][pSeatNum] into he1tTargetAmt
+            if he1tAmt is not he1tTargetAmt then
+               put "allin-wrong-amount" into he1tStateA["err"]
+               return he1tStateA
+            end if
+            if he1tTargetAmt <= he1tStateA["betCur"] then
+               -- an all-in that cannot even match the bet is a call for less
+               put he1heBetPay(he1tStateA, pSeatNum, he1tStateA["stackBy"][pSeatNum]) into he1tStateA
+               put "true" into he1tStateA["actedBy"][pSeatNum]
+               return he1heBetAfterAction(he1tStateA, pSeatNum)
+            end if
+         else
+            put he1tAmt into he1tTargetAmt
+            -- chips are integers and the amount arrives as TEXT (the UI box
+            -- today, the wire in Phase 2). A non-number passes the string-
+            -- fallback compares below and then THROWS in the arithmetic; a
+            -- fractional target flows into he1heSettleOf's div/mod accounting,
+            -- where a fractional remainder hands a whole chip to EVERY winner
+            -- and mints chips -- and the replay audit re-derives the same
+            -- wrong payout, so it stamps the minting hand clean. Reject both.
+            if he1tTargetAmt is not a number or he1tTargetAmt is not trunc(he1tTargetAmt) then
+               put "act-bad-amount" into he1tStateA["err"]
+               return he1tStateA
+            end if
+            if he1tVerb is "bet" and he1tStateA["betCur"] > 0 then
+               put "bet-facing-bet-use-raise" into he1tStateA["err"]
+               return he1tStateA
+            end if
+            if he1tVerb is "raise" and he1tStateA["betCur"] is 0 then
+               put "raise-nothing-to-raise-use-bet" into he1tStateA["err"]
+               return he1tStateA
+            end if
+         end if
+         if he1tTargetAmt <= he1tStateA["betCur"] then
+            put "raise-not-above-bet" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1tTargetAmt - he1tStateA["streetBy"][pSeatNum] into he1tPay
+         if he1tPay > he1tStateA["stackBy"][pSeatNum] then
+            put "raise-beyond-stack" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1tPay is he1tStateA["stackBy"][pSeatNum] into he1tIsAllin
+         put he1tTargetAmt - he1tStateA["betCur"] into he1tIncrement
+         if he1tIncrement < he1tStateA["raiseFull"] and not he1tIsAllin then
+            put "raise-below-minimum" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         if he1tStateA["actedBy"][pSeatNum] is "true" then
+            -- betting was never reopened for this seat (an under-raise
+            -- all-in happened since it acted): it may only call or fold
+            put "raise-not-reopened" into he1tStateA["err"]
+            return he1tStateA
+         end if
+         put he1heBetPay(he1tStateA, pSeatNum, he1tPay) into he1tStateA
+         put he1tTargetAmt into he1tStateA["betCur"]
+         put pSeatNum into he1tStateA["aggressor"]
+         put "true" into he1tStateA["actedBy"][pSeatNum]
+         if he1tIncrement >= he1tStateA["raiseFull"] then
+            -- a FULL raise reopens action for everyone else
+            put he1tIncrement into he1tStateA["raiseFull"]
+            repeat for each item he1tSeatNum in he1tStateA["occ"]
+               if he1tSeatNum is not pSeatNum then
+                  put "false" into he1tStateA["actedBy"][he1tSeatNum]
+               end if
+            end repeat
+         end if
+         return he1heBetAfterAction(he1tStateA, pSeatNum)
+
+      default
+         put "unknown-verb:" & he1tVerb into he1tStateA["err"]
+         return he1tStateA
+   end switch
+end he1heBetApply
+
+function he1heBetLegal pStateA, pSeatNum
+   -- for the UI: one action per line -- "fold", "check", "call N",
+   -- "bet MIN MAX", "raise MINTO MAXTO", "allin N"
+   local he1tOut, he1tOwe, he1tMinTo, he1tMaxTo
+   put empty into he1tOut
+   if pStateA["phase"] is not "acting" or pStateA["toAct"] is not pSeatNum then
+      return he1tOut
+   end if
+   put pStateA["betCur"] - pStateA["streetBy"][pSeatNum] into he1tOwe
+   put "fold" & return after he1tOut
+   if he1tOwe <= 0 then
+      put "check" & return after he1tOut
+   else
+      put "call " & min(he1tOwe, pStateA["stackBy"][pSeatNum]) & return after he1tOut
+   end if
+   put pStateA["streetBy"][pSeatNum] + pStateA["stackBy"][pSeatNum] into he1tMaxTo
+   if pStateA["actedBy"][pSeatNum] is "false" and he1tMaxTo > pStateA["betCur"] then
+      put min(pStateA["betCur"] + pStateA["raiseFull"], he1tMaxTo) into he1tMinTo
+      if pStateA["betCur"] is 0 then
+         put "bet " & he1tMinTo && he1tMaxTo & return after he1tOut
+      else
+         put "raise " & he1tMinTo && he1tMaxTo & return after he1tOut
+      end if
+   end if
+   -- a shove above the bet is a raise: only legal if betting is (re)open
+   -- for this seat; a shove at or under the bet is just a call for less
+   if pStateA["actedBy"][pSeatNum] is "false" or he1tMaxTo <= pStateA["betCur"] then
+      put "allin " & he1tMaxTo & return after he1tOut
+   end if
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heBetLegal
+
+function he1heShowdownOrderOf pStateA
+   -- last aggressor of the final street first, then clockwise (spec 8.1)
+   local he1tOut, he1tSeatNum, he1tOrder, he1tFirstSeat
+   set the itemDelimiter to comma
+   put pStateA["sdFirst"] into he1tFirstSeat
+   if he1tFirstSeat is 0 or pStateA["foldedBy"][he1tFirstSeat] is "true" then
+      put he1heBetFirstInHandAfter(pStateA, pStateA["buttonSeat"]) into he1tFirstSeat
+   end if
+   put he1tFirstSeat & comma & he1heRotateAfter(pStateA["occ"], he1tFirstSeat) into he1tOrder
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in he1tOrder
+      if pStateA["foldedBy"][he1tSeatNum] is "false" and he1tSeatNum is not among the items of he1tOut then
+         put he1tSeatNum & comma after he1tOut
+      end if
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heShowdownOrderOf
+
+function he1heSettleOf pStateA, pRanksA
+   local he1tDeltasA, he1tSeatNum, he1tLevelsList, he1tLevelVal, he1tPrevLevel, he1tLayerAmt
+   local he1tEligibleList, he1tBestRank, he1tWinnersList, he1tShare, he1tRemainder, he1tOrder
+   local he1tContrib, he1tWinCount, he1tNoteTxt
+   set the itemDelimiter to comma
+   put empty into he1tNoteTxt
+   repeat for each item he1tSeatNum in pStateA["occ"]
+      put 0 into he1tDeltasA[he1tSeatNum]
+      subtract pStateA["handBy"][he1tSeatNum] from he1tDeltasA[he1tSeatNum]
+   end repeat
+
+   -- distinct positive commitment levels, ascending
+   put empty into he1tLevelsList
+   repeat for each item he1tSeatNum in pStateA["occ"]
+      if pStateA["handBy"][he1tSeatNum] > 0 and pStateA["handBy"][he1tSeatNum] is not among the items of he1tLevelsList then
+         put pStateA["handBy"][he1tSeatNum] & comma after he1tLevelsList
+      end if
+   end repeat
+   delete char -1 of he1tLevelsList
+   sort items of he1tLevelsList numeric ascending
+
+   put 0 into he1tPrevLevel
+   repeat for each item he1tLevelVal in he1tLevelsList
+      -- the layer pot: every seat contributes its slice of this level
+      put 0 into he1tLayerAmt
+      repeat for each item he1tSeatNum in pStateA["occ"]
+         put min(pStateA["handBy"][he1tSeatNum], he1tLevelVal) - he1tPrevLevel into he1tContrib
+         if he1tContrib > 0 then
+            add he1tContrib to he1tLayerAmt
+         end if
+      end repeat
+      -- eligible: unfolded seats fully covering this level
+      put empty into he1tEligibleList
+      repeat for each item he1tSeatNum in pStateA["occ"]
+         if pStateA["foldedBy"][he1tSeatNum] is "false" and pStateA["handBy"][he1tSeatNum] >= he1tLevelVal then
+            put he1tSeatNum & comma after he1tEligibleList
+         end if
+      end repeat
+      delete char -1 of he1tEligibleList
+      if he1tEligibleList is empty then
+         repeat for each item he1tSeatNum in pStateA["occ"]
+            put min(pStateA["handBy"][he1tSeatNum], he1tLevelVal) - he1tPrevLevel into he1tContrib
+            if he1tContrib > 0 then
+               add he1tContrib to he1tDeltasA[he1tSeatNum]
+            end if
+         end repeat
+         put he1tLevelVal into he1tPrevLevel
+         next repeat
+      end if
+      -- winners: best rank among the eligible
+      put empty into he1tBestRank
+      repeat for each item he1tSeatNum in he1tEligibleList
+         if he1tBestRank is empty or pRanksA[he1tSeatNum] > he1tBestRank then
+            put pRanksA[he1tSeatNum] into he1tBestRank
+         end if
+      end repeat
+      put empty into he1tWinnersList
+      repeat for each item he1tSeatNum in he1tEligibleList
+         if pRanksA[he1tSeatNum] is he1tBestRank or he1heCountItems(he1tEligibleList) is 1 then
+            put he1tSeatNum & comma after he1tWinnersList
+         end if
+      end repeat
+      delete char -1 of he1tWinnersList
+      put he1heCountItems(he1tWinnersList) into he1tWinCount
+      put he1tLayerAmt div he1tWinCount into he1tShare
+      put he1tLayerAmt mod he1tWinCount into he1tRemainder
+      repeat for each item he1tSeatNum in he1tWinnersList
+         add he1tShare to he1tDeltasA[he1tSeatNum]
+      end repeat
+      -- odd chips: first winner(s) clockwise from the button
+      put he1heRotateAfter(pStateA["occ"], pStateA["buttonSeat"]) into he1tOrder
+      repeat for each item he1tSeatNum in he1tOrder
+         if he1tRemainder is 0 then
+            exit repeat
+         end if
+         if he1tSeatNum is among the items of he1tWinnersList then
+            add 1 to he1tDeltasA[he1tSeatNum]
+            subtract 1 from he1tRemainder
+         end if
+      end repeat
+      put "pot " & he1tLayerAmt & " to " & he1tWinnersList & return after he1tNoteTxt
+      put he1tLevelVal into he1tPrevLevel
+   end repeat
+   put he1tNoteTxt into he1tDeltasA["note"]
+   return he1tDeltasA
+end he1heSettleOf
+
+function he1heLogLine pHandNum, pFromTxt, pTypeTxt, pBodyTxt
+   -- tab-delimited; body is plain text (never contains a tab)
+   return pHandNum & tab & pFromTxt & tab & pTypeTxt & tab & pBodyTxt
+end he1heLogLine
+
+function he1heLogField pLine, pIdx
+   local he1tSaved, he1tOut
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   put item pIdx of pLine into he1tOut
+   set the itemDelimiter to he1tSaved
+   return he1tOut
+end he1heLogField
+
+command he1heLogAppend pTypeTxt, pFromTxt, pBodyTxt
+   put he1heLogLine(he1gGame["handNum"], pFromTxt, pTypeTxt, pBodyTxt) & return after he1gGame["log"]
+end he1heLogAppend
+
+function he1heLogIsCleanHotseat pLogTxt
+   -- true iff pLogTxt begins with a 4-field hotseat line whose type is "cfg" (not
+   -- an online WIRE envelope, and not empty). The online lobby and the hotseat game
+   -- share he1gGame["log"] but in two incompatible formats: a hotseat line is
+   -- handNum TAB from TAB type TAB body (4 tab fields), while an online wire is a
+   -- 10-field signed envelope whose 3rd field is the hand number, NOT the type. A
+   -- hotseat History fold reads field 3 as the type and needs a hotseat "cfg" line
+   -- (which carries sb/bb/ante AND per-seat stacks) to seed he1heBetNewHand. So when
+   -- he1heTableCreate/he1heTableJoin has clobbered the log with a wire cfg (which carries
+   -- no stacks), leaving the lobby to hotseat must start a fresh hotseat table.
+   -- Pure (takes the log as a parameter) so it can be pinned in the harness.
+   local he1tFirst, he1tSaved
+   put line 1 of pLogTxt into he1tFirst
+   if he1tFirst is empty then
+      return false
+   end if
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to tab
+   if the number of items of he1tFirst is 4 and item 3 of he1tFirst is "cfg" then
+      set the itemDelimiter to he1tSaved
+      return true
+   end if
+   set the itemDelimiter to he1tSaved
+   return false
+end he1heLogIsCleanHotseat
+
+function he1heIsCardList pListTxt, pCount
+   -- pure guard for the fold: TRUE only when pListTxt is exactly pCount
+   -- comma-items, each a whole card index 1..52. Keeps a truncated or
+   -- hand-edited transcript from feeding he1heEval7 short/garbage card lists
+   -- (he1heCardRankVal on empty or non-numeric text throws). Mirrored in
+   -- tools/fold-kat.py.
+   local he1tItem
+   set the itemDelimiter to comma
+   if he1heCountItems(pListTxt) is not pCount then
+      return false
+   end if
+   repeat for each item he1tItem in pListTxt
+      if he1tItem is not a number then
+         return false
+      end if
+      if he1tItem is not trunc(he1tItem) or he1tItem < 1 or he1tItem > 52 then
+         return false
+      end if
+   end repeat
+   return true
+end he1heIsCardList
+
+function he1heFoldTranscript pLogTxt
+   -- pure fold: replay a transcript and RE-DERIVE everything (engine state,
+   -- showdown ranks, settlements); logged settle lines are verified against
+   -- the recomputation, so replay is also an audit. Returns "stacksBy"
+   -- (array), "handNum", "trace" (per-hand deltas lines), "errors" (lines).
+   local he1tOutA, he1tLogLine, he1tType, he1tBodyTxt, he1tBodyA, he1tStateA, he1tHaveHand
+   local he1tSeatNum, he1tHolesA, he1tBoardList, he1tRanksA, he1tDeltasA, he1tDeltasTxt
+   local he1tSevenList, he1tOccList, he1tButtonSeat, he1tSB, he1tBB, he1tAnte, he1tFromTxt, he1tStacksTxt
+   local he1tPos, he1tCardTxt, he1tOneCard, he1tSettleBad
+   local he1tHistLine, he1tBoardNames, he1tPotTotal, he1tWinnersTxt, he1tShownTxt, he1tHolePair, he1tAuditPart
+   local he1tShowChoiceA, he1tShownPiece
+   set the itemDelimiter to comma
+   put 0 into he1tOutA["handNum"]
+   put empty into he1tOutA["trace"]
+   put empty into he1tOutA["errors"]
+   put empty into he1tOutA["history"]
+   put "false" into he1tHaveHand
+   put empty into he1tBoardList
+
+   repeat for each line he1tLogLine in pLogTxt
+      if he1tLogLine is empty then
+         next repeat
+      end if
+      put he1heLogField(he1tLogLine, 3) into he1tType
+      put he1heLogField(he1tLogLine, 4) into he1tBodyTxt
+      set the itemDelimiter to comma
+
+      switch he1tType
+
+         case "cfg"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["sb"] into he1tSB
+            put he1tBodyA["bb"] into he1tBB
+            put he1tBodyA["ante"] into he1tAnte    -- absent in pre-ante transcripts
+            if he1tAnte is empty then
+               put 0 into he1tAnte
+            end if
+            put he1tBodyA["seats"] into he1tOccList
+            replace "|" with comma in he1tOccList
+            put he1tBodyA["button"] into he1tButtonSeat
+            put he1tBodyA["stacks"] into he1tStacksTxt
+            replace "|" with comma in he1tStacksTxt
+            put 0 into he1tPos
+            repeat for each item he1tSeatNum in he1tOccList
+               add 1 to he1tPos
+               put item he1tPos of he1tStacksTxt into he1tOutA["stacksBy"][he1tSeatNum]
+            end repeat
+            break
+
+         case "level"
+            -- tournament level change: subsequent hands use these stakes/ante
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["sb"] into he1tSB
+            put he1tBodyA["bb"] into he1tBB
+            put he1tBodyA["ante"] into he1tAnte
+            if he1tAnte is empty then
+               put 0 into he1tAnte
+            end if
+            break
+
+         case "handStart"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["seats"] into he1tOccList
+            replace "|" with comma in he1tOccList
+            put he1tBodyA["button"] into he1tButtonSeat
+            put he1heBetNewHand(he1tSB, he1tBB, he1tAnte, he1tOutA["stacksBy"], he1tOccList, he1tButtonSeat) into he1tStateA
+            put "true" into he1tHaveHand
+            put empty into he1tHolesA
+            put empty into he1tBoardList
+            put empty into he1tRanksA
+            put empty into he1tShowChoiceA
+            put he1heLogField(he1tLogLine, 1) into he1tOutA["handNum"]
+            break
+
+         case "holeDeliver"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["cards"] into he1tCardTxt
+            replace "|" with comma in he1tCardTxt
+            put he1heCardIndex(item 1 of he1tCardTxt) & comma & he1heCardIndex(item 2 of he1tCardTxt) \
+                  into he1tHolesA[he1tBodyA["seat"]]
+            break
+
+         case "board"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["cards"] into he1tCardTxt
+            replace "|" with comma in he1tCardTxt
+            repeat for each item he1tOneCard in he1tCardTxt
+               if he1tBoardList is empty then
+                  put he1heCardIndex(he1tOneCard) into he1tBoardList
+               else
+                  put he1tBoardList & comma & he1heCardIndex(he1tOneCard) into he1tBoardList
+               end if
+            end repeat
+            put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+            break
+
+         case "bidAnte"
+         case "bidSB"
+         case "bidBB"
+         case "act"
+            if he1tHaveHand is not "true" then
+               put "action-before-hand" & return after he1tOutA["errors"]
+               next repeat
+            end if
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1heLogField(he1tLogLine, 2) into he1tFromTxt
+            put char 5 to -1 of he1tFromTxt into he1tSeatNum
+            if he1tType is "act" then
+               put he1heBetApply(he1tStateA, "act", he1tSeatNum, he1tBodyA["verb"] & comma & he1tBodyA["amount"]) into he1tStateA
+            else
+               put he1heBetApply(he1tStateA, he1tType, he1tSeatNum, he1tBodyA["amount"]) into he1tStateA
+            end if
+            if he1tStateA["err"] is not empty then
+               put "engine-rejected:" & he1tStateA["err"] & return after he1tOutA["errors"]
+            end if
+            break
+
+         case "settle"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put empty into he1tRanksA
+            if he1heCountItems(he1heBetInHandList(he1tStateA)) > 1 then
+               -- drop-and-log (spec 16 posture): a contested showdown needs 5
+               -- valid board cards and a valid hole pair per unfolded seat. A
+               -- truncated or hand-edited transcript would otherwise feed
+               -- he1heEval7 short/garbage card lists here and THROW mid-replay,
+               -- killing the whole History fold on exactly the tampered input
+               -- the audit exists to catch. Name it and skip this settle.
+               put "false" into he1tSettleBad
+               if not he1heIsCardList(he1tBoardList, 5) then
+                  put "true" into he1tSettleBad
+               end if
+               repeat for each item he1tSeatNum in he1heBetInHandList(he1tStateA)
+                  put he1tHolesA[he1tSeatNum] into he1tHolePair
+                  if not he1heIsCardList(he1tHolePair, 2) then
+                     put "true" into he1tSettleBad
+                  end if
+               end repeat
+               if he1tSettleBad is "true" then
+                  put "settle-bad-cards-hand-" & he1heLogField(he1tLogLine, 1) & return after he1tOutA["errors"]
+                  break
+               end if
+               repeat for each item he1tSeatNum in he1heBetInHandList(he1tStateA)
+                  put he1tHolesA[he1tSeatNum] & comma & he1tBoardList into he1tSevenList
+                  put he1heEval7(he1tSevenList) into he1tRanksA[he1tSeatNum]
+               end repeat
+            end if
+            put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+            put empty into he1tDeltasTxt
+            repeat for each item he1tSeatNum in he1tStateA["occ"]
+               put he1tSeatNum & ":" & he1tDeltasA[he1tSeatNum] & "|" after he1tDeltasTxt
+            end repeat
+            delete char -1 of he1tDeltasTxt
+            if he1tBodyA["deltas"] is not he1tDeltasTxt then
+               put "settle-mismatch-hand-" & he1heLogField(he1tLogLine, 1) & ":logged=" & he1tBodyA["deltas"] \
+                     & ":computed=" & he1tDeltasTxt & return after he1tOutA["errors"]
+            end if
+            repeat for each item he1tSeatNum in he1tStateA["occ"]
+               add he1tDeltasA[he1tSeatNum] to he1tOutA["stacksBy"][he1tSeatNum]
+            end repeat
+            put "hand " & he1heLogField(he1tLogLine, 1) & ": " & he1tDeltasTxt & return after he1tOutA["trace"]
+            -- auditable hand-history line, folded from the transcript (which IS
+            -- the record). "settle-verified" means the logged payout equalled the
+            -- independent recomputation on this replay -- the audit, per hand.
+            put empty into he1tBoardNames
+            repeat for each item he1tOneCard in he1tBoardList
+               put he1heCardName(he1tOneCard) & comma after he1tBoardNames
+            end repeat
+            if he1tBoardNames is not empty then
+               delete char -1 of he1tBoardNames        -- trailing comma
+               replace comma with space in he1tBoardNames
+            end if
+            put 0 into he1tPotTotal
+            put empty into he1tWinnersTxt
+            put empty into he1tShownTxt
+            repeat for each item he1tSeatNum in he1tStateA["occ"]
+               add he1tStateA["handBy"][he1tSeatNum] to he1tPotTotal
+               if he1tDeltasA[he1tSeatNum] > 0 then
+                  put he1tSeatNum & comma after he1tWinnersTxt
+               end if
+               if he1tRanksA[he1tSeatNum] is not empty then
+                  put he1tHolesA[he1tSeatNum] into he1tHolePair
+                  put he1tSeatNum & "=" & he1heCardName(item 1 of he1tHolePair) && he1heCardName(item 2 of he1tHolePair) \
+                        && he1heHandLabel(he1tRanksA[he1tSeatNum]) into he1tShownPiece
+                  -- 2e show/muck: the audit knows every contested hand (the
+                  -- seeds reveal it); a seat that DECLINED to show it at the
+                  -- table is annotated, not hidden -- display choice, not
+                  -- correctness (mirrored in tools/fold-kat.py)
+                  if he1tShowChoiceA[he1tSeatNum] is "muck" then
+                     put " (mucked)" after he1tShownPiece
+                  end if
+                  put he1tShownPiece & ", " after he1tShownTxt
+               end if
+            end repeat
+            if he1tWinnersTxt is not empty then
+               delete char -1 of he1tWinnersTxt
+            end if
+            if he1tShownTxt is not empty then
+               delete char -1 of he1tShownTxt           -- trailing space, then...
+               delete char -1 of he1tShownTxt           -- ...trailing comma (two proven deletes)
+            end if
+            put "hand " & he1heLogField(he1tLogLine, 1) & ": board " & he1tBoardNames \
+                  & "; pot " & he1tPotTotal & "; winner seat " & he1tWinnersTxt into he1tHistLine
+            if he1tShownTxt is not empty then
+               put "; showdown " & he1tShownTxt after he1tHistLine
+            end if
+            put "; deltas " & he1tDeltasTxt into he1tAuditPart
+            if he1tBodyA["deltas"] is he1tDeltasTxt then
+               put he1tAuditPart & "; settle-verified" after he1tHistLine
+            else
+               put he1tAuditPart & "; settle-MISMATCH" after he1tHistLine
+            end if
+            put he1tHistLine & return after he1tOutA["history"]
+            put "false" into he1tHaveHand
+            break
+
+         case "show"
+         case "muck"
+            -- 2e display choice, recorded ahead of the settle line (the
+            -- online-log translator repositions them there); annotates the
+            -- audited showdown, never changes it
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1tBodyA["seat"] is a number then
+               put he1tType into he1tShowChoiceA[he1tBodyA["seat"]]
+            end if
+            break
+
+         case "chat"
+            break
+
+      end switch
+   end repeat
+   return he1tOutA
+end he1heFoldTranscript
+
+function he1heNetLogToHotseat pLogTxt
+   -- ONLINE HISTORY FOLDING (2e; the 2d deferral): translate the signed
+   -- wire chain into the 4-field hotseat-shaped transcript he1heFoldTranscript
+   -- and he1heAuditDealsFromLog already fold, so History audits an ONLINE
+   -- session through the exact same replay path as a hotseat one. PURE
+   -- (H5): reads no he1gGame. The input chain was verified wire-by-wire on
+   -- ingest (he1heEnvVerify); this is a format translation, not a second
+   -- verification pass. The mapping:
+   --   * the signed cfg's stakes + the sit wires' seats become the hotseat
+   --     cfg line (stacks seed from the cfg's stack, as the live fold does),
+   --     emitted once before the first handStart;
+   --   * pubkey senders become "seatN" from-names (the fold parses the seat
+   --     off them for bids and acts);
+   --   * dealLevel gains table=<the envelope's table id> and the
+   --     CONTRIBUTOR count (seats, plus the oracle's extra position at
+   --     level 1) -- the range the deal audit re-derives over;
+   --   * holeDeliver wires carry sealed boxes a reader cannot open, so the
+   --     holes are RE-DERIVED from the revealed seeds (the same truth the
+   --     live audit used) and emitted as plain card lines before the
+   --     settle; a hand whose reveals never completed gets none, and its
+   --     contested settle is then NAMED settle-bad-cards by the fold --
+   --     honest, never invented;
+   --   * show/muck reposition just AHEAD of their hand's settle (on the
+   --     wire they follow it; the fold annotates the showdown they cover);
+   --   * ckpt/receipt/audit/join/roster are not hotseat vocabulary -- the
+   --     net feed carries their live verdicts.
+   -- Returns empty when the log holds no translatable game (no handStart).
+   -- Exercised end to end by the netplay loopback (section 15); the pieces
+   -- it composes are each KAT-pinned (fold-kat, protocol-kat).
+   local he1tA, he1tWireLine, he1tTypeTxt, he1tBodyTxt, he1tBodyA, he1tHandTxt, he1tFromSeat
+   local he1tSeatByPubA, he1tStackAmt, he1tCfgSB, he1tCfgBB, he1tCfgAnte
+   local he1tSeatsTxt, he1tStacksTxt, he1tSeatNum, he1tCfgDone, he1tOut, he1tFromTxt
+   local he1tHandLines, he1tShowLines, he1tSettleLine, he1tTableHex, he1tHoleLines
+   local he1tOccList, he1tButton, he1tContribN, he1tSeedsA, he1tRevealN, he1tHandNum
+   local he1tPos, he1tDealErr, he1tDeckList, he1tDealA, he1tHolePair, he1tNamesTxt, he1tSeenHand
+   set the itemDelimiter to comma
+   put 1 into he1tCfgSB
+   put 2 into he1tCfgBB
+   put 0 into he1tCfgAnte
+   put he1kHeDefaultStack into he1tStackAmt
+   put "false" into he1tCfgDone
+   put "false" into he1tSeenHand
+   put empty into he1tOut
+   put empty into he1tHandLines
+   put empty into he1tShowLines
+   put empty into he1tSettleLine
+   put empty into he1tHoleLines
+   put 0 into he1tRevealN
+   put 0 into he1tContribN
+   repeat for each line he1tWireLine in pLogTxt
+      if he1tWireLine is empty then
+         next repeat
+      end if
+      put he1heEnvWireParse(he1tWireLine) into he1tA
+      if he1tA["hostSig"] is empty then
+         next repeat   -- not a 10-field wire (a clobbered/foreign line)
+      end if
+      put he1tA["type"] into he1tTypeTxt
+      put he1tA["hand"] into he1tHandTxt
+      put he1heEnvBodyText(he1tA["bodyHex"]) into he1tBodyTxt
+      put he1tSeatByPubA[he1tA["from"]] into he1tFromSeat
+      set the itemDelimiter to comma
+      switch he1tTypeTxt
+         case "cfg"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1tBodyA["sb"] is a number then
+               put he1tBodyA["sb"] into he1tCfgSB
+            end if
+            if he1tBodyA["bb"] is a number then
+               put he1tBodyA["bb"] into he1tCfgBB
+            end if
+            if he1tBodyA["ante"] is a number then
+               put he1tBodyA["ante"] into he1tCfgAnte
+            end if
+            if he1tBodyA["stack"] is a number then
+               put he1tBodyA["stack"] into he1tStackAmt
+            end if
+            break
+         case "sit"
+            -- the host ASSIGNMENT form only (seat=N,pub=...); a seat's own
+            -- sit-return (2e, no pub) is liveness state, not seating -- its
+            -- effect is already in the next handStart's seats
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1tBodyA["seat"] is a number and he1tBodyA["pub"] is not empty then
+               put he1tBodyA["seat"] into he1tSeatByPubA[he1tBodyA["pub"]]
+            end if
+            break
+         case "handStart"
+            -- flush the PREVIOUS hand first (its trailing show/muck wires
+            -- land between its settle and this handStart)
+            put he1heNetXlatFlush(he1tHandLines, he1tHoleLines, he1tShowLines, he1tSettleLine) after he1tOut
+            put empty into he1tHandLines
+            put empty into he1tShowLines
+            put empty into he1tSettleLine
+            put empty into he1tHoleLines
+            put empty into he1tSeedsA
+            put 0 into he1tRevealN
+            put 0 into he1tContribN
+            put "true" into he1tSeenHand
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["seats"] into he1tOccList
+            replace "|" with comma in he1tOccList
+            put he1tBodyA["button"] into he1tButton
+            put he1tHandTxt into he1tHandNum
+            if he1tCfgDone is not "true" then
+               -- the one-time hotseat cfg: the sit wires' seats, each
+               -- opening on the signed cfg's stack
+               put "true" into he1tCfgDone
+               put empty into he1tSeatsTxt
+               put empty into he1tStacksTxt
+               repeat for each item he1tSeatNum in he1tOccList
+                  put he1tSeatNum & "|" after he1tSeatsTxt
+                  put he1tStackAmt & "|" after he1tStacksTxt
+               end repeat
+               if he1tSeatsTxt is not empty then
+                  delete char -1 of he1tSeatsTxt
+                  delete char -1 of he1tStacksTxt
+               end if
+               put he1heLogLine(0, "table", "cfg", "sb=" & he1tCfgSB & ",bb=" & he1tCfgBB \
+                     & ",ante=" & he1tCfgAnte & ",seats=" & he1tSeatsTxt \
+                     & ",stacks=" & he1tStacksTxt & ",button=" & he1tButton) & return after he1tOut
+            end if
+            put he1heLogLine(he1tHandTxt, "table", "handStart", he1tBodyTxt) & return after he1tHandLines
+            break
+         case "dealLevel"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            put he1tBodyA["count"] into he1tContribN
+            if he1tContribN is not a number then
+               put 0 into he1tContribN
+            end if
+            if he1tBodyA["level"] is "1" then
+               add 1 to he1tContribN   -- the oracle's entropy position
+            end if
+            put he1tA["table"] into he1tTableHex
+            put he1heLogLine(he1tHandTxt, "table", "dealLevel", "level=" & he1tBodyA["level"] \
+                  & ",table=" & he1tTableHex & ",count=" & he1tContribN) & return after he1tHandLines
+            break
+         case "seedCommit"
+            put he1heLogLine(he1tHandTxt, he1heNetXlatFrom(he1tFromSeat), "seedCommit", he1tBodyTxt) \
+                  & return after he1tHandLines
+            break
+         case "seedReveal"
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1tBodyA["pos"] is a number and he1tSeedsA[he1tBodyA["pos"]] is empty then
+               put he1tBodyA["seed"] into he1tSeedsA[he1tBodyA["pos"]]
+               add 1 to he1tRevealN
+            end if
+            put he1heLogLine(he1tHandTxt, he1heNetXlatFrom(he1tFromSeat), "seedReveal", he1tBodyTxt) \
+                  & return after he1tHandLines
+            break
+         case "board"
+            put he1heLogLine(he1tHandTxt, "table", "board", he1tBodyTxt) & return after he1tHandLines
+            break
+         case "bidAnte"
+         case "bidSB"
+         case "bidBB"
+         case "act"
+            -- 2e: a HOST-authored timeout wire acts FOR the seat its body
+            -- names (timeout=1,seat=N) -- attribute the translated line to
+            -- THAT seat, or the fold would engine-reject it as the host
+            -- seat's out-of-turn action (or the oracle's, which has none).
+            -- The extra body keys ride along harmlessly (the fold reads
+            -- verb/amount by name).
+            put he1tBodyTxt into he1tBodyA
+            split he1tBodyA by comma and "="
+            if he1tBodyA["timeout"] is "1" and he1tBodyA["seat"] is a number then
+               put he1heLogLine(he1tHandTxt, "seat" & he1tBodyA["seat"], he1tTypeTxt, he1tBodyTxt) \
+                     & return after he1tHandLines
+            else if he1tFromSeat is a number then
+               put he1heLogLine(he1tHandTxt, "seat" & he1tFromSeat, he1tTypeTxt, he1tBodyTxt) \
+                     & return after he1tHandLines
+            end if
+            break
+         case "show"
+         case "muck"
+            put he1heLogLine(he1tHandTxt, he1heNetXlatFrom(he1tFromSeat), he1tTypeTxt, he1tBodyTxt) \
+                  & return after he1tShowLines
+            break
+         case "settle"
+            -- held back so the trailing show/muck wires can precede it;
+            -- the holes re-derive HERE, while this hand's reveals are in
+            -- scope (needs SodiumXT; guarded -- an incomplete or
+            -- underivable hand honestly gets no hole lines)
+            put he1heLogLine(he1tHandTxt, "table", "settle", he1tBodyTxt) into he1tSettleLine
+            put empty into he1tHoleLines
+            if he1heHasSodium() and he1tContribN > 0 and he1tRevealN >= he1tContribN then
+               try
+                  put he1heLevel0Deck(he1heHex2BinD(he1tTableHex), he1tHandNum, he1tSeedsA, he1tContribN) into he1tDeckList
+                  put he1heDealAssign(he1tDeckList, he1tOccList, he1tButton) into he1tDealA
+                  repeat for each item he1tSeatNum in he1tOccList
+                     put he1tDealA["holesBy"][he1tSeatNum] into he1tHolePair
+                     put he1heCardName(item 1 of he1tHolePair) & "|" & he1heCardName(item 2 of he1tHolePair) into he1tNamesTxt
+                     put he1heLogLine(he1tHandNum, "table", "holeDeliver", "seat=" & he1tSeatNum \
+                           & ",cards=" & he1tNamesTxt) & return after he1tHoleLines
+                  end repeat
+               catch he1tDealErr
+                  put empty into he1tHoleLines
+               end try
+            end if
+            break
+      end switch
+   end repeat
+   put he1heNetXlatFlush(he1tHandLines, he1tHoleLines, he1tShowLines, he1tSettleLine) after he1tOut
+   if he1tSeenHand is not "true" then
+      return empty
+   end if
+   return he1tOut
+end he1heNetLogToHotseat
+
+function he1heNetXlatFrom pFromSeat
+   -- translated from-name: a seated key is "seatN"; anything else (the
+   -- host relay, the oracle) is "table" -- the fold only parses seats off
+   -- bid/act lines, which always come from seats
+   if pFromSeat is a number then
+      return "seat" & pFromSeat
+   end if
+   return "table"
+end he1heNetXlatFrom
+
+function he1heNetXlatFlush pHandLines, pHoleLines, pShowLines, pSettleLine
+   -- one translated hand, assembled in fold order: the play, the derived
+   -- holes, the display choices, THEN the settle (the fold snapshots its
+   -- history line at the settle, so everything it annotates must precede it)
+   if pHandLines is empty and pSettleLine is empty then
+      return empty
+   end if
+   return pHandLines & pHoleLines & pShowLines & pSettleLine & return
+end he1heNetXlatFlush
+
+command he1heCfgDefaults
+   -- seed the persistent table configuration. Called once at he1openStack and any
+   -- time he1gCfg is found empty; the settings panel (he1heApplyCfg) overwrites keys.
+   put he1kHeDefaultStack into he1gCfg["startStack"]
+   put he1kHeDefaultSB into he1gCfg["sb"]
+   put he1kHeDefaultBB into he1gCfg["bb"]
+   put he1kHeDefaultAnte into he1gCfg["ante"]
+   put he1kHeDefaultSeats into he1gCfg["numSeats"]
+   put "off" into he1gCfg["levelMode"]        -- "off" (cash) | "hands" | "time"
+   put he1kHeDefaultLevels into he1gCfg["levels"]
+   put he1kHeDefaultLevelEvery into he1gCfg["levelEvery"]      -- hands per level (hands mode)
+   put he1kHeDefaultLevelMinutes into he1gCfg["levelMinutes"]  -- minutes per level (time mode)
+   put "normal" into he1gCfg["speed"]          -- "fast" | "normal" | "slow"
+   put "on" into he1gCfg["sounds"]             -- "on" | "off" (casino-audio SFX)
+   put "rp1" into he1gCfg["transport"]         -- "rp1" (DHT swarm) | "onion" (Tor, 2f)
+   put "play" into he1gCfg["hostMode"]         -- "play" | "oracle" (Phase 3 deck oracle)
+end he1heCfgDefaults
+
+command he1heCfgEnsure
+   -- lazily fill he1gCfg so any entry point (a stale paste, a test) has a config
+   if he1gCfg["numSeats"] is empty then
+      he1heCfgDefaults
+   end if
+   -- 2f arrived after stacks in the wild had a saved he1gCfg: backfill the
+   -- transport key alone so an upgraded stack keeps its other settings
+   if he1gCfg["transport"] is empty then
+      put "rp1" into he1gCfg["transport"]
+   end if
+   -- Phase 3 (v0.21.0): same backfill for the host mode
+   if he1gCfg["hostMode"] is empty then
+      put "play" into he1gCfg["hostMode"]
+   end if
+end he1heCfgEnsure
+
+function he1heSpeedMult pSpeed
+   -- fast deals in half the time, slow stretches the beats out
+   switch pSpeed
+      case "fast"
+         return 0.5
+      case "slow"
+         return 1.6
+   end switch
+   return 1.0
+end he1heSpeedMult
+
+command he1heSpeedPace pSpeed
+   -- scale the NORMAL-speed pacing constants into the live he1gGame["pace*"] values
+   -- the schedule handlers read. trunc keeps them whole milliseconds.
+   local he1tM
+   put he1heSpeedMult(pSpeed) into he1tM
+   put trunc(he1kHeNextHandDelayMs * he1tM) into he1gGame["paceNextHand"]
+   put trunc(he1kHeStreetRevealMs * he1tM) into he1gGame["paceReveal"]
+   put trunc(he1kHeRunoutStepMs * he1tM) into he1gGame["paceRunout"]
+   put trunc(he1kHeShowdownHoldMs * he1tM) into he1gGame["paceShowdown"]
+   put trunc(he1kHeFoldHoldMs * he1tM) into he1gGame["paceFold"]
+end he1heSpeedPace
+
+command he1heTableNew
+   local he1tSeatNum, he1tErr
+   -- H1: a fresh hotseat table while an online session is live must stop that
+   -- session FIRST -- "put empty into he1gGame" below destroys the handle and the
+   -- online flag, after which he1heNetStop is a no-op forever and the libtorrent
+   -- session (with its poll loop already dead) outlives every teardown path,
+   -- even he1closeStack. Reached via Settings -> Apply and the game-over
+   -- auto-reset; Leave's own explicit he1heNetStop stays a harmless second call
+   -- (it exits on the cleared flag).
+   he1heNetStop
+   he1heCfgEnsure
+   put empty into he1gGame
+   put he1gCfg["sb"] into he1gGame["sb"]
+   put he1gCfg["bb"] into he1gGame["bb"]
+   put he1gCfg["ante"] into he1gGame["ante"]
+   put he1gCfg["startStack"] into he1gGame["startStack"]
+   put he1gCfg["numSeats"] into he1gGame["numSeats"]
+   put he1gCfg["levelMode"] into he1gGame["levelMode"]
+   put he1gCfg["levels"] into he1gGame["levels"]
+   put he1gCfg["levelEvery"] into he1gGame["levelEvery"]
+   put he1gCfg["levelMinutes"] into he1gGame["levelMinutes"]
+   put he1gCfg["speed"] into he1gGame["speed"]
+   put 0 into he1gGame["curLevel"]
+   put the milliseconds into he1gGame["tableStartMs"]   -- clock zero for time-based levels
+   he1heSpeedPace he1gCfg["speed"]
+   put 0 into he1gGame["handNum"]
+   put 0 into he1gGame["buttonSeat"]
+   put 0 into he1gGame["lastBB"]
+   put "idle" into he1gGame["phase"]
+   put empty into he1gGame["log"]
+   -- seat 1..numSeats with the opening stack; unseated spots stay absent from
+   -- stacksBy, so he1heSeatsAlive / the deal / settlement never touch them
+   repeat with he1tSeatNum = 1 to he1gGame["numSeats"]
+      put he1gCfg["startStack"] into he1gGame["stacksBy"][he1tSeatNum]
+   end repeat
+   put he1heHexId(16) into he1gGame["tableId"]
+   -- a 32-byte crypto table id (hex) is the domain for the Level 0 committed
+   -- deal (spec 7.1). Present only with SodiumXT; its absence makes he1heHandStart
+   -- fall back to the labelled practice PRNG.
+   put empty into he1gGame["tableIdHex"]
+   if he1heHasSodium() then
+      try
+         put he1heBin2HexS(sxRandomBytes(32)) into he1gGame["tableIdHex"]
+      catch he1tErr
+         put empty into he1gGame["tableIdHex"]
+      end try
+   end if
+   he1heLogAppend "cfg", "table", he1heCfgBody()
+   he1heHudMark
+end he1heTableNew
+
+command he1heApplyCfg pStartStack, pSB, pBB, pAnte, pNumSeats, pLevelMode, pLevelEvery, pLevelMinutes, pSpeed
+   -- the settings panel calls this with validated values, then he1heTableNew to
+   -- start a fresh table on the new configuration. Kept separate so config
+   -- persists across tables (he1gCfg) independent of live game state (he1gGame).
+   he1heCfgEnsure
+   put pStartStack into he1gCfg["startStack"]
+   put pSB into he1gCfg["sb"]
+   put pBB into he1gCfg["bb"]
+   put pAnte into he1gCfg["ante"]
+   put pNumSeats into he1gCfg["numSeats"]
+   put pLevelMode into he1gCfg["levelMode"]
+   put pLevelEvery into he1gCfg["levelEvery"]
+   put pLevelMinutes into he1gCfg["levelMinutes"]
+   put pSpeed into he1gCfg["speed"]
+end he1heApplyCfg
+
+function he1heCfgBody
+   -- the table cfg logged to the transcript at create time. key=value pairs, so
+   -- new keys (ante, level) are backward-compatible with he1heFoldTranscript's parse.
+   local he1tSeatsTxt, he1tStacksTxt, he1tSeatNum
+   put empty into he1tSeatsTxt
+   put empty into he1tStacksTxt
+   repeat with he1tSeatNum = 1 to he1gGame["numSeats"]
+      put he1tSeatNum & "|" after he1tSeatsTxt
+      put he1gGame["stacksBy"][he1tSeatNum] & "|" after he1tStacksTxt
+   end repeat
+   delete char -1 of he1tSeatsTxt
+   delete char -1 of he1tStacksTxt
+   return "sb=" & he1gGame["sb"] & ",bb=" & he1gGame["bb"] & ",ante=" & he1gGame["ante"] \
+         & ",seats=" & he1tSeatsTxt & ",stacks=" & he1tStacksTxt & ",button=1" \
+         & ",levelMode=" & he1gGame["levelMode"] & ",speed=" & he1gGame["speed"]
+end he1heCfgBody
+
+function he1heLevelFor pHandNum, pLevelsTxt, pHandsPerLevel
+   -- tournament blind schedule: pLevelsTxt is "sb/bb/ante;sb/bb/ante;...". The
+   -- active level advances every pHandsPerLevel hands (1-based) and clamps at the
+   -- last level. Returns "sb,bb,ante". Pure -- KAT-pinned in betting-kat.py.
+   local he1tEvery, he1tIdx
+   put pHandsPerLevel into he1tEvery
+   if he1tEvery < 1 then
+      put 1 into he1tEvery
+   end if
+   put trunc((pHandNum - 1) / he1tEvery) + 1 into he1tIdx
+   return he1heLevelForPeriod(he1tIdx, pLevelsTxt)
+end he1heLevelFor
+
+function he1heLevelForPeriod pPeriodIdx, pLevelsTxt
+   -- return the "sb,bb,ante" for a 1-based period index, clamped to the last
+   -- level. Shared by hand-count and (future) time-based schedules. Saves and
+   -- restores the itemDelimiter so it never leaks ";" to the caller (gotcha 5).
+   local he1tSaved, he1tLevels, he1tCount, he1tIdx, he1tLevel
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to ";"
+   put pLevelsTxt into he1tLevels
+   put the number of items of he1tLevels into he1tCount
+   if he1tCount < 1 then
+      set the itemDelimiter to he1tSaved
+      return "1,2,0"
+   end if
+   put pPeriodIdx into he1tIdx
+   if he1tIdx > he1tCount then
+      put he1tCount into he1tIdx
+   end if
+   if he1tIdx < 1 then
+      put 1 into he1tIdx
+   end if
+   put item he1tIdx of he1tLevels into he1tLevel
+   set the itemDelimiter to he1tSaved
+   replace "/" with comma in he1tLevel
+   return he1tLevel
+end he1heLevelForPeriod
+
+function he1heSeatsAlive
+   local he1tOut, he1tSeatNum
+   put empty into he1tOut
+   repeat with he1tSeatNum = 1 to he1gGame["numSeats"]
+      if he1gGame["stacksBy"][he1tSeatNum] > 0 then
+         put he1tSeatNum & comma after he1tOut
+      end if
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heSeatsAlive
+
+function he1heLevelCount pLevelsTxt
+   -- number of levels in a "sb/bb/ante;..." schedule (saves/restores delimiter)
+   local he1tSaved, he1tTxt, he1tN
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to ";"
+   put pLevelsTxt into he1tTxt
+   put the number of items of he1tTxt into he1tN
+   set the itemDelimiter to he1tSaved
+   return he1tN
+end he1heLevelCount
+
+command he1heApplyLevel
+   -- set this hand's sb/bb/ante from the tournament schedule when one is active.
+   -- The level's PERIOD index comes from hands played (levelMode "hands") or wall-
+   -- clock minutes since the table opened (levelMode "time"); "off" holds fixed
+   -- stakes. Logs a "level" line only when the index changes (curLevel tracks it).
+   local he1tLvl, he1tIdx, he1tEvery, he1tElapsedMs, he1tPerMs, he1tCount
+   switch he1gGame["levelMode"]
+      case "hands"
+         put he1gGame["levelEvery"] into he1tEvery
+         if he1tEvery < 1 then
+            put 1 into he1tEvery
+         end if
+         put trunc((he1gGame["handNum"] - 1) / he1tEvery) + 1 into he1tIdx
+         break
+      case "time"
+         put he1gGame["levelMinutes"] into he1tEvery
+         if he1tEvery < 1 then
+            put 1 into he1tEvery
+         end if
+         put the milliseconds - he1gGame["tableStartMs"] into he1tElapsedMs
+         put he1tEvery * 60000 into he1tPerMs
+         put trunc(he1tElapsedMs / he1tPerMs) + 1 into he1tIdx
+         break
+      default
+         exit he1heApplyLevel
+   end switch
+   -- clamp the index to the schedule so curLevel settles at the top (no log spam)
+   put he1heLevelCount(he1gGame["levels"]) into he1tCount
+   if he1tCount < 1 then
+      exit he1heApplyLevel
+   end if
+   if he1tIdx > he1tCount then
+      put he1tCount into he1tIdx
+   end if
+   if he1tIdx < 1 then
+      put 1 into he1tIdx
+   end if
+   put he1heLevelForPeriod(he1tIdx, he1gGame["levels"]) into he1tLvl
+   set the itemDelimiter to comma
+   put item 1 of he1tLvl into he1gGame["sb"]
+   put item 2 of he1tLvl into he1gGame["bb"]
+   put item 3 of he1tLvl into he1gGame["ante"]
+   if he1tIdx is not he1gGame["curLevel"] then
+      put he1tIdx into he1gGame["curLevel"]
+      he1heLogAppend "level", "table", "level=" & he1tIdx & ",sb=" & he1gGame["sb"] \
+            & ",bb=" & he1gGame["bb"] & ",ante=" & he1gGame["ante"]
+   end if
+end he1heApplyLevel
+
+command he1heHandStart
+   local he1tOccList, he1tSeatNum, he1tDeckList, he1tDealA, he1tHolePair, he1tHoleNames
+   local he1tSeatsTxt, he1tDealCount, he1tPos, he1tTableData, he1tSeedsA, he1tCommitsA, he1tDealErr
+   set the itemDelimiter to comma
+   -- only start from a settled table: "idle" (fresh/after clear) or "between"
+   -- (result shown). Any active or animating phase (hand/reveal/runout/
+   -- showdown) means a Deal click or a stale next-hand send must be ignored so
+   -- a paced sequence is never interrupted or a hand double-dealt.
+   if he1gGame["phase"] is not "idle" and he1gGame["phase"] is not "between" then
+      exit he1heHandStart
+   end if
+   -- while ONLINE the hotseat engine must never run: he1gGame["log"] holds the
+   -- signed wire chain, and he1heLogAppend'ing raw 4-field hotseat lines into it
+   -- would be shipped to every joining peer as junk "w" frames by
+   -- he1heNetReplayLogTo (the corruption he1heNetParkHotseat guards in the OTHER
+   -- direction). Reachable because Settings/History dismiss the lobby overlay
+   -- without restoring it, leaving the Deal button clickable. Online
+   -- dealing arrives with the Phase 2 orchestration increment; until then the
+   -- deal is a hotseat-only verb.
+   if he1gGame["online"] is "true" then
+      he1heUISetStatus "Online dealing is not wired yet -- press Leave for a hotseat game."
+      exit he1heHandStart
+   end if
+   -- a Deal click during the "between" result-pause starts here while the prior
+   -- hand's he1heNextHandTick is still pending; cancel any in-flight paced step so a
+   -- stale timer cannot fire into this hand and auto-deal an unrequested one
+   -- (deep-dive P1). The HUD/network poll loops are free-running and untouched.
+   he1heCancelPacedSteps
+   put he1heSeatsAlive() into he1tOccList
+   if he1heCountItems(he1tOccList) < 2 then
+      he1heUISetStatus "Game over -- one stack left. Starting a fresh table."
+      he1heTableNew
+      -- the finished game's board/hole cards are still painted (the pending
+      -- he1heNextHandTick that would have cleared them was cancelled above, and
+      -- no new deal follows to overwrite them) -- clear them with the reset
+      he1heUIClearCards
+      exit he1heHandStart
+   end if
+   add 1 to he1gGame["handNum"]
+   -- tournament option: when a blind schedule is active, THIS hand's sb/bb/ante
+   -- come from the level for the hand number (levels rise as hands are played).
+   -- Logged only when the level actually changes so the transcript stays terse.
+   he1heApplyLevel
+   set the itemDelimiter to comma   -- he1heApplyLevel parses with ";" (gotcha 5)
+   -- dead-button-aware schedule: the big blind advances to the next live seat
+   -- each hand, so eliminations never double- or skip-charge a blind
+   put he1heScheduleButton(he1tOccList, he1gGame["lastBB"]) into he1gGame["buttonSeat"]
+   put he1tOccList into he1gGame["occ"]
+   put "hand" into he1gGame["phase"]
+
+   put he1tOccList into he1tSeatsTxt
+   replace comma with "|" in he1tSeatsTxt
+   he1heLogAppend "handStart", "table", "seats=" & he1tSeatsTxt & ",button=" & he1gGame["buttonSeat"]
+
+   -- deal the deck. When SodiumXT is present, use the Level 0 COMMITTED
+   -- keyed-stream shuffle (spec 7.1): a per-contributor seed is committed, then
+   -- revealed, and the deck is a hash of the XOR of the seeds -- so the shuffle is
+   -- fixed by the commitments and provably consistent with the revealed seeds on
+   -- replay (tamper-evident). The whole crypto path is wrapped in a try, so ANY
+   -- failure falls back to the labelled practice PRNG and the playable path can
+   -- never break. NOTE seeds are generated LOCALLY here (one node holds them all --
+   -- in hotseat, one human): this is the auditable, tamper-evident machinery, NOT
+   -- an adversarial unstackability guarantee against a cheating dealer. That needs
+   -- independent per-player seeds, each committed before any reveal, and arrives
+   -- with online play (spec 7.1).
+   put he1heCountItems(he1tOccList) into he1tDealCount
+   put "practice" into he1gGame["dealMode"]
+   put empty into he1gGame["dealSeedsA"]
+   put empty into he1gGame["dealCommitsA"]
+   if he1heHasSodium() and he1gGame["tableIdHex"] is not empty then
+      try
+         put he1heHex2BinD(he1gGame["tableIdHex"]) into he1tTableData
+         put empty into he1tSeedsA
+         put empty into he1tCommitsA
+         put 0 into he1tPos
+         repeat for each item he1tSeatNum in he1tOccList
+            add 1 to he1tPos
+            put he1heBin2HexS(sxRandomBytes(32)) into he1tSeedsA[he1tPos]
+            put he1heSeedCommitHex(he1tSeedsA[he1tPos]) into he1tCommitsA[he1tPos]
+         end repeat
+         put he1heLevel0Deck(he1tTableData, he1gGame["handNum"], he1tSeedsA, he1tDealCount) into he1tDeckList
+         put he1tSeedsA into he1gGame["dealSeedsA"]
+         put he1tCommitsA into he1gGame["dealCommitsA"]
+         put "level0" into he1gGame["dealMode"]
+      catch he1tDealErr
+         put "practice" into he1gGame["dealMode"]
+      end try
+   end if
+   if he1gGame["dealMode"] is "practice" then
+      put he1heShuffleDeck(he1heFreshPrngState()) into he1tDeckList
+   end if
+   put he1heDealAssign(he1tDeckList, he1tOccList, he1gGame["buttonSeat"]) into he1tDealA
+   put he1tDeckList into he1tDealA["deckList"]
+   put he1tDealCount into he1tDealA["seatCount"]
+   put he1tDealA into he1gGame["deal"]
+
+   -- record the deal provenance in the transcript so the deal is auditable on
+   -- replay: the binding commit for each contributor, then the reveal. Anyone
+   -- with the transcript can re-derive the deck and confirm it was not stacked
+   -- (he1heAuditDealsFromLog / tools/fold-kat.py do exactly this).
+   if he1gGame["dealMode"] is "level0" then
+      he1heLogAppend "dealLevel", "table", "level=0,table=" & he1gGame["tableIdHex"] & ",count=" & he1tDealCount
+      put 0 into he1tPos
+      repeat for each item he1tSeatNum in he1tOccList
+         add 1 to he1tPos
+         he1heLogAppend "seedCommit", "seat" & he1tSeatNum, "pos=" & he1tPos & ",commit=" & he1gGame["dealCommitsA"][he1tPos]
+      end repeat
+      put 0 into he1tPos
+      repeat for each item he1tSeatNum in he1tOccList
+         add 1 to he1tPos
+         he1heLogAppend "seedReveal", "seat" & he1tSeatNum, "pos=" & he1tPos & ",seed=" & he1gGame["dealSeedsA"][he1tPos]
+      end repeat
+   end if
+
+   -- hole delivery (hotseat shows all; Phase 2 seals per seat)
+   repeat for each item he1tSeatNum in he1tOccList
+      put he1tDealA["holesBy"][he1tSeatNum] into he1tHolePair
+      put he1heCardName(item 1 of he1tHolePair) & "|" & he1heCardName(item 2 of he1tHolePair) into he1tHoleNames
+      he1heLogAppend "holeDeliver", "table", "seat=" & he1tSeatNum & ",cards=" & he1tHoleNames
+   end repeat
+
+   -- antes (if any) then blinds, all through the engine, then the table is live.
+   -- Antes are dead money posted by every seat before the blinds; a bidAnte for
+   -- each seat keeps them in the signed transcript so the fold can re-derive the
+   -- pot (he1heFoldTranscript handles bidAnte the same as the engine).
+   put he1heBetNewHand(he1gGame["sb"], he1gGame["bb"], he1gGame["ante"], he1gGame["stacksBy"], he1tOccList, he1gGame["buttonSeat"]) into he1gGame["state"]
+   put he1gGame["state"]["bbSeat"] into he1gGame["lastBB"]
+   if he1gGame["ante"] > 0 then
+      repeat for each item he1tSeatNum in he1tOccList
+         he1heEngineDo "bidAnte", he1tSeatNum, min(he1gGame["ante"], he1gGame["stacksBy"][he1tSeatNum])
+      end repeat
+   end if
+   -- cap each blind by the seat's POST-ante engine stack, not the pre-ante
+   -- bankroll he1gGame["stacksBy"]: the ante loop above already moved the antes into
+   -- he1gGame["state"]["stackBy"] (via he1heBetPayDead), and he1heBetApply validates the
+   -- blind against that post-ante stack. Using he1gGame["stacksBy"] here made a seat
+   -- that is short AFTER its ante over-post the blind, so the engine rejected it
+   -- with bidSB/bidBB-wrong-amount -- silently dropping the small blind or wedging
+   -- the hand in tournament (ante) play (deep-dive P0).
+   he1heEngineDo "bidSB", he1gGame["state"]["sbSeat"], min(he1gGame["sb"], he1gGame["state"]["stackBy"][he1gGame["state"]["sbSeat"]])
+   he1heEngineDo "bidBB", he1gGame["state"]["bbSeat"], min(he1gGame["bb"], he1gGame["state"]["stackBy"][he1gGame["state"]["bbSeat"]])
+   he1heUIHandStart
+   he1heHudMark
+   he1heUIPromptToAct
+end he1heHandStart
+
+command he1heEngineDo pMsgType, pSeatNum, pAmount
+   -- one gate for every state transition: apply, then log ONLY if accepted
+   local he1tStateA, he1tVerb
+   put he1heBetApply(he1gGame["state"], pMsgType, pSeatNum, pAmount) into he1tStateA
+   if he1tStateA["err"] is not empty then
+      he1heUISetStatus "Rejected: " & he1tStateA["err"]
+      exit he1heEngineDo
+   end if
+   put he1tStateA into he1gGame["state"]
+   switch pMsgType
+      case "bidAnte"
+      case "bidSB"
+      case "bidBB"
+         he1heLogAppend pMsgType, "seat" & pSeatNum, "amount=" & pAmount
+         break
+      case "act"
+         set the itemDelimiter to comma
+         put item 1 of pAmount into he1tVerb
+         he1heLogAppend "act", "seat" & pSeatNum, "verb=" & he1tVerb & ",amount=" & item 2 of pAmount
+         -- SFX here, on the ACCEPTED path only (a rejected action exited above),
+         -- so every action source -- buttons now, remote peers later -- sounds alike
+         he1heSndVerb he1tVerb
+         break
+   end switch
+   he1heReactToNotes
+end he1heEngineDo
+
+command he1heActionDo pSeatNum, pVerb, pAmount
+   if he1gGame["phase"] is not "hand" then
+      exit he1heActionDo
+   end if
+   he1heEngineDo "act", pSeatNum, pVerb & comma & pAmount
+   he1heHudMark
+   -- only prompt the next actor if the action stayed on the same street; a
+   -- street close / runout / showdown handed off to a paced step that will
+   -- prompt (or settle) on its own timer, and phase is no longer "hand".
+   if he1gGame["phase"] is "hand" then
+      he1heUIPromptToAct
+   end if
+end he1heActionDo
+
+command he1heReactToNotes
+   -- the engine transition is instant; its VISIBLE consequences are paced so a
+   -- hand plays out like real dealing instead of flashing to the result. Each
+   -- consequence hands off to a timer-driven step and returns; nothing here
+   -- deals a card or settles synchronously. A single act produces at most one
+   -- of these notes (a street close, a runout, or a showdown), so the first
+   -- match wins and we stop.
+   local he1tNoteLine, he1tNotesTxt
+   put he1gGame["state"]["note"] into he1tNotesTxt
+   repeat for each line he1tNoteLine in he1tNotesTxt
+      set the itemDelimiter to comma
+      switch item 1 of he1tNoteLine
+         case "advance:flop"
+            he1heScheduleReveal "flop"
+            exit repeat
+         case "advance:turn"
+            he1heScheduleReveal "turn"
+            exit repeat
+         case "advance:river"
+            he1heScheduleReveal "river"
+            exit repeat
+         case "runout"
+            he1heScheduleRunout
+            exit repeat
+         case "showdown"
+            he1heScheduleShowdown
+            exit repeat
+         default
+            if he1tNoteLine begins with "foldwin:" then
+               he1heScheduleShowdown
+               exit repeat
+            end if
+      end switch
+   end repeat
+end he1heReactToNotes
+
+command he1heCancelPacedSteps
+   -- cancel any in-flight paced schedule send (reveal / runout / showdown /
+   -- next-hand) so a stale timer from a prior hand can never fire into a later
+   -- one. Only these hand-paced steps are swept; the free-running HUD and network
+   -- poll loops (he1heHudTick / he1heNetPollTick) are deliberately left alone. Called at
+   -- the top of he1heHandStart. (gotcha 5: pendingMessages is comma-delimited
+   -- id,time,name,target -- set the delimiter before parsing.)
+   local he1tMsgLine, he1tName
+   set the itemDelimiter to comma
+   repeat for each line he1tMsgLine in the pendingMessages
+      put item 3 of he1tMsgLine into he1tName
+      if he1tName is "he1heRevealStep" or he1tName is "he1heRunoutStep" \
+            or he1tName is "he1heSettleStep" or he1tName is "he1heNextHandTick" then
+         cancel item 1 of he1tMsgLine
+      end if
+   end repeat
+end he1heCancelPacedSteps
+
+command he1heScheduleReveal pStreetName
+   -- betting closed and the next street is due: hold a beat with the buttons
+   -- inert (the "reveal" phase is non-actionable), then land the board and
+   -- reopen the action. he1gGame["state"] already advanced inside he1heBetApply;
+   -- this only paces the visual reveal.
+   put pStreetName into he1gGame["revealStreet"]
+   put "reveal" into he1gGame["phase"]
+   he1heHudMark
+   send "he1heRevealStep" to me in he1hePaceMs("paceReveal", he1kHeStreetRevealMs) milliseconds
+end he1heScheduleReveal
+
+function he1hePaceMs pKey, pDefaultMs
+   -- the speed-scaled beat for a schedule step, defaulting to the normal-speed
+   -- constant if a hand somehow starts before he1heSpeedPace ran
+   if he1gGame[pKey] is a number then
+      return he1gGame[pKey]
+   end if
+   return pDefaultMs
+end he1hePaceMs
+
+on he1heRevealStep
+   -- guarded against stale sends (playbook: defer world changes, then gate on
+   -- our own phase lock so a Deal/new-hand cannot let a late reveal double-fire)
+   if he1gGame["phase"] is not "reveal" then
+      exit he1heRevealStep
+   end if
+   he1heDealBoard he1gGame["revealStreet"]
+   put "hand" into he1gGame["phase"]
+   he1heHudMark
+   he1heUIPromptToAct
+end he1heRevealStep
+
+command he1heDealBoard pStreetName
+   local he1tDealA, he1tCardsTxt, he1tIdxList, he1tIdx
+   set the itemDelimiter to comma
+   put he1gGame["deal"] into he1tDealA
+   switch pStreetName
+      case "flop"
+         put he1tDealA["flopList"] into he1tIdxList
+         break
+      case "turn"
+         put he1tDealA["turnIx"] into he1tIdxList
+         break
+      case "river"
+         put he1tDealA["riverIx"] into he1tIdxList
+         break
+   end switch
+   put empty into he1tCardsTxt
+   repeat for each item he1tIdx in he1tIdxList
+      put he1heCardName(he1tIdx) & "|" after he1tCardsTxt
+   end repeat
+   delete char -1 of he1tCardsTxt
+   he1heLogAppend "board", "table", "street=" & pStreetName & ",cards=" & he1tCardsTxt
+   he1heUIShowBoardStreet pStreetName, he1tIdxList
+   he1heHudMark
+end he1heDealBoard
+
+command he1heScheduleRunout
+   -- no more betting possible (all-in with at most one live better): run the
+   -- remaining streets out ONE AT A TIME on a timer so the board comes like a
+   -- real all-in, not all at once. he1heRunoutStep deals a street, advances the
+   -- engine, and reschedules itself until the engine reaches showdown.
+   put "runout" into he1gGame["phase"]
+   he1heHudMark
+   send "he1heRunoutStep" to me in he1hePaceMs("paceRunout", he1kHeRunoutStepMs) milliseconds
+end he1heScheduleRunout
+
+on he1heRunoutStep
+   local he1tStateA
+   if he1gGame["phase"] is not "runout" then
+      exit he1heRunoutStep
+   end if
+   put he1gGame["state"] into he1tStateA
+   if he1tStateA["phase"] is not "runout" then
+      -- engine has dealt the last street: hold, then settle
+      he1heScheduleShowdown
+      exit he1heRunoutStep
+   end if
+   switch he1tStateA["street"]
+      case "preflop"
+         he1heDealBoard "flop"
+         break
+      case "flop"
+         he1heDealBoard "turn"
+         break
+      case "turn"
+         he1heDealBoard "river"
+         break
+      default
+         he1heScheduleShowdown
+         exit he1heRunoutStep
+   end switch
+   -- the board message advances the engine street by street (fold-determinism)
+   put he1heBetApply(he1gGame["state"], "board", 0, 0) into he1gGame["state"]
+   he1heHudMark
+   send "he1heRunoutStep" to me in he1hePaceMs("paceRunout", he1kHeRunoutStepMs) milliseconds
+end he1heRunoutStep
+
+command he1heScheduleShowdown
+   -- reveal the contested hands (or just hold on a fold-win), then settle after
+   -- a beat so the result registers instead of the hand ending abruptly. The
+   -- ranks needed by the settlement are stashed for he1heHandSettle.
+   local he1tStateA, he1tRanksA, he1tSeatNum, he1tSevenList
+   local he1tDealA, he1tInHandList, he1tBoardIdxList, he1tHoldMs
+   set the itemDelimiter to comma
+   put "showdown" into he1gGame["phase"]
+   put he1gGame["state"] into he1tStateA
+   put he1gGame["deal"] into he1tDealA
+   put he1heBetInHandList(he1tStateA) into he1tInHandList
+   put he1tDealA["flopList"] & comma & he1tDealA["turnIx"] & comma & he1tDealA["riverIx"] into he1tBoardIdxList
+   put empty into he1tRanksA
+   put he1hePaceMs("paceFold", he1kHeFoldHoldMs) into he1tHoldMs
+   if he1heCountItems(he1tInHandList) > 1 then
+      -- a contested showdown: reveal every shown hand and hold long enough to read it
+      repeat for each item he1tSeatNum in he1tInHandList
+         put he1tDealA["holesBy"][he1tSeatNum] & comma & he1tBoardIdxList into he1tSevenList
+         put he1heEval7(he1tSevenList) into he1tRanksA[he1tSeatNum]
+      end repeat
+      he1heUIShowdownReveal he1tInHandList, he1tRanksA
+      put he1hePaceMs("paceShowdown", he1kHeShowdownHoldMs) into he1tHoldMs
+   end if
+   put he1tRanksA into he1gGame["showdownRanks"]
+   he1heHudMark
+   send "he1heSettleStep" to me in he1tHoldMs milliseconds
+end he1heScheduleShowdown
+
+on he1heSettleStep
+   -- guarded against stale sends: only the showdown we set up may settle
+   if he1gGame["phase"] is not "showdown" then
+      exit he1heSettleStep
+   end if
+   he1heHandSettle
+end he1heSettleStep
+
+command he1heHandSettle
+   -- settle from the stashed showdown ranks, log the deltas, schedule next hand
+   local he1tStateA, he1tRanksA, he1tSeatNum, he1tDeltasA, he1tDeltasTxt
+   set the itemDelimiter to comma
+   put he1gGame["state"] into he1tStateA
+   put he1gGame["showdownRanks"] into he1tRanksA
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+
+   put empty into he1tDeltasTxt
+   repeat for each item he1tSeatNum in he1tStateA["occ"]
+      put he1tSeatNum & ":" & he1tDeltasA[he1tSeatNum] & "|" after he1tDeltasTxt
+      add he1tDeltasA[he1tSeatNum] to he1gGame["stacksBy"][he1tSeatNum]
+   end repeat
+   delete char -1 of he1tDeltasTxt
+   he1heLogAppend "settle", "table", "deltas=" & he1tDeltasTxt
+
+   put "between" into he1gGame["phase"]
+   he1heSndPlay "win"
+   he1heUISetStatus "Hand " & he1gGame["handNum"] & " settled: " & he1tDeltasTxt
+   he1heHudMark
+   send "he1heNextHandTick" to me in he1hePaceMs("paceNextHand", he1kHeNextHandDelayMs) milliseconds
+end he1heHandSettle
+
+on he1heNextHandTick
+   -- guarded against stale sends (playbook: defer world changes, then gate)
+   if he1gGame["phase"] is not "between" then
+      exit he1heNextHandTick
+   end if
+   put "idle" into he1gGame["phase"]
+   he1heUIClearCards
+   he1heHandStart
+end he1heNextHandTick
+
+function he1heHasKit
+   -- the Box2Dxt Kit counts as present if its stack is loaded UNDER THAT NAME, or if
+   -- its b2k* handlers are simply on the message path already -- merged into this stack's
+   -- script, or hosted by a differently-named stack. b2kSheetFrames on an unknown sheet
+   -- returns 0 without throwing when the handler exists; it throws "can't find handler"
+   -- when the Kit is absent. (Probe cached in he1gHasKitChk; he1heKitReload clears it.)
+   local he1tProbeErr
+   if he1gHasKitChk is empty then
+      put "false" into he1gHasKitChk
+      if there is a stack "box2dxt-kit" then
+         put "true" into he1gHasKitChk
+      else
+         try
+            get b2kSheetFrames("__he_probe__")
+            put "true" into he1gHasKitChk
+         catch he1tProbeErr
+         end try
+      end if
+   end if
+   return he1gHasKitChk is "true"
+end he1heHasKit
+
+command he1heBuildTable
+   local he1tSeatNum, he1tSpotTxt, he1tSpotX, he1tSpotY, he1tPos, he1tBetX, he1tBetY, he1tName
+   set the defaultStack to the short name of this stack
+   if there is a graphic "heFelt" and the uHeUIVersion of this stack is he1kUIVersion then
+      -- the chrome persists in a SAVED stack but script locals do not: without
+      -- re-deriving them here, a reopened stack had an empty he1gSlotCenter (so
+      -- he1heKitTryInit -- and he1heKitReload after it -- pooled ZERO card sprites
+      -- and kit mode was silently unrecoverable), stale avatar caches, and an
+      -- unfitted logo. Rebuild the runtime state from the existing controls.
+      he1heRehydrateChrome
+      exit he1heBuildTable
+   end if
+   lock screen
+   he1heWipeChrome
+   set the uHeUIVersion of this stack to he1kUIVersion
+   set the backgroundColor of this stack to "26,32,30"
+
+   -- felt: a wooden rim behind, green oval-ish table on top
+   create graphic "heFeltRim"
+   set the style of graphic "heFeltRim" to "roundrect"
+   set the roundRadius of graphic "heFeltRim" to 90
+   set the rect of graphic "heFeltRim" to "32,40,992,532"
+   set the backgroundColor of graphic "heFeltRim" to he1kHeFeltRim
+   set the opaque of graphic "heFeltRim" to true
+   create graphic "heFelt"
+   set the style of graphic "heFelt" to "roundrect"
+   set the roundRadius of graphic "heFelt" to 80
+   set the rect of graphic "heFelt" to he1kHeFeltRect
+   set the backgroundColor of graphic "heFelt" to he1kHeFeltColor
+   set the opaque of graphic "heFelt" to true
+
+   -- host table logo: a faint centred watermark, created HERE (before the pot and
+   -- board) so it sits UNDERNEATH them and never hides a card or the pot. Hidden until
+   -- the host picks one in Settings; he1heTableLogoRender loads it. NEEDS AN OXT PASS.
+   create image "heTableLogo"
+   set the rect of image "heTableLogo" to \
+         (512 - he1kHeLogoBox div 2) & comma & (286 - he1kHeLogoBox div 2) & comma \
+         & (512 + he1kHeLogoBox div 2) & comma & (286 + he1kHeLogoBox div 2)
+   set the blendLevel of image "heTableLogo" to he1kHeLogoDim
+   set the visible of image "heTableLogo" to false
+
+   -- header + pot
+   create field "heHeader"
+   set the rect of field "heHeader" to "40,10,696,38"
+   set the lockText of field "heHeader" to true
+   set the textAlign of field "heHeader" to "center"
+   set the textSize of field "heHeader" to 15
+   set the textFont of field "heHeader" to "Helvetica"
+   set the textColor of field "heHeader" to he1kHeGoldColor
+   set the borderWidth of field "heHeader" to 0
+   set the opaque of field "heHeader" to true
+   set the backgroundColor of field "heHeader" to "26,32,30"
+
+   create graphic "hePotChip"
+   set the style of graphic "hePotChip" to "oval"
+   set the rect of graphic "hePotChip" to "382,338,404,360"
+   set the backgroundColor of graphic "hePotChip" to he1kHeGoldColor
+   set the opaque of graphic "hePotChip" to true
+   create field "hePot"
+   set the rect of field "hePot" to "412,334,612,368"
+   set the lockText of field "hePot" to true
+   set the textAlign of field "hePot" to "center"
+   set the textSize of field "hePot" to 20
+   set the textColor of field "hePot" to he1kHeGoldColor
+   set the opaque of field "hePot" to true
+   set the backgroundColor of field "hePot" to he1kHeFeltColor
+   set the borderWidth of field "hePot" to 0
+
+   -- board slots
+   repeat with he1tPos = 1 to 5
+      he1heMakeCardSlot "heBoard" & he1tPos, he1kHeBoardX0 + (he1tPos - 1) * he1kHeBoardDX, he1kHeBoardY
+   end repeat
+
+   -- per-seat: panel, name, stack, badge, state, bet chip+amount, hole cards
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      set the itemDelimiter to ";"
+      put item he1tSeatNum of he1kHeSeatSpots into he1tSpotTxt
+      set the itemDelimiter to comma
+      put item 1 of he1tSpotTxt into he1tSpotX
+      put item 2 of he1tSpotTxt into he1tSpotY
+      put item he1tSeatNum of he1kHeSeatNames into he1tName
+
+      create graphic ("hePanel" & he1tSeatNum)
+      set the style of graphic ("hePanel" & he1tSeatNum) to "roundrect"
+      set the roundRadius of graphic ("hePanel" & he1tSeatNum) to 14
+      set the rect of graphic ("hePanel" & he1tSeatNum) to \
+            (he1tSpotX - 76) & comma & (he1tSpotY - 4) & comma & (he1tSpotX + 76) & comma & (he1tSpotY + 54)
+      set the backgroundColor of graphic ("hePanel" & he1tSeatNum) to he1kHePanelColor
+      set the opaque of graphic ("hePanel" & he1tSeatNum) to true
+      -- acting-seat glow: a constant 2px outline whose colour is the ring (gold) when
+      -- acting and the panel colour (so it vanishes) otherwise -- toggled in he1heSeatFace.
+      set the lineSize of graphic ("hePanel" & he1tSeatNum) to 2
+      set the foregroundColor of graphic ("hePanel" & he1tSeatNum) to he1kHePanelColor
+
+      -- seat portrait at the left of the plate: disc + initial fallback + picked image.
+      -- he1heSeatAvatarRender chooses which to show; click any of the three to re-pick.
+      he1heMakeAvatar he1tSeatNum, he1tSpotX - 52, he1tSpotY + 25
+
+      he1heMakeLabel "heSeatName" & he1tSeatNum, (he1tSpotX - 24) & comma & (he1tSpotY - 2) & comma & (he1tSpotX + 72) & comma & (he1tSpotY + 22), he1tName, he1kHeWhite, 14
+      he1heMakeLabel "heSeatStack" & he1tSeatNum, (he1tSpotX - 24) & comma & (he1tSpotY + 24) & comma & (he1tSpotX + 72) & comma & (he1tSpotY + 50), "", he1kHeGoldColor, 15
+      he1heMakeLabel "heSeatBadge" & he1tSeatNum, (he1tSpotX + 20) & comma & (he1tSpotY - 26) & comma & (he1tSpotX + 76) & comma & (he1tSpotY - 6), "", he1kHeInk, 11
+      he1heMakeLabel "heSeatState" & he1tSeatNum, (he1tSpotX - 54) & comma & (he1tSpotY - 74) & comma & (he1tSpotX + 54) & comma & (he1tSpotY - 54), "", he1kHeGoldColor, 12
+
+      put he1tSpotX + trunc((512 - he1tSpotX) * 0.42) into he1tBetX
+      put he1tSpotY + trunc((286 - he1tSpotY) * 0.42) into he1tBetY
+      create graphic ("heSeatChip" & he1tSeatNum)
+      set the style of graphic ("heSeatChip" & he1tSeatNum) to "oval"
+      set the rect of graphic ("heSeatChip" & he1tSeatNum) to \
+            (he1tBetX - 11) & comma & (he1tBetY - 11) & comma & (he1tBetX + 11) & comma & (he1tBetY + 11)
+      set the backgroundColor of graphic ("heSeatChip" & he1tSeatNum) to he1kHeChipColor
+      set the opaque of graphic ("heSeatChip" & he1tSeatNum) to true
+      set the visible of graphic ("heSeatChip" & he1tSeatNum) to false
+      he1heMakeLabel "heSeatBet" & he1tSeatNum, (he1tBetX - 26) & comma & (he1tBetY + 12) & comma & (he1tBetX + 26) & comma & (he1tBetY + 30), "", he1kHeWhite, 12
+
+      -- two hole cards straddling the seat centre; the offset scales with the card
+      -- width (half a card + a small gap) so they never overlap as the size changes
+      he1heMakeCardSlot "heHole" & he1tSeatNum & "a", he1tSpotX - (he1kHeCardW div 2 + 2), he1tSpotY - 40
+      he1heMakeCardSlot "heHole" & he1tSeatNum & "b", he1tSpotX + (he1kHeCardW div 2 + 2), he1tSpotY - 40
+   end repeat
+
+   -- paint each seat portrait (custom image or coloured initial disc) + the host logo
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      he1heSeatAvatarRender he1tSeatNum
+   end repeat
+   he1heTableLogoRender
+
+   create field "heDealerDisc"
+   set the rect of field "heDealerDisc" to "0,0,26,26"
+   set the lockText of field "heDealerDisc" to true
+   set the textAlign of field "heDealerDisc" to "center"
+   set the textSize of field "heDealerDisc" to 12
+   set the textColor of field "heDealerDisc" to he1kHeInk
+   set the backgroundColor of field "heDealerDisc" to he1kHeWhite
+   set the text of field "heDealerDisc" to "D"
+   set the visible of field "heDealerDisc" to false
+
+   create field "heStatus"
+   set the rect of field "heStatus" to "40,596,984,636"
+   set the lockText of field "heStatus" to true
+   set the textSize of field "heStatus" to 13
+   set the opaque of field "heStatus" to true
+   set the backgroundColor of field "heStatus" to "26,32,30"
+   set the textColor of field "heStatus" to he1kHeWhite
+   set the borderWidth of field "heStatus" to 0
+
+   he1heMakeActionButton "heBtnFold", "Fold", 40
+   he1heMakeActionButton "heBtnCheck", "Check", 120
+   he1heMakeActionButton "heBtnCall", "Call", 200
+   he1heMakeActionButton "heBtnBet", "Bet", 280
+   he1heMakeActionButton "heBtnRaise", "Raise", 360
+   he1heMakeActionButton "heBtnAllin", "All-in", 440
+   create field "heAmount"
+   set the rect of field "heAmount" to "528,560,600,584"
+   set the textAlign of field "heAmount" to "center"
+   set the text of field "heAmount" to "0"
+   -- bet-sizing slider: drag to set the raise-to between the minimum legal raise and
+   -- all-in; feeds the heAmount box (the Bet/Raise buttons read that). Sits in the thin
+   -- margin above the action row. Shown only on a bet/raise turn (he1heUIPromptToAct).
+   create scrollbar "heBetSlider"
+   -- a scale, not a scrollbar: no arrow buttons, a draggable thumb on a track
+   set the style of scrollbar "heBetSlider" to "scale"
+   set the rect of scrollbar "heBetSlider" to "528,538,1004,554"
+   set the visible of scrollbar "heBetSlider" to false
+   he1heMakeActionButton "heBtnMin", "Min", 608
+   he1heMakeActionButton "heBtnHalf", "1/2 Pot", 688
+   he1heMakeActionButton "heBtnPot", "Pot", 768
+   he1heMakeActionButton "heBtnDeal", "Deal", 848
+   he1heMakeActionButton "heBtnOnline", "Lobby", 928
+   create button "heBtnHistory"
+   set the rect of button "heBtnHistory" to "892,8,980,36"
+   set the label of button "heBtnHistory" to "History"
+   create button "heBtnSettings"
+   set the rect of button "heBtnSettings" to "792,8,884,36"
+   set the label of button "heBtnSettings" to "Settings"
+   -- 2e sit-out/return toggle (spec 9): our seat's own signed liveness
+   -- wires; enabled only online with a seat (he1heHudRefresh keeps the face)
+   create button "heBtnSitOut"
+   set the rect of button "heBtnSitOut" to "704,8,784,36"
+   set the label of button "heBtnSitOut" to "Sit out"
+
+   he1heBuildLobby
+   he1heBuildHistory
+   he1heBuildSettings
+   he1heKitTryInit
+   unlock screen
+end he1heBuildTable
+
+command he1heRehydrateChrome
+   -- a REOPENED saved stack keeps its built chrome and its uHeUIVersion, so
+   -- he1heBuildTable's version-match exit skips the whole build -- but script
+   -- locals (he1gSlotCenter, he1gUIMode, he1gCardSpr, the sheet suffixes, he1gAvatarOn)
+   -- do NOT persist in a saved stack. Re-derive everything the skipped build
+   -- would have set: slot centres from the existing controls' locs (a slot
+   -- field's loc IS the centre he1heMakeCardSlot recorded), the avatar
+   -- image-vs-initial caches, the logo fit, then the kit probe itself.
+   local he1tSeatNum, he1tPos, he1tSlotName
+   repeat with he1tPos = 1 to 5
+      put "heBoard" & he1tPos into he1tSlotName
+      if there is a field he1tSlotName then
+         put the loc of field he1tSlotName into he1gSlotCenter[he1tSlotName]
+      end if
+   end repeat
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      put "heHole" & he1tSeatNum & "a" into he1tSlotName
+      if there is a field he1tSlotName then
+         put the loc of field he1tSlotName into he1gSlotCenter[he1tSlotName]
+      end if
+      put "heHole" & he1tSeatNum & "b" into he1tSlotName
+      if there is a field he1tSlotName then
+         put the loc of field he1tSlotName into he1gSlotCenter[he1tSlotName]
+      end if
+      he1heSeatAvatarRender he1tSeatNum
+   end repeat
+   he1heTableLogoRender
+   he1heKitTryInit
+end he1heRehydrateChrome
+
+command he1heBuildLobby
+   -- the online lobby overlay: Create/Join a table, watch peers connect over
+   -- the DHT, and see every signed presence message verify or drop. Built
+   -- hidden; he1heLobbyShow/he1heLobbyHide toggle it as one unit. NEEDS AN OXT PASS.
+   create graphic "heLobbyBg"
+   set the style of graphic "heLobbyBg" to "roundrect"
+   set the roundRadius of graphic "heLobbyBg" to 16
+   set the rect of graphic "heLobbyBg" to "192,84,832,556"
+   set the backgroundColor of graphic "heLobbyBg" to "20,26,24"
+   set the borderColor of graphic "heLobbyBg" to he1kHeGoldColor
+   set the borderWidth of graphic "heLobbyBg" to 2
+   set the opaque of graphic "heLobbyBg" to true
+
+   he1heMakeLabel "heLobbyTitle", "212,94,812,124", \
+         "holde-em online -- serverless table over the DHT", he1kHeGoldColor, 16
+   -- the create row is FOUR buttons since v0.21.0 (he1kUIVersion 14): Create,
+   -- the 2f transport toggle, the Phase 3 host-mode toggle, Join -- same
+   -- row, same overlay, no window growth (since v0.23.0 the stack itself
+   -- fits the suite's 720p budget; the overlays always sat above the fold)
+   create button "heBtnCreate"
+   set the rect of button "heBtnCreate" to "232,134,372,170"
+   set the label of button "heBtnCreate" to "Create Table"
+   create button "heBtnJoin"
+   set the rect of button "heBtnJoin" to "662,134,792,170"
+   set the label of button "heBtnJoin" to "Join Table"
+   -- 2f: the transport the NEXT Create hosts over (a joiner's transport
+   -- comes from the invite itself). DHT swarm is the default; Tor onion
+   -- needs OnionXT + a running tor daemon and FAILS CLOSED without them.
+   create button "heBtnTransport"
+   set the rect of button "heBtnTransport" to "382,134,512,170"
+   set the label of button "heBtnTransport" to "Host over: DHT"
+   -- Phase 3: whether the NEXT Create hosts as a PLAYER (deals rotate, the
+   -- host sits) or as the ORACLE (the host deals every hand and holds no
+   -- seat -- spec 7.2 Level 1). Bound to the table at Create; joiners see
+   -- the mode on the table line (the signed cfg's level=1).
+   create button "heBtnHostMode"
+   set the rect of button "heBtnHostMode" to "522,134,652,170"
+   set the label of button "heBtnHostMode" to "Host: playing"
+
+   he1heMakeLabel "heJoinLabel", "212,182,532,204", \
+         "paste an invite code, then Join -- or Create to host", he1kHeWhite, 11
+   -- 2f: the tor probe status line (the quickshare-pill states)
+   he1heMakeLabel "heTorLine", "542,182,812,204", "", he1kHeGoldColor, 11
+   create field "heJoinCode"
+   set the rect of field "heJoinCode" to "232,208,712,238"
+   set the lockText of field "heJoinCode" to false
+   set the textSize of field "heJoinCode" to 12
+   set the textAlign of field "heJoinCode" to "center"
+   create button "heBtnCopyCode"
+   set the rect of button "heBtnCopyCode" to "724,206,792,240"
+   set the label of button "heBtnCopyCode" to "Copy"
+
+   he1heMakeLabel "heLobbyId", "212,246,812,270", "", he1kHeWhite, 12
+   he1heMakeLabel "heLobbyTable", "212,272,812,296", "", he1kHeGoldColor, 12
+   he1heMakeLabel "heRosterHdr", "212,304,502,326", "Players at this table", he1kHeWhite, 12
+   he1heMakeLabel "heNetHdr", "522,304,812,326", "Network activity (verify / drop)", he1kHeWhite, 12
+
+   create field "heLobbyRoster"
+   set the rect of field "heLobbyRoster" to "212,328,502,510"
+   set the lockText of field "heLobbyRoster" to true
+   set the textSize of field "heLobbyRoster" to 12
+   set the opaque of field "heLobbyRoster" to true
+   set the backgroundColor of field "heLobbyRoster" to "14,18,16"
+   set the textColor of field "heLobbyRoster" to he1kHeWhite
+   set the borderWidth of field "heLobbyRoster" to 0
+
+   create field "heLobbyNet"
+   set the rect of field "heLobbyNet" to "522,328,812,510"
+   set the lockText of field "heLobbyNet" to true
+   set the textSize of field "heLobbyNet" to 11
+   set the opaque of field "heLobbyNet" to true
+   set the backgroundColor of field "heLobbyNet" to "14,18,16"
+   set the textColor of field "heLobbyNet" to "150,220,150"
+   set the borderWidth of field "heLobbyNet" to 0
+
+   create button "heBtnLeave"
+   set the rect of button "heBtnLeave" to "232,516,472,548"
+   set the label of button "heBtnLeave" to "Leave (play hotseat)"
+   -- host-only: seats everyone who has joined and deals hand 1 (Phase 2d);
+   -- he1heLobbyRefresh keeps it enabled only for a host with 2+ joined players
+   create button "heBtnStartGame"
+   set the rect of button "heBtnStartGame" to "492,516,732,548"
+   set the label of button "heBtnStartGame" to "Start Game"
+
+   he1heLobbyHide
+end he1heBuildLobby
+
+command he1heLobbyShow
+   he1heHistHide
+   he1heSettingsHide
+   he1heLobbySetVisible true
+   he1heLobbyRefresh
+end he1heLobbyShow
+
+command he1heLobbyHide
+   he1heLobbySetVisible false
+end he1heLobbyHide
+
+command he1heLobbySetVisible pOn
+   -- toggle the whole overlay by concrete type (by-name generic "control"
+   -- references are not reliably valid in strict OXT; field/button/graphic are)
+   local he1tFields, he1tButtons, he1tNm
+   if there is a graphic "heLobbyBg" then
+      set the visible of graphic "heLobbyBg" to pOn
+   end if
+   put "heLobbyTitle,heJoinLabel,heTorLine,heJoinCode,heLobbyId,heLobbyTable," \
+         & "heRosterHdr,heNetHdr,heLobbyRoster,heLobbyNet" into he1tFields
+   put "heBtnCreate,heBtnJoin,heBtnTransport,heBtnHostMode,heBtnCopyCode,heBtnLeave,heBtnStartGame" into he1tButtons
+   set the itemDelimiter to comma
+   repeat for each item he1tNm in he1tFields
+      if there is a field he1tNm then
+         set the visible of field he1tNm to pOn
+      end if
+   end repeat
+   repeat for each item he1tNm in he1tButtons
+      if there is a button he1tNm then
+         set the visible of button he1tNm to pOn
+      end if
+   end repeat
+end he1heLobbySetVisible
+
+function he1heLobbyVisible
+   if there is a graphic "heLobbyBg" then
+      return the visible of graphic "heLobbyBg"
+   end if
+   return false
+end he1heLobbyVisible
+
+function he1heTransportLabel pMode
+   -- the lobby toggle's face (2f)
+   if pMode is "onion" then
+      return "Host over: Tor"
+   end if
+   return "Host over: DHT"
+end he1heTransportLabel
+
+function he1heHostModeLabel pMode
+   -- the Phase 3 host-mode toggle's face
+   if pMode is "oracle" then
+      return "Host: ORACLE"
+   end if
+   return "Host: playing"
+end he1heHostModeLabel
+
+command he1heHostModeCycle
+   -- the lobby's host-mode toggle (Phase 3). Shapes the NEXT Create only --
+   -- he1heTableCreate binds the mode into he1gGame["oracleHost"] and the signed
+   -- cfg (level=1), so a live table's deal level can never flip mid-game.
+   he1heCfgEnsure
+   if he1gCfg["hostMode"] is "oracle" then
+      put "play" into he1gCfg["hostMode"]
+   else
+      put "oracle" into he1gCfg["hostMode"]
+   end if
+   if there is a button "heBtnHostMode" then
+      set the label of button "heBtnHostMode" to he1heHostModeLabel(he1gCfg["hostMode"])
+   end if
+   he1heLobbyRefresh
+end he1heHostModeCycle
+
+command he1heTransportCycle
+   -- the lobby's transport toggle (2f). It shapes the NEXT Create only; a
+   -- joiner's transport comes from the invite itself (he1heInviteParse), so
+   -- there is nothing to toggle on the join side -- and an onion invite
+   -- pasted into a stack without OnionXT fails closed in he1heJoinRefusal,
+   -- never silently downgrades to the DHT.
+   he1heCfgEnsure
+   if he1gCfg["transport"] is "onion" then
+      put "rp1" into he1gCfg["transport"]
+   else
+      put "onion" into he1gCfg["transport"]
+   end if
+   if there is a button "heBtnTransport" then
+      set the label of button "heBtnTransport" to he1heTransportLabel(he1gCfg["transport"])
+   end if
+   he1heLobbyRefresh
+end he1heTransportCycle
+
+command he1heBuildSettings
+   create graphic "heSetBg"
+   set the style of graphic "heSetBg" to "roundrect"
+   set the roundRadius of graphic "heSetBg" to 16
+   set the rect of graphic "heSetBg" to "192,84,832,556"
+   set the backgroundColor of graphic "heSetBg" to "20,26,24"
+   set the borderColor of graphic "heSetBg" to he1kHeGoldColor
+   set the borderWidth of graphic "heSetBg" to 2
+   set the opaque of graphic "heSetBg" to true
+
+   he1heMakeLabel "heSetTitle", "212,94,812,124", \
+         "Table settings -- play the game you want", he1kHeGoldColor, 16
+   he1heMakeLabel "heSetHint", "212,126,812,148", \
+         "the host sets these; Apply starts a fresh table on the new config", he1kHeWhite, 11
+
+   he1heMakeSettingRow "heSetStack", "Starting chips", 158
+   he1heMakeSettingRow "heSetSB", "Small blind", 196
+   he1heMakeSettingRow "heSetBB", "Big blind", 234
+   he1heMakeSettingRow "heSetAnte", "Ante (0 for none)", 272
+   he1heMakeSettingRow "heSetSeats", "Players (2-6)", 310
+
+   he1heMakeLabel "heSetLevelLbl", "232,346,540,374", "Blinds", he1kHeWhite, 13
+   create button "heBtnSetLevel"
+   set the rect of button "heBtnSetLevel" to "560,344,792,376"
+   set the label of button "heBtnSetLevel" to "Fixed (cash game)"
+
+   -- interval row: meaning follows the blind mode (hands per level / minutes per
+   -- level); ignored when blinds are fixed. Its label repaints with the mode.
+   he1heMakeLabel "heSetIntervalLbl", "232,386,540,414", "Raise interval", he1kHeWhite, 13
+   create field "heSetInterval"
+   set the rect of field "heSetInterval" to "560,384,792,416"
+   set the textAlign of field "heSetInterval" to "center"
+   set the textSize of field "heSetInterval" to 14
+   set the lockText of field "heSetInterval" to false
+
+   he1heMakeLabel "heSetSpeedLbl", "232,426,540,454", "Deal speed", he1kHeWhite, 13
+   create button "heBtnSetSpeed"
+   set the rect of button "heBtnSetSpeed" to "560,424,792,456"
+   set the label of button "heBtnSetSpeed" to "Normal"
+
+   he1heMakeLabel "heSetLevelInfo", "212,462,540,492", \
+         "a rising schedule turns the table into a tournament", he1kHeGoldColor, 11
+   -- sound effects toggle (v0.16.0, Kenney Casino Audio); label follows he1gCfg["sounds"]
+   create button "heBtnSetSounds"
+   set the rect of button "heBtnSetSounds" to "560,460,792,492"
+   set the label of button "heBtnSetSounds" to "Sounds: On"
+
+   create button "heBtnSetApply"
+   set the rect of button "heBtnSetApply" to "232,502,472,540"
+   set the label of button "heBtnSetApply" to "Apply & New Table"
+   create button "heBtnSetCancel"
+   set the rect of button "heBtnSetCancel" to "592,502,792,540"
+   set the label of button "heBtnSetCancel" to "Cancel"
+   -- host picks a centre-table logo image (any format the engine reads); he1heTableLogoPick
+   create button "heBtnSetLogo"
+   set the rect of button "heBtnSetLogo" to "482,502,582,540"
+   set the label of button "heBtnSetLogo" to "Table Logo"
+
+   he1heSettingsHide
+end he1heBuildSettings
+
+command he1heMakeSettingRow pFieldName, pLabelTxt, pTopY
+   he1heMakeLabel (pFieldName & "Lbl"), "232," & pTopY & ",540," & (pTopY + 28), pLabelTxt, he1kHeWhite, 13
+   create field pFieldName
+   set the rect of field pFieldName to "560," & (pTopY - 2) & ",792," & (pTopY + 30)
+   set the textAlign of field pFieldName to "center"
+   set the textSize of field pFieldName to 14
+   set the lockText of field pFieldName to false
+end he1heMakeSettingRow
+
+command he1heSettingsShow
+   he1heLobbyHide
+   he1heHistHide
+   he1heSettingsSetVisible true
+   he1heSettingsRefresh
+end he1heSettingsShow
+
+command he1heSettingsHide
+   he1heSettingsSetVisible false
+end he1heSettingsHide
+
+command he1heSettingsSetVisible pOn
+   local he1tFields, he1tButtons, he1tNm
+   set the itemDelimiter to comma
+   if there is a graphic "heSetBg" then
+      set the visible of graphic "heSetBg" to pOn
+   end if
+   put "heSetTitle,heSetHint,heSetLevelInfo,heSetStackLbl,heSetSBLbl,heSetBBLbl," \
+         & "heSetAnteLbl,heSetSeatsLbl,heSetLevelLbl,heSetIntervalLbl,heSetSpeedLbl," \
+         & "heSetStack,heSetSB,heSetBB,heSetAnte,heSetSeats,heSetInterval" into he1tFields
+   put "heBtnSetLevel,heBtnSetSpeed,heBtnSetApply,heBtnSetCancel,heBtnSetLogo,heBtnSetSounds" into he1tButtons
+   repeat for each item he1tNm in he1tFields
+      if there is a field he1tNm then
+         set the visible of field he1tNm to pOn
+      end if
+   end repeat
+   repeat for each item he1tNm in he1tButtons
+      if there is a button he1tNm then
+         set the visible of button he1tNm to pOn
+      end if
+   end repeat
+end he1heSettingsSetVisible
+
+function he1heSettingsVisible
+   if there is a graphic "heSetBg" then
+      return the visible of graphic "heSetBg"
+   end if
+   return false
+end he1heSettingsVisible
+
+command he1heSettingsRefresh
+   -- populate the fields/buttons from the persistent config
+   he1heCfgEnsure
+   if there is not a field "heSetStack" then
+      exit he1heSettingsRefresh
+   end if
+   set the text of field "heSetStack" to he1gCfg["startStack"]
+   set the text of field "heSetSB" to he1gCfg["sb"]
+   set the text of field "heSetBB" to he1gCfg["bb"]
+   set the text of field "heSetAnte" to he1gCfg["ante"]
+   set the text of field "heSetSeats" to he1gCfg["numSeats"]
+   set the label of button "heBtnSetLevel" to he1heSettingsLevelLabel(he1gCfg["levelMode"])
+   set the label of button "heBtnSetSpeed" to he1heSettingsSpeedLabel(he1gCfg["speed"])
+   set the label of button "heBtnSetSounds" to he1heSettingsSoundsLabel(he1gCfg["sounds"])
+   he1heSettingsIntervalRefresh
+end he1heSettingsRefresh
+
+command he1heSettingsIntervalRefresh
+   -- the interval field + its label follow the blind mode
+   if there is not a field "heSetInterval" then
+      exit he1heSettingsIntervalRefresh
+   end if
+   set the text of field "heSetIntervalLbl" to he1heSettingsIntervalLabel(he1gCfg["levelMode"])
+   if he1gCfg["levelMode"] is "time" then
+      set the text of field "heSetInterval" to he1gCfg["levelMinutes"]
+   else
+      set the text of field "heSetInterval" to he1gCfg["levelEvery"]
+   end if
+end he1heSettingsIntervalRefresh
+
+command he1heSettingsIntervalStash
+   -- read the interval field into the he1gCfg key for the CURRENT mode, so cycling
+   -- the mode never discards what the host typed. A bad value is left for Apply
+   -- to reject rather than silently overwriting the stored one.
+   local he1tVal
+   if there is not a field "heSetInterval" then
+      exit he1heSettingsIntervalStash
+   end if
+   put word 1 of the text of field "heSetInterval" into he1tVal
+   if not he1heSettingsNumOk(he1tVal, 1) then
+      exit he1heSettingsIntervalStash
+   end if
+   if he1gCfg["levelMode"] is "time" then
+      put he1tVal into he1gCfg["levelMinutes"]
+   else
+      put he1tVal into he1gCfg["levelEvery"]
+   end if
+end he1heSettingsIntervalStash
+
+function he1heSettingsLevelLabel pMode
+   switch pMode
+      case "hands"
+         return "Rising, by hands played"
+      case "time"
+         return "Rising, on a timer"
+   end switch
+   return "Fixed (cash game)"
+end he1heSettingsLevelLabel
+
+function he1heSettingsIntervalLabel pMode
+   switch pMode
+      case "hands"
+         return "Hands per level"
+      case "time"
+         return "Minutes per level"
+   end switch
+   return "Raise interval (n/a for cash)"
+end he1heSettingsIntervalLabel
+
+function he1heSettingsSoundsLabel pMode
+   if pMode is "off" then
+      return "Sounds: Off"
+   end if
+   return "Sounds: On"
+end he1heSettingsSoundsLabel
+
+function he1heSettingsSpeedLabel pSpeed
+   switch pSpeed
+      case "fast"
+         return "Fast"
+      case "slow"
+         return "Slow"
+   end switch
+   return "Normal"
+end he1heSettingsSpeedLabel
+
+command he1heSettingsCycle pWhich
+   -- advance an enum choice and re-label its button (live on he1gCfg; number fields
+   -- stage until Apply)
+   he1heCfgEnsure
+   switch pWhich
+      case "level"
+         -- off -> by hands -> on a timer -> off. Stash the current interval field
+         -- back to the right he1gCfg key before switching, so cycling never loses it.
+         he1heSettingsIntervalStash
+         switch he1gCfg["levelMode"]
+            case "off"
+               put "hands" into he1gCfg["levelMode"]
+               break
+            case "hands"
+               put "time" into he1gCfg["levelMode"]
+               break
+            default
+               put "off" into he1gCfg["levelMode"]
+         end switch
+         set the label of button "heBtnSetLevel" to he1heSettingsLevelLabel(he1gCfg["levelMode"])
+         he1heSettingsIntervalRefresh
+         break
+      case "speed"
+         switch he1gCfg["speed"]
+            case "normal"
+               put "fast" into he1gCfg["speed"]
+               break
+            case "fast"
+               put "slow" into he1gCfg["speed"]
+               break
+            default
+               put "normal" into he1gCfg["speed"]
+         end switch
+         set the label of button "heBtnSetSpeed" to he1heSettingsSpeedLabel(he1gCfg["speed"])
+         break
+      case "sounds"
+         if he1gCfg["sounds"] is "on" then
+            put "off" into he1gCfg["sounds"]
+         else
+            put "on" into he1gCfg["sounds"]
+         end if
+         set the label of button "heBtnSetSounds" to he1heSettingsSoundsLabel(he1gCfg["sounds"])
+         if he1gCfg["sounds"] is "on" then
+            -- audible confirmation, which doubles as a live test of the play path
+            he1heSndPlay "check"
+         end if
+         break
+   end switch
+end he1heSettingsCycle
+
+command he1heSettingsApply
+   -- validate the number fields, commit to the config, then start a fresh table
+   local he1tStack, he1tSB, he1tBB, he1tAnte, he1tSeats, he1tInterval
+   he1heSettingsIntervalStash
+   put word 1 of the text of field "heSetStack" into he1tStack
+   put word 1 of the text of field "heSetSB" into he1tSB
+   put word 1 of the text of field "heSetBB" into he1tBB
+   put word 1 of the text of field "heSetAnte" into he1tAnte
+   put word 1 of the text of field "heSetSeats" into he1tSeats
+   put word 1 of the text of field "heSetInterval" into he1tInterval
+   if not he1heSettingsNumOk(he1tStack, 1) or not he1heSettingsNumOk(he1tSB, 0) \
+         or not he1heSettingsNumOk(he1tBB, 1) or not he1heSettingsNumOk(he1tAnte, 0) \
+         or not he1heSettingsNumOk(he1tSeats, he1kHeMinSeats) then
+      he1heUISetStatus "Settings: every field must be a whole number (chips>=1, seats>=2)."
+      exit he1heSettingsApply
+   end if
+   if (he1gCfg["levelMode"] is "hands" or he1gCfg["levelMode"] is "time") \
+         and not he1heSettingsNumOk(he1tInterval, 1) then
+      he1heUISetStatus "Settings: the blind interval must be a whole number of at least 1."
+      exit he1heSettingsApply
+   end if
+   -- clamp / normalise: BB is at least the SB, seats within the layout
+   if he1tBB < he1tSB then
+      put he1tSB into he1tBB
+   end if
+   if he1tSeats > he1kHeMaxSeats then
+      put he1kHeMaxSeats into he1tSeats
+   end if
+   if he1tSeats < he1kHeMinSeats then
+      put he1kHeMinSeats into he1tSeats
+   end if
+   if he1tAnte >= he1tStack then
+      he1heUISetStatus "Settings: the ante must be smaller than the starting stack."
+      exit he1heSettingsApply
+   end if
+   he1heApplyCfg he1tStack, he1tSB, he1tBB, he1tAnte, he1tSeats, he1gCfg["levelMode"], \
+         he1gCfg["levelEvery"], he1gCfg["levelMinutes"], he1gCfg["speed"]
+   he1heSettingsHide
+   he1heTableNew
+   he1heUIClearCards
+   he1heUISetStatus "New table: " & he1tSeats & " seats, " & he1tStack & " chips, blinds " \
+         & he1tSB & "/" & he1tBB & ".  Press Deal."
+end he1heSettingsApply
+
+function he1heSettingsNumOk pVal, pMin
+   -- a whole, non-negative number at least pMin
+   if pVal is not a number then
+      return false
+   end if
+   if pVal is not trunc(pVal) then
+      return false
+   end if
+   return pVal >= pMin
+end he1heSettingsNumOk
+
+command he1heLobbyRefresh
+   -- repaint identity, table line, roster, and the recent net activity from
+   -- he1gGame -- called on every handshake and every ingested wire. No-op if the
+   -- overlay is not built or not visible.
+   local he1tRoleTxt, he1tKeyPub, he1tRoster, he1tSeatRole, he1tNet, he1tNetAll, he1tCount
+   local he1tMyPub, he1tTableId, he1tOnlineTxt
+   if not (there is a field "heLobbyRoster") then
+      exit he1heLobbyRefresh
+   end if
+   if not he1heLobbyVisible() then
+      exit he1heLobbyRefresh
+   end if
+   he1heCfgEnsure
+   -- copy array elements to plain locals before chunking them (house gotcha H6)
+   put he1gGame["idPubHex"] into he1tMyPub
+   put he1gGame["tableIdHex"] into he1tTableId
+   -- identity
+   if he1gGame["idFingerprint"] is empty then
+      set the text of field "heLobbyId" to "You: identity is generated when you Create or Join."
+   else
+      set the text of field "heLobbyId" to \
+            "You: " & he1gGame["idFingerprint"] & "   key " & char 1 to 12 of he1tMyPub
+   end if
+   -- table / role / online line
+   if he1gGame["online"] is "true" then
+      if he1gGame["isHost"] is "true" then
+         put "host" into he1tRoleTxt
+      else
+         put "player" into he1tRoleTxt
+      end if
+      if he1gGame["transport"] is "onion" then
+         put "-- online over tor --" into he1tOnlineTxt
+      else
+         put "-- online --" into he1tOnlineTxt
+      end if
+      -- Phase 3: the signed cfg's level=1 marks an ORACLE table -- say so
+      -- to every joiner (the host deals every hand and holds no seat)
+      if he1heNetCfgVal("level", 0) is 1 then
+         put "  ORACLE table: the host deals, holds no seat." after he1tOnlineTxt
+      end if
+      set the text of field "heLobbyTable" to \
+            "Table " & char 1 to 16 of he1tTableId & "   role " & he1tRoleTxt & "   " & he1tOnlineTxt
+   else
+      set the text of field "heLobbyTable" to "Not connected. Create a table to host, or Join with a code."
+   end if
+   -- 2f: transport toggle label + the tor status line; Phase 3: host mode
+   if there is a button "heBtnTransport" then
+      set the label of button "heBtnTransport" to he1heTransportLabel(he1gCfg["transport"])
+   end if
+   if there is a button "heBtnHostMode" then
+      set the label of button "heBtnHostMode" to he1heHostModeLabel(he1gCfg["hostMode"])
+   end if
+   if there is a field "heTorLine" then
+      set the text of field "heTorLine" to he1heNetOnionStatusTxt()
+   end if
+   -- roster from the admitted set (+ roles); the host key is marked
+   put empty into he1tRoster
+   repeat for each key he1tKeyPub in he1gGame["admittedA"]
+      put he1gGame["roleByPub"][he1tKeyPub] into he1tSeatRole
+      if he1tSeatRole is empty then
+         put "player" into he1tSeatRole
+      end if
+      if he1tKeyPub is he1gGame["idPubHex"] then
+         put "* " after he1tRoster
+      else
+         put "  " after he1tRoster
+      end if
+      put char 1 to 12 of he1tKeyPub & "   " & he1tSeatRole & return after he1tRoster
+   end repeat
+   if he1tRoster is empty then
+      put "(no one yet)" into he1tRoster
+   end if
+   set the text of field "heLobbyRoster" to he1tRoster
+   -- last ~14 lines of network activity, newest at the bottom
+   put he1gGame["netLog"] into he1tNetAll
+   put the number of lines of he1tNetAll into he1tCount
+   if he1tCount > 14 then
+      put line (he1tCount - 13) to he1tCount of he1tNetAll into he1tNet
+   else
+      put he1tNetAll into he1tNet
+   end if
+   set the text of field "heLobbyNet" to he1tNet
+   -- Start Game is the host's verb, once the table is live and the game is
+   -- not already running (joined-player count is checked on the click)
+   he1heEnableBtn "heBtnStartGame", (he1gGame["online"] is "true" \
+         and he1gGame["isHost"] is "true" and he1gGame["gameOn"] is not "true")
+end he1heLobbyRefresh
+
+command he1heBuildHistory
+   -- the hand-history overlay: the folded, re-verified transcript. Built
+   -- hidden; he1heHistShow/he1heHistHide toggle it. NEEDS AN OXT PASS.
+   create graphic "heHistBg"
+   set the style of graphic "heHistBg" to "roundrect"
+   set the roundRadius of graphic "heHistBg" to 16
+   set the rect of graphic "heHistBg" to "192,84,832,556"
+   set the backgroundColor of graphic "heHistBg" to "20,26,24"
+   set the borderColor of graphic "heHistBg" to he1kHeGoldColor
+   set the borderWidth of graphic "heHistBg" to 2
+   set the opaque of graphic "heHistBg" to true
+
+   he1heMakeLabel "heHistTitle", "212,94,812,124", \
+         "hand history -- replayed from the transcript & re-verified", he1kHeGoldColor, 15
+   he1heMakeLabel "heHistAudit", "212,128,812,150", "", he1kHeWhite, 12
+
+   create field "heHistList"
+   set the rect of field "heHistList" to "212,158,812,502"
+   set the lockText of field "heHistList" to true
+   set the textSize of field "heHistList" to 12
+   set the opaque of field "heHistList" to true
+   set the backgroundColor of field "heHistList" to "14,18,16"
+   set the textColor of field "heHistList" to he1kHeWhite
+   set the borderWidth of field "heHistList" to 0
+
+   create button "heBtnHistVerify"
+   set the rect of button "heBtnHistVerify" to "212,510,352,544"
+   set the label of button "heBtnHistVerify" to "Re-verify"
+   create button "heBtnHistExport"
+   set the rect of button "heBtnHistExport" to "360,510,540,544"
+   set the label of button "heBtnHistExport" to "Copy transcript"
+   create button "heBtnHistClose"
+   set the rect of button "heBtnHistClose" to "712,510,812,544"
+   set the label of button "heBtnHistClose" to "Close"
+
+   he1heHistHide
+end he1heBuildHistory
+
+command he1heHistShow
+   he1heLobbyHide
+   he1heSettingsHide
+   he1heHistSetVisible true
+   he1heHistRefresh
+end he1heHistShow
+
+command he1heHistHide
+   he1heHistSetVisible false
+end he1heHistHide
+
+command he1heHistSetVisible pOn
+   local he1tFields, he1tButtons, he1tNm
+   if there is a graphic "heHistBg" then
+      set the visible of graphic "heHistBg" to pOn
+   end if
+   put "heHistTitle,heHistAudit,heHistList" into he1tFields
+   put "heBtnHistVerify,heBtnHistExport,heBtnHistClose" into he1tButtons
+   set the itemDelimiter to comma
+   repeat for each item he1tNm in he1tFields
+      if there is a field he1tNm then
+         set the visible of field he1tNm to pOn
+      end if
+   end repeat
+   repeat for each item he1tNm in he1tButtons
+      if there is a button he1tNm then
+         set the visible of button he1tNm to pOn
+      end if
+   end repeat
+end he1heHistSetVisible
+
+function he1heHistVisible
+   if there is a graphic "heHistBg" then
+      return the visible of graphic "heHistBg"
+   end if
+   return false
+end he1heHistVisible
+
+command he1heHistRefresh
+   -- fold the current transcript and show the per-hand history plus TWO audits:
+   -- the settlement (the fold re-derives every payout and compares it to the
+   -- logged one) and, for Level 0 hands, the DEAL (he1heAuditDealsFromLog
+   -- re-derives the committed shuffle from the revealed seeds). An all-verified
+   -- transcript is the legitimacy proof.
+   local he1tFold, he1tHistTxt, he1tErrs, he1tAuditTxt, he1tDealAudit, he1tLogTxt
+   local he1tXlatTxt, he1tSrcTxt
+   if not (there is a field "heHistList") then
+      exit he1heHistRefresh
+   end if
+   -- copy the transcript to a plain local before measuring/chunking it (H6)
+   put he1gGame["log"] into he1tLogTxt
+   put "hotseat transcript" into he1tSrcTxt
+   -- The lobby and the hotseat game share he1gGame["log"] in two INCOMPATIBLE
+   -- formats (he1heLogIsCleanHotseat spells out why). 2e: an ONLINE signed
+   -- chain is no longer a dead end here -- he1heNetLogToHotseat translates it
+   -- into the hotseat shape and the SAME fold + deal audit run over the
+   -- translation ("the live audit verdicts land in the net feed" is over:
+   -- History now folds online play too). A chain with no game in it (a
+   -- lobby that never dealt) still gets the honest say-what-is-there text.
+   if not he1heLogIsCleanHotseat(he1tLogTxt) then
+      if he1tLogTxt is empty then
+         set the text of field "heHistList" to \
+               "No transcript yet. Play a hand (Deal), then re-open History."
+         set the text of field "heHistAudit" to \
+               "NOT AUDITED -- nothing to replay yet."
+         set the textColor of field "heHistAudit" to he1kHeGoldColor
+         exit he1heHistRefresh
+      end if
+      put he1heNetLogToHotseat(he1tLogTxt) into he1tXlatTxt
+      if he1tXlatTxt is empty then
+         set the text of field "heHistList" to \
+               "This transcript is the ONLINE signed chain (" \
+               & the number of lines of he1tLogTxt & " wires) with no dealt hands yet." & return \
+               & "Every wire was signature- and chain-verified as it arrived. Play a" & return \
+               & "hand and re-open History, or use Copy transcript to export the chain."
+         set the text of field "heHistAudit" to \
+               "NOT AUDITED HERE -- online chain (verified on ingest), no hands to replay."
+         set the textColor of field "heHistAudit" to he1kHeGoldColor
+         exit he1heHistRefresh
+      end if
+      put "online signed chain, translated (" \
+            & the number of lines of he1tLogTxt & " wires)" into he1tSrcTxt
+      put he1tXlatTxt into he1tLogTxt
+   end if
+   put he1heFoldTranscript(he1tLogTxt) into he1tFold
+   put he1tFold["history"] into he1tHistTxt
+   put he1tFold["errors"] into he1tErrs
+   put he1heAuditDealsFromLog(he1tLogTxt) into he1tDealAudit
+   if he1tHistTxt is empty then
+      put "No completed hands yet. Play a hand (Deal), then re-open History." into he1tHistTxt
+   end if
+   set the text of field "heHistList" to "source: " & he1tSrcTxt & return & return \
+         & he1tHistTxt & return & return \
+         & "-- deal audit (commit-reveal shuffle) --" & return & he1tDealAudit
+   if he1tErrs is empty then
+      put "AUDIT PASSED -- every hand's settlement matched the independent replay." into he1tAuditTxt
+      set the textColor of field "heHistAudit" to "150,220,150"
+   else
+      put "AUDIT FAILED -- " & line 1 of he1tErrs into he1tAuditTxt
+      set the textColor of field "heHistAudit" to he1kHeRed
+   end if
+   set the text of field "heHistAudit" to he1tAuditTxt
+end he1heHistRefresh
+
+command he1heMakeLabel pName, pRect, pText, pColor, pSize
+   create field pName
+   set the rect of field pName to pRect
+   set the lockText of field pName to true
+   set the textAlign of field pName to "center"
+   set the textSize of field pName to pSize
+   set the textColor of field pName to pColor
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the text of field pName to pText
+end he1heMakeLabel
+
+command he1heWipeChrome
+   local he1tPos
+   repeat with he1tPos = the number of controls of card 1 down to 1
+      if the short name of control he1tPos of card 1 begins with "he" then
+         delete control he1tPos of card 1
+      end if
+   end repeat
+end he1heWipeChrome
+
+command he1heMakeCardSlot pSlotName, pCenterX, pCenterY
+   create field pSlotName
+   set the rect of field pSlotName to \
+         (pCenterX - he1kHeCardW div 2) & comma & (pCenterY - he1kHeCardH div 2) & comma \
+         & (pCenterX + he1kHeCardW div 2) & comma & (pCenterY + he1kHeCardH div 2)
+   set the lockText of field pSlotName to true
+   set the textAlign of field pSlotName to "center"
+   set the textSize of field pSlotName to 22
+   set the textStyle of field pSlotName to "bold"
+   set the opaque of field pSlotName to true
+   set the backgroundColor of field pSlotName to he1kHeWhite
+   set the borderWidth of field pSlotName to 1
+   set the borderColor of field pSlotName to "60,60,60"
+   set the visible of field pSlotName to false
+   -- remember the centre so he1heKitTryInit can pool a card sprite over this slot
+   put pCenterX & comma & pCenterY into he1gSlotCenter[pSlotName]
+end he1heMakeCardSlot
+
+function he1heSuitGlyph pSuitVal
+   -- built from codepoints so the source stays ASCII (no glyphs in the file)
+   switch pSuitVal
+      case 1
+         return numToCodepoint(9827)  -- clubs
+      case 2
+         return numToCodepoint(9830)  -- diamonds
+      case 3
+         return numToCodepoint(9829)  -- hearts
+      case 4
+         return numToCodepoint(9824)  -- spades
+   end switch
+   return "?"
+end he1heSuitGlyph
+
+function he1heCardFace pIdx
+   -- rank + suit glyph, e.g. A + spade; ten shows as "10"
+   local he1tName, he1tRankCh, he1tRankTxt
+   put he1heCardName(pIdx) into he1tName
+   put char 1 of he1tName into he1tRankCh
+   if he1tRankCh is "T" then
+      put "10" into he1tRankTxt
+   else
+      put he1tRankCh into he1tRankTxt
+   end if
+   return he1tRankTxt & he1heSuitGlyph(he1heCardSuitVal(pIdx))
+end he1heCardFace
+
+function he1heKenneyFrame pIdx
+   -- map an internal card id (1..52) to its Kenney "Playing Cards Pack" atlas frame
+   -- BASE name (no extension), for kit-mode card art. he1heCardName gives rank+suit
+   -- ("As","Ts","7c"); Kenney names frames card<Suit><Rank>: c->Clubs d->Diamonds
+   -- h->Hearts s->Spades, ten as "10". So 52 (As) -> "cardSpadesA", Ts -> "cardSpades10".
+   -- The vendored atlas (assets/cards/playingCards.xml, CC0) carries the ".png" suffix
+   -- on its SubTexture names; whether Box2Dxt keeps or strips it on load is a
+   -- per-sheet question (gotcha 24) resolved on the OXT pass. Pinned by tools/atlas-kat.py.
+   local he1tName, he1tRankCh, he1tSuitCh, he1tSuitTxt, he1tRankTxt
+   put he1heCardName(pIdx) into he1tName
+   put char 1 of he1tName into he1tRankCh
+   put char 2 of he1tName into he1tSuitCh
+   switch he1tSuitCh
+      case "c"
+         put "Clubs" into he1tSuitTxt
+         break
+      case "d"
+         put "Diamonds" into he1tSuitTxt
+         break
+      case "h"
+         put "Hearts" into he1tSuitTxt
+         break
+      case "s"
+         put "Spades" into he1tSuitTxt
+         break
+   end switch
+   if he1tRankCh is "T" then
+      put "10" into he1tRankTxt
+   else
+      put he1tRankCh into he1tRankTxt
+   end if
+   return "card" & he1tSuitTxt & he1tRankTxt
+end he1heKenneyFrame
+
+command he1heMakeActionButton pBtnName, pLabelTxt, pLeftX
+   create button pBtnName
+   set the rect of button pBtnName to pLeftX & ",556" & comma & (pLeftX + 76) & ",588"
+   set the label of button pBtnName to pLabelTxt
+end he1heMakeActionButton
+
+command he1heMakeAvatar pSeatNum, pCx, pCy
+   -- three stacked controls at (pCx,pCy): the disc, the initial fallback, the image
+   local he1tRad, he1tRect
+   put he1kHeAvatarSize div 2 into he1tRad
+   put (pCx - he1tRad) & comma & (pCy - he1tRad) & comma & (pCx + he1tRad) & comma & (pCy + he1tRad) into he1tRect
+   create graphic ("heSeatAv" & pSeatNum)
+   set the style of graphic ("heSeatAv" & pSeatNum) to "oval"
+   set the rect of graphic ("heSeatAv" & pSeatNum) to he1tRect
+   set the opaque of graphic ("heSeatAv" & pSeatNum) to true
+   set the lineSize of graphic ("heSeatAv" & pSeatNum) to 2
+   set the foregroundColor of graphic ("heSeatAv" & pSeatNum) to he1kHeGoldColor
+   he1heMakeLabel "heSeatAvTx" & pSeatNum, he1tRect, "", he1kHeWhite, 20
+   set the textStyle of field ("heSeatAvTx" & pSeatNum) to "bold"
+   create image ("heSeatAvImg" & pSeatNum)
+   set the rect of image ("heSeatAvImg" & pSeatNum) to he1tRect
+   set the visible of image ("heSeatAvImg" & pSeatNum) to false
+end he1heMakeAvatar
+
+command he1heSeatAvatarRender pSeatNum
+   -- choose picked-image vs coloured-initial for one seat; caches the choice in
+   -- he1gAvatarOn so he1heSeatChromeVisible (the 4Hz hot path) never reloads the file
+   local he1tPath, he1tName, he1tInitial, he1tFill, he1tPaths, he1tLocTxt, he1tCx, he1tCy, he1tNatW, he1tNatH
+   set the itemDelimiter to ";"
+   put item pSeatNum of he1kHeAvatarFills into he1tFill
+   set the itemDelimiter to comma
+   if there is a graphic ("heSeatAv" & pSeatNum) then
+      set the backgroundColor of graphic ("heSeatAv" & pSeatNum) to he1tFill
+   end if
+   put the uHeAvatarPaths of this stack into he1tPaths
+   put line pSeatNum of he1tPaths into he1tPath
+   if he1tPath is not empty and there is a file he1tPath then
+      put "true" into he1gAvatarOn[pSeatNum]
+      if there is an image ("heSeatAvImg" & pSeatNum) then
+         -- setting the filename resets the control to the picture's natural size,
+         -- so re-rect AFTER it -- aspect-fit inside the disc (formatWidth/Height are
+         -- the loaded picture's natural pixels) so a non-square photo letterboxes
+         -- on the coloured disc instead of stretching
+         set the filename of image ("heSeatAvImg" & pSeatNum) to he1tPath
+         if there is a graphic ("heSeatAv" & pSeatNum) then
+            put the loc of graphic ("heSeatAv" & pSeatNum) into he1tLocTxt
+            put item 1 of he1tLocTxt into he1tCx
+            put item 2 of he1tLocTxt into he1tCy
+            put the formatWidth of image ("heSeatAvImg" & pSeatNum) into he1tNatW
+            put the formatHeight of image ("heSeatAvImg" & pSeatNum) into he1tNatH
+            set the rect of image ("heSeatAvImg" & pSeatNum) to \
+                  he1heFitRect(he1tNatW, he1tNatH, he1tCx, he1tCy, he1kHeAvatarSize)
+         end if
+         set the visible of image ("heSeatAvImg" & pSeatNum) to true
+      end if
+      if there is a field ("heSeatAvTx" & pSeatNum) then
+         set the visible of field ("heSeatAvTx" & pSeatNum) to false
+      end if
+   else
+      put "false" into he1gAvatarOn[pSeatNum]
+      if there is an image ("heSeatAvImg" & pSeatNum) then
+         set the visible of image ("heSeatAvImg" & pSeatNum) to false
+      end if
+      put item pSeatNum of he1kHeSeatNames into he1tName
+      put toUpper(char 1 of he1tName) into he1tInitial
+      if there is a field ("heSeatAvTx" & pSeatNum) then
+         set the text of field ("heSeatAvTx" & pSeatNum) to he1tInitial
+         set the visible of field ("heSeatAvTx" & pSeatNum) to true
+      end if
+   end if
+end he1heSeatAvatarRender
+
+command he1heSeatAvatarPick pSeatNum
+   local he1tFile, he1tName, he1tPrompt, he1tPaths
+   set the itemDelimiter to comma
+   put item pSeatNum of he1kHeSeatNames into he1tName
+   put "Choose an avatar image for " & he1tName into he1tPrompt
+   answer file he1tPrompt with type "Images|png,jpg,jpeg,gif,bmp"
+   put it into he1tFile
+   if he1tFile is empty then
+      exit he1heSeatAvatarPick   -- cancelled
+   end if
+   -- ONE uHeAvatarPaths property, line N = seat N's path (paths cannot contain a
+   -- newline, so the line index is safe). A computed property NAME would need the
+   -- parenthesised dynamic-property form, which is not portable xTalk -- H9.
+   put the uHeAvatarPaths of this stack into he1tPaths
+   put he1tFile into line pSeatNum of he1tPaths
+   set the uHeAvatarPaths of this stack to he1tPaths
+   he1heSeatAvatarRender pSeatNum
+   he1heUISetStatus he1tName && "portrait updated."
+end he1heSeatAvatarPick
+
+command he1heTableLogoPick
+   local he1tFile
+   answer file "Choose a table logo image" with type "Images|png,jpg,jpeg,gif,bmp"
+   put it into he1tFile
+   if he1tFile is empty then
+      exit he1heTableLogoPick   -- cancelled
+   end if
+   set the uHeTableLogoPath of this stack to he1tFile
+   he1heTableLogoRender
+   he1heUISetStatus "Table logo updated."
+end he1heTableLogoPick
+
+command he1heTableLogoRender
+   local he1tPath, he1tNatW, he1tNatH
+   if there is not an image "heTableLogo" then
+      exit he1heTableLogoRender
+   end if
+   put the uHeTableLogoPath of this stack into he1tPath
+   if he1tPath is not empty and there is a file he1tPath then
+      -- filename first (it resets the control to the picture's natural size),
+      -- then aspect-fit the rect into the logo box centred on the felt
+      set the filename of image "heTableLogo" to he1tPath
+      put the formatWidth of image "heTableLogo" into he1tNatW
+      put the formatHeight of image "heTableLogo" into he1tNatH
+      set the rect of image "heTableLogo" to he1heFitRect(he1tNatW, he1tNatH, 512, 286, he1kHeLogoBox)
+      set the blendLevel of image "heTableLogo" to he1kHeLogoDim
+      set the visible of image "heTableLogo" to true
+   else
+      set the visible of image "heTableLogo" to false
+   end if
+end he1heTableLogoRender
+
+function he1heFitRect pNatW, pNatH, pCx, pCy, pBox
+   -- the largest aspect-preserving rect that fits a pBox square centred on
+   -- (pCx,pCy). Pure values-in/values-out (H5); integer div keeps it exact.
+   -- Bad/missing natural sizes (image not loaded yet) fall back to the full box.
+   local he1tW, he1tH
+   if pNatW is not a number or pNatH is not a number or pNatW <= 0 or pNatH <= 0 then
+      put pBox into he1tW
+      put pBox into he1tH
+   else if pNatW >= pNatH then
+      put pBox into he1tW
+      put round(pBox * pNatH / pNatW) into he1tH
+   else
+      put pBox into he1tH
+      put round(pBox * pNatW / pNatH) into he1tW
+   end if
+   return (pCx - he1tW div 2) & comma & (pCy - he1tH div 2) & comma \
+         & (pCx + he1tW div 2) & comma & (pCy + he1tH div 2)
+end he1heFitRect
+
+command he1heBetSliderShow pMinTo, pMaxTo
+   if there is not a scrollbar "heBetSlider" then
+      exit he1heBetSliderShow
+   end if
+   if pMaxTo <= pMinTo then
+      -- nothing to slide (only an all-in is available): hide it
+      set the visible of scrollbar "heBetSlider" to false
+      exit he1heBetSliderShow
+   end if
+   set the startValue of scrollbar "heBetSlider" to pMinTo
+   set the endValue of scrollbar "heBetSlider" to pMaxTo
+   set the thumbPosition of scrollbar "heBetSlider" to pMinTo
+   -- track clicks step by a big blind (page = 4 blinds), so keyboard-free sizing
+   -- lands on natural amounts
+   if he1gGame["bb"] is a number and he1gGame["bb"] > 0 then
+      set the lineInc of scrollbar "heBetSlider" to he1gGame["bb"]
+      set the pageInc of scrollbar "heBetSlider" to he1gGame["bb"] * 4
+   end if
+   set the visible of scrollbar "heBetSlider" to true
+end he1heBetSliderShow
+
+command he1heBetSliderHide
+   if there is a scrollbar "heBetSlider" then
+      set the visible of scrollbar "heBetSlider" to false
+   end if
+end he1heBetSliderHide
+
+command he1heBetSliderSync
+   -- move the thumb to match the amount box (after a Min/1/2/Pot button), clamped
+   local he1tVal
+   if there is not a scrollbar "heBetSlider" then
+      exit he1heBetSliderSync
+   end if
+   if not the visible of scrollbar "heBetSlider" then
+      exit he1heBetSliderSync
+   end if
+   put word 1 of the text of field "heAmount" into he1tVal
+   if he1tVal is not a number then
+      exit he1heBetSliderSync
+   end if
+   if he1tVal < the startValue of scrollbar "heBetSlider" then
+      put the startValue of scrollbar "heBetSlider" into he1tVal
+   end if
+   if he1tVal > the endValue of scrollbar "heBetSlider" then
+      put the endValue of scrollbar "heBetSlider" into he1tVal
+   end if
+   set the thumbPosition of scrollbar "heBetSlider" to he1tVal
+end he1heBetSliderSync
+
+command he1heBetSliderFromThumb
+   -- deferred: read wherever the engine left the thumb and mirror it into the
+   -- amount box. Guarded against the slider having been hidden since the send.
+   if there is not a scrollbar "heBetSlider" then
+      exit he1heBetSliderFromThumb
+   end if
+   if not the visible of scrollbar "heBetSlider" then
+      exit he1heBetSliderFromThumb
+   end if
+   if there is a field "heAmount" then
+      set the text of field "heAmount" to round(the thumbPosition of scrollbar "heBetSlider")
+   end if
+end he1heBetSliderFromThumb
+
+function he1heSndFilesFor pKind
+   -- game moment -> comma list of vendored files (2+ alternate via he1gSndTick).
+   -- "shuffle" is vendored + mapped but not yet wired into the flow: it is 3 s
+   -- long and would be cut off by the deal sound on the same beat; the deal-
+   -- animation increment paces it before the first deal.
+   switch pKind
+      case "shuffle"
+         return "cardShuffle.wav"
+      case "deal"
+         return "cardSlide1.wav,cardSlide2.wav"
+      case "board"
+         return "cardPlace1.wav,cardPlace2.wav"
+      case "fold"
+         return "cardShove1.wav"
+      case "check"
+         return "chipLay1.wav"
+      case "chips"
+         return "chipsHandle1.wav,chipsHandle2.wav"
+      case "allin"
+         return "chipsCollide1.wav"
+      case "win"
+         return "chipsStack1.wav"
+   end switch
+   return ""
+end he1heSndFilesFor
+
+command he1heSndVerb pVerb
+   -- accepted-action funnel (called from he1heEngineDo): verb -> sound kind
+   switch pVerb
+      case "fold"
+         he1heSndPlay "fold"
+         break
+      case "check"
+         he1heSndPlay "check"
+         break
+      case "allin"
+         he1heSndPlay "allin"
+         break
+      case "call"
+      case "bet"
+      case "raise"
+         he1heSndPlay "chips"
+         break
+   end switch
+end he1heSndVerb
+
+command he1heSndTryInit
+   -- import each vendored WAV as an audioClip, once. A clip already present
+   -- (saved stack, or a prior init) is just marked playable. Failures mark the
+   -- single file bad and move on -- one broken file never mutes the rest.
+   local he1tFile, he1tFolder, he1tFull, he1tImpErr
+   if he1gSndChk is "true" then
+      exit he1heSndTryInit
+   end if
+   put "true" into he1gSndChk
+   -- import lands in the defaultStack: pin it to THIS stack so a message-box
+   -- call can never import the clips into whatever stack happens to be front
+   set the defaultStack to the short name of this stack
+   set the itemDelimiter to comma
+   put the uHeSoundsPath of this stack into he1tFolder
+   if he1tFolder is empty then
+      put he1heStackFolder() into he1tFolder
+      if he1tFolder is empty then
+         exit he1heSndTryInit   -- unsaved stack, no override: stay silent
+      end if
+      put he1tFolder & "/assets/sounds" into he1tFolder
+   end if
+   repeat for each item he1tFile in he1kHeSoundFiles
+      if there is an audioClip he1tFile then
+         put "true" into he1gSndOk[he1tFile]
+         next repeat
+      end if
+      put he1tFolder & "/" & he1tFile into he1tFull
+      if there is not a file he1tFull then
+         next repeat
+      end if
+      try
+         import audioClip from file he1tFull
+         -- some engines name the imported clip after the full path: normalise
+         if there is not an audioClip he1tFile then
+            set the name of audioClip (the number of audioClips of this stack) \
+                  of this stack to he1tFile
+         end if
+         if there is an audioClip he1tFile then
+            put "true" into he1gSndOk[he1tFile]
+         end if
+      catch he1tImpErr
+         -- leave he1gSndOk[he1tFile] unset: this one stays silent, the rest still play
+      end try
+   end repeat
+end he1heSndTryInit
+
+command he1heSndPlay pKind
+   -- the ONE playback gate: config toggle -> lazy init -> rotate -> guarded play
+   local he1tList, he1tCount, he1tIdx, he1tFile, he1tPlayErr
+   he1heCfgEnsure
+   if he1gCfg["sounds"] is not "on" then
+      exit he1heSndPlay
+   end if
+   he1heSndTryInit
+   set the itemDelimiter to comma
+   put he1heSndFilesFor(pKind) into he1tList
+   if he1tList is empty then
+      exit he1heSndPlay
+   end if
+   put the number of items of he1tList into he1tCount
+   if he1gSndTick is not a number then
+      put 0 into he1gSndTick
+   end if
+   add 1 to he1gSndTick
+   put (he1gSndTick mod he1tCount) + 1 into he1tIdx
+   put item he1tIdx of he1tList into he1tFile
+   if he1gSndOk[he1tFile] is not "true" then
+      exit he1heSndPlay
+   end if
+   try
+      play audioClip he1tFile
+   catch he1tPlayErr
+      -- an engine without audio (or a hosed clip): mark it bad and stay silent
+      put "false" into he1gSndOk[he1tFile]
+   end try
+end he1heSndPlay
+
+command he1heProbeSounds
+   -- message-box diagnostic (mirror of he1heProbeKit): what resolved, what loaded
+   local he1tOut, he1tFile, he1tFolder, he1tFull
+   set the itemDelimiter to comma
+   put "holde-em sound probe  stack v" & he1kHeVersion & return into he1tOut
+   put "sounds enabled (he1gCfg): " & he1gCfg["sounds"] & return after he1tOut
+   put the uHeSoundsPath of this stack into he1tFolder
+   if he1tFolder is empty then
+      put he1heStackFolder() into he1tFolder
+      if he1tFolder is empty then
+         put "folder: stack UNSAVED and uHeSoundsPath unset -- save the stack" \
+               & " with assets/sounds next to it, or set uHeSoundsPath" & return after he1tOut
+      else
+         put he1tFolder & "/assets/sounds" into he1tFolder
+      end if
+   end if
+   put "folder: " & he1tFolder & return after he1tOut
+   put "init ran: " & (he1gSndChk is "true") & return after he1tOut
+   repeat for each item he1tFile in he1kHeSoundFiles
+      put he1tFolder & "/" & he1tFile into he1tFull
+      put he1tFile & "  file:" & (there is a file he1tFull) \
+            & "  clip:" & (there is an audioClip he1tFile) \
+            & "  ok:" & (he1gSndOk[he1tFile] is "true") & return after he1tOut
+   end repeat
+   put "run he1heSndReload after moving files or loading the pack" & return after he1tOut
+   put he1tOut
+end he1heProbeSounds
+
+command he1heSndReload
+   -- clear the cached init so the next play (or a probe after it) re-imports
+   put empty into he1gSndChk
+   put empty into he1gSndOk
+   he1heSndTryInit
+end he1heSndReload
+
+function he1heStackFolder
+   -- the folder that holds the SAVED stack file, so an assets/ folder sitting next
+   -- to the stack is found automatically. Empty when the stack was pasted into the
+   -- message box and never saved (there is no file to be relative to) -- then set
+   -- uHeAtlasPath/uHeBacksPath by hand, or just save the stack once. LiveCode reports
+   -- filenames with "/" separators on every platform, so item 1 to -2 is the folder.
+   -- gotcha 5: the itemDelimiter is global mutable state, so it is saved and
+   -- restored here. Leaving it as "/" (pre-v0.14.1) leaked a foreign delimiter out
+   -- to every caller -- he1heKitTryInit's early exit on a missing atlas returned with
+   -- it still set, and the next handler to chunk items without setting it first
+   -- would have parsed with "/".
+   local he1tFile, he1tSaved, he1tOut
+   put the filename of this stack into he1tFile
+   if he1tFile is empty then
+      return ""
+   end if
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to "/"
+   put item 1 to -2 of he1tFile into he1tOut
+   set the itemDelimiter to he1tSaved
+   return he1tOut
+end he1heStackFolder
+
+function he1heSwapExt pPath, pNewExt
+   -- pPath with its trailing ".<ext>" replaced by pNewExt (e.g. ".xml"), so a .png
+   -- atlas path yields its sibling TextureAtlas .xml. Copied to a local before the
+   -- chunk (H6). A folder name containing a "." is a rare cosmetic edge, not a crash.
+   -- saves/restores the itemDelimiter (gotcha 5) -- it used to leave it as "."
+   local he1tBase, he1tSaved
+   put pPath into he1tBase
+   put the itemDelimiter into he1tSaved
+   set the itemDelimiter to "."
+   if the number of items of he1tBase > 1 then
+      delete last item of he1tBase
+   end if
+   set the itemDelimiter to he1tSaved
+   return he1tBase & pNewExt
+end he1heSwapExt
+
+command he1heKitTryInit
+   local he1tIdx, he1tKitErr, he1tBacksErr, he1tPng, he1tXml, he1tBackPng, he1tBackXml, he1tDir
+   local he1tSlot, he1tCtr, he1tSpr, he1tFrameW, he1tBackFrameW
+   put "flat" into he1gUIMode
+   put 0 into he1gAnimBusy
+   put empty into he1gCardSpr
+   put empty into he1gKitSuffix
+   put empty into he1gKitBackSuffix
+   put empty into he1gKitLastErr
+   if not he1heHasKit() then
+      exit he1heKitTryInit
+   end if
+   -- resolve the atlas PNG path. b2kSheetLoadAtlas takes the PNG (its sibling .xml is
+   -- the optional 2nd arg). An explicit uHeAtlasPath/uHeBacksPath override wins (a .xml
+   -- override is accepted and swapped to .png); otherwise default to assets/cards/ NEXT
+   -- TO the saved stack -- so dropping the assets folder beside the stack just works.
+   -- A pasted, unsaved stack has no folder, so it stays on the flat cards.
+   put the uHeAtlasPath of this stack into he1tPng
+   put the uHeBacksPath of this stack into he1tBackPng
+   put he1heStackFolder() into he1tDir
+   if he1tPng is empty and he1tDir is not empty then
+      put he1tDir & "/assets/cards/playingCards.png" into he1tPng
+   end if
+   if he1tBackPng is empty and he1tDir is not empty then
+      put he1tDir & "/assets/cards/playingCardBacks.png" into he1tBackPng
+   end if
+   if he1tPng ends with ".xml" then
+      put he1heSwapExt(he1tPng, ".png") into he1tPng
+   end if
+   if he1tBackPng ends with ".xml" then
+      put he1heSwapExt(he1tBackPng, ".png") into he1tBackPng
+   end if
+   if he1tPng is empty or there is not a file (he1tPng) then
+      exit he1heKitTryInit
+   end if
+   put he1heSwapExt(he1tPng, ".xml") into he1tXml
+   put he1heSwapExt(he1tBackPng, ".xml") into he1tBackXml
+   try
+      -- put the Kit's handlers on the message path IF it is a separately-loaded stack;
+      -- if they are already here (merged in / differently-named host), skip it -- a
+      -- start-using of a non-existent stack would throw and drop us back to flat.
+      if there is a stack "box2dxt-kit" then
+         start using stack "box2dxt-kit"
+      end if
+      set the itemDelimiter to comma
+      -- persist the sheets: cards never change, so a saved stack carries the sliced
+      -- art and any teardown reloads it as a no-op (Kit guidance).
+      b2kSheetPersist true
+      b2kSheetLoadAtlas "heCards", he1tPng, he1tXml
+      -- Kenney frames are card<Suit><Rank>; some atlas loaders keep the ".png" on the
+      -- frame key and some strip it (gotcha 24) -- ask the sheet which it is.
+      if b2kSheetHasFrame("heCards", "cardSpadesA.png") then
+         put ".png" into he1gKitSuffix
+      else
+         put empty into he1gKitSuffix
+      end if
+      -- scale the sheet so a Kenney card (140 px wide) displays at the slot width,
+      -- then pre-warm every face (a lazy first slice costs ~250 ms mid-hand).
+      put item 1 of b2kSheetFrameSize("heCards", "cardSpadesA" & he1gKitSuffix) into he1tFrameW
+      if he1tFrameW is not a number or he1tFrameW is 0 then
+         put 140 into he1tFrameW
+      end if
+      b2kSheetScale "heCards", he1kHeCardW / he1tFrameW
+      repeat with he1tIdx = 1 to 52
+         b2kSheetEnsureIcon "heCards", he1heKenneyFrame(he1tIdx) & he1gKitSuffix
+      end repeat
+      -- pool ONE bodiless sprite over each card slot (pooled at build, never mid-hand);
+      -- he1heUIShowCardIn swaps its frame and shows it. Positioned at the slot centre.
+      repeat for each key he1tSlot in he1gSlotCenter
+         put he1gSlotCenter[he1tSlot] into he1tCtr
+         b2kSpriteNew "heCards", he1heKenneyFrame(1) & he1gKitSuffix, item 1 of he1tCtr, item 2 of he1tCtr
+         put the result into he1tSpr
+         b2kSpriteMoveTo he1tSpr, item 1 of he1tCtr, item 2 of he1tCtr
+         set the visible of he1tSpr to false
+         put he1tSpr into he1gCardSpr[he1tSlot]
+      end repeat
+      -- the backs sheet (face-down cards): load + size + pre-warm the chosen back.
+      -- Guarded so a missing/failed backs sheet never costs us the loaded faces.
+      -- Suffix and frame width are probed PER SHEET (gotcha 24: frame-name
+      -- conventions vary per sheet -- a custom uHeBacksPath atlas may keep or
+      -- strip ".png" and carry a different card width than the faces sheet).
+      try
+         if he1tBackPng is not empty and there is a file (he1tBackPng) then
+            b2kSheetLoadAtlas "heCardBacks", he1tBackPng, he1tBackXml
+            if b2kSheetHasFrame("heCardBacks", he1kHeCardBackFrame & ".png") then
+               put ".png" into he1gKitBackSuffix
+            else
+               put empty into he1gKitBackSuffix
+            end if
+            put item 1 of b2kSheetFrameSize("heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix) \
+                  into he1tBackFrameW
+            if he1tBackFrameW is not a number or he1tBackFrameW is 0 then
+               put he1tFrameW into he1tBackFrameW
+            end if
+            b2kSheetScale "heCardBacks", he1kHeCardW / he1tBackFrameW
+            b2kSheetEnsureIcon "heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix
+         end if
+      catch he1tBacksErr
+      end try
+      put "kit" into he1gUIMode
+   catch he1tKitErr
+      -- keep the reason: he1heProbeKit's whole job is naming the exact gap, and a
+      -- silent drop to flat left it able to say only "kit mode is OFF"
+      put he1tKitErr into he1gKitLastErr
+      put "flat" into he1gUIMode
+   end try
+end he1heKitTryInit
+
+command he1heProbeKit
+   -- diagnostic (run in the message box): is kit-mode card art wired up? Does LIVE
+   -- checks (not the cached he1heHasKit -- you may have just added the Kit), so it always
+   -- reflects the current state. Names the exact gap and what to do about it.
+   local he1tOut, he1tDir, he1tPng, he1tErr, he1tHasStack, he1tHandlers
+   put "holde-em kit probe  stack v" & he1kHeVersion & return & return into he1tOut
+   -- 1. is the Kit reachable? Two ways: a loaded stack named "box2dxt-kit" (the normal
+   --    install), OR the b2k* handlers already on the message path.
+   put (there is a stack "box2dxt-kit") into he1tHasStack
+   put "false" into he1tHandlers
+   -- b2kSheetFrames on an unknown sheet returns 0 (no throw) IF the Kit handlers are
+   -- on the message path; if the Kit is absent the call throws "can't find handler".
+   try
+      get b2kSheetFrames("__he_probe__")
+      put "true" into he1tHandlers
+   catch he1tErr
+   end try
+   put "stack " & quote & "box2dxt-kit" & quote & " loaded: " & he1tHasStack & return after he1tOut
+   put "b2k* handlers on the message path: " & he1tHandlers & return after he1tOut
+   if he1tHasStack is false and he1tHandlers is false then
+      put return & "==> The Box2Dxt Kit is NOT loaded. It is a SEPARATE stack named" & return after he1tOut
+      put "    " & quote & "box2dxt-kit" & quote & " -- open its box2dxt-kit.livecodescript in OXT (File > Open" & return after he1tOut
+      put "    Stack), do not paste it into this script. Then run he1heKitReload." & return after he1tOut
+      put he1tOut
+      return he1tOut
+   end if
+   -- 2. the atlas
+   put the uHeAtlasPath of this stack into he1tPng
+   if he1tPng is empty then
+      put he1heStackFolder() into he1tDir
+      if he1tDir is empty then
+         put "atlas path: this stack is UNSAVED (no folder) and uHeAtlasPath is unset --" & return after he1tOut
+         put "  save the stack to a file with assets/cards next to it, or set uHeAtlasPath." & return after he1tOut
+      else
+         put he1tDir & "/assets/cards/playingCards.png" into he1tPng
+      end if
+   end if
+   if he1tPng is not empty then
+      if he1tPng ends with ".xml" then
+         put he1heSwapExt(he1tPng, ".png") into he1tPng
+      end if
+      put "atlas PNG: " & he1tPng & return after he1tOut
+      put "  file exists: " & (there is a file (he1tPng)) & return after he1tOut
+   end if
+   -- 3. what the last he1heKitTryInit achieved
+   put "current UI mode: " & he1gUIMode & "   frame suffix: '" & he1gKitSuffix & "'" & return after he1tOut
+   put "card sprites pooled: " & the number of lines of the keys of he1gCardSpr & return after he1tOut
+   try
+      put "heCards frames loaded: " & b2kSheetFrames("heCards") after he1tOut
+      put "   heCardBacks: " & b2kSheetFrames("heCardBacks") & return after he1tOut
+   catch he1tErr
+      put "sheets: not loaded yet" & return after he1tOut
+   end try
+   if he1gUIMode is not "kit" then
+      -- the recorded reason the last init dropped to flat (self-diagnosing:
+      -- without it this probe could only say OFF, never why)
+      if he1gKitLastErr is not empty then
+         put "last kit-init error: " & he1gKitLastErr & return after he1tOut
+      end if
+      put return & "==> kit mode is OFF. If the checks above look right, run he1heKitReload" & return after he1tOut
+      put "    to (re)build the card sprites, then run he1heProbeKit again." & return after he1tOut
+   else
+      put return & "==> kit mode is ON. If cards still look flat, it is a sprite anchor/" & return after he1tOut
+      put "    scale/z-order detail -- send me this probe output and a screenshot." & return after he1tOut
+   end if
+   put he1tOut
+   return he1tOut
+end he1heProbeKit
+
+command he1heKitReload
+   -- force a fresh Kit probe + card-sprite rebuild -- run this in the message box after
+   -- loading the Box2Dxt Kit, saving the stack, or moving the assets. Clears the cached
+   -- extension probe, removes any pooled sprites, then re-runs he1heKitTryInit and reports.
+   local he1tSlot, he1tSpr, he1tRmErr
+   put empty into he1gHasKitChk
+   if he1gCardSpr is an array then
+      repeat for each key he1tSlot in he1gCardSpr
+         put he1gCardSpr[he1tSlot] into he1tSpr
+         try
+            b2kSpriteRemove he1tSpr
+         catch he1tRmErr
+         end try
+      end repeat
+   end if
+   put empty into he1gCardSpr
+   he1heKitTryInit
+   he1heUIClearCards
+   put "kit reload done -- UI mode is now: " & he1gUIMode & \
+         "   (run he1heProbeKit for details)"
+end he1heKitReload
+
+function he1heCallAmountFor pSeatNum
+   local he1tOwe
+   put he1gGame["state"]["betCur"] - he1gGame["state"]["streetBy"][pSeatNum] into he1tOwe
+   return min(he1tOwe, he1gGame["state"]["stackBy"][pSeatNum])
+end he1heCallAmountFor
+
+function he1heQuickAmount pSeatNum, pKind
+   -- thin shell wrapper: the sizing itself is pure (he1heQuickAmountOf) so it is
+   -- KAT-pinned in tools/betting-kat.py and the harness, not just eyeballed
+   return he1heQuickAmountOf(he1gGame["state"], pSeatNum, pKind)
+end he1heQuickAmount
+
+function he1heQuickAmountOf pStateA, pSeatNum, pKind
+   -- a convenience "raise to" amount, clamped to [minTo, maxTo]. PURE (H5):
+   -- values in, value out, no UI reads -- pinned by tools/betting-kat.py.
+   --
+   -- The pot-limit definition (spec 8.1 sizing, the standard one): the maximum
+   -- raise is "the pot AFTER you call" -- the money already committed plus the
+   -- amount you must first put in to call -- and that is the raise INCREMENT,
+   -- laid on top of the current bet. So
+   --     raiseTo = betCur + potAfterCall,   potAfterCall = committed + owe
+   -- and the chips the seat actually pushes are owe + potAfterCall.
+   -- v0.14.1 fix: this used to read betCur + owe + potAfterCall, which counts
+   -- the call TWICE (betCur already equals streetBy + owe). Facing a 2 into a
+   -- pot of 3 it offered a raise to 9 where a pot-sized raise is 7 -- the Pot
+   -- and 1/2 Pot buttons over-sized every raise made while facing a bet. With
+   -- owe = 0 (opening a street) the extra term vanished, which is why the
+   -- opening-bet case always looked right.
+   local he1tOwe, he1tPotAfter, he1tMaxTo, he1tMinTo, he1tTo, he1tSeat
+   set the itemDelimiter to comma
+   put pStateA["betCur"] - pStateA["streetBy"][pSeatNum] into he1tOwe
+   put 0 into he1tPotAfter
+   repeat for each item he1tSeat in pStateA["occ"]
+      add pStateA["handBy"][he1tSeat] to he1tPotAfter
+   end repeat
+   add he1tOwe to he1tPotAfter
+   put pStateA["streetBy"][pSeatNum] + pStateA["stackBy"][pSeatNum] into he1tMaxTo
+   put min(pStateA["betCur"] + pStateA["raiseFull"], he1tMaxTo) into he1tMinTo
+   switch pKind
+      case "half"
+         put pStateA["betCur"] + (he1tPotAfter div 2) into he1tTo
+         break
+      case "pot"
+         put pStateA["betCur"] + he1tPotAfter into he1tTo
+         break
+      default
+         put he1tMinTo into he1tTo
+   end switch
+   if he1tTo < he1tMinTo then
+      put he1tMinTo into he1tTo
+   end if
+   if he1tTo > he1tMaxTo then
+      put he1tMaxTo into he1tTo
+   end if
+   return he1tTo
+end he1heQuickAmountOf
+
+command he1heUISetStatus pTxt
+   -- keep the last status text in the store as well as on the felt (v0.24.0).
+   -- The field is the display; the copy is what lets a headless harness pin
+   -- WHICH message won when two writers race for this one line -- the F8
+   -- defect was exactly such a race (the redial's fail-closed message
+   -- overwriting the election's "Elected host: ..." two lines later), and it
+   -- was unpinnable while the only record of it lived in a field.
+   put pTxt into he1gGame["statusTxt"]
+   if there is a field "heStatus" then
+      set the text of field "heStatus" to pTxt
+   end if
+end he1heUISetStatus
+
+command he1heUIPromptToAct
+   local he1tSeatNum, he1tLegalTxt, he1tLine, he1tHasCheck, he1tHasCall, he1tHasBet, he1tHasRaise
+   local he1tHasAllin, he1tCallAmt, he1tName, he1tMinTo, he1tMaxTo
+   set the itemDelimiter to comma
+   if he1gGame["phase"] is not "hand" then
+      exit he1heUIPromptToAct
+   end if
+   put he1gGame["state"]["toAct"] into he1tSeatNum
+   if he1tSeatNum is 0 then
+      exit he1heUIPromptToAct
+   end if
+   -- online, the prompt is only ever OURS: another seat's turn shows as
+   -- waiting (he1heNetGameReact disables the buttons and says who is up)
+   if he1gGame["online"] is "true" and he1tSeatNum is not he1heNetMySeat() then
+      he1heDisableActions
+      exit he1heUIPromptToAct
+   end if
+   put he1heBetLegal(he1gGame["state"], he1tSeatNum) into he1tLegalTxt
+   put false into he1tHasCheck
+   put false into he1tHasCall
+   put false into he1tHasBet
+   put false into he1tHasRaise
+   put false into he1tHasAllin
+   put he1heCallAmountFor(he1tSeatNum) into he1tCallAmt
+   repeat for each line he1tLine in he1tLegalTxt
+      switch word 1 of he1tLine
+         case "check"
+            put true into he1tHasCheck
+            break
+         case "call"
+            put true into he1tHasCall
+            break
+         case "bet"
+            put true into he1tHasBet
+            break
+         case "raise"
+            put true into he1tHasRaise
+            break
+         case "allin"
+            put true into he1tHasAllin
+            break
+      end switch
+   end repeat
+   he1heEnableBtn "heBtnCheck", he1tHasCheck
+   he1heEnableBtn "heBtnCall", he1tHasCall
+   he1heEnableBtn "heBtnBet", he1tHasBet
+   he1heEnableBtn "heBtnRaise", he1tHasRaise
+   he1heEnableBtn "heBtnAllin", he1tHasAllin
+   he1heEnableBtn "heBtnFold", true
+   if there is a button "heBtnCall" then
+      if he1tHasCall then
+         set the label of button "heBtnCall" to "Call " & he1tCallAmt
+      else
+         set the label of button "heBtnCall" to "Call"
+      end if
+   end if
+   -- seed the amount box with the minimum legal bet/raise-to, and arm the slider
+   -- between that minimum and all-in (streetBy + stackBy). No bet/raise -> hide it.
+   if (he1tHasBet or he1tHasRaise) and there is a field "heAmount" then
+      put he1heQuickAmount(he1tSeatNum, "min") into he1tMinTo
+      put he1gGame["state"]["streetBy"][he1tSeatNum] + he1gGame["state"]["stackBy"][he1tSeatNum] \
+            into he1tMaxTo
+      set the text of field "heAmount" to he1tMinTo
+      he1heBetSliderShow he1tMinTo, he1tMaxTo
+   else
+      he1heBetSliderHide
+   end if
+   put item he1tSeatNum of he1kHeSeatNames into he1tName
+   he1heUISetStatus he1tName & " to act  --  " & toUpper(he1gGame["state"]["street"]) \
+         & ".  Pot " & he1heCurrentPot() & ".  To call: " & he1tCallAmt
+end he1heUIPromptToAct
+
+command he1heEnableBtn pBtnName, pOn
+   if there is not a button pBtnName then
+      exit he1heEnableBtn
+   end if
+   set the disabled of button pBtnName to not pOn
+end he1heEnableBtn
+
+command he1heDisableActions
+   local he1tBtn
+   set the itemDelimiter to comma
+   repeat for each item he1tBtn in "heBtnFold,heBtnCheck,heBtnCall,heBtnBet,heBtnRaise,heBtnAllin,heBtnMin,heBtnHalf,heBtnPot"
+      he1heEnableBtn he1tBtn, false
+   end repeat
+   if there is a button "heBtnCall" then
+      set the label of button "heBtnCall" to "Call"
+   end if
+   he1heBetSliderHide
+end he1heDisableActions
+
+function he1heHandLive
+   -- true while a dealt hand still owns he1gGame["state"]: the acting phase AND the
+   -- paced beats that follow it (the board reveal, an all-in runout, the showdown
+   -- hold). Everything the HUD reads out of the hand -- pot, chips behind, street
+   -- bets, blind badges, FOLDED/ALL-IN -- is valid for ALL of these, and gating it
+   -- on "hand" alone (pre-v0.14.1) blanked the table exactly when the hand was at
+   -- its most dramatic: the pot read 0, every seat showed its pre-hand bankroll,
+   -- and the folded/all-in markers vanished for the whole runout and showdown.
+   -- "between" is NOT live: he1heHandSettle has already paid the deltas into
+   -- he1gGame["stacksBy"], so the hand's handBy would double-count.
+   switch he1gGame["phase"]
+      case "hand"
+      case "reveal"
+      case "runout"
+      case "showdown"
+         return true
+   end switch
+   return false
+end he1heHandLive
+
+function he1heCurrentPot
+   local he1tSeatNum, he1tPot
+   set the itemDelimiter to comma
+   put 0 into he1tPot
+   if he1heHandLive() then
+      repeat for each item he1tSeatNum in he1gGame["state"]["occ"]
+         add he1gGame["state"]["handBy"][he1tSeatNum] to he1tPot
+      end repeat
+   end if
+   return he1tPot
+end he1heCurrentPot
+
+command he1heHudMark
+   put true into he1gHudDirty
+end he1heHudMark
+
+on he1heHudTick
+   if he1gHudTickOn is not true then
+      exit he1heHudTick
+   end if
+   if he1gHudDirty is true then
+      put false into he1gHudDirty
+      he1heHudRefresh
+   end if
+   send "he1heHudTick" to me in he1kHeHudMs milliseconds
+end he1heHudTick
+
+command he1heHudRefresh
+   local he1tSeatNum, he1tPotAmt, he1tSpotTxt, he1tSpotX, he1tSpotY, he1tHandBy, he1tInHand, he1tStreetBy
+   local he1tActing, he1tSbSeat, he1tBbSeat, he1tBadge
+   if there is not a field "hePot" then
+      exit he1heHudRefresh
+   end if
+   set the itemDelimiter to comma
+   put he1heCurrentPot() into he1tPotAmt
+   set the text of field "hePot" to "POT  " & he1tPotAmt
+   set the visible of graphic "hePotChip" to (he1tPotAmt > 0)
+   set the text of field "heHeader" to he1heHeaderTxt()
+   -- Deal is offered only from a settled table; during reveal/runout/showdown
+   -- beats it stays inert so a click cannot cut a paced sequence short -- and
+   -- never while online (the hotseat engine would corrupt the signed wire log;
+   -- he1heHandStart carries the same gate as the backstop)
+   he1heEnableBtn "heBtnDeal", ((he1gGame["phase"] is "idle" or he1gGame["phase"] is "between") \
+         and he1gGame["online"] is not "true")
+   -- 2e sit-out: our own seat's toggle -- live only online with a seat; its
+   -- face follows our sit-out state (Sit out <-> Return)
+   he1heEnableBtn "heBtnSitOut", (he1gGame["online"] is "true" and he1heNetMySeat() > 0)
+   if there is a button "heBtnSitOut" then
+      if he1gGame["online"] is "true" and he1gGame["sitOutBy"][he1heNetMySeat()] is "true" then
+         set the label of button "heBtnSitOut" to "Return"
+      else
+         set the label of button "heBtnSitOut" to "Sit out"
+      end if
+   end if
+   if he1gGame["phase"] is not "hand" then
+      he1heDisableActions
+   end if
+
+   put 0 into he1tActing
+   put 0 into he1tSbSeat
+   put 0 into he1tBbSeat
+   if he1heHandLive() then
+      -- toAct is already 0 in the reveal/runout/showdown beats, so no seat glows
+      -- during them; the blind badges stay up for the whole hand, as they should
+      put he1gGame["state"]["toAct"] into he1tActing
+      put he1gGame["state"]["sbSeat"] into he1tSbSeat
+      put he1gGame["state"]["bbSeat"] into he1tBbSeat
+   end if
+
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      -- tables smaller than the 6-spot layout hide their unused seats entirely
+      if he1tSeatNum > he1gGame["numSeats"] then
+         he1heSeatChromeVisible he1tSeatNum, false
+         next repeat
+      end if
+      he1heSeatChromeVisible he1tSeatNum, true
+      put he1heHandByOf(he1tSeatNum) into he1tHandBy
+      -- chip TOTAL behind (always visible, even between hands)
+      if he1gGame["stacksBy"][he1tSeatNum] is a number then
+         set the text of field ("heSeatStack" & he1tSeatNum) to \
+               (he1gGame["stacksBy"][he1tSeatNum] - he1tHandBy)
+      end if
+      -- bet in front this street
+      put 0 into he1tStreetBy
+      if he1heHandLive() and he1gGame["state"]["streetBy"][he1tSeatNum] is a number then
+         put he1gGame["state"]["streetBy"][he1tSeatNum] into he1tStreetBy
+      end if
+      if he1tStreetBy > 0 then
+         set the text of field ("heSeatBet" & he1tSeatNum) to he1tStreetBy
+         set the visible of graphic ("heSeatChip" & he1tSeatNum) to true
+      else
+         set the text of field ("heSeatBet" & he1tSeatNum) to ""
+         set the visible of graphic ("heSeatChip" & he1tSeatNum) to false
+      end if
+      -- role badge (D / SB / BB), acting highlight, folded / all-in state
+      put "" into he1tBadge
+      if he1tSeatNum is he1tSbSeat then
+         put "SB" into he1tBadge
+      end if
+      if he1tSeatNum is he1tBbSeat then
+         put "BB" into he1tBadge
+      end if
+      set the text of field ("heSeatBadge" & he1tSeatNum) to he1tBadge
+      he1heSeatFace he1tSeatNum, (he1tSeatNum is he1tActing)
+   end repeat
+
+   -- dealer button disc
+   if he1gGame["buttonSeat"] > 0 then
+      set the itemDelimiter to ";"
+      put item he1gGame["buttonSeat"] of he1kHeSeatSpots into he1tSpotTxt
+      set the itemDelimiter to comma
+      put item 1 of he1tSpotTxt into he1tSpotX
+      put item 2 of he1tSpotTxt into he1tSpotY
+      set the loc of field "heDealerDisc" to (he1tSpotX - 92) & comma & (he1tSpotY + 24)
+      set the visible of field "heDealerDisc" to true
+   else
+      set the visible of field "heDealerDisc" to false
+   end if
+end he1heHudRefresh
+
+command he1heSeatChromeVisible pSeatNum, pOn
+   -- show or hide a whole seat's persistent chrome, so a table configured for
+   -- fewer than the 6 layout spots does not display ghost seats
+   local he1tCtl
+   set the itemDelimiter to comma
+   if there is a graphic ("hePanel" & pSeatNum) then
+      set the visible of graphic ("hePanel" & pSeatNum) to pOn
+   end if
+   repeat for each item he1tCtl in "heSeatName,heSeatStack,heSeatBadge,heSeatState,heSeatBet"
+      if there is a field (he1tCtl & pSeatNum) then
+         set the visible of field (he1tCtl & pSeatNum) to pOn
+      end if
+   end repeat
+   -- seat portrait: the disc always follows the seat; the image vs initial follows the
+   -- cached he1gAvatarOn (set by he1heSeatAvatarRender) so this hot path never reloads a file
+   if there is a graphic ("heSeatAv" & pSeatNum) then
+      set the visible of graphic ("heSeatAv" & pSeatNum) to pOn
+   end if
+   if there is a field ("heSeatAvTx" & pSeatNum) then
+      set the visible of field ("heSeatAvTx" & pSeatNum) to (pOn and he1gAvatarOn[pSeatNum] is not "true")
+   end if
+   if there is an image ("heSeatAvImg" & pSeatNum) then
+      set the visible of image ("heSeatAvImg" & pSeatNum) to (pOn and he1gAvatarOn[pSeatNum] is "true")
+   end if
+   if not pOn then
+      -- unseated: also drop the bet chip and any hole cards
+      if there is a graphic ("heSeatChip" & pSeatNum) then
+         set the visible of graphic ("heSeatChip" & pSeatNum) to false
+      end if
+      if there is a field ("heHole" & pSeatNum & "a") then
+         set the visible of field ("heHole" & pSeatNum & "a") to false
+         set the visible of field ("heHole" & pSeatNum & "b") to false
+      end if
+   end if
+end he1heSeatChromeVisible
+
+command he1heSeatFace pSeatNum, pActing
+   -- panel colour + state label: acting (gold), folded (dim), all-in (gold text)
+   local he1tState, he1tFolded, he1tAllin, he1tCurTxt, he1tLabelTxt
+   put "false" into he1tFolded
+   put "false" into he1tAllin
+   if he1heHandLive() then
+      put he1gGame["state"] into he1tState
+      put he1tState["foldedBy"][pSeatNum] into he1tFolded
+      put he1tState["allinBy"][pSeatNum] into he1tAllin
+   end if
+   if pActing then
+      set the backgroundColor of graphic ("hePanel" & pSeatNum) to he1kHePanelActive
+      set the foregroundColor of graphic ("hePanel" & pSeatNum) to he1kHeGlowColor
+   else
+      set the backgroundColor of graphic ("hePanel" & pSeatNum) to he1kHePanelColor
+      set the foregroundColor of graphic ("hePanel" & pSeatNum) to he1kHePanelColor
+   end if
+   if there is not a field ("heSeatState" & pSeatNum) then
+      exit he1heSeatFace
+   end if
+   -- a showdown WINNER badge outranks the folded/all-in state and must survive the
+   -- repaints that follow: he1heUIShowdownReveal writes it, then the very next 4 Hz
+   -- HUD tick used to wipe it (pre-v0.14.1 this handler cleared the state field
+   -- outside phase "hand"), so the winner flashed for at most one tick. It stays
+   -- up through the showdown hold and the between-hands result pause, and
+   -- he1heUIClearCards clears it when the next hand is dealt.
+   put the text of field ("heSeatState" & pSeatNum) into he1tCurTxt
+   if he1tCurTxt is "WINNER" and (he1gGame["phase"] is "showdown" or he1gGame["phase"] is "between") then
+      exit he1heSeatFace
+   end if
+   -- the label decision is pure (he1heSeatFaceLabel); this half only paints it.
+   -- The two dim labels are the seat's "not playing" states; everything the
+   -- plate says about a LIVE seat is gold (an empty label paints no text, so
+   -- its colour never shows).
+   put he1heSeatFaceLabel(pSeatNum, pActing, he1tFolded, he1tAllin) into he1tLabelTxt
+   set the text of field ("heSeatState" & pSeatNum) to he1tLabelTxt
+   if he1tLabelTxt is "FOLDED" or he1tLabelTxt is "SIT OUT" then
+      set the textColor of field ("heSeatState" & pSeatNum) to "150,150,150"
+   else
+      set the textColor of field ("heSeatState" & pSeatNum) to he1kHeGoldColor
+   end if
+end he1heSeatFace
+
+function he1heSeatFaceLabel pSeatNum, pActing, pFoldedTxt, pAllinTxt
+   -- WHICH state label a seat plate shows, decided in one place with no UI
+   -- read or write (v0.24.0) -- so the priority order is pinnable headlessly
+   -- instead of only observable on a felt. The order IS the contract:
+   --   FOLDED / ALL-IN   the engine's own verdict on the seat, first
+   --   SIT OUT           the seat's STATUS, ahead of the countdown (F9): the
+   --                     countdown branch used to win, so a sitting-out seat
+   --                     whose turn came up painted "0s" -- and 0 is exactly
+   --                     what he1heNetTurnLimitSecs returns FOR a sitting-out
+   --                     seat, so the plate showed the reason for the label
+   --                     as a stopwatch instead of the label.
+   --   <n>s              the acting seat's remaining seconds (online only)
+   --   empty             nothing to say
+   if pFoldedTxt is "true" then
+      return "FOLDED"
+   end if
+   if pAllinTxt is "true" then
+      return "ALL-IN"
+   end if
+   if he1gGame["online"] is "true" and he1gGame["sitOutBy"][pSeatNum] is "true" then
+      return "SIT OUT"
+   end if
+   if pActing and he1gGame["online"] is "true" and he1gGame["turnClockTxt"] is not empty then
+      -- 2e act timer: painted only from the 4 Hz HUD tick, and
+      -- he1heNetActTimerTick marks the HUD dirty only when the shown second
+      -- CHANGES -- <= 1 Hz in practice.
+      return he1gGame["turnClockTxt"]
+   end if
+   return empty
+end he1heSeatFaceLabel
+
+function he1heHeaderTxt
+   local he1tTxt
+   put "holde-em " & he1kHeVersion into he1tTxt
+   if he1gGame["handNum"] > 0 then
+      put "     Hand " & he1gGame["handNum"] after he1tTxt
+   end if
+   if he1heHandLive() then
+      put "     " & toUpper(he1gGame["state"]["street"]) after he1tTxt
+   end if
+   put "     Blinds " & he1gGame["sb"] & "/" & he1gGame["bb"] after he1tTxt
+   if he1gGame["ante"] > 0 then
+      put "     Ante " & he1gGame["ante"] after he1tTxt
+   end if
+   if he1gGame["levelMode"] is not "off" and he1gGame["curLevel"] > 0 then
+      put "     Level " & he1gGame["curLevel"] after he1tTxt
+   end if
+   return he1tTxt
+end he1heHeaderTxt
+
+function he1heHandByOf pSeatNum
+   -- what this seat has committed to the LIVE hand, so the HUD can show chips
+   -- BEHIND (bankroll - committed). Valid for every live phase; at "between" the
+   -- deltas are already in he1gGame["stacksBy"] and this must read 0.
+   if he1heHandLive() and he1gGame["state"]["handBy"][pSeatNum] is a number then
+      return he1gGame["state"]["handBy"][pSeatNum]
+   end if
+   return 0
+end he1heHandByOf
+
+command he1heUIHandStart
+   local he1tSeatNum, he1tDealA
+   he1heUIClearCards
+   put he1gGame["deal"] into he1tDealA
+   set the itemDelimiter to comma
+   repeat for each item he1tSeatNum in he1gGame["occ"]
+      he1heUIShowHole he1tSeatNum, he1tDealA["holesBy"][he1tSeatNum]
+   end repeat
+   he1heSndPlay "deal"
+   he1heUISetStatus "Hand " & he1gGame["handNum"] & " dealt -- blinds " & he1gGame["sb"] & "/" & he1gGame["bb"] & " posted."
+end he1heUIHandStart
+
+command he1heUIShowHole pSeatNum, pIdxPair
+   local he1tSlotName, he1tPair
+   set the itemDelimiter to comma
+   put pIdxPair into he1tPair
+   put "heHole" & pSeatNum & "a" into he1tSlotName
+   he1heUIShowCardIn he1tSlotName, item 1 of he1tPair
+   put "heHole" & pSeatNum & "b" into he1tSlotName
+   he1heUIShowCardIn he1tSlotName, item 2 of he1tPair
+end he1heUIShowHole
+
+command he1heUIShowCardIn pSlotName, pIdx
+   local he1tSpr, he1tShowErr
+   -- kit mode: swap this slot's pooled sprite to the card's Kenney frame and show it,
+   -- hiding the flat field beneath. Guarded so a kit hiccup falls back to the flat
+   -- glyph card and never breaks the deal.
+   if he1gUIMode is "kit" and he1gCardSpr[pSlotName] is not empty then
+      try
+         put he1gCardSpr[pSlotName] into he1tSpr
+         b2kSpriteSetFrame he1tSpr, he1heKenneyFrame(pIdx) & he1gKitSuffix
+         set the visible of he1tSpr to true
+         if there is a field pSlotName then
+            set the visible of field pSlotName to false
+         end if
+         exit he1heUIShowCardIn
+      catch he1tShowErr
+      end try
+   end if
+   if there is not a field pSlotName then
+      exit he1heUIShowCardIn
+   end if
+   set the text of field pSlotName to he1heCardFace(pIdx)
+   if he1heCardSuitVal(pIdx) is 2 or he1heCardSuitVal(pIdx) is 3 then
+      set the textColor of field pSlotName to he1kHeRed
+   else
+      set the textColor of field pSlotName to he1kHeInk
+   end if
+   set the backgroundColor of field pSlotName to he1kHeWhite
+   set the visible of field pSlotName to true
+end he1heUIShowCardIn
+
+command he1heUIShowBoardStreet pStreetName, pIdxList
+   local he1tIdx, he1tPos
+   set the itemDelimiter to comma
+   switch pStreetName
+      case "flop"
+         put 1 into he1tPos
+         break
+      case "turn"
+         put 4 into he1tPos
+         break
+      case "river"
+         put 5 into he1tPos
+         break
+   end switch
+   repeat for each item he1tIdx in pIdxList
+      he1heUIShowCardIn "heBoard" & he1tPos, he1tIdx
+      add 1 to he1tPos
+   end repeat
+   he1heSndPlay "board"
+end he1heUIShowBoardStreet
+
+command he1heUIShowdownReveal pInHandList, pRanksA
+   local he1tSeatNum, he1tTxt, he1tName, he1tBest, he1tOrder
+   set the itemDelimiter to comma
+   put he1heShowdownOrderOf(he1gGame["state"]) into he1tOrder
+   -- best rank among those who showed -> winner highlight
+   put empty into he1tBest
+   repeat for each item he1tSeatNum in pInHandList
+      if he1tBest is empty or pRanksA[he1tSeatNum] > he1tBest then
+         put pRanksA[he1tSeatNum] into he1tBest
+      end if
+   end repeat
+   put "Showdown -- " into he1tTxt
+   repeat for each item he1tSeatNum in he1tOrder
+      put item he1tSeatNum of he1kHeSeatNames into he1tName
+      put he1tName & " (" & he1heHandLabel(pRanksA[he1tSeatNum]) & ")   " after he1tTxt
+      if pRanksA[he1tSeatNum] is he1tBest and there is a field ("heSeatState" & he1tSeatNum) then
+         set the text of field ("heSeatState" & he1tSeatNum) to "WINNER"
+         set the textColor of field ("heSeatState" & he1tSeatNum) to he1kHeGoldColor
+      end if
+   end repeat
+   he1heUISetStatus he1tTxt
+end he1heUIShowdownReveal
+
+function he1heHandLabel pPacked
+   -- turn a packed rank into a human category name for the status line
+   local he1tCat
+   put char 1 to 2 of pPacked into he1tCat
+   switch he1tCat
+      case "08"
+         return "straight flush"
+      case "07"
+         return "four of a kind"
+      case "06"
+         return "full house"
+      case "05"
+         return "flush"
+      case "04"
+         return "straight"
+      case "03"
+         return "three of a kind"
+      case "02"
+         return "two pair"
+      case "01"
+         return "one pair"
+      default
+         return "high card"
+   end switch
+end he1heHandLabel
+
+command he1heUIClearCards
+   local he1tSeatNum, he1tPos, he1tSlot, he1tSpr
+   -- kit mode: hide every pooled card sprite between hands
+   if he1gUIMode is "kit" then
+      repeat for each key he1tSlot in he1gCardSpr
+         put he1gCardSpr[he1tSlot] into he1tSpr
+         set the visible of he1tSpr to false
+      end repeat
+   end if
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      if there is a field ("heHole" & he1tSeatNum & "a") then
+         set the visible of field ("heHole" & he1tSeatNum & "a") to false
+         set the visible of field ("heHole" & he1tSeatNum & "b") to false
+      end if
+      if there is a field ("heSeatState" & he1tSeatNum) then
+         set the text of field ("heSeatState" & he1tSeatNum) to ""
+      end if
+      if there is a field ("heSeatBet" & he1tSeatNum) then
+         set the text of field ("heSeatBet" & he1tSeatNum) to ""
+         set the visible of graphic ("heSeatChip" & he1tSeatNum) to false
+      end if
+      if there is a field ("heSeatBadge" & he1tSeatNum) then
+         set the text of field ("heSeatBadge" & he1tSeatNum) to ""
+      end if
+      if there is a graphic ("hePanel" & he1tSeatNum) then
+         set the backgroundColor of graphic ("hePanel" & he1tSeatNum) to he1kHePanelColor
+         set the foregroundColor of graphic ("hePanel" & he1tSeatNum) to he1kHePanelColor
+      end if
+   end repeat
+   repeat with he1tPos = 1 to 5
+      if there is a field ("heBoard" & he1tPos) then
+         set the visible of field ("heBoard" & he1tPos) to false
+      end if
+   end repeat
+end he1heUIClearCards
+
+on he1b2kFrame
+   if he1gAnimBusy > 0 then
+      -- reserved: deal-slide / flip chaining bookkeeping (OXT pass)
+   end if
+end he1b2kFrame
+
+command he1heRunSelftest
+   -- THE INTERACTIVE entry point: run everything, then deliver the report the
+   -- way a maintainer sitting in front of the stack wants it (panel, clipboard,
+   -- msg). he1heSelfTest, just below, is the QUIET one; both drive the SAME
+   -- he1heTestRunAllSections, so the two can never end up testing different
+   -- things -- two copies of the section list is exactly how one goes stale.
+   he1heTestRunAllSections
+   put return & "==== " & he1gPassN & " pass, " & he1gFailN & " fail, " & he1gSkipN & " skip ====" \
+         & return after he1gRpt
+   if he1gFailN > 0 then
+      put "RESULT: FAILED" & return after he1gRpt
+   else
+      put "RESULT: green" & return after he1gRpt
+   end if
+   -- deliver the report where it can be READ WHOLE: the stack's own scrolling
+   -- report panel (he1heReportShow) -- on OXT a put into the msg container lands
+   -- silently in a CLOSED message-box palette, so the report seemed to vanish
+   -- while the lobby's net field (the live wire feed) kept updating -- plus a
+   -- full copy on the clipboard, made to be pasted back for review. (The msg
+   -- CONTAINER token is "msg", not the prose "the message box" -- v0.17.2,
+   -- gotcha 13's family -- but even the correct form displays nothing when
+   -- the palette is closed, hence the panel.)
+   put "(full report is also on the clipboard -- just paste it)" & return after he1gRpt
+   set the clipboardData["text"] to he1gRpt
+   put he1gRpt into msg
+   he1heReportShow he1gRpt
+   return he1gRpt
+end he1heRunSelftest
+
+function he1heSelfTest
+   -- THE QUIET entry point: runs exactly what he1heRunSelftest runs and RETURNS
+   -- the report as a value. It builds no control and touches no clipboard,
+   -- which is what a harness folded into another paste has to be.
+   --
+   -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
+   -- than left as a claim that reads better than it is: this used to say "and
+   -- no msg", and section 21 is he1heProbeSodium, whose last lines are
+   -- `put return & he1tRpt after he1gRpt` and then a BARE `put he1tRpt` -- and a bare
+   -- put writes to msg. That echo is deliberate and documented at its own site
+   -- (running he1heProbeSodium standalone from the message box should print), and
+   -- it is harmless in a host paste (the suite core never reads msg; nothing
+   -- it owns is overwritten). The clipboard is the one that would have cost
+   -- something, because the suite scaffold's Copy-results button lives there,
+   -- and that one really is untouched. The line
+   -- format is riptide's rsSelfTest, deliberately copied rather than invented.
+   --
+   -- Why he1heRunSelftest cannot be that entry point -- every reason below is a
+   -- defect the moment it is forgotten, so they are written down rather than
+   -- summarised as "it is interactive":
+   --   * it BUILDS an 800x560 report overlay on the card (he1heReportShow). A
+   --     suite paste has no holde-em card, and a stack that grew one would be
+   --     a stack the harness silently redecorated.
+   --   * it OVERWRITES clipboardData["text"], which is the suite scaffold's
+   --     OWN Copy-results channel: the person who ran the suite harness and
+   --     pressed Copy would paste holde-em's report instead of the suite's,
+   --     and nothing would say so.
+   --   * it writes to msg.
+   --   * its summary reads "==== n pass, m fail, k skip ====", which the
+   --     core's stSummaryCounts refuses ON PURPOSE -- the words are
+   --     "pass"/"fail" rather than "passed"/"failed" and "====" is not a
+   --     number -- so a fold that reused it would report this member as
+   --     unreadable while its report was perfect. That exact failure cost the
+   --     2026-08-09 engine pass two members; it is not a hypothetical.
+   --
+   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
+   -- "failed", in that order, and nothing else. One extra word and
+   -- stSummaryCounts reads the line as prose and refuses it (which is the
+   -- behaviour that makes the parse safe, not a bug to work around). So the
+   -- skip count gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary.
+   --
+   -- Verified statically; needs an OXT pass.
+   he1heTestRunAllSections
+   -- leave no timer of ours running inside somebody else's paste
+   he1heTestSweepNetTimers
+   return he1gPassN && "passed," && he1gFailN && "failed" & return & \
+         he1gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+         & return & "----------------------------------------" & return & he1gRpt
+end he1heSelfTest
+
+command he1heTestRunAllSections
+   -- The RUN, with no delivery attached: reset the counters, print the banner,
+   -- drive every section under its guard. Factored out of he1heRunSelftest so the
+   -- interactive report and the folded one execute one list, not two.
+   put empty into he1gRpt
+   put 0 into he1gPassN
+   put 0 into he1gFailN
+   put 0 into he1gSkipN
+   put "holde-em self-test  stack v" & he1kHeVersion & "  harness v" & he1kHeHarnessV \
+         & return & return after he1gRpt
+   -- each section runs inside a guard so a first-contact runtime fault in one
+   -- is reported (with its error) and the rest still run -- the harness never
+   -- dies with an opaque "error in function handler", it tells you where
+   he1heRunSection "he1heTestEvaluatorRun"
+   he1heRunSection "he1heTestBettingRun"
+   he1heRunSection "he1heTestAnteRun"
+   he1heRunSection "he1heTestLevelRun"
+   he1heRunSection "he1heTestLegalRun"
+   he1heRunSection "he1heTestScheduleRun"
+   he1heRunSection "he1heTestShuffleRun"
+   he1heRunSection "he1heTestFoldRun"
+   he1heRunSection "he1heTestCryptoRun"
+   he1heRunSection "he1heTestReceiptRun"
+   he1heRunSection "he1heTestDealRun"
+   he1heRunSection "he1heTestDealOrderRun"
+   he1heRunSection "he1heTestLobbyRun"
+   he1heRunSection "he1heTestNetSim"
+   he1heRunSection "he1heTestNetPlay"
+   he1heRunSection "he1heTestLevel2Run"
+   he1heRunSection "he1heTestOnionRun"
+   he1heRunSection "he1heTestOracleRun"
+   he1heRunSection "he1heTestLevel2VoidRun"
+   he1heRunSection "he1heTestLivenessRun"
+   he1heRunSection "he1heProbeSodium"
+end he1heTestRunAllSections
+
+command he1heTestSweepNetTimers
+   -- Cancel the network timers the harness itself armed. Several sections drive
+   -- he1heNetHandKick (seven times) and he1heNetStartGame on SYNTHETIC online
+   -- contexts, and those paths legitimately arm a send -- the between-hands
+   -- beat is "send he1heNetNextHandTick ... in <pace> milliseconds". Standalone
+   -- that is merely untidy: the tick finds he1gGame restored and exits on its own
+   -- guard. Inside a suite paste it is not untidy at all -- it fires into
+   -- somebody else's async phase, seconds after this member has already
+   -- reported, from a handler no other member has heard of.
+   --
+   -- Swept BY PREFIX rather than by the names armed today, because a heNet*
+   -- send added to a section later would otherwise ride back out of the
+   -- harness silently, which is the whole class of bug this exists for. NOT
+   -- the blanket "he" prefix he1closeStack uses: he1heHudTick and the paced hand
+   -- steps belong to a REAL table, and stopping a maintainer's HUD because
+   -- they ran the harness would be a new bug. (Running this against a LIVE
+   -- online table is unsupported either way -- the sections swap he1gGame out
+   -- from under it and restore it on the way past.)
+   --
+   -- gotcha 5: pendingMessages is comma-delimited id,time,name,target -- set
+   -- the delimiter before parsing it.
+   local he1tMsgLine
+   set the itemDelimiter to comma
+   -- GENERATED (tools/build-suite-selftest.py): the sweep is by the MEMBER
+   -- PREFIX here, not by the heNet stem the standalone harness uses. Two
+   -- reasons, and the first one is a silent failure rather than a judgement
+   -- call. (1) The stem is a FRAGMENT of a name, not a name, so the fold's
+   -- rename cannot move it: every message this harness arms is prefixed, the
+   -- literal is not, and the sweep would match nothing while looking exactly
+   -- like the code that was reviewed. (2) The stem is deliberately narrow
+   -- standalone -- he1heHudTick and the paced hand steps belong to a real table
+   -- and must survive a harness run -- and there is no real table here. This
+   -- harness's reachable closure also arms he1heNextHandTick, he1heRevealStep,
+   -- he1heRunoutStep and he1heSettleStep; left armed, the next-hand tick fires into
+   -- the core's async loopback phase, seconds after this member has already
+   -- reported, and lands in he1heHandStart, which deals a hand. The prefix is the
+   -- exact net: every name it catches is this member's, and nothing else in
+   -- this paste is spelled that way.
+   repeat for each line he1tMsgLine in the pendingMessages
+      if item 3 of he1tMsgLine begins with "he1" then
+         cancel item 1 of he1tMsgLine
+      end if
+   end repeat
+end he1heTestSweepNetTimers
+
+command he1heReportShow pTxt
+   -- the harness report panel: a scrollable field the WHOLE report reads in,
+   -- with a Close button. Built on first use (so it layers above every other
+   -- overlay) and reused after; deliberately NOT part of he1heBuildTable, so it
+   -- needs no he1kUIVersion bump and never exists until a report does.
+   if there is not a field "heReportFld" then
+      create graphic "heReportBg"
+      set the style of graphic "heReportBg" to "roundrect"
+      set the roundRadius of graphic "heReportBg" to 16
+      set the rect of graphic "heReportBg" to "112,60,912,620"
+      set the backgroundColor of graphic "heReportBg" to "20,26,24"
+      set the borderColor of graphic "heReportBg" to he1kHeGoldColor
+      set the borderWidth of graphic "heReportBg" to 2
+      set the opaque of graphic "heReportBg" to true
+      create field "heReportFld"
+      set the rect of field "heReportFld" to "124,72,900,572"
+      set the lockText of field "heReportFld" to true
+      set the vScrollbar of field "heReportFld" to true
+      set the textSize of field "heReportFld" to 11
+      set the opaque of field "heReportFld" to true
+      set the backgroundColor of field "heReportFld" to "14,18,16"
+      set the textColor of field "heReportFld" to he1kHeWhite
+      set the borderWidth of field "heReportFld" to 0
+      create button "heBtnReportClose"
+      set the rect of button "heBtnReportClose" to "812,580,900,612"
+      set the label of button "heBtnReportClose" to "Close"
+   end if
+   set the text of field "heReportFld" to pTxt
+   set the scroll of field "heReportFld" to 0
+   show graphic "heReportBg"
+   show field "heReportFld"
+   show button "heBtnReportClose"
+end he1heReportShow
+
+command he1heReportHide
+   if there is a field "heReportFld" then
+      hide graphic "heReportBg"
+      hide field "heReportFld"
+      hide button "heBtnReportClose"
+   end if
+end he1heReportHide
+
+command he1heRunSection pName
+   -- run one test section under a guard: a runtime fault is caught, counted as a
+   -- FAIL with its error text, and the remaining sections still run. Keeps a
+   -- first-contact arithmetic error in a new section from aborting the harness.
+   -- he1gGame is snapshotted around the section: several sections (netsim above
+   -- all) swap he1gGame for a synthetic context and restore it on their LAST line,
+   -- so a mid-section throw used to leave the user's REAL game replaced by the
+   -- sim corpse (fake keys, online "true") -- the next Deal click acted on it.
+   -- On a throw, the pre-section he1gGame comes back; a clean section keeps its
+   -- own (already restored) state.
+   local he1tErr, he1tGameSaved
+   put he1gGame into he1tGameSaved
+   try
+      do pName
+   catch he1tErr
+      add 1 to he1gFailN
+      put "FAIL  " & pName & " THREW: " & he1tErr & return after he1gRpt
+      put he1tGameSaved into he1gGame
+   end try
+end he1heRunSection
+
+command he1heTAssert pLabel, pObserved, pExpected
+   if pObserved is pExpected then
+      add 1 to he1gPassN
+      put "PASS  " & pLabel & return after he1gRpt
+   else
+      add 1 to he1gFailN
+      put "FAIL  " & pLabel & return after he1gRpt
+      put "      observed: " & pObserved & return after he1gRpt
+      put "      expected: " & pExpected & return after he1gRpt
+   end if
+end he1heTAssert
+
+command he1heTContains pLabel, pObserved, pNeedle
+   if pObserved contains pNeedle then
+      add 1 to he1gPassN
+      put "PASS  " & pLabel & return after he1gRpt
+   else
+      add 1 to he1gFailN
+      put "FAIL  " & pLabel & return after he1gRpt
+      put "      observed: " & pObserved & return after he1gRpt
+      put "      expected to contain: " & pNeedle & return after he1gRpt
+   end if
+end he1heTContains
+
+command he1heTSkip pLabel, pWhy
+   add 1 to he1gSkipN
+   put "SKIP  " & pLabel & " (" & pWhy & ")" & return after he1gRpt
+end he1heTSkip
+
+command he1heTestDealRun
+   -- on-engine mirror of the Level 0 keyed-stream deal (spec 7.1), pinned in
+   -- tools/protocol-kat.py. SKIPs without SodiumXT. Exercises the real
+   -- commit-reveal dealing protocol the online game uses.
+   local he1tSeedsA, he1tXorHex, he1tKeyData, he1tDeckList, he1tDealA, he1tCommitsA, he1tTableData
+   local he1tDealLog, he1tHoles1, he1tHoles2, he1tHoles3, he1tFlopP, he1tAuditOut
+   put return & "-- 11. Level 0 keyed-stream deal (spec 7.1, crypto path)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "deal: Level 0 keyed-stream", "SodiumXT not installed"
+      exit he1heTestDealRun
+   end if
+   set the itemDelimiter to comma
+   put he1kKatSeed1 into he1tSeedsA[1]
+   put he1kKatSeed2 into he1tSeedsA[2]
+   put he1kKatSeed3 into he1tSeedsA[3]
+   he1heTAssert "deal: seeds XOR", he1heXorSeedsHex(he1tSeedsA, 3), he1kKatSeedsXor
+   put he1heHex2BinD(he1kKatTableHex) into he1tTableData
+   put he1heStreamKeyData(he1tTableData, 1, he1kKatSeedsXor) into he1tKeyData
+   he1heTAssert "deal: stream key", he1heBin2HexS(he1tKeyData), he1kKatStreamKey
+   put he1heDeckFromStreamKey(he1tKeyData) into he1tDeckList
+   he1heTAssert "deal: full shuffled deck (52 cards)", he1heTNamesOf(he1tDeckList), he1kKatDeck
+   put he1heDealAssign(he1tDeckList, "1,2,3", 1) into he1tDealA
+   he1heTAssert "deal: hole cards seat 1", he1heTNamesOf(he1tDealA["holesBy"][1]), he1kKatHole1
+   he1heTAssert "deal: hole cards seat 2", he1heTNamesOf(he1tDealA["holesBy"][2]), he1kKatHole2
+   he1heTAssert "deal: hole cards seat 3", he1heTNamesOf(he1tDealA["holesBy"][3]), he1kKatHole3
+   he1heTAssert "deal: flop", he1heTNamesOf(he1tDealA["flopList"]), he1kKatFlop
+   he1heTAssert "deal: turn", he1heCardName(he1tDealA["turnIx"]), he1kKatTurn
+   he1heTAssert "deal: river", he1heCardName(he1tDealA["riverIx"]), he1kKatRiver
+   -- the burns were pinned in protocol-kat all along but never re-checked
+   -- on-engine; a consumption-order drift would shift every later card
+   he1heTAssert "deal: burn cards (KAT-pinned)", he1heTNamesOf(he1tDealA["burnsList"]), "Jd,9d,3d"
+   -- end-of-hand audit: honest deal passes; a corrupted commit is named
+   put he1heSeedCommitHex(he1kKatSeed1) into he1tCommitsA[1]
+   put he1heSeedCommitHex(he1kKatSeed2) into he1tCommitsA[2]
+   put he1heSeedCommitHex(he1kKatSeed3) into he1tCommitsA[3]
+   he1heTAssert "deal: seed commitment 1", he1tCommitsA[1], he1kKatCommit1
+   he1heTAssert "deal: audit passes the honest deal", \
+         he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tDealA, "1,2,3", 1), "pass"
+   put he1kKatCommit1 into he1tCommitsA[2]
+   he1heTAssert "deal: audit names a corrupted commit", \
+         he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tDealA, "1,2,3", 1), \
+         "fail:commit-mismatch-position-2"
+
+   -- audit-from-TRANSCRIPT (mirror of tools/fold-kat.py): build the canned
+   -- Level 0 log he1heHandStart would write and confirm he1heAuditDealsFromLog
+   -- re-derives the committed shuffle from the revealed seeds -- proving the
+   -- played deal is verifiable by anyone with the transcript, and that a
+   -- tampered revealed seed is caught.
+   put he1kKatHole1 into he1tHoles1
+   replace comma with "|" in he1tHoles1
+   put he1kKatHole2 into he1tHoles2
+   replace comma with "|" in he1tHoles2
+   put he1kKatHole3 into he1tHoles3
+   replace comma with "|" in he1tHoles3
+   put he1kKatFlop into he1tFlopP
+   replace comma with "|" in he1tFlopP
+   put he1heLogLine(0, "table", "cfg", "sb=1,bb=2,seats=1|2|3,stacks=400|400|400,button=1") & return into he1tDealLog
+   put he1heLogLine(1, "table", "handStart", "seats=1|2|3,button=1") & return after he1tDealLog
+   put he1heLogLine(1, "table", "dealLevel", "level=0,table=" & he1kKatTableHex & ",count=3") & return after he1tDealLog
+   put he1heLogLine(1, "seat1", "seedCommit", "pos=1,commit=" & he1kKatCommit1) & return after he1tDealLog
+   put he1heLogLine(1, "seat2", "seedCommit", "pos=2,commit=" & he1kKatCommit2) & return after he1tDealLog
+   put he1heLogLine(1, "seat3", "seedCommit", "pos=3,commit=" & he1kKatCommit3) & return after he1tDealLog
+   put he1heLogLine(1, "seat1", "seedReveal", "pos=1,seed=" & he1kKatSeed1) & return after he1tDealLog
+   put he1heLogLine(1, "seat2", "seedReveal", "pos=2,seed=" & he1kKatSeed2) & return after he1tDealLog
+   put he1heLogLine(1, "seat3", "seedReveal", "pos=3,seed=" & he1kKatSeed3) & return after he1tDealLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=1,cards=" & he1tHoles1) & return after he1tDealLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=2,cards=" & he1tHoles2) & return after he1tDealLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=3,cards=" & he1tHoles3) & return after he1tDealLog
+   put he1heLogLine(1, "table", "board", "street=flop,cards=" & he1tFlopP) & return after he1tDealLog
+   put he1heLogLine(1, "table", "board", "street=turn,cards=" & he1kKatTurn) & return after he1tDealLog
+   put he1heLogLine(1, "table", "board", "street=river,cards=" & he1kKatRiver) & return after he1tDealLog
+   put he1heLogLine(1, "table", "settle", "deltas=1:0|2:0|3:0") & return after he1tDealLog
+   put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
+   he1heTContains "deal: audit-from-transcript re-derives the committed shuffle", he1tAuditOut, "1/1 deals verified"
+   he1heTContains "deal: audit-from-transcript marks the hand deal-verified", he1tAuditOut, "hand 1: deal-verified"
+   replace ("pos=2,seed=" & he1kKatSeed2) with ("pos=2,seed=" & he1kKatSeed1) in he1tDealLog
+   put he1heAuditDealsFromLog(he1tDealLog) into he1tAuditOut
+   he1heTContains "deal: audit-from-transcript catches a tampered seed", he1tAuditOut, "deal-FAILED"
+end he1heTestDealRun
+
+function he1heTIdentityDeck
+   -- deck 1..52 where each card's value IS its position, so a deal signature
+   -- reads the card->seat mapping directly
+   local he1tOut, he1tI
+   put empty into he1tOut
+   repeat with he1tI = 1 to 52
+      put he1tI & comma after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heTIdentityDeck
+
+function he1heTDealSig pDeckList, pOccList, pButton
+   -- "seat=h1-h2;... flop=f-f-f turn=t river=r" from he1heDealAssign, matching
+   -- tools/protocol-kat.py deal_signature over the identity deck (all chunks
+   -- are of plain locals -- H6-safe)
+   local he1tDealA, he1tSeatNum, he1tHole, he1tOut, he1tFlop
+   set the itemDelimiter to comma
+   put he1heDealAssign(pDeckList, pOccList, pButton) into he1tDealA
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in pOccList
+      put he1tDealA["holesBy"][he1tSeatNum] into he1tHole
+      put he1tSeatNum & "=" & (item 1 of he1tHole) & "-" & (item 2 of he1tHole) & ";" after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   put he1tDealA["flopList"] into he1tFlop
+   put he1tOut & " flop=" & (item 1 of he1tFlop) & "-" & (item 2 of he1tFlop) & "-" & (item 3 of he1tFlop) \
+         & " turn=" & he1tDealA["turnIx"] & " river=" & he1tDealA["riverIx"] into he1tOut
+   return he1tOut
+end he1heTDealSig
+
+command he1heTestDealOrderRun
+   -- pin the card->seat deal mapping (spec 7.1) for configs the main deal KAT
+   -- never covers: button not first, non-contiguous seats, heads-up, full ring.
+   -- On-engine mirror of tools/protocol-kat.py deal_orders (identity deck).
+   local he1tDeck
+   put return & "-- 12. deal order: card->seat mapping across seat configs" & return after he1gRpt
+   put he1heTIdentityDeck() into he1tDeck
+   he1heTAssert "deal-order: 3-handed, button 3 (button not first)", \
+         he1heTDealSig(he1tDeck, "1,2,3", 3), "1=1-4;2=2-5;3=3-6 flop=8-9-10 turn=12 river=14"
+   he1heTAssert "deal-order: non-contiguous seats 2,4,6 button 4", \
+         he1heTDealSig(he1tDeck, "2,4,6", 4), "2=2-5;4=3-6;6=1-4 flop=8-9-10 turn=12 river=14"
+   he1heTAssert "deal-order: heads-up 1,2 button 1", \
+         he1heTDealSig(he1tDeck, "1,2", 1), "1=2-4;2=1-3 flop=6-7-8 turn=10 river=12"
+   he1heTAssert "deal-order: heads-up non-contiguous 3,5 button 5", \
+         he1heTDealSig(he1tDeck, "3,5", 5), "3=1-3;5=2-4 flop=6-7-8 turn=10 river=12"
+   he1heTAssert "deal-order: full ring 1-6 button 4", \
+         he1heTDealSig(he1tDeck, "1,2,3,4,5,6", 4), \
+         "1=3-9;2=4-10;3=5-11;4=6-12;5=1-7;6=2-8 flop=14-15-16 turn=18 river=20"
+end he1heTestDealOrderRun
+
+command he1heTestLobbyRun
+   -- on-engine mirror of the online lobby's signed-presence + reconnect path
+   -- (spec 9), pinned in tools/protocol-kat.py. Two in-process identities:
+   -- the host (idSeed1) opens a table and signs a cfg (seq 1, from genesis),
+   -- then a roster (seq 2) once a player (idSeed2) has joined; a late joiner
+   -- replays both from genesis and must land on he1kKatLobbyHead2. This checks
+   -- the exact wires the transport carries, with no network. SKIPs w/o SodiumXT.
+   local he1tPub, he1tSec, he1tHostPubHex, he1tContent, he1tWire1, he1tWire2, he1tWire3, he1tHead1, he1tHead2, he1tHead3
+   local he1tMembers, he1tMembersRev, he1tRoster, he1tClientHead, he1tVerdict
+   put return & "-- 13. Online lobby: signed presence + transcript replay (spec 9)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "lobby: signed presence + replay", "SodiumXT not installed"
+      exit he1heTestLobbyRun
+   end if
+   set the itemDelimiter to comma
+
+   -- canonical roster body: sorting (not input order) fixes the signed bytes
+   put he1kKatIdPub1 & tab & "host" & return & he1kKatIdPub2 & tab & "player" into he1tMembers
+   put he1kKatIdPub2 & tab & "player" & return & he1kKatIdPub1 & tab & "host" into he1tMembersRev
+   put he1heRosterBody(he1tMembers) into he1tRoster
+   he1heTAssert "lobby: canonical roster body", he1tRoster, he1kKatRosterBody
+   he1heTAssert "lobby: roster body is order-independent", he1heRosterBody(he1tMembersRev), he1kKatRosterBody
+
+   -- host builds the two presence wires (host is sender AND relay for presence)
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub, he1tSec
+   put he1heBin2HexS(he1tPub) into he1tHostPubHex
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tHostPubHex, "cfg", he1kKatLobbyCfgBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec, 1, he1kHeGenesisPrev, he1tSec) into he1tWire1
+   put he1heChainNextHex(he1tWire1) into he1tHead1
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tHostPubHex, "roster", he1tRoster) into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec, 2, he1tHead1, he1tSec) into he1tWire2
+   put he1heChainNextHex(he1tWire2) into he1tHead2
+   he1heTAssert "lobby: presence chain head after cfg+roster", he1tHead2, he1kKatLobbyHead2
+
+   -- a joiner replays from genesis: cfg verifies at genesis, roster at head1
+   he1heTAssert "lobby: joiner verifies the cfg wire (from genesis)", \
+         he1heEnvVerify(he1tWire1, he1tHostPubHex, he1tHostPubHex, he1kHeGenesisPrev), "ok"
+   he1heTAssert "lobby: joiner verifies the roster wire (chained)", \
+         he1heEnvVerify(he1tWire2, he1tHostPubHex, he1tHostPubHex, he1tHead1), "ok"
+   -- out-of-order replay is a chain break: the roster cannot land before the cfg
+   he1heTAssert "lobby: roster before cfg is a chain break", \
+         he1heEnvVerify(he1tWire2, he1tHostPubHex, he1tHostPubHex, he1kHeGenesisPrev), "drop:chain-break"
+
+   -- resync recovery (spec 9): a client that ingested w1 then MISSED w2 wedges
+   -- on w3 (drop:chain-break) -- but a full-log replay recovers it. Replayed w1
+   -- drops (already have it), w2 lands on head1, w3 on head2: head reaches head3.
+   -- This pins the recovery logic he1heNetRequestSync/he1heNetReplayLogTo rely on.
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tHostPubHex, "roster", he1tRoster) into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec, 3, he1tHead2, he1tSec) into he1tWire3
+   put he1heChainNextHex(he1tWire3) into he1tHead3
+   put he1tHead1 into he1tClientHead
+   -- w3 arrives with w2 still missing -> chain break, head does not move
+   he1heTAssert "resync: gapped client drops the ahead-of-gap wire", \
+         he1heEnvVerify(he1tWire3, he1tHostPubHex, he1tHostPubHex, he1tClientHead), "drop:chain-break"
+   -- host replays the whole log; step the client head exactly as ingest would
+   put he1heEnvVerify(he1tWire1, he1tHostPubHex, he1tHostPubHex, he1tClientHead) into he1tVerdict
+   he1heTAssert "resync: replayed already-seen wire drops cleanly", he1tVerdict, "drop:chain-break"
+   put he1heEnvVerify(he1tWire2, he1tHostPubHex, he1tHostPubHex, he1tClientHead) into he1tVerdict
+   if he1tVerdict is "ok" then
+      put he1heChainNextHex(he1tWire2) into he1tClientHead
+   end if
+   he1heTAssert "resync: missing wire now applies", he1tVerdict, "ok"
+   put he1heEnvVerify(he1tWire3, he1tHostPubHex, he1tHostPubHex, he1tClientHead) into he1tVerdict
+   if he1tVerdict is "ok" then
+      put he1heChainNextHex(he1tWire3) into he1tClientHead
+   end if
+   he1heTAssert "resync: client recovers to the current chain head", he1tClientHead, he1tHead3
+end he1heTestLobbyRun
+
+command he1heTestNetSim
+   -- single-machine LOOPBACK of the online message orchestration -- no rp1, no
+   -- second machine. We drive the REAL stateful handlers (he1heHostRelay,
+   -- he1heNetIngestWire) against he1gGame and route the bytes each side would send by
+   -- hand, so seq-assignment, verify-or-drop, chain-advance, and resync recovery
+   -- are proven on ONE machine before a networked OXT pass. btRp1Send is never
+   -- reached (the host has no live peers, so he1heNetBroadcast is a no-op and the
+   -- resync request finds no host peer). he1gGame is saved and restored so the sim
+   -- never disturbs the live game. SKIPs without SodiumXT.
+   local he1tSaved, he1tHostPub, he1tHostSec, he1tPlayPub, he1tPlaySec, he1tHostPubHex, he1tPlayPubHex
+   local he1tCfgWire, he1tRosterWire, he1tActWire, he1tCfg2Wire, he1tHostLog, he1tContent, he1tSenderSig, he1tPacket
+   local he1tHead1, he1tHead2, he1tHead3, he1tHead4, he1tBadPub, he1tBadSec, he1tBadPubHex, he1tGhostWire
+   local he1tPriorCfg, he1tForgedWire, he1tPriorHead, he1tWrongTable, he1tWrongWire
+   put return & "-- 14. Online orchestration loopback (single machine, no rp1)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "netsim: online orchestration", "SodiumXT not installed"
+      exit he1heTestNetSim
+   end if
+   set the itemDelimiter to comma
+   put he1gGame into he1tSaved
+
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tHostPub, he1tHostSec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tPlayPub, he1tPlaySec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed3), he1tBadPub, he1tBadSec
+   put he1heBin2HexS(he1tHostPub) into he1tHostPubHex
+   put he1heBin2HexS(he1tPlayPub) into he1tPlayPubHex
+   put he1heBin2HexS(he1tBadPub) into he1tBadPubHex
+
+   -- ===== HOST context =====
+   put empty into he1gGame
+   put "true" into he1gGame["online"]
+   put "true" into he1gGame["isHost"]
+   put he1tHostPubHex into he1gGame["idPubHex"]
+   put he1tHostSec into he1gGame["idSecData"]
+   put he1tHostPubHex into he1gGame["hostPubHex"]
+   put he1kKatTableHex into he1gGame["tableIdHex"]
+   put 0 into he1gGame["handNum"]
+   put 0 into he1gGame["seqCounter"]
+   put 0 into he1gGame["syncCooldown"]
+   put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+   put 0 into he1gGame["lastSeq"]
+   put empty into he1gGame["wireBuf"]
+   put 0 into he1gGame["wireBufN"]
+   put "true" into he1gGame["admittedA"][he1tHostPubHex]
+   put "true" into he1gGame["admittedA"][he1tPlayPubHex]     -- as if the player already handshook
+   put "host" into he1gGame["roleByPub"][he1tHostPubHex]
+   put "player" into he1gGame["roleByPub"][he1tPlayPubHex]
+
+   -- host emits a cfg (seq 1): he1heNetSendAction -> he1heHostRelay -> local ingest
+   he1heNetSendAction "cfg", he1kKatLobbyCfgBody
+   put he1gGame["log"] into he1tHostLog
+   he1heTAssert "netsim: host relayed + logged its own cfg (seq 1)", the number of lines of he1tHostLog, 1
+   put line 1 of he1tHostLog into he1tCfgWire
+   put he1gGame["chainHeadHex"] into he1tHead1
+
+   -- host publishes the roster (seq 2) through the REAL emitter, exactly as it
+   -- does after every admission -- this is what makes the player's later action
+   -- a ROSTERED sender on every client (the spec 6 unknown-from rule)
+   he1heHostEmitRoster
+   put he1gGame["log"] into he1tHostLog
+   he1heTAssert "netsim: host emitted the roster (seq 2)", the number of lines of he1tHostLog, 2
+   put line 2 of he1tHostLog into he1tRosterWire
+   put he1gGame["chainHeadHex"] into he1tHead2
+
+   -- a player's signed action arrives; the host relays it (seq 3). This is the
+   -- real star-topology path minus the rp1 hop (peerPubA is empty, no broadcast).
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tPlayPubHex, "act", "verb=check,amount=0") into he1tContent
+   put he1heEnvSenderSigHex(he1tContent, he1tPlaySec) into he1tSenderSig
+   put he1tContent & tab & he1tSenderSig into he1tPacket
+   he1heHostRelay 0, he1tPacket
+   put he1gGame["log"] into he1tHostLog
+   he1heTAssert "netsim: host verified + relayed a player action (seq 3)", the number of lines of he1tHostLog, 3
+   put line 3 of he1tHostLog into he1tActWire
+   put he1gGame["chainHeadHex"] into he1tHead3
+
+   -- host emits a fourth wire (a cfg refresh)
+   he1heNetSendAction "cfg", he1kKatLobbyCfgBody
+   put he1gGame["log"] into he1tHostLog
+   put line 4 of he1tHostLog into he1tCfg2Wire
+   put he1gGame["chainHeadHex"] into he1tHead4
+
+   -- a validly-signed action from an UNADMITTED key must be dropped by the relay
+   -- (admission is enforced, not just the signature) -- no new wire is produced
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tBadPubHex, "act", "verb=bet,amount=99") into he1tContent
+   put he1heEnvSenderSigHex(he1tContent, he1tBadSec) into he1tSenderSig
+   put he1tContent & tab & he1tSenderSig into he1tPacket
+   he1heHostRelay 0, he1tPacket
+   put he1gGame["log"] into he1tHostLog
+   he1heTAssert "netsim: host drops an unadmitted sender (no new wire)", the number of lines of he1tHostLog, 4
+
+   -- ===== PLAYER context =====
+   put empty into he1gGame
+   put "true" into he1gGame["online"]
+   put "false" into he1gGame["isHost"]
+   put he1tPlayPubHex into he1gGame["idPubHex"]
+   put he1tPlaySec into he1gGame["idSecData"]
+   put he1tHostPubHex into he1gGame["hostPubHex"]
+   put he1kKatTableHex into he1gGame["tableIdHex"]
+   put 0 into he1gGame["syncCooldown"]
+   put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+   put 0 into he1gGame["lastSeq"]
+   put empty into he1gGame["wireBuf"]
+   put 0 into he1gGame["wireBufN"]
+
+   -- player ingests the host cfg wire (seq 1) -> chain advances, cfg body stashed
+   he1heNetIngestWire he1tCfgWire
+   he1heTAssert "netsim: player accepts host cfg + advances chain to head1", he1gGame["chainHeadHex"], he1tHead1
+   he1heTAssert "netsim: player stashed the cfg body", he1gGame["cfgBody"], he1kKatLobbyCfgBody
+   he1heTAssert "netsim: player lastSeq is 1 after cfg", he1gGame["lastSeq"], 1
+
+   -- the roster (seq 2) folds and now lists the player as a member
+   he1heNetIngestWire he1tRosterWire
+   he1heTAssert "netsim: player accepts the roster, chain at head2", he1gGame["chainHeadHex"], he1tHead2
+   he1heTContains "netsim: the roster body lists the player", he1gGame["rosterBody"], he1tPlayPubHex
+
+   -- REORDER: the player receives wire 4 (seq 4) BEFORE wire 3 -- rp1 reorders.
+   -- It must be HELD (buffered), not dropped, and the chain must stay put.
+   he1heNetIngestWire he1tCfg2Wire
+   he1heTAssert "netsim: out-of-order future wire is held, chain unchanged", he1gGame["chainHeadHex"], he1tHead2
+   he1heTAssert "netsim: the gap wire is buffered (not dropped)", he1gGame["wireBufN"], 1
+
+   -- the missing wire 3 arrives: it applies (a rostered sender's action) AND the
+   -- buffered wire 4 drains behind it, so the chain jumps straight to head4.
+   he1heNetIngestWire he1tActWire
+   he1heTAssert "netsim: filling the gap cascades the buffered wire to head4", he1gGame["chainHeadHex"], he1tHead4
+   he1heTAssert "netsim: buffer emptied after the cascade", he1gGame["wireBufN"], 0
+
+   -- DUPLICATES: rp1 redelivers wires constantly. An already-applied wire must be
+   -- dropped SILENTLY -- no chain change, no resync -- or the client resync-loops
+   -- forever and the game never starts (the actual networked bug this fixes).
+   he1heNetIngestWire he1tCfgWire
+   he1heTAssert "netsim: a duplicate cfg (seq 1) is dropped, chain unchanged", he1gGame["chainHeadHex"], he1tHead4
+   he1heNetIngestWire he1tActWire
+   he1heNetIngestWire he1tCfg2Wire
+   he1heTAssert "netsim: duplicate wires 3 and 4 are dropped, chain stays head4", he1gGame["chainHeadHex"], he1tHead4
+   he1heTAssert "netsim: lastSeq stays 4 through the duplicates", he1gGame["lastSeq"], 4
+
+   -- spec 6 unknown-from (deep-dive transport): a host-SIGNED wire whose sender
+   -- is not in the host-signed roster can only mean a corrupt host stream. The
+   -- chain link is authentic so it advances (refusing it would wedge the
+   -- table), but the body is marked and never folds.
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tBadPubHex, "act", "verb=bet,amount=99") into he1tContent
+   put he1heWireBuild(he1tContent, he1tBadSec, 5, he1gGame["chainHeadHex"], he1tHostSec) into he1tGhostWire
+   he1heNetIngestWire he1tGhostWire
+   he1heTAssert "netsim: an unrostered sender's wire still advances the chain (seq 5)", he1gGame["lastSeq"], 5
+   he1heTContains "netsim: the unrostered sender is marked in the net feed", he1gGame["netLog"], "unrostered sender"
+
+   -- host-authority on ingest (deep-dive [1]/[6]): a wire whose cfg content is
+   -- authored by a NON-host key -- even if it is otherwise valid, host-signed,
+   -- and from a ROSTERED member -- must NOT overwrite the cfg body. Build one
+   -- from the player key and confirm the stashed cfg is untouched.
+   put he1gGame["cfgBody"] into he1tPriorCfg
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tPlayPubHex, "cfg", "v=1,level=0,sb=999,bb=999,seats=6,button=1") into he1tContent
+   put he1heWireBuild(he1tContent, he1tPlaySec, 6, he1gGame["chainHeadHex"], he1tHostSec) into he1tForgedWire
+   he1heNetIngestWire he1tForgedWire
+   he1heTAssert "netsim: a non-host cfg body is not folded (host-authority)", he1gGame["cfgBody"], he1tPriorCfg
+
+   -- table binding on ingest (deep-dive [4]/[5]): a host-signed wire for a DIFFERENT
+   -- table is dropped and the chain does not advance.
+   put he1gGame["chainHeadHex"] into he1tPriorHead
+   put "1111111111111111111111111111111111111111111111111111111111111111" into he1tWrongTable
+   put he1heEnvContentLine(he1tWrongTable, 0, he1tHostPubHex, "cfg", he1kKatLobbyCfgBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tHostSec, 7, he1tPriorHead, he1tHostSec) into he1tWrongWire
+   he1heNetIngestWire he1tWrongWire
+   he1heTAssert "netsim: a wire for another table is dropped (chain unchanged)", he1gGame["chainHeadHex"], he1tPriorHead
+
+   put he1tSaved into he1gGame
+end he1heTestNetSim
+
+command he1heTNetDeliver pPayloadTxt
+   -- netplay loopback: deliver one captured rp1 payload into the CURRENT
+   -- he1gGame context through the REAL message router, so control frames (the
+   -- "r!" catch-up marker above all) take exactly the production path. Peer
+   -- handle 0 is the loopback's stand-in for the counterparty's live handle.
+   he1heNetOnMessage 0, textEncode(pPayloadTxt, "utf-8")
+end he1heTNetDeliver
+
+command he1heTNetPump
+   -- shuttle captured payloads between the contexts until all go quiet.
+   -- Player outboxes carry "c" frames to the host; the host outbox carries
+   -- "w" broadcasts to EVERY player (he1heNetBroadcast captures ONE copy; the
+   -- pump is the fan-out, exactly the star topology's shape). The second
+   -- player context exists only in the oracle section (he1gTNetPlay2G is an
+   -- array there; empty everywhere else, and the guards skip it).
+   local he1tRound, he1tQuiet, he1tCarry, he1tLine
+   repeat with he1tRound = 1 to 400
+      put "true" into he1tQuiet
+      put he1gTNetPlayG["netOutbox"] into he1tCarry
+      put empty into he1gTNetPlayG["netOutbox"]
+      if he1tCarry is not empty then
+         put "false" into he1tQuiet
+         put he1gTNetHostG into he1gGame
+         repeat for each line he1tLine in he1tCarry
+            if he1tLine is not empty then
+               he1heTNetDeliver he1tLine
+            end if
+         end repeat
+         put he1gGame into he1gTNetHostG
+      end if
+      if he1gTNetPlay2G is an array then
+         put he1gTNetPlay2G["netOutbox"] into he1tCarry
+         put empty into he1gTNetPlay2G["netOutbox"]
+         if he1tCarry is not empty then
+            put "false" into he1tQuiet
+            put he1gTNetHostG into he1gGame
+            repeat for each line he1tLine in he1tCarry
+               if he1tLine is not empty then
+                  he1heTNetDeliver he1tLine
+               end if
+            end repeat
+            put he1gGame into he1gTNetHostG
+         end if
+      end if
+      put he1gTNetHostG["netOutbox"] into he1tCarry
+      put empty into he1gTNetHostG["netOutbox"]
+      if he1tCarry is not empty then
+         put "false" into he1tQuiet
+         put he1gTNetPlayG into he1gGame
+         repeat for each line he1tLine in he1tCarry
+            if he1tLine is not empty then
+               he1heTNetDeliver he1tLine
+            end if
+         end repeat
+         put he1gGame into he1gTNetPlayG
+         if he1gTNetPlay2G is an array then
+            put he1gTNetPlay2G into he1gGame
+            repeat for each line he1tLine in he1tCarry
+               if he1tLine is not empty then
+                  he1heTNetDeliver he1tLine
+               end if
+            end repeat
+            put he1gGame into he1gTNetPlay2G
+         end if
+      end if
+      if he1tQuiet is "true" then
+         exit repeat
+      end if
+   end repeat
+end he1heTNetPump
+
+command he1heTNetAct pSeatNum, pBodyTxt
+   -- emit an act from whichever context owns the seat, then pump to quiet
+   local he1tMySeat
+   put he1gTNetPlayG into he1gGame
+   put he1heNetMySeat() into he1tMySeat
+   if he1tMySeat is pSeatNum then
+      he1heNetSendAction "act", pBodyTxt
+      put he1gGame into he1gTNetPlayG
+   else
+      put he1gGame into he1gTNetPlayG
+      put he1gTNetHostG into he1gGame
+      he1heNetSendAction "act", pBodyTxt
+      put he1gGame into he1gTNetHostG
+   end if
+   he1heTNetPump
+end he1heTNetAct
+
+command he1heTNetOracleAct pSeatNum, pBodyTxt
+   -- oracle-table loopback: an act comes from whichever PLAYER context owns
+   -- the seat -- the oracle host never acts (it has no seat to act from)
+   local he1tMySeat
+   put he1gTNetPlayG into he1gGame
+   put he1heNetMySeat() into he1tMySeat
+   put he1gGame into he1gTNetPlayG
+   if he1tMySeat is pSeatNum then
+      put he1gTNetPlayG into he1gGame
+      he1heNetSendAction "act", pBodyTxt
+      put he1gGame into he1gTNetPlayG
+   else
+      put he1gTNetPlay2G into he1gGame
+      he1heNetSendAction "act", pBodyTxt
+      put he1gGame into he1gTNetPlay2G
+   end if
+   he1heTNetPump
+end he1heTNetOracleAct
+
+command he1heTNetPlayCtx pIsHost, pPubHex, pSecData, pBoxPub, pBoxSec, pHostPubHex, pIdSeedHex
+   -- one netplay context: the online keys + game store a create/join builds,
+   -- with the capture seam on and the host's between-hands timer off
+   put empty into he1gGame
+   put "true" into he1gGame["online"]
+   put pIsHost into he1gGame["isHost"]
+   put pPubHex into he1gGame["idPubHex"]
+   put pSecData into he1gGame["idSecData"]
+   put pIdSeedHex into he1gGame["idSeedHex"]
+   put pBoxPub into he1gGame["boxPubData"]
+   put pBoxSec into he1gGame["boxSecData"]
+   put pHostPubHex into he1gGame["hostPubHex"]
+   put he1kKatTableHex into he1gGame["tableIdHex"]
+   put 1 into he1gGame["sb"]
+   put 2 into he1gGame["bb"]
+   put 0 into he1gGame["ante"]
+   put 400 into he1gGame["startStack"]
+   put 0 into he1gGame["handNum"]
+   put 0 into he1gGame["seqCounter"]
+   put 0 into he1gGame["syncCooldown"]
+   put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+   put 0 into he1gGame["lastSeq"]
+   put empty into he1gGame["wireBuf"]
+   put 0 into he1gGame["wireBufN"]
+   he1heNetGameInit
+   put "false" into he1gGame["autoNext"]
+   put "true" into he1gGame["netCap"]
+   put empty into he1gGame["netOutbox"]
+   -- the loopback's peer handle for the host is 0 (he1heTNetDeliver's stand-in),
+   -- so the "r!" catch-up marker's from-the-host transport check passes
+   put 0 into he1gGame["peerByPub"][pHostPubHex]
+   put "idle" into he1gGame["phase"]
+end he1heTNetPlayCtx
+
+command he1heTestNetPlay
+   -- a FULL online Level 0 hand, twice, on one machine: host + player contexts
+   -- driving the REAL handlers end to end -- cfg/roster, join (session box
+   -- binding), sit, handStart/dealLevel, seedCommit -> seedSeal -> sealed
+   -- holeDeliver (real sxSeal roundtrips), blinds, betting, dealer board
+   -- wires, seed reveals, the verified settle, receipt co-signatures, and
+   -- per-client audits. Hand 1 is a scripted fold-win (deterministic deltas
+   -- whatever the deck); hand 2 checks down to a showdown (the deck is real
+   -- entropy, so the asserts there are invariants: conservation, agreement,
+   -- clean audits). SKIPs without SodiumXT or without its box surface.
+   local he1tSaved, he1tHostPub, he1tHostSec, he1tPlayPub, he1tPlaySec, he1tHostPubHex, he1tPlayPubHex
+   local he1tHostBoxPub, he1tHostBoxSec, he1tPlayBoxPub, he1tPlayBoxSec, he1tBoxErr
+   local he1tStateA, he1tSbSeat, he1tBbSeat, he1tStep, he1tSeat, he1tOwe, he1tBoardTxt, he1tRcptHand1
+   local he1tSnapG, he1tEvil, he1tEvilC, he1tOffPub, he1tOffSec, he1tDlrSeat, he1tDlrPub, he1tDlrSec, he1tStackSnap
+   local he1tSeqSnap, he1tXlatTxt, he1tXlatFold, he1tOutboxTxt
+   put return & "-- 15. Online Level 0 hand, end to end (single-machine loopback)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "netplay: online hand", "SodiumXT not installed"
+      exit he1heTestNetPlay
+   end if
+   set the itemDelimiter to comma
+   put he1gGame into he1tSaved
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tHostPub, he1tHostSec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tPlayPub, he1tPlaySec
+   put he1heBin2HexS(he1tHostPub) into he1tHostPubHex
+   put he1heBin2HexS(he1tPlayPub) into he1tPlayPubHex
+   try
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed1, "utf-8")), \
+            he1tHostBoxPub, he1tHostBoxSec
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed2, "utf-8")), \
+            he1tPlayBoxPub, he1tPlayBoxSec
+      get sxSeal(textEncode("probe", "utf-8"), he1tHostBoxPub)
+   catch he1tBoxErr
+      put he1tSaved into he1gGame
+      he1heTSkip "netplay: online hand", "SodiumXT box surface not available"
+      exit he1heTestNetPlay
+   end try
+
+   -- host context opens the table: signed cfg + roster, then its own join
+   he1heTNetPlayCtx "true", he1tHostPubHex, he1tHostSec, he1tHostBoxPub, he1tHostBoxSec, he1tHostPubHex, he1kKatIdSeed1
+   put "true" into he1gGame["admittedA"][he1tHostPubHex]
+   put "true" into he1gGame["admittedA"][he1tPlayPubHex]
+   put "host" into he1gGame["roleByPub"][he1tHostPubHex]
+   put "player" into he1gGame["roleByPub"][he1tPlayPubHex]
+   he1heNetSendAction "cfg", he1heLobbyCfgBody()
+   he1heHostEmitRoster
+   put he1gGame into he1gTNetHostG
+   he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
+   put he1gGame into he1gTNetPlayG
+   he1heTNetPump
+   he1heTAssert "netplay: both session box keys bound on-chain (host view)", \
+         the number of lines of the keys of he1gTNetHostG["boxByPub"], 2
+   he1heTAssert "netplay: both session box keys bound on-chain (player view)", \
+         the number of lines of the keys of he1gTNetPlayG["boxByPub"], 2
+
+   -- the host starts the game: sit wires + hand 1; the deal and the blinds
+   -- then run themselves through the react engine on both sides
+   put he1gTNetHostG into he1gGame
+   he1heNetStartGame
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTAssert "netplay: hand 1 dealt itself to the action (phase acting)", he1tStateA["phase"], "acting"
+   he1heTAssert "netplay: both sides at the same chain head", \
+         he1gTNetPlayG["chainHeadHex"], he1gTNetHostG["chainHeadHex"]
+   he1heTAssert "netplay: the player's sealed holes opened", \
+         (he1gTNetPlayG["oDeal"]["myHoles"] is not empty), "true"
+   he1heTAssert "netplay: the host's sealed holes opened", \
+         (he1gTNetHostG["oDeal"]["myHoles"] is not empty), "true"
+   put he1tStateA["sbSeat"] into he1tSbSeat
+   put he1tStateA["bbSeat"] into he1tBbSeat
+   he1heTAssert "netplay: heads-up preflop action is on the button/SB", he1tStateA["toAct"], he1tSbSeat
+
+   -- hand 1: the SB folds -> deterministic deltas (SB -1, BB +1) no matter
+   -- what the committed deck was; then reveals/settle/receipts/audits flow
+   he1heTNetAct he1tSbSeat, "verb=fold,amount=0"
+   he1heTAssert "netplay: hand 1 settled on both sides", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true"
+   he1heTAssert "netplay: the folder paid its blind", he1gTNetPlayG["stacksBy"][he1tSbSeat], 399
+   he1heTAssert "netplay: the winner collected it", he1gTNetPlayG["stacksBy"][he1tBbSeat], 401
+   he1heTAssert "netplay: stacks agree across the wire", \
+         he1gTNetPlayG["stacksBy"][he1tSbSeat] & "/" & he1gTNetPlayG["stacksBy"][he1tBbSeat], \
+         he1gTNetHostG["stacksBy"][he1tSbSeat] & "/" & he1gTNetHostG["stacksBy"][he1tBbSeat]
+   he1heTAssert "netplay: receipt heads agree and left genesis", \
+         (he1gTNetPlayG["rcptHeadHex"] is he1gTNetHostG["rcptHeadHex"] \
+         and he1gTNetPlayG["rcptHeadHex"] is not he1kHeGenesisPrev), "true"
+   he1heTContains "netplay: the receipt is co-signed by both seats", \
+         he1gTNetPlayG["netLog"], "receipt co-signed by all 2"
+   he1heTContains "netplay: seat 1 audits the deal clean", he1gTNetPlayG["netLog"], "audit  seat 1: pass"
+   he1heTContains "netplay: seat 2 audits the deal clean", he1gTNetPlayG["netLog"], "audit  seat 2: pass"
+   put he1gTNetPlayG["rcptHeadHex"] into he1tRcptHand1
+
+   -- hand 2: kicked by the host (the sim keeps autoNext off). Played to the
+   -- flop, then the PLAYER CRASHES AND RECONNECTS mid-hand: its context is
+   -- rebuilt from nothing but its keys and identity seed, the host replays
+   -- the whole signed transcript (spec 9), and the rebuilt client must
+   -- converge byte-for-byte AND keep playing -- the deterministic per-hand
+   -- seed re-derives, the sealed holes re-open from the replayed wire, and
+   -- the hand checks down to a showdown with the usual invariants (real
+   -- entropy decides the winner): five board cards on the wire, chip
+   -- conservation, agreement, a fresh receipt link, clean audits.
+   put he1gTNetHostG into he1gGame
+   he1heNetHandKick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   -- preflop: SB completes, BB checks -> the dealer wires the flop
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTNetAct he1tStateA["toAct"], "verb=call,amount=1"
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTNetAct he1tStateA["toAct"], "verb=check,amount=0"
+   put he1gTNetPlayG["oDeal"]["boardList"] into he1tBoardTxt
+   he1heTAssert "netplay: the flop is on the wire before the crash", the number of items of he1tBoardTxt, 3
+
+   -- adversarial probe, mid-hand: an out-of-turn act -- host-signed and
+   -- correctly sequenced, so it APPLIES to the chain -- must be ENGINE-
+   -- rejected on fold (drop-and-log). Probes run on a THROWAWAY copy of the
+   -- player context so the poisoned chain never leaks into the honest stream.
+   put he1gTNetPlayG into he1tSnapG
+   put he1gTNetPlayG into he1gGame
+   put he1gGame["state"] into he1tStateA
+   if he1tStateA["toAct"] is he1heNetMySeat() then
+      put he1tHostPubHex into he1tOffPub
+      put he1tHostSec into he1tOffSec
+   else
+      put he1tPlayPubHex into he1tOffPub
+      put he1tPlaySec into he1tOffSec
+   end if
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tOffPub, "act", "verb=check,amount=0") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tOffSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "netplay: an out-of-turn act is engine-rejected on fold", \
+         he1gGame["netLog"], "engine-rejected act"
+   put he1tSnapG into he1gTNetPlayG
+
+   -- adversarial probe: a holeDeliver that will not OPEN (junk ciphertext,
+   -- but host-signed and dealer-authored) is a logged drop, never a throw,
+   -- and the holes stay unset
+   put he1gTNetPlayG into he1tSnapG
+   put he1gTNetPlayG into he1gGame
+   put he1gGame["oDeal"]["dealerSeat"] into he1tDlrSeat
+   put he1gGame["pubBySeat"][he1tDlrSeat] into he1tDlrPub
+   if he1tDlrPub is he1tHostPubHex then
+      put he1tHostSec into he1tDlrSec
+   else
+      put he1tPlaySec into he1tDlrSec
+   end if
+   put empty into he1gGame["oDeal"]["myHoles"]
+   put empty into he1gGame["oDeal"]["holeSealedBy"][he1heNetMySeat()]
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tDlrPub, "holeDeliver", \
+         "seat=" & he1heNetMySeat() & ",sealed=deadbeef") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tDlrSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "netplay: a junk sealed delivery is a logged drop", \
+         he1gGame["netLog"], "would not open"
+   he1heTAssert "netplay: the junk delivery leaves the holes unset", \
+         (he1gGame["oDeal"]["myHoles"] is empty), "true"
+   put he1tSnapG into he1gTNetPlayG
+
+   -- RECONNECT: rebuild the player from nothing but its keys and identity
+   -- seed, then the host replays the whole signed transcript into it. The
+   -- replay must add ZERO new wires to the live chain -- the "r!" catch-up
+   -- marker suppresses the rebuilt client's reactions until it is caught up,
+   -- so mid-replay states never leak duplicate emissions (Codex, PR #39).
+   put he1gTNetHostG["lastSeq"] into he1tSeqSnap
+   he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
+   put he1gGame into he1gTNetPlayG
+   put he1gTNetHostG into he1gGame
+   he1heNetReplayLogTo 0
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   he1heTAssert "reconnect: the catch-up replay added ZERO wires to the chain", \
+         he1gTNetHostG["lastSeq"], he1tSeqSnap
+   he1heTAssert "reconnect: the rebuilt client reaches the host's chain head", \
+         he1gTNetPlayG["chainHeadHex"], he1gTNetHostG["chainHeadHex"]
+   he1heTAssert "reconnect: seat map and stacks recovered", \
+         he1gTNetPlayG["stacksBy"][1] & "/" & he1gTNetPlayG["stacksBy"][2] & "/" & he1gTNetPlayG["seatByPub"][he1tPlayPubHex], \
+         he1gTNetHostG["stacksBy"][1] & "/" & he1gTNetHostG["stacksBy"][2] & "/" & he1gTNetHostG["seatByPub"][he1tPlayPubHex]
+   he1heTAssert "reconnect: the mid-hand street recovered", \
+         he1gTNetPlayG["state"]["street"], he1gTNetHostG["state"]["street"]
+   he1heTAssert "reconnect: the sealed holes re-opened from the replayed wire", \
+         (he1gTNetPlayG["oDeal"]["myHoles"] is not empty), "true"
+
+   -- ...and the hand keeps playing from the reconnected state: check it down
+   repeat with he1tStep = 1 to 20
+      put he1gTNetPlayG["state"] into he1tStateA
+      if he1tStateA["phase"] is not "acting" then
+         exit repeat
+      end if
+      put he1tStateA["toAct"] into he1tSeat
+      put he1tStateA["betCur"] - he1tStateA["streetBy"][he1tSeat] into he1tOwe
+      if he1tOwe > 0 then
+         he1heTNetAct he1tSeat, "verb=call,amount=" & min(he1tOwe, he1tStateA["stackBy"][he1tSeat])
+      else
+         he1heTNetAct he1tSeat, "verb=check,amount=0"
+      end if
+   end repeat
+   he1heTAssert "netplay: hand 2 settled on both sides", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true"
+   put he1gTNetPlayG["oDeal"]["boardList"] into he1tBoardTxt
+   he1heTAssert "netplay: the dealer wired all five board cards", the number of items of he1tBoardTxt, 5
+   he1heTAssert "netplay: chips conserved through the showdown", \
+         he1gTNetPlayG["stacksBy"][1] + he1gTNetPlayG["stacksBy"][2], 800
+   he1heTAssert "netplay: hand 2 stacks agree across the wire", \
+         he1gTNetPlayG["stacksBy"][1] & "/" & he1gTNetPlayG["stacksBy"][2], \
+         he1gTNetHostG["stacksBy"][1] & "/" & he1gTNetHostG["stacksBy"][2]
+   he1heTAssert "netplay: the receipt chain advanced hand to hand", \
+         (he1gTNetPlayG["rcptHeadHex"] is not he1tRcptHand1 \
+         and he1gTNetPlayG["rcptHeadHex"] is he1gTNetHostG["rcptHeadHex"]), "true"
+   he1heTAssert "netplay: both sides end at the same chain head", \
+         he1gTNetPlayG["chainHeadHex"], he1gTNetHostG["chainHeadHex"]
+
+   -- 2e STREET CKPTS: every boundary this checked-down hand crossed got a
+   -- ckpt wire from BOTH seats, all naming the transition wire's head --
+   -- which both contexts recorded identically (fork detection's premise)
+   he1heTAssert "ckpt: both seats checkpointed the flop boundary", \
+         (he1gTNetPlayG["oDeal"]["ckptsBy"]["flop:1"] is not empty \
+         and he1gTNetPlayG["oDeal"]["ckptsBy"]["flop:2"] is not empty), "true"
+   he1heTAssert "ckpt: river + showdown boundaries checkpointed too", \
+         (he1gTNetPlayG["oDeal"]["ckptsBy"]["river:1"] is not empty \
+         and he1gTNetPlayG["oDeal"]["ckptsBy"]["showdown:2"] is not empty), "true"
+   he1heTAssert "ckpt: the recorded flop boundary heads agree across the wire", \
+         he1gTNetPlayG["oDeal"]["ckptHeadBy"]["flop"], he1gTNetHostG["oDeal"]["ckptHeadBy"]["flop"]
+   he1heTAssert "ckpt: no fork evidence on the honest stream", \
+         (he1gTNetPlayG["netLog"] contains "CKPT-FORK"), "false"
+   -- 2e SHOW/MUCK: both contested seats declared a display choice after the
+   -- verified settle, and at least one SHOWS (a claimed pot is a shown
+   -- hand; a chopped pot shows both) -- entropy decides which
+   he1heTAssert "show/muck: both contested seats declared a display choice", \
+         (he1gTNetPlayG["oDeal"]["showBy"][1] is not empty \
+         and he1gTNetPlayG["oDeal"]["showBy"][2] is not empty), "true"
+   he1heTContains "show/muck: at least one seat shows", \
+         he1gTNetPlayG["oDeal"]["showBy"][1] & "/" & he1gTNetPlayG["oDeal"]["showBy"][2], "show"
+   he1heTAssert "show/muck: the display choices agree across the wire", \
+         he1gTNetPlayG["oDeal"]["showBy"][1] & "/" & he1gTNetPlayG["oDeal"]["showBy"][2], \
+         he1gTNetHostG["oDeal"]["showBy"][1] & "/" & he1gTNetHostG["oDeal"]["showBy"][2]
+
+   -- 2e TRIMMED RESYNC: a caught-up client's "s?" now names its applied
+   -- seq, and the host's replay is the "r!" marker and NOTHING else (the
+   -- spec 9 since-your-last-checkpoint replay, keyed by seq; the bare
+   -- pre-2e "s?" still means a full replay). Driven through the real
+   -- router; the outbox is inspected, not delivered.
+   put he1gTNetPlayG["lastSeq"] into he1tSeqSnap
+   put he1gTNetHostG into he1gGame
+   put he1tPlayPubHex into he1gGame["peerPubA"][0]   -- the loopback handle, admitted
+   put empty into he1gGame["netOutbox"]
+   he1heNetOnMessage 0, textEncode("s?" & tab & he1tSeqSnap, "utf-8")
+   -- copy the outbox to a plain local before chunking it (H6)
+   put he1gGame["netOutbox"] into he1tOutboxTxt
+   he1heTAssert "resync: a caught-up peer's trimmed replay is marker-only", \
+         the number of lines of he1tOutboxTxt & "/" & char 1 to 3 of line 1 of he1tOutboxTxt, \
+         "1/r!" & tab
+   put empty into he1gGame["netOutbox"]
+   put he1gGame into he1gTNetHostG
+
+   -- 2e ONLINE HISTORY FOLDING: the signed chain translates to the hotseat
+   -- shape and the SAME fold + deal audit run over it -- two settled hands,
+   -- every settle re-verified, both committed shuffles re-derived
+   put he1heNetLogToHotseat(he1gTNetHostG["log"]) into he1tXlatTxt
+   put he1heFoldTranscript(he1tXlatTxt) into he1tXlatFold
+   he1heTAssert "history: the translated chain folds two settled hands", \
+         the number of lines of he1tXlatFold["history"], 2
+   he1heTAssert "history: the translated fold reports zero errors", \
+         (he1tXlatFold["errors"] is empty), "true"
+   he1heTContains "history: the translated settles re-verify", \
+         he1tXlatFold["history"], "settle-verified"
+   he1heTAssert "history: the translated stacks match the live ones", \
+         he1tXlatFold["stacksBy"][1] & "/" & he1tXlatFold["stacksBy"][2], \
+         he1gTNetHostG["stacksBy"][1] & "/" & he1gTNetHostG["stacksBy"][2]
+   he1heTContains "history: the deal audit re-derives both committed shuffles", \
+         he1heAuditDealsFromLog(he1tXlatTxt), "2/2 deals verified"
+
+   -- adversarial probe, post-hand: a seedReveal that does not open its
+   -- commitment is NAMED and never stored (the commit check runs first)
+   put he1gTNetPlayG into he1tSnapG
+   put he1gTNetPlayG into he1gGame
+   put he1gGame["pubBySeat"][he1heNetSeatAtPos(1)] into he1tOffPub
+   if he1tOffPub is he1tHostPubHex then
+      put he1tHostSec into he1tOffSec
+   else
+      put he1tPlaySec into he1tOffSec
+   end if
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tOffPub, "seedReveal", \
+         "pos=1,seed=" & he1kKatSeed3) into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tOffSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "netplay: a reveal that breaks its commitment is named", \
+         he1gGame["netLog"], "does not match its commit"
+   put he1tSnapG into he1gTNetPlayG
+
+   -- adversarial probe, post-hand: a host settle that LIES about the deltas
+   -- is refused outright -- the client recomputes and never folds it
+   put he1gTNetPlayG into he1tSnapG
+   put he1gTNetPlayG into he1gGame
+   put "false" into he1gGame["oDeal"]["settleDone"]
+   put he1gGame["stacksBy"][1] into he1tStackSnap
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tHostPubHex, "settle", \
+         "deltas=1:400|2:-400") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tHostSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "netplay: a lying host settle is refused", he1gGame["netLog"], "SETTLE-MISMATCH"
+   he1heTAssert "netplay: the refused settle moved no chips", he1gGame["stacksBy"][1], he1tStackSnap
+   he1heTAssert "netplay: the refused settle did not complete the hand", \
+         he1gGame["oDeal"]["settleDone"], "false"
+   put he1tSnapG into he1gTNetPlayG
+
+   put empty into he1gTNetHostG
+   put empty into he1gTNetPlayG
+   put he1tSaved into he1gGame
+end he1heTestNetPlay
+
+command he1heTestCryptoRun
+   -- on-engine mirror of tools/protocol-kat.py (spec 6 + 7.1 crypto). SKIPs
+   -- cleanly without SodiumXT; all-green confirms the online transcript
+   -- foundation runs on this engine with the corrected sxHash/sign calls.
+   local he1tPub, he1tSec, he1tHostPub, he1tHostSec, he1tContent, he1tWire, he1tPrevHex, he1tChainData
+   local he1tSenderSeeds, he1tHands, he1tTypes, he1tBodies, he1tSeq, he1tTampered
+   put return & "-- 9. SodiumXT crypto: hash / identity / signed envelope (spec 6)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "crypto: all SodiumXT KATs", "SodiumXT not installed"
+      exit he1heTestCryptoRun
+   end if
+   set the itemDelimiter to comma
+
+   he1heTAssert "crypto: sxHash(empty,32) is BLAKE2b-256", he1heHashHex(textEncode("", "utf-8")), he1kKatHashEmpty
+   he1heTAssert "crypto: domain-separated seed commit 1", \
+         he1heHashDomHex(he1kHeDomainSeedC, he1heHex2BinD(he1kKatSeed1)), he1kKatCommit1
+   he1heTAssert "crypto: domain-separated seed commit 2", \
+         he1heHashDomHex(he1kHeDomainSeedC, he1heHex2BinD(he1kKatSeed2)), he1kKatCommit2
+   he1heTAssert "crypto: domain-separated seed commit 3", \
+         he1heHashDomHex(he1kHeDomainSeedC, he1heHex2BinD(he1kKatSeed3)), he1kKatCommit3
+
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub, he1tSec
+   he1heTAssert "crypto: ed25519 identity pubkey from seed", he1heBin2HexS(he1tPub), he1kKatIdPub1
+
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1kKatIdPub1, "cfg", he1kKatCfgBody) into he1tContent
+   he1heTAssert "crypto: canonical content-line bytes", \
+         he1heBin2HexS(textEncode(he1tContent, "utf-8")), he1kKatEnv0ContentHex
+   he1heTAssert "crypto: sender signature over the content line", \
+         he1heEnvSenderSigHex(he1tContent, he1tSec), he1kKatEnv0SenderSig
+
+   -- rebuild the six-envelope hash chain (host relay = identity 1)
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tHostPub, he1tHostSec
+   put he1kKatIdSeed1 & return & he1kKatIdSeed1 & return & he1kKatIdSeed2 & return \
+         & he1kKatIdSeed3 & return & he1kKatIdSeed2 & return & he1kKatIdSeed3 into he1tSenderSeeds
+   put "0,1,1,1,1,1" into he1tHands
+   put "cfg,seedCommit,seedCommit,seedCommit,bidSB,bidBB" into he1tTypes
+   put he1kKatCfgBody & return & he1kKatCommit1 & return & he1kKatCommit2 & return \
+         & he1kKatCommit3 & return & "amount=1" & return & "amount=2" into he1tBodies
+   put he1kHeGenesisPrev into he1tPrevHex
+   repeat with he1tSeq = 1 to 6
+      sxSignKeypairFromSeed he1heHex2BinD(line he1tSeq of he1tSenderSeeds), he1tPub, he1tSec
+      put he1heEnvContentLine(he1kKatTableHex, item he1tSeq of he1tHands, he1heBin2HexS(he1tPub), \
+            item he1tSeq of he1tTypes, line he1tSeq of he1tBodies) into he1tContent
+      put he1heWireBuild(he1tContent, he1tSec, he1tSeq, he1tPrevHex, he1tHostSec) into he1tWire
+      put he1heChainNextHex(he1tWire) into he1tPrevHex
+      put he1heHex2BinD(he1tPrevHex) into he1tChainData
+   end repeat
+   he1heTAssert "crypto: six-envelope chain head", he1tPrevHex, he1kKatChainHead6
+   he1heTAssert "crypto: settlement receipt hash", \
+         he1heSettleHashHex("1:-4,2:8,3:-4", he1tChainData), he1kKatSettleHash
+
+   -- verify-or-drop (spec 6): honest wire accepted, tampered body rejected
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub, he1tSec
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1heBin2HexS(he1tPub), "cfg", he1kKatCfgBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec, 1, he1kHeGenesisPrev, he1tSec) into he1tWire
+   he1heTAssert "crypto: verify accepts an honest wire", \
+         he1heEnvVerify(he1tWire, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "ok"
+   put he1tWire into he1tTampered
+   set the itemDelimiter to tab
+   put he1heBin2HexS(textEncode("v=1,level=0,sb=9,bb=9,seats=3,button=1", "utf-8")) into item 6 of he1tTampered
+   set the itemDelimiter to comma
+   he1heTAssert "crypto: verify drops a tampered body", \
+         he1heEnvVerify(he1tTampered, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:bad-sender-sig"
+   -- expect a DIFFERENT admitted key than the wire's actual signer
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tHostPub, he1tHostSec
+   he1heTAssert "crypto: verify drops an unknown sender", \
+         he1heEnvVerify(he1tWire, he1heBin2HexS(he1tHostPub), he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:unknown-from"
+   he1heTAssert "crypto: verify drops a chain break", \
+         he1heEnvVerify(he1tWire, he1heBin2HexS(he1tPub), he1heBin2HexS(he1tPub), he1kKatChainHead6), "drop:chain-break"
+   -- H4: a malformed (non-hex) field must DROP cleanly, never throw out of the
+   -- poll loop. Corrupt the from-key to non-hex and confirm the verdict.
+   put he1tWire into he1tTampered
+   set the itemDelimiter to tab
+   put "zznothexzz" into item 4 of he1tTampered
+   set the itemDelimiter to comma
+   he1heTAssert "crypto: verify drops a malformed hex field (no throw)", \
+         he1heEnvVerify(he1tTampered, empty, he1heBin2HexS(he1tPub), he1kHeGenesisPrev), "drop:malformed"
+   he1heTAssert "crypto: he1heIsHex rejects odd-length and non-hex", \
+         he1heIsHex("abc", 0) & "," & he1heIsHex("zz", 0) & "," & he1heIsHex("ab", 0), "false,false,true"
+
+   -- admission token (spec 5): host-role signature pinned, and the verify
+   -- roundtrip returns the admitted pubkey for a good token, "" for a wrong
+   -- table, and the role is recoverable for host adoption
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub, he1tSec
+   he1heTAssert "admit: host-token signature", \
+         he1heBin2HexS(he1heSignDetachedD(textEncode(he1kHeDomainSess & he1kKatTableHex & "|" & he1kKatIdPub1 & "|host", "utf-8"), he1tSec)), \
+         he1kKatAdmitSig
+   he1heTAssert "admit: verify accepts a good token", \
+         he1heAdmitTokenVerify(he1heAdmitTokenData(he1kKatTableHex, he1kKatIdPub1, he1tSec, "host"), he1kKatTableHex), he1kKatIdPub1
+   he1heTAssert "admit: verify rejects a wrong-table token", \
+         he1heAdmitTokenVerify(he1heAdmitTokenData(he1kKatTableHex, he1kKatIdPub1, he1tSec, "host"), he1kKatChainHead6), ""
+   he1heTAssert "admit: role is recoverable", \
+         he1heAdmitTokenRole(he1heAdmitTokenData(he1kKatTableHex, he1kKatIdPub1, he1tSec, "host")), "host"
+end he1heTestCryptoRun
+
+command he1heTestReceiptRun
+   -- on-engine mirror of the host-trust hardening (spec 6 checkpoints + 8.3
+   -- settlement receipts), pinned in tools/protocol-kat.py. Three players are
+   -- simulated with the KAT identities, so the MULTI-PARTY signed ledger is
+   -- verified on one machine. SKIPs without SodiumXT.
+   local he1tPub1, he1tSec1, he1tPub2, he1tSec2, he1tPub3, he1tSec3, he1tSh2, he1tRh1, he1tRh2, he1tSig1, he1tSig2, he1tSig3
+   local he1tContent, he1tWire, he1tHead
+   put return & "-- 10. Host trust: checkpoints + multi-signed settlement receipts" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "receipts: ckpt + settlement receipts", "SodiumXT not installed"
+      exit he1heTestReceiptRun
+   end if
+   set the itemDelimiter to comma
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub1, he1tSec1
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tPub2, he1tSec2
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed3), he1tPub3, he1tSec3
+
+   -- ckpt: a player signs the transcript head; a fork or a wrong signer fails
+   he1heTAssert "ckpt: player signs the chain head", he1heCkptSigHex(he1kKatChainHead6, he1tSec2), he1kKatCkptSig
+   he1heTAssert "ckpt: verify accepts the signer", \
+         he1heCkptVerify(he1kKatCkptSig, he1kKatChainHead6, he1heBin2HexS(he1tPub2)), "true"
+   he1heTAssert "ckpt: verify rejects a different signer", \
+         he1heCkptVerify(he1kKatCkptSig, he1kKatChainHead6, he1heBin2HexS(he1tPub1)), "false"
+   he1heTAssert "ckpt: verify rejects a forked (different) head", \
+         he1heCkptVerify(he1kKatCkptSig, he1kKatRcptHead1, he1heBin2HexS(he1tPub2)), "false"
+
+   -- 2e: the street ckpt WIRE (spec 6 as-built) -- the body codec and the
+   -- three-wire seq 7..9 extension of the KAT transcript, chained exactly
+   -- as tools/protocol-kat.py pins them (additive: heads 1..6 untouched)
+   he1heTAssert "ckpt: canonical street-boundary body", \
+         he1heCkptBodyTxt("flop", he1kKatChainHead6, he1tSec2), he1kKatCkptBody
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1heBin2HexS(he1tPub2), "ckpt", he1kKatCkptBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec2, 7, he1kKatChainHead6, he1tSec1) into he1tWire
+   put he1heChainNextHex(he1tWire) into he1tHead
+   he1heTAssert "ckpt: the ckpt wire chains (head 7)", he1tHead, he1kKatCkptHead7
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1heBin2HexS(he1tPub2), "show", "seat=2") into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec2, 8, he1tHead, he1tSec1) into he1tWire
+   put he1heChainNextHex(he1tWire) into he1tHead
+   he1heTAssert "show: the show wire chains (head 8)", he1tHead, he1kKatShowHead8
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1heBin2HexS(he1tPub3), "muck", "seat=3") into he1tContent
+   put he1heWireBuild(he1tContent, he1tSec3, 9, he1tHead, he1tSec1) into he1tWire
+   he1heTAssert "muck: the muck wire chains (head 9)", he1heChainNextHex(he1tWire), he1kKatMuckHead9
+
+   -- settlement receipt chain: hand 1 then hand 2, each receipt chained to the last
+   put he1heSettleHashHex("1:2,2:-1,3:-1", he1heHex2BinD(he1kHeGenesisPrev)) into he1tSh2
+   he1heTAssert "receipt: hand-2 settlement digest", he1tSh2, he1kKatSettleHash2
+   put he1heReceiptHeadHex(he1kKatSettleHash, he1kHeGenesisPrev) into he1tRh1
+   he1heTAssert "receipt: hand-1 receipt head (from genesis)", he1tRh1, he1kKatRcptHead1
+   put he1heReceiptHeadHex(he1tSh2, he1tRh1) into he1tRh2
+   he1heTAssert "receipt: hand-2 receipt head (chained to hand 1)", he1tRh2, he1kKatRcptHead2
+
+   -- all three seated players sign the hand-2 receipt head
+   put he1heReceiptSigHex(he1tRh2, he1tSec1) into he1tSig1
+   put he1heReceiptSigHex(he1tRh2, he1tSec2) into he1tSig2
+   put he1heReceiptSigHex(he1tRh2, he1tSec3) into he1tSig3
+   he1heTAssert "receipt: player 1 signature", he1tSig1, he1kKatRcptSig1
+   he1heTAssert "receipt: player 2 signature", he1tSig2, he1kKatRcptSig2
+   he1heTAssert "receipt: player 3 signature", he1tSig3, he1kKatRcptSig3
+   he1heTAssert "receipt: all three signatures verify (ledger multi-signed)", \
+         he1heReceiptSigVerify(he1tSig1, he1tRh2, he1heBin2HexS(he1tPub1)) and \
+         he1heReceiptSigVerify(he1tSig2, he1tRh2, he1heBin2HexS(he1tPub2)) and \
+         he1heReceiptSigVerify(he1tSig3, he1tRh2, he1heBin2HexS(he1tPub3)), "true"
+   -- a signature over the WRONG (rolled-back) head is rejected
+   he1heTAssert "receipt: a signature over a rolled-back head is rejected", \
+         he1heReceiptSigVerify(he1tSig1, he1tRh1, he1heBin2HexS(he1tPub1)), "false"
+   -- a forged co-signer (player 3's sig checked against player 1's key) is rejected
+   he1heTAssert "receipt: a forged co-signer is rejected", \
+         he1heReceiptSigVerify(he1tSig3, he1tRh2, he1heBin2HexS(he1tPub1)), "false"
+end he1heTestReceiptRun
+
+command he1heTestLevel2Run
+   -- Level 2 mental-poker COMPUTE algebra (spec 7.3, plan 4a-4c): the
+   -- on-engine mirror of tools/protocol-kat.py's l2_* twins, which the
+   -- file's independent RFC 9496 reference drives -- a green run here plus
+   -- the green KAT pins engine, xTalk, and reference to one answer. SKIPs
+   -- without SodiumXT, and SKIPs on a pre-ABI-8 build (no sxRistretto*
+   -- surface: the first touch throws "can't find handler", the probe's
+   -- catch is the detection, and no uncaught engine error can take the run
+   -- -- the stMergeCounted lesson). Fixed scalars end to end; the ONLY
+   -- fresh randomness is the closing roundtrip, which asserts an identity
+   -- law, not a pinned value.
+   local he1tBaseList, he1tDeck1, he1tDeck2, he1tDeck3, he1tChainTxt, he1tVal1, he1tVal2, he1tVal3
+   local he1tHole0, he1tHole1, he1tHole2, he1tDupList, he1tBad2, he1tBad3, he1tPermBad
+   local he1tTablePt, he1tRndK, he1tRndMask, he1tRndBack
+   put return & "-- 16. Level 2 mental poker: ristretto255 deal algebra (spec 7.3)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "level2: ristretto255 deal algebra", "SodiumXT not installed"
+      exit he1heTestLevel2Run
+   end if
+   if not he1heL2HasRistretto() then
+      he1heTSkip "level2: ristretto255 deal algebra", "SodiumXT pre-ABI-8 (no sxRistretto* surface)"
+      exit he1heTestLevel2Run
+   end if
+   set the itemDelimiter to comma
+   -- 4a: the public card table, then a three-seat shuffle-mask round
+   put he1heL2BaseDeckHex() into he1tBaseList
+   he1heTAssert "level2: 52 base points (domain-separated hash-to-group)", he1tBaseList, he1kKatL2BaseDeck
+   he1heTAssert "level2: base deck passes the free integrity check", he1heL2DeckCheckHex(he1tBaseList), "ok"
+   he1heTAssert "level2: scalar inversion (k1^-1 mod L)", he1heL2ScalarInvertHex(he1kKatL2Scalar1), he1kKatL2Inv1
+   put he1heL2MaskDeckHex(he1tBaseList, he1kKatL2Scalar1, he1kKatL2Perm1) into he1tDeck1
+   he1heTAssert "level2: seat 1 shuffle-mask step (52 mults + sigma)", he1tDeck1, he1kKatL2Deck1
+   put he1heL2MaskDeckHex(he1tDeck1, he1kKatL2Scalar2, he1kKatL2Perm2) into he1tDeck2
+   put he1heL2MaskDeckHex(he1tDeck2, he1kKatL2Scalar3, he1kKatL2Perm3) into he1tDeck3
+   he1heTAssert "level2: three-seat masked table deck", he1tDeck3, he1kKatL2MaskedDeck
+   he1heTAssert "level2: masked table deck all distinct", he1heL2DeckCheckHex(he1tDeck3), "ok"
+   -- 4b: unmask chains -- a public card, then a hole card owned by seat 2
+   put item 1 of he1tDeck3 into he1tTablePt
+   put he1heL2MaskPointHex(he1kKatL2Inv1, he1tTablePt) into he1tVal1
+   put he1heL2MaskPointHex(he1kKatL2Inv2, he1tVal1) into he1tVal2
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tVal2) into he1tVal3
+   put he1tTablePt & comma & he1tVal1 & comma & he1tVal2 & comma & he1tVal3 into he1tChainTxt
+   he1heTAssert "level2: public unmask chain values", he1tChainTxt, he1kKatL2PublicChain
+   he1heTAssert "level2: public chain resolves to its card", \
+         he1heL2PublicCardHex(he1tChainTxt, he1tBaseList), he1kKatL2PublicCard
+   put item 2 of he1tDeck3 into he1tHole0
+   put he1heL2MaskPointHex(he1kKatL2Inv1, he1tHole0) into he1tHole1
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tHole1) into he1tHole2
+   he1heTAssert "level2: hole chain public part (owner's step absent)", \
+         he1tHole0 & comma & he1tHole1 & comma & he1tHole2, he1kKatL2HoleChain
+   he1heTAssert "level2: penultimate value hits no card (CDH-hidden)", \
+         he1heL2CardOfPointHex(he1tHole2, he1tBaseList), 0
+   he1heTAssert "level2: owner strips its mask and resolves the hole", \
+         he1heL2HoleCardHex(he1kKatL2HoleChain, he1kKatL2Inv2, he1tBaseList), he1kKatL2HoleCard
+   -- 4c: showdown -- the revealed (k2, sigma2) re-verifies seat 2's steps
+   he1heTAssert "level2: reveal re-verifies the shuffle step", \
+         he1heL2RevealShuffleHex(he1tDeck1, he1tDeck2, he1kKatL2Scalar2, he1kKatL2Perm2), "ok"
+   he1heTAssert "level2: reveal re-verifies an unmask step", \
+         he1heL2RevealUnmaskHex(he1tVal1, he1tVal2, he1kKatL2Scalar2), "ok"
+   -- the void vocabulary: distinct, attributable refusals (all KAT-pinned)
+   put he1tDeck3 into he1tDupList
+   put item 1 of he1tDupList into item 2 of he1tDupList
+   he1heTAssert "level2: duplicate points are publicly refused", \
+         he1heL2DeckCheckHex(he1tDupList), "void:duplicate-point:1,2"
+   he1heTAssert "level2: a wrong revealed scalar is named", \
+         he1heL2RevealUnmaskHex(he1tVal1, he1tVal2, he1kKatL2Scalar3), "void:unmask-mismatch"
+   he1heTAssert "level2: an invalid encoding mid-chain is named", \
+         he1heL2PublicCardHex(he1tTablePt & comma & he1kKatL2BadPoint & comma & he1tVal2 & comma & he1tVal3, \
+         he1tBaseList), "void:invalid-point:2"
+   -- seat 2 applies the WRONG inverse mid-chain; seat 3 steps honestly
+   -- after it -- the chain completes but lands outside the card table
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tVal1) into he1tBad2
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tBad2) into he1tBad3
+   he1heTAssert "level2: a wrong-scalar chain lands outside the table", \
+         he1heL2PublicCardHex(he1tTablePt & comma & he1tVal1 & comma & he1tBad2 & comma & he1tBad3, \
+         he1tBaseList), "void:final-not-in-table"
+   he1heTAssert "level2: the identity result is named", \
+         he1heL2MaskPointHex(he1kKatL2Scalar1, he1kKatL2Identity), "void:identity-point"
+   he1heTAssert "level2: an invalid mask target is named", \
+         he1heL2MaskPointHex(he1kKatL2Scalar1, he1kKatL2BadPoint), "void:invalid-point"
+   put he1kKatL2Perm1 into he1tPermBad
+   put 0 into item 1 of he1tPermBad
+   he1heTAssert "level2: a malformed permutation is named", \
+         he1heL2MaskDeckHex(he1tBaseList, he1kKatL2Scalar1, he1tPermBad), "void:perm-format:1"
+   -- fresh-randomness property (engine-only, deliberately unpinned): mask
+   -- with a random scalar, unmask with its inverse, land exactly back
+   put he1heL2ScalarRandomHex() into he1tRndK
+   put he1heL2MaskPointHex(he1tRndK, item 3 of he1tBaseList) into he1tRndMask
+   put he1heL2MaskPointHex(he1heL2ScalarInvertHex(he1tRndK), he1tRndMask) into he1tRndBack
+   he1heTAssert "level2: random mask/unmask roundtrip", he1tRndBack, item 3 of he1tBaseList
+end he1heTestLevel2Run
+
+command he1heTestOnionRun
+   -- Phase 2f's headless slice: everything an engine can pin WITHOUT a tor
+   -- daemon or a second machine -- the invite codec round-trip on both
+   -- transports (plus its refusal vectors), the pure he1heJoinRefusal
+   -- downgrade-refusal gate (OnionXT presence is dependency-injected, so
+   -- BOTH branches run on any engine), onion-seed derivation properties,
+   -- the OnionXT address round-trip when the library is present, and the
+   -- "h" hello handshake driven through the REAL message router on netCap
+   -- loopback contexts (the netsim mold). The LIVE multi-hand onion table
+   -- session is the engine-era exit gate and is SKIPped by name at the end.
+   local he1tInvA, he1tInviteTxt, he1tSeedHex1, he1tSeedHex2, he1tAddrTxt, he1tOxErr, he1tRecovHex
+   local he1tSaved, he1tHostPub, he1tHostSec, he1tPlayPub, he1tPlaySec, he1tHostPubHex, he1tPlayPubHex
+   local he1tTokTxt, he1tHostTokTxt, he1tOutbox, he1tReplyTok
+   put return & "-- 17. Onion tables (2f): invite codec + fail-closed + hello" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- the invite codec: pure, no dependencies at all
+   put he1heInviteParse(he1kKatTableHex) into he1tInvA
+   he1heTAssert "invite: a bare 64-hex code parses as the DHT transport", \
+         he1tInvA["transport"] & "/" & he1tInvA["table"] & "/" & he1tInvA["err"], "rp1/" & he1kKatTableHex & "/"
+   put he1kKatTableHex & "@" & he1kKatOnionAddr into he1tInviteTxt
+   put he1heInviteParse(he1tInviteTxt) into he1tInvA
+   he1heTAssert "invite: table@address.onion parses as the onion transport", \
+         he1tInvA["transport"] & "/" & he1tInvA["table"] & "/" & he1tInvA["onion"] & "/" & he1tInvA["err"], \
+         "onion/" & he1kKatTableHex & "/" & he1kKatOnionAddr & "/"
+   put he1heInviteParse(toUpper(he1tInviteTxt)) into he1tInvA
+   he1heTAssert "invite: parsing normalizes case (an uppercase paste still binds the table)", \
+         he1tInvA["table"] & "/" & he1tInvA["onion"], he1kKatTableHex & "/" & he1kKatOnionAddr
+   -- the downgrade-refusal-BY-FORMAT property: one word, and not bare hex,
+   -- so a pre-2f stack's `word 1` + he1heIsHex gate refuses the WHOLE invite
+   he1heTAssert "invite: an onion invite is one word and NOT bare hex (a pre-2f stack fails closed)", \
+         (the number of words of he1tInviteTxt) & "/" & he1heIsHex(he1tInviteTxt, 64), "1/false"
+   put he1heInviteParse("abc123") into he1tInvA
+   he1heTContains "invite: a short code is refused readably", he1tInvA["err"], "64 hex"
+   put he1heInviteParse("zz" & char 3 to -1 of he1kKatTableHex & "@" & he1kKatOnionAddr) into he1tInvA
+   he1heTContains "invite: a non-hex table part is refused readably", he1tInvA["err"], "table code"
+   put he1heInviteParse(he1kKatTableHex & "@" & "1" & char 2 to -1 of he1kKatOnionAddr) into he1tInvA
+   he1heTContains "invite: an address character outside base32 is refused", he1tInvA["err"], "character"
+   put he1heInviteParse(he1kKatTableHex & "@" & char 2 to -1 of he1kKatOnionAddr) into he1tInvA
+   he1heTContains "invite: a 55-char address core is refused", he1tInvA["err"], "56"
+   put he1heInviteParse(he1kKatTableHex & "@" & char 1 to 56 of he1kKatOnionAddr) into he1tInvA
+   he1heTContains "invite: a missing .onion suffix is refused", he1tInvA["err"], ".onion"
+   put he1heInviteParse("") into he1tInvA
+   he1heTContains "invite: an empty paste is refused readably", he1tInvA["err"], "Paste"
+
+   -- the join-side fail-closed gate, both branches, on ANY engine (presence
+   -- is a parameter -- the H5 shape)
+   put he1heInviteParse(he1tInviteTxt) into he1tInvA
+   he1heTContains "refusal: onion invite without OnionXT fails CLOSED (no silent downgrade)", \
+         he1heJoinRefusal(he1tInvA, false), "OnionXT"
+   he1heTAssert "refusal: onion invite with OnionXT present is admitted to the join path", \
+         he1heJoinRefusal(he1tInvA, true), empty
+   put he1heInviteParse("not-an-invite") into he1tInvA
+   he1heTContains "refusal: a malformed invite carries the parser's reason", \
+         he1heJoinRefusal(he1tInvA, true), "64 hex"
+
+   -- the onion-service seed (spec 10 as-built): deterministic, identity-
+   -- keyed, per-table. Needs SodiumXT (it is a domain-separated hash).
+   if he1heHasSodium() then
+      put he1heOnionSeedHex(he1kKatIdSeed1, he1kKatTableHex, empty) into he1tSeedHex1
+      put he1heOnionSeedHex(he1kKatIdSeed1, he1kKatTableHex, empty) into he1tSeedHex2
+      he1heTAssert "onion seed: deterministic (a restarted host re-derives its address)", he1tSeedHex1, he1tSeedHex2
+      he1heTAssert "onion seed: 32 bytes of lowercase hex", he1heIsHex(he1tSeedHex1, 64), true
+      put he1heOnionSeedHex(he1kKatIdSeed2, he1kKatTableHex, empty) into he1tSeedHex2
+      he1heTAssert "onion seed: keyed by the host identity (another key, another address)", \
+            he1tSeedHex1 is he1tSeedHex2, false
+      put he1heOnionSeedHex(he1kKatIdSeed1, he1kKatSeed1, empty) into he1tSeedHex2
+      he1heTAssert "onion seed: fresh per table (another table, another address)", \
+            he1tSeedHex1 is he1tSeedHex2, false
+   else
+      he1heTSkip "onion seed: derivation properties", "SodiumXT not installed"
+   end if
+
+   -- the address round-trip through OnionXT's pure helpers (no daemon
+   -- involved): a REAL checksummed address from a fixed pubkey rides the
+   -- invite and decodes back to the same key -- the self-authenticating-
+   -- rendezvous property the transport leans on.
+   if he1heHasOnion() and he1heHasSodium() then
+      put empty into he1tAddrTxt
+      try
+         put oxAddressFromPublicKey(he1heHex2BinD(he1kKatIdPub1)) into he1tAddrTxt
+      catch he1tOxErr
+         put he1tOxErr into he1tAddrTxt
+      end try
+      if he1tAddrTxt ends with ".onion" then
+         he1heTAssert "onion addr: a v3 address is 62 chars with its .onion", \
+               the number of chars of he1tAddrTxt, 62
+         he1heTAssert "onion addr: OnionXT validates the derived address", \
+               oxIsValidAddress(he1tAddrTxt), true
+         put he1heInviteParse(he1kKatTableHex & "@" & he1tAddrTxt) into he1tInvA
+         he1heTAssert "onion addr: a real derived address rides the invite round-trip", \
+               he1tInvA["onion"] & "/" & he1tInvA["err"], he1tAddrTxt & "/"
+         put he1heBin2HexS(oxPublicKeyFromAddress(he1tAddrTxt)) into he1tRecovHex
+         he1heTAssert "onion addr: the address IS the pubkey (decode recovers it)", he1tRecovHex, he1kKatIdPub1
+      else
+         he1heTSkip "onion addr: derive + validate", "needs SodiumXT ABI 7 sxSha3_256 -- " & he1tAddrTxt
+      end if
+   else
+      he1heTSkip "onion addr: derive + validate", "OnionXT (or SodiumXT) not loaded"
+   end if
+
+   -- the "h" hello handshake through the REAL router, netCap loopback (the
+   -- netsim mold): a verified hello admits + replies + replays IN ORDER;
+   -- garbage and wrong-table hellos earn nothing; the player adopts the
+   -- host from its hello. he1gGame is swapped and restored (he1heRunSection's
+   -- snapshot backstops a mid-section throw).
+   if he1heHasSodium() then
+      put he1gGame into he1tSaved
+      sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tHostPub, he1tHostSec
+      sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tPlayPub, he1tPlaySec
+      put he1heBin2HexS(he1tHostPub) into he1tHostPubHex
+      put he1heBin2HexS(he1tPlayPub) into he1tPlayPubHex
+      -- HOST context with the capture seam on and one cfg wire on the chain
+      put empty into he1gGame
+      put "true" into he1gGame["online"]
+      put "true" into he1gGame["isHost"]
+      put he1tHostPubHex into he1gGame["idPubHex"]
+      put he1tHostSec into he1gGame["idSecData"]
+      put he1tHostPubHex into he1gGame["hostPubHex"]
+      put he1kKatTableHex into he1gGame["tableIdHex"]
+      put 0 into he1gGame["handNum"]
+      put 0 into he1gGame["seqCounter"]
+      put 0 into he1gGame["syncCooldown"]
+      put he1kHeGenesisPrev into he1gGame["chainHeadHex"]
+      put 0 into he1gGame["lastSeq"]
+      put empty into he1gGame["wireBuf"]
+      put 0 into he1gGame["wireBufN"]
+      put "true" into he1gGame["netCap"]
+      put empty into he1gGame["netOutbox"]
+      put "true" into he1gGame["admittedA"][he1tHostPubHex]
+      put "host" into he1gGame["roleByPub"][he1tHostPubHex]
+      he1heNetSendAction "cfg", he1kKatLobbyCfgBody
+      put empty into he1gGame["netOutbox"]   -- keep only the handshake's own output
+      put textDecode(he1heAdmitTokenData(he1kKatTableHex, he1tPlayPubHex, he1tPlaySec, "player"), "utf-8") into he1tTokTxt
+      he1heNetOnMessage 7, textEncode("h" & tab & he1tTokTxt, "utf-8")
+      he1heTAssert "hello: a verified hello admits the peer", he1gGame["admittedA"][he1tPlayPubHex], "true"
+      he1heTAssert "hello: the stream handle becomes the peer handle", he1gGame["peerPubA"][7], he1tPlayPubHex
+      put he1gGame["netOutbox"] into he1tOutbox
+      he1heTAssert "hello: the host answers with its own hello FIRST (ordered stream)", \
+            char 1 to 2 of line 1 of he1tOutbox, "h" & tab
+      set the itemDelimiter to tab
+      put item 2 to -1 of line 1 of he1tOutbox into he1tReplyTok
+      set the itemDelimiter to comma
+      he1heTAssert "hello: the reply token verifies and names the host key", \
+            he1heAdmitTokenVerify(textEncode(he1tReplyTok, "utf-8"), he1kKatTableHex), he1tHostPubHex
+      he1heTAssert "hello: the reply token declares role host", \
+            he1heAdmitTokenRole(textEncode(he1tReplyTok, "utf-8")), "host"
+      he1heTAssert "hello: the r! catch-up marker follows the hello", \
+            char 1 to 3 of line 2 of he1tOutbox, "r!" & tab
+      he1heTContains "hello: the replay carries the signed cfg wire", he1tOutbox, "w" & tab
+      -- an invalid hello earns NOTHING: no admit, no reply, a named drop
+      put empty into he1gGame["netOutbox"]
+      he1heNetOnMessage 9, textEncode("h" & tab & "garbage-token", "utf-8")
+      he1heTAssert "hello: a garbage hello admits nothing", he1gGame["peerPubA"][9], empty
+      he1heTAssert "hello: a garbage hello earns no reply", he1gGame["netOutbox"], empty
+      he1heTContains "hello: the drop is named in the net feed", he1gGame["netLog"], "onion hello failed"
+      -- a hello signed for ANOTHER table is a stranger here (the token binds
+      -- the table id): refused identically
+      put textDecode(he1heAdmitTokenData(he1kKatSeed1, he1tPlayPubHex, he1tPlaySec, "player"), "utf-8") into he1tTokTxt
+      he1heNetOnMessage 11, textEncode("h" & tab & he1tTokTxt, "utf-8")
+      he1heTAssert "hello: a wrong-table hello admits nothing", he1gGame["peerPubA"][11], empty
+      -- PLAYER side: adopting the host from ITS hello over the dialed stream
+      put empty into he1gGame
+      put "true" into he1gGame["online"]
+      put "false" into he1gGame["isHost"]
+      put he1tPlayPubHex into he1gGame["idPubHex"]
+      put he1tPlaySec into he1gGame["idSecData"]
+      put empty into he1gGame["hostPubHex"]
+      put he1kKatTableHex into he1gGame["tableIdHex"]
+      put 0 into he1gGame["syncCooldown"]
+      put "true" into he1gGame["netCap"]
+      put empty into he1gGame["netOutbox"]
+      put textDecode(he1heAdmitTokenData(he1kKatTableHex, he1tHostPubHex, he1tHostSec, "host"), "utf-8") into he1tHostTokTxt
+      he1heNetOnMessage 3, textEncode("h" & tab & he1tHostTokTxt, "utf-8")
+      he1heTAssert "hello: the player adopts the host key from the host hello", \
+            he1gGame["hostPubHex"], he1tHostPubHex
+      he1heTAssert "hello: the host's stream handle is pinned for sends", \
+            he1gGame["peerByPub"][he1tHostPubHex], 3
+      he1heTAssert "hello: the player answers no hello of its own (no ping-pong)", \
+            he1gGame["netOutbox"], empty
+      put he1tSaved into he1gGame
+   else
+      he1heTSkip "hello handshake loopback", "SodiumXT not installed"
+   end if
+
+   -- what only the real world can verify -- say so, by name (the honesty
+   -- convention): the exit for 2f is a MULTI-HAND onion table session on
+   -- two machines with a running tor daemon, plus the live probe states.
+   he1heTSkip "onion: LIVE multi-hand table session over tor", \
+         "two machines + a running tor daemon -- the 2f engine-era exit gate"
+end he1heTestOnionRun
+
+command he1heTestOracleRun
+   -- Phase 3 deck oracle (spec 7.2), as far as a single engine can drive it:
+   -- an oracle-hosted table on THREE loopback contexts (oracle + two
+   -- players) through the REAL handlers -- the oracle deals sealed holes it
+   -- can read but has no stake in, the no-seat invariant holds on every
+   -- context, a fold-win hand settles with receipts co-signed by the SEATS
+   -- only, the oracle's own entropy commits/reveals at position
+   -- dealCount+1, and its audit verdict files as "oracle". Then the oracle
+   -- goes SILENT mid-hand-2 and both players independently elect the same
+   -- successor and void to the last receipt (spec 9 -- oracle loss IS host
+   -- loss). The LIVE three-machine round is the exit gate, SKIPped by name.
+   local he1tSaved, he1tOrcPub, he1tOrcSec, he1tP1Pub, he1tP1Sec, he1tP2Pub, he1tP2Sec
+   local he1tOrcPubHex, he1tP1PubHex, he1tP2PubHex, he1tOrcBoxPub, he1tOrcBoxSec
+   local he1tP1BoxPub, he1tP1BoxSec, he1tP2BoxPub, he1tP2BoxSec, he1tBoxErr
+   local he1tStateA, he1tSbSeat, he1tBbSeat, he1tLoop, he1tElectTxt, he1tSeedA, he1tSeedB
+   put return & "-- 18. Phase 3 deck oracle: no-seat host + election on oracle loss" & return after he1gRpt
+   set the itemDelimiter to comma
+   -- the pure pieces first: seed-domain separation + deterministic election
+   if he1heHasSodium() then
+      put he1heOnionSeedHex(he1kKatIdSeed1, he1kKatTableHex, empty) into he1tSeedA
+      he1heTAssert "oracle: playing-table service seed (2f derivation, pinned)", he1tSeedA, he1kKatOnionSeed
+      put he1heOnionSeedHex(he1kKatIdSeed1, he1kKatTableHex, "oracle") into he1tSeedB
+      he1heTAssert "oracle: oracle-table service seed (he1kHeDomainOracle, pinned)", he1tSeedB, he1kKatOracleSeed
+      he1heTAssert "oracle: the two domains never share an address seed", he1tSeedA is he1tSeedB, false
+   else
+      he1heTSkip "oracle: service-seed domain separation", "SodiumXT not installed"
+   end if
+   he1heTAssert "election: he1heElectHostOf picks the lowest pubkey (pinned)", \
+         he1heElectHostOf(he1kKatIdPub1 & return & he1kKatIdPub2), he1kKatElectedHost
+   he1heTAssert "election: candidate order never matters", \
+         he1heElectHostOf(he1kKatIdPub2 & return & he1kKatIdPub1), he1kKatElectedHost
+   if not he1heHasSodium() then
+      he1heTSkip "oracle: hosted-table loopback + election", "SodiumXT not installed"
+      exit he1heTestOracleRun
+   end if
+   put he1gGame into he1tSaved
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tOrcPub, he1tOrcSec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tP1Pub, he1tP1Sec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed3), he1tP2Pub, he1tP2Sec
+   put he1heBin2HexS(he1tOrcPub) into he1tOrcPubHex
+   put he1heBin2HexS(he1tP1Pub) into he1tP1PubHex
+   put he1heBin2HexS(he1tP2Pub) into he1tP2PubHex
+   try
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed1, "utf-8")), \
+            he1tOrcBoxPub, he1tOrcBoxSec
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed2, "utf-8")), \
+            he1tP1BoxPub, he1tP1BoxSec
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed3, "utf-8")), \
+            he1tP2BoxPub, he1tP2BoxSec
+      get sxSeal(textEncode("probe", "utf-8"), he1tOrcBoxPub)
+   catch he1tBoxErr
+      put he1tSaved into he1gGame
+      he1heTSkip "oracle: hosted-table loopback + election", "SodiumXT box surface not available"
+      exit he1heTestOracleRun
+   end try
+
+   -- ORACLE-HOST context: the host role with oracleHost bound, as
+   -- he1heTableCreate binds it; the signed cfg carries level=1
+   he1heTNetPlayCtx "true", he1tOrcPubHex, he1tOrcSec, he1tOrcBoxPub, he1tOrcBoxSec, he1tOrcPubHex, he1kKatIdSeed1
+   put "true" into he1gGame["oracleHost"]
+   put "true" into he1gGame["admittedA"][he1tOrcPubHex]
+   put "true" into he1gGame["admittedA"][he1tP1PubHex]
+   put "true" into he1gGame["admittedA"][he1tP2PubHex]
+   put "host" into he1gGame["roleByPub"][he1tOrcPubHex]
+   put "player" into he1gGame["roleByPub"][he1tP1PubHex]
+   put "player" into he1gGame["roleByPub"][he1tP2PubHex]
+   he1heTAssert "oracle: the signed cfg pins level=1 (the oracle marker)", \
+         he1heLobbyCfgBody(), he1kKatLobbyCfgBodyOracle
+   he1heNetSendAction "cfg", he1heLobbyCfgBody()
+   he1heHostEmitRoster
+   put he1gGame into he1gTNetHostG
+   he1heTNetPlayCtx "false", he1tP1PubHex, he1tP1Sec, he1tP1BoxPub, he1tP1BoxSec, he1tOrcPubHex, he1kKatIdSeed2
+   put he1gGame into he1gTNetPlayG
+   he1heTNetPlayCtx "false", he1tP2PubHex, he1tP2Sec, he1tP2BoxPub, he1tP2BoxSec, he1tOrcPubHex, he1kKatIdSeed3
+   put he1gGame into he1gTNetPlay2G
+   he1heTNetPump
+   he1heTAssert "oracle: all three session boxes bound on-chain (the oracle's too)", \
+         the number of lines of the keys of he1gTNetHostG["boxByPub"], 3
+
+   -- Start Game seats ONLY the players; hand 1 deals itself via the react
+   -- engines on all three contexts
+   put he1gTNetHostG into he1gGame
+   he1heNetStartGame
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   he1heTAssert "oracle: exactly the two players are seated", \
+         the number of items of he1gTNetPlayG["seatedList"], 2
+   he1heTAssert "oracle: the oracle holds NO seat (every view)", \
+         he1gTNetHostG["seatByPub"][he1tOrcPubHex] & "/" & he1gTNetPlayG["seatByPub"][he1tOrcPubHex] \
+         & "/" & he1gTNetPlay2G["seatByPub"][he1tOrcPubHex], "//"
+   he1heTAssert "oracle: dealLevel names the oracle (level 1, dealer 0)", \
+         he1gTNetPlayG["oDeal"]["oracleDeal"] & "/" & he1gTNetPlayG["oDeal"]["dealerSeat"], "true/0"
+   he1heTAssert "oracle: three entropy contributors committed (2 seats + oracle)", \
+         he1gTNetPlayG["oDeal"]["commitN"], 3
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTAssert "oracle: hand 1 dealt itself to the action", he1tStateA["phase"], "acting"
+   he1heTAssert "oracle: both players' sealed holes opened", \
+         (he1gTNetPlayG["oDeal"]["myHoles"] is not empty \
+         and he1gTNetPlay2G["oDeal"]["myHoles"] is not empty), "true"
+   he1heTAssert "oracle: the oracle's own holes stay EMPTY (no seat, no cards)", \
+         (he1gTNetHostG["oDeal"]["myHoles"] is empty), "true"
+   he1heTAssert "oracle: hole deliveries cover exactly the seats", \
+         he1gTNetHostG["oDeal"]["holeN"], 2
+   he1heTAssert "oracle: every context at one chain head", \
+         (he1gTNetPlayG["chainHeadHex"] is he1gTNetHostG["chainHeadHex"] \
+         and he1gTNetPlay2G["chainHeadHex"] is he1gTNetHostG["chainHeadHex"]), "true"
+
+   -- hand 1: the SB folds -> deterministic deltas; reveals (incl. the
+   -- oracle's pos 3), the verified settle, seat-only receipts, three audits
+   put he1tStateA["sbSeat"] into he1tSbSeat
+   put he1tStateA["bbSeat"] into he1tBbSeat
+   he1heTNetOracleAct he1tSbSeat, "verb=fold,amount=0"
+   he1heTAssert "oracle: hand 1 settled on every context", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetPlay2G["oDeal"]["settleDone"] \
+         & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true/true"
+   he1heTAssert "oracle: the oracle revealed its own seed (position 3)", \
+         (he1gTNetPlayG["oDeal"]["revealsBy"][3] is not empty), "true"
+   he1heTAssert "oracle: blinds moved only between the seats", \
+         he1gTNetPlayG["stacksBy"][he1tSbSeat] & "/" & he1gTNetPlayG["stacksBy"][he1tBbSeat], "399/401"
+   he1heTAssert "oracle: the oracle banks no stack (no seat in stacksBy)", \
+         the number of lines of the keys of he1gTNetHostG["stacksBy"], 2
+   he1heTContains "oracle: the receipt is co-signed by the SEATS alone", \
+         he1gTNetPlayG["netLog"], "receipt co-signed by all 2"
+   he1heTContains "oracle: seat 1 audits the oracle deal clean", he1gTNetPlayG["netLog"], "audit  seat 1: pass"
+   he1heTContains "oracle: seat 2 audits the oracle deal clean", he1gTNetPlayG["netLog"], "audit  seat 2: pass"
+   he1heTContains "oracle: the oracle's own audit files as oracle", \
+         he1gTNetPlayG["netLog"], "audit  oracle: pass"
+   he1heTAssert "oracle: the uncontested winner mucks (display choice)", \
+         he1gTNetPlayG["oDeal"]["showBy"][he1tBbSeat], "muck"
+
+   -- ELECTION ON ORACLE SILENCE: kick hand 2, reach the action, then the
+   -- oracle says nothing more. Each player's watchdog trips independently;
+   -- both must name the SAME successor and void to the last receipt.
+   put he1gTNetHostG into he1gGame
+   he1heNetHandKick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTAssert "oracle: hand 2 reached the action before the loss", he1tStateA["phase"], "acting"
+   put he1heElectHostOf(he1tP1PubHex & return & he1tP2PubHex) into he1tElectTxt
+   put he1gTNetPlayG into he1gGame
+   repeat with he1tLoop = 1 to he1kHeHostLossTicks + 1
+      he1heNetHostLossCheck
+   end repeat
+   put he1gGame into he1gTNetPlayG
+   put he1gTNetPlay2G into he1gGame
+   repeat with he1tLoop = 1 to he1kHeHostLossTicks + 1
+      he1heNetHostLossCheck
+   end repeat
+   put he1gGame into he1gTNetPlay2G
+   he1heTAssert "election: both clients declare the host lost", \
+         he1gTNetPlayG["hostLost"] & "/" & he1gTNetPlay2G["hostLost"], "true/true"
+   he1heTAssert "election: both clients name the SAME successor", \
+         he1gTNetPlayG["electedHostPubHex"], he1gTNetPlay2G["electedHostPubHex"]
+   he1heTAssert "election: the successor is the lowest live seated pubkey", \
+         he1gTNetPlayG["electedHostPubHex"], he1tElectTxt
+   he1heTAssert "election: the in-flight hand is VOID on both clients", \
+         he1gTNetPlayG["phase"] & "/" & he1gTNetPlay2G["phase"], "idle/idle"
+   he1heTAssert "election: stacks stand at the last receipt", \
+         he1gTNetPlayG["stacksBy"][he1tSbSeat] & "/" & he1gTNetPlayG["stacksBy"][he1tBbSeat], "399/401"
+   he1heTContains "election: the net feed names the loss and the successor", \
+         he1gTNetPlayG["netLog"], "HOST LOST"
+
+   put empty into he1gTNetHostG
+   put empty into he1gTNetPlayG
+   put empty into he1gTNetPlay2G
+   put he1tSaved into he1gGame
+
+   -- what only the real world can verify -- say so, by name (the honesty
+   -- convention): Phase 3's exit is a THREE-MACHINE round.
+   he1heTSkip "oracle: LIVE three-machine round (two players + a non-playing oracle)", \
+         "the Phase 3 exit gate -- kill the oracle mid-hand, void + resume per spec 9"
+   he1heTSkip "oracle: onion-hosted oracle service (he1kHeDomainOracle address) over tor", \
+         "needs a running tor daemon + a second machine (+ live-tor honesty label)"
+end he1heTestOracleRun
+
+command he1heTestLevel2VoidRun
+   -- Phase 4d void-and-audit + the spec 12.4 adversarial bots + Phase 5
+   -- DLEQ: the on-engine mirror of protocol-kat's l2v_*/l0_*/l2_dleq_*
+   -- scenario pins. Every bot's verdict string here is the SAME literal
+   -- the Python twins pinned from the independent reference, so a green
+   -- run pins engine, xTalk, and reference to one attribution answer.
+   -- SKIPs without SodiumXT; the machine half SKIPs below ABI 8; the DLEQ
+   -- half SKIPs by name below ABI 9 (the sx* DLEQ calls have never run on
+   -- an engine -- this section IS their first-contact harness).
+   local he1tSeedsA, he1tCommitsA, he1tTableData, he1tKeyData, he1tDeckList, he1tDealA, he1tStackA
+   local he1tBase, he1tD1, he1tD2, he1tD3, he1tPipe1, he1tSh1, he1tC0, he1tV1, he1tV2, he1tV3
+   local he1tH0, he1tW1, he1tW2, he1tBad2, he1tBad3, he1tRevTxt, he1tStA, he1tCardTxt, he1tHoleTxt
+   local he1tDupDeck, he1tEqDeck, he1tLastTxt, he1tProof, he1tProofBad, he1tTampered
+   local he1tStB, he1tStC, he1tStD
+   put return & "-- 19. Level 2 void-and-audit + cheater bots (spec 7.3/12.4, plan 4d/4e; DLEQ 7.4)" & return after he1gRpt
+   if not he1heHasSodium() then
+      he1heTSkip "level2 void: machine + bots", "SodiumXT not installed"
+      exit he1heTestLevel2VoidRun
+   end if
+   set the itemDelimiter to comma
+   -- bot[deck-stacker], against LEVEL 0 (spec 12.4 lists it there): a
+   -- dealer who deals cards the committed stream never produced, and one
+   -- who re-chooses its seed after seeing the others -- the spec 7.1
+   -- step 5 audit names each (pinned: l0_stacker_holes/l0_stacker_commit)
+   put he1kKatSeed1 into he1tSeedsA[1]
+   put he1kKatSeed2 into he1tSeedsA[2]
+   put he1kKatSeed3 into he1tSeedsA[3]
+   put he1heSeedCommitHex(he1kKatSeed1) into he1tCommitsA[1]
+   put he1heSeedCommitHex(he1kKatSeed2) into he1tCommitsA[2]
+   put he1heSeedCommitHex(he1kKatSeed3) into he1tCommitsA[3]
+   put he1heHex2BinD(he1kKatTableHex) into he1tTableData
+   put he1heStreamKeyData(he1tTableData, 1, he1kKatSeedsXor) into he1tKeyData
+   put he1heDeckFromStreamKey(he1tKeyData) into he1tDeckList
+   put he1heDealAssign(he1tDeckList, "1,2,3", 1) into he1tDealA
+   put he1tDealA into he1tStackA
+   put he1tDealA["holesBy"][2] into he1tStackA["holesBy"][1]
+   put he1tDealA["holesBy"][1] into he1tStackA["holesBy"][2]
+   he1heTAssert "bot[deck-stacker]: a stacked delivery is named (L0 audit)", \
+         he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tStackA, "1,2,3", 1), \
+         "fail:hole-mismatch-seat-1"
+   put he1kKatCommit2 into he1tCommitsA[1]
+   he1heTAssert "bot[deck-stacker]: a re-chosen seed breaks its commit", \
+         he1heAuditDeal(he1tTableData, 1, he1tSeedsA, he1tCommitsA, 3, he1tDealA, "1,2,3", 1), \
+         "fail:commit-mismatch-position-1"
+   if not he1heL2HasRistretto() then
+      he1heTSkip "level2 void: machine + bots", "SodiumXT pre-ABI-8 (no sxRistretto* surface)"
+      exit he1heTestLevel2VoidRun
+   end if
+   -- fixtures: the pinned base deck, the three-seat masked decks, and the
+   -- pinned chain values (same constants section 16 verifies)
+   put he1heL2BaseDeckHex() into he1tBase
+   put he1heL2MaskDeckHex(he1tBase, he1kKatL2Scalar1, he1kKatL2Perm1) into he1tD1
+   put he1heL2MaskDeckHex(he1tD1, he1kKatL2Scalar2, he1kKatL2Perm2) into he1tD2
+   put he1heL2MaskDeckHex(he1tD2, he1kKatL2Scalar3, he1kKatL2Perm3) into he1tD3
+   put item 1 of he1tD3 into he1tC0
+   put he1heL2MaskPointHex(he1kKatL2Inv1, he1tC0) into he1tV1
+   put he1heL2MaskPointHex(he1kKatL2Inv2, he1tV1) into he1tV2
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tV2) into he1tV3
+   put item 2 of he1tD3 into he1tH0
+   put he1heL2MaskPointHex(he1kKatL2Inv1, he1tH0) into he1tW1
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tW1) into he1tW2
+   put "1" & tab & he1kKatL2Scalar1 & tab & he1kKatL2Perm1 & return & \
+         "2" & tab & he1kKatL2Scalar2 & tab & he1kKatL2Perm2 & return & \
+         "3" & tab & he1kKatL2Scalar3 & tab & he1kKatL2Perm3 into he1tRevTxt
+   -- the PINNED record formats (spec 6 body conventions)
+   put he1tD1 into he1tPipe1
+   replace comma with "|" in he1tPipe1
+   put he1heL2ShuffleBodyOf(1, empty, he1tD1) into he1tSh1
+   he1heTAssert "4d: shuffleStep record format (pinned)", he1tSh1, \
+         "pos=1,ck=,deck=" & he1tPipe1
+   he1heTAssert "4d: unmaskStep record format (pinned)", \
+         he1heL2UnmaskBodyOf(1, 1, he1tV1, empty), \
+         "pos=1,slot=1,val=" & he1tV1 & ",proof="
+   -- the honest table: shuffle -> deal, a public slot resolves its card, a
+   -- hole slot completes without its owner's step, the audit comes back
+   -- clean (a clean audit is the table agreeing to void)
+   put he1heL2VoidNew(3, he1tBase, false, "2:2") into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 2, he1heL2ShuffleBodyOf(2, empty, he1tD2)) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 3, he1heL2ShuffleBodyOf(3, empty, he1tD3)) into he1tStA
+   he1heTAssert "4d: three honest shuffle steps reach the deal phase", \
+         he1heL2VoidOutcome(he1tStA), "deal"
+   put he1heL2VoidUnmask(he1tStA, 1, he1heL2UnmaskBodyOf(1, 1, he1tV1, empty)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 2, he1heL2UnmaskBodyOf(2, 1, he1tV2, empty)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 3, he1heL2UnmaskBodyOf(3, 1, he1tV3, empty)) into he1tStA
+   put he1tStA["card"][1] into he1tCardTxt
+   he1heTAssert "4d: a completed public chain resolves its card", he1tCardTxt, he1kKatL2PublicCard
+   put he1heL2VoidUnmask(he1tStA, 1, he1heL2UnmaskBodyOf(1, 2, he1tW1, empty)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 3, he1heL2UnmaskBodyOf(3, 2, he1tW2, empty)) into he1tStA
+   put he1tStA["holeUp"][2] into he1tHoleTxt
+   he1heTAssert "4d: the hole chain completes without the owner's step", he1tHoleTxt, "true"
+   he1heTAssert "4d: the honest table never voids", he1heL2VoidOutcome(he1tStA), "deal"
+   he1heTAssert "4d: a clean audit names nobody", he1heL2VoidAudit(he1tStA, he1tRevTxt), \
+         "named=0|audit-clean"
+   -- bot[duplicate-point shuffler]: the free integrity check refuses the
+   -- posted deck at once -- named directly, no audit needed
+   put he1heL2VoidNew(3, he1tBase, false, empty) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1tD2 into he1tDupDeck
+   put item 1 of he1tDupDeck into item 2 of he1tDupDeck
+   put he1heL2VoidShuffle(he1tStA, 2, he1heL2ShuffleBodyOf(2, empty, he1tDupDeck)) into he1tStA
+   he1heTAssert "bot[duplicate-point shuffler]: refused at post time, named", \
+         he1heL2VoidOutcome(he1tStA), \
+         "void|void:duplicate-point:1,2|named=2|bets-return|reveal-required"
+   -- bot[rollback replayer]: an identical re-post is a harmless dup (the
+   -- state does not move -- rp1 redelivers); a DIFFERENT re-post for the
+   -- applied position is signed equivocation, named directly
+   put he1heL2VoidNew(3, he1tBase, false, empty) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 2, he1heL2ShuffleBodyOf(2, empty, he1tD2)) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1tStA["last"] & comma & he1tStA["applied"] into he1tLastTxt
+   he1heTAssert "bot[rollback replayer]: an identical re-post is a harmless dup", \
+         he1tLastTxt, "dup,2"
+   put he1tD1 into he1tEqDeck
+   put item 2 of he1tD1 into item 1 of he1tEqDeck
+   put item 1 of he1tD1 into item 2 of he1tEqDeck
+   put he1heL2VoidShuffle(he1tStA, 1, he1heL2ShuffleBodyOf(1, empty, he1tEqDeck)) into he1tStA
+   he1heTAssert "bot[rollback replayer]: a DIFFERENT re-post is equivocation, named", \
+         he1heL2VoidOutcome(he1tStA), \
+         "void|void:step-equivocation:1|named=1|bets-return|reveal-required"
+   -- bot[wrong-scalar unmasker], no DLEQ: every step individually
+   -- well-formed, the chain completes OUTSIDE the table -> deferred
+   -- attribution, and the mandatory reveal audit names seat 2's step
+   put he1heL2VoidNew(3, he1tBase, false, empty) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 2, he1heL2ShuffleBodyOf(2, empty, he1tD2)) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 3, he1heL2ShuffleBodyOf(3, empty, he1tD3)) into he1tStA
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tV1) into he1tBad2
+   put he1heL2MaskPointHex(he1kKatL2Inv3, he1tBad2) into he1tBad3
+   put he1heL2VoidUnmask(he1tStA, 1, he1heL2UnmaskBodyOf(1, 1, he1tV1, empty)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 2, he1heL2UnmaskBodyOf(2, 1, he1tBad2, empty)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 3, he1heL2UnmaskBodyOf(3, 1, he1tBad3, empty)) into he1tStA
+   he1heTAssert "bot[wrong-scalar unmasker]: chain lands outside the table -> audit", \
+         he1heL2VoidOutcome(he1tStA), \
+         "void|void:final-not-in-table:1|named=audit|bets-return|reveal-required"
+   he1heTAssert "bot[wrong-scalar unmasker]: the reveal audit names seat 2's step", \
+         he1heL2VoidAudit(he1tStA, he1tRevTxt), "named=2|void:unmask-mismatch:1:2"
+   -- bot[deal staller]: provisionally named on the timeout; the audit
+   -- re-verifies everything signed and keeps the staller's name
+   put he1heL2VoidNew(3, he1tBase, false, empty) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 1, he1tSh1) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 2, he1heL2ShuffleBodyOf(2, empty, he1tD2)) into he1tStA
+   put he1heL2VoidShuffle(he1tStA, 3, he1heL2ShuffleBodyOf(3, empty, he1tD3)) into he1tStA
+   put he1heL2VoidUnmask(he1tStA, 1, he1heL2UnmaskBodyOf(1, 1, he1tV1, empty)) into he1tStA
+   put he1heL2VoidTimeout(he1tStA, 2) into he1tStA
+   he1heTAssert "bot[deal staller]: the timeout voids with the ower named", \
+         he1heL2VoidOutcome(he1tStA), \
+         "void|void:deal-timeout:2|named=2|bets-return|reveal-required"
+   he1heTAssert "bot[deal staller]: the audit re-verifies all, keeps the name", \
+         he1heL2VoidAudit(he1tStA, he1tRevTxt), "named=2|void:deal-timeout:2"
+   -- Phase 5 DLEQ, behind its own probe: on a pre-ABI-9 SodiumXT the whole
+   -- half SKIPs by name and the 4d machine above still ran on ABI 8
+   if not he1heL2HasDleq() then
+      he1heTSkip "phase5: DLEQ proofs + machine wiring", \
+            "SodiumXT pre-ABI-9 (no DLEQ/batch surface)"
+      exit he1heTestLevel2VoidRun
+   end if
+   he1heTAssert "dleq: commitment key ck1 = k1*B (pinned)", \
+         he1heL2CommitKeyHex(he1kKatL2Scalar1), he1kKatL2Ck1
+   he1heTAssert "dleq: commitment key ck2 = k2*B (pinned)", \
+         he1heL2CommitKeyHex(he1kKatL2Scalar2), he1kKatL2Ck2
+   put he1heL2DleqProve(he1kKatL2Scalar1, he1tV1, he1tC0) into he1tProof
+   he1heTAssert "dleq: derandomized proof matches the reference (pinned)", \
+         he1tProof, he1kKatL2DleqProof
+   he1heTAssert "dleq: the honest proof verifies", \
+         he1heL2DleqVerify(he1kKatL2Ck1, he1tV1, he1tC0, he1tProof), "ok"
+   -- soundness, negatively: the honest PROCEDURE over a FALSE statement
+   -- (the wrong-scalar unmasker's only available forgery) fails equation
+   -- 2; a wrong secret, swapped points, and a tampered commitment all
+   -- change the transcript and fail equation 1
+   he1heTAssert "dleq: honest procedure over a FALSE statement fails (eq 2)", \
+         he1heL2DleqVerify(he1kKatL2Ck2, he1tBad2, he1tV1, \
+         he1heL2DleqProve(he1kKatL2Scalar2, he1tBad2, he1tV1)), "void:dleq-mismatch:2"
+   he1heTAssert "dleq: a wrong secret cannot forge (eq 1)", \
+         he1heL2DleqVerify(he1kKatL2Ck2, he1tV2, he1tV1, \
+         he1heL2DleqProve(he1kKatL2Scalar3, he1tV2, he1tV1)), "void:dleq-mismatch:1"
+   he1heTAssert "dleq: swapped points refuse", \
+         he1heL2DleqVerify(he1kKatL2Ck1, he1tC0, he1tV1, he1tProof), "void:dleq-mismatch:1"
+   put he1tV3 & char 65 to 192 of he1tProof into he1tTampered
+   he1heTAssert "dleq: a tampered commitment changes the challenge", \
+         he1heL2DleqVerify(he1kKatL2Ck1, he1tV1, he1tC0, he1tTampered), "void:dleq-mismatch:1"
+   -- the proof wired into the unmaskStep record (spec 7.4's reserved
+   -- field): on a dleq=1 machine an honest proof-carrying step applies,
+   -- the wrong-scalar unmasker is refused INSTANTLY with direct
+   -- attribution (no audit round -- "impossible rather than
+   -- attributable"), and a missing proof is itself a named refusal
+   put he1heL2VoidNew(3, he1tBase, true, "2:2") into he1tStB
+   put he1heL2VoidShuffle(he1tStB, 1, he1heL2ShuffleBodyOf(1, he1kKatL2Ck1, he1tD1)) into he1tStB
+   put he1heL2VoidShuffle(he1tStB, 2, he1heL2ShuffleBodyOf(2, he1kKatL2Ck2, he1tD2)) into he1tStB
+   put he1heL2VoidShuffle(he1tStB, 3, he1heL2ShuffleBodyOf(3, he1kKatL2Ck3, he1tD3)) into he1tStB
+   put he1heL2VoidUnmask(he1tStB, 1, he1heL2UnmaskBodyOf(1, 1, he1tV1, he1tProof)) into he1tStB
+   put he1tStB["last"] into he1tLastTxt
+   he1heTAssert "phase5: a proof-carrying honest step applies", he1tLastTxt, "applied"
+   put he1heL2DleqProve(he1kKatL2Scalar2, he1tBad2, he1tV1) into he1tProofBad
+   put he1heL2VoidUnmask(he1tStB, 2, he1heL2UnmaskBodyOf(2, 1, he1tBad2, he1tProofBad)) into he1tStB
+   he1heTAssert "phase5: a wrong unmask is refused INSTANTLY, named -- no audit round", \
+         he1heL2VoidOutcome(he1tStB), \
+         "void|void:dleq-mismatch:2:1|named=2|bets-return|reveal-required"
+   put he1heL2VoidNew(3, he1tBase, true, empty) into he1tStC
+   put he1heL2VoidShuffle(he1tStC, 1, he1heL2ShuffleBodyOf(1, he1kKatL2Ck1, he1tD1)) into he1tStC
+   put he1heL2VoidShuffle(he1tStC, 2, he1heL2ShuffleBodyOf(2, he1kKatL2Ck2, he1tD2)) into he1tStC
+   put he1heL2VoidShuffle(he1tStC, 3, he1heL2ShuffleBodyOf(3, he1kKatL2Ck3, he1tD3)) into he1tStC
+   put he1heL2VoidUnmask(he1tStC, 1, he1heL2UnmaskBodyOf(1, 1, he1tV1, empty)) into he1tStC
+   he1heTAssert "phase5: a missing proof on a dleq table is itself named", \
+         he1heL2VoidOutcome(he1tStC), \
+         "void|void:proof-missing:1|named=1|bets-return|reveal-required"
+   -- a lying commitment key (posted ck3, masked with k1) is caught by the
+   -- audit's binding check, before any chain algebra runs
+   put he1heL2VoidNew(3, he1tBase, true, empty) into he1tStD
+   put he1heL2VoidShuffle(he1tStD, 1, he1heL2ShuffleBodyOf(1, he1kKatL2Ck3, he1tD1)) into he1tStD
+   put he1heL2VoidShuffle(he1tStD, 2, he1heL2ShuffleBodyOf(2, he1kKatL2Ck2, he1tD2)) into he1tStD
+   put he1heL2VoidShuffle(he1tStD, 3, he1heL2ShuffleBodyOf(3, he1kKatL2Ck3, he1tD3)) into he1tStD
+   he1heTAssert "phase5: a lying commitment key is caught by the audit binding", \
+         he1heL2VoidAudit(he1tStD, he1tRevTxt), "named=1|void:audit-ck-mismatch"
+end he1heTestLevel2VoidRun
+
+command he1heTestLivenessRun
+   -- 2e liveness (spec 8.1/9): act timers + the per-hand time-bank,
+   -- sit-out/return, late-join seating, and the onion auto-redial's
+   -- ordering against the election watchdog. The pure prescriptions and
+   -- the redial schedule run on ANY engine; the wire pins and the timed
+   -- netsim hand need SodiumXT (+ its box surface); the LIVE legs -- a
+   -- timed two-machine table on wall clocks, a real tor-stream loss --
+   -- are SKIPped by name at the end (the honesty convention).
+   local he1tSaved, he1tHostPub, he1tHostSec, he1tPlayPub, he1tPlaySec, he1tHostPubHex, he1tPlayPubHex
+   local he1tHostBoxPub, he1tHostBoxSec, he1tPlayBoxPub, he1tPlayBoxSec, he1tBoxErr
+   local he1tP3Pub, he1tP3Sec, he1tP3PubHex, he1tP3BoxPub, he1tP3BoxSec
+   local he1tStateA, he1tSeat, he1tSeatX, he1tSeatY, he1tOwe, he1tVerb, he1tStep, he1tLoop
+   local he1tContent, he1tWire, he1tHead, he1tTokTxt, he1tFrameTxt, he1tListTxt, he1tKeyA, he1tKeyB
+   local he1tEvil, he1tEvilC, he1tSnapG, he1tHandBefore, he1tOutboxTxt, he1tWireN, he1tLineTxt
+   local he1tSnapH, he1tBodyA, he1tSeatOther, he1tOtherPub, he1tOtherSec, he1tGhostPub, he1tLivePub
+   put return & "-- 20. Liveness: act timers + time-bank, sit-out, late-join, redial" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- the seat plate's label PRIORITY, pure (v0.24.0, F9). The countdown used
+   -- to be tested before the sit-out label, so a sitting-out seat whose turn
+   -- came up showed "0s" -- and 0 is precisely what he1heNetTurnLimitSecs returns
+   -- for a sitting-out seat, so the plate rendered the reason for the label
+   -- instead of the label. These four lines are the only ones in the pure half
+   -- that touch the live store, so they snapshot and restore it.
+   put he1gGame into he1tSaved
+   put "true" into he1gGame["online"]
+   put empty into he1gGame["sitOutBy"]
+   put "12s" into he1gGame["turnClockTxt"]
+   he1heTAssert "plate: an acting seat shows its countdown", \
+         he1heSeatFaceLabel(1, true, "false", "false"), "12s"
+   put "true" into he1gGame["sitOutBy"][1]
+   he1heTAssert "plate: SIT OUT outranks the countdown on the acting seat", \
+         he1heSeatFaceLabel(1, true, "false", "false"), "SIT OUT"
+   he1heTAssert "plate: the engine's folded verdict outranks both", \
+         he1heSeatFaceLabel(1, true, "true", "false"), "FOLDED"
+   he1heTAssert "plate: all-in outranks the countdown too", \
+         he1heSeatFaceLabel(1, true, "false", "true"), "ALL-IN"
+   put he1tSaved into he1gGame
+
+   -- the spec 9 expiry prescription, pure: check when nothing is owed,
+   -- else fold (a host may never fold a seat that could check)
+   put he1heTBlinds(he1heTNewHand(1, 2, "400,400,400", "1,2,3", 1)) into he1tStateA
+   he1heTAssert "timer: an owing seat's expiry prescription is fold", \
+         he1heTimeoutVerbOf(he1tStateA, he1tStateA["toAct"]), "fold"
+   he1heTAssert "timer: the big blind's expiry prescription is check", \
+         he1heTimeoutVerbOf(he1tStateA, he1tStateA["bbSeat"]), "check"
+   -- the pending-forced-post prescription (blinds phase, engine amounts)
+   put he1heTNewHand(1, 2, "400,400", "1,2", 1) into he1tStateA
+   he1heTAssert "timer: the pending post names the SB first (engine amount)", \
+         he1heTimeoutPostOf(he1tStateA), "bidSB,1,1"
+   put he1heBetApply(he1tStateA, "bidSB", he1tStateA["sbSeat"], 1) into he1tStateA
+   he1heTAssert "timer: then the BB at the engine's amount", \
+         he1heTimeoutPostOf(he1tStateA), "bidBB,2,2"
+   put he1heTNewHandAnte(1, 2, 1, "400,400,400", "1,2,3", 1) into he1tStateA
+   he1heTAssert "timer: antes precede the blinds (lowest unposted seat)", \
+         he1heTimeoutPostOf(he1tStateA), "bidAnte,1,1"
+   put he1heTBlinds(he1heTNewHand(1, 2, "400,400", "1,2", 1)) into he1tStateA
+   he1heTAssert "timer: no pending post once the betting opens", \
+         he1heTimeoutPostOf(he1tStateA), empty
+   -- the redial backoff schedule, pure and bounded (2/4/8/16 s in ticks;
+   -- he1kHeRedialMax attempts -- the watchdog always concludes)
+   put he1heRedialWaitTicks(1) & comma & he1heRedialWaitTicks(2) & comma \
+         & he1heRedialWaitTicks(3) & comma & he1heRedialWaitTicks(4) into he1tListTxt
+   he1heTAssert "redial: doubling backoff 8/16/32/64 poll ticks", he1tListTxt, "8,16,32,64"
+
+   if not he1heHasSodium() then
+      he1heTSkip "liveness: wire pins + timed netsim hand", "SodiumXT not installed"
+      he1heTSkip "liveness: LIVE timed table (two machines, wall clocks)", \
+            "the 2e engine-era exit leg"
+      he1heTSkip "redial: LIVE tor host-stream loss + redial", \
+            "needs a running tor daemon + a second machine"
+      exit he1heTestLivenessRun
+   end if
+
+   -- the seq 10..13 wire-format pins (protocol-kat's transcript extension)
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tHostPub, he1tHostSec
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed2), he1tPlayPub, he1tPlaySec
+   put he1heBin2HexS(he1tHostPub) into he1tHostPubHex
+   put he1heBin2HexS(he1tPlayPub) into he1tPlayPubHex
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1tHostPubHex, "act", he1kKatTimeoutBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tHostSec, 10, he1kKatMuckHead9, he1tHostSec) into he1tWire
+   put he1heChainNextHex(he1tWire) into he1tHead
+   he1heTAssert "timeout: the host timeout act chains (head 10)", he1tHead, he1kKatTimeoutHead10
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1tPlayPubHex, "stand", "seat=2") into he1tContent
+   put he1heWireBuild(he1tContent, he1tPlaySec, 11, he1tHead, he1tHostSec) into he1tWire
+   put he1heChainNextHex(he1tWire) into he1tHead
+   he1heTAssert "stand: the sit-out wire chains (head 11)", he1tHead, he1kKatStandHead11
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1tPlayPubHex, "sit", "seat=2") into he1tContent
+   put he1heWireBuild(he1tContent, he1tPlaySec, 12, he1tHead, he1tHostSec) into he1tWire
+   put he1heChainNextHex(he1tWire) into he1tHead
+   he1heTAssert "sit: the return wire chains (head 12)", he1tHead, he1kKatSitBackHead12
+   put he1heEnvContentLine(he1kKatTableHex, 1, he1tHostPubHex, "bidBB", he1kKatTimeoutBidBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tHostSec, 13, he1tHead, he1tHostSec) into he1tWire
+   he1heTAssert "timeout: the host timeout bid chains (head 13)", \
+         he1heChainNextHex(he1tWire), he1kKatTimeoutBidHead13
+   -- the onion hello's trailing-seq trim frame: byte-pinned, and the extra
+   -- item must not disturb the token's verification (old-host compatible)
+   put textDecode(he1heAdmitTokenData(he1kKatTableHex, he1tPlayPubHex, he1tPlaySec, "player"), "utf-8") into he1tTokTxt
+   put "h" & tab & he1tTokTxt & tab & 42 into he1tFrameTxt
+   he1heTAssert "hello: the trim frame is byte-pinned", \
+         he1heBin2HexS(textEncode(he1tFrameTxt, "utf-8")), he1kKatHelloTrimHex
+   he1heTAssert "hello: the trailing seq does not disturb verification", \
+         he1heAdmitTokenVerify(textEncode(he1tTokTxt & tab & 42, "utf-8"), he1kKatTableHex), he1tPlayPubHex
+
+   try
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed1, "utf-8")), \
+            he1tHostBoxPub, he1tHostBoxSec
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed2, "utf-8")), \
+            he1tPlayBoxPub, he1tPlayBoxSec
+      sxBoxKeypairFromSeed he1heHash32(textEncode(he1kHeDomainSess & he1kKatIdSeed3, "utf-8")), \
+            he1tP3BoxPub, he1tP3BoxSec
+      get sxSeal(textEncode("probe", "utf-8"), he1tHostBoxPub)
+   catch he1tBoxErr
+      he1heTSkip "liveness: timed netsim hand", "SodiumXT box surface not available"
+      he1heTSkip "liveness: LIVE timed table (two machines, wall clocks)", \
+            "the 2e engine-era exit leg"
+      he1heTSkip "redial: LIVE tor host-stream loss + redial", \
+            "needs a running tor daemon + a second machine"
+      exit he1heTestLivenessRun
+   end try
+   sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed3), he1tP3Pub, he1tP3Sec
+   put he1heBin2HexS(he1tP3Pub) into he1tP3PubHex
+   put he1gGame into he1tSaved
+   put empty into he1gTNetPlay2G
+
+   -- ===== the timed netsim hand: host + player through the real handlers
+   he1heTNetPlayCtx "true", he1tHostPubHex, he1tHostSec, he1tHostBoxPub, he1tHostBoxSec, he1tHostPubHex, he1kKatIdSeed1
+   put "true" into he1gGame["admittedA"][he1tHostPubHex]
+   put "true" into he1gGame["admittedA"][he1tPlayPubHex]
+   put "host" into he1gGame["roleByPub"][he1tHostPubHex]
+   put "player" into he1gGame["roleByPub"][he1tPlayPubHex]
+   he1heNetSendAction "cfg", he1heLobbyCfgBody()
+   he1heHostEmitRoster
+   put he1gGame into he1gTNetHostG
+   he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
+   put he1gGame into he1gTNetPlayG
+   he1heTNetPump
+   put he1gTNetPlayG into he1gGame
+   he1heTAssert "cfg: the signed cfg carries the timer lengths (act/bank/miss)", \
+         he1heNetCfgVal("act", 0) & "/" & he1heNetCfgVal("bank", 0) & "/" & he1heNetCfgVal("miss", 0), \
+         he1kHeDefaultActSecs & "/" & he1kHeDefaultBankSecs & "/" & he1kHeDefaultMisses
+   put he1gGame into he1gTNetPlayG
+   put he1gTNetHostG into he1gGame
+   he1heNetStartGame
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   put he1gTNetPlayG["state"] into he1tStateA
+   he1heTAssert "timer: hand 1 dealt itself to the action", he1tStateA["phase"], "acting"
+   put he1tStateA["toAct"] into he1tSeatX
+   -- copy the turn keys out before chunking them (H6), and re-set the
+   -- delimiter after the pump (gotcha 5)
+   set the itemDelimiter to comma
+   put he1gTNetPlayG["turnKey"] into he1tKeyA
+   put he1gTNetHostG["turnKey"] into he1tKeyB
+   he1heTAssert "timer: the turn mark aims at the acting seat (both sides)", \
+         item 2 of he1tKeyA & "/" & item 2 of he1tKeyB, he1tSeatX & "/" & he1tSeatX
+
+   -- a PREMATURE forged host timeout is refused by the player's own clock
+   -- (throwaway copy; the honest stream never sees the poisoned chain)
+   put he1gTNetPlayG into he1tSnapG
+   put he1gTNetPlayG into he1gGame
+   put he1heTimeoutVerbOf(he1gGame["state"], he1tSeatX) into he1tVerb
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tHostPubHex, "act", \
+         "verb=" & he1tVerb & ",amount=0,seat=" & he1tSeatX & ",timeout=1,bank=1") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tHostSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "timer: a premature host timeout is refused + named", \
+         he1gGame["netLog"], "TIMEOUT-REFUSED"
+   he1heTAssert "timer: the refused timeout moved no action", he1gGame["state"]["toAct"], he1tSeatX
+   put he1tSnapG into he1gTNetPlayG
+
+   -- CATCH-UP CLOCKS (v0.24.0, F2). A client that learns of the turn from a
+   -- REPLAY starts its clock now, for a turn that opened minutes ago
+   -- everywhere else; the host's live timeout then arrives PAST the replay's
+   -- announced head, so the seq-keyed waiver cannot fire, and the old code
+   -- refused it as premature -- leaving that client one action behind for the
+   -- rest of the session with nothing on the chain to say so. The waiver keys
+   -- on the CLOCK now, and dies with its turn.
+   put he1gTNetPlayG into he1gGame
+   put empty into he1tBodyA
+   put he1heTimeoutVerbOf(he1gGame["state"], he1tSeatX) into he1tBodyA["verb"]
+   put "1" into he1tBodyA["bank"]
+   -- ...and a marker for a head we already hold is not a catch-up at all: it
+   -- would suspend react until the next live wire and mark THAT wire's turn
+   -- clock replayed, waiving one deadline check for nothing.
+   he1heTNetDeliver "r!" & tab & he1gGame["lastSeq"]
+   he1heTAssert "catchup: a marker for a head we already hold does not suspend", \
+         (he1gGame["catchUpTo"] is a number), "false"
+   put he1gGame["lastSeq"] + 3 into he1gGame["catchUpTo"]   -- a replay is streaming
+   put empty into he1gGame["turnKey"]                    -- so the next mark restarts
+   he1heNetTurnMark
+   he1heTAssert "catchup: a turn clock started during a replay is marked replayed", \
+         he1gGame["turnStale"], "true"
+   put empty into he1gGame["catchUpTo"]   -- the replay completed (react clears it)
+   he1heTAssert "catchup: the live timeout past the replay is waived, not refused", \
+         he1heNetTimeoutOk(he1tBodyA, he1tSeatX, "act", 0), empty
+   put empty into he1gGame["turnKey"]
+   he1heNetTurnMark                       -- a LIVE mark: the waiver must not survive
+   he1heTAssert "catchup: the waiver dies with its turn (the next turn is policed)", \
+         (he1heNetTimeoutOk(he1tBodyA, he1tSeatX, "act", 0) is not empty), "true"
+   put he1tSnapG into he1gTNetPlayG
+
+   -- AN ENGINE-REFUSED TIMEOUT (v0.24.0, F3 + F4). Forge a host timeout for
+   -- the seat that is NOT to act: it passes every verification (right
+   -- prescription for that seat, bank unspent, deadline genuinely passed on a
+   -- backdated clock) and then he1heBetApply refuses it as out of turn. Nothing
+   -- consensus may move on that: the seat keeps its one per-hand time-bank and
+   -- its miss count, and the host's timeoutSent latch -- which only
+   -- he1heNetTurnMark ever cleared, and he1heNetTurnMark does not run for a refused
+   -- fold -- must not stay stuck, or the host never re-emits and the table
+   -- stalls silently for the rest of the hand.
+   put he1gTNetPlayG into he1gGame
+   put empty into he1gGame["catchUpTo"]
+   put "false" into he1gGame["turnStale"]
+   put 3 - he1tSeatX into he1tSeatOther      -- heads-up: the seats are 1 and 2
+   put 1 into he1gGame["missCntBy"][he1tSeatOther]
+   put "true" into he1gGame["timeoutSent"]   -- as the emitting host would hold it
+   put he1gGame["turnStartMs"] - ((he1kHeDefaultActSecs + he1kHeDefaultBankSecs + 1) * 1000) \
+         into he1gGame["turnStartMs"]
+   put he1heTimeoutVerbOf(he1gGame["state"], he1tSeatOther) into he1tVerb
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tHostPubHex, "act", \
+         "verb=" & he1tVerb & ",amount=0,seat=" & he1tSeatOther & ",timeout=1,bank=1") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tHostSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "refused: an engine-rejected timeout is named in the feed", \
+         he1gGame["netLog"], "engine refused that timeout"
+   he1heTAssert "refused: it spends no time-bank and counts no miss", \
+         he1gGame["oDeal"]["bankUsedBy"][he1tSeatOther] & "/" & he1gGame["missCntBy"][he1tSeatOther], "/1"
+   he1heTAssert "refused: the timeout latch is cleared, so the host re-emits", \
+         he1gGame["timeoutSent"], "false"
+   -- ...and the twin on the LIVE path (F5): an out-of-turn act the engine
+   -- throws away must not reset the seat's miss count, or a stalling client
+   -- holds itself at zero misses forever and is never sat out.
+   put 1 into he1gGame["missCntBy"][he1tSeatOther]
+   put he1gGame["pubBySeat"][he1tSeatOther] into he1tOtherPub
+   if he1tOtherPub is he1tPlayPubHex then
+      put he1tPlaySec into he1tOtherSec
+   else
+      put he1tHostSec into he1tOtherSec
+   end if
+   put he1heEnvContentLine(he1kKatTableHex, he1gGame["handNum"], he1tOtherPub, "act", \
+         "verb=check,amount=0") into he1tEvilC
+   put he1heWireBuild(he1tEvilC, he1tOtherSec, he1gGame["lastSeq"] + 1, he1gGame["chainHeadHex"], he1tHostSec) into he1tEvil
+   he1heNetIngestWire he1tEvil
+   he1heTContains "refused: the out-of-turn act is engine-rejected", \
+         he1gGame["netLog"], "engine-rejected act"
+   he1heTAssert "refused: a rejected act does not reset the seat's miss count", \
+         he1gGame["missCntBy"][he1tSeatOther], 1
+   put he1tSnapG into he1gTNetPlayG
+
+   -- expiry for real: backdate BOTH clocks past act+bank, tick the HOST --
+   -- it emits the signed timeout (bank=1), both sides verify and fold it,
+   -- and the fold-win hand settles itself through the react engines
+   put he1gTNetHostG["turnStartMs"] - ((he1kHeDefaultActSecs + he1kHeDefaultBankSecs + 1) * 1000) \
+         into he1gTNetHostG["turnStartMs"]
+   put he1gTNetPlayG["turnStartMs"] - ((he1kHeDefaultActSecs + he1kHeDefaultBankSecs + 1) * 1000) \
+         into he1gTNetPlayG["turnStartMs"]
+   put he1gTNetHostG into he1gGame
+   he1heNetActTimerTick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   he1heTContains "timer: the host emitted and both folded the timeout", \
+         he1gTNetPlayG["netLog"], "t-out  seat " & he1tSeatX
+   he1heTAssert "timer: the timeout consumed the seat's time-bank (both sides)", \
+         he1gTNetPlayG["oDeal"]["bankUsedBy"][he1tSeatX] & "/" & he1gTNetHostG["oDeal"]["bankUsedBy"][he1tSeatX], \
+         "true/true"
+   he1heTAssert "timer: one recorded miss on the timed-out seat", \
+         he1gTNetPlayG["missCntBy"][he1tSeatX] & "/" & he1gTNetHostG["missCntBy"][he1tSeatX], "1/1"
+   he1heTAssert "timer: hand 1 settled on both sides after the timeout fold", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true"
+
+   -- hand 2: the OTHER seat opens voluntarily (a live act resets ITS miss
+   -- count), then the hand-1 offender times out AGAIN -> second consecutive
+   -- miss -> AUTO-SIT-OUT (transcript-derived, both sides agree); its later
+   -- turns this hand time out INSTANTLY (no backdating) and the hand still
+   -- reaches a clean settle
+   put he1gTNetHostG into he1gGame
+   he1heNetHandKick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   put he1gTNetPlayG["state"] into he1tStateA
+   put he1tStateA["toAct"] into he1tSeatY
+   he1heTAssert "sitout: the heads-up button alternated (a fresh clock subject)", \
+         (he1tSeatY is not he1tSeatX), "true"
+   put he1tStateA["betCur"] - he1tStateA["streetBy"][he1tSeatY] into he1tOwe
+   he1heTNetAct he1tSeatY, "verb=call,amount=" & he1tOwe
+   he1heTAssert "sitout: the action moved to the hand-1 offender", \
+         he1gTNetPlayG["state"]["toAct"], he1tSeatX
+   put he1gTNetHostG["turnStartMs"] - ((he1kHeDefaultActSecs + he1kHeDefaultBankSecs + 1) * 1000) \
+         into he1gTNetHostG["turnStartMs"]
+   put he1gTNetPlayG["turnStartMs"] - ((he1kHeDefaultActSecs + he1kHeDefaultBankSecs + 1) * 1000) \
+         into he1gTNetPlayG["turnStartMs"]
+   put he1gTNetHostG into he1gGame
+   he1heNetActTimerTick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   he1heTContains "sitout: two consecutive misses sit the seat out (named)", \
+         he1gTNetPlayG["netLog"], "sits out after 2 missed turns"
+   he1heTAssert "sitout: both sides agree the seat sits out", \
+         he1gTNetPlayG["sitOutBy"][he1tSeatX] & "/" & he1gTNetHostG["sitOutBy"][he1tSeatX], "true/true"
+   -- drive hand 2 to its settle: the sat-out seat's turns are INSTANT host
+   -- timeouts (limit 0 -- no backdating), the live seat checks through
+   repeat with he1tStep = 1 to 30
+      put he1gTNetPlayG["state"] into he1tStateA
+      if he1tStateA["phase"] is not "acting" then
+         exit repeat
+      end if
+      put he1tStateA["toAct"] into he1tSeat
+      if he1gTNetPlayG["sitOutBy"][he1tSeat] is "true" then
+         put he1gTNetHostG into he1gGame
+         he1heNetActTimerTick
+         put he1gGame into he1gTNetHostG
+         he1heTNetPump
+      else
+         put he1tStateA["betCur"] - he1tStateA["streetBy"][he1tSeat] into he1tOwe
+         if he1tOwe > 0 then
+            he1heTNetAct he1tSeat, "verb=call,amount=" & min(he1tOwe, he1tStateA["stackBy"][he1tSeat])
+         else
+            he1heTNetAct he1tSeat, "verb=check,amount=0"
+         end if
+      end if
+   end repeat
+   he1heTAssert "sitout: hand 2 still settled cleanly around the sat-out seat", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true"
+   he1heTAssert "sitout: chips conserved through the instant timeouts", \
+         he1gTNetPlayG["stacksBy"][1] + he1gTNetPlayG["stacksBy"][2], 800
+   -- the next boundary deals the sat-out seat OUT -- and with only one live
+   -- seat the table WAITS instead of declaring game over
+   put he1gTNetHostG into he1gGame
+   he1heTAssert "sitout: the next-hand occupants exclude the sat-out seat", \
+         he1heNetNextOccList(), he1tSeatY
+   -- F10: the "seated with chips" scan is ONE definition with two readers --
+   -- he1heNetNextOccList filters it by sit-out, he1heNetHandKick counts it to tell
+   -- an over table from a parked one. he1heNetHandKick used to carry its own
+   -- copy, which only the second of those two rules was ever pinned against.
+   he1heTAssert "sitout: one occupancy rule, two readers (chips vs chips-and-in)", \
+         he1heNetSeatedWithChipsList() & "/" & he1heNetNextOccList(), \
+         he1gGame["seatedList"] & "/" & he1tSeatY
+   put he1gGame["handNum"] into he1tHandBefore
+   he1heNetHandKick
+   he1heTAssert "sitout: one live seat parks the table (no hand dealt)", \
+         he1gGame["handNum"], he1tHandBefore
+   he1heTAssert "sitout: the park is LATCHED so any path can re-arm the beat", \
+         he1gGame["handWait"], "true"
+   -- F6: the between-hands beat must fire from that latch whatever phase the
+   -- table is in -- a park reached from he1heNetStartGame leaves the phase at
+   -- "idle", and the old phase-only guard killed the re-armed beat on its
+   -- first firing, so the table could never deal again however many players
+   -- returned. Driven on a throwaway copy (it deals a whole hand).
+   put he1gGame into he1tSnapH
+   put "idle" into he1gGame["phase"]
+   put empty into he1gGame["sitOutBy"]
+   he1heNetNextHandTick
+   he1heTAssert "sitout: the parked beat deals once seats return, in any phase", \
+         (he1gGame["handNum"] > he1tHandBefore) & "/" & he1gGame["handWait"], "true/false"
+   put he1tSnapH into he1gGame
+   put he1gGame into he1gTNetHostG
+   -- the voluntary form: the LIVE seat stands by its own signed wire, then
+   -- returns -- both folds seat-scoped, both sides in agreement
+   put he1gTNetPlayG into he1gGame
+   if he1heNetMySeat() is he1tSeatY then
+      he1heNetSendAction "stand", "seat=" & he1tSeatY
+      put he1gGame into he1gTNetPlayG
+   else
+      put he1gGame into he1gTNetPlayG
+      put he1gTNetHostG into he1gGame
+      he1heNetSendAction "stand", "seat=" & he1tSeatY
+      put he1gGame into he1gTNetHostG
+   end if
+   he1heTNetPump
+   he1heTAssert "sitout: a seat's own stand wire folds on both sides", \
+         he1gTNetPlayG["sitOutBy"][he1tSeatY] & "/" & he1gTNetHostG["sitOutBy"][he1tSeatY], "true/true"
+   put he1gTNetPlayG into he1gGame
+   if he1heNetMySeat() is he1tSeatY then
+      he1heNetSendAction "sit", "seat=" & he1tSeatY
+      put he1gGame into he1gTNetPlayG
+   else
+      put he1gGame into he1gTNetPlayG
+      put he1gTNetHostG into he1gGame
+      he1heNetSendAction "sit", "seat=" & he1tSeatY
+      put he1gGame into he1gTNetHostG
+   end if
+   he1heTNetPump
+   he1heTAssert "sitout: the return wire clears the state on both sides", \
+         (he1gTNetPlayG["sitOutBy"][he1tSeatY] is not "true" \
+         and he1gTNetHostG["sitOutBy"][he1tSeatY] is not "true"), "true"
+   -- the auto-sat-out seat returns too (re-enters next hand)
+   put he1gTNetPlayG into he1gGame
+   if he1heNetMySeat() is he1tSeatX then
+      he1heNetSendAction "sit", "seat=" & he1tSeatX
+      put he1gGame into he1gTNetPlayG
+   else
+      put he1gGame into he1gTNetPlayG
+      put he1gTNetHostG into he1gGame
+      he1heNetSendAction "sit", "seat=" & he1tSeatX
+      put he1gGame into he1gTNetHostG
+   end if
+   he1heTNetPump
+   he1heTAssert "sitout: the auto-sat-out seat's return clears its misses", \
+         he1gTNetPlayG["sitOutBy"][he1tSeatX] & "/" & he1gTNetPlayG["missCntBy"][he1tSeatX], "/0"
+   -- F6, the half that actually heals a parked table: the RETURN unparks it.
+   -- The sit-return fold used to clear sitOutBy and stop there, so with the
+   -- beat off (or dead, above) the returning player saw Return succeed and the
+   -- table simply never dealt again. The react engine now kicks the moment the
+   -- folded transcript says two seats are dealable -- on the same pass that
+   -- folded the return, so no timer has to be alive for it.
+   he1heTAssert "sitout: the second return UNPARKS the table (a hand deals itself)", \
+         (he1gTNetHostG["handNum"] > he1tHandBefore) & "/" & he1gTNetHostG["handWait"], "true/false"
+
+   -- ===== LATE-JOIN: a third identity arrives mid-session -- full replay
+   -- (the standing machinery), joins, and the host seats it at the next
+   -- hand boundary; the joiner must reach the identical fold state
+   put he1gTNetHostG into he1gGame
+   put "true" into he1gGame["admittedA"][he1tP3PubHex]
+   put "player" into he1gGame["roleByPub"][he1tP3PubHex]
+   -- the transport handle a real rp1/onion handshake would have registered.
+   -- The loopback pump delivers frames without one, and since v0.24.0 (F7)
+   -- the boundary seats only keys that are PRESENT -- so the sim has to be
+   -- as honest about presence as the transport is.
+   put 3 into he1gGame["peerByPub"][he1tP3PubHex]
+   put he1tP3PubHex into he1gGame["peerPubA"][3]
+   he1heNetReplayLogTo 0
+   he1heHostEmitRoster
+   put he1gGame into he1gTNetHostG
+   he1heTNetPlayCtx "false", he1tP3PubHex, he1tP3Sec, he1tP3BoxPub, he1tP3BoxSec, he1tHostPubHex, he1kKatIdSeed3
+   put he1gGame into he1gTNetPlay2G
+   he1heTNetPump
+   he1heTAssert "latejoin: the replayed joiner reaches the host's chain head", \
+         he1gTNetPlay2G["chainHeadHex"], he1gTNetHostG["chainHeadHex"]
+   he1heTAssert "latejoin: the joiner bound its session box on-chain", \
+         (he1gTNetHostG["boxByPub"][he1tP3PubHex] is not empty), "true"
+   put he1gTNetHostG into he1gGame
+   he1heNetHandKick
+   put he1gGame into he1gTNetHostG
+   he1heTNetPump
+   he1heTAssert "latejoin: the host seats the joiner at the boundary (seat 3)", \
+         he1gTNetPlay2G["seatByPub"][he1tP3PubHex] & "/" & he1gTNetHostG["seatByPub"][he1tP3PubHex], "3/3"
+   he1heTAssert "latejoin: the joiner's stack seeds from the signed cfg", \
+         he1gTNetPlay2G["stacksBy"][3], 400
+   put he1gTNetPlay2G["state"] into he1tStateA
+   he1heTAssert "latejoin: the next hand deals THREE seats", \
+         the number of items of he1tStateA["occ"], 3
+   he1heTAssert "latejoin: hand 3 dealt itself to the action everywhere", \
+         he1tStateA["phase"] & "/" & he1gTNetPlayG["state"]["phase"], "acting/acting"
+   -- check hand 3 down with three contexts, each acting from its own seat
+   repeat with he1tStep = 1 to 40
+      put he1gTNetHostG["state"] into he1tStateA
+      if he1tStateA["phase"] is not "acting" then
+         exit repeat
+      end if
+      put he1tStateA["toAct"] into he1tSeat
+      put he1tStateA["betCur"] - he1tStateA["streetBy"][he1tSeat] into he1tOwe
+      if he1tOwe > 0 then
+         put "verb=call,amount=" & min(he1tOwe, he1tStateA["stackBy"][he1tSeat]) into he1tVerb
+      else
+         put "verb=check,amount=0" into he1tVerb
+      end if
+      put he1gTNetPlayG into he1gGame
+      if he1heNetMySeat() is he1tSeat then
+         he1heNetSendAction "act", he1tVerb
+         put he1gGame into he1gTNetPlayG
+      else
+         put he1gGame into he1gTNetPlayG
+         put he1gTNetPlay2G into he1gGame
+         if he1heNetMySeat() is he1tSeat then
+            he1heNetSendAction "act", he1tVerb
+            put he1gGame into he1gTNetPlay2G
+         else
+            put he1gGame into he1gTNetPlay2G
+            put he1gTNetHostG into he1gGame
+            he1heNetSendAction "act", he1tVerb
+            put he1gGame into he1gTNetHostG
+         end if
+      end if
+      he1heTNetPump
+   end repeat
+   he1heTAssert "latejoin: hand 3 settles on every context", \
+         he1gTNetPlayG["oDeal"]["settleDone"] & "/" & he1gTNetPlay2G["oDeal"]["settleDone"] \
+         & "/" & he1gTNetHostG["oDeal"]["settleDone"], "true/true/true"
+   he1heTAssert "latejoin: identical fold state (one chain head everywhere)", \
+         (he1gTNetPlayG["chainHeadHex"] is he1gTNetHostG["chainHeadHex"] \
+         and he1gTNetPlay2G["chainHeadHex"] is he1gTNetHostG["chainHeadHex"]), "true"
+   he1heTAssert "latejoin: three-seat chips conserved and agreed", \
+         he1gTNetPlay2G["stacksBy"][1] + he1gTNetPlay2G["stacksBy"][2] + he1gTNetPlay2G["stacksBy"][3] \
+         & "/" & (he1gTNetPlay2G["stacksBy"][1] is he1gTNetHostG["stacksBy"][1]), "1200/true"
+   -- GHOST SEATS (v0.24.0, F7): "has joined" is a historical fact, and it was
+   -- the only test the boundary applied -- so a peer that joined and then
+   -- closed its stack (still admitted, still in boxByPub: nothing ever clears
+   -- those) was handed the lowest empty seat and a full opening stack, timed
+   -- out every turn until two misses sat it out, and held that seat for the
+   -- rest of the session, because seats are never released. Both keys below
+   -- are fakes that never sign anything (the host signs the sit wires), and
+   -- the whole probe runs on a throwaway copy of the host context.
+   put he1gTNetHostG into he1gGame
+   put he1gGame into he1tSnapH
+   put he1heBin2HexS(he1heHash32(textEncode("ghost-key", "utf-8"))) into he1tGhostPub
+   put he1heBin2HexS(he1heHash32(textEncode("present-key", "utf-8"))) into he1tLivePub
+   put "true" into he1gGame["admittedA"][he1tGhostPub]
+   put he1tGhostPub into he1gGame["boxByPub"][he1tGhostPub]
+   put "true" into he1gGame["admittedA"][he1tLivePub]
+   put he1tLivePub into he1gGame["boxByPub"][he1tLivePub]
+   -- only the second one is PRESENT: a transport handle plus a fresh
+   -- last-heard stamp (what an applied wire or a handshake leaves behind)
+   put 11 into he1gGame["peerByPub"][he1tLivePub]
+   put the milliseconds into he1gGame["seenMsByPub"][he1tLivePub]
+   he1heNetSeatLateJoiners
+   he1heTAssert "latejoin: a joined-but-gone key is NOT seated (no ghost seats)", \
+         he1gGame["seatByPub"][he1tGhostPub], empty
+   he1heTAssert "latejoin: a key that IS present still gets its seat", \
+         (he1gGame["seatByPub"][he1tLivePub] is not empty), "true"
+   he1heTContains "latejoin: the refusal is named in the net feed", \
+         he1gGame["netLog"], "not seating"
+   put he1tSnapH into he1gGame
+   put he1gGame into he1gTNetHostG
+
+   -- ===== the redial-vs-election ORDERING (netCap; the dial itself needs
+   -- tor, so the attempt is probed): stream death arms the redial -- never
+   -- an instant election -- the backoff doubles per attempt, a host wire
+   -- applying resets the counter, and the 60 s watchdog's election always
+   -- concludes with the redial standing down
+   he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
+   put "onion" into he1gGame["transport"]
+   he1heNetOnionReset
+   put "true" into he1gGame["gameOn"]
+   put "ready" into he1gGame["oxState"]
+   put 7 into he1gGame["oxStream"]
+   put he1tHostPubHex into he1gGame["peerPubA"][7]
+   put 7 into he1gGame["peerByPub"][he1tHostPubHex]
+   put "1,2" into he1gGame["seatedList"]
+   put 400 into he1gGame["stacksBy"][1]
+   put 400 into he1gGame["stacksBy"][2]
+   put he1tHostPubHex into he1gGame["pubBySeat"][1]
+   put he1tPlayPubHex into he1gGame["pubBySeat"][2]
+   put 7 & return into he1gGame["oxDeadList"]
+   he1heNetOnionDead
+   he1heTAssert "redial: stream death arms the redial, never an instant election", \
+         he1gGame["hostLost"] & "/" & he1gGame["oxState"] & "/" & he1gGame["oxRedialN"], "false/redial/1"
+   he1heTAssert "redial: attempt 1 waits the base backoff", he1gGame["oxRedialWait"], 8
+   repeat with he1tLoop = 1 to 8
+      he1heNetOnionTick
+   end repeat
+   he1heTAssert "redial: the attempt fires when the wait expires", he1gGame["oxRedialProbe"], 1
+   he1heNetOnionRedialArm
+   he1heTAssert "redial: a failed attempt doubles the backoff", \
+         he1gGame["oxRedialN"] & "/" & he1gGame["oxRedialWait"], "2/16"
+   -- F1: a DIAL failure mid-redial re-arms the schedule. It must never take
+   -- the join-time fail-closed path: that calls he1heNetStop, which clears
+   -- he1gGame["online"] and cancels the poll tick -- and he1heNetHostLossCheck exits
+   -- on its first line when online is not "true", so the election watchdog
+   -- would never conclude and attempts 2..4 would never fire. The bounded
+   -- four-attempt schedule collapsed into one, with no host and no successor.
+   he1heNetOnionDialFail "SOCKS refused (simulated)"
+   he1heTAssert "redial: a mid-redial dial failure re-arms, never fails closed", \
+         he1gGame["oxRedialN"] & "/" & he1gGame["oxState"] & "/" & he1gGame["online"], "3/redial/true"
+   he1heTContains "redial: the failed attempt is named in the feed", \
+         he1gGame["netLog"], "redial attempt 2 failed"
+   he1heTAssert "redial: a re-armed schedule keeps the election pending", \
+         he1gGame["hostLost"], "false"
+   -- proof the host answered is a host-signed wire APPLYING: counter resets
+   put he1heEnvContentLine(he1kKatTableHex, 0, he1tHostPubHex, "cfg", he1kKatLobbyCfgBody) into he1tContent
+   put he1heWireBuild(he1tContent, he1tHostSec, 1, he1kHeGenesisPrev, he1tHostSec) into he1tWire
+   he1heNetIngestWire he1tWire
+   he1heTAssert "redial: a host wire applying resets the attempt counter", \
+         he1gGame["oxRedialN"] & "/" & he1gGame["hostQuietTicks"], "0/0"
+   -- ...but when the host stays gone, the WATCHDOG election concludes and
+   -- the redial stands down without clobbering the election's message
+   he1heNetOnionRedialArm
+   put he1kHeHostLossTicks into he1gGame["hostQuietTicks"]
+   he1heNetHostLossCheck
+   he1heTAssert "redial: the watchdog election still concludes (successor named)", \
+         he1gGame["hostLost"] & "/" & (he1gGame["electedHostPubHex"] is not empty), "true/true"
+   he1heNetOnionTick
+   he1heTAssert "redial: after the election the redial stands down", he1gGame["oxState"], "failed"
+   he1heTContains "redial: the stand-down is named in the net feed", he1gGame["netLog"], "stood down"
+
+   -- F8: the OTHER way out of the redial state -- the attempts running out --
+   -- must behave the same way. It ran the election (which names the elected
+   -- successor on the status line) and then called he1heNetOnionFail two lines
+   -- later, whose own status write overwrote exactly that message: the player
+   -- was told to "Join again" and never told WHO was elected. Both exits are
+   -- the quiet stand-down now.
+   he1heTNetPlayCtx "false", he1tPlayPubHex, he1tPlaySec, he1tPlayBoxPub, he1tPlayBoxSec, he1tHostPubHex, he1kKatIdSeed2
+   put "onion" into he1gGame["transport"]
+   he1heNetOnionReset
+   put "true" into he1gGame["gameOn"]
+   put "1,2" into he1gGame["seatedList"]
+   put 400 into he1gGame["stacksBy"][1]
+   put 400 into he1gGame["stacksBy"][2]
+   put he1tHostPubHex into he1gGame["pubBySeat"][1]
+   put he1tPlayPubHex into he1gGame["pubBySeat"][2]
+   put he1kHeRedialMax into he1gGame["oxRedialN"]   -- the last attempt just failed
+   he1heNetOnionRedialArm
+   he1heTAssert "redial: exhaustion concludes the election itself", \
+         he1gGame["hostLost"] & "/" & (he1gGame["electedHostPubHex"] is not empty), "true/true"
+   he1heTContains "redial: the elected successor stays on the status line", \
+         he1gGame["statusTxt"], "elected host"
+   he1heTAssert "redial: the exhausted stand-down never clobbers that message", \
+         (he1gGame["statusTxt"] contains "Hotseat still works"), "false"
+   he1heTContains "redial: the tor line says the election concluded", \
+         he1gGame["oxFailTxt"], "election concluded"
+
+   -- the redial hello's trim mark, through the REAL router on the HOST:
+   -- a reconnecting peer naming applied seq 2 of 3 gets marker + wire 3 only
+   he1heTNetPlayCtx "true", he1tHostPubHex, he1tHostSec, he1tHostBoxPub, he1tHostBoxSec, he1tHostPubHex, he1kKatIdSeed1
+   put "true" into he1gGame["admittedA"][he1tHostPubHex]
+   put "true" into he1gGame["admittedA"][he1tPlayPubHex]
+   put "host" into he1gGame["roleByPub"][he1tHostPubHex]
+   put "player" into he1gGame["roleByPub"][he1tPlayPubHex]
+   he1heNetSendAction "cfg", he1heLobbyCfgBody()
+   he1heNetSendAction "chat", "hi=1"
+   he1heNetSendAction "chat", "hi=2"
+   put 5 into he1gGame["peerByPub"][he1tPlayPubHex]
+   put he1tPlayPubHex into he1gGame["peerPubA"][5]
+   put empty into he1gGame["netOutbox"]
+   he1heNetOnMessage 9, textEncode("h" & tab & he1tTokTxt & tab & 2, "utf-8")
+   put he1gGame["netOutbox"] into he1tOutboxTxt
+   put 0 into he1tWireN
+   repeat for each line he1tLineTxt in he1tOutboxTxt
+      if char 1 to 2 of he1tLineTxt is "w" & tab then
+         add 1 to he1tWireN
+      end if
+   end repeat
+   he1heTAssert "redial: the hello's seq mark trims the reconnect replay to the tail", \
+         he1tWireN & "/" & the number of lines of he1tOutboxTxt, "1/3"
+   he1heTContains "redial: the trimmed replay still leads with the catch-up marker", \
+         he1tOutboxTxt, "r!" & tab
+
+   put empty into he1gTNetHostG
+   put empty into he1gTNetPlayG
+   put empty into he1gTNetPlay2G
+   put he1tSaved into he1gGame
+
+   -- what only the real world can verify -- say so, by name (the honesty
+   -- convention): wall clocks, real latency, a real tor stream dying.
+   he1heTSkip "liveness: LIVE timed table (act timer + time-bank on two machines, wall clocks)", \
+         "the 2e engine-era exit leg -- let a seat time out for real"
+   he1heTSkip "redial: LIVE tor host-stream loss + redial (trimmed resync)", \
+         "needs a running tor daemon + a second machine, host killed and restarted"
+end he1heTestLivenessRun
+
+function he1heTIdxOf pNamesTxt
+   local he1tOut, he1tNameTxt, he1tNames
+   set the itemDelimiter to comma
+   put pNamesTxt into he1tNames
+   replace comma with space in he1tNames
+   put empty into he1tOut
+   repeat for each word he1tNameTxt in he1tNames
+      put he1heCardIndex(he1tNameTxt) & comma after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heTIdxOf
+
+function he1heTNamesOf pIdxList
+   local he1tOut, he1tIdx
+   set the itemDelimiter to comma
+   put empty into he1tOut
+   repeat for each item he1tIdx in pIdxList
+      put he1heCardName(he1tIdx) & comma after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heTNamesOf
+
+function he1heTVectors
+   local he1tVecs
+   put empty into he1tVecs
+   put "As Ks Qs Js Ts 2c 3d|081400000000|royal flush" & return after he1tVecs
+   put "9h 8h 7h 6h 5h Ad Kc|080900000000|straight flush 9 high" & return after he1tVecs
+   put "Ah 2h 3h 4h 5h Kd Qc|080500000000|wheel straight flush high=5" & return after he1tVecs
+   put "Ah 2h 3h 4h 5h Kh Qh|080500000000|steel wheel not outranked by flush" & return after he1tVecs
+   put "Qc Qd Qh Qs Ad 2c 3c|071214000000|quads with best kicker" & return after he1tVecs
+   put "8c 8d 8h 8s Kd 2c 2d|070813000000|quads on board, kicker decides" & return after he1tVecs
+   put "Ac Ad Ah Kc Kd Kh Qs|061413000000|boat over boat: two trips" & return after he1tVecs
+   put "2c 2d 2h 3c 3d Ah Kh|060203000000|boat: low trips high pair" & return after he1tVecs
+   put "9h 8h 6h 5h 2h 7c Td|050908060502|flush beats mixed straight" & return after he1tVecs
+   put "Ah Qh Th 8h 6h 4h 2h|051412100806|flush best five of seven suited" & return after he1tVecs
+   put "As Kd Qh Js Tc 2c 3d|041400000000|broadway straight" & return after he1tVecs
+   put "As Kd Qh Js Tc 4h 5s|041400000000|board plays: same broadway" & return after he1tVecs
+   put "Ad 2c 3h 4s 5d Kc Qh|040500000000|wheel straight mixed suits" & return after he1tVecs
+   put "2c 3d 4h 5s 6c 7d 8h|040800000000|seven-card run picks best high" & return after he1tVecs
+   put "8c 7d 6h 5s 4c 8d 4d|040800000000|straight through paired board" & return after he1tVecs
+   put "Ac Kd Qh Js 9c 2d 3h|001413121109|A-K-Q-J-9 is no straight" & return after he1tVecs
+   put "Ac Ad Ah Kc Qd 9s 2c|031413120000|trips with two kickers" & return after he1tVecs
+   put "Ac Ad Kc Kd Qc Qd 2h|021413120000|two pair from three pairs" & return after he1tVecs
+   put "9c 9d 8c 8d 2h 2s Ac|020908140000|two pair lone ace outkicks" & return after he1tVecs
+   put "Jc Jd 4c 4d 9h 8s Ah|021104140000|plain two pair ace kicker" & return after he1tVecs
+   put "Ac Ad Kc Qd 9s 5h 2c|011413120900|one pair three kickers" & return after he1tVecs
+   put "7c 7d 7h 4c 4d 4h As|060704000000|full house from two trips low" & return after he1tVecs
+   put "2c 2d 2h 2s Ac 7d 5h|070214000000|quads of deuces ace kicker" & return after he1tVecs
+   put "Kh Jh Th 9h 8h 7h 2c|081100000000|six-card flush hides a J-high SF" & return after he1tVecs
+   put "2c 3d 4h 5s 6c Ac Kd|040600000000|6-high straight chosen over the wheel" & return after he1tVecs
+   put "Ac Ad Ah Kc Kd Qc Qd|061413000000|boat picks the higher of two pairs" & return after he1tVecs
+   return he1tVecs
+end he1heTVectors
+
+command he1heTestEvaluatorRun
+   local he1tVecLine, he1tExpect, he1tLabel, he1tIdxList, he1tBase, he1tPermLines, he1tPermLine
+   local he1tPermuted, he1tPos, he1tResA, he1tPairI, he1tPairJ, he1tBad, he1tVecCount, he1tA, he1tBv
+   put "-- 1. evaluator (spec 8.2)" & return after he1gRpt
+   repeat for each line he1tVecLine in he1heTVectors()
+      set the itemDelimiter to "|"
+      put item 2 of he1tVecLine into he1tExpect
+      put item 3 of he1tVecLine into he1tLabel
+      put he1heTIdxOf(item 1 of he1tVecLine) into he1tIdxList
+      he1heTAssert "eval: " & he1tLabel, he1heEval7(he1tIdxList), he1tExpect
+   end repeat
+
+   put "7,6,5,4,3,2,1" & return & "4,5,6,7,1,2,3" & return \
+         & "2,4,6,1,3,5,7" & return & "5,1,7,3,6,2,4" into he1tPermLines
+   put 0 into he1tBad
+   repeat for each line he1tVecLine in he1heTVectors()
+      set the itemDelimiter to "|"
+      put he1heTIdxOf(item 1 of he1tVecLine) into he1tIdxList
+      set the itemDelimiter to comma
+      put he1heEval7(he1tIdxList) into he1tBase
+      repeat for each line he1tPermLine in he1tPermLines
+         put empty into he1tPermuted
+         repeat for each item he1tPos in he1tPermLine
+            put item he1tPos of he1tIdxList & comma after he1tPermuted
+         end repeat
+         delete char -1 of he1tPermuted
+         if he1heEval7(he1tPermuted) is not he1tBase then
+            add 1 to he1tBad
+         end if
+      end repeat
+   end repeat
+   he1heTAssert "eval: order independence (26 hands x 4 permutations)", he1tBad, 0
+
+   put 0 into he1tPos
+   repeat for each line he1tVecLine in he1heTVectors()
+      set the itemDelimiter to "|"
+      add 1 to he1tPos
+      put he1heEval7(he1heTIdxOf(item 1 of he1tVecLine)) into he1tResA[he1tPos]
+   end repeat
+   put he1tPos into he1tVecCount
+   put 0 into he1tBad
+   repeat with he1tPairI = 1 to he1tVecCount - 1
+      repeat with he1tPairJ = he1tPairI + 1 to he1tVecCount
+         put he1tResA[he1tPairI] > he1tResA[he1tPairJ] into he1tA
+         put he1tResA[he1tPairJ] > he1tResA[he1tPairI] into he1tBv
+         if he1tResA[he1tPairI] is he1tResA[he1tPairJ] then
+            if he1tA or he1tBv then
+               add 1 to he1tBad
+            end if
+         else
+            if he1tA is he1tBv then
+               add 1 to he1tBad
+            end if
+         end if
+      end repeat
+   end repeat
+   he1heTAssert "eval: antisymmetry over all vector pairs", he1tBad, 0
+   -- leave the delimiter as the house default, not the "|" this section parses
+   -- vectors with (gotcha 5: it is global state and the next section inherits it)
+   set the itemDelimiter to comma
+end he1heTestEvaluatorRun
+
+function he1heTNewHand pSB, pBB, pStacksList, pOccList, pButtonSeat
+   -- ante-free wrapper for the existing betting cases; he1heTNewHandAnte adds antes
+   local he1tStacksA, he1tPos, he1tSeatNum
+   set the itemDelimiter to comma
+   put 0 into he1tPos
+   repeat for each item he1tSeatNum in pOccList
+      add 1 to he1tPos
+      put item he1tPos of pStacksList into he1tStacksA[he1tSeatNum]
+   end repeat
+   return he1heBetNewHand(pSB, pBB, 0, he1tStacksA, pOccList, pButtonSeat)
+end he1heTNewHand
+
+function he1heTNewHandAnte pSB, pBB, pAnte, pStacksList, pOccList, pButtonSeat
+   local he1tStacksA, he1tPos, he1tSeatNum
+   set the itemDelimiter to comma
+   put 0 into he1tPos
+   repeat for each item he1tSeatNum in pOccList
+      add 1 to he1tPos
+      put item he1tPos of pStacksList into he1tStacksA[he1tSeatNum]
+   end repeat
+   return he1heBetNewHand(pSB, pBB, pAnte, he1tStacksA, pOccList, pButtonSeat)
+end he1heTNewHandAnte
+
+function he1heTBlinds pStateA
+   local he1tStateA
+   put he1heBetApply(pStateA, "bidSB", pStateA["sbSeat"], \
+         min(pStateA["sb"], pStateA["stackBy"][pStateA["sbSeat"]])) into he1tStateA
+   put he1heBetApply(he1tStateA, "bidBB", he1tStateA["bbSeat"], \
+         min(he1tStateA["bb"], he1tStateA["stackBy"][he1tStateA["bbSeat"]])) into he1tStateA
+   return he1tStateA
+end he1heTBlinds
+
+function he1heTAct pStateA, pSeatNum, pVerbAmt, pExpectErr, pLabel
+   local he1tStateA
+   put he1heBetApply(pStateA, "act", pSeatNum, pVerbAmt) into he1tStateA
+   he1heTAssert pLabel, he1tStateA["err"], pExpectErr
+   if he1tStateA["err"] is empty then
+      return he1tStateA
+   end if
+   return pStateA
+end he1heTAct
+
+function he1heTDeltasTxt pDeltasA, pOccList
+   local he1tOut, he1tSeatNum
+   set the itemDelimiter to comma
+   put empty into he1tOut
+   repeat for each item he1tSeatNum in pOccList
+      put he1tSeatNum & ":" & pDeltasA[he1tSeatNum] & "|" after he1tOut
+   end repeat
+   delete char -1 of he1tOut
+   return he1tOut
+end he1heTDeltasTxt
+
+command he1heTestBettingRun
+   local he1tStateA, he1tDeltasA, he1tRanksA
+   put return & "-- 2. betting engine (spec 8.1) + settlement (8.3)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into he1tStateA
+   he1heTAssert "bet: preflop first to act is left of BB", he1tStateA["toAct"], 1
+   put he1heTAct(he1tStateA, 1, "raise,3", "raise-below-minimum", "bet: raise under min rejected") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,4", empty, "bet: min raise accepted") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "raise,5", "raise-below-minimum", "bet: re-raise under min rejected") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "raise,6", empty, "bet: re-raise at min accepted") into he1tStateA
+   he1heTAssert "bet: raiseFull tracks the full raise", he1tStateA["raiseFull"], 2
+
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,13,100", "1,2,3", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,2", empty, "bet: limp accepted") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,1", empty, "bet: sb completes") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", empty, "bet: bb checks option") into he1tStateA
+   he1heTAssert "bet: flop reached", he1tStateA["street"], "flop"
+   put he1heTAct(he1tStateA, 2, "check,0", empty, "bet: flop check") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "bet,10", empty, "bet: flop bet 10") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,10", empty, "bet: flop call") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "allin,11", empty, "bet: under-raise all-in accepted") into he1tStateA
+   he1heTAssert "bet: betCur moves to 11 on the under-raise", he1tStateA["betCur"], 11
+   he1heTAssert "bet: raiseFull stays 10 after under-raise", he1tStateA["raiseFull"], 10
+   put he1heTAct(he1tStateA, 3, "raise,25", "raise-not-reopened", "bet: bettor cannot re-raise under-raise") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "call,1", empty, "bet: bettor calls the extra") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,25", "raise-not-reopened", "bet: caller cannot re-raise either") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,1", empty, "bet: caller calls the extra") into he1tStateA
+   he1heTAssert "bet: street closes to turn", he1tStateA["street"], "turn"
+
+   -- BB option: limps come back to the BB, who may RAISE its option, and the
+   -- limpers must then respond (mirror of betting-kat case_bb_option -- the
+   -- old harness only ever had the BB CHECK its option)
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,2", empty, "opt: utg limps") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,1", empty, "opt: sb completes") into he1tStateA
+   he1heTAssert "opt: action returns to the BB (option)", he1tStateA["toAct"], 3
+   put he1heTAct(he1tStateA, 3, "raise,6", empty, "opt: BB raises its option") into he1tStateA
+   he1heTAssert "opt: limpers must respond to the option raise", he1tStateA["toAct"], 1
+
+   -- checked-around street + the out-of-turn rejection (mirror of betting-kat
+   -- case_check_around -- the only out-of-turn pin, previously CI-only)
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,2", empty, "chk: limp") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,1", empty, "chk: sb completes") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", empty, "chk: bb checks its option") into he1tStateA
+   he1heTAssert "chk: flop opens on the sb", he1tStateA["toAct"], 2
+   put he1heTAct(he1tStateA, 3, "check,0", "act-out-of-turn", "chk: acting out of turn is rejected") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "check,0", empty, "chk: flop check 1") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", empty, "chk: flop check 2") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "check,0", empty, "chk: flop check 3") into he1tStateA
+   he1heTAssert "chk: a checked-around street advances", he1tStateA["street"], "turn"
+
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,50,20", "1,2,3", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "allin,100", empty, "pot: open shove") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "allin,50", empty, "pot: short call-allin") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "allin,20", empty, "pot: shorter call-allin") into he1tStateA
+   he1heTAssert "pot: hand runs out", he1tStateA["phase"], "runout"
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   he1heTAssert "pot: runout reaches showdown", he1tStateA["phase"], "showdown"
+   put empty into he1tRanksA
+   put "011413120900" into he1tRanksA[1]
+   put "021104140000" into he1tRanksA[2]
+   put "031413120000" into he1tRanksA[3]
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   he1heTAssert "pot: main 60 to s3, side 60 to s2, 50 back to s1", \
+         he1heTDeltasTxt(he1tDeltasA, he1tStateA["occ"]), "1:-50|2:10|3:40"
+
+   put he1heTNewHand(1, 2, "100,100", "2,5", 2) into he1tStateA
+   he1heTAssert "hu: button posts SB", he1tStateA["sbSeat"], 2
+   he1heTAssert "hu: other seat posts BB", he1tStateA["bbSeat"], 5
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   he1heTAssert "hu: button acts first preflop", he1tStateA["toAct"], 2
+   put he1heTAct(he1tStateA, 2, "call,1", empty, "hu: button completes") into he1tStateA
+   put he1heTAct(he1tStateA, 5, "check,0", empty, "hu: bb checks") into he1tStateA
+   he1heTAssert "hu: non-button acts first postflop", he1tStateA["toAct"], 5
+
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100", "1,2", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,6", empty, "fw: open raise") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "fold,0", empty, "fw: fold") into he1tStateA
+   he1heTAssert "fw: fold ends the hand", he1tStateA["phase"], "handdone"
+   put empty into he1tRanksA
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   he1heTAssert "fw: uncalled raise returned", he1heTDeltasTxt(he1tDeltasA, he1tStateA["occ"]), "1:2|2:-2"
+
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,2", empty, "split: limp") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,1", empty, "split: sb completes") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", empty, "split: bb checks") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "bet,9", empty, "split: flop bet") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "call,9", empty, "split: flop call 1") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,9", empty, "split: flop call 2") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "check,0", empty, "split: turn check 1") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", empty, "split: turn check 2") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "check,0", empty, "split: turn check 3") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "check,0", empty, "split: river check") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "bet,2", empty, "split: river bet") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "call,2", empty, "split: river call 1") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,2", empty, "split: river call 2") into he1tStateA
+   he1heTAssert "split: river aggressor shows first", he1heShowdownOrderOf(he1tStateA), "3,1,2"
+   put empty into he1tRanksA
+   put "041400000000" into he1tRanksA[1]
+   put "041400000000" into he1tRanksA[2]
+   put "011413120900" into he1tRanksA[3]
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   he1heTAssert "split: odd chip to first winner after button", \
+         he1heTDeltasTxt(he1tDeltasA, he1tStateA["occ"]), "1:6|2:7|3:-13"
+
+   put he1heTNewHand(1, 2, "1,2", "4,6", 4) into he1tStateA
+   put he1heBetApply(he1tStateA, "bidSB", 4, 1) into he1tStateA
+   he1heTAssert "blind: short SB posts all-in", he1tStateA["allinBy"][4], "true"
+   put he1heBetApply(he1tStateA, "bidBB", 6, 2) into he1tStateA
+   he1heTAssert "blind: both blinds all-in -> runout", he1tStateA["phase"], "runout"
+end he1heTestBettingRun
+
+command he1heTestAnteRun
+   -- antes are dead money: into the pot (handBy), NEVER the street bet, so a seat
+   -- still owes the full blind. Mirror of betting-kat case_antes / conservation.
+   local he1tStateA, he1tDeltasA, he1tRanksA, he1tSeatNum
+   put return & "-- 3. antes (dead money) + chip conservation" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   put he1heTNewHandAnte(1, 2, 1, "100,100,100", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, 1) into he1tStateA
+   end repeat
+   he1heTAssert "ante: dead money in the pot (s1 handBy)", he1tStateA["handBy"][1], 1
+   he1heTAssert "ante: not on the street bet (s1 streetBy)", he1tStateA["streetBy"][1], 0
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   he1heTAssert "ante: SB total = ante + small blind", he1tStateA["handBy"][2], 2
+   he1heTAssert "ante: BB total = ante + big blind", he1tStateA["handBy"][3], 3
+   put he1heTAct(he1tStateA, 1, "fold,0", empty, "ante: utg folds") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "fold,0", empty, "ante: sb folds") into he1tStateA
+   he1heTAssert "ante: fold-around ends the hand", he1tStateA["phase"], "handdone"
+   put empty into he1tRanksA
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   he1heTAssert "ante: dead money folds into the winner's pot", \
+         he1heTDeltasTxt(he1tDeltasA, he1tStateA["occ"]), "1:-1|2:-2|3:3"
+
+   put he1heTNewHandAnte(1, 2, 5, "100,100,1", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, min(5, he1tStateA["stackBy"][he1tSeatNum])) into he1tStateA
+   end repeat
+   he1heTAssert "ante: short seat posts what it has", he1tStateA["handBy"][3], 1
+   he1heTAssert "ante: short seat all-in for the ante", he1tStateA["allinBy"][3], "true"
+
+   put he1heTNewHandAnte(5, 10, 2, "200,200,200", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, 2) into he1tStateA
+   end repeat
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "allin,198", empty, "ante: s1 all-in 198") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "allin,198", empty, "ante: s2 all-in 198") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "allin,198", empty, "ante: s3 all-in 198") into he1tStateA
+   he1heTAssert "ante: three-way all-in runs out", he1tStateA["phase"], "runout"
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+   put empty into he1tRanksA
+   put "011413120900" into he1tRanksA[1]
+   put "021104140000" into he1tRanksA[2]
+   put "081400000000" into he1tRanksA[3]
+   put he1heSettleOf(he1tStateA, he1tRanksA) into he1tDeltasA
+   he1heTAssert "ante: winner scoops the 600 pot (each put in its whole 200)", \
+         he1heTDeltasTxt(he1tDeltasA, he1tStateA["occ"]), "1:-200|2:-200|3:400"
+
+   -- P0 regression pin (deep-dive): a blind-position seat that is short AFTER its
+   -- ante must be posted from the POST-ante stack, which is exactly what he1heHandStart
+   -- now caps by (he1gGame["state"]["stackBy"]). Seat 2 = SB, starts 55, ante 10 ->
+   -- post-ante stack 45, so its all-in small blind is 45, not min(50, pre-ante 55).
+   put he1heTNewHandAnte(50, 100, 10, "400,55,400", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, min(10, he1tStateA["stackBy"][he1tSeatNum])) into he1tStateA
+   end repeat
+   he1heTAssert "ante: short SB seat is short after its ante", he1tStateA["stackBy"][2], 45
+   put he1heBetApply(he1tStateA, "bidSB", 2, min(50, he1tStateA["stackBy"][2])) into he1tStateA
+   he1heTAssert "ante: short SB posts from the post-ante stack (he1heHandStart P0 fix)", he1tStateA["err"], empty
+   he1heTAssert "ante: short SB is all-in for ante + short blind", he1tStateA["handBy"][2], 55
+   -- and the OLD pre-ante cap (the bug the fix removes) is what the engine rejects:
+   put he1heTNewHandAnte(50, 100, 10, "400,55,400", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, min(10, he1tStateA["stackBy"][he1tSeatNum])) into he1tStateA
+   end repeat
+   put he1heBetApply(he1tStateA, "bidSB", 2, min(50, 55)) into he1tStateA
+   he1heTAssert "ante: a pre-ante blind cap is rejected (regression guard)", \
+         he1tStateA["err"], "bidSB-wrong-amount"
+
+   -- duplicate-post rejection (mirror of betting-kat case_duplicate_posts):
+   -- phase stays "blinds" until the BB posts, so without the posted flags a
+   -- transcript repeating a bidSB/bidAnte replayed clean AND audited clean
+   put he1heTNewHandAnte(1, 2, 1, "100,100,100", "1,2,3", 1) into he1tStateA
+   repeat with he1tSeatNum = 1 to 3
+      put he1heBetApply(he1tStateA, "bidAnte", he1tSeatNum, 1) into he1tStateA
+   end repeat
+   put he1heBetApply(he1tStateA, "bidAnte", 1, 1) into he1tStateA
+   he1heTAssert "ante: a repeated ante is rejected", he1tStateA["err"], "bidAnte-duplicate"
+   put he1heBetApply(he1tStateA, "bidAnte", 4, 1) into he1tStateA
+   he1heTAssert "ante: an ante from outside the hand is rejected", he1tStateA["err"], "bidAnte-wrong-seat"
+   put he1heBetApply(he1tStateA, "bidSB", 2, 1) into he1tStateA
+   he1heTAssert "ante: the first SB still posts clean", he1tStateA["err"], empty
+   put he1heBetApply(he1tStateA, "bidSB", 2, 1) into he1tStateA
+   he1heTAssert "ante: a repeated SB is rejected", he1tStateA["err"], "bidSB-duplicate"
+end he1heTestAnteRun
+
+command he1heTestLevelRun
+   -- tournament blind schedule: pure level selection by hand number (he1heLevelFor).
+   -- Mirror of betting-kat case_levels.
+   local he1tLv
+   put return & "-- 4. tournament blind levels (he1heLevelFor)" & return after he1gRpt
+   put "1/2/0;2/4/0;3/6/0;5/10/0;10/20/0;15/30/0;25/50/0;50/100/10" into he1tLv
+   he1heTAssert "level: hand 1 is level 1", he1heLevelFor(1, he1tLv, 8), "1,2,0"
+   he1heTAssert "level: last hand of level 1", he1heLevelFor(8, he1tLv, 8), "1,2,0"
+   he1heTAssert "level: first hand of level 2", he1heLevelFor(9, he1tLv, 8), "2,4,0"
+   he1heTAssert "level: hand 20 is level 3", he1heLevelFor(20, he1tLv, 8), "3,6,0"
+   he1heTAssert "level: hand 25 is level 4", he1heLevelFor(25, he1tLv, 8), "5,10,0"
+   he1heTAssert "level: top level carries an ante", he1heLevelFor(57, he1tLv, 8), "50,100,10"
+   he1heTAssert "level: clamps at the final level", he1heLevelFor(9999, he1tLv, 8), "50,100,10"
+   he1heTAssert "level: every=1 advances each hand", he1heLevelFor(3, he1tLv, 1), "3,6,0"
+   he1heTAssert "level: period 1 is level 1", he1heLevelForPeriod(1, he1tLv), "1,2,0"
+   he1heTAssert "level: period 4 is level 4", he1heLevelForPeriod(4, he1tLv), "5,10,0"
+   he1heTAssert "level: period clamps at the top", he1heLevelForPeriod(999, he1tLv), "50,100,10"
+   he1heTAssert "level: count of the default schedule", he1heLevelCount(he1tLv), 8
+end he1heTestLevelRun
+
+function he1heTLegalAllAccepted pStateA, pSeatNum
+   -- replay every line he1heBetLegal offers through he1heBetApply (the gate); returns
+   -- "ok" iff all are accepted, else the first rejected action. bet/raise offer
+   -- a MIN and a MAX (words 2 and 3) -- both must be accepted.
+   local he1tMenu, he1tLine, he1tVerb, he1tRes
+   put he1heBetLegal(pStateA, pSeatNum) into he1tMenu
+   repeat for each line he1tLine in he1tMenu
+      put word 1 of he1tLine into he1tVerb
+      switch he1tVerb
+         case "fold"
+         case "check"
+            put he1heBetApply(pStateA, "act", pSeatNum, he1tVerb & ",0") into he1tRes
+            break
+         case "call"
+         case "allin"
+            put he1heBetApply(pStateA, "act", pSeatNum, he1tVerb & comma & word 2 of he1tLine) into he1tRes
+            break
+         case "bet"
+         case "raise"
+            put he1heBetApply(pStateA, "act", pSeatNum, he1tVerb & comma & word 2 of he1tLine) into he1tRes
+            if he1tRes["err"] is empty then
+               put he1heBetApply(pStateA, "act", pSeatNum, he1tVerb & comma & word 3 of he1tLine) into he1tRes
+            end if
+            break
+      end switch
+      if he1tRes["err"] is not empty then
+         return "rejected:" & he1tLine & "(" & he1tRes["err"] & ")"
+      end if
+   end repeat
+   return "ok"
+end he1heTLegalAllAccepted
+
+command he1heTestLegalRun
+   -- he1heBetLegal must offer exactly the actions he1heBetApply accepts (the gate).
+   -- On-engine mirror of the legal-consistency fuzz in tools/logic-fuzz.py: for
+   -- reachable states, every action he1heBetLegal offers is replayed through
+   -- he1heBetApply and must be accepted. A bug here would show a player an illegal
+   -- move or hide a legal one -- a fairness bug.
+   local he1tStateA, he1tSeatNum
+   put return & "-- 5. he1heBetLegal: every offered action is accepted (spec 8.1)" & return after he1gRpt
+   set the itemDelimiter to comma
+   -- preflop, 3-handed, 100 each, button 1: first-to-act faces the big blind
+   put he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1) into he1tStateA
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   put he1tStateA["toAct"] into he1tSeatNum
+   he1heTAssert "legal: preflop first-to-act menu is non-empty", \
+         (he1heBetLegal(he1tStateA, he1tSeatNum) is not empty), "true"
+   he1heTAssert "legal: every preflop action offered is accepted", \
+         he1heTLegalAllAccepted(he1tStateA, he1tSeatNum), "ok"
+   -- the next seat now faces a raise (re-raise decision)
+   put he1heTAct(he1tStateA, he1tSeatNum, "raise,6", "", "legal: setup a raise to 6") into he1tStateA
+   put he1tStateA["toAct"] into he1tSeatNum
+   he1heTAssert "legal: every action offered facing a raise is accepted", \
+         he1heTLegalAllAccepted(he1tStateA, he1tSeatNum), "ok"
+   -- a short stack that cannot cover a full raise: menu still all-accepted
+   put he1heTNewHand(1, 2, "3,100,100", "1,2,3", 1) into he1tStateA
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   put he1tStateA["toAct"] into he1tSeatNum
+   he1heTAssert "legal: short-stack menu is all accepted", \
+         he1heTLegalAllAccepted(he1tStateA, he1tSeatNum), "ok"
+
+   -- quick-bet sizing (he1heQuickAmountOf), mirror of betting-kat case_quick_amounts.
+   -- v0.14.1 regression pin: FACING a bet, the pot raise-to must be
+   -- betCur + (committed + owe) -- 2 + (3 + 2) = 7 with 1/2 blinds folded to the
+   -- button. The old formula added the call a second time and offered 9.
+   put he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1) into he1tStateA
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   he1heTAssert "quick: pot raise facing the BB is a true pot raise", \
+         he1heQuickAmountOf(he1tStateA, 1, "pot"), 7
+   he1heTAssert "quick: half-pot facing the BB", he1heQuickAmountOf(he1tStateA, 1, "half"), 4
+   he1heTAssert "quick: min is the min legal raise-to", he1heQuickAmountOf(he1tStateA, 1, "min"), 4
+   -- opening a street with nothing in front: a pot-sized BET is the pot itself
+   -- (owe is 0 here, so this case never showed the bug -- it pins that the fix
+   -- left it alone)
+   put he1heTAct(he1tStateA, 1, "call,2", "", "quick: button calls") into he1tStateA
+   put he1heTAct(he1tStateA, 2, "call,1", "", "quick: sb completes") into he1tStateA
+   put he1heTAct(he1tStateA, 3, "check,0", "", "quick: bb checks to the flop") into he1tStateA
+   he1heTAssert "quick: flop opened", he1tStateA["street"], "flop"
+   he1heTAssert "quick: pot-sized opening bet is the pot", \
+         he1heQuickAmountOf(he1tStateA, he1tStateA["toAct"], "pot"), 6
+   he1heTAssert "quick: half-pot opening bet", \
+         he1heQuickAmountOf(he1tStateA, he1tStateA["toAct"], "half"), 3
+   -- clamped by the stack: a short seat's pot raise caps at all-in
+   put he1heTNewHand(1, 2, "5,100,100", "1,2,3", 1) into he1tStateA
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   he1heTAssert "quick: pot raise clamps to all-in on a short stack", \
+         he1heQuickAmountOf(he1tStateA, 1, "pot"), 5
+
+   -- integer-only wagers (mirror of betting-kat case_bad_amounts): a
+   -- fractional target would mint chips in he1heSettleOf's div/mod accounting
+   -- and a non-number would throw mid-arithmetic -- both engine-rejected
+   put he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1) into he1tStateA
+   put he1heTBlinds(he1tStateA) into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,4.5", "act-bad-amount", "legal: fractional raise rejected") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,abc", "act-bad-amount", "legal: non-numeric raise rejected") into he1tStateA
+   put he1heTAct(he1tStateA, 1, "raise,4", empty, "legal: the integer raise still lands") into he1tStateA
+end he1heTestLegalRun
+
+function he1heTButtonSchedule pLiveList, pLastBB
+   -- returns "button,SB,BB" the way the shell schedules a hand, via the pure
+   -- he1heScheduleButton + he1heBetNewHand derivation
+   local he1tBtn, he1tStateA, he1tStacksA, he1tSeatNum
+   set the itemDelimiter to comma
+   repeat for each item he1tSeatNum in pLiveList
+      put 100 into he1tStacksA[he1tSeatNum]
+   end repeat
+   put he1heScheduleButton(pLiveList, pLastBB) into he1tBtn
+   put he1heBetNewHand(1, 2, 0, he1tStacksA, pLiveList, he1tBtn) into he1tStateA
+   return he1tBtn & comma & he1tStateA["sbSeat"] & comma & he1tStateA["bbSeat"]
+end he1heTButtonSchedule
+
+command he1heTestScheduleRun
+   local he1tSeq, he1tLastBB, he1tRound, he1tOne
+   set the itemDelimiter to comma
+   put return & "-- 6. blind schedule (dead-button; TDA rule 10)" & return after he1gRpt
+   -- 3-handed no-bust: button and BB each advance one seat per hand
+   put empty into he1tSeq
+   put 0 into he1tLastBB
+   repeat with he1tRound = 1 to 4
+      put he1heTButtonSchedule("1,2,3", he1tLastBB) into he1tOne
+      put he1tOne & ";" after he1tSeq
+      put item 3 of he1tOne into he1tLastBB
+   end repeat
+   delete char -1 of he1tSeq
+   he1heTAssert "sched: 3-handed no-bust rotation", he1tSeq, "1,2,3;2,3,1;3,1,2;1,2,3"
+   -- seat 1 busts after button=1/BB=3: heads-up must not post BB twice for seat 3
+   he1heTAssert "sched: bust-to-HU no double BB", he1heTButtonSchedule("2,3", 3), "3,3,2"
+   -- seats 2,3 bust after button=1/BB=3: BB advances to the survivor (seat 4)
+   he1heTAssert "sched: double-bust BB advances to survivor", he1heTButtonSchedule("1,4,5,6", 3), "6,1,4"
+end he1heTestScheduleRun
+
+command he1heTestShuffleRun
+   local he1tDeckList, he1tDealA, he1tPos, he1tSeenA, he1tDup, he1tSecond
+   local he1tRangeN, he1tDrawPair, he1tDrawVal, he1tDrawState, he1tOutOfRange
+   set the itemDelimiter to comma
+   put return & "-- 7. integer shuffle (binary-free deal)" & return after he1gRpt
+
+   he1heTAssert "draw: minstd step is deterministic", he1heRngStep(1), 16807
+   he1heTAssert "draw: uniform in range returns value,state", item 1 of he1heDrawInt(1, 52) is a number, "true"
+   -- draw bounds, actually checked: for every range 2..52, a chained draw
+   -- lands in 1..n (mirror of shuffle-kat's range loop -- the old assert only
+   -- checked "is a number", which a 0 or 53 would have passed)
+   put 0 into he1tOutOfRange
+   put 1 into he1tDrawState
+   repeat with he1tRangeN = 2 to 52
+      put he1heDrawInt(he1tDrawState, he1tRangeN) into he1tDrawPair
+      put item 1 of he1tDrawPair into he1tDrawVal
+      put item 2 of he1tDrawPair into he1tDrawState
+      if he1tDrawVal < 1 or he1tDrawVal > he1tRangeN or he1tDrawVal is not trunc(he1tDrawVal) then
+         add 1 to he1tOutOfRange
+      end if
+   end repeat
+   he1heTAssert "draw: every chained draw lands in 1..n (n = 2..52)", he1tOutOfRange, 0
+
+   -- pinned deck for a fixed seed (mirrored in tools; MINSTD from seed 1)
+   put he1heShuffleDeck(1) into he1tDeckList
+   he1heTAssert "shuffle: seed 1 matches the pinned deck", he1heTNamesOf(he1tDeckList), he1kKatSeed1Deck
+
+   -- permutation property: all 52 present, none twice
+   put 0 into he1tDup
+   repeat with he1tPos = 1 to 52
+      if he1tSeenA[item he1tPos of he1tDeckList] is "true" then
+         add 1 to he1tDup
+      end if
+      put "true" into he1tSeenA[item he1tPos of he1tDeckList]
+   end repeat
+   he1heTAssert "shuffle: seed 1 deck is a permutation of 52", (he1tDup is 0) and (the number of items of he1tDeckList is 52), "true"
+
+   -- determinism: same seed -> same deck
+   put he1heShuffleDeck(20260712) into he1tSecond
+   he1heTAssert "shuffle: same seed reproduces the deck", he1heShuffleDeck(20260712), he1tSecond
+
+   -- deal assignment on the pinned deck (3 seats, button 1 -> order 2,3,1)
+   put he1heDealAssign(he1tDeckList, "1,2,3", 1) into he1tDealA
+   he1heTAssert "deal: seat 1 gets cards 3 and 6 off the top", \
+         he1heTNamesOf(he1tDealA["holesBy"][1]), (he1heCardName(item 3 of he1tDeckList)) & comma & (he1heCardName(item 6 of he1tDeckList))
+   he1heTAssert "deal: flop is deck 8-10 after two rounds + burn", \
+         he1heTNamesOf(he1tDealA["flopList"]), \
+         (he1heCardName(item 8 of he1tDeckList)) & comma & (he1heCardName(item 9 of he1tDeckList)) & comma & (he1heCardName(item 10 of he1tDeckList))
+
+   -- keyed-stream shuffle CORE, cross-checked WITHOUT SodiumXT: feed the fixed
+   -- synthetic hex stream (tools/protocol-kat.py SYNTH_STREAM) straight through
+   -- the rejection-sampling draw + Fisher-Yates and compare to the pinned deck.
+   -- This pins he1heDrawUniform (modulo-bias/off-by-one) + he1heShuffleFromStreamHex
+   -- on every engine, even one with no crypto installed (that is exactly why
+   -- SYNTH_STREAM exists -- it needs no hashing).
+   he1heTAssert "shuffle: synthetic keyed-stream deck (no crypto)", \
+         he1heTNamesOf(he1heShuffleFromStreamHex(he1kKatSynthStream)), he1kKatSynthDeck
+end he1heTestShuffleRun
+
+function he1heTKatLog pTamper
+   -- canned hotseat session, plain-text transcript (binary-free): holes
+   -- s1=3d5d s2=Ac5h s3=KcKh, board 3h2h5c4hTc; folds to 442/394/364
+   local he1tLog
+   put empty into he1tLog
+   put he1heLogLine(0, "table", "cfg", "sb=1,bb=2,seats=1|2|3,stacks=400|400|400,button=1") & return after he1tLog
+   put he1heLogLine(1, "table", "handStart", "seats=1|2|3,button=1") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=1,cards=3d|5d") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=2,cards=Ac|5h") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=3,cards=Kc|Kh") & return after he1tLog
+   put he1heLogLine(1, "seat2", "bidSB", "amount=1") & return after he1tLog
+   put he1heLogLine(1, "seat3", "bidBB", "amount=2") & return after he1tLog
+   put he1heLogLine(1, "seat1", "act", "verb=raise,amount=6") & return after he1tLog
+   put he1heLogLine(1, "seat2", "act", "verb=call,amount=5") & return after he1tLog
+   if pTamper is "badact" then
+      put he1heLogLine(1, "seat3", "act", "verb=call,amount=7") & return after he1tLog
+   end if
+   put he1heLogLine(1, "seat3", "act", "verb=call,amount=4") & return after he1tLog
+   put he1heLogLine(1, "table", "board", "street=flop,cards=3h|2h|5c") & return after he1tLog
+   put he1heLogLine(1, "seat2", "act", "verb=check,amount=0") & return after he1tLog
+   put he1heLogLine(1, "seat3", "act", "verb=bet,amount=10") & return after he1tLog
+   put he1heLogLine(1, "seat1", "act", "verb=call,amount=10") & return after he1tLog
+   put he1heLogLine(1, "seat2", "act", "verb=fold,amount=0") & return after he1tLog
+   put he1heLogLine(1, "table", "board", "street=turn,cards=4h") & return after he1tLog
+   put he1heLogLine(1, "seat3", "act", "verb=check,amount=0") & return after he1tLog
+   put he1heLogLine(1, "seat1", "act", "verb=check,amount=0") & return after he1tLog
+   put he1heLogLine(1, "table", "board", "street=river,cards=Tc") & return after he1tLog
+   put he1heLogLine(1, "seat3", "act", "verb=bet,amount=20") & return after he1tLog
+   put he1heLogLine(1, "seat1", "act", "verb=call,amount=20") & return after he1tLog
+   -- 2e display choice: the winner shows, the caller mucks its losing kings
+   -- (annotated "(mucked)" in the history line; mirrored in fold-kat)
+   put he1heLogLine(1, "seat1", "show", "seat=1") & return after he1tLog
+   put he1heLogLine(1, "seat3", "muck", "seat=3") & return after he1tLog
+   if pTamper is "settle" then
+      put he1heLogLine(1, "table", "settle", "deltas=1:52|2:-16|3:-36") & return after he1tLog
+   else
+      put he1heLogLine(1, "table", "settle", "deltas=1:42|2:-6|3:-36") & return after he1tLog
+   end if
+   return he1tLog
+end he1heTKatLog
+
+function he1heTKatAnteLog
+   -- canned ante session (mirror of fold-kat ante_transcript): 3-handed, ante
+   -- 2 each, blinds 1/2, folds to the BB. Pot = 3 antes (6) + SB (1) + BB (2)
+   -- = 9; the fold must re-derive the settle from the bidAnte lines alone --
+   -- if it ignored antes the logged deltas would mismatch on replay.
+   local he1tLog
+   put empty into he1tLog
+   put he1heLogLine(0, "table", "cfg", "sb=1,bb=2,ante=2,seats=1|2|3,stacks=400|400|400,button=1,levelMode=off,speed=normal") & return after he1tLog
+   put he1heLogLine(1, "table", "handStart", "seats=1|2|3,button=1") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=1,cards=3d|5d") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=2,cards=Ac|5h") & return after he1tLog
+   put he1heLogLine(1, "table", "holeDeliver", "seat=3,cards=Kc|Kh") & return after he1tLog
+   put he1heLogLine(1, "seat1", "bidAnte", "amount=2") & return after he1tLog
+   put he1heLogLine(1, "seat2", "bidAnte", "amount=2") & return after he1tLog
+   put he1heLogLine(1, "seat3", "bidAnte", "amount=2") & return after he1tLog
+   put he1heLogLine(1, "seat2", "bidSB", "amount=1") & return after he1tLog
+   put he1heLogLine(1, "seat3", "bidBB", "amount=2") & return after he1tLog
+   put he1heLogLine(1, "seat1", "act", "verb=fold,amount=0") & return after he1tLog
+   put he1heLogLine(1, "seat2", "act", "verb=fold,amount=0") & return after he1tLog
+   put he1heLogLine(1, "table", "settle", "deltas=1:-2|2:-3|3:5") & return after he1tLog
+   return he1tLog
+end he1heTKatAnteLog
+
+function he1heTFoldTxt pFoldA
+   return pFoldA["stacksBy"][1] & "/" & pFoldA["stacksBy"][2] & "/" & pFoldA["stacksBy"][3] \
+         & " hand=" & pFoldA["handNum"] & " errs=[" & pFoldA["errors"] & "]"
+end he1heTFoldTxt
+
+command he1heTestFoldRun
+   local he1tFoldA, he1tFoldB, he1tShortLog, he1tRiverLine
+   put return & "-- 8. transcript fold: determinism + replay-as-audit" & return after he1gRpt
+   put he1heFoldTranscript(he1heTKatLog(empty)) into he1tFoldA
+   he1heTAssert "fold: canned session settles to the pinned stacks", \
+         he1heTFoldTxt(he1tFoldA), "442/394/364 hand=1 errs=[]"
+   put he1heFoldTranscript(he1heTKatLog(empty)) into he1tFoldB
+   he1heTAssert "fold: folding twice is identical", he1heTFoldTxt(he1tFoldB), he1heTFoldTxt(he1tFoldA)
+   he1heTContains "fold: per-hand trace recorded", he1tFoldA["trace"], "hand 1: 1:42|2:-6|3:-36"
+   he1heTContains "history: board, pot, and winner recorded", he1tFoldA["history"], \
+         "hand 1: board 3h 2h 5c 4h Tc; pot 78; winner seat 1"
+   he1heTContains "history: showdown names the winning hand", he1tFoldA["history"], "1=3d 5d two pair"
+   he1heTContains "history: showdown names the losing hand too", he1tFoldA["history"], "3=Kc Kh one pair"
+   he1heTContains "history: a mucked hand is annotated, not hidden (2e)", \
+         he1tFoldA["history"], "3=Kc Kh one pair (mucked)"
+   he1heTContains "history: settlement marked verified on replay", he1tFoldA["history"], "settle-verified"
+   put he1heFoldTranscript(he1heTKatLog("settle")) into he1tFoldA
+   he1heTContains "history: tampered settle shows MISMATCH not verified", he1tFoldA["history"], "settle-MISMATCH"
+   put he1heFoldTranscript(he1heTKatLog("settle")) into he1tFoldA
+   he1heTContains "fold: tampered settle line is caught", he1tFoldA["errors"], "settle-mismatch"
+   put he1heFoldTranscript(he1heTKatLog("badact")) into he1tFoldA
+   he1heTContains "fold: wrong-amount action rejected on replay", he1tFoldA["errors"], "engine-rejected"
+
+   -- a truncated transcript (river board line deleted before a contested
+   -- settle) is NAMED and skipped, never a mid-audit throw (the he1heIsCardList
+   -- guard; mirror of fold-kat's truncated-board case)
+   put he1heTKatLog(empty) into he1tShortLog
+   put he1heLogLine(1, "table", "board", "street=river,cards=Tc") into he1tRiverLine
+   replace he1tRiverLine & return with empty in he1tShortLog
+   put he1heFoldTranscript(he1tShortLog) into he1tFoldA
+   he1heTContains "fold: a truncated board is named, not a crash", he1tFoldA["errors"], "settle-bad-cards"
+
+   -- ante transcript (mirror of fold-kat ante_transcript): the settle is
+   -- re-derived from the bidAnte lines alone
+   put he1heFoldTranscript(he1heTKatAnteLog()) into he1tFoldA
+   he1heTAssert "fold: ante session settles to the pinned stacks", \
+         he1heTFoldTxt(he1tFoldA), "398/397/405 hand=1 errs=[]"
+   he1heTContains "fold: ante settle verified on replay", he1tFoldA["history"], "settle-verified"
+
+   -- deep-dive (OXT-pass finding): the online lobby and the hotseat game share
+   -- he1gGame["log"] in two incompatible formats -- a 4-field hotseat line vs a
+   -- 10-field signed wire. A hotseat log clobbered by an online create/join folds
+   -- to pot 0 / settle-MISMATCH (no hotseat cfg -> no stakes/stacks). heBtnLeave
+   -- now starts a fresh hotseat table whenever he1heLogIsCleanHotseat is false; pin
+   -- its recognition of a clean hotseat log vs a wire-led / empty one.
+   he1heTAssert "log: a hotseat cfg-led log is recognized as clean", \
+         he1heLogIsCleanHotseat(he1heLogLine(0, "table", "cfg", "sb=1,bb=2,ante=0,seats=1|2,stacks=400|400,button=1") \
+         & return & he1heLogLine(1, "table", "handStart", "seats=1|2,button=1")), true
+   he1heTAssert "log: a wire-envelope-led log is NOT a clean hotseat log", \
+         he1heLogIsCleanHotseat("1" & tab & "aa" & tab & "0" & tab & "bb" & tab & "cfg" & tab & "cc" \
+         & tab & "dd" & tab & "1" & tab & "ee" & tab & "ff"), false
+   he1heTAssert "log: an empty log is not a clean hotseat log", he1heLogIsCleanHotseat(empty), false
+end he1heTestFoldRun

@@ -3,8 +3,54 @@ script "Holdem"
 holdem.livecodescript -- serverless no-limit Texas Hold'em for OXT (holde-em).
 
 ONE self-contained, paste-and-run stack: the hotseat game plus its own
-self-test harness (call heRunSelftest in the message box). No second stack,
-no required extensions to be playable.
+self-test harness. Two entry points into that harness: heRunSelftest in the
+message box (interactive -- report panel, clipboard, msg) and heSelfTest()
+(quiet -- returns the report as a value and touches nothing). No second
+stack, no required extensions to be playable.
+
+v0.24.1 -- THE THREE SOURCE-SIDE FOLD BLOCKERS, CLEARED (2026-08-16). No
+wire change (protocol-kat's 114 pins are untouched), no gameplay change,
+no chrome change: kUIVersion stays 15, kHeVersion 0.24.0 -> 0.24.1,
+kHeHarnessV 39 -> 40 (the harness grew a second entry point, so a report
+has to be able to say which one produced it). Verified statically; needs
+an OXT pass.
+  * b2kSpriteOnFinish REMOVED, and it was a real defect: this file defined
+    it as a RECEIVER, but it is the b2k Kit's SETTER
+    (b2kSpriteOnFinish pCtrl, pMessage registers the message the Kit should
+    dispatch when a non-looping animation ends, and the Kit dispatches THAT
+    REGISTERED NAME). The handler therefore never ran, and it shadowed the
+    setter for any future caller. LOUD PART, because it is the kind of
+    thing that reads like a regression later: NOTHING BROKE, because the
+    card-flip chaining it was written for was never built at all --
+    b2kSpritePlay is called nowhere in this file (the pooled card slots
+    swap faces with b2kSpriteSetFrame) and b2kFrameTarget is called
+    nowhere, so the Kit had neither an animation to finish nor an object to
+    dispatch a finish to. Carried gotcha 19 is still true and still owed;
+    what was untrue was the belief that this file had honoured it. The real
+    three-part wiring is written down where the handler stood, and the
+    gotcha now names the setter/receiver trap.
+  * THE 81 DECLARATIONS BELOW THE FIRST HANDLER ARE HOISTED. Every
+    script-level local and constant now sits above `on preOpenStack`
+    (187 of 187), where OXT's lexical-position rule and any assembly that
+    hoists a leading preamble can both see them. The harness block moved
+    verbatim -- same order, same comments, every constant's literal value
+    byte-identical -- and the checker's constants-before-use gate holds it.
+  * heSelfTest() ADDED beside heRunSelftest, not instead of it: the quiet,
+    returned-report entry point a folded harness needs (riptide's rsSelfTest
+    is the shape, copied deliberately). It builds no overlay, does not touch
+    clipboardData (the suite scaffold's own Copy-results channel),
+    puts the counts on a first line the suite core's stSummaryCounts can
+    actually parse -- "n passed, m failed", where the shipped
+    "==== n pass, m fail, k skip ====" is refused on purpose -- and sweeps
+    its own pending heNet* messages so no timer this harness armed is left
+    running inside somebody else's paste. Both entry points drive one
+    heTestRunAllSections, so they cannot drift apart.
+    (This entry said "or msg" until the 2026-08-16 suite fold, and that half
+    was not true: section 21 is heProbeSodium, whose last act is a bare
+    `put tRpt`, and a bare put writes to msg. Deliberate at its own site --
+    running the probe from the message box should print -- and harmless in a
+    host paste, since nothing the suite core owns lives in msg. Corrected
+    rather than left reading better than it is.)
 
 v0.24.0 -- LIVENESS-LAYER CORRECTIONS: ten reviewed defects in the v0.23.0
 2e layer, every one of them a local state-ordering or control-flow fault.
@@ -931,8 +977,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.24.0"
-constant kHeHarnessV = "39"
+constant kHeVersion = "0.24.1"
+constant kHeHarnessV = "40"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -1184,8 +1230,11 @@ local gHasKitChk
 local gUIMode          -- "flat" or "kit"
 local gHudDirty        -- HUD repaints only on change, max 4 Hz (playbook)
 local gHudTickOn
-local gFlipCtxA        -- per-sprite flip context locks (gotcha 19)
-local gAnimBusy
+local gAnimBusy        -- deal-slide / flip bookkeeping counter (b2kFrame).
+                       -- The per-sprite flip context locks that lived beside
+                       -- it (gFlipCtxA) went with the dead b2kSpriteOnFinish
+                       -- receiver; the note where that handler stood carries
+                       -- the real wiring for whoever lands the flip.
 -- kit-mode card rendering: gSlotCenter[slotName]->"x,y" (recorded as slots build),
 -- gCardSpr[slotName]->the Box2Dxt sprite's long id, gKitSuffix is "" or ".png" (the
 -- Kenney frame-name suffix as this sheet actually exposes it, resolved at load).
@@ -1207,6 +1256,139 @@ local gSndTick
 -- script-local, not a gGame key, because gGame is wiped by every new table
 -- while the control connection deliberately survives between tables.
 local gOxCtlUp
+
+--------------------------------------------------------------------------
+-- self-test harness state, HOISTED (2026-08-16). These belong with the
+-- harness at the bottom of the file and used to live there; they are up
+-- here because a script-level declaration is resolved BY LEXICAL POSITION
+-- and, worse, is invisible to any assembly that hoists only the leading
+-- preamble (tools/build-suite-selftest.py refuses that shape now -- 81 of
+-- this file's 188 declarations were below the first handler). A dropped
+-- declaration does not error: LiveCodeScript evaluates an undeclared name
+-- as the literal text of its own name, so kKatDeck would compare against
+-- the string "kKatDeck" and read like a library defect (the kKatSeedsXor
+-- lesson, one door over). Order and comments are the harness block's own,
+-- unchanged; every constant's literal value is byte-identical.
+--------------------------------------------------------------------------
+local gRpt, gPassN, gFailN, gSkipN
+-- the netplay loopback's live gGame contexts (host / player, plus a second
+-- player for the ORACLE table's three-way star), shuttled by heTNetPump;
+-- emptied when each section ends so nothing big lingers. gTNetPlay2G stays
+-- empty (not an array) outside the oracle section -- the pump keys on that.
+local gTNetHostG, gTNetPlayG, gTNetPlay2G
+
+constant kKatSeed1Deck = "8h,4d,6s,Qd,2c,2d,6d,7d,Ad,Jd,8d,5c,5d,Ts,Tc,7c,8c,Ac,3c,Js,6c,Ah,9d,Jh,2h,As,9s,Kc,8s,4c,Qc,5h,Th,7s,2s,Kh,5s,Qh,9c,4s,Jc,3d,Kd,9h,3s,Qs,3h,Td,Ks,7h,6h,4h"
+
+-- Phase 2 crypto KAT vectors (generated by tools/protocol-kat.py --gen-xtalk;
+-- BLAKE2b-256 + ed25519, the corrected SodiumXT calls)
+constant kKatHashEmpty = "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
+constant kKatTableHex = "e52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3"
+constant kKatSeed1 = "6c10d2dcff41a1a7e8bd9c7530052c7eb91b91808ee5d935e5f56098539eea3c"
+constant kKatSeed2 = "f7badd5dc86a8a5dce0984ef43bcb7ec228398e08a854a8a8c455ff895dc8a49"
+constant kKatSeed3 = "e848bf12b0bf2708b52c20053ef674e603e7f3a3c7092533dc92e1b0828960cd"
+constant kKatCommit1 = "7623721b5a6372fa974ed62f558fce9992259eb2a834ece7bcea66bce970c0e3"
+constant kKatCommit2 = "83726c97707155ba2e81f0e5f673dd9e10dfde06e1c8f643bdd8539403aace51"
+constant kKatCommit3 = "5f043c34bfb7a626581eb8653c88503a5a8524c9b47bdc2e09e37780005e0308"
+-- keyed-stream deal vectors (spec 7.1) -- these were dropped from the block
+-- when the lobby constants were added, which silently broke heTestDealRun
+-- (undeclared names evaluate to their own text, then heHex2BinD throws). The
+-- full set is emitted by tools/protocol-kat.py --gen-xtalk; keep it complete.
+constant kKatSeedsXor = "73e2b09387940cf29398389f4d4fef74987ffac3c369b68cb522ded044cb00b8"
+constant kKatStreamKey = "e4d91a49ee23982afb804fd386cbd3d2df6370ae0a743b0f461325b94818e40f"
+constant kKatDeck = "Ks,4d,3c,Tc,9h,8c,Jd,4h,2c,6d,9d,Th,3d,9s,5s,3h,Qc,2h,9c,8h,7c,Js,7s,2d,6s,Ac,8s,As,Kh,2s,Ah,5h,Jh,Jc,4c,7h,6c,8d,Ad,Kd,Qs,Kc,6h,Qd,7d,5d,Qh,Ts,5c,3s,4s,Td"
+constant kKatHole1 = "3c,8c"
+constant kKatHole2 = "Ks,Tc"
+constant kKatHole3 = "4d,9h"
+constant kKatFlop = "4h,2c,6d"
+constant kKatTurn = "Th"
+constant kKatRiver = "9s"
+constant kKatSynthStream = "8eaba859db2f1a2a3bce5e381fc1afa1339dc9b7a8a1bbc550277e756dabdffcf7390d23167268d1523ac24f71f476cd47cd1fcd31cfa7ec51ef45c7853978859f7a10230ff86f287f1ead8ec6ac797f6f3d3a1eb75bcb435b5f491b81077775b47c0dcf3cc1d1c8f329c4e1cdae9c6e21f3825454f5c04a21fde75572ef04e25e36672b9e4ce78b4333da7090746ff00b8e32e7ad161f033523cb6f5ba2b10af1a1ebf6c815e54e4fe5efed623198c302732bf6e40ed8856a89e15d78f564614531b8f684aa727e51ea968727a22eb6e14bd588d502b2637bd73d59a8518eaf7a2311d555dd86147e83af7f1e9ef7c9baf253b851bbb48abecdea0b27f90761a67fb810022c6eae480866f19839deb884a4ec819be41bcb605df7dd1ee2efcdaab49eef76d4a98b6be858d3324ac616f2b1f58fc9a1749a6164e2a0e276d62d1815d6a042c78b82f3b0d1ff78852cf8778ba3e127411f0121775056de9e5f8e4253f98b54e627e74cf8c2a38c83edd7d6272de4eb6bd645ebcae1f1701bda866beadc5968e757a8f902e2be46933346dcb794676fd609e14f67d20432796eb492a0c86910f10e51c5c02e5a9fa95f407283b3d0abfb8357cc5f94fe4416b5984eb07e046975e1c15edece5c9e80fd6de3d43d6831a310fe9d74e0c5bb9e438da44bffd728a284795046da833ffb8fdd16128b7fdee7ef76e434e035c7471d52"
+constant kKatSynthDeck = "Ac,Kc,3d,5h,Kh,5d,Qc,3h,2h,5c,8c,4h,4d,Tc,7h,Qs,6c,Ts,6h,7d,Th,6s,Kd,3c,Jc,9s,4c,Ah,5s,2d,8s,As,2s,Ad,9d,Qh,8d,Jh,Qd,Jd,2c,6d,7s,Ks,7c,Js,8h,3s,4s,9h,9c,Td"
+constant kKatIdSeed1 = "629a089485b96c24fef651012c8deae57aa438a7a11c81f3e6a99b5e22f83b38"
+constant kKatIdSeed2 = "fa645b9f3778a3b162514e3a00436568aef46b726e10ef563c94e73b2c2cb448"
+constant kKatIdSeed3 = "7833fb1675dbb196e2222ad6f93ff30aacd313faf7a7818078e30a47f6890083"
+constant kKatIdPub1 = "b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566"
+constant kKatCfgBody = "v=1,level=0,sb=1,bb=2,seats=3,button=1"
+constant kKatEnv0ContentHex = "31096535323637353635306437616434386337313239313835656664616563316532623839636334313064386534633865303835626364363532313837623237643309300962366566316131396437383963323762656133663663313237646236333539323935343166333439303737353065653132643062373135633031306337353636096366670937363364333132633663363537363635366333643330326337333632336433313263363236323364333232633733363536313734373333643333326336323735373437343666366533643331"
+constant kKatEnv0SenderSig = "c1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b"
+constant kKatChainHead6 = "62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778"
+constant kKatSettleHash = "68095dcf5a74fac1e1340a1073a466dcf117024257f5c265de21698257b34b6f"
+constant kKatAdmitSig = "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b"
+constant kKatIdPub2 = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+constant kKatLobbyCfgBody = "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
+constant kKatRosterBody = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10:player,b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566:host"
+constant kKatLobbyHead2 = "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa"
+constant kKatCkptSig = "08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
+constant kKatSettleHash2 = "5e716ce9022f4c47d99e081b52be3a8bb5f9f1f56d3def18577c2f7ac9de8df5"
+constant kKatRcptHead1 = "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef"
+constant kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910"
+constant kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
+constant kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
+constant kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
+-- 2e street ckpt + show/muck wires (spec 6 as-built) + spec 9 election +
+-- Phase 3 oracle seeds/cfg (generated by tools/protocol-kat.py --gen-xtalk;
+-- keep the block complete -- a dropped constant evaluates to its own name)
+constant kKatCkptBody = "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
+constant kKatCkptHead7 = "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497"
+constant kKatShowHead8 = "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c"
+constant kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71"
+-- 2e liveness wires (v0.23.0): the seq 10..13 transcript extension --
+-- host-authored timeout act/bid (timeout=1/bank= marks on the EXISTING
+-- wires), a seat's own stand (sit-out) and pub-less sit (return) -- plus
+-- the onion hello's trailing-seq trim frame (tab-framed, so it travels as
+-- hex of its UTF-8 bytes, the kKatEnv0ContentHex convention)
+constant kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
+constant kKatTimeoutHead10 = "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694"
+constant kKatStandHead11 = "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6"
+constant kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc"
+constant kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
+constant kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
+constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
+constant kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+constant kKatOnionSeed = "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2"
+constant kKatOracleSeed = "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0"
+constant kKatLobbyCfgBodyOracle = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
+-- Phase 2f invite vector: a STRUCTURALLY valid v3 onion address (56 chars of
+-- the base32 alphabet + ".onion") for the pure invite-parse pins. Its
+-- checksum is fake by design -- the parse is structural, and the checksum
+-- round-trip runs on a REAL derived address when OnionXT + SodiumXT ABI 7
+-- are present (section 17). KAT INPUT, not generated.
+constant kKatOnionAddr = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
+-- Phase 4a-4c Level 2 vectors (generated by tools/protocol-kat.py
+-- --gen-xtalk; the ristretto255 deal algebra from FIXED scalars, pinned by
+-- the file's independent RFC 9496 reference). Keep the block complete: a
+-- dropped constant evaluates to its own name and fails like a library
+-- defect (the kKatSeedsXor lesson above).
+constant kKatL2Scalar1 = "38f967b55df92422303a885e0bdd8400e52e6ca53623f2c816bc08ce6b7d480a"
+constant kKatL2Scalar2 = "04db114cfbf9228a88b8533a2fd8f7b3d023db8adb22abf3ce804a33d105e804"
+constant kKatL2Scalar3 = "380b4308d6301ffd7c124b79b15ae31343e221dfc77d6bb4c1ea48de8f34810a"
+constant kKatL2Inv1 = "05e469c6d0880a9b8e27c9cfc6b887171837d1c5b5e01a9bc0320fe70a64bc0f"
+constant kKatL2Inv2 = "5211b8e991092be89603c8b33eb590833774d63832f1294b7f3dc2b312112b0a"
+constant kKatL2Inv3 = "8cf1653acb11f8ea598fe0918c83210d1282a4218f4cf9546a5907f3401c6403"
+constant kKatL2Perm1 = "35,31,39,27,36,51,26,11,7,49,18,9,28,24,40,50,25,44,45,34,15,2,13,5,41,3,23,12,33,6,29,52,20,10,21,42,17,46,8,22,38,19,32,47,16,37,30,14,48,1,43,4"
+constant kKatL2Perm2 = "30,35,31,18,7,33,4,50,38,19,15,2,29,44,49,16,22,51,47,9,5,10,25,12,6,21,52,24,14,39,8,3,20,37,43,36,46,34,40,26,23,48,28,11,41,42,27,32,1,45,13,17"
+constant kKatL2Perm3 = "22,14,28,2,48,29,37,23,52,32,38,25,30,47,43,5,11,3,39,20,1,45,50,21,51,27,15,4,9,26,24,8,19,36,41,35,18,49,7,13,46,6,31,34,44,16,12,33,42,17,10,40"
+constant kKatL2BaseDeck = "f43e364e1c1a4da57953b755e62e4a21c6ca54dad6c8afdd4fe527d1fa0f1471,e2b5c63bf1cb966f79bb5dd8049eb0fca145588b5128a6f7322acd1012e45b7c,ca68072db08307f62268023fb580e8148aea78f8b87e7b1d2691a922b5245446,b6e6777a5bf7657fd842629a537b02f06bc9e9c202d51b27cdd550b61c8a8a18,d68850b61f37953e920659d48ee504a51addd0e26996f0719188dad7f37fa52b,0c4a3a1a25314e3144391e6133bc6c7b135fae6673fbe9a0889dd5ed477c171a,4acd93b546fc640606953a84123707ad9a1617357d00e5f763084daa6a0d3840,dcfd9215cf8a022e2198e87af9f4c08059504ffb309a6dd1ff97917b6012902f,a825c649a65028cfa090453b8f8d7c91b5761a4df3c3a099105f764d05bbfc79,a2751a23688be97fee506a367e917f2d1b0b8445d56679fb66af2aca3f1dbc04,e2fd88a0a2bf8ec954e1bd7c637e9c5e810195e3614a09ee400adf6d8cb8c856,78f3c83c94a84614c0589b3f58269687a539de6a4cae5c02449f95bf6a46a46b,a40fdc57edfa2dc321608b50e782cc6f0907f65eada0ad48a25a00f546d0987a,22830c692615fc4b2a8ef1e3f8fbedc51a720107e359f9d2c1af737699af733b,d8ee75f4266debe97bcb495971922583ebb97ad60b78f5e9c1d187972bb1ec1b,44744fa706cee62e39546bb3f60b86c8563625be486dd73ae41bab0fd1a7cb00,4cd2d796f2e9e21c10b4db346d08ec53bbc7af1338f605d1d7e9a5244500af74,4aad6f63cff471e83ab8abbfefc7c52c4ac7e38eec8bab874a98db796b69f710,6ab24c9cd511a4fed28e34f86a40198700626511d05fc986eb5c4e0ac0688245,1a815ccb611b5b5fdcece3e811bf479e6d866f5211c4222766008c7de0b3fd77,40ebc4540b298dec8b107d3465bae5b4298c0d9dd0b052b6ee35085a15967043,1e7bb71f06a5a72d4f6dc5f0e5131b3ed38f344ae8afe4ab6325bd71d97eb770,0e6ac715b89c1b7350d1216965122c5565009b7d9140e0090c4041932c8a5a35,72edfa2243b1b418c24d89f6c7cc3444367945ead40cc152c1a02ed74b894d73,1af2d8904604eb9de539209d048932660026be3e09f1591deed8475b466d9c1d,98afeba72c1aad9ef62bb78730b25e81fb8c0f0aa496f5f558d4a401fb08dc32,2436bc86ba0f7a7a065a61e572021e4ba2f58edba7cf529d0f2fd9c852938d6b,36ff7c85101d8f18a8a98e16d225b56904ae11e5d4b3d441b0213237d274ee1f,9e3d2f7ba70b89df9fbeb9be41281e3738937f124195772e032c3d1fdb78f855,1cd179e72cb1b79eec94f4a249cb7ca303be533cf60004d22d18847ea06b6f74,ee9bf366559e64e3120c89a71b3a3f5157e901b52035c77add57f1e77631c621,62bb8617c9d4a3868b2685d0b68251a7ed77a438835f3955a809cdf991da5144,64b530ce023f8108b30706674fb1d50bcaec450e24b2eebebde1d0039be87b3f,6a88be3b6e714f8c47eb879456ee5343a54ad0090b1f8efa2ee3c55654b7cc16,146f81383fd8305ceec4ca6d3d59cf1358ef3333c708b6e6bb4d5dbd7cebb335,ccdf0af1f4608a4186a2ebddd4729174fb696a72606c0205bc237a181be2e006,248e4956f6625bc4e38f1025413893827006ec904f1d9e48f5bd8b9e8cfe622e,569050be976d1b9f7c3bb79534202819d33b2f747a04b34b00f74e4533f3d534,e686afeda75fbafe47f550a9914e5872f867fd144be9727906844fd7a5efba76,46f0ee3869ccfbd02973504688e82360867cead0540237b88cca8dd64ab8653e,feaa1f3bbfcd9f3e3428dc887d61612bab06635b7991abdd34ec69e01cd21a09,7ac0547ac2ae5c08f7b7dd14e1f2fd46d4110cc464c54379ed738e877bcdb42d,0ad5483deee6ec96989b844a54a52d93fdf9d61aa1c8bad49de64001e0aa7e42,7228ec86b2507b1f73de6668f23b68b01af1cbd1a18bc74b56bb98e0d1044d32,d070da71ae4c8f56464e6a9f0c0a7265f062de5047bce758957a37c3c06b4272,18b94704378b8065af2d9603b0e7a350105628025c8093ad9d6991c8efcd747b,967b07c684c6865789f35f3d3aaa16fae3f7d16d82b13dfe9c06fe79cf6f8578,a4467ecf421b21ff1783d95a45790c51a5904d0da89edfccf0c142e07b558901,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b,d0f0a3ca37ae84285a38836c0abba3536af53cfc32ca1681347baec559f47b7b,88ce578d9d4f057a76486e5f2e15fce75b1d07ea6d23efcb5d0ed421e1d35c37,50532c4ee88d1439e01a61f151c2f25f1ba2319c2d32f943ecfb1264d03ed72e"
+constant kKatL2Deck1 = "a8de3428db2d1cb591341ac375bbdb0581bd46f80d2804e94e71710a3b48541f,6208a4235f8ae00a67e3c8f0ebbbf2c97fbcded0363569d684a174c9f9c33472,d80f7d6653463748864517be750974916e0139fe3afcbd1a5e05481471d1e71e,0cb1f4e9cc67e1d58c88b5141f12c64caad25c5cbd5641ed6eb7433ffd9b236f,aca2977971dfa44ef40e9086ab5b58f635f25993d91d1c9eebec806b42e2084d,b42c199b8688e4fa95be56db11c0f269defd692ec3d56726055f4f2e3bf15c22,be8fd78c93e5096e7f156a4b6401874965065c9a39abdb57d2e278b5252cae03,b83bf82a7d4192df111443cde252d748245569be844c373078c97b3c5c21d042,380662f5a44beb9168bad94af183a145d6aa68330087e47c2413e1c02255ce7b,880321e01b402cab8e58739e24b8650502e87a1e53a728f4c7120f85cd79ec31,c4a33acbf3a9748e75320863de31088d2c156358797f55c1992e11ea95a5e768,a610eeaa66e3a4f799ab05ad0a5791ccf155fe9105815c8a5a27341cf00c3e20,ac94ae783e70f5b4db4e723283815cc2266fd5def3d0063ac58f50444e6e6620,ccf2a5e4813136eebc70cc00c8452d587701f378214aaedd1ed577a7f1c1020f,2ad863fc5aa197b4c35efccdb87379ebcc84a15a046bdf7fab33ffb9acd1f759,9ac91cad66318f80906c50bc9c2161ff4204fdd5e573a71c9409b5e92ecfc446,06c97bc904c39b8f2f13833ca41b376d0a70df99c3f48ce81c63e827c700b135,82c2bb912824f452cb8d62f5acad8b700324d13083016ade60dbebd0e24adf16,4cbdb1a1a87e1b2087df92f229a7e3d646f841a730275f3a355647b79d4c726f,202a2868ad6d3b99b4646a08f4f571e2373221ff58df7af32ce2801d1d725770,dc1d10c111206bc0e777e46a9fd5a56a2df56f37cec67f5261c26aa12a2aa937,9ef54cb33db9d77c664069f15bf54061ed01e075b5a5846bff366acb7f477d37,30dec7a12b6fd2f973683dfa053865fa8aa3f08ea5325a10e27aad97020bb729,6aae1939f32cc599e76e968455a30ce4d82280274ddaa3da099226aee642b57a,cac50035ec7bfe2a6f0091969ce08045b28b5fcaf6502d8aae107557e3c3e109,70337dc2f81c273be97d83f42e8f36ea03acec7451c0f6472155ffc4ac0f3518,02bbda5b5f1987ec365739fb37c2a599d2b725bedc0c204deb31fea49b5a9c4b,b4eb5d98403b1e5276994305fca33f4aa508978ed4edd923f18616783458b118,90f8bce01a01e5b30373962182b648c731452a2ccbfec2dba91de8fb022c193a,12cf3f7c4cd5cbc9b1fac833454ef6dbbd7ddd139bfa3812ee19b2bc3a34753f,24fc8edd6bcccf04c49b2b4b337131f6d4fd4d36d1b1c4ba6ed1a24ebeaf581b,98063c80c1bfa451e791f19fbb52723a302c94d16dd01f52425b6a496413785f,6e161fd50766cbd972d31ea5fc0b90807a4a103bf79b9766427cdd7fc4e3521b,8a835b4edd4375f1e2e908f14f1a47ba48e2cd499dc90a64040333d9c9344a74,94deccd57786903f49e7783e30b373781ffd162eab5f095ebdf99f088a048e4c,f0e6fd4c43e8647095384db6e110202c691408d6c9be53f00b4b13023a24d217,b61e937b2825e50de783985a69279b1e07cf45b2113c4ada5a78b8951f57ae0d,2239b5510058e2962e0bd9cf17f54fde38cb3d76f0503ce5ec4e132887c9a571,10135c31a39b36a2af83c0a0ff759facde77bce17b6350579c706f656486a10f,acdee51d73bdf6ee8613c73739d7c897d97a52fb9c6c4a0104395ea4806f2047,6ad5cc0f70a07befcbfbd6abcdb0279a579968e51555c36af6bc6b2bb0f6a010,aa66031a9585d3487f62170ad6bc236d81dbdeff4e0287dcce6e971afcfd4150,205f6e66b3d54d4e23e7be0512194444a13e76ef53bc032773e3eb1ba615015f,1cad41fa4896a2192cb96763568fd7b0b1a17a641235c571d6b9f735f970d800,fa91391acee3da6ce5beb220842c6d3a89b127d898915d78569becf98e42c405,92fd398554c27e6d525f6ab451a60bd34773fb627f5ac5e335ba26ba01d30c39,c202fb60a22eebdf70b871f93f0c871b97a602f2c46e77c9bf6517e5eac87677,2ef2dc398f3c20aa0d472c7be964b1450c8aea652cbc950a0684559328771371,e6ac5b83882b4f694775463dcfa35b30e269be84200826242615191af8072b7a,d4e11d4f0dba15abe5ec94e448871bd11e00e7c5f8c301a5573fbccd3ea2cc04,e4e0dfcd6cf502920991dd5789504d3b4764db3ca8b5a7356d6e1fdd70ffc274,d69d1e07c98931eea27cdd197eee2dd78d2d787adfc8c21dfef0968b9aed5d07"
+constant kKatL2MaskedDeck = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,ccbd8b67ded62a4c617adaf2661b6a5f3b321f8ac82d4ed631e174f17e016872,9087ea23c9a04974739041651d08ffaa60c83fe30e93c37ead172ddaeecea577,520321aa5411f0102d9854d7c36d0d9c0d218634c44655b99a3a78256178e774,8c155652fd2bdc7f3b1bbb3e960d9eb5097366f62c924b1c92bed58e945f9f19,1ed3f96f1a7d03fe3da78c54c209ed98aa2f2260bc5ff290ab9cb8ce1391ac0c,b632f200ca5decad5e041fa1d2411ea3555cd46a4b64790ccfe0c70c4de34a0f,9a4602b46bde2c6c860f9e7b9562ce87b62053c75daefeda0ffa3d72e13c4a05,4476b7e54b72b9abda47c42c7a0b55676acb865a9949119d2814a028b381bd10,4a0bb09499996a33d379909b8b7f1c6b48f276c76d7213abc82e920b2155872d,1ce9352e0a5505d7a67c00e0139bcd32ba585c84e416310e92eaccd4ff10245d,dca2411b332e647eec34df62d5fb8162d850bb831a115d1e71d51dce55eed626,56ba017c3ad1ea1126093efca04c749d085112132a578ec755d23a777f982f23,6edb77fbda06a59d0afa90686f9945efa863434424f74a1739c3d5153015f357,fa8273b7c9a231dfeb3ef71bc77788e7d357f292731c79cd2c52ef76acf47a29,c0ba5d3b244be2b869252cf23988a8063908520ff3e34ceca71cda4bbbc84b04,a8c3d44a17fbe150dedf35fadb9f3d5a3fbcf400f20994b4f0e1620478301a15,5e3168d6f5106aca4fea6916765ad28931aeba746d4e5c438e7257a053ec255b,3e59ef03c2f78b1c0be06501b254cee66608e3570dd08c9f16a2256f0585e476,20c2fcd252741106fc6bac82a30dccb3d9bb05f4c65891ebdc81d20cf4c6831a,5a954722e48f2a0534a26271ee77809fe27111152e77c161091d5c78476f6819,b42ba308571bd4f27052bf38ec82b50755dd22d97832cc4eb784630264d99638,a871a574b10e19d6431ae82e6f3d67571e29225e137d44821e887e1efceef715,a2d8ab119c8a7c9f2746cff786f8514fee315631e54c1850a20389b2e2d57e0b,6cc6bbf761404aca110b92e36e637dd5a8bca799e5680077654b0d0f192fa554,7cb1aeacfd37b1d7809c7d269c15737c7f746507c4358a30291c40a0efcfc13f,603aa0b85684a71fe8be7edbaa26cab094c4633df389f818faa6d1dbe69a4a51,2af6de55fc37181ad678f8dcb141c365f875d9a571b8e9727f8c963066792e62,38b0fbfdf0cdb815094dae6ae1ebe102125d5fc5933d2bf42ce9bc2bddd4eb0b,38f162c482282626597a32d0eff26dcadc22ea38b1e107c1934b905397d8b973,9c5f3d94578d122f329b825a8563b03d12b2e5b96916e83f1ff00264df8e9c67,767ac5e92db1ea84be5cf73dd70a39c61a7024e3464e109e36ff2c62b14a7235,308cdbdc2f3334271ef4d25e7f7ecc8933b5918ddbe819bb3484d3fa02325c27,8e8544127ae68c2a8d18a9c8cb8d37a76758916286ebf17597b17b9283b5f909,c0ddddd1e00241611d3c045b85d45b0fbf3ac2ae0078fd928da2955579339920,48c8be8d6374e2763cf6ab51e9a84863ad9d322098006243c8e1eaa318479e78,b49934b95c8748348fe21a30f191d080c805aae4e3505555f324b6974379ab68,bc2c0a3edf2c8f9c761980bcf13d444455d846c2a137a582ca8679ead71ee604,b463da981cfef69817ab80245630bf70deb604820fc87265719410f72462de35,6c7dc076178538735f5e1a890a21f054a9d81039f72424b65be5b041b5c3fa4f,8015469fa91721b299a3b6f7522478398820085127429312e17d42e5a40a462a,9abd2266d21ee49b0a6fc227a6ae21a8a18e8f0019eaf35933518d61f71c4052,d4a31d2d53796a3ffa6f12de5ed0de6cc2131a5d811c6b55505a5e58317af20e,b4e06f3351546a873220664a0585c506524e605453d9ea7d0de46bae5c90ea24,f4383b63dcb04aa7d70595c1450cad7842552095c31328d1c2ff3a5b3469067b,4876092cf6739c17bab348b6ff2d05feb8d00ecdcc865c5c17154b80f157c301,f4bb4c89cacaf8727fd11878f03b9fa47cb1645f5db293a656d3ba3b2641bf3b,da8fba36a6c821b0125984a1b9432c0911849f7fe6183c98abd940dad8d41b41,7247827e28f0b6116ec614a4d713f49ac291b6112f4ad0dd5f3a4f92bc331c02,feef6df7bf025f0f0b77c2fd40da954c44be8b85ccf943301e888e783a312307,e625479c6e3b0e1f1bafbe6f7e7630bd8c7c8c583e802b9282255bfe27574136"
+constant kKatL2PublicChain = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,dccce0c6d9e263337316e3487d17796b76d3057c9473c40b95be7b4b78a10069,54a040c81ab1aca13bf76c725416660af35c171209001e3abfb7aa6f56e2ce24,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b"
+constant kKatL2PublicCard = "card:49"
+constant kKatL2HoleChain = "62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,80b56b50f6eea1ab201aaa93c738dd6441f5842f256bb890a5ebc867e5807c70,3a18dfc38fbbce3503f1fa5b45ba7b88c547799f663ecbd38d7474aa2aadff5b"
+constant kKatL2HoleCard = "card:47"
+-- Phase 4d/5 vectors (generated by tools/protocol-kat.py --gen-xtalk): the
+-- DLEQ commitment keys of the three fixed scalars (ck_i = k_i * B) and the
+-- derandomized Chaum-Pedersen proof over the pinned unmask step (statement
+-- c0 = k1 * v1, i.e. prove(k1, v1, c0)). Keep the block complete (the
+-- kKatSeedsXor lesson).
+constant kKatL2Ck1 = "f8aaee2dfe3f251d8726037421fd646a85446b00f132dc37d0792a7e48a08a03"
+constant kKatL2Ck2 = "94d02c9027dffcedbc3fca0569b23d13fc966462b5208b5a25668ddefaa4ea65"
+constant kKatL2Ck3 = "9ce4b6a7337e94a6c60535fccf71ee83a69745b46359fa9bd0a1846864ad1458"
+constant kKatL2DleqProof = "d84b045c40a2d08257ef6907556d4a096a26f0777b2a8c213db9736e403150048634476eb775e61807679da17345da913e9ae89959a0dd3a5ed121483a4de064c838dc1234a84786a24f5c120cf28dc410b59d28213e74c4befbc1992fbb2e04"
+-- KAT INPUTS (not generated): the canonical identity encoding (the one
+-- VALID point scalar mult must still refuse -- 32 zero bytes) and 32 bytes
+-- that are NOT a valid ristretto encoding at all
+constant kKatL2Identity = "0000000000000000000000000000000000000000000000000000000000000000"
+constant kKatL2BadPoint = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 --------------------------------------------------------------------------
 -- lifecycle (house law H1: sessions bracket the stack's life)
@@ -11822,12 +12004,33 @@ on b2kFrame
    end if
 end b2kFrame
 
-on b2kSpriteOnFinish pSpriteId
-   if gFlipCtxA[pSpriteId] is empty then
-      exit b2kSpriteOnFinish
-   end if
-   put empty into gFlipCtxA[pSpriteId]
-end b2kSpriteOnFinish
+-- CARD-FLIP CHAINING IS NOT WIRED, and what stood here never wired it. This
+-- file used to define `on b2kSpriteOnFinish pSpriteId` as a RECEIVER, holding
+-- a per-sprite context lock (gFlipCtxA) for gotcha 19's double-fire guard.
+-- b2kSpriteOnFinish is the Kit's SETTER: `b2kSpriteOnFinish pCtrl, pMessage`
+-- records which message THIS game wants when a non-looping animation ends,
+-- and the Kit then dispatches THAT REGISTERED NAME
+-- (`dispatch sSprMsg[tRef] to sFrameObj with tRef, tAnim`) -- never the
+-- literal "b2kSpriteOnFinish". So the handler could not fire whatever else
+-- was true: it was dead the day it was written, it shadowed the setter for
+-- any future caller, and in the suite paste (Kit + this stack as one script
+-- layer) the two definitions collide outright.
+-- REMOVED 2026-08-16 rather than renamed, because a renamed receiver would
+-- still be dead in both directions: nothing here plays a non-looping
+-- animation (b2kSpritePlay is called NOWHERE -- the pooled card slots swap
+-- faces with b2kSpriteSetFrame), and nothing calls b2kFrameTarget, so the
+-- Kit holds no object to dispatch a finish TO. Registering a message now
+-- would only move the dead code, so the wiring is written down instead of
+-- half-built. All three parts are required together, and the OXT pass owes
+-- all three:
+--   1. b2kFrameTarget me                          -- once, in heKitTryInit
+--   2. b2kSpriteOnFinish tSpr, "heCardFlipDone"   -- per pooled sprite, at
+--      pool time (the SETTER, called; not defined)
+--   3. on heCardFlipDone pSpriteRef, pAnimName    -- the receiver, gated on
+--      its own per-sprite context lock: gotcha 19 is real, a finish message
+--      goes to whoever started the animation, and a stale one must not
+--      double-fire a flip sequence. gAnimBusy/b2kFrame above is the other
+--      half of that bookkeeping.
 
 --------------------------------------------------------------------------
 -- self-test harness (folded in -- run heRunSelftest in the message box).
@@ -11835,127 +12038,95 @@ end b2kSpriteOnFinish
 -- header; bump it on every engine-behavior change.
 --------------------------------------------------------------------------
 
-local gRpt, gPassN, gFailN, gSkipN
--- the netplay loopback's live gGame contexts (host / player, plus a second
--- player for the ORACLE table's three-way star), shuttled by heTNetPump;
--- emptied when each section ends so nothing big lingers. gTNetPlay2G stays
--- empty (not an array) outside the oracle section -- the pump keys on that.
-local gTNetHostG, gTNetPlayG, gTNetPlay2G
-
-constant kKatSeed1Deck = "8h,4d,6s,Qd,2c,2d,6d,7d,Ad,Jd,8d,5c,5d,Ts,Tc,7c,8c,Ac,3c,Js,6c,Ah,9d,Jh,2h,As,9s,Kc,8s,4c,Qc,5h,Th,7s,2s,Kh,5s,Qh,9c,4s,Jc,3d,Kd,9h,3s,Qs,3h,Td,Ks,7h,6h,4h"
-
--- Phase 2 crypto KAT vectors (generated by tools/protocol-kat.py --gen-xtalk;
--- BLAKE2b-256 + ed25519, the corrected SodiumXT calls)
-constant kKatHashEmpty = "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
-constant kKatTableHex = "e52675650d7ad48c7129185efdaec1e2b89cc410d8e4c8e085bcd652187b27d3"
-constant kKatSeed1 = "6c10d2dcff41a1a7e8bd9c7530052c7eb91b91808ee5d935e5f56098539eea3c"
-constant kKatSeed2 = "f7badd5dc86a8a5dce0984ef43bcb7ec228398e08a854a8a8c455ff895dc8a49"
-constant kKatSeed3 = "e848bf12b0bf2708b52c20053ef674e603e7f3a3c7092533dc92e1b0828960cd"
-constant kKatCommit1 = "7623721b5a6372fa974ed62f558fce9992259eb2a834ece7bcea66bce970c0e3"
-constant kKatCommit2 = "83726c97707155ba2e81f0e5f673dd9e10dfde06e1c8f643bdd8539403aace51"
-constant kKatCommit3 = "5f043c34bfb7a626581eb8653c88503a5a8524c9b47bdc2e09e37780005e0308"
--- keyed-stream deal vectors (spec 7.1) -- these were dropped from the block
--- when the lobby constants were added, which silently broke heTestDealRun
--- (undeclared names evaluate to their own text, then heHex2BinD throws). The
--- full set is emitted by tools/protocol-kat.py --gen-xtalk; keep it complete.
-constant kKatSeedsXor = "73e2b09387940cf29398389f4d4fef74987ffac3c369b68cb522ded044cb00b8"
-constant kKatStreamKey = "e4d91a49ee23982afb804fd386cbd3d2df6370ae0a743b0f461325b94818e40f"
-constant kKatDeck = "Ks,4d,3c,Tc,9h,8c,Jd,4h,2c,6d,9d,Th,3d,9s,5s,3h,Qc,2h,9c,8h,7c,Js,7s,2d,6s,Ac,8s,As,Kh,2s,Ah,5h,Jh,Jc,4c,7h,6c,8d,Ad,Kd,Qs,Kc,6h,Qd,7d,5d,Qh,Ts,5c,3s,4s,Td"
-constant kKatHole1 = "3c,8c"
-constant kKatHole2 = "Ks,Tc"
-constant kKatHole3 = "4d,9h"
-constant kKatFlop = "4h,2c,6d"
-constant kKatTurn = "Th"
-constant kKatRiver = "9s"
-constant kKatSynthStream = "8eaba859db2f1a2a3bce5e381fc1afa1339dc9b7a8a1bbc550277e756dabdffcf7390d23167268d1523ac24f71f476cd47cd1fcd31cfa7ec51ef45c7853978859f7a10230ff86f287f1ead8ec6ac797f6f3d3a1eb75bcb435b5f491b81077775b47c0dcf3cc1d1c8f329c4e1cdae9c6e21f3825454f5c04a21fde75572ef04e25e36672b9e4ce78b4333da7090746ff00b8e32e7ad161f033523cb6f5ba2b10af1a1ebf6c815e54e4fe5efed623198c302732bf6e40ed8856a89e15d78f564614531b8f684aa727e51ea968727a22eb6e14bd588d502b2637bd73d59a8518eaf7a2311d555dd86147e83af7f1e9ef7c9baf253b851bbb48abecdea0b27f90761a67fb810022c6eae480866f19839deb884a4ec819be41bcb605df7dd1ee2efcdaab49eef76d4a98b6be858d3324ac616f2b1f58fc9a1749a6164e2a0e276d62d1815d6a042c78b82f3b0d1ff78852cf8778ba3e127411f0121775056de9e5f8e4253f98b54e627e74cf8c2a38c83edd7d6272de4eb6bd645ebcae1f1701bda866beadc5968e757a8f902e2be46933346dcb794676fd609e14f67d20432796eb492a0c86910f10e51c5c02e5a9fa95f407283b3d0abfb8357cc5f94fe4416b5984eb07e046975e1c15edece5c9e80fd6de3d43d6831a310fe9d74e0c5bb9e438da44bffd728a284795046da833ffb8fdd16128b7fdee7ef76e434e035c7471d52"
-constant kKatSynthDeck = "Ac,Kc,3d,5h,Kh,5d,Qc,3h,2h,5c,8c,4h,4d,Tc,7h,Qs,6c,Ts,6h,7d,Th,6s,Kd,3c,Jc,9s,4c,Ah,5s,2d,8s,As,2s,Ad,9d,Qh,8d,Jh,Qd,Jd,2c,6d,7s,Ks,7c,Js,8h,3s,4s,9h,9c,Td"
-constant kKatIdSeed1 = "629a089485b96c24fef651012c8deae57aa438a7a11c81f3e6a99b5e22f83b38"
-constant kKatIdSeed2 = "fa645b9f3778a3b162514e3a00436568aef46b726e10ef563c94e73b2c2cb448"
-constant kKatIdSeed3 = "7833fb1675dbb196e2222ad6f93ff30aacd313faf7a7818078e30a47f6890083"
-constant kKatIdPub1 = "b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566"
-constant kKatCfgBody = "v=1,level=0,sb=1,bb=2,seats=3,button=1"
-constant kKatEnv0ContentHex = "31096535323637353635306437616434386337313239313835656664616563316532623839636334313064386534633865303835626364363532313837623237643309300962366566316131396437383963323762656133663663313237646236333539323935343166333439303737353065653132643062373135633031306337353636096366670937363364333132633663363537363635366333643330326337333632336433313263363236323364333232633733363536313734373333643333326336323735373437343666366533643331"
-constant kKatEnv0SenderSig = "c1d5f49bcc0fb8418830f63cc8be9c6bf7e5fd11a77807af38e672aa7284bba9c9cd58d73976888055851d034d440ab504cd0c9ab984f7df368a5f94225b310b"
-constant kKatChainHead6 = "62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778"
-constant kKatSettleHash = "68095dcf5a74fac1e1340a1073a466dcf117024257f5c265de21698257b34b6f"
-constant kKatAdmitSig = "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b"
-constant kKatIdPub2 = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
-constant kKatLobbyCfgBody = "v=1,level=0,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
-constant kKatRosterBody = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10:player,b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566:host"
-constant kKatLobbyHead2 = "57c56971affa1ac3d723d600937df12046a7def0c059444054f763e94a65b7fa"
-constant kKatCkptSig = "08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
-constant kKatSettleHash2 = "5e716ce9022f4c47d99e081b52be3a8bb5f9f1f56d3def18577c2f7ac9de8df5"
-constant kKatRcptHead1 = "53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef"
-constant kKatRcptHead2 = "0284af24c750eaaaa5a521b87d8f1ab6ce00b0b2be074ce03d24884e004fc910"
-constant kKatRcptSig1 = "222929a8ce05e0d45cab6658d9e67d882d6cfa1f91c35cda8e07a58763c4b1fb6c733e23d116f04ed91960c0ad386541139fed43e1632df341175021d70b1700"
-constant kKatRcptSig2 = "20a21d334da7d32b00bf3a17920350ebaad0773121fc3f2d9feba041360d9548fb527c555cab8039985439bed3af73d17656b939942a6bc3a793630275070706"
-constant kKatRcptSig3 = "429a37ee32d74fd2d09b1b3a86fccc383c7e773ef52670ed07e4ede7e2e10f9ab4b791d630d0b44bdb6c405ed5238cc0bbab9d40129d3673c2c39f1d5d1a9c09"
--- 2e street ckpt + show/muck wires (spec 6 as-built) + spec 9 election +
--- Phase 3 oracle seeds/cfg (generated by tools/protocol-kat.py --gen-xtalk;
--- keep the block complete -- a dropped constant evaluates to its own name)
-constant kKatCkptBody = "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f"
-constant kKatCkptHead7 = "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497"
-constant kKatShowHead8 = "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c"
-constant kKatMuckHead9 = "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71"
--- 2e liveness wires (v0.23.0): the seq 10..13 transcript extension --
--- host-authored timeout act/bid (timeout=1/bank= marks on the EXISTING
--- wires), a seat's own stand (sit-out) and pub-less sit (return) -- plus
--- the onion hello's trailing-seq trim frame (tab-framed, so it travels as
--- hex of its UTF-8 bytes, the kKatEnv0ContentHex convention)
-constant kKatTimeoutBody = "verb=fold,amount=0,seat=3,timeout=1,bank=1"
-constant kKatTimeoutHead10 = "bb5c70e38815d017dbcd3be3654fd8691fd2513bd816a5ab33659e1103fed694"
-constant kKatStandHead11 = "fc854db9ed13c5dcaf7ae7455678c87b4a0e1a6286e88ad98dd61dbf173e8ef6"
-constant kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc"
-constant kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
-constant kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
-constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
-constant kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
-constant kKatOnionSeed = "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2"
-constant kKatOracleSeed = "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0"
-constant kKatLobbyCfgBodyOracle = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
--- Phase 2f invite vector: a STRUCTURALLY valid v3 onion address (56 chars of
--- the base32 alphabet + ".onion") for the pure invite-parse pins. Its
--- checksum is fake by design -- the parse is structural, and the checksum
--- round-trip runs on a REAL derived address when OnionXT + SodiumXT ABI 7
--- are present (section 17). KAT INPUT, not generated.
-constant kKatOnionAddr = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
--- Phase 4a-4c Level 2 vectors (generated by tools/protocol-kat.py
--- --gen-xtalk; the ristretto255 deal algebra from FIXED scalars, pinned by
--- the file's independent RFC 9496 reference). Keep the block complete: a
--- dropped constant evaluates to its own name and fails like a library
--- defect (the kKatSeedsXor lesson above).
-constant kKatL2Scalar1 = "38f967b55df92422303a885e0bdd8400e52e6ca53623f2c816bc08ce6b7d480a"
-constant kKatL2Scalar2 = "04db114cfbf9228a88b8533a2fd8f7b3d023db8adb22abf3ce804a33d105e804"
-constant kKatL2Scalar3 = "380b4308d6301ffd7c124b79b15ae31343e221dfc77d6bb4c1ea48de8f34810a"
-constant kKatL2Inv1 = "05e469c6d0880a9b8e27c9cfc6b887171837d1c5b5e01a9bc0320fe70a64bc0f"
-constant kKatL2Inv2 = "5211b8e991092be89603c8b33eb590833774d63832f1294b7f3dc2b312112b0a"
-constant kKatL2Inv3 = "8cf1653acb11f8ea598fe0918c83210d1282a4218f4cf9546a5907f3401c6403"
-constant kKatL2Perm1 = "35,31,39,27,36,51,26,11,7,49,18,9,28,24,40,50,25,44,45,34,15,2,13,5,41,3,23,12,33,6,29,52,20,10,21,42,17,46,8,22,38,19,32,47,16,37,30,14,48,1,43,4"
-constant kKatL2Perm2 = "30,35,31,18,7,33,4,50,38,19,15,2,29,44,49,16,22,51,47,9,5,10,25,12,6,21,52,24,14,39,8,3,20,37,43,36,46,34,40,26,23,48,28,11,41,42,27,32,1,45,13,17"
-constant kKatL2Perm3 = "22,14,28,2,48,29,37,23,52,32,38,25,30,47,43,5,11,3,39,20,1,45,50,21,51,27,15,4,9,26,24,8,19,36,41,35,18,49,7,13,46,6,31,34,44,16,12,33,42,17,10,40"
-constant kKatL2BaseDeck = "f43e364e1c1a4da57953b755e62e4a21c6ca54dad6c8afdd4fe527d1fa0f1471,e2b5c63bf1cb966f79bb5dd8049eb0fca145588b5128a6f7322acd1012e45b7c,ca68072db08307f62268023fb580e8148aea78f8b87e7b1d2691a922b5245446,b6e6777a5bf7657fd842629a537b02f06bc9e9c202d51b27cdd550b61c8a8a18,d68850b61f37953e920659d48ee504a51addd0e26996f0719188dad7f37fa52b,0c4a3a1a25314e3144391e6133bc6c7b135fae6673fbe9a0889dd5ed477c171a,4acd93b546fc640606953a84123707ad9a1617357d00e5f763084daa6a0d3840,dcfd9215cf8a022e2198e87af9f4c08059504ffb309a6dd1ff97917b6012902f,a825c649a65028cfa090453b8f8d7c91b5761a4df3c3a099105f764d05bbfc79,a2751a23688be97fee506a367e917f2d1b0b8445d56679fb66af2aca3f1dbc04,e2fd88a0a2bf8ec954e1bd7c637e9c5e810195e3614a09ee400adf6d8cb8c856,78f3c83c94a84614c0589b3f58269687a539de6a4cae5c02449f95bf6a46a46b,a40fdc57edfa2dc321608b50e782cc6f0907f65eada0ad48a25a00f546d0987a,22830c692615fc4b2a8ef1e3f8fbedc51a720107e359f9d2c1af737699af733b,d8ee75f4266debe97bcb495971922583ebb97ad60b78f5e9c1d187972bb1ec1b,44744fa706cee62e39546bb3f60b86c8563625be486dd73ae41bab0fd1a7cb00,4cd2d796f2e9e21c10b4db346d08ec53bbc7af1338f605d1d7e9a5244500af74,4aad6f63cff471e83ab8abbfefc7c52c4ac7e38eec8bab874a98db796b69f710,6ab24c9cd511a4fed28e34f86a40198700626511d05fc986eb5c4e0ac0688245,1a815ccb611b5b5fdcece3e811bf479e6d866f5211c4222766008c7de0b3fd77,40ebc4540b298dec8b107d3465bae5b4298c0d9dd0b052b6ee35085a15967043,1e7bb71f06a5a72d4f6dc5f0e5131b3ed38f344ae8afe4ab6325bd71d97eb770,0e6ac715b89c1b7350d1216965122c5565009b7d9140e0090c4041932c8a5a35,72edfa2243b1b418c24d89f6c7cc3444367945ead40cc152c1a02ed74b894d73,1af2d8904604eb9de539209d048932660026be3e09f1591deed8475b466d9c1d,98afeba72c1aad9ef62bb78730b25e81fb8c0f0aa496f5f558d4a401fb08dc32,2436bc86ba0f7a7a065a61e572021e4ba2f58edba7cf529d0f2fd9c852938d6b,36ff7c85101d8f18a8a98e16d225b56904ae11e5d4b3d441b0213237d274ee1f,9e3d2f7ba70b89df9fbeb9be41281e3738937f124195772e032c3d1fdb78f855,1cd179e72cb1b79eec94f4a249cb7ca303be533cf60004d22d18847ea06b6f74,ee9bf366559e64e3120c89a71b3a3f5157e901b52035c77add57f1e77631c621,62bb8617c9d4a3868b2685d0b68251a7ed77a438835f3955a809cdf991da5144,64b530ce023f8108b30706674fb1d50bcaec450e24b2eebebde1d0039be87b3f,6a88be3b6e714f8c47eb879456ee5343a54ad0090b1f8efa2ee3c55654b7cc16,146f81383fd8305ceec4ca6d3d59cf1358ef3333c708b6e6bb4d5dbd7cebb335,ccdf0af1f4608a4186a2ebddd4729174fb696a72606c0205bc237a181be2e006,248e4956f6625bc4e38f1025413893827006ec904f1d9e48f5bd8b9e8cfe622e,569050be976d1b9f7c3bb79534202819d33b2f747a04b34b00f74e4533f3d534,e686afeda75fbafe47f550a9914e5872f867fd144be9727906844fd7a5efba76,46f0ee3869ccfbd02973504688e82360867cead0540237b88cca8dd64ab8653e,feaa1f3bbfcd9f3e3428dc887d61612bab06635b7991abdd34ec69e01cd21a09,7ac0547ac2ae5c08f7b7dd14e1f2fd46d4110cc464c54379ed738e877bcdb42d,0ad5483deee6ec96989b844a54a52d93fdf9d61aa1c8bad49de64001e0aa7e42,7228ec86b2507b1f73de6668f23b68b01af1cbd1a18bc74b56bb98e0d1044d32,d070da71ae4c8f56464e6a9f0c0a7265f062de5047bce758957a37c3c06b4272,18b94704378b8065af2d9603b0e7a350105628025c8093ad9d6991c8efcd747b,967b07c684c6865789f35f3d3aaa16fae3f7d16d82b13dfe9c06fe79cf6f8578,a4467ecf421b21ff1783d95a45790c51a5904d0da89edfccf0c142e07b558901,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b,d0f0a3ca37ae84285a38836c0abba3536af53cfc32ca1681347baec559f47b7b,88ce578d9d4f057a76486e5f2e15fce75b1d07ea6d23efcb5d0ed421e1d35c37,50532c4ee88d1439e01a61f151c2f25f1ba2319c2d32f943ecfb1264d03ed72e"
-constant kKatL2Deck1 = "a8de3428db2d1cb591341ac375bbdb0581bd46f80d2804e94e71710a3b48541f,6208a4235f8ae00a67e3c8f0ebbbf2c97fbcded0363569d684a174c9f9c33472,d80f7d6653463748864517be750974916e0139fe3afcbd1a5e05481471d1e71e,0cb1f4e9cc67e1d58c88b5141f12c64caad25c5cbd5641ed6eb7433ffd9b236f,aca2977971dfa44ef40e9086ab5b58f635f25993d91d1c9eebec806b42e2084d,b42c199b8688e4fa95be56db11c0f269defd692ec3d56726055f4f2e3bf15c22,be8fd78c93e5096e7f156a4b6401874965065c9a39abdb57d2e278b5252cae03,b83bf82a7d4192df111443cde252d748245569be844c373078c97b3c5c21d042,380662f5a44beb9168bad94af183a145d6aa68330087e47c2413e1c02255ce7b,880321e01b402cab8e58739e24b8650502e87a1e53a728f4c7120f85cd79ec31,c4a33acbf3a9748e75320863de31088d2c156358797f55c1992e11ea95a5e768,a610eeaa66e3a4f799ab05ad0a5791ccf155fe9105815c8a5a27341cf00c3e20,ac94ae783e70f5b4db4e723283815cc2266fd5def3d0063ac58f50444e6e6620,ccf2a5e4813136eebc70cc00c8452d587701f378214aaedd1ed577a7f1c1020f,2ad863fc5aa197b4c35efccdb87379ebcc84a15a046bdf7fab33ffb9acd1f759,9ac91cad66318f80906c50bc9c2161ff4204fdd5e573a71c9409b5e92ecfc446,06c97bc904c39b8f2f13833ca41b376d0a70df99c3f48ce81c63e827c700b135,82c2bb912824f452cb8d62f5acad8b700324d13083016ade60dbebd0e24adf16,4cbdb1a1a87e1b2087df92f229a7e3d646f841a730275f3a355647b79d4c726f,202a2868ad6d3b99b4646a08f4f571e2373221ff58df7af32ce2801d1d725770,dc1d10c111206bc0e777e46a9fd5a56a2df56f37cec67f5261c26aa12a2aa937,9ef54cb33db9d77c664069f15bf54061ed01e075b5a5846bff366acb7f477d37,30dec7a12b6fd2f973683dfa053865fa8aa3f08ea5325a10e27aad97020bb729,6aae1939f32cc599e76e968455a30ce4d82280274ddaa3da099226aee642b57a,cac50035ec7bfe2a6f0091969ce08045b28b5fcaf6502d8aae107557e3c3e109,70337dc2f81c273be97d83f42e8f36ea03acec7451c0f6472155ffc4ac0f3518,02bbda5b5f1987ec365739fb37c2a599d2b725bedc0c204deb31fea49b5a9c4b,b4eb5d98403b1e5276994305fca33f4aa508978ed4edd923f18616783458b118,90f8bce01a01e5b30373962182b648c731452a2ccbfec2dba91de8fb022c193a,12cf3f7c4cd5cbc9b1fac833454ef6dbbd7ddd139bfa3812ee19b2bc3a34753f,24fc8edd6bcccf04c49b2b4b337131f6d4fd4d36d1b1c4ba6ed1a24ebeaf581b,98063c80c1bfa451e791f19fbb52723a302c94d16dd01f52425b6a496413785f,6e161fd50766cbd972d31ea5fc0b90807a4a103bf79b9766427cdd7fc4e3521b,8a835b4edd4375f1e2e908f14f1a47ba48e2cd499dc90a64040333d9c9344a74,94deccd57786903f49e7783e30b373781ffd162eab5f095ebdf99f088a048e4c,f0e6fd4c43e8647095384db6e110202c691408d6c9be53f00b4b13023a24d217,b61e937b2825e50de783985a69279b1e07cf45b2113c4ada5a78b8951f57ae0d,2239b5510058e2962e0bd9cf17f54fde38cb3d76f0503ce5ec4e132887c9a571,10135c31a39b36a2af83c0a0ff759facde77bce17b6350579c706f656486a10f,acdee51d73bdf6ee8613c73739d7c897d97a52fb9c6c4a0104395ea4806f2047,6ad5cc0f70a07befcbfbd6abcdb0279a579968e51555c36af6bc6b2bb0f6a010,aa66031a9585d3487f62170ad6bc236d81dbdeff4e0287dcce6e971afcfd4150,205f6e66b3d54d4e23e7be0512194444a13e76ef53bc032773e3eb1ba615015f,1cad41fa4896a2192cb96763568fd7b0b1a17a641235c571d6b9f735f970d800,fa91391acee3da6ce5beb220842c6d3a89b127d898915d78569becf98e42c405,92fd398554c27e6d525f6ab451a60bd34773fb627f5ac5e335ba26ba01d30c39,c202fb60a22eebdf70b871f93f0c871b97a602f2c46e77c9bf6517e5eac87677,2ef2dc398f3c20aa0d472c7be964b1450c8aea652cbc950a0684559328771371,e6ac5b83882b4f694775463dcfa35b30e269be84200826242615191af8072b7a,d4e11d4f0dba15abe5ec94e448871bd11e00e7c5f8c301a5573fbccd3ea2cc04,e4e0dfcd6cf502920991dd5789504d3b4764db3ca8b5a7356d6e1fdd70ffc274,d69d1e07c98931eea27cdd197eee2dd78d2d787adfc8c21dfef0968b9aed5d07"
-constant kKatL2MaskedDeck = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,ccbd8b67ded62a4c617adaf2661b6a5f3b321f8ac82d4ed631e174f17e016872,9087ea23c9a04974739041651d08ffaa60c83fe30e93c37ead172ddaeecea577,520321aa5411f0102d9854d7c36d0d9c0d218634c44655b99a3a78256178e774,8c155652fd2bdc7f3b1bbb3e960d9eb5097366f62c924b1c92bed58e945f9f19,1ed3f96f1a7d03fe3da78c54c209ed98aa2f2260bc5ff290ab9cb8ce1391ac0c,b632f200ca5decad5e041fa1d2411ea3555cd46a4b64790ccfe0c70c4de34a0f,9a4602b46bde2c6c860f9e7b9562ce87b62053c75daefeda0ffa3d72e13c4a05,4476b7e54b72b9abda47c42c7a0b55676acb865a9949119d2814a028b381bd10,4a0bb09499996a33d379909b8b7f1c6b48f276c76d7213abc82e920b2155872d,1ce9352e0a5505d7a67c00e0139bcd32ba585c84e416310e92eaccd4ff10245d,dca2411b332e647eec34df62d5fb8162d850bb831a115d1e71d51dce55eed626,56ba017c3ad1ea1126093efca04c749d085112132a578ec755d23a777f982f23,6edb77fbda06a59d0afa90686f9945efa863434424f74a1739c3d5153015f357,fa8273b7c9a231dfeb3ef71bc77788e7d357f292731c79cd2c52ef76acf47a29,c0ba5d3b244be2b869252cf23988a8063908520ff3e34ceca71cda4bbbc84b04,a8c3d44a17fbe150dedf35fadb9f3d5a3fbcf400f20994b4f0e1620478301a15,5e3168d6f5106aca4fea6916765ad28931aeba746d4e5c438e7257a053ec255b,3e59ef03c2f78b1c0be06501b254cee66608e3570dd08c9f16a2256f0585e476,20c2fcd252741106fc6bac82a30dccb3d9bb05f4c65891ebdc81d20cf4c6831a,5a954722e48f2a0534a26271ee77809fe27111152e77c161091d5c78476f6819,b42ba308571bd4f27052bf38ec82b50755dd22d97832cc4eb784630264d99638,a871a574b10e19d6431ae82e6f3d67571e29225e137d44821e887e1efceef715,a2d8ab119c8a7c9f2746cff786f8514fee315631e54c1850a20389b2e2d57e0b,6cc6bbf761404aca110b92e36e637dd5a8bca799e5680077654b0d0f192fa554,7cb1aeacfd37b1d7809c7d269c15737c7f746507c4358a30291c40a0efcfc13f,603aa0b85684a71fe8be7edbaa26cab094c4633df389f818faa6d1dbe69a4a51,2af6de55fc37181ad678f8dcb141c365f875d9a571b8e9727f8c963066792e62,38b0fbfdf0cdb815094dae6ae1ebe102125d5fc5933d2bf42ce9bc2bddd4eb0b,38f162c482282626597a32d0eff26dcadc22ea38b1e107c1934b905397d8b973,9c5f3d94578d122f329b825a8563b03d12b2e5b96916e83f1ff00264df8e9c67,767ac5e92db1ea84be5cf73dd70a39c61a7024e3464e109e36ff2c62b14a7235,308cdbdc2f3334271ef4d25e7f7ecc8933b5918ddbe819bb3484d3fa02325c27,8e8544127ae68c2a8d18a9c8cb8d37a76758916286ebf17597b17b9283b5f909,c0ddddd1e00241611d3c045b85d45b0fbf3ac2ae0078fd928da2955579339920,48c8be8d6374e2763cf6ab51e9a84863ad9d322098006243c8e1eaa318479e78,b49934b95c8748348fe21a30f191d080c805aae4e3505555f324b6974379ab68,bc2c0a3edf2c8f9c761980bcf13d444455d846c2a137a582ca8679ead71ee604,b463da981cfef69817ab80245630bf70deb604820fc87265719410f72462de35,6c7dc076178538735f5e1a890a21f054a9d81039f72424b65be5b041b5c3fa4f,8015469fa91721b299a3b6f7522478398820085127429312e17d42e5a40a462a,9abd2266d21ee49b0a6fc227a6ae21a8a18e8f0019eaf35933518d61f71c4052,d4a31d2d53796a3ffa6f12de5ed0de6cc2131a5d811c6b55505a5e58317af20e,b4e06f3351546a873220664a0585c506524e605453d9ea7d0de46bae5c90ea24,f4383b63dcb04aa7d70595c1450cad7842552095c31328d1c2ff3a5b3469067b,4876092cf6739c17bab348b6ff2d05feb8d00ecdcc865c5c17154b80f157c301,f4bb4c89cacaf8727fd11878f03b9fa47cb1645f5db293a656d3ba3b2641bf3b,da8fba36a6c821b0125984a1b9432c0911849f7fe6183c98abd940dad8d41b41,7247827e28f0b6116ec614a4d713f49ac291b6112f4ad0dd5f3a4f92bc331c02,feef6df7bf025f0f0b77c2fd40da954c44be8b85ccf943301e888e783a312307,e625479c6e3b0e1f1bafbe6f7e7630bd8c7c8c583e802b9282255bfe27574136"
-constant kKatL2PublicChain = "1c4a4cd95ab5df7e3fbb801b47c156e726bc8ffef83cb6892e979e12f2f40a18,dccce0c6d9e263337316e3487d17796b76d3057c9473c40b95be7b4b78a10069,54a040c81ab1aca13bf76c725416660af35c171209001e3abfb7aa6f56e2ce24,fce090799a09255f8066bc186f716f53b7df53a54c38e4d4f83ce7a9800cba6b"
-constant kKatL2PublicCard = "card:49"
-constant kKatL2HoleChain = "62e9d101a14e45cbea8506f23a225d6da973a3edfede81a99b7e81c3b9957827,80b56b50f6eea1ab201aaa93c738dd6441f5842f256bb890a5ebc867e5807c70,3a18dfc38fbbce3503f1fa5b45ba7b88c547799f663ecbd38d7474aa2aadff5b"
-constant kKatL2HoleCard = "card:47"
--- Phase 4d/5 vectors (generated by tools/protocol-kat.py --gen-xtalk): the
--- DLEQ commitment keys of the three fixed scalars (ck_i = k_i * B) and the
--- derandomized Chaum-Pedersen proof over the pinned unmask step (statement
--- c0 = k1 * v1, i.e. prove(k1, v1, c0)). Keep the block complete (the
--- kKatSeedsXor lesson).
-constant kKatL2Ck1 = "f8aaee2dfe3f251d8726037421fd646a85446b00f132dc37d0792a7e48a08a03"
-constant kKatL2Ck2 = "94d02c9027dffcedbc3fca0569b23d13fc966462b5208b5a25668ddefaa4ea65"
-constant kKatL2Ck3 = "9ce4b6a7337e94a6c60535fccf71ee83a69745b46359fa9bd0a1846864ad1458"
-constant kKatL2DleqProof = "d84b045c40a2d08257ef6907556d4a096a26f0777b2a8c213db9736e403150048634476eb775e61807679da17345da913e9ae89959a0dd3a5ed121483a4de064c838dc1234a84786a24f5c120cf28dc410b59d28213e74c4befbc1992fbb2e04"
--- KAT INPUTS (not generated): the canonical identity encoding (the one
--- VALID point scalar mult must still refuse -- 32 zero bytes) and 32 bytes
--- that are NOT a valid ristretto encoding at all
-constant kKatL2Identity = "0000000000000000000000000000000000000000000000000000000000000000"
-constant kKatL2BadPoint = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+-- The harness's own script-level declarations -- gRpt/gPassN/gFailN/gSkipN,
+-- the netplay loopback contexts, and every kKat* vector -- are HOISTED to
+-- the declaration block at the top of this file. See the banner there for
+-- why they cannot live here.
 
 command heRunSelftest
+   -- THE INTERACTIVE entry point: run everything, then deliver the report the
+   -- way a maintainer sitting in front of the stack wants it (panel, clipboard,
+   -- msg). heSelfTest, just below, is the QUIET one; both drive the SAME
+   -- heTestRunAllSections, so the two can never end up testing different
+   -- things -- two copies of the section list is exactly how one goes stale.
+   heTestRunAllSections
+   put return & "==== " & gPassN & " pass, " & gFailN & " fail, " & gSkipN & " skip ====" \
+         & return after gRpt
+   if gFailN > 0 then
+      put "RESULT: FAILED" & return after gRpt
+   else
+      put "RESULT: green" & return after gRpt
+   end if
+   -- deliver the report where it can be READ WHOLE: the stack's own scrolling
+   -- report panel (heReportShow) -- on OXT a put into the msg container lands
+   -- silently in a CLOSED message-box palette, so the report seemed to vanish
+   -- while the lobby's net field (the live wire feed) kept updating -- plus a
+   -- full copy on the clipboard, made to be pasted back for review. (The msg
+   -- CONTAINER token is "msg", not the prose "the message box" -- v0.17.2,
+   -- gotcha 13's family -- but even the correct form displays nothing when
+   -- the palette is closed, hence the panel.)
+   put "(full report is also on the clipboard -- just paste it)" & return after gRpt
+   set the clipboardData["text"] to gRpt
+   put gRpt into msg
+   heReportShow gRpt
+   return gRpt
+end heRunSelftest
+
+function heSelfTest
+   -- THE QUIET entry point: runs exactly what heRunSelftest runs and RETURNS
+   -- the report as a value. It builds no control and touches no clipboard,
+   -- which is what a harness folded into another paste has to be.
+   --
+   -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
+   -- than left as a claim that reads better than it is: this used to say "and
+   -- no msg", and section 21 is heProbeSodium, whose last lines are
+   -- `put return & tRpt after gRpt` and then a BARE `put tRpt` -- and a bare
+   -- put writes to msg. That echo is deliberate and documented at its own site
+   -- (running heProbeSodium standalone from the message box should print), and
+   -- it is harmless in a host paste (the suite core never reads msg; nothing
+   -- it owns is overwritten). The clipboard is the one that would have cost
+   -- something, because the suite scaffold's Copy-results button lives there,
+   -- and that one really is untouched. The line
+   -- format is riptide's rsSelfTest, deliberately copied rather than invented.
+   --
+   -- Why heRunSelftest cannot be that entry point -- every reason below is a
+   -- defect the moment it is forgotten, so they are written down rather than
+   -- summarised as "it is interactive":
+   --   * it BUILDS an 800x560 report overlay on the card (heReportShow). A
+   --     suite paste has no holde-em card, and a stack that grew one would be
+   --     a stack the harness silently redecorated.
+   --   * it OVERWRITES clipboardData["text"], which is the suite scaffold's
+   --     OWN Copy-results channel: the person who ran the suite harness and
+   --     pressed Copy would paste holde-em's report instead of the suite's,
+   --     and nothing would say so.
+   --   * it writes to msg.
+   --   * its summary reads "==== n pass, m fail, k skip ====", which the
+   --     core's stSummaryCounts refuses ON PURPOSE -- the words are
+   --     "pass"/"fail" rather than "passed"/"failed" and "====" is not a
+   --     number -- so a fold that reused it would report this member as
+   --     unreadable while its report was perfect. That exact failure cost the
+   --     2026-08-09 engine pass two members; it is not a hypothetical.
+   --
+   -- THE FIRST LINE IS THE CONTRACT: exactly two numbers plus "passed" and
+   -- "failed", in that order, and nothing else. One extra word and
+   -- stSummaryCounts reads the line as prose and refuses it (which is the
+   -- behaviour that makes the parse safe, not a bug to work around). So the
+   -- skip count gets its own line, and the run's banner stays below the
+   -- divider where it can never be mistaken for a summary.
+   --
+   -- Verified statically; needs an OXT pass.
+   heTestRunAllSections
+   -- leave no timer of ours running inside somebody else's paste
+   heTestSweepNetTimers
+   return gPassN && "passed," && gFailN && "failed" & return & \
+         gSkipN && "skipped (absent optional extensions and engine-only paths -- see the log)" \
+         & return & "----------------------------------------" & return & gRpt
+end heSelfTest
+
+command heTestRunAllSections
+   -- The RUN, with no delivery attached: reset the counters, print the banner,
+   -- drive every section under its guard. Factored out of heRunSelftest so the
+   -- interactive report and the folded one execute one list, not two.
    put empty into gRpt
    put 0 into gPassN
    put 0 into gFailN
@@ -11986,27 +12157,37 @@ command heRunSelftest
    heRunSection "heTestLevel2VoidRun"
    heRunSection "heTestLivenessRun"
    heRunSection "heProbeSodium"
-   put return & "==== " & gPassN & " pass, " & gFailN & " fail, " & gSkipN & " skip ====" \
-         & return after gRpt
-   if gFailN > 0 then
-      put "RESULT: FAILED" & return after gRpt
-   else
-      put "RESULT: green" & return after gRpt
-   end if
-   -- deliver the report where it can be READ WHOLE: the stack's own scrolling
-   -- report panel (heReportShow) -- on OXT a put into the msg container lands
-   -- silently in a CLOSED message-box palette, so the report seemed to vanish
-   -- while the lobby's net field (the live wire feed) kept updating -- plus a
-   -- full copy on the clipboard, made to be pasted back for review. (The msg
-   -- CONTAINER token is "msg", not the prose "the message box" -- v0.17.2,
-   -- gotcha 13's family -- but even the correct form displays nothing when
-   -- the palette is closed, hence the panel.)
-   put "(full report is also on the clipboard -- just paste it)" & return after gRpt
-   set the clipboardData["text"] to gRpt
-   put gRpt into msg
-   heReportShow gRpt
-   return gRpt
-end heRunSelftest
+end heTestRunAllSections
+
+command heTestSweepNetTimers
+   -- Cancel the network timers the harness itself armed. Several sections drive
+   -- heNetHandKick (seven times) and heNetStartGame on SYNTHETIC online
+   -- contexts, and those paths legitimately arm a send -- the between-hands
+   -- beat is "send heNetNextHandTick ... in <pace> milliseconds". Standalone
+   -- that is merely untidy: the tick finds gGame restored and exits on its own
+   -- guard. Inside a suite paste it is not untidy at all -- it fires into
+   -- somebody else's async phase, seconds after this member has already
+   -- reported, from a handler no other member has heard of.
+   --
+   -- Swept BY PREFIX rather than by the names armed today, because a heNet*
+   -- send added to a section later would otherwise ride back out of the
+   -- harness silently, which is the whole class of bug this exists for. NOT
+   -- the blanket "he" prefix closeStack uses: heHudTick and the paced hand
+   -- steps belong to a REAL table, and stopping a maintainer's HUD because
+   -- they ran the harness would be a new bug. (Running this against a LIVE
+   -- online table is unsupported either way -- the sections swap gGame out
+   -- from under it and restore it on the way past.)
+   --
+   -- gotcha 5: pendingMessages is comma-delimited id,time,name,target -- set
+   -- the delimiter before parsing it.
+   local tMsgLine
+   set the itemDelimiter to comma
+   repeat for each line tMsgLine in the pendingMessages
+      if item 3 of tMsgLine begins with "heNet" then
+         cancel item 1 of tMsgLine
+      end if
+   end repeat
+end heTestSweepNetTimers
 
 command heReportShow pTxt
    -- the harness report panel: a scrollable field the WHOLE report reads in,

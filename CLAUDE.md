@@ -64,9 +64,14 @@ openxtalk-libraries/
                        13-21; the idiom gate file is retired); seven KAT
                        mirrors + an independent-reference fuzz ride
                        build-all; the fold record is in its CLAUDE.md - which
-                       also carries the 2026-08-16 assessment of why its
-                       harness is still NOT in the suite paste (five pieces of
-                       missing fold machinery and one real defect, all named)
+                       also carries the 2026-08-16 assessment that named the
+                       five pieces of missing fold machinery and the one real
+                       defect keeping its harness OUT of the suite paste, and
+                       then the record of the fold itself once all six were
+                       cleared: it is the NINTH member harness since
+                       2026-08-16, and the only one whose fold carries a whole
+                       APPLICATION, because its game and its tests are one
+                       file
 ```
 
 Each member stays a **self-contained extension**: its own `CMakeLists.txt` /
@@ -153,10 +158,10 @@ python3 tools/check-suite-coverage.py            # does it actually reach the su
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test** (EIGHT since 2026-08-16: the six extensions,
+member's own deep self-test** (NINE since 2026-08-16: the six extensions,
 riptide's harness — which now spans phases 1-4, 6, and 7 plus the spec-8.3
-sealed-anon-DM crypto — and box2dxt's, folded in with each one's names
-prefixed), plus — since 2026-08-10 — **the pure-script LIBRARIES themselves**,
+sealed-anon-DM crypto — box2dxt's, and holde-em's, folded in with each one's
+names prefixed), plus — since 2026-08-10 — **the pure-script LIBRARIES themselves**,
 `coinxt/src/coinxt.livecodescript`, `onionxt/src/onionxt.livecodescript`,
 (since 2026-08-11) `riptide/src/riptide.livecodescript` and (since 2026-08-16)
 `box2dxt/src/box2dxt-kit.livecodescript`,
@@ -201,6 +206,34 @@ Five things about it are worth knowing before you touch it:
   defect in the dispatcher. All three mechanisms assert their inputs still
   exist, so a rename in the member harness fails the build instead of silently
   leaving a stale exemption behind.
+
+- **HOLDE-EM IS THE OTHER ODD FOLD, and it needed almost none of that
+  (2026-08-16).** It is the second paste-and-run stack, but it differs in the
+  one way that decides the shape: **its game and its harness are THE SAME
+  FILE**, so there is nothing to embed and the whole 15k-line application
+  folds in PREFIXED alongside the tests that drive it. That is safe for the
+  reason the verbatim embeds exist to work around — the layers stay unprefixed
+  because their tests live in a DIFFERENT file and must reach them by their
+  real names, and here both sides are renamed together. Measured: of 6950
+  string literals in code, `rename()` touches 45, every one a message name
+  armed by `send`/dispatched by `do` or prose in a test label; all 165
+  `constant` values are byte-identical in the output, and un-prefixing the
+  folded section diffs against the source, minus its dropped chrome, to ONE
+  hunk. Verbatim would have been the wrong call twice over: 389 unprefixed
+  handlers into a paste already carrying 928, and — decisively — its
+  `on b2kFrame` would have started receiving the embedded Kit's frame messages
+  during box2dxt's deterministic hand-stepping, because box2dxt's harness
+  registers `b2kFrameTarget the long id of me` and in the paste that is the
+  same stack. Its row therefore uses only `drop_extra` (nine handlers of stack
+  chrome, `preOpenStack` first — it sets this stack's rect, so left in it
+  would silently resize the suite's window to 1024x640) and ONE rewrite: the
+  harness's own pending-message sweep, which matches `begins with "heNet"` and
+  so would have matched NOTHING once every message it arms was prefixed —
+  **a fragment of a name is not a name, and nothing renames it**. That rewrite
+  is what `@PREFIX@` is for (the post-rename placeholder beside
+  `@CORESESSION@`), and it widens the sweep to the member prefix because this
+  harness also arms four non-`heNet` paced-hand steps whose next-hand tick
+  would otherwise fire into the core's async loopback phase and deal a hand.
 - **The namespacing is TOTAL.** All five `.livecodescript` harnesses define
   `stAssert`, `stRun`, `stBuild` and `sTotal`, so every name a member file
   defines is prefixed - including its own scaffolding and its own counters. Not
@@ -216,19 +249,45 @@ Five things about it are worth knowing before you touch it:
   either regresses, and if `en1stCleanup`/`dc1stCleanup` ever become reachable -
   they call `enDeinitialize`/`dcCleanup`, which would pull the transport out from
   under the core's loopback.
-- **A declaration BELOW the first handler is dropped, also silently, and that
-  is now refused at the source (2026-08-16).** `split_handlers` returns only the
-  LEADING run of non-handler lines, so a `local` or `constant` written BETWEEN
-  two handlers — legal, and the natural pattern in any file that keeps a
-  subsystem's state next to its handlers — was dropped by both `fold()` and
-  `embed()` with no error at all. It is the same hazard as the lexical-position
-  one below, arriving by a different door, and the committed-file checker's
-  check 12 catches only the `s*`/`k*` spellings of it, never a `g*`. The
-  generator now measures every source's declaration lines against the ones the
-  hoist can see and refuses the build when they disagree
-  (`assert_no_declaration_dropped`, mutation-tested). Every current member and
-  layer passes it; the assessment that found it was holde-em's, where **81 of
-  188 declarations** sit below the first handler.
+- **holde-em's live game is the third, and it is checked by REACHABILITY
+  rather than by absence (2026-08-16)** - because a fold that carries a whole
+  application carries everything that application can do, whether the harness
+  calls it or not. `check-suite-selftest.py`'s check 7d computes the closure
+  from `he1heSelfTest` (an over-approximation on purpose: any `he1*` name in a
+  reachable body is an edge, so it can name a path that never runs but cannot
+  miss one) and refuses a build where `heNetStart` (`btStartSession` - a
+  SECOND libtorrent session), `heRunSelftest` (overlay + clipboard + `msg`),
+  `heBuildTable`, `heReportShow` or `heKitTryInit` (a b2k world colliding with the
+  one box2dxt hand-steps) becomes reachable. **The `bt1stCleanup` hazard here
+  is subtler than the enetxt/datachannelxt one and worth carrying:**
+  `heNetStop` IS reachable and DOES call `btStopSession gGame["session"]`.
+  What makes that harmless is that `gGame["session"]` is written only by
+  `heNetStart`, which is not - so the folded run can only ever hand it an
+  empty handle. Both halves are checked; the argument is not left as prose.
+  7d also holds a property rather than a list - the closure creates no
+  control, deletes none, never resizes or retitles the stack and never touches
+  `clipboardData`, which is the half that survives a rename - and refuses a
+  pending-message sweep that is not by the member prefix. Check 7e refuses any
+  of the nine dropped chrome handlers reappearing.
+- **CORRECTED 2026-08-16, the same day it was written: a declaration below the
+  first handler is NOT dropped, and the gate that claimed to refuse it cannot
+  fire.** The paragraph that stood here said `split_handlers` returns only the
+  LEADING run of non-handler lines, so a `local` or `constant` between two
+  handlers was silently dropped, and that `assert_no_declaration_dropped` now
+  refuses that shape "mutation-tested". Measured against the code instead of the
+  docstring: `split_handlers` appends EVERY top-level non-handler line wherever
+  it sits, so such declarations are collected and hoisted correctly, and the
+  guard's two counts are equal by construction on every real source. It can only
+  fire on a column-0 declaration written INSIDE a handler body — a narrow and
+  genuine case, and the only thing it actually guards.
+  **How the false claim survived a mutation test is the lesson.** The test drove
+  the FUNCTION with a hand-built preamble matching its docstring, and it refused
+  correctly. It was never driven through the PIPELINE, which never produces that
+  input. Component verified, system claimed — the same shape as coinxt's
+  constant gate reporting the constants it had parsed as the ones it had
+  checked. When a gate is added, exercise it the way the build will, not the way
+  its docstring describes. The `81 of 188` figure quoted here came from the same
+  misreading and is not a real hazard count.
 - **A missing declaration is SILENT, which is why there is a checker.** OXT
   cannot compile a `.livecodescript` headlessly, and LiveCodeScript evaluates an
   undeclared name as the literal text of its own name - so a fold that dropped
@@ -315,7 +374,7 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
 That gap is invisible from the inside: the harness was ~4400 lines running ~580
-checks when this was learned (20590 lines today, and the lesson still holds - and it landed again on
+checks when this was learned (34119 lines today, and the lesson still holds - and it landed again on
 2026-08-16, when box2dxt joined the gate and **211 of its Kit's 313 public
 handlers turned out never to have been named by a test**, many of them handlers
 that RUN on every existing test through `b2kStepOnce`),
@@ -332,12 +391,32 @@ handler cannot leave a permanent exemption behind it. It is a floor, not a ceili
 "called by name" is not "tested well", and depth stays the member vector gates' job.
 Box2dxt's 211 were closed the same way, by 13 new sections in its own harness that
 say in their banner that they are shallow; the member is at 313/313 with zero
-exemptions, and the suite total is **724/742**. What is NOT in that ratchet, and
-says so beside its row: box2dxt's raw `b2*` `.lcb` binding, 376 public handlers
-over 374 foreign declarations, of which **245 are named by no script anywhere in
-that member**. Ratcheting it would mean ~375 assertions written blind against a
-foreign-bound API in one pass; a script-level ratchet for that layer is an OPEN
-item, and `box2dxt/tests/smoke_test.c` under ASan is what covers it today.
+exemptions, and the suite total is **724/742**. TWO layers are NOT in that
+ratchet, and each says so beside the `MEMBERS` list with its numbers, because
+"we did not measure it" and "we measured it and a row would lie" are different
+admissions:
+
+- **box2dxt's raw `b2*` `.lcb` binding** - 376 public handlers over 374 foreign
+  declarations, of which **245 are named by no script anywhere in that
+  member**. Ratcheting it would mean ~375 assertions written blind against a
+  foreign-bound API in one pass; `box2dxt/tests/smoke_test.c` under ASan is
+  what covers it today.
+- **holde-em's `he*` surface** (2026-08-16, at the fold) - 379 public handlers
+  in ONE 15k-line file that is the game AND its harness. A row would read
+  **0/379** as the gate is written (everything ships prefixed as `he1he*`, so
+  it would fail with 379 phantom gaps on day one) and **379/379** the moment
+  the scan were taught the prefix - permanently, because the folded section is
+  the GAME and the game names its own API. Only **163/379** are named by a
+  `heTest*`/`heProbe*` body, which is the honest number and not one this gate
+  can compute. That 379/379 is exactly the failure the embedded-span CUT
+  exists to prevent, arriving where there is nothing to cut: every other
+  member keeps its library in a separate file, embedded and cut, while its
+  tests are folded. A row here would be a gate that overstates its coverage -
+  the coinxt lesson below - so the seven KAT mirrors plus `logic-fuzz.py`
+  (an INDEPENDENT reference, not the port) stay what backs that layer.
+
+Both are OPEN items, not closed ones; holde-em's needs a way to scan the
+harness REGION of a single-file member, which nothing in this suite has.
 
 The same shape of hole was in **coinxt's own constant gate**, found while fixing this
 one: `check-selftest-vectors.py` re-derived an explicit list and then printed

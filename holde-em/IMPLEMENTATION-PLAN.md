@@ -100,9 +100,12 @@ self-test stack was folded into `src/holdem.livecodescript`.
 - **1d. Table UI + animations** (spec 11) — self-building UI (the family pattern:
   construct chrome on open, tag with a `kUIVersion`, bump when chrome changes); pooled
   card sprites + chip bodies at build; `b2kSheetEnsureIcon` pre-warm; deal slides
-  (`b2kSpriteMoveTo`, ~70 ms stagger), squash-flip via one-shot + `b2kSpriteOnFinish`
+  (`b2kSpriteMoveTo`, ~70 ms stagger), squash-flip via one-shot + a finish message
+  REGISTERED with `b2kSpriteOnFinish` (the Kit's setter -- the receiver is the game's
+  own `heCardFlipDone`, and `b2kFrameTarget` must be set or nothing is dispatched)
   + `b2kSpriteSetFrame` (gotchas 19/23/27); one-impulse chip tosses that settle and
-  sleep (gotcha 17); HUD on-change at <= 4 Hz.
+  sleep (gotcha 17); HUD on-change at <= 4 Hz. Not built: the v0.24.1 pass found the
+  receiver had been written under the old wrong reading and removed it.
 - **1e. Harness v1**: evaluator vectors, betting cases, deal-audit round-trip,
   transcript replay determinism (a canned hotseat session folds to identical state
   twice), plus the family rule — bump `kHeHarnessV` on every engine-behavior change.

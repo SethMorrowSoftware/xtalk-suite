@@ -2012,8 +2012,8 @@ command stRunMemberHarnesses
             "Kit is embedded in this paste, but the physics is native)"
    end if
 
-   -- Riptide is an APP layer over the extensions above, so it runs LAST: by
-   -- here every extension it probes has already shown its own colours. Its
+   -- Riptide is an APP layer over the extensions above, so it runs after them:
+   -- by here every extension it probes has already shown its own colours. Its
    -- harness handles a missing optional extension itself (sections SKIP), and
    -- refuses cleanly without SodiumXT, so the only gate here is the embedded
    -- layer being present at all.
@@ -2027,6 +2027,36 @@ command stRunMemberHarnesses
       stSkip "Riptide deep self-test", \
             "the riptide script layer is not present; the paste is damaged"
    end if
+
+   -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to
+   -- probe for first. It is the second capstone APP and it is pure script, so
+   -- the whole game folds in with its harness (one file: tools/build-suite-
+   -- selftest.py prefixes both together) and he1heSelfTest always exists. Its
+   -- 21 sections do their own probing and SKIP by name when SodiumXT,
+   -- TorrentXT or OnionXT is absent, so an unconditional call reports honestly
+   -- on a bare engine instead of hiding behind a guard the member does not
+   -- need.
+   --
+   -- LAST for a reason, not for tidiness. It is the only folded harness that
+   -- ARMS TIMERS of its own: several sections drive the between-hands beat on
+   -- synthetic online contexts, and the paced hand steps can arm too. Its quiet
+   -- entry point sweeps every pending message carrying this member's prefix
+   -- before it returns (the fold widens that sweep - see the rewrite in the
+   -- generator), so nothing it armed can still be ticking when stRun arms the
+   -- cross-member ENet/DataChannel loopbacks a few lines below. Running it here
+   -- keeps the gap between "the last thing holde-em armed" and "the sweep" as
+   -- small as this file can make it.
+   --
+   -- The entry point is heSelfTest, NOT heRunSelftest: the interactive one
+   -- builds an 800x560 report overlay on the card, overwrites
+   -- clipboardData["text"] (this scaffold's own Copy-results channel) and
+   -- writes to msg, and its "==== n pass, m fail ====" summary is a line
+   -- stSummaryCounts refuses on purpose.
+   try
+      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest()
+   catch tError
+      stSectionFailed "holde-em deep self-test", tError
+   end try
 end stRunMemberHarnesses
 
 -- Strip the punctuation a report hangs off its words, so "PASSED:" and

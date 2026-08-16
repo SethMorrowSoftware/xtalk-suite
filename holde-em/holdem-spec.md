@@ -712,9 +712,14 @@ apply throughout; gotcha numbers below cite the carried-lessons list in `CLAUDE.
 - **Deal**: `b2kSpriteMoveTo` slides from the shoe, staggered ~70 ms by `send ... in`
   timers.
 - **Flip** (flop/turn/river): sprites do not rotate (gotcha 23), so flips are the
-  squash trick — one-shot `b2kSpritePlay` back->edge, then in `b2kSpriteOnFinish` swap
-  the face with `b2kSpriteSetFrame` and play edge->flat. Gotchas 19 (OnFinish fires for
-  whoever started it) and 27 (capture per-flip context immediately) apply verbatim.
+  squash trick — one-shot `b2kSpritePlay` back->edge, then in the game's OWN finish
+  receiver swap the face with `b2kSpriteSetFrame` and play edge->flat. The receiver is
+  reached by registering it: `b2kFrameTarget me` once, then
+  `b2kSpriteOnFinish tSpr, "heCardFlipDone"` per sprite -- `b2kSpriteOnFinish` is the
+  Kit's SETTER, and defining a handler by that name receives nothing (this text said
+  otherwise until v0.24.1, and the stack duly shipped the dead receiver). Gotchas 19
+  (the finish message goes to whoever started the animation) and 27 (capture per-flip
+  context immediately) apply verbatim.
 - **Chips**: the one earned physics flourish — chips are *graphics* bodies (they tumble;
   rotation matters), tossed at the pot with a single `b2kForce` write and left to
   settle and sleep (gotcha 17: no per-frame velocity writes, ever). Pot-push to the
