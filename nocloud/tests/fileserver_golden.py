@@ -59,6 +59,13 @@ User-declared routes (.qsroutes.json):
   qsTemplateValue  -> template_value()  (deterministic tokens; clock tokens empty here)
   qsTemplateEscape -> template_escape() (default-deny: json types JSON, all else HTML)
   qsMountLocation -> mount_location()   (redirect Location re-based onto the /<token>/ mount)
+  qsRouteKeyPath   -> route_key_path()  (the path half of a "METHOD /path" key)
+  qsRouteHasParams -> route_has_params() (exact key vs :param pattern - the one test)
+  qsRouteParamCount -> route_param_count() (specificity rank: fewest params = most literal)
+  qsUserPatternValid -> user_pattern_valid() (the :param declaration gate: static FIRST
+                                         segment, [A-Za-z0-9_] names, no duplicates)
+  qsRouteMatch     -> route_match()     (segment matcher + the reserved-path backstop)
+  qsUserRouteFind  -> user_route_find() (deterministic pattern pick for one request)
 
 Transfers-row formatting:
   qsRateShort     -> rate_short()
@@ -549,31 +556,148 @@ def http_date(epoch):
         pad2(hour), pad2(minute), pad2(sec))
 
 
+# ---- :param route patterns (Phase 3): key split, pattern test, matcher, picker ----
+# A user route path may carry :param segments. The pieces mirror one property each and
+# compose into the request-time walk: route_key_path splits a "METHOD /path" table key;
+# route_has_params is the ONE exact-vs-pattern test (safe because user_pattern_valid
+# refuses any param-shaped path it cannot store, so within the stored table the two are
+# the same predicate); route_param_count ranks specificity; route_match extracts the
+# captures; user_route_find arbitrates deterministically. Mirrors qsRouteKeyPath /
+# qsRouteHasParams / qsRouteParamCount / qsUserPatternValid / qsRouteMatch /
+# qsUserRouteFind.
+
+def route_key_path(key):
+    sp = key.find(" ")
+    return "" if sp < 0 else key[sp + 1:]
+
+
+def route_has_params(path):
+    return any(seg.startswith(":") for seg in path.split("/"))
+
+
+def route_param_count(path):
+    return sum(1 for seg in path.split("/") if seg.startswith(":"))
+
+
+def user_pattern_valid(path):
+    """Declaration gate for a possibly-parameterised route path. A plain path defers to
+    user_path_valid; a pattern must ALSO keep its FIRST segment static (a leading param
+    would match into /_qs and /_edit - with it static, the reserved namespaces are
+    unreachable by any stored pattern BY CONSTRUCTION), name every param [A-Za-z0-9_],
+    and never reuse a name. Mirrors qsUserPatternValid."""
+    if not user_path_valid(path):
+        return False
+    if not route_has_params(path):
+        return True
+    seen = set()
+    for idx, seg in enumerate(path.split("/"), 1):
+        if not seg.startswith(":"):
+            continue
+        if idx == 2:                 # item 1 is the empty text before the leading "/"
+            return False             # -> the FIRST real segment must be static
+        name = seg[1:]
+        if name == "":
+            return False
+        for c in name:
+            o = ord(c)
+            if not ((48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122) or c == "_"):
+                return False
+        if name in seen:
+            return False
+        seen.add(name)
+    return True
+
+
+def route_match(pattern, path):
+    """Match one STORED pattern against a decoded request path -> {name: value} or None.
+    Segments compare pairwise; a :param captures exactly ONE nonempty segment (the request
+    path was urlDecoded before routing, so an encoded %2F is already a real separator and
+    splits - a param can never smuggle a slash). Trailing slash is significant, checked up
+    front (which also keeps the engine's trailing-delimiter item counting and this split()
+    in verdict agreement). BACKSTOP: never matches anything against a reserved request
+    path - declaration makes such a pattern unstorable, so this pins the defense-in-depth
+    line against a hostile pattern injected past declaration. Mirrors qsRouteMatch."""
+    if path == "/_qs" or path.startswith("/_qs/") \
+            or path == "/_edit" or path.startswith("/_edit/"):
+        return None
+    if pattern.endswith("/") != path.endswith("/"):
+        return None
+    pat_segs = pattern.split("/")
+    path_segs = path.split("/")
+    if len(pat_segs) != len(path_segs):
+        return None
+    params = {}
+    for pat, got in zip(pat_segs, path_segs):
+        if pat.startswith(":"):
+            if got == "":
+                return None
+            params[pat[1:]] = got
+        elif pat != got:
+            return None
+    return params
+
+
+def user_route_find(keys, method, path):
+    """The stored pattern key that should serve method+path, or "". Exact keys are the
+    caller's fast path and are SKIPPED here. Deterministic across matches: fewest params
+    wins, ties broken by the smallest key (array iteration order is not a contract).
+    Mirrors qsUserRouteFind (which walks the same keys off the live table)."""
+    best_key, best_count = "", -1
+    for k in keys:
+        sp = k.find(" ")
+        if sp < 0:
+            continue
+        if k[:sp] != method:
+            continue
+        rp = k[sp + 1:]
+        if not route_has_params(rp):
+            continue
+        if route_match(rp, path) is None:
+            continue
+        count = route_param_count(rp)
+        if best_key == "" or count < best_count or (count == best_count and k < best_key):
+            best_key, best_count = k, count
+    return best_key
+
+
 # ---- qsHttpAllow: the Allow header value for a path --------------------------
-# Static verbs GET/HEAD/OPTIONS plus any method registered for exactly this path -
-# across BOTH the built-in route table and (when a root is shared) the folder's
-# user-declared .qsroutes.json routes - in deterministic (sorted) order, de-duplicated.
-# Both tables key on "METHOD /path". Mirrors qsHttpAllow(pPath, pRoot).
+# Static verbs GET/HEAD/OPTIONS plus any method registered for a route CLAIMING this
+# path - built-in routes (always exact) and (when a root is shared) the folder's
+# user-declared .qsroutes.json routes, where "claiming" is an exact key match OR a
+# :param pattern that MATCHES the path (a param route's methods must never fall out of
+# the OPTIONS/405 derivation) - in deterministic (sorted) order, de-duplicated. Both
+# tables key on "METHOD /path". Mirrors qsHttpAllow(pPath, pRoot).
 
 def http_allow(route_keys, path, user_keys=None):
-    keys = list(route_keys) + list(user_keys or [])
-    extras = sorted({
-        k.split(" ", 1)[0]
-        for k in keys
-        if " " in k and k.split(" ", 1)[1] == path
-        and k.split(" ", 1)[0] not in ("GET", "HEAD", "OPTIONS")
-    })
-    return ", ".join(["GET", "HEAD", "OPTIONS"] + extras)
+    extras = set()
+    for k in route_keys:
+        if " " in k:
+            m, p = k.split(" ", 1)
+            if p == path and m not in ("GET", "HEAD", "OPTIONS"):
+                extras.add(m)
+    for k in (user_keys or []):
+        if " " in k:
+            m, p = k.split(" ", 1)
+            claims = (p == path) or (route_has_params(p)
+                                     and route_match(p, path) is not None)
+            if claims and m not in ("GET", "HEAD", "OPTIONS"):
+                extras.add(m)
+    return ", ".join(["GET", "HEAD", "OPTIONS"] + sorted(extras))
 
 
 # ---- qsCorsPreflight: the CORS header block for an OPTIONS preflight ----------
-# Empty unless some user route on `path` opted into cors; else the four Access-Control-*
-# lines (Allow-Methods reuses the already-computed Allow value). `cors_keys` = the set of
-# "METHOD /path" keys whose route set cors:true. Mirrors qsCorsPreflight.
+# Empty unless some user route CLAIMING `path` (exact, or a matching :param pattern -
+# the same rule as http_allow, so the preflight promise holds identically for param
+# routes) opted into cors; else the four Access-Control-* lines (Allow-Methods reuses
+# the already-computed Allow value). `cors_keys` = the set of "METHOD /path" keys whose
+# route set cors:true. Mirrors qsCorsPreflight.
 
 def cors_preflight(cors_keys, path, allow):
     for k in cors_keys:
-        if " " in k and k.split(" ", 1)[1] == path:
+        if " " not in k:
+            continue
+        p = k.split(" ", 1)[1]
+        if p == path or (route_has_params(p) and route_match(p, path) is not None):
             return ("Access-Control-Allow-Origin: *\r\n"
                     "Access-Control-Allow-Methods: " + allow + "\r\n"
                     "Access-Control-Allow-Headers: *\r\n"
@@ -782,6 +906,11 @@ def template_value(tok, req):
         return req.get("__path", "")
     if tok.startswith("query."):
         return query_param(req.get("__query", ""), tok[6:])
+    if tok.startswith("param."):
+        # the :param captures ride the request array as __params (server-owned "__"
+        # namespace - unforgeable by a client); a missing capture is empty, like an
+        # absent query value, and the value is escaped at the substitution site
+        return req.get("__params", {}).get(tok[6:], "")
     return ""                       # unknown (incl. clock tokens now/date) -> empty here
 
 
@@ -1295,6 +1424,145 @@ def main():
     ]:
         check("user_path_valid(%r)" % path, user_path_valid(path), want)
 
+    # -- :param patterns: the key split, the exact-vs-pattern test, the specificity rank --
+    for key, want in [
+        ("GET /api/x", "/api/x"),
+        ("DELETE /api/files/:name", "/api/files/:name"),
+        ("GET /a b", "/a b"),                   # a path may contain a space; first space splits
+        ("NOSPACE", ""),
+    ]:
+        check("route_key_path(%r)" % key, route_key_path(key), want)
+    for path, want in [
+        ("/api/hello", False),
+        ("/api/:name", True),
+        ("/api/files/:name", True),
+        ("/api/x:y", False),                    # ":" not segment-leading -> literal, not a param
+        ("/", False),
+    ]:
+        check("route_has_params(%r)" % path, route_has_params(path), want)
+    for path, want in [
+        ("/api/hello", 0),
+        ("/api/:a", 1),
+        ("/api/:a/:b", 2),
+        ("/api/:a/sub/:b", 2),
+    ]:
+        check("route_param_count(%r)" % path, route_param_count(path), want)
+
+    # -- :param declaration gate: static first segment, named params, no duplicates --
+    for path, want in [
+        ("/api/:name", True),
+        ("/api/files/:name", True),
+        ("/api/:a/:b", True),
+        ("/api/:a/sub/:b", True),
+        ("/dl/:tag/", True),                    # trailing slash is a legal (significant) shape
+        ("/api/hello", True),                   # a plain path defers to user_path_valid
+        ("/:x", False),                         # THE constraint: a leading param would match
+        ("/:x/y", False),                       #   /_qs and /_edit - first segment must be static
+        ("/_qs/:x", False),                     # reserved at declaration (literal prefix)
+        ("/_edit/:x", False),
+        ("/api/:", False),                      # ":" alone names nothing
+        ("/api/:na-me", False),                 # names are [A-Za-z0-9_] only
+        ("/api/:x/:x", False),                  # duplicate capture name
+        ("/files/:a..b", False),                # ".." refused (user_path_valid runs first)
+        ("api/:x", False),                      # must be absolute
+    ]:
+        check("user_pattern_valid(%r)" % path, user_pattern_valid(path), want)
+
+    # -- :param matching: capture extraction + the request-time reserved backstop --
+    for pattern, path, want in [
+        ("/api/files/:name", "/api/files/readme.txt", {"name": "readme.txt"}),
+        ("/api/:a/:b", "/api/x/y", {"a": "x", "b": "y"}),
+        ("/api/files/:name", "/api/files/", None),      # a param never matches empty
+        ("/api/files/:name", "/api/files/a/b", None),   # one segment only (an encoded %2F
+        #   decodes to a real "/" BEFORE routing, so it splits and cannot ride a param)
+        ("/api/files/:name", "/api/other/x", None),     # static segment mismatch
+        ("/dl/:tag/", "/dl/v1/", {"tag": "v1"}),        # trailing slash on both -> match
+        ("/dl/:tag", "/dl/v1/", None),                  # trailing slash is significant...
+        ("/dl/:tag/", "/dl/v1", None),                  # ...in both directions
+        # a request whose literal path IS the pattern text still goes through the matcher
+        # (qsHttpTryRoutes skips patterns on the exact fast path), so it captures ":name"
+        ("/api/greet/:name", "/api/greet/:name", {"name": ":name"}),
+        # request-time reserved backstop: even HOSTILE patterns that declaration refuses
+        # (leading param / reserved prefix) can never match a reserved request path
+        ("/:x/info", "/_qs/info", None),
+        ("/_qs/:x", "/_qs/info", None),
+        ("/files/:x", "/_qs/info", None),
+        ("/:x", "/_edit", None),
+        ("/:x/login", "/_edit/login", None),
+    ]:
+        check("route_match(%r,%r)" % (pattern, path), route_match(pattern, path), want)
+
+    # -- deterministic pattern pick: method filter, specificity, tie-break, backstop --
+    _pat_keys = ["GET /api/hello", "GET /api/files/:name",
+                 "POST /api/files/:name", "GET /api/:a/:b"]
+    for method, path, want in [
+        ("GET", "/api/files/x", "GET /api/files/:name"),   # 1 param beats 2
+        ("POST", "/api/files/x", "POST /api/files/:name"), # method filters
+        ("DELETE", "/api/files/x", ""),                    # no route for the method
+        ("GET", "/api/x/y", "GET /api/:a/:b"),
+        ("GET", "/api/hello", ""),               # exact keys are the caller's fast path
+        ("GET", "/_qs/info", ""),                # reserved: nothing ever matches
+    ]:
+        check("user_route_find(%r,%r)" % (method, path),
+              user_route_find(_pat_keys, method, path), want)
+    # equal param counts tie-break on the smallest key - never on table iteration order
+    check("user_route_find tie-break",
+          user_route_find(["GET /api/files/:b", "GET /api/:a/x"], "GET", "/api/files/x"),
+          "GET /api/:a/x")
+    # a hostile pattern injected past declaration still cannot claim a reserved path
+    check("user_route_find hostile-reserved",
+          user_route_find(["GET /:x/info"], "GET", "/_qs/info"), "")
+    check("user_route_find literal-pattern-text",
+          user_route_find(["GET /api/greet/:name"], "GET", "/api/greet/:name"),
+          "GET /api/greet/:name")
+
+    # -- Allow/405 derivation with :param routes: a matching pattern contributes its methods --
+    for path, ukeys, want in [
+        ("/api/files/readme.txt",
+         ["DELETE /api/files/:name", "GET /api/files/:name", "PUT /api/other/:x"],
+         "GET, HEAD, OPTIONS, DELETE"),
+        ("/api/files/x", ["POST /api/files/x", "POST /api/files/:n"],
+         "GET, HEAD, OPTIONS, POST"),           # exact + pattern dedup to one POST
+        ("/api/files/a/b", ["DELETE /api/files/:n"],
+         "GET, HEAD, OPTIONS"),                 # non-matching pattern contributes nothing
+        ("/_qs/info", ["DELETE /:x/info"],
+         "GET, HEAD, OPTIONS"),                 # the reserved backstop shows up in Allow too
+    ]:
+        check("http_allow param(%r)" % path, http_allow([], path, ukeys), want)
+
+    # -- CORS preflight promise holds identically for :param routes --
+    _pf_param = ("Access-Control-Allow-Origin: *\r\n"
+                 "Access-Control-Allow-Methods: GET, HEAD, OPTIONS, POST\r\n"
+                 "Access-Control-Allow-Headers: *\r\n"
+                 "Access-Control-Max-Age: 600\r\n")
+    check("cors_preflight param match",
+          cors_preflight(["POST /api/thing/:id"], "/api/thing/42",
+                         "GET, HEAD, OPTIONS, POST"), _pf_param)
+    check("cors_preflight param no-match",
+          cors_preflight(["POST /api/thing/:id"], "/api/other/42",
+                         "GET, HEAD, OPTIONS"), "")
+    check("cors_preflight param reserved",
+          cors_preflight(["GET /:x/info"], "/_qs/info", "GET, HEAD, OPTIONS"), "")
+
+    # -- the file-pointing param route: find + captures + the SAME bounded-pump head plan --
+    # (Phase 3's "streaming" scope: a route response beyond the inline-body budget points at
+    # a folder file and rides the existing pump - Range-aware, per-route headers, type
+    # override - through the one shared head builder already pinned above.)
+    _dl_key = user_route_find(["GET /dl/:version"], "GET", "/dl/v1.2.3")
+    check("param file route find", _dl_key, "GET /dl/:version")
+    check("param file route captures",
+          route_match(route_key_path(_dl_key), "/dl/v1.2.3"), {"version": "v1.2.3"})
+    _fh = http_file_head(10, "big.bin", dict(_fh_get, range="bytes=0-3"),
+                         "application/octet-stream", "X-Route: dl\r\n", 42, 0, _fh_epoch)
+    check("param file route head kind+window",
+          (_fh["kind"], _fh["status"], _fh["start"], _fh["length"]),
+          ("serve", "206 Partial Content", 0, 4))
+    check("param file route head", _fh["head"],
+          "HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\n"
+          'Accept-Ranges: bytes\r\nETag: W/"10-42-0"\r\nContent-Length: 4\r\n'
+          "Content-Range: bytes 0-3/10\r\n" + _fh_extra + "X-Route: dl\r\n"
+          'Content-Disposition: inline; filename="big.bin"\r\nConnection: close\r\n\r\n')
+
     # -- header sanitisation (no CRLF/control injection) --
     for val, want in [
         ("value", "value"),
@@ -1358,9 +1626,30 @@ def main():
         ("<svg>{{query.evil}}</svg>", _svg_ct,
            "<svg>&lt;script&gt;alert(1)&lt;/script&gt;</svg>"),
         ("cb({{query.raw}})", _js_ct, "cb(&quot;&lt;b&gt;&quot;)"),
+        # no __params on this request (an exact route): a param token is simply empty
+        ("{{param.name}}", _text_ct, ""),
     ]:
         check("render_template(%r,%s)" % (text, ctype.split(";")[0]),
               render_template(text, _treq, ctype), want)
+
+    # -- :param captures reach a template exactly like query values: escaped per type --
+    # A param value is HOSTILE input (it is a request-path segment the visitor chose);
+    # it rides __params and goes through the same default-deny escaping as everything else.
+    _preq = {"__method": "GET", "__path": "/api/greet/x", "__query": "",
+             "__params": {"name": "world", "q": '"<b>"',
+                          "evil": "<script>alert(1)</script>"}}
+    for text, ctype, want in [
+        ("hello {{param.name}}", _text_ct, "hello world"),
+        ("{{ param.name }}", _json_ct, "world"),                 # trimmed like any token
+        ("{{param.missing}}", _json_ct, ""),                     # absent capture -> empty
+        ('{"who":"{{param.q}}"}', _json_ct, '{"who":"\\"<b>\\""}'),   # json-escaped
+        ("<p>{{param.evil}}</p>", _html_ct, "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"),
+        ("<svg>{{param.evil}}</svg>", _svg_ct,
+           "<svg>&lt;script&gt;alert(1)&lt;/script&gt;</svg>"),  # default-deny holds
+        ("v={{param.q}}", _text_ct, "v=&quot;&lt;b&gt;&quot;"),
+    ]:
+        check("render_template param(%r,%s)" % (text, ctype.split(";")[0]),
+              render_template(text, _preq, ctype), want)
 
     # -- render-size cap: a token-saturated body x a huge value stays bounded (no unbounded build) --
     _cap_req = {"__query": "big=" + ("x" * 200000)}      # one ~200 KB reflected value
@@ -1376,7 +1665,8 @@ def main():
           "probe, filename sanitise, rate + ETA format, HTTP-date, Allow header, "
           "editor login backoff, user-route path + header sanitise, template render + "
           "escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
-          "redirect mount re-prefix, editor parent-dirs all match)")
+          "redirect mount re-prefix, editor parent-dirs, param patterns + reserved "
+          "backstop + pattern Allow/preflight all match)")
     return 0
 
 

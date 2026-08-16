@@ -36,8 +36,32 @@
 > redirect's folder-absolute `Location` is re-based onto the `/<token>/` capability mount
 > over a web link (`qsMountLocation`, golden `mount_location()`) — emitted verbatim it
 > escaped the mount and the token gate 404'd the redirected request; external and relative
-> `Location`s, and the Tor root, are untouched. Still open: first-class per-route
-> streaming/params (Phase 3), and the **Tor keep-alive question** (§6 Phase 2) — an owner
+> `Location`s, and the Tor root, are untouched.
+>
+> **2026-08-16 — Phase 3 LANDED, scoped (verified statically + golden-pinned; needs an OXT
+> pass):** `.qsroutes.json` paths may carry **`:param` segments** (see `user-routes.md`,
+> "Path parameters"). The scope was set by the contract questions that made the 2026-08-15
+> change *skip* a naive matcher, and each is answered structurally rather than patched: (1)
+> a pattern's **first segment must be static** — declaration refuses `/:x` (and `/_qs/:x`
+> et al. were already refused literally), so no stored pattern can match into the reserved
+> `/_qs//_edit` namespaces **by construction**, and `qsRouteMatch` refuses reserved request
+> paths outright as a golden-pinned backstop; (2) the **`Allow`/`405` derivation
+> pattern-matches** — a request path that a param route claims contributes that route's
+> methods (`qsHttpAllow`, golden `http_allow()`); (3) the **CORS preflight promise holds
+> identically** — a `cors: true` param route answers `OPTIONS` on its matching paths
+> (`qsCorsPreflight`, golden `cors_preflight()`); (4) captures reach **only a templated
+> body**, as `{{param.NAME}}` through the same default-deny `qsTemplateEscape` as query
+> values (never a `file` target, `redirect` Location, or header — a param is hostile
+> input); (5) **"streaming" for a route stays the `file` kind**: an inline body is capped
+> at 64 KB, and anything larger points at a folder file and rides the EXISTING bounded
+> pump (`qsHttpFileHead` + the per-transport pumps) with per-route headers/type — Phase 3
+> deliberately ships no `qsHttpReplyStream`/SSE (§4's long-lived/generated-body endpoints
+> stay roadmap). Matching is deterministic (exact beats pattern; fewest params, then
+> smallest key) and pattern routes never ride the exact-key fast path (a request for the
+> literal pattern text still gets its captures). Golden: `route_key_path` /
+> `route_has_params` / `route_param_count` / `user_pattern_valid` / `route_match` /
+> `user_route_find` + the extended `http_allow`/`cors_preflight`/`template_value`, 70 new
+> checks (358 -> 428). Still open: the **Tor keep-alive question** (§6 Phase 2) — an owner
 > decision, deliberately not made by the dedup.
 
 ---
@@ -99,7 +123,9 @@ as an opaque `pConn` and replies via `qsHttpReply` (§1.3).
 
 ### 1.3 Dynamic routes (`qsHttpRoute`/`Dispatch`/`Reply`/`Reason`, 3600–3692)
 
-- Registry: `sHttpRoutes["<METHOD> <path>"] -> handler name` (exact string match).
+- Registry: `sHttpRoutes["<METHOD> <path>"] -> handler name` (exact string match — and
+  built-in routes stay exact-only by design; the `:param` patterns added 2026-08-16 exist
+  only for user-declared `.qsroutes.json` routes, see the status ledger).
 - **Precedence:** a registered route answers **first, any method**, then the static
   GET/HEAD pipeline runs (`qsFsServePath` ~4176, `qsCwServe` ~5089). Over clearweb the
   token is stripped so the handler sees the **app-relative** path.
@@ -238,6 +264,11 @@ pure-logic helper must be mirrored in `fileserver_golden.py`.
   `/api/files/:name`. A minimal matcher — exact first, then a **single** `:param` or a
   trailing `*` prefix — covers the useful cases without a regex engine. Constraint fit:
   matcher is pure → **golden it**; keep it deterministic and cheap (single-thread).
+  **Status (2026-08-16): LANDED for user routes**, generalised to multiple `:param`
+  segments (static first segment mandatory; no `*` prefix — deliberately) — see the
+  status ledger at the top and `user-routes.md`. Built-in `qsHttpRoute` registrations
+  stay exact-only: nothing internal needs a pattern, and the smaller surface is the
+  safer default.
 - **Configurable listing / index behavior + directory `Cache-Control`.** *(S, low risk)*
   Small polish: let the sharer suppress the auto-listing (serve `403`/`404` instead) for
   folders without an `index.html`, since a listing enumerates filenames to anonymous
@@ -379,6 +410,17 @@ and, for anything touching the wire, an **OXT pass** before it's called "done."
   helper emits `Connection: close` on every file head, exactly as both twins always did.
 - **Phase 3 — first-class routes (M–L):** header-control + streaming replies + a minimal
   `:param` matcher. Unlocks the rest.
+  **Status (2026-08-16): LANDED, deliberately scoped** (verified statically +
+  golden-pinned; needs an OXT pass — the checklist's §1a is that pass's script).
+  Header-control and streaming had *already* arrived via the user-route work
+  (per-route `headers`/`status`/`type`, and `file`-kind routes streaming through the
+  shared `qsHttpFileHead` + pump); what this phase added is the `:param` matcher done
+  against the contract questions that made the 2026-08-15 change skip it (reserved
+  namespaces unreachable by construction, pattern-aware `Allow`/`405` + CORS preflight,
+  captures escaped as hostile input, streaming = point at a file). NOT built, still
+  open behind §4's endpoint ideas: `qsHttpReplyStream`/SSE (a *generated* long-lived
+  body — zip/hashes/events), and patterns for built-in `qsHttpRoute` routes. §4's
+  endpoints themselves stay roadmap.
 - **Phase 4 — content endpoints (M):** `/_qs/manifest`, `/_qs/hashes` (+ `/_qs/integrity`),
   `/_qs/search`, `sitemap`/`robots`, feed. *Golden:* manifest/serialization purity, hash
   vectors.
@@ -424,7 +466,10 @@ duplication debt **before** it's multiplied by new endpoints; Phases 3–5 build
    want an option to keep a share's *contents list* private while still serving individual
    files by known path?
 3. **How far to take routes:** a full "app platform" (streaming, params, header control,
-   ephemeral paste/KV) vs. keeping routes a thin demo surface?
+   ephemeral paste/KV) vs. keeping routes a thin demo surface? *(Partially answered
+   2026-08-16: params, header control, and file-backed streaming are in for user routes —
+   see the ledger. Still yours: generated-body streaming/SSE and anything stateful like
+   paste/KV.)*
 4. **Integrity/verification appetite:** is a `sha256` manifest + a pre-download
    passphrase-verify endpoint worth the CPU/complexity for your users?
 5. **Compression:** worth the `gzip_static` sidecar approach, or leave it (Tor is the
