@@ -426,7 +426,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "23"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "24"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -502,7 +502,7 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.24.1"
+constant he1kHeVersion = "0.24.2"
 constant he1kHeHarnessV = "40"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
@@ -18717,8 +18717,18 @@ command b21stTestPlayerHelpers
    b2kPlayerMake 200, 470, 30, 50
    put the result into b21tRef
    b21stStep 8
-   b21stAssert "halfW getter (got " & round(b2kPlayerHalfW()) & " ~ 15)", (round(b2kPlayerHalfW()) is 15)
-   b21stAssert "halfH getter (got " & round(b2kPlayerHalfH()) & " ~ 25)", (round(b2kPlayerHalfH()) is 25)
+   -- FIXED after the 2026-08-16 engine run, which reported 16/26 against an
+   -- expectation of 15/25. The engine was right and this test was wrong: the
+   -- Kit sets sPlayHalfW/H from `(the width of b21tRef) / 2` -- the CONTROL's
+   -- real size -- and b2kPlayerMake's 30x50 request lands as a 32x52 control.
+   -- These are probe geometry, so being the control's true half-extents is
+   -- what they are FOR; asserting the requested size was asserting a number
+   -- the Kit never promised. Pin the documented relationship instead, which
+   -- also survives any future change to the control's border.
+   b21stAssert "halfW getter is half the control's width (got " & round(b2kPlayerHalfW()) \
+         & " of " & the width of b21tRef & ")", (round(b2kPlayerHalfW()) is round((the width of b21tRef) / 2))
+   b21stAssert "halfH getter is half the control's height (got " & round(b2kPlayerHalfH()) \
+         & " of " & the height of b21tRef & ")", (round(b2kPlayerHalfH()) is round((the height of b21tRef) / 2))
    b21stAssert "not in a ladder/water zone yet", \
          (b2kPlayerInLadder() is false and b2kPlayerInWater() is false)
    b2kPlayerAddWater 100, 300, 400, 560
@@ -25612,15 +25622,23 @@ command he1heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          end if
          put he1tBodyA["amount"] into he1tAmt
          he1heNetEngineFold pTypeTxt, he1tFromSeat, he1tAmt
-         if he1gGame["foldApplied"] is "true" then
-            -- a live post is presence -- but ONLY once the engine took it
-            -- (F5): the unconditional reset let a stalling client hold its
-            -- miss count at zero forever with out-of-turn bids the engine
-            -- threw away, so it never reached the miss threshold, never sat
-            -- out, and every hand still burned the full act timer plus bank
-            -- waiting for it.
-            put 0 into he1gGame["missCntBy"][he1tFromSeat]
-         end if
+         -- v0.24.2, FOUND BY THE FIRST ENGINE RUN OF THIS SECTION: a bid does
+         -- NOT reset the miss count, because every wire that reaches here is a
+         -- FORCED post -- a blind or an ante. A seat whose human walked away
+         -- still posts them: that is what "forced" means, and the client does
+         -- it without being asked. So resetting here wiped the counter at the
+         -- top of EVERY hand and made the consecutive-miss auto-sit-out
+         -- unreachable across hands -- which is the only span spec 9's
+         -- "(config) missed turns" can mean. Observed: seat 1 timed out in
+         -- hand 1 (miss 1), posted its blind in hand 2 (reset to 0), timed out
+         -- again (miss 1), and never sat out; six section-20 checks failed on
+         -- that one line and every one of them was right.
+         -- Presence is a VOLUNTARY act, and the act case below is where the
+         -- reset belongs (it already gates on foldApplied, F5, so an
+         -- out-of-turn act the engine throws away cannot hold the count at
+         -- zero either). No WIRE byte changes here, but the miss count is
+         -- transcript-derived consensus, so every client must carry this
+         -- together.
          break
 
       case "act"
