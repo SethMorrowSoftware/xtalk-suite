@@ -18,7 +18,12 @@ Built by composing the OXT extension family:
 
 ## Status
 
-**Phase 2 online lobby + Phase 1 hotseat, one paste-and-run stack.**
+**Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the 2e
+remainder (street checkpoints, show/muck, online History, host election), plus the
+Phase 3 deck oracle and the Phase 4a-4c Level 2 compute layer — one paste-and-run
+stack, at v0.21.0.** The live multi-machine passes are the pending exit gates: a
+multi-hand rp1 session on real networks (Phase 2), a two-machine onion table over
+live tor (2f), and a **three-machine oracle round** (Phase 3).
 `src/holdem.livecodescript` is the whole thing — the hotseat game, the online lobby, its
 self-test (`heRunSelftest` in the message box), and SodiumXT/TorrentXT diagnostics
 (`heProbeSodium` / `heProbeTorrent`) — in a single self-building stack with no required
@@ -54,8 +59,10 @@ hands, per-seat deltas — folded straight from the transcript and **re-verified
 spot**, with **two audits**: the settlement (the fold re-derives each payout and compares
 it to the logged one) and, for Level 0 hands, the **deal** (the committed shuffle is
 re-derived from the revealed seeds and confirmed to have produced exactly the cards dealt).
-"Copy transcript" exports the raw, replayable record. Both audits are independently pinned
-in CI (`tools/fold-kat.py`).
+Since v0.21.0 an **online** session's signed wire chain folds here too — translated into
+the same replayable shape (holes re-derived from the revealed seeds, mucked showdown hands
+annotated) and run through the identical fold + audits. "Copy transcript" exports the raw,
+replayable record. Both audits are independently pinned in CI (`tools/fold-kat.py`).
 
 With **SodiumXT + TorrentXT** installed, the stack opens on an **online lobby**: Create a
 table (its 64-hex code is the invite) or Join one, and peers meet over the BitTorrent
@@ -66,8 +73,15 @@ propagates so every client verifies (or drops) it and the roster stays in agreem
 overlay shows the live peer roster and a feed of every verify/drop verdict. The presence
 wires are machine-pinned in `tools/protocol-kat.py` and re-checked on-engine by
 `heTestLobbyRun`; the transport itself is verified statically and needs an OXT pass (two
-machines, one code). Online betting/dealing orchestration builds on this confirmed
-transport next.
+machines, one code). On that transport the **full online Level 0 game** runs (Phase 2d):
+sealed hole delivery, blinds and betting as signed wires through the same pure engine,
+end-of-hand seed reveals every client re-derives the showdown from, verified settles,
+co-signed receipts, per-client audits — plus street **checkpoint wires** at every
+boundary (fork evidence against an equivocating host, and the resync replay resumes from
+your applied seq instead of genesis), **show/muck** display-choice wires at showdown,
+and **host election** (deterministic: lowest live seated key) when the host goes silent
+mid-game — the in-flight hand voids and stacks stand at the last receipt; the live
+handover is the Phase 3 exit gate.
 
 With **OnionXT** also loaded (plus a locally running tor daemon), the host can flip the
 lobby's transport toggle and host an **onion table** (spec 10, built 2026-08-15): the
@@ -82,6 +96,20 @@ transport; a lobby status line walks the tor probe states (connecting / bootstra
 N% / publishing / ready / FAILED-with-why). The invite codec, the refusals, and the
 stream handshake are pinned headlessly in the harness (section 17); the live multi-hand
 onion session (two machines + tor) is the pending engine-era gate.
+
+The lobby's **"Host: ORACLE"** toggle (Phase 3, spec 7.2) makes the same stack host as a
+**deck oracle** — a Level 1 table where the host deals every hand and **plays no seat**:
+players' committed entropy still fixes the shuffle (the oracle adds its own committed
+seed at an extra position, so it cannot stack and nobody's seed stands alone), sealed
+hole delivery rides the existing path authored by the oracle key, receipts stay a
+seats-only multi-signature, and the oracle's audit verdict files by name. It works over
+either transport; an onion-hosted oracle derives its service address under its own
+domain tag, so it can never collide with the same host's playing table. Oracle loss is
+host loss by construction — the same election path covers both. The harness drives an
+oracle-hosted hand end to end on three loopback contexts (section 18); the **live
+three-machine round** — two players plus a non-playing oracle on an onion address,
+killed mid-hand and recovered per spec 9 — is the Phase 3 exit gate ("verified
+statically; needs the multi-machine pass, + live tor for the onion oracle").
 
 The **Level 2 mental-poker COMPUTE layer** (spec 7.3, plan 4a-4c) is built as pure
 `heL2*` handlers on SodiumXT ABI 8's ristretto255 surface: card base points by

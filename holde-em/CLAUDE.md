@@ -91,10 +91,13 @@ The three documents that govern this repo:
 - **`IMPLEMENTATION-PLAN.md`** — the phased build order with exit criteria per phase.
 - **This file** — how to work here without getting bitten by OXT.
 
-**Status: Phase 2 online lobby + online play (2d) + onion tables (2f) written, on
-Phase 1 hotseat, plus the Phase 4a-4c Level 2 COMPUTE layer (pure algebra only;
-nothing plays on it yet), at v0.20.0. 2f's exit -- a multi-hand onion table session
-on two machines with a running tor -- is the pending live gate.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+**Status: Phase 2 online play (2d) + onion tables (2f) + the 2e remainder (street
+ckpt wires, show/muck, online History folding, host election) + the Phase 3 deck
+oracle written, on Phase 1 hotseat, plus the Phase 4a-4c Level 2 COMPUTE layer
+(pure algebra only; nothing plays on it yet), at v0.21.0. The pending live gates:
+a multi-hand onion table session on two machines with running tor (2f), and the
+Phase 3 THREE-MACHINE oracle round (two players + a non-playing oracle, killed
+mid-hand and recovered per spec 9; + live tor for an onion-hosted oracle).** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -272,9 +275,59 @@ touching the `heNetOnion*` section:
     the control connection deliberately survives between tables and is
     `oxShutdown` on closeStack (`gOxCtlUp` remembers we opened it).
   - Deferred with 2e liveness, on purpose: auto-redial after a lost host stream
-    (today it fail-closes naming "Join again"), host election over onion.
+    (today it fail-closes naming "Join again"). Host election LANDED (v0.21.0):
+    a lost host stream during play now routes through heNetHostLost before the
+    fail-closed message, so the successor is named (the section below).
   The whole section is verified statically; the live two-machine tor session is
   the exit gate (harness section 17 pins the headless slice).
+
+**2e remainder + Phase 3 deck oracle (v0.21.0, 2026-08-16 -- verified statically;
+the three-machine round is the live gate, + live tor for an onion oracle).** The
+contracts to keep intact when touching these:
+  - **Street ckpts sign the TRANSITION wire's head.** Every client records the
+    boundary head at the wire that produced it (last holeDeliver = "deal", the
+    street's board wire, the betting-closing wire = "showdown") -- that is what
+    makes two verified ckpts naming different heads FORK EVIDENCE rather than a
+    timing artifact. Never sign "whatever the head is now". The ckpt body
+    (street/head/sig) and the seq 7-9 wire extension are byte-pinned in
+    protocol-kat; emissions are presence-guarded per street like everything in
+    the react engine.
+  - **The `s?` seq is a trim hint, never an authority.** The host trims the
+    replay to wires past the requester's named seq; dedup keeps every replay
+    idempotent, so a wrong mark can only cost bytes or starve the liar. The
+    reconnect handshake still replays in full -- a rebuilt client has nothing.
+  - **show/muck are display-only BY CONSTRUCTION.** Online ranks derive from
+    the revealed seeds; the wires only gate what PAINTS (heNetShowSeat) and
+    what History annotates ("(mucked)"). Do not let a show/muck wire near the
+    settle or audit paths. Policy lives in react step 11b; the fold annotation
+    is mirrored in fold-kat (keep the twins in step).
+  - **The History translator re-derives, never invents.** heNetLogToHotseat
+    (pure, H5) turns the signed chain into the hotseat shape; sealed
+    holeDeliver wires become card lines ONLY from complete seed reveals --
+    an unrevealed hand honestly gets none and its contested settle is NAMED
+    by the fold. show/muck reposition ahead of their settle (the fold
+    snapshots its history line there).
+  - **The oracle is the host role minus the seat.** level=1 in the signed cfg
+    is the ONLY marker (spec 7.2 is Level 1); dealLevel carries level=1,
+    dealer=0; the dealer-authority seams go through heNetDealerPubHex /
+    heNetWeDeal, and the entropy seams through heNetContribCount /
+    heNetMyContribPos / heNetContribPosOk (the oracle owns exactly position
+    dealCount+1 -- committed before it saw anyone's seed, revealed at hand
+    end because the XOR needs it). No seat, no stack, no receipt signature;
+    its audit files as "oracle" (slot 0). An onion oracle derives its service
+    seed under kHeDomainOracle (never kHeDomainOnion -- the addresses must
+    not collide). Recorded divergence from the spec sketch: the as-built
+    oracle IS the relay, so it sees the (public, signed) betting wires; the
+    no-stake property is what Level 1 actually buys (spec 7.2 as-built).
+  - **Oracle loss IS host loss** -- one watchdog (60 s wire-silence during
+    play; onion stream-death routes in directly), one deterministic election
+    (heElectHostOf: lowest live seated pubkey, pinned as elected_host), one
+    void-to-last-receipt. The elected host is NAMED and the client fails
+    closed; the live handover belongs to the Phase 3 exit gate. Never make
+    the election guess or negotiate -- determinism is the whole point.
+  - Harness: netplay (15) pins ckpts/show-muck/trimmed-resync/History; the
+    oracle section (18) runs THREE loopback contexts (heTNetPump's third
+    seat) and SKIPs the live legs by name.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the
@@ -286,7 +339,7 @@ user confirms in the IDE. This discipline is house law across the family.
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
 | **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*` — cross-checked KATs green, handlers still need their OXT pass). |
-| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0)** -- optional per table (the host picks the transport at Create; a DHT table never touches it); Phase 3 oracle hosting is future | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass. |
+| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
 Install all of them through the OXT **Extension Manager**; each bundles its native

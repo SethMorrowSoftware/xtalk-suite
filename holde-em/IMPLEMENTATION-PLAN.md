@@ -134,12 +134,49 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
   seeds travel as on-chain `seedSeal` ciphertexts; showdown ranks are re-derived
   from the revealed seeds (players cannot lie about holes); the host's `settle` is
   verified by every client before folding; `receipt` wires carry the 8.3
-  co-signatures. Street `ckpt` wires and `show`/`muck` are deferred to 2e alongside
-  liveness (they exist for reconnect windows and display choice, not correctness).
-  Online History folding (translating the wire log for the History panel) is also
-  deferred -- the live audit verdicts land in the net feed.
+  co-signatures. Street `ckpt` wires and `show`/`muck` were deferred to 2e alongside
+  liveness (they exist for reconnect windows and display choice, not correctness) and
+  landed there (v0.21.0, below); online History folding likewise.
 - **2e. Liveness** (spec 9): act timers + time-bank, sit-out, reconnect via
   transcript replay from last checkpoint, host election.
+  **Status: the reconnect/hardening half was built at v0.18.0 (deterministic
+  per-hand seeds, replay-proof emissions, catch-up suppression, the crash-and-
+  reconnect sim); the deferred sub-items and the election landed at v0.21.0,
+  verified statically.** As-built:
+  - **Street ckpt wires** (spec 6): at each boundary (deal/flop/turn/river/
+    showdown) every seated client signs the head the boundary's TRANSITION wire
+    produced -- body `street=..,head=..,sig=..`, so the head rides the wire and
+    a verified ckpt naming a different head is logged as CKPT-FORK evidence,
+    never folded as agreement. Consumed on replay: the `s?` resync frame now
+    carries the requester's applied seq and the host replays only the tail, so
+    a mid-hand client resumes from (at worst) its last street boundary instead
+    of shedding the whole log; a bare `s?` and the reconnect handshake still
+    get the full replay. Pinned: ckpt_body/ckpt_head7 in protocol-kat; the
+    netplay sim asserts same-head ckpts on both sides and a marker-only
+    trimmed replay for a caught-up peer.
+  - **show/muck** (spec 6/8.1): seat-scoped display-choice wires emitted after
+    the verified settle -- display only (ranks derive from the revealed
+    seeds). Policy: contested non-losers show, contested losers muck,
+    uncontested winners muck, earlier folds emit nothing. The showdown paint
+    now honors it (only shown seats' cards go up); History annotates
+    "(mucked)". Pinned: show/muck wire heads in protocol-kat, the annotation
+    in fold-kat + the canned fold fixtures.
+  - **Online History folding**: heNetLogToHotseat translates the signed chain
+    into the hotseat-shaped transcript (sit wires -> cfg seats/stacks, pubkeys
+    -> seat names, sealed deliveries -> holes re-derived from the reveals,
+    show/muck repositioned ahead of their settle) and History runs the SAME
+    fold + deal audit over it; the netplay sim pins a 2-hand translation
+    (settle-verified, 2/2 deals verified, stacks match the live fold).
+  - **Host election** (spec 9): built as the slice Phase 3 needs -- a
+    wire-silence watchdog (60 s during play; the onion transport also routes
+    its positive stream-death here), deterministic election (lowest pubkey
+    among live seated players, `heElectHostOf`, pinned as elected_host), void
+    of the in-flight hand with stacks standing at the last receipt, and the
+    successor NAMED on every client. The LIVE handover (elected host re-hosts,
+    peers re-join) is exercised by Phase 3's exit gate, not faked here.
+  - **Still open in 2e**: act timers + time-bank, sit-out, late-join seating,
+    auto-redial after a lost onion stream. They remain this phase's exit
+    criteria work.
 - **2f. Onion tables** (spec 10): the same envelopes over OnionXT streams — expected
   to fall out nearly free once 2c is honest about its transport seam.
   **Status: built 2026-08-15 (v0.20.0), verified statically; the exit — a
@@ -184,9 +221,35 @@ KATs green in CI.
   pattern).
 - Host election handles oracle loss identically to host loss.
 
+> **BUILT 2026-08-16 (v0.21.0), verified statically; the exit below is the
+> pending live gate.** As-built decisions (recorded in spec 7.2):
+> - "Oracle mode" is the lobby's Host toggle on the SAME stack -- the host
+>   role minus the seat, not a separate daemon. `level=1` in the signed cfg
+>   IS the oracle marker (spec 7.2 is Level 1); `dealLevel` carries
+>   `level=1,dealer=0`. A pre-oracle client refuses the hand readably at its
+>   dealLevel gate (downgrade refusal), never mis-folds the table.
+> - Players' entropy still commits the shuffle, and the oracle contributes
+>   its OWN committed seed at position dealCount+1 -- committed before it
+>   saw anyone's, so it cannot stack; it holds no cards, no stack, and signs
+>   no receipts (a seats-only multi-signature), but it does reveal its seed
+>   (the XOR needs it) and emits its audit verdict, filed as "oracle".
+> - Hole delivery rides the EXISTING sealed path, authored by the oracle
+>   key; seedSeals seal to the oracle's session box (its join binds one).
+> - Works over EITHER transport via the 2f seam. An onion oracle derives its
+>   service seed under its own domain tag (kHeDomainOracle -- spec 16:
+>   every hash carries its purpose), pinned in protocol-kat beside the 2f
+>   playing derivation.
+> - Oracle loss IS host loss by construction (one election path; the
+>   oracle, never seated, is never electable) -- see 2e's election note.
+> - Harness section 18 drives an oracle-hosted hand end to end on three
+>   loopback contexts (deal path, the no-seat invariant everywhere,
+>   seats-only receipts, the oracle's reveal + audit, election + void on
+>   oracle silence), with the live legs SKIPped by name.
+
 **Exit:** a three-machine round (two players + non-playing oracle on an onion address)
 completes with the oracle never holding a seat; killing the oracle mid-hand voids and
-resumes per spec 9.
+resumes per spec 9. **This is the one gate the build above still owes -- nothing about
+the oracle is "done" until that round has been played for real.**
 
 ## Workstream U — upstream SodiumXT ristretto255 (parallel; blocks Phase 4)
 
@@ -200,6 +263,11 @@ resumes per spec 9.
 > `sxRistrettoFromHash` wants. Still open before Phase 4 leans on it: the
 > `sxRistretto*` handlers' first OXT engine pass, and the recorded Phase 5
 > follow-ons (batch multiplication, point add/sub, base mult for DLEQ).
+> Those follow-ons shipped 2026-08-15 too, as SodiumXT ABI 9
+> (`sxRistrettoAdd`/`sxRistrettoSub`, `sxRistrettoScalarMultBase`,
+> `sxRistrettoScalarMultBatch`, `sxRistrettoScalarAdd`/`sxRistrettoScalarMul`)
+> - statically, with the same twice-over KAT pinning in
+> `tools/protocol-kat.py` - so the engine pass is now the one open item here.
 
 Runs in the **SodiumXT repo**, not here; tracked in this plan because Phase 4 cannot
 start without it.

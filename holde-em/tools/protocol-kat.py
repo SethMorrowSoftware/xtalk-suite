@@ -517,6 +517,54 @@ assert _r255_ok
 R255_BASE = (_r255_bx, _r255_by, 1, _r255_bx * _r255_by % R255_P)
 
 
+# -- the ABI 9 follow-on operations (SodiumXT's DLEQ/batch surface, shipped
+# 2026-08-15): point add/sub, base-point multiplication, scalar arithmetic
+# mod L - the same pure Edwards machinery as above, no new calibration.
+# Negation on the extended coordinates is (-x, y, z, -t); everything else
+# composes the existing group law and encode/decode.
+
+def _r255_neg(pt):
+    x, y, z, t = pt
+    return ((-x) % R255_P, y, z, (-t) % R255_P)
+
+
+def r255_point_add(p_bytes, q_bytes):
+    pp = r255_decode(p_bytes)
+    qq = r255_decode(q_bytes)
+    if pp is None or qq is None:
+        return None
+    return r255_encode(_r255_add(pp, qq))
+
+
+def r255_point_sub(p_bytes, q_bytes):
+    pp = r255_decode(p_bytes)
+    qq = r255_decode(q_bytes)
+    if pp is None or qq is None:
+        return None
+    return r255_encode(_r255_add(pp, _r255_neg(qq)))
+
+
+def r255_scalarmult_base(k_bytes):
+    """n * B (B = the RFC 9496 basepoint above); None on a zero scalar, the
+    same merged identity-result failure libsodium reports."""
+    k = int.from_bytes(k_bytes, "little") % R255_L
+    if k == 0:
+        return None
+    return r255_encode(_r255_mul(k, R255_BASE))
+
+
+def r255_scalar_add(x_bytes, y_bytes):
+    """x + y mod L, each input read as a little-endian 256-bit integer and the
+    result fully reduced (libsodium's widen-and-reduce semantics)."""
+    z = (int.from_bytes(x_bytes, "little") + int.from_bytes(y_bytes, "little")) % R255_L
+    return z.to_bytes(32, "little")
+
+
+def r255_scalar_mul(x_bytes, y_bytes):
+    z = (int.from_bytes(x_bytes, "little") * int.from_bytes(y_bytes, "little")) % R255_L
+    return z.to_bytes(32, "little")
+
+
 # --------------------------------------------------------------------------
 # Level 2 mental-poker deal algebra (spec 7.3, plan 4a-4c) -- the l2_*
 # functions below are LINE-FOR-LINE mirrors of the heL2* handlers in
@@ -812,6 +860,49 @@ def compute_all():
                     2, lh1, HOST_SEED)
     out["lobby_head2"] = chain_next(lw2).hex()
 
+    # -- 2e street checkpoints + show/muck (spec 6 as-built bodies, v0.21.0).
+    # A ckpt WIRE packages the street name, the boundary head, and the
+    # player's ckpt signature over that head ("street=..,head=..,sig=..");
+    # show/muck are seat-scoped display-choice wires ("seat=N" from the
+    # seat's own key). Pinned as an EXTENSION of the six-envelope transcript
+    # (seq 7..9 chained from head 6), so every pre-existing chain-head pin
+    # stands byte-for-byte -- additive, not a consensus break.
+    out["ckpt_body"] = "street=flop,head=%s,sig=%s" % (heads[5], out["ckpt_sig"])
+    w7 = make_wire(1, TABLE, 1, ID_SEEDS[1], "ckpt", out["ckpt_body"],
+                   7, prev, HOST_SEED)
+    h7 = chain_next(w7)
+    out["ckpt_head7"] = h7.hex()
+    out["show_body"] = "seat=2"
+    out["muck_body"] = "seat=3"
+    w8 = make_wire(1, TABLE, 1, ID_SEEDS[1], "show", out["show_body"],
+                   8, h7, HOST_SEED)
+    h8 = chain_next(w8)
+    out["show_head8"] = h8.hex()
+    w9 = make_wire(1, TABLE, 1, ID_SEEDS[2], "muck", out["muck_body"],
+                   9, h8, HOST_SEED)
+    out["muck_head9"] = chain_next(w9).hex()
+
+    # -- spec 9 host election (the 2e liveness slice Phase 3 leans on): the
+    # successor is DETERMINISTIC -- the lowest pubkey among the live
+    # candidates -- so every client names the same one with no round trips.
+    # Mirrors heElectHostOf (a text sort over lowercase 64-hex lines).
+    out["elected_host"] = min(out["id_pubs"])
+
+    # -- Phase 3 oracle: the deterministic onion-service seed, play vs
+    # oracle. ONE derivation shape, TWO domain tags (spec 16: every hash
+    # carries its purpose, versioned): an oracle table's address can never
+    # collide with the same host's PLAYING table on the same table id.
+    # Mirrors heOnionSeedHex(idSeedHex, tableHex[, mode]).
+    _svc = (ID_SEEDS[0].hex() + "|" + TABLE.hex()).encode("utf-8")
+    out["onion_service_seed"] = H(b"HOLDEM-ONION-v1|" + _svc).hex()
+    out["oracle_service_seed"] = H(b"HOLDEM-ORACLE-v1|" + _svc).hex()
+    # The oracle table's signed cfg: level=1 IS the oracle marker (spec 7.2
+    # -- Level 1 is the non-playing-dealer rung of the deal ladder). Every
+    # other byte matches the playing body, so a pre-oracle client refuses
+    # the hand at its dealLevel gate ("unsupported deal level") instead of
+    # mis-folding an oracle table as a playing one.
+    out["lobby_cfg_body_oracle"] = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1"
+
     # -- ristretto255 (Workstream U shipped in SodiumXT at ABI 8, 2026-08-15).
     # These values are computed by the INDEPENDENT reference below and pinned
     # against vectors generated from the pinned libsodium build itself, so a
@@ -834,6 +925,37 @@ def compute_all():
                         bytes.fromhex(out["ristretto_k7_card00"])).hex()
         == out["ristretto_point_card00"])
     out["ristretto_ff_invalid"] = r255_decode(b"\xff" * 32) is None
+
+    # -- ABI 9 follow-ons (the plan's recorded Phase 5 surface, shipped in
+    # SodiumXT 2026-08-15): base-mult, point add/sub, the one-crossing batch,
+    # scalar arithmetic mod L. Same two-implementation rule as above: every
+    # pin was generated from the pinned libsodium build and is re-derived
+    # here by the independent reference on every run. The base-mult of 7 is
+    # additionally RFC 9496's own small-multiples table entry B[7] - a third
+    # independent witness for that one.
+    out["ristretto_base_mult7"] = r255_scalarmult_base(k7).hex()
+    out["ristretto_add_c00_c01"] = r255_point_add(
+        bytes.fromhex(out["ristretto_point_card00"]),
+        bytes.fromhex(out["ristretto_point_card01"])).hex()
+    out["ristretto_sub_roundtrip"] = (
+        r255_point_sub(bytes.fromhex(out["ristretto_add_c00_c01"]),
+                       bytes.fromhex(out["ristretto_point_card01"])).hex()
+        == out["ristretto_point_card00"])
+    # the batch call's contract is element-for-element the single scalarmult,
+    # so its pin IS the concatenation of the three per-card products
+    out["ristretto_batch_k7_cards"] = ",".join(
+        r255_scalarmult(k7, bytes.fromhex(out[key])).hex()
+        for key in ("ristretto_point_card00", "ristretto_point_card01",
+                    "ristretto_point_card51"))
+    out["ristretto_scalar_add_wrap"] = r255_scalar_add(
+        k7, (R255_L - 2).to_bytes(32, "little")).hex()   # 7 + (L-2) = 5 mod L
+    out["ristretto_scalar_mul_inv"] = r255_scalar_mul(
+        k7, bytes.fromhex(out["ristretto_k7_inv"])).hex()  # 7 * 7^-1 = 1 mod L
+    out["ristretto_dleq_identity"] = (
+        r255_scalarmult(k7, bytes.fromhex(out["ristretto_add_c00_c01"])).hex()
+        == r255_point_add(
+            bytes.fromhex(out["ristretto_batch_k7_cards"].split(",")[0]),
+            bytes.fromhex(out["ristretto_batch_k7_cards"].split(",")[1])).hex())
 
     # -- Level 2 mental poker (spec 7.3, plan 4a-4c): a COMPLETE hand from
     # fixed scalars, end to end -- the Phase 4 exit criterion's KAT. Three
@@ -942,6 +1064,16 @@ PINNED = {
  "ristretto_k7_inv": "22d5909fba32273143cdfe848dda1f4c92244992244992244992244992244902",
  "ristretto_unmask_roundtrip": True,
  "ristretto_ff_invalid": True,
+ # ABI 9 follow-ons (SodiumXT's DLEQ/batch surface, 2026-08-15): generated
+ # from the pinned libsodium, re-derived by the reference on every run; the
+ # base-mult of 7 also equals RFC 9496's small-multiples entry B[7].
+ "ristretto_base_mult7": "44f53520926ec81fbd5a387845beb7df85a96a24ece18738bdcfa6a7822a176d",
+ "ristretto_add_c00_c01": "34722b333ab7982fe4d5e2be2913c316db8f8675de2394a5cfb704abab7c8b4c",
+ "ristretto_sub_roundtrip": True,
+ "ristretto_batch_k7_cards": "e4efdd42fce9e2cc212ccf6aa307b6bba55ba8f9d2b33103721be7fead96964c,c4aea78979e6929435b9bfcc4dee30d0dc714c714ae28f5e3c44cc124625a345,58907d49b012f75999ae4231e156cdec4432851939532b1e1278f900fbfaaa2d",
+ "ristretto_scalar_add_wrap": "0500000000000000000000000000000000000000000000000000000000000000",
+ "ristretto_scalar_mul_inv": "0100000000000000000000000000000000000000000000000000000000000000",
+ "ristretto_dleq_identity": True,
  # Level 2 mental poker (spec 7.3, plan 4a-4c): one complete hand from
  # fixed scalars, plus the void-string refusal vocabulary -- computed by
  # the l2_* mirrors over the independent reference, re-checked on-engine
@@ -972,6 +1104,22 @@ PINNED = {
  "l2_void_wrong_scalar": "void:unmask-mismatch",
  "admit_sig": "17cf45eeecf27a3e9b63e1e0ff47ae1ea337430cb135fb499944a60681fcd1e949a7a88f532b2f888c0ea32364e93e9aa2f569419f27e8034b695a4ee94d5e0b",
  "burns": "Jd,9d,3d",
+ # 2e street ckpt + show/muck wires (spec 6 as-built bodies), pinned as the
+ # seq 7..9 extension of the six-envelope transcript -- additive, so no
+ # earlier chain-head pin moved.
+ "ckpt_body": "street=flop,head=62fcd52b3757f590c33bede7330620853074c1e5c153549244a8dac7287e3778,sig=08c7f29409998d642657b9a084802b7ca3a136d696e881b545ed4e5a750fdb6d14e4967f401977aca416f03c0d4f03f98b3acc53e61266f3d8cee9912639e20f",
+ "ckpt_head7": "296cfef0944557351fa4899e8da5722743b4cfd212206dcf9a2b89fc30331497",
+ "show_body": "seat=2",
+ "show_head8": "969def7cb20b499f2ae3fa259234f09ac79cd4608e65b2d25b2027217a82a45c",
+ "muck_body": "seat=3",
+ "muck_head9": "5fbfd0aeef7d918249601a92233de273809dc1b4791e991e22758ba85af6df71",
+ # spec 9 host election: the deterministic successor (lowest live pubkey)
+ "elected_host": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
+ # Phase 3 oracle: service-seed domain separation (play vs oracle) + the
+ # oracle table's signed cfg (level=1 IS the oracle marker, spec 7.2)
+ "onion_service_seed": "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2",
+ "oracle_service_seed": "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0",
+ "lobby_cfg_body_oracle": "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1",
  "chain_heads": [
   "a60914c4c335f520aaef3b3a5dace3f9dafc1ab4a26f7e65dde2e880d51ead02",
   "d742f834712a24c4da268dcbc44182e511113370c87302132694faa02cdb3c0e",
@@ -1085,6 +1233,14 @@ def main():
         print('constant kKatRcptSig1 = "%s"' % got["receipt_sigs"][0])
         print('constant kKatRcptSig2 = "%s"' % got["receipt_sigs"][1])
         print('constant kKatRcptSig3 = "%s"' % got["receipt_sigs"][2])
+        print('constant kKatCkptBody = "%s"' % got["ckpt_body"])
+        print('constant kKatCkptHead7 = "%s"' % got["ckpt_head7"])
+        print('constant kKatShowHead8 = "%s"' % got["show_head8"])
+        print('constant kKatMuckHead9 = "%s"' % got["muck_head9"])
+        print('constant kKatElectedHost = "%s"' % got["elected_host"])
+        print('constant kKatOnionSeed = "%s"' % got["onion_service_seed"])
+        print('constant kKatOracleSeed = "%s"' % got["oracle_service_seed"])
+        print('constant kKatLobbyCfgBodyOracle = "%s"' % got["lobby_cfg_body_oracle"])
         print('constant kKatL2Scalar1 = "%s"' % got["l2_scalars"][0])
         print('constant kKatL2Scalar2 = "%s"' % got["l2_scalars"][1])
         print('constant kKatL2Scalar3 = "%s"' % got["l2_scalars"][2])

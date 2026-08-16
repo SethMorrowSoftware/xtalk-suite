@@ -189,7 +189,17 @@ to seat N's session box pub. `board` (dealer) carries `street=..,cards=a|b|c`.
 `settle` (host) carries the standard deltas body; every client verifies it against its
 own `heSettleOf` recomputation before folding it. Showdown ranks online are derived
 from the REVEALED seeds (re-derive deck -> holes -> ranks), never from player claims,
-so `show`/`muck` remain display-only niceties (deferred with liveness, 2e).
+so `show`/`muck` are display-only by construction. As-built (v0.21.0, the 2e
+remainder): `ckpt` carries `street=<deal|flop|turn|river|showdown>,head=<64hex>,
+sig=<128hex>` -- the signer's ckpt signature over the chain head the boundary's
+TRANSITION wire produced (the last holeDeliver for "deal", the street's board wire,
+the wire that closed the betting for "showdown"), so every client records the same
+head and a verified ckpt naming a different one is logged as fork evidence, never
+folded as agreement. `show`/`muck` carry `seat=N` from the seat's own key, emitted
+after the verified settle; the showdown display honors them (only shown seats'
+cards paint; a mucked hand is annotated "(mucked)" in History) while the audit is
+untouched. All three wire formats are byte-pinned in `tools/protocol-kat.py`
+(ckpt_body, ckpt_head7/show_head8/muck_head9).
 
 ## 7. The deal protocol ladder
 
@@ -236,6 +246,36 @@ Level 0's exact protocol, but the dealer role is a machine with no stake: a head
 needs no network setup. Entropy is still player-committed (the oracle cannot stack); the
 oracle sees cards but holds no cards, and it never sees the betting (it gets deal-phase
 messages only). Collusion oracle-with-player remains (T3) — that is why Level 2 exists.
+
+**As-built (2026-08-16, v0.21.0 — Phase 3; code wins; verified statically, needs the
+three-machine pass + live tor for the onion oracle):**
+
+- The oracle is the lobby's **"Host: ORACLE"** mode of the same stack — the HOST ROLE
+  minus the seat, bound at Create. `level=1` in the signed table config IS the oracle
+  marker (this section is the deal ladder's Level 1 — no extra field), and the
+  per-hand `dealLevel` wire carries `level=1,dealer=0`. A pre-oracle client refuses
+  the hand readably ("unsupported deal level 1") instead of mis-folding the table.
+- **The oracle contributes its own committed seed** at contributor position
+  dealCount+1: players' entropy still commits the shuffle, the oracle's own seed was
+  committed before it saw anyone's (it cannot stack — the same argument as the L0
+  dealer's), and no player's entropy ever stands alone. It reveals that seed at hand
+  end (the XOR needs it) and emits an audit verdict filed as "oracle". It holds no
+  cards, banks no stack, and signs **no settlement receipt** — receipts stay the
+  seats' multi-signature (8.3).
+- Hole delivery is the EXISTING sealed path authored by the oracle key; players'
+  seedSeals seal to the oracle's session box (its `join` binds one like any peer's).
+- **One divergence from the sketch above, recorded:** as-built the oracle IS the
+  relay host, so it necessarily handles (public, signed) betting wires — "never sees
+  the betting" would require splitting the relay from the dealer, which this build
+  deliberately does not do. What the threat model actually needs from Level 1 is the
+  no-stake property — the peeker holds no cards and no chips — and that holds. A
+  betting-blind oracle daemon remains open work if it ever earns its complexity.
+- Onion hosting derives the service seed under its **own domain tag**
+  (`"HOLDEM-ORACLE-v1|"`, spec 16), so an oracle table's deterministic address can
+  never collide with the same host's playing table on the same table id. Pinned in
+  `tools/protocol-kat.py` (oracle_service_seed vs onion_service_seed).
+- **Oracle loss is host loss by construction** — same role, same spec 9 election
+  path; the oracle, never seated, is never electable.
 
 ### 7.3 Level 2 — ristretto255 mental poker (the value-candidate deal)
 
@@ -437,7 +477,14 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   idempotent for a mid-stream client because replayed wires at or below its seq shed
   silently and it resumes from its head forward. `s?` is a transport control message,
   not a transcript type, and is honored only from an already-admitted, connected
-  peer, rate-limited per peer.
+  peer, rate-limited per peer. As-built (v0.21.0, the 2e street-ckpt work): the
+  `s?` frame carries the requester's applied seq and the host TRIMS the replay to
+  the wires past it — the "transcript since your last ckpt" above, keyed by seq
+  (the street ckpt wires pin the boundaries; a mid-stream client resumes from at
+  worst the last one). A bare `s?` and the reconnect handshake still get the full
+  log (a rebuilt client has nothing to resume from), and the mark is only a trim
+  hint from an admitted peer: dedup keeps any replay safe, a forward lie only
+  starves the liar.
 - **Timeout in betting**: auto check/fold, seat goes to sit-out after (config) misses.
 - **Timeout in dealing** (L2): void-and-audit (7.3). A player who habitually
   "disconnects" when the flop looks bad voids hands but never sees that flop — aborting
@@ -446,7 +493,16 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
 - **Host loss**: any player can call a host election (deterministic: lowest pubkey among
   live seats); the transcript's checkpoints make the handover point unambiguous. Voids
   the in-flight hand at L2 (audit optional — nobody misbehaved), resumes from the last
-  receipt.
+  receipt. As-built (v0.21.0; oracle loss takes the SAME path — the oracle is the host
+  role, spec 7.2): detection is a wire-silence watchdog (no host-countersigned wire for
+  60 s during play — rp1's only honest signal; the onion transport also routes its
+  positive stream-death here), the election needs no calling round at all
+  (`heElectHostOf`: lowest pubkey among live SEATED players, so every client names the
+  same successor independently; pinned as elected_host in protocol-kat), and the void
+  costs nothing at L0 — bets that never reached a verified settle never moved the
+  stacks, so they already stand at the last receipt. The LIVE handover — the elected
+  host re-hosting and peers re-joining — is Phase 3's three-machine exit gate; until
+  that pass, the client fails closed with the successor named.
 
 ## 10. Transport profile
 
