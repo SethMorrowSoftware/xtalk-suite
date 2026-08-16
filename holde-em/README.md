@@ -23,9 +23,14 @@ liveness layer (street checkpoints, show/muck, online History, host election —
 since v0.23.0, act timers with a per-hand time-bank, sit-out/return, late-join
 seating, and onion auto-redial), plus the Phase 3 deck oracle, the Phase 4a-4d
 Level 2 layer (compute + void-and-audit) with its 4e adversarial harness, and Phase
-5's DLEQ proofs — one paste-and-run stack, at v0.23.0, now sized 1024x640 inside
+5's DLEQ proofs — one paste-and-run stack, at v0.24.0, sized 1024x640 inside
 the suite's 720p budget (re-layout verified by rect arithmetic; the confirming eye
-is the OXT pass's).** The live multi-machine passes are the pending exit gates: a
+is the OXT pass's). v0.24.0 is a correction pass over that liveness layer: ten
+reviewed defects (a redial that could kill the host election, a catching-up client
+that refused every later timeout, consensus state written around folds the engine
+had refused, a table parked for sit-outs that could never resume, ghost seats for
+departed peers) fixed with **no wire change at all** — the 114 protocol pins are
+untouched, so v0.23.0 and v0.24.0 clients speak the identical protocol.** The live multi-machine passes are the pending exit gates: a
 multi-hand rp1 session on real networks (Phase 2, now including seats timing out on
 real wall clocks), a two-machine onion table over live tor (2f, + a real
 host-stream loss and redial), and a **three-machine oracle round** (Phase 3); the

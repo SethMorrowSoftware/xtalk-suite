@@ -525,7 +525,11 @@ pin (all classic, all fiddly, all testable without networking):
   `bank=1`, so bank state is transcript-derived consensus. Forced posts time out the
   same way once the deal is complete; an L0 deal stall (a contributor never
   commits/seals/reveals) deliberately has NO timeout prescription — this bullet's
-  dealing timeout is the Level 2 machine's.
+  dealing timeout is the Level 2 machine's. As-built (v0.24.0, no wire change): the
+  bank spend and the consecutive-miss count move only when the engine actually
+  APPLIED the timeout, and a live act/bid resets the miss count only when the engine
+  applied THAT — an action the engine refused changes no shared state; a refused
+  timeout re-arms the interval instead of latching the host's "already sent" flag.
 
 ### 8.2 Hand evaluator
 
@@ -592,8 +596,10 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   host may never fold a seat that could check), the transcript-derived bank state,
   and the deadline genuinely passed on the CLIENT's own clock within a 5 s transport-
   jitter tolerance (NOT the +-600 s wall-clock window: no timestamp crosses the wire;
-  both sides time the same wire-to-wire interval locally; catch-up replay waives the
-  clock check, the live table already policed it) — then folded as the seat's action,
+  both sides time the same wire-to-wire interval locally; the clock check is waived
+  for a historical wire AND — v0.24.0 — for a turn whose clock was started during a
+  catch-up replay, since that clock times the replay rather than the table: the
+  waiver ends with that turn) — then folded as the seat's action,
   so the transcript stays deterministic. After (config) `miss=` consecutive timeouts
   the seat sits out AUTOMATICALLY (transcript-derived, every client agrees); a seat
   may also sit out by its own signed `stand`. A sitting-out seat is DEALT OUT at the
@@ -630,7 +636,13 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   redial's hello names the client's applied seq (a compatible trailing token item),
   so the host's reconnect replay arrives TRIMMED to the tail — this section's "since
   your last ckpt" resync; a host-signed wire applying is what resets the attempt
-  counter.
+  counter. As-built (v0.24.0, no wire change): "the election always concludes" is
+  now structural rather than aspirational — a dial failure DURING a redial re-arms
+  the schedule instead of tearing the transport down (tearing it down cancelled the
+  poll tick the watchdog rides on, so neither the election nor the remaining
+  attempts ever happened), and BOTH exits from the redial state — the watchdog
+  concluding first, and the attempts running out — leave the elected successor's
+  name standing on the status line.
 
 ## 10. Transport profile
 

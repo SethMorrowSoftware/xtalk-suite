@@ -6,6 +6,93 @@ ONE self-contained, paste-and-run stack: the hotseat game plus its own
 self-test harness (call heRunSelftest in the message box). No second stack,
 no required extensions to be playable.
 
+v0.24.0 -- LIVENESS-LAYER CORRECTIONS: ten reviewed defects in the v0.23.0
+2e layer, every one of them a local state-ordering or control-flow fault.
+NO WIRE CHANGED -- not a byte, not a field, not an order: protocol-kat's
+114 pins are untouched, so a v0.23.0 client and a v0.24.0 client speak the
+identical protocol and disagree only about what they do to themselves.
+kHeHarnessV 38 -> 39 (section 20 grew a pin per fix); kUIVersion stays 15
+(the seat plate's label order changed, but the plate is painted at
+runtime, so no saved chrome has to be rebuilt). Verified statically; the
+live legs are unchanged and still owed.
+  * THE ELECTION ALWAYS CONCLUDES -- for real this time. A dial failure
+    during an auto-redial (a throw, a non-integer stream, a callback
+    registration failure) took heNetOnionFail, whose heNetStop clears
+    gGame["online"] and cancels the poll tick -- and heNetHostLossCheck
+    exits on its FIRST line when online is not "true". So the one thing
+    the redial design promised, that the 60 s wire-silence watchdog keeps
+    counting underneath, was false the moment a redial dial failed: no
+    election, and no attempts 2..4 either (the bounded four-attempt
+    schedule collapsed to one). heNetOnionDialFail now owns that fork --
+    mid-redial failures re-arm the schedule (heNetOnionRedialArm runs the
+    election itself at exhaustion), join-time failures still fail closed.
+  * ONE QUIET EXIT FROM THE REDIAL STATE (heNetOnionStandDown). The
+    exhaustion branch ran the election, which names the elected successor
+    on the status line, and then called heNetOnionFail two lines later,
+    which overwrote it -- precisely what heNetOnionRedialGiveup's comment
+    said must never happen. Both exits share one handler now; the player
+    always ends up seeing who was elected.
+  * A REPLAYED CLOCK IS MARKED REPLAYED (heNetTurnClockStart). A client
+    catching up folds the turn-opening wire NOW, so its act clock starts
+    for a turn that opened long ago everywhere else; the host's live
+    timeout then lands past the replay's head, where the seq-keyed waiver
+    cannot reach it, and was refused as premature. Every other node had
+    folded the seat, so that client was one action behind FOREVER, every
+    later wire engine-rejecting out of turn with nothing on the chain to
+    say why. The waiver keys on the CLOCK now -- and dies with its turn,
+    so it can never shelter a rushing host on a live one. (The v0.23.0
+    KNOWN EDGE claim that "a reconnect heals it" was false for exactly
+    this reason; CLAUDE.md now says what is true.)
+  * NOTHING CONSENSUS MOVES ON A FOLD THAT DID NOT HAPPEN.
+    heNetEngineFold records gGame["foldApplied"], and the timeout folds
+    read it: the seat's one per-hand time-bank is spent and its miss
+    counted only when heBetApply actually took the action (both were
+    written around a fold that can refuse -- and since every client did it
+    identically, the wrong state was CONSENSUS, not a divergence anyone
+    could detect); a live act or bid resets the miss counter only when the
+    engine took THAT (the unconditional reset let a stalling client hold
+    itself at zero misses forever with out-of-turn wires, so it never sat
+    out and every hand still burned the full act timer plus bank).
+  * A REFUSED TIMEOUT RE-ARMS INSTEAD OF STALLING (heNetTimeoutRearm).
+    timeoutSent latched when the host EMITTED, and only heNetTurnMark
+    cleared it -- which a refused fold never reaches, since turnKey does
+    not move. The host then never re-emitted, the seat never acted, and
+    the table stalled silently: the exact failure the timer exists to
+    prevent. The interval restarts on the refused wire (the same wire
+    everywhere, so the interval-on-one-clock property holds), which is a
+    bounded retry rather than a 4 Hz re-emit storm.
+  * A PARKED TABLE CAN RESUME (gGame["handWait"] + react's unpark step).
+    The "waiting for sitting-out players" park re-armed the beat only under
+    autoNext, and the beat additionally required phase "between" -- false
+    when the park came from heNetStartGame, so it died on its first firing.
+    Nothing else kicked: the sit-return fold cleared sitOutBy and stopped,
+    so the returning player saw Return succeed and the table never dealt
+    again. The park is latched (any path can re-arm it) and the react
+    engine kicks the moment the folded transcript says two seats are
+    dealable -- no timer needs to be alive.
+  * LATE-JOIN REQUIRES PRESENCE, NOT HISTORY (heNetPubIsLive). The
+    boundary seated every admitted key that had ever emitted a join wire,
+    and nothing ever clears boxByPub/admittedA -- so a peer that joined and
+    closed its stack was handed the lowest empty seat and a full stack,
+    timed out every turn until two misses sat it out, and held the seat for
+    the session. Liveness comes from state we already keep: a current
+    transport handle (authoritative on the onion transport, which clears it
+    at stream death) plus a last-heard stamp (the only signal rp1 has -- it
+    surfaces no disconnect event). OPEN: telling a SPECTATOR from a player
+    still needs a wire/UI decision and none was invented here (recorded in
+    CLAUDE.md / IMPLEMENTATION-PLAN.md).
+  * THE PLATE'S STATUS OUTRANKS ITS STOPWATCH (heSeatFaceLabel, now pure
+    and pinned). A sitting-out seat whose turn came up painted "0s" --
+    which is exactly what heNetTurnLimitSecs returns FOR a sitting-out
+    seat, so the plate showed the reason for the SIT OUT label instead of
+    the label.
+  * ONE OCCUPANCY RULE (heNetSeatedWithChipsList). heNetHandKick's
+    chip-count loop re-implemented the scan heNetNextOccList had just been
+    extracted to centralize, and only heNetNextOccList was pinned.
+  * heUISetStatus also stashes gGame["statusTxt"], so a headless harness
+    can pin WHICH message won a race for the status line -- the redial
+    clobber above was unpinnable while that text lived only in a field.
+
 v0.23.0 -- 2e LIVENESS REMAINDER (spec 8.1/9: act timers + time-bank,
 sit-out/return, late-join, onion auto-redial) + the 720p RE-LAYOUT
 (1024x690 -> 1024x640, the suite height budget). kHeHarnessV 37 -> 38 (new
@@ -841,8 +928,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.23.0"
-constant kHeHarnessV = "38"
+constant kHeVersion = "0.24.0"
+constant kHeHarnessV = "39"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -939,6 +1026,17 @@ constant kHeHostLossTicks = 240
 constant kHeDefaultActSecs = 30
 constant kHeDefaultBankSecs = 60
 constant kHeDefaultMisses = 2
+-- how recently an admitted key must have been HEARD FROM (an applied wire or
+-- a verified handshake) for the host to seat it at a hand boundary
+-- (heNetPubIsLive, v0.24.0). Only the rp1 transport needs it -- the onion
+-- transport clears a dead peer's handle positively (heNetOnionDead), while
+-- rp1 surfaces no disconnect event at all, so a departed peer would otherwise
+-- be seated as a ghost that times out every turn and holds the seat for the
+-- session. 600 s is deliberately generous against the honest case (a joined
+-- but unseated observer emits nothing on its own, so its stamp is usually
+-- just its join wire) and still bounds the ghost. A JUDGEMENT CALL, not a
+-- measured number: needs an OXT pass on a real table.
+constant kHeSeatLiveSecs = 600
 -- the clock-skew tolerance on a host timeout wire, in seconds. NOT the
 -- +-600 s wall-clock freshness window (riptide's rp1-inbox precedent):
 -- no wall-clock timestamp crosses this wire at all -- both sides measure
@@ -3643,6 +3741,10 @@ command heNetOnHandshake pPeer, pTokenData, pFromSeq
    put pPeer into gGame["peerByPub"][tPubHex]
    put "true" into gGame["admittedA"][tPubHex]
    put tRoleTxt into gGame["roleByPub"][tPubHex]
+   -- a verified handshake is positive presence: stamp it like an applied wire
+   -- (v0.24.0, F7 -- heNetPubIsLive). This is what makes a RECONNECTING peer
+   -- immediately seatable again after its last wire went stale.
+   put the milliseconds into gGame["seenMsByPub"][tPubHex]
    -- adopt as host only a peer whose token DECLARES role "host" -- the phantom
    -- swarm connects players to each other too, so "first peer" is not the host.
    -- Trust-on-first-use: pin the first host key and surface (do NOT silently
@@ -3715,7 +3817,15 @@ command heNetOnMessage pPeer, pPayloadData
          -- anyone else could otherwise suppress a victim's emissions
          -- indefinitely (transport DoS).
          put gGame["hostPubHex"] into tPeerPub
-         if pPeer is gGame["peerByPub"][tPeerPub] and tRest is a number then
+         if pPeer is gGame["peerByPub"][tPeerPub] and tRest is a number \
+               and tRest > gGame["lastSeq"] then
+            -- v0.24.0: a marker announcing a head we ALREADY hold is not a
+            -- catch-up at all -- every wire that follows it is a duplicate we
+            -- shed by seq, so nothing would ever fold to clear the mark. It
+            -- used to suspend our react emissions until the next LIVE wire,
+            -- and since the turn clock now records whether it started under a
+            -- replay, it would also have marked that wire's turn replayed and
+            -- waived one deadline check for nothing. Only a real gap suspends.
             put tRest into gGame["catchUpTo"]
             put "catch  replay to seq " & tRest & " announced" & return after gGame["netLog"]
          end if
@@ -3893,6 +4003,11 @@ command heNetApplyWire pWire, pA
    if gGame["oxRedialN"] > 0 then
       put 0 into gGame["oxRedialN"]
    end if
+   -- v0.24.0 (F7): stamp when we last had positive evidence of this sender.
+   -- It is the only liveness rp1 can offer (it surfaces no disconnect event),
+   -- and heNetPubIsLive reads it so the host never seats a departed peer as a
+   -- ghost. Per KEY, not per handle: a reconnect changes the handle.
+   put the milliseconds into gGame["seenMsByPub"][tFromHex]
    put pWire & return after gGame["log"]
    put "ok     " & tTypeTxt & " seq " & tSeqTxt & return after gGame["netLog"]
    -- spec 6: an unknown "from" is never ACTED on -- no exceptions, including
@@ -4480,21 +4595,21 @@ command heNetOnionTick
          break
       case "dial"
          if gGame["oxDialErr"] is not empty then
-            if gGame["oxRedialN"] > 0 then
-               -- a redial attempt failed: back off and try again (bounded)
-               -- instead of tearing the transport down mid-recovery
-               heNetOnionRedialArm
-            else
-               heNetOnionFail "Could not reach the host's onion: " & gGame["oxDialErr"] \
-                     & "  Is the host's table still open?"
-            end if
+            heNetOnionDialFail "Could not reach the host's onion: " & gGame["oxDialErr"] \
+                  & "  Is the host's table still open?"
             exit heNetOnionTick
          end if
          put empty into tStreamState
          try
             put oxStreamState(gGame["oxStream"]) into tStreamState
          catch tErr
-            heNetOnionFail "OnionXT went away mid-dial: " & tErr
+            -- v0.24.0: this exit is inside the DIAL state, which a redial
+            -- also passes through, so it takes the redial-aware handler like
+            -- every other dial failure. Fail-closed here would cancel the
+            -- poll tick and with it the election watchdog (see
+            -- heNetOnionDialFail); a gone OnionXT just exhausts the four
+            -- bounded attempts instead, and the election concludes.
+            heNetOnionDialFail "OnionXT went away mid-dial: " & tErr
             exit heNetOnionTick
          end try
          if gGame["oxDialOpen"] is "open" or tStreamState is "connected" then
@@ -4517,23 +4632,19 @@ command heNetOnionTick
             -- the stream failed and OnionXT already forgot the handle; the
             -- stashed oxDialErr usually carries why (checked above) -- this
             -- is the catch-all
-            if gGame["oxRedialN"] > 0 then
-               heNetOnionRedialArm
-            else
-               heNetOnionFail "The tor stream to the host closed during the dial. Check the invite and Join again."
-            end if
+            heNetOnionDialFail "The tor stream to the host closed during the dial. Check the invite and Join again."
             exit heNetOnionTick
          end if
          -- a redial attempt gets a SHORT dial deadline (the watchdog is 60 s
          -- away and a hung SOCKS dial must not eat the whole recovery window)
          if gGame["oxRedialN"] > 0 then
             if gGame["oxTicks"] > kHeRedialDialTicks then
-               heNetOnionRedialArm
+               heNetOnionDialFail "the redial dial deadline passed"
             end if
             exit heNetOnionTick
          end if
          if gGame["oxTicks"] > kHeOnionDialTicks then
-            heNetOnionFail "Dialing the host's onion timed out. The host may be offline, or its descriptor not yet published -- try again in a minute."
+            heNetOnionDialFail "Dialing the host's onion timed out. The host may be offline, or its descriptor not yet published -- try again in a minute."
          end if
          break
       case "redial"
@@ -4577,13 +4688,25 @@ command heNetOnionRedialArm
    if gGame["oxRedialN"] >= kHeRedialMax then
       -- exhausted with the host still gone: run the election NOW (the
       -- pre-redial path did exactly this on stream death -- exhaustion is
-      -- the same positive signal, just retried), then fail closed. The
-      -- watchdog would conclude the same way; this just never leaves a
-      -- dead table election-less when the backoffs run out first.
+      -- the same positive signal, just retried), then stand down QUIETLY
+      -- behind it. The watchdog would conclude the same way; this just
+      -- never leaves a dead table election-less when the backoffs run out
+      -- first. Only the no-election exit (below) fails closed with a
+      -- status message of its own -- there is nothing there to overwrite.
       put "redial gave up after " & kHeRedialMax & " attempts" & return after gGame["netLog"]
       if gGame["gameOn"] is "true" then
          heNetHostLost "the tor stream to the host stayed dead through " \
                & kHeRedialMax & " redials"
+         -- v0.24.0: heNetHostLost has just NAMED the elected successor on the
+         -- status line, and that is the one message the player needs. The old
+         -- code called heNetOnionFail two lines later, whose heUISetStatus
+         -- overwrote it -- exactly what heNetOnionRedialGiveup's comment says
+         -- must never happen. BOTH exits from the redial state are quiet now
+         -- (one shape, one handler); the fail-CLOSED spelling below is only
+         -- for the exit where no election ran, so no status is being lost.
+         heNetOnionStandDown "Tor: host stream lost -- " & kHeRedialMax \
+               & " redials failed, election concluded (see the status line)"
+         exit heNetOnionRedialArm
       end if
       heNetOnionFail "Lost the tor stream to the host and " & kHeRedialMax \
             & " redials failed. Join again with the same invite (if a host was elected, the net feed names it)."
@@ -4604,13 +4727,59 @@ command heNetOnionRedialGiveup
    -- heNetOnionFail here would overwrite exactly the message the player
    -- needs. Tear the transport down (H1) and keep the tor line honest.
    put "redial stood down -- the election concluded first" & return after gGame["netLog"]
+   heNetOnionStandDown "Tor: host stream lost -- election concluded (see the status line)"
+end heNetOnionRedialGiveup
+
+command heNetOnionStandDown pTorLineTxt
+   -- the QUIET exit from the redial state (v0.24.0): tear the transport down
+   -- (H1) and keep the tor line honest, but NEVER touch the status line.
+   -- Both ways out of a redial -- the watchdog election concluding first
+   -- (heNetOnionRedialGiveup) and the attempts running out
+   -- (heNetOnionRedialArm's exhaustion branch) -- reach here only AFTER
+   -- heNetHostLost has named the elected successor there, and the two used to
+   -- disagree: the giveup path was quiet, the exhaustion path called
+   -- heNetOnionFail and clobbered the election's message with "Hotseat still
+   -- works". One handler, one behaviour: the player always ends up seeing who
+   -- was elected. heNetOnionFail stays the fail-CLOSED spelling for the paths
+   -- where no election ran (join time, an idle table).
    put "failed" into gGame["oxState"]
-   put "Tor: host stream lost -- election concluded (see the status line)" into gGame["oxFailTxt"]
+   put pTorLineTxt into gGame["oxFailTxt"]
    if gGame["netCap"] is not "true" then
       heNetStop
    end if
    heLobbyRefresh
-end heNetOnionRedialGiveup
+end heNetOnionStandDown
+
+command heNetOnionDialFail pWhyTxt
+   -- a dial failure means two DIFFERENT things depending on where we are, and
+   -- v0.23.0 served both with one handler -- the F1 defect. At JOIN time it is
+   -- fatal and heNetOnionFail (fail closed, "Join again") is right. MID-REDIAL
+   -- it is just this ATTEMPT failing, and heNetOnionFail would be catastrophic:
+   -- it calls heNetStop, which sets gGame["online"] to "false" and cancels the
+   -- pending heNetPollTick -- and heNetHostLossCheck exits on its FIRST line
+   -- when online is not "true", so the 60 s election watchdog would never
+   -- conclude and attempts 2..4 would never fire. The bounded 4-attempt
+   -- schedule collapsed to one, and the table was left with no host and no
+   -- successor -- against this member's written contract that the election
+   -- always concludes. So a redial-time failure re-arms the schedule instead:
+   -- heNetOnionRedialArm owns every decision from here (it stands down quietly
+   -- when the election already concluded, and runs the election ITSELF at
+   -- exhaustion), and the transport comes down only when something has decided
+   -- the table is over. Verified statically; needs an OXT pass (+ live tor).
+   --
+   -- This is the ONLY spelling of that fork. The first cut of the fix left
+   -- three dial-state sites testing oxRedialN inline beside this handler --
+   -- correct, but four copies of one rule, which is the exact shape that
+   -- produced F1: a later edit fixes the copy it can see. Every dial-state
+   -- failure calls here now, so the join-vs-redial decision has one home.
+   if gGame["oxRedialN"] > 0 then
+      put "tor    redial attempt " & gGame["oxRedialN"] & " failed: " & pWhyTxt \
+            & return after gGame["netLog"]
+      heNetOnionRedialArm
+      exit heNetOnionDialFail
+   end if
+   heNetOnionFail pWhyTxt
+end heNetOnionDialFail
 
 function heRedialWaitTicks pAttemptN
    -- the redial backoff, PURE (H5) so the harness pins the schedule: attempt
@@ -4652,17 +4821,21 @@ end heNetOnionPublish
 
 command heNetOnionDial
    -- player, at bootstrap-done: SOCKS-dial the invite's onion. Completes
-   -- asynchronously; the "dial" state watches for open/failed.
+   -- asynchronously; the "dial" state watches for open/failed. Every
+   -- SYNCHRONOUS failure below goes through heNetOnionDialFail, never
+   -- heNetOnionFail directly (v0.24.0): this handler is also the redial's
+   -- dialer, and tearing the transport down mid-redial cancels the poll tick
+   -- that the election watchdog rides on -- see heNetOnionDialFail.
    local tStream, tErr, tCbRes
    try
       oxDial gGame["onionAddrTxt"], kHeOnionVirtPort
       put the result into tStream
    catch tErr
-      heNetOnionFail "dialing the host's onion threw: " & heReadableErr(tErr)
+      heNetOnionDialFail "dialing the host's onion threw: " & heReadableErr(tErr)
       exit heNetOnionDial
    end try
    if tStream is not an integer then
-      heNetOnionFail "could not dial the host's onion: " & tStream
+      heNetOnionDialFail "could not dial the host's onion: " & tStream
       exit heNetOnionDial
    end if
    put tStream into gGame["oxStream"]
@@ -4673,7 +4846,7 @@ command heNetOnionDial
       put tErr into tCbRes
    end try
    if tCbRes is not empty then
-      heNetOnionFail "could not register the stream callback: " & tCbRes
+      heNetOnionDialFail "could not register the stream callback: " & tCbRes
       exit heNetOnionDial
    end if
    put "dial" into gGame["oxState"]
@@ -5001,7 +5174,14 @@ command heNetGameInit
    put empty into gGame["turnKey"]
    put 0 into gGame["turnStartMs"]
    put "false" into gGame["timeoutSent"]
+   put "false" into gGame["turnStale"]
    put empty into gGame["turnClockTxt"]
+   -- v0.24.0: the engine-fold outcome the timeout/act folds read back
+   -- (heNetEngineFold), and the "table parked for sit-outs" latch that makes
+   -- the between-hands beat re-armable from any path (heNetHandKick)
+   put "false" into gGame["foldApplied"]
+   put "false" into gGame["handWait"]
+   put empty into gGame["seenMsByPub"]
 end heNetGameInit
 
 command heNetHandReset
@@ -5036,6 +5216,7 @@ command heNetHandReset
    put empty into gGame["turnKey"]
    put 0 into gGame["turnStartMs"]
    put "false" into gGame["timeoutSent"]
+   put "false" into gGame["turnStale"]
    put empty into gGame["turnClockTxt"]
 end heNetHandReset
 
@@ -5248,14 +5429,52 @@ command heNetTurnMark
    end if
    if tKeyTxt is not gGame["turnKey"] then
       put tKeyTxt into gGame["turnKey"]
-      put the milliseconds into gGame["turnStartMs"]
-      put "false" into gGame["timeoutSent"]
+      heNetTurnClockStart
       if tKeyTxt is empty and gGame["turnClockTxt"] is not empty then
          put empty into gGame["turnClockTxt"]
          heHudMark
       end if
    end if
 end heNetTurnMark
+
+command heNetTurnClockStart
+   -- start the CURRENT turn's interval on this client's own clock. One place
+   -- (v0.24.0) because two callers need the same three decisions, and the
+   -- third one is the F2 fix: whether this clock is a REPLAYED one.
+   -- A client catching up by full replay folds the turn-opening wire NOW, so
+   -- turnStartMs becomes "now" for a turn that opened minutes ago at every
+   -- other node. When the host's live timeout wire then arrives -- past the
+   -- replay's announced head, so the seq-keyed waiver in heNetTimeoutOk does
+   -- NOT apply -- this client compares ~10 s elapsed against a 90 s limit and
+   -- refuses it as premature. Every other node folded the seat; this one is
+   -- one action behind FOREVER and every later wire engine-rejects out of
+   -- turn, with no chain-level signal. So the clock REMEMBERS that it was
+   -- started during catch-up, and heNetTimeoutOk waives the deadline for that
+   -- turn ONLY -- the next live turn mark clears the flag, because a waiver
+   -- that outlived its turn would let a rushing host fold a live seat early.
+   put the milliseconds into gGame["turnStartMs"]
+   put "false" into gGame["timeoutSent"]
+   if gGame["catchUpTo"] is a number then
+      put "true" into gGame["turnStale"]
+   else
+      put "false" into gGame["turnStale"]
+   end if
+end heNetTurnClockStart
+
+command heNetTimeoutRearm
+   -- a host timeout wire the ENGINE refused (heBetApply rejected it: a raced
+   -- prescription, a stale seat) leaves turnKey untouched, so heNetTurnMark
+   -- never runs -- and heNetTurnMark is the ONLY thing that clears
+   -- timeoutSent. The host's own guard then exited on every later tick, it
+   -- never re-emitted, the seat never acted and the table stalled SILENTLY:
+   -- exactly the failure the timer exists to prevent (F3). Restart the
+   -- interval instead. Every client folded the SAME refused wire, so every
+   -- clock restarts on the same wire and the interval-on-one-clock property
+   -- survives; the host re-emits one full act period later, which is a
+   -- BOUNDED retry -- clearing the latch alone would have re-emitted the same
+   -- refused wire at 4 Hz forever.
+   heNetTurnClockStart
+end heNetTimeoutRearm
 
 function heNetTurnLimitSecs pSeatNum
    -- the CURRENT subject's full allowance in seconds: 0 for a sitting-out
@@ -5387,6 +5606,19 @@ function heNetTimeoutOk pBodyA, pSeatNum, pKindTxt, pAmt
    if gGame["catchUpTo"] is a number and gGame["lastSeq"] <= gGame["catchUpTo"] then
       return empty   -- historical: the live table policed the clock
    end if
+   if gGame["turnStale"] is "true" then
+      -- v0.24.0 (F2): THIS turn's clock was started while a replay was
+      -- streaming, so it times the replay, not the table -- the turn really
+      -- opened long before we heard about it. The wire's seq cannot express
+      -- that (the live timeout arrives PAST the replay's head, so the waiver
+      -- above never fires), and refusing it left this client one action
+      -- behind for the rest of the session with nothing on the chain to say
+      -- so. Waive the deadline for this turn only; heNetTurnClockStart clears
+      -- the flag at the next live turn mark. The verb/amount and bank checks
+      -- above still run -- those are transcript-deterministic, so a catching-
+      -- up client polices them exactly as well as a live one.
+      return empty
+   end if
    put heNetTurnLimitSecs(pSeatNum) into tLimit
    put (the milliseconds - gGame["turnStartMs"]) div 1000 into tElapsed
    if tElapsed < tLimit - kHeActSkewSecs then
@@ -5395,17 +5627,41 @@ function heNetTimeoutOk pBodyA, pSeatNum, pKindTxt, pAmt
    return empty
 end heNetTimeoutOk
 
-function heNetNextOccList
-   -- the seats the NEXT hand deals to: seated, holding chips, and not
-   -- sitting out (spec 9: a sitting-out seat is dealt out until its signed
-   -- return). One place, so the host's heNetHandKick and the harness pin
-   -- the same rule.
+function heNetSeatedWithChipsList
+   -- the seats that are SEATED and still hold chips, ascending. The base of
+   -- the occupancy rule, factored out at v0.24.0 (F10): heNetHandKick had its
+   -- own copy of this scan to tell an over table (one stack left) from a
+   -- parked one, and the copy had already drifted -- it omitted nothing yet,
+   -- but only heNetNextOccList was pinned by the harness, so a change to the
+   -- rule could have silently held in one place and not the other. One
+   -- definition, two readers.
    local tOut, tSeatNum, tSeatedList
    set the itemDelimiter to comma
    put gGame["seatedList"] into tSeatedList
    put empty into tOut
    repeat for each item tSeatNum in tSeatedList
-      if gGame["stacksBy"][tSeatNum] > 0 and gGame["sitOutBy"][tSeatNum] is not "true" then
+      if gGame["stacksBy"][tSeatNum] > 0 then
+         put tSeatNum & comma after tOut
+      end if
+   end repeat
+   if tOut is not empty then
+      delete char -1 of tOut
+   end if
+   return tOut
+end heNetSeatedWithChipsList
+
+function heNetNextOccList
+   -- the seats the NEXT hand deals to: seated, holding chips, and not
+   -- sitting out (spec 9: a sitting-out seat is dealt out until its signed
+   -- return). One place, so the host's heNetHandKick and the harness pin
+   -- the same rule -- and since v0.24.0 the "seated with chips" half is
+   -- heNetSeatedWithChipsList, the same scan the parked-table test reads.
+   local tOut, tSeatNum, tChipList
+   set the itemDelimiter to comma
+   put heNetSeatedWithChipsList() into tChipList
+   put empty into tOut
+   repeat for each item tSeatNum in tChipList
+      if gGame["sitOutBy"][tSeatNum] is not "true" then
          put tSeatNum & comma after tOut
       end if
    end repeat
@@ -5415,6 +5671,50 @@ function heNetNextOccList
    return tOut
 end heNetNextOccList
 
+function heNetPubIsLive pPubHex
+   -- is this admitted key present RIGHT NOW? Answered from state we already
+   -- keep -- no new wire, no new frame kind (v0.24.0, F7). heNetSeatLateJoiners
+   -- used to seat every admitted key that had ever emitted a join wire, and a
+   -- peer that joined and then closed its stack stays in boxByPub/admittedA
+   -- forever: at the next hand boundary the ghost was handed the lowest empty
+   -- seat and a full opening stack, timed out every turn until two misses sat
+   -- it out, and held the seat for the rest of the session (seats are never
+   -- released).
+   -- The two signals, and exactly what each proves:
+   --   * a CURRENT transport handle (peerByPub). On the ONION transport this
+   --     is authoritative: stream death is a positive event and
+   --     heNetOnionDead clears the mapping within a poll tick, so a closed
+   --     stack stops being live immediately.
+   --   * recency of the last wire or handshake from that key (seenMsByPub,
+   --     stamped in heNetApplyWire and heNetOnHandshake). rp1 surfaces NO
+   --     disconnect event -- wire-silence is the only honest signal it has,
+   --     which is why the host-loss watchdog is built on silence too -- so on
+   --     rp1 a handle alone would keep a departed peer "live" forever, i.e.
+   --     would not fix the ghost at all.
+   -- The rp1 window is deliberately generous (kHeSeatLiveSecs): a joined but
+   -- unseated observer emits nothing on its own, so its stamp is usually just
+   -- its join wire, and the boundary that would seat it is normally seconds
+   -- to a couple of minutes later. An observer that has waited out the whole
+   -- window is treated as gone and stays an observer -- a fail-SAFE guess
+   -- (reconnecting re-stamps it), and the honest limit of what rp1 can prove.
+   -- Verified statically; needs an OXT pass.
+   local tSeenMs
+   if pPubHex is gGame["idPubHex"] then
+      return true   -- ourselves: the host running this check is present
+   end if
+   if gGame["peerByPub"][pPubHex] is empty then
+      return false
+   end if
+   if gGame["transport"] is "onion" then
+      return true
+   end if
+   put gGame["seenMsByPub"][pPubHex] into tSeenMs
+   if tSeenMs is not a number then
+      return false
+   end if
+   return ((the milliseconds - tSeenMs) <= (kHeSeatLiveSecs * 1000))
+end heNetPubIsLive
+
 command heNetSeatLateJoiners
    -- HOST, at each hand boundary (2e late-join, spec 9's reconnect family):
    -- any admitted key that has JOINED (bound a session box on-chain) but
@@ -5423,6 +5723,16 @@ command heNetSeatLateJoiners
    -- cfg's seat count -- each as a signed sit wire, so every client folds
    -- the same seating. No empty seat = the joiner stays an OBSERVER (it
    -- folds the whole game already; the replay machinery carried it here).
+   -- v0.24.0 (F7): "has joined" is a HISTORICAL fact and was the only test --
+   -- so a departed peer was seated as a ghost. Current liveness is now
+   -- required (heNetPubIsLive, which carries what each transport can prove).
+   -- OPEN DECISION, deliberately not invented here: a SPECTATOR (spec 4's
+   -- read-only role) is still indistinguishable from a player at this point.
+   -- The admission token has a role field, but every client this build can
+   -- talk to sends "player" in it, so refusing on role would refuse real
+   -- players; declaring spectator intent needs a wire/UI decision, and this
+   -- change was scoped to introduce none. Recorded in CLAUDE.md and
+   -- IMPLEMENTATION-PLAN.md.
    local tPubHex, tPubsTxt, tSeatNum, tMaxSeats
    if gGame["isHost"] is not "true" then
       exit heNetSeatLateJoiners
@@ -5433,6 +5743,11 @@ command heNetSeatLateJoiners
             and gGame["seatByPub"][tPubHex] is empty then
          if gGame["oracleHost"] is "true" and tPubHex is gGame["idPubHex"] then
             next repeat   -- the oracle never takes a seat
+         end if
+         if not heNetPubIsLive(tPubHex) then
+            put "join   not seating " & char 1 to 8 of tPubHex \
+                  & " -- joined but not present now" & return after gGame["netLog"]
+            next repeat
          end if
          put tPubHex & return after tPubsTxt
       end if
@@ -5508,26 +5823,39 @@ command heNetHandKick
    -- wires, deterministic order) and where a table short of live players
    -- WAITS instead of ending -- a sitting-out seat still holding chips is a
    -- player who can return, so the beat re-arms until one does.
-   local tOccList, tSeatNum, tButtonSeat, tCount, tStacksTxt, tSeatedList
+   local tOccList, tButtonSeat, tCount, tStacksTxt
    local tChipCount
    if gGame["online"] is not "true" or gGame["isHost"] is not "true" then
       exit heNetHandKick
    end if
+   -- clear the parked latch FIRST, before anything below emits (v0.24.0).
+   -- Both heNetSeatLateJoiners and the handStart emission fold their own
+   -- wires re-entrantly (heNetFoldGameWire ends in heNetGameReact), and
+   -- react's unpark step reads this latch -- leaving it set while a kick is
+   -- already in flight would let a nested react kick again and deal two
+   -- hands. The park branch below sets it back on if the table stays short.
+   put "false" into gGame["handWait"]
    heNetSeatLateJoiners
    set the itemDelimiter to comma
    put heNetNextOccList() into tOccList
    put the number of items of tOccList into tCount
    if tCount < 2 then
       -- fewer than 2 DEALT seats: distinguish an over table (one stack
-      -- left) from a parked one (sitting-out players still hold chips)
-      put gGame["seatedList"] into tSeatedList
-      put 0 into tChipCount
-      repeat for each item tSeatNum in tSeatedList
-         if gGame["stacksBy"][tSeatNum] > 0 then
-            add 1 to tChipCount
-         end if
-      end repeat
+      -- left) from a parked one (sitting-out players still hold chips).
+      -- The scan is heNetSeatedWithChipsList (v0.24.0, F10) -- the same one
+      -- heNetNextOccList filters, so the two can no longer drift.
+      put the number of items of heNetSeatedWithChipsList() into tChipCount
       if tChipCount >= 2 then
+         -- PARK the table and LATCH it (v0.24.0, F6). The latch is what makes
+         -- the parked state re-armable no matter which path parked it: the
+         -- between-hands beat used to require phase "between", which is true
+         -- after a settle but NOT when the park came from heNetStartGame, so
+         -- the beat died on its first firing and the table never dealt again
+         -- however many players returned. heNetNextHandTick now accepts the
+         -- latch, and heNetGameReact kicks the table the moment a signed sit
+         -- return makes two seats dealable -- which is what actually heals a
+         -- table parked with autoNext off, where no beat exists at all.
+         put "true" into gGame["handWait"]
          heUISetStatus "Waiting for sitting-out players to return..."
          if gGame["autoNext"] is "true" then
             send "heNetNextHandTick" to me in hePaceMs("paceNext", kHeNextHandDelayMs) milliseconds
@@ -5554,11 +5882,16 @@ command heNetHandKick
 end heNetHandKick
 
 on heNetNextHandTick
-   -- host's between-hands beat; guarded so a stale send can never double-kick
+   -- host's between-hands beat; guarded so a stale send can never double-kick.
+   -- v0.24.0 (F6): a PARKED table (heNetHandKick found fewer than 2 dealable
+   -- seats while 2+ stacks remain) counts as a legal state to fire in, whether
+   -- it was parked from the between-hands pause or straight from
+   -- heNetStartGame -- the phase-only guard let the re-armed beat die on its
+   -- first firing in the second case, and the table could never resume.
    if gGame["online"] is not "true" or gGame["isHost"] is not "true" then
       exit heNetNextHandTick
    end if
-   if gGame["phase"] is not "between" then
+   if gGame["phase"] is not "between" and gGame["handWait"] is not "true" then
       exit heNetNextHandTick
    end if
    heNetHandKick
@@ -5568,13 +5901,25 @@ command heNetEngineFold pMsgType, pSeatNum, pAmount
    -- fold one gameplay message into the SAME pure engine the hotseat uses.
    -- No heLogAppend (online, gGame["log"] is the signed wire chain itself) and
    -- no paced hotseat scheduling -- consequences are wire-driven via react.
+   -- v0.24.0: the outcome is RECORDED in gGame["foldApplied"] for the caller.
+   -- heBetApply can refuse (out of turn, wrong amount, a raced prescription),
+   -- and three call sites were writing consensus state -- the seat's one
+   -- per-hand time-bank, its consecutive-miss count, and the reset of that
+   -- count -- around a fold that might never have happened (F4/F5). A command
+   -- cannot return a value to a statement-position caller, and `the result` is
+   -- consumed by the next command (gotcha 27), so the flag is a store field:
+   -- set on every path, read IMMEDIATELY by the caller, and inspectable by the
+   -- harness. Nothing this handler calls afterwards folds again, so there is
+   -- no nesting that could overwrite it before the caller looks.
    local tStateA, tVerb
+   put "false" into gGame["foldApplied"]
    put heBetApply(gGame["state"], pMsgType, pSeatNum, pAmount) into tStateA
    if tStateA["err"] is not empty then
       put "drop   engine-rejected " & pMsgType && tStateA["err"] & return after gGame["netLog"]
       exit heNetEngineFold
    end if
    put tStateA into gGame["state"]
+   put "true" into gGame["foldApplied"]
    if pMsgType is "act" then
       set the itemDelimiter to comma
       put item 1 of pAmount into tVerb
@@ -5861,12 +6206,26 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
                      & tResultTxt & return after gGame["netLog"]
                break
             end if
-            if tBodyA["bank"] is "1" then
-               put "true" into gGame["oDeal"]["bankUsedBy"][tSeat]
-            end if
             put "t-out  seat " & tSeat & " timed out -- auto " & pTypeTxt & return after gGame["netLog"]
             heNetEngineFold pTypeTxt, tSeat, tAmt
-            heNetTimeoutMiss tSeat
+            if gGame["foldApplied"] is "true" then
+               -- v0.24.0 (F4): the bank spend and the miss count are CONSENSUS
+               -- state, so they may only move for an action that actually
+               -- applied. Writing them before the fold spent the seat's one
+               -- per-hand time-bank and charged it a miss for a bet that never
+               -- happened -- and since every client did it identically, the
+               -- wrong state was consensus too, invisible as a divergence.
+               -- Two of those miss counts sit the seat out for turns it was
+               -- never given.
+               if tBodyA["bank"] is "1" then
+                  put "true" into gGame["oDeal"]["bankUsedBy"][tSeat]
+               end if
+               heNetTimeoutMiss tSeat
+            else
+               put "t-out  the engine refused that timeout -- interval re-armed" \
+                     & return after gGame["netLog"]
+               heNetTimeoutRearm
+            end if
             break
          end if
          if tFromSeat is 0 then
@@ -5874,8 +6233,16 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
             break
          end if
          put tBodyA["amount"] into tAmt
-         put 0 into gGame["missCntBy"][tFromSeat]   -- a live post is presence
          heNetEngineFold pTypeTxt, tFromSeat, tAmt
+         if gGame["foldApplied"] is "true" then
+            -- a live post is presence -- but ONLY once the engine took it
+            -- (F5): the unconditional reset let a stalling client hold its
+            -- miss count at zero forever with out-of-turn bids the engine
+            -- threw away, so it never reached the miss threshold, never sat
+            -- out, and every hand still burned the full act timer plus bank
+            -- waiting for it.
+            put 0 into gGame["missCntBy"][tFromSeat]
+         end if
          break
 
       case "act"
@@ -5905,12 +6272,20 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
                      & return after gGame["netLog"]
                break
             end if
-            if tBodyA["bank"] is "1" then
-               put "true" into gGame["oDeal"]["bankUsedBy"][tSeat]
-            end if
             put "t-out  seat " & tSeat & " timed out -- auto " & tVerb & return after gGame["netLog"]
             heNetEngineFold "act", tSeat, tVerb & comma & 0
-            heNetTimeoutMiss tSeat
+            if gGame["foldApplied"] is "true" then
+               -- F4, the act twin of the forced-post site above: bank and miss
+               -- only move when the fold moved.
+               if tBodyA["bank"] is "1" then
+                  put "true" into gGame["oDeal"]["bankUsedBy"][tSeat]
+               end if
+               heNetTimeoutMiss tSeat
+            else
+               put "t-out  the engine refused that timeout -- interval re-armed" \
+                     & return after gGame["netLog"]
+               heNetTimeoutRearm
+            end if
             break
          end if
          if tFromSeat is 0 then
@@ -5919,8 +6294,10 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          end if
          put tBodyA["verb"] into tVerb
          put tBodyA["amount"] into tAmt
-         put 0 into gGame["missCntBy"][tFromSeat]   -- a live act is presence
          heNetEngineFold "act", tFromSeat, tVerb & comma & tAmt
+         if gGame["foldApplied"] is "true" then
+            put 0 into gGame["missCntBy"][tFromSeat]   -- a live act is presence (F5)
+         end if
          break
 
       case "board"
@@ -6175,6 +6552,24 @@ command heNetGameReact
    end if
    if gGame["gameOn"] is not "true" then
       exit heNetGameReact
+   end if
+   -- 1b. HOST: a table PARKED for sit-outs resumes the moment the transcript
+   -- says two seats are dealable again (v0.24.0, F6). This is the half that
+   -- actually heals the parked table: the sit-return fold only cleared
+   -- sitOutBy/missCntBy, so with autoNext off (or after the between-hands
+   -- beat had died on a park that came from heNetStartGame) the returning
+   -- player saw Return succeed and the table simply never dealt again.
+   -- Reacting is the house shape for this -- it runs after every applied
+   -- wire, on the same pass that folded the return, so no timer has to be
+   -- alive -- and the latch is its own debounce: heNetHandKick clears
+   -- handWait as soon as it deals, and leaves it set if the table is still
+   -- short, so this can never loop.
+   if gGame["isHost"] is "true" and gGame["handWait"] is "true" then
+      set the itemDelimiter to comma
+      if the number of items of heNetNextOccList() >= 2 then
+         put "hand   a returning player unparks the table" & return after gGame["netLog"]
+         heNetHandKick
+      end if
    end if
    put heNetMySeat() into tMySeat
    put gGame["oDeal"]["dealerSeat"] into tDealerSeat
@@ -10876,6 +11271,13 @@ function heQuickAmountOf pStateA, pSeatNum, pKind
 end heQuickAmountOf
 
 command heUISetStatus pTxt
+   -- keep the last status text in the store as well as on the felt (v0.24.0).
+   -- The field is the display; the copy is what lets a headless harness pin
+   -- WHICH message won when two writers race for this one line -- the F8
+   -- defect was exactly such a race (the redial's fail-closed message
+   -- overwriting the election's "Elected host: ..." two lines later), and it
+   -- was unpinnable while the only record of it lived in a field.
+   put pTxt into gGame["statusTxt"]
    if there is a field "heStatus" then
       set the text of field "heStatus" to pTxt
    end if
@@ -11150,7 +11552,7 @@ end heSeatChromeVisible
 
 command heSeatFace pSeatNum, pActing
    -- panel colour + state label: acting (gold), folded (dim), all-in (gold text)
-   local tState, tFolded, tAllin, tCurTxt
+   local tState, tFolded, tAllin, tCurTxt, tLabelTxt
    put "false" into tFolded
    put "false" into tAllin
    if heHandLive() then
@@ -11178,26 +11580,49 @@ command heSeatFace pSeatNum, pActing
    if tCurTxt is "WINNER" and (gGame["phase"] is "showdown" or gGame["phase"] is "between") then
       exit heSeatFace
    end if
-   if tFolded is "true" then
-      set the text of field ("heSeatState" & pSeatNum) to "FOLDED"
-      set the textColor of field ("heSeatState" & pSeatNum) to "150,150,150"
-   else if tAllin is "true" then
-      set the text of field ("heSeatState" & pSeatNum) to "ALL-IN"
-      set the textColor of field ("heSeatState" & pSeatNum) to kHeGoldColor
-   else if pActing and gGame["online"] is "true" \
-         and gGame["turnClockTxt"] is not empty then
-      -- 2e act timer: the acting seat's remaining seconds. Painted only
-      -- from the 4 Hz HUD tick, and heNetActTimerTick marks the HUD dirty
-      -- only when the shown second CHANGES -- <= 1 Hz in practice.
-      set the text of field ("heSeatState" & pSeatNum) to gGame["turnClockTxt"]
-      set the textColor of field ("heSeatState" & pSeatNum) to kHeGoldColor
-   else if gGame["online"] is "true" and gGame["sitOutBy"][pSeatNum] is "true" then
-      set the text of field ("heSeatState" & pSeatNum) to "SIT OUT"
+   -- the label decision is pure (heSeatFaceLabel); this half only paints it.
+   -- The two dim labels are the seat's "not playing" states; everything the
+   -- plate says about a LIVE seat is gold (an empty label paints no text, so
+   -- its colour never shows).
+   put heSeatFaceLabel(pSeatNum, pActing, tFolded, tAllin) into tLabelTxt
+   set the text of field ("heSeatState" & pSeatNum) to tLabelTxt
+   if tLabelTxt is "FOLDED" or tLabelTxt is "SIT OUT" then
       set the textColor of field ("heSeatState" & pSeatNum) to "150,150,150"
    else
-      set the text of field ("heSeatState" & pSeatNum) to ""
+      set the textColor of field ("heSeatState" & pSeatNum) to kHeGoldColor
    end if
 end heSeatFace
+
+function heSeatFaceLabel pSeatNum, pActing, pFoldedTxt, pAllinTxt
+   -- WHICH state label a seat plate shows, decided in one place with no UI
+   -- read or write (v0.24.0) -- so the priority order is pinnable headlessly
+   -- instead of only observable on a felt. The order IS the contract:
+   --   FOLDED / ALL-IN   the engine's own verdict on the seat, first
+   --   SIT OUT           the seat's STATUS, ahead of the countdown (F9): the
+   --                     countdown branch used to win, so a sitting-out seat
+   --                     whose turn came up painted "0s" -- and 0 is exactly
+   --                     what heNetTurnLimitSecs returns FOR a sitting-out
+   --                     seat, so the plate showed the reason for the label
+   --                     as a stopwatch instead of the label.
+   --   <n>s              the acting seat's remaining seconds (online only)
+   --   empty             nothing to say
+   if pFoldedTxt is "true" then
+      return "FOLDED"
+   end if
+   if pAllinTxt is "true" then
+      return "ALL-IN"
+   end if
+   if gGame["online"] is "true" and gGame["sitOutBy"][pSeatNum] is "true" then
+      return "SIT OUT"
+   end if
+   if pActing and gGame["online"] is "true" and gGame["turnClockTxt"] is not empty then
+      -- 2e act timer: painted only from the 4 Hz HUD tick, and
+      -- heNetActTimerTick marks the HUD dirty only when the shown second
+      -- CHANGES -- <= 1 Hz in practice.
+      return gGame["turnClockTxt"]
+   end if
+   return empty
+end heSeatFaceLabel
 
 function heHeaderTxt
    local tTxt
@@ -13345,8 +13770,30 @@ command heTestLivenessRun
    local tStateA, tSeat, tSeatX, tSeatY, tOwe, tVerb, tStep, tLoop
    local tContent, tWire, tHead, tTokTxt, tFrameTxt, tListTxt, tKeyA, tKeyB
    local tEvil, tEvilC, tSnapG, tHandBefore, tOutboxTxt, tWireN, tLineTxt
+   local tSnapH, tBodyA, tSeatOther, tOtherPub, tOtherSec, tGhostPub, tLivePub
    put return & "-- 20. Liveness: act timers + time-bank, sit-out, late-join, redial" & return after gRpt
    set the itemDelimiter to comma
+
+   -- the seat plate's label PRIORITY, pure (v0.24.0, F9). The countdown used
+   -- to be tested before the sit-out label, so a sitting-out seat whose turn
+   -- came up showed "0s" -- and 0 is precisely what heNetTurnLimitSecs returns
+   -- for a sitting-out seat, so the plate rendered the reason for the label
+   -- instead of the label. These four lines are the only ones in the pure half
+   -- that touch the live store, so they snapshot and restore it.
+   put gGame into tSaved
+   put "true" into gGame["online"]
+   put empty into gGame["sitOutBy"]
+   put "12s" into gGame["turnClockTxt"]
+   heTAssert "plate: an acting seat shows its countdown", \
+         heSeatFaceLabel(1, true, "false", "false"), "12s"
+   put "true" into gGame["sitOutBy"][1]
+   heTAssert "plate: SIT OUT outranks the countdown on the acting seat", \
+         heSeatFaceLabel(1, true, "false", "false"), "SIT OUT"
+   heTAssert "plate: the engine's folded verdict outranks both", \
+         heSeatFaceLabel(1, true, "true", "false"), "FOLDED"
+   heTAssert "plate: all-in outranks the countdown too", \
+         heSeatFaceLabel(1, true, "false", "true"), "ALL-IN"
+   put tSaved into gGame
 
    -- the spec 9 expiry prescription, pure: check when nothing is owed,
    -- else fold (a host may never fold a seat that could check)
@@ -13480,6 +13927,85 @@ command heTestLivenessRun
    heTAssert "timer: the refused timeout moved no action", gGame["state"]["toAct"], tSeatX
    put tSnapG into gTNetPlayG
 
+   -- CATCH-UP CLOCKS (v0.24.0, F2). A client that learns of the turn from a
+   -- REPLAY starts its clock now, for a turn that opened minutes ago
+   -- everywhere else; the host's live timeout then arrives PAST the replay's
+   -- announced head, so the seq-keyed waiver cannot fire, and the old code
+   -- refused it as premature -- leaving that client one action behind for the
+   -- rest of the session with nothing on the chain to say so. The waiver keys
+   -- on the CLOCK now, and dies with its turn.
+   put gTNetPlayG into gGame
+   put empty into tBodyA
+   put heTimeoutVerbOf(gGame["state"], tSeatX) into tBodyA["verb"]
+   put "1" into tBodyA["bank"]
+   -- ...and a marker for a head we already hold is not a catch-up at all: it
+   -- would suspend react until the next live wire and mark THAT wire's turn
+   -- clock replayed, waiving one deadline check for nothing.
+   heTNetDeliver "r!" & tab & gGame["lastSeq"]
+   heTAssert "catchup: a marker for a head we already hold does not suspend", \
+         (gGame["catchUpTo"] is a number), "false"
+   put gGame["lastSeq"] + 3 into gGame["catchUpTo"]   -- a replay is streaming
+   put empty into gGame["turnKey"]                    -- so the next mark restarts
+   heNetTurnMark
+   heTAssert "catchup: a turn clock started during a replay is marked replayed", \
+         gGame["turnStale"], "true"
+   put empty into gGame["catchUpTo"]   -- the replay completed (react clears it)
+   heTAssert "catchup: the live timeout past the replay is waived, not refused", \
+         heNetTimeoutOk(tBodyA, tSeatX, "act", 0), empty
+   put empty into gGame["turnKey"]
+   heNetTurnMark                       -- a LIVE mark: the waiver must not survive
+   heTAssert "catchup: the waiver dies with its turn (the next turn is policed)", \
+         (heNetTimeoutOk(tBodyA, tSeatX, "act", 0) is not empty), "true"
+   put tSnapG into gTNetPlayG
+
+   -- AN ENGINE-REFUSED TIMEOUT (v0.24.0, F3 + F4). Forge a host timeout for
+   -- the seat that is NOT to act: it passes every verification (right
+   -- prescription for that seat, bank unspent, deadline genuinely passed on a
+   -- backdated clock) and then heBetApply refuses it as out of turn. Nothing
+   -- consensus may move on that: the seat keeps its one per-hand time-bank and
+   -- its miss count, and the host's timeoutSent latch -- which only
+   -- heNetTurnMark ever cleared, and heNetTurnMark does not run for a refused
+   -- fold -- must not stay stuck, or the host never re-emits and the table
+   -- stalls silently for the rest of the hand.
+   put gTNetPlayG into gGame
+   put empty into gGame["catchUpTo"]
+   put "false" into gGame["turnStale"]
+   put 3 - tSeatX into tSeatOther      -- heads-up: the seats are 1 and 2
+   put 1 into gGame["missCntBy"][tSeatOther]
+   put "true" into gGame["timeoutSent"]   -- as the emitting host would hold it
+   put gGame["turnStartMs"] - ((kHeDefaultActSecs + kHeDefaultBankSecs + 1) * 1000) \
+         into gGame["turnStartMs"]
+   put heTimeoutVerbOf(gGame["state"], tSeatOther) into tVerb
+   put heEnvContentLine(kKatTableHex, gGame["handNum"], tHostPubHex, "act", \
+         "verb=" & tVerb & ",amount=0,seat=" & tSeatOther & ",timeout=1,bank=1") into tEvilC
+   put heWireBuild(tEvilC, tHostSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
+   heNetIngestWire tEvil
+   heTContains "refused: an engine-rejected timeout is named in the feed", \
+         gGame["netLog"], "engine refused that timeout"
+   heTAssert "refused: it spends no time-bank and counts no miss", \
+         gGame["oDeal"]["bankUsedBy"][tSeatOther] & "/" & gGame["missCntBy"][tSeatOther], "/1"
+   heTAssert "refused: the timeout latch is cleared, so the host re-emits", \
+         gGame["timeoutSent"], "false"
+   -- ...and the twin on the LIVE path (F5): an out-of-turn act the engine
+   -- throws away must not reset the seat's miss count, or a stalling client
+   -- holds itself at zero misses forever and is never sat out.
+   put 1 into gGame["missCntBy"][tSeatOther]
+   put gGame["pubBySeat"][tSeatOther] into tOtherPub
+   if tOtherPub is tPlayPubHex then
+      put tPlaySec into tOtherSec
+   else
+      put tHostSec into tOtherSec
+   end if
+   put heEnvContentLine(kKatTableHex, gGame["handNum"], tOtherPub, "act", \
+         "verb=check,amount=0") into tEvilC
+   put heWireBuild(tEvilC, tOtherSec, gGame["lastSeq"] + 1, gGame["chainHeadHex"], tHostSec) into tEvil
+   heNetIngestWire tEvil
+   heTContains "refused: the out-of-turn act is engine-rejected", \
+         gGame["netLog"], "engine-rejected act"
+   heTAssert "refused: a rejected act does not reset the seat's miss count", \
+         gGame["missCntBy"][tSeatOther], 1
+   put tSnapG into gTNetPlayG
+
    -- expiry for real: backdate BOTH clocks past act+bank, tick the HOST --
    -- it emits the signed timeout (bank=1), both sides verify and fold it,
    -- and the fold-win hand settles itself through the react engines
@@ -13561,10 +14087,31 @@ command heTestLivenessRun
    put gTNetHostG into gGame
    heTAssert "sitout: the next-hand occupants exclude the sat-out seat", \
          heNetNextOccList(), tSeatY
+   -- F10: the "seated with chips" scan is ONE definition with two readers --
+   -- heNetNextOccList filters it by sit-out, heNetHandKick counts it to tell
+   -- an over table from a parked one. heNetHandKick used to carry its own
+   -- copy, which only the second of those two rules was ever pinned against.
+   heTAssert "sitout: one occupancy rule, two readers (chips vs chips-and-in)", \
+         heNetSeatedWithChipsList() & "/" & heNetNextOccList(), \
+         gGame["seatedList"] & "/" & tSeatY
    put gGame["handNum"] into tHandBefore
    heNetHandKick
    heTAssert "sitout: one live seat parks the table (no hand dealt)", \
          gGame["handNum"], tHandBefore
+   heTAssert "sitout: the park is LATCHED so any path can re-arm the beat", \
+         gGame["handWait"], "true"
+   -- F6: the between-hands beat must fire from that latch whatever phase the
+   -- table is in -- a park reached from heNetStartGame leaves the phase at
+   -- "idle", and the old phase-only guard killed the re-armed beat on its
+   -- first firing, so the table could never deal again however many players
+   -- returned. Driven on a throwaway copy (it deals a whole hand).
+   put gGame into tSnapH
+   put "idle" into gGame["phase"]
+   put empty into gGame["sitOutBy"]
+   heNetNextHandTick
+   heTAssert "sitout: the parked beat deals once seats return, in any phase", \
+         (gGame["handNum"] > tHandBefore) & "/" & gGame["handWait"], "true/false"
+   put tSnapH into gGame
    put gGame into gTNetHostG
    -- the voluntary form: the LIVE seat stands by its own signed wire, then
    -- returns -- both folds seat-scoped, both sides in agreement
@@ -13609,6 +14156,14 @@ command heTestLivenessRun
    heTNetPump
    heTAssert "sitout: the auto-sat-out seat's return clears its misses", \
          gTNetPlayG["sitOutBy"][tSeatX] & "/" & gTNetPlayG["missCntBy"][tSeatX], "/0"
+   -- F6, the half that actually heals a parked table: the RETURN unparks it.
+   -- The sit-return fold used to clear sitOutBy and stop there, so with the
+   -- beat off (or dead, above) the returning player saw Return succeed and the
+   -- table simply never dealt again. The react engine now kicks the moment the
+   -- folded transcript says two seats are dealable -- on the same pass that
+   -- folded the return, so no timer has to be alive for it.
+   heTAssert "sitout: the second return UNPARKS the table (a hand deals itself)", \
+         (gTNetHostG["handNum"] > tHandBefore) & "/" & gTNetHostG["handWait"], "true/false"
 
    -- ===== LATE-JOIN: a third identity arrives mid-session -- full replay
    -- (the standing machinery), joins, and the host seats it at the next
@@ -13616,6 +14171,12 @@ command heTestLivenessRun
    put gTNetHostG into gGame
    put "true" into gGame["admittedA"][tP3PubHex]
    put "player" into gGame["roleByPub"][tP3PubHex]
+   -- the transport handle a real rp1/onion handshake would have registered.
+   -- The loopback pump delivers frames without one, and since v0.24.0 (F7)
+   -- the boundary seats only keys that are PRESENT -- so the sim has to be
+   -- as honest about presence as the transport is.
+   put 3 into gGame["peerByPub"][tP3PubHex]
+   put tP3PubHex into gGame["peerPubA"][3]
    heNetReplayLogTo 0
    heHostEmitRoster
    put gGame into gTNetHostG
@@ -13680,6 +14241,35 @@ command heTestLivenessRun
    heTAssert "latejoin: three-seat chips conserved and agreed", \
          gTNetPlay2G["stacksBy"][1] + gTNetPlay2G["stacksBy"][2] + gTNetPlay2G["stacksBy"][3] \
          & "/" & (gTNetPlay2G["stacksBy"][1] is gTNetHostG["stacksBy"][1]), "1200/true"
+   -- GHOST SEATS (v0.24.0, F7): "has joined" is a historical fact, and it was
+   -- the only test the boundary applied -- so a peer that joined and then
+   -- closed its stack (still admitted, still in boxByPub: nothing ever clears
+   -- those) was handed the lowest empty seat and a full opening stack, timed
+   -- out every turn until two misses sat it out, and held that seat for the
+   -- rest of the session, because seats are never released. Both keys below
+   -- are fakes that never sign anything (the host signs the sit wires), and
+   -- the whole probe runs on a throwaway copy of the host context.
+   put gTNetHostG into gGame
+   put gGame into tSnapH
+   put heBin2HexS(heHash32(textEncode("ghost-key", "utf-8"))) into tGhostPub
+   put heBin2HexS(heHash32(textEncode("present-key", "utf-8"))) into tLivePub
+   put "true" into gGame["admittedA"][tGhostPub]
+   put tGhostPub into gGame["boxByPub"][tGhostPub]
+   put "true" into gGame["admittedA"][tLivePub]
+   put tLivePub into gGame["boxByPub"][tLivePub]
+   -- only the second one is PRESENT: a transport handle plus a fresh
+   -- last-heard stamp (what an applied wire or a handshake leaves behind)
+   put 11 into gGame["peerByPub"][tLivePub]
+   put the milliseconds into gGame["seenMsByPub"][tLivePub]
+   heNetSeatLateJoiners
+   heTAssert "latejoin: a joined-but-gone key is NOT seated (no ghost seats)", \
+         gGame["seatByPub"][tGhostPub], empty
+   heTAssert "latejoin: a key that IS present still gets its seat", \
+         (gGame["seatByPub"][tLivePub] is not empty), "true"
+   heTContains "latejoin: the refusal is named in the net feed", \
+         gGame["netLog"], "not seating"
+   put tSnapH into gGame
+   put gGame into gTNetHostG
 
    -- ===== the redial-vs-election ORDERING (netCap; the dial itself needs
    -- tor, so the attempt is probed): stream death arms the redial -- never
@@ -13711,6 +14301,19 @@ command heTestLivenessRun
    heNetOnionRedialArm
    heTAssert "redial: a failed attempt doubles the backoff", \
          gGame["oxRedialN"] & "/" & gGame["oxRedialWait"], "2/16"
+   -- F1: a DIAL failure mid-redial re-arms the schedule. It must never take
+   -- the join-time fail-closed path: that calls heNetStop, which clears
+   -- gGame["online"] and cancels the poll tick -- and heNetHostLossCheck exits
+   -- on its first line when online is not "true", so the election watchdog
+   -- would never conclude and attempts 2..4 would never fire. The bounded
+   -- four-attempt schedule collapsed into one, with no host and no successor.
+   heNetOnionDialFail "SOCKS refused (simulated)"
+   heTAssert "redial: a mid-redial dial failure re-arms, never fails closed", \
+         gGame["oxRedialN"] & "/" & gGame["oxState"] & "/" & gGame["online"], "3/redial/true"
+   heTContains "redial: the failed attempt is named in the feed", \
+         gGame["netLog"], "redial attempt 2 failed"
+   heTAssert "redial: a re-armed schedule keeps the election pending", \
+         gGame["hostLost"], "false"
    -- proof the host answered is a host-signed wire APPLYING: counter resets
    put heEnvContentLine(kKatTableHex, 0, tHostPubHex, "cfg", kKatLobbyCfgBody) into tContent
    put heWireBuild(tContent, tHostSec, 1, kHeGenesisPrev, tHostSec) into tWire
@@ -13727,6 +14330,32 @@ command heTestLivenessRun
    heNetOnionTick
    heTAssert "redial: after the election the redial stands down", gGame["oxState"], "failed"
    heTContains "redial: the stand-down is named in the net feed", gGame["netLog"], "stood down"
+
+   -- F8: the OTHER way out of the redial state -- the attempts running out --
+   -- must behave the same way. It ran the election (which names the elected
+   -- successor on the status line) and then called heNetOnionFail two lines
+   -- later, whose own status write overwrote exactly that message: the player
+   -- was told to "Join again" and never told WHO was elected. Both exits are
+   -- the quiet stand-down now.
+   heTNetPlayCtx "false", tPlayPubHex, tPlaySec, tPlayBoxPub, tPlayBoxSec, tHostPubHex, kKatIdSeed2
+   put "onion" into gGame["transport"]
+   heNetOnionReset
+   put "true" into gGame["gameOn"]
+   put "1,2" into gGame["seatedList"]
+   put 400 into gGame["stacksBy"][1]
+   put 400 into gGame["stacksBy"][2]
+   put tHostPubHex into gGame["pubBySeat"][1]
+   put tPlayPubHex into gGame["pubBySeat"][2]
+   put kHeRedialMax into gGame["oxRedialN"]   -- the last attempt just failed
+   heNetOnionRedialArm
+   heTAssert "redial: exhaustion concludes the election itself", \
+         gGame["hostLost"] & "/" & (gGame["electedHostPubHex"] is not empty), "true/true"
+   heTContains "redial: the elected successor stays on the status line", \
+         gGame["statusTxt"], "elected host"
+   heTAssert "redial: the exhausted stand-down never clobbers that message", \
+         (gGame["statusTxt"] contains "Hotseat still works"), "false"
+   heTContains "redial: the tor line says the election concluded", \
+         gGame["oxFailTxt"], "election concluded"
 
    -- the redial hello's trim mark, through the REAL router on the HOST:
    -- a reconnecting peer naming applied seq 2 of 3 gets marker + wire 3 only

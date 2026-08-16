@@ -104,8 +104,10 @@ since v0.23.0, act timers + time-bank, sit-out/return, late-join, onion
 auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Phase
 4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
 bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
-Level 2 yet), at v0.23.0 -- which also brought the table inside the suite's 720p
-budget (1024x640; the check-stack-size SKIP is gone). The pending live gates: a
+Level 2 yet), at v0.24.0 -- v0.23.0 brought the table inside the suite's 720p
+budget (1024x640; the check-stack-size SKIP is gone) and v0.24.0 corrected ten
+reviewed defects in that liveness layer with NO wire change (the liveness
+contracts block below carries each one). The pending live gates: a
 TIMED multi-hand session on wall clocks (seats timing out for real), a multi-hand
 onion table session on two machines with running tor (2f, + a real host-stream
 loss -> redial), and the Phase 3 THREE-MACHINE oracle round (two players + a
@@ -391,9 +393,13 @@ contracts to keep intact when touching these:
     oracle section (18) runs THREE loopback contexts (heTNetPump's third
     seat) and SKIPs the live legs by name.
 
-**2e liveness remainder + the 720p re-layout (v0.23.0, 2026-08-16 -- verified
-statically; the timed live pass and the re-layout's confirming eye are what the
-OXT pass owes).** The contracts to keep intact when touching the liveness layer:
+**2e liveness remainder + the 720p re-layout (v0.23.0, 2026-08-16), with the
+v0.24.0 CORRECTIONS folded in below (2026-08-16: ten reviewed defects in this
+layer, all local state-ordering/control-flow -- NO wire changed, protocol-kat's
+114 pins are untouched, so v0.23.0 and v0.24.0 clients speak the identical
+protocol). Verified statically; the timed live pass and the re-layout's
+confirming eye are what the OXT pass owes.** The contracts to keep intact when
+touching the liveness layer:
   - **The timeout is a FIELD, never a new kind.** The host authors the
     EXISTING act/bid wire with `seat=/timeout=1/bank=` marks; a pre-liveness
     client engine-rejects it visibly (out of turn for the host's seat) instead
@@ -406,40 +412,119 @@ OXT pass owes).** The contracts to keep intact when touching the liveness layer:
     (heNetTurnMark: the clock restarts only when the SUBJECT changes, so
     redelivery never extends a deadline), and verification is interval-on-
     one-clock: refuse a timeout more than kHeActSkewSecs (5 s, transport
-    jitter) EARLY -- deliberately not the +-600 s wall-clock precedent, and
-    waived during catch-up replay (the live table already policed it; the
-    verb/bank checks still run, they are transcript-deterministic). KNOWN
-    EDGE, recorded not engineered away: a timeout drained out of the
+    jitter) EARLY -- deliberately not the +-600 s wall-clock precedent. The
+    verb/bank checks always run; they are transcript-deterministic.
+    **The waiver keys on the CLOCK, not on the wire's seq (v0.24.0).**
+    heNetTurnClockStart marks a turn's clock REPLAYED when it is started
+    while a host replay is streaming (catchUpTo set), and heNetTimeoutOk
+    waives the deadline for that turn only -- the next live turn mark
+    clears the flag, so a waiver can never shelter a rushing host on a
+    live turn. The seq-keyed waiver (a timeout wire at seq <= catchUpTo is
+    historical) stays as well, for wires whose turn mark predates the
+    replay. **What v0.23.0 got wrong, corrected here:** it had ONLY the
+    seq waiver, so a client that caught up by full replay started the
+    current turn's clock at replay time and then refused the host's LIVE
+    timeout (seq past catchUpTo, ~10 s elapsed against a 90 s limit) as
+    premature. Every other node folded the seat, so that client stayed one
+    action behind for the rest of the session, every later wire
+    engine-rejecting out of turn with no chain-level signal.
+    KNOWN EDGE, recorded not engineered away: a timeout drained out of the
     REORDER BUFFER (a lost turn-opening wire redelivered in the same burst,
     with no r! marker) can be early-refused by the one client that only
     just learned of the turn -- locally indistinguishable from a rushing
     host, so refusing is the right fail-visible call; its fold then
-    disputes at the settle and a reconnect (full replay, waiver applies)
-    heals it. The live pass should try to hit this.
+    disputes at the settle. A reconnect DOES heal it now -- the replay
+    re-marks the turn's clock as replayed and the waiver applies -- which
+    is exactly what the v0.23.0 text claimed without it being true. The
+    live pass should still try to hit this.
+  - **Nothing consensus moves on a fold that did not happen (v0.24.0).**
+    heNetEngineFold records gGame["foldApplied"] and every caller that
+    writes shared state reads it FIRST: the bank spend and the miss count
+    only move for a timeout heBetApply actually took, and a live act/bid
+    only resets the miss count when the engine took THAT. v0.23.0 wrote all
+    three around a fold that can refuse -- and because every client does it
+    identically, the wrong state was CONSENSUS, not a divergence anything
+    could detect: a seat lost its one time-bank and gained a miss for an
+    action that never applied, and an out-of-turn wire from a stalling
+    client reset its miss count forever, so it never sat out.
   - **Bank state is consensus, never a clock's guess.** The one per-hand
     time-bank auto-arms on the first would-be timeout (a request wire would
     race the timeout) and spends ON the wire (`bank=1` -> bankUsedBy); a
     bank-denying or bank-double-spending host timeout is refused by name.
+  - **A refused timeout re-arms; it never latches (v0.24.0).** timeoutSent
+    is cleared only by heNetTurnMark, which a rejected fold never reaches
+    (turnKey does not move) -- so v0.23.0's host emitted once and then
+    exited on its guard forever: the seat never acted and the table stalled
+    SILENTLY, the exact failure the timer exists to prevent.
+    heNetTimeoutRearm restarts the interval on the refused wire (the same
+    wire on every client, so interval-on-one-clock survives): a bounded
+    retry one act period later instead of a 4 Hz re-emit storm.
   - **Sit-out is transcript-derived**: `stand` (own key) or `miss=`
     consecutive timeouts (heNetTimeoutMiss); a live act/bid RESETS the miss
     count; sitting-out seats time out instantly (limit 0) and are dealt out
     by heNetNextOccList -- the ONE occupant rule heNetHandKick and the
-    harness share. `sit` with no pub (own key) returns; the host-assignment
-    `sit` keeps its pub=, so the forms never collide. A short table WAITS
-    (re-armed beat) instead of declaring game over while 2+ stacks exist.
-  - **Late-join rides the boundary**: heNetSeatLateJoiners seats joined-but-
-    unseated keys (ascending pubkey, lowest empty seat, cfg-capped) as
-    signed sit wires at each kick; full = observer, and the standing replay
-    machinery is what got the joiner current.
+    harness share (v0.24.0: its "seated with chips" half is
+    heNetSeatedWithChipsList, which heNetHandKick's parked-vs-over test
+    reads too -- the duplicate scan it used to carry could have drifted
+    with only one of the two pinned). The seat plate says SIT OUT ahead of
+    any countdown (heSeatFaceLabel, pure and pinned -- the countdown branch
+    used to win and painted "0s", which is what the limit IS for a
+    sitting-out seat). `sit` with no pub (own key) returns; the
+    host-assignment `sit` keeps its pub=, so the forms never collide.
+  - **A parked table can always resume (v0.24.0).** A short table WAITS
+    instead of declaring game over while 2+ stacks exist -- and the park is
+    LATCHED (gGame["handWait"]), so heNetNextHandTick fires from it in any
+    phase, and heNetGameReact kicks the table the moment the folded
+    transcript says two seats are dealable. v0.23.0 re-armed the beat only
+    under autoNext and additionally required phase "between" -- false when
+    the park came from heNetStartGame -- so the beat died on its first
+    firing, and nothing else kicked: the sit-return fold cleared sitOutBy
+    and stopped there, so Return succeeded and the table never dealt again.
+    heNetHandKick clears the latch BEFORE it emits anything, because its
+    own emissions fold re-entrantly through react.
+  - **Late-join rides the boundary, and requires PRESENCE (v0.24.0)**:
+    heNetSeatLateJoiners seats joined-but-unseated keys (ascending pubkey,
+    lowest empty seat, cfg-capped) as signed sit wires at each kick; full =
+    observer, and the standing replay machinery is what got the joiner
+    current. "Has joined" is a historical fact and nothing ever clears
+    boxByPub/admittedA, so it was NOT enough: a peer that joined and closed
+    its stack was seated as a ghost that timed out every turn until two
+    misses sat it out, then held the seat for the session (seats are never
+    released). heNetPubIsLive answers "present now" from state we already
+    keep -- a current transport handle (authoritative on the onion
+    transport: heNetOnionDead clears it at stream death) plus a last-heard
+    stamp, gGame["seenMsByPub"], written by heNetApplyWire and
+    heNetOnHandshake (the only liveness rp1 has -- it surfaces no
+    disconnect event). kHeSeatLiveSecs is a judgement call, not a measured
+    number. **OPEN DECISION: spectator intent.** Spec 4's read-only role is
+    still indistinguishable from a player here -- the admission token has a
+    role field, but every client that can talk to this build sends
+    "player", so refusing on role would refuse real players. Declaring
+    spectator intent needs a wire/UI decision; none was invented in the
+    v0.24.0 pass (also recorded in IMPLEMENTATION-PLAN.md 2e).
   - **The redial must not race the election** -- structurally: the 60 s
     wire-silence watchdog counts through every redial (a dead stream
     delivers no wires), every redial step gates on hostLost, and the
     stand-down NEVER clobbers the election's status message
-    (heNetOnionRedialGiveup is quiet). Attempts are bounded
+    (heNetOnionStandDown is quiet; BOTH exits from the redial state use it
+    since v0.24.0 -- the exhaustion branch used to run the election and
+    then call heNetOnionFail two lines later, whose heUISetStatus
+    overwrote the successor's name with "Join again"). Attempts are bounded
     (kHeRedialMax/kHeRedialBaseTicks, heRedialWaitTicks pure); proof the
     host answered is a host-signed wire APPLYING (heNetApplyWire resets the
     counter), nothing weaker. The redial hello's trailing seq is items-1..3
     compatible with old hosts (heAdmitTokenVerify never reads past item 3).
+  - **The election always concludes -- so a redial must never call
+    heNetOnionFail (v0.24.0).** heNetOnionFail tears the transport down via
+    heNetStop, which clears gGame["online"] and cancels the poll tick --
+    and heNetHostLossCheck exits on its FIRST line when online is not
+    "true". A mid-redial dial failure therefore killed the watchdog AND
+    attempts 2..4 (the bounded schedule collapsed to one), leaving a dead
+    table with no successor. heNetOnionDialFail owns the fork now: mid-
+    redial re-arms the schedule (heNetOnionRedialArm runs the election
+    itself at exhaustion), join-time still fails closed. When touching this
+    section, the rule is: nothing may tear the transport down while
+    hostLost is false and gameOn is true.
   - **The re-layout is arithmetic until an eye confirms it.** Every rect
     derives from the constants block (kHeStackRect 1024x640); the pot line
     sits BELOW the board because the centre column above it belongs to seat
@@ -451,7 +536,15 @@ OXT pass owes).** The contracts to keep intact when touching the liveness layer:
     hand (premature-timeout refusal included), auto-sit-out, the waiting
     table, stand/sit round-trips, a third context late-joining to identical
     fold state, and the redial-vs-election ordering; the live legs are
-    SKIPped by name.
+    SKIPped by name. **Every v0.24.0 correction above got its own pin
+    there** (kHeHarnessV 39), each one written to FAIL against the
+    v0.23.0 behaviour: the seat-plate label order, the replayed-clock
+    waiver and its expiry, an engine-refused timeout leaving bank/miss/
+    latch alone, a rejected act not resetting the miss count, the parked
+    latch firing the beat in any phase, the return unparking the table, a
+    ghost key not being seated (with a present one still seated beside
+    it), a mid-redial dial failure re-arming with online still true, and
+    exhaustion leaving the elected successor on the status line.
 
 **Do not claim runtime behavior you cannot observe.** Anything visual, timed, socket-,
 or extension-touching gets the phrase "verified statically; needs an OXT pass" and the

@@ -144,8 +144,10 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
   replay-proof emissions, catch-up suppression, the crash-and-reconnect sim);
   street ckpts, show/muck, online History, and the election at v0.21.0; and
   the liveness remainder (act timers + time-bank, sit-out/return, late-join,
-  onion auto-redial) at v0.23.0. The timed live pass is what 2e still owes
-  (the closing note below).** As-built:
+  onion auto-redial) at v0.23.0, corrected by the v0.24.0 review pass (ten
+  local defects in that layer, no wire changed -- the last bullet below).
+  The timed live pass is what 2e still owes (the closing note below).**
+  As-built:
   - **Street ckpt wires** (spec 6): at each boundary (deal/flop/turn/river/
     showdown) every seated client signs the head the boundary's TRANSITION wire
     produced -- body `street=..,head=..,sig=..`, so the head rides the wire and
@@ -202,13 +204,48 @@ The netcode spike. Everything here is turn-rate — rp1's ~1 s tick is the budge
     - **Late-join**: the existing full-replay machinery stands; the host now
       seats joined-but-unseated keys into empty seats at each hand boundary
       (ascending pubkey, cfg-capped, signed sit wires, cfg opening stack) --
-      or the joiner stays an observer when full.
+      or the joiner stays an observer when full. Since v0.24.0 the key must
+      also be PRESENT (heNetPubIsLive), not merely have joined once.
     - **Onion auto-redial**: bounded (4 attempts, 2/4/8/16 s backoff, 10 s
       per dial) on host-stream death during play, BEFORE the 60 s election
       watchdog concludes; every step gates on the election (it always
       concludes; the redial stands down quietly), and a successful redial
       resyncs via the TRIMMED replay (the hello's compatible trailing-seq
       item; a host wire applying resets the counter).
+    - **The v0.24.0 CORRECTION PASS (2026-08-16, verified statically).** A
+      review of the layer above found ten defects, every one of them local
+      state-ordering or control-flow -- **no wire changed** (protocol-kat's
+      114 pins are untouched, so a v0.23.0 and a v0.24.0 client speak the
+      identical protocol). Fixed, each with its own harness pin in section
+      20 (kHeHarnessV 39), each pin written to fail against the old
+      behaviour: a mid-redial dial failure took the fail-closed path and
+      cancelled the poll tick, which killed the election watchdog and
+      attempts 2..4 (heNetOnionDialFail); redial exhaustion overwrote the
+      elected successor's status line (heNetOnionStandDown, one quiet exit
+      for both paths); a full-replay client's act clock started at replay
+      time and then refused the host's live timeout forever
+      (heNetTurnClockStart marks the clock replayed; the waiver keys on
+      that and dies with the turn); the timeoutSent latch never cleared on
+      an engine-refused timeout, so the host silently stopped re-emitting
+      (heNetTimeoutRearm); the time-bank spend, the miss count and the
+      miss RESET all ran around a fold that can refuse (gGame["foldApplied"]
+      gates all three -- and being identical on every client made the wrong
+      state consensus rather than a detectable divergence); a table parked
+      for sit-outs could never resume (the park is latched and the react
+      engine unparks it on the returning seat's own wire); the plate's
+      countdown painted over SIT OUT (heSeatFaceLabel, now pure and pinned);
+      and heNetHandKick's duplicate occupancy scan collapsed into
+      heNetSeatedWithChipsList.
+      **OPEN DECISION carried out of that pass: spectator intent.** The
+      late-join gate now requires liveness, but spec 4's read-only
+      SPECTATOR is still indistinguishable from a player at a hand
+      boundary: the admission token carries a role field, yet every client
+      that can talk to this build sends "player" in it, so refusing on role
+      would refuse real players. Declaring spectator intent needs a wire
+      and/or UI decision (a role a joiner can choose, or a `sit`-request
+      wire the host answers) -- deliberately NOT invented in a pass whose
+      whole constraint was to change no wire. Decide it before the 2e live
+      pass if spectators are wanted at all.
     What the LIVE pass still owes 2e: a timed multi-machine session on wall
     clocks (real seats timing out, the bank visibly arming, a sit-out
     rejoining), a real tor host-stream loss -> redial -> trimmed resync
