@@ -70,6 +70,22 @@ cuts the carried Kit (the real one is embedded once, from src/, as a script
 layer), drop_extra drops the window builder the card hooks called, and
 keep_names holds b2kFell/b2kSensorEnter/b2kContact at their real spelling, since
 a b21b2kFell would simply never be dispatched to.
+holde-em joined the same day and is the SECOND paste-and-run stack, but it needs
+almost none of that, because it differs in the one way that decides the shape:
+the game and its harness are THE SAME FILE. Everything else here folds a test
+file and embeds its library separately; here there is nothing to embed, so the
+whole 15k-line game rides in prefixed alongside the tests that drive it - and
+that is exactly why prefixing is safe rather than merely tidy. The reason
+coinxt, onionxt, riptide and the b2k Kit embed VERBATIM is that their tests must
+reach a separate library by its real names; when both sides are renamed together
+nothing can be left behind. Measured on that file: of 6950 string literals in
+code, rename() touches 45, and every one is either a message name armed by
+`send` / dispatched by `do` (which must move with its handler) or prose in a
+test label naming a handler (which rename() rewrites on purpose). No KAT vector,
+wire body, domain tag or hex pin changes. Its row therefore uses only drop_extra
+(its stack chrome - preOpenStack, which would resize the suite's window to
+1024x640, and the bet slider's five scrollbar messages) plus one rewrite, for
+the pending-message sweep; the row itself carries the reasoning for both.
 Three are not, and each is handled explicitly rather than fudged:
   torrentxt  synchronous, but TorrentXT allows exactly ONE session per process.
              Folded whole, with its session acquisition rewritten to reuse the
@@ -115,6 +131,14 @@ cxMnemonicNormalize, the dispatchers name every callback), so an uncut scan
 would score coinxt and onionxt at permanent 100% coverage - every future
 handler "exercised" by its own definition, and that gate structurally dead for
 the two members that need it most.
+
+That cut is also why holde-em has NO ROW in check-suite-coverage.py. The cut
+works because a library and the tests that drive it live in two files: fold the
+tests, embed and cut the library, and what is left is tests naming a library.
+holde-em is one file, so there is nothing to cut, and the same scan pointed at
+its folded section measures the GAME naming its own API - 379/379, permanently,
+from the day such a row were added. The measurement and the reasoning are
+written out beside the MEMBERS list in that tool rather than left implicit here.
 
 Usage:
   python3 tools/build-suite-selftest.py            # write the generated file
@@ -369,6 +393,116 @@ MEMBERS = [
    end if"""),
         ),
     ),
+    Member(
+        "holdem", "holde-em/src/holdem.livecodescript", "he1",
+        "heSelfTest", "holde-em: the full he* self-test",
+        "21 sections over the whole game, driven through heSelfTest - the QUIET "
+        "entry point (report returned as a value, no control built, no "
+        "clipboard, no overlay), not the interactive heRunSelftest. The "
+        "7-card evaluator and the betting engine and side-pot settlement; the "
+        "deal ladder (integer PRNG, the Level 0 commit-reveal keyed stream, "
+        "the Level 2 ristretto mental-poker algebra and its void-and-audit "
+        "machine with DLEQ proofs); the signed transcript wire, the lobby, "
+        "three-context netplay and deck-oracle loopbacks, the onion "
+        "transport's headless slice, and the whole liveness layer. Every "
+        "section that needs SodiumXT, TorrentXT or OnionXT SKIPs by name when "
+        "it is absent, and every live leg (a tor daemon, a second machine) "
+        "SKIPs too, so the folded run is offline and synchronous throughout.",
+        # WHY THIS IS A PREFIXED FOLD AND NOT A VERBATIM SCRIPT-LAYER EMBED.
+        # holde-em is the second member whose harness lives in a paste-and-run
+        # stack, but it is unlike box2dxt in the one way that decides the shape:
+        # the game and its tests are THE SAME FILE. The reason coinxt, onionxt,
+        # riptide and the b2k Kit embed verbatim is that their tests must reach a
+        # SEPARATE library by its real names; here renaming moves both sides
+        # together, so nothing can be left behind. Measured on this file: of 6950
+        # string literals in code, rename() touches 45, and every one is either a
+        # message name armed by `send` / dispatched by `do` (which MUST move with
+        # its handler) or prose in a test label naming a handler (which rename()
+        # rewrites on purpose). No KAT vector, wire body, domain tag or hex pin
+        # changes. Verbatim, by contrast, would put 389 unprefixed handlers and
+        # 192 declarations into a paste that already carries 928 and 625 -
+        # colliding on openStack/closeStack/mouseUp today, which embed() has no
+        # way to drop, and leaving an open-ended collision surface after that.
+        #
+        # AND ONE NAME SETTLES IT ON ITS OWN: `on b2kFrame`. box2dxt's folded
+        # harness calls `b2kFrameTarget the long id of me`, and in this paste
+        # `me` is THIS stack - so a verbatim `on b2kFrame` would start receiving
+        # the embedded Kit's frame messages during box2dxt's deterministic
+        # hand-stepping. One member perturbing another is precisely what the
+        # total namespacing exists to prevent. Prefixed, he1b2kFrame is
+        # dispatched by nobody, which is exactly what happens standalone: this
+        # stack calls b2kFrameTarget NOWHERE (carried gotcha 19).
+        drop_extra=(
+            # The engine hooks and the bet slider's scrollbar messages - the ones
+            # DROP_HANDLERS does not already cover. They are here rather than in
+            # that global set because drop_extra is ASSERTED: a rename in
+            # holde-em fails this build instead of quietly leaving its window
+            # code in the suite paste.
+            #
+            # preOpenStack is the loud one. Its two lines are `set the rect of
+            # this stack to kHeStackRect` and `set the title of this stack` - so
+            # left in, the suite's window would silently become a 1024x640 stack
+            # titled "holde-em 0.24.1" the moment this paste's stack opened.
+            "preOpenStack",
+            # The five scrollbar messages belong to the bet slider. Each one
+            # guards on `the short name of the target is "heBetSlider"` and
+            # otherwise passes, so they are inert here - but inert BECAUSE no
+            # control in the suite window happens to carry that name, which is
+            # luck rather than a property. An unhandled message passes on by
+            # itself, so dropping them is behaviour-identical and stops relying
+            # on the coincidence.
+            "scrollbarDrag", "scrollbarLineInc", "scrollbarLineDec",
+            "scrollbarPageInc", "scrollbarPageDec",
+        ),
+        rewrites=(
+            # THE PENDING-MESSAGE SWEEP, widened - and it had to change at all
+            # because a FRAGMENT of a name is not a name. heTestSweepNetTimers
+            # cancels its own timers with `begins with "heNet"`, and "heNet" is
+            # not something this file declares, so the rename leaves the literal
+            # exactly as written while renaming every message the harness arms.
+            # The sweep would have matched nothing and said nothing: a silent
+            # no-op in the one handler whose entire job is to leave no timer
+            # running inside somebody else's paste.
+            #
+            # It is WIDENED to the member prefix on top of that, and the narrow
+            # spelling is right standalone for the reason its own comment gives
+            # (heHudTick and the paced hand steps belong to a REAL table, and
+            # stopping a maintainer's HUD because they ran the harness would be a
+            # new bug). There is no real table in a suite paste, and the
+            # reachable closure of this harness arms four NON-heNet sends as
+            # well: the paced hand steps. Left armed, the next-hand tick fires
+            # seconds later - inside the core's async loopback phase, after this
+            # member has already reported - into heHandStart, which DEALS A HAND
+            # on the harness's leftover state. The member prefix is exactly the
+            # right net: everything it catches is holde-em's, and no other unit
+            # in this paste has a name that begins with it.
+            ("""   repeat for each line tMsgLine in the pendingMessages
+      if item 3 of tMsgLine begins with "heNet" then
+         cancel item 1 of tMsgLine
+      end if
+   end repeat""",
+             """   -- GENERATED (tools/build-suite-selftest.py): the sweep is by the MEMBER
+   -- PREFIX here, not by the heNet stem the standalone harness uses. Two
+   -- reasons, and the first one is a silent failure rather than a judgement
+   -- call. (1) The stem is a FRAGMENT of a name, not a name, so the fold's
+   -- rename cannot move it: every message this harness arms is prefixed, the
+   -- literal is not, and the sweep would match nothing while looking exactly
+   -- like the code that was reviewed. (2) The stem is deliberately narrow
+   -- standalone -- heHudTick and the paced hand steps belong to a real table
+   -- and must survive a harness run -- and there is no real table here. This
+   -- harness's reachable closure also arms heNextHandTick, heRevealStep,
+   -- heRunoutStep and heSettleStep; left armed, the next-hand tick fires into
+   -- the core's async loopback phase, seconds after this member has already
+   -- reported, and lands in heHandStart, which deals a hand. The prefix is the
+   -- exact net: every name it catches is this member's, and nothing else in
+   -- this paste is spelled that way.
+   repeat for each line tMsgLine in the pendingMessages
+      if item 3 of tMsgLine begins with "@PREFIX@" then
+         cancel item 1 of tMsgLine
+      end if
+   end repeat"""),
+        ),
+    ),
 ]
 
 
@@ -434,22 +568,121 @@ EMBED_END = "-- <<< GENERATED EMBED: {name} <<< --"
 
 
 def strip_comments(text):
-    """Comment-free view, for finding DEFINITIONS only. Never used for output."""
-    out = []
+    """Comment-free view, for finding DEFINITIONS only. Never used for output.
+
+    LINE COUNT IS PRESERVED, and that is load-bearing rather than tidy:
+    split_handlers reads its STRUCTURE from this view and slices its OUTPUT
+    from the original text at the same indices, so a single dropped line would
+    misalign every handler boundary below it.
+
+    BLOCK COMMENTS ARE COMMENTS TOO. /* ... */ is legal LiveCodeScript and
+    holde-em keeps its entire 926-line header changelog in one, where prose
+    wraps at the margin - so a line of that changelog begins `on every wire
+    during the netplay section)`. Read as code, that is a handler named
+    `every`: split_handlers died on "unterminated handler every", and
+    defined_names harvested `every` into the set rename() prefixes, which
+    substitutes on word boundaries and would have rewritten the word wherever
+    it appeared. This is the same phantom-definition class that
+    tools/check-handler-calls.py grew its own block-comment strip for in the
+    2026-08-15 fold (31 phantoms, suite-wide), arriving at the generator.
+
+    It follows that sibling's scan - stateful across lines, opening and
+    closing mid-line, repeatably - and differs from it in exactly ONE way, on
+    purpose. check-handler-calls strips blocks BEFORE line comments and
+    strings, so a `/*` sitting inside a `--` comment opens a block there. This
+    scanner already tracks both, so it can get the precedence right instead:
+    `--` outside a string ends the line (a `/*` after it is prose), and a `/*`
+    inside a string is data. That is not academic - holde-em carries
+    `bt*/session` and `l2v_*/l0_*` inside line comments today, and they are
+    harmless only because no `/*` happens to precede them, which is luck
+    rather than a property of the tree.
+
+    An UNTERMINATED block is REFUSED, not blanked to end-of-file. Blanking
+    would delete every handler below it and hand back a shorter harness that
+    still looks perfectly green - the failure mode this whole file exists to
+    prevent.
+    """
+    out, in_block = [], False
     for raw in text.split("\n"):
         buf, i, instr = "", 0, False
         while i < len(raw):
             ch = raw[i]
+            if in_block:
+                # Inside /* */ nothing is code: not a quote, not a --, not an
+                # opener. Only the closing delimiter means anything.
+                if ch == "*" and raw[i + 1:i + 2] == "/":
+                    in_block = False
+                    i += 1
+                i += 1
+                continue
             if ch == '"':
                 instr = not instr
                 buf += ch
             elif not instr and ch == "-" and raw[i + 1:i + 2] == "-":
                 break
+            elif not instr and ch == "/" and raw[i + 1:i + 2] == "*":
+                in_block = True
+                i += 1
             else:
                 buf += ch
             i += 1
         out.append(buf)
+    if in_block:
+        raise SystemExit(
+            "build-suite-selftest: an unterminated /* block comment runs to the "
+            "end of a source file. Blanking it would silently delete every "
+            "handler below it and fold in a shorter harness that still reports "
+            "green; close the comment at its source instead.")
     return "\n".join(out)
+
+
+def declaration_names(line):
+    """The names ONE `local`/`constant` line declares.
+
+    STRING LITERALS COME OUT BEFORE THE COMMA SPLIT, which is the entire
+    reason this is a function rather than two inline loops. A comma is both
+    the separator between declarations on one line and an ordinary character
+    inside a string, so `constant kKatL2Perm1 = "35,31,39,12"` splits into
+    four parts and injects 31, 39 and 12 into the name set.
+
+    Neither consequence is cosmetic. The set defined_names builds goes to
+    rename(), which substitutes on WORD BOUNDARIES, so a folded holde-em
+    would have that very constant rewritten to "35,he131,he139,12" and every
+    bare 31 in its arithmetic turned into he131 - test data silently
+    corrupted by the tool whose job was to carry it across verbatim. The same
+    set reaches assert_no_duplicate_definitions, where two KAT constants that
+    merely share a value report that value as a duplicate DECLARATION, and
+    the build refuses an assembly that is perfectly sound.
+
+    The removal is naive on purpose and exactly right here: LiveCodeScript
+    has no string escape syntax, so quotes always pair. Same substitution,
+    for the same stated reason, as tools/check-handler-calls.py's strip_noise.
+    """
+    names = []
+    for part in re.sub(r'"[^"]*"', '""', line).split(","):
+        part = part.split("=")[0].strip()
+        if re.fullmatch(r'\w+', part):
+            names.append(part)
+    return names
+
+
+def preamble_declarations(preamble):
+    """The preamble lines that really declare something, in ORIGINAL spelling.
+
+    Matched against the comment-free view and returned as the source wrote
+    them: these lines are HOISTED INTO THE OUTPUT, so a trailing `-- why`
+    must survive, while a `local gRpt, gPassN` quoted inside a block-comment
+    changelog must not be mistaken for the real thing. Before strip_comments
+    knew about /* */ the two were indistinguishable, and the commented-out one
+    would have been hoisted as a genuine declaration.
+    """
+    view = strip_comments("\n".join(preamble)).split("\n")
+    if len(view) != len(preamble):
+        raise SystemExit("build-suite-selftest: the comment-free view of the "
+                         "preamble lost lines; the declaration hoist cannot be "
+                         "trusted to pick the right ones.")
+    return [orig for orig, seen in zip(preamble, view)
+            if re.match(r'^\s*(?:local|constant)\s', seen)]
 
 
 def defined_names(text):
@@ -458,10 +691,7 @@ def defined_names(text):
     names = set(re.findall(r'^(?:private\s+)?(?:command|function|on)\s+(\w+)',
                            bare, re.M))
     for line in re.findall(r'^\s*(?:local|constant)\s+(.+)$', bare, re.M):
-        for part in line.split(","):
-            part = part.split("=")[0].strip()
-            if re.fullmatch(r'\w+', part):
-                names.add(part)
+        names.update(declaration_names(line))
     return names
 
 
@@ -480,12 +710,27 @@ def rename(text, names, prefix):
 
 
 def split_handlers(text):
-    """[(name_lower, block_text)] in source order, plus the leading preamble."""
+    """[(name_lower, block_text)] in source order, plus the leading preamble.
+
+    STRUCTURE COMES FROM THE COMMENT-FREE VIEW; OUTPUT IS SLICED FROM THE
+    ORIGINAL. Only code can open a handler, close one, or nest a block, so
+    every decision below is made against `view` - but every line handed back
+    is `lines`, because the fold ships comments through verbatim (rename()
+    deliberately rewrites them too, so a comment names the handler that is
+    actually there). Asking the raw text these questions is what made a line
+    of holde-em's block-comment changelog - `on every wire during the netplay
+    section)` - open a handler named `every` that no `end every` ever closed.
+    """
     lines = text.split("\n")
+    view = strip_comments(text).split("\n")
+    if len(view) != len(lines):
+        raise SystemExit("build-suite-selftest: the comment-free view lost lines, "
+                         "so every handler boundary below would be sliced from the "
+                         "wrong place in the source.")
     blocks, preamble, i = [], [], 0
     opener = re.compile(r'^(?:private\s+)?(?:command|function|on)\s+(\w+)', re.I)
     while i < len(lines):
-        m = opener.match(lines[i])
+        m = opener.match(view[i])
         if not m:
             preamble.append(lines[i])
             i += 1
@@ -494,7 +739,7 @@ def split_handlers(text):
         end = re.compile(r'^end\s+' + re.escape(name) + r'\b', re.I)
         j, depth = i + 1, 0
         while j < len(lines):
-            s = lines[j].strip()
+            s = view[j].strip()
             if re.match(r'^(if\b.*\bthen$|repeat\b|try\b|switch\b)', s, re.I):
                 depth += 1
             elif re.match(r'^end\s+(if|repeat|try|switch)\b', s, re.I):
@@ -540,6 +785,19 @@ def assert_no_declaration_dropped(src, preamble, who, path):
     """Every script-level declaration must be in the PREAMBLE, because the
     preamble is all the hoist can see.
 
+    READ THIS BEFORE TRUSTING THIS GUARD (corrected 2026-08-16, the day it was
+    added). It does NOT catch "a declaration written between two handlers":
+    split_handlers appends every top-level non-handler line wherever it sits, so
+    those are already in the preamble and are hoisted correctly. On any real
+    source the two counts below are equal by construction and this never fires.
+    What it DOES catch is the narrow case it can: a column-0 local/constant
+    written INSIDE a handler body, which split_handlers cannot see.
+
+    The guard was added on a misreading of split_handlers, and the mutation test
+    that "proved" it drove this function with a hand-built preamble matching the
+    docstring rather than one the pipeline produces. Keeping it is cheap and the
+    narrow case is real; believing its original description is not.
+
     split_handlers returns only the LEADING run of non-handler lines, so a
     `local` or `constant` written BETWEEN two handlers - perfectly legal, and
     the house pattern in any file that groups a subsystem's state next to its
@@ -557,7 +815,12 @@ def assert_no_declaration_dropped(src, preamble, who, path):
     """
     bare = strip_comments(src)
     total = len(re.findall(r'^(?:local|constant)\s', bare, re.M))
-    in_pre = len([ln for ln in preamble if re.match(r'^(?:local|constant)\s', ln)])
+    # Both sides are counted through the comment strip, or the check reports
+    # nonsense on a file that quotes a `local` line inside a block comment:
+    # the preamble would hold it (it is a raw line) while `total` would not,
+    # and the difference would come out NEGATIVE.
+    in_pre = len([ln for ln in preamble_declarations(preamble)
+                  if re.match(r'^(?:local|constant)\s', ln)])
     if total != in_pre:
         missed = [ln.strip() for ln in strip_comments("\n".join(
             src.split("\n")[len(preamble):])).split("\n")
@@ -612,6 +875,17 @@ def fold(member):
     # it survives it: the torrent rewrite has to reach the CORE's sSession, and
     # anything spelled `sSession` before this point becomes the member's own.
     src = src.replace("@CORESESSION@", "sSession")
+    # @PREFIX@ is the same placeholder trick pointed the other way, and it exists
+    # for a hazard rename() cannot fix by itself: a FRAGMENT of a name is not a
+    # name. holde-em's harness sweeps its own pending messages with
+    # `begins with "heNet"`, which is correct standalone and matches NOTHING once
+    # every message this member arms has been prefixed - a silent no-op exactly
+    # where a silent no-op is most expensive. A rewrite has to spell the folded
+    # prefix, and spelling it literally would duplicate the Member row's own
+    # `prefix` argument, so a prefix change would quietly stop matching. This
+    # keeps one source of truth, substituted here (after the rename) for the same
+    # reason @CORESESSION@ is: written earlier it would itself be renamed.
+    src = src.replace("@PREFIX@", member.prefix)
     preamble, blocks = split_handlers(src)
 
     entry = (member.prefix + member.entry).lower()
@@ -678,8 +952,7 @@ def fold(member):
     # core supplies the one this file needs) and so is its prose, which stays
     # readable in the source file this section names.
     assert_no_declaration_dropped(src, preamble, member.key, member.path)
-    decls = [ln for ln in preamble
-             if re.match(r'^\s*(?:local|constant)\s', ln)]
+    decls = preamble_declarations(preamble)
     if not decls:
         raise SystemExit(f"build-suite-selftest: {member.key}: no local/constant "
                          f"declarations found in the preamble - the parse is wrong, "
@@ -733,7 +1006,7 @@ def embed(layer):
 
     preamble, blocks = split_handlers(src)
     assert_no_declaration_dropped(src, preamble, layer.key, layer.path)
-    decls = [ln for ln in preamble if re.match(r'^\s*(?:local|constant)\s', ln)]
+    decls = preamble_declarations(preamble)
     if not decls:
         raise SystemExit(f"build-suite-selftest: {layer.key}: no script-level "
                          f"declarations found in its layer - the parse is wrong, "
@@ -792,10 +1065,7 @@ def assert_no_duplicate_definitions(text):
         (dup_h if n.lower() in seen else seen).add(n.lower())
     decls = []
     for line in re.findall(r'^(?:local|constant)\s+([^\n]+)$', bare, re.M):
-        for part in line.split(","):
-            part = part.split("=")[0].strip()
-            if re.fullmatch(r'\w+', part):
-                decls.append(part)
+        decls.extend(declaration_names(line))
     seen, dup_d = set(), set()
     for n in decls:
         (dup_d if n.lower() in seen else seen).add(n.lower())

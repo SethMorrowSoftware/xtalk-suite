@@ -157,7 +157,7 @@ put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession 
 put cxKeccak256Len()     -- coinxt: prints 32
 ```
 
-Or run all seven suite members plus the Riptide app layer at once.
+Or run all seven suite members plus both app layers - Riptide and holde-em - at once.
 `tests/suite-selftest.livecodescript` is a single stack script that builds its
 own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — a
 member you did not install skips, it never fails.
@@ -167,10 +167,21 @@ whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
 and datachannelxt, box2dxt's `stSelfTest` (50 handlers, ~372 assertions driving
-the real b2k Kit hand-stepped one fixed 1/60 tick at a time), and riptide's
+the real b2k Kit hand-stepped one fixed 1/60 tick at a time), riptide's
 harness (phases 1-4 + 6 + 7, including the live feed, media, DM, LAN-admission,
-and anon-persona layers) — plus the cross-member compositions no
-per-member harness can have. One paste settles what used to take eight runs.
+and anon-persona layers), and — since 2026-08-16 — holde-em's `heSelfTest` (21
+sections over the evaluator, the betting engine and side pots, the whole deal
+ladder up to the Level 2 ristretto mental poker and its DLEQ audit, the signed
+transcript wire, and three-context netplay, oracle and liveness loopbacks) —
+plus the cross-member compositions no per-member harness can have. One paste
+settles what used to take nine runs.
+
+holde-em is the one fold that carries a whole APPLICATION rather than a test
+file, because its game and its harness are the same 15k-line stack; it rides in
+prefixed, entered only through its quiet returned-report entry point, and the
+structural gate proves by REACHABILITY that its live paths — a second
+libtorrent session, its own 1024x640 table, its report overlay, a b2k world —
+stay out of the harness's reach.
 
 It is **generated** (`tools/build-suite-selftest.py`) from those harnesses rather
 than copied from them, because a hand-copied test suite drifts and then reports
@@ -197,12 +208,23 @@ left behind by a rename, so the shortfall can only ever be a decision somebody
 wrote down. It counts handlers *reached*, not handlers tested well — depth is
 each member's own vector gate.
 
-One layer is deliberately outside that ratchet and says so beside its row:
-box2dxt's raw `b2*` extension binding — 376 public handlers over 374 foreign
-declarations, of which **245 are named by no script anywhere in that member**.
-The b2k Kit above it is the game-facing API and is held at 313/313; the raw
-layer's cover today is `box2dxt/tests/smoke_test.c` under ASan/UBSan, and a
-script-level ratchet for it is an open item, not a closed one.
+Two layers are deliberately outside that ratchet, and each says so beside the
+tool's member list with the numbers behind the call:
+
+- **box2dxt's raw `b2*` extension binding** — 376 public handlers over 374
+  foreign declarations, of which **245 are named by no script anywhere in that
+  member**. The b2k Kit above it is the game-facing API and is held at 313/313;
+  the raw layer's cover today is `box2dxt/tests/smoke_test.c` under ASan/UBSan.
+- **holde-em's `he*` surface** — 379 public handlers in ONE file that is the
+  game *and* its harness. A row would read **0/379** as the gate is written and
+  **379/379** the moment the scan were taught the fold's prefix — permanently,
+  because the folded section is the game and the game names its own API. Only
+  **163/379** are named by a test body, which is the honest number and not one
+  this gate can compute. That is the same effect the embedded-span cut exists to
+  prevent, arriving where there is nothing to cut; seven KAT mirrors plus an
+  independent-reference fuzz are what back that layer instead.
+
+Both are open items, not closed ones.
 
 **You do not have to clone it.** Every `suite gates` run uploads a
 `suite-selftest` artifact with the pasteable script, that coverage report, and

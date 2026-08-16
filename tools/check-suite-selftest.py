@@ -34,31 +34,92 @@ GEN = os.path.join(ROOT, "tests", "suite-selftest.livecodescript")
 # The prefixes tools/build-suite-selftest.py assigns, and the member each names.
 PREFIXES = {"sx1": "sodiumxt", "ox1": "onionxt", "cx1": "coinxt",
             "bt1": "torrentxt", "en1": "enetxt", "dc1": "datachannelxt",
-            "rs1": "riptide", "b21": "box2dxt"}
+            "rs1": "riptide", "b21": "box2dxt", "he1": "holde-em"}
 
 # What the core calls into each folded harness. If the generator ever renames or
 # drops one of these, the suite harness compiles and then does nothing.
 ENTRY_POINTS = ["sx1sxSelfTest", "ox1oxSelfTest", "cx1stRun", "bt1stRun",
-                "en1stRun", "dc1stRun", "rs1rsSelfTest", "b21stSelfTest"]
+                "en1stRun", "dc1stRun", "rs1rsSelfTest", "b21stSelfTest",
+                "he1heSelfTest"]
 COUNTED = ["cx1", "bt1", "en1", "dc1"]
 
 
 def strip_comments(text):
-    out = []
+    """Comment-free view of the generated file. Line count is PRESERVED, so
+    check 10 can report the line numbers it finds.
+
+    THIS IS THE SAME FUNCTION AS tools/build-suite-selftest.py's, deliberately
+    - the generator refuses to WRITE a file with a defect, and this re-checks
+    the COMMITTED one, so the two must read a source identically or a future
+    fold produces a file the generator accepts and this gate rejects. Keep
+    them in step by hand; nothing enforces it yet.
+
+    Block comments are the reason both grew past a line-comment scan.
+    /* ... */ is legal LiveCodeScript and holde-em keeps a 926-line header
+    changelog in one, where prose wraps to lines like `on every wire during
+    the netplay section)` - read as code, a handler named `every`.
+
+    BE PRECISE ABOUT WHAT REACHES THIS FILE, because it is narrower than it
+    first looks: fold() and embed() emit only handler BLOCKS, so a header
+    changelog sits in the preamble and is dropped - it never gets here. What
+    does get here is a /* */ written INSIDE a handler body, which ships
+    verbatim like every other comment. A column-0 line of prose in one is
+    then a phantom handler to checks 1 and 4, and a phantom `local` below the
+    first handler to check 10 - a gate failure describing a declaration that
+    is not there. Defensive, therefore, rather than load-bearing today; the
+    load-bearing half is that the two tools must read a source IDENTICALLY,
+    or the generator writes a file this gate refuses.
+    """
+    out, in_block = [], False
     for raw in text.split("\n"):
         buf, i, instr = "", 0, False
         while i < len(raw):
             ch = raw[i]
+            if in_block:
+                if ch == "*" and raw[i + 1:i + 2] == "/":
+                    in_block = False
+                    i += 1
+                i += 1
+                continue
             if ch == '"':
                 instr = not instr
                 buf += ch
             elif not instr and ch == "-" and raw[i + 1:i + 2] == "-":
                 break
+            elif not instr and ch == "/" and raw[i + 1:i + 2] == "*":
+                in_block = True
+                i += 1
             else:
                 buf += ch
             i += 1
         out.append(buf)
+    if in_block:
+        raise SystemExit(
+            "check-suite-selftest: an unterminated /* block comment runs to the "
+            "end of tests/suite-selftest.livecodescript. Blanking it would hide "
+            "every handler below it from these checks.")
     return "\n".join(out)
+
+
+def declaration_names(line):
+    """The names ONE `local`/`constant` line declares, string literals removed
+    BEFORE the comma split.
+
+    The generator's twin carries the full reasoning. The short version: a
+    comma separates declarations AND sits inside strings, so
+    `constant kKatL2Perm1 = "35,31,39,12"` would inject 31, 39 and 12 as
+    declared names - check 1b then reports a wall of phantom duplicate
+    declarations for any two KAT constants that merely share a value, and
+    check 2's `declared` set silently ABSORBS real names that appear in such a
+    string, which is the direction that hides a defect rather than inventing
+    one.
+    """
+    names = []
+    for part in re.sub(r'"[^"]*"', '""', line).split(","):
+        part = part.split("=")[0].strip()
+        if re.fullmatch(r'\w+', part):
+            names.append(part)
+    return names
 
 
 def main(argv):
@@ -86,10 +147,7 @@ def main(argv):
     # generator refuses to write such a file; this re-checks the committed one.
     decl_names = []
     for line in re.findall(r'^(?:local|constant)\s+([^\n]+)$', bare, re.M):
-        for part in line.split(","):
-            part = part.split("=")[0].strip()
-            if re.fullmatch(r'\w+', part):
-                decl_names.append(part)
+        decl_names.extend(declaration_names(line))
     seen, dup_decls = set(), set()
     for n in decl_names:
         (dup_decls if n.lower() in seen else seen).add(n.lower())
@@ -103,10 +161,7 @@ def main(argv):
     # for prefixed s*/k* names used anywhere that were never declared.
     declared = set()
     for line in re.findall(r'^\s*(?:local|constant)\s+([^\n]+)$', bare, re.M):
-        for part in line.split(","):
-            part = part.split("=")[0].strip()
-            if re.fullmatch(r'\w+', part):
-                declared.add(part)
+        declared.update(declaration_names(line))
     handler_names = {n for n in defs}
     used = set()
     for pfx in PREFIXES:
@@ -228,6 +283,175 @@ def main(argv):
             problems.append(f"{gone} survived the fold; box2dxt's own window would "
                             f"be built over the suite's")
 
+    # ---- 7d. holde-em: the LIVE game stays out of the harness's reach -------
+    # holde-em is the one member whose fold carries a whole APPLICATION, not a
+    # test file: the game and its harness are the same 15k-line stack, so
+    # everything the game can do is in this paste whether the harness calls it
+    # or not. Every hazard below is therefore a REACHABILITY question, and the
+    # answer has to be re-asked on every build - a new call site in a section is
+    # the cheapest possible way to wire one of these up by accident.
+    #
+    # The closure is deliberately an OVER-approximation: any he1* name mentioned
+    # anywhere in a reachable handler's body (comments stripped, strings KEPT -
+    # this harness dispatches its sections with `do pName` off string literals)
+    # counts as an edge. It can therefore report a path that never executes,
+    # which is the safe direction; it cannot miss one.
+    he_blocks = {}
+    for m in re.finditer(r'^(?:private\s+)?(?:command|function|on)\s+(he1\w+)\b'
+                         r'(.*?)^end\s+\1\b', bare, re.S | re.M):
+        he_blocks.setdefault(m.group(1).lower(), []).append(m.group(2))
+    if not he_blocks:
+        problems.append("holde-em folded in no he1* handlers at all - this whole "
+                        "block of checks is now checking nothing")
+    else:
+        reach, frontier = {"he1heselftest"}, ["he1heselftest"]
+        while frontier:
+            name = frontier.pop()
+            for body in he_blocks.get(name, []):
+                for tok in set(re.findall(r'\b(he1\w+)\b', body)):
+                    low = tok.lower()
+                    if low in he_blocks and low not in reach:
+                        reach.add(low)
+                        frontier.append(low)
+        # Each of these would be silent, and each is a DIFFERENT kind of silent.
+        forbidden = {
+            "he1heNetStart":
+                "btStartSession - a SECOND libtorrent session in a process that "
+                "allows exactly one, and the core already opened it during its "
+                "probe. It is also the ONLY writer of he1gGame[\"session\"], "
+                "which is what keeps the reachable he1heNetStop from ever "
+                "handing the core's live handle to btStopSession",
+            "he1heRunSelftest":
+                "the INTERACTIVE entry point: it builds an 800x560 report "
+                "overlay on the card, overwrites clipboardData[\"text\"] (this "
+                "scaffold's own Copy-results channel) and writes to msg",
+            "he1heBuildTable":
+                "it builds holde-em's entire 1024x640 poker table - every seat, "
+                "the felt, the board and the action row - on the suite's card",
+            "he1heReportShow":
+                "it creates the report overlay's graphic, field and button on "
+                "whatever card this paste is running on",
+            "he1heProbeTorrent":
+                "btStartSession - the SECOND of holde-em's two session openers, "
+                "and the one that reads as harmless because it is a diagnostic. "
+                "It is unreachable today (nothing in the folded closure calls "
+                "it), so this entry is a TRIPWIRE rather than a fix: the "
+                "one-session-per-process rule is a property of the paste, not of "
+                "any one handler, and naming only heNetStart would let a future "
+                "section wire the probe up and take the core's session with it",
+            "he1heKitTryInit":
+                "it starts a b2k physics world and loads card atlases, which "
+                "would collide with the world box2dxt's folded harness "
+                "hand-steps a few sections earlier",
+        }
+        # A NAMED HAZARD THAT NO LONGER EXISTS IS A STALE EXCUSE, and this repo
+        # has already paid for one gate that could not tell "checked" from
+        # "parsed" (coinxt's constant gate, root CLAUDE.md). If a handler above
+        # is renamed or deleted, its entry silently stops guarding anything
+        # while still reading like protection - so the list is held to the
+        # tree in BOTH directions: reachable is a failure, and absent is a
+        # failure.
+        for name in forbidden:
+            if name.lower() not in he_blocks:
+                problems.append(
+                    f"{name} is named in this gate's forbidden set but is not "
+                    f"defined in the folded harness at all. Either it was "
+                    f"renamed - in which case this entry now guards nothing and "
+                    f"must be updated to the new name - or it is gone and the "
+                    f"entry should be deleted. A hazard list that outlives its "
+                    f"hazards is worse than no list.")
+        for name, why in forbidden.items():
+            if name.lower() in reach:
+                problems.append(
+                    f"{name} is REACHABLE from he1heSelfTest, and it runs {why}. "
+                    f"Either the call is a mistake, or the hazard has been "
+                    f"handled and this entry should say so.")
+        # NAMING THE FIVE HANDLERS ABOVE SAYS WHAT MUST NOT BE CALLED; this
+        # says what must not HAPPEN, which is the half that survives a rename
+        # or a new handler nobody thought to list. Measured at the fold: the
+        # closure of he1heSelfTest creates no control, deletes none, never
+        # resizes or retitles the stack, and never touches clipboardData. Those
+        # are the four ways this member could damage a paste it is a guest in -
+        # the suite core owns the window, and clipboardData is the scaffold's
+        # own Copy-results channel. (What the closure DOES reach, and why it is
+        # allowed: the sound path's `set the defaultStack`, `import audioClip`
+        # and `play audioClip`, all three inside heSndTryInit/heSndPlay and all
+        # fail-closed behind heStackFolder returning empty for an unsaved stack
+        # and gSndOk never being set. They are named here so that "the scan
+        # found nothing" cannot be confused with "the scan looks for nothing".)
+        guest = (
+            (r'^\s*create\s+', "creates a control on the host's card"),
+            (r'^\s*delete\s+(?:field|button|graphic|image|control)\b',
+             "deletes a control on the host's card"),
+            (r'set\s+the\s+(?:rect|width|height|title)\s+of\s+this\s+stack',
+             "resizes or retitles the host's window"),
+            (r'\bclipboardData\b',
+             "writes the clipboard, which is the suite scaffold's own "
+             "Copy-results channel"),
+        )
+        for name in sorted(reach):
+            for body in he_blocks.get(name, []):
+                for ln in body.split("\n"):
+                    for pat, what in guest:
+                        if re.search(pat, ln, re.I):
+                            problems.append(
+                                f"{name} is reachable from he1heSelfTest and "
+                                f"{what}: {ln.strip()!r}. holde-em is a guest "
+                                f"in this paste; the core owns the window.")
+        # The second half of the bt1stCleanup argument, stated as a fact rather
+        # than left as reasoning: he1heNetStop IS reachable and does call
+        # btStopSession, so what makes that harmless is that the handle it
+        # passes can only ever be empty. Nothing but he1heNetStart may write it.
+        for m in re.finditer(r'^.*\binto\s+he1gGame\["session"\].*$', bare, re.M):
+            line = m.group(0)
+            owner = None
+            for name, bodies in he_blocks.items():
+                if any(line in b for b in bodies):
+                    owner = name
+                    break
+            if owner != "he1henetstart":
+                problems.append(
+                    f"he1gGame[\"session\"] is written outside he1heNetStart "
+                    f"({line.strip()!r}, in {owner}). he1heNetStop is reachable "
+                    f"from the harness and passes that value to btStopSession; "
+                    f"the ONLY reason that cannot free the core's session is "
+                    f"that nothing the harness reaches ever puts a real handle "
+                    f"there.")
+        # The pending-message sweep. Standalone it matches the "heNet" stem,
+        # which is a FRAGMENT of a name and so survives the fold's rename
+        # untouched while every message this member arms is prefixed - a sweep
+        # that matches nothing, in the handler whose whole job is to leave no
+        # timer ticking in somebody else's paste. The generator rewrites it to
+        # the member prefix (which also widens it over the paced hand steps).
+        sweep = re.search(r'^command he1heTestSweepNetTimers\b(.*?)'
+                          r'^end he1heTestSweepNetTimers', bare, re.S | re.M)
+        if sweep is None:
+            problems.append("he1heTestSweepNetTimers is gone; nothing cancels the "
+                            "timers holde-em's sections arm, so its next-hand beat "
+                            "fires into the core's async loopback phase")
+        elif 'begins with "he1"' not in sweep.group(1):
+            problems.append(
+                "he1heTestSweepNetTimers no longer sweeps by the member prefix. "
+                "The standalone \"heNet\" stem cannot survive the rename (it is "
+                "not a name, so nothing renames it) and would match none of the "
+                "prefixed messages this harness arms - a silent no-op.")
+
+    # ---- 7e. holde-em's own window and engine hooks did not come with it -----
+    # Its harness is headless (every UI touch is guarded and fails closed), but
+    # the STACK around it is not. preOpenStack is the loud one: two lines that
+    # set this stack's rect and title, so left in it would silently turn the
+    # suite's window into a 1024x640 stack called "holde-em" the moment the
+    # paste opened. The five scrollbar messages belong to the bet slider and
+    # guard on a control name; they are inert here only because nothing in the
+    # suite window happens to be called "heBetSlider".
+    for gone in ("he1preOpenStack", "he1openStack", "he1closeStack",
+                 "he1mouseUp", "he1scrollbarDrag", "he1scrollbarLineInc",
+                 "he1scrollbarLineDec", "he1scrollbarPageInc",
+                 "he1scrollbarPageDec"):
+        if re.search(r'^(?:command|on|function)\s+' + gone + r'\b', src, re.M):
+            problems.append(f"{gone} survived the fold; holde-em's own stack "
+                            f"chrome would run on the suite's window")
+
     # ---- 8. coinxt is probed as TWO pieces ----------------------------------
     # It is the only member that ships an extension AND a separate script layer,
     # and ten of its folded sections call the script. Probing only the extension
@@ -270,8 +494,16 @@ def main(argv):
     # This is the invariant that makes that stay true, and it is deliberately
     # blunt: position, not reachability. Anything subtler would need to know
     # which handler reads what, which is how the first version got it wrong.
+    #
+    # Asked of the COMMENT-FREE view, not the raw text, while reporting the
+    # raw line: strip_comments preserves the line count precisely so these
+    # numbers stay usable. Raw, a folded block-comment changelog would supply
+    # both halves of a false alarm - a prose line opening `on ...` taken for
+    # the first handler, and every real declaration below it then "late".
+    lines_raw = src.split("\n")
+    lines_bare = bare.split("\n")
     first_handler = None
-    for i, line in enumerate(src.split("\n"), start=1):
+    for i, line in enumerate(lines_bare, start=1):
         if re.match(r'^(?:private\s+)?(?:command|function|on)\s+\w+', line):
             first_handler = i
             break
@@ -279,8 +511,8 @@ def main(argv):
         problems.append("no handlers found at all - the generated file is not "
                         "what this checker thinks it is")
     else:
-        late = [(i, line.strip())
-                for i, line in enumerate(src.split("\n"), start=1)
+        late = [(i, lines_raw[i - 1].strip())
+                for i, line in enumerate(lines_bare, start=1)
                 if i > first_handler and re.match(r'^(?:local|constant)\s', line)]
         if late:
             problems.append(

@@ -123,6 +123,19 @@ deferral - lost, correctly: it argued from timing ("no consumer needs Taproot
 spends today"), and timing is the owner's to weigh, not the suite's. Both are
 recorded in D-01 rather than tidied away.
 
+**THE SELF-TEST NOW REACHES 76% MORE OF THE SUITE (2026-08-16, commit
+`ef73172`).** Asked to make the self-test "test as much as it possible can", the
+audit found the limit was not depth inside sections but WHICH MEMBERS FOLD AT
+ALL: seven did, and box2dxt's 7000-line harness sat unfolded, so the suite paste
+had never touched a line of the physics or game-Kit surface. Folding it took
+coverage **411/429 -> 724/742**. Two things came out of it worth carrying: a
+latent paste-time bug (the harness carries a verbatim copy of the b2k Kit, so a
+naive fold would have defined 313 handlers twice - found here rather than on an
+engine), and a coverage ratchet that failed at 103/313 because many Kit handlers
+RUN on every test while no test writes their name down. holde-em remains
+unfolded pending five named blockers; nocloud has no script harness and is
+correctly out of scope.
+
 **The short version.** One big build is unstarted (Model C for DHT-Channels).
 The second capstone turned out to be half-built already: holde-em folded home
 with hotseat and online play written, leaving its oracle, mental-poker, and
@@ -381,11 +394,26 @@ Built and statically verified; pending under the honesty convention.
    hold. Deliberately manual lipo builds on real hardware.
    — `docs/OXT-PASS-RUNBOOK.md` §2.1/§2.4, `sodiumxt/CLAUDE.md:54-59`
 
-2. **box2dxt as the eighth folded harness member** (large). Returned-report
-   selftest line, Member row in build-suite-selftest.py, b2/b2k prefixes in
-   check-suite-coverage.py AND check-handler-calls.py, then close what the
-   coverage gate demands.
-   — `box2dxt/CLAUDE.md:53-67`
+2. **~~box2dxt as the eighth folded harness member~~ SHIPPED statically
+   2026-08-16** (commit `ef73172`). Suite coverage **411/429 -> 724/742**;
+   the paste is 20,616 lines, 928 handlers, 8 folded harnesses, 4 embedded
+   script layers. The item's own list is done (returned-report entry, Member
+   row, b2k in the coverage gate) plus three mechanisms nobody had costed:
+   box2dxt is the first member whose harness is a paste-and-run STACK, and
+   its verbatim copy of the b2k Kit had to be CUT and the Kit embedded once,
+   or all 313 Kit handlers would have been defined twice - a compile error
+   first met on a real engine, which is exactly the scarce resource this
+   work protects. "Close what the coverage gate demands" turned out to be
+   **210 handlers**: 13 new sections took the Kit to 313/313 with zero
+   exemptions. **NOT closed, and recorded as an open item beside the gate
+   row rather than pretended away:** `box2dxt/src/box2dxt.lcb`'s 376 public
+   `b2*` handlers, of which the Kit names 131 and **245 are named by no
+   script anywhere in the member**. That layer is a 1:1 binding driven by
+   `smoke_test.c` under ASan in CI; 375 blind assertions against a
+   foreign-bound API would most likely hand the next OXT session a pile of
+   test bugs instead of defects.
+   — `box2dxt/CLAUDE.md` (fold record), `tools/check-suite-coverage.py`
+   (the measurement beside the row)
 
 3. **box2dxt into the release assembly lane** (medium). release-binaries.yml
    and install-release-binaries.py both omit it; needs the docker-run job
