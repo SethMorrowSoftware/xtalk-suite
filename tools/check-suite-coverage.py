@@ -163,11 +163,26 @@ MEMBERS = [
     # one reason - is the "gate that overstates its coverage" this repo
     # already learned to distrust (coinxt's constant gate, root CLAUDE.md).
     #
-    # What that layer HAS: tests/smoke_test.c drives the C ABI under
-    # ASan/UBSan in build-all.sh and in native-box2dxt.yml, and the Kit's own
-    # 313 handlers - every one of which is exercised here - are what call it.
-    # What it does NOT have is a script-level ratchet, and that is an open
-    # item, not a closed one.
+    # What that layer HAS, stated with the number rather than the adjective
+    # (measured 2026-08-17 by GCOV, not by grep): tests/smoke_test.c drives
+    # **194 of the 370 LC_API exports** - it drove 53 that morning - in
+    # build-all.sh (Release) and under ASan/UBSan in native-box2dxt.yml's
+    # sanitize job, and the Kit's own 313 handlers, every one of which is
+    # exercised here, are what call into it.
+    #
+    # THE OLD BASELINE FOR THIS WAS 60, AND 60 WAS A GREP ARTIFACT. It came
+    # from counting b2lc_* tokens in smoke_test.c, which also matched the
+    # file's `extern` DECLARATION block - and six exports sat in that block
+    # declared and never called by any line, so every count of "what the smoke
+    # test reaches" had been counting them as covered. A declaration is not a
+    # call: the same shipped-is-not-run lesson this file's own history turns
+    # on, one level down in the toolchain. All six are called now.
+    #
+    # Signatures across that boundary are checked separately by
+    # box2dxt/tools/check-lcb-signatures.py (370 binds vs 370 LC_API
+    # definitions, return type + arity + per-parameter type).
+    # What this layer does NOT have is a script-level ratchet, and that is an
+    # open item, not a closed one.
     ("box2dxt (kit)", "b2k", ["box2dxt/src/box2dxt-kit.livecodescript"]),
     #
     # HOLDE-EM HAS NO ROW HERE, AND THAT IS A DECISION WITH NUMBERS BEHIND IT
@@ -222,46 +237,71 @@ MEMBERS = [
 # reason specific: "hard to test" is not one of the two categories, and if a
 # handler only needs a fixture then it belongs in a harness, not in here.
 UNTESTABLE = {
-    # --- torrentxt: three handlers the harness must not run ------------------
-    # Added 2026-08-17, when blanking string literals stopped this gate
-    # counting torrentxt's own "not auto-checked - confirm by hand" note as
-    # proof the handlers it names were exercised. The note's reasons were
-    # always honest; they just were not entries. A fourth name in that note -
-    # btAddMagnet - is NOT here: it was excused as "covered via btAddMagnetEx",
-    # which is an argument about shape rather than a test (the two take
-    # different argument counts, so the plain form's marshalling was never
-    # exercised), so it got a real check in torrentxt's harness instead.
-    #
-    # These three stay excused because running them in an automated harness
-    # would either destroy data or require bytes only a live swarm produces.
-    # Each is on the runbook's manual list: torrentxt's "destructive-handler
-    # manual pass" (REMAINING-WORK B.7).
-    "btMoveStorage": "destructive: relocates a torrent's storage on disk; "
-                     "manual pass only (REMAINING-WORK B.7)",
-    "btSetFilePriorities": "needs a binary priority buffer sized to a real "
-                           "torrent's file list, which needs metadata from a "
-                           "live swarm; manual pass only",
-    "btAddTorrentWithResume": "needs async resume bytes, which only a real "
-                              "btSaveResumeData round trip produces; the "
-                              "resume path is runbook B.7's restart pass",
-
     # --- onionxt: the engine's own socket callbacks --------------------------
     # OnionXT is pure script over engine sockets, and these are what the ENGINE
-    # calls when one of them does something. They take a socket id the harness
-    # has no way to mint, and they mutate per-socket state keyed by it, so
-    # calling them with a synthetic id would not exercise the real path - it
-    # would corrupt the state of whatever socket happened to share the id.
-    "oxCtlOpened": "engine-event: socket callback, engine supplies the socket id",
-    "oxCtlLine": "engine-event: socket callback, engine supplies the socket id",
-    "oxCtlDeadline": "engine-event: socket timeout callback",
-    "oxSocksOpened": "engine-event: socket callback, engine supplies the socket id",
-    "oxSocksMethod": "engine-event: SOCKS5 handshake step, driven by socket reads",
-    "oxSocksReplyHead": "engine-event: SOCKS5 reply step, driven by socket reads",
-    "oxSocksReplyLen": "engine-event: SOCKS5 reply step, driven by socket reads",
-    "oxSocksReplyDone": "engine-event: SOCKS5 reply step, driven by socket reads",
-    "oxStreamData": "engine-event: stream read callback",
-    "oxStreamDeadline": "engine-event: stream timeout callback",
-    "oxPeerAccepted": "engine-event: inbound connection callback",
+    # (or, for the two WATCHDOGS, a self-sent `send ... to me in <timeout>`)
+    # calls back. The exemption each one carries is NARROWER than the reason
+    # this block used to give, and the old reason was wrong twice:
+    #   - "the harness has no way to mint a socket id" is about the ARGUMENT,
+    #     but every one of these opens by TESTING that argument (against
+    #     sControlSocket, or as a key into sSockToStream / sStreams) and exits
+    #     on a miss. A synthetic id therefore exercises the guard and nothing
+    #     else - which is a fine thing to be exempt from, but it is not the
+    #     thing the text claimed.
+    #   - "it would corrupt the state of whatever socket happened to share the
+    #     id" was false in the direction that matters: the miss-exit makes 999999
+    #     a clean no-op. The only way to collide is to name a LIVE id on purpose,
+    #     and ours are predictable ("127.0.0.1:9050|oxs3"), so the real hazard is
+    #     smaller and different from the one asserted.
+    # What each reason below names instead is the leg PAST that guard - the
+    # `read from socket` / `write to socket` / `close socket` work, and the
+    # per-socket state only oxConnectControl or oxDial creates. Reaching it needs
+    # an engine, not an argument.
+    # AND NOTE THE LIMIT OF THAT: an exemption for a BODY is not an exemption for
+    # its pure helpers. oxPeerAccepted's loopback guard (oxHostOfSocket +
+    # oxHostIsLoopback) is pure string work, is NOT covered here, and is
+    # fixture-tested offline in onionxt's harness section 10 - which is how the
+    # 2026-08-17 fail-open in it was found, after this block had spent months
+    # implying the whole path was unreachable.
+    "oxCtlOpened": "engine-event: exits unless pSocketID IS the live control "
+                   "socket, which only oxConnectControl's `open socket` mints; "
+                   "past that guard it arms `read ... until crlf` and writes "
+                   "PROTOCOLINFO to that socket",
+    "oxCtlLine": "engine-event: same live-control-socket guard; past it the body "
+                 "parses a reply/650 line and re-arms `read from socket`, so it "
+                 "needs a control connection, not a string",
+    "oxCtlDeadline": "WATCHDOG, not a socket callback: armed by `send ... to me "
+                     "in kOxHandshakeTimeout`; exits unless pSocketID is the live "
+                     "control socket, and the leg that matters calls "
+                     "oxDisconnectControl (`close socket`)",
+    "oxSocksOpened": "engine-event: exits on a sSockToStream miss; past it, writes "
+                     "the 05 01 00 greeting to the socket and arms the 2-byte "
+                     "method read",
+    "oxSocksMethod": "engine-event: exits on a sSockToStream miss; past it, writes "
+                     "the ATYP=3 CONNECT request to the socket and arms the 4-byte "
+                     "reply-head read",
+    "oxSocksReplyHead": "engine-event: exits on a sSockToStream miss; past it, "
+                        "frames BND.ADDR by ATYP and arms the next `read from "
+                        "socket` (a non-zero REP fails the stream closed here)",
+    "oxSocksReplyLen": "engine-event: exits on a sSockToStream miss; past it, arms "
+                       "the `read ... for <len+2>` that consumes the domain "
+                       "BND.ADDR and port",
+    "oxSocksReplyDone": "engine-event: exits on a sSockToStream miss; past it, "
+                        "reports `open` to the app and arms the persistent stream "
+                        "read on a socket that is now a tunnel",
+    "oxStreamData": "engine-event: exits on a sSockToStream miss; past it, delivers "
+                    "the chunk and re-arms `read from socket`, so it needs bytes "
+                    "the engine actually read",
+    "oxStreamDeadline": "WATCHDOG, not a socket callback, and its argument is a "
+                        "STREAM HANDLE, not a socket id: armed by `send ... to me "
+                        "in`; exits unless that stream has a socketID, which only "
+                        "oxDial's `open socket` sets, and the leg past it fails the "
+                        "stream closed (`close socket`)",
+    "oxPeerAccepted": "engine-event: needs a socket `accept connections on port` "
+                      "accepted - it reads from and closes that socket. Its "
+                      "loopback guard is explicitly NOT exempt: oxHostOfSocket / "
+                      "oxHostIsLoopback are pure and are fixture-tested offline in "
+                      "onionxt's harness section 10",
     # --- onionxt: needs a real Tor daemon ------------------------------------
     # The honesty convention this repo uses for OnionXT is "verified statically;
     # needs an OXT pass + a live-Tor pass". These are the second half of that.

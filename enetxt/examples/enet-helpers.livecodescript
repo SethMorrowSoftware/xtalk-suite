@@ -33,9 +33,19 @@ local sPolling          -- "true" while the timer loop is armed
 -- the current card; INTERVALMS defaults to 33 (about 30 Hz). One target and
 -- one interval serve every registered host (last caller wins).
 command enStartPolling pHost, pTarget, pIntervalMs
+   local tSavedDelim
    if pHost is empty or pHost is 0 then
       exit enStartPolling
    end if
+   -- sPollHosts is a COMMA list, but `among the items of` splits on whatever
+   -- the itemDelimiter currently is - global mutable state this handler
+   -- INHERITS from whoever called it (the family's LCS gotcha: set it
+   -- immediately before use, never assume it). Set it around our own read and
+   -- put back what we found: a helper must not decide the delimiter for the
+   -- handler that called it. The writes below are delimiter-free (they append
+   -- a literal comma), so only the read needs bracketing.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
    if pHost is not among the items of sPollHosts then
       if sPollHosts is empty then
          put pHost into sPollHosts
@@ -43,6 +53,7 @@ command enStartPolling pHost, pTarget, pIntervalMs
          put comma & pHost after sPollHosts
       end if
    end if
+   set the itemDelimiter to tSavedDelim
    if pTarget is empty then
       put the long id of this card into sPollTarget
    else
@@ -64,13 +75,19 @@ end enStartPolling
 -- Stopping the pump FREEZES the transport for the remaining app lifetime
 -- (nothing progresses unpumped) - stop only what you are done with.
 command enStopPolling pHost
-   local tI, tNew
+   local tI, tNew, tSavedDelim
    if pHost is empty then
       put empty into sPollHosts
       put "false" into sPolling
       exit enStopPolling
    end if
    put empty into tNew
+   -- Same bracketing as enStartPolling: this walk re-splits the comma list, so
+   -- it sets the delimiter it needs and restores the caller's. Dropping the
+   -- restore would leave OUR comma behind in the caller's handler, which is
+   -- the same class of bug from the other direction.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
    repeat for each item tI in sPollHosts
       if tI is not pHost then
          if tNew is empty then
@@ -80,6 +97,7 @@ command enStopPolling pHost
          end if
       end if
    end repeat
+   set the itemDelimiter to tSavedDelim
    put tNew into sPollHosts
    if sPollHosts is empty then
       put "false" into sPolling
@@ -89,10 +107,18 @@ end enStopPolling
 -- One pump pass: enPoll each registered host, dispatch each event by name,
 -- then reschedule.
 command enetPollOnce
-   local tHost, tEvents, tEvent, tName
+   local tHost, tEvents, tEvent, tName, tSavedDelim
    if sPolling is not "true" then
       exit enetPollOnce
    end if
+   -- The pump pass OWNS the delimiter for its whole length, not just for the
+   -- split: every dispatch below runs app code, and app code that set the
+   -- itemDelimiter would otherwise decide how the pump set is read for the
+   -- rest of this pass. Comma is also the engine default, so a dispatched
+   -- handler sees the same delimiter it would have seen from a bare timer
+   -- message. Restored before we reschedule.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
    repeat for each item tHost in sPollHosts
       put enPoll(tHost) into tEvents
       repeat for each element tEvent in tEvents
@@ -104,6 +130,7 @@ command enetPollOnce
          dispatch "enetEvent" to sPollTarget with tEvent
       end repeat
    end repeat
+   set the itemDelimiter to tSavedDelim
    send "enetPollOnce" to me in (sPollInterval) milliseconds
 end enetPollOnce
 
@@ -132,17 +159,32 @@ end enStateName
 
 -- enFormatBytes N -- a small humaniser for dashboards (KiB/MiB/GiB).
 function enFormatBytes pBytes
-   local tUnits, tVal, tI
+   local tUnits, tVal, tI, tSavedDelim, tOut
    if pBytes is empty or pBytes is not a number then
       return "0 B"
    end if
    put "B,KiB,MiB,GiB,TiB" into tUnits
    put pBytes into tVal
    put 1 into tI
+   -- TWO reads need the comma, not one: the loop guard COUNTS the units and
+   -- the return picks one. The `set` used to sit BETWEEN them, so the guard
+   -- counted under whatever delimiter was in force rather than the one this
+   -- data is written in - and under any delimiter but comma that string is a
+   -- ONE-item list, so the loop never runs and a gigabyte reports itself in
+   -- bytes. Set once before the FIRST read; restore before returning, since a
+   -- humaniser has no business changing its caller's delimiter (the family's
+   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
+   -- before use, and put back what you found). Not a precaution: holde-em's
+   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
+   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
+   -- answered all three with save-and-restore.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits
       put tVal / 1024 into tVal
       add 1 to tI
    end repeat
-   set the itemDelimiter to comma
-   return (the round of (tVal * 10) / 10) && (item tI of tUnits)
+   put (the round of (tVal * 10) / 10) && (item tI of tUnits) into tOut
+   set the itemDelimiter to tSavedDelim
+   return tOut
 end enFormatBytes

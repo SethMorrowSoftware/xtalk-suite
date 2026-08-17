@@ -143,7 +143,11 @@ chainHead   = sxHash("HOLDEM-CHAIN-v1|" || utf8(wire)); genesis prev = 32 zero b
 ```
 
 Field meanings are unchanged: `v` protocol version; `table` the 32-byte random table
-id (the DHT info-hash is `sxHash(table)`); `hand` the hand number, 0 = table setup;
+id (the DHT info-hash is the FIRST 20 BYTES of `sxHash(table)` — 40 hex, because a
+BitTorrent info-hash is 20 bytes; as-built `heTableInfohash`, and it hashes the table
+id's BYTES, not its hex text. Pinned as table_infohash in protocol-kat since v0.24.4:
+an off-by-one here fails nowhere and simply puts two peers on two different DHT keys);
+`hand` the hand number, 0 = table setup;
 `seq` assigned by the host relay, strictly increasing; `prev` the previous envelope's
 chain head; `from` the sender's ed25519 pubkey; `body` hex of type-specific UTF-8 text
 (hex so no tab can leak into the frame).
@@ -621,12 +625,27 @@ receipts. **A future value layer must consume receipts and nothing but receipts*
   role, spec 7.2): detection is a wire-silence watchdog (no host-countersigned wire for
   60 s during play — rp1's only honest signal; the onion transport also routes its
   positive stream-death here), the election needs no calling round at all
-  (`heElectHostOf`: lowest pubkey among live SEATED players, so every client names the
-  same successor independently; pinned as elected_host in protocol-kat), and the void
+  (lowest pubkey among live SEATED players, so every client names the same successor
+  independently; pinned as elected_host in protocol-kat), and the void
   costs nothing at L0 — bets that never reached a verified settle never moved the
   stacks, so they already stand at the last receipt. The LIVE handover — the elected
   host re-hosting and peers re-joining — is Phase 3's three-machine exit gate; until
-  that pass, the client fails closed with the successor named. As-built (v0.23.0, the
+  that pass, the client fails closed with the successor named. **Which two handlers do
+  which half matters, and is recorded here because getting it wrong cost a real defect
+  (v0.24.4):** `heElectHostOf` only sorts the candidates it is HANDED — it is
+  `heNetElectablePubs` that decides who is a candidate, and "live seated" there means
+  seated, still holding chips, not the lost host, **and not sitting out**. A sat-out
+  seat is dealt out at every boundary and times out instantly, so electing one hands
+  the table to the key guaranteed not to re-host — and since every client runs the same
+  election, that is a table death every client agrees on rather than a divergence
+  anything could detect. Through v0.24.3 the candidate scan never looked at sit-out.
+  The sit-out filter is safe to apply here precisely because sit-out is
+  TRANSCRIPT-DERIVED (a signed `stand`, or counted host-authored timeout wires) — every
+  client folds the same value. Per-client observation (a live transport handle, a
+  last-heard stamp) may gate SEATING but must never gate an election, because two
+  clients can honestly disagree about it and name two different successors. Pinned as
+  elected_host_sitout in protocol-kat, and driven through the real handlers in harness
+  section 20. As-built (v0.23.0, the
   2e remainder): on the ONION transport, positive host-stream death during play now
   arms a bounded AUTO-REDIAL first — four attempts, 2/4/8/16 s doubling backoff, 10 s
   per dial; the host's onion address is deterministic (above), so the same invite

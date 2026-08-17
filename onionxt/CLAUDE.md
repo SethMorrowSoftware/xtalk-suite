@@ -346,8 +346,22 @@ Confirmed on-engine (promoted from `VERIFY:`):
 2. `read ... for N with message` delivers exactly N raw bytes on a binary socket (the SOCKS handshake).
 3. The no-quantifier `read ... with message oxStreamData` streams available bytes as they arrive and does
    NOT block to EOF - a dialed SOCKS tunnel and an inbound onion HTTP request both deliver chunk by chunk.
-4. `accept connections on port` accepts Tor-forwarded loopback connections; the loopback guard now
-   accepts every loopback spelling (`127.x` / `::1` / `localhost` / empty), not just "127.0.0.1".
+4. `accept connections on port` accepts Tor-forwarded loopback connections. **The rest of this line
+   was corrected 2026-08-17 and the correction is the lesson.** It used to claim the guard "accepts
+   every loopback spelling (`127.x` / `::1` / `localhost` / empty)". Measured against the code rather
+   than against the guard's own comment: `oxHostOfSocket` split the socket id on ":" and took item 1,
+   so on any IPv6-shaped id it handed the guard an EMPTY string - the `::1` and `[::1]` branches were
+   unreachable by construction (item 1 of a string containing a colon cannot contain one), and
+   "`[::1]`" itself parsed to "`[`" and was REFUSED. What the on-engine pass actually confirmed was
+   the `empty` branch, which accepted whatever it could not parse. That is a fail-OPEN default on the
+   one guard that decides whether an unauthenticated peer reaches the stream tables:
+   "`::ffff:203.0.113.9:1234`" is a routable peer in IPv4-mapped form, and item 1 of it is empty too.
+   The parser is shape-based now (drop the `|name` suffix, unbracket a bracketed group, else take
+   everything up to the LAST colon), the guard reads `::1` / `::ffff:127.x` for the first time, and an
+   empty host is a REFUSAL with the raw id printed beside it. Verified statically and pinned by seven
+   socket-id fixtures in `examples/onionxt-tests.livecodescript` section 10; needs an OXT pass. The
+   general lesson is the family's own: a comment describing a branch is not evidence the branch runs,
+   and "confirmed on-engine" for an accept path only ever confirmed the branch that ran.
 5. Publish -> serve -> remove works; `oxRemoveService` / `oxShutdown` close the listener and DEL_ONION.
 6. `dispatch ... to <owner>` resolves app callbacks (onStatus / onPeer / onStreamData) and the `sx*`
    primitives (SAFECOOKIE composes `sxHmacSha256`); an absent handler is a clean miss.
@@ -450,6 +464,17 @@ troubleshooting):
   to seed it, then let the events update it.
 - **The control port must be enabled explicitly** (`ControlPort` + an auth method in `torrc`): tor opens
   SOCKS by default but no control port, and Tor Browser exposes none. A refused connect is `Error 10061`.
+- **An app that defines `socketError` / `socketClosed` / `socketTimeout` must `pass` the ones that are
+  not its own** (documented 2026-08-17 in docs/05 and docs/10, cross-referenced from docs/08). Those
+  three names are the ENGINE's, not ours, so they are the one part of this library's surface an app can
+  intercept by accident - and swallowing one costs nothing visible: the failed dial never reports, the
+  closed stream never delivers `closed`, the stalled handshake never times out. **The symptom is a
+  HANG, not an error**, which is why no gate in this repo can see it and why it earns a rule instead of
+  a footnote. Two shipping apps in the suite re-derived the same guard independently
+  (`nocloud/src/nocloudquickshare.livecodescript`, `torrentxt/examples/torrent-quickshare.livecodescript`:
+  act only on our own sockets, `pass` the rest), which is the family's usual signal that something
+  belongs in the tree's written rules rather than in each app's head. The exact message-path ordering
+  is the engine's and is recorded as those two apps found it: verified statically; needs an OXT pass.
 
 ## Git / workflow
 

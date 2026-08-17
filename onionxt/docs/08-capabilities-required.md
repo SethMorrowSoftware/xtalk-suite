@@ -82,8 +82,12 @@ These are assumed to exist in OXT (they exist in LiveCode); confirm and record t
 Phase 0, because the whole core rests on them:
 
 - Asynchronous sockets: `open socket ... with message`, `read from socket ... for N with message`,
-  `write to socket`, `accept connections on <port> with message`, `close socket`, `socketError` /
-  `socketTimeout` messages, and `the socketTimeoutInterval`.
+  `write to socket`, `accept connections on <port> with message`, `close socket`, the `socketError` /
+  `socketClosed` / `socketTimeout` messages, and `the socketTimeoutInterval`. Those three messages are
+  the engine's own, not `ox*` handlers OnionXT named, so an app stack that defines one of them and
+  does not `pass` it can swallow OnionXT's copy - a hang, not an error. The rule and the pattern are
+  in [doc 10 section 2](10-usage-guide.md); what each does is in
+  [doc 05](05-api-reference.md), "Handlers the ENGINE calls".
 - Binary discipline: byte-exact `read`/`write`, `byte x to y of`, `numToByte`, `byteToNum`,
   `binaryEncode`, `binaryDecode`, with no Unicode reinterpretation on the socket path.
 - Reading a file's raw bytes (the control cookie): `open file ... for binary read` / `url

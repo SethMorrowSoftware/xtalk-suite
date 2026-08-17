@@ -1133,8 +1133,13 @@ command oxPeerAccepted pSocketID
    put oxHostOfSocket(pSocketID) into tPeerHost
    if not oxHostIsLoopback(tPeerHost) then
       -- Not a Tor-forwarded loopback connection: refuse it (docs LiveCode ref;
-      -- the listener may be bound to all interfaces).
-      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & "]"
+      -- the listener may be bound to all interfaces). Print the RAW id next to
+      -- the parsed host, because since oxHostIsLoopback stopped treating an
+      -- unparseable id as loopback this notice is also how a socket-id spelling
+      -- oxHostOfSocket does not know announces itself (it arrives here with an
+      -- empty host); one self-contained line is what a tester can act on.
+      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & \
+         "] from id [" & pSocketID & "]"
       oxSafeCloseSocket pSocketID
       exit oxPeerAccepted
    end if
@@ -1170,15 +1175,32 @@ private function oxGuessService pSocketID
 end oxGuessService
 
 private function oxHostIsLoopback pHost
-   -- Accept a Tor-forwarded (loopback) peer no matter how the engine spells the
-   -- local address in the accepted-socket id: "127.0.0.1", any "127.x" in the
-   -- 127.0.0.0/8 block, IPv6 "::1" / "[::1]", the name "localhost", or empty
-   -- (some engines report no host for a local accept). Reject anything else, so a
-   -- listener that bound to all interfaces cannot be reached by a routable peer.
+   -- Accept a Tor-forwarded peer no matter how the engine spells the local
+   -- address in the accepted-socket id, and NOTHING else: `accept connections on
+   -- port` takes no bind address (see oxStartService), so the listener may be
+   -- reachable from the network and this is the only thing standing between a
+   -- routable peer and our stream tables. Takes the host oxHostOfSocket parsed,
+   -- so the brackets of "[::1]" are already gone and there is exactly one
+   -- spelling of each address to test. Comparisons are case-insensitive by
+   -- default, so "::FFFF:" matches "::ffff:" without folding anything.
+   --
+   -- EMPTY IS A REFUSAL NOW, and that is the point of this change rather than a
+   -- side effect. It used to return true, with "some engines report no host for
+   -- a local accept" as the reason - but the old parser handed this guard an
+   -- empty string for EVERY IPv6-shaped id, so "the engine reported no host" and
+   -- "we could not parse this id" were indistinguishable, and the permissive
+   -- branch let "::ffff:203.0.113.9:1234" - a routable peer wearing an
+   -- IPv4-mapped hat - in as loopback. A guard whose default is accept is a
+   -- fail-open guard; CLAUDE.md rule 4 says fail closed on anything we do not
+   -- understand. So an unrecognized spelling is refused and oxPeerAccepted
+   -- prints the RAW id alongside the parsed host: if a real engine is ever seen
+   -- spelling an accepted id with no host at all (or with the fully expanded
+   -- "0:0:0:0:0:0:0:1"), the fix is to teach oxHostOfSocket that spelling, never
+   -- to re-open this branch.
    local tHost
    put pHost into tHost
    if tHost is empty then
-      return true
+      return false
    end if
    if tHost is kOxHost then
       return true
@@ -1186,8 +1208,20 @@ private function oxHostIsLoopback pHost
    if tHost begins with "127." then
       return true
    end if
-   if tHost is "::1" or tHost is "[::1]" then
+   if tHost is "::1" then
       return true
+   end if
+   if tHost begins with "::ffff:" then
+      -- The IPv4-mapped form a dual-stack listener can report. It is the SAME
+      -- address with a prefix, so strip it and re-test the v4 rules: that admits
+      -- "::ffff:127.0.0.1" (genuinely loopback, and unroutable) and refuses
+      -- "::ffff:203.0.113.9" (genuinely routable), which the old empty-item-1
+      -- parse could not tell apart.
+      delete char 1 to 7 of tHost
+      if tHost is kOxHost or tHost begins with "127." then
+         return true
+      end if
+      return false
    end if
    if tHost is "localhost" then
       return true
@@ -1922,11 +1956,57 @@ private function oxByteHex pNum
 end oxByteHex
 
 private function oxHostOfSocket pSocketID
-   -- The host part of an engine socket id "host:port" or "host:port|name".
-   local tSaved, tOut
+   -- The HOST part of an engine socket id: "host:port", optionally with a
+   -- "|name" suffix (we mint "127.0.0.1:9050|oxs3" ourselves; an ACCEPTED id is
+   -- whatever the engine spells the PEER address as, so its shape is the
+   -- engine's choice, not ours).
+   --
+   -- This is security-critical input, not a display helper: oxPeerAccepted feeds
+   -- the result straight to oxHostIsLoopback, which decides whether an inbound
+   -- peer is let in. The obvious "item 1 with the itemDelimiter set to colon"
+   -- was wrong in BOTH directions on an IPv6 id, and one of those directions
+   -- FAILED OPEN:
+   --   "::1:54321"                -> item 1 is EMPTY, and the guard's old
+   --                                 empty-is-loopback branch accepted it;
+   --   "::ffff:203.0.113.9:1234"  -> item 1 is EMPTY too, so a ROUTABLE peer in
+   --                                 IPv4-mapped form was accepted as loopback;
+   --   "[::1]:54321"              -> item 1 is "[", so a real loopback peer was
+   --                                 refused (the harmless direction).
+   -- Parse by SHAPE instead, which also makes the guard's "::1" branch reachable
+   -- for the first time (it never could be: item 1 of anything containing a
+   -- colon cannot itself contain one):
+   --   1. drop any "|name" suffix - the name half is ours and never part of the
+   --      host, and it can carry digits that would otherwise look like a port;
+   --   2. a bracketed group IS the host, verbatim and unbracketed - the brackets
+   --      exist precisely to separate an IPv6 host's colons from the port colon,
+   --      and stripping them here means the guard sees ONE spelling of ::1;
+   --   3. otherwise the host is everything up to the LAST colon, which is right
+   --      for "127.0.0.1:9050" and for a bare "::1:54321" alike;
+   --   4. a colon-less id has no port to strip, so it is all host.
+   -- Anything this cannot make sense of comes back EMPTY, which oxHostIsLoopback
+   -- now REFUSES (it used to accept it); that is the fail-closed direction.
+   local tSaved, tRaw, tCut, tOut
+   put pSocketID into tRaw
+   put offset("|", tRaw) into tCut
+   if tCut > 0 then
+      delete char tCut to -1 of tRaw
+   end if
+   if char 1 of tRaw is "[" then
+      put offset("]", tRaw) into tCut
+      if tCut < 3 then
+         return empty              -- unclosed or empty brackets: not a host
+      end if
+      return char 2 to (tCut - 1) of tRaw
+   end if
+   if ":" is not in tRaw then
+      return tRaw
+   end if
    put the itemDelimiter into tSaved
    set the itemDelimiter to ":"
-   put item 1 of pSocketID into tOut
+   -- `item 1 to -2` REJOINS its items with the delimiter, which is exactly what
+   -- a bare IPv6 host needs: the three empty/short items of "::1:54321" come
+   -- back as "::1", while "127.0.0.1:9050" comes back unchanged.
+   put item 1 to -2 of tRaw into tOut
    set the itemDelimiter to tSaved
    return tOut
 end oxHostOfSocket

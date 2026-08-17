@@ -116,7 +116,19 @@ script "riptideSocialApp"
 -- guards anything real in a demo.
 
 -- ---- constants ---------------------------------------------------------------
+-- Tick cadence is the app's one latency/CPU knob and the spec (section
+-- 10.1) names two tiers: ~33 ms while a live dc/enet session is active,
+-- ~250 ms when only the feed and DMs are. Only the slow tier existed until
+-- 2026-08-17, which meant phases 5 and 6 - the two an engine pass judges
+-- BY FEEL, a call and a typing indicator - ran at 7.5x their designed
+-- interval, and "sluggish" would have read as a transport problem instead
+-- of a constant in this file. raPollDelay picks the tier; kPaintMs keeps
+-- the UI repaint tier where it was, because raising the painters from 4 Hz
+-- to 30 Hz alongside the transports would be a NEW performance defect, not
+-- a fix.
 constant kPollMs = 250
+constant kPollLiveMs = 33
+constant kPaintMs = 250
 constant kDhtWaitMs = 25000
 constant kWalkMax = 12
 constant kNameMax = 64
@@ -503,6 +515,7 @@ local sOnion           -- the identity as .onion (empty without a SHA3 provider)
 local sSeq             -- monotonic head sequence (recovered from our own head)
 local sMyLatest        -- our latest post's 40-hex target, or empty
 local sPolling         -- "true" while the pump chain is armed
+local sPaintAt         -- ms of the last UI repaint tier (kPaintMs gate)
 local sAwaitOwn        -- "true" while our own head lookup is in flight
 local sFollowHandle    -- the author a fetch is walking
 local sAwaitHead       -- "true" while their head lookup is in flight
@@ -544,8 +557,24 @@ local sLanInit         -- "true" once enInitialize succeeded (teardown guard)
 -- phase 6 sync state. My side: the per-device counters are seeded from
 -- the clock at Host/Join so a leave-and-rejoin still moves strictly
 -- forward (the receivers' monotonic apply demands it; the phase-3
--- clock-salt precedent). Their side: everything is per enet peer id,
--- dropped with the peer.
+-- clock-salt precedent).
+--
+-- THEIR side is keyed by the SIGNING DEVICE NAME, not by the enet peer,
+-- and that is the whole correctness of a mesh with more than two devices.
+-- The mesh is hub-and-spoke: the host RELAYS every verified record to the
+-- other admitted peers, so on a JOINER every device's record arrives over
+-- the ONE peer that is the host. Keyed by peer, three devices' interleaved
+-- seq counters - each seeded independently from `the seconds` - would
+-- fight over one slot and the sequence guard would drop most of them
+-- SILENTLY (its drop path is a deliberate silent exit, so nothing would be
+-- logged), and the Devices panel, which paints from the admitted peers,
+-- would never show a relayed device at all. The name is INSIDE the signed
+-- span and read only after the signature verdict, and the library states
+-- the contract at rsLanBuildDraft: apply only a seq strictly above the
+-- last one applied FOR THAT DEVICE. It is deliberately not a per-device
+-- IDENTITY - all your devices derive ONE LAN keypair, so any admitted
+-- device can sign any name - but that is the recorded threat model (these
+-- are your own devices), not a hole this keying opens.
 local sLanSeq          -- my draft seq (monotonic per device)
 local sLanTick         -- my presence tick (monotonic per device)
 local sLanDraftLast    -- the draft text last BROADCAST (convergence compare)
@@ -554,15 +583,21 @@ local sLanDraftNextOk  -- ms gate: the earliest next draft broadcast
 local sLanPresenceAt   -- ms of my last presence broadcast
 local sLanTypingUntil  -- ms deadline while my draft edits count as typing
 local sLanFeedLast     -- the feed seq last broadcast (send only on change)
-local sLanPeerSeq      -- peer id -> highest draft seq applied
-local sLanPeerDraft    -- peer id -> that device's latest draft text
-local sLanPeerTick     -- peer id -> highest presence tick applied
-local sLanPeerTyping   -- peer id -> "true" while that device is typing
-local sLanPeerSeen     -- peer id -> ms of its last applied presence
+local sLanPeerSeq      -- device name -> highest draft seq applied
+local sLanPeerDraft    -- device name -> that device's latest draft text
+local sLanPeerTick     -- device name -> highest presence tick applied
+local sLanPeerTyping   -- device name -> "true" while that device is typing
+local sLanPeerSeen     -- device name -> ms of its last applied presence
+-- ...and the one thing that still has to be per PEER: which device names
+-- reached us over which enet link, so a disconnect drops exactly the state
+-- that link fed us (on a host that is the one device it admitted; on a
+-- joiner the host's link fed us every relayed device, and losing the host
+-- loses all of them). Nested array, name -> "true", the set-of-names idiom
+local sLanPeerNames    -- peer id -> array of device names it contributed
 -- the channel-0 media handoff (the channel-2 decision: a signed POINTER
 -- at the phase-3 torrent path; the offer outlives the mesh because the
--- swarm does - only the per-peer replay tracking dies with a peer)
-local sLanPeerMediaSeq -- peer id -> highest handoff seq applied
+-- swarm does - only the per-device replay tracking dies with its link)
+local sLanPeerMediaSeq -- device name -> highest handoff seq applied
 local sLanMediaHash    -- the latest verified offer's 40-hex info-hash
 local sLanMediaName    -- ...its file leaf name (display only)
 local sLanMediaSize    -- ...its claimed size in bytes (display only)
@@ -867,7 +902,10 @@ command raBuildLanCard
    uiSection "raLanSec3", "3. My draft: synced to every admitted device as I type", "16,342,592,360"
    uiInput "raLanDraft", "16,366,592,562"
 
-   uiSection "raLanSec2", "2. Admitted devices (each proved it shares your master seed)", "608,58,1184,76"
+   -- "devices on the mesh", not "admitted devices": on a joiner most rows
+   -- are devices the HOST admitted and relays to us, and we verified them
+   -- per record rather than at a handshake of our own
+   uiSection "raLanSec2", "2. Devices on the mesh (each proved it shares your master seed)", "608,58,1184,76"
    uiArea "raLanDevices", "608,80,1184,268"
 
    uiSection "raLanSec4", "4. Drafts from your other devices (signature-verified)", "608,274,1184,292"
@@ -1186,13 +1224,52 @@ command raClearKeys
    put empty into sAwaitOwn
 end raClearKeys
 
--- End every DM conversation: free the secretstream handles (SodiumXT has
--- no unload hook; sxFreeStream is idempotent) and forget the per-peer
--- state. The inbox swarms stay in the session - they carry no secrets.
+-- The clean-close half of the secretstream, and the reason the far side
+-- no longer sits under "-- channel open with ... --" forever after we hang
+-- up. libsodium's FINAL tag IS the "this stream ended" signal (the spec's
+-- section 5.3 names sxIsFinalTag for exactly this), so one last push with
+-- final true turns a hang-up into a protocol event instead of silence.
+-- Two properties worth stating because both are load-bearing: the body is
+-- FILLER - the tag carries the meaning and the far side never renders it,
+-- but rsDmMessageBody refuses an empty body so something must ride along -
+-- and this is the LAST thing this push stream can ever do, because the
+-- FINAL tag closes it. Best-effort throughout: the peer may already be
+-- gone, and a goodbye that cannot be delivered must never block a
+-- teardown or a Lock.
+private command raDmPushClose pPeer
+   local tMsg, tCipher, tFrame, tOk, tErr
+   if sDmPush[pPeer] is empty then
+      exit raDmPushClose
+   end if
+   put rsDmMessageBody("T", the seconds, "bye") into tMsg
+   if tMsg is empty then
+      exit raDmPushClose
+   end if
+   try
+      put sxSecretStreamPush(sDmPush[pPeer], tMsg, empty, true) into tCipher
+   catch tErr
+      exit raDmPushClose
+   end try
+   put rsDmFrame("M", tCipher) into tFrame
+   if tFrame is empty then
+      exit raDmPushClose
+   end if
+   -- rsDmSend never throws (rule 5) and returns false on a dead session or
+   -- a vanished peer, which is the whole expected failure set here
+   put rsDmSend(sSession, pPeer, tFrame) into tOk
+end raDmPushClose
+
+-- End every DM conversation: say goodbye, then free the secretstream
+-- handles (SodiumXT has no unload hook; sxFreeStream is idempotent) and
+-- forget the per-peer state. The inbox swarms stay in the session - they
+-- carry no secrets.
 command raDmTeardown
    local tPeer, tErr
    raDcTeardown
    repeat for each key tPeer in sDmPush
+      -- goodbye BEFORE the free: a freed stream can push nothing, and the
+      -- FINAL tag is the only clean-close signal the far side gets
+      raDmPushClose tPeer
       try
          sxFreeStream sDmPush[tPeer]
       catch tErr
@@ -1245,12 +1322,16 @@ command raStartSession
    end try
    if sSession is an integer and sSession > 0 and sPolling is not "true" then
       put "true" into sPolling
-      send "raPoll" to me in kPollMs milliseconds
+      -- the repaint gate is arithmetic on the very first tick, and an
+      -- undeclared-shaped empty in a subtraction is not a number; seed it
+      -- where the chain is armed, the sLanPresenceAt discipline
+      put 0 into sPaintAt
+      send "raPoll" to me in raPollDelay() milliseconds
    end if
 end raStartSession
 
 command raPoll
-   local tEvents, tEvent, tErr
+   local tEvents, tEvent, tErr, tNow
    if sPolling is not "true" then
       exit raPoll
    end if
@@ -1322,11 +1403,44 @@ command raPoll
          -- the lane is optional; the call carries on without it
       end try
    end if
-   raExpire
-   raMediaPaint
-   raLanMediaPaint
-   send "raPoll" to me in kPollMs milliseconds
+   -- the UI repaint tier, deliberately NOT on the pump's cadence. These
+   -- read torrent status and rewrite fields; the fast tier exists for the
+   -- TRANSPORTS (a dc call and the enet mesh are pump-or-nothing, so a
+   -- missed drain is a stalled call), and dragging the painters from 4 Hz
+   -- to 30 Hz with them would trade one slow slot for a sluggish window.
+   -- raExpire rides here too: it is a deadline check, and one checked 4
+   -- times a second is a deadline checked promptly enough. The devices
+   -- panel joins them because its [typing]/[quiet] markers age against the
+   -- clock, so it needs a periodic repaint and not a per-tick one.
+   put the milliseconds into tNow
+   if tNow - sPaintAt >= kPaintMs then
+      put tNow into sPaintAt
+      raExpire
+      raMediaPaint
+      raLanMediaPaint
+      if sLanHost is not empty then
+         raLanPaintDevices
+      end if
+   end if
+   send "raPoll" to me in raPollDelay() milliseconds
 end raPoll
+
+-- Which tick tier are we in? The spec's section 10.1 knob: ~33 ms while a
+-- live dc call or an enet mesh is running (both are pump-or-nothing and
+-- both are judged BY FEEL on an engine pass - a call connecting, a typing
+-- indicator appearing), ~250 ms when only the feed and DMs are live, which
+-- are DHT-paced and gain nothing from a faster drain. Read on every tick
+-- rather than latched at start/stop, so hanging up or leaving the mesh
+-- drops straight back to the cheap tier with no state to keep in sync.
+private function raPollDelay
+   if sDcPeer is not empty then
+      return kPollLiveMs
+   end if
+   if sLanHost is not empty and sLanHost is not 0 then
+      return kPollLiveMs
+   end if
+   return kPollMs
+end raPollDelay
 
 -- Append a status line to a Feed-card (card 1) field from anywhere, safely.
 -- The pump and its handlers run on whatever card the user is viewing, but
@@ -1452,8 +1566,13 @@ command raHandleEvent pEvent
                   -- with the first hash so Fetch + play is one click
                   raFeedNote "raTheirFeed", "  media attachment(s):" && tPost["mediaTargets"]
                   -- itemDelimiter is global mutable state; set it right
-                  -- before the item read (an earlier handler may have left
-                  -- it as "/"), and target card 1's field, guarded
+                  -- before the item read, and target card 1's field,
+                  -- guarded. The handler that used to leave it as "/" was
+                  -- the LIBRARY (rsMediaCreate), fixed at its source to
+                  -- save and restore the narrowest span; this line stays
+                  -- as defence in depth because the pump reaches here from
+                  -- any card after any handler, and one line is cheaper
+                  -- than trusting every caller in a file no harness runs.
                   set the itemDelimiter to comma
                   if there is a field "raMediaHash" of card 1 then
                      if field "raMediaHash" of card 1 is empty then
@@ -1701,7 +1820,7 @@ end raDmPrekeyArrived
 -- One rp1 event. Peer ids are stable per connection (the rp1-chat rule);
 -- everything DM-shaped is keyed by them.
 command raHandleRp1 pEvent
-   local tPeer, tFrame, tOpened, tParsed, tPlain, tTag, tErr
+   local tPeer, tFrame, tOpened, tParsed, tPlain, tTag, tFinal, tErr
    put pEvent["peer"] into tPeer
    switch pEvent["name"]
       case "rp1Handshake"
@@ -1780,6 +1899,25 @@ command raHandleRp1 pEvent
                   raDmDropPeer tPeer
                   break
                end try
+               -- the FINAL tag is the far side's clean close (spec 5.3):
+               -- a hang-up is a protocol event, not silence. The body it
+               -- rides is filler by construction (raDmPushClose), so it is
+               -- deliberately NOT parsed or rendered - the close line IS
+               -- the message. Foreign call, so it sits in a try (rule 5)
+               -- and an unreadable verdict falls through as ordinary
+               -- traffic rather than closing a live conversation.
+               put false into tFinal
+               try
+                  put sxIsFinalTag(tTag) into tFinal
+               catch tErr
+                  put false into tFinal
+               end try
+               if tFinal is true then
+                  raDmChatLine "-- " & raDmShort(sDmTheirHandle[tPeer]) && \
+                        "closed the conversation --"
+                  raDmDropPeer tPeer
+                  break
+               end if
                put rsDmParseMessage(tPlain) into tParsed
                if tParsed is empty then
                   raDmLog "an authenticated but malformed message;" && \
@@ -1938,6 +2076,9 @@ private function raDmSendMessage pKind, pBody
    if tMsg is empty then
       return false
    end if
+   -- final is FALSE on every ordinary message on purpose: the FINAL tag
+   -- ends the stream for good, so it belongs to exactly one caller
+   -- (raDmPushClose, at teardown) and nothing else may spend it
    try
       put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
             into tCipher
@@ -2509,16 +2650,14 @@ command raHandleEnet pEvent
             delete variable sLanDevices[tPeer]
             raLanPaintDevices
          end if
-         -- drop the peer's sync state with the peer (a rejoin gets a
-         -- fresh peer id and fresh monotonic tracking); the media OFFER
-         -- deliberately survives - the swarm it points at outlives the
-         -- mesh, and a mid-download must not lose its Fetch button
-         delete variable sLanPeerSeq[tPeer]
-         delete variable sLanPeerDraft[tPeer]
-         delete variable sLanPeerTick[tPeer]
-         delete variable sLanPeerTyping[tPeer]
-         delete variable sLanPeerSeen[tPeer]
-         delete variable sLanPeerMediaSeq[tPeer]
+         -- drop the sync state this LINK fed us, by the device names it
+         -- contributed - the state is keyed by signing device now, and one
+         -- link can carry many devices (a joiner sees every relayed device
+         -- over the host's single peer). A rejoin gets fresh monotonic
+         -- tracking, exactly as before. The media OFFER deliberately
+         -- survives - the swarm it points at outlives the mesh, and a
+         -- mid-download must not lose its Fetch button.
+         raLanDropPeerNames tPeer
          raLanPaintDrafts
          if tPeer is sLanServerPeer then
             raLanLog "the host went away; Leave and re-Join to reconnect."
@@ -2574,12 +2713,55 @@ private command raLanSyncReset
    put empty into sLanPeerTick
    put empty into sLanPeerTyping
    put empty into sLanPeerSeen
-   -- the media handoff: per-peer replay tracking resets with the mesh
-   -- (peer ids recycle across hosts); the OFFER itself and its watched
-   -- fetch survive on purpose - the torrent rail outlives the mesh
+   put empty into sLanPeerNames
+   -- the media handoff: per-device replay tracking resets with the mesh
+   -- (a new mesh may be a different set of devices); the OFFER itself and
+   -- its watched fetch survive on purpose - the torrent rail outlives the
+   -- mesh
    put empty into sLanPeerMediaSeq
    raLanPaintDrafts
 end raLanSyncReset
+
+-- Remember that this LINK carried this device, so a disconnect can drop
+-- exactly the state it fed us. Called on every APPLIED record (a refused
+-- one must leave no trace). Names are a nested set, never a delimited
+-- list: a device name is arbitrary UTF-8 up to the library's cap and may
+-- legitimately contain a return, which would corrupt a line list.
+private command raLanNoteName pPeer, pName
+   if pName is empty then
+      exit raLanNoteName
+   end if
+   put "true" into sLanPeerNames[pPeer][pName]
+end raLanNoteName
+
+-- The disconnect half: forget every device this link contributed. On a
+-- host that is the single device it admitted; on a joiner, losing the
+-- host loses every device the host was relaying, which is the truth -
+-- a joiner has no other link to hear them over.
+private command raLanDropPeerNames pPeer
+   local tNames, tDev
+   put sLanPeerNames[pPeer] into tNames
+   delete variable sLanPeerNames[pPeer]
+   -- lifted out and type-guarded rather than iterated in place. The COMMON
+   -- disconnect here is a peer that contributed nothing (a stranger the
+   -- admission dropped, or an admitted device that never got a record in),
+   -- so this element is usually ABSENT. Iterating an empty top-level array
+   -- local is proven in this file - raDmTeardown walks an empty sDmPush on
+   -- every quit that never opened a DM - but iterating a MISSING nested
+   -- element is a different shape and nothing here has run it on an
+   -- engine. The demo is this member's least-verified surface; guard.
+   if tNames is not an array then
+      exit raLanDropPeerNames
+   end if
+   repeat for each key tDev in tNames
+      delete variable sLanPeerSeq[tDev]
+      delete variable sLanPeerDraft[tDev]
+      delete variable sLanPeerTick[tDev]
+      delete variable sLanPeerTyping[tDev]
+      delete variable sLanPeerSeen[tDev]
+      delete variable sLanPeerMediaSeq[tDev]
+   end repeat
+end raLanDropPeerNames
 
 -- One sync record to every ADMITTED peer - never enBroadcast: a
 -- broadcast would also reach a connected-but-unadmitted stranger in its
@@ -2685,7 +2867,13 @@ command raLanSyncTick
          put tNow into sLanPresenceAt
       end if
    end if
-   raLanPaintDevices
+   -- the panel repaint used to hang off the end of this handler, which was
+   -- fine while the pump only ran at 4 Hz. It rides raPoll's repaint tier
+   -- now instead: the [typing]/[quiet] markers age against the clock and
+   -- so need a PERIODIC repaint, not a per-tick one, and this handler runs
+   -- 30 times a second whenever a mesh is up. The event-driven repaints
+   -- (admission, welcome, disconnect, an applied presence record) are
+   -- unchanged and still immediate.
 end raLanSyncTick
 
 -- One inbound sync record. Order of refusals, each logged distinctly:
@@ -2694,7 +2882,7 @@ end raLanSyncTick
 -- signature IS the stranger case the runbook watches for), then the
 -- monotonic apply (a replay or reorder is a silent no-op, not an error).
 command raLanSyncReceive pPeer, pKind, pBytes
-   local tRec, tLast
+   local tRec, tLast, tDev
    if sLanDevices[pPeer] is empty then
       raLanLog "stranger record refused (unadmitted peer): kind" && pKind
       exit raLanSyncReceive
@@ -2708,16 +2896,22 @@ command raLanSyncReceive pPeer, pKind, pBytes
          raLanLog "stranger record refused:" && rsLastError()
          exit raLanSyncReceive
       end if
-      put sLanPeerSeq[pPeer] into tLast
+      -- key by the SIGNING DEVICE, which the signature above just proved
+      -- and which the library's contract names ("a seq strictly above the
+      -- last one applied FOR THAT DEVICE"). The peer is only the LINK it
+      -- came over, and on a joiner that link is the host for every device.
+      put tRec["name"] into tDev
+      put sLanPeerSeq[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
       end if
       if tRec["seq"] <= tLast then
          exit raLanSyncReceive
       end if
-      put tRec["seq"] into sLanPeerSeq[pPeer]
-      put tRec["draft"] into sLanPeerDraft[pPeer]
-      raLanLog "draft from" && tRec["name"] && "seq" && tRec["seq"] && \
+      raLanNoteName pPeer, tDev
+      put tRec["seq"] into sLanPeerSeq[tDev]
+      put tRec["draft"] into sLanPeerDraft[tDev]
+      raLanLog "draft from" && tDev && "seq" && tRec["seq"] && \
             "applied"
       raLanPaintDrafts
       raLanRelay pPeer, pKind, pBytes
@@ -2738,6 +2932,9 @@ command raLanSyncReceive pPeer, pKind, pBytes
                (char 1 to 12 of tRec["readPeer"]) & "... up to" && \
                tRec["readUpTo"]
       end if
+      -- deliberately NOT keyed or noted: feed state is max-applied into
+      -- ONE global seq, so there is no per-device slot to collide and
+      -- nothing for a disconnect to drop
       raLanRelay pPeer, pKind, pBytes
    else if pKind is "P" then
       put rsLanVerifyPresence(pBytes, sMasterSeed) into tRec
@@ -2745,20 +2942,25 @@ command raLanSyncReceive pPeer, pKind, pBytes
          raLanLog "stranger record refused:" && rsLastError()
          exit raLanSyncReceive
       end if
-      put sLanPeerTick[pPeer] into tLast
+      -- by device, not by link: presence is what the Devices panel paints
+      -- from, so keyed by peer a joiner's relayed devices would overwrite
+      -- the host's row instead of getting one of their own
+      put tRec["name"] into tDev
+      put sLanPeerTick[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
       end if
       if tRec["tick"] <= tLast then
          exit raLanSyncReceive
       end if
-      put tRec["tick"] into sLanPeerTick[pPeer]
+      raLanNoteName pPeer, tDev
+      put tRec["tick"] into sLanPeerTick[tDev]
       if tRec["typing"] is true then
-         put "true" into sLanPeerTyping[pPeer]
+         put "true" into sLanPeerTyping[tDev]
       else
-         put empty into sLanPeerTyping[pPeer]
+         put empty into sLanPeerTyping[tDev]
       end if
-      put the milliseconds into sLanPeerSeen[pPeer]
+      put the milliseconds into sLanPeerSeen[tDev]
       raLanPaintDevices
       raLanRelay pPeer, pKind, pBytes
    else if pKind is "M" then
@@ -2771,19 +2973,24 @@ command raLanSyncReceive pPeer, pKind, pBytes
          raLanLog "stranger record refused:" && rsLastError()
          exit raLanSyncReceive
       end if
-      put sLanPeerMediaSeq[pPeer] into tLast
+      -- the handoff shares the draft record's per-device seq space, so it
+      -- keys the same way (two devices offering media over one relaying
+      -- host must not share one replay counter)
+      put tRec["name"] into tDev
+      put sLanPeerMediaSeq[tDev] into tLast
       if tLast is empty then
          put -1 into tLast
       end if
       if tRec["seq"] <= tLast then
          exit raLanSyncReceive
       end if
-      put tRec["seq"] into sLanPeerMediaSeq[pPeer]
+      raLanNoteName pPeer, tDev
+      put tRec["seq"] into sLanPeerMediaSeq[tDev]
       put tRec["infoHash"] into sLanMediaHash
       put tRec["fileName"] into sLanMediaName
       put tRec["fileSize"] into sLanMediaSize
-      put tRec["name"] into sLanMediaFrom
-      raLanLog "media offer from" && quote & tRec["name"] & quote & ":" && \
+      put tDev into sLanMediaFrom
+      raLanLog "media offer from" && quote & tDev & quote & ":" && \
             tRec["fileName"] && "(" & tRec["fileSize"] && "bytes) -" && \
             "Fetch + play below pulls it over the torrent rail."
       raLanPaintMediaOffer
@@ -2794,7 +3001,7 @@ end raLanSyncReceive
 -- The latest draft per device, ABSOLUTE state repainted whole (diffed so
 -- the pump does not churn the field). Guarded: the pump runs anywhere.
 command raLanPaintDrafts
-   local tRows, tPeer
+   local tRows, tDev
    if there is no field "raLanDrafts" of card "raDevices" then
       exit raLanPaintDrafts
    end if
@@ -2803,10 +3010,13 @@ command raLanPaintDrafts
       put "No drafts from your other devices yet." into tRows
    else
       put empty into tRows
-      repeat for each key tPeer in sLanPeerDraft
-         put "--" && sLanDevices[tPeer] && "(seq" && \
-               sLanPeerSeq[tPeer] & ") --" & return & \
-               sLanPeerDraft[tPeer] & return after tRows
+      -- label from the key, which IS the device: looking the name up in
+      -- sLanDevices would label every relayed draft with the HOST's name
+      -- on a joiner, because that is the only peer a joiner ever has
+      repeat for each key tDev in sLanPeerDraft
+         put "--" && tDev && "(seq" && \
+               sLanPeerSeq[tDev] & ") --" & return & \
+               sLanPeerDraft[tDev] & return after tRows
       end repeat
    end if
    if the text of field "raLanDrafts" of card "raDevices" is not tRows then
@@ -2828,37 +3038,56 @@ command raLanLog pLine
 end raLanLog
 
 command raLanPaintDevices
-   local tRows, tPeer, tRow, tNow
+   local tRows, tPeer, tRow, tNow, tSet, tDev
    if there is no field "raLanDevices" of card "raDevices" then
       exit raLanPaintDevices
    end if
    if sLanHost is empty then
       put "Not on a mesh. Host this device, or Join another by its LAN IP." into tRows
-   else if the number of keys of sLanDevices is 0 then
-      if sLanIsServer is "true" then
-         put "Hosting. No devices admitted yet." into tRows
-      else
-         put "Joining. Waiting for admission..." into tRows
-      end if
    else
-      put the milliseconds into tNow
-      put empty into tRows
+      -- the panel lists DEVICES, not links: the names we admitted directly
+      -- plus every name we have applied presence from. Painting from
+      -- sLanDevices alone showed exactly ONE row on a joiner - the host -
+      -- because a joiner's only peer IS the host and every other device
+      -- reaches it relayed, under that same peer id
+      put empty into tSet
       repeat for each key tPeer in sLanDevices
-         put sLanDevices[tPeer] into tRow
-         -- the channel-1 presence lane: [typing] while fresh, [quiet]
-         -- once its cadence has gone silent (a crashed or wedged device
-         -- must not paint as live forever)
-         if sLanPeerSeen[tPeer] is not empty then
-            if tNow - sLanPeerSeen[tPeer] >= kLanPresenceStaleMs then
-               put "  [quiet]" after tRow
-            else if sLanPeerTyping[tPeer] is "true" then
-               put "  [typing]" after tRow
-            end if
-         end if
-         put tRow & return after tRows
+         put "true" into tSet[sLanDevices[tPeer]]
       end repeat
-      if the last char of tRows is return then
-         delete the last char of tRows
+      repeat for each key tDev in sLanPeerSeen
+         put "true" into tSet[tDev]
+      end repeat
+      if the number of keys of tSet is 0 then
+         if sLanIsServer is "true" then
+            put "Hosting. No devices admitted yet." into tRows
+         else
+            put "Joining. Waiting for admission..." into tRows
+         end if
+      else
+         put the milliseconds into tNow
+         put empty into tRows
+         -- deliberately unsorted: sorting would mean `the keys`, a
+         -- RETURN-delimited list, and a device name is arbitrary UTF-8 to
+         -- the library's cap - the one place a name carrying a return
+         -- could garble the panel. Key order is stable for a given set.
+         repeat for each key tDev in tSet
+            put tDev into tRow
+            -- the channel-1 presence lane: [typing] while fresh, [quiet]
+            -- once its cadence has gone silent (a crashed or wedged device
+            -- must not paint as live forever). A directly-admitted device
+            -- we have heard no presence from yet gets neither marker.
+            if sLanPeerSeen[tDev] is not empty then
+               if tNow - sLanPeerSeen[tDev] >= kLanPresenceStaleMs then
+                  put "  [quiet]" after tRow
+               else if sLanPeerTyping[tDev] is "true" then
+                  put "  [typing]" after tRow
+               end if
+            end if
+            put tRow & return after tRows
+         end repeat
+         if the last char of tRows is return then
+            delete the last char of tRows
+         end if
       end if
    end if
    if the text of field "raLanDevices" of card "raDevices" is not tRows then

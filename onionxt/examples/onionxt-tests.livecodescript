@@ -23,7 +23,10 @@
 --   3. idempotent teardown (duplicate close/remove/disconnect/shutdown);
 --   4. the two SodiumXT ABI-6 primitives OnionXT composes (sxSignSeedToExpandedKey,
 --      sxHmacSha256) against their pinned vectors - gated on SodiumXT being loaded,
---      skipped (not failed) otherwise. Needs SodiumXT ABI >= 6, not a tor daemon.
+--      skipped (not failed) otherwise. Needs SodiumXT ABI >= 6, not a tor daemon;
+--   5. the inbound loopback guard's socket-id parse and verdict (section 10),
+--      which is pure string work on the ids the engine hands oxPeerAccepted, so
+--      it is testable offline even though the accept path itself is not.
 -- The actual wire handshakes (SOCKS5 dial, control auth, ADD_ONION) are an
 -- on-engine / integration concern: run examples/onionxt-demo.livecodescript or
 -- examples/onion-roundtrip against a real tor daemon for those (see
@@ -70,6 +73,7 @@ function oxSelfTest
    testAddressNegativePaths
    testSodiumComposition
    testConfigurationSetters
+   testLoopbackGuard
 
    local tSummary
    put sPass & " passed, " & sFail & " failed" into tSummary
@@ -410,6 +414,92 @@ private command testConfigurationSetters
    oxSetPeerCallback empty
    oxCheck (oxIsReady() is tWasReady), "restoring the dispatch configuration is harmless too"
 end testConfigurationSetters
+
+-- ==========================================================================
+-- Section 10: the inbound loopback guard - the socket-id parse plus the
+-- accept/refuse verdict oxPeerAccepted makes on it.
+--
+-- WHY THIS IS WORTH A SECTION even though it is two private helpers: it is the
+-- only security DECISION in this library that runs on attacker-reachable input.
+-- `accept connections on port` takes no bind address (oxStartService says so),
+-- so the listener Tor forwards to may also be reachable from the network, and
+-- oxHostIsLoopback is what stands between a routable peer and the stream tables.
+-- Until 2026-08-17 the parse in front of it took item 1 with the itemDelimiter
+-- set to colon, which on an IPv6-shaped id yields an EMPTY host - and the guard
+-- accepted empty. "::ffff:203.0.113.9:1234" therefore came in as loopback: a
+-- fail-open on the one guard that must fail closed. Nothing on-engine would have
+-- shown it (an accepted connection looks the same either way), and no gate in
+-- the repo could see it, which is exactly the kind of hole a fixture table is
+-- for. The five ids the fix was written against are pinned below, plus a second
+-- 127.0.0.0/8 address, the IPv4-mapped loopback that must still be let IN, and
+-- the unparseable id that must now be refused.
+--
+-- HOW IT REACHES A PRIVATE HANDLER. oxHostOfSocket / oxHostIsLoopback are
+-- private to src/onionxt.livecodescript, so they resolve only where this harness
+-- and that library share one script - which is how it actually runs on an
+-- engine: tools/build-standalone.py concatenates them into the demo standalone
+-- (whose About tab runs oxSelfTest), and the suite generator does the same for
+-- tests/suite-selftest.livecodescript. Run instead as two library stacks, the
+-- call raises a catchable "no such handler" execution error - the same mechanism
+-- the sx* probes in section 8 rely on - so probe once and SKIP with a note
+-- rather than reporting a phantom failure in a configuration where the check
+-- simply cannot see the code. Making them public just to test them would be the
+-- worse trade: it would put two internals in the published ABI (docs/05) and in
+-- the suite coverage denominator forever.
+-- ==========================================================================
+
+private command testLoopbackGuard
+   oxSection "inbound loopback guard (socket id parse + verdict)"
+   local tProbe, tError
+   try
+      put oxHostOfSocket("127.0.0.1:9050") into tProbe
+   catch tError
+      put sLog & "  --   (skipped: oxHostOfSocket / oxHostIsLoopback are private to " & \
+         "onionxt.livecodescript; run the demo standalone or the suite paste, where " & \
+         "the harness and the library are one script)" & return into sLog
+      exit testLoopbackGuard
+   end try
+
+   -- The shape we mint ourselves, and a second address from 127.0.0.0/8. The
+   -- old parse handled both correctly; they are here so the rewrite cannot fix
+   -- IPv6 by breaking IPv4.
+   testOneSocketID "127.0.0.1:9050|oxs3", "127.0.0.1", true, "dialed SOCKS id with a |name suffix"
+   testOneSocketID "127.9.9.9:1024", "127.9.9.9", true, "another 127.0.0.0/8 address"
+   testOneSocketID "192.0.2.5:1234", "192.0.2.5", false, "routable IPv4 peer (TEST-NET-1) is refused"
+
+   -- The one the old parse got wrong in the HARMLESS direction: item 1 was "[",
+   -- so a genuine loopback peer was refused.
+   testOneSocketID "[::1]:54321|3", "::1", true, "bracketed IPv6 loopback with a |name suffix"
+
+   -- And the three whose item 1 was EMPTY, which the guard accepted. Two of them
+   -- got the right answer with no reasoning behind it; the third is the fail-open
+   -- itself, a routable address let in as loopback.
+   testOneSocketID "::1:54321", "::1", true, "bare IPv6 loopback"
+   testOneSocketID "::ffff:127.0.0.1:1234", "::ffff:127.0.0.1", true, \
+      "IPv4-mapped loopback is still let in"
+   testOneSocketID "::ffff:203.0.113.9:1234", "::ffff:203.0.113.9", false, \
+      "IPv4-mapped ROUTABLE peer (TEST-NET-3) is refused"
+
+   -- The new default. An id whose shape we do not understand parses to no host,
+   -- and no host is a REFUSAL now; oxPeerAccepted prints the raw id beside it so
+   -- an unknown spelling announces itself instead of being waved through.
+   testOneSocketID ":54321", empty, false, "an id with no host parses empty and is refused"
+   oxCheck (not oxHostIsLoopback(empty)), "the guard refuses an empty host (it used to accept one)"
+   oxCheck oxHostIsLoopback("localhost"), "the name localhost is still loopback"
+end testLoopbackGuard
+
+private command testOneSocketID pSocketID, pExpectHost, pExpectLoopback, pLabel
+   -- Both halves are asserted separately on purpose: a parse that returns the
+   -- right verdict for the wrong reason is the bug this section exists to catch
+   -- (empty-host-means-loopback gave the RIGHT answer for "::1:54321" and the
+   -- wrong one for "::ffff:203.0.113.9:1234", from the identical parse result).
+   local tHost
+   put oxHostOfSocket(pSocketID) into tHost
+   oxCheck (tHost is pExpectHost), \
+      pLabel & ": [" & pSocketID & "] parses to host [" & pExpectHost & "]"
+   oxCheck (oxHostIsLoopback(tHost) is pExpectLoopback), \
+      pLabel & ": loopback verdict is " & pExpectLoopback
+end testOneSocketID
 
 -- ==========================================================================
 -- Small local helpers (test glue only).

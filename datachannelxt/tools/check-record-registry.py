@@ -15,7 +15,8 @@ a missing constant, a wrong value, AND a value swap (because each LCB constant's
 expected value is tied to its specific C++ enumerator by name). Every enumerator
 in the header must have a matching `constant k... is <value>` in
 src/datachannel.lcb. It ALSO asserts DCX_ABI_VERSION (dcx_abi.h) equals
-kABIVersion (the .lcb) - the ABI-sync gate.
+kABIVersion (the .lcb) - the ABI-sync gate - and PINS the return codes
+(DCX_OK / the six DCX_ERR_*) to their published numbering.
 
     python3 tools/check-record-registry.py [path/to/dcx_record.h] [path/to/datachannel.lcb]
 
@@ -63,11 +64,82 @@ def parse_header_enum(text, cpp_prefix):
 
 
 def parse_lcb_constants(text):
-    """Return {kName: value} for every `constant kName is <int>` in the .lcb."""
+    """Return {kName: value} for every `constant kName is <int>` in the .lcb.
+    The sign is part of the value: kErrInvalidArg is -3, and a parser that
+    matched only digits would read it as 3 and then agree with a header that
+    said -3."""
     out = {}
-    for m in re.finditer(r"\bconstant\s+(k[A-Za-z0-9_]+)\s+is\s+(\d+)\b", text):
+    for m in re.finditer(r"\bconstant\s+(k[A-Za-z0-9_]+)\s+is\s+(-?\d+)\b", text):
         out[m.group(1)] = int(m.group(2))
     return out
+
+
+# The action return codes, pinned by VALUE rather than merely parsed. Three
+# things depend on this exact numbering and none of them can be checked by
+# reading the header:
+#   * tests/datachannel-selftest.livecodescript asserts `is -2` (and, in the
+#     async half, `is -4`) as bare literals - a renumber would turn a green
+#     harness red, or worse, green about the wrong condition;
+#   * docs/api-reference.md publishes the list in prose at the top of the file;
+#   * datachannel.lcb now RETURNS one of them on its own - kErrInvalidArg, for
+#     the embedded-NUL refusal in dcSendText that the shim cannot make,
+#     because by the time the string is a `const char *` the NUL IS its
+#     terminator.
+# Renumbering these is an ABI change like any other; this is the gate that
+# says so out loud instead of letting a harness discover it on an engine.
+DCX_RETURN_CODES = {
+    "DCX_OK": 0,
+    "DCX_ERR_GENERIC": -1,
+    "DCX_ERR_BAD_HANDLE": -2,
+    "DCX_ERR_INVALID_ARG": -3,
+    "DCX_ERR_TOO_LARGE": -4,
+    "DCX_ERR_NATIVE": -5,
+    "DCX_ERR_EXCEPTION": -6,
+}
+
+# The .lcb declares only the code it issues ITSELF; the rest reach script
+# straight from the shim and never need a name here. Kept as a mapping so
+# adding a second one is one line, not a new check.
+LCB_RETURN_CODE_CONSTANTS = {
+    "kErrInvalidArg": "DCX_ERR_INVALID_ARG",
+}
+
+
+def check_return_codes(abi_text, lcb_consts, problems):
+    """Pin DCX_OK / DCX_ERR_* to DCX_RETURN_CODES, and the .lcb mirrors of
+    them to the header. Returns the number of things actually CHECKED - the
+    count reports what was verified, not what was parsed (the coinxt lesson: a
+    gate that overstates its coverage answers the question nobody asks
+    twice)."""
+    found = {}
+    for m in re.finditer(r"\b(DCX_OK|DCX_ERR_[A-Z_]+)\s*=\s*(-?\d+)", abi_text):
+        found[m.group(1)] = int(m.group(2))
+    checked = 0
+    for name, value in sorted(DCX_RETURN_CODES.items(), key=lambda kv: -kv[1]):
+        if name not in found:
+            problems.append("missing return code `%s` in src/dcx_abi.h "
+                            "(expected %d)" % (name, value))
+            continue
+        checked += 1
+        if found[name] != value:
+            problems.append("return-code drift: dcx_abi.h %s = %d but the "
+                            "published contract is %d" % (name, found[name], value))
+    for extra in sorted(set(found) - set(DCX_RETURN_CODES)):
+        problems.append("unpinned return code `%s = %d` in src/dcx_abi.h - add "
+                        "it to DCX_RETURN_CODES here (and to the list at the "
+                        "top of docs/api-reference.md)" % (extra, found[extra]))
+    for lcb_name, cpp_name in sorted(LCB_RETURN_CODE_CONSTANTS.items()):
+        if lcb_name not in lcb_consts:
+            problems.append("missing LCB constant `%s` (for C++ %s) - "
+                            "datachannel.lcb returns that code itself"
+                            % (lcb_name, cpp_name))
+            continue
+        checked += 1
+        if lcb_consts[lcb_name] != DCX_RETURN_CODES[cpp_name]:
+            problems.append("value drift: LCB `%s` is %d but %s = %d"
+                            % (lcb_name, lcb_consts[lcb_name], cpp_name,
+                               DCX_RETURN_CODES[cpp_name]))
+    return checked
 
 
 def parse_abi_version(path):
@@ -130,9 +202,10 @@ def main(argv):
                                 % (expected, lcb_consts[expected], cpp_name, value))
 
     # DCX_MAX_MESSAGE (dcx_abi.h) must equal kMaxMessage (the .lcb) - the
-    # documented size budget is part of the contract, not folklore.
-    m = re.search(r"#define\s+DCX_MAX_MESSAGE\s+(\d+)", open(
-        os.path.join(HERE, "src", "dcx_abi.h"), encoding="utf-8").read())
+    # documented size budget is part of the contract, not folklore. The same
+    # header read serves the return-code pin below it.
+    abi_text = open(os.path.join(HERE, "src", "dcx_abi.h"), encoding="utf-8").read()
+    m = re.search(r"#define\s+DCX_MAX_MESSAGE\s+(\d+)", abi_text)
     if not m:
         problems.append("could not read DCX_MAX_MESSAGE from src/dcx_abi.h")
     elif lcb_consts.get("kMaxMessage") != int(m.group(1)):
@@ -141,6 +214,8 @@ def main(argv):
                         % (m.group(1), lcb_consts.get("kMaxMessage")))
     else:
         checked += 1
+
+    checked += check_return_codes(abi_text, lcb_consts, problems)
 
     if problems:
         for p in problems:

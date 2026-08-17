@@ -162,6 +162,15 @@ run_gates() {
   # standard rot of a tool nobody runs. The findings themselves print into the
   # build log for a human to read; nobody should treat "0 finding(s)" here as a
   # layout gate.
+  # The .lcb <-> C signature gate: 370 `binds to "c:box2dxt>SYM!cdecl"`
+  # declarations against 370 LC_API definitions, comparing return type, arity
+  # and every parameter type. A mismatch here is not a compile error anywhere -
+  # it surfaces at RUN TIME on an engine, as a marshalling fault in a call that
+  # looks right in both files. Sub-second, and green today.
+  if [ -f "$m/tools/check-lcb-signatures.py" ]; then
+    echo "== $m: tools/check-lcb-signatures.py =="
+    ( cd "$m" && python3 tools/check-lcb-signatures.py )
+  fi
   if [ -f "$m/tools/audit-platformer.py" ]; then
     echo "== $m: tools/audit-platformer.py (advisory; gates only that it still parses) =="
     ( cd "$m" && python3 tools/audit-platformer.py )

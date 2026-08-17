@@ -79,6 +79,38 @@ oxSetCallbackOwner the long id of me
 (If you skip this, OnionXT dispatches callbacks to the topStack, which is usually but not always your
 app's stack.)
 
+### If your stack handles `socketError` / `socketClosed` / `socketTimeout`, forward them
+
+This is the one OnionXT integration mistake whose symptom is a **hang, not an error**, so it is worth
+the paragraph. OnionXT handles the three engine socket messages itself (see
+[doc 05](05-api-reference.md), "Handlers the ENGINE calls"): `socketError` fails the owning stream
+closed, `socketClosed` delivers `closed` to your stream callback, `socketTimeout` tears down a stalled
+handshake. If your own stack script defines one of those names and does not forward it, it can swallow
+the message before OnionXT's copy runs - and nothing errors. The dial that failed never reports, the
+closed stream never delivers `closed`, the stalled handshake never times out, and the app just waits.
+
+If your app opens sockets of its own (a LAN HTTP server, say), handle only your own and pass the rest:
+
+```
+-- Stack-level socket messages. Act only on OUR sockets; pass anything else along
+-- so OnionXT's own sockets are unaffected.
+on socketClosed pSocketID
+   if sMySockets[pSocketID] is not empty then
+      myClean pSocketID
+   else
+      pass socketClosed
+   end if
+end socketClosed
+```
+
+and the same shape for `socketError pSocketID, pError` and `socketTimeout pSocketID`. Two shipping
+apps in this suite arrived at exactly this guard independently
+(`nocloud/src/nocloudquickshare.livecodescript`, `torrentxt/examples/torrent-quickshare.livecodescript`),
+which is why it is written down here rather than left to be rediscovered a third time. The precise
+message-path ordering that decides which script sees a socket message first is the engine's:
+**verified statically; needs an OXT pass** to state exactly. Forwarding is safe either way - an
+unhandled `pass` costs nothing - so pass unless the socket is provably yours.
+
 ## 3. Dial a host through Tor (outbound)
 
 `oxDial` reports a stream handle immediately; the SOCKS handshake finishes asynchronously and your

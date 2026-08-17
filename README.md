@@ -211,10 +211,16 @@ each member's own vector gate.
 Two layers are deliberately outside that ratchet, and each says so beside the
 tool's member list with the numbers behind the call:
 
-- **box2dxt's raw `b2*` extension binding** — 376 public handlers over 374
-  foreign declarations, of which **245 are named by no script anywhere in that
-  member**. The b2k Kit above it is the game-facing API and is held at 313/313;
-  the raw layer's cover today is `box2dxt/tests/smoke_test.c` under ASan/UBSan.
+- **box2dxt's raw `b2*` extension binding** — 376 public handlers over 373
+  foreign declarations (370 of them binding into the member's own library; the
+  "374" quoted here until 2026-08-17 was a `grep -c` that counted one line of
+  prose), of which **244 are named by no script anywhere in that
+  member**. The b2k Kit above it is the game-facing API and is held at 313/313.
+  The raw layer's cover is `box2dxt/tests/smoke_test.c`, and since 2026-08-17
+  that cover is *measured* rather than asserted: gcov puts it at **194 of the
+  370 LC_API exports**, up from 53 the same morning, running in `build-all.sh`
+  and under ASan/UBSan in `native-box2dxt.yml`. `check-lcb-signatures.py` holds
+  the 370 binds against the 370 definitions on every push.
 - **holde-em's `he*` surface** — 379 public handlers in ONE file that is the
   game *and* its harness. A row would read **0/379** as the gate is written and
   **379/379** the moment the scan were taught the fold's prefix — permanently,

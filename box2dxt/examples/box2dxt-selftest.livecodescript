@@ -47,7 +47,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "28"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "29"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -160,6 +160,7 @@ command stRunAll
    stRun "stTestDash"
    stRun "stTestPlatformCarry"
    stRun "stTestDuckReshape"
+   stRun "stTestDuckFilter"
    stRun "stTestPlayerHelpers"
    stRun "stTestTeardown"
    -- the Kit API coverage sections (see the banner below stTestTeardown)
@@ -1486,6 +1487,82 @@ command stTestDuckReshape
    stAssert "stood back up past the ceiling (halfH " & round(b2kPlayerHalfH()) & ")", \
          (round(b2kPlayerHalfH()) >= tFullH)
 end stTestDuckReshape
+
+-- The duck/stand rebuilds must carry the shape's COLLISION FILTER across,
+-- not just its material. b2kReshape resetting BOTH is documented contract
+-- (kit-guide section 5) and a hand-written reshape gets to re-apply what it
+-- set - but the duck fires from INSIDE b2kPlayerTick, so a game has no hook
+-- between the rebuild and the next step; the two internal callers own it.
+-- They re-applied friction and bounce from the day the crawl shipped and
+-- silently dropped the filter, which put a layered player back on the
+-- default category / collide-with-everything for the rest of the level.
+-- Written as ONE fall over three obstacles, so the resting y names which
+-- field was lost instead of just saying "no":
+--   ~354  landed on the deck        -> the MASK was lost
+--   ~394  landed on the group block -> the GROUP was lost
+--   ~474  landed on the ground      -> all three survived (the pass)
+--   past 560, still falling         -> the CATEGORY was lost
+-- The ghost layer is deliberately the SECOND named bit: the first is 1,
+-- which is ALSO Box2D's default category, so a category reset would have
+-- been indistinguishable from a category kept (the ghost-layer defect of
+-- run 5 hid behind exactly that coincidence).
+command stTestDuckFilter
+   local tRef, tFullH, tDuckH, tRest
+   stNewWorld "player: the duck rebuild keeps the collision filter"
+   b2kDefineLayer "stDfSolid"      -- bit 1, which is also the DEFAULT category
+   b2kDefineLayer "stDfGhost"      -- bit 2
+   -- the ground answers the ghost layer ONLY, so a player whose category
+   -- was reset to the default 1 falls straight through it
+   stSlab "st_ground", 50, 500, 900, 560
+   b2kSetCategory the long id of graphic "st_ground", "stDfGhost"
+   b2kSetMask the long id of graphic "st_ground", "stDfGhost"
+   -- a solid-layer deck with the DEFAULT mask: only a player whose mask was
+   -- reset to "everything" collides with it
+   stSlab "st_deck", 300, 380, 700, 400
+   b2kSetCategory the long id of graphic "st_deck", "stDfSolid"
+   -- a block the player shares a NEGATIVE group with: category and mask both
+   -- say collide, so the group alone is what keeps them apart
+   stSlab "st_block", 460, 420, 540, 440
+   b2kSetCategory the long id of graphic "st_block", "stDfGhost"
+   b2kSetMask the long id of graphic "st_block", "stDfGhost"
+   b2kSetCollisionGroup the long id of graphic "st_block", -7
+   b2kPlayerMake 500, 300, 32, 48
+   put the result into tRef
+   b2kSetCategory tRef, "stDfGhost"
+   b2kSetMask tRef, "stDfGhost"
+   b2kSetCollisionGroup tRef, -7   -- LAST: the two above write the group back
+   -- one full duck/stand cycle through the explicit entry points (the tick's
+   -- own trigger needs grounding and this player is still in the air), each
+   -- half proved to have actually rebuilt - run 4's lesson is that a duck
+   -- which quietly no-ops makes the whole section vacuous
+   b2kPlayerSet "duckScale", 0.5
+   put round(b2kPlayerHalfH()) into tFullH
+   -- step FIRST. The duck rebuild re-seats the body at (sPlayPX, sPlayPY +
+   -- shift), and those two are the PROBE's stash, which b2kPlayerAttach
+   -- leaves at 0,0 until a tick has run -- ducking straight off
+   -- b2kPlayerMake teleports the player to the origin, nowhere near the
+   -- three obstacles this test is built from.
+   stStep 2
+   b2kPlayerDuckSet true
+   put round(b2kPlayerHalfH()) into tDuckH
+   stAssert "the duck rebuilt the capsule (" & tFullH & " -> " & tDuckH & ")", \
+         (tDuckH < tFullH)
+   b2kPlayerStandUp
+   stAssert "the stand-up rebuilt it back (got " & round(b2kPlayerHalfH()) \
+         & " of " & tFullH & ")", (round(b2kPlayerHalfH()) is tFullH)
+   -- 150 fixed steps. The clear fall is ~190px (the back-to-back duck/stand
+   -- pair nets 13px of lift, because both re-seat off the SAME probe stash),
+   -- which is ~58 steps at this world's gravity; the rest settle the landing,
+   -- and a player that lost its category is still falling when they run out.
+   stStep 150
+   put round(stY(tRef)) into tRest
+   stAssert "MASK survived the rebuilds: no landing on the solid-layer deck (y " \
+         & tRest & ")", (tRest > 410)
+   stAssert "GROUP survived the rebuilds: no landing on the shared-group block (y " \
+         & tRest & ")", (tRest > 440)
+   stAssert "CATEGORY survived the rebuilds: still landed on the ghost-layer ground (y " \
+         & tRest & ", vy " & round(stVY(tRef)) & ")", (tRest < 520)
+end stTestDuckFilter
 
 -- Wave 5: the pure-win getters (half-extents, zone queries) + the respawn
 -- primitive (teleport + zero velocity + clean state).
@@ -6569,9 +6646,26 @@ end b2kPlayerWallProbe
 -- < 1). Entering shrinks the capsule FEET-ANCHORED (drop the centre by
 -- half the height lost so the feet stay planted); standing waits for
 -- headroom (a ray up from the crouched top), so a low ceiling keeps you
--- crawling. b2kReshape resets the material, so friction/bounce are re-set.
+-- crawling. b2kReshape resets the shape's material AND its collision
+-- FILTER (documented contract, kit-guide section 5), so both are captured
+-- and re-applied around each rebuild.
+--
+-- FILTER FIX 2026-08-17: only half of that contract was honoured here.
+-- Friction and bounce have been re-set since the crawl shipped; the filter
+-- never was, so every duck (and every stand-up) silently returned the
+-- player to the default category 1 / collide-with-everything and threw
+-- away whatever b2kSetCategory/b2kSetMask/b2kSetCollisionGroup the game
+-- had set. Unlike a hand-written b2kReshape call the game gets no chance
+-- to re-apply it either -- the duck fires from INSIDE b2kPlayerTick, so
+-- there is no hook between the reshape and the next step. The readback is
+-- clamped exactly as b2kPlayerDropStart clamps its mask: Box2D's default
+-- bits read back as 2^64-1, above the shim's 2^53 double guard, and
+-- b2SetShapeFilter would then refuse the whole call SILENTLY (the
+-- ghost-layer defect, run 5). A category of 0 means the readback found no
+-- shape at all, so the restore is skipped rather than stamping a
+-- collides-with-nothing filter onto the new one.
 command b2kPlayerDuckSet pWantDuck
-   local tNewH, tShift, tNeed
+   local tNewH, tShift, tNeed, tS, tCat, tMask, tGrp
    if sPlayRef is empty then exit b2kPlayerDuckSet
    if pWantDuck is true then
       if sPlayDucked is true or sPlayDuckScale >= 1 then exit b2kPlayerDuckSet
@@ -6586,9 +6680,25 @@ command b2kPlayerDuckSet pWantDuck
       put max(8, round(sPlayCapH * sPlayDuckScale)) into tNewH
       put (sPlayCapH - tNewH) / 2 into tShift
       b2kMoveTo sPlayRef, sPlayPX, sPlayPY + tShift
+      -- capture the filter BEFORE the rebuild: b2kReshape destroys the old
+      -- shape, and sShapeH[sPlayRef] names a different shape afterwards.
+      -- The empty guard is b2kPlayerDropStart's: the raw b2Shape* handlers
+      -- take an Integer, so handing one an empty ref is a coercion THROW
+      -- from inside the player tick, not a quiet 0.
+      put 0 into tCat
+      put sShapeH[sPlayRef] into tS
+      if tS is not empty then
+         put b2ShapeFilterCategory(tS) into tCat
+         put b2ShapeFilterMask(tS) into tMask
+         put b2ShapeFilterGroup(tS) into tGrp
+         if tCat > 4294967295 then put 4294967295 into tCat
+         if tMask > 4294967295 then put 4294967295 into tMask
+      end if
       b2kReshape sPlayRef, "capsule", sPlayCapW, tNewH
       b2kSetFriction sPlayRef, 0.08
       b2kSetBounce sPlayRef, 0
+      put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+      if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
       put tNewH into sPlayDuckH
       put tNewH / 2 into sPlayHalfH
       put true into sPlayDucked
@@ -6607,15 +6717,29 @@ end b2kPlayerDuckSet
 -- Internal (Wave 5): restore the capsule to standing height, feet planted.
 -- Used by the duck exit (with headroom) and by b2kPlayerRespawn (forced).
 command b2kPlayerStandUp
-   local tShift
+   local tShift, tS, tCat, tMask, tGrp
    if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
    -- mirror of the duck: stored capsule dims in, explicit dims to b2kReshape,
-   -- no control resize (inert on a polygon graphic; the drawer re-points it)
+   -- no control resize (inert on a polygon graphic; the drawer re-points it),
+   -- and the same material + filter capture/restore around the rebuild (see
+   -- b2kPlayerDuckSet's header). This one is reached by b2kPlayerRespawn too,
+   -- which is the other path with no hook for the game to re-apply a filter.
    put (sPlayCapH - sPlayDuckH) / 2 into tShift
    b2kMoveTo sPlayRef, sPlayPX, sPlayPY - tShift
+   put 0 into tCat
+   put sShapeH[sPlayRef] into tS
+   if tS is not empty then
+      put b2ShapeFilterCategory(tS) into tCat
+      put b2ShapeFilterMask(tS) into tMask
+      put b2ShapeFilterGroup(tS) into tGrp
+      if tCat > 4294967295 then put 4294967295 into tCat
+      if tMask > 4294967295 then put 4294967295 into tMask
+   end if
    b2kReshape sPlayRef, "capsule", sPlayCapW, sPlayCapH
    b2kSetFriction sPlayRef, 0.08
    b2kSetBounce sPlayRef, 0
+   put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+   if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
    put sPlayStandH / 2 into sPlayHalfH
    put false into sPlayDucked
    b2kPlayerTuneCache

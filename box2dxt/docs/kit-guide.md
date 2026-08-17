@@ -1202,7 +1202,14 @@ b2kPlayerSet "platformCarry", 1       -- ride a moving kinematic platform
   capsule reshapes (feet-anchored) to that fraction of its standing height,
   so you fit under a low overhead, and stands back up only when there's
   headroom. Read the live half-height with `b2kPlayerHalfH()` for any
-  head-reach logic, and size crawl gaps against it.
+  head-reach logic, and size crawl gaps against it. The crawl rebuilds the
+  capsule through `b2kReshape`, which resets a shape's material and filter
+  (section 5) — but the duck fires from inside the player tick, where your
+  game has no chance to re-apply either, so the two rebuilds carry the
+  friction, the bounce **and** the collision filter across for you. A layer
+  you set with `b2kSetCategory`/`b2kSetMask`/`b2kSetCollisionGroup` survives
+  ducking, standing and `b2kPlayerRespawn`. (Fixed 2026-08-17; before that the
+  filter alone was dropped on every duck.)
 - **`platformCarry 1`** makes a grounded player inherit the velocity of the
   moving kinematic body under it — so a moving platform *carries* you instead
   of sliding out from under. The platform must move by **velocity** (a

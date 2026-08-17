@@ -49,7 +49,7 @@ memory — the usual caveat).
 | `dcCreateChannelEx(pPeer, pLabel, pProtocol, pUnordered, pMaxRetransmits, pMaxLifetimeMs, pNegotiated, pStreamId)` | Integer | reliability + negotiation options, below |
 | `dcCloseChannel(pChannel)` | Integer | polite close (both sides see `dcChannelClosed`) |
 | `dcFreeChannel(pChannel)` | — | close + destroy; idempotent |
-| `dcSendText(pChannel, pText)` | Integer | TEXT message (browser: string) |
+| `dcSendText(pChannel, pText)` | Integer | TEXT message (browser: string); **-3 if `pText` carries an embedded NUL** — refused in the binding, see below |
 | `dcSendData(pChannel, pData)` | Integer | BINARY message (browser: ArrayBuffer); empty Data legal |
 | `dcChannelLabel(pChannel)` | String | |
 | `dcChannelProtocol(pChannel)` | String | subprotocol, "" if none |
@@ -71,6 +71,19 @@ SAME `pStreamId` (0..65534) and no in-band open handshake is sent; `pStreamId`
 returns -4. Inbound is bounded identically (advertised in the SCTP
 negotiation); a misbehaving remote's oversized message is dropped whole with a
 `dcChannelError` event. Bulk belongs to TorrentXT.
+
+**The embedded-NUL refusal:** `dcSendText` returns -3 for a `pText` containing
+a NUL character, and it is the LCB binding that refuses — before the FFI, not
+in the shim. Text crosses as `ZStringUTF8`, so `dcx_send_text` receives a
+`const char *` and measures it with `strlen`: an embedded NUL has by then
+BECOME the terminator. The shim would send the head of the string as if it were
+the whole message (the silent truncation the budget contract rules out above)
+and would measure only the bytes before the NUL, sliding a large payload past
+the -4 check as well. It cannot detect what it can no longer see, so the
+binding answers first. `dcLastError()` is deliberately EMPTY for this one: the
+call never reached the shim, so the shim has nothing to say about it. Send
+bytes with `dcSendData`, which carries an explicit length and round-tripped an
+embedded NUL byte-for-byte on the 2026-08-15 engine pass.
 
 **Backpressure:** send until `dcBufferedAmount(chan)` exceeds your high-water
 mark, stop, resume on `dcBufferedLow`. Do not blast a slow channel.
@@ -102,7 +115,11 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 
 The helpers also fire a catch-all `dataChannelEvent` for every event, and
 provide `dcStartPolling target, intervalMs` / `dcStopPolling`, plus the sugar
-`dcStateName(n)`, `dcGatheringName(n)`, `dcFormatBytes(n)`.
+`dcStateName(n)`, `dcGatheringName(n)`, `dcFormatBytes(n)`. `dcStartPolling` is
+safe to call again while polling — it re-points the target and interval, and
+does NOT arm a second timer chain (a second chain would not duplicate events,
+since each pass drains the whole queue, but it would double the drain rate for
+the life of the app).
 
 ## Constants (mirrored from the native registries; checker-enforced)
 

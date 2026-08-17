@@ -8,6 +8,74 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.24.4 -- THE ELECTION'S SIT-OUT FILTER + THE HELPERS NO TEST NAMED
+(2026-08-17). NO WIRE CHANGED -- not a byte: protocol-kat's pins all still
+hold and two were ADDED beside them, so a v0.24.3 client and a v0.24.4
+client speak the identical protocol. kHeVersion 0.24.3 -> 0.24.4,
+kHeHarnessV 40 -> 41, kUIVersion stays 15 (no chrome moved). Verified
+statically; needs an OXT pass.
+  * heNetElectablePubs ELECTED SITTING-OUT SEATS, and it is a deterministic
+    table death rather than a divergence. It scanned seatedList itself,
+    filtering on seated + chips + not-the-lost-host, and never looked at
+    sitOutBy -- while spec 9, this file's own header, and heElectHostOf's
+    own comment all say the successor is the lowest pubkey among the LIVE
+    SEATED players. A sat-out seat is dealt out at every boundary and times
+    out instantly, so electing it hands the table to the one key guaranteed
+    not to re-host -- and because every client runs the same code, every
+    client agrees on the wrong successor and nothing detects it. It rides
+    heNetSeatedWithChipsList now (v0.24.0's F10 scan -- this was its last
+    stray copy) filtered exactly the way heNetNextOccList filters it: one
+    occupancy definition, three readers.
+    WHY THE FILTER IS SAFE HERE, which is the whole reason it can be
+    applied at all: sitOutBy is derived from the TRANSCRIPT alone (a signed
+    stand wire, or heNetTimeoutMiss counting host-authored timeout wires),
+    so every client computes the same candidate set with no round trips --
+    the property the election exists for. heNetPubIsLive would NOT be safe:
+    it answers from per-client observation (our transport handle, our
+    last-heard stamp), so two clients could legitimately name two different
+    successors. Presence gates SEATING; only transcript-derived facts may
+    gate an election.
+    WHY NO GATE SAW IT: the handler is REACHABLE and always was -- section
+    20 drives heNetHostLost twice and section 18 once -- but every one of
+    those assertions only checks that SOME successor was named. The FILTER
+    was what nothing tested, so the defect was invisible to a fully green
+    507/0 run. Section 20 now pins the candidate set itself (three seats,
+    the lowest key sat out, the successor moving up), and protocol-kat
+    mirrors it as elected_host_sitout beside elected_host.
+  * SECTION 21 ADDED (heTestHelpersRun) for the pure leaf handlers that no
+    heTest or heProbe body had ever named -- 205 of this file's 379 public
+    handlers were in that state when the suite measured it on 2026-08-16.
+    (Spelling those two prefixes with globs and a slash would close this
+    block comment on the spot; the unified checker caught exactly that
+    while this entry was being written.)
+    Shallow on purpose and its banner says so. The two that mattered:
+    heTableInfohash is the spec 10 DHT RENDEZVOUS ID (an off-by-one in its
+    chunk fails nowhere and costs a whole multi-machine session -- two
+    peers announcing to two different keys), and heFingerprintOf is the
+    spec 5 display handle; both are pinned in section 9 against new
+    protocol-kat mirrors (table_infohash / id_fingerprint1). Plus value
+    pins for heSwapExt (including its documented dotted-folder edge and its
+    itemDelimiter restore -- atlas-kat hardcodes both sides of the
+    .png/.xml pair and models no swap, so these come from the contract, not
+    from a mirror), heSettingsNumOk, heHandByOf (including the "between"
+    edge that stops the HUD double-counting a settled hand) and heRcTxt.
+    heProbeSodium is the 22nd entry in heTestRunAllSections now; it was
+    always the trailing PROBE rather than a numbered section, and the two
+    places in this file that called it "section 21" are corrected.
+  * heFitRect's COMMENT WAS FALSE and is corrected rather than the code.
+    It claimed "integer div keeps it exact"; the rect is built as
+    centre -+ (t div 2), so the rendered size is 2 * (t div 2) and an ODD
+    fitted size comes out one pixel short. What integer div actually buys
+    is exact SYMMETRY about the centre, and that is the property
+    tools/check-table-layout.py's exemption for both callers rests on --
+    it derives the built heSeatAv<N>/heTableLogo rects and argues this
+    runtime re-fit can only ever shrink inside them, which an exact-width
+    version would weaken by pushing one edge to ceil(t/2). One pixel on a
+    blendLevel watermark did not justify an un-eyeballed geometry change in
+    the one layer whose confirming eye is still owed to the OXT pass, so
+    the behaviour is PINNED (symmetry and the one-pixel cost, both) and the
+    comment now says what the code does.
+
 v0.24.1 -- THE THREE SOURCE-SIDE FOLD BLOCKERS, CLEARED (2026-08-16). No
 wire change (protocol-kat's 114 pins are untouched), no gameplay change,
 no chrome change: kUIVersion stays 15, kHeVersion 0.24.0 -> 0.24.1,
@@ -46,8 +114,9 @@ an OXT pass.
     running inside somebody else's paste. Both entry points drive one
     heTestRunAllSections, so they cannot drift apart.
     (This entry said "or msg" until the 2026-08-16 suite fold, and that half
-    was not true: section 21 is heProbeSodium, whose last act is a bare
-    `put tRpt`, and a bare put writes to msg. Deliberate at its own site --
+    was not true: the trailing entry is heProbeSodium (section 21 then, 22
+    since v0.24.4 added the pure-helpers section ahead of it), whose last act
+    is a bare `put tRpt`, and a bare put writes to msg. Deliberate at its own site --
     running the probe from the message box should print -- and harmless in a
     host paste, since nothing the suite core owns lives in msg. Corrected
     rather than left reading better than it is.)
@@ -977,8 +1046,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.24.3"
-constant kHeHarnessV = "40"
+constant kHeVersion = "0.24.4"
+constant kHeHarnessV = "41"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -1344,7 +1413,19 @@ constant kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc641
 constant kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
 constant kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
 constant kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
+constant kKatIdPub3 = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
 constant kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+-- the same election with the LOWEST key's seat SITTING OUT: spec 9 elects
+-- among LIVE seated players, and a sat-out seat is not one, so the successor
+-- moves up to kKatIdPub3 (heNetElectablePubs' sit-out filter -- the half
+-- heElectHostOf cannot see, because it only ever sees the candidates it is
+-- handed)
+constant kKatElectedHostSitOut = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
+-- the two TRUNCATIONS of the same digest that no other pin covers: the spec
+-- 10 DHT rendezvous id (40 hex = 20 bytes of H(tableId), the id BYTES) and
+-- the spec 5 display fingerprint (8 hex of H(pubkey), here kKatIdSeed1's)
+constant kKatTableInfohash = "891e5f5c70b88414190980f34a02cb06784cd6da"
+constant kKatIdFingerprint1 = "77d2c2dc"
 constant kKatOnionSeed = "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2"
 constant kKatOracleSeed = "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0"
 constant kKatLobbyCfgBodyOracle = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
@@ -4484,15 +4565,34 @@ function heElectHostOf pPubsLines
 end heElectHostOf
 
 function heNetElectablePubs
-   -- election candidates: seated players still holding chips, EXCLUDING the
-   -- (lost) host key. An oracle host was never seated, so oracle tables
+   -- election candidates: LIVE seated players still holding chips, EXCLUDING
+   -- the (lost) host key. An oracle host was never seated, so oracle tables
    -- need no special case here.
-   local tOut, tSeatNum, tPub, tSeatedList
+   -- "live seated" is spec 9's own wording and it means NOT SITTING OUT: a
+   -- sat-out seat is dealt out at every boundary and times out instantly, so
+   -- electing it hands the table to the one key guaranteed not to re-host --
+   -- and because every client elects the same successor, that is a
+   -- DETERMINISTIC table death rather than a divergence anything could
+   -- notice. This used to scan seatedList itself and never looked at
+   -- sitOutBy; it rides heNetSeatedWithChipsList now (v0.24.0's F10 scan --
+   -- the last stray copy of it), filtered exactly the way heNetNextOccList
+   -- filters it, so "who is still in" has ONE definition with three readers.
+   -- WHY THIS FILTER IS CONSENSUS-SAFE, which is the whole reason it can be
+   -- applied here at all: sitOutBy is derived from the TRANSCRIPT alone --
+   -- a signed stand wire, or heNetTimeoutMiss counting host-authored timeout
+   -- wires every client folds identically -- so every client computes the
+   -- same candidate set with zero round trips, which is the property the
+   -- election exists for. heNetPubIsLive would NOT be safe here: it answers
+   -- from per-client observation (our own transport handle, our own
+   -- last-heard stamp), so two clients can legitimately disagree and name
+   -- two different successors. Presence gates SEATING (heNetSeatLateJoiners);
+   -- only transcript-derived facts may gate an election.
+   local tOut, tSeatNum, tPub, tChipList
    set the itemDelimiter to comma
    put empty into tOut
-   put gGame["seatedList"] into tSeatedList
-   repeat for each item tSeatNum in tSeatedList
-      if gGame["stacksBy"][tSeatNum] > 0 then
+   put heNetSeatedWithChipsList() into tChipList
+   repeat for each item tSeatNum in tChipList
+      if gGame["sitOutBy"][tSeatNum] is not "true" then
          put gGame["pubBySeat"][tSeatNum] into tPub
          if tPub is not empty and tPub is not gGame["hostPubHex"] then
             put tPub & return after tOut
@@ -10693,8 +10793,20 @@ end heTableLogoRender
 
 function heFitRect pNatW, pNatH, pCx, pCy, pBox
    -- the largest aspect-preserving rect that fits a pBox square centred on
-   -- (pCx,pCy). Pure values-in/values-out (H5); integer div keeps it exact.
+   -- (pCx,pCy). Pure values-in/values-out (H5).
    -- Bad/missing natural sizes (image not loaded yet) fall back to the full box.
+   -- WHAT "integer div" ACTUALLY BUYS, corrected 2026-08-17: it buys exact
+   -- SYMMETRY about (pCx,pCy), not an exact width. The rect is built as
+   -- centre -+ (t div 2), so its rendered size is 2 * (t div 2) -- one pixel
+   -- SHORT whenever the fitted t is odd. That is deliberate now rather than
+   -- merely true: the shrink-or-equal, symmetric-about-the-centre property is
+   -- what tools/check-table-layout.py's exemption for BOTH callers rests on
+   -- (it derives the built heSeatAv<N> / heTableLogo rects and argues this
+   -- runtime re-fit can only ever shrink inside them), and an exact-width
+   -- version would push one edge out to ceil(t/2) and weaken that argument
+   -- for a pixel nobody can see on a blendLevel watermark. Pinned in harness
+   -- section 21 -- both the symmetry and the one-pixel cost -- so the next
+   -- person to want exact widths changes a checked fact, not a comment.
    local tW, tH
    if pNatW is not a number or pNatH is not a number or pNatW <= 0 or pNatH <= 0 then
       put pBox into tW
@@ -12109,7 +12221,9 @@ function heSelfTest
    --
    -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
    -- than left as a claim that reads better than it is: this used to say "and
-   -- no msg", and section 21 is heProbeSodium, whose last lines are
+   -- no msg", and the LAST entry in heTestRunAllSections is heProbeSodium
+   -- (section 21 when that was written, the 22nd entry since v0.24.4 put the
+   -- pure-helpers section ahead of it), whose last lines are
    -- `put return & tRpt after gRpt` and then a BARE `put tRpt` -- and a bare
    -- put writes to msg. That echo is deliberate and documented at its own site
    -- (running heProbeSodium standalone from the message box should print), and
@@ -12186,6 +12300,7 @@ command heTestRunAllSections
    heRunSection "heTestOracleRun"
    heRunSection "heTestLevel2VoidRun"
    heRunSection "heTestLivenessRun"
+   heRunSection "heTestHelpersRun"
    heRunSection "heProbeSodium"
 end heTestRunAllSections
 
@@ -13155,6 +13270,18 @@ command heTestCryptoRun
    sxSignKeypairFromSeed heHex2BinD(kKatIdSeed1), tPub, tSec
    heTAssert "crypto: ed25519 identity pubkey from seed", heBin2HexS(tPub), kKatIdPub1
 
+   -- the two TRUNCATIONS of that same digest, both one-liners and both
+   -- unpinned until now. The infohash is the expensive one to get wrong: it
+   -- is the spec 10 DHT rendezvous id, so an off-by-one in the chunk (or
+   -- hashing the table id's HEX TEXT instead of its BYTES) does not fail
+   -- anywhere -- it just puts two machines on two different DHT keys, and
+   -- the whole multi-machine session is spent watching a lobby that never
+   -- fills. Mirrored in protocol-kat as table_infohash / id_fingerprint1.
+   heTAssert "crypto: the DHT rendezvous id is 40 hex of H(tableId bytes)", \
+         heTableInfohash(kKatTableHex), kKatTableInfohash
+   heTAssert "crypto: the display fingerprint is 8 hex of H(pubkey)", \
+         heFingerprintOf(tPub), kKatIdFingerprint1
+
    put heEnvContentLine(kKatTableHex, 0, kKatIdPub1, "cfg", kKatCfgBody) into tContent
    heTAssert "crypto: canonical content-line bytes", \
          heBin2HexS(textEncode(tContent, "utf-8")), kKatEnv0ContentHex
@@ -14037,6 +14164,49 @@ command heTestLivenessRun
          & heRedialWaitTicks(3) & comma & heRedialWaitTicks(4) into tListTxt
    heTAssert "redial: doubling backoff 8/16/32/64 poll ticks", tListTxt, "8,16,32,64"
 
+   -- the ELECTION'S CANDIDATE SET, pure. heNetHostLost is driven twice below
+   -- (and once in section 18), but both of those only ever assert that SOME
+   -- successor was named -- so the filter inside heNetElectablePubs was
+   -- invisible to a fully green run, which is how it shipped electing seats
+   -- that are sitting out. Spec 9 elects among LIVE SEATED players: a sat-out
+   -- seat is dealt out at every boundary and times out instantly, so handing
+   -- it the table is a table death every client agrees on. Three seats, the
+   -- lowest key sat out; the successor must move UP to the next key. Reads
+   -- the live store, so it snapshots and restores it (the plate block above).
+   put gGame into tSaved
+   put "1,2,3" into gGame["seatedList"]
+   put empty into gGame["sitOutBy"]
+   put empty into gGame["stacksBy"]
+   put empty into gGame["pubBySeat"]
+   put 400 into gGame["stacksBy"][1]
+   put 400 into gGame["stacksBy"][2]
+   put 400 into gGame["stacksBy"][3]
+   put kKatIdPub1 into gGame["pubBySeat"][1]
+   put kKatIdPub2 into gGame["pubBySeat"][2]
+   put kKatIdPub3 into gGame["pubBySeat"][3]
+   put empty into gGame["hostPubHex"]   -- an ORACLE host: never seated, so nothing to exclude
+   heTAssert "election: all three seats live elects the lowest key", \
+         heElectHostOf(heNetElectablePubs()), kKatElectedHost
+   put "true" into gGame["sitOutBy"][2]
+   heTAssert "election: a SITTING-OUT seat is not electable (spec 9 live seats)", \
+         heElectHostOf(heNetElectablePubs()), kKatElectedHostSitOut
+   heTAssert "election: the sat-out key is gone from the candidate set entirely", \
+         (heNetElectablePubs() contains kKatIdPub2), "false"
+   -- the two filters it already had, re-pinned through the shared scan so a
+   -- later edit cannot trade one for the other. Seat 2 is still sitting out
+   -- here, so busting seat 3 leaves seat 1 as the only candidate and the
+   -- successor moves again -- a filter that stopped working would leave the
+   -- previous winner standing and this line would catch it.
+   put 0 into gGame["stacksBy"][3]
+   heTAssert "election: a busted seat is not electable either", \
+         heElectHostOf(heNetElectablePubs()), kKatIdPub1
+   put 400 into gGame["stacksBy"][3]
+   put empty into gGame["sitOutBy"]
+   put kKatIdPub2 into gGame["hostPubHex"]
+   heTAssert "election: the lost host never elects itself", \
+         heElectHostOf(heNetElectablePubs()), kKatElectedHostSitOut
+   put tSaved into gGame
+
    if not heHasSodium() then
       heTSkip "liveness: wire pins + timed netsim hand", "SodiumXT not installed"
       heTSkip "liveness: LIVE timed table (two machines, wall clocks)", \
@@ -14611,6 +14781,131 @@ command heTestLivenessRun
    heTSkip "redial: LIVE tor host-stream loss + redial (trimmed resync)", \
          "needs a running tor daemon + a second machine, host killed and restarted"
 end heTestLivenessRun
+
+command heTestHelpersRun
+   -- 21: the PURE LEAF HELPERS nothing else in this harness ever named.
+   -- SHALLOW ON PURPOSE, and the banner says so: these are one-expression
+   -- handlers whose whole risk is a chunk boundary, a comparison operator or
+   -- a restored delimiter, so a value pin is exactly the right depth for
+   -- them and nothing deeper is claimed. They are here because the suite's
+   -- 2026-08-16 coverage measurement found 205 of this member's 379 public
+   -- handlers named by no heTest*/heProbe* body at all, and a handler no
+   -- test names is a handler whose next edit is unverified -- the same
+   -- lesson box2dxt learned when 211 of its Kit's 313 turned out to run on
+   -- every existing test and be asserted by none.
+   -- Everything here is values-in/values-out (H5) and needs no extension,
+   -- so this section never SKIPs as a whole; the one branch that reaches a
+   -- bt* call probes for it and SKIPs by name.
+   local tSaved, tRcTxt, tRcErr, tDelimTxt, tRectTxt
+   put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after gRpt
+   set the itemDelimiter to comma
+
+   -- heSwapExt: the atlas sibling-path swap. Its own comment makes three
+   -- claims and every one of them is pinned here, because atlas-kat.py
+   -- hardcodes BOTH sides of the .png/.xml pair and never models the swap --
+   -- there is no Python mirror to lean on, so these come from the contract.
+   heTAssert "helpers: heSwapExt swaps a trailing extension", \
+         heSwapExt("/cards/playingCards.png", ".xml"), "/cards/playingCards.xml"
+   heTAssert "helpers: heSwapExt appends when there is no extension", \
+         heSwapExt("/cards/playingCards", ".xml"), "/cards/playingCards.xml"
+   -- the documented cosmetic edge: a DOT IN A FOLDER NAME eats that segment,
+   -- because the swap is item-based. Pinned rather than left as prose so the
+   -- day someone makes it path-aware, they change a test and not a promise.
+   heTAssert "helpers: heSwapExt's dotted-folder edge is cosmetic, not a crash", \
+         heSwapExt("/a.b/cards", ".xml"), "/a.xml"
+   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. This
+   -- line is the only thing that can catch that regression -- a leaked "."
+   -- would corrupt the next comma-item read in whatever called it.
+   put the itemDelimiter into tDelimTxt
+   heTAssert "helpers: heSwapExt restores the itemDelimiter (gotcha 5)", tDelimTxt, comma
+
+   -- heSettingsNumOk: the settings dialog's whole-number guard. Three
+   -- separate refusals live in one handler, so each gets its own value.
+   heTAssert "helpers: heSettingsNumOk accepts a whole number at the minimum", \
+         heSettingsNumOk(2, 2), "true"
+   heTAssert "helpers: heSettingsNumOk refuses below the minimum", \
+         heSettingsNumOk(1, 2), "false"
+   heTAssert "helpers: heSettingsNumOk refuses a fraction", \
+         heSettingsNumOk(2.5, 2), "false"
+   heTAssert "helpers: heSettingsNumOk refuses non-numeric text", \
+         heSettingsNumOk("ten", 0), "false"
+   heTAssert "helpers: heSettingsNumOk refuses empty (an untyped field)", \
+         heSettingsNumOk(empty, 0), "false"
+   heTAssert "helpers: heSettingsNumOk accepts zero at minimum zero", \
+         heSettingsNumOk(0, 0), "true"
+
+   -- heHandByOf: what the HUD subtracts to show chips BEHIND. Its contract
+   -- has a sharp edge -- at "between" the deltas are ALREADY in stacksBy, so
+   -- reading the hand's handBy there would double-count every settled bet --
+   -- and that edge is the whole reason the handler exists rather than the
+   -- array read. Reads the live store, so it snapshots and restores it.
+   put gGame into tSaved
+   put "hand" into gGame["phase"]
+   put 25 into gGame["state"]["handBy"][2]
+   heTAssert "helpers: heHandByOf reports a live seat's committed chips", \
+         heHandByOf(2), 25
+   heTAssert "helpers: heHandByOf reads 0 for a seat that has committed none", \
+         heHandByOf(3), 0
+   put "showdown" into gGame["phase"]
+   heTAssert "helpers: the showdown hold is still a LIVE hand for the HUD", \
+         heHandByOf(2), 25
+   put "between" into gGame["phase"]
+   heTAssert "helpers: heHandByOf reads 0 at between (stacksBy already paid)", \
+         heHandByOf(2), 0
+   put tSaved into gGame
+
+   -- heRcTxt: the bt* return-code label the torrent probe prints. The ok and
+   -- positive branches are pure; the NEGATIVE branch names btLastError, so
+   -- it is probed for rather than assumed (this harness must run on an
+   -- engine with no TorrentXT). The probe is named by DESCRIPTION and not by
+   -- handler, deliberately: the suite fold's check 7d builds its reachable
+   -- closure by over-approximation -- any he* name in a reachable body is an
+   -- edge, comment or not -- and that probe opens a libtorrent session.
+   heTAssert "helpers: heRcTxt reads an empty result as ok", heRcTxt(empty), "ok"
+   heTAssert "helpers: heRcTxt reads 0 as ok", heRcTxt(0), "ok"
+   heTAssert "helpers: heRcTxt labels a positive rc with its number", heRcTxt(3), "rc=3"
+   try
+      put heRcTxt(-1) into tRcTxt
+   catch tRcErr
+      put empty into tRcTxt
+   end try
+   if tRcTxt is empty then
+      heTSkip "helpers: heRcTxt's failure branch", \
+            "it names btLastError -- TorrentXT not installed"
+   else
+      heTContains "helpers: heRcTxt names the code on a negative rc", tRcTxt, "FAILED (-1)"
+   end if
+
+   -- heFitRect: the aspect-fit both the seat avatar and the table logo use.
+   -- PINNED AS BUILT, and the interesting half is the LAST two lines. The
+   -- returned width is 2 * (tW div 2), so an ODD fitted size renders one
+   -- pixel short -- the handler's comment used to claim "integer div keeps
+   -- it exact", which is false about the width and is corrected at its own
+   -- site. It is pinned rather than fixed because the shrink-or-equal,
+   -- exactly-symmetric-about-(pCx,pCy) rect is a property something else
+   -- already leans on: tools/check-table-layout.py exempts BOTH callers on
+   -- the written argument that heFitRect "can only ever shrink within" the
+   -- built rect centred on that point, which an exact-width version would
+   -- quietly weaken by pushing one edge to ceil(tW/2). One pixel on a
+   -- blendLevel watermark is not worth an un-eyeballed geometry change in a
+   -- layer whose confirming eye is still owed to the OXT pass.
+   heTAssert "helpers: heFitRect letterboxes a wide picture inside the box", \
+         heFitRect(100, 50, 512, 286, 240), "392,226,632,346"
+   heTAssert "helpers: heFitRect pillarboxes a tall picture inside the box", \
+         heFitRect(50, 100, 512, 286, 240), "452,166,572,406"
+   heTAssert "helpers: heFitRect falls back to the full box on a bad size", \
+         heFitRect(0, 0, 100, 100, 46), "77,77,123,123"
+   heTAssert "helpers: heFitRect falls back to the full box on non-numeric", \
+         heFitRect("x", 10, 100, 100, 46), "77,77,123,123"
+   -- the odd case: a fitted height of round(46 * 63 / 100) = 29, built as
+   -- 100 -+ 14, so the rect is dead-centred and 28 tall. Copied to a local
+   -- before the chunk (H6, and heSwapExt's own precedent).
+   put heFitRect(100, 63, 100, 100, 46) into tRectTxt
+   heTAssert "helpers: heFitRect stays exactly symmetric about the centre", \
+         tRectTxt, "77,86,123,114"
+   heTAssert "helpers: ...which costs an odd fit ONE pixel (28 for a fitted 29)", \
+         (item 4 of tRectTxt) - (item 2 of tRectTxt), 28
+end heTestHelpersRun
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

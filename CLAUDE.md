@@ -374,7 +374,7 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
 That gap is invisible from the inside: the harness was ~4400 lines running ~580
-checks when this was learned (34119 lines today, and the lesson still holds - and it landed again on
+checks when this was learned (34879 lines today, and the lesson still holds - and it landed again on
 2026-08-16, when box2dxt joined the gate and **211 of its Kit's 313 public
 handlers turned out never to have been named by a test**, many of them handlers
 that RUN on every existing test through `b2kStepOnce`),
@@ -396,11 +396,24 @@ ratchet, and each says so beside the `MEMBERS` list with its numbers, because
 "we did not measure it" and "we measured it and a row would lie" are different
 admissions:
 
-- **box2dxt's raw `b2*` `.lcb` binding** - 376 public handlers over 374 foreign
-  declarations, of which **245 are named by no script anywhere in that
-  member**. Ratcheting it would mean ~375 assertions written blind against a
-  foreign-bound API in one pass; `box2dxt/tests/smoke_test.c` under ASan is
-  what covers it today.
+- **box2dxt's raw `b2*` `.lcb` binding** - 376 public handlers over **373**
+  foreign declarations (370 binding into the member's own library; the "374"
+  that stood here was a `grep -c` counting one line of prose), of which **244
+  are named by no script anywhere in that member**. Ratcheting the SCRIPT side
+  would mean ~375 assertions written blind against a foreign-bound API in one
+  pass, so it stays open.
+  **The C side is no longer unmeasured, and the numbers moved a long way on
+  2026-08-17.** `box2dxt/tests/smoke_test.c` runs in `build-all.sh` (Release)
+  and under ASan/UBSan in `native-box2dxt.yml`'s sanitize job - a lane that did
+  not exist that morning - and gcov says it entered **194 of the 370 LC_API
+  exports**, up from **53**. The old figure quoted for it was 60, and 60 was a
+  grep artifact: it counted b2lc_* tokens including the file's `extern`
+  DECLARATION block, and six exports sat in that block declared and never
+  called, so every count of what the smoke test reached had been counting them
+  as covered. **A declaration is not a call** - this file's own
+  shipped-is-not-run lesson, one level down in the toolchain. Signatures across
+  the boundary are now gated too (`box2dxt/tools/check-lcb-signatures.py`: 370
+  binds vs 370 definitions, return type, arity, and every parameter type).
 - **holde-em's `he*` surface** (2026-08-16, at the fold) - 379 public handlers
   in ONE 15k-line file that is the game AND its harness. A row would read
   **0/379** as the gate is written (everything ships prefixed as `he1he*`, so
@@ -460,7 +473,10 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
 ## Building & CI
 
 - `tools/build-all.sh` configures, builds, and tests each member that has a
-  `CMakeLists.txt` (sodiumxt, torrentxt, enetxt, datachannelxt — with each
+  `CMakeLists.txt` (sodiumxt, torrentxt, enetxt, datachannelxt, and — since
+  2026-08-17 — box2dxt, which was walked only by the compiler-free loop before
+  that, while three places in the tree cited its C harness as that layer's
+  cover — with each
   member's `<MEMBER>_BUILD_TESTS` enabled and `ctest --no-tests=error`, so "no
   tests registered" can never pass silently), runs coinxt's
   `native/build.sh asan` self-test and KAT harness, and runs every member's

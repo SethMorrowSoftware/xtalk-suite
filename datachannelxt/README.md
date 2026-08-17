@@ -35,6 +35,9 @@ unordered, from a dozen lines of script.
 - **Text and binary.** `dcSendText` arrives as a string (browser: `string`),
   `dcSendData` as bytes (browser: `ArrayBuffer`), up to 60 000 bytes per message
   (the documented budget — route bulk transfer to TorrentXT, which exists for it).
+  Text is text: `dcSendText` refuses a string carrying an embedded NUL with -3
+  rather than let it truncate at the C string's terminator (see the api-reference).
+  Anything that can hold a NUL is binary — send it with `dcSendData`.
 
 ## Quick taste
 

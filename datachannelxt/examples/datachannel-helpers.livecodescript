@@ -38,7 +38,9 @@ local sPolling          -- "true" while the timer loop is armed
 -- dcStartPolling TARGET, INTERVALMS
 -- Begin draining events and dispatching them to TARGET. If TARGET is empty,
 -- events go to the current card. INTERVALMS defaults to 33 (about 30 Hz -
--- real-time feel without measurable CPU cost).
+-- real-time feel without measurable CPU cost). Calling it again while polling
+-- re-points the target and the interval (last caller wins); it does NOT arm a
+-- second chain.
 command dcStartPolling pTarget, pIntervalMs
    if pTarget is empty then
       put the long id of this card into sPollTarget
@@ -50,9 +52,19 @@ command dcStartPolling pTarget, pIntervalMs
    else
       put pIntervalMs into sPollInterval
    end if
-   put "true" into sPolling
-   -- kick the loop immediately; it reschedules itself
-   send "dcChannelPollOnce" to me in 0 milliseconds
+   -- Arm the chain ONCE - the guard enet-helpers has carried since it was
+   -- written, and the one this file lacked. A second chain does not duplicate
+   -- EVENTS: each pass drains the whole queue in one dcPoll, so the second
+   -- chain mostly finds it empty. What doubles, permanently, is the FFI drain
+   -- RATE and the timer churn - and neither chain can be stood down on its
+   -- own, because both read this one flag. Every in-tree caller
+   -- (datachannel-loopback, datachannel-dht-chat) arms once at startup, so
+   -- this is a trap laid for the NEXT caller rather than a live regression.
+   if sPolling is not "true" then
+      put "true" into sPolling
+      -- kick the loop immediately; it reschedules itself
+      send "dcChannelPollOnce" to me in 0 milliseconds
+   end if
 end dcStartPolling
 
 -- Stop the timer loop. Safe to call when not polling. (This stops DELIVERY
@@ -118,17 +130,32 @@ end dcGatheringName
 
 -- dcFormatBytes N -- a small humaniser for buffered-amount displays.
 function dcFormatBytes pBytes
-   local tUnits, tVal, tI
+   local tUnits, tVal, tI, tSavedDelim, tOut
    if pBytes is empty or pBytes is not a number then
       return "0 B"
    end if
    put "B,KiB,MiB,GiB" into tUnits
    put pBytes into tVal
    put 1 into tI
+   -- TWO reads need the comma, not one: the loop guard COUNTS the units and
+   -- the return picks one. The `set` used to sit BETWEEN them, so the guard
+   -- counted under whatever delimiter was in force rather than the one this
+   -- data is written in - and under any delimiter but comma that string is a
+   -- ONE-item list, so the loop never runs and a gigabyte reports itself in
+   -- bytes. Set once before the FIRST read; restore before returning, since a
+   -- humaniser has no business changing its caller's delimiter (the family's
+   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
+   -- before use, and put back what you found). Not a precaution: holde-em's
+   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
+   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
+   -- answered all three with save-and-restore.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
    repeat while tVal >= 1024 and tI < the number of items of tUnits
       put tVal / 1024 into tVal
       add 1 to tI
    end repeat
-   set the itemDelimiter to comma
-   return (the round of (tVal * 10) / 10) && (item tI of tUnits)
+   put (the round of (tVal * 10) / 10) && (item tI of tUnits) into tOut
+   set the itemDelimiter to tSavedDelim
+   return tOut
 end dcFormatBytes

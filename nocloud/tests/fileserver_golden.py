@@ -43,6 +43,9 @@ HTTP framing, headers, and conditional GET:
   qsHttpDisposition -> http_disposition() (inline vs ?dl attachment Content-Disposition)
   qsHttpFileHead  -> http_file_head()   (the ONE 304/416/200/206 file-head plan both
                                          transport twins call - the Phase 2 dedup)
+  qsFsSendText / qsCwSendText -> http_text_response() (the one-shot text reply both
+                                         transports send; a HEAD keeps the GET's
+                                         Content-Length and sends no body)
 
 The web editor (the WRITE path):
   qsEditSafePath  -> edit_safe_path()   (write-path confinement - THE linchpin)
@@ -52,6 +55,9 @@ The web editor (the WRITE path):
   qsQueryParam    -> query_param()      (editor read/write ?path= extraction)
 
 User-declared routes (.qsroutes.json):
+  qsHttpReservedPath -> reserved_path() (/_qs and /_edit belong to the route layer: no user
+                                         route declares one, no pattern matches one, and the
+                                         static pipeline refuses one)
   qsUserPathValid -> user_path_valid()  (absolute, traversal-free; /_qs and /_edit reserved)
   qsSanitizeHeaderName  -> sanitize_header_name()  (letters/digits/hyphen only)
   qsSanitizeHeaderValue -> sanitize_header_value() (CR/LF/control bytes dropped)
@@ -60,6 +66,9 @@ User-declared routes (.qsroutes.json):
   qsTemplateEscape -> template_escape() (default-deny: json types JSON, all else HTML)
   qsMountLocation -> mount_location()   (redirect Location re-based onto the /<token>/ mount)
   qsRouteKeyPath   -> route_key_path()  (the path half of a "METHOD /path" key)
+  qsRouteLookupKey -> route_lookup_key() (the key a request LOOKS UP: a HEAD falls back to
+                                         the GET route, else it missed the table entirely
+                                         and the SPA fallback answered it)
   qsRouteHasParams -> route_has_params() (exact key vs :param pattern - the one test)
   qsRouteParamCount -> route_param_count() (specificity rank: fewest params = most literal)
   qsUserPatternValid -> user_pattern_valid() (the :param declaration gate: static FIRST
@@ -571,6 +580,29 @@ def route_key_path(key):
     return "" if sp < 0 else key[sp + 1:]
 
 
+def route_lookup_key(method, path, table_keys):
+    """Mirror qsRouteLookupKey: the route-table key a request should LOOK UP, and the one
+    place HEAD is turned back into GET. Every method looks up its own "METHOD /path" key; a
+    HEAD looks up its own only when the table actually declares a HEAD route (an explicit
+    one wins) and otherwise falls back to the GET key, because HEAD is GET-without-a-body
+    and the server advertises it on every path (http_allow always lists it). Until
+    2026-08-17 the key was built from the literal method, so a HEAD missed BOTH route tables
+    and fell into the static pipeline - where the path has no file, its leaf has no ".", and
+    spa_is_route() therefore said index.html: HEAD /_qs/info answered the SPA at 200
+    text/html while GET /_qs/info answered JSON. `table_keys` is the key set of the table
+    being consulted; both tables key the same way, so one lookup serves both."""
+    method = method.upper()
+    key = method + " " + path
+    if method != "HEAD":
+        return key
+    # an EMPTY table (no .qsroutes.json loaded, or nothing shared) declares no HEAD route,
+    # so it takes the same branch - the LCS guards that case explicitly because there the
+    # table arrives unset rather than empty, and indexing a non-array is not a lookup
+    if key in table_keys:
+        return key
+    return "GET " + path
+
+
 def route_has_params(path):
     return any(seg.startswith(":") for seg in path.split("/"))
 
@@ -617,8 +649,7 @@ def route_match(pattern, path):
     in verdict agreement). BACKSTOP: never matches anything against a reserved request
     path - declaration makes such a pattern unstorable, so this pins the defense-in-depth
     line against a hostile pattern injected past declaration. Mirrors qsRouteMatch."""
-    if path == "/_qs" or path.startswith("/_qs/") \
-            or path == "/_edit" or path.startswith("/_edit/"):
+    if reserved_path(path):
         return None
     if pattern.endswith("/") != path.endswith("/"):
         return None
@@ -807,6 +838,28 @@ def http_file_head(size, formime, headers, type_override, extra, seed, gen, epoc
     return {"kind": "serve", "head": head, "status": status, "start": start, "length": length}
 
 
+def http_text_response(status, ctype, body, extra, epoch, method, keep=False):
+    """Mirror the ONE-SHOT text reply both transports send - qsFsSendText over Tor,
+    qsCwSendText over clearweb: every non-file answer (directory listings, 404s, the
+    /_qs/* endpoints, every user-route body) goes out through one of these two. Returns
+    the complete wire bytes, head then body - EXCEPT on a HEAD, where Content-Length still
+    reports exactly what a GET would return and NO body follows it.
+
+    The twins differ in one line, the Connection header (`keep` picks it; the Tor twin is
+    always close-per-response and passes keep=False), which is why one mirror can pin both
+    - and pinning both is the point: until 2026-08-17 only the clearweb twin had the HEAD
+    test, so every non-file Tor reply shipped its body to a client that discards it unread.
+    Nothing DESYNCS on that transport, since the response closes the stream; the cost is
+    wasted onion bandwidth plus a plain spec violation."""
+    crlf = "\r\n"
+    data = body.encode("utf-8")
+    head = ("HTTP/1.1 " + status + crlf + "Content-Type: " + ctype + crlf
+            + "Content-Length: %d" % len(data) + crlf)
+    head += http_extra_headers(epoch) + extra
+    head += ("Connection: keep-alive" if keep else "Connection: close") + crlf + crlf
+    return head.encode("utf-8") + (b"" if method == "HEAD" else data)
+
+
 # ---- qsEditLoginWait: editor login brute-force backoff -----------------------
 # ms this peer must still wait before another attempt. First _EDIT_FREE_TRIES fails are
 # free; after that the required gap doubles each fail, capped. Constants mirror the kEdit*
@@ -839,6 +892,18 @@ def edit_login_wait(fails, last_ms, now_ms):
 # A user route path must be absolute, traversal-free, control-free, and NEVER under the
 # reserved /_qs/ or /_edit/ namespaces. Mirrors qsUserPathValid.
 
+def reserved_path(path):
+    """Mirror qsHttpReservedPath: is this path inside a RESERVED server namespace? /_qs
+    (observability) and /_edit (the LAN editor) belong to the ROUTE layer alone - no user
+    route may declare a path there, no :param pattern may match one, and (2026-08-17) the
+    static pipeline refuses one instead of resolving it off disk or through the SPA
+    fallback. One predicate for all three, because it was the same literal test written out
+    three times and the static one would have made a fourth copy of a security rule.
+    Prefix-exact: "/_qsx" and "/_editor" are ordinary paths."""
+    return (path in ("/_qs", "/_edit")
+            or path.startswith("/_qs/") or path.startswith("/_edit/"))
+
+
 def user_path_valid(path):
     if path == "" or path[:1] != "/":
         return False
@@ -846,9 +911,7 @@ def user_path_valid(path):
         return False
     if any(ord(c) < 32 for c in path):
         return False
-    if path == "/_qs" or path.startswith("/_qs/"):
-        return False
-    if path == "/_edit" or path.startswith("/_edit/"):
+    if reserved_path(path):
         return False
     return True
 
@@ -1388,6 +1451,48 @@ def main():
           "X-Extra: 1\r\n"
           'Content-Disposition: attachment; filename="data.bin"\r\nConnection: close\r\n\r\n')
 
+    # -- the one-shot TEXT reply (the non-file half): a HEAD keeps the Content-Length a GET
+    # would have sent and ships NO body. Until 2026-08-17 the Tor twin qsFsSendText had no
+    # method test at all, so every non-file Tor reply - listings, 404s, /_qs/info,
+    # /_qs/transparency, /_qs/routes, every user-route body - sent its body in answer to a
+    # HEAD. Nothing desyncs there (a Tor response closes its stream), so the cost is bytes
+    # pushed down an onion circuit for a client that discards them, plus the spec violation.
+    _tx = "hello, HEAD"                                    # 11 bytes when UTF-8 encoded
+    _tx_get = http_text_response("200 OK", "text/plain; charset=utf-8", _tx, "",
+                                 _fh_epoch, "GET")
+    _tx_head = http_text_response("200 OK", "text/plain; charset=utf-8", _tx, "",
+                                  _fh_epoch, "HEAD")
+    check("text_response GET body", _tx_get.split(b"\r\n\r\n", 1)[1], b"hello, HEAD")
+    check("text_response HEAD body", _tx_head.split(b"\r\n\r\n", 1)[1], b"")
+    # THE property: the head is byte-identical, so Content-Length is UNCHANGED at 11 - a
+    # HEAD reports what a GET would return, which is the whole point of the method
+    check("text_response HEAD head is the GET head",
+          _tx_head.split(b"\r\n\r\n", 1)[0], _tx_get.split(b"\r\n\r\n", 1)[0])
+    check("text_response Content-Length survives HEAD",
+          b"Content-Length: 11\r\n" in _tx_head, True)
+    # the full head byte-for-byte, so the header ORDER is pinned like every file head above
+    check("text_response head", _tx_get.split(b"\r\n\r\n", 1)[0].decode("utf-8"),
+          "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
+          "Content-Length: 11\r\n" + _fh_extra + "Connection: close")
+    # pExtra lands after the always-sent block (the 405's Allow line, the 429's Retry-After)
+    check("text_response extra header",
+          http_text_response("405 Method Not Allowed", "text/plain; charset=utf-8",
+                             "Method not allowed.", "Allow: GET, HEAD, OPTIONS\r\n",
+                             _fh_epoch, "GET").split(b"\r\n\r\n", 1)[0].decode("utf-8"),
+          "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain; charset=utf-8\r\n"
+          "Content-Length: 19\r\n" + _fh_extra + "Allow: GET, HEAD, OPTIONS\r\n"
+          "Connection: close")
+    # the twins differ in exactly ONE line: clearweb may keep the connection, Tor never does
+    check("text_response keep-alive is the only twin difference",
+          http_text_response("200 OK", "text/plain; charset=utf-8", _tx, "",
+                             _fh_epoch, "GET", True),
+          _tx_get.replace(b"Connection: close", b"Connection: keep-alive"))
+    # a HEAD suppresses the body on a kept-alive connection too (there the unread body would
+    # also be mis-read as the framing of the NEXT response - the clearweb-only hazard)
+    check("text_response HEAD keep-alive body",
+          http_text_response("200 OK", "text/plain; charset=utf-8", _tx, "",
+                             _fh_epoch, "HEAD", True).split(b"\r\n\r\n", 1)[1], b"")
+
     # -- editor login brute-force backoff --
     for fails, last_ms, now_ms, want in [
         (0, None, 1000, 0),                     # first attempt: free
@@ -1423,6 +1528,42 @@ def main():
         ("/a\nb", False),                       # control byte
     ]:
         check("user_path_valid(%r)" % path, user_path_valid(path), want)
+
+    # -- the reserved-namespace predicate the three refusals above all share --
+    for path, want in [
+        ("/_qs", True), ("/_qs/info", True), ("/_qs/", True),
+        ("/_edit", True), ("/_edit/api/write", True),
+        ("/_qsx", False),                       # a longer first segment is a normal path
+        ("/_editor", False),
+        ("/a/_qs", False),                      # reserved only at the ROOT of the app path
+        ("/_q", False), ("/", False), ("", False),
+    ]:
+        check("reserved_path(%r)" % path, reserved_path(path), want)
+
+    # -- HEAD route lookup: HEAD is GET-without-a-body, so it must reach the GET route --
+    # Until 2026-08-17 the lookup key was built from the literal method, so a HEAD matched
+    # nothing in either table and fell into the static pipeline - where the leaf has no "."
+    # and the SPA fallback answers index.html. HEAD /_qs/info came back as the SPA page at
+    # 200 text/html while http_allow had advertised HEAD on every path. Both transports
+    # shared that path, so both were wrong.
+    _lk_builtin = ["GET /_qs/info", "GET /_qs/transparency", "POST /_edit/login"]
+    _lk_user = ["GET /api/hello", "HEAD /probe", "GET /probe", "POST /api/submit"]
+    for method, path, keys, want in [
+        ("HEAD", "/_qs/info", _lk_builtin, "GET /_qs/info"),     # the built-in route answers
+        ("HEAD", "/api/hello", _lk_user, "GET /api/hello"),      # a user route answers
+        ("HEAD", "/probe", _lk_user, "HEAD /probe"),             # a DECLARED HEAD route wins
+        ("GET", "/api/hello", _lk_user, "GET /api/hello"),       # a GET is untouched
+        ("GET", "/nope", _lk_user, "GET /nope"),                 # ... including a miss
+        ("POST", "/api/submit", _lk_user, "POST /api/submit"),   # no fallback for other verbs
+        ("POST", "/probe", _lk_user, "POST /probe"),             # ... even where GET exists
+        ("HEAD", "/nope", _lk_user, "GET /nope"),                # falls back, then misses ->
+                                                                 # the static pipeline, as before
+        ("head", "/api/hello", _lk_user, "GET /api/hello"),      # method upper-cased first
+        ("HEAD", "/api/hello", [], "GET /api/hello"),            # an EMPTY table: no HEAD route
+        ("GET", "/api/hello", [], "GET /api/hello"),             # ... and unchanged for a GET
+    ]:
+        check("route_lookup_key(%r,%r)" % (method, path),
+              route_lookup_key(method, path, keys), want)
 
     # -- :param patterns: the key split, the exact-vs-pattern test, the specificity rank --
     for key, want in [
@@ -1666,7 +1807,8 @@ def main():
           "editor login backoff, user-route path + header sanitise, template render + "
           "escape, CORS preflight, conditional-GET ETag, shared file-head plan, "
           "redirect mount re-prefix, editor parent-dirs, param patterns + reserved "
-          "backstop + pattern Allow/preflight all match)")
+          "backstop + pattern Allow/preflight, reserved-namespace predicate, HEAD route "
+          "lookup, one-shot text reply + HEAD body suppression all match)")
     return 0
 
 

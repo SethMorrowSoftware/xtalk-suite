@@ -30,6 +30,13 @@ script "dataChannelSelfTest"
 -- pins among them are all dated runtime results now. A green re-run needs
 -- no label work.
 --
+-- ADDED 2026-08-17, and NOT observed: the four stale-handle ACTION checks now
+-- assert the exact -2 instead of `< 0`, an oversize dcSendText pins the shim's
+-- handle-before-size classification order, and dcSendText's embedded-NUL
+-- refusal - the one refusal the .lcb has to make because the shim cannot see
+-- a NUL that has become its terminator - is checked here for the first time.
+-- Those five legs are verified statically; they need an OXT pass.
+--
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK
 -- script (Object > Stack Script), then close+reopen. It builds its own UI,
 -- runs the synchronous checks, then a LIVE LOOPBACK (two in-process peers,
@@ -283,7 +290,7 @@ end openStack
 
 -- ---- the run -----------------------------------------------------------------
 command stRun
-   local tPair
+   local tPair, tBig, tNulR, tNulErr
    stResetCounters
    put empty into sPhase
 
@@ -295,7 +302,16 @@ command stRun
    stAssert "dcLastError empty after clear", dcLastError() is empty
 
    stSection "stale handles are harmless no-ops"
-   stAssert "dcClosePeer(0) errors", dcClosePeer(0) < 0
+   -- The ACTION calls assert the EXACT code, not `< 0`. -2 (DCX_ERR_BAD_HANDLE)
+   -- is what the shim's classification order produces: every dcx_* action
+   -- validates the handle FIRST, then the argument, then the size, so a stale
+   -- handle can only ever answer -2. `< 0` also passed for -6, the firewall's
+   -- "a native throw was caught" - which would mean the stale-handle path is
+   -- THROWING somewhere inside libdatachannel rather than being the harmless
+   -- no-op this whole section exists to prove. Tightened 2026-08-17; the
+   -- values are pinned to dcx_abi.h by tools/check-record-registry.py so a
+   -- renumber cannot leave these literals quietly wrong.
+   stAssert "dcClosePeer(0) is -2", dcClosePeer(0) is -2
    stAssert "dcPeerState(0) is -1", dcPeerState(0) is -1
    stAssert "dcGatheringState(0) is -1", dcGatheringState(0) is -1
    stAssert "dcLocalDescription(0) empty", dcLocalDescription(0) is empty
@@ -306,7 +322,13 @@ command stRun
    put dcSelectedCandidatePair(0) into tPair
    stAssert "dcSelectedCandidatePair(0) empty", the number of lines of the keys of tPair is 0
    stAssert "dcCreateChannel(0) is 0", dcCreateChannel(0, "x") is 0
-   stAssert "dcSendText(0) errors", dcSendText(0, "x") < 0
+   stAssert "dcSendText(0) is -2", dcSendText(0, "x") is -2
+   -- The classification ORDER itself, pinned: an oversize message on a stale
+   -- handle is still -2, because dcx_send_text checks the handle before it
+   -- measures. (The live -4 legs need an open channel and live in the async
+   -- half, which the suite fold deliberately leaves out.)
+   put stRepeatByte(65, 60001) into tBig
+   stAssert "oversize dcSendText on a stale handle is still -2", dcSendText(0, tBig) is -2
    stAssert "dcChannelLabel(0) empty", dcChannelLabel(0) is empty
    stAssert "dcChannelStreamId(0) is -1", dcChannelStreamId(0) is -1
    stAssert "dcChannelIsOpen(0) is false", dcChannelIsOpen(0) is false
@@ -314,14 +336,37 @@ command stRun
    stAssert "dcBufferedAmount(0) is -1", dcBufferedAmount(0) is -1
    stAssert "dcLocalDescriptionType(0) empty", dcLocalDescriptionType(0) is empty
    stAssert "dcChannelProtocol(0) empty", dcChannelProtocol(0) is empty
-   stAssert "dcSetLocalDescription(0) errors", dcSetLocalDescription(0, "offer") < 0
-   stAssert "dcSetBufferedLowThreshold(0) errors", dcSetBufferedLowThreshold(0, 4096) < 0
+   stAssert "dcSetLocalDescription(0) is -2", dcSetLocalDescription(0, "offer") is -2
+   stAssert "dcSetBufferedLowThreshold(0) is -2", dcSetBufferedLowThreshold(0, 4096) is -2
    stAssert "dcCreateChannelEx(0) is 0", \
          dcCreateChannelEx(0, "x", "proto", false, -1, -1, false, -1) is 0
    dcFreePeer(0)      -- must not crash
    dcFreeChannel(0)   -- must not crash
    stAssert "dcFreePeer/dcFreeChannel(0) survived", true
    stAssert "dcSendText(0) left a last-error", dcLastError() is not empty
+
+   -- The embedded-NUL refusal, which the BINDING makes because the shim
+   -- CANNOT: pText crosses as ZStringUTF8, so by the time dcx_send_text holds
+   -- it the NUL has become the terminator and the tail of the message is
+   -- gone. -3 on a STALE handle is the tell that the .lcb refused before the
+   -- FFI - a shim that saw this call would have answered -2 for the handle.
+   -- It sits BETWEEN the assertion above and the clear below on purpose: that
+   -- assertion has just proved the shim's last-error is DIRTY, so the empty
+   -- assertion here can only pass if this refusal cleared it. Placed after
+   -- the dcClearError instead, it would have passed whether the refusal ran
+   -- or not - a check that answers the question nobody asks twice.
+   -- Try-guarded because what the LCS -> LCB String bridge does with a NUL
+   -- char is itself unobserved engine behaviour: a throw at the marshalling
+   -- boundary must be a reported FAIL carrying its message, not the end of a
+   -- 500-check run.
+   put "" into tNulR
+   try
+      put dcSendText(0, "a" & numToByte(0) & "b") into tNulR
+   catch tNulErr
+      put "threw:" && tNulErr into tNulR
+   end try
+   stAssert "dcSendText refuses an embedded NUL with -3", tNulR is -3
+   stAssert "the NUL refusal cleared the shim last-error", dcLastError() is empty
    dcClearError
 
    stSection "loopback: create + negotiate (async)"

@@ -394,11 +394,23 @@ Built and statically verified; pending under the honesty convention.
    transaction accepted on a live testnet in each of the four families.
    — `coinxt/examples/coinxt-demo.livecodescript:14-18`, `coinxt/IMPLEMENTATION-PLAN.md:235`
 
-9. **nocloud: the 59-item pass checklist at zero ticks + whole-stack re-pass**
-   (large). Plus the checklist's own gaps: no ETag/304 section, no items for
-   the webapp's runtime claims (SW-over-Tor, in-app Range, SPA refresh,
-   HEAD-on-SPA), no redirect-under-token-mount test.
-   — `nocloud/docs/oxt-pass-checklist.md`, `nocloud/src/nocloudquickshare.livecodescript:57-60`
+9. **nocloud: the 68-item pass checklist at zero ticks + whole-stack re-pass**
+   (large). **The four "checklist gaps" this entry listed are all closed as of
+   2026-08-17, and three of them were already closed when the entry was
+   written** - re-verified against the file rather than the entry:
+   - "no ETag/304 section" - the Conditional GET item has been in section 4
+     since 2026-08-15.
+   - "no redirect-under-token-mount test" - section 1 carries the
+     `GET /<token>/go/gallery` -> `Location: /<token>/gallery` re-prefix test,
+     also since 2026-08-15.
+   - "no items for the webapp's runtime claims" - the service worker, Range
+     seeking and `pushState` routing items were ADDED 2026-08-17, alongside
+     the two `HEAD` fixes; the checklist grew 59 -> 68 in the same pass.
+   What survives intact is the part that needs an engine: **zero of the 68 are
+   ticked**, and the whole-stack re-pass has never run. That is runbook S1
+   row S (web-link half) and S2 item 7 (Tor half), and both budgets are now
+   light for the longer list.
+   — `nocloud/docs/oxt-pass-checklist.md` ("Conditional GET (shared head builder, 2026-08-15)")
 
 10. **Suite-root stacks: start-here, ui-kit v2 assembly, closing-pass stack**
     (small). Each carries its own "verified statically" label; cheap

@@ -4180,9 +4180,26 @@ end b2kPlayerWallProbe
 -- < 1). Entering shrinks the capsule FEET-ANCHORED (drop the centre by
 -- half the height lost so the feet stay planted); standing waits for
 -- headroom (a ray up from the crouched top), so a low ceiling keeps you
--- crawling. b2kReshape resets the material, so friction/bounce are re-set.
+-- crawling. b2kReshape resets the shape's material AND its collision
+-- FILTER (documented contract, kit-guide section 5), so both are captured
+-- and re-applied around each rebuild.
+--
+-- FILTER FIX 2026-08-17: only half of that contract was honoured here.
+-- Friction and bounce have been re-set since the crawl shipped; the filter
+-- never was, so every duck (and every stand-up) silently returned the
+-- player to the default category 1 / collide-with-everything and threw
+-- away whatever b2kSetCategory/b2kSetMask/b2kSetCollisionGroup the game
+-- had set. Unlike a hand-written b2kReshape call the game gets no chance
+-- to re-apply it either -- the duck fires from INSIDE b2kPlayerTick, so
+-- there is no hook between the reshape and the next step. The readback is
+-- clamped exactly as b2kPlayerDropStart clamps its mask: Box2D's default
+-- bits read back as 2^64-1, above the shim's 2^53 double guard, and
+-- b2SetShapeFilter would then refuse the whole call SILENTLY (the
+-- ghost-layer defect, run 5). A category of 0 means the readback found no
+-- shape at all, so the restore is skipped rather than stamping a
+-- collides-with-nothing filter onto the new one.
 command b2kPlayerDuckSet pWantDuck
-   local tNewH, tShift, tNeed
+   local tNewH, tShift, tNeed, tS, tCat, tMask, tGrp
    if sPlayRef is empty then exit b2kPlayerDuckSet
    if pWantDuck is true then
       if sPlayDucked is true or sPlayDuckScale >= 1 then exit b2kPlayerDuckSet
@@ -4197,9 +4214,25 @@ command b2kPlayerDuckSet pWantDuck
       put max(8, round(sPlayCapH * sPlayDuckScale)) into tNewH
       put (sPlayCapH - tNewH) / 2 into tShift
       b2kMoveTo sPlayRef, sPlayPX, sPlayPY + tShift
+      -- capture the filter BEFORE the rebuild: b2kReshape destroys the old
+      -- shape, and sShapeH[sPlayRef] names a different shape afterwards.
+      -- The empty guard is b2kPlayerDropStart's: the raw b2Shape* handlers
+      -- take an Integer, so handing one an empty ref is a coercion THROW
+      -- from inside the player tick, not a quiet 0.
+      put 0 into tCat
+      put sShapeH[sPlayRef] into tS
+      if tS is not empty then
+         put b2ShapeFilterCategory(tS) into tCat
+         put b2ShapeFilterMask(tS) into tMask
+         put b2ShapeFilterGroup(tS) into tGrp
+         if tCat > 4294967295 then put 4294967295 into tCat
+         if tMask > 4294967295 then put 4294967295 into tMask
+      end if
       b2kReshape sPlayRef, "capsule", sPlayCapW, tNewH
       b2kSetFriction sPlayRef, 0.08
       b2kSetBounce sPlayRef, 0
+      put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+      if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
       put tNewH into sPlayDuckH
       put tNewH / 2 into sPlayHalfH
       put true into sPlayDucked
@@ -4218,15 +4251,29 @@ end b2kPlayerDuckSet
 -- Internal (Wave 5): restore the capsule to standing height, feet planted.
 -- Used by the duck exit (with headroom) and by b2kPlayerRespawn (forced).
 command b2kPlayerStandUp
-   local tShift
+   local tShift, tS, tCat, tMask, tGrp
    if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
    -- mirror of the duck: stored capsule dims in, explicit dims to b2kReshape,
-   -- no control resize (inert on a polygon graphic; the drawer re-points it)
+   -- no control resize (inert on a polygon graphic; the drawer re-points it),
+   -- and the same material + filter capture/restore around the rebuild (see
+   -- b2kPlayerDuckSet's header). This one is reached by b2kPlayerRespawn too,
+   -- which is the other path with no hook for the game to re-apply a filter.
    put (sPlayCapH - sPlayDuckH) / 2 into tShift
    b2kMoveTo sPlayRef, sPlayPX, sPlayPY - tShift
+   put 0 into tCat
+   put sShapeH[sPlayRef] into tS
+   if tS is not empty then
+      put b2ShapeFilterCategory(tS) into tCat
+      put b2ShapeFilterMask(tS) into tMask
+      put b2ShapeFilterGroup(tS) into tGrp
+      if tCat > 4294967295 then put 4294967295 into tCat
+      if tMask > 4294967295 then put 4294967295 into tMask
+   end if
    b2kReshape sPlayRef, "capsule", sPlayCapW, sPlayCapH
    b2kSetFriction sPlayRef, 0.08
    b2kSetBounce sPlayRef, 0
+   put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+   if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
    put sPlayStandH / 2 into sPlayHalfH
    put false into sPlayDucked
    b2kPlayerTuneCache

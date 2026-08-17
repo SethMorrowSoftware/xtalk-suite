@@ -145,6 +145,7 @@ local sFsTxPos          -- array: stream -> next byte offset to read (0-based; h
 local sFsTxRemaining    -- array: stream -> bytes still to send (respects a Range)
 local sFsTxName         -- array: stream -> the file's leaf name (for the log)
 local sFsTxDeadline     -- array: stream -> the milliseconds of the last activity (watchdog)
+local sFsMethod         -- array: stream -> the current request's method (HEAD must send no body)
 -- Dynamic routes (the light xTalk backend). A hosted web app can call back into
 -- this stack: sHttpRoutes maps "METHOD /path" -> the name of an xTalk handler that
 -- answers the request (see qsHttpRoute / qsHttpReply below). Works over BOTH
@@ -3564,6 +3565,7 @@ end qsHtmlEncrypted
 command qsFsPeer pStream
    put "" into sFsReq[pStream]
    put "false" into sFsServed[pStream]
+   put "" into sFsMethod[pStream]          -- no method parsed yet (qsFsServePath sets it)
    put the milliseconds into sFsTxDeadline[pStream]
    oxSetStreamCallback pStream, "qsFsStream"
    send ("qsFsWatchdog " & pStream) to me in kOnionSendTimeout milliseconds
@@ -3865,13 +3867,19 @@ end qsSendRedirect
 -- then a .qsroutes.json route, then an OPTIONS preflight/Allow, then a 405 for an unsupported
 -- method. Reports (via `the result`) "true" when it answered - the caller then stops - or "false"
 -- to fall through to the static pipeline. pConn is "ox:<id>"/"cw:<id>"; pAppPath is the decoded,
--- app-relative path; pRoot is THIS share's folder (for its user routes). This is the block that
--- used to be copied verbatim into qsFsServePath AND qsCwServe.
+-- app-relative path; pRoot is THIS share's folder (for its user routes). A HEAD is looked up
+-- as its own method first and then as the GET it is defined to be (qsRouteLookupKey, and the
+-- explicit retry on the pattern finder), so every route this server ADVERTISES HEAD on is
+-- actually reachable by one. This is the block that used to be copied verbatim into
+-- qsFsServePath AND qsCwServe.
 command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
    local tMethod, tRouteKey, tAllow, tCrlf, tPatternKey, tParams
    put (numToChar(13) & numToChar(10)) into tCrlf
    put pHeaders["__method"] into tMethod
-   put toUpper(tMethod) & space & pAppPath into tRouteKey
+   -- the key is per-TABLE, not per-request: qsRouteLookupKey answers a HEAD out of the GET
+   -- route unless THIS table declares a HEAD one, and the two tables are declared
+   -- independently, so it is asked once for each.
+   put qsRouteLookupKey(tMethod, pAppPath, sHttpRoutes) into tRouteKey
    if sHttpRoutes[tRouteKey] is not empty then
       put pAppPath into pHeaders["__path"]              -- hand the handler the decoded path
       qsHttpDispatch pConn, sHttpRoutes[tRouteKey], pHeaders
@@ -3882,6 +3890,7 @@ command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
    -- served off this fast path: a request whose literal path IS the pattern text would
    -- exact-hit the key and dispatch with no captures, so patterns always go through the
    -- matcher below - one code path, captures always set.
+   put qsRouteLookupKey(tMethod, pAppPath, sUserRoutes[pRoot]) into tRouteKey
    if sUserRoutes[pRoot][tRouteKey] is an array \
          and sUserRoutes[pRoot][tRouteKey]["pattern"] is not "true" then
       qsUserRouteDispatch pConn, sUserRoutes[pRoot][tRouteKey], pHeaders, pRoot
@@ -3893,6 +3902,14 @@ command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
    -- and reach a route body ONLY through qsTemplateEscape - a param value is hostile
    -- input, escaped exactly like a query value.
    put qsUserRouteFind(pRoot, toUpper(tMethod), pAppPath) into tPatternKey
+   -- the same HEAD-is-GET rule the exact tables get from qsRouteLookupKey, spelled out here
+   -- because the pattern finder arbitrates by METHOD over the whole table rather than by
+   -- key: ask for a HEAD pattern first (an explicit one still wins), then for the GET one.
+   -- Without it a HEAD to a :param path fell through to the static pipeline and, for the
+   -- extensionless leaf a param route usually has, came back as the SPA's index.html.
+   if tPatternKey is empty and toUpper(tMethod) is "HEAD" then
+      put qsUserRouteFind(pRoot, "GET", pAppPath) into tPatternKey
+   end if
    if tPatternKey is not empty then
       put qsRouteMatch(qsRouteKeyPath(tPatternKey), pAppPath) into tParams
       put tParams into pHeaders["__params"]
@@ -3914,6 +3931,7 @@ command qsHttpTryRoutes pConn, pAppPath, pRoot, pHeaders
 end qsHttpTryRoutes
 
 -- Shared static GET/HEAD pipeline for BOTH transports (used once the route layer declined): a
+-- 404 for anything in the reserved namespaces (they are the route layer's, and never disk), a
 -- 503 if no folder is shared, then dotfiles are invisible, then a directory serves its
 -- index.html (or a listing) with a trailing-slash redirect, then a plain file, then an SPA
 -- fallback to index.html, else a 404. pRawPath is the still-%xx-encoded path (for the redirect
@@ -3921,6 +3939,18 @@ end qsHttpTryRoutes
 -- used to be duplicated across qsFsServePath and qsCwServe.
 command qsHttpServeStatic pConn, pAppPath, pRawPath, pRoot, pHeaders
    local tDisk, tIndex, tSpa
+   -- FIRST, before the share is even consulted: the reserved namespaces are the route
+   -- layer's alone. A /_qs or /_edit request that reaches here named no route (a method the
+   -- table does not declare, a typo, the editor switched off), and the static pipeline must
+   -- not try to answer it - it would look for a real "_qs" folder inside somebody's shared
+   -- directory, and failing that hand the SPA fallback an extensionless leaf and reply
+   -- index.html at 200 for a URL this server reserves. A real 404 is the honest answer and
+   -- keeps a reserved prefix looking exactly like "nothing here" to a prober. It sits above
+   -- the 503 so the answer does not change with whether a folder happens to be shared.
+   if qsHttpReservedPath(pAppPath) then
+      qsHttpReply pConn, 404, "text/html; charset=utf-8", qsFsNotFound(pAppPath)
+      exit qsHttpServeStatic
+   end if
    if pRoot is empty then
       qsHttpReply pConn, 503, "text/plain; charset=utf-8", "No folder is being shared."
       exit qsHttpServeStatic
@@ -4313,6 +4343,25 @@ function qsCanJson
    return (tArr["k"] is 1)
 end qsCanJson
 
+-- Is pPath inside a RESERVED server namespace? /_qs (the observability endpoints) and
+-- /_edit (the LAN editor) belong to the ROUTE layer alone: no user route may declare a path
+-- there (qsUserPathValid), no :param pattern may match one (qsRouteMatch's backstop), and
+-- the static pipeline must never resolve one off disk or through the SPA fallback
+-- (qsHttpServeStatic). That was the same three-line literal test written out at each of
+-- those places; the static one was added 2026-08-17 and a FOURTH copy of a security rule is
+-- exactly the drift this repo keeps checkers for, so the predicate is one handler now.
+-- Prefix-exact on purpose: "/_qsx" and "/_editor" are ordinary paths, not reserved ones.
+-- Pure; golden: reserved_path().
+function qsHttpReservedPath pPath
+   if pPath is "/_qs" or pPath begins with "/_qs/" then
+      return true
+   end if
+   if pPath is "/_edit" or pPath begins with "/_edit/" then
+      return true
+   end if
+   return false
+end qsHttpReservedPath
+
 -- Is a user-declared route path acceptable? Absolute, no traversal, no control bytes, and
 -- NEVER colliding with the reserved server namespaces. Pure; golden: user_path_valid().
 function qsUserPathValid pPath
@@ -4325,10 +4374,7 @@ function qsUserPathValid pPath
    if qsPathHasControl(pPath) then
       return false
    end if
-   if pPath is "/_qs" or pPath begins with "/_qs/" then
-      return false
-   end if
-   if pPath is "/_edit" or pPath begins with "/_edit/" then
+   if qsHttpReservedPath(pPath) then
       return false
    end if
    return true
@@ -4344,6 +4390,39 @@ function qsRouteKeyPath pKey
    end if
    return char (tSp + 1) to -1 of pKey
 end qsRouteKeyPath
+
+-- The route-table key a request should LOOK UP - the other half of the key story, and the
+-- one place HEAD is turned back into GET. Every method looks up its own "METHOD /path" key;
+-- a HEAD looks up its own key when the table actually declares a HEAD route (an explicit
+-- one wins - it may want to answer differently) and otherwise falls back to the GET key,
+-- because HEAD is defined as GET-without-a-body and this server ADVERTISES it on every path
+-- (qsHttpAllow unconditionally answers "GET, HEAD, OPTIONS"). Until 2026-08-17 the key was
+-- built from the literal method, so a HEAD missed BOTH route tables and fell through to the
+-- static pipeline - where a reserved or app path has no file, its leaf has no ".", and
+-- qsSiteSpaTarget therefore handed back index.html: HEAD /_qs/info answered 200 text/html
+-- with the SPA while GET /_qs/info answered JSON. pTable is the route array being consulted
+-- (both tables key on "METHOD /path", so one lookup serves sHttpRoutes and
+-- sUserRoutes[root]); the body is suppressed downstream by qsCwSendText / qsFsSendText, so
+-- the fallback reply carries the GET's headers and Content-Length and no bytes.
+-- Pure over pTable; golden: route_lookup_key().
+function qsRouteLookupKey pMethod, pPath, pTable
+   local tMethod, tKey
+   put toUpper(pMethod) into tMethod
+   put tMethod & space & pPath into tKey
+   if tMethod is not "HEAD" then
+      return tKey
+   end if
+   -- pTable can legitimately arrive unset (sUserRoutes[root] before any .qsroutes.json is
+   -- loaded, or with no folder shared at all), which is a table declaring no HEAD route -
+   -- the same answer the lookup below would give, just without indexing a non-array.
+   if pTable is not an array then
+      return "GET" & space & pPath
+   end if
+   if pTable[tKey] is not empty then
+      return tKey
+   end if
+   return "GET" & space & pPath
+end qsRouteLookupKey
 
 -- Does a route path carry a PARAM segment (a "/"-separated segment starting ":")? This is
 -- the one test that decides exact-vs-pattern for a STORED key: qsLoadUserRoutes only stores
@@ -4454,8 +4533,7 @@ end qsUserPatternValid
 -- declaration. Pure; golden: route_match().
 function qsRouteMatch pPattern, pPath
    local tSavedID, tPatSlash, tPathSlash, tCount, tI, tPatSeg, tPathSeg, tParams
-   if pPath is "/_qs" or pPath begins with "/_qs/" \
-         or pPath is "/_edit" or pPath begins with "/_edit/" then
+   if qsHttpReservedPath(pPath) then
       return "no"
    end if
    put (the last char of pPattern is "/") into tPatSlash
@@ -5582,6 +5660,7 @@ end qsEditHtml
 -- Tor serves at the folder root). Mirrored by qsCwServe's prologue.
 command qsFsServePath pStream, pHeaders
    local tRaw, tPath, tConn
+   put pHeaders["__method"] into sFsMethod[pStream]   -- a HEAD reply must carry no body (qsFsSendText)
    put pHeaders["__path"] into tRaw          -- still %xx-encoded; used for the redirect Location
    put urlDecode(tRaw) into tPath            -- real chars for disk mapping
    if tPath is empty then
@@ -5915,7 +5994,7 @@ end qsFsFinish
 -- pExtra (optional): additional CRLF-terminated response header lines (e.g. "Allow: ...").
 -- Existing callers pass four arguments, so pExtra is empty and the output is unchanged.
 command qsFsSendText pStream, pStatus, pType, pBody, pExtra
-   local tData, tHead, tCrlf
+   local tData, tHead, tCrlf, tBody
    put (numToChar(13) & numToChar(10)) into tCrlf
    put textEncode(pBody, "UTF-8") into tData
    put ("HTTP/1.1 " & pStatus & tCrlf & "Content-Type: " & pType & tCrlf & \
@@ -5923,7 +6002,21 @@ command qsFsSendText pStream, pStatus, pType, pBody, pExtra
    put qsHttpExtraHeaders() after tHead
    put pExtra after tHead
    put ("Connection: close" & tCrlf & tCrlf) after tHead
-   oxWrite pStream, (textEncode(tHead, "UTF-8") & tData)
+   -- a HEAD reply must report the accurate Content-Length a GET would return but send NO
+   -- body. Unlike the clearweb twin this can never DESYNC anything - a Tor response always
+   -- closes its stream, so there is no next response to mis-frame - so the cost of getting
+   -- it wrong (as this handler did until 2026-08-17, while qsCwSendText had the test from
+   -- the start) is a body pushed down an onion circuit for a client that discards it
+   -- unread: wasted bandwidth on the slowest transport we have, plus a plain spec
+   -- violation. It reached EVERY non-file Tor reply - listings, 404s, /_qs/info,
+   -- /_qs/transparency, /_qs/routes and every user-route body. (The file path already
+   -- handles HEAD in qsFsServeFile.)
+   if sFsMethod[pStream] is "HEAD" then
+      put "" into tBody
+   else
+      put tData into tBody
+   end if
+   oxWrite pStream, (textEncode(tHead, "UTF-8") & tBody)
    oxCloseStream pStream
    qsFsCleanup pStream
 end qsFsSendText
@@ -5946,6 +6039,7 @@ command qsFsCleanup pStream
    delete variable sFsTxRemaining[pStream]
    delete variable sFsTxName[pStream]
    delete variable sFsTxDeadline[pStream]
+   delete variable sFsMethod[pStream]
 end qsFsCleanup
 
 command qsFsAbort pStream

@@ -22,6 +22,48 @@ it had checked.
 
 ---
 
+## WHAT CLOSED THE SAME DAY THIS WAS COMPILED (2026-08-17)
+
+This file was compiled in the morning and most of its C and D sections were
+built in the afternoon, by eight agents working on disjoint file sets with the
+whole gate suite green at the end. Recording it here rather than rewriting the
+41 entries, because **the entries are the evidence for the numbers below** and
+striking them would delete the reasoning.
+
+**Closed: C1-C6, C8-C16, C19-C21, B1, B3, B6, D1-D3, D6-D8, D11-D13, D15.**
+Highlights, each with the measurement rather than the adjective:
+
+- **The two gates that were lying are fixed and gated.** `check-handler-calls`
+  could not see 2,476 lines of nocloud (fixed, +42 handlers, 12 fixtures);
+  `check-suite-coverage` counted a SKIP NOTE as coverage (fixed by writing the
+  four missing checks, not by exempting them - torrentxt 85/85, zero
+  exemptions).
+- **`cross-member-test.py` now runs in CI at all.** It ran in ZERO lanes and
+  printed "every cross-member invariant holds (measured natively, not
+  reasoned)" after skipping three of four legs.
+- **box2dxt's C ABI, this file's "biggest genuinely-open measurement hole", is
+  half closed and now MEASURED BY GCOV: 53 -> 194 of 370 exports entered.**
+  Section F's "60 of 370" was itself a grep artifact - it counted the `extern`
+  DECLARATION block, and six exports sat there declared and never called, so
+  every prior count of that harness's reach included six functions nothing ran.
+  A declaration is not a call. `check-lcb-signatures.py` (370 binds vs 370
+  definitions, return type, arity, every parameter) is wired into the gate set.
+- **Three real defects with a security or consensus edge:** onionxt's
+  `oxHostOfSocket` FAILED OPEN on a bare IPv6 socket id (item 1 parsed empty,
+  and `oxHostIsLoopback` accepts empty) on a guard its own comment calls
+  security-critical; riptide keyed six LAN sync arrays by the enet peer rather
+  than the signing device, so on a joiner other devices never appeared at all;
+  holde-em's host election could elect a sitting-out seat, a deterministic
+  table-death in the one layer whose written contract is that the election
+  always concludes.
+
+**Still open and unchanged: all of section A, B2/B4/B5/B7, C7, C17, C18, C22,
+D4, D5, D9, D10, D14, and every one of section E.** C7 - the holde-em
+harness-region ratchet - is the largest, and now has its prerequisite: the
+coverage gate's string convention is decided and documented for it to reuse.
+
+---
+
 ## THE FOURTH EXHAUSTION BANNER, AND WHY IT KEEPS FAILING
 
 `docs/REMAINING-WORK.md` carries three banners declaring the headless column
@@ -200,24 +242,37 @@ called once metadata arrives.
 
 ## C. DEFECTS AND GATE GAPS - fix before an engine run is spent on them
 
-**C2. The coverage gate counts a SKIP NOTE as coverage** - suite tools,
-small. **[M]** `check-suite-coverage.py`'s hit scan is a bare word-boundary
-regex over text that still contains string literals. Measured: **exactly
-three** handlers - `btMoveStorage`, `btSetFilePriorities`,
-`btAddTorrentWithResume` - have their only surviving mention inside
-`bt1stNote` strings at `tests/suite-selftest.livecodescript:16754-16755`
-**that say the handlers are not exercised**. The advertised **724/742 is
-721/742** by the gate's own definition.
+**C2. ~~The coverage gate counts a SKIP NOTE as coverage~~ FIXED 2026-08-17** -
+suite tools, small. **[M]** `check-suite-coverage.py`'s hit scan was a bare
+word-boundary regex over text that still contained string literals, so a handler
+counted as exercised if a test LABEL spelled its name. It fired in the worst
+direction available: torrentxt's harness ends with a section headed "not
+auto-checked - confirm by hand", and the gate was accepting those notes - whose
+content is that the handlers are NOT exercised - as proof that they were.
 
-> *Correction to the survey, recorded rather than tidied away:* it reported
-> five such handlers and a figure of 719/742, including `btAddMagnet` and
-> `cxBech32EncodeValues`. Both have real calls (4 and 11 mentions, not all
-> in literals). The measured number is three.
+> **THE NUMBER WAS MEASURED THREE TIMES AND CAME OUT DIFFERENT EVERY TIME, AND
+> THE TRAIL IS THE POINT.** The survey said five handlers, 719/742. This document
+> said three, 721/742, with a blockquote "correcting" the survey. The fix
+> measured **four, 720/742**. All three disagreed because each measured a
+> DIFFERENT TEXT: the gate scans the harness with the embedded library spans CUT,
+> and `btAddMagnet`'s only real call lives inside the cut riptide embed - so it
+> looks covered before the cut and is a note after it. `cxBech32EncodeValues` is
+> literal-only too and survives only via the dispatch carve-out. Both earlier
+> counts, including this file's own correction of the survey, were right about
+> one handler and wrong about the other. Measuring "the file" is not measuring
+> "what the gate reads".
 
-Today a maintainer closes a coverage gap by **writing prose about the gap** -
-the coinxt-constant-gate failure this repo has already paid for once.
-**Decide the string convention here and reuse it in C7**, or the new ratchet
-inherits the same fail-open on day one.
+**Resolved by closing the gaps rather than exempting them, which changed the
+answer again.** Three exemptions were written first and then REMOVED: the shims
+check the handle or session FIRST and return an error code before anything
+destructive runs, so every one of the four has a refusal leg that is safe,
+offline and deterministic. `btMoveStorage(999999, ...)` returns -2 having moved
+nothing; `btAddTorrentWithResume` on garbage returns 0 with "invalid resume
+data" from the ec-overload. Writing the note's prose into `UNTESTABLE` would
+have installed, as a considered decision, a paraphrase of the very sentence that
+caused the bug. All four now have real checks. **torrentxt is 85/85 with zero
+exemptions and the suite is back to 724/742 - the same number it advertised
+before, true for the first time.**
 
 **C3. Wire box2dxt's four written-but-unrun checks into `build-all.sh`** -
 box2dxt, small. **[S, all four executed by the surveyor]**
