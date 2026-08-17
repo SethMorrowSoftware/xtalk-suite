@@ -380,6 +380,7 @@ constant bt1kStHeight = 620
 local bt1sSession          -- the live session handle (0 = none)
 local bt1sTorrent          -- a torrent we create + seed, for torrent-scoped checks
 local bt1sTorrent2         -- a second torrent from the extended-add check
+local bt1sTorrent3         -- a third, from the plain btAddMagnet check beside it
 local bt1sTempDir          -- parent dir we seed from
 local bt1sContentDir       -- the content folder inside it
 local bt1sTotal, bt1sPassed, bt1sFailed, bt1sSkipped
@@ -16582,6 +16583,7 @@ command bt1stRun
    bt1stResetCounters
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
+   put 0 into bt1sTorrent3
 
    bt1stSection "session + ABI"
    -- btStartSession is the one handler that can throw (on ABI skew); a clean
@@ -16753,7 +16755,7 @@ command bt1stRun
    bt1stSection "not auto-checked - confirm by hand"
    bt1stNote "btMoveStorage + btRemoveTorrent(deleteFiles=true) are destructive;"
    bt1stNote "btSetFilePriorities needs a binary buffer; btAddTorrentWithResume"
-   bt1stNote "needs async resume bytes; btAddMagnet is covered via btAddMagnetEx."
+   bt1stNote "needs async resume bytes. btAddMagnet is now checked above."
    catch bt1tRunErr
       bt1stNote "RUNTIME ERROR - a binding call failed: " & bt1tRunErr
       add 1 to bt1sFailed
@@ -16843,6 +16845,15 @@ command bt1stRunTorrentChecks pTorrentData
    bt1stAssert "btClearPieceDeadlines", (btClearPieceDeadlines(bt1sTorrent) is 0)
 
    bt1stSection "extended add"
+   -- btAddMagnet is the plain form of the Ex call below. It used to be listed
+   -- in the hand-check note at the end of this file as "covered via
+   -- btAddMagnetEx", which is an argument about SHAPE, not a test: the two
+   -- take different argument counts, so the plain form's own marshalling was
+   -- never exercised anywhere. The 2026-08-17 coverage-gate fix - which stopped
+   -- counting a name inside a string literal as a call - is what surfaced that,
+   -- because the note was the only surviving mention.
+   put btAddMagnet(bt1sSession, "magnet:?xt=urn:btih:2222222222222222222222222222222222222222", bt1sTempDir) into bt1sTorrent3
+   bt1stAssert "btAddMagnet returns a handle", (bt1sTorrent3 > 0)
    put btAddMagnetEx(bt1sSession, "magnet:?xt=urn:btih:1111111111111111111111111111111111111111", bt1sTempDir, "16", "16") into bt1sTorrent2
    bt1stAssert "btAddMagnetEx (paused) returns a handle", (bt1sTorrent2 > 0)
    bt1stAssert "btAddTorrentFileEx returns a handle", (btAddTorrentFileEx(bt1sSession, pTorrentData, bt1sTempDir, "16", "16") > 0)
@@ -16880,11 +16891,15 @@ command bt1stCleanup
       if bt1sTorrent2 is not empty and bt1sTorrent2 > 0 then
          btRemoveTorrent bt1sSession, bt1sTorrent2, false
       end if
+      if bt1sTorrent3 is not empty and bt1sTorrent3 > 0 then
+         btRemoveTorrent bt1sSession, bt1sTorrent3, false
+      end if
       btStopSession bt1sSession
    end if
    put 0 into bt1sSession
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
+   put 0 into bt1sTorrent3
 end bt1stCleanup
 
 

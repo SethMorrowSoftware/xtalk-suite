@@ -10,17 +10,19 @@ member could ship a new public handler, never test it, and every gate in the
 repo would stay green: the generated file would be perfectly up to date with a
 harness that does not touch the new code.
 
-That gap is invisible from the inside. The harness is 4300 lines and runs about
-580 checks, which reads as thorough, and "is it thorough?" is not a question
-anyone re-asks after seeing a number that size. When it was first measured, 31
-public handlers across the suite had never been called by it - including
-CoinXT's cxHdDeriveChild (the single derivation step the whole HD layer loops
-over) and both ABI-4 tweak entry points, which are what make an xpub watch-only
-wallet agree with its xprv.
+That gap is invisible from the inside. The harness was 4300 lines running about
+580 checks when this was written (34343 lines today), which reads as thorough,
+and "is it thorough?" is not a question anyone re-asks after a number that size.
+When it was first measured, 31 public handlers across the suite had never been
+called by it - including CoinXT's cxHdDeriveChild (the single derivation step
+the whole HD layer loops over) and both ABI-4 tweak entry points, which are what
+make an xpub watch-only wallet agree with its xprv.
 
 WHAT IT CHECKS. For every member, the public API surface - `public handler` in a
-.lcb, top-level handlers in a src/ .livecodescript - must appear by name in
-tests/suite-selftest.livecodescript, or be listed in UNTESTABLE below with the
+.lcb, top-level handlers in a src/ .livecodescript - must appear by name in the
+SCANNED VIEW of tests/suite-selftest.livecodescript - comments stripped, the
+embedded library spans cut, string literals blanked, the last two each with a
+section below. Anything not named there must be listed in UNTESTABLE with the
 reason it cannot run in an offline paste-into-a-stack harness. There are only
 two honest reasons, and both are about the environment rather than the code:
 
@@ -50,6 +52,67 @@ handler arrives pre-"exercised" by its own definition. So the spans between the
 sentinels are removed before the scan, and their ABSENCE is an error rather
 than a fallback: a harness with no spans to cut means the embed contract
 changed under this gate, and scanning it whole would fail open.
+
+STRING LITERALS ARE BLANKED BEFORE THE SCAN, AND THE NEXT GATE MUST USE THE SAME
+CONVENTION. Until 2026-08-17 the hit scan was a bare `\\bname\\b` over text that
+still held every string literal in the harness, so a handler counted as
+exercised if a TEST LABEL happened to spell its name. That is not a theoretical
+hole - it fired, in the worst direction available. TorrentXT's harness ends with
+a section headed "not auto-checked - confirm by hand" whose three notes read:
+
+    btMoveStorage + btRemoveTorrent(deleteFiles=true) are destructive;
+    btSetFilePriorities needs a binary buffer; btAddTorrentWithResume
+    needs async resume bytes; btAddMagnet is covered via btAddMagnetEx.
+
+Four handlers - btMoveStorage, btSetFilePriorities, btAddTorrentWithResume and
+btAddMagnet - had no other surviving mention anywhere in the scanned text. So
+this gate was accepting, as its proof that they were exercised, a sentence whose
+content is that they are not. (btAddMagnet is the instructive one: it HAS a real
+call, in riptide's rsMediaFetch - inside the embedded riptide layer, which the
+cut above correctly removes. Measure before the cut and it looks fine; measure
+what the gate actually scans and it is a note.) The advertised 724/742 was
+720/742 by the gate's own definition. That is the coinxt-constant-gate failure
+again, in the same shape - a count of what was PARSED presented as a count of
+what was CHECKED - and root CLAUDE.md's verdict on it applies unchanged: a gate
+that overstates its coverage is worse than no gate, because it answers the
+question nobody asks twice.
+
+THE CONVENTION, spelled out because a second gate is about to be built on it.
+Every double-quoted literal is blanked to spaces - the quotes are kept, so line
+lengths survive and a blanked line is still readable when dumped - EXCEPT on a
+line where `do`, `dispatch`, `send` or `stThrows` appears OUTSIDE a literal.
+There the raw line is kept, because on such a line a name inside a literal IS a
+call site: `do "get" && pHandler` is how cx1stThrows2 drives the handler it is
+given, and `send "b2kFell" to me` is how the b2k Kit dispatches. Measured
+2026-08-17, the carve-out fires on 72 lines and is load-bearing for exactly one
+handler - cxBech32EncodeValues, whose three surviving mentions are all
+cx1stThrows2 dispatches (720/742 with the carve-out, 719/742 without it). Two
+details of it are deliberate:
+
+  - The keyword test runs on the BLANKED line, not the raw one, so prose that
+    merely contains the word cannot carve itself out. Measured both ways:
+    matching raw carves 86 lines, matching blanked carves 72, and the coverage
+    total is identical - the 14 lost were all prose ("what do ya want for
+    nothing?", the Jefe HMAC vector, three copies; "static terrain helpers do
+    not enter the control table"). Same answer, 14 fewer places to be wrong.
+  - The carve-out is the one place this gate fails OPEN, so its keyword list is
+    a fixed literal set and has to stay short. Widening it - to `put`, say -
+    would quietly reopen the hole this section exists to close.
+
+LiveCodeScript has no backslash escapes inside a literal (a quote is written as
+the `quote` constant), so toggling on `"` is exact rather than approximate -
+the same assumption strip_comments() below has always made. Blanking is per
+line, because a literal cannot span a physical line break even under a `\\`
+continuation.
+
+THE HOLDE-EM HARNESS-REGION RATCHET MUST SCAN THROUGH blank_string_literals()
+TOO. That is the open item at the bottom of MEMBERS, and it is the single worst
+place to skip this: holde-em is one 15k-line file where the game's prose, its
+wire-protocol names, its `send`-armed message names and its test labels all sit
+beside the API being measured. Scanned with literals in, it would report a
+number that reads as proof of a coverage it has not got - which is the failure
+this section just closed, arriving somewhere with far more string literals to
+be wrong about.
 
 Usage:
   python3 tools/check-suite-coverage.py            # print the table
@@ -159,6 +222,29 @@ MEMBERS = [
 # reason specific: "hard to test" is not one of the two categories, and if a
 # handler only needs a fixture then it belongs in a harness, not in here.
 UNTESTABLE = {
+    # --- torrentxt: three handlers the harness must not run ------------------
+    # Added 2026-08-17, when blanking string literals stopped this gate
+    # counting torrentxt's own "not auto-checked - confirm by hand" note as
+    # proof the handlers it names were exercised. The note's reasons were
+    # always honest; they just were not entries. A fourth name in that note -
+    # btAddMagnet - is NOT here: it was excused as "covered via btAddMagnetEx",
+    # which is an argument about shape rather than a test (the two take
+    # different argument counts, so the plain form's marshalling was never
+    # exercised), so it got a real check in torrentxt's harness instead.
+    #
+    # These three stay excused because running them in an automated harness
+    # would either destroy data or require bytes only a live swarm produces.
+    # Each is on the runbook's manual list: torrentxt's "destructive-handler
+    # manual pass" (REMAINING-WORK B.7).
+    "btMoveStorage": "destructive: relocates a torrent's storage on disk; "
+                     "manual pass only (REMAINING-WORK B.7)",
+    "btSetFilePriorities": "needs a binary priority buffer sized to a real "
+                           "torrent's file list, which needs metadata from a "
+                           "live swarm; manual pass only",
+    "btAddTorrentWithResume": "needs async resume bytes, which only a real "
+                              "btSaveResumeData round trip produces; the "
+                              "resume path is runbook B.7's restart pass",
+
     # --- onionxt: the engine's own socket callbacks --------------------------
     # OnionXT is pure script over engine sockets, and these are what the ENGINE
     # calls when one of them does something. They take a socket id the harness
@@ -230,6 +316,65 @@ def cut_embedded_spans(text):
     return "\n".join(kept), names, problems
 
 
+# The carve-out for the literal blanking below: the spellings that make a name
+# inside a string a genuine call site rather than prose about one. IGNORECASE
+# because LiveCodeScript keywords are case-insensitive, though measured
+# 2026-08-17 it changes nothing in this tree (all 72 carved lines are lowercase).
+# THIS IS THE ONE PLACE THIS GATE FAILS OPEN - keep the list short and literal.
+DISPATCH_RE = re.compile(r'\bdo\b|\bdispatch\b|\bsend\b|stThrows', re.I)
+
+
+def blank_literals_in_line(raw):
+    """One line with every double-quoted literal blanked to spaces.
+
+    The quotes stay so the line keeps its length (and stays legible if it is
+    ever printed). Toggling on `"` is exact, not a heuristic: LiveCodeScript has
+    no in-literal escape - a quote character is the `quote` constant - so there
+    is no such thing as an embedded, escaped quote to be fooled by.
+    """
+    buf, instr = "", False
+    for ch in raw:
+        if ch == '"':
+            instr = not instr
+            buf += ch
+        elif instr:
+            buf += " "
+        else:
+            buf += ch
+    return buf
+
+
+def blank_string_literals(text):
+    """Literal-free view, minus the dispatch carve-out. THE convention.
+
+    See the module docstring for why this exists and what it cost to learn. The
+    holde-em harness-region ratchet must scan through THIS function, not a copy
+    of it with its own idea of the carve-out.
+    """
+    out = []
+    for raw in text.split("\n"):
+        blanked = blank_literals_in_line(raw)
+        # The keyword test runs on the BLANKED line on purpose. Matched against
+        # the raw line, any note containing the word "do" or "send" carves ITSELF
+        # out and hands its literals back to the scan - measured, that is 14 of
+        # 86 lines here and every one of them prose.
+        out.append(raw if DISPATCH_RE.search(blanked) else blanked)
+    return "\n".join(out)
+
+
+def literal_only_mentions(name, mentioned, harness):
+    """The lines where `name` survives commenting-out but not the blanking.
+
+    Worth the extra pass purely for the failure message: after the blanking, a
+    maintainer who greps the harness for a handler this gate has just called a
+    gap FINDS the name and concludes the gate is broken. It is not - the mention
+    is a label. Quote the line back at them and the argument is over.
+    """
+    pat = re.compile(r'\b' + re.escape(name) + r'\b')
+    return [a.strip() for a, b in zip(mentioned.split("\n"), harness.split("\n"))
+            if pat.search(a) and not pat.search(b)]
+
+
 def strip_comments(text):
     """Comment-free view. A handler named only in a comment is not exercised."""
     out = []
@@ -294,7 +439,11 @@ def main(argv):
               "that member. The embed contract with tools/build-suite-selftest.py "
               "changed; update both sides together.")
         return 1
-    harness = strip_comments(cut)
+    # Two views, because the failure message needs the difference between them:
+    # `mentioned` is what a grep of the harness would find, `harness` is what
+    # counts as a call.
+    mentioned = strip_comments(cut)
+    harness = blank_string_literals(mentioned)
 
     problems = []
     rows = []
@@ -317,10 +466,19 @@ def main(argv):
         total_excused += len(excused)
         rows.append((member, len(hit), len(api), len(excused), gaps))
         if gaps:
+            detail = []
+            for gap in gaps:
+                shown = literal_only_mentions(gap, mentioned, harness)
+                if shown:
+                    detail.append(f"{gap}\n         named ONLY inside a string "
+                                  f"literal, which is not a call: "
+                                  f"{shown[0][:100]}")
+                else:
+                    detail.append(gap)
             problems.append(
                 f"{member}: {len(gaps)} public handler(s) are never called by the "
                 f"suite harness and are not listed as untestable:\n      "
-                + "\n      ".join(gaps)
+                + "\n      ".join(detail)
                 + f"\n      Add a check to that member's own harness and rerun "
                   f"tools/build-suite-selftest.py, or - only if it genuinely "
                   f"cannot run offline - add it to UNTESTABLE in "
