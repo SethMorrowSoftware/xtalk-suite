@@ -31,10 +31,33 @@ node, and not a broadcaster.
 It **is**:
 - secp256k1 elliptic-curve operations: keypairs, ECDSA (RFC 6979 deterministic), **recoverable** ECDSA
   (the `v` recovery id Ethereum needs), public-key recovery (`ecrecover`), ECDH, and Schnorr / BIP-340.
-- The hashes both chains need: SHA-256, SHA-512, SHA3-256/512 (AS BUILT: SHA3-512 is specced here
-  and in the README but not built - no `cnx_sha3_512` / `cxSha3_512` exists, and section 5.1 below
-  never listed one; the vendored `sha3.c` implements it, so ship it or strike it is an open call),
-  **Keccak-256** (Ethereum's non-NIST padding), RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
+- The hashes both chains need: SHA-256, SHA-512, SHA3-256, **Keccak-256** (Ethereum's non-NIST
+  padding), RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512.
+  > **AS BUILT: SHA3-512 IS DEFERRED, and that open call is CLOSED as of 2026-08-17.** This bullet
+  > read "SHA3-256/512" with a note saying no `cnx_sha3_512` / `cxSha3_512` exists and that "ship it
+  > or strike it is an open call". Neither half of that call was taken for a year, so it is taken
+  > here: **deferred, not struck**, and the line above no longer advertises 512 as provided.
+  >
+  > *Deferred rather than struck*, because the primitive is not missing - the vendored `sha3.c` at
+  > the pinned commit implements SHA3-512 and it is already compiled into every shipped binary. What
+  > is missing is only the two wrappers, so recording the design keeps a real fact ("one export
+  > away") that striking the line would throw away.
+  >
+  > *Deferred rather than shipped*, because shipping it is not a documentation change and must not
+  > be smuggled in as one. It needs a `cnx_sha3_512` export plus its length accessor, `.lcb`
+  > wrappers, an ABI bump in `CNX_ABI_VERSION` AND `kABIVersion`, and - suite rule 5 - the committed
+  > `src/code/<arch>-<platform>/` binary refreshed for all four platforms in the same change, with
+  > the Windows pair meeting this member's execution bar. That is a native release pass. Against
+  > that cost the demand is zero: neither chain uses SHA3-512 (Bitcoin is SHA-256/RIPEMD-160,
+  > Ethereum is Keccak-256), nothing in the suite calls it, and callers who want the NIST padding
+  > already have `cxSha3_256`. Rule 1's principle applies to surface as much as to code - do not
+  > widen the audited native boundary for a caller who does not exist.
+  >
+  > *The condition for revisiting*, written down so this does not become an open call again: a
+  > concrete caller. Ship it in a native release pass with the ABI bump, or leave it deferred.
+  > `tools/check-doc-handlers.py` carries `cxSha3_512` as a `deferred` exemption naming this
+  > paragraph, and will fail the build the day the handler actually ships with the exemption still
+  > in place - so the decision cannot rot in either direction.
 - HD wallets: BIP-32 derivation, BIP-39 mnemonics (and SLIP-39 in a later phase).
 - Address and serialization formats: Base58Check, Bech32 / Bech32m (SegWit v0 / v1), hex, RLP, xprv/xpub,
   WIF, and the EIP-55 mixed-case Ethereum checksum.
@@ -156,8 +179,14 @@ known-answer testable.** trezor-crypto signs with RFC 6979 (deterministic ECDSA)
 randomness. The only place randomness is inherent is *fresh key material*, and CoinXT does not generate
 it internally:
 
-- A private key is any valid 32-byte scalar. `cxSeckeyValidate` checks range; a seed / mnemonic / entropy
+- A private key is any valid 32-byte scalar. `cxSeckeyIsValid` checks range; a seed / mnemonic / entropy
   is supplied by the caller.
+  > **AS BUILT (name corrected 2026-08-17).** This line said `cxSeckeyValidate`, which has never
+  > existed - the shipped handler is `cxSeckeyIsValid` (`.lcb`, returns a Boolean rather than
+  > throwing, which is what makes it usable for a range CHECK). Section 5.1 and section 8 already
+  > spelled it correctly, so the wrong name was in exactly one place: a reader who copied it out of
+  > this paragraph got `handler not found`. `tools/check-doc-handlers.py` now refuses any `cx*` name
+  > in these docs that no handler defines, so a name that only exists in prose cannot come back.
 - The caller brings entropy from a real CSPRNG. The natural source in this family is **SodiumXT's
   `sxRandomBytes`** (compose it), exactly as OnionXT derives onion keys from a SodiumXT seed. An app
   without SodiumXT passes OS entropy it obtained itself.

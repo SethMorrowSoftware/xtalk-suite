@@ -167,6 +167,18 @@ run_gates() {
   # and every parameter type. A mismatch here is not a compile error anywhere -
   # it surfaces at RUN TIME on an engine, as a marshalling fault in a call that
   # looks right in both files. Sub-second, and green today.
+  # Do the docs and the shipped handler set still agree? A `cx*` name in the
+  # docs that no handler defines costs a reader a `handler not found`, and every
+  # other gate stays green about it: SPEC.md named `cxSeckeyValidate` where the
+  # shipped handler is `cxSeckeyIsValid`, in the one document that member calls
+  # its source of truth. Holds BOTH directions - a documented name nothing
+  # defines, and a shipped public handler the api-reference never names - with
+  # the stale-excuse ratchet from tools/check-suite-coverage.py, so a rename
+  # cannot leave a permanent exemption behind it.
+  if [ -f "$m/tools/check-doc-handlers.py" ]; then
+    echo "== $m: tools/check-doc-handlers.py =="
+    ( cd "$m" && python3 tools/check-doc-handlers.py --check )
+  fi
   if [ -f "$m/tools/check-lcb-signatures.py" ]; then
     echo "== $m: tools/check-lcb-signatures.py =="
     ( cd "$m" && python3 tools/check-lcb-signatures.py )
@@ -243,6 +255,30 @@ fi
 if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
   python3 tools/check-harness-scaffold-drift.py
+fi
+# The three C++ shims carry ONE handle table in three files, and this is the
+# first gate in the suite that compares one member's NATIVE code to another's.
+# The existing native gates are all vertical and single-member; the horizontal
+# "are the N copies still one thing?" question had gates only on the script
+# side. Suite rule 4 - a stale handle is a harmless no-op - IS this header,
+# three times, so a fix landing in one copy leaves the other two members'
+# stale-handle rule quietly weaker, and the symptom arrives on an engine as a
+# touch of a recycled slot. Scoped to the handle table ALONE: the record codecs
+# genuinely diverge per library, and docs/OPEN-DECISIONS.md D-14 stays open over
+# every block this does not name.
+if [ -f tools/check-shim-scaffold-drift.py ]; then
+  echo "== suite: tools/check-shim-scaffold-drift.py =="
+  python3 tools/check-shim-scaffold-drift.py
+fi
+# The committed binaries still match the source that produced them.
+# MANIFEST.sha256, checked per member below, proves a blob is UNCHANGED; it
+# cannot prove the blob is what the current source would BUILD - so an export
+# lost in a MinGW cross-build, or an ABI bump the binary never got, passes it
+# and reaches a user as a bind failure at LOAD time. No compiler and no
+# binutils: stdlib struct walks over ELF and PE.
+if [ -f tools/check-binary-freshness.py ]; then
+  echo "== suite: tools/check-binary-freshness.py =="
+  python3 tools/check-binary-freshness.py
 fi
 if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="
@@ -351,6 +387,15 @@ fi
 # would have made: no duplicate handlers, no undeclared constant (which
 # LiveCodeScript turns into the literal text of its own name rather than an
 # error), the core's entry points present, and the async cuts still cut.
+# tests/preflight.livecodescript is the one-paste "can this machine run the
+# pass at all?" stack, and its six expected-ABI numbers are READ from the C
+# shims - so it goes stale at the next ABI bump exactly as the suite harness
+# goes stale on a test change. --check re-derives them and re-proves the three
+# invariants the generated stack depends on.
+if [ -f tools/build-preflight.py ]; then
+  echo "== suite: tools/build-preflight.py --check =="
+  python3 tools/build-preflight.py --check
+fi
 if [ -f tools/check-suite-selftest.py ]; then
   echo "== suite: tools/check-suite-selftest.py =="
   python3 tools/check-suite-selftest.py
@@ -364,6 +409,17 @@ fi
 if [ -f tools/check-suite-coverage.py ]; then
   echo "== suite: tools/check-suite-coverage.py =="
   python3 tools/check-suite-coverage.py --check
+fi
+# tools/install-release-binaries.py is the one piece of code standing between a
+# freshly built artifact and a committed binary, and until now NOTHING ran it
+# except release-binaries.yml - the gates were silent about the tool whose whole
+# job is refusing bad libraries. --selftest drives main() over throwaway bundles
+# and asserts each leg: member routing, filename, architecture, the thin-Mach-O
+# refusal, and both manifest legs against a temporary ROOT. Nothing in the tree
+# is written.
+if [ -f tools/install-release-binaries.py ]; then
+  echo "== suite: tools/install-release-binaries.py --selftest =="
+  python3 tools/install-release-binaries.py --selftest
 fi
 
 if [ "$GATES_ONLY" = 1 ]; then

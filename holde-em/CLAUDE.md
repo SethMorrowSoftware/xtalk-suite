@@ -187,24 +187,38 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   - 7d also refuses a sweep that is not by the member prefix, and 7e refuses
 >     any of the nine dropped chrome handlers reappearing.
 >
->   **COVERAGE: holde-em deliberately has NO ROW in
->   `tools/check-suite-coverage.py`**, and the numbers are written out beside
->   that tool's `MEMBERS` list so the call can be re-taken rather than
->   inherited. Measured against the shipped harness: 379 public `he*`
->   handlers; **0/379** as the gate is written (everything ships as `he1he*`,
->   so a blind row would fail with 379 phantom gaps); **379/379** with the
->   scan taught the prefix - permanently, from day one, because the folded
->   section IS the game and the game names its own API; **163/379** counting
->   only names a `heTest*`/`heProbe*` body mentions directly, which is the
->   honest number and not one this gate can compute. The 379/379 is exactly
->   the failure the embedded-span CUT exists to prevent, arriving where there
->   is nothing to cut: every other member keeps its library in a separate file
->   that is embedded and cut while its tests are folded. A row would be a gate
->   that overstates its coverage - the coinxt-constant-gate lesson - so what
->   backs this layer stays the seven KAT mirrors plus `tools/logic-fuzz.py`
->   (an INDEPENDENT reference, not the port), and a name-level ratchet for a
->   single-file member is an OPEN item: it needs a way to scan the harness
->   REGION of one file, which no mechanism in this suite has.
+>   **COVERAGE: holde-em HAS AN ADVISORY ROW as of 2026-08-17.** The
+>   paragraph that stood here said it deliberately had NO row, that the honest
+>   number was "not one this gate can compute", and that a name-level ratchet
+>   for a single-file member "needs a way to scan the harness REGION of one
+>   file, which no mechanism in this suite has". The mechanism exists now, and
+>   the reasoning below is kept because it is WHY the row has the shape it
+>   does - the superseded numbers are marked as such rather than deleted.
+>
+>   The gate splits this ONE file at its selftest boundary into a GAME region
+>   and a HARNESS region - the same move as the embedded-span cut, done with a
+>   boundary line instead of a sentinel - and asks its question across the cut.
+>   **119/329 game handlers are named by a body reachable from the selftest
+>   entry point; +1 dispatched by name = 120/329 exercised, 209 named by
+>   nothing that runs** (20 live-transport, 9 engine-media, 41 host-window, 139
+>   simply untested). The denominator is **329 game + 51 harness = 380** public
+>   `he*` handlers, not the 379 this file and three others quoted.
+>
+>   The old dead ends still explain the design: **0/379** blind and **379/379**
+>   with the prefix taught (permanently, because the folded section IS the game
+>   and the game names its own API) are both lies, and ~~163/379~~ was a fourth
+>   answer from a fifth convention. Two conventions are deliberately different
+>   here: REACHABILITY keeps string literals, because sections are wired as
+>   `heRunSection "heTestFoldRun"` -> `do pName`; COVERAGE blanks them, because
+>   a literal is a label until proven otherwise. Exactly two names differ, one
+>   of each kind - `heProbeSodium` (a literal that IS the call) and
+>   `heHandStart` (a literal that is only a test label, and a genuine gap).
+>
+>   The row is ADVISORY - it prints without failing - but every property that
+>   would make its number a LIE is enforced, including a denominator floor that
+>   caught a comment-parse fault turning the row green at 66/260. The seven KAT
+>   mirrors plus `tools/logic-fuzz.py` still back this layer; they are no longer
+>   the only thing that does.
 >
 >   **WHAT IS STILL OWED: the OXT pass.** Nothing here has been compiled by an
 >   engine. The fold is verified statically - the generated file passes the

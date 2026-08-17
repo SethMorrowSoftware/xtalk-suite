@@ -176,9 +176,14 @@ is a support promise only the owner can renegotiate.
 in `release-binaries.yml`'s matrix; its known-good Linux recipe is `docker run
 manylinux2014` inside a stock runner (node20 actions refuse to start in a
 glibc-2.17 container), which cannot join the `cmake-members` job's
-`container:` shape; `tools/install-release-binaries.py` also does not know
-box2dxt's package layout; "Do this as a deliberate release-lane pass, not a
-drive-by."
+`container:` shape; ~~`tools/install-release-binaries.py` also does not know
+box2dxt's package layout~~ - **that half LANDED 2026-08-17, and the cost was
+MISPRICED rather than paid: there was never a layout to learn.** box2dxt's
+`src/code` is the identical family layout to sodiumxt's and torrentxt's, so the
+installer needed ONE token; it is verification-only and inert until a lane
+exists, and pinned by a committed `--selftest`. Only the WORKFLOW half remains,
+which is the half that is genuinely this decision's. "Do this as a deliberate
+release-lane pass, not a drive-by."
 
 **Options:**
 - **Port the docker-run job** from `native-box2dxt.yml` into
@@ -546,6 +551,24 @@ Reasoning: the checker unification paid off because those copies MUST be
 byte-identical; the shim scaffolding must NOT be (the divergences are
 per-library design), so byte-unification is not even the right goal, and the
 extraction's window closed when the last planned member shipped.
+
+> **AMENDED 2026-08-17: half of that reasoning was measured, and half of it was
+> wrong.** "The divergences are per-library design" HOLDS for the record codecs -
+> `btx_record.h` / `enx_record.h` / `dcx_record.h` normalise to 275 / 198 / 202
+> code lines over three different field registries. It does NOT hold for the
+> HANDLE TABLE, which normalises to **89 code lines and ONE digest in all three
+> C++ members**, the only surviving raw differences being the include guard, the
+> `namespace` line and the comments. That is not three implementations that
+> happen to resemble each other; it is one implementation in three files - and
+> suite rule 4 ("a stale handle is a harmless no-op") IS that header, three
+> times, so a fix landing in one copy left the other two members' stale-handle
+> rule quietly weaker, with the symptom arriving on an engine as a touch of a
+> recycled slot.
+>
+> `tools/check-shim-scaffold-drift.py` now holds those three byte-equivalent and
+> **pre-empts none of the three options above**: it is scoped to the handle table
+> ALONE, and this decision stays open over every other block. What changed is
+> only that the recommendation's premise can no longer be stated unqualified.
 
 ---
 

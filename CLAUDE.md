@@ -414,22 +414,45 @@ admissions:
   shipped-is-not-run lesson, one level down in the toolchain. Signatures across
   the boundary are now gated too (`box2dxt/tools/check-lcb-signatures.py`: 370
   binds vs 370 definitions, return type, arity, and every parameter type).
-- **holde-em's `he*` surface** (2026-08-16, at the fold) - 379 public handlers
-  in ONE 15k-line file that is the game AND its harness. A row would read
-  **0/379** as the gate is written (everything ships prefixed as `he1he*`, so
-  it would fail with 379 phantom gaps on day one) and **379/379** the moment
-  the scan were taught the prefix - permanently, because the folded section is
-  the GAME and the game names its own API. Only **163/379** are named by a
-  `heTest*`/`heProbe*` body, which is the honest number and not one this gate
-  can compute. That 379/379 is exactly the failure the embedded-span CUT
-  exists to prevent, arriving where there is nothing to cut: every other
-  member keeps its library in a separate file, embedded and cut, while its
-  tests are folded. A row here would be a gate that overstates its coverage -
-  the coinxt lesson below - so the seven KAT mirrors plus `logic-fuzz.py`
-  (an INDEPENDENT reference, not the port) stay what backs that layer.
+- **holde-em's `he*` surface** - **MEASURED 2026-08-17; the mechanism this
+  paragraph said did not exist now exists.** The old text said a row would read
+  **0/379** or **379/379**, that only **163/379** were named by a test, and that
+  the honest number was "not one this gate can compute". Every figure in that
+  sentence is superseded, including the denominator: the file defines **380**
+  public `he*` handlers, **329 game + 51 harness**, not 379.
 
-Both are OPEN items, not closed ones; holde-em's needs a way to scan the
-harness REGION of a single-file member, which nothing in this suite has.
+  The gate splits the ONE file into a GAME region and a HARNESS region at its
+  selftest boundary - the same move as the embedded-span cut, done with a
+  boundary line instead of a sentinel - and asks its own question across the
+  cut. **119/329 game handlers are named by a body REACHABLE from the selftest
+  entry point**, +1 dispatched by name = **120/329 exercised, 209 named by
+  nothing that runs** (20 live-transport, 9 engine-media, 41 host-window, 139
+  simply untested). The unrestricted closure that `check-suite-selftest.py`
+  check 7d computes over the same graph scores 264/329, and refusing that
+  inflation is exactly why the row has its own stopping rule.
+
+  **TWO STRING CONVENTIONS, DELIBERATELY DIFFERENT, and the difference is two
+  names.** Reachability KEEPS literals, because this harness arms its sections
+  as `heRunSection "heTestFoldRun"` -> `do pName`, so a literal is how a section
+  is WIRED. Coverage BLANKS them, because a literal is a label until proven
+  otherwise. Measured, exactly two names differ and they are one of each kind:
+  `heProbeSodium` survives only inside `heRunSection "heProbeSodium"`, which IS
+  the call; `heHandStart` - the hotseat hand opener - survives only inside a
+  test LABEL and is a genuine gap. The blanking convention was load-bearing on
+  its first use, as its docstring predicted.
+
+  The row is **ADVISORY**: it prints in both modes so CI records the number, and
+  does not fail the build. What IS enforced is everything that would make the
+  printed number a lie - a unique boundary, test-shaped names below it,
+  parseable blocks, reachability of every harness handler bar the three
+  interactive ones, and a denominator floor. That floor is not decoration: a
+  mutation test found that an unterminated `/*` closes on a stray `*/` inside an
+  ordinary line comment, swallowing 2,200 lines and taking 69 public handlers
+  out of the denominator - the row went GREEN at 66/260, every number smaller
+  and wrong.
+
+box2dxt's script-side row is still OPEN. holde-em's is measured, and the honest
+next step is arming it as a floor (no NEW gaps), which would fail on 0 today.
 
 The same shape of hole was in **coinxt's own constant gate**, found while fixing this
 one: `check-selftest-vectors.py` re-derived an explicit list and then printed

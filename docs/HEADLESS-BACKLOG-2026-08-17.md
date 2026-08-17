@@ -57,10 +57,42 @@ Highlights, each with the measurement rather than the adjective:
   table-death in the one layer whose written contract is that the election
   always concludes.
 
-**Still open and unchanged: all of section A, B2/B4/B5/B7, C7, C17, C18, C22,
-D4, D5, D9, D10, D14, and every one of section E.** C7 - the holde-em
-harness-region ratchet - is the largest, and now has its prerequisite: the
-coverage gate's string convention is decided and documented for it to reuse.
+**WAVE 2 CLOSED MOST OF WHAT THAT SENTENCE LISTED (later the same day):
+C7, C17, C18, C22, B2, B5, D5, D10.** Five new gates, all landing green and all
+mutation-tested rather than attested:
+
+- **C7, the holde-em ratchet - the largest item here - is BUILT and ADVISORY.**
+  It splits the one 15k-line file at its selftest boundary into a GAME region
+  and a HARNESS region and asks the coverage question across the cut:
+  **120/329 exercised, 209 named by nothing that runs.** The denominator is
+  **380** public `he*` handlers (329 game + 51 harness), not the 379 four
+  documents quoted. It prints without failing, but every property that would
+  make its number a lie IS enforced - and that mattered immediately: a mutation
+  test found an unterminated `/*` closing on a stray `*/` inside an ordinary
+  line comment, swallowing 2,200 lines and taking 69 handlers out of the
+  denominator, turning the row GREEN at 66/260. The floor catches it.
+- **C18, binary freshness:** 24 committed libraries, 636 distinct `.lcb` binds,
+  2,544 bind-vs-export resolutions, **18 ABI constants decoded straight out of
+  committed machine code** (PE as well as ELF, so the Windows DLLs stop being
+  skips), 6 of them confirmed by loading the library and calling the function.
+  MANIFEST.sha256 proves a blob is unchanged; this proves it still matches its
+  source.
+- **C17 amended a decision brief rather than just adding a gate.** D-14 said the
+  shim scaffolding "must NOT be byte-identical, so byte-unification is not even
+  the right goal". Measured: true of the record codecs (275/198/202 lines, three
+  registries), **false of the handle table, which normalises to 89 code lines
+  and ONE digest in all three members**. Suite rule 4 IS that header, three
+  times.
+- **C22** gave onionxt's skips a counter and the merge path a floor - the last
+  place in the paste where a member could quietly test a third less than it
+  claims while the one summary line read green.
+- **B2** replaced the runbook's hand-typed five-probe PREREQ with a generated
+  one-paste preflight stack whose six expected-ABI numbers are read from the C
+  shims, so an ABI skew is found at minute two instead of minute fifteen.
+
+**Still open: all of section A, B4, B7, D4, D9, D14, and every one of section
+E.** Section A is now the bulk of what remains, and it is genuine feature work
+rather than measurement.
 
 ---
 

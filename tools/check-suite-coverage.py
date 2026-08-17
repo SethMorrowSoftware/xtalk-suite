@@ -105,14 +105,97 @@ the same assumption strip_comments() below has always made. Blanking is per
 line, because a literal cannot span a physical line break even under a `\\`
 continuation.
 
-THE HOLDE-EM HARNESS-REGION RATCHET MUST SCAN THROUGH blank_string_literals()
-TOO. That is the open item at the bottom of MEMBERS, and it is the single worst
-place to skip this: holde-em is one 15k-line file where the game's prose, its
-wire-protocol names, its `send`-armed message names and its test labels all sit
-beside the API being measured. Scanned with literals in, it would report a
-number that reads as proof of a coverage it has not got - which is the failure
-this section just closed, arriving somewhere with far more string literals to
-be wrong about.
+THE HOLDE-EM HARNESS-REGION RATCHET, ADDED 2026-08-17, ADVISORY ON PURPOSE.
+Every row in MEMBERS is (a library file) measured against (the folded harness),
+and the two are different files, which is what lets the scan tell a test from
+the code under test. holde-em has no such pair: its game and its harness are
+ONE file, so the row it could not have is replaced by a REGION SPLIT of that
+one file - which is the same move as the embedded-span cut above, done with a
+boundary line instead of a sentinel:
+
+    holde-em/src/holdem.livecodescript
+      lines 1 .. <boundary>     the GAME - the denominator, 329 public he*
+      <boundary> .. EOF         the HARNESS - the scanned text, 51 handlers
+
+The boundary is `command heRunSelftest`, the first of the two entry points, and
+it is RE-FOUND on every run rather than pinned to a line number. Everything
+below it is a test (heTest*/heT*/heRunSection/heReport*), and the gate refuses
+a build where it is not - a game handler written below the banner would
+silently leave the denominator, which is a coverage number rising because the
+thing it measures shrank.
+
+THE TWO STRING CONVENTIONS ARE DIFFERENT ON PURPOSE, and that is the one part
+of this worth reading twice. Reachability KEEPS literals; coverage BLANKS them:
+
+  - Reachability asks "does this test run?", and this harness arms its sections
+    by literal name - `heRunSection "heTestFoldRun"` reaching `do pName`. A
+    literal is how a section is WIRED, so cutting them would report every
+    section as dead. (This is the same walk, with the same deliberate
+    over-approximation, as check 7d in tools/check-suite-selftest.py, which
+    asks the opposite question of the same graph - what must NOT be reachable.
+    The two share a shape; a fix to either is worth considering for the other.)
+  - Coverage asks "is this handler CALLED?", and there a literal is a label
+    until proven otherwise - the whole lesson of the section above. So the
+    numerator scans through blank_string_literals(), the same function, not a
+    copy with its own idea of the carve-out.
+
+Measured 2026-08-17, the difference between the two conventions here is exactly
+two names, and they are one of each kind - which is as clean a demonstration as
+this tree is going to get:
+
+    heHandStart     survives ONLY inside a test label ("ante: short SB posts
+                    from the post-ante stack (heHandStart P0 fix)"). Nothing
+                    calls the hotseat hand opener. Counting the label would have
+                    been the btMoveStorage failure again, in a file carrying
+                    7044 string literals in code to be wrong about.
+    heProbeSodium   survives ONLY inside `heRunSection "heProbeSodium"`, which
+                    IS the call - it is the last section of every run. Blanked
+                    away, so it is carried in the worklist below under
+                    `dispatch`, with the call site quoted and CHECKED.
+
+THE NUMBER, AND WHAT IT MEANS - stated in full because four earlier attempts at
+it gave four different answers (304/379, 161/313/66, 146/282/97, 174/205; those
+are carried as history, not re-derived here) and every one of them measured
+something slightly different. Note that all four say 379 and this says 380:
+2026-08-17's heTestHelpersRun brought a handler with it, which is a small
+reminder that a figure written into prose is a snapshot and this one is not:
+
+    119 / 329   public he* handlers DEFINED IN THE GAME REGION that are named
+                by the body of a harness-region handler REACHABLE from
+                heSelfTest, comments stripped and string literals blanked.
+                +1 (heProbeSodium, above) = 120 actually exercised.
+                209 are named by nothing that runs.
+
+Not a closure: a handler the game calls internally does not count, exactly as
+cxMnemonicNormalize does not count for coinxt. The 7d-style closure of the same
+graph scores 264/329, and that number is the inflation this whole file exists
+to refuse. Whole-region scan and reachable-bodies scan agree today (119 both),
+because every harness handler except the three interactive-delivery ones is
+reachable - which the gate now checks, so an unwired test section is a failure
+rather than a silent contributor to the numerator.
+
+IT DOES NOT FAIL THE BUILD YET, and that is deliberate rather than unfinished.
+209 is a real number and it has to be on the record BEFORE anything ratchets on
+it, or the first person to look at a red gate goes looking for a convention
+that makes it smaller - and this file's history is one long argument that the
+convention is the thing you must not choose to fit the number. What IS enforced
+is everything that would make the number a LIE: the boundary, the shape of the
+region, the reachability of every section, and the one dispatch entry. See
+holdem_region_report() for the exact split.
+
+HOW THE ENFORCED HALF WAS CHECKED, AND WHAT IS STILL OWED. Each of those checks
+was driven against a MUTATED temp copy of holdem.livecodescript on 2026-08-17 -
+a second boundary line, a game handler moved below the banner, a section
+unwired from heTestRunAllSections, the heProbeSodium dispatch deleted, an `end`
+line renamed, heSelfTest renamed, the header block comment closed early,
+heReportShow made reachable - and every one turned this row red while the
+untouched tree stayed green. Two of them CHANGED the gate: the denominator
+tripwire and the second capital in HOLDEM_TEST_NAME_RE both exist because a
+mutation walked straight past the first version, and both comments say what
+walked past. THOSE MUTATIONS ARE NOT COMMITTED, which by this repo's own
+standard (tools/test-checker.py; root CLAUDE.md's "shipped is not run") makes
+this paragraph an attestation and not yet a fixture. Arming the ratchet is the
+moment to make it one.
 
 Usage:
   python3 tools/check-suite-coverage.py            # print the table
@@ -185,52 +268,13 @@ MEMBERS = [
     # open item, not a closed one.
     ("box2dxt (kit)", "b2k", ["box2dxt/src/box2dxt-kit.livecodescript"]),
     #
-    # HOLDE-EM HAS NO ROW HERE, AND THAT IS A DECISION WITH NUMBERS BEHIND IT
-    # rather than an omission. It was folded into the suite harness on
-    # 2026-08-16; what follows is what a `("holde-em", "he", [...])` row would
-    # actually measure, so the next reader can re-take the call instead of
-    # inheriting it.
-    #
-    #   holde-em/src/holdem.livecodescript   ONE 15,276-line paste-and-run stack
-    #     holding 379 public he* handlers - the game AND its 21-section harness
-    #     in the same file. There is no second file, so there is no glob that
-    #     isolates a subset either.
-    #
-    # Measured against the harness this gate actually scans:
-    #
-    #   0 / 379   as this gate is written. The fold prefixes every name the
-    #             file defines, so the shipped spelling is he1heShuffleDeck and
-    #             `\bheShuffleDeck\b` matches nothing inside it. A row added
-    #             blind would fail with 379 phantom gaps on the day it landed.
-    #   379 / 379 with the scan taught about the he1 prefix. Permanently, and
-    #             on the day the row is added - because the folded section is
-    #             the GAME, and the game names its own API: heHandStart calls
-    #             heShuffleDeck, the react engine names every wire handler. Not
-    #             one of those mentions is a test.
-    #   163 / 379 counting only the names a heTest*/heProbe* body mentions
-    #             directly - the closest thing to an honest number, and not one
-    #             this gate can compute, because it has no way to tell a test
-    #             from the code under test inside one file.
-    #
-    # That 379/379 is the whole reason the row is absent. It is exactly the
-    # failure the embedded-span cut above exists to prevent ("a library's body
-    # names nearly its whole own API"), arriving where there is nothing to cut:
-    # coinxt, onionxt, riptide and the b2k Kit keep their library in a SEPARATE
-    # file that is embedded (and cut) while their tests are folded, so the
-    # scan sees tests naming a library. holde-em's tests and its library are
-    # the same handlers' neighbours in the same file. A row here would be a
-    # gate that answers a question nobody asks twice - the coinxt-constant-gate
-    # lesson in root CLAUDE.md, and worse than no gate because the number would
-    # read as proof.
-    #
-    # What that layer HAS instead, all of it in tools/build-all.sh --gates:
-    # seven KAT mirrors (evaluator, betting/settlement, shuffle, protocol
-    # incl. the Level 2 ristretto twins, fold, atlas, sounds) plus
-    # tools/logic-fuzz.py, which checks the same logic against a SECOND,
-    # independently written evaluator and settlement rather than against the
-    # port. What it does NOT have is a name-level ratchet, and that is an open
-    # item: closing it needs a way to scan the harness REGION of a
-    # single-file member, which no mechanism in this suite has today.
+    # HOLDE-EM STILL HAS NO ROW IN THIS LIST, and it never can have one: every
+    # row here is (a library file) measured against (the folded harness), and
+    # holde-em has no such pair - its game and its 22-section harness are the
+    # same 15k-line file. It is measured instead by the HARNESS-REGION RATCHET
+    # at the bottom of this file, which splits that one file where the game
+    # ends and the harness begins and then asks this list's question across the
+    # cut. See HOLDEM_* below for what it measures and what it does not.
 ]
 
 # The handlers an offline harness genuinely cannot reach, and why. Keep the
@@ -312,6 +356,212 @@ UNTESTABLE = {
     "oxTransportListen": "live-daemon: listens as a hidden service",
     "oxTransportSend": "live-daemon: writes to a live Tor stream",
     "oxTransportRecv": "live-daemon: reads from a live Tor stream",
+}
+
+
+# ==========================================================================
+# holde-em: the harness-region ratchet. See the module docstring for the
+# convention and the numbers; this block is the data it runs on.
+# ==========================================================================
+HOLDEM_SRC = os.path.join(ROOT, "holde-em", "src", "holdem.livecodescript")
+
+# WHERE THE GAME ENDS. The file's own banner above this line reads "self-test
+# harness (folded in ...)", but a banner is prose and prose gets reworded; the
+# first ENTRY POINT is a handler definition, so a rename cannot leave this
+# matching a stale comment. Everything from here to EOF is the harness.
+HOLDEM_BOUNDARY_RE = re.compile(r'^command\s+heRunSelftest\b')
+
+# The QUIET entry point, and the one the fold actually calls (he1heSelfTest).
+# Seeding the walk here rather than at heRunSelftest is what keeps the
+# interactive delivery path - report overlay, clipboard, msg - out of the
+# numerator, which is the same line check 7d in tools/check-suite-selftest.py
+# draws for the same reason.
+HOLDEM_SEED = "heselftest"
+
+# A TRIPWIRE ON THE DENOMINATOR, and it is here because a mutation test put it
+# here rather than because it seemed prudent. `if not game_api` - the guard
+# every MEMBERS row uses - is a floor of ONE, and the failure that matters is
+# not the region vanishing, it is the region SHRINKING: a coverage ratio that
+# improves because the thing it measures got smaller is the exact shape this
+# file spends its docstring refusing.
+# MEASURED 2026-08-17: delete the `*/` that closes holdem.livecodescript's
+# 1041-line header and the block does NOT run to EOF, where strip_comments()
+# would refuse it. It closes on the next stray `*/` in the file - which is
+# inside the ordinary line comment `the bt*/session/rp1 calls are seams` - and
+# swallows 2200 lines of game with it. The row went GREEN at 66/260: 69 public
+# handlers had left the denominator and 15 gaps had left the worklist, and
+# every printed number was smaller and wrong. 300 is a tripwire, not a target;
+# if holde-em genuinely loses thirty public handlers, lower it and say why.
+HOLDEM_API_FLOOR = 300
+
+# What a handler BELOW the boundary is allowed to be called. Anything else
+# down there is a game handler that has drifted past the banner, and it would
+# leave the denominator silently - a coverage figure that improved because the
+# thing being measured got smaller. `heTest` covers the sections
+# (heTestFoldRun); `heT` + ANOTHER CAPITAL covers their helpers (heTAssert,
+# heTNewHand, heTKatLog); the five spelled out are the two entry points, the
+# per-section guard, and the report panel.
+# THE SECOND CAPITAL IS THE WHOLE RULE, and a bare `^heT` was written here
+# first. Measured: `^heT` also admits twelve REAL game handlers - heTableCreate,
+# heTableInfohash, heTableJoin, heTableLogoPick, heTableLogoRender, heTableNew,
+# heTempPath, heTimeoutPostOf, heTimeoutVerbOf, heTransportCycle,
+# heTransportLabel, heTwoDigits - every one of which could then be written
+# below the banner and quietly leave the denominator. The harness abbreviates
+# (heTAct), the game spells words out (heTable), so the character after `heT`
+# separates them exactly. Re-measured: zero game names match this, zero harness
+# names fail it.
+HOLDEM_TEST_NAME_RE = re.compile(
+    r'^(?:heTest|heT[A-Z]|heRunSelftest$|heSelfTest$|heRunSection$'
+    r'|heReportShow$|heReportHide$)')
+
+# The harness-region handlers that are NOT reachable from heSelfTest, with the
+# reason each one is allowed to be. All three are the INTERACTIVE delivery
+# path: heRunSelftest is what a maintainer types into the message box, and it
+# is the handler check 7d forbids the fold from reaching (overlay + clipboard +
+# msg). Anything else unreachable is an unwired test section - a section that
+# was written, is counted by nobody, and whose names would otherwise inflate
+# this row. That is the shipped-is-not-run lesson at handler scale, so it is a
+# failure rather than a note.
+HOLDEM_DELIVERY = {
+    "herunselftest": "the INTERACTIVE entry point; heSelfTest is the quiet one "
+                     "and both drive one heTestRunAllSections",
+    "hereportshow": "the report overlay heRunSelftest delivers into; check 7d "
+                    "in tools/check-suite-selftest.py forbids the fold from "
+                    "reaching it at all",
+    "hereporthide": "the same overlay's Close button handler",
+}
+
+# THE WORKLIST: every public he* handler the game region defines that no
+# reachable test names. IT IS NOT AN EXCUSE LIST, and the difference from
+# UNTESTABLE above matters. UNTESTABLE carries a per-handler reason in one of
+# two categories, both about the ENVIRONMENT, and it is enforced. This is a
+# triage of DEBT: the categories say what stands between each handler and a
+# test, so a later pass can attack the cheap 139 before the expensive 41, and
+# the only entry here that is not debt is the single `dispatch` one.
+#
+# Each name was classified by what its OWN body does, not by what its callees
+# do. That is the conservative direction for a worklist: heActionDo calls
+# heUISetStatus, but its own body is arithmetic, so it lands in no-test where
+# somebody will look at it - rather than in host-window where it would read as
+# already accounted for. The evidence token for each non-obvious call is in
+# the category comment; re-derive with a body scan, do not trust the grouping.
+HOLDEM_WORKLIST = {
+    # THE ONE ENTRY THAT IS NOT DEBT. heTestRunAllSections' last line is
+    # `heRunSection "heProbeSodium"`, and heRunSection's body is `do pName` -
+    # so this handler runs on every single execution of the harness. The
+    # blanking convention removes the literal, by design, because the same
+    # shape spells a test label. holdem_region_report() CHECKS the call site
+    # rather than trusting this sentence, so the entry cannot outlive it.
+    "dispatch": (
+        "run on every pass, but only through `heRunSection \"<name>\"` -> "
+        "`do pName`, which the literal-blanking convention cannot see",
+        ["heProbeSodium"],
+    ),
+    # Bodies that call into torrentxt (bt*) or onionxt (ox*) directly:
+    # btStartSession, btAddInfohash, btRp1Poll, oxDial, oxWrite, oxState,
+    # oxCloseStream, oxCreateServiceFromSeed, oxSetStreamCallback ...
+    # NOT an excuse: several of these open with holde-em's own netCap capture
+    # mode (`if gGame["netCap"] is "true" then ... exit`), which is exactly how
+    # the netsim sections drive the wire offline - so heNetTxTo and friends are
+    # reachable for a test that sets it. Cheaper than they look; listed here
+    # because the leg PAST that guard needs a session or a daemon.
+    "live-transport": (
+        "its own body calls torrentxt (bt*) or onionxt (ox*); the leg past "
+        "holde-em's netCap capture guard needs a live session or daemon",
+        ["heNetApplyWire", "heNetJoinSwarm", "heNetOnionCloseStream",
+         "heNetOnionDial", "heNetOnionDrain", "heNetOnionFail",
+         "heNetOnionPublish", "heNetOnionStandDown", "heNetOnionStatusTxt",
+         "heNetPollTick", "heNetStart", "heNetStartOnion", "heNetStop",
+         "heNetTxTo", "heOnionPeer", "heOnionStatus", "heOnionStreamEvt",
+         "heProbeTorrent", "heTableCreate", "heTableJoin"],
+    ),
+    # b2k physics/atlas (b2kSheetFrames, b2kSpriteSetFrame, b2kSheetPersist),
+    # `import`/`play audioClip`, or `the filename of this stack`. The Kit ones
+    # are hard-blocked rather than merely awkward: check 7d refuses to let the
+    # fold reach heKitTryInit at all, because a second b2k world would collide
+    # with the one box2dxt's folded harness hand-steps in the same paste.
+    "engine-media": (
+        "its own body drives the b2k Kit, an audioClip, or the stack's file "
+        "on disk - and the Kit half is forbidden outright by check 7d",
+        ["heHasKit", "heKitReload", "heKitTryInit", "heProbeKit",
+         "heProbeSounds", "heSndPlay", "heSndTryInit", "heStackFolder",
+         "heUIShowCardIn"],
+    ),
+    # Bodies that create, delete, or read/write a property of a control on the
+    # card. Testing them needs holde-em's own table built, and check 7d refuses
+    # exactly that: heBuildTable would put a 1024x640 poker table on the
+    # suite's card. Standalone these are testable; folded they are not, and
+    # this gate measures the FOLDED harness.
+    "host-window": (
+        "its own body builds or mutates a control on the card; check 7d "
+        "forbids the folded harness from building holde-em's table to have "
+        "one",
+        ["heBetSliderFromThumb", "heBetSliderHide", "heBetSliderShow",
+         "heBetSliderSync", "heBuildHistory", "heBuildLobby",
+         "heBuildSettings", "heBuildTable", "heDisableActions",
+         "heEnableBtn", "heHistRefresh", "heHistSetVisible", "heHistVisible",
+         "heHostModeCycle", "heHudRefresh", "heLobbyRefresh",
+         "heLobbySetVisible", "heLobbyVisible", "heMakeActionButton",
+         "heMakeAvatar", "heMakeCardSlot", "heMakeLabel", "heMakeSettingRow",
+         "heRehydrateChrome", "heSeatAvatarRender", "heSeatChromeVisible",
+         "heSeatFace", "heSettingsApply", "heSettingsCycle",
+         "heSettingsIntervalRefresh", "heSettingsIntervalStash",
+         "heSettingsRefresh", "heSettingsSetVisible", "heSettingsVisible",
+         "heTableLogoRender", "heTransportCycle", "heUIClearCards",
+         "heUIPromptToAct", "heUISetStatus", "heUIShowdownReveal",
+         "heWipeChrome"],
+    ),
+    # THE REAL DEBT, and the only category with no excuse attached to it: 139
+    # handlers whose bodies are arithmetic, list work, string work or state
+    # transitions, every one of which a section could name today. heHandStart
+    # is the one to read first - the hotseat hand opener, named in this harness
+    # exactly once, inside a test LABEL. Others worth a first pass because they
+    # are pure leaves: heRank5, heCardRankVal, heCardSuitVal, heTwoDigits,
+    # heCountItems, heNextInList, heByteXor, heU32BEData, heHexId.
+    "no-test": (
+        "NO REASON - a pure or near-pure handler a section could name today, "
+        "and none does. This is the debt, not an exemption",
+        ["heActionDo", "heApplyCfg", "heApplyLevel", "heAuditDealLog",
+         "heBetAfterAction", "heBetCloseStreet", "heBetFirstInHandAfter",
+         "heBetInHandList", "heBetLiveCount", "heBetNextPending", "heBetPay",
+         "heBetPayDead", "heBetSeatPending", "heByteXor", "heCallAmountFor",
+         "heCancelPacedSteps", "heCardFace", "heCardRankVal",
+         "heCardSuitVal", "heCfgBody", "heCfgDefaults", "heCfgEnsure",
+         "heCountItems", "heCurrentPot", "heDealBoard", "heDeltaOfTxt",
+         "heDrawUniform", "heEngineDo", "heEnvBodyText", "heEnvWireParse",
+         "heFreshPrngState", "heHandLabel", "heHandLive", "heHandSettle",
+         "heHandStart", "heHeaderTxt", "heHexId", "heHistHide", "heHistShow",
+         "heHostModeLabel", "heHudMark", "heHudTick", "heIdentitySeedHex",
+         "heIdentitySetup", "heInviteTxt", "heIsCardList", "heKenneyFrame",
+         "heL2CardPointHex", "heL2ChainOrder", "heL2PointOkHex",
+         "heL2VoidMark", "heLevel0Deck", "heLobbyHide", "heLobbyShow",
+         "heLogAppend", "heLogField", "heNetApplySettle", "heNetAuditHand",
+         "heNetBroadcast", "heNetBufferWire", "heNetComputeSettleTxt",
+         "heNetContribCount", "heNetContribPosOk", "heNetDealFromSeeds",
+         "heNetDealerBoard", "heNetDealerDeal", "heNetDealerPubHex",
+         "heNetDrainBuffer", "heNetEngineFold", "heNetFoldGameWire",
+         "heNetGameReact", "heNetHandReset", "heNetHandSeedHex",
+         "heNetHostLost", "heNetMyContribPos", "heNetOnHandshake",
+         "heNetOnRp1", "heNetOnionHello", "heNetOnionRedialGiveup",
+         "heNetOracleDeal", "heNetParkHotseat", "heNetPubIsLive",
+         "heNetRequestSync", "heNetRevealedDealA", "heNetSeatPos",
+         "heNetSendToHost", "heNetSendWireTo", "heNetShowBoard",
+         "heNetShowSeat", "heNetShowdownShow", "heNetTimeoutMiss",
+         "heNetTimeoutRearm", "heNetTurnClockStart", "heNetTurnLimitSecs",
+         "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
+         "heNextInList", "heNextLiveAfterPos", "hePaceMs",
+         "hePrevLiveBeforePos", "heQuickAmount", "heRank5", "heReactToNotes",
+         "heReadableErr", "heRevealStep", "heRosterHasKey", "heRotateAfter",
+         "heRunoutStep", "heScheduleReveal", "heScheduleRunout",
+         "heScheduleShowdown", "heSeatAvatarPick", "heSeatsAlive",
+         "heSettingsHide", "heSettingsIntervalLabel", "heSettingsLevelLabel",
+         "heSettingsShow", "heSettingsSoundsLabel", "heSettingsSpeedLabel",
+         "heSettleStep", "heSndFilesFor", "heSndReload", "heSndVerb",
+         "heSpeedMult", "heSpeedPace", "heStreamBlocksHex", "heSuitGlyph",
+         "heTableLogoPick", "heTableNew", "heTempPath", "heTransportLabel",
+         "heTwoDigits", "heU32BEData", "heUIHandStart",
+         "heUIShowBoardStreet", "heUIShowHole", "heVerifyDetached"],
+    ),
 }
 
 
@@ -415,23 +665,80 @@ def literal_only_mentions(name, mentioned, harness):
             if pat.search(a) and not pat.search(b)]
 
 
-def strip_comments(text):
-    """Comment-free view. A handler named only in a comment is not exercised."""
-    out = []
+def strip_comments(text, what="the harness"):
+    """Comment-free view. A handler named only in a comment is not exercised.
+
+    Line count is PRESERVED, because literal_only_mentions() zips this view
+    against the blanked one line by line.
+
+    BLOCK COMMENTS ARE HANDLED, and the reason is holde-em rather than anything
+    this gate used to read. /* ... */ is legal LiveCodeScript and
+    holde-em/src/holdem.livecodescript opens with a 1041-line header changelog
+    in one - prose about the game, naming most of its API. Scanned as code by
+    the harness-region ratchet below, that header would hand the game's own
+    changelog to the scan as though it were a test.
+    MEASURED 2026-08-17, so this is a no-op everywhere else rather than a
+    silent change of behaviour: `/*` appears ZERO times in
+    tests/suite-selftest.livecodescript (the fold emits handler blocks only, so
+    a header changelog never reaches it) and zero times in every source glob in
+    MEMBERS. The upgrade changes no number in the table above; it is what makes
+    the holde-em row honest. It also brings this function into step with its
+    twin in tools/check-suite-selftest.py, which grew the same handling for the
+    same file - two tools that read one source must read it identically.
+    """
+    out, in_block = [], False
     for raw in text.split("\n"):
         buf, i, instr = "", 0, False
         while i < len(raw):
             ch = raw[i]
+            if in_block:
+                if ch == "*" and raw[i + 1:i + 2] == "/":
+                    in_block = False
+                    i += 1
+                i += 1
+                continue
             if ch == '"':
                 instr = not instr
                 buf += ch
             elif not instr and ch == "-" and raw[i + 1:i + 2] == "-":
                 break
+            elif not instr and ch == "/" and raw[i + 1:i + 2] == "*":
+                in_block = True
+                i += 1
             else:
                 buf += ch
             i += 1
         out.append(buf)
+    if in_block:
+        # Blanking to EOF would hide every handler below it - from the API
+        # scan, which is the direction that quietly shrinks a denominator.
+        raise SystemExit(f"check-suite-coverage: an unterminated /* block "
+                         f"comment runs to the end of {what}.")
     return "\n".join(out)
+
+
+def script_handler_names(src):
+    """Top-level handler names in a comment-stripped .livecodescript.
+
+    `private` is excluded by the anchor, which is the point: a private handler
+    is not public API. Factored out so the holde-em region ratchet applies
+    EXACTLY this rule to its two regions rather than a look-alike of it - the
+    denominator of a coverage figure is not a place for two spellings.
+    """
+    return set(re.findall(r'^(?:command|function|on)\s+(\w+)', src, re.M))
+
+
+def public_only(names, prefix):
+    """The public-API filter, shared for the same reason as the scan above.
+
+    `pfx1...` is a folded member harness's namespaced copy, never public API.
+    `...Inner` is the untouched body behind an itemDelimiter save/restore
+    wrapper (coinxt); the WRAPPER is the public handler and is checked.
+    """
+    return {n for n in names
+            if n.lower().startswith(prefix)
+            and not n.lower().startswith(prefix + "1")
+            and not n.endswith("Inner")}
 
 
 def public_api(prefix, patterns):
@@ -439,19 +746,204 @@ def public_api(prefix, patterns):
     names = set()
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
-            src = strip_comments(open(path, encoding="utf-8").read())
+            src = strip_comments(open(path, encoding="utf-8").read(), path)
             if path.endswith(".lcb"):
                 names |= set(re.findall(r'^public\s+handler\s+(\w+)', src, re.M))
             else:
-                names |= set(re.findall(r'^(?:command|function|on)\s+(\w+)',
-                                        src, re.M))
-    # `pfx1...` is a folded member harness's namespaced copy, never public API.
-    # `...Inner` is the untouched body behind an itemDelimiter save/restore
-    # wrapper (coinxt); the WRAPPER is the public handler and is checked.
-    return {n for n in names
-            if n.lower().startswith(prefix)
-            and not n.lower().startswith(prefix + "1")
-            and not n.endswith("Inner")}
+                names |= script_handler_names(src)
+    return public_only(names, prefix)
+
+
+def holdem_handler_blocks(text):
+    """name.lower() -> [body, ...] for every top-level he* handler in `text`.
+
+    Deliberately the SAME parse as check 7d in tools/check-suite-selftest.py
+    (which reads the folded he1* copy of this code) - one shape, two questions.
+    The backreference in the `end` anchor is what makes it a block rather than
+    a span to the next definition: a handler whose `end` line disagrees with
+    its opening line yields no block at all, and the caller refuses that rather
+    than measuring a region with a hole in it.
+    """
+    blocks = {}
+    for m in re.finditer(r'^(?:private\s+)?(?:command|function|on)\s+(he\w+)\b'
+                         r'(.*?)^end\s+\1\b', text, re.S | re.M):
+        blocks.setdefault(m.group(1).lower(), []).append(m.group(2))
+    return blocks
+
+
+def holdem_region_report():
+    """Measure holde-em by splitting its one file into game and harness.
+
+    Returns (row, problems, notes). `problems` FAIL the build - every one of
+    them is a way the printed number could become a lie. `notes` are the
+    coverage figures themselves, which are advisory for now; see the module
+    docstring for why the number goes on the record before the ratchet does.
+    """
+    problems, notes = [], []
+    if not os.path.exists(HOLDEM_SRC):
+        problems.append("holde-em: holde-em/src/holdem.livecodescript is gone, "
+                        "so the harness-region ratchet is measuring nothing")
+        return None, problems, notes
+    bare = strip_comments(open(HOLDEM_SRC, encoding="utf-8").read(), HOLDEM_SRC)
+    lines = bare.split("\n")
+
+    # ---- the split ------------------------------------------------------
+    at = [i for i, ln in enumerate(lines) if HOLDEM_BOUNDARY_RE.match(ln)]
+    if len(at) != 1:
+        problems.append(
+            f"holde-em: the harness boundary `command heRunSelftest` matches "
+            f"{len(at)} times in holdem.livecodescript (expected exactly 1). "
+            f"Without a unique boundary there is no game region and no harness "
+            f"region, and every number below it would be arbitrary.")
+        return None, problems, notes
+    game = "\n".join(lines[:at[0]])
+    harness = "\n".join(lines[at[0]:])
+
+    game_api = public_only(script_handler_names(game), "he")
+    harness_api = public_only(script_handler_names(harness), "he")
+    blocks = holdem_handler_blocks(harness)
+    if not game_api or not blocks:
+        problems.append("holde-em: the split produced an empty game region or "
+                        "an empty harness region - the file's layout changed "
+                        "and this ratchet is now checking nothing")
+        return None, problems, notes
+    if len(game_api) < HOLDEM_API_FLOOR:
+        problems.append(
+            f"holde-em: the game region defines only {len(game_api)} public he* "
+            f"handlers, under the {HOLDEM_API_FLOOR} tripwire. Something has "
+            f"eaten part of the denominator - a stray `*/` closing the header "
+            f"block comment early is the measured way that happens - and every "
+            f"number this row prints would be smaller and wrong. Check the "
+            f"file's comment structure before touching HOLDEM_API_FLOOR.")
+        return None, problems, notes
+
+    # A GAME HANDLER MUST NOT DRIFT BELOW THE BANNER. If one does it leaves the
+    # denominator, and a coverage percentage that improves because the thing it
+    # measures got smaller is the worst reading this file can produce.
+    for name in sorted(harness_api):
+        if not HOLDEM_TEST_NAME_RE.match(name):
+            problems.append(
+                f"holde-em: {name} is defined BELOW the harness boundary but is "
+                f"not test-shaped (heTest*, heT<Capital>*, heRunSelftest, "
+                f"heSelfTest, heRunSection, heReportShow, heReportHide). "
+                f"If it is game code, move it above "
+                f"`command heRunSelftest` so it counts in the denominator; if it "
+                f"is a new kind of harness handler, teach HOLDEM_TEST_NAME_RE.")
+        if name.lower() not in blocks:
+            problems.append(
+                f"holde-em: {name} is defined in the harness region but its "
+                f"`end {name}` line does not match, so it parses as no block at "
+                f"all - the reachability walk cannot see through it and the "
+                f"names in its body are invisible to the scan.")
+    if HOLDEM_SEED not in blocks:
+        problems.append("holde-em: heSelfTest is gone from the harness region. "
+                        "It is the handler the fold calls (he1heSelfTest) and "
+                        "the seed of this walk; without it nothing is reachable "
+                        "and the row would read 0.")
+        return None, problems, notes
+
+    # ---- reachability: STRINGS ARE KEPT ---------------------------------
+    # This harness arms its sections by literal name (`heRunSection
+    # "heTestFoldRun"` -> `do pName`), so a literal is how a section is WIRED.
+    # Over-approximating on purpose, exactly as check 7d does: any he* token in
+    # a reachable body is an edge, so this can name a path that never executes
+    # but it cannot miss one.
+    reach, frontier = {HOLDEM_SEED}, [HOLDEM_SEED]
+    while frontier:
+        name = frontier.pop()
+        for body in blocks.get(name, []):
+            for tok in set(re.findall(r'\b(he\w+)\b', body)):
+                low = tok.lower()
+                if low in blocks and low not in reach:
+                    reach.add(low)
+                    frontier.append(low)
+
+    for low, why in HOLDEM_DELIVERY.items():
+        if low not in blocks:
+            problems.append(
+                f"holde-em: {low} is listed as unreachable-by-design ({why}) but "
+                f"the harness region does not define it. A list that outlives "
+                f"its entries reads like protection and is none.")
+        elif low in reach:
+            problems.append(
+                f"holde-em: {low} is now REACHABLE from heSelfTest, and it is "
+                f"the interactive delivery path ({why}). In the suite paste that "
+                f"is an overlay and a clipboard write in somebody else's stack; "
+                f"check 7d in tools/check-suite-selftest.py refuses it too.")
+    for low in sorted(set(blocks) - reach - set(HOLDEM_DELIVERY)):
+        problems.append(
+            f"holde-em: {low} is defined in the harness region but nothing "
+            f"reachable from heSelfTest calls it. A test section that is not in "
+            f"heTestRunAllSections never runs - and every handler ITS body names "
+            f"would otherwise count toward this row's numerator. Wire it up, or "
+            f"add it to HOLDEM_DELIVERY with the reason it is not a test.")
+
+    # ---- coverage: STRINGS ARE BLANKED ----------------------------------
+    # Only the bodies that actually run, and only names that survive
+    # blank_string_literals() - THE convention, called rather than copied.
+    ran = "\n".join(b for low in sorted(reach) for b in blocks.get(low, []))
+    scanned = blank_string_literals(ran)
+    hit = {n for n in game_api
+           if re.search(r'\b' + re.escape(n) + r'\b', scanned)}
+
+    # ---- the worklist, held to the tree ---------------------------------
+    listed, dup = {}, []
+    for cat, (_reason, names) in HOLDEM_WORKLIST.items():
+        for name in names:
+            if name in listed:
+                dup.append(f"{name} ({listed[name]} and {cat})")
+            listed[name] = cat
+    if dup:
+        problems.append("holde-em: HOLDEM_WORKLIST lists these names twice, so "
+                        "its per-category counts do not add up: "
+                        + ", ".join(sorted(dup)))
+    # The `dispatch` entry is the only one claiming a handler RUNS, so it is the
+    # only one that can be checked rather than believed - and it is, against the
+    # raw (unblanked) text of what actually runs.
+    for name in HOLDEM_WORKLIST["dispatch"][1]:
+        if not re.search(r'heRunSection\s+"' + re.escape(name) + r'"', ran):
+            problems.append(
+                f"holde-em: {name} is listed under `dispatch` - exercised via "
+                f"`heRunSection \"{name}\"` - but no reachable body contains "
+                f"that call any more. Either it is now a genuine gap and belongs "
+                f"in no-test, or it is called some other way and this entry is "
+                f"describing a call site that is gone.")
+
+    dispatched = {n for n in HOLDEM_WORKLIST["dispatch"][1]
+                  if n in game_api and n not in hit}
+    gaps = game_api - hit - dispatched
+    stale = sorted(n for n in listed if n not in game_api)
+    promoted = sorted(n for n in listed if n in hit)
+    unlisted = sorted(n for n in gaps if n not in listed)
+
+    notes.append("holde-em (harness region, ADVISORY - see HOLDEM_* in "
+                 "tools/check-suite-coverage.py)")
+    notes.append(f"  {len(hit)}/{len(game_api)} public he* handlers in the GAME "
+                 f"region are named by a body reachable from heSelfTest "
+                 f"(comments stripped, string literals blanked)")
+    notes.append(f"  +{len(dispatched)} dispatched by name through heRunSection, "
+                 f"which the blanking cannot see = "
+                 f"{len(hit) + len(dispatched)}/{len(game_api)} exercised")
+    notes.append(f"  {len(gaps)} named by nothing that runs: "
+                 + ", ".join(f"{len(names)} {cat}"
+                             for cat, (_r, names) in HOLDEM_WORKLIST.items()
+                             if cat != "dispatch"))
+    notes.append(f"  harness region: {len(blocks)} handlers, {len(reach)} "
+                 f"reachable from heSelfTest, "
+                 f"{len(HOLDEM_DELIVERY)} interactive-delivery by design")
+    if stale:
+        notes.append("  WORKLIST STALE (holde-em no longer defines these; drop "
+                     "them from HOLDEM_WORKLIST): " + ", ".join(stale))
+    if promoted:
+        notes.append("  NOW EXERCISED (a test names these; drop them from "
+                     "HOLDEM_WORKLIST): " + ", ".join(promoted))
+    if unlisted:
+        notes.append("  NEW GAP (named by no test and in no HOLDEM_WORKLIST "
+                     "category): " + ", ".join(unlisted))
+    notes.append(f"  if this row were armed today it would fail on {len(gaps)} "
+                 f"handler(s); armed as a floor - no NEW gaps - it would fail "
+                 f"on {len(unlisted) + len(promoted) + len(stale)}")
+    return (len(hit) + len(dispatched), len(game_api), len(gaps)), problems, notes
 
 
 def main(argv):
@@ -524,6 +1016,15 @@ def main(argv):
                   f"cannot run offline - add it to UNTESTABLE in "
                   f"tools/check-suite-coverage.py with the reason.")
 
+    # holde-em rides its own measurement, and its number is deliberately NOT
+    # merged into the totals below. The rows above share one denominator rule
+    # (a member's library file) and are enforced; this one splits a single file
+    # by region and is advisory. Adding 120/329 into 724/742 would produce a
+    # ratio that means neither thing, and the headline number is the one people
+    # quote.
+    holdem_row, holdem_problems, holdem_notes = holdem_region_report()
+    problems.extend(holdem_problems)
+
     # A stale excuse is worse than none: it reads as a considered decision about
     # a handler that no longer exists, and it hides the next one that lands.
     stale = sorted(set(UNTESTABLE) - every_name)
@@ -539,7 +1040,17 @@ def main(argv):
             print(f"{member:16s} {hit:>6d}/{api:<5d} {excused:>12d}{flag}")
             for gap in gaps:
                 print(f"{'':18s}{gap}")
+        if holdem_row:
+            hit, api, gapn = holdem_row
+            print(f"{'holde-em*':16s} {hit:>6d}/{api:<5d} {'':>12s}"
+                  f"   <-- {gapn} GAP(S), ADVISORY")
         print(f"{'':16s} {'':>12s} {'':>12s}")
+
+    # Printed in BOTH modes, terse included: an advisory number that CI does not
+    # record is a number nobody sees until somebody goes looking, and the whole
+    # point of landing this row before it bites is that 209 is on the record.
+    for note in holdem_notes:
+        print(note)
 
     if problems:
         print("check-suite-coverage: FAILED")

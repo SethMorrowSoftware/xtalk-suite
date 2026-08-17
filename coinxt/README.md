@@ -10,10 +10,12 @@ One wrap covers both chains:
 - **secp256k1** keypairs, ECDSA (RFC 6979 deterministic), **recoverable** signatures and public-key
   recovery (Ethereum's `v` / `ecrecover`), ECDH, and - since 2026-08-16 - **BIP-340 Schnorr and the
   BIP-341 Taproot tweak**. All built (see Status).
-- **Hashes** both chains need: SHA-256/512, SHA3-256/512, **Keccak-256** (Ethereum's non-NIST padding),
-  RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512. (SHA3-512 is specced but not shipped - calling
-  `cxSha3_512` is a `handler not found`; the vendored `sha3.c` implements it, so ship it or strike it
-  is an open call.)
+- **Hashes** both chains need: SHA-256/512, SHA3-256, **Keccak-256** (Ethereum's non-NIST padding),
+  RIPEMD-160, plus HMAC and PBKDF2-HMAC-SHA512. (SHA3-**512** is **deferred**, decided 2026-08-17:
+  `cxSha3_512` is a `handler not found` and this line no longer offers it. The primitive is compiled
+  in - the vendored `sha3.c` has it - but exporting it means an ABI bump and a four-platform binary
+  refresh, and no chain, caller or suite member needs it. SPEC.md section 1 carries the full
+  decision and the condition for revisiting it.)
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
 - **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, WIF
   (encode and fail-closed decode, mainnet and testnet, the 0x01 compressed marker), and the EIP-55

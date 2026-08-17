@@ -529,7 +529,12 @@ are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
 coinxt installs like any other member and the run below is just a run.
 
 > **All four are current as of the 2026-08-16 Schnorr/Taproot change (ABI 6)**, and
-> `coinxt/tools/check-binary-freshness.py` says so on every push. One note on how
+> since 2026-08-17 the SUITE gate `tools/check-binary-freshness.py` says so about
+> all four on every push. The member copy named here until then said so about only
+> TWO of them - it reads ELF and printed a SKIP for each Windows DLL, so this
+> sentence was a live instance of the repo's own overstated-coverage lesson
+> sitting in the runbook. The suite gate reads PE too: 43/43 binds resolved and
+> ABI 6 decoded from the export table on both DLLs. One note on how
 > the `x86-linux` one was produced: the environment that built the other three has
 > no 32-bit libc, so it was cross-compiled with **Zig** (`zig cc -target
 > x86-linux-gnu.2.25`) rather than `gcc -m32`. The artifact is a 32-bit i386 ELF
@@ -1295,13 +1300,30 @@ are already done and recorded — leave them as history and fill in the rest.
 ```
 Environment: OXT version ______  OS/arch ______  date ______
 
-PREREQ
+PREREQ  <- one paste answers all but the last line: tests/preflight.livecodescript
 [ ] platform binaries present or fetched (section 2.1)
-[ ] sxVersion() ......... loaded?  result: ______
-[ ] btStartSession() .... loaded?  result: ______   (then btStopSession)
-[ ] enLibraryVersion() .. loaded?  result: ______
-[ ] dcLibraryVersion() .. loaded?  result: ______
-[ ] oxVersion() ......... loaded?  result: ______
+[ ] tests/preflight.livecodescript pasted + reopened (3.1). It prints ONE
+    found-vs-expected ABI table; screenshot it, or use its Copy results button.
+       summary:  ____ passed  ____ failed  ____ skipped
+       engine:   platform ______  processor ______  engine version ______
+       SodiumXT ......... LOADED / NOT INSTALLED / ABI SKEW
+       TorrentXT ........ LOADED / NOT INSTALLED / ABI SKEW
+       enetxt ........... LOADED / NOT INSTALLED / ABI SKEW
+       DataChannelXT .... LOADED / NOT INSTALLED / ABI SKEW
+       CoinXT ........... LOADED / NOT INSTALLED / ABI SKEW
+       Box2Dxt .......... found ABI ______ vs expected ______ (the one READ number)
+       OnionXT script layer present? ____   CoinXT script layer present? ____
+    The expected numbers are printed BY the table - `tools/build-preflight.py`
+    reads them out of the six C shims and `--check` re-derives them on every
+    push - so nothing here needs retyping when an ABI is bumped. A SKIP is not a
+    defect: that member is simply not installed on this machine. An ABI SKEW is,
+    and it is the one this saves a session over - a mac with sodiumxt's
+    universal-mac dylib blocks every sodiumxt test AND everything downstream,
+    and this finds it at minute two instead of minute fifteen.
+    NOTE: only Box2Dxt can report the number it FOUND. The other five guards are
+    private handlers that throw an ABI message without exposing the value, so
+    their rows are a three-way verdict rather than a comparison - the table says
+    so rather than faking a column.
 [ ] tor running with ControlPort 9051 + CookieAuthentication 1?  log line seen? ___
 
 BREADTH

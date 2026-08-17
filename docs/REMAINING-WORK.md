@@ -464,8 +464,12 @@ Built and statically verified; pending under the honesty convention.
    — `box2dxt/CLAUDE.md` (fold record), `tools/check-suite-coverage.py`
    (the measurement beside the row)
 
-3. **box2dxt into the release assembly lane** (medium). release-binaries.yml
-   and install-release-binaries.py both omit it; needs the docker-run job
+3. **box2dxt into the release assembly lane** (medium; **scope HALVED
+   2026-08-17**). ~~release-binaries.yml and install-release-binaries.py both
+   omit it~~ - the installer half landed (one token, verification-only, inert
+   until a lane exists, pinned by `--selftest`), and the "teach it box2dxt's
+   package layout" cost every doc quoted was never real: the layout was already
+   the family layout. Only **release-binaries.yml** omits it now; needs the docker-run job
    ported or an owner-decided glibc-floor raise. "A deliberate release-lane
    pass, not a drive-by."
    — `box2dxt/CLAUDE.md:34-47`

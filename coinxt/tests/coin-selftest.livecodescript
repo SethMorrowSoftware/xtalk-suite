@@ -1185,7 +1185,9 @@ end stRunRlp
 
 command stRunWif
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local tDecoded, tThrew
+   -- tThrew went with the two hand-rolled try blocks the refusals below used
+   -- to need; stThrowsText3 carries that state now.
+   local tDecoded
    stSection "WIF (wallet import format)"
    try
       -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
@@ -1206,23 +1208,29 @@ command stRunWif
       put cxWifDecode(kWifTestnet) into tDecoded
       stAssert "the testnet form reports testnet", tDecoded["network"] is "testnet"
       -- The refusals. A typo in a pasted key must never decode to a plausible
-      -- neighbouring wallet, so "it threw" is the assertion.
-      stAssert "a corrupt checksum is refused", stThrows("cxWifDecode", kWifBadChecksum)
-      stAssert "an xprv is refused (wrong payload length)", stThrows("cxWifDecode", kBip32V1Xprv)
-      put "false" into tThrew
-      try
-         get cxWifEncode(kWifSeckey, "regtest", true)
-      catch tInner
-         put "true" into tThrew
-      end try
-      stAssert "an unknown network is refused", tThrew is "true"
-      put "false" into tThrew
-      try
-         get cxWifEncode("deadbeef", "mainnet", true)
-      catch tInner2
-         put "true" into tThrew
-      end try
-      stAssert "a short key is refused", tThrew is "true"
+      -- neighbouring wallet, so a refusal is the assertion - but WHICH refusal
+      -- is the assertion that has content here, because WIF is four guards
+      -- stacked on a Base58Check frame and every one of them throws. Each line
+      -- names the handler the message must come from and a phrase unique to
+      -- that guard's sentence (see stRefusalNames).
+      --
+      -- The corrupt-checksum case is the instructive one: it is refused by
+      -- cxBase58CheckDecode, one layer BELOW cxWifDecode, which never sees the
+      -- string. Naming cxWifDecode here would have been wrong, and the reason
+      -- to pin it is the _wrong_spec lesson the Python gate already carries - a
+      -- bad checksum masks every later check, so the four WIF-specific guards
+      -- can only be reached through payloads whose checksum is VALID. If this
+      -- line ever started naming cxWifDecode, the checksum would have stopped
+      -- being verified before the payload was read.
+      stAssertRefusal "a corrupt checksum is refused, by the Base58Check frame below cxWifDecode", stThrowsText("cxWifDecode", kWifBadChecksum), "cxBase58CheckDecode", "checksum"
+      stAssertRefusal "an xprv is refused, on its payload LENGTH and not on its version byte", stThrowsText("cxWifDecode", kBip32V1Xprv), "cxWifDecode", "payload"
+      -- These two were hand-rolled try blocks with an undeclared catch
+      -- variable each. stThrowsText3 is the same shape as the rest of the
+      -- harness, declares its catch variable (checker check 15), and reads the
+      -- message, so the three-argument encoder's two distinct refusals can no
+      -- longer be satisfied by each other.
+      stAssertRefusal "an unknown network is refused, naming the network", stThrowsText3("cxWifEncode", kWifSeckey, "regtest", true), "cxWifEncode", "network"
+      stAssertRefusal "a short key is refused, naming the key length", stThrowsText3("cxWifEncode", "deadbeef", "mainnet", true), "cxWifEncode", "64 hex characters"
    catch tError
       stSectionFailed "WIF", tError
    end try
@@ -1276,9 +1284,17 @@ command stRunSchnorr
       stAssert "cxSchnorrSignatureLen is 64", cxSchnorrSignatureLen() is 64
       stAssert "cxXOnlyPubkeyLen is 32", cxXOnlyPubkeyLen() is 32
       stAssert "cxTaprootOutputLen is 33 (key plus a parity byte)", cxTaprootOutputLen() is 33
-      -- Fail closed.
-      stAssert "cxXOnlyPubkey refuses a 33-byte public key", stThrows("cxXOnlyPubkey", cxHexDecode(kPubOneCompressed))
-      stAssert "cxSchnorrVerify refuses a 33-byte key (a length is a caller bug, not a verdict)", stThrows3("cxSchnorrVerify", cxHexDecode(kPubOneCompressed), tMsg, tSig)
+      -- Fail closed, and in whose words (see stRefusalNames). Neither of these
+      -- has a script-layer guard above it, so the message is the .lcb's
+      -- sFinish text and the reason it can carry is the shim's generic status
+      -- sentence rather than an argument name. That is still the assertion
+      -- worth making, because the STATUS is what discriminates: cxSchnorrVerify
+      -- is the one handler in the library where a bad SIGNATURE is an answer
+      -- (false) and a bad LENGTH is an error, so "it threw" cannot tell a
+      -- correct length refusal from the shim having decided the 33 bytes were
+      -- an unparseable KEY. The message can, and does.
+      stAssertRefusal "cxXOnlyPubkey refuses a 33-byte public key", stThrowsText("cxXOnlyPubkey", cxHexDecode(kPubOneCompressed)), "cxXOnlyPubkey", "a buffer had the wrong length"
+      stAssertRefusal "cxSchnorrVerify refuses a 33-byte key as a LENGTH error (a length is a caller bug, not a verdict)", stThrowsText3("cxSchnorrVerify", cxHexDecode(kPubOneCompressed), tMsg, tSig), "cxSchnorrVerify", "a buffer had the wrong length"
    catch tError
       stSectionFailed "BIP-340 Schnorr", tError
    end try
@@ -1333,12 +1349,35 @@ command stRunTaproot
       -- valid-looking address nobody can spend from - so the two handlers
       -- disagreeing on the same 32 bytes is the assertion.
       stAssert "cxBtcAddressP2TR still does NOT tweak", cxBtcAddressP2TR(tInternal) is not kTapAddress0
-      -- Fail closed.
-      stAssert "a 33-byte internal key is refused", stThrows2("cxTaprootTweak", cxHexDecode(kPubOneCompressed), empty)
-      stAssert "an internal key that is not on the curve is refused", stThrows2("cxTaprootTweak", cxHexDecode(kSchnorrPubOffCurve), empty)
-      stAssert "a 31-byte merkle root is refused", stThrows2("cxTaprootTweak", tInternal, stRepeatByte(0, 31))
-      stAssert "cxBtcAddressP2TRFromInternal refuses a 33-byte key", stThrows2("cxBtcAddressP2TRFromInternal", cxHexDecode(kPubOneCompressed), empty)
-      stAssert "cxTaprootTweakSeckey refuses a 31-byte key", stThrows2("cxTaprootTweakSeckey", stRepeatByte(0, 31), empty)
+      -- Fail closed, AND IN WHOSE WORDS. These five used to assert only that
+      -- something threw, which on this surface is close to asserting nothing:
+      -- the shim re-checks every length the script guards, so the guard can be
+      -- deleted and the throw survives. That mutation was run and it SURVIVED
+      -- on the headless side until check-script-vectors.py started reading the
+      -- message (2026-08-16). Each check below now names the handler the
+      -- message must come from and a phrase from the reason, which is the only
+      -- thing that separates "the guard under test refused" from "something
+      -- below it did". See stRefusalNames for why the handler is matched with
+      -- its colons.
+      stAssertRefusal "a 33-byte internal key is refused, by cxTaprootTweak's own guard", stThrowsText2("cxTaprootTweak", cxHexDecode(kPubOneCompressed), empty), "cxTaprootTweak", "internal key"
+      -- The off-curve key is the one that must NOT come from the script: 32
+      -- bytes passes both length guards, so only the curve can say no, and the
+      -- message therefore names cxTaprootTweakPubkey - the .lcb handler one
+      -- call down. Asserting that is asserting the layering: if this ever
+      -- started naming cxTaprootTweak, a script-side check would have grown
+      -- that is deciding curve membership, which nothing in this layer may do.
+      stAssertRefusal "an internal key that is not on the curve is refused, by the CURVE and not by a length check", stThrowsText2("cxTaprootTweak", cxHexDecode(kSchnorrPubOffCurve), empty), "cxTaprootTweakPubkey", "not a valid secp256k1 key"
+      stAssertRefusal "a 31-byte merkle root is refused, naming the merkle root", stThrowsText2("cxTaprootTweak", tInternal, stRepeatByte(0, 31)), "cxTaprootTweak", "merkle root"
+      -- cxBtcAddressP2TRFromInternal re-throws the INNER message, so this line
+      -- expects cxTaprootTweak's words and not its own. That is worth pinning
+      -- rather than working around: the handler wraps its body in a
+      -- capture-set-the-itemDelimiter-back-then-throw-after-end-try dance,
+      -- because a throw issued INSIDE a catch does not reach the caller on OXT
+      -- (2026-08-09, the fail-open that made cxMnemonicValidate answer true to
+      -- a mistyped backup). If that capture ever broke, the caller would get
+      -- empty or a bare engine error, and this is the check that would say so.
+      stAssertRefusal "cxBtcAddressP2TRFromInternal refuses a 33-byte key, re-throwing the inner message intact", stThrowsText2("cxBtcAddressP2TRFromInternal", cxHexDecode(kPubOneCompressed), empty), "cxTaprootTweak", "internal key"
+      stAssertRefusal "cxTaprootTweakSeckey refuses a 31-byte key", stThrowsText2("cxTaprootTweakSeckey", stRepeatByte(0, 31), empty), "cxTaprootTweakSeckey", "a buffer had the wrong length"
    catch tError
       stSectionFailed "BIP-341 Taproot", tError
    end try
@@ -1383,6 +1422,122 @@ function stThrows3 pHandler, pArgA, pArgB, pArgC
    end try
    return tThrew is "true"
 end stThrows3
+
+-- ---- the same three, but returning the MESSAGE ------------------------------
+--
+-- WHY A SECOND FAMILY EXISTS, AND WHY "IT THREW" IS THE WEAK ASSERTION HERE.
+-- Every refusal in this library can come from either of TWO layers: a guard in
+-- src/coinxt.livecodescript, and, one call below it, the C shim checking the
+-- same thing again through the .lcb. Where both refuse the same input, a
+-- Boolean "it threw" tests the layer BELOW the one under test, and the upper
+-- guard is untested by construction.
+--
+-- That is not a theoretical worry, it is a measured one. On 2026-08-16 four
+-- defects were reconstructed in the shipped Taproot script and driven through
+-- tools/check-script-vectors.py; three were caught and one SURVIVED - deleting
+-- cxTaprootTweak's merkle-root length guard - because the shim refuses a
+-- 31-byte root too, with CNX_ERR_BADLEN, so the handler threw either way. The
+-- headless gate was upgraded that day (its `throw_text`, and the mutation is
+-- caught now). These helpers are the same upgrade on the ENGINE side, so the
+-- two gates assert the same property instead of one of them settling for the
+-- weaker half.
+--
+-- What the upper guard actually buys is a MESSAGE that names the handler and
+-- the argument, instead of the shim's generic "a buffer had the wrong length"
+-- - so that is what has to be asserted.
+--
+-- tError IS DECLARED in all three of these and is NOT declared in the Boolean
+-- forms above, and the difference is load-bearing rather than tidiness: these
+-- bodies REFERENCE the caught error. On strict OXT a reference to an undeclared
+-- catch variable throws a SECOND error at the moment the catch fires, masking
+-- the real failure as an opaque "error in function handler" - which is
+-- invisible on a read, because the catch only misbehaves when it actually
+-- fires (holde-em gotcha H8; check-livecodescript.py check 15). The Boolean
+-- forms never read theirs, which is the binding-only case the checker
+-- deliberately allows and onionxt's capability probes have proven on engines.
+--
+-- The no-throw answer is a SENTINEL rather than empty: empty would read as "it
+-- threw, with an empty message" in a failure line, and the sentinel text
+-- contains none of the words any caller asserts on, so stRefusalNames says no
+-- to it for the right reason.
+function stThrowsText pHandler, pArg
+   local tError, tMessage
+   put "(did not throw)" into tMessage
+   try
+      do "get" && pHandler & "(pArg)"
+   catch tError
+      put tError into tMessage
+   end try
+   return tMessage
+end stThrowsText
+
+function stThrowsText2 pHandler, pArgA, pArgB
+   local tError, tMessage
+   put "(did not throw)" into tMessage
+   try
+      do "get" && pHandler & "(pArgA, pArgB)"
+   catch tError
+      put tError into tMessage
+   end try
+   return tMessage
+end stThrowsText2
+
+function stThrowsText3 pHandler, pArgA, pArgB, pArgC
+   local tError, tMessage
+   put "(did not throw)" into tMessage
+   try
+      do "get" && pHandler & "(pArgA, pArgB, pArgC)"
+   catch tError
+      put tError into tMessage
+   end try
+   return tMessage
+end stThrowsText3
+
+-- Did a refusal say WHICH handler refused, and WHY, in its own words?
+--
+-- Every error this library raises is framed "CoinXT: <handler>: <reason>" -
+-- the script layer writes that literally, and the .lcb builds the same shape
+-- in sFinish ("CoinXT:" && pName & ":" && sStatusText(...)). So the handler is
+-- matched WITH ITS COLONS and not as a bare name, which matters more than it
+-- looks: "cxTaprootTweak" is a PREFIX of both cxTaprootTweakPubkey and
+-- cxTaprootTweakSeckey, three handlers that refuse three different things and
+-- sit one call apart. A bare-name match would let the wrong layer's refusal
+-- satisfy the check, which is the exact confusion these helpers exist to
+-- remove.
+--
+-- pReason is matched as a plain substring, and stRun sets `the caseSensitive`
+-- true, so it is byte for byte. It is deliberately a PHRASE from the message
+-- rather than the whole sentence: the .lcb appends a wipe note on the (never
+-- yet seen) path where memzero refuses, and a whole-string comparison would go
+-- red for a reason that is not a defect in the handler under test.
+-- The two tests are written as two STATEMENTS rather than joined with `and`,
+-- deliberately. `A is in B and C is in D` almost certainly parses the way it
+-- reads, but "almost certainly" about operator precedence is exactly the kind
+-- of bet this harness exists to settle rather than to place, and there is no
+-- engine-passed precedent for that shape in this file (every `and` here is in
+-- an ABI-6 section that has never run). Two ifs cost nothing and ask nothing.
+function stRefusalNames pMessage, pHandler, pReason
+   local tFramed
+   put "CoinXT: " & pHandler & ":" into tFramed
+   if tFramed is in pMessage then
+      return pReason is in pMessage
+   end if
+   return false
+end stRefusalNames
+
+-- Assert a refusal MESSAGE, putting the message itself on the result line when
+-- it does not match. A bare "FAIL a 31-byte merkle root is refused" tells the
+-- person doing the engine pass nothing about what came back, and the whole
+-- reason for reading the message is that the wrong layer's refusal looks
+-- exactly like the right one from a distance. On a PASS the label stays short,
+-- so the results window does not grow a full error sentence per green line.
+command stAssertRefusal pName, pMessage, pHandler, pReason
+   if stRefusalNames(pMessage, pHandler, pReason) then
+      stAssert pName, true
+   else
+      stAssert pName & "  [got: " & pMessage & "]", false
+   end if
+end stAssertRefusal
 
 -- Byte-exact equality for two HEX STRINGS, which `is` alone cannot promise.
 -- `is` compares two operands that both LOOK numeric as NUMBERS, and a hex

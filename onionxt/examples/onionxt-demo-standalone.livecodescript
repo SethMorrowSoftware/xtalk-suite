@@ -2610,6 +2610,19 @@ end oxhHtmlEscape
 -- examples/onion-roundtrip against a real tor daemon for those (see
 -- IMPLEMENTATION-PLAN.md phase 4 and CLAUDE.md's on-engine VERIFY checklist).
 --
+-- HOW MUCH OF IT ACTUALLY RAN IS PART OF THE REPORT (2026-08-17). Seven of the
+-- sections above can bail out when the environment cannot support them, and
+-- every one of those bail-outs is now a COUNTED skip (oxSkip below), reported
+-- as a third number on the summary line: "n passed, m failed, k skipped". It
+-- used to be a line in the log and nothing else, which meant the one line a
+-- reader actually reads could not tell 61 checks from 33 checks and 8 skips -
+-- both printed as green with zero failures. The suite core reads that third
+-- count now, and it also applies a FLOOR to what this harness attempts; the
+-- arithmetic behind that number, section by section, is beside the OnionXT
+-- call site in tests/suite-selftest.core.livecodescript's stRunMemberHarnesses.
+-- Add or remove a check here and that floor moves: it is a ratchet, and it is
+-- meant to be re-derived in the same change, not quietly lowered.
+--
 -- CAUTION - side effects on shared state: OnionXT's connection/service/stream
 -- state is a script-local singleton shared by the whole message path (not
 -- per-object), so the idempotent-teardown section below really does call
@@ -2622,7 +2635,12 @@ end oxhHtmlEscape
 -- STATUS: confirmed on-engine: the About-tab self-test run (via the bundled
 -- standalone) executes this harness on a real engine (CLAUDE.md as-built
 -- notes). Everything here is pure script with no socket I/O of its own, so
--- the risk surface is much smaller than the library itself.
+-- the risk surface is much smaller than the library itself. The 2026-08-17
+-- skip counting - sSkip, oxSkip, and the third number on the summary line -
+-- has NOT run on an engine: verified statically; needs an OXT pass. What an
+-- engine would settle is one thing this repo cannot check headlessly: that
+-- the summary line still reads as a summary to the suite core, which is why
+-- the parse rule is quoted in full beside the line that builds it.
 
 -- Two real, published v3 onion addresses, the same vectors pinned in
 -- tools/onion-kat.py, so the Python KAT and this livecodescript suite agree.
@@ -2632,6 +2650,7 @@ constant kTestAddrDuckDuckGo = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twa
 local sLog
 local sPass
 local sFail
+local sSkip      -- a skipped check COUNTS (see oxSkip); it is not just a log line
 
 -- ==========================================================================
 -- Entry point.
@@ -2641,6 +2660,7 @@ function oxSelfTest
    put empty into sLog
    put 0 into sPass
    put 0 into sFail
+   put 0 into sSkip
 
    testVersionAndCapabilities
    testInitialState
@@ -2654,7 +2674,15 @@ function oxSelfTest
    testLoopbackGuard
 
    local tSummary
-   put sPass & " passed, " & sFail & " failed" into tSummary
+   -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
+   -- stSummaryCounts: a line counts as the summary only if every word on it is
+   -- a number or the word passed/failed/skipped, in that order, and EXACTLY
+   -- ONE line in the whole report may qualify - zero matches and two matches
+   -- are both reported failures there rather than a silent zero folded into
+   -- the suite totals. The skip count is the third number as of 2026-08-17;
+   -- the two-number spelling still parses, so a member that has no skips to
+   -- report is not forced to grow one.
+   put sPass & " passed, " & sFail & " failed, " & sSkip & " skipped" into tSummary
    return tSummary & return & "----------------------------------------" & return & sLog
 end oxSelfTest
 
@@ -2675,6 +2703,29 @@ end oxCheck
 private command oxSection pTitle
    put sLog & return & "-- " & pTitle & " --" & return into sLog
 end oxSection
+
+-- A SKIP IS A COUNTED OUTCOME, not a line in the log (2026-08-17).
+--
+-- WHY THIS EXISTS. Seven sites in this file bail out when the environment
+-- cannot support a check - a session that is already control-authenticated, a
+-- SodiumXT without sxSha3_256 or older than ABI 6, a run where oxHostOfSocket
+-- is not in this script - and every one of them used to append to sLog and
+-- touch NO counter. The suite core folds this harness in through
+-- stMergeReturned, which reads the counts back out of the SUMMARY LINE, so a
+-- skipped section was invisible in the one line an engine session actually
+-- reads: 33 checks and 8 skips printed "33 passed, 0 failed", the same green
+-- as all 61. Now the summary carries the skips, the core adds them to the
+-- suite's own sSkipped, and its floor refuses a run that attempted fewer items
+-- than this harness can attempt in its worst environment.
+--
+-- The LOG line keeps its exact old shape on purpose. The report is read by eye
+-- on an engine pass and nothing about a skip's prose changed - only whether
+-- anything counted it. pReason is the sentence that used to sit inside the
+-- parentheses, so a site converts by deleting its wrapper, not by rewording.
+private command oxSkip pReason
+   add 1 to sSkip
+   put sLog & "  --   (skipped: " & pReason & ")" & return into sLog
+end oxSkip
 
 -- ==========================================================================
 -- Section 1: version string and the transport capability probe.
@@ -2712,8 +2763,8 @@ end testVersionAndCapabilities
 private command testInitialState
    oxSection "initial state (before oxConnectControl)"
    if oxIsControlAuthenticated() then
-      put sLog & "  --   (skipped: this session is already control-authenticated; " & \
-         "run oxSelfTest before oxConnectControl for this section)" & return into sLog
+      oxSkip "this session is already control-authenticated; " & \
+         "run oxSelfTest before oxConnectControl for this section"
       exit testInitialState
    end if
    oxCheck (oxBootstrapProgress() is 0), "bootstrap progress starts at 0"
@@ -2748,8 +2799,8 @@ private command testFailClosedArguments
    -- the note on testInitialState above); skip rather than false-fail if a
    -- prior oxConnectControl in this session already succeeded.
    if oxIsControlAuthenticated() then
-      put sLog & "  --   (skipped: pre-auth guard on oxCreateService* needs a " & \
-         "session that has not authenticated yet)" & return into sLog
+      oxSkip "pre-auth guard on oxCreateService* needs a " & \
+         "session that has not authenticated yet"
    else
       oxCreateService 80, 8080
       put the result into tResult
@@ -2843,7 +2894,7 @@ private command testOneKnownAddress pAddress, pLabel
       oxCheck (oxAddressFromPublicKey(tPub) is pAddress), \
          pLabel & ": oxAddressFromPublicKey re-encodes the exact same address"
    else
-      put sLog & "  --   (skipped: " & pLabel & " re-encode needs SodiumXT sxSha3_256, docs/08)" & return into sLog
+      oxSkip pLabel & " re-encode needs SodiumXT sxSha3_256, docs/08"
    end if
 end testOneKnownAddress
 
@@ -2874,7 +2925,7 @@ private command testAddressNegativePaths
    if tInfo["offlineAddress"] is true then
       oxCheck (not oxIsValidAddress(tTampered)), "a tampered address fails checksum validation"
    else
-      put sLog & "  --   (skipped: tamper-detection needs SodiumXT sxSha3_256, docs/08)" & return into sLog
+      oxSkip "tamper-detection needs SodiumXT sxSha3_256, docs/08"
    end if
 end testAddressNegativePaths
 
@@ -2900,7 +2951,7 @@ private command testSodiumComposition
       oxCheck (testHex(tExpanded) is tExpectExp), \
          "sxSignSeedToExpandedKey(seed 0x42 x 32) matches the pinned expanded-key vector"
    else
-      put sLog & "  --   (skipped: sxSignSeedToExpandedKey needs SodiumXT ABI >= 6)" & return into sLog
+      oxSkip "sxSignSeedToExpandedKey needs SodiumXT ABI >= 6"
    end if
 
    -- Gap #3 (SHIPPED): sxHmacSha256("Jefe","what do ya want for nothing?") RFC 4231 TC2.
@@ -2911,7 +2962,7 @@ private command testSodiumComposition
       oxCheck (testHex(tMac) is tExpectMac), \
          "sxHmacSha256 (RFC 4231 Test Case 2) matches the pinned HMAC vector"
    else
-      put sLog & "  --   (skipped: sxHmacSha256 needs SodiumXT ABI >= 6)" & return into sLog
+      oxSkip "sxHmacSha256 needs SodiumXT ABI >= 6"
    end if
 end testSodiumComposition
 
@@ -3032,9 +3083,9 @@ private command testLoopbackGuard
    try
       put oxHostOfSocket("127.0.0.1:9050") into tProbe
    catch tError
-      put sLog & "  --   (skipped: oxHostOfSocket / oxHostIsLoopback are private to " & \
+      oxSkip "oxHostOfSocket / oxHostIsLoopback are private to " & \
          "onionxt.livecodescript; run the demo standalone or the suite paste, where " & \
-         "the harness and the library are one script)" & return into sLog
+         "the harness and the library are one script"
       exit testLoopbackGuard
    end try
 

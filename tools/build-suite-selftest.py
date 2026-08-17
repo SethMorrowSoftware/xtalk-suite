@@ -58,7 +58,7 @@ them into the unified report. That is the only coupling.
 WHAT IS FOLDED IN, AND WHAT IS DELIBERATELY NOT. Three members are pure,
 offline and synchronous, so they fold in whole:
   sodiumxt   sxSelfTest()   21 groups
-  onionxt    oxSelfTest()    8 groups, all offline (no Tor daemon needed)
+  onionxt    oxSelfTest()    10 groups, all offline (no Tor daemon needed)
   coinxt     stRun          28 sections
 box2dxt joined them 2026-08-16 and is the odd one, because its harness is a
 paste-and-run STACK rather than a test file: it carries a verbatim copy of the
@@ -224,7 +224,7 @@ MEMBERS = [
     Member(
         "onion", "onionxt/examples/onionxt-tests.livecodescript", "ox1",
         "oxSelfTest", "OnionXT: the full ox* self-test",
-        "8 groups, all OFFLINE - no Tor daemon is started or contacted. "
+        "10 groups, all OFFLINE - no Tor daemon is started or contacted. "
         "The live-Tor paths stay in onionxt's own demo.",
     ),
     Member(

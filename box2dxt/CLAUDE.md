@@ -43,7 +43,12 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   from native-box2dxt.yml, or a move to manylinux_2_28 that would raise
 >   its glibc floor from 2.17 to 2.28 (a real portability regression, the
 >   owner's call). `tools/install-release-binaries.py` would also need to
->   learn box2dxt's package layout. Do this as a deliberate release-lane
+>   learn box2dxt's package layout. **(SUPERSEDED 2026-08-17: that half
+>   landed, and there was never a layout to learn - box2dxt's `src/code` is
+>   the identical family layout to sodiumxt's and torrentxt's, so the
+>   installer needed ONE token, verification-only and inert until a lane
+>   exists, pinned by a committed `--selftest`. The WORKFLOW half is what
+>   remains, and it is the half that is genuinely the owner's.)** Do this as a deliberate release-lane
 >   pass, not a drive-by.
 > - The examples are registered EXEMPT in the suite UI-kit gate: they are
 >   games drawn by this member's own embedded b2k Kit (whose copies have
