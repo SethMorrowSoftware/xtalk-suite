@@ -132,20 +132,28 @@ coverage **411/429 -> 724/742**. Two things came out of it worth carrying: a
 latent paste-time bug (the harness carries a verbatim copy of the b2k Kit, so a
 naive fold would have defined 313 handlers twice - found here rather than on an
 engine), and a coverage ratchet that failed at 103/313 because many Kit handlers
-RUN on every test while no test writes their name down. holde-em remains
-unfolded pending five named blockers; nocloud has no script harness and is
-correctly out of scope.
+RUN on every test while no test writes their name down. **holde-em folded the
+SAME DAY** (commit `7f55839`) — the sentence that stood here said it "remains
+unfolded pending five named blockers", and all five were cleared hours later;
+it is the ninth harness, at 380 folded handlers. nocloud has no script harness
+and is correctly out of scope.
 
-**The short version.** One big build is unstarted (Model C for DHT-Channels).
-The second capstone turned out to be half-built already: holde-em folded home
-with hotseat and online play written, leaving its oracle, mental-poker, and
-hardening phases open. One code layer is missing from an otherwise-done Riptide
-phase (onion serving). Everything else that is *built* mostly waits on three
-environmental sessions `docs/OXT-PASS-RUNBOOK.md` already scripts: **one evening
-with a Tor daemon**, **one two-machine session** (now including holde-em's
-"two machines, one invite code" pass), and **cheap single-machine re-opens** of
-every demo converted in the 2026-08-14 UI unification. The macOS binaries are
-the one release gap. The rest is label/doc hygiene and recorded owner decisions.
+**The short version — REWRITTEN 2026-08-17, and every claim it used to make was
+stale.** It said one big build was unstarted (Model C) — Model C is built, 629
+onion/Tor references in the Channels stack. It said a code layer was missing from
+a Riptide phase (onion serving) — `rsAnonFeedPage`, `rsAnonPrekeyBody` and
+`rsAnonAcceptDm` all exist. It said holde-em's oracle and mental-poker phases were
+open — Phase 3, the 4a-4e Level 2 layer and Phase 5's DLEQ proofs all shipped.
+
+What is actually true now: **nothing large is unstarted.** What is BUILT waits on
+the runbook's five resource-keyed sessions (S1 one machine; S2 plus a tor daemon;
+S3 two machines; S4 two machines plus tor; S5 a Mac or a Windows box), and the
+macOS binaries are the one release gap. What remains HEADLESS is no longer
+unbuilt features but **measurement**: two layers ship with no ratchet at all
+(box2dxt's raw `.lcb`, holde-em's `he*` surface), and the gates that report on
+the rest have been found overstating twice in two days. See
+`docs/HEADLESS-BACKLOG-2026-08-17.md`, which is the live index for that work;
+this file stays the ledger.
 
 ---
 
@@ -218,39 +226,60 @@ and one functional hole.
    clipped, the felt still reads) is the OXT pass's.
    — `holde-em/src/holdem.livecodescript` (kHeStackRect, kUIVersion 15)
 
-4. **ONIONXT integration plan Phases 2-3: Model C for DHT-Channels** (large).
-   The §6 design (identity unification, per-channel onion services, the svc=
-   feed line, the BTXC/BTXF request layer, anonymous file delivery,
-   badges/persistence) plus Phase 0's Tor toggle in the Channels UI has no
-   code: `torrentxt/examples/torrent-dht-channels.livecodescript` contains zero
-   onion/Tor references. Only the QuickShare side (Phase 1) was built.
-   — `docs/ONIONXT-INTEGRATION-PLAN.md` §6, §10
+4. **~~ONIONXT integration plan Phases 2-3: Model C for DHT-Channels~~ BUILT
+   2026-08-15; struck 2026-08-17.** This entry's own evidence is what falsified
+   it: it said `torrent-dht-channels.livecodescript` "contains zero onion/Tor
+   references", and that file now matches **629** of them, with Model C built
+   from `chOnionServiceFor` / `chAnonFeedText` / `chOnionServeRequest` /
+   `chOnionPublishFile` / `chOnionDownload`. The plan's §10 carries dated
+   "As-built (built 2026-08-15)" blockquotes for Phases 2 and 3. **What remains
+   is verification, not code**, and it is already counted in section B: register
+   items #31-#33 need a tor daemon (#31) and two machines plus tor (#32, #33).
+   — `docs/ONIONXT-INTEGRATION-PLAN.md` §6, §10, §12.3
 
-5. **ONIONXT plan Phase 4 docs** (small). `docs/anon-transport.md`, the
-   threat-model page, and the §13 onboarding doc do not exist anywhere.
-   — `docs/ONIONXT-INTEGRATION-PLAN.md:1493-1497`
+5. **~~ONIONXT plan Phase 4 docs~~ SHIPPED; struck 2026-08-17.** All three
+   exist: `docs/anon-transport.md`, `docs/anon-transport-threat-model.md`, and
+   `docs/anon-transport-onboarding.md`. **The PHASE does not close with them**,
+   and that distinction is kept rather than tidied: its exit gate is a fresh
+   user completing the walkthrough on each of macOS, Windows and Linux, which is
+   section C/E work needing three platform boxes and a human.
+   — `docs/ONIONXT-INTEGRATION-PLAN.md` §13
 
-6. **Riptide spec 8.2/8.3 onion transport serving** (medium). No oxh* call
-   exists in riptide: serving the anon feed page, serving the persona prekey,
-   and accepting sealed intros via POST /dm are unbuilt (the 8.3 crypto closed
-   2026-08-15; the transport did not).
-   — `riptide/README.md:131-140`, `riptide/CLAUDE.md:316-332`,
-   `docs/RIPTIDE-SOCIAL-SPEC.md:370-395`
+6. **~~Riptide spec 8.2/8.3 onion transport serving~~ BUILT; struck
+   2026-08-17.** `rsAnonFeedPage`, `rsAnonPrekeyBody` and `rsAnonAcceptDm` all
+   exist in `riptide/src/riptide.livecodescript`, and the demo registers all
+   three routes. The live half stays open as B.4 (phase 7 over Tor, two
+   machines).
+   — `riptide/src/riptide.livecodescript`, `docs/RIPTIDE-SOCIAL-SPEC.md` §8.2/8.3
 
-7. **Riptide phase 6's actual sync payload** (medium). Only the admission
-   handshake exists; the spec's channel 0/1/2 traffic (keyring/drafts/feed
-   seq/read receipts, presence, bulk media) is unbuilt, so the phase's
-   draft-appears-on-another-device criterion cannot yet be met.
-   — `docs/RIPTIDE-SOCIAL-SPEC.md:325-347`, `riptide/src/riptide.livecodescript:2074-2326`
+7. **~~Riptide phase 6's actual sync payload~~ BUILT; struck 2026-08-17.** The
+   RSL1 record builders and the LAN sync receive path exist. **One defect found
+   in that layer on 2026-08-17 and fixed the same day** (C6 of the headless
+   backlog): the demo keyed six sync arrays by the ENET PEER rather than the
+   signing DEVICE, so on a joiner every relayed record from every device landed
+   in one slot and other devices never appeared in the Devices panel at all —
+   violating a contract `riptide/src/riptide.livecodescript` states in its own
+   words ("apply only a seq strictly above the last one applied for that
+   device"). The two-machine runbook has ONE non-host device and structurally
+   could not have reached it.
+   — `docs/RIPTIDE-SOCIAL-SPEC.md` §6, `riptide/src/riptide.livecodescript`
 
-8. **Riptide phase-5 typing presence has no recorded disposition** (small).
-   Neither built nor recorded as a deliberate non-build (the way the
-   DHT-dead-drop cold start was). Build it or write the decision down.
-   — `docs/RIPTIDE-SOCIAL-SPEC.md:315-321,524-535`
+8. **~~Riptide phase-5 typing presence~~ BUILT; struck 2026-08-17.** The
+   typing lane exists in the demo (`raDmTypingTick` and its four call sites).
+   Its live confirmation rides B.4's phase-5 two-machine pass.
+   — `docs/RIPTIDE-SOCIAL-SPEC.md` §5
 
-9. **Riptide demo publishes profileMeta empty** (small). rsBuildHead carries the
-   field; the demo never populates it. Demo-side wiring only.
-   — `riptide/examples/riptide-social.livecodescript:78-79`
+9. **Riptide profileMeta has a PUBLISHER and a PARSER but NO READER** (small;
+   rewritten 2026-08-17, not struck — the original said "the demo never
+   populates it", and that half is now false). `raPost` publishes the
+   display-name blob through `rsPublishImmutable` and passes the target to
+   `rsBuildHead`, with a non-fatal refusal path; `rsBuildHead`'s parse writes
+   `tHead["profileMetaTarget"]`; one harness assertion pins it. **Nothing
+   anywhere fetches that target and shows the name**, which is the entire point
+   of the field (spec 4.1: "so a reader can show a name without parsing the
+   head's own name field out of band"). Demo-side wiring only, and now the
+   smaller half of the job.
+   — `riptide/examples/riptide-social.livecodescript` ("the head's profileMeta names a display-name blob")
 
 10. **~~coinxt Schnorr/BIP-340 + the Taproot tweak~~ SHIPPED statically
     2026-08-16** (commit `affdf1c`, coinxt ABI 6). The blocking decision
@@ -269,9 +298,13 @@ and one functional hole.
     coinxt signs a sighash it is handed and cannot compute one.
     — `coinxt/CLAUDE.md` (the dated rule-change entry), `coinxt/SPEC.md` 2.1
 
-11. **coinxt WIF encode/decode** (small). Designed in SPEC, "handler not found"
-    today; the Base58Check framing already exists.
-    — `coinxt/README.md:15-17`
+11. **~~coinxt WIF encode/decode~~ SHIPPED 2026-08-15; struck 2026-08-17.**
+    `cxWifEncode` / `cxWifDecode` ship, mainnet and testnet, with the 0x01
+    compressed marker and a fail-closed decode. The wave-1 banner at the top of
+    this section recorded the ship; the ENTRY was left reading present-tense
+    open, which is the inverse pathology this document warns about — a shipped
+    item listed as blocked spends engine minutes. Its OXT pass is counted in B.8.
+    — `coinxt/src/coinxt.livecodescript` ("cxWifEncode")
 
 12. **~~coinxt cnx_memzero export~~ SHIPPED statically 2026-08-16** (commit
     `55f9130`: ABI 5, the export a thin wrap of the already-vendored
@@ -285,21 +318,25 @@ and one functional hole.
     both already counted in section B's backlog, not new items.
     — `coinxt/CLAUDE.md` (as-built entry), `coinxt/src/coinxt.lcb`
 
-13. **nocloud HTTP-host Phase 3: per-route streaming/params** (large). The
-    deep-dive's own ledger names it the one open item; enabler for its §4
-    endpoint ideas.
-    — `nocloud/docs/http-server-deep-dive.md:27,213-226`
+13. **~~nocloud HTTP-host Phase 3: per-route streaming/params~~ BUILT
+    2026-08-16; struck 2026-08-17.** The `:param` matcher ships and the routes
+    stream through the shared bounded pump. The §4 endpoint MENU it enables
+    stays an owner call (E.5 / D-02).
+    — `nocloud/docs/http-server-deep-dive.md`
 
-14. **nocloud residual Phase-2 duplication** (medium). qsFsServeFile and
-    qsCwServeFile duplicate the whole ETag/304 branch and head assembly; the
-    Tor keep-alive question is an as-built fact, not a recorded decision.
-    — `nocloud/src/nocloudquickshare.livecodescript:5487-5535,6378-6421`
+14. **~~nocloud residual Phase-2 duplication~~ FACTORED; struck 2026-08-17.**
+    The ETag/304 branch and head assembly are one golden-pinned helper
+    (`qsHttpFileHead`), reached by both transports. The Tor keep-alive half was
+    always an owner decision and stays one (E.5).
+    — `nocloud/src/nocloudquickshare.livecodescript` ("qsHttpFileHead")
 
-15. **nocloud token-mount redirect hole** (small). The shipped /go/gallery
-    redirect emits Location: /gallery verbatim; under a /<token>/ web-link
-    mount that lands outside the capability mount. Re-prefix server-side, or
-    document the Tor-root-only limit and test the redirect from inside a mount.
-    — `nocloud/webapp/.qsroutes.json:32-37`, `nocloud/src/nocloudquickshare.livecodescript:4522-4523`
+15. **~~nocloud token-mount redirect hole~~ FIXED 2026-08-15; struck
+    2026-08-17.** Redirects are re-prefixed server-side by `qsMountLocation`,
+    golden-mirrored. **This entry also named a handler that has never existed
+    anywhere in the tree** (`qsRebaseLocation`) — recorded rather than quietly
+    corrected, because a citation nobody can resolve is how a punch-list item
+    survives past its fix.
+    — `nocloud/src/nocloudquickshare.livecodescript` ("qsMountLocation")
 
 16. **box2dxt platformer polish plan §9 passes** (medium). Scene composition
     (each biome deliberately dressed), audio + UX/chrome sweep, code/repo
@@ -357,7 +394,7 @@ Built and statically verified; pending under the honesty convention.
    transaction accepted on a live testnet in each of the four families.
    — `coinxt/examples/coinxt-demo.livecodescript:14-18`, `coinxt/IMPLEMENTATION-PLAN.md:235`
 
-9. **nocloud: the 48-item pass checklist at zero ticks + whole-stack re-pass**
+9. **nocloud: the 59-item pass checklist at zero ticks + whole-stack re-pass**
    (large). Plus the checklist's own gaps: no ETag/304 section, no items for
    the webapp's runtime claims (SW-over-Tor, in-app Range, SPA refresh,
    HEAD-on-SPA), no redirect-under-token-mount test.
@@ -407,7 +444,7 @@ Built and statically verified; pending under the honesty convention.
    **210 handlers**: 13 new sections took the Kit to 313/313 with zero
    exemptions. **NOT closed, and recorded as an open item beside the gate
    row rather than pretended away:** `box2dxt/src/box2dxt.lcb`'s 376 public
-   `b2*` handlers, of which the Kit names 131 and **245 are named by no
+   `b2*` handlers, of which the Kit names 132 and **244 are named by no
    script anywhere in the member**. That layer is a 1:1 binding driven by
    `smoke_test.c` under ASan in CI; 375 blind assertions against a
    foreign-bound API would most likely hand the next OXT session a pile of
@@ -421,12 +458,23 @@ Built and statically verified; pending under the honesty convention.
    pass, not a drive-by."
    — `box2dxt/CLAUDE.md:34-47`
 
-4. **holde-em into the suite selftest and coverage gate** (medium).
-   Deliberately not done in the fold: the member's harness lives EMBEDDED in
-   the game stack (heRunSelftest), so the generator and coverage gate do not
-   know it (the box2dxt precedent). Done = extract the harness or teach the
-   fold machinery an embedded one, add the Member row and the he prefix, close
-   the gaps the gate then demands.
+4. **holde-em into the suite selftest ~~and coverage gate~~ — SPLIT
+   2026-08-17; the selftest half is DONE, the coverage half is not.**
+   - ~~Suite selftest~~ **DONE 2026-08-16** (commit `7f55839`): holde-em is the
+     ninth folded harness and `check-suite-selftest.py` reports
+     `holde-em=380`. Its fold needed only `drop_extra` plus one `@PREFIX@`
+     rewrite, because its game and its harness are the SAME FILE and both
+     sides rename together.
+   - **Coverage gate — STILL OPEN.** The member is folded but NOT ratcheted,
+     so its surface is in no numerator. Measured 2026-08-17: **379 public
+     `he*` handlers, 174 named by a `heTest*`/`heProbe*` body, 205 named by
+     nothing.** (The 163 quoted elsewhere in this file is stale — the harness
+     grew.) What is missing is a way to scan the harness REGION of a
+     single-file member; the graph walk itself already exists as
+     `check-suite-selftest.py`'s check 7d and should be lifted rather than
+     rewritten. **Compute the number under the coverage gate's string
+     convention, and commit measurement-only first**, so the honest figure is
+     recorded before the ratchet bites.
    — `holde-em/CLAUDE.md` (fold record), `tools/build-suite-selftest.py`,
    `tools/check-suite-coverage.py`
 
@@ -531,11 +579,17 @@ Built and statically verified; pending under the honesty convention.
 8. **torrentxt api-reference "fields not yet populated" reconcile** (small).
    — `torrentxt/docs/api-reference.md:10-14,734-736`
 
-9. **Two riptide gate scripts want hardening** (small).
-   check-selftest-vectors.py silently skips constants its regex cannot parse
-   (fail loudly instead); check-docs-style.py's SCOPE docstring omits riptide,
-   which runs the gate without declaring the rule.
-   — `riptide/tools/check-selftest-vectors.py:30-38`, `riptide/tools/check-docs-style.py:11-17`
+9. **~~Two riptide gate scripts want hardening~~ FALSE ON BOTH HALVES; struck
+   2026-08-17 after re-reading the files rather than the entry.**
+   `check-selftest-vectors.py` does NOT silently skip — its comment states the
+   opposite rule and its code enforces it ("any `constant k` line the regex
+   cannot decompose is a LOUD failure, never a skip"), naming the
+   parsed-vs-checked hole as the thing it refuses. And `check-docs-style.py`'s
+   SCOPE docstring DOES name riptide, in a list of exactly the four members
+   that declare the no-dash rule. Both were presumably fixed without striking
+   the entry.
+   — `riptide/tools/check-selftest-vectors.py` ("a LOUD failure, never a skip"),
+   `riptide/tools/check-docs-style.py` ("SCOPE, precisely")
 
 ## E. Open decisions and roadmap (10)
 
