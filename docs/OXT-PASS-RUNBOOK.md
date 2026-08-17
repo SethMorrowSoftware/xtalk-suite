@@ -143,6 +143,119 @@ ran.
 
 ---
 
+> ## The 2026-08-17 pass: THE LARGEST GREEN RUN THE PROJECT HAS HAD
+>
+> **Windows, x86_64, NT 10.0, OXT 9.6.3. 1,836 folded member checks, ZERO
+> failures, 7 skips - every skip a live-transport or daemon leg that no
+> single machine can run.** The previous best on record was 617 folded
+> checks (2026-08-13). All six packaged extensions loaded at the exact ABI
+> their guard expects: SodiumXT 9, TorrentXT 11, enetxt 2, DataChannelXT 1,
+> CoinXT 6, Box2Dxt 4 (the last one READ, not inferred).
+>
+> | member | checks | member | checks |
+> |---|---|---|---|
+> | holde-em | 538 | torrentxt | 101 |
+> | box2dxt | 374 | sodiumxt | 99 |
+> | riptide | 338 | onionxt | 61 |
+> | coinxt | 278 | datachannelxt | 26 |
+> | | | enetxt | 21 |
+>
+> **`tests/preflight.livecodescript` ran first and did its job on its first
+> outing** - six LOADED rows in about a minute, and the two script-layer SKIPs
+> correctly explained as not-needed-for-the-paste. It was written the same day
+> and had never been executed.
+>
+> ### What this pass proved for the FIRST TIME
+>
+> Everything below shipped between 2026-08-15 and 2026-08-17 and had never met
+> an engine. All of it came back green:
+>
+> - **coinxt BIP-340 Schnorr and the BIP-341 Taproot tweak (ABI 6)** - all 19
+>   published Schnorr vectors including the 10 negatives, and the wallet
+>   vectors: key-path output key, script-tree root, the tweaked private key
+>   signing for the tweaked public key, and `cxBtcAddressP2TR` confirmed still
+>   NOT tweaking (the deliberate non-change that keeps existing calls
+>   spendable).
+> - **coinxt WIF** - all four framing legs plus the refusals, including the one
+>   that matters: an xprv is refused on its payload LENGTH, not its version byte.
+> - **SodiumXT ristretto255, ABI 8 AND ABI 9** - the mask/unmask roundtrip, the
+>   batch over 3 points, `k*(P+Q) == k*P + k*Q` (the DLEQ-shaped identity), and
+>   the failure the batch API exists to get right: one bad point fails the whole
+>   batch, NAMING index 2 of 3.
+> - **holde-em's Level 2 + Phase 5 DLEQ** - a wrong unmask refused INSTANTLY and
+>   named, with no audit round; all five cheater bots detected and attributed.
+> - **box2dxt at harness v29: 374/0.** Run 5 predicted "369/0, fully green"; the
+>   extra five are the checks added on 2026-08-17. The prediction held.
+>
+> ### The five 2026-08-17 fixes, each confirmed by the check written for it
+>
+> This is the part worth reading, because each line is a defect found by
+> READING and closed before an engine ever saw it:
+>
+> - **onionxt's loopback guard fail-open.** `ok  the guard refuses an empty host
+>   (it used to accept one)`, and all eight socket-id fixtures parse correctly -
+>   including `[::1:54321]` -> host `[::1]`, the bare-IPv6 shape that used to
+>   yield EMPTY and be ACCEPTED by a guard its own comment calls
+>   security-critical.
+> - **torrentxt's three "untestable" refusal legs.** `btMoveStorage on a stale id
+>   refuses, moving nothing`; `btSetFilePriorities on a stale id refuses`;
+>   `btAddTorrentWithResume refuses garbage resume bytes` **`...and says why (the
+>   shim ran, it did not short-circuit)`**. Writing real checks instead of
+>   exemptions was the right call, and this run is the proof - plus `btAddMagnet
+>   returns a handle`, the fourth.
+> - **datachannelxt.** `dcSendText refuses an embedded NUL with -3`, the refusal
+>   cleared the shim last-error, and the four stale-handle assertions now read
+>   the exact `-2` rather than `< 0`.
+> - **box2dxt's duck rebuild dropping the collision filter.** MASK, GROUP and
+>   CATEGORY each survived the duck/stand rebuild, proven by three separate
+>   landing outcomes.
+> - **holde-em's host election.** `a SITTING-OUT seat is not electable (spec 9
+>   live seats)` and `the sat-out key is gone from the candidate set entirely`.
+>
+> **And one the coverage ratchet found.** `ante: short SB posts from the
+> post-ante stack (heHandStart P0 fix)` - `heHandStart` survived only inside a
+> test LABEL, which is exactly the gap the string-blanking convention was built
+> to expose on the day it was built. It is a real check now, and it passes.
+>
+> ### The hotseat session found a defect the gates could not
+>
+> **Three hands of real hotseat play, reported back as a transcript, and its
+> third hand is poker-inconsistent**: heads-up, a 392 all-in called by a 2008
+> stack, reported `pot 2400` for an awarded pot of **784**. Everything else
+> about it was right - chips conserved, `settle-verified` passed, all three
+> deals re-derived - and that is exactly why nothing caught it. The history
+> line summed `handBy`, every seat's total COMMITMENT, and a bet nobody calls
+> is RETURNED. The money was never wrong; only the number on screen was,
+> inflated by precisely the 1616 that went straight back.
+>
+> Fixed the same day in `heAwardedPot` (extracted from a forty-line fold loop
+> so it could be pinned at all), mirrored in `tools/fold-kat.py`, and pinned
+> five ways in harness section 21 plus a new canned uncalled-bet session. A
+> mutation test confirms the shape: with the old code restored, the stacks,
+> conservation and settle-verified checks all still PASS and only the two pot
+> assertions fire - which is the transcript's signature exactly.
+>
+> **It was not the only instance.** The repo's OWN canned ante session had
+> reported `pot 9` since the day it was written, where the awarded pot is 8:
+> the big blind's blind is uncalled by one chip when the small blind folds.
+> Nothing pinned that figure either. Both are pinned now.
+>
+> The lesson is the one this tree keeps relearning from a different angle: the
+> deltas reconcile under BOTH readings, so every check that existed - chip
+> conservation, settlement re-derivation, the independent fold - stayed green
+> over a wrong number. Only a human reading a real session noticed.
+>
+> ### What it did NOT close
+>
+> The 7 skips are the honest remainder and every one needs a resource this
+> session did not have: riptide's anon onion service create + serving (2, tor);
+> holde-em's live onion table, the three-machine oracle round, the
+> onion-hosted oracle, the live timed table and the live tor redial (5). The
+> ENet and DataChannel **async loopbacks** stay deliberately unfolded. Nothing
+> here touches the two-machine legs (S3/S4) or the macOS/Windows-package gaps.
+
+---
+
 > ## The 2026-08-08 pass: what it closed
 >
 > **`tests/suite-selftest.livecodescript` ran green on a real engine with all six
@@ -1183,6 +1296,33 @@ does not expose one at all. Use a system tor on `127.0.0.1:9051`, or Tor Browser
 `Error 10061` / `WSAECONNREFUSED` / "connection refused" and means nothing is
 listening there - it is not an onionxt bug. Confirm the
 `Opening Control listener on 127.0.0.1:9051` line in tor's log before blaming script.
+
+### 5.3.1 Mode B will collide with the daemon you already have running
+
+**`oxLaunchTor` defaults to SocksPort 9050 and ControlPort 9051** - exactly the
+ports a system tor already holds. If you are running S2 in the normal way (a
+system daemon up, per 2.3), then leg F's `oxLaunchTor` launches a SECOND tor
+against those same ports, the bind fails, and the symptom is a tor that starts
+and dies rather than an error OnionXT can report. It reads like "Mode B is
+broken". It is a port collision.
+
+Added 2026-08-17 because nothing in this tree said so, and Mode B is the one
+path in onionxt that has never had an engine pass - so the first person to run
+it is the most likely to misread the failure as the defect it is meant to find.
+
+Two ways through, and the first is better:
+
+- **Pass explicit high ports:** `oxLaunchTor tPath, tDir, 9250, 9251`. Both
+  daemons coexist, Mode A stays up for the other items, and `oxLaunchTor`
+  calls `oxSetSocksPort`/`oxSetControlPort` for you, so the rest of the API
+  follows the launched one automatically. This also proves the port arguments
+  actually marshal, which the defaults never would.
+- **Stop the system daemon first**, run leg F alone, then restart it. Simpler
+  to reason about, but it costs you the daemon every other S2 item wants.
+
+Either way, record WHICH you did: "Mode B on 9250/9251 beside a running system
+tor" and "Mode B on 9050/9051 with the system daemon stopped" are different
+claims, and only the first proves the ports are honoured.
 
 ### 5.4 An ephemeral ADD_ONION service dies with its control connection
 

@@ -22,6 +22,38 @@ it had checked.
 
 ---
 
+## THE ENGINE RAN THE SAME EVENING, AND EVERY FIX IN THIS FILE HELD
+
+**1,836 folded member checks, ZERO failures, 7 skips** (Windows x86_64, OXT
+9.6.3) - roughly three times the previous best of 617. This document was
+compiled in the morning, its C and D sections were built in the afternoon, and
+the engine ran that night. Recording the result here because a backlog whose
+items are never confirmed is just a list.
+
+**Every one of the five read-found defects was confirmed by the check written
+for it** - C14's loopback fail-open (`the guard refuses an empty host (it used
+to accept one)`), C2's four torrentxt refusal legs, C15/C16's datachannelxt NUL
+refusal and exact codes, C13's duck-rebuild filter, C9's election filter. None
+of these had ever reached an engine; all five would have been found there
+instead, at the cost of a scarce session each.
+
+**Two vindications worth naming:**
+- **C2, on refusing to exempt.** Three handlers were nearly written into
+  `UNTESTABLE` on the strength of the harness note that caused the bug. Written
+  as real checks instead, they came back green - and `btAddTorrentWithResume
+  refuses garbage resume bytes` **`...and says why (the shim ran, it did not
+  short-circuit)`** is the assertion proving the exemption would have been
+  false.
+- **C7, on the string convention.** The blanking convention flagged
+  `heHandStart` as surviving only inside a test LABEL. That was a genuine gap,
+  a real check now covers it, and it passes: `ante: short SB posts from the
+  post-ante stack`.
+
+**B2's preflight stack**, written that day and never run, ran first and did its
+job in about a minute.
+
+---
+
 ## WHAT CLOSED THE SAME DAY THIS WAS COMPILED (2026-08-17)
 
 This file was compiled in the morning and most of its C and D sections were

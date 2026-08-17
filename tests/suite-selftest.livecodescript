@@ -517,7 +517,7 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.24.4"
+constant he1kHeVersion = "0.24.5"
 constant he1kHeHarnessV = "41"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
@@ -28534,11 +28534,26 @@ function he1heFoldTranscript pLogTxt
                delete char -1 of he1tBoardNames        -- trailing comma
                replace comma with space in he1tBoardNames
             end if
-            put 0 into he1tPotTotal
+            -- THE AWARDED POT, NOT THE SUM OF COMMITMENTS (fixed 2026-08-17
+            -- from a hotseat transcript). This used to be a plain
+            -- `add handBy[seat] to he1tPotTotal`, which counts chips that were
+            -- never in the pot: a bet nobody called is RETURNED, and the
+            -- return is exactly what keeps the deltas correct. In a heads-up
+            -- all-in it reads spectacularly wrong -- a 392 short stack called
+            -- by a 2008 stack showed "pot 2400" for a pot of 784, inflated by
+            -- the 1616 that went straight back. The money was always right;
+            -- only this line lied, which is why settle-verified passed
+            -- alongside it.
+            -- The rule: a seat's chips enter the pot only up to the largest
+            -- amount ANY OTHER seat committed. Equivalently, with h1 the
+            -- highest commitment and h2 the second highest COUNTING TIES, a
+            -- seat below h1 contributes all of it and a seat AT h1 contributes
+            -- h2 -- so a normal called hand (two or more seats level at h1) is
+            -- unchanged, and only a genuine uncalled excess is excluded.
+            put he1heAwardedPot(he1tStateA["handBy"], he1tStateA["occ"]) into he1tPotTotal
             put empty into he1tWinnersTxt
             put empty into he1tShownTxt
             repeat for each item he1tSeatNum in he1tStateA["occ"]
-               add he1tStateA["handBy"][he1tSeatNum] to he1tPotTotal
                if he1tDeltasA[he1tSeatNum] > 0 then
                   put he1tSeatNum & comma after he1tWinnersTxt
                end if
@@ -31759,6 +31774,57 @@ on he1b2kFrame
    end if
 end he1b2kFrame
 
+function he1heAwardedPot pHandBy, pOcc
+   -- The pot that is actually AWARDED, which is NOT the sum of what everyone
+   -- committed. A bet nobody called is RETURNED, so it never entered the pot.
+   --
+   -- Found 2026-08-17 in a hotseat transcript: a 392 all-in called by a 2008
+   -- stack reported "pot 2400" for a pot of 784, inflated by exactly the 1616
+   -- that went straight back. The DELTAS were right throughout - chips
+   -- conserved, settle-verified passed - which is why every existing gate
+   -- stayed green over a wrong number. This is a display defect, not a money
+   -- one, and the distinction is worth keeping in the comment.
+   --
+   -- The rule: a seat's chips enter the pot only up to the largest amount ANY
+   -- OTHER seat committed. With h1 the highest commitment and h2 the second
+   -- highest COUNTING TIES, a seat below h1 contributes all of it and a seat
+   -- AT h1 contributes h2. So a normally called hand - where two or more seats
+   -- are level at h1, h2 = h1 - is unchanged, and only a genuine uncalled
+   -- excess is excluded. That is why hands 1 and 2 of the transcript agreed
+   -- with the old code and only the all-in hand did not.
+   --
+   -- Extracted rather than left inline so it can be PINNED: the shipped fold
+   -- is a forty-line loop no assertion could reach.
+   local he1tHiOne, he1tHiTwo, he1tAmt, he1tSeat, he1tTotal
+   put 0 into he1tHiOne
+   put 0 into he1tHiTwo
+   repeat for each item he1tSeat in pOcc
+      put pHandBy[he1tSeat] into he1tAmt
+      if he1tAmt is empty then
+         put 0 into he1tAmt
+      end if
+      if he1tAmt > he1tHiOne then
+         put he1tHiOne into he1tHiTwo
+         put he1tAmt into he1tHiOne
+      else if he1tAmt > he1tHiTwo then
+         put he1tAmt into he1tHiTwo
+      end if
+   end repeat
+   put 0 into he1tTotal
+   repeat for each item he1tSeat in pOcc
+      put pHandBy[he1tSeat] into he1tAmt
+      if he1tAmt is empty then
+         put 0 into he1tAmt
+      end if
+      if he1tAmt < he1tHiOne then
+         add he1tAmt to he1tTotal
+      else
+         add he1tHiTwo to he1tTotal
+      end if
+   end repeat
+   return he1tTotal
+end he1heAwardedPot
+
 command he1heRunSelftest
    -- THE INTERACTIVE entry point: run everything, then deliver the report the
    -- way a maintainer sitting in front of the stack wants it (panel, clipboard,
@@ -34494,6 +34560,40 @@ command he1heTestHelpersRun
          he1tRectTxt, "77,86,123,114"
    he1heTAssert "helpers: ...which costs an odd fit ONE pixel (28 for a fitted 29)", \
          (item 4 of he1tRectTxt) - (item 2 of he1tRectTxt), 28
+
+   -- he1heAwardedPot: the uncalled-bet rule, from the 2026-08-17 hotseat
+   -- transcript. The three hands below ARE that session: two normal called
+   -- hands the old sum-of-commitments got right, and the heads-up all-in it
+   -- got wrong by exactly the returned excess.
+   local he1tHandBy
+   put empty into he1tHandBy
+   put 16 into he1tHandBy[1]
+   put 400 into he1tHandBy[2]
+   put 12 into he1tHandBy[3]
+   put 400 into he1tHandBy[4]
+   put 6 into he1tHandBy[5]
+   put 8 into he1tHandBy[6]
+   he1heTAssert "pot: a fully called six-way hand is the sum of commitments (842)", \
+         he1heAwardedPot(he1tHandBy, "1,2,3,4,5,6"), 842
+   put empty into he1tHandBy
+   put 384 into he1tHandBy[1]
+   put 388 into he1tHandBy[3]
+   put 394 into he1tHandBy[4]
+   put 394 into he1tHandBy[5]
+   put 0 into he1tHandBy[6]
+   he1heTAssert "pot: two seats level at the top still sum whole (1560)", \
+         he1heAwardedPot(he1tHandBy, "1,3,4,5,6"), 1560
+   put empty into he1tHandBy
+   put 2008 into he1tHandBy[4]
+   put 392 into he1tHandBy[6]
+   he1heTAssert "pot: a 392 all-in called by 2008 awards 784, NOT the 2400 committed", \
+         he1heAwardedPot(he1tHandBy, "4,6"), 784
+   put empty into he1tHandBy
+   put 500 into he1tHandBy[1]
+   he1heTAssert "pot: a lone seat's whole commitment is uncalled - the pot is 0", \
+         he1heAwardedPot(he1tHandBy, "1"), 0
+   he1heTAssert "pot: no seats is an empty pot, not an error", \
+         he1heAwardedPot(he1tHandBy, empty), 0
 end he1heTestHelpersRun
 
 function he1heTIdxOf pNamesTxt

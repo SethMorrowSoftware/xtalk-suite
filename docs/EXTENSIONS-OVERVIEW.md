@@ -257,9 +257,9 @@ handlers, ABI 6. Binaries: Linux + Windows x64/x86 (macOS pending).
   cross-verified by independent decoders (python-bitcointx accepts fresh
   spends under consensus rules; eth-account recovers the exact sender).
   Everything added since that run — WIF, `cnx_memzero`, Schnorr/Taproot —
-  is **verified statically and has never met an engine**; it rides the
-  next pass. The one bar left before "broadcastable": a live testnet
-  broadcast.
+  **ran green on 2026-08-17** (Windows x86_64, OXT 9.6.3), taking coinxt to
+  278/278 on a real engine. The one bar left before "broadcastable": a live
+  testnet broadcast.
 
 ## riptide — Riptide Social, the capstone app (`rs*`)
 
