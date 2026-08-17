@@ -63,6 +63,31 @@
 > `user_route_find` + the extended `http_allow`/`cors_preflight`/`template_value`, 70 new
 > checks (358 -> 428). Still open: the **Tor keep-alive question** (§6 Phase 2) — an owner
 > decision, deliberately not made by the dedup.
+>
+> **2026-08-17 — two `HEAD` defects fixed (verified statically + golden-pinned; needs an OXT
+> pass):** both were invisible to the gates because neither gate had ever been *asked* about
+> `HEAD` on the non-file paths, and §3.4 had carried the question unrun since it was written.
+> (1) **A `HEAD` reached no route at all.** `qsHttpTryRoutes` built its lookup key from the
+> literal method, so `HEAD /_qs/info` missed both route tables, fell into the static pipeline
+> and — the leaf having no `.` — was answered by `qsSiteSpaTarget` with `index.html` at `200
+> text/html`, while `qsHttpAllow` advertised `HEAD` on every path unconditionally. Now
+> `qsRouteLookupKey` (golden `route_lookup_key()`) returns the `HEAD` key when the table
+> declares one and the `GET` key otherwise, asked once per table because the two tables are
+> declared independently; the pattern finder gets the same fallback spelled out, since it
+> arbitrates by method rather than by key. (2) **`qsFsSendText` sent a body on a `HEAD`** —
+> its clearweb twin `qsCwSendText` had the test from the start, so every non-file *Tor* reply
+> (listings, `404`s, `/_qs/info`, `/_qs/transparency`, `/_qs/routes`, every user-route body)
+> shipped bytes a client discards. Framed correctly, that is **wasted onion bandwidth plus a
+> spec violation, not a desync**: a Tor response closes its stream, so there is no following
+> response to mis-frame — the keep-alive hazard is the clearweb twin's alone. The method is
+> stashed per stream (`sFsMethod`, mirroring `sCwMethod`) and cleared in `qsFsCleanup`.
+> Alongside them, the reserved namespaces got the static backstop they never had:
+> `qsHttpServeStatic` now refuses `/_qs` and `/_edit` before it consults the share, through
+> one `qsHttpReservedPath` predicate that replaced the three literal copies of that rule
+> (`qsUserPathValid`, `qsRouteMatch`'s backstop, and this new site — a fourth copy of a
+> security test being exactly the drift this repo keeps checkers for). Golden:
+> `route_lookup_key` / `reserved_path` / `http_text_response` (which pins BOTH text twins at
+> once — they differ in one line, the `Connection` header), 30 new checks (428 -> 458).
 
 ---
 
@@ -149,7 +174,14 @@ as an opaque `pConn` and replies via `qsHttpReply` (§1.3).
 - **Range** supports open-ended (`bytes=N-`), suffix (`bytes=-N`), closed (`bytes=A-B`),
   and returns `416` + `Content-Range: bytes */total` when unsatisfiable. **Multi-range is
   intentionally not supported** — a comma spec serves the whole file.
-- **`HEAD` is implemented** (writes the head, closes, no body: `qsFsServeFile` ~4331).
+- **`HEAD` is implemented** on the file path (writes the head, closes, no body:
+  `qsFsServeFile` ~4331) — and, **since 2026-08-17**, on the other two halves it had been
+  missing from. It was only ever half-done: the TEXT reply over Tor (`qsFsSendText`) had no
+  method test at all, so every listing, `404`, `/_qs/*` and user-route body went out with its
+  body in answer to a `HEAD` (the clearweb twin `qsCwSendText` had the test from the start);
+  and no `HEAD` reached the ROUTE tables at all, because the lookup key was built from the
+  literal method — see §3.4, where this was already a watch-item. Both fixed; verified
+  statically + golden-pinned (`http_text_response`, `route_lookup_key`), needs an OXT pass.
 - **Routing niceties:** directory → `301` to add a trailing slash → `index.html` or a
   generated listing (`qsFsListing`); unknown dot-free path → **SPA fallback** to
   `index.html` (`qsSiteSpaTarget`); real miss → styled `404` (`qsFsNotFound`).
@@ -296,8 +328,23 @@ pure-logic helper must be mirrored in `fileserver_golden.py`.
 
 ### 3.4 Correctness watch-items (verify, likely fine)
 
-- **`SPA fallback + HEAD`**: confirm a `HEAD` on a SPA route returns the head-only path.
-  *(needs OXT pass)*
+- **`SPA fallback + HEAD`**: ~~confirm a `HEAD` on a SPA route returns the head-only
+  path.~~ **RESOLVED 2026-08-17, and the suspicion was better than the question.** A `HEAD`
+  did not merely miss the head-only path — it was the SPA fallback's own *cause*: the route
+  key was built from the literal method, so `HEAD /_qs/info` matched nothing in either route
+  table, fell through to the static pipeline, and `qsSiteSpaTarget` answered the
+  extensionless leaf with `index.html` at `200 text/html` — while `qsHttpAllow`
+  unconditionally advertised `HEAD` on every path. A reserved-namespace URL was being served
+  the SPA. Three fixes, both transports (they share the pipeline): `qsRouteLookupKey` maps a
+  `HEAD` onto the `GET` route unless the table declares a `HEAD` one; `qsFsSendText` gained
+  the body suppression its clearweb twin always had; and `qsHttpServeStatic` now refuses
+  `/_qs` and `/_edit` outright (`qsHttpReservedPath`, one predicate replacing the three
+  literal copies of that rule) rather than letting the static pipeline answer a reserved URL
+  off disk or off the SPA. Golden-pinned; the engine items are in
+  `oxt-pass-checklist.md` §4. **The lesson worth keeping is about this list**: a watch-item
+  that is never run is not a control. This one named the exact defect and sat here unrun for
+  two rounds of "both gates green" — which is the repo's *shipped is not run* rule arriving
+  in a document instead of in code.
 - **`Range` on a zero-byte file**: `bytes=0-` against `total=0` — confirm `qsFsParseRange`
   yields `416` (start `>= pTotal`), not a negative length. *(golden already exercises
   bounds; add a `total=0` vector to be safe.)*

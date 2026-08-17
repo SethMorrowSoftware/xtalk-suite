@@ -1028,7 +1028,12 @@ not run.
   line filtered out the name set was empty, and the function treated an empty set as the documented
   `None`, "no opinion". `--lib` then printed `exports: not checked` and proceeded.
 - **The consequence.** For `src/code/x86_64-win32/coinxt.dll` and `src/code/x86-win32/coinxt.dll`
-  there is no second gate: `check-binary-freshness.py` reads ELF and SKIPS both. So a MinGW build
+  there is no second gate: `check-binary-freshness.py` reads ELF and SKIPS both.
+(**SUPERSEDED 2026-08-17**: the suite-level `tools/check-binary-freshness.py`
+reads PE as well - 43/43 binds resolved, 43/43 shim definitions exported, and
+ABI 6 decoded from the export table on both DLLs. The member copy still skips
+them; the clause that broke is "there is no second gate". The incident record
+above stands as written.) So a MinGW build
   that had genuinely lost `cnx_memzero` (or any of the other 34) would have installed silently and
   failed at bind time on a user's machine, which is the exact outcome the check exists to stop.
 - **What made it easy to miss**, and it is worth carrying: the DLL has 35 import thunks AND 35 real

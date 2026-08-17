@@ -69,6 +69,15 @@ constant kEncodingUtf8 is 4
 -- above it back. Chunk bigger payloads, or move bulk via TorrentXT.
 constant kMaxMessage is 60000
 
+-- The one shim return code this LAYER issues on its own, mirroring
+-- DCX_ERR_INVALID_ARG in dcx_abi.h. dcSendText refuses an embedded NUL here
+-- (the whole argument is at that handler), and it must answer in the shim's
+-- own vocabulary so a caller cannot tell "the binding refused" from "the shim
+-- refused" by the code alone - the distinction that matters is in the
+-- api-reference, not in a private number. tools/check-record-registry.py pins
+-- it to the header.
+constant kErrInvalidArg is -3
+
 -- Reusable buffer capacities (the single-thread performance playbook:
 -- allocate once, reuse every poll, never rebuild). Grown on demand when the
 -- shim reports a bigger -needed. The drain default holds one max-size message
@@ -194,6 +203,7 @@ private foreign handler _dcx_poll(in pOut as Pointer, in pCap as CInt) returns C
 -- these - unlike every other private handler in this file - carry NO leading
 -- `_`. Renaming any of them breaks the binding.
 private foreign handler MCStringDecode(in pData as Data, in pEncoding as CInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+private foreign handler MCStringEncode(in pString as String, in pEncoding as CInt, in pIsExternalRep as CBool, out rData as Data) returns CBool binds to "<builtin>"
 private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
 private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
 private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
@@ -274,6 +284,45 @@ private handler _bufToData(in pPtr as Pointer, in pLen as Integer) returns Data
       end if
    end if
    return tData
+end handler
+
+-- Does pText carry a NUL - the one character that cannot survive the crossing
+-- in dcSendText? The whole argument is at that handler; this half just answers
+-- the question in the only place it can still be asked, by encoding to the
+-- same UTF-8 the ZStringUTF8 bridge will produce and looking for a zero byte
+-- (U+0000 is the only codepoint UTF-8 writes as one). O(n) in the message, on
+-- a path whose messages are control-plane sized; dcSendData, the bulk-ish one,
+-- is untouched because its length crosses explicitly.
+-- FAILS CLOSED: a string the engine could not encode is a string we cannot
+-- clear, and an unverified send is exactly what this refusal exists to stop.
+-- The scan sets a flag and runs to the end rather than leaving the loop early.
+-- That is deliberate: it is byte-for-byte the shape box2dxt's b2LoadNativeLib-
+-- Here already uses on a real engine, no `.lcb` in this suite has ever
+-- returned from inside a `repeat`, and there is nothing here to compile
+-- against - the worst case is the same O(n) either way, so the untried
+-- construct buys nothing.
+private handler _hasNulByte(in pText as String) returns Boolean
+   variable tData as Data
+   variable tOk as Boolean
+   variable tLen as Integer
+   variable tI as Integer
+   variable tFound as Boolean
+   put the empty data into tData
+   put false into tOk
+   put false into tFound
+   unsafe
+      put MCStringEncode(pText, kEncodingUtf8, false, tData) into tOk
+   end unsafe
+   if not tOk then
+      return true
+   end if
+   put the number of bytes in tData into tLen
+   repeat with tI from 1 up to tLen
+      if the code of (byte tI of tData) is 0 then
+         put true into tFound
+      end if
+   end repeat
+   return tFound
 end handler
 
 -- Read a big-endian u16 at 1-based byte offset pOffset (the wire is network
@@ -733,9 +782,36 @@ public handler dcSendData(in pChannel as Integer, in pData as Data) returns Inte
 end handler
 
 -- Send one TEXT message (a browser peer receives a string; an OXT peer a
--- dcMessage event with a "text" key). Fails -4 over kMaxMessage.
+-- dcMessage event with a "text" key). Fails -4 over kMaxMessage, and -3 on a
+-- string carrying an embedded NUL.
 public handler dcSendText(in pChannel as Integer, in pText as String) returns Integer
    variable tR as Integer
+   -- REFUSED HERE, because here is the only place it CAN be refused. pText
+   -- crosses as ZStringUTF8, so dcx_send_text receives a `const char *` and
+   -- measures it with std::strlen: by then an embedded NUL has BECOME the
+   -- terminator, and the shim cannot detect what it can no longer see. It
+   -- would send the head of the string as if it were the whole message -
+   -- precisely the silent truncation dcx_abi.h's DCX_MAX_MESSAGE contract
+   -- promises never happens ("nothing is truncated or split silently") - and
+   -- it would walk a 100 KB payload straight past the budget check, since
+   -- strlen would report only the bytes before the NUL. What the engine's
+   -- ZStringUTF8 bridge actually does with U+0000 has never been observed
+   -- here, and this refusal deliberately does not depend on the answer:
+   -- whatever it would hand the shim, we hand it nothing. Binary belongs in
+   -- dcSendData, which carries an explicit length and delivered an embedded
+   -- NUL byte-for-byte on the 2026-08-15 engine pass.
+   -- Two consequences worth stating rather than discovering. This check runs
+   -- BEFORE the shim's handle check, so a stale handle carrying a NUL answers
+   -- -3, not -2 - the argument is wrong whichever channel it was aimed at.
+   -- And the shim never sees the call, so it has no last-error to offer:
+   -- clear the previous one instead of letting dcLastError answer for an
+   -- unrelated failure. Verified statically; needs an OXT pass.
+   if _hasNulByte(pText) then
+      unsafe
+         _dcx_clear_error()
+      end unsafe
+      return kErrInvalidArg
+   end if
    unsafe
       put _dcx_send_text(pChannel, pText) into tR
    end unsafe

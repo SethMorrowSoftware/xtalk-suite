@@ -35,7 +35,76 @@ concurrency:
   group: native-box2dxt-${{ github.ref }}
   cancel-in-progress: true
 
+# The other five native lanes each carry this and this one did not (2026-08-17).
+# Nothing here needs a write token - every lane uploads artifacts and commits
+# nothing, which is this file's stated rule above - so the workflow should not
+# be handed the default write scope on a push.
+permissions:
+  contents: read
+
 jobs:
+  # The instrumented lane. Box2D is a solver full of hand-rolled array
+  # arithmetic and the shim hands it raw script-supplied indices, so the smoke
+  # test's validity-guard and bad-handle cases are exactly where an off-by-one
+  # would hide - and three separate places in the tree (the root CLAUDE.md,
+  # this member's CLAUDE.md, tools/check-suite-coverage.py) cite
+  # "smoke_test.c under ASan" as the ONLY thing covering the 376 raw b2*
+  # exports, a claim that had no lane behind it until this job existed.
+  #
+  # WHY HAND-ROLLED FLAGS, when native-torrentxt.yml's lane says in as many
+  # words to prefer the member's own knob: box2dxt has no BOX2DXT_SANITIZE
+  # option, unlike its five siblings. The warning there is that hand-rolled
+  # CMAKE_<LANG>_FLAGS instrument the COMPILE and leave the LINK bare, so this
+  # sets the linker flags too - both EXE (the smoke test) and SHARED (the .so
+  # it links against). Setting them on the configure line rather than per
+  # target is deliberate and is the same reasoning enetxt's lane gives for its
+  # global knob: CMAKE_C_FLAGS is in effect when FetchContent_MakeAvailable
+  # creates Box2D's targets, so the vendored solver is instrumented as well.
+  # Measured locally on gcc 13.3 before this landed - __asan_report_* appear in
+  # _deps/box2d-build/src/libbox2d.a, libasan/libubsan are NEEDED by the smoke
+  # binary, and ctest passes clean. A BOX2DXT_SANITIZE knob in the member's
+  # CMakeLists is the better home for this and would let this block shrink to
+  # the sibling shape; it is an open item, not something this file can fix.
+  #
+  # Box2D's SIMD default (AVX2 on x64) is deliberately LEFT ON here: the
+  # release lanes below turn it off for portability, so leaving it alone is
+  # what puts the vectorised solver paths - the ones with the array arithmetic
+  # worth instrumenting - under the sanitizer at all.
+  sanitize:
+    name: full-stack ASan+UBSan (linux x86_64)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: box2dxt
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire toolchain
+        # g++ as well as gcc: the shim and Box2D are both C, but Box2D's own
+        # project() enables CXX, so configure needs a working C++ compiler even
+        # though it never compiles a .cpp here.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ cmake ninja-build
+      - name: Configure + build + test under sanitizers
+        # gcc, not clang: clang's ASan runtime is not on the runner image, the
+        # same reason sodiumxt's lane pins CC.
+        env:
+          CC: gcc
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBOX2DXT_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build-asan --parallel 4
+          # --no-tests=error: ctest exits 0 on an EMPTY test set, so without it
+          # a lane that failed to register `smoke` reports green having run
+          # nothing under the sanitizer.
+          ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+          ctest --test-dir build-asan --output-on-failure --no-tests=error
+
   # Linux binaries build inside a manylinux2014 container (CentOS 7, glibc
   # 2.17) so they load on virtually any Linux from 2013 onward. Checkout on
   # the host, `docker run` the build: actions/checkout's bundled Node won't

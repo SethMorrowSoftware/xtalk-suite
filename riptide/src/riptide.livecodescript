@@ -1432,7 +1432,7 @@ end rsRequestImmutable
 -- handles, and btFindTorrent(pSession, tHash) recovers the handle whenever
 -- the app wants one (rsMediaFetch on your own hash does exactly that).
 function rsMediaCreate pSession, pPath
-   local tParent, tData, tH, tHash, tWhy, tErr
+   local tParent, tData, tH, tHash, tWhy, tErr, tSavedDelim
    if there is not a file pPath then
       rsSetError "rsMediaCreate: no file at" && pPath && \
             "(media attachments are single files)"
@@ -1443,8 +1443,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
+   -- itemDelimiter is GLOBAL mutable state and this is the library's only
+   -- non-default set, so it is saved and restored around the NARROWEST
+   -- possible span - the path split, nothing else. Restoring here rather
+   -- than at each exit is not tidiness: this function has SEVEN exits, six
+   -- of them refusals, and a restore per exit is a line a later refusal
+   -- path forgets. The leak was real and its symptom was a mystery, not a
+   -- delimiter: a caller's later comma-joined item read returned the whole
+   -- list under "/" (the demo carried a point patch quoting exactly that).
+   put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
+   set the itemDelimiter to tSavedDelim
    if tParent is empty then put "/" into tParent
    try
       put btCreateTorrent(pPath, 0, 0, empty) into tData
@@ -3071,7 +3081,7 @@ end rsAnonCreateService
 -- page, so the served feed is a wire format, not a template someone
 -- restyles by accident (a look change bumps the golden).
 function rsAnonFeedPage pTitle, pEntries
-   local tTitleBytes, tEsc, tOut, tList, tLine
+   local tTitleBytes, tEsc, tOut, tList, tLine, tSavedDelim
    put textEncode(pTitle, "UTF-8") into tTitleBytes
    if the number of bytes in tTitleBytes < 1 or \
          the number of bytes in tTitleBytes > kRsMaxDisplayName then
@@ -3085,6 +3095,12 @@ function rsAnonFeedPage pTitle, pEntries
    put pEntries into tList
    replace numToChar(13) & numToChar(10) with numToChar(10) in tList
    replace numToChar(13) with numToChar(10) in tList
+   -- the same save/restore discipline as rsMediaCreate's itemDelimiter,
+   -- applied uniformly rather than only where it bit. Be honest about what
+   -- this one is: LF IS the engine default, so this set leaks nothing
+   -- observable today - it is defence in depth against a caller who set
+   -- something else, not a second live bug fixed.
+   put the lineDelimiter into tSavedDelim
    set the lineDelimiter to numToChar(10)
    repeat for each line tLine in tList
       if tLine is empty then
@@ -3092,6 +3108,7 @@ function rsAnonFeedPage pTitle, pEntries
       end if
       put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
    end repeat
+   set the lineDelimiter to tSavedDelim
    put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
          "hex), then POST your sealed intro as hex to /dm.</p>" & \
          "</body></html>" after tOut

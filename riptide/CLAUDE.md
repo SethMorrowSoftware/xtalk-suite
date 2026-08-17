@@ -56,9 +56,10 @@ machines, done-criteria included** (library 0.10.0; 83 public handlers,
   mesh - "D" draft sync, "F" feed-seq/read-receipt state, "P"
   presence/typing - signed under the shared LAN key with a distinct
   domain, golden-pinned, refusals harness-proven offline, plus the
-  demo's Devices-card wiring (a debounced draft field, per-peer
+  demo's Devices-card wiring (a debounced draft field, per-device
   presence, verified drafts rendered with their origin, strangers
-  refused and logged). **Channel 2 SETTLED 2026-08-16**: bulk media
+  refused and logged; the receive state was keyed by the enet PEER until
+  2026-08-17 - see the C6 record below). **Channel 2 SETTLED 2026-08-16**: bulk media
   handoff is a fourth RSL1 kind, "M", on CHANNEL 0 - a signed POINTER
   (info-hash + file name + size) at the phase-3 torrent path - and
   channel 2 stays reserved, dark (the decision record below). Verified
@@ -351,14 +352,21 @@ docs/two-machine-runbook.md.
   (or restart) must keep a device's seq/tick moving strictly forward
   past anything a receiver applied for an earlier session; `the
   seconds` gives that for free (the phase-3 clock-salt precedent). The
-  receiver additionally drops per-peer tracking with the enet peer, so
-  even a clock step backwards only costs a stale-looking first record.
+  receiver additionally drops a device's tracking when the LINK that fed
+  it goes away, so even a clock step backwards only costs a stale-looking
+  first record. (Written as "drops per-peer tracking with the enet peer",
+  which is what the demo did and was the C6 defect; the state is keyed by
+  DEVICE now and the link only says which entries to drop.)
 - **Sync sends go per-admitted-peer, never enBroadcast.** A broadcast
   would also reach a connected-but-unadmitted stranger in its pre-drop
   window, and drafts are plaintext. The host relays verified records to
   the other admitted peers (bytes intact - the no-binder choice is what
   makes that sound); a two-device pass never exercises the relay, but
-  it keeps a three-device mesh from silently not syncing.
+  it keeps a three-device mesh from silently not syncing. **That last
+  clause was half true and the half it got wrong cost a defect** - the
+  host relayed correctly, but until 2026-08-17 the RECEIVER keyed every
+  relayed record by the enet peer it arrived over, which on a joiner is
+  one peer for the whole mesh. See the C6 record below.
 - **Authenticated, NOT encrypted, and the UI says so.** A LAN observer
   reads draft plaintext; the spec's section 7 is admission-only by
   design, and encrypting would need a new traffic subkey (a future spec
@@ -433,9 +441,10 @@ docs/two-machine-runbook.md.
   defect).
 - **The demo's offer is one slot, and it outlives the mesh.** The
   Devices card keeps the LATEST verified offer (the one-conversation
-  pattern); per-peer seq tracking drops with the enet peer, but the
-  offer and its watched fetch deliberately survive Leave/disconnect -
-  the swarm outlives the mesh, and a mid-download must not lose its
+  pattern); per-DEVICE seq tracking drops when the link that carried it
+  goes, but the offer and its watched fetch deliberately survive
+  Leave/disconnect - the swarm outlives the mesh, and a mid-download must
+  not lose its
   Fetch button. The sender reads the true file size from its own seed's
   metadata (rsMediaFetch on its own hash lands on the find path - no
   download, no copy), and the receive path only REMEMBERS a verified
@@ -674,6 +683,93 @@ Two things follow, and they are the operational point:
      cards are built by the same `raBuild` pass and use the same navigation
      and reference forms, so the syntax class is settled; what remains
      unexercised there is their own flows, not their spelling.
+
+## The 2026-08-17 pre-engine-pass sweep (do not re-litigate)
+
+Four fixes ahead of the phase 5/6/7 passes. All FOUR are demo or library
+edits with no wire-format change, no new golden vector, and no new public
+`rs*` handler; all are verified statically and need the OXT pass.
+
+- **C6: the LAN sync state was keyed by the enet PEER, not by the signing
+  DEVICE - and the runbook could not have found it.** `raLanSyncReceive`
+  keyed all six of its per-device arrays by `pPeer`. On a HOST that is
+  accidentally right (one link per device); on a JOINER it is wrong for
+  every device but the host, because the mesh is hub-and-spoke and the
+  host RELAYS verified records, so a joiner's whole mesh arrives over ONE
+  peer id. Three consequences, in rising order of how badly they read on
+  an engine: interleaved seq/tick counters from different devices fought
+  over one slot and the monotonic guard dropped most of them through a
+  path that is a DELIBERATE SILENT EXIT, so nothing was logged; the drafts
+  panel labelled every relayed draft with the HOST's name, because it
+  looked the label up in `sLanDevices[peer]`; and the devices panel
+  iterated `sLanDevices`, so on a joiner OTHER DEVICES NEVER APPEARED AT
+  ALL. The library had stated the correct contract since the day it was
+  written - `rsLanBuildDraft`'s own comment says "apply only a seq
+  strictly above the last one applied FOR THAT DEVICE" - so the demo was
+  violating a contract its own library spells out. The fix keys the six
+  arrays by `tRec["name"]`, which is INSIDE the signed span and read only
+  after the signature verdict; the painters label and iterate by device;
+  and a new `sLanPeerNames` (peer -> set of names) is what a disconnect
+  drops by, because one link can legitimately carry many devices. Keying
+  by name is not a per-device IDENTITY claim - all your devices share one
+  LAN keypair, so any admitted device can sign any name - and that is the
+  recorded threat model (your own devices), not a hole the keying opens.
+  **The process lesson is the one worth keeping: the two-machine runbook
+  had exactly ONE non-host device, so the S3 session as scripted could
+  not reach the relay at all.** A THIRD-DEVICE step is now step 8 of the
+  phase-6 section, and it names the failure it is looking for rather than
+  only the success. When a design has a hub-and-spoke shape, a two-node
+  test plan is not a small-sample version of it - it is a different
+  topology that never runs the code.
+- **C10: `rsMediaCreate` leaked `itemDelimiter` as "/" for the rest of
+  the session.** A PUBLIC handler set it and none of its seven exits
+  restored it; six of those exits are refusals. The demo had already met
+  the symptom twice and patched it at the call sites, one patch quoting
+  what it looked like from outside - "leaving it as / made item 1 return
+  the whole list" - which is exactly how a delimiter leak reports on an
+  engine pass: as a mystery about the media list, never as a delimiter.
+  Fixed at the source, and fixed by restoring around the NARROWEST span
+  (the path split) rather than at each exit, because a restore per exit
+  is a line the next refusal path forgets. `rsAnonFeedPage`'s
+  `lineDelimiter` got the same save/restore for uniformity, and its
+  comment says plainly that it sets the ENGINE DEFAULT, so that one is
+  discipline and not a second live bug fixed. The demo's defensive
+  re-set in `raHandleEvent` deliberately STAYS - the pump reaches that
+  item read from any card after any handler, and one line is cheaper
+  than trusting every caller in a file no harness runs - but its comment
+  now names the library fix instead of blaming an unnamed earlier
+  handler.
+- **B3: the pump ran phases 5 and 6 at 7.5x their designed interval.**
+  The spec's section 10.1 always named two tiers, ~33 ms while a live
+  dc/enet session is active and ~250 ms otherwise; only the slow one
+  existed. Phases 5 and 6 are the main events of the next engine session
+  and BOTH ARE JUDGED BY FEEL - a call connecting, a typing indicator
+  appearing - so a whole slot could have gone to chasing sluggishness
+  that was a constant in this file. `raPollDelay` picks the tier on every
+  tick (never latched, so hanging up drops straight back to the cheap
+  tier). The half that needed care is the UI: a straight fast tier would
+  have taken `raExpire`/`raMediaPaint`/`raLanMediaPaint` from 4 Hz to
+  30 Hz, which is a NEW performance defect and not a fix, so they sit
+  behind a `kPaintMs` gate - and `raLanPaintDevices`, which used to hang
+  off the end of `raLanSyncTick`, moved onto that same gate for the same
+  reason. Everything else on the fast path was already cadence-gated
+  (`raDmTypingTick`, the draft debounce, the presence interval), which is
+  why the tier change is small.
+- **D15: a DM hang-up was silence, not a close.** `raDmTeardown` freed
+  the secretstream handles and pushed nothing, so the far side kept
+  showing `-- channel open with ... --` forever. libsodium's FINAL tag is
+  the clean-close signal and the spec names `sxIsFinalTag` for exactly
+  this, so `raDmPushClose` pushes one last message with final true before
+  the free, and the receive path prints `closed the conversation` and
+  drops the peer on a final tag. Two things are deliberate: the body is
+  FILLER and is never parsed or rendered (the TAG is the message, but
+  `rsDmMessageBody` refuses an empty body so something must ride along),
+  and the FINAL tag belongs to exactly ONE caller - every ordinary send
+  keeps final false, because spending it ends the stream. `sxIsFinalTag`
+  was already exercised by the harness, so the gap was only ever in
+  `src/` and `examples/`; a reconnect mints fresh streams, so the old
+  symptom was silence and never a false auth failure. Do not overstate
+  it in the changelog.
 
 ## Suite integration status
 

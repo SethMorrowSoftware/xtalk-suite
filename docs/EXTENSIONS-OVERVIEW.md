@@ -4,9 +4,9 @@ One section per suite member: what it is, what it gives an xTalk app, and
 where it honestly stands. Compiled 2026-08-15 from each member's own
 `README.md` / `CLAUDE.md`, which remain the authority; the root `README.md`
 carries the full release matrix. Handler counts are counted from the
-sources, not estimated. The two applications (riptide, nocloud) close the
-page: they are members of the tree and ride the same gates, but they are
-apps built *on* the extensions, not extensions.
+sources, not estimated. The three applications (riptide, nocloud,
+holde-em) close the page: they are members of the tree and ride the same
+gates, but they are apps built *on* the extensions, not extensions.
 
 Suite-wide facts that apply to every section below: each native member
 bundles its per-platform library inside the extension (nothing to install
@@ -223,8 +223,9 @@ five platforms**. Ships as `org.openxtalk.box2dxt` (predates the
 
 ## coinxt — Bitcoin + Ethereum primitives (`cx*`)
 
-Wraps **trezor-crypto** (pinned; plain C, no external deps). 80 public
-handlers, ABI 4. Binaries: Linux + Windows x64/x86 (macOS pending).
+Wraps **trezor-crypto** (pinned; plain C, no external deps) plus
+**bitcoin-core/secp256k1** (vendored 2026-08-16 for BIP-340). 90 public
+handlers, ABI 6. Binaries: Linux + Windows x64/x86 (macOS pending).
 
 - **The hash surface both chains need** — Keccak-256 (Ethereum) vs
   SHA3-256 (NIST), SHA-256/512, RIPEMD-160, `cxHash160` / `cxHash256`,
@@ -240,21 +241,33 @@ handlers, ABI 4. Binaries: Linux + Windows x64/x86 (macOS pending).
 - **Transactions** — Bitcoin legacy + BIP-143 SegWit sighash / encode /
   txid (`cxBtcSighashSegwit`, `cxBtcTxEncode`); Ethereum EIP-155 and
   EIP-1559 (`cxEth1559Sighash`, `cxEth1559Encode`).
+- **Schnorr / Taproot** — BIP-340 sign/verify and the BIP-341 output-key
+  tweak, shipped 2026-08-16 at ABI 6 against all 19 published BIP-340
+  vectors (10 negative) and all 14 BIP-341 wallet vectors.
+  `cxBtcAddressP2TR` is deliberately UNCHANGED and still encodes a key it
+  is given: making it tweak would turn every existing correct call into a
+  permanently unspendable double tweak, so the full path is a separately
+  named handler. There is **no BIP-341 sighash builder** — coinxt signs a
+  sighash it is handed and cannot compute one.
+- **WIF** — `cxWifEncode` / `cxWifDecode`, shipped 2026-08-15.
 - Design: signs only a digest the app hands it — never a blind signer;
-  the app owns custody. Schnorr/BIP-340 and Taproot **signing** are
-  deliberately deferred (P2TR addresses work); WIF is specced, unshipped.
+  the app owns custody. Secrets are wiped before free (`cnx_memzero`,
+  ABI 5).
 - Status: **all five phases engine-proven** (230/230 on 2026-08-12),
   cross-verified by independent decoders (python-bitcointx accepts fresh
   spends under consensus rules; eth-account recovers the exact sender).
-  The one bar left before "broadcastable": a live testnet broadcast.
+  Everything added since that run — WIF, `cnx_memzero`, Schnorr/Taproot —
+  is **verified statically and has never met an engine**; it rides the
+  next pass. The one bar left before "broadcastable": a live testnet
+  broadcast.
 
 ## riptide — Riptide Social, the capstone app (`rs*`)
 
 **An app, not an extension**: the serverless social network of
 `docs/RIPTIDE-SOCIAL-SPEC.md`, built phase by phase in pure script over
 the installed extensions (sodiumxt required; torrentxt, onionxt, enetxt,
-datachannelxt, coinxt optional per feature). Library 0.7.0, 72 public
-handlers, all 72 harness-exercised. It exists to prove the suite
+datachannelxt, coinxt optional per feature). Library 0.7.0, 83 public
+handlers, all 83 harness-exercised. It exists to prove the suite
 composes; `rs*` never becomes a library other members call.
 
 - **Phase 1 — identity**: one master seed, Argon2id-sealed key file, a
@@ -308,6 +321,44 @@ onionxt are optional and probed at startup.
 - Status: passed the suite's stricter checker clean on first contact;
   like every stack in the 2026-08-14 UI-kit pass, it is labelled
   "UI unified 2026-08-14; needs an OXT re-pass".
+
+## holde-em — serverless Texas Hold'em, the second capstone app (`he*`)
+
+**A whole application in one paste-and-run stack**, folded home
+2026-08-15 and into the suite self-test 2026-08-16 as the ninth harness.
+No accounts, no server: players meet over the BitTorrent DHT — the table
+code *is* the invite — every action lives in a signed hash-chained
+transcript, and the deal runs a security ladder topping out at a
+**ristretto255 mental-poker shuffle**. torrentxt and sodiumxt are
+required; box2dxt (card art via the b2k Kit) and onionxt (anonymous
+tables) are optional and probed.
+
+- **The deal ladder** — Level 0 (independent per-player seeds XORed) up
+  through the Level 2 mental-poker layer: masked deck, void-and-audit
+  attribution that names a cheater from signed records, and Phase 5 DLEQ
+  proofs that refuse a wrong unmask step instantly.
+- **The transcript is the authority** — settlement, history, and the
+  audit verdicts are all re-derived from it, so a tampered settle is
+  caught and marked rather than trusted.
+- **Liveness** — street checkpoints, show/muck, host election, act
+  timers with a per-hand time-bank, sit-out/return, late-join seating,
+  and onion auto-redial. v0.24.0 was a correction pass over that layer:
+  ten reviewed defects fixed with **no wire change at all**, so the 114
+  protocol pins are untouched and v0.23.0 and v0.24.0 clients speak the
+  identical protocol.
+- Design: its **game and its harness are the same file**, which is why
+  its fold is the only one that carries a whole application — and why
+  `check-suite-selftest.py` check 7d holds the live game UNREACHABLE
+  from the folded harness by reachability rather than by absence.
+- Verification: seven KAT mirrors plus `tools/logic-fuzz.py`, an
+  INDEPENDENT reference rather than a port, ride `build-all.sh`; the
+  1024x640 layout is re-derived from the builders on every push by
+  `tools/check-table-layout.py`.
+- Status: v0.24.3. Five engine runs (2026-08-16/17) took it to 507/0 on
+  the folded harness. The pending exit gates are all multi-machine: a
+  multi-hand rp1 session on real networks, a two-machine onion table
+  over live tor, a three-machine oracle round, and a timed liveness
+  session. Phase 4f and Phase 5's hostile review + soak remain open.
 
 ## How they fit together
 

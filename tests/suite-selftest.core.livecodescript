@@ -36,12 +36,25 @@ script "xTalkSuiteSelfTest"
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
+-- WHAT HAS NOT RUN ON AN ENGINE (2026-08-17): the skip channel through
+-- stMergeReturned, the third count in stSummaryCounts, and stMergeFloor with
+-- it. The rule was exercised against every member's real summary spelling and
+-- against mutations of them by a hand port of the parse, which is what a
+-- headless environment can do and no more - verified statically; needs an OXT
+-- pass. The one number it puts at risk is onionxt's floor of 41: too high, and
+-- a green run reports one extra FAIL line naming the member and printing what
+-- it attempted, which is the failure mode this file chooses on purpose over an
+-- uncaught error.
+--
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
 --   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()       8 groups, all offline
+--   onionxt         oxSelfTest()      10 sections, all offline, and since
+--                                     2026-08-17 the only folded harness
+--                                     whose summary carries THREE counts:
+--                                     passed, failed and skipped
 --   coinxt          its 28 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
@@ -1916,14 +1929,37 @@ command stRunMemberHarnesses
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
 
-   -- SodiumXT and OnionXT return their report as a string; CoinXT, TorrentXT,
-   -- ENetXT and DataChannelXT accumulate into their own script locals. Both
-   -- shapes are handled, because both are what those members actually ship -
-   -- rewriting one to look like the other would be editing a proven harness to
-   -- suit this file, which is backwards.
+   -- SodiumXT, OnionXT, Box2Dxt, Riptide and holde-em return their report as a
+   -- string; CoinXT, TorrentXT, ENetXT and DataChannelXT accumulate into their
+   -- own script locals. Both shapes are handled, because both are what those
+   -- members actually ship - rewriting one to look like the other would be
+   -- editing a proven harness to suit this file, which is backwards.
+   --
+   -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
+   -- member can attempt in any environment it supports (checks + skips). Read
+   -- stMergeFloor for what it does and does not catch. Only ONE of the five is
+   -- measured today:
+   --
+   --   OnionXT   41, derived section by section at its call site below. It is
+   --             the member whose harness can degrade the furthest (its skips
+   --             span a third of its items), which is why it was measured
+   --             first and why the skip channel exists at all.
+   --   the four  1, the CATASTROPHIC floor, and it is not a measured minimum.
+   --   others    What it refuses is a harness that attempted NOTHING and still
+   --             read green, because zero failures is zero failures. Measuring
+   --             a real one means auditing that harness's conditional paths -
+   --             SodiumXT's two ABI probes exit its ristretto section early,
+   --             Box2Dxt/Riptide/holde-em skip whole sections by probe - and a
+   --             floor set above a member's true worst case would false-fail
+   --             an engine session, which is the one cost this file can least
+   --             afford. A guess here would be worse than the gap: this repo
+   --             has already paid once for a gate that reported the constants
+   --             it had PARSED as the ones it had CHECKED. So the four carry
+   --             the honest floor and say so, and measuring them is open work.
    if sHaveSodium then
       try
-         stMergeReturned "SodiumXT", sx1sxSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
       catch tError
          stSectionFailed "SodiumXT deep self-test", tError
       end try
@@ -1933,7 +1969,40 @@ command stRunMemberHarnesses
 
    if sHaveOnion then
       try
-         stMergeReturned "OnionXT", ox1oxSelfTest()
+         -- THE FLOOR IS 41, and the arithmetic is here because a number with
+         -- no derivation beside it is a number nobody dares to change - which
+         -- is how a ratchet quietly becomes a decoration. onionxt's harness
+         -- runs ten sections; SEVEN of them can bail out, and since 2026-08-17
+         -- every bail-out counts as one skip. Attempted = checks + skips, per
+         -- section, worst case:
+         --    1 version and capabilities     6   unconditional
+         --    2 initial state                1   3 checks, or 1 skip when this
+         --                                       session is already authed
+         --    3 fail-closed arguments        4   3 unconditional, + 2 pre-auth
+         --                                       checks or 1 skip
+         --    4 unknown handles              5   unconditional
+         --    5 idempotent teardown          2   unconditional
+         --    6 address round-trip           6   2 addresses x (2 + 1 either
+         --                                       way: re-encode or skip)
+         --    7 address negative paths       4   3, + 1 either way
+         --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
+         --    9 configuration setters       10   unconditional
+         --   10 loopback guard               1   18 checks, or 1 skip where
+         --                                       oxHostOfSocket is not in this
+         --                                       script
+         --                                  --
+         --                                  41
+         -- Its best case is 61, and THIS paste normally sees 58-61: section
+         -- 10's probe resolves here because the generator embeds the library
+         -- into this same script, which is the whole reason that section is
+         -- testable at all. The floor is deliberately the environment-proof 41
+         -- rather than the paste-expected 58: a floor that can false-fail an
+         -- engine session is worth less than a floor that catches less, and
+         -- the degraded case is no longer invisible anyway - it arrives as 8
+         -- skips on the summary line. Cross-check on the arithmetic: onionxt's
+         -- CLAUDE.md records a 2026-08-12 engine run at 43 checks, and
+         -- sections 1-9 at their best case are exactly 43.
+         stMergeReturned "OnionXT", ox1oxSelfTest(), 41
       catch tError
          stSectionFailed "OnionXT deep self-test", tError
       end try
@@ -2003,7 +2072,8 @@ command stRunMemberHarnesses
    -- has to finish BEFORE the cross-member loopbacks below arm their pump.
    if sHaveBox2d then
       try
-         stMergeReturned "Box2Dxt", b21stSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "Box2Dxt", b21stSelfTest(), 1
       catch tError
          stSectionFailed "Box2Dxt deep self-test", tError
       end try
@@ -2019,7 +2089,8 @@ command stRunMemberHarnesses
    -- layer being present at all.
    if sHaveRiptideScript then
       try
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -2050,10 +2121,12 @@ command stRunMemberHarnesses
    -- The entry point is heSelfTest, NOT heRunSelftest: the interactive one
    -- builds an 800x560 report overlay on the card, overwrites
    -- clipboardData["text"] (this scaffold's own Copy-results channel) and
-   -- writes to msg, and its "==== n pass, m fail ====" summary is a line
-   -- stSummaryCounts refuses on purpose.
+   -- writes to msg, and its "==== n pass, m fail, k skip ====" summary is a
+   -- line stSummaryCounts refuses on purpose (measured 2026-08-17: the string
+   -- carries the skip count too - this comment quoted it a field short).
    try
-      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest()
+      -- floor 1: catastrophic only, not measured (see above)
+      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
    catch tError
       stSectionFailed "holde-em deep self-test", tError
    end try
@@ -2081,23 +2154,37 @@ function stTrimEdges pWord
    return tOut
 end stTrimEdges
 
--- Given ONE line, return "<passed> <failed>" if that line is a summary, or
--- empty if it is not. This is the whole rule; see stMergeReturned below for why
--- it is shaped this way.
+-- Given ONE line, return "<passed> <failed>" - or "<passed> <failed> <skipped>"
+-- when the line carries a skip count - if that line is a summary, or empty if
+-- it is not. This is the whole rule; see stMergeReturned below for why it is
+-- shaped this way.
 --
--- A line qualifies only when EVERY word on it is either a number or the word
--- "passed"/"failed" (case and edge punctuation ignored), with exactly one of
--- each keyword, "passed" before "failed", and exactly two numbers. That shape
--- test - rather than "the line mentions both words" - is what makes an
--- individual check's LABEL unable to masquerade as a summary: a label always
--- carries at least one other word (SodiumXT's "  ok   a failed call surfaces an
--- error" has "ok", "a", "call"), and one other word is enough to disqualify it.
+-- A line qualifies only when EVERY word on it is either a number or one of the
+-- words "passed"/"failed"/"skipped" (case and edge punctuation ignored), with
+-- at most one of each keyword, "passed" and "failed" both present and in that
+-- order, "skipped" after them when it appears at all, and exactly one number
+-- per keyword present. That shape test - rather than "the line mentions both
+-- words" - is what makes an individual check's LABEL unable to masquerade as a
+-- summary: a label always carries at least one other word (SodiumXT's
+-- "  ok   a failed call surfaces an error" has "ok", "a", "call"), and one
+-- other word is enough to disqualify it.
+--
+-- THE THIRD COUNT IS OPTIONAL, and that is the whole compatibility story
+-- (2026-08-17). Five harnesses come through here and only onionxt's reports
+-- skips; the other four (SodiumXT, Box2Dxt, Riptide, holde-em) spell their
+-- summary with two counts and are not going to be rewritten to carry a zero
+-- they do not have. "skipped" is therefore admitted as a word rather than
+-- required, and it widens NOTHING else: a line still needs both of the
+-- original keywords, so "3 skipped" alone is prose here, and the number count
+-- must still match the keyword count exactly, so a stray third number on a
+-- two-keyword line is refused as loudly as it was before.
 function stSummaryCounts pLine
-   local tI, tN, tWord, tPassAt, tFailAt, tNums
+   local tI, tN, tWord, tPassAt, tFailAt, tSkipAt, tNums, tWant
 
    put the number of words of pLine into tN
    put 0 into tPassAt
    put 0 into tFailAt
+   put 0 into tSkipAt
    put empty into tNums
    repeat with tI = 1 to tN
       put stTrimEdges(word tI of pLine) into tWord
@@ -2107,33 +2194,50 @@ function stSummaryCounts pLine
          put tI into tPassAt
       else if toLower(tWord) is "failed" and tFailAt is 0 then
          put tI into tFailAt
+      else if toLower(tWord) is "skipped" and tSkipAt is 0 then
+         put tI into tSkipAt
       else
-         -- Any other word - or a SECOND "passed"/"failed" - means this line is
-         -- prose. Nothing is guessed from it.
+         -- Any other word - or a SECOND "passed"/"failed"/"skipped" - means
+         -- this line is prose. Nothing is guessed from it.
          return empty
       end if
    end repeat
    if tPassAt is 0 or tFailAt is 0 or tPassAt > tFailAt then
       return empty
    end if
-   if the number of words of tNums is not 2 then
+   -- One number per keyword, and the skip keyword comes last when it comes.
+   -- Both halves matter: the count rule is what stops a summary being read off
+   -- a line with a spare number on it, and the order rule is what lets the
+   -- numbers be assigned by POSITION below instead of by parsing pairs.
+   put 2 into tWant
+   if tSkipAt is not 0 then
+      put 3 into tWant
+      if tFailAt > tSkipAt then
+         return empty
+      end if
+   end if
+   if the number of words of tNums is not tWant then
       return empty
    end if
-   -- Keyword order was just checked, and both shipped spellings put the pass
-   -- count with the "passed" keyword, so the two numbers are in the order the
-   -- two keywords are: first number = passed, second = failed. Requiring the
-   -- keyword order is what makes that one-line rule safe rather than lucky.
-   return word 1 to 2 of tNums
+   -- Keyword order was just checked, and every shipped spelling puts each
+   -- count with its own keyword, so the numbers are in the order the keywords
+   -- are: first = passed, second = failed, third (when present) = skipped.
+   -- Requiring the keyword order is what makes that one-line rule safe rather
+   -- than lucky.
+   return word 1 to tWant of tNums
 end stSummaryCounts
 
--- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT). The
--- counts are parsed back out of the report rather than guessed at, and if the
--- parse ever fails that is a reported FAILURE, not a silent zero.
+-- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT,
+-- Box2Dxt, Riptide and holde-em - five of the nine, not the two this comment
+-- named until 2026-08-17; the other four accumulate into script locals and go
+-- through stMergeCounted below). The counts are parsed back out of the report
+-- rather than guessed at, and if the parse ever fails that is a reported
+-- FAILURE, not a silent zero.
 --
 -- THE RULE, in one sentence: the summary is the ONE line of the report that is
 -- nothing but two numbers and the words "passed" and "failed" (in that order,
--- case and edge punctuation ignored), and its first number is the pass count
--- and its second the fail count.
+-- case and edge punctuation ignored) - or, since 2026-08-17, three numbers with
+-- "skipped" behind them - and its numbers are its counts in that same order.
 --
 -- WHY IT IS NOT THE OBVIOUS THING, and this is the whole reason the handler was
 -- rewritten. It used to take word 1 as the pass count and the LAST word as the
@@ -2160,13 +2264,49 @@ end stSummaryCounts
 -- qualify. Requiring exactly one is what keeps this LOUD - zero matches and two
 -- matches are both reported failures that print the report for a human to read,
 -- never a silent zero folded into the suite totals.
-command stMergeReturned pMember, pReport
-   local tLine, tI, tCount, tPair, tMatches, tPassed, tFailed, tOk
+--
+-- THE SKIP CHANNEL (2026-08-17). stMergeCounted has carried a skip count into
+-- the suite totals since the scaffold was unified; this path had no parameter
+-- for one, and the summary field prints sSkipped, so a member merged HERE
+-- could only ever contribute zero skips to the line the operator reads.
+-- OnionXT is the member that made that a lie rather than a gap: seven of its
+-- sections bail out when the environment cannot support them, and every
+-- bail-out used to touch no counter at all, so a run that tested 33 of its 61
+-- items reported "33 passed, 0 failed" - the same green, one line, no way to
+-- tell. Its summary carries a third count now and this handler reads it.
+--
+-- WHAT THE OTHER FOUR DO, measured rather than assumed, because the widening
+-- has to be compatible with all of it and because two of them turn out to be
+-- carrying the same defect:
+--   Box2Dxt   has no skip outcome at all. Every section asserts; the core
+--             guards its PRESENCE instead, one row up. Nothing to carry.
+--   SodiumXT  counts a skip AS A PASS - `sxCheck true, "SKIP: this SodiumXT
+--             package predates ristretto255 (ABI 8)"` on each of its two ABI
+--             probes - so its skips are already inside its pass count and a
+--             third number here would count them twice.
+--   Riptide   BOTH keep a real skip counter and BOTH park it on a SECOND
+--   holde-em  line, worded as prose on purpose so this parser refuses it.
+--             Their own comments say so and name the two-count rule as the
+--             reason ("the skip count gets its own line"). So their skips are
+--             printed and never merged - the same hole this change closes for
+--             onionxt, in two more members. Widening the parser is what
+--             unblocks them; moving their counts onto line 1 is an edit in
+--             their own files, and until someone makes it their skips stay
+--             visible-but-unmerged rather than silently zero.
+-- The two-count form is therefore still first-class, not deprecated: no member
+-- is rewritten from here to suit this file, which would be backwards.
+--
+-- pFloor is the OTHER half of the same lesson and it is deliberately not
+-- folded into this handler: see stMergeFloor below.
+command stMergeReturned pMember, pReport, pFloor
+   local tLine, tI, tCount, tPair, tMatches, tPassed, tFailed, tSkipped
+   local tAttempted, tOk
 
    stSection pMember & ": its own full self-test"
    put 0 into tMatches
    put empty into tPassed
    put empty into tFailed
+   put empty into tSkipped
    put the number of lines of pReport into tCount
    repeat with tI = 1 to tCount
       put line tI of pReport into tLine
@@ -2175,37 +2315,120 @@ command stMergeReturned pMember, pReport
          add 1 to tMatches
          put word 1 of tPair into tPassed
          put word 2 of tPair into tFailed
+         put word 3 of tPair into tSkipped
       end if
    end repeat
+   -- A TWO-COUNT SUMMARY IS STILL A SUMMARY, so word 3 of the pair is empty
+   -- for the four members still spelling it that way - and empty is not a
+   -- number, which the validation below would call a broken summary. Turn it into
+   -- the zero it means first, the same shape and for the same reason as
+   -- stMergeCounted's empty-pSkipped line: a member that reports no skips has
+   -- no skips, not an unreadable report.
+   if tSkipped is empty then
+      put 0 into tSkipped
+   end if
    -- Built as a value rather than a continued condition, for the same reason
    -- stMergeCounted below does it: three of the six copies of
    -- check-livecodescript.py do not join line continuations before counting
    -- block openers, so an `if ... \` reads to them as a handler-level statement
    -- and every `end if` after it looks unbalanced.
    --
-   -- The two numeric tests are redundant with stSummaryCounts, which already
-   -- refuses to return anything but two numbers. They stay because the lesson
+   -- The three numeric tests are redundant with stSummaryCounts, which already
+   -- refuses to return anything but numbers. They stay because the lesson
    -- recorded on stMergeCounted below was that "it cannot be anything but a
    -- number" is a feeling, not a check, and these values are added into the
    -- suite totals: an `add` on a non-number is an UNCAUGHT engine error that
    -- takes the whole run, while a failed assertion costs one line of report.
-   put (tMatches is 1 and tPassed is a number and tFailed is a number) into tOk
+   put (tMatches is 1 and tPassed is a number and tFailed is a number and tSkipped is a number) into tOk
    if tOk is false then
       stAssert pMember & " deep self-test reported a summary this harness could read", false
-      stNote "Looked for the one line that is nothing but two counts and the words"
-      stNote "passed/failed (either order of word and number);" && tMatches && \
+      stNote "Looked for the one line that is nothing but two or three counts and the"
+      stNote "words passed/failed(/skipped), in that order;" && tMatches && \
             "line(s) in its report matched."
+      stNote "Nothing was folded into the totals, and its floor of" && pFloor && \
+            "went unchecked: there are no counts to check it against."
       stNote "Its report is below verbatim; read the counts by eye."
    else
       add tPassed to sPassed
       add tFailed to sFailed
-      add (tPassed + tFailed) to sTotal
+      add tSkipped to sSkipped
+      -- ATTEMPTED, not "checks": a skip is an item this member reached and
+      -- declined to run, and the suite's own stSkip counts one into sTotal for
+      -- exactly the same reason. Counting it keeps this line agreeing with the
+      -- summary field, which prints passed + failed + skipped + total.
+      put tPassed + tFailed + tSkipped into tAttempted
+      add tAttempted to sTotal
       stAssert pMember & " deep self-test had zero failures", tFailed is 0
-      stNote tPassed && "passed," && tFailed && "failed, folded into the totals above"
+      stMergeFloor pMember, tAttempted, pFloor
+      stNote tPassed && "passed," && tFailed && "failed," && tSkipped && \
+            "skipped, folded into the totals above"
    end if
    stNote "---- " & pMember & " report ----"
    put pReport & return after sResultText
 end stMergeReturned
+
+-- THE FLOOR: the fewest items a member's harness may have attempted before
+-- this suite refuses to call its report a result.
+--
+-- WHY IT EXISTS, and it is the one hole every other check here leaves open.
+-- Everything above believes what the member says it ran. "0 passed, 0 failed"
+-- is a perfectly readable summary and folds in as zero failures - green. So
+-- does a harness that lost half its sections to a rename: the counts simply
+-- get smaller and nothing anywhere says so. An engine session's whole output
+-- is one verdict line, and until now that line could not tell a full run from
+-- a third of one. Everything else in this file guards how a member's numbers
+-- are READ; this guards whether there were enough of them to mean anything.
+--
+-- WHAT A FLOOR IS. The number of checks-plus-skips a member attempts in its
+-- WORST supported environment - not its expected total, and not its best case.
+-- The skip channel above is what makes such a number exist at all: a section
+-- that bails out still counts 1, so the attempted total stops swinging with
+-- what happens to be installed and a floor can sit just under it without
+-- false-failing an engine session on a bare machine.
+--
+-- WHAT A FLOOR IS NOT. It is not a coverage measure and it cannot see a
+-- skippable section that skipped - that section still contributes its 1, and
+-- the honest report of it is the skip COUNT, not this. It catches the thing a
+-- summary line structurally cannot show: items that never happened at all.
+--
+-- AND A BAD FLOOR IS A REPORTED FAILURE, NEVER AN ENGINE ERROR. `pAttempted <
+-- pFloor` against a non-numeric pFloor is an uncaught engine error, and
+-- stMergeCounted's comment below is the record of what one of those costs:
+-- it takes the WHOLE run, so every member's results are lost to a single line
+-- that cannot even name the member it came from. The floor is validated before
+-- it is compared, exactly like the counters on both merge paths, and a floor
+-- that is not a number is a failure that names the member and prints what it
+-- got. It is a separate handler rather than four more lines inside
+-- stMergeReturned because the two questions are separate: that one asks
+-- whether a report can be READ, this one asks whether it says ENOUGH - and
+-- because the second question is not particular to the returned-report shape.
+-- Its parameters are (member, attempted, floor) and nothing private to
+-- stMergeReturned, so stMergeCounted can call it the day its four members
+-- carry measured floors of their own. They do not today: the counted path is
+-- unfloored, and that is open work rather than a decision.
+command stMergeFloor pMember, pAttempted, pFloor
+   local tFloorOk
+
+   put (pFloor is a number and pAttempted is a number) into tFloorOk
+   if tFloorOk is false then
+      stAssert pMember & " was merged against a numeric floor", false
+      stNote "Got floor=[" & pFloor & "] attempted=[" & pAttempted & "]"
+      stNote "The floor is a literal at this member's call site in"
+      stNote "stRunMemberHarnesses, so a non-number is an edit to fix there and"
+      stNote "not a defect in the member. No floor was applied to this report."
+      exit stMergeFloor
+   end if
+   stAssert pMember & " attempted at least its floor of" && pFloor && "items", \
+         (pAttempted >= pFloor)
+   if pAttempted < pFloor then
+      stNote "It attempted" && pAttempted && "items (passed + failed + skipped)."
+      stNote "That is not a failing check inside that member - it is checks that"
+      stNote "never ran at all, which its own summary line cannot show."
+      stNote "Either a section stopped being called, or the floor is stale:"
+      stNote "re-derive it beside that member's call site in stRunMemberHarnesses,"
+      stNote "in the same change that moved the count."
+   end if
+end stMergeFloor
 
 -- For a harness that accumulates into script locals (CoinXT, TorrentXT,
 -- ENetXT, DataChannelXT). Its counters are read directly - they are locals of
@@ -2224,8 +2447,9 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal, pSkipped
    -- session - NO INDICATION OF WHICH MEMBER IT WAS. Six harnesses had run and
    -- the operator was left with one line naming a handler.
    --
-   -- stMergeReturned, ten lines up, has validated its counts since the day it
-   -- was written, because THOSE come from parsing a report and a parse can
+   -- stMergeReturned, above (with stMergeFloor now between them - it was "ten
+   -- lines up" when this was written), has validated its counts since the day
+   -- it was written, because THOSE come from parsing a report and a parse can
    -- obviously fail. This path skipped the check because its values come from
    -- script locals, which felt safer. Feeling safer is not the same as being
    -- checked, and the two paths merge into the same totals: they should be

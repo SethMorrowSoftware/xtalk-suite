@@ -1206,6 +1206,16 @@ def compute_all():
     out = {}
     out["table"] = TABLE.hex()
     out["id_pubs"] = [ed_publickey(s).hex() for s in ID_SEEDS]
+    # -- the two display/rendezvous truncations of the SAME digest (spec 5,
+    # spec 10). Both are one-liners, which is exactly why they earn a pin: a
+    # silent off-by-one in the infohash is not a wrong pixel, it is two
+    # machines announcing to two different DHT keys and never finding each
+    # other -- a whole multi-machine session lost to a chunk expression no
+    # harness ever evaluated. Mirrors heTableInfohash (20 bytes = 40 hex of
+    # H(tableId), the id BYTES not their hex text) and heFingerprintOf
+    # (8 hex of H(pubkey)).
+    out["table_infohash"] = H(TABLE).hex()[:40]
+    out["id_fingerprint1"] = H(ed_publickey(ID_SEEDS[0])).hex()[:8]
     out["deal_seeds"] = [s.hex() for s in DEAL_SEEDS]
     out["commits"] = [seed_commit(s).hex() for s in DEAL_SEEDS]
     sx = xor_seeds(DEAL_SEEDS)
@@ -1356,6 +1366,15 @@ def compute_all():
     # candidates -- so every client names the same one with no round trips.
     # Mirrors heElectHostOf (a text sort over lowercase 64-hex lines).
     out["elected_host"] = min(out["id_pubs"])
+    # ...and "live" means NOT SITTING OUT (spec 9: "lowest pubkey among live
+    # SEATED players"). Mirrors heNetElectablePubs' sit-out filter, which is
+    # the half heElectHostOf cannot see: with the lowest-pubkey seat sat out
+    # the candidate set is the other two, so the successor moves to the next
+    # key up. Safe to mirror here precisely because sitOutBy is derived from
+    # the transcript alone (a signed stand, or counted timeout wires), so the
+    # KAT can compute it from the same public facts every client folds.
+    out["elected_host_sitout"] = min(p for p in out["id_pubs"]
+                                     if p != out["elected_host"])
 
     # -- Phase 3 oracle: the deterministic onion-service seed, play vs
     # oracle. ONE derivation shape, TWO domain tags (spec 16: every hash
@@ -1776,6 +1795,9 @@ PINNED = {
  "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\td02b1e826f4351264cd3a77a1580921495f9c7df5f0f29a370ebb5fdd69b9a1c5c1c9226ae2865919622a266df124ac755b57141a6d8a77e0eb8b6f7d89de208\t42",
  # spec 9 host election: the deterministic successor (lowest live pubkey)
  "elected_host": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
+ # ...and the same election with that lowest key SITTING OUT: a sat-out seat
+ # is not a live seat, so it is not electable (heNetElectablePubs' filter)
+ "elected_host_sitout": "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6",
  # Phase 3 oracle: service-seed domain separation (play vs oracle) + the
  # oracle table's signed cfg (level=1 IS the oracle marker, spec 7.2)
  "onion_service_seed": "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2",
@@ -1817,6 +1839,10 @@ PINNED = {
   "2": "Ks,Tc",
   "3": "4d,9h"
  },
+ # spec 10 DHT rendezvous id + spec 5 display fingerprint: the 40-hex and
+ # 8-hex truncations of H(tableId) and H(pubkey)
+ "table_infohash": "891e5f5c70b88414190980f34a02cb06784cd6da",
+ "id_fingerprint1": "77d2c2dc",
  "id_pubs": [
   "b6ef1a19d789c27bea3f6c127db635929541f34907750ee12d0b715c010c7566",
   "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
@@ -1909,7 +1935,11 @@ def main():
         # the hello frame carries tabs, so it travels as hex of its UTF-8
         # bytes (the kKatEnv0ContentHex convention)
         print('constant kKatHelloTrimHex = "%s"' % got["hello_trim_frame"].encode("utf-8").hex())
+        print('constant kKatIdPub3 = "%s"' % got["id_pubs"][2])
+        print('constant kKatTableInfohash = "%s"' % got["table_infohash"])
+        print('constant kKatIdFingerprint1 = "%s"' % got["id_fingerprint1"])
         print('constant kKatElectedHost = "%s"' % got["elected_host"])
+        print('constant kKatElectedHostSitOut = "%s"' % got["elected_host_sitout"])
         print('constant kKatOnionSeed = "%s"' % got["onion_service_seed"])
         print('constant kKatOracleSeed = "%s"' % got["oracle_service_seed"])
         print('constant kKatLobbyCfgBodyOracle = "%s"' % got["lobby_cfg_body_oracle"])

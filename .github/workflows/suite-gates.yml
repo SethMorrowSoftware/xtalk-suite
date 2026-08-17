@@ -23,6 +23,15 @@ name: suite gates
 on:
   push:
   pull_request:
+  # So the heavy cross-member job below can be forced without pushing a commit
+  # that touches one of its scoped paths. It also fires the fast gates job,
+  # which is harmless.
+  workflow_dispatch:
+
+# Nothing here writes: both jobs read the tree, run gates, and upload
+# artifacts. Same reasoning as the native-<member>.yml lanes beside this file.
+permissions:
+  contents: read
 
 jobs:
   gates:
@@ -80,3 +89,123 @@ jobs:
             suite-selftest-coverage.txt
             docs/OXT-PASS-RUNBOOK.md
           if-no-files-found: error
+
+  # --- the cross-member invariants, actually executed ------------------------
+  #
+  # WHY A SECOND JOB. tests/cross-member-test.py settles the suite's four
+  # marquee cross-member claims natively - one seed giving both members the
+  # same ed25519 identity, the two secret-key spellings, a libsodium signature
+  # libtorrent verifies, the shared 60000-byte budget. Until 2026-08-17 it ran
+  # in NO lane: its only caller is tools/build-all.sh, below that script's
+  # `--gates` early exit, and every CI invocation passes --gates. It drives the
+  # built .so files, so it cannot ride the gates job above - that job has no
+  # compiler beyond coinxt's tiny KAT build, and keeping it that way is what
+  # makes it fast enough to run on every push.
+  #
+  # WHY THE WHOLE WALKER rather than a two-member build spelled out here: the
+  # walker is what produces the artifacts this test drives, at the paths it
+  # looks for them. Reimplementing "configure, build and test sodiumxt and
+  # torrentxt" in YAML would be a second copy of build-all.sh's build logic
+  # that drifts from the first - the same reason release-binaries.yml runs
+  # tools/install-release-binaries.py instead of reimplementing it. As a
+  # by-product this is also the only lane that proves the full walk still
+  # works end to end; nothing else runs it.
+  #
+  # WHY IT IS SCOPED, AND SAID PLAINLY: this is expensive. The full walk builds
+  # libsodium (ExternalProject), libtorrent v2.0.11 and libdatachannel and ENet
+  # and Box2D (all FetchContent, all from source), then coinxt's ASan
+  # self-test. That is tens of minutes, and running it on every push to every
+  # branch would make the fast gates job pointless. So the `scope` job below
+  # decides from the changed files whether this run can possibly affect the
+  # invariants, and this job runs only when it can. Per-member build coverage
+  # is NOT this lane's job and is not what the scope list is for - each member
+  # has its own paths-scoped native-<member>.yml for that.
+  scope:
+    name: does this change touch the cross-member invariants?
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history: the diff below needs the base commit, and the
+          # default shallow clone does not have it.
+          fetch-depth: 0
+      - id: decide
+        name: Decide from the changed paths
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          # FAIL OPEN. A branch's first push sends an all-zero `before`, a
+          # force push leaves one we cannot reach, and workflow_dispatch sends
+          # none at all. In every case we cannot tell what changed - and the
+          # two errors are not symmetric: a redundant run costs runner minutes,
+          # a missed run silently restores the exact hole this job was added to
+          # close. So an unknown base RUNS the job.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "base unknown or unreachable ('$base') - running the lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+          echo "changed files:"; echo "$changed"
+          # The paths the invariants actually depend on: the two shims they
+          # drive, the two headers the budget leg reads (by #define, so a value
+          # edit in either one is precisely what that leg exists to catch), the
+          # test itself, the walker that runs it, and this file.
+          if printf '%s\n' "$changed" | grep -qE '^(sodiumxt/|torrentxt/|enetxt/src/enx_abi\.h$|datachannelxt/src/dcx_abi\.h$|tests/cross-member-test\.py$|tools/build-all\.sh$|\.github/workflows/suite-gates\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  cross-member:
+    name: the cross-member invariants (sodiumxt + torrentxt, native)
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    # Generous: libtorrent is built from source. A hang should still end the
+    # run rather than sit on a runner for six hours.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # The union of what the green per-member Linux lanes install: g++/cmake/
+      # ninja for everyone, OpenSSL and zlib and Boost headers for torrentxt's
+      # and datachannelxt's source builds, gcc for coinxt's ASan self-test.
+      - name: Acquire the toolchain every member's Linux build needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ cmake ninja-build \
+                                  libboost-dev libssl-dev zlib1g-dev
+
+      # CROSSMEMBER_REQUIRE_ALL is why this job is worth its runner minutes.
+      # Without it, a lane whose build silently produced no sodiumxt.so would
+      # print "SKIP the ed25519 and BEP44 checks" and exit 0 - green, having
+      # measured two #defines. With it the skip is a FAILURE, so this job can
+      # only pass by actually settling the invariants.
+      #
+      # SUITE_ONLY_MEMBERS, and why this job stopped being a "full build"
+      # (2026-08-17). As first written it ran the whole walk and was killed at
+      # 7 minutes with exit 143 - the runner OOM, not a test failure, while
+      # ~60 g++ processes compiled libtorrent and a test binary at once. Two
+      # things were wrong and both are fixed: build-all.sh passed a bare `-j`
+      # to make (UNLIMITED; it now bounds jobs by memory as well as cores), and
+      # this lane built five members to answer a question that loads exactly
+      # two libraries. It now builds those two. coinxt is NOT built here, so
+      # COINXT_REQUIRE_CROSSCHECK is deliberately absent rather than set and
+      # silently inapplicable - the fast --gates job above owns that check.
+      - name: Build sodiumxt + torrentxt, then settle the invariants
+        env:
+          SUITE_ONLY_MEMBERS: "sodiumxt torrentxt"
+          CROSSMEMBER_REQUIRE_ALL: "1"
+        run: bash tools/build-all.sh

@@ -72,8 +72,16 @@ any more except SHA3-512 and SLIP-39.
 > file records, so the whole ABI-6 section below is **verified statically and executed
 > headlessly against the published vectors; it needs an OXT pass.**
 >
-> **Still not shipped, despite appearing in SPEC.md:** `cxSha3_512` and SLIP-39. Calling
-> `cxSha3_512` is a `handler not found`.
+> **Not shipped, and now decided rather than merely noted (2026-08-17):** `cxSha3_512` is
+> **deferred** and SPEC.md section 1 no longer advertises it. Calling it is still a
+> `handler not found`; what changed is that "ship it or strike it" is no longer an open question -
+> the full decision, its cost (an ABI bump plus a four-platform binary refresh) and the condition
+> for revisiting it are in that section. SLIP-39 remains a later phase.
+>
+> Nothing else in this file is in that position: every one of the 90 shipped `cx*` handlers is
+> documented here, and `tools/check-doc-handlers.py` holds both directions - a shipped handler that
+> never reaches this page, and a `cx*` name in these docs that no handler defines, each fail the
+> build.
 
 ## Before anything else
 

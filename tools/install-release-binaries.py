@@ -4,6 +4,7 @@ install-release-binaries.py - land a release-binaries bundle into the tree.
 
 USAGE
     python3 tools/install-release-binaries.py <bundle-dir> [--dry-run]
+    python3 tools/install-release-binaries.py --selftest
 
 The bundle is what .github/workflows/release-binaries.yml publishes: one
 directory laid out as
@@ -41,18 +42,57 @@ the repository half-updated:
 It then refreshes each touched member's src/code/MANIFEST.sha256 - creating one
 for a member that had none, and saying so - and prints what changed. It does not
 commit: in CI that is the calling job's next step, and locally it is yours.
+
+--selftest is this file's own regression, and it lives here rather than in a
+sibling tool because what it pins is THIS file's behaviour, end to end. It drives
+main() over throwaway bundles - the five COMMITTED box2dxt libraries for the
+accept case, synthesised headers for the refusals - and asserts what each one is
+supposed to do: that a box2dxt bundle installs at all (it did not, until
+2026-08-17), that an unknown member directory is still merely skipped rather than
+installed, that a thin Mach-O and a wrong architecture and a wrong filename are
+each REFUSED, and that both manifest legs below - refreshed and CREATED - do what
+their message says, driven against a temporary ROOT so the real tree is never
+written. The accept case deliberately reads the member's real committed files
+instead of synthesising them, because a synthetic ELF would prove only that the
+parser parses. This repo's standing lesson is that SHIPPED IS NOT RUN: a claim
+that can be pinned by executing the code should not be left as a comment.
 """
 
+import contextlib
 import hashlib
+import io
 import os
 import re
 import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt")
+# The members whose libraries this tool will land. Anything else in a bundle is
+# reported as skipped, which is the right default - the bundle directory is
+# whatever the workflow or a human unzipped, not a trusted manifest.
+#
+# BOX2DXT JOINED 2026-08-17, and the token is VERIFICATION-ONLY. It does NOT put
+# box2dxt in a release lane and deliberately does not pre-empt the decision
+# box2dxt/CLAUDE.md reserves for the owner: its known-good Linux build runs
+# `docker run manylinux2014` INSIDE a stock runner (glibc floor 2.17), while
+# release-binaries.yml's cmake-members job uses the `container:` shape with
+# manylinux_2_28, so joining that matrix as-is would raise the member's glibc
+# floor - a real portability regression, and a call nobody should make as a
+# side effect of editing a Python tuple. Until that lane exists, nothing in CI
+# produces a box2dxt bundle and this token is inert there.
+#
+# What it DOES buy is the hand-assembled path, which is the one people actually
+# use for a member with no lane: a locally built or unzipped box2dxt bundle used
+# to be routed to "not a native suite member" and then refused with "the bundle
+# contained no installable library", so the only way to land those five binaries
+# was to copy them in by hand - with none of the filename, object-format,
+# architecture or fat-Mach-O checks below run over them, and the manifest
+# refreshed by hand or not at all. That is exactly the failure mode suite rule 5
+# exists to prevent, so the fix is worth landing ahead of the YAML half.
+MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib"}
 
 
@@ -232,12 +272,31 @@ def main(argv):
     # the ones in this bundle: the manifest is a statement about the directory.
     #
     # Members that have never had one GET one, and that is called out rather than
-    # done quietly. Only sodiumxt and coinxt ship a src/code manifest today, so a
-    # member whose binaries this tool lands is also a member that gains integrity
-    # checking - tools/build-all.sh picks the file up automatically and verifies
-    # it from then on. That is an improvement, but it changes what the gates
-    # cover, so it belongs in the output and in the diff you review rather than
-    # turning up later as a mystery file.
+    # done quietly: tools/build-all.sh picks a MANIFEST.sha256 up automatically
+    # and verifies it from then on, so creating one changes what the gate set
+    # covers. That is an improvement, but a change in gate coverage belongs in the
+    # output and in the diff you review rather than turning up later as a mystery
+    # file.
+    #
+    # CORRECTED 2026-08-17. The line here used to say "only sodiumxt and coinxt
+    # ship a src/code manifest today". Measured against the tree: ALL SIX members
+    # that have a src/code carry one - sodiumxt, torrentxt, enetxt, datachannelxt,
+    # coinxt, and box2dxt (whose manifest landed with its 2026-08-14 fold) - which
+    # is exactly the set MEMBERS names. So the CREATED leg cannot fire on today's
+    # tree, and the comment was inviting a reader to reason from a false premise
+    # about which members are protected.
+    #
+    # The leg is KEPT rather than deleted, for two reasons. This tool creates the
+    # destination directory too (os.makedirs above), so it is the path by which a
+    # member's FIRST binaries arrive, and it is the only place that would notice.
+    # And MEMBERS grows - box2dxt was added to it the same day this comment was
+    # corrected - so "no member lacks a manifest" is a fact about today's tuple,
+    # not an invariant. Deleting the leg would mean the next member to join lands
+    # binaries with no integrity coverage and no notice that the gate set just
+    # changed shape. It is not dead-by-neglect either: --selftest drives both legs
+    # against a throwaway ROOT, so the branch is EXECUTED on every gate run rather
+    # than asserted to work - which is the distinction that made the sentence above
+    # wrong for as long as it was.
     for member in sorted(touched):
         code = os.path.join(ROOT, member, "src", "code")
         existed = os.path.exists(os.path.join(code, "MANIFEST.sha256"))
@@ -260,5 +319,197 @@ def main(argv):
     return 0
 
 
+# --------------------------------------------------------------------------
+# --selftest
+# --------------------------------------------------------------------------
+# Header synthesisers. Each writes the exact prefix read_format() reads and not
+# one byte more - these are fixtures for the FORMAT checks, not loadable
+# libraries, and pretending otherwise would only invite someone to try one.
+
+def _bytes_elf(elf_class, e_machine):
+    """A 64-byte ELF header. elf_class: 1 = 32-bit, 2 = 64-bit."""
+    head = bytearray(64)
+    head[0:4] = b"\x7fELF"
+    head[4] = elf_class
+    struct.pack_into("<H", head, 18, e_machine)
+    return bytes(head)
+
+
+def _bytes_pe(machine):
+    """An MZ stub whose e_lfanew points at a PE signature and machine word."""
+    head = bytearray(0x46)
+    head[0:2] = b"MZ"
+    struct.pack_into("<I", head, 0x3C, 0x40)
+    head[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<H", head, 0x44, machine)
+    return bytes(head)
+
+
+def _bytes_thin_macho():
+    """A 64-bit little-endian THIN Mach-O magic - byte for byte what an
+    arm64-only macos runner emits, and what universal-mac must refuse."""
+    return b"\xcf\xfa\xed\xfe" + bytes(60)
+
+
+def _put(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(data)
+
+
+def _capture(args):
+    """main() over argv, stdout captured -> (rc, text). The gate drives the
+    real entry point rather than the helpers underneath it, because the bug it
+    exists to catch - a member missing from MEMBERS - lives in the routing, and
+    every helper below is perfectly happy without it."""
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc = main(["install-release-binaries.py"] + args)
+    except Exception as exc:  # noqa: BLE001 - deliberately everything
+        # A traceback out of main() is a FAILURE of the check that is running,
+        # not a crash of the gate. Reporting it as one keeps the remaining
+        # checks running and names the fixture that caused it - measured while
+        # mutation-testing this gate: deleting the "expected <member>.<ext>"
+        # existence check makes read_format() raise FileNotFoundError, which
+        # ended the whole run with a bare traceback and no indication of which
+        # bundle it came from. 99 is returned so that every rc assertion here
+        # (which expects 0 or 1) fails rather than accidentally matching.
+        return 99, buf.getvalue() + f"\n[raised] {type(exc).__name__}: {exc}"
+    return rc, buf.getvalue()
+
+
+def selftest():
+    global ROOT
+    failures = []
+    tmp = tempfile.mkdtemp(prefix="install-release-selftest-")
+
+    def check(name, ok, detail=""):
+        print(f"  {'ok  ' if ok else 'FAIL'}  {name}")
+        if not ok:
+            failures.append(f"{name}\n        got: {detail}")
+
+    try:
+        # 1. THE ACCEPT CASE, over the member's REAL committed libraries. This is
+        #    the box2dxt claim in executable form: before box2dxt was in MEMBERS
+        #    this exact bundle printed one skip note and returned 1.
+        #
+        #    The expected count is READ FROM THE TREE rather than written down as
+        #    5 (which is what it was on 2026-08-17: four ELF/PE targets plus the
+        #    fat universal-mac dylib). A hard 5 would redden this gate the day
+        #    box2dxt gains an arm64-linux target - a good change - and a gate that
+        #    goes red for good changes is a gate somebody deletes. The property
+        #    worth pinning is "EVERY committed library of this member passes every
+        #    check in this file", which survives the platform set moving.
+        code = os.path.join(ROOT, "box2dxt", "src", "code")
+        bundle = os.path.join(tmp, "bundle")
+        staged = 0
+        for platform_id in sorted(os.listdir(code)):
+            pdir = os.path.join(code, platform_id)
+            if not os.path.isdir(pdir):
+                continue
+            for fn in sorted(f for f in os.listdir(pdir) if not f.endswith(".md")):
+                _put(os.path.join(bundle, "box2dxt", platform_id, fn), b"")
+                shutil.copy2(os.path.join(pdir, fn),
+                             os.path.join(bundle, "box2dxt", platform_id, fn))
+                staged += 1
+        check("box2dxt ships committed libraries to verify (suite rule 5)",
+              staged > 0, staged)
+
+        rc, out = _capture([bundle, "--dry-run"])
+        check("a box2dxt bundle is accepted (rc 0)", rc == 0, out)
+        check(f"  ...with all {staged} libraries verified",
+              f"{staged} libraries verified" in out, out)
+        check("  ...and NOT routed to 'not a native suite member'",
+              "not a native suite member" not in out, out)
+        check("  ...writing nothing under --dry-run",
+              "--dry-run: nothing written." in out, out)
+        # Positively, not just by the absence of a complaint: the committed dylib
+        # really is fat, so the accept above is not the thin-Mach-O leg passing by
+        # accident on a file it should have refused.
+        dylib = os.path.join(code, "universal-mac", "box2dxt.dylib")
+        check("the committed universal-mac dylib reads as a FAT Mach-O",
+              read_format(dylib) == ("mac", "universal"), read_format(dylib))
+
+        # 2. THE REFUSALS. Each one proves a leg of the accept case is live rather
+        #    than vacuous - a checker that says yes to everything would pass 1.
+        _put(os.path.join(tmp, "thin", "box2dxt", "universal-mac", "box2dxt.dylib"),
+             _bytes_thin_macho())
+        rc, out = _capture([os.path.join(tmp, "thin"), "--dry-run"])
+        check("a THIN Mach-O under universal-mac is REFUSED",
+              rc == 1 and "THIN Mach-O" in out, out)
+
+        _put(os.path.join(tmp, "arch", "box2dxt", "x86-linux", "box2dxt.so"),
+             _bytes_elf(2, 0x3E))
+        rc, out = _capture([os.path.join(tmp, "arch"), "--dry-run"])
+        check("an x86_64 ELF filed under x86-linux is REFUSED",
+              rc == 1 and "built for x86_64, not x86" in out, out)
+
+        _put(os.path.join(tmp, "pe", "box2dxt", "x86_64-win32", "box2dxt.dll"),
+             _bytes_pe(0x014C))
+        rc, out = _capture([os.path.join(tmp, "pe"), "--dry-run"])
+        check("an x86 PE filed under x86_64-win32 is REFUSED",
+              rc == 1 and "built for x86, not x86_64" in out, out)
+
+        _put(os.path.join(tmp, "name", "box2dxt", "x86_64-linux", "libbox2dxt.so"),
+             _bytes_elf(2, 0x3E))
+        rc, out = _capture([os.path.join(tmp, "name"), "--dry-run"])
+        check("a mis-named library is REFUSED (the bind token is a filename)",
+              rc == 1 and "expected box2dxt.so" in out, out)
+
+        # 3. THE ROUTING box2dxt used to get. Skipping an unknown directory is
+        #    correct and must survive; what was wrong was which directories
+        #    counted as unknown.
+        _put(os.path.join(tmp, "unknown", "onionxt", "x86_64-linux", "onionxt.so"),
+             _bytes_elf(2, 0x3E))
+        rc, out = _capture([os.path.join(tmp, "unknown"), "--dry-run"])
+        check("a non-member directory is skipped, never installed",
+              rc == 1 and "not a native suite member" in out, out)
+
+        # 4. BOTH MANIFEST LEGS, against a throwaway ROOT so the real tree is
+        #    untouched. The CREATED leg cannot fire on this tree (every member in
+        #    MEMBERS already ships a manifest), which is precisely why it needs
+        #    executing here: it is the branch a future member's first install
+        #    takes, and nothing else would ever run it.
+        saved_root, fake_root = ROOT, os.path.join(tmp, "root")
+        try:
+            ROOT = fake_root
+            rc, out = _capture([bundle])
+            created = os.path.join(fake_root, "box2dxt", "src", "code",
+                                   "MANIFEST.sha256")
+            check("a first install CREATES the member's manifest, and says so",
+                  rc == 0 and "CREATED (new integrity coverage" in out
+                  and os.path.exists(created), out)
+            body = []
+            if os.path.exists(created):
+                with open(created, encoding="utf-8") as fh:
+                    body = fh.read().splitlines()
+            check("  ...covering every library it landed and nothing else",
+                  len(body) == staged and all(len(ln.split("  ", 1)[0]) == 64
+                                              for ln in body), body)
+            rc, out = _capture([bundle])
+            check("a second install REFRESHES it instead",
+                  rc == 0 and "refreshed box2dxt/src/code/MANIFEST.sha256" in out,
+                  out)
+            check("  ...reporting the now-identical libraries unchanged",
+                  out.count("(unchanged)") == staged, out)
+        finally:
+            ROOT = saved_root
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    if failures:
+        print(f"\ninstall-release-binaries --selftest: {len(failures)} FAILURE(S)")
+        for f in failures:
+            print(f"  {f}")
+        return 1
+    print("\ninstall-release-binaries --selftest: all checks passed.")
+    return 0
+
+
 if __name__ == "__main__":
+    # --selftest is dispatched before the bundle-dir argument handling: it takes
+    # no bundle, and main() would otherwise print the docstring and exit.
+    if "--selftest" in sys.argv[1:]:
+        sys.exit(selftest())
     sys.exit(main(sys.argv))

@@ -8,6 +8,35 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **Kit: `b2kPlayerDuckSet` / `b2kPlayerStandUp` no longer drop the shape's
+  collision filter** (2026-08-17). `b2kReshape` resetting the material AND the
+  filter is documented contract, and a hand-written reshape gets to re-apply
+  both - but the duck fires from inside `b2kPlayerTick`, so the game has no hook
+  there, and these two internal callers honoured only half of it: friction and
+  bounce were re-set from the day the crawl shipped, the filter never was. Every
+  duck and every stand-up (including the forced one in `b2kPlayerRespawn`) put a
+  layered player back on the default category with a collide-with-everything
+  mask. Both handlers now capture category/mask/group off the old shape and
+  write them back beside the friction/bounce restores, with the 2^53 shim-guard
+  clamp `b2kPlayerDropStart` already carried. `b2kReshape`'s own contract is
+  unchanged.
+- `examples/box2dxt-selftest` **v29**: `stTestDuckFilter`, a duck/stand filter
+  round-trip staged as one fall over three obstacles, so the resting y names
+  which of category, mask or group was lost.
+- **`tests/smoke_test.c`: the body + shape accessor sweep** (2026-08-17). 134
+  `LC_API` exports that had never been executed - the whole `b2lc_body_*` and
+  `b2lc_shape_*` surface plus the AABB, mass-data, polygon-builder and
+  one-shot-shape-def registers - are now driven and asserted under ASan/UBSan.
+  Measured with gcov, not grep: **53 of 370 exports executed before, 194 after**
+  (the grep answer had been 60, because the file declared six exports it never
+  called). The remaining 176 are the world, joint, query, mouse, chain and
+  contact/sensor-register families.
+- **New gate `tools/check-lcb-signatures.py`** (2026-08-17): holds all 370
+  `binds to "c:box2dxt>...!cdecl"` declarations in `src/box2dxt.lcb` to the
+  `LC_API` definitions in `src/box2d_lc.c` for return type, arity and each
+  parameter type, and reports a bind with no definition or an export with no
+  bind. Green today; each refusal class is mutation-tested. Not yet in
+  `tools/build-all.sh`.
 - Folded into the xtalk-suite monorepo (2026-08-14): the unified suite checker
   replaced the local copy (an ~1550-violation ASCII sweep followed, including 29
   real `repeat ... step` loop bugs in the platformer, rewritten), all five

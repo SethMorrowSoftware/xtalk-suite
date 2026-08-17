@@ -108,6 +108,63 @@ and is still flagged `VERIFY:` in the source (not yet exercised on-engine):
 | stream callback (per dialed stream) | inbound `Data` arrives on that stream. |
 | peer callback (per service) | a remote peer connects to a published service; yields a new inbound stream handle to register a stream callback on. |
 
+## Handlers the ENGINE calls (in the script, not in the app-facing API)
+
+`src/onionxt.livecodescript` defines fourteen handlers that appear in none of the tables above and
+that an app must never call. They are documented here because "absent from the API reference" was, in
+practice, indistinguishable from "does not exist" - and the last three of them carry the one OnionXT
+integration hazard whose symptom is a **hang rather than an error** (see the rule below and
+[doc 10 section 2](10-usage-guide.md)).
+
+**Eleven `ox*` callbacks OnionXT arms and the engine calls back.** Each is armed by the library itself
+(`open socket ... with message`, `read from socket ... with message`, `accept connections on ... with
+message`) or by a self-sent watchdog (`send ... to me in <timeout>`), and is called with the socket id
+the engine minted. The two watchdogs are the exception worth knowing: they are self-sent rather than
+engine-sent, and `oxStreamDeadline`'s argument is a STREAM HANDLE, not a socket id at all:
+
+| Handler | Armed by | Called when |
+|---|---|---|
+| `oxCtlOpened pSocketID` | `open socket` to the control port | the control TCP connection is up; starts the line reader and sends `PROTOCOLINFO 1`. |
+| `oxCtlLine pSocketID, pData` | `read ... until crlf with message` | one control line arrived; demultiplexes `650` events from command replies (doc 03 framing). |
+| `oxCtlDeadline pSocketID` | `send ... to me in` (watchdog, not a socket message) | the control handshake watchdog expires; tears down an unauthenticated connection. |
+| `oxSocksOpened pSocketID` | `open socket` to the SOCKS port | the proxy TCP connection is up; writes the `05 01 00` greeting. |
+| `oxSocksMethod pSocketID, pData` | `read ... for 2 with message` | the 2-byte method selection arrived (doc 02 step 1). |
+| `oxSocksReplyHead pSocketID, pData` | `read ... for 4 with message` | the fixed 4-byte reply head arrived; `REP != 0` fails closed here. |
+| `oxSocksReplyLen pSocketID, pData` | `read ... for 1 with message` | the ATYP=3 `BND.ADDR` length byte arrived. |
+| `oxSocksReplyDone pSocketID, pData` | `read ... for N with message` | the rest of the reply is consumed; the socket is now a tunnel. |
+| `oxStreamData pSocketID, pData` | `read ... with message` (no quantifier) | a chunk arrived on a live stream, dialed or inbound; delivers `data` and re-arms. |
+| `oxStreamDeadline pStream` | `send ... to me in` (watchdog; takes a STREAM HANDLE, not a socket id) | a dialed stream's handshake watchdog expires. |
+| `oxPeerAccepted pSocketID` | `accept connections on port ... with message` | Tor forwarded an inbound onion connection to the local listener; **enforces the loopback guard** before reading a byte. |
+
+Every one of them opens by testing its argument - against the live control socket, or as a key into
+the per-socket / per-stream tables - and exits on a miss, so calling one by hand is a clean no-op
+rather than a crash. It also exercises nothing: the leg past that test is `read from socket` /
+`write to socket` / `close socket` work on a socket the engine owns. That is also why the suite coverage
+gate (`tools/check-suite-coverage.py` at the suite root) carries exactly these eleven as written
+exemptions rather than counting them as untested.
+
+**Three engine socket MESSAGES, whose names are the engine's and so carry no `ox` prefix.** These are
+sent to the message path, not to a handler OnionXT named, which is what makes them an integration
+concern rather than an implementation detail:
+
+| Message | What OnionXT does with it |
+|---|---|
+| `socketError pSocketID, pError` | arrives instead of `socketClosed` when a socket fails; fails the owning stream closed, or reports and disconnects the control connection. |
+| `socketClosed pSocketID` | the far side closed cleanly; delivers `closed` to the stream's app callback and forgets it, or marks control disconnected. |
+| `socketTimeout pSocketID` | REPEATS every `socketTimeoutInterval` while a read is pending, so it is fatal only during a handshake; a connected stream ignores it. |
+
+> **Integration rule: if your stack defines any of these three, it must `pass` the ones that are not
+> yours.** A stack script that handles `socketClosed` (or `socketError`, or `socketTimeout`) and does
+> not forward it can swallow the message before OnionXT's own copy runs. Nothing errors: the dial that
+> failed simply never reports, the stream that closed never delivers `closed`, the stalled handshake
+> never times out. The symptom is a hang, and no gate in this repo can see it. Two shipping apps in
+> the suite arrived at the same guard independently (`nocloud/src/nocloudquickshare.livecodescript`
+> and `torrentxt/examples/torrent-quickshare.livecodescript`, both: act only on our own sockets,
+> `pass` everything else); [doc 10 section 2](10-usage-guide.md) gives the pattern to copy. The exact
+> message-path ordering that decides which script sees the message first is the engine's, and is
+> recorded here as those two apps found it: **verified statically; needs an OXT pass** to state
+> precisely.
+
 ## Error model
 
 - Commands set `the result` to empty on success, or to a clear, human-readable error string on

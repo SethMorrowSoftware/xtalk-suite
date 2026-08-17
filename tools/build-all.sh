@@ -29,7 +29,51 @@ GATES_ONLY=0
 
 # Members that carry a CMake build (a native shim to compile). Each gates its
 # ctest registration behind <MEMBER>_BUILD_TESTS, so the walker turns that on.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt)
+# box2dxt joined this list 2026-08-17: it has carried a CMakeLists.txt and an
+# `add_test(NAME smoke ...)` since the fold, but was walked only by the
+# compiler-free gate loop below - so the one thing actually covering its 376
+# raw b2* exports (tests/smoke_test.c, which three places in the tree cite as
+# that layer's cover) had never run here. Its Box2D comes from FetchContent,
+# so the lane costs a Box2D source build; unlike sodiumxt it copies nothing
+# back into src/code/, so it adds no second case to the NOTE at the top.
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt)
+
+# HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
+# `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
+# and a bare `-j` means UNLIMITED - make starts every target whose deps are
+# ready, all at once. That is invisible on a small member and fatal on
+# torrentxt, which builds libtorrent from source: on 2026-08-17 the suite's
+# full-build CI lane was killed at 7 minutes with exit 143 ("the runner has
+# received a shutdown signal") while ~60 g++ processes compiled libtorrent and
+# a torrentxt test binary simultaneously. That is an OOM, not a test failure,
+# and it would have hit anyone running this script on a laptop too.
+# So: bound it, by MEMORY as well as by cores, since the constraint here is
+# memory (heavy Boost/template translation units run to a gigabyte or more,
+# while the core count says nothing about that). Override with BUILD_JOBS=N.
+#
+# THE PRECEDENT WAS ALREADY IN THE TREE, which is what makes this a fix rather
+# than a guess: .github/workflows/native-torrentxt.yml has always built its
+# libtorrent with `--parallel ${{ matrix.build_jobs || '4' }}`. The lane that
+# builds this dependency every day had learned to cap it; the full walk was the
+# one path that had not, and it is the only one that died. (One instance
+# remains, knowingly: native-sodiumxt.yml passes a bare `-j`. It survives
+# because libsodium is small - a handful of C files, not a Boost-heavy C++
+# tree - so it is recorded here rather than changed inside a CI fix.)
+if [ -z "${BUILD_JOBS:-}" ]; then
+  _cpus="$(nproc 2>/dev/null || echo 2)"
+  _memkb="$(awk '/MemTotal/{print $2; exit}' /proc/meminfo 2>/dev/null || echo 4194304)"
+  _memjobs="$(( _memkb / 2097152 ))"          # ~2 GiB per C++ translation unit
+  [ "$_memjobs" -lt 1 ] && _memjobs=1
+  if [ "$_memjobs" -lt "$_cpus" ]; then BUILD_JOBS="$_memjobs"; else BUILD_JOBS="$_cpus"; fi
+fi
+
+# Build a SUBSET of the native members. A lane that exists to settle one
+# question should build what that question needs and nothing else: the
+# cross-member invariants load exactly sodiumxt/build/sodiumxt.so and
+# torrentxt/build/torrentxt.so, so building enetxt, datachannelxt, box2dxt and
+# coinxt for them is runner time spent proving nothing. Empty = build them all,
+# which is what a local full walk and the release lane both want.
+SUITE_ONLY_MEMBERS="${SUITE_ONLY_MEMBERS:-}"
 # CoinXT builds via coinxt/native/build.sh; OnionXT is pure script (nothing to
 # compile).
 
@@ -131,6 +175,55 @@ run_gates() {
     echo "== $m: tools/build-standalone.py --check =="
     ( cd "$m" && python3 tools/build-standalone.py --check )
   fi
+  # Embedded-Kit freshness (box2dxt): the same shape as build-standalone.py
+  # above - src/box2dxt-kit.livecodescript is the master, and each of the six
+  # example stacks carries a verbatim copy between sentinels so it stays
+  # paste-and-run. Its docstring has always said "--check exits non-zero ... so
+  # CI fails until sync-embedded-kit.py is re-run", and until 2026-08-17 that
+  # was a claim with no caller behind it: the whole tree held five PROSE
+  # mentions of this tool and zero invocations. A drifted copy is the demo-kit
+  # failure with the blast radius the other way round - one stale example runs
+  # an old Kit and reports a bug that was fixed in src/ months ago.
+  if [ -f "$m/tools/sync-embedded-kit.py" ]; then
+    echo "== $m: tools/sync-embedded-kit.py --check =="
+    ( cd "$m" && python3 tools/sync-embedded-kit.py --check )
+  fi
+  # The platformer's level geometry (box2dxt). Read what this one IS before
+  # reading a green run as an endorsement: its own docstring calls the findings
+  # ADVISORY and "not a CI gate" - some beats deliberately sit a coin in an
+  # enemy's path - and main() prints the finding count without ever setting a
+  # non-zero exit. So what this probe actually holds is narrower than it looks:
+  # that the auditor can still PARSE the demo it audits. That is worth holding,
+  # because the parser reads the level builders by regex and a restructured
+  # pfL3Scene would leave the tool silently auditing nothing at all - the
+  # standard rot of a tool nobody runs. The findings themselves print into the
+  # build log for a human to read; nobody should treat "0 finding(s)" here as a
+  # layout gate.
+  # The .lcb <-> C signature gate: 370 `binds to "c:box2dxt>SYM!cdecl"`
+  # declarations against 370 LC_API definitions, comparing return type, arity
+  # and every parameter type. A mismatch here is not a compile error anywhere -
+  # it surfaces at RUN TIME on an engine, as a marshalling fault in a call that
+  # looks right in both files. Sub-second, and green today.
+  # Do the docs and the shipped handler set still agree? A `cx*` name in the
+  # docs that no handler defines costs a reader a `handler not found`, and every
+  # other gate stays green about it: SPEC.md named `cxSeckeyValidate` where the
+  # shipped handler is `cxSeckeyIsValid`, in the one document that member calls
+  # its source of truth. Holds BOTH directions - a documented name nothing
+  # defines, and a shipped public handler the api-reference never names - with
+  # the stale-excuse ratchet from tools/check-suite-coverage.py, so a rename
+  # cannot leave a permanent exemption behind it.
+  if [ -f "$m/tools/check-doc-handlers.py" ]; then
+    echo "== $m: tools/check-doc-handlers.py =="
+    ( cd "$m" && python3 tools/check-doc-handlers.py --check )
+  fi
+  if [ -f "$m/tools/check-lcb-signatures.py" ]; then
+    echo "== $m: tools/check-lcb-signatures.py =="
+    ( cd "$m" && python3 tools/check-lcb-signatures.py )
+  fi
+  if [ -f "$m/tools/audit-platformer.py" ]; then
+    echo "== $m: tools/audit-platformer.py (advisory; gates only that it still parses) =="
+    ( cd "$m" && python3 tools/audit-platformer.py )
+  fi
   # Committed-binary FRESHNESS (distinct from the manifests below, which prove a
   # committed blob is unchanged but say nothing about whether it still matches
   # the source). This is the automated half of suite rule 5: a shim that gained,
@@ -139,6 +232,23 @@ run_gates() {
   if [ -f "$m/tools/check-binary-freshness.py" ]; then
     echo "== $m: tools/check-binary-freshness.py =="
     ( cd "$m" && python3 tools/check-binary-freshness.py )
+  fi
+  # Committed-extension COMPLETENESS (box2dxt): --check lists src/code/ and
+  # exits non-zero if any of the five platform slots is empty. That is a
+  # different question from the MANIFEST below, which proves the blobs that ARE
+  # there are unchanged and says nothing about a missing one - and a missing
+  # slot is the failure a maintainer meets at run time on exactly the one
+  # platform they do not develop on, as "the extension will not load". Probed by
+  # CAPABILITY rather than by name, which is the one place the *-kat.py block's
+  # probe-by-exact-name trick does not work: six members ship a file with this
+  # exact name and only box2dxt's takes --check (enetxt's takes
+  # --platform-id/--build-dir and would fail on the flag). Probing the flag
+  # keeps the file's preference for lists that cover a new member with no edit
+  # here - a sibling that grows a --check is covered the day it does.
+  if [ -f "$m/tools/package-extension.py" ] && \
+     grep -q '"--check"' "$m/tools/package-extension.py"; then
+    echo "== $m: tools/package-extension.py --check =="
+    ( cd "$m" && python3 tools/package-extension.py --check )
   fi
   # Committed-binary / vendored-source integrity manifests: a committed blob
   # that is unlisted or does not match its recorded SHA256 fails the gate.
@@ -183,6 +293,30 @@ if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
   python3 tools/check-harness-scaffold-drift.py
 fi
+# The three C++ shims carry ONE handle table in three files, and this is the
+# first gate in the suite that compares one member's NATIVE code to another's.
+# The existing native gates are all vertical and single-member; the horizontal
+# "are the N copies still one thing?" question had gates only on the script
+# side. Suite rule 4 - a stale handle is a harmless no-op - IS this header,
+# three times, so a fix landing in one copy leaves the other two members'
+# stale-handle rule quietly weaker, and the symptom arrives on an engine as a
+# touch of a recycled slot. Scoped to the handle table ALONE: the record codecs
+# genuinely diverge per library, and docs/OPEN-DECISIONS.md D-14 stays open over
+# every block this does not name.
+if [ -f tools/check-shim-scaffold-drift.py ]; then
+  echo "== suite: tools/check-shim-scaffold-drift.py =="
+  python3 tools/check-shim-scaffold-drift.py
+fi
+# The committed binaries still match the source that produced them.
+# MANIFEST.sha256, checked per member below, proves a blob is UNCHANGED; it
+# cannot prove the blob is what the current source would BUILD - so an export
+# lost in a MinGW cross-build, or an ABI bump the binary never got, passes it
+# and reaches a user as a bind failure at LOAD time. No compiler and no
+# binutils: stdlib struct walks over ELF and PE.
+if [ -f tools/check-binary-freshness.py ]; then
+  echo "== suite: tools/check-binary-freshness.py =="
+  python3 tools/check-binary-freshness.py
+fi
 if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="
   python3 tools/check-launcher-registry.py
@@ -202,12 +336,61 @@ done
 # member's checker covers it: the copies are byte-identical and the drift gate
 # above already failed the build if they were not (this block used to run all
 # seven copies in turn, back when the lineages disagreed about `switch`).
+#
+# WIDENED 2026-08-17, and the hole it closed was the worst-placed one in the
+# tree. The member loop walks only member directories and this list read
+# `tests/*` only, so the three suite-level scripts - start-here.livecodescript,
+# tools/ui-kit.livecodescript and tools/harness-scaffold.livecodescript - were
+# read by NO static gate at all. Rule 5 says the gate is law for script, and
+# two of those three are CARRIED MASTERS, which is where a defect is worst: the
+# kit is copied verbatim into 15 demos and the scaffold into 5 harnesses, so one
+# bad line in a master is one bad line in fifteen pasteable files - and the
+# drift gates, doing exactly their job, would hold every copy faithfully
+# identical to it.
 shopt -s nullglob
-ROOT_SCRIPTS=(tests/*.livecodescript tests/*.lcb)
+ROOT_SCRIPTS=(start-here.livecodescript
+              tests/*.livecodescript tests/*.lcb
+              tools/*.livecodescript tools/*.lcb)
 shopt -u nullglob
-if [ ${#ROOT_SCRIPTS[@]} -gt 0 ]; then
-  echo "== suite: tests/ under the unified static gate (sodiumxt's copy) =="
-  python3 sodiumxt/tools/check-livecodescript.py "${ROOT_SCRIPTS[@]}"
+
+# ONE documented exemption, and it is checked rather than assumed.
+# tools/harness-scaffold.livecodescript is a TEMPLATE WITH HOLES, not a
+# runnable stack: its window half reads kStWidth/kStHeight/kStTitle, which the
+# block's own header instructs each ADOPTER to declare ABOVE the carried region
+# (OXT resolves constants by lexical position, so they cannot live in the
+# master). Run through the checker it reports three undeclared constants -
+# correctly, for a file nobody pastes on its own, and unfixably, because the
+# fix is to declare them in the master and the master is carried byte-identical
+# into five harnesses that already declare them. tools/check-stack-size.py's
+# SKIP set reached the identical conclusion about the identical three names and
+# took the identical route, so this is the tree's existing answer to this
+# question and not a new one. The real constants ARE gated: every adopter
+# declares them and every adopter goes through its own member's checker.
+#
+# The exemption asserts its input still exists, the way box2dxt's fold
+# mechanisms do: a renamed or deleted master must fail the build rather than
+# leave a stale excuse behind that quietly exempts nothing.
+SCRIPT_GATE_EXEMPT=(tools/harness-scaffold.livecodescript)
+for x in "${SCRIPT_GATE_EXEMPT[@]}"; do
+  if [ ! -f "$x" ]; then
+    echo "build-all: static-gate exemption names $x, which does not exist -" \
+         "remove the exemption or restore the file"; exit 1
+  fi
+done
+GATED_SCRIPTS=()
+# ${arr[@]+"${arr[@]}"}: the set -u-safe expansion. Plain "${arr[@]}" on an
+# empty array is an unbound-variable error under `set -u`, and the "${arr[@]:-}"
+# spelling quietly yields one EMPTY element - which the checker would then
+# accept and silently drop, reporting OK over a shorter list than intended.
+for s in ${ROOT_SCRIPTS[@]+"${ROOT_SCRIPTS[@]}"}; do
+  skip=0
+  for x in "${SCRIPT_GATE_EXEMPT[@]}"; do [ "$s" = "$x" ] && skip=1; done
+  [ "$skip" = 1 ] || GATED_SCRIPTS+=("$s")
+done
+
+if [ ${#GATED_SCRIPTS[@]} -gt 0 ]; then
+  echo "== suite: root + tests/ + tools/ under the unified static gate (sodiumxt's copy) =="
+  python3 sodiumxt/tools/check-livecodescript.py "${GATED_SCRIPTS[@]}"
 fi
 
 # --- suite-level: every handler CALLED across members must actually EXIST ---
@@ -216,6 +399,10 @@ fi
 # headless. This is the gate that would have caught the shipped example calling
 # sxHashKey (a handler that never existed). It is repo-wide, so it runs once
 # rather than per member.
+if [ -f tools/test-handler-calls.py ]; then
+  echo "== suite: tools/test-handler-calls.py =="
+  python3 tools/test-handler-calls.py
+fi
 if [ -f tools/check-handler-calls.py ]; then
   echo "== suite: tools/check-handler-calls.py =="
   python3 tools/check-handler-calls.py
@@ -237,6 +424,15 @@ fi
 # would have made: no duplicate handlers, no undeclared constant (which
 # LiveCodeScript turns into the literal text of its own name rather than an
 # error), the core's entry points present, and the async cuts still cut.
+# tests/preflight.livecodescript is the one-paste "can this machine run the
+# pass at all?" stack, and its six expected-ABI numbers are READ from the C
+# shims - so it goes stale at the next ABI bump exactly as the suite harness
+# goes stale on a test change. --check re-derives them and re-proves the three
+# invariants the generated stack depends on.
+if [ -f tools/build-preflight.py ]; then
+  echo "== suite: tools/build-preflight.py --check =="
+  python3 tools/build-preflight.py --check
+fi
 if [ -f tools/check-suite-selftest.py ]; then
   echo "== suite: tools/check-suite-selftest.py =="
   python3 tools/check-suite-selftest.py
@@ -251,6 +447,17 @@ if [ -f tools/check-suite-coverage.py ]; then
   echo "== suite: tools/check-suite-coverage.py =="
   python3 tools/check-suite-coverage.py --check
 fi
+# tools/install-release-binaries.py is the one piece of code standing between a
+# freshly built artifact and a committed binary, and until now NOTHING ran it
+# except release-binaries.yml - the gates were silent about the tool whose whole
+# job is refusing bad libraries. --selftest drives main() over throwaway bundles
+# and asserts each leg: member routing, filename, architecture, the thin-Mach-O
+# refusal, and both manifest legs against a temporary ROOT. Nothing in the tree
+# is written.
+if [ -f tools/install-release-binaries.py ]; then
+  echo "== suite: tools/install-release-binaries.py --selftest =="
+  python3 tools/install-release-binaries.py --selftest
+fi
 
 if [ "$GATES_ONLY" = 1 ]; then
   echo "All static gates passed."
@@ -260,14 +467,20 @@ fi
 # --- native builds + tests ---
 for m in "${CMAKE_MEMBERS[@]}"; do
   [ -d "$m" ] || continue
+  if [ -n "$SUITE_ONLY_MEMBERS" ]; then
+    case " $SUITE_ONLY_MEMBERS " in
+      *" $m "*) ;;
+      *) echo "== $m: SKIPPED (SUITE_ONLY_MEMBERS=$SUITE_ONLY_MEMBERS) =="; continue ;;
+    esac
+  fi
   # sodiumxt -> SODIUMXT_BUILD_TESTS etc.: without this flag no member
   # registers any ctest test, and ctest exits 0 on an empty test set, so the
   # old plain-Release walk "passed" while testing nothing. --no-tests=error
   # keeps that from ever happening silently again.
   tflag="$(printf '%s' "$m" | tr '[:lower:]' '[:upper:]')_BUILD_TESTS"
-  echo "== $m: cmake configure + build + ctest =="
+  echo "== $m: cmake configure + build + ctest ($BUILD_JOBS job(s)) =="
   cmake -S "$m" -B "$m/build" -DCMAKE_BUILD_TYPE=Release "-D${tflag}=ON"
-  cmake --build "$m/build" --parallel
+  cmake --build "$m/build" --parallel "$BUILD_JOBS"
   ctest --test-dir "$m/build" --output-on-failure --no-tests=error || {
     echo "$m: ctest failed (or no tests were registered)"; exit 1;
   }
@@ -276,7 +489,9 @@ done
 # CoinXT: the asan variant compiles the shim + vendored sources and runs the
 # ASan/UBSan self-test, entirely in a temp dir (the plain `lib` variant would
 # drop native/libcoinxt.so into the working tree, so the walker avoids it).
-if [ -f coinxt/native/build.sh ]; then
+if [ -n "$SUITE_ONLY_MEMBERS" ] && case " $SUITE_ONLY_MEMBERS " in *" coinxt "*) false;; *) true;; esac; then
+  echo "== coinxt: SKIPPED (SUITE_ONLY_MEMBERS=$SUITE_ONLY_MEMBERS) =="
+elif [ -f coinxt/native/build.sh ]; then
   echo "== coinxt: native/build.sh asan (build + self-test) =="
   ( cd coinxt && sh native/build.sh asan )
 else

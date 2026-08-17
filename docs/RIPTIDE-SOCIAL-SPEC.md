@@ -736,20 +736,44 @@ here.
 
 ## 12. Open decisions for the owner
 
+> **ANNOTATED 2026-08-17.** Four of these five were settled BY CONSTRUCTION while
+> the phases were built, and this section went on presenting all five as open —
+> so an owner reading it was invited to decide four things that were already
+> decided in code. Each annotation below names the artefact, so the claim can be
+> checked rather than believed. Only decision 4 is genuinely open; it is brief
+> **D-06** in `docs/OPEN-DECISIONS.md`.
+
 1. **One stack or a stack set?** The five rails are separable; a single stack is
    simplest to install, a set (feed / messenger / anon) mirrors how people
    actually use the parts. Recommendation: one stack, rails behind tabs, so the
    shared dispatcher and keyring live in one script.
+   **As built: ONE stack** — `riptide/examples/riptide-social.livecodescript` is
+   the only demo stack in the member, rails behind tabs, one dispatcher.
 2. **Anon persona count.** Subkey `100+n` allows many; the UI/threat story is
    simpler with exactly one. Recommendation: ship one, keep the derivation
    ready for more.
+   **As built: exactly as recommended** — the library takes a persona index
+   (`rsAnonSeed`/`rsAnonHandle`/`rsAnonOnion`, subkey `100+n`, with the sealed-DM
+   kx seed separately at `200+n`), and the demo passes literal `0` at every one
+   of its call sites. Many are derivable; one ships.
 3. **Prekey rotation.** One-time prekeys (X3DH-style) versus a single long-term
    X25519 prekey. Recommendation: long-term prekey for v1 (simpler, in the head),
    rotation as a later spec.
+   **As built: the long-term prekey** — `rsBuildPrekey` / `rsParsePrekey` /
+   `rsVerifyPrekey`, advertised in the head; the word "rotation" appears nowhere
+   in `riptide/src/riptide.livecodescript`.
 4. **Feed retention.** BEP44 items expire unless republished; how aggressively
    does a follower re-seed a followee's head to keep it alive? Recommendation: a
    follower republishes heads it follows on the DHT-channels demo's cadence.
+   **STILL OPEN — the one decision here the build did not make.** As built only
+   the OWN head republishes, on post; no follower-republish code exists. It
+   spends followers' resources to keep other people's feeds alive, which is a
+   network-citizenship call. Brief: **D-06**.
 5. **Which demo to build first.** This spec's phase 1–2 (identity + public feed)
    is the smallest end-to-end slice that shows the thesis. Recommendation: build
    through phase 4 (DMs) as the first shippable milestone; it exercises four of
    the five extensions and needs no tor daemon.
+   **As built: overtaken** — the build went past the recommended phase-4
+   milestone and through phase 7, so the question no longer has an answer to
+   give. Kept rather than struck, because the recommendation was followed and
+   then exceeded, which is a different thing from being ignored.

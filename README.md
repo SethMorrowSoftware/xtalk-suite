@@ -63,7 +63,7 @@ authority; this is the summary:
 | torrentxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Mature; broad ABI. Session lifecycle and the signed-put path observed on-engine 2026-08-08; the full 96-check member selftest ran green on-engine 2026-08-10 (folded), the v9-v11 surface included. Two-machine rp1/DHT behaviour still open |
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). The standalone async loopback - the live `enHostStatus` pair and the `enPeerStatus` statistics included - ran green 2026-08-13, so nothing in its selftest is static any more; only the two-machine LAN chat stays open |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have been called on-engine (2026-08-10, folded sync half). The standalone **async loopback** ran green 2026-08-15 - real SDP carrying ICE candidates, correct offer/answer roles, gathering complete on both peers, a selected candidate pair, text and binary (NUL included) byte-for-byte, `dcCreateChannelEx` label/protocol round-trip, and a cap-sized send - so nothing in its selftest is static any more; only browser interop and a two-network call stay open |
-| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (now 43 checks) ran green on-engine 2026-08-12, folded. Mode B (launching tor) still unexercised |
+| onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (43 checks on the 2026-08-12 engine run; section 10 added 18 more, so it attempts 41-61 depending on what is installed) ran green on-engine 2026-08-12, folded. Mode B (launching tor) still unexercised |
 | box2dxt | yes | **all 5 platforms** + `MANIFEST.sha256` (added in the fold) | The family ancestor, mature and feature-frozen upstream. The 2026-08-14 fold replaced its pre-unification checker with the suite's (first contact found ~1550 violations: mostly the pre-ASCII character set, plus 29 real `repeat with ... step` engine traps in the platformer, all fixed). **The folded `stSelfTest` has run on a real engine FIVE times 2026-08-16/17** (346/11 -> 348/9 -> 353/4 -> 365/4 -> 366/3): the engine corrected blind first-contact coverage tests with its own numbers and surfaced FOUR real Kit defects nothing headless could reach - sprite entry points throwing on an empty control ref (no-op guards across the whole sprite surface), event-buffer readers answering STALE controls after `b2kEventsReset` (count-guarded), the public filter wrappers silently no-opping (Box2D v3.1's uint64 default mask reads back as 2^64-1, above the shim's 2^53 guard, so the round-tripped `b2SetShapeFilter` call was refused whole - the clamp existed in the player's drop-through path all along and is now in all three wrappers), and - run 5's instrumented find - the player's duck reshape never physically shrinking the capsule (OXT does not resize a polygon graphic by a height-set, so the crawl wedged on the ceiling's face at full height while the halfH bookkeeping insisted the pill was short; `b2kReshape` now takes explicit dims and the duck/stand rebuilds pass the canonical capsule dims captured at attach). All three remaining reds trace to that one defect; the next paste is expected fully green. The games and the raw `b2*` layer still owe their own re-pass |
 | coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All five phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. **Phase 5 (transactions) is ENGINE-PASSED (2026-08-12, Windows x64, 230/230)**: Bitcoin legacy + BIP-143 SegWit and Ethereum EIP-155 + EIP-1559, model-verified against the BIP-143/EIP-155 published examples, driven through the real `.livecodescript` by `check-script-vectors.py` (251 checks) — which caught and fixed a would-be-red engine defect (`cxBtcTxEncode` refused the reference tx over a trailing-empty scriptSig) — and then confirmed on a real engine, the BIP-143 signed tx byte for byte. The independent-decoder bar is met (2026-08-12, extended 2026-08-13 to all four tx families: python-bitcointx accepts fresh legacy + segwit spends under consensus rules, eth-account recovers the exact sender from fresh EIP-155 + EIP-1559 txs); a live testnet broadcast is the one bar left before "broadcastable" **ABI 6 (2026-08-16)** adds BIP-340 Schnorr and the BIP-341 tweak on a second vendored library (upstream bitcoin-core/secp256k1, hash-verified against its pin); the new surface **ran green on a real engine 2026-08-16**, hours after it shipped - all 19 BIP-340 vectors and all 14 BIP-341 wallet vectors through the binding, on the day's first paste. The Windows DLLs still carry static checks only until the next release dispatch |
 
@@ -163,7 +163,7 @@ own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — 
 member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
-whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (8, all
+whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (10 groups, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
 and datachannelxt, box2dxt's `stSelfTest` (50 handlers, ~372 assertions driving
@@ -211,18 +211,28 @@ each member's own vector gate.
 Two layers are deliberately outside that ratchet, and each says so beside the
 tool's member list with the numbers behind the call:
 
-- **box2dxt's raw `b2*` extension binding** — 376 public handlers over 374
-  foreign declarations, of which **245 are named by no script anywhere in that
-  member**. The b2k Kit above it is the game-facing API and is held at 313/313;
-  the raw layer's cover today is `box2dxt/tests/smoke_test.c` under ASan/UBSan.
-- **holde-em's `he*` surface** — 379 public handlers in ONE file that is the
-  game *and* its harness. A row would read **0/379** as the gate is written and
-  **379/379** the moment the scan were taught the fold's prefix — permanently,
-  because the folded section is the game and the game names its own API. Only
-  **163/379** are named by a test body, which is the honest number and not one
-  this gate can compute. That is the same effect the embedded-span cut exists to
-  prevent, arriving where there is nothing to cut; seven KAT mirrors plus an
-  independent-reference fuzz are what back that layer instead.
+- **box2dxt's raw `b2*` extension binding** — 376 public handlers over 373
+  foreign declarations (370 of them binding into the member's own library; the
+  "374" quoted here until 2026-08-17 was a `grep -c` that counted one line of
+  prose), of which **244 are named by no script anywhere in that
+  member**. The b2k Kit above it is the game-facing API and is held at 313/313.
+  The raw layer's cover is `box2dxt/tests/smoke_test.c`, and since 2026-08-17
+  that cover is *measured* rather than asserted: gcov puts it at **194 of the
+  370 LC_API exports**, up from 53 the same morning, running in `build-all.sh`
+  and under ASan/UBSan in `native-box2dxt.yml`. `check-lcb-signatures.py` holds
+  the 370 binds against the 370 definitions on every push.
+- **holde-em's `he*` surface** — **measured 2026-08-17.** It is 380 public
+  handlers in ONE file that is the game *and* its harness — **329 game + 51
+  harness**, not the 379 quoted before. The gate splits the file at its selftest
+  boundary and asks its question across the cut, which is the same move as the
+  embedded-span cut done with a boundary line instead of a sentinel: **120 of
+  329 game handlers are exercised, 209 are named by nothing that runs** (20
+  live-transport, 9 engine-media, 41 host-window, 139 simply untested). The row
+  is ADVISORY — it prints the number without failing the build — but everything
+  that would make that number a lie IS enforced, including a denominator floor
+  that catches a comment-parse fault which otherwise turned the row green at
+  66/260. Seven KAT mirrors plus an independent-reference fuzz still back the
+  layer; they are no longer the only thing that does.
 
 Both are open items, not closed ones.
 

@@ -65,7 +65,7 @@ Needs: an open DM conversation (phase 4 flow), datachannelxt on both.
    fail visibly (STUN only, no TURN relay, by design - spec section 6);
    the call dies on Lock or close.
 
-## Phase 6 - the LAN mesh (never run; welcome + sync payload + media handoff)
+## Phase 6 - the LAN mesh (never run; welcome + sync payload + media handoff + the three-device relay)
 
 Needs: BOTH machines unlocked with the SAME master (see the table), same
 LAN, UDP 27099 allowed.
@@ -114,19 +114,55 @@ LAN, UDP 27099 allowed.
    discovery is the DHT, so a LAN with no internet route may not find
    its swarm even though both devices sit on it - report that as the
    recorded honest limit, not a defect.
-8. The stranger test (the security half): on B, Lock, unlock a DIFFERENT
+8. THE THIRD-DEVICE STEP (added 2026-08-17; this runbook structurally
+   could not reach the relay before it, and a real defect was hiding
+   there). Everything above uses ONE non-host device, so every record B
+   applies arrives from A over B's only link. The mesh is hub-and-spoke:
+   the host RELAYS each verified record to its other admitted peers, so
+   a joiner's view of a THIRD device arrives over the SAME peer id as
+   the host's own records. Bring up C on the same master and the same
+   LAN, give it a THIRD distinct device name, and `Join` A's IP (C joins
+   the HOST, never B - joiners have no link to each other).
+   - On A: the device list must show BOTH B and C, and `Send media...`
+     must report `to 2 admitted device(s)`.
+   - On B: the device list must show A AND C, two rows, each with its
+     own `[typing]` / `[quiet]` marker. One row, or C's presence
+     replacing A's row, is the failure this step exists to catch.
+   - Type on C. B must log `draft from <C's name> seq N applied` and
+     render that draft labeled with C's NAME - not with A's, and not
+     replacing A's draft block. Then type on A and C at the same time:
+     both drafts must converge independently on B. The per-device seq
+     counters seed from the clock on each device separately, so
+     interleaved records under one counter would silently drop most of
+     them (the drop path is a deliberate silent exit and logs nothing,
+     which is exactly why this must be watched in the UI and not in the
+     log).
+   - Media: offer a file from C. B must show the offer attributed to
+     C's name, and A must relay it rather than swallow it.
+   - Then close C (no `Leave`): within about 5 s B must mark C
+     `[quiet]` while A's row stays live. Now `Leave` on A: B loses ALL
+     rows, C's included, which is correct - B had no link but the host.
+   If a third machine is not available, a second OXT instance on B's
+   machine should serve (the same key file and passphrase, a DIFFERENT
+   device name; only the HOST binds UDP 27099, so a second joiner needs
+   no port). That substitution is untried - report it if it does not
+   work rather than assuming the mesh is at fault.
+9. The stranger test (the security half): on B, Lock, unlock a DIFFERENT
    identity, Join again. A must log `a peer FAILED admission (not your
    device)` and drop it. Nothing should appear in either device list,
    and NO draft may cross. If any record does arrive from an unadmitted
    or foreign peer, the log line to expect (and report) is
    `stranger record refused` - the record-level refusal the library
    enforces on top of admission.
-9. Timing note: the admission is a first-message handshake, so a
-   same-second join is normal; a hang at `connecting to <ip>` is almost
-   always the firewall or the wrong IP.
-10. Honest limits, said in the UI too: sync records are authenticated,
+10. Timing note: the admission is a first-message handshake, so a
+    same-second join is normal; a hang at `connecting to <ip>` is almost
+    always the firewall or the wrong IP.
+11. Honest limits, said in the UI too: sync records are authenticated,
     not encrypted - the LAN carries draft plaintext - and offered media
-    BYTES ride the ordinary torrent rail (swarm peers see your IP).
+    BYTES ride the ordinary torrent rail (swarm peers see your IP). A
+    joiner keeps a row for a device that leaves the mesh until its
+    presence goes `[quiet]`: there is no leave record, and a joiner
+    hears nothing when a device drops off the HOST's link.
 
 ## Phase 7 - the anon persona (needs tor; single machine is enough)
 
@@ -176,6 +212,24 @@ wiring), verified statically; this pass is what flips its label.
   on A, fetch on B, and confirm playback starts while the progress line
   is visibly below 100%. The 2026-08-15 pass proved the path; this proves
   the "mid-download" word.
+- The DM clean close (new 2026-08-17, never run): with a conversation
+  open both ways, `Lock` on A. B must print
+  `-- <A's short handle> closed the conversation --` and stop showing the
+  channel as open. Before this the far side simply went quiet and kept
+  its `channel open with ...` line forever, which reads as a hang rather
+  than a hang-up. The signal is the secretstream FINAL tag, so it is
+  one-shot: A cannot send again on that stream, which is correct - a
+  re-dial mints fresh streams. Report it if B shows nothing, and report
+  separately if B shows a stray chat line (the close rides a filler body
+  that must never be rendered).
+- The tick tiers (new 2026-08-17, never run): the pump now runs at ~33 ms
+  while a dc call or an enet mesh is live and ~250 ms otherwise, which is
+  the cadence the spec's section 10.1 always specified and NOT what
+  phases 5 and 6 were ever driven at. Judge the call and the typing
+  indicators for feel at that cadence, and watch CPU on the slower of the
+  two machines while a call and a mesh are up together - the UI painters
+  are deliberately still gated to 4 Hz, so a busy CPU with a smooth
+  window means the transport tier, not the painters.
 - The suite selftest paste (`tests/suite-selftest.livecodescript`) on any
   machine whose extensions changed.
 

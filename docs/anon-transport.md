@@ -133,13 +133,24 @@ the sender's window must stay open: the service, and the transfer, live in it.
 
 ## The Channels layer
 
-The same substrate is designed to give the DHT-Channels demo per-channel
-anonymous feeds and file delivery. That layer is **being built in a parallel
-workstream**: for what it is, see the plan's section 6; for what is built
-versus pending at any moment, see the plan's **section 10** (the phased
-roadmap - Channels is Phases 2 and 3, each with an explicit two-machine done
-gate). This page deliberately does not restate that status: a pointer cannot
-go stale the way a restatement can.
+The same substrate gives the DHT-Channels demo per-channel anonymous feeds and
+file delivery. That layer is **BUILT** (2026-08-15): per-channel onion
+services, the signed anon feed, the BTXC/BTXF request layer and onion file
+delivery all ship, and like everything in this tree that no engine has run it
+is **verified statically; needs an OXT + live-Tor pass**. Its two-machine done
+gates are the plan's #32 and #33.
+
+For what the layer IS, see the plan's section 6; for what is built versus
+pending at any moment, see the plan's **section 10**, whose Phase 2 and Phase 3
+entries carry dated as-built blockquotes.
+
+> **Why this paragraph is dated rather than evergreen.** It used to say the
+> layer was "being built in a parallel workstream", and justified carrying no
+> status with "a pointer cannot go stale the way a restatement can" - in the
+> sentence immediately after a restatement, which then went stale for two days.
+> The principle is right and the execution was not: the pointer to section 10 is
+> what this page relies on, and any status sentence beside it carries a date so
+> a reader can see how old it is.
 
 ## What would change this page
 

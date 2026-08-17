@@ -229,7 +229,20 @@ machinery but never leaves the host.
 8. **`dcPoll` is the ONE buffer call whose return is a COUNT, not bytes** (same
    as TorrentXT's `btPoll`); the walker reads the leading u16 and each entry's
    bodyLen, so the unused buffer tail is never touched.
-9. **LCB idioms do not exist in LiveCode Script** (cost an OXT compile error in
+9. **`ZStringUTF8` MEASURES WITH `strlen`, so a NUL is a terminator, not a
+   character.** `dcSendText` takes a String and the foreign decl passes it as
+   `ZStringUTF8`; `dcx_send_text` then does `std::strlen(text)`. An embedded
+   NUL therefore truncates the message AND shrinks what the budget check
+   measures - and the shim cannot detect either, because by the time it holds
+   a `const char *` the evidence is gone. The refusal has to live in the
+   `.lcb`, which still has a length: `dcSendText` encodes to UTF-8 and rejects
+   a zero byte with `kErrInvalidArg` (-3) before the `unsafe` block, clearing
+   the shim's last-error rather than letting `dcLastError` answer for an
+   unrelated failure. Anything that can carry a NUL is BINARY: send it with
+   `dcSendData`, whose length crosses explicitly (and which delivered an
+   embedded NUL byte-for-byte on the 2026-08-15 pass). Added 2026-08-17;
+   verified statically, needs an OXT pass.
+10. **LCB idioms do not exist in LiveCode Script** (cost an OXT compile error in
    the selftest): `{}` is valid LCB but NOT LCS (no array literals at all); a
    function result cannot be subscripted in LCS (`f(x)["k"]` - put it in a
    local first); a bare `is empty` on a whole ARRAY is vacuously true (arrays

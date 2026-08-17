@@ -85,39 +85,71 @@ def strip_noise(text):
     (/* ... */) are legal LCS and holde-em keeps its whole header changelog in
     one - until the 2026-08-15 fold this function only knew line comments, so
     prose in a block comment leaked into the candidate set.
+
+    ONE PASS, LEFT TO RIGHT, AND THAT IS THE WHOLE POINT (fixed 2026-08-17).
+    This used to run its four rules in SEPARATE passes - block comments first,
+    then line comments, then string literals - and the order was wrong in both
+    directions at once. A `--` line comment that merely MENTIONS a path like
+    `/_qs/*` opened a phantom block comment, because block scanning ran before
+    line-comment stripping; and an HTTP header string carrying
+    `Content-Range: bytes */` CLOSED one, because string literals were removed
+    last of all. In nocloud's HTTP host both happened: two phantom blocks
+    swallowed 2,476 of 7,541 lines - 33% of the file - hiding 96 handler
+    DEFINITIONS from the "does this name exist?" set that is this gate's whole
+    reason to exist, hiding every call in that third of the file, and (because
+    check_file numbers the lines it is handed) shifting every reported line
+    number after the first phantom open by up to 2,476. The gate printed OK
+    throughout. A scanner that decides what is code must therefore respect all
+    four constructs SIMULTANEOUSLY, which means one character-wise walk that
+    knows which construct it is currently inside - not four passes that each
+    assume the others have not run yet.
+
+    Every line in yields exactly one line out, so line numbers survive the
+    strip; the old version dropped lines and silently de-synchronised them.
     """
     out = []
     in_block = False
     for line in text.splitlines():
-        if in_block:
-            idx = line.find("*/")
-            if idx == -1:
+        buf = []
+        i, n = 0, len(line)
+        in_str = False
+        while i < n:
+            if in_block:
+                # Inside /* ... */ nothing else has meaning - not a quote, not
+                # a `--`. Only the terminator ends it.
+                if line.startswith("*/", i):
+                    in_block = False
+                    i += 2
+                else:
+                    i += 1
                 continue
-            line = line[idx + 2:]
-            in_block = False
-        # a block comment may open (and close) mid-line, repeatedly
-        while True:
-            idx = line.find("/*")
-            if idx == -1:
-                break
-            end = line.find("*/", idx + 2)
-            if end == -1:
-                line = line[:idx]
+            ch = line[i]
+            if in_str:
+                # Inside a literal nothing else has meaning either. LCS has no
+                # escape syntax, so the next quote always closes.
+                if ch == '"':
+                    in_str = False
+                    buf.append('"')
+                i += 1
+                continue
+            if line.startswith("/*", i):
                 in_block = True
+                i += 2
+                continue
+            if line.startswith("--", i) or line.startswith("//", i):
                 break
-            line = line[:idx] + line[end + 2:]
-        # LiveCodeScript / LCB line comments: -- and #, plus // in .lcb.
-        for marker in ("--", "//"):
-            idx = line.find(marker)
-            if idx != -1:
-                line = line[:idx]
-        stripped = line.lstrip()
-        if stripped.startswith("#"):
-            continue
-        # Drop double-quoted string literals (LCS has no escape syntax, so a
-        # naive pairwise removal is exactly right here).
-        line = re.sub(r'"[^"]*"', '""', line)
-        out.append(line)
+            # `#` is only a comment where the line's code is still empty - the
+            # conservative rule this gate has always used.
+            if ch == "#" and not "".join(buf).strip():
+                break
+            if ch == '"':
+                in_str = True
+                buf.append('"')
+                i += 1
+                continue
+            buf.append(ch)
+            i += 1
+        out.append("".join(buf))
     return "\n".join(out)
 
 

@@ -43,7 +43,12 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   from native-box2dxt.yml, or a move to manylinux_2_28 that would raise
 >   its glibc floor from 2.17 to 2.28 (a real portability regression, the
 >   owner's call). `tools/install-release-binaries.py` would also need to
->   learn box2dxt's package layout. Do this as a deliberate release-lane
+>   learn box2dxt's package layout. **(SUPERSEDED 2026-08-17: that half
+>   landed, and there was never a layout to learn - box2dxt's `src/code` is
+>   the identical family layout to sodiumxt's and torrentxt's, so the
+>   installer needed ONE token, verification-only and inert until a lane
+>   exists, pinned by a committed `--selftest`. The WORKFLOW half is what
+>   remains, and it is the half that is genuinely the owner's.)** Do this as a deliberate release-lane
 >   pass, not a drive-by.
 > - The examples are registered EXEMPT in the suite UI-kit gate: they are
 >   games drawn by this member's own embedded b2k Kit (whose copies have
@@ -123,6 +128,21 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   `tools/check-suite-coverage.py` beside the row. That layer's cover today is
 >   `tests/smoke_test.c` under ASan/UBSan; a script-level ratchet for it is an
 >   OPEN item.
+>   **MEASURED AND HALVED 2026-08-17.** "Covered by the smoke test" had never
+>   been a number. It is now, from gcov rather than from a grep: of the shim's
+>   **370 `LC_API` exports, 53 were ever executed** by that harness - and the
+>   grep answer was 60, because the file's `extern` block NAMED six exports no
+>   line ever called (a declaration is not a call; the suite's shipped-is-not-run
+>   lesson one level down). The argument for leaving this layer alone is about
+>   SCRIPT assertions with no engine to run them on, and it does not transfer to
+>   a C harness that compiles and runs in the build, so the sweep was written:
+>   the whole `b2lc_body_*` and `b2lc_shape_*` surface plus the four readback
+>   registers they fill (AABB, mass data, the polygon builder, the one-shot
+>   shape def), 134 exports, every one green under ASan/UBSan. **194 of 370
+>   executed**; the 176 still dark are the world, joint, query, mouse, chain and
+>   contact/sensor-register families, and they are the next slice. Those
+>   assertions are deliberately shallow, exactly like the Kit's v23 coverage
+>   sections, and say so in their banner.
 > - None of this is runtime-verifiable here: **verified statically; needs an
 >   OXT pass**, and the v23 sections are first-contact code, so expect the
 >   usual arithmetic slips on the first run.
@@ -231,6 +251,24 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > the stand-up shift and headroom ray use the stored dims too. Expected next
 > paste: **369/0 -- box2dxt fully green** -- if the reshape fix holds;
 > holde-em steady at 507/0.
+> **v29 (2026-08-17) adds five assertions to that expectation, for a Kit defect
+> the reshape work walked straight past: 374/0.** `b2kReshape` resetting the
+> shape's material AND its collision FILTER is documented contract in two
+> places, and a hand-written reshape gets to re-apply both - but the duck fires
+> from INSIDE `b2kPlayerTick`, so the game has no hook there, and the two
+> internal callers honoured exactly half of it. They re-set friction and bounce
+> from the day the crawl shipped and dropped the filter, which returned a
+> layered player to the default category / collide-with-everything on every
+> duck and every stand-up (including the forced one in `b2kPlayerRespawn`).
+> Fixed by capturing category/mask/group off the old shape and writing them back
+> beside the friction/bounce restores, with the same 2^53 clamp
+> `b2kPlayerDropStart` carries and a skip when the readback finds no shape (a
+> zero category would stamp a collides-with-nothing filter onto the new one).
+> `stTestDuckFilter` proves it as ONE fall over three obstacles, so the resting y
+> names which of the three fields was lost rather than just saying no. Run 5
+> could not have distinguished this: its duck failures were all about the
+> capsule's HEIGHT, and a filter that resets silently keeps every halfH reading
+> correct.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
@@ -340,6 +378,21 @@ CMake fetches Box2D v3.1.0 automatically (pinned `GIT_TAG v3.1.0`). See `docs/bu
 
 **Sync the embedded Kit** (run after every Kit edit): `python3 tools/sync-embedded-kit.py`
 
+**Check the FFI signatures** (run after every shim or `.lcb` edit):
+`python3 tools/check-lcb-signatures.py`. It holds all 370 `binds to
+"c:box2dxt>...!cdecl"` declarations to the `LC_API` definitions they name -
+return type, arity, per-parameter type - plus a bind with no definition and a
+definition with no bind. Nothing else can catch that drift: the engine resolves
+the symbol by NAME and then calls it with whatever the declaration says, so a
+`CInt` promised where the shim returns `double` neither fails to load nor
+raises; it reads a garbage register and hands script a plausible number. The
+regex is anchored on the `c:box2dxt>` token, so the three POSIX binds in the
+loader assist drop out without an exemption list. It is green today, and each of
+its five refusal classes is mutation-tested (drive the gate the way the build
+will, not the way its docstring reads). **Not yet wired into
+`tools/build-all.sh`'s gate set** - that file was owned by another change in the
+same wave; adding the line is the next step.
+
 **Static verification for the script layer.** OXT/LiveCode is a GUI runtime — there is **no
 headless way to compile or run the `.livecodescript` here**. The user compiles and tests in OXT.
 Your job is to catch what's statically catchable *before* they do. One command bundles the gates
@@ -359,7 +412,7 @@ failure. Run it after **every** `.livecodescript` edit.
 pass" and let the user confirm.
 
 **The self-test harness** (`examples/box2dxt-selftest.livecodescript`) is the runtime safety net:
-~372 deterministic assertions across 50 test handlers (currently **v23**) driving the real Kit
+377 deterministic assertions across 51 test handlers (currently **v29**) driving the real Kit
 (paused world + `b2kStepOnce` hand-stepping + `b2kInputInject` scripted keys). It is in TWO
 halves and the file says so where they meet: the first 37 handlers are BEHAVIOUR tests, each
 one a lesson learned on real hardware; the 13 added in v23 are **Kit API coverage** - broad,
@@ -672,7 +725,9 @@ and `deselectPart` restores them, so highlighting never corrupts a part's real c
   getters return 0, actions no-op). Never let a bad handle reach Box2D.
 - **Adding a raw handler:** `b2lc_*` in `src/box2d_lc.c` (validate inputs) → `foreign handler` +
   public `b2*` wrapper in `src/box2dxt.lcb` → bump `LC_ABI_VERSION` if the ABI changed → add a
-  `tests/smoke_test.c` assertion. Keep the shim warning-clean (`-Wall -Wextra`, `/W3` on MSVC).
+  `tests/smoke_test.c` assertion → `python3 tools/check-lcb-signatures.py` (it fails on an
+  export nothing binds, so a wrapper you meant to write cannot be quietly skipped). Keep the
+  shim warning-clean (`-Wall -Wextra`, `/W3` on MSVC).
 - **Match the surrounding style** — comment density, naming, idiom. This codebase comments the
   *why*, densely; mirror that.
 

@@ -8,11 +8,16 @@ runtime behaviours that the two gates (`tools/check-livecodescript.py`,
 Covers the HTTP-host work landed across the recent PRs: custom `.qsroutes.json` routes (bodies,
 templating, file-mapped, redirects, and — since 2026-08-16 — `:param` path patterns), the
 `/_qs/*` observability endpoints, the response-header set, `OPTIONS`/`Allow`/`405`, the
-editor-login throttle, and CORS preflight — plus the load-bearing invariants those ride on
-(self-building UI, fail-closed extensions, clean shutdown).
+editor-login throttle, CORS preflight, and — since 2026-08-17 — the two `HEAD` fixes (a `HEAD`
+now reaches the `GET` route instead of falling through to the SPA fallback, and the Tor twin
+stopped sending a body with it) plus the reserved-namespace static backstop — all of that on top
+of the load-bearing invariants those ride on (self-building UI, fail-closed extensions, clean
+shutdown), and the bundled webapp's own browser-only claims (service worker, Range seeking,
+`pushState` routing) in section 7.
 
-**How to use it:** work top-to-bottom, mark each `- [ ]` as pass/fail, and note anything odd
-inline. Each item is *action -> expected result*. Anything you can't reach is fine — just say so.
+**How to use it:** work top-to-bottom, mark each `- [ ]` as pass/fail, fill in the **section
+tally** at the bottom as each section closes, and note anything odd inline. Each item is
+*action -> expected result*. Anything you can't reach is fine — just say so.
 One item is worth capturing precisely because it strengthens a shipped feature: whether the engine
 exposes a **cheap single-file modification date** (see section 4) — conditional GET / `ETag` /
 `304` shipped without it, and a cheap mtime would upgrade its validator.
@@ -110,6 +115,30 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 - [ ] `OPTIONS` on a path with a declared `POST` route -> `Allow` **includes `POST`**.
 - [ ] An unsupported method (e.g. `DELETE /somefile`) -> `405` + `Allow` header.
 - [ ] `HEAD` on a file -> headers only, **no body**.
+- [ ] **`HEAD` on a ROUTE** (fixed 2026-08-17; verified statically + golden-pinned, THIS is its
+      engine pass): `HEAD /_qs/info` and `HEAD /api/hello` -> the **GET's** headers, the GET's
+      `Content-Length`, `Content-Type: application/json`, and **no body** — never `text/html`
+      and never the SPA's `index.html`. Until the fix the lookup key was built from the literal
+      method (`qsRouteLookupKey` now maps HEAD onto the GET route), so a `HEAD` missed both
+      route tables, fell through to the static pipeline and came back as `index.html` at `200`
+      while `Allow` had advertised `HEAD` on every path. Check over **both** transports.
+- [ ] **`HEAD` over Tor specifically** (`qsFsSendText`, fixed the same day): `HEAD /` on a folder
+      share -> the listing's headers with its real `Content-Length` and **zero body bytes**
+      (compare `curl -s … | wc -c` for the GET against the `HEAD`). The clearweb twin has always
+      suppressed the body; the Tor one shipped it for every listing, `404`, `/_qs/*` and
+      user-route reply. Nothing desynced (a Tor response closes its stream) — this item is
+      about the wasted onion bandwidth and the spec, so *measure the byte count*, don't just
+      look for a working page.
+- [ ] **A declared `HEAD` route still wins:** add a `"method": "HEAD"` route beside a `GET` one
+      on the same path -> `HEAD` runs the HEAD route, `GET` runs the GET route.
+- [ ] **`HEAD` on a `:param` route** (e.g. `HEAD /api/greet/world`) -> answered by the matching
+      `GET` pattern: headers + `Content-Length`, no body, **not** the SPA fallback.
+- [ ] **The reserved namespaces are never served off disk** (`qsHttpReservedPath`, new
+      2026-08-17): `GET /_qs/nope` and `HEAD /_qs/nope` -> **`404`**, not `index.html` at `200`;
+      `/_edit/api/nope` likewise. Then put a real folder named `_qs` (with a file in it) inside
+      the shared folder -> it stays unreachable over HTTP on both transports. (An *unsupported
+      method* on a real reserved path, e.g. `DELETE /_qs/info`, is still the route layer's
+      `405` + `Allow` — unchanged.)
 - [ ] Video/audio scrub -> `206 Partial Content`; a multi-range request -> whole file.
 - [ ] A URL with `?dl` -> `Content-Disposition: attachment`.
 - [ ] MIME spot-check: `.wasm`, `.mjs`, `.xml`, `.map`, `.webmanifest`, `.woff2` served with the
@@ -165,6 +194,28 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
       (including the four privacy ones); `OPTIONS -> Allow`; the templated `/api/echo?msg=…` call.
 - [ ] **About tab** -> "honest privacy model" populated from `/_qs/transparency`.
 - [ ] **Admin link** in the footer routes to the admin panel (see §6a).
+- [ ] **The service worker registers ONLY in a secure context** (`webapp/sw.js:1-14` states the
+      claim; the registration is gated on `window.isSecureContext` at `webapp/app.js:837-838`):
+      over a Tor **`.onion`** the About tab's service-worker row reads *registered + active
+      (secure context)* and its chip goes live; over a plain **`http://` web link** it reads
+      *unavailable here - needs a secure context* and `navigator.serviceWorker.register` is
+      never reached. Only a browser can settle this one, which is why it is here.
+- [ ] **The Theater's Range claim is true** (the page asserts it at `webapp/app.js:345-352`;
+      the seek buttons and the `seeked` report are `:386-397`): click a chapter -> the status
+      line says *Seeked to …*, and the host's Activity log / dev-tools Network shows a
+      **`206 Partial Content`** for `assets/film.webm` (or `.mp4`), **not** a fresh whole-file
+      `200`. Scrub backwards too — a second `206` at a lower offset.
+- [ ] **The Music deck streams the same way** (`webapp/app.js:400-451`): a track does **not**
+      fetch until played (`preload="none"`), scrubbing issues `Range:` -> `206`, and each row's
+      **get** link (`?dl=1`) arrives as a download with `Content-Disposition: attachment` —
+      including the `.wav` interlude, which exercises a different MIME row.
+- [ ] **SPA URLs are real URLs** (`history.pushState` in `go()`, `webapp/app.js:1422-1426`):
+      moving between tabs changes the address bar with **no page load**; then **reload** on a
+      deep tab and **paste that URL into a fresh window** -> the same view, because the host's
+      SPA fallback answers the extensionless path with `index.html`; Back/Forward walk the
+      history correctly. Over a web link the `/<token>/` prefix must survive every hop. Opening
+      the folder over `file://` (no host at all) must take the documented full-navigation
+      fallback rather than erroring.
 
 ## 8. Fail-closed extensions & clean shutdown
 
@@ -175,6 +226,27 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
       and web listener torn down, temp `.enc` files deleted).
 
 ---
+
+## Section tally
+
+Fill this in **as you go**, one verdict per section. It exists because this file is the record
+sheet for two runbook sittings that split it (in the suite runbook at the monorepo root,
+`docs/OXT-PASS-RUNBOOK.md`: session S1's stretch row **S** takes the web-link half, session
+S2's item **7** the Tor half), and a half-finished pass that reports only its failures
+cannot be told apart from one that never reached those items at all. `PASS` = every item in the
+section passed; `FAIL` = at least one did not (the failure itself goes in Results below);
+`PARTIAL` = some items were not reached — say which; `SKIP` = the whole section was out of reach
+(no Tor daemon, no second machine, cryptoXT absent).
+
+```
+0.  Build & smoke                    ____      4.  Response headers & HTTP    ____
+1.  Custom routes - functional       ____      5.  CORS preflight             ____
+1a. :param routes                    ____      6.  Editor login throttle      ____
+2.  Custom routes - security         ____      6a. Admin panel + upload       ____
+3.  Observability endpoints          ____      7.  Webapp demo                ____
+                                               8.  Fail-closed + shutdown     ____
+transport: web link ____ / Tor ____            date ________  engine ____________
+```
 
 ## Results
 

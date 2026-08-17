@@ -36,12 +36,25 @@ script "xTalkSuiteSelfTest"
 -- Riptide's phase-2 single-engine work is therefore closed; only its
 -- two-machine propagation criterion remains under runbook item 6.
 --
+-- WHAT HAS NOT RUN ON AN ENGINE (2026-08-17): the skip channel through
+-- stMergeReturned, the third count in stSummaryCounts, and stMergeFloor with
+-- it. The rule was exercised against every member's real summary spelling and
+-- against mutations of them by a hand port of the parse, which is what a
+-- headless environment can do and no more - verified statically; needs an OXT
+-- pass. The one number it puts at risk is onionxt's floor of 41: too high, and
+-- a green run reports one extra FAIL line naming the member and printing what
+-- it attempted, which is the failure mode this file chooses on purpose over an
+-- uncaught error.
+--
 -- THIS IS NO LONGER A SAMPLER, AND THAT IS THE BIG CHANGE. It used to drive
 -- about a dozen handlers per member and say so. It now carries EVERY member's
 -- own deep self-test as well, folded in whole by tools/build-suite-selftest.py:
 --
 --   sodiumxt        sxSelfTest()      21 groups, the entire sx* surface
---   onionxt         oxSelfTest()       8 groups, all offline
+--   onionxt         oxSelfTest()      10 sections, all offline, and since
+--                                     2026-08-17 the only folded harness
+--                                     whose summary carries THREE counts:
+--                                     passed, failed and skipped
 --   coinxt          its 28 sections    all five phases, ~300 checks
 --   torrentxt       its full harness   sharing this file's single session
 --   enetxt          its SYNC half      lifecycle, stale handles, tuning
@@ -245,6 +258,7 @@ constant ox1kTestAddrDuckDuckGo = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6
 local ox1sLog
 local ox1sPass
 local ox1sFail
+local ox1sSkip      -- a skipped check COUNTS (see ox1oxSkip); it is not just a log line
 
 -- ---- CoinXT: the full cx* self-test ----
 constant cx1kKeccakEmpty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
@@ -380,6 +394,7 @@ constant bt1kStHeight = 620
 local bt1sSession          -- the live session handle (0 = none)
 local bt1sTorrent          -- a torrent we create + seed, for torrent-scoped checks
 local bt1sTorrent2         -- a second torrent from the extended-add check
+local bt1sTorrent3         -- a third, from the plain btAddMagnet check beside it
 local bt1sTempDir          -- parent dir we seed from
 local bt1sContentDir       -- the content folder inside it
 local bt1sTotal, bt1sPassed, bt1sFailed, bt1sSkipped
@@ -426,7 +441,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "28"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "29"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -502,8 +517,8 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.24.3"
-constant he1kHeHarnessV = "40"
+constant he1kHeVersion = "0.24.4"
+constant he1kHeHarnessV = "41"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -662,7 +677,11 @@ constant he1kKatSitBackHead12 = "f69afd084f98085581135c43346641dea04f2937952becc
 constant he1kKatTimeoutBidBody = "amount=2,seat=3,timeout=1,bank=1"
 constant he1kKatTimeoutBidHead13 = "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd"
 constant he1kKatHelloTrimHex = "68093833336665643865653330613838326264383737353535613964663236306434333232323234666130393535313364383439373261363630653761643662313009706c61796572096430326231653832366634333531323634636433613737613135383039323134393566396337646635663066323961333730656262356664643639623961316335633163393232366165323836353931393632326132363664663132346163373535623537313431613664386137376530656238623666376438396465323038093432"
+constant he1kKatIdPub3 = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
 constant he1kKatElectedHost = "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10"
+constant he1kKatElectedHostSitOut = "ad1d6dbbd062cdacf356daf0834471b6246105b17e3b988dd5e7f0db45fb66a6"
+constant he1kKatTableInfohash = "891e5f5c70b88414190980f34a02cb06784cd6da"
+constant he1kKatIdFingerprint1 = "77d2c2dc"
 constant he1kKatOnionSeed = "77061b1432063cb55aff898386cfe8948a1655627114891d10e6a5cb5af729e2"
 constant he1kKatOracleSeed = "6e027a075cd69ea09e20004167c54c12491c5538f105c138a0bafe49d956e5d0"
 constant he1kKatLobbyCfgBodyOracle = "v=1,level=1,sb=1,bb=2,ante=0,stack=400,seats=6,button=1,act=30,bank=60,miss=2"
@@ -2627,14 +2646,37 @@ command stRunMemberHarnesses
    stNote "Each of these is the SAME harness that member ships standalone."
    stNote "A failure here means the same thing it would mean there."
 
-   -- SodiumXT and OnionXT return their report as a string; CoinXT, TorrentXT,
-   -- ENetXT and DataChannelXT accumulate into their own script locals. Both
-   -- shapes are handled, because both are what those members actually ship -
-   -- rewriting one to look like the other would be editing a proven harness to
-   -- suit this file, which is backwards.
+   -- SodiumXT, OnionXT, Box2Dxt, Riptide and holde-em return their report as a
+   -- string; CoinXT, TorrentXT, ENetXT and DataChannelXT accumulate into their
+   -- own script locals. Both shapes are handled, because both are what those
+   -- members actually ship - rewriting one to look like the other would be
+   -- editing a proven harness to suit this file, which is backwards.
+   --
+   -- THE THIRD ARGUMENT TO stMergeReturned IS A FLOOR: the fewest items that
+   -- member can attempt in any environment it supports (checks + skips). Read
+   -- stMergeFloor for what it does and does not catch. Only ONE of the five is
+   -- measured today:
+   --
+   --   OnionXT   41, derived section by section at its call site below. It is
+   --             the member whose harness can degrade the furthest (its skips
+   --             span a third of its items), which is why it was measured
+   --             first and why the skip channel exists at all.
+   --   the four  1, the CATASTROPHIC floor, and it is not a measured minimum.
+   --   others    What it refuses is a harness that attempted NOTHING and still
+   --             read green, because zero failures is zero failures. Measuring
+   --             a real one means auditing that harness's conditional paths -
+   --             SodiumXT's two ABI probes exit its ristretto section early,
+   --             Box2Dxt/Riptide/holde-em skip whole sections by probe - and a
+   --             floor set above a member's true worst case would false-fail
+   --             an engine session, which is the one cost this file can least
+   --             afford. A guess here would be worse than the gap: this repo
+   --             has already paid once for a gate that reported the constants
+   --             it had PARSED as the ones it had CHECKED. So the four carry
+   --             the honest floor and say so, and measuring them is open work.
    if sHaveSodium then
       try
-         stMergeReturned "SodiumXT", sx1sxSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "SodiumXT", sx1sxSelfTest(), 1
       catch tError
          stSectionFailed "SodiumXT deep self-test", tError
       end try
@@ -2644,7 +2686,40 @@ command stRunMemberHarnesses
 
    if sHaveOnion then
       try
-         stMergeReturned "OnionXT", ox1oxSelfTest()
+         -- THE FLOOR IS 41, and the arithmetic is here because a number with
+         -- no derivation beside it is a number nobody dares to change - which
+         -- is how a ratchet quietly becomes a decoration. onionxt's harness
+         -- runs ten sections; SEVEN of them can bail out, and since 2026-08-17
+         -- every bail-out counts as one skip. Attempted = checks + skips, per
+         -- section, worst case:
+         --    1 version and capabilities     6   unconditional
+         --    2 initial state                1   3 checks, or 1 skip when this
+         --                                       session is already authed
+         --    3 fail-closed arguments        4   3 unconditional, + 2 pre-auth
+         --                                       checks or 1 skip
+         --    4 unknown handles              5   unconditional
+         --    5 idempotent teardown          2   unconditional
+         --    6 address round-trip           6   2 addresses x (2 + 1 either
+         --                                       way: re-encode or skip)
+         --    7 address negative paths       4   3, + 1 either way
+         --    8 SodiumXT ABI-6 composition   2   2 x (check or skip)
+         --    9 configuration setters       10   unconditional
+         --   10 loopback guard               1   18 checks, or 1 skip where
+         --                                       oxHostOfSocket is not in this
+         --                                       script
+         --                                  --
+         --                                  41
+         -- Its best case is 61, and THIS paste normally sees 58-61: section
+         -- 10's probe resolves here because the generator embeds the library
+         -- into this same script, which is the whole reason that section is
+         -- testable at all. The floor is deliberately the environment-proof 41
+         -- rather than the paste-expected 58: a floor that can false-fail an
+         -- engine session is worth less than a floor that catches less, and
+         -- the degraded case is no longer invisible anyway - it arrives as 8
+         -- skips on the summary line. Cross-check on the arithmetic: onionxt's
+         -- CLAUDE.md records a 2026-08-12 engine run at 43 checks, and
+         -- sections 1-9 at their best case are exactly 43.
+         stMergeReturned "OnionXT", ox1oxSelfTest(), 41
       catch tError
          stSectionFailed "OnionXT deep self-test", tError
       end try
@@ -2714,7 +2789,8 @@ command stRunMemberHarnesses
    -- has to finish BEFORE the cross-member loopbacks below arm their pump.
    if sHaveBox2d then
       try
-         stMergeReturned "Box2Dxt", b21stSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "Box2Dxt", b21stSelfTest(), 1
       catch tError
          stSectionFailed "Box2Dxt deep self-test", tError
       end try
@@ -2730,7 +2806,8 @@ command stRunMemberHarnesses
    -- layer being present at all.
    if sHaveRiptideScript then
       try
-         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest()
+         -- floor 1: catastrophic only, not measured (see above)
+         stMergeReturned "Riptide Social (phases 1-2)", rs1rsSelfTest(), 1
       catch tError
          stSectionFailed "Riptide deep self-test", tError
       end try
@@ -2761,10 +2838,12 @@ command stRunMemberHarnesses
    -- The entry point is heSelfTest, NOT heRunSelftest: the interactive one
    -- builds an 800x560 report overlay on the card, overwrites
    -- clipboardData["text"] (this scaffold's own Copy-results channel) and
-   -- writes to msg, and its "==== n pass, m fail ====" summary is a line
-   -- stSummaryCounts refuses on purpose.
+   -- writes to msg, and its "==== n pass, m fail, k skip ====" summary is a
+   -- line stSummaryCounts refuses on purpose (measured 2026-08-17: the string
+   -- carries the skip count too - this comment quoted it a field short).
    try
-      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest()
+      -- floor 1: catastrophic only, not measured (see above)
+      stMergeReturned "holde-em (hotseat + online + Level 2)", he1heSelfTest(), 1
    catch tError
       stSectionFailed "holde-em deep self-test", tError
    end try
@@ -2792,23 +2871,37 @@ function stTrimEdges pWord
    return tOut
 end stTrimEdges
 
--- Given ONE line, return "<passed> <failed>" if that line is a summary, or
--- empty if it is not. This is the whole rule; see stMergeReturned below for why
--- it is shaped this way.
+-- Given ONE line, return "<passed> <failed>" - or "<passed> <failed> <skipped>"
+-- when the line carries a skip count - if that line is a summary, or empty if
+-- it is not. This is the whole rule; see stMergeReturned below for why it is
+-- shaped this way.
 --
--- A line qualifies only when EVERY word on it is either a number or the word
--- "passed"/"failed" (case and edge punctuation ignored), with exactly one of
--- each keyword, "passed" before "failed", and exactly two numbers. That shape
--- test - rather than "the line mentions both words" - is what makes an
--- individual check's LABEL unable to masquerade as a summary: a label always
--- carries at least one other word (SodiumXT's "  ok   a failed call surfaces an
--- error" has "ok", "a", "call"), and one other word is enough to disqualify it.
+-- A line qualifies only when EVERY word on it is either a number or one of the
+-- words "passed"/"failed"/"skipped" (case and edge punctuation ignored), with
+-- at most one of each keyword, "passed" and "failed" both present and in that
+-- order, "skipped" after them when it appears at all, and exactly one number
+-- per keyword present. That shape test - rather than "the line mentions both
+-- words" - is what makes an individual check's LABEL unable to masquerade as a
+-- summary: a label always carries at least one other word (SodiumXT's
+-- "  ok   a failed call surfaces an error" has "ok", "a", "call"), and one
+-- other word is enough to disqualify it.
+--
+-- THE THIRD COUNT IS OPTIONAL, and that is the whole compatibility story
+-- (2026-08-17). Five harnesses come through here and only onionxt's reports
+-- skips; the other four (SodiumXT, Box2Dxt, Riptide, holde-em) spell their
+-- summary with two counts and are not going to be rewritten to carry a zero
+-- they do not have. "skipped" is therefore admitted as a word rather than
+-- required, and it widens NOTHING else: a line still needs both of the
+-- original keywords, so "3 skipped" alone is prose here, and the number count
+-- must still match the keyword count exactly, so a stray third number on a
+-- two-keyword line is refused as loudly as it was before.
 function stSummaryCounts pLine
-   local tI, tN, tWord, tPassAt, tFailAt, tNums
+   local tI, tN, tWord, tPassAt, tFailAt, tSkipAt, tNums, tWant
 
    put the number of words of pLine into tN
    put 0 into tPassAt
    put 0 into tFailAt
+   put 0 into tSkipAt
    put empty into tNums
    repeat with tI = 1 to tN
       put stTrimEdges(word tI of pLine) into tWord
@@ -2818,33 +2911,50 @@ function stSummaryCounts pLine
          put tI into tPassAt
       else if toLower(tWord) is "failed" and tFailAt is 0 then
          put tI into tFailAt
+      else if toLower(tWord) is "skipped" and tSkipAt is 0 then
+         put tI into tSkipAt
       else
-         -- Any other word - or a SECOND "passed"/"failed" - means this line is
-         -- prose. Nothing is guessed from it.
+         -- Any other word - or a SECOND "passed"/"failed"/"skipped" - means
+         -- this line is prose. Nothing is guessed from it.
          return empty
       end if
    end repeat
    if tPassAt is 0 or tFailAt is 0 or tPassAt > tFailAt then
       return empty
    end if
-   if the number of words of tNums is not 2 then
+   -- One number per keyword, and the skip keyword comes last when it comes.
+   -- Both halves matter: the count rule is what stops a summary being read off
+   -- a line with a spare number on it, and the order rule is what lets the
+   -- numbers be assigned by POSITION below instead of by parsing pairs.
+   put 2 into tWant
+   if tSkipAt is not 0 then
+      put 3 into tWant
+      if tFailAt > tSkipAt then
+         return empty
+      end if
+   end if
+   if the number of words of tNums is not tWant then
       return empty
    end if
-   -- Keyword order was just checked, and both shipped spellings put the pass
-   -- count with the "passed" keyword, so the two numbers are in the order the
-   -- two keywords are: first number = passed, second = failed. Requiring the
-   -- keyword order is what makes that one-line rule safe rather than lucky.
-   return word 1 to 2 of tNums
+   -- Keyword order was just checked, and every shipped spelling puts each
+   -- count with its own keyword, so the numbers are in the order the keywords
+   -- are: first = passed, second = failed, third (when present) = skipped.
+   -- Requiring the keyword order is what makes that one-line rule safe rather
+   -- than lucky.
+   return word 1 to tWant of tNums
 end stSummaryCounts
 
--- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT). The
--- counts are parsed back out of the report rather than guessed at, and if the
--- parse ever fails that is a reported FAILURE, not a silent zero.
+-- For a harness whose entry point RETURNS its report (SodiumXT, OnionXT,
+-- Box2Dxt, Riptide and holde-em - five of the nine, not the two this comment
+-- named until 2026-08-17; the other four accumulate into script locals and go
+-- through stMergeCounted below). The counts are parsed back out of the report
+-- rather than guessed at, and if the parse ever fails that is a reported
+-- FAILURE, not a silent zero.
 --
 -- THE RULE, in one sentence: the summary is the ONE line of the report that is
 -- nothing but two numbers and the words "passed" and "failed" (in that order,
--- case and edge punctuation ignored), and its first number is the pass count
--- and its second the fail count.
+-- case and edge punctuation ignored) - or, since 2026-08-17, three numbers with
+-- "skipped" behind them - and its numbers are its counts in that same order.
 --
 -- WHY IT IS NOT THE OBVIOUS THING, and this is the whole reason the handler was
 -- rewritten. It used to take word 1 as the pass count and the LAST word as the
@@ -2871,13 +2981,49 @@ end stSummaryCounts
 -- qualify. Requiring exactly one is what keeps this LOUD - zero matches and two
 -- matches are both reported failures that print the report for a human to read,
 -- never a silent zero folded into the suite totals.
-command stMergeReturned pMember, pReport
-   local tLine, tI, tCount, tPair, tMatches, tPassed, tFailed, tOk
+--
+-- THE SKIP CHANNEL (2026-08-17). stMergeCounted has carried a skip count into
+-- the suite totals since the scaffold was unified; this path had no parameter
+-- for one, and the summary field prints sSkipped, so a member merged HERE
+-- could only ever contribute zero skips to the line the operator reads.
+-- OnionXT is the member that made that a lie rather than a gap: seven of its
+-- sections bail out when the environment cannot support them, and every
+-- bail-out used to touch no counter at all, so a run that tested 33 of its 61
+-- items reported "33 passed, 0 failed" - the same green, one line, no way to
+-- tell. Its summary carries a third count now and this handler reads it.
+--
+-- WHAT THE OTHER FOUR DO, measured rather than assumed, because the widening
+-- has to be compatible with all of it and because two of them turn out to be
+-- carrying the same defect:
+--   Box2Dxt   has no skip outcome at all. Every section asserts; the core
+--             guards its PRESENCE instead, one row up. Nothing to carry.
+--   SodiumXT  counts a skip AS A PASS - `sxCheck true, "SKIP: this SodiumXT
+--             package predates ristretto255 (ABI 8)"` on each of its two ABI
+--             probes - so its skips are already inside its pass count and a
+--             third number here would count them twice.
+--   Riptide   BOTH keep a real skip counter and BOTH park it on a SECOND
+--   holde-em  line, worded as prose on purpose so this parser refuses it.
+--             Their own comments say so and name the two-count rule as the
+--             reason ("the skip count gets its own line"). So their skips are
+--             printed and never merged - the same hole this change closes for
+--             onionxt, in two more members. Widening the parser is what
+--             unblocks them; moving their counts onto line 1 is an edit in
+--             their own files, and until someone makes it their skips stay
+--             visible-but-unmerged rather than silently zero.
+-- The two-count form is therefore still first-class, not deprecated: no member
+-- is rewritten from here to suit this file, which would be backwards.
+--
+-- pFloor is the OTHER half of the same lesson and it is deliberately not
+-- folded into this handler: see stMergeFloor below.
+command stMergeReturned pMember, pReport, pFloor
+   local tLine, tI, tCount, tPair, tMatches, tPassed, tFailed, tSkipped
+   local tAttempted, tOk
 
    stSection pMember & ": its own full self-test"
    put 0 into tMatches
    put empty into tPassed
    put empty into tFailed
+   put empty into tSkipped
    put the number of lines of pReport into tCount
    repeat with tI = 1 to tCount
       put line tI of pReport into tLine
@@ -2886,37 +3032,120 @@ command stMergeReturned pMember, pReport
          add 1 to tMatches
          put word 1 of tPair into tPassed
          put word 2 of tPair into tFailed
+         put word 3 of tPair into tSkipped
       end if
    end repeat
+   -- A TWO-COUNT SUMMARY IS STILL A SUMMARY, so word 3 of the pair is empty
+   -- for the four members still spelling it that way - and empty is not a
+   -- number, which the validation below would call a broken summary. Turn it into
+   -- the zero it means first, the same shape and for the same reason as
+   -- stMergeCounted's empty-pSkipped line: a member that reports no skips has
+   -- no skips, not an unreadable report.
+   if tSkipped is empty then
+      put 0 into tSkipped
+   end if
    -- Built as a value rather than a continued condition, for the same reason
    -- stMergeCounted below does it: three of the six copies of
    -- check-livecodescript.py do not join line continuations before counting
    -- block openers, so an `if ... \` reads to them as a handler-level statement
    -- and every `end if` after it looks unbalanced.
    --
-   -- The two numeric tests are redundant with stSummaryCounts, which already
-   -- refuses to return anything but two numbers. They stay because the lesson
+   -- The three numeric tests are redundant with stSummaryCounts, which already
+   -- refuses to return anything but numbers. They stay because the lesson
    -- recorded on stMergeCounted below was that "it cannot be anything but a
    -- number" is a feeling, not a check, and these values are added into the
    -- suite totals: an `add` on a non-number is an UNCAUGHT engine error that
    -- takes the whole run, while a failed assertion costs one line of report.
-   put (tMatches is 1 and tPassed is a number and tFailed is a number) into tOk
+   put (tMatches is 1 and tPassed is a number and tFailed is a number and tSkipped is a number) into tOk
    if tOk is false then
       stAssert pMember & " deep self-test reported a summary this harness could read", false
-      stNote "Looked for the one line that is nothing but two counts and the words"
-      stNote "passed/failed (either order of word and number);" && tMatches && \
+      stNote "Looked for the one line that is nothing but two or three counts and the"
+      stNote "words passed/failed(/skipped), in that order;" && tMatches && \
             "line(s) in its report matched."
+      stNote "Nothing was folded into the totals, and its floor of" && pFloor && \
+            "went unchecked: there are no counts to check it against."
       stNote "Its report is below verbatim; read the counts by eye."
    else
       add tPassed to sPassed
       add tFailed to sFailed
-      add (tPassed + tFailed) to sTotal
+      add tSkipped to sSkipped
+      -- ATTEMPTED, not "checks": a skip is an item this member reached and
+      -- declined to run, and the suite's own stSkip counts one into sTotal for
+      -- exactly the same reason. Counting it keeps this line agreeing with the
+      -- summary field, which prints passed + failed + skipped + total.
+      put tPassed + tFailed + tSkipped into tAttempted
+      add tAttempted to sTotal
       stAssert pMember & " deep self-test had zero failures", tFailed is 0
-      stNote tPassed && "passed," && tFailed && "failed, folded into the totals above"
+      stMergeFloor pMember, tAttempted, pFloor
+      stNote tPassed && "passed," && tFailed && "failed," && tSkipped && \
+            "skipped, folded into the totals above"
    end if
    stNote "---- " & pMember & " report ----"
    put pReport & return after sResultText
 end stMergeReturned
+
+-- THE FLOOR: the fewest items a member's harness may have attempted before
+-- this suite refuses to call its report a result.
+--
+-- WHY IT EXISTS, and it is the one hole every other check here leaves open.
+-- Everything above believes what the member says it ran. "0 passed, 0 failed"
+-- is a perfectly readable summary and folds in as zero failures - green. So
+-- does a harness that lost half its sections to a rename: the counts simply
+-- get smaller and nothing anywhere says so. An engine session's whole output
+-- is one verdict line, and until now that line could not tell a full run from
+-- a third of one. Everything else in this file guards how a member's numbers
+-- are READ; this guards whether there were enough of them to mean anything.
+--
+-- WHAT A FLOOR IS. The number of checks-plus-skips a member attempts in its
+-- WORST supported environment - not its expected total, and not its best case.
+-- The skip channel above is what makes such a number exist at all: a section
+-- that bails out still counts 1, so the attempted total stops swinging with
+-- what happens to be installed and a floor can sit just under it without
+-- false-failing an engine session on a bare machine.
+--
+-- WHAT A FLOOR IS NOT. It is not a coverage measure and it cannot see a
+-- skippable section that skipped - that section still contributes its 1, and
+-- the honest report of it is the skip COUNT, not this. It catches the thing a
+-- summary line structurally cannot show: items that never happened at all.
+--
+-- AND A BAD FLOOR IS A REPORTED FAILURE, NEVER AN ENGINE ERROR. `pAttempted <
+-- pFloor` against a non-numeric pFloor is an uncaught engine error, and
+-- stMergeCounted's comment below is the record of what one of those costs:
+-- it takes the WHOLE run, so every member's results are lost to a single line
+-- that cannot even name the member it came from. The floor is validated before
+-- it is compared, exactly like the counters on both merge paths, and a floor
+-- that is not a number is a failure that names the member and prints what it
+-- got. It is a separate handler rather than four more lines inside
+-- stMergeReturned because the two questions are separate: that one asks
+-- whether a report can be READ, this one asks whether it says ENOUGH - and
+-- because the second question is not particular to the returned-report shape.
+-- Its parameters are (member, attempted, floor) and nothing private to
+-- stMergeReturned, so stMergeCounted can call it the day its four members
+-- carry measured floors of their own. They do not today: the counted path is
+-- unfloored, and that is open work rather than a decision.
+command stMergeFloor pMember, pAttempted, pFloor
+   local tFloorOk
+
+   put (pFloor is a number and pAttempted is a number) into tFloorOk
+   if tFloorOk is false then
+      stAssert pMember & " was merged against a numeric floor", false
+      stNote "Got floor=[" & pFloor & "] attempted=[" & pAttempted & "]"
+      stNote "The floor is a literal at this member's call site in"
+      stNote "stRunMemberHarnesses, so a non-number is an edit to fix there and"
+      stNote "not a defect in the member. No floor was applied to this report."
+      exit stMergeFloor
+   end if
+   stAssert pMember & " attempted at least its floor of" && pFloor && "items", \
+         (pAttempted >= pFloor)
+   if pAttempted < pFloor then
+      stNote "It attempted" && pAttempted && "items (passed + failed + skipped)."
+      stNote "That is not a failing check inside that member - it is checks that"
+      stNote "never ran at all, which its own summary line cannot show."
+      stNote "Either a section stopped being called, or the floor is stale:"
+      stNote "re-derive it beside that member's call site in stRunMemberHarnesses,"
+      stNote "in the same change that moved the count."
+   end if
+end stMergeFloor
 
 -- For a harness that accumulates into script locals (CoinXT, TorrentXT,
 -- ENetXT, DataChannelXT). Its counters are read directly - they are locals of
@@ -2935,8 +3164,9 @@ command stMergeCounted pMember, pReport, pPassed, pFailed, pTotal, pSkipped
    -- session - NO INDICATION OF WHICH MEMBER IT WAS. Six harnesses had run and
    -- the operator was left with one line naming a handler.
    --
-   -- stMergeReturned, ten lines up, has validated its counts since the day it
-   -- was written, because THOSE come from parsing a report and a parse can
+   -- stMergeReturned, above (with stMergeFloor now between them - it was "ten
+   -- lines up" when this was written), has validated its counts since the day
+   -- it was written, because THOSE come from parsing a report and a parse can
    -- obviously fail. This path skipped the check because its values come from
    -- script locals, which felt safer. Feeling safer is not the same as being
    -- checked, and the two paths merge into the same totals: they should be
@@ -6052,8 +6282,13 @@ command oxPeerAccepted pSocketID
    put oxHostOfSocket(pSocketID) into tPeerHost
    if not oxHostIsLoopback(tPeerHost) then
       -- Not a Tor-forwarded loopback connection: refuse it (docs LiveCode ref;
-      -- the listener may be bound to all interfaces).
-      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & "]"
+      -- the listener may be bound to all interfaces). Print the RAW id next to
+      -- the parsed host, because since oxHostIsLoopback stopped treating an
+      -- unparseable id as loopback this notice is also how a socket-id spelling
+      -- oxHostOfSocket does not know announces itself (it arrives here with an
+      -- empty host); one self-contained line is what a tester can act on.
+      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & \
+         "] from id [" & pSocketID & "]"
       oxSafeCloseSocket pSocketID
       exit oxPeerAccepted
    end if
@@ -6089,15 +6324,32 @@ private function oxGuessService pSocketID
 end oxGuessService
 
 private function oxHostIsLoopback pHost
-   -- Accept a Tor-forwarded (loopback) peer no matter how the engine spells the
-   -- local address in the accepted-socket id: "127.0.0.1", any "127.x" in the
-   -- 127.0.0.0/8 block, IPv6 "::1" / "[::1]", the name "localhost", or empty
-   -- (some engines report no host for a local accept). Reject anything else, so a
-   -- listener that bound to all interfaces cannot be reached by a routable peer.
+   -- Accept a Tor-forwarded peer no matter how the engine spells the local
+   -- address in the accepted-socket id, and NOTHING else: `accept connections on
+   -- port` takes no bind address (see oxStartService), so the listener may be
+   -- reachable from the network and this is the only thing standing between a
+   -- routable peer and our stream tables. Takes the host oxHostOfSocket parsed,
+   -- so the brackets of "[::1]" are already gone and there is exactly one
+   -- spelling of each address to test. Comparisons are case-insensitive by
+   -- default, so "::FFFF:" matches "::ffff:" without folding anything.
+   --
+   -- EMPTY IS A REFUSAL NOW, and that is the point of this change rather than a
+   -- side effect. It used to return true, with "some engines report no host for
+   -- a local accept" as the reason - but the old parser handed this guard an
+   -- empty string for EVERY IPv6-shaped id, so "the engine reported no host" and
+   -- "we could not parse this id" were indistinguishable, and the permissive
+   -- branch let "::ffff:203.0.113.9:1234" - a routable peer wearing an
+   -- IPv4-mapped hat - in as loopback. A guard whose default is accept is a
+   -- fail-open guard; CLAUDE.md rule 4 says fail closed on anything we do not
+   -- understand. So an unrecognized spelling is refused and oxPeerAccepted
+   -- prints the RAW id alongside the parsed host: if a real engine is ever seen
+   -- spelling an accepted id with no host at all (or with the fully expanded
+   -- "0:0:0:0:0:0:0:1"), the fix is to teach oxHostOfSocket that spelling, never
+   -- to re-open this branch.
    local tHost
    put pHost into tHost
    if tHost is empty then
-      return true
+      return false
    end if
    if tHost is kOxHost then
       return true
@@ -6105,8 +6357,20 @@ private function oxHostIsLoopback pHost
    if tHost begins with "127." then
       return true
    end if
-   if tHost is "::1" or tHost is "[::1]" then
+   if tHost is "::1" then
       return true
+   end if
+   if tHost begins with "::ffff:" then
+      -- The IPv4-mapped form a dual-stack listener can report. It is the SAME
+      -- address with a prefix, so strip it and re-test the v4 rules: that admits
+      -- "::ffff:127.0.0.1" (genuinely loopback, and unroutable) and refuses
+      -- "::ffff:203.0.113.9" (genuinely routable), which the old empty-item-1
+      -- parse could not tell apart.
+      delete char 1 to 7 of tHost
+      if tHost is kOxHost or tHost begins with "127." then
+         return true
+      end if
+      return false
    end if
    if tHost is "localhost" then
       return true
@@ -6803,11 +7067,57 @@ private function oxByteHex pNum
 end oxByteHex
 
 private function oxHostOfSocket pSocketID
-   -- The host part of an engine socket id "host:port" or "host:port|name".
-   local tSaved, tOut
+   -- The HOST part of an engine socket id: "host:port", optionally with a
+   -- "|name" suffix (we mint "127.0.0.1:9050|oxs3" ourselves; an ACCEPTED id is
+   -- whatever the engine spells the PEER address as, so its shape is the
+   -- engine's choice, not ours).
+   --
+   -- This is security-critical input, not a display helper: oxPeerAccepted feeds
+   -- the result straight to oxHostIsLoopback, which decides whether an inbound
+   -- peer is let in. The obvious "item 1 with the itemDelimiter set to colon"
+   -- was wrong in BOTH directions on an IPv6 id, and one of those directions
+   -- FAILED OPEN:
+   --   "::1:54321"                -> item 1 is EMPTY, and the guard's old
+   --                                 empty-is-loopback branch accepted it;
+   --   "::ffff:203.0.113.9:1234"  -> item 1 is EMPTY too, so a ROUTABLE peer in
+   --                                 IPv4-mapped form was accepted as loopback;
+   --   "[::1]:54321"              -> item 1 is "[", so a real loopback peer was
+   --                                 refused (the harmless direction).
+   -- Parse by SHAPE instead, which also makes the guard's "::1" branch reachable
+   -- for the first time (it never could be: item 1 of anything containing a
+   -- colon cannot itself contain one):
+   --   1. drop any "|name" suffix - the name half is ours and never part of the
+   --      host, and it can carry digits that would otherwise look like a port;
+   --   2. a bracketed group IS the host, verbatim and unbracketed - the brackets
+   --      exist precisely to separate an IPv6 host's colons from the port colon,
+   --      and stripping them here means the guard sees ONE spelling of ::1;
+   --   3. otherwise the host is everything up to the LAST colon, which is right
+   --      for "127.0.0.1:9050" and for a bare "::1:54321" alike;
+   --   4. a colon-less id has no port to strip, so it is all host.
+   -- Anything this cannot make sense of comes back EMPTY, which oxHostIsLoopback
+   -- now REFUSES (it used to accept it); that is the fail-closed direction.
+   local tSaved, tRaw, tCut, tOut
+   put pSocketID into tRaw
+   put offset("|", tRaw) into tCut
+   if tCut > 0 then
+      delete char tCut to -1 of tRaw
+   end if
+   if char 1 of tRaw is "[" then
+      put offset("]", tRaw) into tCut
+      if tCut < 3 then
+         return empty              -- unclosed or empty brackets: not a host
+      end if
+      return char 2 to (tCut - 1) of tRaw
+   end if
+   if ":" is not in tRaw then
+      return tRaw
+   end if
    put the itemDelimiter into tSaved
    set the itemDelimiter to ":"
-   put item 1 of pSocketID into tOut
+   -- `item 1 to -2` REJOINS its items with the delimiter, which is exactly what
+   -- a bare IPv6 host needs: the three empty/short items of "::1:54321" come
+   -- back as "::1", while "127.0.0.1:9050" comes back unchanged.
+   put item 1 to -2 of tRaw into tOut
    set the itemDelimiter to tSaved
    return tOut
 end oxHostOfSocket
@@ -10234,7 +10544,7 @@ command b2kPlayerWallProbe pBody, pAxis
 end b2kPlayerWallProbe
 
 command b2kPlayerDuckSet pWantDuck
-   local tNewH, tShift, tNeed
+   local tNewH, tShift, tNeed, tS, tCat, tMask, tGrp
    if sPlayRef is empty then exit b2kPlayerDuckSet
    if pWantDuck is true then
       if sPlayDucked is true or sPlayDuckScale >= 1 then exit b2kPlayerDuckSet
@@ -10249,9 +10559,25 @@ command b2kPlayerDuckSet pWantDuck
       put max(8, round(sPlayCapH * sPlayDuckScale)) into tNewH
       put (sPlayCapH - tNewH) / 2 into tShift
       b2kMoveTo sPlayRef, sPlayPX, sPlayPY + tShift
+      -- capture the filter BEFORE the rebuild: b2kReshape destroys the old
+      -- shape, and sShapeH[sPlayRef] names a different shape afterwards.
+      -- The empty guard is b2kPlayerDropStart's: the raw b2Shape* handlers
+      -- take an Integer, so handing one an empty ref is a coercion THROW
+      -- from inside the player tick, not a quiet 0.
+      put 0 into tCat
+      put sShapeH[sPlayRef] into tS
+      if tS is not empty then
+         put b2ShapeFilterCategory(tS) into tCat
+         put b2ShapeFilterMask(tS) into tMask
+         put b2ShapeFilterGroup(tS) into tGrp
+         if tCat > 4294967295 then put 4294967295 into tCat
+         if tMask > 4294967295 then put 4294967295 into tMask
+      end if
       b2kReshape sPlayRef, "capsule", sPlayCapW, tNewH
       b2kSetFriction sPlayRef, 0.08
       b2kSetBounce sPlayRef, 0
+      put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+      if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
       put tNewH into sPlayDuckH
       put tNewH / 2 into sPlayHalfH
       put true into sPlayDucked
@@ -10268,15 +10594,29 @@ command b2kPlayerDuckSet pWantDuck
 end b2kPlayerDuckSet
 
 command b2kPlayerStandUp
-   local tShift
+   local tShift, tS, tCat, tMask, tGrp
    if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
    -- mirror of the duck: stored capsule dims in, explicit dims to b2kReshape,
-   -- no control resize (inert on a polygon graphic; the drawer re-points it)
+   -- no control resize (inert on a polygon graphic; the drawer re-points it),
+   -- and the same material + filter capture/restore around the rebuild (see
+   -- b2kPlayerDuckSet's header). This one is reached by b2kPlayerRespawn too,
+   -- which is the other path with no hook for the game to re-apply a filter.
    put (sPlayCapH - sPlayDuckH) / 2 into tShift
    b2kMoveTo sPlayRef, sPlayPX, sPlayPY - tShift
+   put 0 into tCat
+   put sShapeH[sPlayRef] into tS
+   if tS is not empty then
+      put b2ShapeFilterCategory(tS) into tCat
+      put b2ShapeFilterMask(tS) into tMask
+      put b2ShapeFilterGroup(tS) into tGrp
+      if tCat > 4294967295 then put 4294967295 into tCat
+      if tMask > 4294967295 then put 4294967295 into tMask
+   end if
    b2kReshape sPlayRef, "capsule", sPlayCapW, sPlayCapH
    b2kSetFriction sPlayRef, 0.08
    b2kSetBounce sPlayRef, 0
+   put sShapeH[sPlayRef] into tS   -- the reshape minted a NEW shape
+   if tCat > 0 and tS is not empty then b2SetShapeFilter tS, tCat, tMask, tGrp
    put sPlayStandH / 2 into sPlayHalfH
    put false into sPlayDucked
    b2kPlayerTuneCache
@@ -12580,7 +12920,7 @@ function rsRequestImmutable pSession, pTarget
 end rsRequestImmutable
 
 function rsMediaCreate pSession, pPath
-   local tParent, tData, tH, tHash, tWhy, tErr
+   local tParent, tData, tH, tHash, tWhy, tErr, tSavedDelim
    if there is not a file pPath then
       rsSetError "rsMediaCreate: no file at" && pPath && \
             "(media attachments are single files)"
@@ -12591,8 +12931,18 @@ function rsMediaCreate pSession, pPath
             "handle"
       return empty
    end if
+   -- itemDelimiter is GLOBAL mutable state and this is the library's only
+   -- non-default set, so it is saved and restored around the NARROWEST
+   -- possible span - the path split, nothing else. Restoring here rather
+   -- than at each exit is not tidiness: this function has SEVEN exits, six
+   -- of them refusals, and a restore per exit is a line a later refusal
+   -- path forgets. The leak was real and its symptom was a mystery, not a
+   -- delimiter: a caller's later comma-joined item read returned the whole
+   -- list under "/" (the demo carried a point patch quoting exactly that).
+   put the itemDelimiter into tSavedDelim
    set the itemDelimiter to "/"
    put item 1 to -2 of pPath into tParent
+   set the itemDelimiter to tSavedDelim
    if tParent is empty then put "/" into tParent
    try
       put btCreateTorrent(pPath, 0, 0, empty) into tData
@@ -13933,7 +14283,7 @@ function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
 end rsAnonCreateService
 
 function rsAnonFeedPage pTitle, pEntries
-   local tTitleBytes, tEsc, tOut, tList, tLine
+   local tTitleBytes, tEsc, tOut, tList, tLine, tSavedDelim
    put textEncode(pTitle, "UTF-8") into tTitleBytes
    if the number of bytes in tTitleBytes < 1 or \
          the number of bytes in tTitleBytes > kRsMaxDisplayName then
@@ -13947,6 +14297,12 @@ function rsAnonFeedPage pTitle, pEntries
    put pEntries into tList
    replace numToChar(13) & numToChar(10) with numToChar(10) in tList
    replace numToChar(13) with numToChar(10) in tList
+   -- the same save/restore discipline as rsMediaCreate's itemDelimiter,
+   -- applied uniformly rather than only where it bit. Be honest about what
+   -- this one is: LF IS the engine default, so this set leaks nothing
+   -- observable today - it is defence in depth against a caller who set
+   -- something else, not a second live bug fixed.
+   put the lineDelimiter into tSavedDelim
    set the lineDelimiter to numToChar(10)
    repeat for each line tLine in tList
       if tLine is empty then
@@ -13954,6 +14310,7 @@ function rsAnonFeedPage pTitle, pEntries
       end if
       put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
    end repeat
+   set the lineDelimiter to tSavedDelim
    put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
          "hex), then POST your sealed intro as hex to /dm.</p>" & \
          "</body></html>" after tOut
@@ -15000,7 +15357,7 @@ end sx1testDiagnostics
 -- ==========================================================================
 -- OnionXT: the full ox* self-test
 --
--- 8 groups, all OFFLINE - no Tor daemon is started or contacted. The
+-- 10 groups, all OFFLINE - no Tor daemon is started or contacted. The
 -- live-Tor paths stay in onionxt's own demo.
 --
 -- GENERATED from onionxt/examples/onionxt-tests.livecodescript by
@@ -15014,6 +15371,7 @@ function ox1oxSelfTest
    put empty into ox1sLog
    put 0 into ox1sPass
    put 0 into ox1sFail
+   put 0 into ox1sSkip
 
    ox1testVersionAndCapabilities
    ox1testInitialState
@@ -15024,9 +15382,18 @@ function ox1oxSelfTest
    ox1testAddressNegativePaths
    ox1testSodiumComposition
    ox1testConfigurationSetters
+   ox1testLoopbackGuard
 
    local ox1tSummary
-   put ox1sPass & " passed, " & ox1sFail & " failed" into ox1tSummary
+   -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
+   -- stSummaryCounts: a line counts as the summary only if every word on it is
+   -- a number or the word passed/failed/skipped, in that order, and EXACTLY
+   -- ONE line in the whole report may qualify - zero matches and two matches
+   -- are both reported failures there rather than a silent zero folded into
+   -- the suite totals. The skip count is the third number as of 2026-08-17;
+   -- the two-number spelling still parses, so a member that has no skips to
+   -- report is not forced to grow one.
+   put ox1sPass & " passed, " & ox1sFail & " failed, " & ox1sSkip & " skipped" into ox1tSummary
    return ox1tSummary & return & "----------------------------------------" & return & ox1sLog
 end ox1oxSelfTest
 
@@ -15043,6 +15410,11 @@ end ox1oxCheck
 private command ox1oxSection pTitle
    put ox1sLog & return & "-- " & pTitle & " --" & return into ox1sLog
 end ox1oxSection
+
+private command ox1oxSkip pReason
+   add 1 to ox1sSkip
+   put ox1sLog & "  --   (skipped: " & pReason & ")" & return into ox1sLog
+end ox1oxSkip
 
 private command ox1testVersionAndCapabilities
    ox1oxSection "version and capabilities"
@@ -15066,8 +15438,8 @@ end ox1testVersionAndCapabilities
 private command ox1testInitialState
    ox1oxSection "initial state (before oxConnectControl)"
    if oxIsControlAuthenticated() then
-      put ox1sLog & "  --   (skipped: this session is already control-authenticated; " & \
-         "run ox1oxSelfTest before oxConnectControl for this section)" & return into ox1sLog
+      ox1oxSkip "this session is already control-authenticated; " & \
+         "run ox1oxSelfTest before oxConnectControl for this section"
       exit ox1testInitialState
    end if
    ox1oxCheck (oxBootstrapProgress() is 0), "bootstrap progress starts at 0"
@@ -15096,8 +15468,8 @@ private command ox1testFailClosedArguments
    -- the note on ox1testInitialState above); skip rather than false-fail if a
    -- prior oxConnectControl in this session already succeeded.
    if oxIsControlAuthenticated() then
-      put ox1sLog & "  --   (skipped: pre-auth guard on oxCreateService* needs a " & \
-         "session that has not authenticated yet)" & return into ox1sLog
+      ox1oxSkip "pre-auth guard on oxCreateService* needs a " & \
+         "session that has not authenticated yet"
    else
       oxCreateService 80, 8080
       put the result into ox1tResult
@@ -15148,7 +15520,7 @@ private command ox1testIdempotentTeardown
       oxDisconnectControl
       oxShutdown
       oxShutdown
-   catch tError
+   catch ox1tError
       put false into ox1tOk
    end try
    ox1oxCheck ox1tOk, "double close / remove / disconnect / shutdown never throws"
@@ -15173,7 +15545,7 @@ private command ox1testOneKnownAddress pAddress, pLabel
       ox1oxCheck (oxAddressFromPublicKey(ox1tPub) is pAddress), \
          pLabel & ": oxAddressFromPublicKey re-encodes the exact same address"
    else
-      put ox1sLog & "  --   (skipped: " & pLabel & " re-encode needs SodiumXT sxSha3_256, docs/08)" & return into ox1sLog
+      ox1oxSkip pLabel & " re-encode needs SodiumXT sxSha3_256, docs/08"
    end if
 end ox1testOneKnownAddress
 
@@ -15199,7 +15571,7 @@ private command ox1testAddressNegativePaths
    if ox1tInfo["offlineAddress"] is true then
       ox1oxCheck (not oxIsValidAddress(ox1tTampered)), "a tampered address fails checksum validation"
    else
-      put ox1sLog & "  --   (skipped: tamper-detection needs SodiumXT sxSha3_256, docs/08)" & return into ox1sLog
+      ox1oxSkip "tamper-detection needs SodiumXT sxSha3_256, docs/08"
    end if
 end ox1testAddressNegativePaths
 
@@ -15217,7 +15589,7 @@ private command ox1testSodiumComposition
       ox1oxCheck (ox1testHex(ox1tExpanded) is ox1tExpectExp), \
          "sxSignSeedToExpandedKey(seed 0x42 x 32) matches the pinned expanded-key vector"
    else
-      put ox1sLog & "  --   (skipped: sxSignSeedToExpandedKey needs SodiumXT ABI >= 6)" & return into ox1sLog
+      ox1oxSkip "sxSignSeedToExpandedKey needs SodiumXT ABI >= 6"
    end if
 
    -- Gap #3 (SHIPPED): sxHmacSha256("Jefe","what do ya want for nothing?") RFC 4231 TC2.
@@ -15228,7 +15600,7 @@ private command ox1testSodiumComposition
       ox1oxCheck (ox1testHex(ox1tMac) is ox1tExpectMac), \
          "sxHmacSha256 (RFC 4231 Test Case 2) matches the pinned HMAC vector"
    else
-      put ox1sLog & "  --   (skipped: sxHmacSha256 needs SodiumXT ABI >= 6)" & return into ox1sLog
+      ox1oxSkip "sxHmacSha256 needs SodiumXT ABI >= 6"
    end if
 end ox1testSodiumComposition
 
@@ -15286,6 +15658,59 @@ private command ox1testConfigurationSetters
    oxSetPeerCallback empty
    ox1oxCheck (oxIsReady() is ox1tWasReady), "restoring the dispatch configuration is harmless too"
 end ox1testConfigurationSetters
+
+private command ox1testLoopbackGuard
+   ox1oxSection "inbound loopback guard (socket id parse + verdict)"
+   local ox1tProbe, ox1tError
+   try
+      put oxHostOfSocket("127.0.0.1:9050") into ox1tProbe
+   catch ox1tError
+      ox1oxSkip "oxHostOfSocket / oxHostIsLoopback are private to " & \
+         "onionxt.livecodescript; run the demo standalone or the suite paste, where " & \
+         "the harness and the library are one script"
+      exit ox1testLoopbackGuard
+   end try
+
+   -- The shape we mint ourselves, and a second address from 127.0.0.0/8. The
+   -- old parse handled both correctly; they are here so the rewrite cannot fix
+   -- IPv6 by breaking IPv4.
+   ox1testOneSocketID "127.0.0.1:9050|oxs3", "127.0.0.1", true, "dialed SOCKS id with a |name suffix"
+   ox1testOneSocketID "127.9.9.9:1024", "127.9.9.9", true, "another 127.0.0.0/8 address"
+   ox1testOneSocketID "192.0.2.5:1234", "192.0.2.5", false, "routable IPv4 peer (TEST-NET-1) is refused"
+
+   -- The one the old parse got wrong in the HARMLESS direction: item 1 was "[",
+   -- so a genuine loopback peer was refused.
+   ox1testOneSocketID "[::1]:54321|3", "::1", true, "bracketed IPv6 loopback with a |name suffix"
+
+   -- And the three whose item 1 was EMPTY, which the guard accepted. Two of them
+   -- got the right answer with no reasoning behind it; the third is the fail-open
+   -- itself, a routable address let in as loopback.
+   ox1testOneSocketID "::1:54321", "::1", true, "bare IPv6 loopback"
+   ox1testOneSocketID "::ffff:127.0.0.1:1234", "::ffff:127.0.0.1", true, \
+      "IPv4-mapped loopback is still let in"
+   ox1testOneSocketID "::ffff:203.0.113.9:1234", "::ffff:203.0.113.9", false, \
+      "IPv4-mapped ROUTABLE peer (TEST-NET-3) is refused"
+
+   -- The new default. An id whose shape we do not understand parses to no host,
+   -- and no host is a REFUSAL now; oxPeerAccepted prints the raw id beside it so
+   -- an unknown spelling announces itself instead of being waved through.
+   ox1testOneSocketID ":54321", empty, false, "an id with no host parses empty and is refused"
+   ox1oxCheck (not oxHostIsLoopback(empty)), "the guard refuses an empty host (it used to accept one)"
+   ox1oxCheck oxHostIsLoopback("localhost"), "the name localhost is still loopback"
+end ox1testLoopbackGuard
+
+private command ox1testOneSocketID pSocketID, pExpectHost, pExpectLoopback, pLabel
+   -- Both halves are asserted separately on purpose: a parse that returns the
+   -- right verdict for the wrong reason is the bug this section exists to catch
+   -- (empty-host-means-loopback gave the RIGHT answer for "::1:54321" and the
+   -- wrong one for "::ffff:203.0.113.9:1234", from the identical parse result).
+   local ox1tHost
+   put oxHostOfSocket(pSocketID) into ox1tHost
+   ox1oxCheck (ox1tHost is pExpectHost), \
+      pLabel & ": [" & pSocketID & "] parses to host [" & pExpectHost & "]"
+   ox1oxCheck (oxHostIsLoopback(ox1tHost) is pExpectLoopback), \
+      pLabel & ": loopback verdict is " & pExpectLoopback
+end ox1testOneSocketID
 
 private function ox1testHex pData
    -- binaryDecode is a function that fills its output var; `get` discards the count.
@@ -15980,7 +16405,9 @@ end cx1stRunRlp
 
 command cx1stRunWif
    local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
-   local cx1tDecoded, cx1tThrew
+   -- cx1tThrew went with the two hand-rolled try blocks the refusals below used
+   -- to need; cx1stThrowsText3 carries that state now.
+   local cx1tDecoded
    cx1stSection "WIF (wallet import format)"
    try
       -- The mainnet/uncompressed answer IS the Bitcoin wiki's published worked
@@ -16001,23 +16428,29 @@ command cx1stRunWif
       put cxWifDecode(cx1kWifTestnet) into cx1tDecoded
       cx1stAssert "the testnet form reports testnet", cx1tDecoded["network"] is "testnet"
       -- The refusals. A typo in a pasted key must never decode to a plausible
-      -- neighbouring wallet, so "it threw" is the assertion.
-      cx1stAssert "a corrupt checksum is refused", cx1stThrows("cxWifDecode", cx1kWifBadChecksum)
-      cx1stAssert "an xprv is refused (wrong payload length)", cx1stThrows("cxWifDecode", cx1kBip32V1Xprv)
-      put "false" into cx1tThrew
-      try
-         get cxWifEncode(cx1kWifSeckey, "regtest", true)
-      catch tInner
-         put "true" into cx1tThrew
-      end try
-      cx1stAssert "an unknown network is refused", cx1tThrew is "true"
-      put "false" into cx1tThrew
-      try
-         get cxWifEncode("deadbeef", "mainnet", true)
-      catch tInner2
-         put "true" into cx1tThrew
-      end try
-      cx1stAssert "a short key is refused", cx1tThrew is "true"
+      -- neighbouring wallet, so a refusal is the assertion - but WHICH refusal
+      -- is the assertion that has content here, because WIF is four guards
+      -- stacked on a Base58Check frame and every one of them throws. Each line
+      -- names the handler the message must come from and a phrase unique to
+      -- that guard's sentence (see cx1stRefusalNames).
+      --
+      -- The corrupt-checksum case is the instructive one: it is refused by
+      -- cxBase58CheckDecode, one layer BELOW cxWifDecode, which never sees the
+      -- string. Naming cxWifDecode here would have been wrong, and the reason
+      -- to pin it is the _wrong_spec lesson the Python gate already carries - a
+      -- bad checksum masks every later check, so the four WIF-specific guards
+      -- can only be reached through payloads whose checksum is VALID. If this
+      -- line ever started naming cxWifDecode, the checksum would have stopped
+      -- being verified before the payload was read.
+      cx1stAssertRefusal "a corrupt checksum is refused, by the Base58Check frame below cxWifDecode", cx1stThrowsText("cxWifDecode", cx1kWifBadChecksum), "cxBase58CheckDecode", "checksum"
+      cx1stAssertRefusal "an xprv is refused, on its payload LENGTH and not on its version byte", cx1stThrowsText("cxWifDecode", cx1kBip32V1Xprv), "cxWifDecode", "payload"
+      -- These two were hand-rolled try blocks with an undeclared catch
+      -- variable each. cx1stThrowsText3 is the same shape as the rest of the
+      -- harness, declares its catch variable (checker check 15), and reads the
+      -- message, so the three-argument encoder's two distinct refusals can no
+      -- longer be satisfied by each other.
+      cx1stAssertRefusal "an unknown network is refused, naming the network", cx1stThrowsText3("cxWifEncode", cx1kWifSeckey, "regtest", true), "cxWifEncode", "network"
+      cx1stAssertRefusal "a short key is refused, naming the key length", cx1stThrowsText3("cxWifEncode", "deadbeef", "mainnet", true), "cxWifEncode", "64 hex characters"
    catch cx1tError
       cx1stSectionFailed "WIF", cx1tError
    end try
@@ -16059,9 +16492,17 @@ command cx1stRunSchnorr
       cx1stAssert "cxSchnorrSignatureLen is 64", cxSchnorrSignatureLen() is 64
       cx1stAssert "cxXOnlyPubkeyLen is 32", cxXOnlyPubkeyLen() is 32
       cx1stAssert "cxTaprootOutputLen is 33 (key plus a parity byte)", cxTaprootOutputLen() is 33
-      -- Fail closed.
-      cx1stAssert "cxXOnlyPubkey refuses a 33-byte public key", cx1stThrows("cxXOnlyPubkey", cxHexDecode(cx1kPubOneCompressed))
-      cx1stAssert "cxSchnorrVerify refuses a 33-byte key (a length is a caller bug, not a verdict)", cx1stThrows3("cxSchnorrVerify", cxHexDecode(cx1kPubOneCompressed), cx1tMsg, cx1tSig)
+      -- Fail closed, and in whose words (see cx1stRefusalNames). Neither of these
+      -- has a script-layer guard above it, so the message is the .lcb's
+      -- sFinish text and the reason it can carry is the shim's generic status
+      -- sentence rather than an argument name. That is still the assertion
+      -- worth making, because the STATUS is what discriminates: cxSchnorrVerify
+      -- is the one handler in the library where a bad SIGNATURE is an answer
+      -- (false) and a bad LENGTH is an error, so "it threw" cannot tell a
+      -- correct length refusal from the shim having decided the 33 bytes were
+      -- an unparseable KEY. The message can, and does.
+      cx1stAssertRefusal "cxXOnlyPubkey refuses a 33-byte public key", cx1stThrowsText("cxXOnlyPubkey", cxHexDecode(cx1kPubOneCompressed)), "cxXOnlyPubkey", "a buffer had the wrong length"
+      cx1stAssertRefusal "cxSchnorrVerify refuses a 33-byte key as a LENGTH error (a length is a caller bug, not a verdict)", cx1stThrowsText3("cxSchnorrVerify", cxHexDecode(cx1kPubOneCompressed), cx1tMsg, cx1tSig), "cxSchnorrVerify", "a buffer had the wrong length"
    catch cx1tError
       cx1stSectionFailed "BIP-340 Schnorr", cx1tError
    end try
@@ -16116,12 +16557,35 @@ command cx1stRunTaproot
       -- valid-looking address nobody can spend from - so the two handlers
       -- disagreeing on the same 32 bytes is the assertion.
       cx1stAssert "cxBtcAddressP2TR still does NOT tweak", cxBtcAddressP2TR(cx1tInternal) is not cx1kTapAddress0
-      -- Fail closed.
-      cx1stAssert "a 33-byte internal key is refused", cx1stThrows2("cxTaprootTweak", cxHexDecode(cx1kPubOneCompressed), empty)
-      cx1stAssert "an internal key that is not on the curve is refused", cx1stThrows2("cxTaprootTweak", cxHexDecode(cx1kSchnorrPubOffCurve), empty)
-      cx1stAssert "a 31-byte merkle root is refused", cx1stThrows2("cxTaprootTweak", cx1tInternal, cx1stRepeatByte(0, 31))
-      cx1stAssert "cxBtcAddressP2TRFromInternal refuses a 33-byte key", cx1stThrows2("cxBtcAddressP2TRFromInternal", cxHexDecode(cx1kPubOneCompressed), empty)
-      cx1stAssert "cxTaprootTweakSeckey refuses a 31-byte key", cx1stThrows2("cxTaprootTweakSeckey", cx1stRepeatByte(0, 31), empty)
+      -- Fail closed, AND IN WHOSE WORDS. These five used to assert only that
+      -- something threw, which on this surface is close to asserting nothing:
+      -- the shim re-checks every length the script guards, so the guard can be
+      -- deleted and the throw survives. That mutation was run and it SURVIVED
+      -- on the headless side until check-script-vectors.py started reading the
+      -- message (2026-08-16). Each check below now names the handler the
+      -- message must come from and a phrase from the reason, which is the only
+      -- thing that separates "the guard under test refused" from "something
+      -- below it did". See cx1stRefusalNames for why the handler is matched with
+      -- its colons.
+      cx1stAssertRefusal "a 33-byte internal key is refused, by cxTaprootTweak's own guard", cx1stThrowsText2("cxTaprootTweak", cxHexDecode(cx1kPubOneCompressed), empty), "cxTaprootTweak", "internal key"
+      -- The off-curve key is the one that must NOT come from the script: 32
+      -- bytes passes both length guards, so only the curve can say no, and the
+      -- message therefore names cxTaprootTweakPubkey - the .lcb handler one
+      -- call down. Asserting that is asserting the layering: if this ever
+      -- started naming cxTaprootTweak, a script-side check would have grown
+      -- that is deciding curve membership, which nothing in this layer may do.
+      cx1stAssertRefusal "an internal key that is not on the curve is refused, by the CURVE and not by a length check", cx1stThrowsText2("cxTaprootTweak", cxHexDecode(cx1kSchnorrPubOffCurve), empty), "cxTaprootTweakPubkey", "not a valid secp256k1 key"
+      cx1stAssertRefusal "a 31-byte merkle root is refused, naming the merkle root", cx1stThrowsText2("cxTaprootTweak", cx1tInternal, cx1stRepeatByte(0, 31)), "cxTaprootTweak", "merkle root"
+      -- cxBtcAddressP2TRFromInternal re-throws the INNER message, so this line
+      -- expects cxTaprootTweak's words and not its own. That is worth pinning
+      -- rather than working around: the handler wraps its body in a
+      -- capture-set-the-itemDelimiter-back-then-throw-after-end-try dance,
+      -- because a throw issued INSIDE a catch does not reach the caller on OXT
+      -- (2026-08-09, the fail-open that made cxMnemonicValidate answer true to
+      -- a mistyped backup). If that capture ever broke, the caller would get
+      -- empty or a bare engine error, and this is the check that would say so.
+      cx1stAssertRefusal "cxBtcAddressP2TRFromInternal refuses a 33-byte key, re-throwing the inner message intact", cx1stThrowsText2("cxBtcAddressP2TRFromInternal", cxHexDecode(cx1kPubOneCompressed), empty), "cxTaprootTweak", "internal key"
+      cx1stAssertRefusal "cxTaprootTweakSeckey refuses a 31-byte key", cx1stThrowsText2("cxTaprootTweakSeckey", cx1stRepeatByte(0, 31), empty), "cxTaprootTweakSeckey", "a buffer had the wrong length"
    catch cx1tError
       cx1stSectionFailed "BIP-341 Taproot", cx1tError
    end try
@@ -16159,6 +16623,56 @@ function cx1stThrows3 pHandler, pArgA, pArgB, pArgC
    end try
    return cx1tThrew is "true"
 end cx1stThrows3
+
+function cx1stThrowsText pHandler, pArg
+   local cx1tError, cx1tMessage
+   put "(did not throw)" into cx1tMessage
+   try
+      do "get" && pHandler & "(pArg)"
+   catch cx1tError
+      put cx1tError into cx1tMessage
+   end try
+   return cx1tMessage
+end cx1stThrowsText
+
+function cx1stThrowsText2 pHandler, pArgA, pArgB
+   local cx1tError, cx1tMessage
+   put "(did not throw)" into cx1tMessage
+   try
+      do "get" && pHandler & "(pArgA, pArgB)"
+   catch cx1tError
+      put cx1tError into cx1tMessage
+   end try
+   return cx1tMessage
+end cx1stThrowsText2
+
+function cx1stThrowsText3 pHandler, pArgA, pArgB, pArgC
+   local cx1tError, cx1tMessage
+   put "(did not throw)" into cx1tMessage
+   try
+      do "get" && pHandler & "(pArgA, pArgB, pArgC)"
+   catch cx1tError
+      put cx1tError into cx1tMessage
+   end try
+   return cx1tMessage
+end cx1stThrowsText3
+
+function cx1stRefusalNames pMessage, pHandler, pReason
+   local cx1tFramed
+   put "CoinXT: " & pHandler & ":" into cx1tFramed
+   if cx1tFramed is in pMessage then
+      return pReason is in pMessage
+   end if
+   return false
+end cx1stRefusalNames
+
+command cx1stAssertRefusal pName, pMessage, pHandler, pReason
+   if cx1stRefusalNames(pMessage, pHandler, pReason) then
+      cx1stAssert pName, true
+   else
+      cx1stAssert pName & "  [got: " & pMessage & "]", false
+   end if
+end cx1stAssertRefusal
 
 function cx1stSameHex pA, pB
    return ("h" & pA) is ("h" & pB)
@@ -16582,6 +17096,7 @@ command bt1stRun
    bt1stResetCounters
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
+   put 0 into bt1sTorrent3
 
    bt1stSection "session + ABI"
    -- btStartSession is the one handler that can throw (on ABI skew); a clean
@@ -16750,10 +17265,35 @@ command bt1stRun
    bt1stAssert "btRp1Send to a non-peer fails cleanly", \
       (btRp1Send(bt1sSession, 999999, textEncode("nobody is listening", "UTF-8")) < 0)
 
+   -- The three handlers this section used to wave at as "confirm by hand".
+   -- The excuses were about the SUCCESS path and were read as if they covered
+   -- the whole handler: the shim checks the handle (or the session, or the
+   -- buffer) FIRST and returns a code before it can move a byte, so every one
+   -- of them has a refusal leg that is safe, offline and deterministic. That
+   -- distinction is exactly what the 2026-08-17 coverage-gate fix surfaced -
+   -- until then this NOTE was the only surviving mention of all three, and the
+   -- gate counted a sentence saying they were untested as proof they were.
+   bt1stSection "destructive + buffer handlers: the refusal legs"
+   -- btx_move_storage returns BTX_ERR_BAD_HANDLE before h.move_storage() runs,
+   -- so a stale id relocates nothing. Destructive on a LIVE handle only.
+   bt1stAssert "btMoveStorage on a stale id refuses, moving nothing", \
+      (btMoveStorage(999999, bt1sTempDir) is -2)
+   -- Non-empty Data so the .lcb does NOT short-circuit: this proves the
+   -- foreign call ran and the shim rejected the handle, not that we skipped it.
+   bt1stAssert "btSetFilePriorities on a stale id refuses", \
+      (btSetFilePriorities(999999, textEncode("0", "UTF-8")) is -2)
+   -- read_resume_data uses the ec-overload, so garbage sets an error code
+   -- rather than throwing. 0 is "no torrent added".
+   bt1stAssert "btAddTorrentWithResume refuses garbage resume bytes", \
+      (btAddTorrentWithResume(bt1sSession, textEncode("not-bencoded", "UTF-8"), \
+         bt1sTempDir) is 0)
+   -- ...and 0 alone cannot tell a refusal from the empty-Data short-circuit
+   -- that never calls the shim at all, so pin the shim's own message.
+   bt1stAssert "...and says why (the shim ran, it did not short-circuit)", \
+      (btLastError() contains "invalid resume data")
+
    bt1stSection "not auto-checked - confirm by hand"
-   bt1stNote "btMoveStorage + btRemoveTorrent(deleteFiles=true) are destructive;"
-   bt1stNote "btSetFilePriorities needs a binary buffer; btAddTorrentWithResume"
-   bt1stNote "needs async resume bytes; btAddMagnet is covered via btAddMagnetEx."
+   bt1stNote "btRemoveTorrent(deleteFiles=true) deletes real files: manual only."
    catch bt1tRunErr
       bt1stNote "RUNTIME ERROR - a binding call failed: " & bt1tRunErr
       add 1 to bt1sFailed
@@ -16843,6 +17383,15 @@ command bt1stRunTorrentChecks pTorrentData
    bt1stAssert "btClearPieceDeadlines", (btClearPieceDeadlines(bt1sTorrent) is 0)
 
    bt1stSection "extended add"
+   -- btAddMagnet is the plain form of the Ex call below. It used to be listed
+   -- in the hand-check note at the end of this file as "covered via
+   -- btAddMagnetEx", which is an argument about SHAPE, not a test: the two
+   -- take different argument counts, so the plain form's own marshalling was
+   -- never exercised anywhere. The 2026-08-17 coverage-gate fix - which stopped
+   -- counting a name inside a string literal as a call - is what surfaced that,
+   -- because the note was the only surviving mention.
+   put btAddMagnet(bt1sSession, "magnet:?xt=urn:btih:2222222222222222222222222222222222222222", bt1sTempDir) into bt1sTorrent3
+   bt1stAssert "btAddMagnet returns a handle", (bt1sTorrent3 > 0)
    put btAddMagnetEx(bt1sSession, "magnet:?xt=urn:btih:1111111111111111111111111111111111111111", bt1sTempDir, "16", "16") into bt1sTorrent2
    bt1stAssert "btAddMagnetEx (paused) returns a handle", (bt1sTorrent2 > 0)
    bt1stAssert "btAddTorrentFileEx returns a handle", (btAddTorrentFileEx(bt1sSession, pTorrentData, bt1sTempDir, "16", "16") > 0)
@@ -16880,11 +17429,15 @@ command bt1stCleanup
       if bt1sTorrent2 is not empty and bt1sTorrent2 > 0 then
          btRemoveTorrent bt1sSession, bt1sTorrent2, false
       end if
+      if bt1sTorrent3 is not empty and bt1sTorrent3 > 0 then
+         btRemoveTorrent bt1sSession, bt1sTorrent3, false
+      end if
       btStopSession bt1sSession
    end if
    put 0 into bt1sSession
    put 0 into bt1sTorrent
    put 0 into bt1sTorrent2
+   put 0 into bt1sTorrent3
 end bt1stCleanup
 
 
@@ -17278,7 +17831,7 @@ command dc1stReportDone
 end dc1stReportDone
 
 command dc1stRun
-   local dc1tPair
+   local dc1tPair, dc1tBig, dc1tNulR, dc1tNulErr
    dc1stResetCounters
    put empty into dc1sPhase
 
@@ -17290,7 +17843,16 @@ command dc1stRun
    dc1stAssert "dcLastError empty after clear", dcLastError() is empty
 
    dc1stSection "stale handles are harmless no-ops"
-   dc1stAssert "dcClosePeer(0) errors", dcClosePeer(0) < 0
+   -- The ACTION calls assert the EXACT code, not `< 0`. -2 (DCX_ERR_BAD_HANDLE)
+   -- is what the shim's classification order produces: every dcx_* action
+   -- validates the handle FIRST, then the argument, then the size, so a stale
+   -- handle can only ever answer -2. `< 0` also passed for -6, the firewall's
+   -- "a native throw was caught" - which would mean the stale-handle path is
+   -- THROWING somewhere inside libdatachannel rather than being the harmless
+   -- no-op this whole section exists to prove. Tightened 2026-08-17; the
+   -- values are pinned to dcx_abi.h by tools/check-record-registry.py so a
+   -- renumber cannot leave these literals quietly wrong.
+   dc1stAssert "dcClosePeer(0) is -2", dcClosePeer(0) is -2
    dc1stAssert "dcPeerState(0) is -1", dcPeerState(0) is -1
    dc1stAssert "dcGatheringState(0) is -1", dcGatheringState(0) is -1
    dc1stAssert "dcLocalDescription(0) empty", dcLocalDescription(0) is empty
@@ -17301,7 +17863,13 @@ command dc1stRun
    put dcSelectedCandidatePair(0) into dc1tPair
    dc1stAssert "dcSelectedCandidatePair(0) empty", the number of lines of the keys of dc1tPair is 0
    dc1stAssert "dcCreateChannel(0) is 0", dcCreateChannel(0, "x") is 0
-   dc1stAssert "dcSendText(0) errors", dcSendText(0, "x") < 0
+   dc1stAssert "dcSendText(0) is -2", dcSendText(0, "x") is -2
+   -- The classification ORDER itself, pinned: an oversize message on a stale
+   -- handle is still -2, because dcx_send_text checks the handle before it
+   -- measures. (The live -4 legs need an open channel and live in the async
+   -- half, which the suite fold deliberately leaves out.)
+   put dc1stRepeatByte(65, 60001) into dc1tBig
+   dc1stAssert "oversize dcSendText on a stale handle is still -2", dcSendText(0, dc1tBig) is -2
    dc1stAssert "dcChannelLabel(0) empty", dcChannelLabel(0) is empty
    dc1stAssert "dcChannelStreamId(0) is -1", dcChannelStreamId(0) is -1
    dc1stAssert "dcChannelIsOpen(0) is false", dcChannelIsOpen(0) is false
@@ -17309,14 +17877,37 @@ command dc1stRun
    dc1stAssert "dcBufferedAmount(0) is -1", dcBufferedAmount(0) is -1
    dc1stAssert "dcLocalDescriptionType(0) empty", dcLocalDescriptionType(0) is empty
    dc1stAssert "dcChannelProtocol(0) empty", dcChannelProtocol(0) is empty
-   dc1stAssert "dcSetLocalDescription(0) errors", dcSetLocalDescription(0, "offer") < 0
-   dc1stAssert "dcSetBufferedLowThreshold(0) errors", dcSetBufferedLowThreshold(0, 4096) < 0
+   dc1stAssert "dcSetLocalDescription(0) is -2", dcSetLocalDescription(0, "offer") is -2
+   dc1stAssert "dcSetBufferedLowThreshold(0) is -2", dcSetBufferedLowThreshold(0, 4096) is -2
    dc1stAssert "dcCreateChannelEx(0) is 0", \
          dcCreateChannelEx(0, "x", "proto", false, -1, -1, false, -1) is 0
    dcFreePeer(0)      -- must not crash
    dcFreeChannel(0)   -- must not crash
    dc1stAssert "dcFreePeer/dcFreeChannel(0) survived", true
    dc1stAssert "dcSendText(0) left a last-error", dcLastError() is not empty
+
+   -- The embedded-NUL refusal, which the BINDING makes because the shim
+   -- CANNOT: pText crosses as ZStringUTF8, so by the time dcx_send_text holds
+   -- it the NUL has become the terminator and the tail of the message is
+   -- gone. -3 on a STALE handle is the tell that the .lcb refused before the
+   -- FFI - a shim that saw this call would have answered -2 for the handle.
+   -- It sits BETWEEN the assertion above and the clear below on purpose: that
+   -- assertion has just proved the shim's last-error is DIRTY, so the empty
+   -- assertion here can only pass if this refusal cleared it. Placed after
+   -- the dcClearError instead, it would have passed whether the refusal ran
+   -- or not - a check that answers the question nobody asks twice.
+   -- Try-guarded because what the LCS -> LCB String bridge does with a NUL
+   -- char is itself unobserved engine behaviour: a throw at the marshalling
+   -- boundary must be a reported FAIL carrying its message, not the end of a
+   -- 500-check run.
+   put "" into dc1tNulR
+   try
+      put dcSendText(0, "a" & numToByte(0) & "b") into dc1tNulR
+   catch dc1tNulErr
+      put "threw:" && dc1tNulErr into dc1tNulR
+   end try
+   dc1stAssert "dcSendText refuses an embedded NUL with -3", dc1tNulR is -3
+   dc1stAssert "the NUL refusal cleared the shim last-error", dcLastError() is empty
    dcClearError
 
    -- GENERATED CUT (tools/build-suite-selftest.py). Everything below
@@ -17620,6 +18211,7 @@ command b21stRunAll
    b21stRun "b21stTestDash"
    b21stRun "b21stTestPlatformCarry"
    b21stRun "b21stTestDuckReshape"
+   b21stRun "b21stTestDuckFilter"
    b21stRun "b21stTestPlayerHelpers"
    b21stRun "b21stTestTeardown"
    -- the Kit API coverage sections (see the banner below b21stTestTeardown)
@@ -18862,6 +19454,64 @@ command b21stTestDuckReshape
    b21stAssert "stood back up past the ceiling (halfH " & round(b2kPlayerHalfH()) & ")", \
          (round(b2kPlayerHalfH()) >= b21tFullH)
 end b21stTestDuckReshape
+
+command b21stTestDuckFilter
+   local b21tRef, b21tFullH, b21tDuckH, b21tRest
+   b21stNewWorld "player: the duck rebuild keeps the collision filter"
+   b2kDefineLayer "stDfSolid"      -- bit 1, which is also the DEFAULT category
+   b2kDefineLayer "stDfGhost"      -- bit 2
+   -- the ground answers the ghost layer ONLY, so a player whose category
+   -- was reset to the default 1 falls straight through it
+   b21stSlab "st_ground", 50, 500, 900, 560
+   b2kSetCategory the long id of graphic "st_ground", "stDfGhost"
+   b2kSetMask the long id of graphic "st_ground", "stDfGhost"
+   -- a solid-layer deck with the DEFAULT mask: only a player whose mask was
+   -- reset to "everything" collides with it
+   b21stSlab "st_deck", 300, 380, 700, 400
+   b2kSetCategory the long id of graphic "st_deck", "stDfSolid"
+   -- a block the player shares a NEGATIVE group with: category and mask both
+   -- say collide, so the group alone is what keeps them apart
+   b21stSlab "st_block", 460, 420, 540, 440
+   b2kSetCategory the long id of graphic "st_block", "stDfGhost"
+   b2kSetMask the long id of graphic "st_block", "stDfGhost"
+   b2kSetCollisionGroup the long id of graphic "st_block", -7
+   b2kPlayerMake 500, 300, 32, 48
+   put the result into b21tRef
+   b2kSetCategory b21tRef, "stDfGhost"
+   b2kSetMask b21tRef, "stDfGhost"
+   b2kSetCollisionGroup b21tRef, -7   -- LAST: the two above write the group back
+   -- one full duck/stand cycle through the explicit entry points (the tick's
+   -- own trigger needs grounding and this player is still in the air), each
+   -- half proved to have actually rebuilt - run 4's lesson is that a duck
+   -- which quietly no-ops makes the whole section vacuous
+   b2kPlayerSet "duckScale", 0.5
+   put round(b2kPlayerHalfH()) into b21tFullH
+   -- step FIRST. The duck rebuild re-seats the body at (sPlayPX, sPlayPY +
+   -- shift), and those two are the PROBE's stash, which b2kPlayerAttach
+   -- leaves at 0,0 until a tick has run -- ducking straight off
+   -- b2kPlayerMake teleports the player to the origin, nowhere near the
+   -- three obstacles this test is built from.
+   b21stStep 2
+   b2kPlayerDuckSet true
+   put round(b2kPlayerHalfH()) into b21tDuckH
+   b21stAssert "the duck rebuilt the capsule (" & b21tFullH & " -> " & b21tDuckH & ")", \
+         (b21tDuckH < b21tFullH)
+   b2kPlayerStandUp
+   b21stAssert "the stand-up rebuilt it back (got " & round(b2kPlayerHalfH()) \
+         & " of " & b21tFullH & ")", (round(b2kPlayerHalfH()) is b21tFullH)
+   -- 150 fixed steps. The clear fall is ~190px (the back-to-back duck/stand
+   -- pair nets 13px of lift, because both re-seat off the SAME probe stash),
+   -- which is ~58 steps at this world's gravity; the rest settle the landing,
+   -- and a player that lost its category is still falling when they run out.
+   b21stStep 150
+   put round(b21stY(b21tRef)) into b21tRest
+   b21stAssert "MASK survived the rebuilds: no landing on the solid-layer deck (y " \
+         & b21tRest & ")", (b21tRest > 410)
+   b21stAssert "GROUP survived the rebuilds: no landing on the shared-group block (y " \
+         & b21tRest & ")", (b21tRest > 440)
+   b21stAssert "CATEGORY survived the rebuilds: still landed on the ghost-layer ground (y " \
+         & b21tRest & ", vy " & round(b21stVY(b21tRef)) & ")", (b21tRest < 520)
+end b21stTestDuckFilter
 
 command b21stTestPlayerHelpers
    local b21tRef
@@ -23920,15 +24570,34 @@ function he1heElectHostOf pPubsLines
 end he1heElectHostOf
 
 function he1heNetElectablePubs
-   -- election candidates: seated players still holding chips, EXCLUDING the
-   -- (lost) host key. An oracle host was never seated, so oracle tables
+   -- election candidates: LIVE seated players still holding chips, EXCLUDING
+   -- the (lost) host key. An oracle host was never seated, so oracle tables
    -- need no special case here.
-   local he1tOut, he1tSeatNum, he1tPub, he1tSeatedList
+   -- "live seated" is spec 9's own wording and it means NOT SITTING OUT: a
+   -- sat-out seat is dealt out at every boundary and times out instantly, so
+   -- electing it hands the table to the one key guaranteed not to re-host --
+   -- and because every client elects the same successor, that is a
+   -- DETERMINISTIC table death rather than a divergence anything could
+   -- notice. This used to scan seatedList itself and never looked at
+   -- sitOutBy; it rides he1heNetSeatedWithChipsList now (v0.24.0's F10 scan --
+   -- the last stray copy of it), filtered exactly the way he1heNetNextOccList
+   -- filters it, so "who is still in" has ONE definition with three readers.
+   -- WHY THIS FILTER IS CONSENSUS-SAFE, which is the whole reason it can be
+   -- applied here at all: sitOutBy is derived from the TRANSCRIPT alone --
+   -- a signed stand wire, or he1heNetTimeoutMiss counting host-authored timeout
+   -- wires every client folds identically -- so every client computes the
+   -- same candidate set with zero round trips, which is the property the
+   -- election exists for. he1heNetPubIsLive would NOT be safe here: it answers
+   -- from per-client observation (our own transport handle, our own
+   -- last-heard stamp), so two clients can legitimately disagree and name
+   -- two different successors. Presence gates SEATING (he1heNetSeatLateJoiners);
+   -- only transcript-derived facts may gate an election.
+   local he1tOut, he1tSeatNum, he1tPub, he1tChipList
    set the itemDelimiter to comma
    put empty into he1tOut
-   put he1gGame["seatedList"] into he1tSeatedList
-   repeat for each item he1tSeatNum in he1tSeatedList
-      if he1gGame["stacksBy"][he1tSeatNum] > 0 then
+   put he1heNetSeatedWithChipsList() into he1tChipList
+   repeat for each item he1tSeatNum in he1tChipList
+      if he1gGame["sitOutBy"][he1tSeatNum] is not "true" then
          put he1gGame["pubBySeat"][he1tSeatNum] into he1tPub
          if he1tPub is not empty and he1tPub is not he1gGame["hostPubHex"] then
             put he1tPub & return after he1tOut
@@ -29998,8 +30667,20 @@ end he1heTableLogoRender
 
 function he1heFitRect pNatW, pNatH, pCx, pCy, pBox
    -- the largest aspect-preserving rect that fits a pBox square centred on
-   -- (pCx,pCy). Pure values-in/values-out (H5); integer div keeps it exact.
+   -- (pCx,pCy). Pure values-in/values-out (H5).
    -- Bad/missing natural sizes (image not loaded yet) fall back to the full box.
+   -- WHAT "integer div" ACTUALLY BUYS, corrected 2026-08-17: it buys exact
+   -- SYMMETRY about (pCx,pCy), not an exact width. The rect is built as
+   -- centre -+ (t div 2), so its rendered size is 2 * (t div 2) -- one pixel
+   -- SHORT whenever the fitted t is odd. That is deliberate now rather than
+   -- merely true: the shrink-or-equal, symmetric-about-the-centre property is
+   -- what tools/check-table-layout.py's exemption for BOTH callers rests on
+   -- (it derives the built heSeatAv<N> / heTableLogo rects and argues this
+   -- runtime re-fit can only ever shrink inside them), and an exact-width
+   -- version would push one edge out to ceil(t/2) and weaken that argument
+   -- for a pixel nobody can see on a blendLevel watermark. Pinned in harness
+   -- section 21 -- both the symmetry and the one-pixel cost -- so the next
+   -- person to want exact widths changes a checked fact, not a comment.
    local he1tW, he1tH
    if pNatW is not a number or pNatH is not a number or pNatW <= 0 or pNatH <= 0 then
       put pBox into he1tW
@@ -31114,7 +31795,9 @@ function he1heSelfTest
    --
    -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
    -- than left as a claim that reads better than it is: this used to say "and
-   -- no msg", and section 21 is he1heProbeSodium, whose last lines are
+   -- no msg", and the LAST entry in he1heTestRunAllSections is he1heProbeSodium
+   -- (section 21 when that was written, the 22nd entry since v0.24.4 put the
+   -- pure-helpers section ahead of it), whose last lines are
    -- `put return & he1tRpt after he1gRpt` and then a BARE `put he1tRpt` -- and a bare
    -- put writes to msg. That echo is deliberate and documented at its own site
    -- (running he1heProbeSodium standalone from the message box should print), and
@@ -31191,6 +31874,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestOracleRun"
    he1heRunSection "he1heTestLevel2VoidRun"
    he1heRunSection "he1heTestLivenessRun"
+   he1heRunSection "he1heTestHelpersRun"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -32175,6 +32859,18 @@ command he1heTestCryptoRun
    sxSignKeypairFromSeed he1heHex2BinD(he1kKatIdSeed1), he1tPub, he1tSec
    he1heTAssert "crypto: ed25519 identity pubkey from seed", he1heBin2HexS(he1tPub), he1kKatIdPub1
 
+   -- the two TRUNCATIONS of that same digest, both one-liners and both
+   -- unpinned until now. The infohash is the expensive one to get wrong: it
+   -- is the spec 10 DHT rendezvous id, so an off-by-one in the chunk (or
+   -- hashing the table id's HEX TEXT instead of its BYTES) does not fail
+   -- anywhere -- it just puts two machines on two different DHT keys, and
+   -- the whole multi-machine session is spent watching a lobby that never
+   -- fills. Mirrored in protocol-kat as table_infohash / id_fingerprint1.
+   he1heTAssert "crypto: the DHT rendezvous id is 40 hex of H(tableId bytes)", \
+         he1heTableInfohash(he1kKatTableHex), he1kKatTableInfohash
+   he1heTAssert "crypto: the display fingerprint is 8 hex of H(pubkey)", \
+         he1heFingerprintOf(he1tPub), he1kKatIdFingerprint1
+
    put he1heEnvContentLine(he1kKatTableHex, 0, he1kKatIdPub1, "cfg", he1kKatCfgBody) into he1tContent
    he1heTAssert "crypto: canonical content-line bytes", \
          he1heBin2HexS(textEncode(he1tContent, "utf-8")), he1kKatEnv0ContentHex
@@ -33057,6 +33753,49 @@ command he1heTestLivenessRun
          & he1heRedialWaitTicks(3) & comma & he1heRedialWaitTicks(4) into he1tListTxt
    he1heTAssert "redial: doubling backoff 8/16/32/64 poll ticks", he1tListTxt, "8,16,32,64"
 
+   -- the ELECTION'S CANDIDATE SET, pure. he1heNetHostLost is driven twice below
+   -- (and once in section 18), but both of those only ever assert that SOME
+   -- successor was named -- so the filter inside he1heNetElectablePubs was
+   -- invisible to a fully green run, which is how it shipped electing seats
+   -- that are sitting out. Spec 9 elects among LIVE SEATED players: a sat-out
+   -- seat is dealt out at every boundary and times out instantly, so handing
+   -- it the table is a table death every client agrees on. Three seats, the
+   -- lowest key sat out; the successor must move UP to the next key. Reads
+   -- the live store, so it snapshots and restores it (the plate block above).
+   put he1gGame into he1tSaved
+   put "1,2,3" into he1gGame["seatedList"]
+   put empty into he1gGame["sitOutBy"]
+   put empty into he1gGame["stacksBy"]
+   put empty into he1gGame["pubBySeat"]
+   put 400 into he1gGame["stacksBy"][1]
+   put 400 into he1gGame["stacksBy"][2]
+   put 400 into he1gGame["stacksBy"][3]
+   put he1kKatIdPub1 into he1gGame["pubBySeat"][1]
+   put he1kKatIdPub2 into he1gGame["pubBySeat"][2]
+   put he1kKatIdPub3 into he1gGame["pubBySeat"][3]
+   put empty into he1gGame["hostPubHex"]   -- an ORACLE host: never seated, so nothing to exclude
+   he1heTAssert "election: all three seats live elects the lowest key", \
+         he1heElectHostOf(he1heNetElectablePubs()), he1kKatElectedHost
+   put "true" into he1gGame["sitOutBy"][2]
+   he1heTAssert "election: a SITTING-OUT seat is not electable (spec 9 live seats)", \
+         he1heElectHostOf(he1heNetElectablePubs()), he1kKatElectedHostSitOut
+   he1heTAssert "election: the sat-out key is gone from the candidate set entirely", \
+         (he1heNetElectablePubs() contains he1kKatIdPub2), "false"
+   -- the two filters it already had, re-pinned through the shared scan so a
+   -- later edit cannot trade one for the other. Seat 2 is still sitting out
+   -- here, so busting seat 3 leaves seat 1 as the only candidate and the
+   -- successor moves again -- a filter that stopped working would leave the
+   -- previous winner standing and this line would catch it.
+   put 0 into he1gGame["stacksBy"][3]
+   he1heTAssert "election: a busted seat is not electable either", \
+         he1heElectHostOf(he1heNetElectablePubs()), he1kKatIdPub1
+   put 400 into he1gGame["stacksBy"][3]
+   put empty into he1gGame["sitOutBy"]
+   put he1kKatIdPub2 into he1gGame["hostPubHex"]
+   he1heTAssert "election: the lost host never elects itself", \
+         he1heElectHostOf(he1heNetElectablePubs()), he1kKatElectedHostSitOut
+   put he1tSaved into he1gGame
+
    if not he1heHasSodium() then
       he1heTSkip "liveness: wire pins + timed netsim hand", "SodiumXT not installed"
       he1heTSkip "liveness: LIVE timed table (two machines, wall clocks)", \
@@ -33631,6 +34370,131 @@ command he1heTestLivenessRun
    he1heTSkip "redial: LIVE tor host-stream loss + redial (trimmed resync)", \
          "needs a running tor daemon + a second machine, host killed and restarted"
 end he1heTestLivenessRun
+
+command he1heTestHelpersRun
+   -- 21: the PURE LEAF HELPERS nothing else in this harness ever named.
+   -- SHALLOW ON PURPOSE, and the banner says so: these are one-expression
+   -- handlers whose whole risk is a chunk boundary, a comparison operator or
+   -- a restored delimiter, so a value pin is exactly the right depth for
+   -- them and nothing deeper is claimed. They are here because the suite's
+   -- 2026-08-16 coverage measurement found 205 of this member's 379 public
+   -- handlers named by no heTest*/heProbe* body at all, and a handler no
+   -- test names is a handler whose next edit is unverified -- the same
+   -- lesson box2dxt learned when 211 of its Kit's 313 turned out to run on
+   -- every existing test and be asserted by none.
+   -- Everything here is values-in/values-out (H5) and needs no extension,
+   -- so this section never SKIPs as a whole; the one branch that reaches a
+   -- bt* call probes for it and SKIPs by name.
+   local he1tSaved, he1tRcTxt, he1tRcErr, he1tDelimTxt, he1tRectTxt
+   put return & "-- 21. Pure helpers: leaf values nothing else pinned (shallow)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- he1heSwapExt: the atlas sibling-path swap. Its own comment makes three
+   -- claims and every one of them is pinned here, because atlas-kat.py
+   -- hardcodes BOTH sides of the .png/.xml pair and never models the swap --
+   -- there is no Python mirror to lean on, so these come from the contract.
+   he1heTAssert "helpers: he1heSwapExt swaps a trailing extension", \
+         he1heSwapExt("/cards/playingCards.png", ".xml"), "/cards/playingCards.xml"
+   he1heTAssert "helpers: he1heSwapExt appends when there is no extension", \
+         he1heSwapExt("/cards/playingCards", ".xml"), "/cards/playingCards.xml"
+   -- the documented cosmetic edge: a DOT IN A FOLDER NAME eats that segment,
+   -- because the swap is item-based. Pinned rather than left as prose so the
+   -- day someone makes it path-aware, they change a test and not a promise.
+   he1heTAssert "helpers: he1heSwapExt's dotted-folder edge is cosmetic, not a crash", \
+         he1heSwapExt("/a.b/cards", ".xml"), "/a.xml"
+   -- gotcha 5: it sets the itemDelimiter to "." and MUST put it back. This
+   -- line is the only thing that can catch that regression -- a leaked "."
+   -- would corrupt the next comma-item read in whatever called it.
+   put the itemDelimiter into he1tDelimTxt
+   he1heTAssert "helpers: he1heSwapExt restores the itemDelimiter (gotcha 5)", he1tDelimTxt, comma
+
+   -- he1heSettingsNumOk: the settings dialog's whole-number guard. Three
+   -- separate refusals live in one handler, so each gets its own value.
+   he1heTAssert "helpers: he1heSettingsNumOk accepts a whole number at the minimum", \
+         he1heSettingsNumOk(2, 2), "true"
+   he1heTAssert "helpers: he1heSettingsNumOk refuses below the minimum", \
+         he1heSettingsNumOk(1, 2), "false"
+   he1heTAssert "helpers: he1heSettingsNumOk refuses a fraction", \
+         he1heSettingsNumOk(2.5, 2), "false"
+   he1heTAssert "helpers: he1heSettingsNumOk refuses non-numeric text", \
+         he1heSettingsNumOk("ten", 0), "false"
+   he1heTAssert "helpers: he1heSettingsNumOk refuses empty (an untyped field)", \
+         he1heSettingsNumOk(empty, 0), "false"
+   he1heTAssert "helpers: he1heSettingsNumOk accepts zero at minimum zero", \
+         he1heSettingsNumOk(0, 0), "true"
+
+   -- he1heHandByOf: what the HUD subtracts to show chips BEHIND. Its contract
+   -- has a sharp edge -- at "between" the deltas are ALREADY in stacksBy, so
+   -- reading the hand's handBy there would double-count every settled bet --
+   -- and that edge is the whole reason the handler exists rather than the
+   -- array read. Reads the live store, so it snapshots and restores it.
+   put he1gGame into he1tSaved
+   put "hand" into he1gGame["phase"]
+   put 25 into he1gGame["state"]["handBy"][2]
+   he1heTAssert "helpers: he1heHandByOf reports a live seat's committed chips", \
+         he1heHandByOf(2), 25
+   he1heTAssert "helpers: he1heHandByOf reads 0 for a seat that has committed none", \
+         he1heHandByOf(3), 0
+   put "showdown" into he1gGame["phase"]
+   he1heTAssert "helpers: the showdown hold is still a LIVE hand for the HUD", \
+         he1heHandByOf(2), 25
+   put "between" into he1gGame["phase"]
+   he1heTAssert "helpers: he1heHandByOf reads 0 at between (stacksBy already paid)", \
+         he1heHandByOf(2), 0
+   put he1tSaved into he1gGame
+
+   -- he1heRcTxt: the bt* return-code label the torrent probe prints. The ok and
+   -- positive branches are pure; the NEGATIVE branch names btLastError, so
+   -- it is probed for rather than assumed (this harness must run on an
+   -- engine with no TorrentXT). The probe is named by DESCRIPTION and not by
+   -- handler, deliberately: the suite fold's check 7d builds its reachable
+   -- closure by over-approximation -- any he* name in a reachable body is an
+   -- edge, comment or not -- and that probe opens a libtorrent session.
+   he1heTAssert "helpers: he1heRcTxt reads an empty result as ok", he1heRcTxt(empty), "ok"
+   he1heTAssert "helpers: he1heRcTxt reads 0 as ok", he1heRcTxt(0), "ok"
+   he1heTAssert "helpers: he1heRcTxt labels a positive rc with its number", he1heRcTxt(3), "rc=3"
+   try
+      put he1heRcTxt(-1) into he1tRcTxt
+   catch he1tRcErr
+      put empty into he1tRcTxt
+   end try
+   if he1tRcTxt is empty then
+      he1heTSkip "helpers: he1heRcTxt's failure branch", \
+            "it names btLastError -- TorrentXT not installed"
+   else
+      he1heTContains "helpers: he1heRcTxt names the code on a negative rc", he1tRcTxt, "FAILED (-1)"
+   end if
+
+   -- he1heFitRect: the aspect-fit both the seat avatar and the table logo use.
+   -- PINNED AS BUILT, and the interesting half is the LAST two lines. The
+   -- returned width is 2 * (he1tW div 2), so an ODD fitted size renders one
+   -- pixel short -- the handler's comment used to claim "integer div keeps
+   -- it exact", which is false about the width and is corrected at its own
+   -- site. It is pinned rather than fixed because the shrink-or-equal,
+   -- exactly-symmetric-about-(pCx,pCy) rect is a property something else
+   -- already leans on: tools/check-table-layout.py exempts BOTH callers on
+   -- the written argument that he1heFitRect "can only ever shrink within" the
+   -- built rect centred on that point, which an exact-width version would
+   -- quietly weaken by pushing one edge to ceil(he1tW/2). One pixel on a
+   -- blendLevel watermark is not worth an un-eyeballed geometry change in a
+   -- layer whose confirming eye is still owed to the OXT pass.
+   he1heTAssert "helpers: he1heFitRect letterboxes a wide picture inside the box", \
+         he1heFitRect(100, 50, 512, 286, 240), "392,226,632,346"
+   he1heTAssert "helpers: he1heFitRect pillarboxes a tall picture inside the box", \
+         he1heFitRect(50, 100, 512, 286, 240), "452,166,572,406"
+   he1heTAssert "helpers: he1heFitRect falls back to the full box on a bad size", \
+         he1heFitRect(0, 0, 100, 100, 46), "77,77,123,123"
+   he1heTAssert "helpers: he1heFitRect falls back to the full box on non-numeric", \
+         he1heFitRect("x", 10, 100, 100, 46), "77,77,123,123"
+   -- the odd case: a fitted height of round(46 * 63 / 100) = 29, built as
+   -- 100 -+ 14, so the rect is dead-centred and 28 tall. Copied to a local
+   -- before the chunk (H6, and he1heSwapExt's own precedent).
+   put he1heFitRect(100, 63, 100, 100, 46) into he1tRectTxt
+   he1heTAssert "helpers: he1heFitRect stays exactly symmetric about the centre", \
+         he1tRectTxt, "77,86,123,114"
+   he1heTAssert "helpers: ...which costs an odd fit ONE pixel (28 for a fitted 29)", \
+         (item 4 of he1tRectTxt) - (item 2 of he1tRectTxt), 28
+end he1heTestHelpersRun
 
 function he1heTIdxOf pNamesTxt
    local he1tOut, he1tNameTxt, he1tNames
