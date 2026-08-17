@@ -47,7 +47,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "27"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "28"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -2684,6 +2684,13 @@ local sPlayDashGravSave -- the body's gravity scale to restore when the dash end
 local sPlayDuckScale    -- ducked capsule height as a fraction of standing (1 = no reshape)
 local sPlayDucked       -- true while the capsule is shrunk for a crawl
 local sPlayStandH       -- the full standing capsule height in px (for the duck reshape)
+local sPlayCapW, sPlayCapH -- the capsule's CANONICAL pixel dims, captured at attach
+                        -- BEFORE the first draw pads the rect: the duck/stand
+                        -- rebuilds pass these to b2kReshape explicitly, because a
+                        -- polygon graphic's rect is DERIVED from its points -- OXT
+                        -- ignores a height-set on one, and re-reading the drawn
+                        -- rect compounds the pen margin (+2 every rebuild)
+local sPlayDuckH        -- the ducked capsule height in px (for the stand-up shift)
 local sPlayCarry        -- true = inherit a moving platform's velocity (platformCarry knob)
 local sPlayGroundBody   -- the body handle under the grounding ray (carry reads its velocity)
 local sPlayInLad, sPlayInWat -- this frame's ladder/water zone membership (exposed by getters)
@@ -3295,7 +3302,16 @@ end b2kSetDensity
 -- Re-fit a body's collision shape to the control's CURRENT size, in place on the
 -- SAME body so any joints stay valid. pShape is "box" | "ball" | "capsule" | "poly".
 -- Resize the control's graphic first, then re-apply materials afterwards.
-command b2kReshape pControl, pShape
+-- ENGINE-FOUND 2026-08-17 (run 5's duck instrumentation): pW/pH, when given,
+-- are EXPLICIT pixel dims that replace the control-rect read for box/ball/
+-- capsule. Two engine facts force the option: OXT will not resize a polygon
+-- graphic by a height-set (its rect is derived from its points, so the
+-- player's duck "resize the control first" never landed and the capsule
+-- rebuilt at FULL height -- the crawl wedged on the ceiling's face with the
+-- bookkeeping insisting it was short), and the drawer's re-point pads the
+-- rect by the pen margin, so re-reading the rect compounds +2 per rebuild
+-- (50 -> 52 -> 54 across one duck/stand pair, the engine's own numbers).
+command b2kReshape pControl, pShape, pW, pH
    local tRef, tBody, tOld, tHw, tHh, tWm, tHm, tR, tL, tHoriz, tCx, tCy, p, lx, ly, tCount, tNewVerts
    local tWx, tWy, tWa
    put the long id of pControl into tRef
@@ -3310,7 +3326,11 @@ command b2kReshape pControl, pShape
    if sSensor[tRef] is true then b2ShapeDefSensor true   -- a sensor stays a sensor after reshaping
    switch pShape
       case "ball"
-         put ((the width of pControl) / 2) / sScale into tR
+         if pW is a number and pW > 0 then
+            put (pW / 2) / sScale into tR
+         else
+            put ((the width of pControl) / 2) / sScale into tR
+         end if
          if tR <= 0 then
             put tOld into sShapeH[tRef]
             b2ShapeDefReset   -- drop the pending one-shot flags set above
@@ -3320,8 +3340,16 @@ command b2kReshape pControl, pShape
          put tR into sRad[tRef]
          break
       case "capsule"
-         put (the width of pControl) / sScale into tWm
-         put (the height of pControl) / sScale into tHm
+         if pW is a number and pW > 0 then
+            put pW / sScale into tWm
+         else
+            put (the width of pControl) / sScale into tWm
+         end if
+         if pH is a number and pH > 0 then
+            put pH / sScale into tHm
+         else
+            put (the height of pControl) / sScale into tHm
+         end if
          if tWm <= 0 or tHm <= 0 then
             put tOld into sShapeH[tRef]
             b2ShapeDefReset   -- drop the pending one-shot flags set above
@@ -3363,8 +3391,16 @@ command b2kReshape pControl, pShape
          put tNewVerts into sVerts[tRef]
          break
       default
-         put ((the width of pControl) / 2) / sScale into tHw
-         put ((the height of pControl) / 2) / sScale into tHh
+         if pW is a number and pW > 0 then
+            put (pW / 2) / sScale into tHw
+         else
+            put ((the width of pControl) / 2) / sScale into tHw
+         end if
+         if pH is a number and pH > 0 then
+            put (pH / 2) / sScale into tHh
+         else
+            put ((the height of pControl) / 2) / sScale into tHh
+         end if
          if tHw <= 0 or tHh <= 0 then
             put tOld into sShapeH[tRef]
             b2ShapeDefReset   -- drop the pending one-shot flags set above
@@ -5808,6 +5844,13 @@ command b2kPlayerAttach pCtrl
    if sWorld is empty then exit b2kPlayerAttach
    put the long id of pCtrl into tRef
    put false into sPlayOwnBody
+   -- capture the capsule's canonical dims BEFORE b2kAddCapsule's first draw
+   -- re-points the graphic and pads its rect by the pen margin: these are what
+   -- the duck/stand rebuilds hand b2kReshape, so the physical capsule always
+   -- re-derives from one stable pair instead of the drawn rect (which OXT
+   -- will not resize by a height-set and which grows +2 per redraw)
+   put (the width of tRef) into sPlayCapW
+   put (the height of tRef) into sPlayCapH
    if sBody[tRef] is empty then
       b2kAddCapsule tRef
       if sBody[tRef] is empty then exit b2kPlayerAttach   -- zero-sized control
@@ -6532,19 +6575,28 @@ command b2kPlayerDuckSet pWantDuck
    if sPlayRef is empty then exit b2kPlayerDuckSet
    if pWantDuck is true then
       if sPlayDucked is true or sPlayDuckScale >= 1 then exit b2kPlayerDuckSet
-      put max(8, round(sPlayStandH * sPlayDuckScale)) into tNewH
-      put (sPlayStandH - tNewH) / 2 into tShift
-      set the height of sPlayRef to tNewH
+      -- rebuild from the CANONICAL capsule dims, never the drawn rect, and
+      -- never a height-set on the control: OXT ignores a height-set on a
+      -- polygon graphic (its rect follows its points), so the old "resize
+      -- the control, then reshape" rebuilt the capsule at FULL height every
+      -- time -- the crawl wedged on the ceiling's face while sPlayHalfH
+      -- insisted the pill was short (run 5's instrumented failure). The
+      -- drawer re-points the graphic from the new shape, which IS the
+      -- polygon's resize mechanism.
+      put max(8, round(sPlayCapH * sPlayDuckScale)) into tNewH
+      put (sPlayCapH - tNewH) / 2 into tShift
       b2kMoveTo sPlayRef, sPlayPX, sPlayPY + tShift
-      b2kReshape sPlayRef, "capsule"
+      b2kReshape sPlayRef, "capsule", sPlayCapW, tNewH
       b2kSetFriction sPlayRef, 0.08
       b2kSetBounce sPlayRef, 0
+      put tNewH into sPlayDuckH
       put tNewH / 2 into sPlayHalfH
       put true into sPlayDucked
       b2kPlayerTuneCache   -- the probe reach follows the new (shorter) capsule
    else
       if sPlayDucked is not true then exit b2kPlayerDuckSet
-      put sPlayStandH - (the height of sPlayRef) into tNeed
+      -- headroom from the stored capsule dims (the drawn rect is pen-padded)
+      put sPlayCapH - sPlayDuckH into tNeed
       set the itemDelimiter to comma
       get b2kRayHit(sPlayPX, sPlayPY - sPlayHalfH, sPlayPX, sPlayPY - sPlayHalfH - tNeed - 2)
       if sRayNY is not empty then exit b2kPlayerDuckSet   -- a ceiling: stay crawling
@@ -6557,10 +6609,11 @@ end b2kPlayerDuckSet
 command b2kPlayerStandUp
    local tShift
    if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
-   put (sPlayStandH - (the height of sPlayRef)) / 2 into tShift
-   set the height of sPlayRef to sPlayStandH
+   -- mirror of the duck: stored capsule dims in, explicit dims to b2kReshape,
+   -- no control resize (inert on a polygon graphic; the drawer re-points it)
+   put (sPlayCapH - sPlayDuckH) / 2 into tShift
    b2kMoveTo sPlayRef, sPlayPX, sPlayPY - tShift
-   b2kReshape sPlayRef, "capsule"
+   b2kReshape sPlayRef, "capsule", sPlayCapW, sPlayCapH
    b2kSetFriction sPlayRef, 0.08
    b2kSetBounce sPlayRef, 0
    put sPlayStandH / 2 into sPlayHalfH

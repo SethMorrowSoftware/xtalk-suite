@@ -204,8 +204,33 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   is impeding -- but which of state/grounded/vx is wrong is not decidable
 >   from one coordinate. v27's assert reports state, halfH, grounded and vx
 >   at the stall, so the next run diagnoses itself.
-> Expected next paste: 368/1 if the two Kit-side fixes hold (the crawl line
-> still red, now talkative), holde-em steady at 507/0.
+>
+> **THE FIFTH RUN (2026-08-17, 366/3 at v27) CONFIRMED BOTH FIXES AND THE
+> INSTRUMENTATION CONVICTED THE DUCK RESHAPE -- the oldest behaviour failure
+> was a real Kit defect wearing a passing test's numbers.** The filter clamp
+> and the gravity re-wait went green (ghost ball through at y 461; landing at
+> y 473, the predicted arithmetic to the pixel). The three remaining reds were
+> ONE defect seen from three angles: the crawl assert reported `state duck,
+> halfH 13, grounded true, vx -1` -- a body pushing against a wall -- and the
+> v27 API round-trip measured the control at 50 -> 52 -> 54 across one
+> duck/stand pair. Together: **the physical capsule never shrank.** Two engine
+> facts compose into the root cause: the player is a POLYGON graphic (the
+> capsule fit sets its style), and OXT does not resize a polygon graphic by a
+> height-set -- its rect is DERIVED from its points -- so b2kPlayerDuckSet's
+> "resize the control, then b2kReshape" rebuilt the capsule at FULL height
+> every time, while sPlayHalfH (bookkeeping, not measurement) insisted the
+> pill was short; the crawl then wedged on the ceiling's left face at exactly
+> x 269 with vx ~0, and every earlier halfH-based assert in the duck section
+> passed because they only ever read the bookkeeping. The +2-per-call growth
+> is the second half: the drawer's re-point pads the rect by the pen margin,
+> and reshape re-read the padded rect each rebuild. Fixed at v28:
+> `b2kReshape` takes optional EXPLICIT pixel dims (box/ball/capsule);
+> b2kPlayerAttach captures the capsule's canonical dims BEFORE the first draw
+> pads the rect; duck/stand rebuild from those stored dims and never touch the
+> control's rect (the drawer's re-point IS a polygon's resize mechanism), and
+> the stand-up shift and headroom ray use the stored dims too. Expected next
+> paste: **369/0 -- box2dxt fully green** -- if the reshape fix holds;
+> holde-em steady at 507/0.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
