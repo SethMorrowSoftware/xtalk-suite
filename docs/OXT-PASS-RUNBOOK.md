@@ -217,6 +217,34 @@ ran.
 > test LABEL, which is exactly the gap the string-blanking convention was built
 > to expose on the day it was built. It is a real check now, and it passes.
 >
+> ### The hotseat session found a defect the gates could not
+>
+> **Three hands of real hotseat play, reported back as a transcript, and its
+> third hand is poker-inconsistent**: heads-up, a 392 all-in called by a 2008
+> stack, reported `pot 2400` for an awarded pot of **784**. Everything else
+> about it was right - chips conserved, `settle-verified` passed, all three
+> deals re-derived - and that is exactly why nothing caught it. The history
+> line summed `handBy`, every seat's total COMMITMENT, and a bet nobody calls
+> is RETURNED. The money was never wrong; only the number on screen was,
+> inflated by precisely the 1616 that went straight back.
+>
+> Fixed the same day in `heAwardedPot` (extracted from a forty-line fold loop
+> so it could be pinned at all), mirrored in `tools/fold-kat.py`, and pinned
+> five ways in harness section 21 plus a new canned uncalled-bet session. A
+> mutation test confirms the shape: with the old code restored, the stacks,
+> conservation and settle-verified checks all still PASS and only the two pot
+> assertions fire - which is the transcript's signature exactly.
+>
+> **It was not the only instance.** The repo's OWN canned ante session had
+> reported `pot 9` since the day it was written, where the awarded pot is 8:
+> the big blind's blind is uncalled by one chip when the small blind folds.
+> Nothing pinned that figure either. Both are pinned now.
+>
+> The lesson is the one this tree keeps relearning from a different angle: the
+> deltas reconcile under BOTH readings, so every check that existed - chip
+> conservation, settlement re-derivation, the independent fold - stayed green
+> over a wrong number. Only a human reading a real session noticed.
+>
 > ### What it did NOT close
 >
 > The 7 skips are the honest remainder and every one needs a resource this

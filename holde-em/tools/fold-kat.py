@@ -91,9 +91,20 @@ def transcript(tamper=""):
 
 def ante_transcript():
     # 3-handed, ante 2 each, blinds 1/2. Everyone antes (dead money), then folds
-    # to the BB. Pot = 3 antes (6) + SB (1) + BB (2) = 9; BB keeps its own 2, so
-    # nets +7 over the 5 the other two put in. The fold must re-derive this from
-    # the bidAnte lines alone -- if it ignored antes the settle would mismatch.
+    # to the BB. Commitments are 2 / 3 / 4 (nine chips), but the AWARDED POT IS
+    # 8: the BB's blind is uncalled by 1 chip -- the SB folded after putting in
+    # 1 of the 2 -- and that chip is returned. The BB collects 8 against a
+    # matched outlay of 3, netting the +5 the settle line records.
+    #
+    # This comment used to say "Pot = ... = 9" and "nets +7", and BOTH were
+    # wrong in the same way the shipped history line was: they counted
+    # commitments rather than the pot. Nothing caught it because no assertion
+    # pinned the figure -- only the deltas, which reconcile under either
+    # reading. Found 2026-08-17 while fixing the same defect in an all-in hand;
+    # the ante case is the smaller, older instance of it.
+    #
+    # The fold must re-derive all of this from the bidAnte lines alone -- if it
+    # ignored antes the settle would mismatch.
     L = []
     L.append((0, "table", "cfg",
               "sb=1,bb=2,ante=2,seats=1|2|3,stacks=400|400|400,button=1,levelMode=off,speed=normal"))
@@ -110,6 +121,40 @@ def ante_transcript():
     L.append((1, "seat2", "act", "verb=fold,amount=0"))
     # pot 9: seat1 -2 (ante), seat2 -3 (ante+SB), seat3 +5 (ante+BB back, +5 net)
     L.append((1, "table", "settle", "deltas=1:-2|2:-3|3:5"))
+    return L
+
+
+def uncalled_transcript():
+    # HEADS-UP ALL-IN WHERE THE BIG STACK'S EXCESS IS UNCALLED -- the shape a
+    # 2026-08-17 hotseat transcript found reported wrong. Seat 1 (2008) shoves;
+    # seat 2 (392) calls all-in. Seat 1's 1616 excess is UNCALLED and returned,
+    # so the awarded pot is 392 + 392 = 784, NOT the 2400 that summing handBy
+    # gives. Seat 2 wins with the better hand.
+    #
+    # Why no existing case caught this: the two sessions above never leave an
+    # uncalled bet on the table, so every seat's commitment equals the matched
+    # level and sum(handBy) happens to BE the pot. The betting engine's own
+    # "uncalled raise returned" check tests the RETURN; nothing tested the
+    # reported POT. The deltas here are correct either way, which is exactly
+    # why settle-verified passed beside a wrong pot figure.
+    L = []
+    L.append((0, "table", "cfg",
+              "sb=1,bb=2,seats=1|2,stacks=2008|392,button=1,levelMode=off,speed=normal"))
+    L.append((1, "table", "handStart", "seats=1|2,button=1"))
+    L.append((1, "table", "holeDeliver", "seat=1,cards=2c|7h"))
+    L.append((1, "table", "holeDeliver", "seat=2,cards=Kd|Kh"))
+    L.append((1, "seat1", "bidSB", "amount=1"))
+    L.append((1, "seat2", "bidBB", "amount=2"))
+    L.append((1, "seat1", "act", "verb=raise,amount=2008"))
+    # `call` carries the INCREMENT, not the total: seat 2 has already posted
+    # the BB of 2, so 390 more takes it to its 392 all-in.
+    L.append((1, "seat2", "act", "verb=call,amount=390"))
+    L.append((1, "table", "board", "street=flop,cards=9d|3h|Kc"))
+    L.append((1, "table", "board", "street=turn,cards=6s"))
+    L.append((1, "table", "board", "street=river,cards=Ah"))
+    L.append((1, "seat1", "show", "seat=1"))
+    L.append((1, "seat2", "show", "seat=2"))
+    L.append((1, "table", "settle", "deltas=1:-392|2:392"))
     return L
 
 
@@ -188,7 +233,18 @@ def independent_fold(tx):
                 errors.append("settle-mismatch")
             for s in st["occ"]:
                 stacks[s] += deltas[s]
-            pot = sum(st["handBy"][s] for s in st["occ"])
+            # THE AWARDED POT, NOT THE SUM OF COMMITMENTS (fixed 2026-08-17,
+            # mirroring holdem.livecodescript). A bet nobody called is
+            # RETURNED, so it was never in the pot - summing handBy reported
+            # "pot 2400" for a real pot of 784 in a heads-up all-in (392 called
+            # by a 2008 stack). The deltas were right throughout; only the
+            # reported figure was wrong, which is why settle-verified passed
+            # beside it. A seat's chips enter the pot only up to the largest
+            # amount ANY OTHER seat committed.
+            _amts = [st["handBy"][s] for s in st["occ"]]
+            _hi1 = max(_amts, default=0)
+            _hi2 = max(sorted(_amts)[:-1], default=0) if len(_amts) > 1 else 0
+            pot = sum(a if a < _hi1 else _hi2 for a in _amts)
             winners = [s for s in st["occ"] if deltas[s] > 0]
             shown = []
             for s in st["occ"]:
@@ -367,6 +423,29 @@ def main():
     check("ante fold: chips conserved across the hand",
           ast[1] + ast[2] + ast[3], 1200)
     contains("ante fold: settlement verified", anteres["history"][0], "settle-verified")
+    # The awarded pot is 8, not the 9 committed: the BB's blind is uncalled by
+    # 1 chip and returned. Pinned because it was wrong here for as long as this
+    # session has existed, and only the deltas were ever checked.
+    contains("ante fold: the awarded pot is 8, not the 9 committed",
+             anteres["history"][0], "pot 8;")
+
+    # UNCALLED-BET POT: the awarded pot excludes a bet nobody called.
+    # Regression for the 2026-08-17 hotseat finding - a 392 all-in called by a
+    # 2008 stack reported "pot 2400" for a pot of 784. The deltas were correct
+    # throughout, so chip conservation and settle-verified both passed while
+    # the reported figure was inflated by exactly the returned 1616.
+    uncres = independent_fold(uncalled_transcript())
+    ust = uncres["stacks"]
+    check("uncalled: no replay errors", uncres["errors"], [])
+    check("uncalled: final stacks 1616/784", "%d/%d" % (ust[1], ust[2]), "1616/784")
+    check("uncalled: chips conserved", ust[1] + ust[2], 2400)
+    contains("uncalled: settlement verified", uncres["history"][0], "settle-verified")
+    contains("uncalled: the AWARDED pot is 784, not the 2400 committed",
+             uncres["history"][0], "pot 784;")
+    check("uncalled: and 2400 appears nowhere in the history line",
+          "2400" in uncres["history"][0], False)
+    contains("uncalled: the short stack wins with kings",
+             uncres["history"][0], "2=Kd Kh three of a kind")
 
     # Level 0 committed-deal audit from the transcript
     v, t, lines = audit_deals_from_log(build_level0_transcript())
