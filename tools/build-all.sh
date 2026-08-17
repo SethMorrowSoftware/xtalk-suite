@@ -37,6 +37,43 @@ GATES_ONLY=0
 # so the lane costs a Box2D source build; unlike sodiumxt it copies nothing
 # back into src/code/, so it adds no second case to the NOTE at the top.
 CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt)
+
+# HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
+# `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
+# and a bare `-j` means UNLIMITED - make starts every target whose deps are
+# ready, all at once. That is invisible on a small member and fatal on
+# torrentxt, which builds libtorrent from source: on 2026-08-17 the suite's
+# full-build CI lane was killed at 7 minutes with exit 143 ("the runner has
+# received a shutdown signal") while ~60 g++ processes compiled libtorrent and
+# a torrentxt test binary simultaneously. That is an OOM, not a test failure,
+# and it would have hit anyone running this script on a laptop too.
+# So: bound it, by MEMORY as well as by cores, since the constraint here is
+# memory (heavy Boost/template translation units run to a gigabyte or more,
+# while the core count says nothing about that). Override with BUILD_JOBS=N.
+#
+# THE PRECEDENT WAS ALREADY IN THE TREE, which is what makes this a fix rather
+# than a guess: .github/workflows/native-torrentxt.yml has always built its
+# libtorrent with `--parallel ${{ matrix.build_jobs || '4' }}`. The lane that
+# builds this dependency every day had learned to cap it; the full walk was the
+# one path that had not, and it is the only one that died. (One instance
+# remains, knowingly: native-sodiumxt.yml passes a bare `-j`. It survives
+# because libsodium is small - a handful of C files, not a Boost-heavy C++
+# tree - so it is recorded here rather than changed inside a CI fix.)
+if [ -z "${BUILD_JOBS:-}" ]; then
+  _cpus="$(nproc 2>/dev/null || echo 2)"
+  _memkb="$(awk '/MemTotal/{print $2; exit}' /proc/meminfo 2>/dev/null || echo 4194304)"
+  _memjobs="$(( _memkb / 2097152 ))"          # ~2 GiB per C++ translation unit
+  [ "$_memjobs" -lt 1 ] && _memjobs=1
+  if [ "$_memjobs" -lt "$_cpus" ]; then BUILD_JOBS="$_memjobs"; else BUILD_JOBS="$_cpus"; fi
+fi
+
+# Build a SUBSET of the native members. A lane that exists to settle one
+# question should build what that question needs and nothing else: the
+# cross-member invariants load exactly sodiumxt/build/sodiumxt.so and
+# torrentxt/build/torrentxt.so, so building enetxt, datachannelxt, box2dxt and
+# coinxt for them is runner time spent proving nothing. Empty = build them all,
+# which is what a local full walk and the release lane both want.
+SUITE_ONLY_MEMBERS="${SUITE_ONLY_MEMBERS:-}"
 # CoinXT builds via coinxt/native/build.sh; OnionXT is pure script (nothing to
 # compile).
 
@@ -430,14 +467,20 @@ fi
 # --- native builds + tests ---
 for m in "${CMAKE_MEMBERS[@]}"; do
   [ -d "$m" ] || continue
+  if [ -n "$SUITE_ONLY_MEMBERS" ]; then
+    case " $SUITE_ONLY_MEMBERS " in
+      *" $m "*) ;;
+      *) echo "== $m: SKIPPED (SUITE_ONLY_MEMBERS=$SUITE_ONLY_MEMBERS) =="; continue ;;
+    esac
+  fi
   # sodiumxt -> SODIUMXT_BUILD_TESTS etc.: without this flag no member
   # registers any ctest test, and ctest exits 0 on an empty test set, so the
   # old plain-Release walk "passed" while testing nothing. --no-tests=error
   # keeps that from ever happening silently again.
   tflag="$(printf '%s' "$m" | tr '[:lower:]' '[:upper:]')_BUILD_TESTS"
-  echo "== $m: cmake configure + build + ctest =="
+  echo "== $m: cmake configure + build + ctest ($BUILD_JOBS job(s)) =="
   cmake -S "$m" -B "$m/build" -DCMAKE_BUILD_TYPE=Release "-D${tflag}=ON"
-  cmake --build "$m/build" --parallel
+  cmake --build "$m/build" --parallel "$BUILD_JOBS"
   ctest --test-dir "$m/build" --output-on-failure --no-tests=error || {
     echo "$m: ctest failed (or no tests were registered)"; exit 1;
   }
@@ -446,7 +489,9 @@ done
 # CoinXT: the asan variant compiles the shim + vendored sources and runs the
 # ASan/UBSan self-test, entirely in a temp dir (the plain `lib` variant would
 # drop native/libcoinxt.so into the working tree, so the walker avoids it).
-if [ -f coinxt/native/build.sh ]; then
+if [ -n "$SUITE_ONLY_MEMBERS" ] && case " $SUITE_ONLY_MEMBERS " in *" coinxt "*) false;; *) true;; esac; then
+  echo "== coinxt: SKIPPED (SUITE_ONLY_MEMBERS=$SUITE_ONLY_MEMBERS) =="
+elif [ -f coinxt/native/build.sh ]; then
   echo "== coinxt: native/build.sh asan (build + self-test) =="
   ( cd coinxt && sh native/build.sh asan )
 else

@@ -164,11 +164,11 @@ jobs:
           fi
 
   cross-member:
-    name: full build + the cross-member invariants (native)
+    name: the cross-member invariants (sodiumxt + torrentxt, native)
     needs: scope
     if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-24.04
-    # Generous: five source-built dependencies. A hang should still end the
+    # Generous: libtorrent is built from source. A hang should still end the
     # run rather than sit on a runner for six hours.
     timeout-minutes: 120
     steps:
@@ -188,19 +188,24 @@ jobs:
           sudo apt-get install -y gcc g++ cmake ninja-build \
                                   libboost-dev libssl-dev zlib1g-dev
 
-      # The full walk runs the gate set too, so it must not be a WEAKER gate
-      # run than the fast job above: same env, same optional dependency.
-      - name: Install the independent crypto implementation coinxt checks against
-        run: pip install ecdsa
-
       # CROSSMEMBER_REQUIRE_ALL is why this job is worth its runner minutes.
       # Without it, a lane whose build silently produced no sodiumxt.so would
       # print "SKIP the ed25519 and BEP44 checks" and exit 0 - green, having
-      # measured two #defines. With it the skip is a failure, so this job can
-      # only pass by actually settling the invariants. Same shape and same
-      # reasoning as COINXT_REQUIRE_CROSSCHECK above.
-      - name: Full walk - build every member, then the cross-member invariants
+      # measured two #defines. With it the skip is a FAILURE, so this job can
+      # only pass by actually settling the invariants.
+      #
+      # SUITE_ONLY_MEMBERS, and why this job stopped being a "full build"
+      # (2026-08-17). As first written it ran the whole walk and was killed at
+      # 7 minutes with exit 143 - the runner OOM, not a test failure, while
+      # ~60 g++ processes compiled libtorrent and a test binary at once. Two
+      # things were wrong and both are fixed: build-all.sh passed a bare `-j`
+      # to make (UNLIMITED; it now bounds jobs by memory as well as cores), and
+      # this lane built five members to answer a question that loads exactly
+      # two libraries. It now builds those two. coinxt is NOT built here, so
+      # COINXT_REQUIRE_CROSSCHECK is deliberately absent rather than set and
+      # silently inapplicable - the fast --gates job above owns that check.
+      - name: Build sodiumxt + torrentxt, then settle the invariants
         env:
-          COINXT_REQUIRE_CROSSCHECK: "1"
+          SUITE_ONLY_MEMBERS: "sodiumxt torrentxt"
           CROSSMEMBER_REQUIRE_ALL: "1"
         run: bash tools/build-all.sh
