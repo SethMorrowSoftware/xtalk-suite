@@ -77,8 +77,10 @@ The fastest way to lose everything above is to make the same payload available
 both anonymously and on the public swarm: a third party correlates the onion
 content with the swarm's info-hash and reads the real IP off the DHT. The
 design therefore treats anon and clearnet as **mutually exclusive per payload**,
-enforced at the code's branch points, not requested of the user (in the built
-QuickShare path today; the Channels guards land with that layer): the anonymous
+enforced at the code's branch points, not requested of the user (in the
+QuickShare path, and - since 2026-08-15 - in the Channels layer too, whose
+guards ship in `chPublishActiveFeed`, `chChannelTick` and `chHandleEvent`;
+both await the two-machine Tor pass): the anonymous
 branch returns before any torrent/DHT call can run, an anonymous transfer is
 visibly tagged "via Tor" in the transfers list so a mixed state would be
 seen, and no failure path falls back from Tor to the swarm - a refused or

@@ -1515,6 +1515,13 @@ for the passphrase case.
 up-front verifier rejects a wrong passphrase, the file decrypts to the real name, and a plaintext-header downgrade
 of an encrypted-advertised share is refused. Path-traversal names are neutralized to the save folder.
 
+> **As-built (built 2026-08-15; verified statically). Blockquote added 2026-08-17** — Phases 0, 2 and 3 each
+> carried one and this phase did not, though it shipped first, so a reader working down section 10 met three
+> dated entries and one that read as unstarted. Done: `qsStartOnionShare`, `oxCreateServiceFromSeed`, the
+> `BTXTOR1:` code mint and parse, and the passphrase path reusing `qsEncryptFile`/`qsDecryptFile`, all in
+> `torrentxt/examples/torrent-quickshare.livecodescript`. The **two-machine done gate above remains PENDING an
+> OXT + live-Tor pass** — it is #30 in the §12.3 register and item 3 of the runbook's S4 session.
+
 **Phase 2 — Channels feed rendezvous over onion.**
 Publisher runs `oxCreateServiceFromSeed(channelSeed, …)`; add `svc=<onion>` to `chBuildFeed`; follower reaches the
 channel's onion to pull the signed feed. **Gate on the §6.1 equivalence VERIFY** (the seed↔pubkey byte-compare, both
@@ -1564,6 +1571,15 @@ Write `docs/anon-transport.md` (Model C), the threat model, and the §13 onboard
 *Done gate:* A fresh user on each of macOS/Windows/Linux, following **only** the onboarding doc, gets Tor ready and
 completes a two-machine anon transfer; the threat-model page states exactly what is and is not hidden (including the
 plaintext-not-authenticated and clearnet-mixing caveats); `check-livecodescript.py` clean on the final scripts.
+
+> **As-built (docs written 2026-08-15; blockquote added 2026-08-17). THE PHASE DOES NOT CLOSE.** All three pages
+> exist - `docs/anon-transport.md` (what the path hides and does not), `docs/anon-transport-threat-model.md` (by
+> adversary tier, with the residual-risk caveats carried), `docs/anon-transport-onboarding.md` (fresh user, two
+> machines, zero to an anonymous transfer, with a fail-closed troubleshooting table). Three other suite documents
+> point readers at this section as their status source, which is why the distinction matters here rather than in a
+> footnote: **writing the pages is not passing the gate.** The gate above is a FRESH USER completing the walkthrough
+> on each of macOS, Windows and Linux - three platform boxes and a human - and none of that has happened. Until it
+> does, this phase is "documented, unproven", not done.
 
 ---
 
