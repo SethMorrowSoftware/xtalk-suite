@@ -71,7 +71,7 @@ script "riptideSocialApp"
 -- torrentxt (required for publish/fetch; identity still works without), then
 -- put the riptide script library in the message path before opening:
 --
---    start using stack "riptide"
+--    (nothing - the Riptide library is embedded in this file)
 --
 -- ONE SESSION PER PROCESS (torrentxt's rule, runbook trap 5.1): this stack
 -- takes THE TorrentXT session. Close every other torrent-flavoured stack
@@ -126,6 +126,5986 @@ script "riptideSocialApp"
 -- the UI repaint tier where it was, because raising the painters from 4 Hz
 -- to 30 Hz alongside the transports would be a NEW performance defect, not
 -- a fix.
+
+-- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
+-- Pasted from the sources below so this demo runs with NO `start
+-- using` wiring. Do not edit inside these sentinels: run
+-- `python3 tools/sync-demo-embeds.py` instead. The sources under
+-- src/ stay the single source of truth for real projects.
+--
+-- Libraries come FIRST because OXT resolves script-level constants
+-- and locals by lexical position.
+
+-- ---- riptide/src/riptide.livecodescript ----
+script "RiptideSocial"
+-- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
+-- foundation, the pure-compute feed layer, the live feed layer, the media
+-- layer, the DM layer, the LAN mesh admission + sync layer, and the
+-- anonymous persona layer, as a pure-LiveCodeScript library over the
+-- installed suite extensions (docs/RIPTIDE-SOCIAL-SPEC.md sections 3-9).
+-- Phase 5 (live sessions) adds no library surface: its SDP offer/answer
+-- ride the phase-4 DM message kinds "O"/"A" over the existing
+-- secretstream, and its spec-6.2 typing lane is a second dc channel the
+-- demo opens - both demo wiring.
+--
+-- STATUS (honesty convention): phases 1 and 2 had their OXT pass on
+-- 2026-08-12 via the folded suite harness: 133/133, no skips, hasSha3 true.
+-- The phase-2 run covered the pure helpers, synthetic ingest verifiers, and
+-- real-session puts and accepted lookup requests. Its propagation half ("a
+-- second machine walks the chain") CLOSED 2026-08-13: the maintainer ran
+-- examples/riptide-social.livecodescript on two machines - identities
+-- created on both, feeds published and received in both directions through
+-- the real DHT (the stack renders a post only after rsIngestHead and
+-- rsIngestPost verify it, so a received feed is a verified chain walk).
+-- The phase-3 MEDIA layer (rsMediaCreate / rsMediaFetch / rsMediaStatus,
+-- 2026-08-14) CLOSED 2026-08-15 on TWO machines (recorded in
+-- riptide/CLAUDE.md): a follower fetched and PLAYED an attached video
+-- through the demo stack, the phase-3 done-criterion met - the one
+-- unmeasured nuance is playback starting visibly MID-download, which a
+-- fast complete transfer can mimic. The phase-4 DM layer (rsDm* /
+-- rsBuildPrekey / rsBuildIntro, 2026-08-14) closed the SAME day, same
+-- record: two machines exchanged authenticated encrypted DMs with no
+-- server, chat both ways - the sealed RSI1 intro, the deterministic-role
+-- crypto_kx session, and the pairwise secretstream over rp1 all carried
+-- real traffic. The golden pins stand underneath (crypto_kx anchored
+-- against a REAL libsodium - see tools/emit-kx-anchor.py), as do the
+-- harness-covered refusal paths. The phase 5-7 LIVE flows (the call, the
+-- mesh, tor) still await their passes; docs/two-machine-runbook.md
+-- scripts each. The 8.2/8.3 onion SERVING seams (rsAnonFeedPage /
+-- rsAnonPrekeyBody / rsAnonAcceptDm, 2026-08-15) are golden-pinned and
+-- verified statically; they need an OXT + live-Tor pass.
+--
+-- WHAT THIS LAYER OWNS
+--   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
+--     the BTXPREF1 convention with riptide's own magic)
+--   - the KDF subkey tree: one 32-byte master -> identity / DM / LAN / anon
+--     subkeys via sxKdfDerive, context "riptide\0" (8 bytes exactly)
+--   - identity -> handle (ed25519 public key, 64 hex) -> .onion address
+--   - the rendezvous derivations: inboxId and roomId
+--   - the RSH1 feed-head and RSP1 post-record framings, build + parse +
+--     signature verification, caps enforced on BOTH sides
+--   - the LIVE feed layer (phase 2): head publish through the external-
+--     signing seam (btDhtBep44SignBuf semantics rebuilt in script, signed by
+--     sxSignDetached, stored by btDhtPutSigned - the identity secret never
+--     enters libtorrent), post publish as content-addressed immutable items,
+--     the async fetch requests, and the INGEST verifiers the app's poll loop
+--     feeds each dhtMutableItem / dhtImmutableItem event through. The
+--     library NEVER starts, stops, or polls a session: the app owns the one
+--     session per process and its event loop, and passes the handle in.
+--   - the MEDIA layer (phase 3): attach a file as a trackerless torrent
+--     seeded in place (rsMediaCreate -> the 40-hex info-hash a post's
+--     media list carries), fetch-and-co-seed by hash with an optional
+--     sequential playback mode (rsMediaFetch), and the per-torrent status
+--     snapshot a player paints from (rsMediaStatus, btTorrentStatus plus
+--     the first file's on-disk path and per-file progress). Payload never
+--     crosses the FFI: libtorrent moves the bytes engine-to-disk, script
+--     only ever sees hashes, paths, and counters.
+--   - the DM layer (phase 4): the crypto_kx prekey pair from the DM
+--     subkey (rsDmKeys), the RSK1 signed prekey record a head's
+--     prekeyTarget names, the RSI1 sealed-intro first contact (seal to a
+--     VERIFIED prekey; sender signature + recipient binding inside the
+--     seal), one deterministic-role crypto_kx session per pair
+--     (rsDmSessionKeys: the lexically smaller handle is the client), the
+--     RSM1 rp1 transport frames and the kind+timestamp+body message
+--     records a secretstream carries, and the inbox-swarm join + framed
+--     send over rp1 (rsDmJoinInbox / rsDmSend). The app owns the rp1
+--     peer bookkeeping, the secretstream handles (sxFreeStream when
+--     done), and the poll loop, as everywhere else. The message kinds
+--     "O"/"A" carry phase-5 SDP signalling over this same rail.
+--   - the LAN mesh admission layer (phase 6): the shared-master ed25519
+--     keypair every one of your devices derives (rsLanKeys), and the
+--     RSL1 challenge/response that proves a joiner holds the master
+--     (rsLanBuildChallenge / rsLanBuildResponse / rsLanVerifyResponse) -
+--     a stranger on the same Wi-Fi cannot sign it. The records ride enet
+--     channel-0 messages; the app owns the enet host and the pump.
+--   - the phase-6 SYNC records over the admitted mesh (2026-08-15, the
+--     spec section 7 channel discipline): the "D" draft-sync record
+--     (channel 0, reliable - draft text + a monotonic per-device seq +
+--     the sender device name), the "F" feed-seq/read-receipt state
+--     record (channel 0 - feedSeq applies as max so two devices never
+--     publish a conflicting head), and the "P" presence/typing record
+--     (channel 1, unreliable-unsequenced - absolute state with its own
+--     monotonic tick, safely droppable and reorder-proof). All three
+--     are signed under the SAME shared LAN key as the admission with a
+--     distinct domain tag; verify-then-parse on every inbound record
+--     (rsLanBuildDraft / rsLanVerifyDraft / rsLanBuildFeedState /
+--     rsLanVerifyFeedState / rsLanBuildPresence / rsLanVerifyPresence).
+--     Since 2026-08-16 a fourth kind settles spec section 7's channel 2:
+--     the "M" MEDIA HANDOFF record (channel 0) - a signed POINTER at the
+--     phase-3 torrent path (info-hash + file name + size), because a
+--     draft's media essentially never fits enet's 60000-byte budget and
+--     bulk over that seam IS a torrent in this suite (rsLanBuildHandoff /
+--     rsLanVerifyHandoff). Channel 2 itself stays reserved, dark.
+--   - the ANONYMOUS PERSONA layer (phase 7): a separate onion-only
+--     identity from a subkey-100+n seed (rsAnonHandle / rsAnonOnion,
+--     derivable offline), the probe-gated onion-service wrapper
+--     (rsAnonCreateService), the BTXO framed-chunk protocol for files over
+--     a Tor stream (rsBtxo*), and rsPersonaAllows - the pure-policy
+--     DEANONYMIZATION GUARD (spec 9.3) every transport branch asserts
+--     through, fail-closed: an anon persona may use ONLY the onion, a
+--     public persona may use anything EXCEPT the anon onion, and an
+--     unknown transport is refused for both. This is the highest-severity
+--     invariant in the app; a hole in it is a deanonymization bug.
+--   - the spec 8.2/8.3 onion SERVING seams (2026-08-15): the pure
+--     payload builders and the acceptance path for the persona's
+--     onion-httpd routes - rsAnonFeedPage (the deterministic HTML feed
+--     page, entries escaped), rsAnonPrekeyBody (the signed RSK1 prekey
+--     record as hex text for GET /prekey), and rsAnonAcceptDm (the
+--     POST /dm body: a strict-hex refusal BEFORE any decode, then the
+--     existing rsDmOpenIntro verify-then-parse under the persona's own
+--     subkeys). The APP owns the oxh* routes and every stream; nothing
+--     here does I/O, so all three are testable offline.
+--
+-- EXTENSION DEPENDENCIES (probed, never assumed; rsProbeCapabilities):
+--   SodiumXT  HARD  the trust root; without it this library refuses to work.
+--                   At ABI 7 it also serves sxSha3_256, the preferred SHA3
+--                   provider for the OFFLINE .onion self-computation (shipped
+--                   2026-08-11, closing onionxt docs/08 gap #2).
+--   coinxt    soft  cxSha3_256 is the FALLBACK SHA3 provider (the same
+--                   vendored FIPS-202 code; what this app composed before
+--                   sodiumxt shipped it). With neither ABI 7 nor coinxt,
+--                   rsOnionFromPublicKey returns empty with a clear error;
+--                   the VERIFY direction below still works.
+--   onionxt   soft  oxPublicKeyFromAddress verifies a CLAIMED onion against
+--                   a handle offline (structural decode, no daemon needed)
+--   torrentxt soft  the phase-2 live feed layer drives btDhtPutSigned /
+--                   btDhtGetMutable / btDhtPutImmutable / btDhtGetImmutable,
+--                   and the phase-3 media layer drives btCreateTorrent /
+--                   btAddTorrentFile / btAddMagnet / btFindTorrent /
+--                   btInfoHash / btSetSequentialDownload / btTorrentStatus /
+--                   btFileList, all through a session the APP owns. Absent
+--                   torrentxt (or a dead handle), every live handler refuses
+--                   with a clear story; the pure-compute layer is untouched.
+--   enetxt / datachannelxt: probed and reported for the app's capability
+--                   matrix; nothing in phases 1-2 calls them.
+--
+-- ERROR CONVENTION: functions return empty (or false) on failure and record
+-- the reason; rsLastError() returns it. sx* failures throw, so every foreign
+-- call in here sits inside a try. No handler in this file ever throws.
+--
+-- WIRE FORMATS (pinned byte-for-byte by tests/riptide_golden_test.py; the
+-- magic IS the version - any framing change bumps it, never a silent fix):
+--   RIPTKEY1: "RIPTKEY1" "E" salt(16) sxSecretBox(seed32, argon2idKey)
+--   RSH1 head: magic(4) seq(u64 BE) nameLen(u8) name latestPostTarget(40 hex)
+--     prekeyTarget(40 hex) onionLen(u8: 0 or 62) onionAddr
+--     profileMetaTarget(40 hex)
+--   RSP1 post: magic(4) timestamp(u64 BE) prevPostTarget(40 hex) kind(1)
+--     kind "D": textLen(u16 BE) text(UTF-8)
+--     kind "C": chunkCount(u8, 1..16) then chunkCount * 40-hex targets
+--     mediaCount(u8, 0..8) then mediaCount * 40-hex info-hashes
+--     authorSig(64): ed25519 detached over every byte before it
+--   RSK1 prekey: magic(4) kxPub(64 hex) authorSig(64); exactly 132 bytes
+--   RSI1 intro: magic(4) senderHandle(64 hex) senderKxPub(64 hex)
+--     recipientHandle(64 hex) timestamp(u64 BE) authorSig(64); exactly
+--     268 bytes; travels ONLY inside an sxSeal to the recipient's prekey
+--   RSM1 frame: magic(4) kind(1: I/H/M, byte-exact) payload; the whole
+--     frame fits the rp1 60000 cap
+--   DM message (inside the secretstream): kind(1: T/O/A, byte-exact)
+--     timestamp(u64 BE) body(UTF-8, non-empty); O/A carry SDP (phase 5)
+--   RSL1 LAN challenge: magic(4) "C" nameLen(u8) name nonce(32)
+--   RSL1 LAN response: magic(4) "R" nameLen(u8) name sig(64); sig is
+--     ed25519 by the shared LAN key over "riptide-lan" || nonce || name
+--   RSL1 LAN draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
+--     draftLen(u16 BE) draft(UTF-8, 0..4096; empty = cleared) sig(64)
+--   RSL1 LAN feed state: magic(4) "F" nameLen(u8) name feedSeq(u64 BE)
+--     readPeer(64 hex; all-zeros = none) readUpTo(u64 BE) sig(64)
+--   RSL1 LAN presence: magic(4) "P" nameLen(u8) name flags(u8: bit0
+--     typing, other bits refused) tick(u64 BE) sig(64)
+--   RSL1 LAN media handoff: magic(4) "M" nameLen(u8) name seq(u64 BE)
+--     infoHash(40 lowercase hex, non-zero) fileNameLen(u8) fileName
+--     (UTF-8, 1..255) fileSize(u64 BE) sig(64); a POINTER at the
+--     phase-3 torrent path, never the payload (the channel-2 decision)
+--     ...the four sync sigs are ed25519 by the SAME shared LAN key over
+--     "riptide-lan-s" || the whole record body, kind byte included
+--   BTXO header: magic(4) ver(1) flags(1) nameLen(u16 BE) name total(u64)
+--   BTXO data frame: len(u32 BE) bytes; the stream ends on a zero-len frame
+--   Onion serving (spec 8.2/8.3, HTTP bodies over the persona's onion):
+--     GET / -> the anon feed page, deterministic UTF-8 HTML (rsAnonFeedPage)
+--     GET /prekey -> the persona's RSK1 record as 264 lowercase hex chars
+--     POST /dm -> body IS the sealed RSI1 intro as EXACTLY 632 lowercase
+--       hex chars (48 seal bytes + the 268-byte intro, times two); anything
+--       else is refused before a byte is decoded
+--   u64 travels as hi:u32 lo:u32 via binaryEncode("NN"), the BTXO discipline.
+--   DHT targets travel as 40 ASCII hex; the all-zeros target means "none".
+--   On the DHT (phase 2): the stored BEP44 v is the BENCODED byte string of
+--     the record ("<len>:<bytes>"); the canonical signing buffer is
+--     [4:salt<n>:<salt>] 3:seqi<seq>e 1:v <bencoded v> (BEP44, the exact
+--     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
+--     immutable item's target is SHA-1 of the bencoded value.
+
+constant kRsVersion = "0.10.0"
+constant kRsKeyMagic = "RIPTKEY1"
+constant kRsHeadMagic = "RSH1"
+constant kRsPostMagic = "RSP1"
+constant kRsPrekeyMagic = "RSK1"
+constant kRsIntroMagic = "RSI1"
+constant kRsFrameMagic = "RSM1"
+constant kRsFrameMax = 60000
+constant kRsLanMagic = "RSL1"
+constant kRsLanDomain = "riptide-lan"
+constant kRsLanNonceLen = 32
+constant kRsLanMaxName = 32
+-- the phase-6 SYNC records over the admitted mesh: a distinct signature
+-- domain (admission signs "riptide-lan", the welcome "riptide-lan-w"),
+-- a draft-text cap (refused, never truncated - a draft over it still
+-- lives locally, it just does not sync), and the all-zeros "no peer"
+-- spelling for the feed-state record's optional read receipt
+constant kRsLanSyncDomain = "riptide-lan-s"
+constant kRsLanMaxDraft = 4096
+-- the media-handoff record's file leaf name cap (the u8 length field;
+-- refuse, never truncate - and every real platform's leaf cap anyway)
+constant kRsLanMaxFile = 255
+constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
+constant kRsBtxoMagic = "BTXO"
+constant kRsBtxoVer = 1
+-- the POST /dm body: the sealed RSI1 intro as strict lowercase hex -
+-- (48 sxSeal bytes + the 268-byte intro) * 2 hex chars = 632, exactly
+constant kRsAnonDmBodyLen = 632
+-- the anon feed page cap: a runaway compose must refuse, never build an
+-- unbounded HTTP reply
+constant kRsAnonPageMax = 65536
+constant kRsAnonSubkeyBase = 100
+constant kRsHeadSalt = "riptide-head"
+constant kRsKdfContextText = "riptide"
+constant kRsInboxSuffix = "riptide-inbox"
+constant kRsZeroTarget = "0000000000000000000000000000000000000000"
+constant kRsSubkeyIdentity = "1"
+constant kRsSubkeyDm = "2"
+constant kRsSubkeyLan = "3"
+constant kRsSubkeyAnonBase = 100
+constant kRsSubkeyAnonDmBase = 200
+constant kRsMaxDisplayName = 64
+constant kRsMaxMedia = 8
+constant kRsMaxChunks = 16
+constant kRsMaxRecord = 1000
+constant kRsMaxSalt = 64
+constant kRsOnionAddrLen = 62
+constant kRsArgonOps = "2"
+constant kRsBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+constant kRsChecksumPrefix = ".onion checksum"
+
+local sRsLastError
+local sRsProbed
+local sRsCaps
+
+--------------------------------------------------------------------------
+-- diagnostics and capability probes
+--------------------------------------------------------------------------
+
+function rsVersion
+   return "Riptide" && kRsVersion && \
+         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
+end rsVersion
+
+function rsLastError
+   return sRsLastError
+end rsLastError
+
+private command rsSetError pMessage
+   put pMessage into sRsLastError
+end rsSetError
+
+-- Probe each extension once, each in its own try, into a cached array.
+-- SodiumXT gets a REAL round-trip (the family's chCanEncrypt pattern);
+-- the rest are cheap presence probes. Fail-closed: a missing extension
+-- disables exactly its feature and never another one.
+function rsProbeCapabilities
+   local tCaps, tKey, tBox, tOpened, tIgnore
+   if sRsProbed is true then return sRsCaps
+   put false into tCaps["canCrypto"]
+   put false into tCaps["hasTorrent"]
+   put false into tCaps["hasOnion"]
+   put false into tCaps["hasDataChannel"]
+   put false into tCaps["hasEnet"]
+   put false into tCaps["hasCoin"]
+   try
+      put sxRandomBytes(32) into tKey
+      put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
+      put sxSecretBoxOpen(tBox, tKey) into tOpened
+      put (textDecode(tOpened, "ASCII") is "probe") into tCaps["canCrypto"]
+   catch tIgnore
+      put false into tCaps["canCrypto"]
+   end try
+   try
+      put btLastError() into tIgnore
+      put true into tCaps["hasTorrent"]
+   catch tIgnore
+      put false into tCaps["hasTorrent"]
+   end try
+   try
+      put (oxVersion() is not empty) into tCaps["hasOnion"]
+   catch tIgnore
+      put false into tCaps["hasOnion"]
+   end try
+   try
+      put (dcLibraryVersion() is not empty) into tCaps["hasDataChannel"]
+   catch tIgnore
+      put false into tCaps["hasDataChannel"]
+   end try
+   try
+      put (enLibraryVersion() is not empty) into tCaps["hasEnet"]
+   catch tIgnore
+      put false into tCaps["hasEnet"]
+   end try
+   try
+      put (cxSha3_256Len() is 32) into tCaps["hasCoin"]
+   catch tIgnore
+      put false into tCaps["hasCoin"]
+   end try
+   -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
+   -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
+   -- self-computation actually needs. A real call, not a version sniff.
+   put (the number of bytes in rsSha3(textEncode("probe", "ASCII")) is 32) \
+         into tCaps["hasSha3"]
+   put tCaps into sRsCaps
+   put true into sRsProbed
+   return sRsCaps
+end rsProbeCapabilities
+
+-- Constants are script-scoped in xTalk, so the two wire values an APP needs
+-- are exposed as functions.
+function rsHeadSalt
+   return kRsHeadSalt
+end rsHeadSalt
+
+function rsZeroTarget
+   return kRsZeroTarget
+end rsZeroTarget
+
+--------------------------------------------------------------------------
+-- the master seed and the RIPTKEY1 sealed key file
+--------------------------------------------------------------------------
+
+function rsGenerateMasterSeed
+   local tSeed, tErr
+   try
+      put sxRandomBytes(32) into tSeed
+   catch tErr
+      rsSetError "rsGenerateMasterSeed: SodiumXT is required:" && tErr
+      return empty
+   end try
+   return tSeed
+end rsGenerateMasterSeed
+
+-- Seal the master seed under a passphrase: a fresh random 16-byte salt on
+-- every save, Argon2id (opslimit "2", interactive memlimit - the parameters
+-- every sealed file in the family uses; both ends must agree), then
+-- secretbox. Layout: "RIPTKEY1" "E" salt(16) box(nonce24 ct32 mac16).
+function rsSealMasterSeed pSeed, pPassphrase
+   local tSalt, tKey, tOut, tErr
+   if the number of bytes in pSeed is not 32 then
+      rsSetError "rsSealMasterSeed: the master seed must be 32 bytes"
+      return empty
+   end if
+   if pPassphrase is empty then
+      rsSetError "rsSealMasterSeed: an empty passphrase is refused"
+      return empty
+   end if
+   try
+      put sxRandomBytes(16) into tSalt
+      put sxPwHash(textEncode(pPassphrase, "UTF-8"), tSalt, 32, \
+            kRsArgonOps, sxPwMemInteractive()) into tKey
+      put textEncode(kRsKeyMagic & "E", "ASCII") & tSalt & \
+            sxSecretBox(pSeed, tKey) into tOut
+   catch tErr
+      rsSetError "rsSealMasterSeed:" && tErr
+      return empty
+   end try
+   return tOut
+end rsSealMasterSeed
+
+-- Unlock: parse the layout strictly, re-derive the wrap key, open the box.
+-- A wrong passphrase fails the Poly1305 tag inside sxSecretBoxOpen - it
+-- throws, we catch, and the caller gets empty plus a clear reason. It can
+-- never silently mis-decrypt.
+function rsOpenMasterSeed pFileBytes, pPassphrase
+   local tSalt, tSealed, tKey, tSeed, tHeader, tErr
+   -- A RIPTKEY1 file is EXACTLY 97 bytes: 9 (magic "RIPTKEY1E") + 16 (salt) +
+   -- 72 (sxSecretBox of a 32-byte seed = nonce 24 + ct 32 + mac 16). Refuse a
+   -- wrong length up front rather than leaning on the Poly1305 tag to catch a
+   -- truncated file (it does catch it - this is just an honest, explicit gate).
+   if the number of bytes in pFileBytes is not 97 then
+      rsSetError "rsOpenMasterSeed: not a 97-byte RIPTKEY1 file"
+      return empty
+   end if
+   put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
+   if tHeader is not (kRsKeyMagic & "E") then
+      rsSetError "rsOpenMasterSeed: not a RIPTKEY1 sealed key file"
+      return empty
+   end if
+   put byte 10 to 25 of pFileBytes into tSalt
+   put byte 26 to -1 of pFileBytes into tSealed
+   try
+      put sxPwHash(textEncode(pPassphrase, "UTF-8"), tSalt, 32, \
+            kRsArgonOps, sxPwMemInteractive()) into tKey
+      put sxSecretBoxOpen(tSealed, tKey) into tSeed
+   catch tErr
+      rsSetError "rsOpenMasterSeed: wrong passphrase or corrupted key file"
+      return empty
+   end try
+   if the number of bytes in tSeed is not 32 then
+      rsSetError "rsOpenMasterSeed: the sealed payload is not a 32-byte seed"
+      return empty
+   end if
+   return tSeed
+end rsOpenMasterSeed
+
+--------------------------------------------------------------------------
+-- the KDF subkey tree (spec section 3.2)
+--------------------------------------------------------------------------
+
+-- The context is the 8-byte string "riptide" plus one NUL - built here
+-- because a constant cannot hold a NUL byte. sxKdfDerive requires exactly
+-- 8 bytes (crypto_kdf_CONTEXTBYTES) and throws on any other length.
+private function rsKdfContext
+   return textEncode(kRsKdfContextText, "ASCII") & numToByte(0)
+end rsKdfContext
+
+private function rsSubkey pMaster, pSubkeyId
+   local tOut, tErr
+   if the number of bytes in pMaster is not 32 then
+      rsSetError "rsSubkey: the master seed must be 32 bytes"
+      return empty
+   end if
+   try
+      put sxKdfDerive(pMaster, pSubkeyId, rsKdfContext(), 32) into tOut
+   catch tErr
+      rsSetError "rsSubkey:" && tErr
+      return empty
+   end try
+   return tOut
+end rsSubkey
+
+function rsIdentitySeed pMaster
+   return rsSubkey(pMaster, kRsSubkeyIdentity)
+end rsIdentitySeed
+
+function rsDmSeed pMaster
+   return rsSubkey(pMaster, kRsSubkeyDm)
+end rsDmSeed
+
+function rsLanKey pMaster
+   return rsSubkey(pMaster, kRsSubkeyLan)
+end rsLanKey
+
+function rsAnonSeed pMaster, pIndex
+   local tId
+   if pIndex is not an integer or pIndex < 0 then
+      rsSetError "rsAnonSeed: the persona index must be a non-negative integer"
+      return empty
+   end if
+   put kRsSubkeyAnonBase + pIndex into tId
+   return rsSubkey(pMaster, tId)
+end rsAnonSeed
+
+-- The anon persona's sealed-DM kx seed (spec 8.3): subkey 200+n, SEPARATE
+-- from the persona's ed25519 identity for the same reason subkey 2 is
+-- separate from subkey 1 - one seed never feeds two cipher schemes. This
+-- one handler is all 8.3 needs from the library: the whole phase-4 record
+-- machinery composes for anon personas unchanged - rsBuildPrekey(kxPub,
+-- rsAnonSeed(...)) is the persona's prekey (served over its ONION, never
+-- the DHT - the 9.3 guard), rsBuildIntro addressed to the anon handle
+-- seals to it via rsDmSealIntro, and rsDmOpenIntro opens with THIS seed.
+function rsAnonDmSeed pMaster, pIndex
+   local tId
+   if pIndex is not an integer or pIndex < 0 then
+      rsSetError "rsAnonDmSeed: the persona index must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   put kRsSubkeyAnonDmBase + pIndex into tId
+   return rsSubkey(pMaster, tId)
+end rsAnonDmSeed
+
+--------------------------------------------------------------------------
+-- identity -> handle -> onion
+--------------------------------------------------------------------------
+
+-- The handle IS the ed25519 public key of the identity seed, as 64 lowercase
+-- hex. tests/cross-member-test.py pins sxSignKeypairFromSeed and libtorrent's
+-- btDhtKeypair to the same public point, so this equals
+-- btDhtKeypair(seedHex)["publicKey"] without the seed ever entering torrentxt.
+function rsIdentityKeys pSeed
+   local tPub, tSecret, tKeys, tErr
+   if the number of bytes in pSeed is not 32 then
+      rsSetError "rsIdentityKeys: the identity seed must be 32 bytes"
+      return empty
+   end if
+   try
+      sxSignKeypairFromSeed pSeed, tPub, tSecret
+   catch tErr
+      rsSetError "rsIdentityKeys:" && tErr
+      return empty
+   end try
+   put tPub into tKeys["publicKey"]
+   put tSecret into tKeys["secretKey"]
+   put rsBinToHexString(tPub) into tKeys["handle"]
+   if tKeys["handle"] is empty then return empty
+   return tKeys
+end rsIdentityKeys
+
+function rsHandleFromSeed pSeed
+   local tKeys
+   put rsIdentityKeys(pSeed) into tKeys
+   if tKeys is empty then return empty
+   return tKeys["handle"]
+end rsHandleFromSeed
+
+-- SHA3-256 with two providers, preferred order fixed: sodiumxt ABI 7's
+-- sxSha3_256 (shipped 2026-08-11 precisely for this checksum; the trust root
+-- should serve its own hash), then coinxt's cxSha3_256 (the same vendored
+-- FIPS-202 code; the provider this app composed before sodiumxt shipped it).
+-- Empty when neither is installed. Both produce identical bytes, so nothing
+-- downstream cares which answered - the golden vectors pin the output, not
+-- the provider.
+private function rsSha3 pData
+   local tHash, tErr
+   try
+      put sxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   try
+      put cxSha3_256(pData) into tHash
+      if the number of bytes in tHash is 32 then return tHash
+   catch tErr
+      put empty into tHash
+   end try
+   return empty
+end rsSha3
+
+-- The OFFLINE .onion self-computation: base32(pubkey || checksum || 0x03)
+-- where checksum = SHA3-256(".onion checksum" || pubkey || 0x03)[1..2].
+-- SHA3-256 comes from sodiumxt ABI 7 (sxSha3_256) or coinxt (cxSha3_256);
+-- without either this returns empty with that story in rsLastError(). The
+-- VERIFY direction (rsVerifyOnionClaim) does not need SHA3 at all.
+function rsOnionFromPublicKey pPub
+   local tHash
+   if the number of bytes in pPub is not 32 then
+      rsSetError "rsOnionFromPublicKey: the public key must be 32 bytes"
+      return empty
+   end if
+   put rsSha3(textEncode(kRsChecksumPrefix, "UTF-8") & pPub & \
+         numToByte(3)) into tHash
+   if tHash is empty then
+      rsSetError "rsOnionFromPublicKey: the offline .onion checksum needs" && \
+            "SHA3-256 from sodiumxt ABI 7 (sxSha3_256) or coinxt" && \
+            "(cxSha3_256); install either, or read the address from" && \
+            "oxServiceAddress after publishing"
+      return empty
+   end if
+   return rsBase32Encode(pPub & (byte 1 to 2 of tHash) & numToByte(3)) & \
+         ".onion"
+end rsOnionFromPublicKey
+
+function rsOnionFromHandle pHandleHex
+   local tPub
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsOnionFromHandle: the handle must be 64 hex chars"
+      return empty
+   end if
+   return rsOnionFromPublicKey(tPub)
+end rsOnionFromHandle
+
+-- Verify a CLAIMED onion address (e.g. from a followee's RSH1 head) against
+-- the handle you already trust: extract the embedded public key with
+-- onionxt's offline decoder and compare constant-time. This is the
+-- security-relevant direction - the checksum is only a typo guard - and it
+-- works today with no SHA3 and no tor daemon.
+function rsVerifyOnionClaim pOnionAddr, pHandleHex
+   local tClaimed, tExpected, tErr
+   try
+      put oxPublicKeyFromAddress(pOnionAddr) into tClaimed
+   catch tErr
+      rsSetError "rsVerifyOnionClaim: needs onionxt (oxPublicKeyFromAddress)"
+      return false
+   end try
+   if the number of bytes in tClaimed is not 32 then
+      rsSetError "rsVerifyOnionClaim: not a structurally valid onion address"
+      return false
+   end if
+   put rsHexToBin(pHandleHex) into tExpected
+   if the number of bytes in tExpected is not 32 then
+      rsSetError "rsVerifyOnionClaim: the handle must be 64 hex chars"
+      return false
+   end if
+   try
+      return sxMemEqual(tClaimed, tExpected)
+   catch tErr
+      rsSetError "rsVerifyOnionClaim:" && tErr
+      return false
+   end try
+end rsVerifyOnionClaim
+
+--------------------------------------------------------------------------
+-- rendezvous derivations (spec sections 5.1, 5.2)
+--------------------------------------------------------------------------
+
+-- The deterministic inbox swarm id: BLAKE2b-20(pubkey || "riptide-inbox"),
+-- as 40 hex - anyone who knows your handle can join the same phantom swarm.
+function rsInboxId pHandleHex
+   local tPub, tOut, tErr
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsInboxId: the handle must be 64 hex chars"
+      return empty
+   end if
+   try
+      put sxHash(tPub & textEncode(kRsInboxSuffix, "ASCII"), 20) into tOut
+   catch tErr
+      rsSetError "rsInboxId:" && tErr
+      return empty
+   end try
+   return rsBinToHexString(tOut)
+end rsInboxId
+
+-- The pairwise room id: BLAKE2b-20(sortedConcat(pkA, pkB) || sessionSalt).
+-- Sorted by lowercase hex order (equals raw byte order), so both peers
+-- derive the same id no matter who computes it.
+function rsRoomId pPkAHex, pPkBHex, pSessionSalt
+   local tA, tB, tCat, tOut, tErr
+   put toLower(pPkAHex) into tA
+   put toLower(pPkBHex) into tB
+   if not rsIsHexOfLen(tA, 64) or not rsIsHexOfLen(tB, 64) then
+      rsSetError "rsRoomId: both public keys must be 64 hex chars"
+      return empty
+   end if
+   if tA <= tB then
+      put rsHexToBin(tA) & rsHexToBin(tB) into tCat
+   else
+      put rsHexToBin(tB) & rsHexToBin(tA) into tCat
+   end if
+   try
+      put sxHash(tCat & pSessionSalt, 20) into tOut
+   catch tErr
+      rsSetError "rsRoomId:" && tErr
+      return empty
+   end try
+   return rsBinToHexString(tOut)
+end rsRoomId
+
+--------------------------------------------------------------------------
+-- RSH1 - the feed head record
+--------------------------------------------------------------------------
+
+-- Build the head. Targets may be passed empty (meaning "none": the all-zeros
+-- target); the onion address may be empty (onionLen 0). Caps refuse, never
+-- truncate. Max size 260 bytes, far under the 1000-byte BEP44 value cap.
+function rsBuildHead pSeq, pDisplayName, pLatestPost, pPrekey, pOnionAddr, pProfileMeta
+   local tNameBytes, tOnion, tOnionChars, tLatest, tPrekeyT, tProfile, tOut
+   if pSeq is not an integer or pSeq < 0 then
+      rsSetError "rsBuildHead: seq must be a non-negative integer"
+      return empty
+   end if
+   -- The seq field is a u64 on the wire, but xTalk numbers are doubles, so only
+   -- values below 2^53 round-trip exactly. Refuse anything at or above that
+   -- rather than serialize a seq that re-parses to a different number (a BEP44
+   -- monotonic-counter field silently changing value is a correctness bug).
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBuildHead: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
+   put textEncode(pDisplayName, "UTF-8") into tNameBytes
+   if the number of bytes in tNameBytes > kRsMaxDisplayName then
+      rsSetError "rsBuildHead: the display name is over" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsNormalizeTarget(pLatestPost) into tLatest
+   put rsNormalizeTarget(pPrekey) into tPrekeyT
+   put rsNormalizeTarget(pProfileMeta) into tProfile
+   if tLatest is empty or tPrekeyT is empty or tProfile is empty then
+      rsSetError "rsBuildHead: a target must be empty or 40 hex chars"
+      return empty
+   end if
+   put toLower(pOnionAddr) into tOnion
+   put the number of chars in tOnion into tOnionChars
+   if tOnion is not empty and tOnionChars is not kRsOnionAddrLen then
+      rsSetError "rsBuildHead: an onion address must be" && \
+            kRsOnionAddrLen && "chars"
+      return empty
+   end if
+   put textEncode(kRsHeadMagic, "ASCII") into tOut
+   put rsBEu64(pSeq) after tOut
+   put numToByte(the number of bytes in tNameBytes) after tOut
+   put tNameBytes after tOut
+   put textEncode(tLatest, "ASCII") after tOut
+   put textEncode(tPrekeyT, "ASCII") after tOut
+   put numToByte(the number of chars in tOnion) after tOut
+   put textEncode(tOnion, "ASCII") after tOut
+   put textEncode(tProfile, "ASCII") after tOut
+   if the number of bytes in tOut > kRsMaxRecord then
+      rsSetError "rsBuildHead: the head record is over" && kRsMaxRecord && \
+            "bytes"
+      return empty
+   end if
+   return tOut
+end rsBuildHead
+
+-- Parse a head strictly: magic, caps, and EXACT total length. Anything
+-- malformed returns empty - a truncated or padded record is refused, never
+-- partially believed.
+function rsParseHead pBytes
+   local tLen, tPos, tNameLen, tOnionLen, tHead, tField, tErr
+   put the number of bytes in pBytes into tLen
+   if tLen < 13 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsHeadMagic then
+      rsSetError "rsParseHead: bad magic, not an RSH1 record"
+      return empty
+   end if
+   put rsReadBEu64(byte 5 to 12 of pBytes) into tHead["seq"]
+   put byteToNum(byte 13 of pBytes) into tNameLen
+   if tNameLen > kRsMaxDisplayName then
+      rsSetError "rsParseHead: display name length over cap"
+      return empty
+   end if
+   put 13 into tPos
+   if tLen < tPos + tNameLen + 40 + 40 + 1 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   -- pBytes is attacker-supplied, so a bad display name is a clean refusal.
+   -- OXT's textDecode is LOSSY on malformed UTF-8, not throwing (see
+   -- rsBytesAreUtf8 and the 2026-08-15 engine finding), so the refusal is a
+   -- round-trip validity check, NOT a try - the try that used to sit here
+   -- never fired and the head would have parsed with a mangled name.
+   if not rsBytesAreUtf8(byte (tPos + 1) to (tPos + tNameLen) of pBytes) then
+      rsSetError "rsParseHead: the display name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte (tPos + 1) to (tPos + tNameLen) of pBytes, "UTF-8") \
+         into tHead["displayName"]
+   add tNameLen to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed latest-post target"
+      return empty
+   end if
+   put tField into tHead["latestPostTarget"]
+   add 40 to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed prekey target"
+      return empty
+   end if
+   put tField into tHead["prekeyTarget"]
+   add 40 to tPos
+   put byteToNum(byte (tPos + 1) of pBytes) into tOnionLen
+   add 1 to tPos
+   if tOnionLen is not 0 and tOnionLen is not kRsOnionAddrLen then
+      rsSetError "rsParseHead: bad onion address length"
+      return empty
+   end if
+   if tLen < tPos + tOnionLen + 40 then
+      rsSetError "rsParseHead: truncated head record"
+      return empty
+   end if
+   if tOnionLen is 0 then
+      put empty into tHead["onionAddr"]
+   else
+      put textDecode(byte (tPos + 1) to (tPos + tOnionLen) of pBytes, \
+            "ASCII") into tHead["onionAddr"]
+   end if
+   add tOnionLen to tPos
+   put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+         into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParseHead: malformed profile-meta target"
+      return empty
+   end if
+   put tField into tHead["profileMetaTarget"]
+   add 40 to tPos
+   if tLen is not tPos then
+      rsSetError "rsParseHead: trailing bytes after the head record"
+      return empty
+   end if
+   return tHead
+end rsParseHead
+
+--------------------------------------------------------------------------
+-- RSP1 - the post record and the tamper-evident chain
+--------------------------------------------------------------------------
+
+-- A kind-D (direct text) post, signed with the identity seed. pMediaList is
+-- a comma-separated list of 40-hex torrent info-hashes, empty for none.
+function rsBuildPost pTimestamp, pPrevTarget, pTextContent, pMediaList, pIdentitySeed
+   local tBody
+   put rsPostBody(pTimestamp, pPrevTarget, "D", pTextContent, empty, \
+         pMediaList) into tBody
+   if tBody is empty then return empty
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPost
+
+-- A kind-C post whose text lives in immutable chunks named in order.
+-- pChunkTargets is a comma-separated list of 1..16 40-hex targets.
+function rsBuildPostChunked pTimestamp, pPrevTarget, pChunkTargets, pMediaList, pIdentitySeed
+   local tBody
+   put rsPostBody(pTimestamp, pPrevTarget, "C", empty, pChunkTargets, \
+         pMediaList) into tBody
+   if tBody is empty then return empty
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPostChunked
+
+private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
+   local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
+      rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsPostBody: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   put rsNormalizeTarget(pPrevTarget) into tPrev
+   if tPrev is empty then
+      rsSetError "rsPostBody: the previous-post target must be empty or 40 hex"
+      return empty
+   end if
+   put textEncode(kRsPostMagic, "ASCII") into tOut
+   put rsBEu64(pTimestamp) after tOut
+   put textEncode(tPrev, "ASCII") after tOut
+   put textEncode(pKind, "ASCII") after tOut
+   if pKind is "D" then
+      put textEncode(pTextContent, "UTF-8") into tTextBytes
+      if the number of bytes in tTextBytes > 65535 then
+         rsSetError "rsPostBody: the text is over the u16 length field"
+         return empty
+      end if
+      put rsBEu16(the number of bytes in tTextBytes) after tOut
+      put tTextBytes after tOut
+   else
+      set the itemDelimiter to comma
+      put the number of items in pChunkTargets into tChunkCount
+      if tChunkCount < 1 or tChunkCount > kRsMaxChunks then
+         rsSetError "rsPostBody: chunk count must be 1 to" && kRsMaxChunks
+         return empty
+      end if
+      put numToByte(tChunkCount) after tOut
+      repeat for each item tItem in pChunkTargets
+         put rsNormalizeTarget(tItem) into tNorm
+         if tNorm is kRsZeroTarget or tNorm is empty then
+            rsSetError "rsPostBody: a chunk target must be 40 non-zero hex"
+            return empty
+         end if
+         put textEncode(tNorm, "ASCII") after tOut
+      end repeat
+   end if
+   set the itemDelimiter to comma
+   if pMediaList is empty then
+      put 0 into tMediaCount
+   else
+      put the number of items in pMediaList into tMediaCount
+   end if
+   if tMediaCount > kRsMaxMedia then
+      rsSetError "rsPostBody: media count over" && kRsMaxMedia
+      return empty
+   end if
+   put numToByte(tMediaCount) after tOut
+   if tMediaCount > 0 then
+      repeat for each item tItem in pMediaList
+         put rsNormalizeTarget(tItem) into tNorm
+         if tNorm is kRsZeroTarget or tNorm is empty then
+            rsSetError "rsPostBody: a media info-hash must be 40 non-zero hex"
+            return empty
+         end if
+         put textEncode(tNorm, "ASCII") after tOut
+      end repeat
+   end if
+   if the number of bytes in tOut + 64 > kRsMaxRecord then
+      rsSetError "rsPostBody: the post record is over" && kRsMaxRecord && \
+            "bytes; move the text to chunks or drop media"
+      return empty
+   end if
+   return tOut
+end rsPostBody
+
+private function rsSignPost pBody, pIdentitySeed
+   local tKeys, tSig, tErr
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(pBody, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsSignPost:" && tErr
+      return empty
+   end try
+   return pBody & tSig
+end rsSignPost
+
+-- Parse a post strictly (magic, caps, exact length including the 64-byte
+-- signature). Parsing does NOT verify the signature - that needs the
+-- author's public key, which the caller trusts from elsewhere; call
+-- rsVerifyPost for that.
+function rsParsePost pBytes
+   local tLen, tPos, tKind, tCount, tPost, tField, tI, tTextLen, tList, tErr
+   put the number of bytes in pBytes into tLen
+   if tLen < 4 + 8 + 40 + 1 + 1 + 64 then
+      rsSetError "rsParsePost: truncated post record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsPostMagic then
+      rsSetError "rsParsePost: bad magic, not an RSP1 record"
+      return empty
+   end if
+   put rsReadBEu64(byte 5 to 12 of pBytes) into tPost["timestamp"]
+   put textDecode(byte 13 to 52 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 40) then
+      rsSetError "rsParsePost: malformed previous-post target"
+      return empty
+   end if
+   put tField into tPost["prevPostTarget"]
+   put textDecode(byte 53 of pBytes, "ASCII") into tKind
+   put tKind into tPost["kind"]
+   put 53 into tPos
+   if tKind is "D" then
+      if tLen < tPos + 2 + 1 + 64 then
+         rsSetError "rsParsePost: truncated post record"
+         return empty
+      end if
+      put rsReadBEu16(byte (tPos + 1) to (tPos + 2) of pBytes) into tTextLen
+      add 2 to tPos
+      if tLen < tPos + tTextLen + 1 + 64 then
+         rsSetError "rsParsePost: text length runs past the record"
+         return empty
+      end if
+      -- Attacker-supplied bytes; malformed UTF-8 is a clean refusal. OXT's
+      -- textDecode is lossy not throwing (see rsBytesAreUtf8), so validate
+      -- by round-trip rather than a try that never fires.
+      if not rsBytesAreUtf8(byte (tPos + 1) to (tPos + tTextLen) of pBytes) \
+            then
+         rsSetError "rsParsePost: the post text is not valid UTF-8"
+         return empty
+      end if
+      put textDecode(byte (tPos + 1) to (tPos + tTextLen) of pBytes, \
+            "UTF-8") into tPost["text"]
+      add tTextLen to tPos
+   else if tKind is "C" then
+      put byteToNum(byte (tPos + 1) of pBytes) into tCount
+      add 1 to tPos
+      if tCount < 1 or tCount > kRsMaxChunks then
+         rsSetError "rsParsePost: chunk count out of range"
+         return empty
+      end if
+      if tLen < tPos + tCount * 40 + 1 + 64 then
+         rsSetError "rsParsePost: truncated chunk list"
+         return empty
+      end if
+      put empty into tList
+      repeat with tI = 1 to tCount
+         put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+               into tField
+         if not rsIsHexOfLen(tField, 40) then
+            rsSetError "rsParsePost: malformed chunk target"
+            return empty
+         end if
+         if tList is empty then
+            put tField into tList
+         else
+            put comma & tField after tList
+         end if
+         add 40 to tPos
+      end repeat
+      put tList into tPost["chunkTargets"]
+   else
+      rsSetError "rsParsePost: unknown post kind"
+      return empty
+   end if
+   put byteToNum(byte (tPos + 1) of pBytes) into tCount
+   add 1 to tPos
+   if tCount > kRsMaxMedia then
+      rsSetError "rsParsePost: media count out of range"
+      return empty
+   end if
+   if tLen is not tPos + tCount * 40 + 64 then
+      rsSetError "rsParsePost: record length does not match its fields"
+      return empty
+   end if
+   put empty into tList
+   repeat with tI = 1 to tCount
+      put textDecode(byte (tPos + 1) to (tPos + 40) of pBytes, "ASCII") \
+            into tField
+      if not rsIsHexOfLen(tField, 40) then
+         rsSetError "rsParsePost: malformed media info-hash"
+         return empty
+      end if
+      if tList is empty then
+         put tField into tList
+      else
+         put comma & tField after tList
+      end if
+      add 40 to tPos
+   end repeat
+   put tList into tPost["mediaTargets"]
+   return tPost
+end rsParsePost
+
+-- Verify a post's author signature: parse first (so a malformed buffer is
+-- refused before any crypto), then check the trailing 64 bytes are a valid
+-- ed25519 detached signature by the handle over everything before them.
+function rsVerifyPost pBytes, pHandleHex
+   local tPub, tParsed, tLen, tErr
+   put rsParsePost(pBytes) into tParsed
+   if tParsed is empty then return false
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsVerifyPost: the handle must be 64 hex chars"
+      return false
+   end if
+   put the number of bytes in pBytes into tLen
+   try
+      return sxSignVerifyDetached(byte (tLen - 63) to tLen of pBytes, \
+            byte 1 to (tLen - 64) of pBytes, tPub)
+   catch tErr
+      rsSetError "rsVerifyPost:" && tErr
+      return false
+   end try
+end rsVerifyPost
+
+--------------------------------------------------------------------------
+-- BEP44 helpers
+--------------------------------------------------------------------------
+
+-- bencode of a byte string: <len>:<bytes>. The only bencode shape riptide
+-- ever puts on the DHT (the v for btDhtBep44SignBuf / btDhtPutSigned and
+-- the input whose SHA-1 is an immutable item's target).
+function rsBencodeBytes pData
+   local tLen
+   put the number of bytes in pData into tLen
+   return textEncode(tLen & ":", "ASCII") & pData
+end rsBencodeBytes
+
+--------------------------------------------------------------------------
+-- phase 2 - the live feed layer, pure half (spec section 4)
+--
+-- Everything in this half is deterministic compute: the canonical BEP44
+-- signing buffer, the content address of an immutable item, and the two
+-- INGEST verifiers the app's poll loop feeds drained events through. None
+-- of it touches a session, which is what keeps it testable offline and
+-- lets ingest run its refusals even where torrentxt is not installed.
+--------------------------------------------------------------------------
+
+-- Strictly parse a bencoded byte string "<len>:<bytes>" and return len, or
+-- -1 on anything else: a non-digit prefix, a missing colon, a non-canonical
+-- leading zero, or a declared length that does not match the bytes that
+-- follow. The live layer only ever stores this one bencode shape, so
+-- anything else handed to rsBep44SignBuf is a caller bug to refuse loudly.
+private function rsBencodedByteStringLen pValue
+   local tI, tN, tLen, tDigits
+   put 0 into tLen
+   put 0 into tDigits
+   repeat with tI = 1 to the number of bytes in pValue
+      put byteToNum(byte tI of pValue) into tN
+      if tN is 58 then
+         if tDigits is 0 then return -1
+         if the number of bytes in pValue - tI is not tLen then return -1
+         return tLen
+      end if
+      if tN < 48 or tN > 57 then return -1
+      if tDigits > 0 and tLen is 0 then return -1
+      put tLen * 10 + (tN - 48) into tLen
+      add 1 to tDigits
+      if tDigits > 4 then return -1
+   end repeat
+   return -1
+end rsBencodedByteStringLen
+
+-- The canonical BEP44 signing buffer, rebuilt in pure script:
+-- [4:salt<n>:<salt>] 3:seqi<seq>e 1:v <bencoded v>. Byte-identical to
+-- torrentxt's btDhtBep44SignBuf (the folded suite harness cross-checks the
+-- two implementations, and libtorrent's own verifier accepting the result
+-- is the deeper proof) - built here rather than borrowed so rsIngestHead
+-- can verify a head's signature even in a paste with no torrentxt at all.
+function rsBep44SignBuf pSalt, pSeq, pValue
+   local tSaltBytes, tRawLen, tOut
+   if pSeq is not an integer or pSeq < 0 then
+      rsSetError "rsBep44SignBuf: seq must be a non-negative integer"
+      return empty
+   end if
+   if pSeq >= 9007199254740992 then
+      rsSetError "rsBep44SignBuf: seq must be below 2^53 to round-trip exactly"
+      return empty
+   end if
+   put textEncode(pSalt, "UTF-8") into tSaltBytes
+   if the number of bytes in tSaltBytes > kRsMaxSalt then
+      rsSetError "rsBep44SignBuf: the salt is over" && kRsMaxSalt && \
+            "bytes (the BEP44 cap)"
+      return empty
+   end if
+   put rsBencodedByteStringLen(pValue) into tRawLen
+   if tRawLen < 1 or tRawLen > kRsMaxRecord then
+      rsSetError "rsBep44SignBuf: the value must be a bencoded byte string" && \
+            "of 1 to" && kRsMaxRecord && "raw bytes"
+      return empty
+   end if
+   put empty into tOut
+   if tSaltBytes is not empty then
+      put textEncode("4:salt" & the number of bytes in tSaltBytes & ":", \
+            "ASCII") & tSaltBytes into tOut
+   end if
+   put textEncode("3:seqi" & pSeq & "e1:v", "ASCII") after tOut
+   put pValue after tOut
+   return tOut
+end rsBep44SignBuf
+
+-- The 40-hex DHT target of an immutable item: SHA-1 of the BENCODED value
+-- (BEP44). What btDhtPutImmutable returns for the same bytes; recomputable
+-- offline, which is what makes the post chain walkable without trust.
+function rsImmutableTarget pValue
+   local tLen
+   put the number of bytes in pValue into tLen
+   if tLen < 1 or tLen > kRsMaxRecord then
+      rsSetError "rsImmutableTarget: a BEP44 immutable value is 1 to" && \
+            kRsMaxRecord && "bytes"
+      return empty
+   end if
+   return rsBinToHexString(sha1Digest(rsBencodeBytes(pValue)))
+end rsImmutableTarget
+
+-- Verify and unpack a drained dhtMutableItem EVENT as a followee's feed
+-- head. pEvent is the event array btPoll returned (publicKey, salt, seq,
+-- value, signature); pExpectedHandleHex is the handle the app trusts (the
+-- key it asked rsRequestHead about). Refuses: an event for another key or
+-- salt, an insane seq, a value that is not a strict RSH1 record, a record
+-- whose embedded seq disagrees with the BEP44 seq, and - the point - a
+-- BEP44 signature that does not verify under the handle. libtorrent already
+-- verified that signature once on receipt; re-verifying here in SodiumXT
+-- costs one call and means the app's trust does not rest on the transport.
+-- Returns the parsed head array (rsParseHead's shape), or empty.
+function rsIngestHead pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tHead, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestHead: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestHead: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case, so a case-mangled salt could pass this line; it then
+   -- fails the signature below, because the buffer is rebuilt from the
+   -- CANONICAL salt. The crypto backstops the string compare.
+   if pEvent["salt"] is not kRsHeadSalt then
+      rsSetError "rsIngestHead: the event is not a riptide-head item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestHead: the event seq is not a sane integer"
+      return empty
+   end if
+   put rsParseHead(pEvent["value"]) into tHead
+   if tHead is empty then return empty
+   if tHead["seq"] is not tSeq then
+      -- rsPublishHead uses the head's own embedded seq as the BEP44 seq, so
+      -- a disagreement means this record was not published by this layer
+      -- (or was reassembled); refuse rather than guess which counter to
+      -- believe - the app's replay protection reads the one true seq.
+      rsSetError "rsIngestHead: the BEP44 seq and the head's embedded seq" && \
+            "disagree"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestHead: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsHeadSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestHead:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestHead: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   return tHead
+end rsIngestHead
+
+-- Verify and unpack a drained dhtImmutableItem EVENT as one post in a
+-- followee's chain. pExpectedTarget is the target the app asked for (the
+-- head's latestPostTarget, or the previous post's prevPostTarget);
+-- pAuthorHandleHex the author being walked. Three gates, in order: the
+-- event answers the target the app is waiting on; the value's recomputed
+-- SHA-1 IS that target (content addressing - a lying node is refused, and
+-- everything downstream is then over exactly the named bytes); and the
+-- author's ed25519 signature verifies. Returns rsParsePost's array, or
+-- empty. The chain walk is these calls in a loop: request the head's
+-- latest target, ingest, follow prevPostTarget until the zero target.
+function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
+   local tExpected, tEventTarget, tValue, tComputed
+   put rsNormalizeTarget(pExpectedTarget) into tExpected
+   if tExpected is empty or tExpected is kRsZeroTarget then
+      rsSetError "rsIngestPost: the expected target must be 40 non-zero" && \
+            "hex chars"
+      return empty
+   end if
+   put toLower(pEvent["target"]) into tEventTarget
+   if tEventTarget is not tExpected then
+      rsSetError "rsIngestPost: the event names a different target"
+      return empty
+   end if
+   put pEvent["value"] into tValue
+   put rsImmutableTarget(tValue) into tComputed
+   if tComputed is empty then return empty
+   if tComputed is not tExpected then
+      rsSetError "rsIngestPost: the value does not hash to its own target"
+      return empty
+   end if
+   if rsVerifyPost(tValue, pAuthorHandleHex) is not true then
+      return empty
+   end if
+   return rsParsePost(tValue)
+end rsIngestPost
+
+--------------------------------------------------------------------------
+-- phase 2 - the live feed layer, session half (spec section 4)
+--
+-- Thin compositions over a torrent session the APP owns (TorrentXT allows
+-- one per process; this library never starts, stops, or polls one). Every
+-- input is validated BEFORE the session handle is touched, so the refusal
+-- paths run - and are tested - with no torrentxt installed at all. The
+-- fetches are asynchronous: they return true when the lookup is accepted,
+-- and the value arrives later as a dhtMutableItem / dhtImmutableItem event
+-- for rsIngestHead / rsIngestPost.
+--------------------------------------------------------------------------
+
+private function rsValidSession pSession
+   return pSession is an integer and pSession > 0
+end rsValidSession
+
+-- Publish an RSH1 head under the identity key, through the external-signing
+-- seam: the canonical buffer is assembled here, signed by SodiumXT, and
+-- handed to btDhtPutSigned, which VERIFIES the signature against the public
+-- key before anything touches the network - so the identity secret never
+-- crosses into libtorrent, and a true return means libtorrent's own ed25519
+-- agreed with SodiumXT's. The BEP44 seq is the head's embedded seq: one
+-- counter, one source of truth (rsParseHead), never two arguments to skew.
+function rsPublishHead pSession, pHeadBytes, pIdentitySeed
+   local tHead, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   put rsParseHead(pHeadBytes) into tHead
+   if tHead is empty then
+      rsSetError "rsPublishHead: not a valid RSH1 head:" && rsLastError()
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   put rsBencodeBytes(pHeadBytes) into tValue
+   put rsBep44SignBuf(kRsHeadSalt, tHead["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishHead:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsHeadSalt, \
+            tHead["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishHead: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishHead: btDhtPutSigned refused (" & tCode & ")" && tWhy
+      return false
+   end if
+   return true
+end rsPublishHead
+
+-- Store any immutable value (a chunk, a profile-meta blob) and return its
+-- 40-hex target. The target is recomputed here and compared against what
+-- libtorrent returned: two independent SHA-1s over one bencoded value
+-- disagreeing means one side is not hashing what it claims, and a feed
+-- layer that shrugged at that would be publishing unfindable posts.
+function rsPublishImmutable pSession, pValue
+   local tExpected, tTarget, tWhy, tErr
+   put rsImmutableTarget(pValue) into tExpected
+   if tExpected is empty then return empty
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return empty
+   end if
+   try
+      put btDhtPutImmutable(pSession, pValue) into tTarget
+   catch tErr
+      rsSetError "rsPublishImmutable: needs torrentxt" && \
+            "(btDhtPutImmutable):" && tErr
+      return empty
+   end try
+   if tTarget is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishImmutable: btDhtPutImmutable failed;" && tWhy
+      return empty
+   end if
+   if toLower(tTarget) is not tExpected then
+      rsSetError "rsPublishImmutable: libtorrent's target" && tTarget && \
+            "disagrees with the recomputed" && tExpected
+      return empty
+   end if
+   return tExpected
+end rsPublishImmutable
+
+-- Publish one RSP1 post. The strict parse runs first, so a malformed or
+-- truncated record is refused before the network hears about it; the store
+-- itself is rsPublishImmutable, because a post IS just a content-addressed
+-- immutable item. Returns the post's 40-hex target (what the next post's
+-- prevPostTarget and the head's latestPostTarget name), or empty.
+function rsPublishPost pSession, pPostBytes
+   local tParsed
+   put rsParsePost(pPostBytes) into tParsed
+   if tParsed is empty then
+      rsSetError "rsPublishPost: not a valid RSP1 record:" && rsLastError()
+      return empty
+   end if
+   return rsPublishImmutable(pSession, pPostBytes)
+end rsPublishPost
+
+-- Ask the DHT for a followee's current head. Asynchronous: true means the
+-- lookup was accepted; the value arrives as a dhtMutableItem event, which
+-- the app hands to rsIngestHead.
+function rsRequestHead pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestHead: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestHead: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsHeadSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestHead: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestHead: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestHead
+
+-- Ask the DHT for one immutable item (a post, a chunk, a profile blob) by
+-- its target. Asynchronous: the value arrives as a dhtImmutableItem event,
+-- which the app hands to rsIngestPost (posts) or checks against
+-- rsImmutableTarget itself (raw blobs). The zero target means "none" in
+-- every record, so asking for it is always a caller bug.
+function rsRequestImmutable pSession, pTarget
+   local tT, tCode, tErr
+   put rsNormalizeTarget(pTarget) into tT
+   if tT is empty or tT is kRsZeroTarget then
+      rsSetError "rsRequestImmutable: the target must be 40 non-zero hex" && \
+            "chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestImmutable: pSession is not a live torrent" && \
+            "session handle"
+      return false
+   end if
+   try
+      btDhtGetImmutable pSession, tT
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestImmutable: needs torrentxt (btDhtGetImmutable):" \
+            && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestImmutable: btDhtGetImmutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestImmutable
+
+--------------------------------------------------------------------------
+-- the media layer (phase 3) - followers are the CDN
+--------------------------------------------------------------------------
+
+-- Attach one file to the feed: build a TRACKERLESS torrent over it (DHT-only,
+-- like everything else here) and seed it IN PLACE - the save path is the
+-- file's own parent folder, so libtorrent finds the payload where it already
+-- sits and no copy is made. Returns the 40-hex v1 info-hash, which is exactly
+-- what rsBuildPost's pMediaList carries and what a follower's rsMediaFetch
+-- takes. Media attachments are SINGLE FILES by design (a photo, a video);
+-- folder shares are a file-sharing app's job (quickshare), not a feed's.
+-- The torrent handle is deliberately not returned: posts name hashes, not
+-- handles, and btFindTorrent(pSession, tHash) recovers the handle whenever
+-- the app wants one (rsMediaFetch on your own hash does exactly that).
+function rsMediaCreate pSession, pPath
+   local tParent, tData, tH, tHash, tWhy, tErr, tSavedDelim
+   if there is not a file pPath then
+      rsSetError "rsMediaCreate: no file at" && pPath && \
+            "(media attachments are single files)"
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaCreate: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   -- itemDelimiter is GLOBAL mutable state and this is the library's only
+   -- non-default set, so it is saved and restored around the NARROWEST
+   -- possible span - the path split, nothing else. Restoring here rather
+   -- than at each exit is not tidiness: this function has SEVEN exits, six
+   -- of them refusals, and a restore per exit is a line a later refusal
+   -- path forgets. The leak was real and its symptom was a mystery, not a
+   -- delimiter: a caller's later comma-joined item read returned the whole
+   -- list under "/" (the demo carried a point patch quoting exactly that).
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to "/"
+   put item 1 to -2 of pPath into tParent
+   set the itemDelimiter to tSavedDelim
+   if tParent is empty then put "/" into tParent
+   try
+      put btCreateTorrent(pPath, 0, 0, empty) into tData
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btCreateTorrent):" && tErr
+      return empty
+   end try
+   if tData is empty then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btCreateTorrent failed;" && tWhy
+      return empty
+   end if
+   try
+      put btAddTorrentFile(pSession, tData, tParent) into tH
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btAddTorrentFile):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsMediaCreate: btAddTorrentFile refused;" && tWhy
+      return empty
+   end if
+   try
+      put toLower(btInfoHash(tH)) into tHash
+   catch tErr
+      rsSetError "rsMediaCreate: needs torrentxt (btInfoHash):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tHash, 40) then
+      rsSetError "rsMediaCreate: btInfoHash returned" && tHash & \
+            ", not 40 hex"
+      return empty
+   end if
+   return tHash
+end rsMediaCreate
+
+-- Fetch - and from then on co-seed - one media item a post names: join its
+-- swarm by magnet, downloading under pSaveFolder. pSequential true is the
+-- playback mode: pieces arrive in order, so a video can start playing while
+-- its tail is still downloading (poll rsMediaStatus for the moment filePath
+-- resolves). Idempotent on purpose: if the session already holds this hash
+-- (a re-click, a restart's re-fetch, or the author's own seed), the existing
+-- handle is returned instead of libtorrent's duplicate-add error - and the
+-- sequential flag is still applied, because the caller asked for playback
+-- NOW. Completion is not the end: libtorrent keeps seeding a finished
+-- torrent, which is the whole followers-are-the-CDN design - fetching IS
+-- co-seeding. Returns the positive torrent handle, or empty.
+function rsMediaFetch pSession, pInfoHash, pSaveFolder, pSequential
+   local tHash, tH, tCode, tWhy, tErr
+   put rsNormalizeTarget(pInfoHash) into tHash
+   if tHash is empty or tHash is kRsZeroTarget then
+      rsSetError "rsMediaFetch: the info-hash must be 40 non-zero hex chars"
+      return empty
+   end if
+   if there is not a folder pSaveFolder then
+      rsSetError "rsMediaFetch: no folder at" && pSaveFolder
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsMediaFetch: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   try
+      put btFindTorrent(pSession, tHash) into tH
+   catch tErr
+      rsSetError "rsMediaFetch: needs torrentxt (btFindTorrent):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btAddMagnet(pSession, "magnet:?xt=urn:btih:" & tHash, \
+               pSaveFolder) into tH
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt (btAddMagnet):" && tErr
+         return empty
+      end try
+      if tH is 0 then
+         try
+            put btLastError() into tWhy
+         catch tErr
+            put empty into tWhy
+         end try
+         rsSetError "rsMediaFetch: btAddMagnet failed;" && tWhy
+         return empty
+      end if
+   end if
+   if pSequential is true then
+      try
+         btSetSequentialDownload tH, true
+         put the result into tCode
+      catch tErr
+         rsSetError "rsMediaFetch: needs torrentxt" && \
+               "(btSetSequentialDownload):" && tErr
+         return empty
+      end try
+      if tCode is not 0 then
+         -- The torrent stays added (progress is never thrown away over a
+         -- flag); a retry lands on the btFindTorrent path and re-applies.
+         rsSetError "rsMediaFetch: btSetSequentialDownload refused (" & \
+               tCode & ")"
+         return empty
+      end if
+   end if
+   return tH
+end rsMediaFetch
+
+-- One status snapshot for a media torrent, shaped for a feed/player UI: the
+-- btTorrentStatus record (name, state, progress 0..1, totalDone/totalSize,
+-- isFinished/isSeeding, savePath, ...) with the PLAYER fields added on top:
+-- filePath is the on-disk path of the torrent's first file - the one a
+-- player opens - resolved from btFileList, with fileSize/fileProgress (bytes
+-- done of THAT file) beside it. All three stay empty until metadata arrives
+-- (a magnet fetches its file table over the swarm), so "filePath is empty"
+-- doubles as the not-openable-yet probe; with a sequential fetch,
+-- fileProgress is contiguous from the front, which is what makes playing
+-- mid-download work. Takes the torrent handle (from rsMediaFetch or
+-- btFindTorrent), not the session: the snapshot is per-torrent.
+function rsMediaStatus pTorrent
+   local tS, tFiles, tErr
+   if pTorrent is not an integer or pTorrent <= 0 then
+      rsSetError "rsMediaStatus: pTorrent is not a torrent handle"
+      return empty
+   end if
+   try
+      put btTorrentStatus(pTorrent) into tS
+   catch tErr
+      rsSetError "rsMediaStatus: needs torrentxt (btTorrentStatus):" && tErr
+      return empty
+   end try
+   if the keys of tS is empty then
+      rsSetError "rsMediaStatus: not a live torrent handle"
+      return empty
+   end if
+   put empty into tS["filePath"]
+   put empty into tS["fileSize"]
+   put empty into tS["fileProgress"]
+   try
+      put btFileList(pTorrent) into tFiles
+   catch tErr
+      -- status just succeeded, so this cannot be "torrentxt missing";
+      -- degrade to no-file-table (same as metadata-not-yet) rather than
+      -- failing a snapshot the caller can still paint progress from
+      put empty into tFiles
+   end try
+   if tFiles is an array and the number of elements in tFiles > 0 then
+      put tS["savePath"] & "/" & tFiles[1]["path"] into tS["filePath"]
+      put tFiles[1]["size"] into tS["fileSize"]
+      put tFiles[1]["progress"] into tS["fileProgress"]
+   end if
+   return tS
+end rsMediaStatus
+
+--------------------------------------------------------------------------
+-- the DM layer (phase 4) - sealed first contact, then a pairwise
+-- secretstream over rp1 (spec section 5)
+--
+-- The shape: your head's prekeyTarget names an RSK1 record (your crypto_kx
+-- public, signed by your identity key). A stranger fetches it, seals an
+-- RSI1 intro to that prekey (sxSeal: nobody on the inbox swarm learns the
+-- contents, and the sender proves itself with an identity signature INSIDE
+-- the sealed record), and sends it as an RSM1 "I" frame over rp1 in your
+-- inbox phantom swarm. Both sides then derive one crypto_kx session
+-- (deterministic roles: the lexically smaller handle is the kx CLIENT, the
+-- same both-sides-agree discipline as the roomId sortedConcat), start a
+-- secretstream in each direction ("H" header frame, then "M" ciphertext
+-- frames), and every message inside the stream is a kind+timestamp+body
+-- record. The library owns keys, records, and framing; the APP owns the
+-- rp1 peer bookkeeping and the poll loop (the rp1-chat pattern), exactly
+-- as it owns the DHT event loop in phase 2.
+--------------------------------------------------------------------------
+
+-- The crypto_kx keypair for the DM rail, from the DM subkey seed
+-- (rsDmSeed of the master). Returns publicKey/secretKey as 32-byte Data
+-- plus publicKeyHex - the spelling records carry.
+function rsDmKeys pDmSeed
+   local tPub, tSec, tKeys, tErr
+   if the number of bytes in pDmSeed is not 32 then
+      rsSetError "rsDmKeys: the DM seed must be 32 bytes (rsDmSeed of" && \
+            "the master seed)"
+      return empty
+   end if
+   try
+      sxKeyExchangeKeypairFromSeed pDmSeed, tPub, tSec
+   catch tErr
+      rsSetError "rsDmKeys: needs SodiumXT" && \
+            "(sxKeyExchangeKeypairFromSeed):" && tErr
+      return empty
+   end try
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsDmKeys: sxKeyExchangeKeypairFromSeed returned a" && \
+            (the number of bytes in tPub) & "-byte public key"
+      return empty
+   end if
+   put tPub into tKeys["publicKey"]
+   put tSec into tKeys["secretKey"]
+   put rsBinToHexString(tPub) into tKeys["publicKeyHex"]
+   if tKeys["publicKeyHex"] is empty then return empty
+   return tKeys
+end rsDmKeys
+
+-- One crypto_kx session for a pair, with the role decided by the SAME rule
+-- on both machines: the peer whose HANDLE sorts lexically smaller (as
+-- lowercase hex, which equals raw byte order) is the kx client. Returns
+-- rx (receive key), tx (transmit key), and the role this side played -
+-- my tx is the peer's rx, which the harness proves by deriving both sides.
+function rsDmSessionKeys pMyHandleHex, pMyKxKeys, pTheirHandleHex, pTheirKxPubHex
+   local tMine, tTheirs, tTheirPub, tRx, tTx, tOut, tErr
+   put toLower(pMyHandleHex) into tMine
+   put toLower(pTheirHandleHex) into tTheirs
+   if not rsIsHexOfLen(tMine, 64) then
+      rsSetError "rsDmSessionKeys: my handle must be 64 hex chars"
+      return empty
+   end if
+   if not rsIsHexOfLen(tTheirs, 64) then
+      rsSetError "rsDmSessionKeys: the peer handle must be 64 hex chars"
+      return empty
+   end if
+   if tMine is tTheirs then
+      rsSetError "rsDmSessionKeys: a DM session needs two DISTINCT handles"
+      return empty
+   end if
+   if the number of bytes in pMyKxKeys["secretKey"] is not 32 then
+      rsSetError "rsDmSessionKeys: pMyKxKeys must be the rsDmKeys array" && \
+            "(32-byte secretKey)"
+      return empty
+   end if
+   put rsHexToBin(pTheirKxPubHex) into tTheirPub
+   if the number of bytes in tTheirPub is not 32 then
+      rsSetError "rsDmSessionKeys: the peer kx public must be 64 hex chars"
+      return empty
+   end if
+   try
+      if tMine < tTheirs then
+         sxKeyExchangeClient pMyKxKeys["publicKey"], \
+               pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
+         put "client" into tOut["role"]
+      else
+         sxKeyExchangeServer pMyKxKeys["publicKey"], \
+               pMyKxKeys["secretKey"], tTheirPub, tRx, tTx
+         put "server" into tOut["role"]
+      end if
+   catch tErr
+      rsSetError "rsDmSessionKeys: needs SodiumXT (sxKeyExchange):" && tErr
+      return empty
+   end try
+   if the number of bytes in tRx is not 32 or \
+         the number of bytes in tTx is not 32 then
+      rsSetError "rsDmSessionKeys: sxKeyExchange returned session keys" && \
+            "that are not 32 bytes"
+      return empty
+   end if
+   put tRx into tOut["rx"]
+   put tTx into tOut["tx"]
+   return tOut
+end rsDmSessionKeys
+
+-- RSK1: the prekey record a head's prekeyTarget names. magic(4) then the
+-- kx public as 64 hex, then the identity signature over every byte before
+-- it - so a fetched prekey PROVES it belongs to the handle before anything
+-- is sealed to it (a swapped prekey would make first contact readable by
+-- the swapper; the signature is what refuses that).
+function rsBuildPrekey pKxPubHex, pIdentitySeed
+   local tPub, tBody
+   put toLower(pKxPubHex) into tPub
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsBuildPrekey: the kx public must be 64 hex chars"
+      return empty
+   end if
+   put textEncode(kRsPrekeyMagic, "ASCII") into tBody
+   put textEncode(tPub, "ASCII") after tBody
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildPrekey
+
+function rsParsePrekey pBytes
+   local tOut, tField
+   if the number of bytes in pBytes is not 132 then
+      rsSetError "rsParsePrekey: an RSK1 record is exactly 132 bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsPrekeyMagic then
+      rsSetError "rsParsePrekey: bad magic, not an RSK1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParsePrekey: malformed kx public key"
+      return empty
+   end if
+   put tField into tOut["kxPub"]
+   return tOut
+end rsParsePrekey
+
+-- Parse + verify in one refusal: the record's signature must be the
+-- claimed author's. Returns the parsed array (kxPub) or empty.
+function rsVerifyPrekey pBytes, pHandleHex
+   local tOut
+   put rsParsePrekey(pBytes) into tOut
+   if tOut is empty then return empty
+   return rsVerifyDmSigned(pBytes, pHandleHex, tOut)
+end rsVerifyPrekey
+
+-- Shared tail-signature check for the fixed-layout DM records (RSK1 and
+-- RSI1): the last 64 bytes are ed25519 by pHandleHex over the rest.
+-- Returns pParsed on success, empty on refusal.
+private function rsVerifyDmSigned pBytes, pHandleHex, pParsed
+   local tPub, tLen, tOk, tErr
+   put rsHexToBin(pHandleHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsVerifyDmSigned: the handle must be 64 hex chars"
+      return empty
+   end if
+   put the number of bytes in pBytes into tLen
+   try
+      put sxSignVerifyDetached(byte (tLen - 63) to tLen of pBytes, \
+            byte 1 to (tLen - 64) of pBytes, tPub) into tOk
+   catch tErr
+      rsSetError "rsVerifyDmSigned: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyDmSigned: the signature does not verify under" && \
+            pHandleHex
+      return empty
+   end if
+   return pParsed
+end rsVerifyDmSigned
+
+-- RSI1: the intro record a stranger seals to your prekey. The recipient
+-- handle sits INSIDE the signed body, which binds the intro to one inbox -
+-- a third party replaying it to a different recipient fails the recipient
+-- check rather than impersonating first contact. The sender handle is
+-- derived from the signing seed, never passed, so a sender/signer mismatch
+-- cannot be expressed.
+function rsBuildIntro pTimestamp, pRecipientHandleHex, pSenderKxPubHex, pIdentitySeed
+   local tRecipient, tKxPub, tSender, tBody
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsBuildIntro: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsBuildIntro: the timestamp must be below 2^53"
+      return empty
+   end if
+   put toLower(pRecipientHandleHex) into tRecipient
+   if not rsIsHexOfLen(tRecipient, 64) then
+      rsSetError "rsBuildIntro: the recipient handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pSenderKxPubHex) into tKxPub
+   if not rsIsHexOfLen(tKxPub, 64) then
+      rsSetError "rsBuildIntro: the sender kx public must be 64 hex chars"
+      return empty
+   end if
+   put rsHandleFromSeed(pIdentitySeed) into tSender
+   if tSender is empty then return empty
+   put textEncode(kRsIntroMagic, "ASCII") into tBody
+   put textEncode(tSender, "ASCII") after tBody
+   put textEncode(tKxPub, "ASCII") after tBody
+   put textEncode(tRecipient, "ASCII") after tBody
+   put rsBEu64(pTimestamp) after tBody
+   return rsSignPost(tBody, pIdentitySeed)
+end rsBuildIntro
+
+function rsParseIntro pBytes
+   local tOut, tField
+   if the number of bytes in pBytes is not 268 then
+      rsSetError "rsParseIntro: an RSI1 record is exactly 268 bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsIntroMagic then
+      rsSetError "rsParseIntro: bad magic, not an RSI1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed sender handle"
+      return empty
+   end if
+   put tField into tOut["senderHandle"]
+   put textDecode(byte 69 to 132 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed sender kx public"
+      return empty
+   end if
+   put tField into tOut["senderKxPub"]
+   put textDecode(byte 133 to 196 of pBytes, "ASCII") into tField
+   if not rsIsHexOfLen(tField, 64) then
+      rsSetError "rsParseIntro: malformed recipient handle"
+      return empty
+   end if
+   put tField into tOut["recipientHandle"]
+   put rsReadBEu64(byte 197 to 204 of pBytes) into tOut["timestamp"]
+   return tOut
+end rsParseIntro
+
+-- Verify an intro FOR ME: the embedded sender's signature must hold, and
+-- the embedded recipient must be my handle. Returns the parsed array
+-- (senderHandle / senderKxPub / timestamp) or empty. Freshness windows on
+-- the timestamp are the app's policy, not enforced here.
+function rsVerifyIntro pBytes, pMyHandleHex
+   local tOut
+   put rsParseIntro(pBytes) into tOut
+   if tOut is empty then return empty
+   if tOut["recipientHandle"] is not toLower(pMyHandleHex) then
+      rsSetError "rsVerifyIntro: this intro is addressed to" && \
+            tOut["recipientHandle"] & ", not to me"
+      return empty
+   end if
+   return rsVerifyDmSigned(pBytes, tOut["senderHandle"], tOut)
+end rsVerifyIntro
+
+-- Seal an intro to a recipient's prekey (verify the prekey against their
+-- handle FIRST - rsVerifyPrekey - or you are sealing to an unproven key).
+function rsDmSealIntro pIntroBytes, pRecipientKxPubHex
+   local tPub, tOut, tErr
+   if rsParseIntro(pIntroBytes) is empty then
+      rsSetError "rsDmSealIntro: not a valid RSI1 record:" && rsLastError()
+      return empty
+   end if
+   put rsHexToBin(pRecipientKxPubHex) into tPub
+   if the number of bytes in tPub is not 32 then
+      rsSetError "rsDmSealIntro: the recipient kx public must be 64 hex chars"
+      return empty
+   end if
+   try
+      put sxSeal(pIntroBytes, tPub) into tOut
+   catch tErr
+      rsSetError "rsDmSealIntro: needs SodiumXT (sxSeal):" && tErr
+      return empty
+   end try
+   return tOut
+end rsDmSealIntro
+
+-- Open a sealed intro that arrived in my inbox: derive my kx keypair from
+-- my DM seed, open the seal, then verify sender signature + recipient
+-- binding. Returns the verified array or empty (wrong key, tamper, not
+-- addressed to me, or a malformed record inside - one refusal for all).
+function rsDmOpenIntro pSealedBytes, pMyHandleHex, pMyDmSeed
+   local tKeys, tPlain, tErr
+   if the number of bytes in pSealedBytes < 48 + 268 then
+      rsSetError "rsDmOpenIntro: too short to be a sealed RSI1 intro"
+      return empty
+   end if
+   put rsDmKeys(pMyDmSeed) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSealOpen(pSealedBytes, tKeys["publicKey"], \
+            tKeys["secretKey"]) into tPlain
+   catch tErr
+      rsSetError "rsDmOpenIntro: the seal does not open with my prekey" && \
+            "(wrong recipient or tampered):" && tErr
+      return empty
+   end try
+   return rsVerifyIntro(tPlain, pMyHandleHex)
+end rsDmOpenIntro
+
+-- RSM1: the transport frame every rp1 payload wears. kind "I" carries a
+-- sealed intro, "H" a secretstream header, "M" one ciphertext chunk. The
+-- kind byte is checked by VALUE (73/72/77), not by `is` - `is` folds case,
+-- and a non-canonical frame must be refused, not normalized.
+function rsDmFrame pKind, pPayload
+   local tKindByte, tOut
+   if the number of chars in pKind is not 1 then
+      rsSetError "rsDmFrame: the kind must be one of I, H, M"
+      return empty
+   end if
+   put byteToNum(byte 1 of textEncode(pKind, "ASCII")) into tKindByte
+   if tKindByte is not 73 and tKindByte is not 72 and tKindByte is not 77 then
+      rsSetError "rsDmFrame: the kind must be one of I, H, M"
+      return empty
+   end if
+   if the number of bytes in pPayload < 1 then
+      rsSetError "rsDmFrame: the payload must be non-empty"
+      return empty
+   end if
+   if the number of bytes in pPayload + 5 > kRsFrameMax then
+      rsSetError "rsDmFrame: the frame is over the rp1" && kRsFrameMax && \
+            "cap; a DM payload that size belongs in a torrent"
+      return empty
+   end if
+   put textEncode(kRsFrameMagic, "ASCII") into tOut
+   put numToByte(tKindByte) after tOut
+   put pPayload after tOut
+   return tOut
+end rsDmFrame
+
+function rsDmParseFrame pBytes
+   local tOut, tKindByte
+   if the number of bytes in pBytes < 6 then
+      rsSetError "rsDmParseFrame: truncated frame"
+      return empty
+   end if
+   if the number of bytes in pBytes > kRsFrameMax then
+      rsSetError "rsDmParseFrame: frame over the rp1 cap"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsFrameMagic then
+      rsSetError "rsDmParseFrame: bad magic, not an RSM1 frame"
+      return empty
+   end if
+   put byteToNum(byte 5 of pBytes) into tKindByte
+   if tKindByte is not 73 and tKindByte is not 72 and tKindByte is not 77 then
+      rsSetError "rsDmParseFrame: unknown frame kind"
+      return empty
+   end if
+   put textDecode(byte 5 of pBytes, "ASCII") into tOut["kind"]
+   put byte 6 to -1 of pBytes into tOut["payload"]
+   return tOut
+end rsDmParseFrame
+
+-- The plaintext INSIDE the secretstream: kind ("T" text, "O" sdp offer,
+-- "A" sdp answer - the phase-5 signalling rides the same record), then the
+-- timestamp, then the UTF-8 body. Encrypt the result with
+-- sxSecretStreamPush; hand what sxSecretStreamPull returns back to
+-- rsDmParseMessage.
+function rsDmMessageBody pKind, pTimestamp, pBodyText
+   local tKindByte, tBody, tOut
+   if the number of chars in pKind is not 1 then
+      rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
+      return empty
+   end if
+   put byteToNum(byte 1 of textEncode(pKind, "ASCII")) into tKindByte
+   if tKindByte is not 84 and tKindByte is not 79 and tKindByte is not 65 then
+      rsSetError "rsDmMessageBody: the kind must be one of T, O, A"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsDmMessageBody: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsDmMessageBody: the timestamp must be below 2^53"
+      return empty
+   end if
+   put textEncode(pBodyText, "UTF-8") into tBody
+   if the number of bytes in tBody < 1 then
+      rsSetError "rsDmMessageBody: the body must be non-empty"
+      return empty
+   end if
+   put numToByte(tKindByte) into tOut
+   put rsBEu64(pTimestamp) after tOut
+   put tBody after tOut
+   return tOut
+end rsDmMessageBody
+
+function rsDmParseMessage pBytes
+   local tOut, tKindByte, tErr
+   if the number of bytes in pBytes < 10 then
+      rsSetError "rsDmParseMessage: truncated message record"
+      return empty
+   end if
+   put byteToNum(byte 1 of pBytes) into tKindByte
+   if tKindByte is not 84 and tKindByte is not 79 and tKindByte is not 65 then
+      rsSetError "rsDmParseMessage: unknown message kind"
+      return empty
+   end if
+   put textDecode(byte 1 of pBytes, "ASCII") into tOut["kind"]
+   put rsReadBEu64(byte 2 to 9 of pBytes) into tOut["timestamp"]
+   -- the body is authenticated (it came out of the secretstream) but is
+   -- still declared UTF-8 text; OXT's textDecode is lossy not throwing (see
+   -- rsBytesAreUtf8), so validate by round-trip rather than an inert try
+   if not rsBytesAreUtf8(byte 10 to -1 of pBytes) then
+      rsSetError "rsDmParseMessage: the body is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 10 to -1 of pBytes, "UTF-8") into tOut["text"]
+   return tOut
+end rsDmParseMessage
+
+-- Join my inbox rendezvous swarm: enable rp1 (idempotent, and it must
+-- happen BEFORE the swarm is added so the swarm advertises the extension -
+-- the rp1-chat lesson), add the phantom swarm at rsInboxId(handle), and
+-- announce. Returns the swarm's torrent handle, or empty. The announce
+-- refusing is NON-fatal (the torrent's own DHT schedule still announces;
+-- the explicit call just makes the first meeting faster).
+function rsDmJoinInbox pSession, pHandleHex, pSavePath
+   local tInbox, tCode, tH, tWhy, tErr
+   put rsInboxId(pHandleHex) into tInbox
+   if tInbox is empty then return empty
+   if there is not a folder pSavePath then
+      rsSetError "rsDmJoinInbox: no folder at" && pSavePath && \
+            "(a phantom swarm still needs a valid save path)"
+      return empty
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsDmJoinInbox: pSession is not a live torrent session" && \
+            "handle"
+      return empty
+   end if
+   try
+      btRp1Enable pSession
+      put the result into tCode
+   catch tErr
+      rsSetError "rsDmJoinInbox: needs torrentxt (btRp1Enable):" && tErr
+      return empty
+   end try
+   if tCode is not empty and tCode < 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmJoinInbox: btRp1Enable refused (" & tCode & ")" && tWhy
+      return empty
+   end if
+   try
+      put btAddInfohash(pSession, tInbox, pSavePath) into tH
+   catch tErr
+      rsSetError "rsDmJoinInbox: needs torrentxt (btAddInfohash):" && tErr
+      return empty
+   end try
+   if tH is 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmJoinInbox: btAddInfohash refused;" && tWhy
+      return empty
+   end if
+   try
+      btDhtAnnounce pSession, tInbox, 0
+   catch tErr
+      -- non-fatal: the swarm's own announce schedule still runs
+   end try
+   return tH
+end rsDmJoinInbox
+
+-- Send one RSM1 frame to one rp1 peer. The frame is re-parsed before it
+-- leaves (nothing malformed goes on the wire), and the peer id must be
+-- one the app learned from an rp1Handshake event with supportsRp1.
+function rsDmSend pSession, pPeerId, pFrameBytes
+   local tCode, tWhy, tErr
+   if rsDmParseFrame(pFrameBytes) is empty then
+      rsSetError "rsDmSend: not a valid RSM1 frame:" && rsLastError()
+      return false
+   end if
+   if pPeerId is not an integer or pPeerId <= 0 then
+      rsSetError "rsDmSend: pPeerId is not an rp1 peer id"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsDmSend: pSession is not a live torrent session handle"
+      return false
+   end if
+   try
+      btRp1Send pSession, pPeerId, pFrameBytes
+      put the result into tCode
+   catch tErr
+      rsSetError "rsDmSend: needs torrentxt (btRp1Send):" && tErr
+      return false
+   end try
+   if tCode is not empty and tCode < 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsDmSend: btRp1Send refused (" & tCode & ")" && tWhy && \
+            "- the peer may be gone or its handshake incomplete"
+      return false
+   end if
+   return true
+end rsDmSend
+
+--------------------------------------------------------------------------
+-- the LAN mesh admission layer (phase 6) - device-to-device within ONE
+-- identity (spec section 7)
+--
+-- Every device you own reconstructs the SAME master seed from your
+-- passphrase, so every device derives the SAME LAN subkey ed25519 keypair
+-- (rsLanKey -> sxSignKeypairFromSeed). Admission proves the joiner holds
+-- the master: the host sends a random challenge, the joiner signs
+-- "riptide-lan" || nonce || itsName under the LAN secret, and the host
+-- verifies against the LAN public it derives from its OWN master. A
+-- stranger on the same cafe Wi-Fi cannot produce that signature, so
+-- cannot join the mesh. The records ride enet channel-0 messages (the
+-- enConnect data rider is a u32 protocol tag, not a byte buffer, so the
+-- proof is a first MESSAGE, not connect data). The APP owns the enet host
+-- and the poll loop; the library owns the keypair and the two records.
+--------------------------------------------------------------------------
+
+-- The LAN mesh ed25519 keypair from the master seed. All your devices
+-- derive the same one; publicKey/secretKey are 32/64 bytes as usual.
+function rsLanKeys pMaster
+   local tSeed
+   put rsLanKey(pMaster) into tSeed
+   if tSeed is empty then
+      rsSetError "rsLanKeys: could not derive the LAN subkey:" && rsLastError()
+      return empty
+   end if
+   return rsIdentityKeys(tSeed)
+end rsLanKeys
+
+-- Host -> joiner: magic(4) "C" nameLen(u8) name nonce(32). The nonce is
+-- fresh randomness from the caller (sxRandomBytes(32)); a replayed
+-- challenge would let a recorded response back in, so it must never be
+-- reused. Names are UTF-8, 1..32 bytes.
+function rsLanBuildChallenge pName, pNonce
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildChallenge: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if the number of bytes in pNonce is not kRsLanNonceLen then
+      rsSetError "rsLanBuildChallenge: the nonce must be" && kRsLanNonceLen && \
+            "bytes (use sxRandomBytes)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("C", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put pNonce after tOut
+   return tOut
+end rsLanBuildChallenge
+
+function rsLanParseChallenge pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: truncated challenge"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "C" then
+      rsSetError "rsLanParseChallenge: not an RSL1 challenge"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + kRsLanNonceLen then
+      rsSetError "rsLanParseChallenge: length does not match its name field"
+      return empty
+   end if
+   -- the name is attacker-controlled; OXT's textDecode is LOSSY, not throwing
+   -- (see rsBytesAreUtf8), so validate by round-trip and REFUSE a malformed
+   -- name rather than admit a mangled one into the poll pump (rule 5)
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanParseChallenge: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["nonce"]
+   return tOut
+end rsLanParseChallenge
+
+-- The bytes the admission signature covers: the domain tag, the challenge
+-- nonce (freshness), and the joiner's OWN name (so a captured signature
+-- cannot be replayed under a different device name).
+private function rsLanSigMessage pNonce, pName
+   local tOut
+   put textEncode(kRsLanDomain, "ASCII") into tOut
+   put pNonce after tOut
+   put textEncode(pName, "UTF-8") after tOut
+   return tOut
+end rsLanSigMessage
+
+-- Joiner -> host: magic(4) "R" nameLen(u8) name sig(64). Takes the host's
+-- challenge bytes (for the nonce) and the joiner's master (for the LAN
+-- secret). Returns the response record or empty.
+function rsLanBuildResponse pChallengeBytes, pName, pMaster
+   local tChallenge, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanBuildResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildResponse: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanSigMessage(tChallenge["nonce"], pName), \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildResponse: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("R", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildResponse
+
+function rsLanParseResponse pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseResponse: truncated response"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "R" then
+      rsSetError "rsLanParseResponse: not an RSL1 response"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseResponse: length does not match its name field"
+      return empty
+   end if
+   -- attacker-controlled name; OXT's textDecode is lossy not throwing, so
+   -- validate by round-trip and refuse a malformed name (a host draining an
+   -- enet batch must not be handed a mangled one) - see rsBytesAreUtf8
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanParseResponse: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseResponse
+
+-- The host's verdict: does this response prove the joiner shares my
+-- master? Rebuild the signed bytes from MY challenge's nonce and the
+-- response's claimed name, and verify against the LAN public MY master
+-- derives. Returns the joiner's device name on success, empty on refusal
+-- (a stranger, a replayed response for a different nonce, or tamper).
+function rsLanVerifyResponse pResponseBytes, pChallengeBytes, pMaster
+   local tResp, tChallenge, tKeys, tOk, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then return empty
+   put rsLanParseChallenge(pChallengeBytes) into tChallenge
+   if tChallenge is empty then
+      rsSetError "rsLanVerifyResponse: bad challenge:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tResp["signature"], \
+            rsLanSigMessage(tChallenge["nonce"], tResp["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyResponse: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyResponse: the response does not prove the" && \
+            "shared master (a stranger, a stale nonce, or tamper)"
+      return empty
+   end if
+   return tResp["name"]
+end rsLanVerifyResponse
+
+-- The bytes the welcome signature covers: a DISTINCT domain tag, the
+-- joiner's own response signature (unique per challenge nonce, so the
+-- welcome replays to no other handshake), and the host's name.
+private function rsLanWelcomeSigMessage pResponseSig, pHostName
+   local tOut
+   put textEncode("riptide-lan-w", "ASCII") into tOut
+   put pResponseSig after tOut
+   put textEncode(pHostName, "UTF-8") after tOut
+   return tOut
+end rsLanWelcomeSigMessage
+
+-- Host -> joiner after admission: magic(4) "W" nameLen(u8) hostName
+-- sig(64). MUTUAL auth: the admission proved the joiner to the host; this
+-- proves the host back to the joiner (only a master-holder can sign it),
+-- and gives the joiner its positive "you are in" signal.
+function rsLanBuildWelcome pResponseBytes, pHostName, pMaster
+   local tResp, tName, tKeys, tSig, tOut, tErr
+   put rsLanParseResponse(pResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanBuildWelcome: bad response:" && rsLastError()
+      return empty
+   end if
+   put textEncode(pHostName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildWelcome: the host name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(rsLanWelcomeSigMessage(tResp["signature"], \
+            pHostName), tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanBuildWelcome: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("W", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put tSig after tOut
+   return tOut
+end rsLanBuildWelcome
+
+function rsLanParseWelcome pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 6 + 64 then
+      rsSetError "rsLanParseWelcome: truncated welcome"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "W" then
+      rsSetError "rsLanParseWelcome: not an RSL1 welcome"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tLen is not 6 + tNameLen + 64 then
+      rsSetError "rsLanParseWelcome: length does not match its name field"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanParseWelcome: the host name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put byte (7 + tNameLen) to tLen of pBytes into tOut["signature"]
+   return tOut
+end rsLanParseWelcome
+
+-- The joiner's verdict on the host: does this welcome prove the host
+-- shares my master, for THIS handshake? Takes the response I MYSELF sent
+-- (its signature is what the welcome must be bound to). Returns the host's
+-- device name, or empty (a rogue host, a replayed welcome from another
+-- handshake, or tamper).
+function rsLanVerifyWelcome pWelcomeBytes, pMyResponseBytes, pMaster
+   local tWelcome, tResp, tKeys, tOk, tErr
+   put rsLanParseWelcome(pWelcomeBytes) into tWelcome
+   if tWelcome is empty then return empty
+   put rsLanParseResponse(pMyResponseBytes) into tResp
+   if tResp is empty then
+      rsSetError "rsLanVerifyWelcome: bad own-response bytes:" && rsLastError()
+      return empty
+   end if
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(tWelcome["signature"], \
+            rsLanWelcomeSigMessage(tResp["signature"], tWelcome["name"]), \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanVerifyWelcome: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsLanVerifyWelcome: the welcome does not prove the" && \
+            "shared master for this handshake (a rogue host, a replay," && \
+            "or tamper)"
+      return empty
+   end if
+   return tWelcome["name"]
+end rsLanVerifyWelcome
+
+--------------------------------------------------------------------------
+-- the phase-6 SYNC records over the ADMITTED mesh (spec section 7's
+-- channel discipline: drafts + feed state on channel 0 reliable,
+-- presence/typing on channel 1 unreliable-unsequenced)
+--
+-- THE AUTHENTICATION CHOICE, recorded (do not re-litigate). Every sync
+-- record is SIGNED under the SAME shared LAN ed25519 key the admission
+-- uses, with a DISTINCT domain tag - "riptide-lan-s"; admission signs
+-- "riptide-lan", the welcome "riptide-lan-w" - over the WHOLE record
+-- body, kind byte included, so an admission signature can never be
+-- replayed as a sync record, and one sync kind can never be read as
+-- another (the case-folded-kind trick dies on the signature too: the
+-- sig covers the raw bytes). The admission WELCOME leaves no fresh
+-- session secret behind - it is mutual signature verification, not a
+-- key exchange - so the only secret material both sides hold afterwards
+-- is the master-derived LAN keypair itself, and deriving a per-handshake
+-- MAC key from that ed25519 seed would feed one seed to two cipher
+-- schemes (the registry rule that made subkey 2 separate from subkey 1).
+-- A per-handshake session binder was considered and REJECTED: a record
+-- the host relays hub-and-spoke must verify identically at EVERY
+-- admitted peer, and the replay a binder would stop is already neutral
+-- because every record's APPLY semantics are monotonic or absolute (a
+-- draft's per-device seq only moves forward, feed/read state applies as
+-- max, a presence tick only moves forward) and only ADMITTED peers'
+-- records are applied at all. Two honest limits, also recorded: the
+-- records are authenticated, NOT encrypted - a LAN observer reads draft
+-- plaintext (the spec's admission-only design; confidentiality would
+-- need a new traffic subkey and is not claimed) - and the device NAME
+-- is a cooperative label among your own devices, not an identity (all
+-- of them share the one keypair, the phase-6 decision): a signature
+-- proves "a master-holder said this", the name says which device
+-- claims to have said it.
+--------------------------------------------------------------------------
+
+-- A wire counter (seq / tick / timestamp): a non-negative integer below
+-- 2^53, the exact-double cap (the rsDmMessageBody discipline).
+private function rsLanValidCount pValue
+   if pValue is not an integer then return false
+   if pValue < 0 then return false
+   if pValue >= 9007199254740992 then return false
+   return true
+end rsLanValidCount
+
+-- Sign a sync-record body under the shared LAN key, domain-tagged.
+private function rsLanSyncSign pBody, pMaster
+   local tKeys, tSig, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignDetached(textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsLanSyncSign: needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   return tSig
+end rsLanSyncSign
+
+-- The shared-master verdict on a sync record: "true" / "false", or empty
+-- on an environment failure (no SodiumXT, a bad master) with the reason
+-- recorded - callers must treat only "true" as proof.
+private function rsLanSyncSigOk pBody, pSig, pMaster
+   local tKeys, tOk, tErr
+   put rsLanKeys(pMaster) into tKeys
+   if tKeys is empty then return empty
+   try
+      put sxSignVerifyDetached(pSig, \
+            textEncode(kRsLanSyncDomain, "ASCII") & pBody, \
+            tKeys["publicKey"]) into tOk
+   catch tErr
+      rsSetError "rsLanSyncSigOk: needs SodiumXT" && \
+            "(sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is true then return "true"
+   return "false"
+end rsLanSyncSigOk
+
+-- Channel-0 draft sync: magic(4) "D" nameLen(u8) name seq(u64 BE)
+-- draftLen(u16 BE) draft sig(64). The draft is ABSOLUTE state (the whole
+-- current text, empty meaning cleared), and the per-device seq is what
+-- lets a receiver refuse a replayed or reordered draft: apply only a seq
+-- strictly above the last one applied for that device.
+function rsLanBuildDraft pName, pSeq, pDraftText, pMaster
+   local tName, tDraft, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildDraft: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildDraft: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put textEncode(pDraftText, "UTF-8") into tDraft
+   if the number of bytes in tDraft > kRsLanMaxDraft then
+      rsSetError "rsLanBuildDraft: the draft is over the" && \
+            kRsLanMaxDraft & "-byte sync cap (refused, never truncated)"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("D", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put rsBEu16(the number of bytes in tDraft) after tOut
+   put tDraft after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildDraft
+
+-- Verify-then-parse a draft record: structure first (exact length, to
+-- the byte), then the shared-master signature, and only THEN believe a
+-- field. Returns name / seq / draft, or empty with a distinct refusal.
+function rsLanVerifyDraft pBytes, pMaster
+   local tLen, tNameLen, tDraftLen, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 81 then
+      rsSetError "rsLanVerifyDraft: truncated draft record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "D" then
+      rsSetError "rsLanVerifyDraft: not an RSL1 draft record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyDraft: bad device-name length"
+      return empty
+   end if
+   if tLen < 80 + tNameLen then
+      rsSetError "rsLanVerifyDraft: length does not match its name field"
+      return empty
+   end if
+   put rsReadBEu16(byte (15 + tNameLen) to (16 + tNameLen) of pBytes) \
+         into tDraftLen
+   if tDraftLen > kRsLanMaxDraft then
+      rsSetError "rsLanVerifyDraft: the draft field is over the" && \
+            kRsLanMaxDraft & "-byte cap"
+      return empty
+   end if
+   if tLen is not 80 + tNameLen + tDraftLen then
+      rsSetError "rsLanVerifyDraft: length does not match its draft field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyDraft: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   -- decode AFTER the proof; OXT's textDecode is lossy not throwing, so
+   -- UTF-8 validity is a round-trip check (rsBytesAreUtf8), refused clean
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyDraft: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   if tDraftLen is 0 then
+      put empty into tOut["draft"]
+   else
+      if not rsBytesAreUtf8(byte (17 + tNameLen) to \
+            (16 + tNameLen + tDraftLen) of pBytes) then
+         rsSetError "rsLanVerifyDraft: the draft text is not valid UTF-8"
+         return empty
+      end if
+      put textDecode(byte (17 + tNameLen) to (16 + tNameLen + tDraftLen) \
+            of pBytes, "UTF-8") into tOut["draft"]
+   end if
+   return tOut
+end rsLanVerifyDraft
+
+-- Channel-0 feed-seq / read-receipt state: magic(4) "F" nameLen(u8) name
+-- feedSeq(u64 BE) readPeer(64 hex; all-zeros = none) readUpTo(u64 BE)
+-- sig(64). Absolute state, applied as MAX on both halves: feedSeq is the
+-- device's latest published head seq (so two devices never publish a
+-- conflicting head), and readPeer/readUpTo say "I have read the DM
+-- conversation with that handle up to that timestamp". Pass pReadPeerHex
+-- empty (and pReadUpTo 0) for a pure feed-seq claim.
+function rsLanBuildFeedState pName, pFeedSeq, pReadPeerHex, pReadUpTo, pMaster
+   local tName, tPeer, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildFeedState: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pFeedSeq) then
+      rsSetError "rsLanBuildFeedState: the feed seq must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   if pReadPeerHex is empty then
+      put kRsZeroHandle into tPeer
+   else
+      put toLower(pReadPeerHex) into tPeer
+      if not rsIsHexOfLen(tPeer, 64) then
+         rsSetError "rsLanBuildFeedState: the read-receipt peer must be" && \
+               "empty or a 64-hex handle"
+         return empty
+      end if
+   end if
+   if not rsLanValidCount(pReadUpTo) then
+      rsSetError "rsLanBuildFeedState: the read-up-to timestamp must be" && \
+            "a non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("F", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pFeedSeq) after tOut
+   put textEncode(tPeer, "ASCII") after tOut
+   put rsBEu64(pReadUpTo) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildFeedState
+
+-- Verify-then-parse a feed-state record. Returns name / feedSeq /
+-- readPeer (empty for the all-zeros "none") / readUpTo, or empty.
+function rsLanVerifyFeedState pBytes, pMaster
+   local tLen, tNameLen, tPeer, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 151 then
+      rsSetError "rsLanVerifyFeedState: truncated feed-state record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "F" then
+      rsSetError "rsLanVerifyFeedState: not an RSL1 feed-state record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyFeedState: bad device-name length"
+      return empty
+   end if
+   if tLen is not 150 + tNameLen then
+      rsSetError "rsLanVerifyFeedState: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyFeedState: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyFeedState: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the peer travels as 64 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (78 + tNameLen) of pBytes, \
+         "ASCII") into tPeer
+   if not rsIsHexOfLen(tPeer, 64) then
+      rsSetError "rsLanVerifyFeedState: the read-receipt peer is not" && \
+            "64 lowercase hex chars"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["feedSeq"]
+   if tPeer is kRsZeroHandle then
+      put empty into tOut["readPeer"]
+   else
+      put tPeer into tOut["readPeer"]
+   end if
+   put rsReadBEu64(byte (79 + tNameLen) to (86 + tNameLen) of pBytes) \
+         into tOut["readUpTo"]
+   return tOut
+end rsLanVerifyFeedState
+
+-- Channel-1 presence/typing: magic(4) "P" nameLen(u8) name flags(u8:
+-- bit0 typing, every other bit refused fail-closed) tick(u64 BE) sig(64).
+-- ABSOLUTE state, engineered to be safely droppable: the record says
+-- "as of tick N this device is (not) typing", the per-device tick makes
+-- it reorder-proof without enet sequencing (apply only a tick strictly
+-- above the last applied), and any lost record is repaired by the next
+-- one - senders re-assert on a cadence, they never send deltas.
+function rsLanBuildPresence pName, pTyping, pTick, pMaster
+   local tName, tFlags, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildPresence: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if pTyping is not true and pTyping is not false then
+      rsSetError "rsLanBuildPresence: typing must be true or false"
+      return empty
+   end if
+   if not rsLanValidCount(pTick) then
+      rsSetError "rsLanBuildPresence: the tick must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   if pTyping is true then
+      put 1 into tFlags
+   else
+      put 0 into tFlags
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("P", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put numToByte(tFlags) after tOut
+   put rsBEu64(pTick) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildPresence
+
+-- Verify-then-parse a presence record. Returns name / typing (true or
+-- false) / tick, or empty with a distinct refusal. Unknown flag bits are
+-- refused fail-closed - a newer record format must never half-parse.
+function rsLanVerifyPresence pBytes, pMaster
+   local tLen, tNameLen, tFlags, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 80 then
+      rsSetError "rsLanVerifyPresence: truncated presence record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "P" then
+      rsSetError "rsLanVerifyPresence: not an RSL1 presence record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyPresence: bad device-name length"
+      return empty
+   end if
+   if tLen is not 79 + tNameLen then
+      rsSetError "rsLanVerifyPresence: length does not match its name" && \
+            "field"
+      return empty
+   end if
+   put byteToNum(byte (7 + tNameLen) of pBytes) into tFlags
+   if tFlags is not 0 and tFlags is not 1 then
+      rsSetError "rsLanVerifyPresence: unknown flag bits (refused" && \
+            "fail-closed)"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyPresence: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyPresence: the device name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   if tFlags is 1 then
+      put true into tOut["typing"]
+   else
+      put false into tOut["typing"]
+   end if
+   put rsReadBEu64(byte (8 + tNameLen) to (15 + tNameLen) of pBytes) \
+         into tOut["tick"]
+   return tOut
+end rsLanVerifyPresence
+
+-- Channel-0 media handoff: magic(4) "M" nameLen(u8) name seq(u64 BE)
+-- infoHash(40 lowercase hex) fileNameLen(u8) fileName fileSize(u64 BE)
+-- sig(64). THE CHANNEL-2 DECISION, recorded (2026-08-16; do not
+-- re-litigate): spec section 7 reserves channel 2 for bulk handoff BELOW
+-- the 60000-byte packet budget, and a draft's media (a photo, a video)
+-- essentially never fits it - the suite's seam law (enetxt) is that a
+-- payload over the budget stops being a message and becomes a torrent.
+-- So the handoff is this small channel-0 POINTER at the phase-3 media
+-- machinery (rsMediaCreate seeds in place on the sender; rsMediaFetch
+-- joins the swarm on the receiver - the one rail of this app already
+-- proven end to end on two machines), and channel 2 stays RESERVED,
+-- dark, until a genuinely sub-budget bulk case exists (none does today:
+-- drafts already ride channel 0, capped at 4096). A chunked enet lane
+-- was considered and REJECTED - it would reimplement libtorrent's
+-- per-piece integrity, resume, and backpressure with none of its proof.
+-- The 40-hex v1 info-hash is deliberately BOTH fields the design needs:
+-- the content address libtorrent verifies piece-by-piece against (the
+-- receiver cannot be fed different bytes than the hash names) and the
+-- torrent linkage a magnet fetch takes. fileName/fileSize are for the
+-- receiving UI only - the torrent's own metadata is the authority once
+-- fetched. ABSOLUTE state (the device's LATEST offer), the draft
+-- record's replay guard (apply only a strictly higher seq per device);
+-- a duplicate apply is harmless anyway, because rsMediaFetch finds
+-- before it adds.
+function rsLanBuildHandoff pName, pSeq, pInfoHash, pFileName, pFileSize, pMaster
+   local tName, tHash, tFile, tOut, tSig
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or \
+         the number of bytes in tName > kRsLanMaxName then
+      rsSetError "rsLanBuildHandoff: the device name must be 1 to" && \
+            kRsLanMaxName && "bytes"
+      return empty
+   end if
+   if not rsLanValidCount(pSeq) then
+      rsSetError "rsLanBuildHandoff: the seq must be a non-negative" && \
+            "integer below 2^53"
+      return empty
+   end if
+   put toLower(pInfoHash) into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanBuildHandoff: the info-hash must be 40 non-zero" && \
+            "hex chars (what rsMediaCreate returned)"
+      return empty
+   end if
+   put textEncode(pFileName, "UTF-8") into tFile
+   if the number of bytes in tFile < 1 or \
+         the number of bytes in tFile > kRsLanMaxFile then
+      rsSetError "rsLanBuildHandoff: the file name must be 1 to" && \
+            kRsLanMaxFile && "bytes (refused, never truncated)"
+      return empty
+   end if
+   if not rsLanValidCount(pFileSize) then
+      rsSetError "rsLanBuildHandoff: the file size must be a" && \
+            "non-negative integer below 2^53"
+      return empty
+   end if
+   put textEncode(kRsLanMagic, "ASCII") into tOut
+   put textEncode("M", "ASCII") after tOut
+   put numToByte(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pSeq) after tOut
+   put textEncode(tHash, "ASCII") after tOut
+   put numToByte(the number of bytes in tFile) after tOut
+   put tFile after tOut
+   put rsBEu64(pFileSize) after tOut
+   put rsLanSyncSign(tOut, pMaster) into tSig
+   if tSig is empty then return empty
+   put tSig after tOut
+   return tOut
+end rsLanBuildHandoff
+
+-- Verify-then-parse a media-handoff record: structure first (exact
+-- length, to the byte), then the shared-master signature, and only THEN
+-- believe a field. Returns name / seq / infoHash / fileName / fileSize,
+-- or empty with a distinct refusal. The hash is checked strict lowercase
+-- by byte value post-proof (the feed-state peer discipline), and the
+-- all-zeros hash is refused - a handoff must name real content.
+function rsLanVerifyHandoff pBytes, pMaster
+   local tLen, tNameLen, tFileLen, tHash, tVerdict, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 129 then
+      rsSetError "rsLanVerifyHandoff: truncated handoff record"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsLanMagic or \
+         textDecode(byte 5 of pBytes, "ASCII") is not "M" then
+      rsSetError "rsLanVerifyHandoff: not an RSL1 media-handoff record"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tNameLen
+   if tNameLen < 1 or tNameLen > kRsLanMaxName then
+      rsSetError "rsLanVerifyHandoff: bad device-name length"
+      return empty
+   end if
+   if tLen < 128 + tNameLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its name field"
+      return empty
+   end if
+   put byteToNum(byte (55 + tNameLen) of pBytes) into tFileLen
+   if tFileLen < 1 then
+      rsSetError "rsLanVerifyHandoff: bad file-name length"
+      return empty
+   end if
+   if tLen is not 127 + tNameLen + tFileLen then
+      rsSetError "rsLanVerifyHandoff: length does not match its" && \
+            "file-name field"
+      return empty
+   end if
+   put rsLanSyncSigOk(byte 1 to (tLen - 64) of pBytes, \
+         byte (tLen - 63) to tLen of pBytes, pMaster) into tVerdict
+   if tVerdict is empty then return empty
+   if tVerdict is not "true" then
+      rsSetError "rsLanVerifyHandoff: the record does not prove the" && \
+            "shared master (a stranger, or tamper)"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte 7 to (6 + tNameLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the device name is not valid UTF-8"
+      return empty
+   end if
+   -- the hash travels as 40 ASCII hex; strict lowercase, by byte value
+   put textDecode(byte (15 + tNameLen) to (54 + tNameLen) of pBytes, \
+         "ASCII") into tHash
+   if not rsIsHexOfLen(tHash, 40) or tHash is kRsZeroTarget then
+      rsSetError "rsLanVerifyHandoff: the info-hash is not 40 non-zero" && \
+            "lowercase hex chars"
+      return empty
+   end if
+   if not rsBytesAreUtf8(byte (56 + tNameLen) to \
+         (55 + tNameLen + tFileLen) of pBytes) then
+      rsSetError "rsLanVerifyHandoff: the file name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 7 to (6 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (7 + tNameLen) to (14 + tNameLen) of pBytes) \
+         into tOut["seq"]
+   put tHash into tOut["infoHash"]
+   put textDecode(byte (56 + tNameLen) to (55 + tNameLen + tFileLen) \
+         of pBytes, "UTF-8") into tOut["fileName"]
+   put rsReadBEu64(byte (56 + tNameLen + tFileLen) to \
+         (63 + tNameLen + tFileLen) of pBytes) into tOut["fileSize"]
+   return tOut
+end rsLanVerifyHandoff
+
+--------------------------------------------------------------------------
+-- the anonymous persona (phase 7) - a separate identity that lives ONLY
+-- as an onion service (spec section 8), and the deanonymization guard
+-- (section 9.3, the highest-severity invariant in the app)
+--
+-- An anon persona is the ed25519 identity of a subkey-100+n seed. Its
+-- .onion is that key the same way the public identity's is, so it is
+-- derivable offline (rsAnonOnion), and it NEVER touches the DHT, a
+-- torrent, or rp1: publishing a BEP44 head or announcing a swarm under
+-- the anon key would emit its IP and let anyone link its onion to its DHT
+-- presence. rsPersonaAllows is the pure policy every transport branch
+-- asserts through, fail-closed. The BTXO framing (shared with the Model C
+-- onion file transfer) moves files over a Tor stream, never as a torrent -
+-- anonymity's honest cost.
+--------------------------------------------------------------------------
+
+-- The anon persona's 64-hex handle: the ed25519 public of its subkey.
+function rsAnonHandle pMaster, pIndex
+   local tSeed
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonHandle: could not derive the anon subkey:" && \
+            rsLastError()
+      return empty
+   end if
+   return rsHandleFromSeed(tSeed)
+end rsAnonHandle
+
+-- The anon persona's .onion address (the SAME key as a v3 onion). Needs a
+-- SHA3 provider for the offline checksum, exactly like the public onion;
+-- returns empty with a clear error when neither provider is present.
+function rsAnonOnion pMaster, pIndex
+   local tHandle
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsOnionFromHandle(tHandle)
+end rsAnonOnion
+
+-- THE deanonymization guard (spec 9.3). Pure policy, no I/O: given the
+-- active persona's isAnon flag and a named transport, may this persona use
+-- it? An anon persona may use ONLY the onion; a public persona may use
+-- anything EXCEPT the anon onion route. An unknown transport name is
+-- refused for BOTH (fail-closed: a typo must never read as "allowed").
+-- Every send/publish branch in the app asserts through this before it
+-- selects a transport, so a violation is a refusal with a message, never a
+-- silent clearnet leak.
+function rsPersonaAllows pIsAnon, pTransport
+   local tKnown
+   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   set the itemDelimiter to comma
+   if pTransport is not among the items of tKnown then
+      rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
+            quote & " - refusing fail-closed"
+      return false
+   end if
+   if pIsAnon is true then
+      return pTransport is "onion"
+   end if
+   return pTransport is not "onion"
+end rsPersonaAllows
+
+-- Create the anon persona's onion service (probe-gated: needs onionxt +
+-- a live tor daemon). oxCreateServiceFromSeed derives the same address
+-- rsAnonOnion computes offline, so the returned service serves the
+-- persona's own key. Returns the onionxt service handle (a positive
+-- integer) or empty; the address arrives via onionxt's status callback
+-- once tor publishes the descriptor, or synchronously from
+-- oxServiceAddress on the returned handle once ready.
+function rsAnonCreateService pMaster, pIndex, pVirtualPort, pLocalPort
+   local tSeed, tHandle, tErr
+   put rsAnonSeed(pMaster, pIndex) into tSeed
+   if the number of bytes in tSeed is not 32 then
+      rsSetError "rsAnonCreateService: could not derive a 32-byte anon" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   if pVirtualPort is not an integer or pVirtualPort < 1 or \
+         pVirtualPort > 65535 then
+      rsSetError "rsAnonCreateService: the virtual port must be 1..65535"
+      return empty
+   end if
+   if pLocalPort is not an integer or pLocalPort < 1 or pLocalPort > 65535 then
+      rsSetError "rsAnonCreateService: the local port must be 1..65535"
+      return empty
+   end if
+   try
+      oxCreateServiceFromSeed tSeed, pVirtualPort, pLocalPort
+      put the result into tHandle
+   catch tErr
+      rsSetError "rsAnonCreateService: needs onionxt" && \
+            "(oxCreateServiceFromSeed):" && tErr
+      return empty
+   end try
+   if tHandle is not an integer then
+      -- onionxt reports a capability/bind failure as an "OnionXT: ..." string
+      rsSetError "rsAnonCreateService:" && tHandle
+      return empty
+   end if
+   return tHandle
+end rsAnonCreateService
+
+-- The spec 8.2/8.3 onion SERVING seams: what the persona's onion-httpd
+-- routes reply with, and how a POSTed sealed intro is accepted. All
+-- three are pure (no I/O, no session, no stream), so the harness proves
+-- them offline; the APP registers the oxh* routes and owns the streams.
+
+-- The anon feed page (spec 8.2), as UTF-8 HTML bytes: a title plus
+-- line-delimited entries, each HTML-escaped so a crafted entry cannot
+-- inject markup into the persona's own page. Line breaks are normalized
+-- (CRLF and CR become LF) BEFORE the split, so the page bytes do not
+-- depend on which spelling the engine's `return` or a pasted text
+-- carries; blank lines are skipped. The title shares the head's
+-- display-name budget; the finished page caps at kRsAnonPageMax.
+-- Deterministic bytes in, deterministic bytes out - the golden pins the
+-- page, so the served feed is a wire format, not a template someone
+-- restyles by accident (a look change bumps the golden).
+function rsAnonFeedPage pTitle, pEntries
+   local tTitleBytes, tEsc, tOut, tList, tLine, tSavedDelim
+   put textEncode(pTitle, "UTF-8") into tTitleBytes
+   if the number of bytes in tTitleBytes < 1 or \
+         the number of bytes in tTitleBytes > kRsMaxDisplayName then
+      rsSetError "rsAnonFeedPage: the title must be 1 to" && \
+            kRsMaxDisplayName && "bytes of UTF-8"
+      return empty
+   end if
+   put rsHtmlEscape(pTitle) into tEsc
+   put "<!doctype html><html><head><meta charset='utf-8'><title>" & \
+         tEsc & "</title></head><body><h1>" & tEsc & "</h1><ul>" into tOut
+   put pEntries into tList
+   replace numToChar(13) & numToChar(10) with numToChar(10) in tList
+   replace numToChar(13) with numToChar(10) in tList
+   -- the same save/restore discipline as rsMediaCreate's itemDelimiter,
+   -- applied uniformly rather than only where it bit. Be honest about what
+   -- this one is: LF IS the engine default, so this set leaks nothing
+   -- observable today - it is defence in depth against a caller who set
+   -- something else, not a second live bug fixed.
+   put the lineDelimiter into tSavedDelim
+   set the lineDelimiter to numToChar(10)
+   repeat for each line tLine in tList
+      if tLine is empty then
+         next repeat
+      end if
+      put "<li>" & rsHtmlEscape(tLine) & "</li>" after tOut
+   end repeat
+   set the lineDelimiter to tSavedDelim
+   put "</ul><p>Sealed DMs: GET /prekey (my signed RSK1 prekey record," && \
+         "hex), then POST your sealed intro as hex to /dm.</p>" & \
+         "</body></html>" after tOut
+   put textEncode(tOut, "UTF-8") into tOut
+   if the number of bytes in tOut > kRsAnonPageMax then
+      rsSetError "rsAnonFeedPage: the page is over" && kRsAnonPageMax && \
+            "bytes; trim the entries"
+      return empty
+   end if
+   return tOut
+end rsAnonFeedPage
+
+-- The GET /prekey response body (spec 8.3): the persona's signed RSK1
+-- prekey record as 264 lowercase hex chars of TEXT - hex because the
+-- record is binary and a text body survives every HTTP client untouched.
+-- The record is rsBuildPrekey of the subkey-200+n kx public, SIGNED by
+-- the subkey-100+n ANON identity, so a follower who fetched this over
+-- the persona's onion verifies it against the very key they dialed:
+-- rsVerifyPrekey(decoded, anonHandle). Served over the onion ONLY, never
+-- the DHT (the 9.3 guard).
+function rsAnonPrekeyBody pMaster, pIndex
+   local tSeed, tKeys, tRec
+   put rsAnonDmSeed(pMaster, pIndex) into tSeed
+   if tSeed is empty then
+      rsSetError "rsAnonPrekeyBody: could not derive the persona's DM" && \
+            "subkey:" && rsLastError()
+      return empty
+   end if
+   put rsDmKeys(tSeed) into tKeys
+   if tKeys is empty then return empty
+   put rsBuildPrekey(tKeys["publicKeyHex"], rsAnonSeed(pMaster, pIndex)) \
+         into tRec
+   if tRec is empty then return empty
+   return rsBinToHexString(tRec)
+end rsAnonPrekeyBody
+
+-- Accept a POST /dm body (spec 8.3): the sealed RSI1 intro as STRICT
+-- lowercase hex, exactly kRsAnonDmBodyLen chars. REFUSE BEFORE DECODE:
+-- the exact-length and per-byte-hex gates run first, so a hostile body
+-- is turned away before any decode or crypto touches it (uppercase is
+-- refused too - the canonical-form discipline). Then the EXISTING 8.3
+-- machinery does verify-then-parse: rsDmOpenIntro opens the seal with
+-- the persona's subkey-200+n kx pair and verifies sender signature and
+-- recipient binding before a field is believed. One refusal covers
+-- every failure mode - the route must not be an oracle for a prober.
+-- Freshness stays the APP's policy, exactly as on the rp1 inbox path.
+function rsAnonAcceptDm pBody, pMaster, pIndex
+   local tLen, tI, tB, tSealed, tHandle, tErr
+   put the number of bytes in pBody into tLen
+   if tLen is not kRsAnonDmBodyLen then
+      rsSetError "rsAnonAcceptDm: a sealed-intro body is exactly" && \
+            kRsAnonDmBodyLen && "hex chars"
+      return empty
+   end if
+   repeat with tI = 1 to tLen
+      put byteToNum(byte tI of pBody) into tB
+      if not ((tB >= 48 and tB <= 57) or (tB >= 97 and tB <= 102)) then
+         rsSetError "rsAnonAcceptDm: the body is not strict lowercase hex"
+         return empty
+      end if
+   end repeat
+   try
+      put sxHex2Bin(textEncode(pBody, "ASCII")) into tSealed
+   catch tErr
+      rsSetError "rsAnonAcceptDm: needs SodiumXT (sxHex2Bin):" && tErr
+      return empty
+   end try
+   put rsAnonHandle(pMaster, pIndex) into tHandle
+   if tHandle is empty then return empty
+   return rsDmOpenIntro(tSealed, tHandle, rsAnonDmSeed(pMaster, pIndex))
+end rsAnonAcceptDm
+
+-- Escape a value for HTML text context (the oxhHtmlEscape algorithm,
+-- mirrored in the oracle): `&` first, then the rest.
+private function rsHtmlEscape pText
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   return tOut
+end rsHtmlEscape
+
+-- BTXO framing (Model C, shared with the quickshare onion transfer): the
+-- header, then u32-length-prefixed DATA frames, then a zero-length
+-- terminator, all over one Tor stream. The library builds and parses the
+-- frames; the app owns the oxWrite/oxStreamData I/O.
+function rsBtxoHeader pName, pTotalSize, pFlags
+   local tName, tOut
+   put textEncode(pName, "UTF-8") into tName
+   if the number of bytes in tName < 1 or the number of bytes in tName > 65535 \
+         then
+      rsSetError "rsBtxoHeader: the name must be 1..65535 UTF-8 bytes"
+      return empty
+   end if
+   if pTotalSize is not an integer or pTotalSize < 0 then
+      rsSetError "rsBtxoHeader: the total size must be a non-negative integer"
+      return empty
+   end if
+   if pFlags is not an integer or pFlags < 0 or pFlags > 255 then
+      rsSetError "rsBtxoHeader: flags is a single byte (0..255)"
+      return empty
+   end if
+   put textEncode(kRsBtxoMagic, "ASCII") into tOut
+   put numToByte(kRsBtxoVer) after tOut
+   put numToByte(pFlags) after tOut
+   put rsBEu16(the number of bytes in tName) after tOut
+   put tName after tOut
+   put rsBEu64(pTotalSize) after tOut
+   return tOut
+end rsBtxoHeader
+
+function rsBtxoParseHeader pBytes
+   local tLen, tNameLen, tOut
+   put the number of bytes in pBytes into tLen
+   if tLen < 8 then
+      rsSetError "rsBtxoParseHeader: truncated header"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsBtxoMagic then
+      rsSetError "rsBtxoParseHeader: bad magic, not a BTXO stream"
+      return empty
+   end if
+   if byteToNum(byte 5 of pBytes) is not kRsBtxoVer then
+      rsSetError "rsBtxoParseHeader: unsupported BTXO version"
+      return empty
+   end if
+   put byteToNum(byte 6 of pBytes) into tOut["flags"]
+   put rsReadBEu16(byte 7 to 8 of pBytes) into tNameLen
+   if tLen is not 8 + tNameLen + 8 then
+      rsSetError "rsBtxoParseHeader: length does not match its name field"
+      return empty
+   end if
+   -- attacker-controlled file name; OXT's textDecode is lossy not throwing,
+   -- so validate by round-trip and refuse a malformed name - see
+   -- rsBytesAreUtf8 (the never-throw contract, rule 5)
+   if not rsBytesAreUtf8(byte 9 to (8 + tNameLen) of pBytes) then
+      rsSetError "rsBtxoParseHeader: the file name is not valid UTF-8"
+      return empty
+   end if
+   put textDecode(byte 9 to (8 + tNameLen) of pBytes, "UTF-8") into \
+         tOut["name"]
+   put rsReadBEu64(byte (9 + tNameLen) to tLen of pBytes) into tOut["total"]
+   return tOut
+end rsBtxoParseHeader
+
+-- One content frame: a u32 big-endian length then the bytes. Non-empty
+-- (the zero-length frame is the terminator, built separately).
+function rsBtxoDataFrame pPayload
+   local tOut
+   if the number of bytes in pPayload < 1 then
+      rsSetError "rsBtxoDataFrame: a data frame carries at least one byte" && \
+            "(use rsBtxoTerminator to end the stream)"
+      return empty
+   end if
+   put binaryEncode("N", the number of bytes in pPayload) into tOut
+   put pPayload after tOut
+   return tOut
+end rsBtxoDataFrame
+
+function rsBtxoTerminator
+   return binaryEncode("N", 0)
+end rsBtxoTerminator
+
+--------------------------------------------------------------------------
+-- private: hex, big-endian integers, base32
+--------------------------------------------------------------------------
+
+-- Is pBytes a valid UTF-8 sequence?
+--
+-- THE ENGINE FINDING (first two-machine pass, 2026-08-15). Every parser
+-- here used to guard its name/text decode with a `try`, on the belief -
+-- stated in six comments - that textDecode(...,"UTF-8") THROWS on
+-- malformed UTF-8. On a real OXT engine it does NOT: it is LOSSY, decoding
+-- invalid bytes to replacement characters and returning a non-empty
+-- string, so the try never fired and the parsers handed back a mangled
+-- name instead of refusing. The suite selftest's new "non-UTF-8 name is
+-- refused" checks are what caught it - the first inputs that ever
+-- exercised the path. The robust test for validity is a ROUND TRIP:
+-- re-encode the decoded string and require it to reproduce the original
+-- bytes exactly (only a valid UTF-8 sequence does). The inner try stays as
+-- belt-and-suspenders for any engine that DOES throw.
+private function rsBytesAreUtf8 pBytes
+   local tDecoded, tErr
+   if the number of bytes in pBytes is 0 then return true
+   try
+      put textDecode(pBytes, "UTF-8") into tDecoded
+   catch tErr
+      return false
+   end try
+   return textEncode(tDecoded, "UTF-8") is pBytes
+end rsBytesAreUtf8
+
+-- Strict LOWERCASE hex of an exact length. The check is by BYTE VALUE, not
+-- `is in`: `is in` honours the caseSensitive (default FALSE), so "A" is in
+-- "abcdef" would be true and an uppercase target would parse as valid - a
+-- non-canonical record accepted (the malleability the strict parse exists to
+-- refuse; the coinxt discipline-3 lesson). Digits 0-9 are bytes 48..57, lower
+-- a-f are bytes 97..102; nothing else passes, whatever the caller set.
+private function rsIsHexOfLen pValue, pLen
+   local tI, tN
+   if the number of chars in pValue is not pLen then return false
+   repeat with tI = 1 to pLen
+      put byteToNum(byte tI of pValue) into tN
+      if not ((tN >= 48 and tN <= 57) or (tN >= 97 and tN <= 102)) then
+         return false
+      end if
+   end repeat
+   return true
+end rsIsHexOfLen
+
+-- Empty -> the all-zeros "none" target; otherwise require 40 hex chars.
+-- Returns empty on anything else (callers refuse the whole record).
+private function rsNormalizeTarget pTarget
+   local tT
+   if pTarget is empty then return kRsZeroTarget
+   put toLower(pTarget) into tT
+   if not rsIsHexOfLen(tT, 40) then return empty
+   return tT
+end rsNormalizeTarget
+
+private function rsHexToBin pHex
+   local tOut, tErr
+   try
+      put sxHex2Bin(textEncode(toLower(pHex), "ASCII")) into tOut
+   catch tErr
+      rsSetError "rsHexToBin: malformed hex"
+      return empty
+   end try
+   return tOut
+end rsHexToBin
+
+private function rsBinToHexString pData
+   local tOut, tErr
+   try
+      put textDecode(sxBin2Hex(pData), "ASCII") into tOut
+   catch tErr
+      rsSetError "rsBinToHexString:" && tErr
+      return empty
+   end try
+   return tOut
+end rsBinToHexString
+
+private function rsBEu16 pNum
+   return binaryEncode("n", pNum)
+end rsBEu16
+
+private function rsBEu64 pNum
+   return binaryEncode("NN", pNum div 4294967296, pNum mod 4294967296)
+end rsBEu64
+
+private function rsReadBEu16 pBytes
+   return byteToNum(byte 1 of pBytes) * 256 + byteToNum(byte 2 of pBytes)
+end rsReadBEu16
+
+private function rsReadBEu32 pBytes
+   local tA, tB, tC, tD
+   put byteToNum(byte 1 of pBytes) into tA
+   put byteToNum(byte 2 of pBytes) into tB
+   put byteToNum(byte 3 of pBytes) into tC
+   put byteToNum(byte 4 of pBytes) into tD
+   return ((tA * 256 + tB) * 256 + tC) * 256 + tD
+end rsReadBEu32
+
+private function rsReadBEu64 pBytes
+   return rsReadBEu32(byte 1 to 4 of pBytes) * 4294967296 + \
+         rsReadBEu32(byte 5 to 8 of pBytes)
+end rsReadBEu64
+
+-- Base32, RFC 4648 lowercase, no padding - the onionxt algorithm with the
+-- same integer discipline (no caret, no bare div/mod on wide accumulators;
+-- the accumulator is masked to its pending bits every step so it never
+-- outgrows exact double precision).
+private function rsPow2 pN
+   local tOut, tI
+   put 1 into tOut
+   repeat pN times
+      put tOut * 2 into tOut
+   end repeat
+   return tOut
+end rsPow2
+
+private function rsIntDiv pA, pB
+   return trunc(pA / pB)
+end rsIntDiv
+
+private function rsIntMod pA, pB
+   return pA - pB * trunc(pA / pB)
+end rsIntMod
+
+private function rsBase32Encode pData
+   local tAcc, tBits, tOut, tI, tIndex
+   put 0 into tAcc
+   put 0 into tBits
+   put empty into tOut
+   repeat with tI = 1 to the number of bytes in pData
+      put tAcc * 256 + byteToNum(byte tI of pData) into tAcc
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         put rsIntMod(rsIntDiv(tAcc, rsPow2(tBits)), 32) into tIndex
+         put char (tIndex + 1) of kRsBase32Alphabet after tOut
+         put rsIntMod(tAcc, rsPow2(tBits)) into tAcc
+      end repeat
+   end repeat
+   if tBits > 0 then
+      put rsIntMod(tAcc * rsPow2(5 - tBits), 32) into tIndex
+      put char (tIndex + 1) of kRsBase32Alphabet after tOut
+   end if
+   return tOut
+end rsBase32Encode
+
+-- ---- onionxt/src/onionxt.livecodescript ----
+-- onionxt.livecodescript - the OnionXT library.
+--
+-- OnionXT is a Tor transport and rendezvous layer for OpenXTalk / the xTalk
+-- family. It speaks SOCKS5 (RFC 1928 + Tor extensions) and the Tor control
+-- protocol to a LOCALLY-RUNNING tor daemon; it does not embed or ship Tor. It
+-- adds no cryptography (SodiumXT does that) and, in this form, no native code:
+-- the SOCKS5 and control clients are engine socket I/O, and base32 / the
+-- ed25519 scalar clamp are pure byte manipulation.
+--
+-- STATUS: implemented AND run on a real OXT engine against a live tor daemon.
+-- The core paths are confirmed on-engine: dialing through the SOCKS proxy, the
+-- control-port connect + SAFECOOKIE auth, GETINFO / SETEVENTS, publishing a v3
+-- onion service, accepting an inbound (Tor-forwarded) connection, streaming data
+-- both ways, and bootstrap/HS_DESC events. The only path NOT yet exercised is the
+-- optional Mode B (launching a bundled tor via `open process`), still flagged
+-- "VERIFY:" below. The pure-compute paths are pinned by tools/onion-kat.py.
+--
+-- Conventions (see CLAUDE.md): public API oxPascalCase; locals t..., params
+-- p..., script-locals s..., constants k...; SOCKS5 is BINARY (byte / numToByte /
+-- byteToNum), the control protocol is CRLF text; every socket op is async
+-- (open / read / accept with message) so the one interpreter thread never blocks
+-- on the network; loopback (127.0.0.1) only; every open has an idempotent close;
+-- every wire error fails closed and tears the resource down.
+--
+-- The async model (CLAUDE.md): oxDial and oxCreateService return a HANDLE
+-- immediately and complete later; the app learns the outcome through the
+-- callbacks below, never by a blocking return. The callback contracts are:
+--   status callback  <handler> pKind, pInfo
+--       pKind = "control"   pInfo = "connected"|"authenticated"|"disconnected"
+--                                   |"authfailed: <reason>"|"error: <reason>"
+--       pKind = "bootstrap" pInfo = 0..100          (coalesced to <= ~4 Hz)
+--       pKind = "ready"     pInfo = empty           (bootstrap reached 100)
+--       pKind = "service"   pInfo = <address>.onion (ADD_ONION returned it)
+--       pKind = "serviceReady" pInfo = <address>    (descriptor uploaded)
+--       pKind = "notice"    pInfo = <diagnostic>    (e.g. an accepted peer's raw id)
+--       pKind = "event"     pInfo = <raw 650 line>  (advanced; opt-in noise)
+--   stream callback  <handler> pStream, pEvent, pData
+--       pEvent = "open"   the SOCKS tunnel (or inbound peer) is live
+--       pEvent = "data"   pData is an inbound Data chunk (app frames its own)
+--       pEvent = "closed" the peer closed the stream
+--       pEvent = "error"  pData is the error; the stream has been torn down
+--   peer callback    <handler> pStream, pService, pPeerAddr
+--       a remote peer reached a published service; pStream is a fresh inbound
+--       stream handle (register a stream callback on it), pService its service
+--       handle, pPeerAddr the (loopback) peer address Tor forwarded from.
+--
+-- Callbacks are delivered with `dispatch` to the callback owner (oxSetCallbackOwner,
+-- default the topStack); a missing handler is a clean no-op, so an app wires only
+-- the callbacks it needs.
+
+-- ==========================================================================
+-- Constants. Loopback host is fixed; only the ports are configurable (and
+-- loopback-locked). Declared before first use (OXT resolves a constant by
+-- lexical position; a forward reference silently evaluates to nothing).
+-- ==========================================================================
+
+constant kOxHost = "127.0.0.1"
+constant kOxSocksPortDefault = 9050
+constant kOxControlPortDefault = 9051
+constant kOxVersion = "1.0.0"
+
+-- A bootstrapping daemon accepts the TCP connection then stalls; bound every
+-- handshake so a silent stall becomes a clean error (docs/02 state machine).
+constant kOxHandshakeTimeout = 20000     -- milliseconds
+-- Coalesce bootstrap/status updates so a flood of 650 lines cannot thrash a
+-- field (CLAUDE.md: <= ~4 Hz). 250 ms = 4 Hz.
+constant kOxStatusThrottle = 250         -- milliseconds
+-- RFC 4648 base32, lowercase, no padding (docs/04). Pure bytes, no crypto.
+constant kOxBase32Alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+-- The v3 address checksum preimage prefix and version byte (docs/04). SHA3-256
+-- of (kOxChecksumPrefix & pubkey & version) gives the 2-byte checksum; the hash
+-- itself is a SodiumXT call, never hand-rolled here.
+constant kOxChecksumPrefix = ".onion checksum"
+-- The two SAFECOOKIE HMAC key strings, verbatim from the Tor control-spec.
+constant kOxSafeCookieServerKey = "Tor safe cookie authentication server-to-controller hash"
+constant kOxSafeCookieClientKey = "Tor safe cookie authentication controller-to-server hash"
+
+-- ==========================================================================
+-- Script-local state. Handle tables are LiveCode associative arrays keyed by a
+-- small integer handle or by the engine's socket id; a stale or closed id must
+-- be a clean no-op / error, never a crash.
+-- ==========================================================================
+
+-- Configurable ports (default to a system tor; Tor Browser uses 9150 / 9151).
+local sSocksPort
+local sControlPort
+
+-- Control connection and bootstrap state (see docs/03-control-port.md).
+local sControlSocket        -- engine id of the open control socket, or empty
+local sControlState         -- disconnected|connecting|protocolinfo|authenticating|authenticated|failed
+local sControlMethods       -- offered auth methods (comma list) from PROTOCOLINFO
+local sControlCookieFile     -- cookie-file path from PROTOCOLINFO (unescaped)
+local sControlPassword       -- app-set password for HASHEDPASSWORD auth
+local sControlCookieBytes    -- the 32 raw cookie bytes (SAFECOOKIE flow)
+local sControlClientNonce    -- our SAFECOOKIE client nonce (raw bytes)
+local sControlTorVersion     -- tor version string from GETINFO version
+local sBootstrap             -- 0..100 bootstrap percent from STATUS_CLIENT
+
+-- Control command pipeline. One command in flight at a time so replies match
+-- commands (docs/03); further commands queue. Reply lines accumulate until the
+-- space-separated final line terminates the reply.
+local sCtlInFlight           -- label of the in-flight command, or empty
+local sCtlReplyLines         -- accumulated reply text (newline-joined)
+local sCtlInData             -- true while inside a 250+ CmdData block
+local sCtlData               -- accumulated CmdData block text
+local sCtlQueue              -- pending commands: lines of "label" & TAB & "command"
+
+-- App-registered callback handler names and the object they dispatch to.
+local sStatusCallback
+local sPeerCallback
+local sCallbackOwner         -- long id of the object whose script has the callbacks
+local sLastStatusTick        -- `the milliseconds` of the last coalesced update
+
+-- Handle tables.
+local sStreams               -- keyed by integer stream handle (nested array)
+local sSockToStream          -- keyed by socket id string -> stream handle
+local sServices              -- keyed by integer service handle (nested array)
+local sLocalToService        -- keyed by local port -> service handle
+local sNextHandle            -- monotonic handle allocator (0 is never valid)
+
+-- ==========================================================================
+-- Configuration.
+-- ==========================================================================
+
+command oxSetSocksPort pPort
+   -- Loopback-locked: only the port is settable, never the host (CLAUDE.md
+   -- socket gotcha 6). Take effect on the next oxDial.
+   put pPort into sSocksPort
+end oxSetSocksPort
+
+command oxSetControlPort pPort
+   put pPort into sControlPort
+end oxSetControlPort
+
+command oxSetControlPassword pPassword
+   -- Only used if the daemon offers HASHEDPASSWORD auth (docs/03 step 2).
+   put pPassword into sControlPassword
+end oxSetControlPassword
+
+command oxSetCallbackOwner pObjectLongId
+   -- The object whose script holds the app callbacks. If unset, callbacks
+   -- dispatch to the topStack; setting this explicitly (as the demo does) removes
+   -- any ambiguity about which stack. Confirmed on-engine: with an explicit owner,
+   -- onStatus / onPeer / onStreamData all resolve and fire.
+   put pObjectLongId into sCallbackOwner
+end oxSetCallbackOwner
+
+command oxSetStatusCallback pHandlerName
+   put pHandlerName into sStatusCallback
+end oxSetStatusCallback
+
+command oxSetPeerCallback pHandlerName
+   put pHandlerName into sPeerCallback
+end oxSetPeerCallback
+
+function oxVersion
+   -- The library version, plus the tor version once the control connection has
+   -- answered GETINFO version (docs/05).
+   if sControlTorVersion is empty then
+      return kOxVersion
+   end if
+   return kOxVersion & " (tor " & sControlTorVersion & ")"
+end oxVersion
+
+-- ==========================================================================
+-- Control connection, authentication, and the command pipeline
+-- (docs/03-control-port.md). The connection is opened and authenticated
+-- asynchronously; the app learns the outcome through the status callback.
+-- ==========================================================================
+
+command oxConnectControl
+   -- Idempotent-ish: refuse a second concurrent connect rather than leak a
+   -- socket. Disconnect first to reconnect.
+   if sControlSocket is not empty then
+      return "OnionXT: control connection already open (oxDisconnectControl first)"
+   end if
+   local tSocketID
+   -- A named connection (|oxctl) so the id is stable and distinct from streams.
+   put kOxHost & ":" & effectiveControlPort() & "|oxctl" into tSocketID
+   put tSocketID into sControlSocket
+   put "connecting" into sControlState
+   put empty into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlQueue
+   -- Bound the connect/handshake so a stalled daemon fails cleanly.
+   set the socketTimeoutInterval to kOxHandshakeTimeout
+   open socket to tSocketID with message "oxCtlOpened"
+   -- A watchdog independent of the (repeating) socketTimeout: if we are not
+   -- authenticated within the deadline, tear the connection down.
+   send ("oxCtlDeadline " & quote & tSocketID & quote) to me in kOxHandshakeTimeout milliseconds
+   return empty
+end oxConnectControl
+
+command oxDisconnectControl
+   -- Idempotent close of the control socket and reset of all control state.
+   if sControlSocket is not empty then
+      oxSafeCloseSocket sControlSocket
+   end if
+   put empty into sControlSocket
+   put "disconnected" into sControlState
+   put empty into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlQueue
+   put empty into sControlCookieBytes
+   put empty into sControlClientNonce
+end oxDisconnectControl
+
+function oxIsControlAuthenticated
+   return (sControlState is "authenticated")
+end oxIsControlAuthenticated
+
+function oxBootstrapProgress
+   if sBootstrap is empty then
+      return 0
+   end if
+   return sBootstrap
+end oxBootstrapProgress
+
+function oxIsReady
+   -- Ready to carry traffic once bootstrapped to 100 and the control port is
+   -- authenticated. A published service's own reachability is reported
+   -- separately via the "serviceReady" status (HS_DESC UPLOADED).
+   return (sBootstrap is 100) and (sControlState is "authenticated")
+end oxIsReady
+
+command oxCtlOpened pSocketID
+   -- The control TCP connection is up. Start the single persistent line reader
+   -- and kick the auth dance with PROTOCOLINFO (allowed pre-auth).
+   if pSocketID is not sControlSocket then
+      exit oxCtlOpened          -- a stale socket; ignore
+   end if
+   put "protocolinfo" into sControlState
+   oxStatusUpdate "control", "connected"
+   -- One outstanding CRLF read at a time; re-armed at the end of oxCtlLine.
+   read from socket pSocketID until crlf with message "oxCtlLine"
+   oxCtlSend "PROTOCOLINFO 1", "protocolinfo"
+end oxCtlOpened
+
+private command oxCtlSend pCommand, pLabel
+   -- Send a control command, or queue it if one is already in flight so replies
+   -- always match commands (docs/03: keep a single in-flight command queue).
+   if sControlSocket is empty then
+      exit oxCtlSend
+   end if
+   if sCtlInFlight is not empty then
+      put pLabel & tab & pCommand & return after sCtlQueue
+      exit oxCtlSend
+   end if
+   put pLabel into sCtlInFlight
+   put empty into sCtlReplyLines
+   put false into sCtlInData
+   put empty into sCtlData
+   -- Commands are ASCII text; textEncode gives the exact wire bytes, then the
+   -- CRLF terminator (docs/03 line framing).
+   write textEncode(pCommand & oxCrlf(), "UTF-8") to socket sControlSocket
+end oxCtlSend
+
+private command oxCtlDrainQueue
+   -- Send the next queued command, if any. Called when a reply completes.
+   if sCtlQueue is empty then
+      exit oxCtlDrainQueue
+   end if
+   local tLine, tLabel, tCommand, tSaved
+   put line 1 of sCtlQueue into tLine
+   delete line 1 of sCtlQueue
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to tab
+   put item 1 of tLine into tLabel
+   put item 2 to -1 of tLine into tCommand
+   set the itemDelimiter to tSaved
+   oxCtlSend tCommand, tLabel
+end oxCtlDrainQueue
+
+command oxCtlLine pSocketID, pData
+   -- The persistent control-port line reader. Demultiplexes unsolicited 650
+   -- events from command replies, reassembles multi-line replies, and honours
+   -- the 250-/250+/'.'/250 space framing (docs/03).
+   if pSocketID is not sControlSocket then
+      exit oxCtlLine            -- a stale socket; ignore
+   end if
+   local tLine
+   -- Control replies are ASCII; decode as text, then strip the line terminator.
+   -- Confirmed on-engine: `read until crlf` returns the trailing CRLF and
+   -- oxStripLineEnd removes it, so auth / GETINFO / events all parse correctly.
+   put textDecode(pData, "UTF-8") into tLine
+   put oxStripLineEnd(tLine) into tLine
+
+   if sCtlInData then
+      -- Inside a 250+ CmdData block: a lone "." ends it; other lines are data
+      -- with any doubled leading dot un-stuffed (docs/03, RFC 2821 dot-stuffing).
+      if tLine is "." then
+         put false into sCtlInData
+      else
+         if char 1 to 2 of tLine is ".." then
+            delete char 1 of tLine
+         end if
+         put tLine & return after sCtlData
+      end if
+      oxCtlRearm pSocketID
+      exit oxCtlLine
+   end if
+
+   if the length of tLine < 3 then
+      oxCtlRearm pSocketID      -- malformed / empty; skip
+      exit oxCtlLine
+   end if
+
+   local tCode, tSep
+   put char 1 to 3 of tLine into tCode
+   put char 4 of tLine into tSep
+
+   if tCode is "650" then
+      -- An asynchronous event. Route it to the event handler, never to the
+      -- pending-command continuation.
+      oxHandleEvent tLine
+      oxCtlRearm pSocketID
+      exit oxCtlLine
+   end if
+
+   -- A command-reply line. Accumulate it and act on the frame control byte.
+   put tLine & return after sCtlReplyLines
+   if tSep is "+" then
+      put true into sCtlInData
+   else if tSep is space or tSep is empty then
+      -- Space (or a 3-char line) terminates the reply.
+      oxCtlReplyComplete
+      put empty into sCtlInFlight
+      put empty into sCtlReplyLines
+      oxCtlDrainQueue
+   end if
+   -- "-" continuation: just keep reading.
+   oxCtlRearm pSocketID
+end oxCtlLine
+
+private command oxCtlRearm pSocketID
+   -- Keep exactly one read outstanding, but only while the socket is still ours.
+   if pSocketID is sControlSocket then
+      read from socket pSocketID until crlf with message "oxCtlLine"
+   end if
+end oxCtlRearm
+
+private command oxCtlReplyComplete
+   -- Dispatch the just-completed reply to the continuation for the in-flight
+   -- command. if/else-if, not switch (the static gate rejects `end switch`).
+   -- tReplyOp, NOT tOp: a t-prefixed "tOp" lowercases to `top`, a reserved OXT
+   -- property, and the engine would parse it as the keyword, not this variable
+   -- (the prefixed-token-shadow trap, CLAUDE.md gotcha 2).
+   local tLabel, tReplyOp, tArg, tSaved
+   put sCtlInFlight into tLabel
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to ":"
+   put item 1 of tLabel into tReplyOp
+   put item 2 to -1 of tLabel into tArg
+   set the itemDelimiter to tSaved
+
+   if tReplyOp is "protocolinfo" then
+      oxParseProtocolInfo sCtlReplyLines
+      oxChooseAuthAndStart
+   else if tReplyOp is "authchallenge" then
+      oxHandleAuthChallenge sCtlReplyLines
+   else if tReplyOp is "authenticate" then
+      oxHandleAuthResult sCtlReplyLines
+   else if tReplyOp is "setevents" then
+      -- 250 OK expected; nothing to do on success.
+   else if tReplyOp is "getinfo-version" then
+      oxParseTorVersion sCtlReplyLines
+   else if tReplyOp is "getinfo-bootstrap" then
+      oxParseBootstrapPhase sCtlReplyLines
+   else if tReplyOp is "add_onion" then
+      oxHandleAddOnionReply tArg, sCtlReplyLines
+   else if tReplyOp is "del_onion" then
+      -- 250 OK on success, 552 if unknown; the removal already forgot local
+      -- state, so nothing further is required here.
+   end if
+end oxCtlReplyComplete
+
+private command oxParseProtocolInfo pReply
+   -- Extract the offered auth methods and (for cookie auth) the cookie-file path
+   -- from the PROTOCOLINFO reply (docs/03 step 1).
+   put empty into sControlMethods
+   put empty into sControlCookieFile
+   local tLine
+   repeat for each line tLine in pReply
+      if "AUTH METHODS=" is in tLine then
+         -- METHODS=<comma list> [COOKIEFILE="<quoted, C-escaped path>"]
+         put oxFieldAfter(tLine, "METHODS=") into sControlMethods
+         if "COOKIEFILE=" is in tLine then
+            put oxCUnescape(oxQuotedValueAfter(tLine, "COOKIEFILE=")) into sControlCookieFile
+         end if
+      end if
+   end repeat
+end oxParseProtocolInfo
+
+private command oxChooseAuthAndStart
+   -- Priority SAFECOOKIE > COOKIE > NULL > HASHEDPASSWORD (docs/03), but degrade
+   -- past any method whose prerequisite is missing rather than fail: SAFECOOKIE
+   -- needs SodiumXT HMAC-SHA256 and randomness (docs/08), COOKIE needs the
+   -- readable cookie file, HASHEDPASSWORD needs an app-set password.
+   put "authenticating" into sControlState
+
+   if oxMethodOffered("SAFECOOKIE") and oxSodiumHasHmac() and oxSodiumHasRandom() then
+      if oxLoadCookie() then
+         oxStartSafeCookie
+         exit oxChooseAuthAndStart
+      end if
+   end if
+   if oxMethodOffered("COOKIE") then
+      if oxLoadCookie() then
+         local tHex
+         put oxBytesToHex(sControlCookieBytes) into tHex
+         oxCtlSend "AUTHENTICATE " & tHex, "authenticate"
+         exit oxChooseAuthAndStart
+      end if
+   end if
+   if oxMethodOffered("NULL") then
+      oxCtlSend "AUTHENTICATE", "authenticate"
+      exit oxChooseAuthAndStart
+   end if
+   if oxMethodOffered("HASHEDPASSWORD") and sControlPassword is not empty then
+      -- Quote the password; escape backslash and double-quote (docs/03).
+      oxCtlSend "AUTHENTICATE " & quote & oxQuoteEscape(sControlPassword) & quote, "authenticate"
+      exit oxChooseAuthAndStart
+   end if
+
+   put "failed" into sControlState
+   oxStatusUpdate "control", "authfailed: no usable auth method (offered " & sControlMethods & ")"
+   oxDisconnectControl
+end oxChooseAuthAndStart
+
+private command oxStartSafeCookie
+   -- SAFECOOKIE step A: send a 32-byte client nonce as hex (docs/03 step 2).
+   put oxRandomBytes(32) into sControlClientNonce
+   oxCtlSend "AUTHCHALLENGE SAFECOOKIE " & oxBytesToHex(sControlClientNonce), "authchallenge"
+end oxStartSafeCookie
+
+private command oxHandleAuthChallenge pReply
+   -- SAFECOOKIE step B/C/D. The reply is a SINGLE final line:
+   -- 250 AUTHCHALLENGE SERVERHASH=<hex> SERVERNONCE=<hex> (docs/03; the reply is
+   -- space-separated, not a 250- continuation).
+   local tLine, tServerHashHex, tServerNonceHex
+   put line 1 of pReply into tLine
+   if char 1 to 3 of tLine is not "250" then
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: AUTHCHALLENGE rejected (" & tLine & ")"
+      oxDisconnectControl
+      exit oxHandleAuthChallenge
+   end if
+   put oxFieldAfter(tLine, "SERVERHASH=") into tServerHashHex
+   put oxFieldAfter(tLine, "SERVERNONCE=") into tServerNonceHex
+
+   local tServerNonce, tMessage, tExpected, tOk
+   put oxHexToBytes(tServerNonceHex) into tServerNonce
+   -- HMAC message = CookieBytes || ClientNonce || ServerNonce (docs/03).
+   put sControlCookieBytes & sControlClientNonce & tServerNonce into tMessage
+   put oxHmac(kOxSafeCookieServerKey, tMessage) into tExpected
+   -- Verify the server hash in constant time; a mismatch means the far end does
+   -- not hold the cookie (not the real Tor), so abort and do NOT authenticate.
+   put oxConstantTimeEqual(tExpected, oxHexToBytes(tServerHashHex)) into tOk
+   if not tOk then
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: SAFECOOKIE server hash mismatch (not the real Tor?)"
+      oxDisconnectControl
+      exit oxHandleAuthChallenge
+   end if
+   -- Step D: authenticate with the controller-to-server hash.
+   local tClientHash
+   put oxHmac(kOxSafeCookieClientKey, tMessage) into tClientHash
+   oxCtlSend "AUTHENTICATE " & oxBytesToHex(tClientHash), "authenticate"
+end oxHandleAuthChallenge
+
+private command oxHandleAuthResult pReply
+   -- 250 OK => authenticated; anything else (515 bad auth, 514 required) fails
+   -- closed (docs/03; there is no unauthenticated fallback, CLAUDE.md rule 4).
+   local tLine
+   put line 1 of pReply into tLine
+   if char 1 to 3 of tLine is "250" then
+      put "authenticated" into sControlState
+      oxStatusUpdate "control", "authenticated"
+      -- Subscribe to the events we care about and learn the tor version.
+      oxCtlSend "SETEVENTS STATUS_CLIENT HS_DESC CIRC STREAM", "setevents"
+      oxCtlSend "GETINFO version", "getinfo-version"
+      -- Query the CURRENT bootstrap phase once. STATUS_CLIENT BOOTSTRAP events
+      -- only fire WHILE tor is bootstrapping, so a daemon already at 100% when we
+      -- connect emits none and the UI would sit at 0. This one GETINFO seeds it.
+      oxCtlSend "GETINFO status/bootstrap-phase", "getinfo-bootstrap"
+   else
+      put "failed" into sControlState
+      oxStatusUpdate "control", "authfailed: " & tLine
+      oxDisconnectControl
+   end if
+end oxHandleAuthResult
+
+private command oxParseTorVersion pReply
+   -- 250-version=<x> then 250 OK (docs/03). Pull the version value.
+   local tLine
+   repeat for each line tLine in pReply
+      if "version=" is in tLine then
+         put oxFieldAfter(tLine, "version=") into sControlTorVersion
+      end if
+   end repeat
+end oxParseTorVersion
+
+private command oxParseBootstrapPhase pReply
+   -- Reply to GETINFO status/bootstrap-phase, carrying the CURRENT bootstrap state
+   -- (unlike the STATUS_CLIENT event, which only fires while bootstrapping). Line:
+   --   250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="..."
+   -- Parse PROGRESS= the same way as the live event so the UI is seeded on connect.
+   local tLine, tProgress
+   repeat for each line tLine in pReply
+      if "PROGRESS=" is in tLine then
+         put oxFieldAfter(tLine, "PROGRESS=") into tProgress
+         if tProgress is not empty and tProgress is an integer then
+            put tProgress into sBootstrap
+            oxStatusUpdate "bootstrap", tProgress
+            if tProgress is 100 then
+               oxStatusUpdate "ready", empty
+            end if
+         end if
+      end if
+   end repeat
+end oxParseBootstrapPhase
+
+command oxCtlDeadline pSocketID
+   -- Handshake watchdog: if this control socket never reached authenticated,
+   -- tear it down with a clean error (docs/07: a stalled bootstrap must not hang).
+   if pSocketID is not sControlSocket then
+      exit oxCtlDeadline
+   end if
+   if sControlState is not "authenticated" then
+      oxStatusUpdate "control", "error: control authentication timed out"
+      oxDisconnectControl
+   end if
+end oxCtlDeadline
+
+-- ==========================================================================
+-- Event handling: bootstrap progress and onion-descriptor readiness
+-- (docs/03 step 5). 650 lines are tolerant-parsed; never hard-fail on an
+-- unrecognized token (the control-spec requires controllers to tolerate them).
+-- ==========================================================================
+
+private command oxHandleEvent pLine
+   local tType
+   put word 2 of pLine into tType
+   if tType is "STATUS_CLIENT" then
+      if "BOOTSTRAP" is in pLine then
+         local tProgress
+         put oxFieldAfter(pLine, "PROGRESS=") into tProgress
+         if tProgress is not empty and tProgress is an integer then
+            put tProgress into sBootstrap
+            oxStatusUpdate "bootstrap", tProgress
+            if tProgress is 100 then
+               oxStatusUpdate "ready", empty
+            end if
+         end if
+      end if
+   else if tType is "HS_DESC" then
+      -- Positional: HS_DESC <Action> <HSAddress> ... . Our service is reachable
+      -- once we see UPLOADED for its address (docs/03 step 5).
+      local tAction, tAddress
+      put word 3 of pLine into tAction
+      put word 4 of pLine into tAddress
+      if tAction is "UPLOADED" then
+         oxMarkServiceReady tAddress
+         oxStatusUpdate "serviceReady", tAddress
+      end if
+   else
+      -- CIRC / STREAM and anything else are diagnostic; surface raw for advanced
+      -- apps that opted into an "event" status, otherwise ignored.
+      oxStatusUpdate "event", pLine
+   end if
+end oxHandleEvent
+
+private command oxMarkServiceReady pAddress
+   local tKey, tCore
+   -- The event carries the ServiceID (no ".onion"); match either spelling.
+   put pAddress into tCore
+   if tCore ends with ".onion" then
+      put char 1 to -7 of tCore into tCore
+   end if
+   repeat for each key tKey in sServices
+      if sServices[tKey]["serviceID"] is tCore then
+         put true into sServices[tKey]["ready"]
+      end if
+   end repeat
+end oxMarkServiceReady
+
+private command oxStatusUpdate pKind, pInfo
+   -- Deliver a status update to the app, coalescing the high-frequency bootstrap
+   -- stream to <= ~4 Hz (CLAUDE.md). Terminal/rare kinds are always delivered.
+   if pKind is "bootstrap" and pInfo is not 100 then
+      local tNow
+      put the milliseconds into tNow
+      if sLastStatusTick is not empty and (tNow - sLastStatusTick) < kOxStatusThrottle then
+         exit oxStatusUpdate   -- coalesce: drop this intermediate tick
+      end if
+      put tNow into sLastStatusTick
+   end if
+   oxDispatch sStatusCallback, pKind, pInfo, empty
+end oxStatusUpdate
+
+-- ==========================================================================
+-- Outbound: dialing through SOCKS5 (docs/02-socks5-client.md). A callback-driven
+-- state machine: greet, CONNECT with ATYP=3 (Tor resolves the name; never a
+-- local DNS lookup), parse the reply, hand up a raw byte-stream tunnel.
+-- ==========================================================================
+
+command oxDial pHost, pPort
+   -- Reports a stream handle through `the result` immediately; the SOCKS
+   -- handshake completes asynchronously and the stream's callback receives
+   -- "open" or "error" (CLAUDE.md async model).
+   if pHost is empty then
+      return "OnionXT: oxDial needs a host (a .onion or clearnet name)"
+   end if
+   if pPort is not an integer or pPort < 1 or pPort > 65535 then
+      return "OnionXT: oxDial needs a port in 1..65535"
+   end if
+   local tHandle, tConnName, tSocketID
+   put oxAllocHandle() into tHandle
+   -- A NON-numeric connection name so several streams to 127.0.0.1:9050 get
+   -- distinct socket ids, and so they never collide with the numeric names the
+   -- accept loop assigns (the id separator is a vertical bar, docs LiveCode ref).
+   put "oxs" & tHandle into tConnName
+   put kOxHost & ":" & effectiveSocksPort() & "|" & tConnName into tSocketID
+   put tSocketID into sStreams[tHandle]["socketID"]
+   put "connecting" into sStreams[tHandle]["state"]
+   put pHost into sStreams[tHandle]["host"]
+   put pPort into sStreams[tHandle]["port"]
+   put "dial" into sStreams[tHandle]["kind"]
+   put empty into sStreams[tHandle]["callback"]
+   put tHandle into sSockToStream[tSocketID]
+   set the socketTimeoutInterval to kOxHandshakeTimeout
+   open socket to tSocketID with message "oxSocksOpened"
+   send ("oxStreamDeadline " & tHandle) to me in kOxHandshakeTimeout milliseconds
+   return tHandle
+end oxDial
+
+command oxSetStreamCallback pStream, pHandlerName
+   if sStreams[pStream]["socketID"] is empty then
+      return "OnionXT: unknown stream handle " & pStream
+   end if
+   put pHandlerName into sStreams[pStream]["callback"]
+   return empty
+end oxSetStreamCallback
+
+command oxWrite pStream, pData
+   -- Write app bytes (already sealed by the app via SodiumXT) to the
+   -- tunnel. OnionXT does not encrypt (docs/02).
+   if sStreams[pStream]["state"] is not "connected" then
+      return "OnionXT: stream " & pStream & " is not open"
+   end if
+   write pData to socket sStreams[pStream]["socketID"]
+   return empty
+end oxWrite
+
+command oxCloseStream pStream
+   -- Idempotent close of the stream socket; forget the handle. A stale handle is
+   -- a clean no-op.
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxCloseStream
+   end if
+   oxSafeCloseSocket sStreams[pStream]["socketID"]
+   delete variable sSockToStream[sStreams[pStream]["socketID"]]
+   delete variable sStreams[pStream]
+end oxCloseStream
+
+function oxStreamState pStream
+   if sStreams[pStream]["socketID"] is empty then
+      return "unknown"
+   end if
+   return sStreams[pStream]["state"]
+end oxStreamState
+
+command oxSocksOpened pSocketID
+   -- TCP up: send the method-negotiation greeting 05 01 00 (VER=5, 1 method,
+   -- method 00 = no auth) and read the 2-byte method selection (docs/02 step 1).
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksOpened        -- stale
+   end if
+   put "greeting" into sStreams[tHandle]["state"]
+   write numToByte(5) & numToByte(1) & numToByte(0) to socket pSocketID
+   read from socket pSocketID for 2 with message "oxSocksMethod"
+end oxSocksOpened
+
+command oxSocksMethod pSocketID, pData
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksMethod
+   end if
+   if the number of bytes of pData < 2 then
+      oxStreamFail tHandle, "SOCKS greeting reply truncated"
+      exit oxSocksMethod
+   end if
+   local tVer, tMethod
+   put byteToNum(byte 1 of pData) into tVer
+   put byteToNum(byte 2 of pData) into tMethod
+   if tVer is not 5 then
+      oxStreamFail tHandle, "SOCKS server is not version 5"
+      exit oxSocksMethod
+   end if
+   if tMethod is not 0 then
+      -- 0xFF = no acceptable methods; anything non-zero we do not offer. Fail
+      -- closed; on loopback no auth is needed and its absence is a misconfig to
+      -- surface, not paper over (docs/02).
+      oxStreamFail tHandle, "SOCKS server demands an auth method OnionXT does not offer (0x" & oxByteHex(tMethod) & ")"
+      exit oxSocksMethod
+   end if
+   -- Method OK: send the CONNECT request with ATYP=3 (domain name) so TOR
+   -- resolves pHost. This is the anonymity-critical choice (docs/02 step 2).
+   put "connect" into sStreams[tHandle]["state"]
+   local tHost, tHostBytes, tPort, tRequest
+   put sStreams[tHandle]["host"] into tHost
+   put textEncode(tHost, "UTF-8") into tHostBytes
+   if the number of bytes of tHostBytes > 255 then
+      oxStreamFail tHandle, "SOCKS host name exceeds 255 bytes"
+      exit oxSocksMethod
+   end if
+   put sStreams[tHandle]["port"] into tPort
+   -- 05 01 00 03 <len> <host bytes> <port-hi> <port-lo>. The port is 2 bytes
+   -- big-endian; build it by hand so the wire bytes are self-evident (do not use
+   -- binaryEncode "S", which is host order, docs LiveCode ref).
+   put numToByte(5) & numToByte(1) & numToByte(0) & numToByte(3) into tRequest
+   put numToByte(the number of bytes of tHostBytes) after tRequest
+   put tHostBytes after tRequest
+   put numToByte(tPort div 256) & numToByte(tPort mod 256) after tRequest
+   write tRequest to socket pSocketID
+   -- Read the fixed 4-byte reply head (VER REP RSV ATYP); the BND.ADDR that
+   -- follows is variable and framed by ATYP (docs/02 step 3).
+   put "replyhead" into sStreams[tHandle]["state"]
+   read from socket pSocketID for 4 with message "oxSocksReplyHead"
+end oxSocksMethod
+
+command oxSocksReplyHead pSocketID, pData
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyHead
+   end if
+   if the number of bytes of pData < 4 then
+      oxStreamFail tHandle, "SOCKS reply head truncated"
+      exit oxSocksReplyHead
+   end if
+   local tVer, tRep, tAtyp
+   put byteToNum(byte 1 of pData) into tVer
+   put byteToNum(byte 2 of pData) into tRep
+   put byteToNum(byte 4 of pData) into tAtyp
+   if tRep is not 0 then
+      -- Any non-zero REP is failure. Map it (incl. Tor's onion 0xF0..0xF7) to a
+      -- human message and tear down (docs/02 REP table; CLAUDE.md rule 4).
+      oxStreamFail tHandle, oxSocksRepMessage(tRep)
+      exit oxSocksReplyHead
+   end if
+   put tAtyp into sStreams[tHandle]["atyp"]
+   -- Consume BND.ADDR + 2-byte BND.PORT. Length depends on ATYP: 01 -> 4, 04 ->
+   -- 16, 03 -> one length byte then that many. We do not use BND.ADDR; we just
+   -- frame past it so the socket is left at the start of the tunnel payload.
+   if tAtyp is 1 then
+      put "replyrest" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 6 with message "oxSocksReplyDone"     -- 4 + 2
+   else if tAtyp is 4 then
+      put "replyrest" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 18 with message "oxSocksReplyDone"    -- 16 + 2
+   else if tAtyp is 3 then
+      put "replylen" into sStreams[tHandle]["state"]
+      read from socket pSocketID for 1 with message "oxSocksReplyLen"
+   else
+      oxStreamFail tHandle, "SOCKS reply has an unknown address type (" & tAtyp & ")"
+   end if
+end oxSocksReplyHead
+
+command oxSocksReplyLen pSocketID, pData
+   -- ATYP=3 domain BND.ADDR: one length byte, then that many, then 2 port bytes.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyLen
+   end if
+   if the number of bytes of pData < 1 then
+      oxStreamFail tHandle, "SOCKS reply address length truncated"
+      exit oxSocksReplyLen
+   end if
+   local tLen
+   put byteToNum(byte 1 of pData) + 2 into tLen     -- address bytes + 2 port bytes
+   put "replyrest" into sStreams[tHandle]["state"]
+   read from socket pSocketID for tLen with message "oxSocksReplyDone"
+end oxSocksReplyLen
+
+command oxSocksReplyDone pSocketID, pData
+   -- The SOCKS reply is fully consumed and REP was 0: the socket is now a
+   -- transparent tunnel. Hand it up and start the streaming inbound reader.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxSocksReplyDone
+   end if
+   put "connected" into sStreams[tHandle]["state"]
+   oxInvokeStreamCallback tHandle, "open", empty
+   -- Begin the persistent read; each inbound chunk is delivered as "data".
+   -- Confirmed on-engine: the no-quantifier `read ... with message` streams
+   -- available bytes as they arrive (a dialed SOCKS tunnel and an inbound onion
+   -- HTTP request both deliver chunk by chunk); it does not block to EOF.
+   read from socket pSocketID with message "oxStreamData"
+end oxSocksReplyDone
+
+command oxStreamData pSocketID, pData
+   -- Inbound bytes on a live stream (dialed OR inbound-accepted; both are unified
+   -- through the stream tables). Deliver the chunk and re-arm the read.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is empty then
+      exit oxStreamData          -- stale / already torn down
+   end if
+   if the number of bytes of pData > 0 then
+      oxInvokeStreamCallback tHandle, "data", pData
+   end if
+   -- Re-arm only if the stream is still live (the callback may have closed it).
+   if sSockToStream[pSocketID] is not empty then
+      read from socket pSocketID with message "oxStreamData"
+   end if
+end oxStreamData
+
+command oxStreamDeadline pStream
+   -- Handshake watchdog for a dialed stream: if it never reached "connected",
+   -- tear it down (docs/02: a silent stall is the worst failure).
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxStreamDeadline
+   end if
+   local tState
+   put sStreams[pStream]["state"] into tState
+   if tState is not "connected" and tState is not "closed" then
+      oxStreamFail pStream, "SOCKS handshake timed out"
+   end if
+end oxStreamDeadline
+
+private command oxStreamFail pStream, pError
+   -- Fail closed: report the error to the app, then close and forget the stream.
+   if sStreams[pStream]["socketID"] is empty then
+      exit oxStreamFail
+   end if
+   put "failed" into sStreams[pStream]["state"]
+   oxInvokeStreamCallback pStream, "error", pError
+   oxSafeCloseSocket sStreams[pStream]["socketID"]
+   delete variable sSockToStream[sStreams[pStream]["socketID"]]
+   delete variable sStreams[pStream]
+end oxStreamFail
+
+private function oxSocksRepMessage pRep
+   -- Map a SOCKS REP code to a clear message. Standard RFC 1928 0x00..0x08 plus
+   -- Tor's onion extensions 0xF0..0xF7 (docs/02; the extended band only appears
+   -- when the SocksPort has ExtendedErrors set, so 0x01/0x04 must map sensibly
+   -- too, since without that flag Tor collapses onion failures onto them).
+   if pRep is 1 then
+      return "general SOCKS server failure"
+   else if pRep is 2 then
+      return "connection not allowed by ruleset"
+   else if pRep is 3 then
+      return "network unreachable"
+   else if pRep is 4 then
+      return "host unreachable"
+   else if pRep is 5 then
+      return "connection refused"
+   else if pRep is 6 then
+      return "TTL expired"
+   else if pRep is 7 then
+      return "command not supported"
+   else if pRep is 8 then
+      return "address type not supported"
+   else if pRep is 240 then
+      return "onion service not found (wrong or offline .onion address)"
+   else if pRep is 241 then
+      return "onion service descriptor is invalid"
+   else if pRep is 242 then
+      return "onion service introduction failed"
+   else if pRep is 243 then
+      return "onion service rendezvous failed"
+   else if pRep is 244 then
+      return "onion service missing client authorization"
+   else if pRep is 245 then
+      return "onion service wrong client authorization"
+   else if pRep is 246 then
+      return "onion service invalid address (malformed .onion)"
+   else if pRep is 247 then
+      return "onion service introduction timed out"
+   end if
+   return "SOCKS request failed (REP 0x" & oxByteHex(pRep) & ")"
+end oxSocksRepMessage
+
+-- ==========================================================================
+-- Inbound: onion services (docs/03 step 3-4, docs/04). Listen on loopback
+-- FIRST, then ADD_ONION, so a peer that connects the moment the descriptor
+-- publishes is answered (CLAUDE.md socket gotcha 5).
+-- ==========================================================================
+
+command oxCreateService pVirtualPort, pLocalPort
+   -- Ephemeral service, Tor generates the key. Reports a service handle through
+   -- `the result`; the .onion address arrives asynchronously (status "service"
+   -- and oxServiceAddress) once ADD_ONION replies.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   local tHandle
+   put oxStartService(pVirtualPort, pLocalPort) into tHandle
+   if tHandle is not an integer then
+      return tHandle          -- listener did not bind; surfaced verbatim
+   end if
+   -- Flags=Detach keeps the service published even if the control connection
+   -- drops (a transient socketClosed/socketError, or a reconnect): without it, an
+   -- ADD_ONION service dies with its control connection while its descriptor
+   -- lingers in the DHT for ~3h, so a later visit hits "unable to find hidden
+   -- service identity key" at rendezvous. oxRemoveService / oxShutdown DEL_ONION
+   -- it explicitly; a hard crash leaves it until DEL_ONION or a tor restart.
+   oxCtlSend "ADD_ONION NEW:ED25519-V3 Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxCreateService
+
+command oxCreateServiceFromSeed pSeed, pVirtualPort, pLocalPort
+   -- Deterministic, reproducible address: derive the ed25519 identity from pSeed
+   -- and pass Tor the 64-byte ED25519-V3 expanded key (docs/04). The expansion is
+   -- SodiumXT's sxSignSeedToExpandedKey (docs/08 gap #1, SHIPPED in ABI 6); we
+   -- compose it and fail with a clear message if it is absent, never hand-roll
+   -- SHA-512. Same seed -> same .onion on every run.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   if the number of bytes of pSeed is not 32 then
+      return "OnionXT: oxCreateServiceFromSeed needs a 32-byte seed"
+   end if
+   local tExpanded
+   put oxExpandedKeyFromSeed(pSeed) into tExpanded
+   if the number of bytes of tExpanded is not 64 then
+      return tExpanded          -- a capability error, surfaced verbatim
+   end if
+   -- Tor's ADD_ONION ED25519-V3: wants STANDARD RFC 4648 base64 (the +/ alphabet
+   -- with = padding). The engine's base64Encode emits exactly that; do NOT use
+   -- SodiumXT's sxBin2Base64, which is url-safe and unpadded and tor rejects.
+   -- Strip any line-wrap whitespace the encoder may insert (docs/04 base64 note).
+   local tBlob
+   put oxStripWhitespace(base64Encode(tExpanded)) into tBlob
+   local tHandle
+   put oxStartService(pVirtualPort, pLocalPort) into tHandle
+   if tHandle is not an integer then
+      return tHandle          -- listener did not bind; surfaced verbatim
+   end if
+   -- Flags=Detach: keep the service alive across a control-connection drop (see
+   -- oxCreateService); DEL_ONION on teardown still removes it.
+   oxCtlSend "ADD_ONION ED25519-V3:" & tBlob & " Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxCreateServiceFromSeed
+
+command oxPublishService pVirtualPort, pLocalPort
+   -- Publish an onion whose virtual port Tor forwards to a loopback port that
+   -- SOMETHING ELSE is already accepting on (LiveCode's built-in HTTPD Library, or
+   -- any local server). Unlike oxCreateService, OnionXT does NOT start its own
+   -- accept loop: the external server owns the socket, parses the request, and
+   -- replies. Teardown DEL_ONIONs the service but leaves that socket alone. Reports
+   -- a service handle through `the result`; the .onion address arrives
+   -- asynchronously (status "service", oxServiceAddress) once ADD_ONION replies.
+   --
+   -- SECURITY (the caller's responsibility): `accept connections on port` usually
+   -- binds ALL interfaces, so the external server's local port may be reachable
+   -- from the LAN, bypassing Tor. The external server MUST enforce loopback itself
+   -- (reject any non-127.0.0.1 peer before responding), exactly as OnionXT's own
+   -- oxPeerAccepted does. Bind the server to loopback if it supports it.
+   local tError
+   put oxCheckServiceArgs(pVirtualPort, pLocalPort) into tError
+   if tError is not empty then
+      return tError
+   end if
+   local tHandle
+   put oxAllocHandle() into tHandle
+   put pVirtualPort into sServices[tHandle]["virtualPort"]
+   put pLocalPort into sServices[tHandle]["localPort"]
+   put empty into sServices[tHandle]["serviceID"]
+   put empty into sServices[tHandle]["address"]
+   put empty into sServices[tHandle]["privateKey"]
+   put false into sServices[tHandle]["ready"]
+   -- Mark it external so oxRemoveService DEL_ONIONs it but does not close the
+   -- socket (which OnionXT never opened; the external server owns it).
+   put true into sServices[tHandle]["external"]
+   -- No accept loop here (contrast oxStartService). Flags=Detach as in
+   -- oxCreateService, so a control-connection blip does not un-publish it.
+   oxCtlSend "ADD_ONION NEW:ED25519-V3 Flags=Detach Port=" & pVirtualPort & ",127.0.0.1:" & pLocalPort, "add_onion:" & tHandle
+   return tHandle
+end oxPublishService
+
+private function oxCheckServiceArgs pVirtualPort, pLocalPort
+   if sControlState is not "authenticated" then
+      return "OnionXT: connect and authenticate the control port first (oxConnectControl)"
+   end if
+   if pVirtualPort is not an integer or pVirtualPort < 1 or pVirtualPort > 65535 then
+      return "OnionXT: virtual port must be 1..65535"
+   end if
+   if pLocalPort is not an integer or pLocalPort < 1 or pLocalPort > 65535 then
+      return "OnionXT: local port must be 1..65535"
+   end if
+   return empty
+end oxCheckServiceArgs
+
+private function oxStartService pVirtualPort, pLocalPort
+   -- Allocate the handle and START the loopback listener before ADD_ONION so a
+   -- forwarded connection is never refused (docs/03 step 4, ordering gotcha).
+   local tHandle, tPrior
+   put sLocalToService[pLocalPort] into tPrior
+   if tPrior is not empty and sServices[tPrior]["localPort"] is not empty then
+      -- Fail closed: a second service on an in-use local port would overwrite
+      -- the port-to-service mapping, and removing either service would then
+      -- close (or orphan) the shared listener out from under the other, so Tor
+      -- keeps forwarding to a dead port - which looks exactly like a broken
+      -- onion. One local port, one service; pick another local port.
+      -- (Verified statically; needs an OXT pass.)
+      return "OnionXT: local port " & pLocalPort & " already forwards for another service (one service per local port; pick another local port)"
+   end if
+   if tPrior is not empty then
+      -- The mapping is stale (its service is gone); reclaim it and rebind below.
+      delete variable sLocalToService[pLocalPort]
+   end if
+   put oxAllocHandle() into tHandle
+   put pVirtualPort into sServices[tHandle]["virtualPort"]
+   put pLocalPort into sServices[tHandle]["localPort"]
+   put empty into sServices[tHandle]["serviceID"]
+   put empty into sServices[tHandle]["address"]
+   put empty into sServices[tHandle]["privateKey"]
+   put false into sServices[tHandle]["ready"]
+   if sLocalToService[pLocalPort] is empty then
+      -- Bind loopback only. The classic `accept connections on port` has no
+      -- bind-address argument (may listen on all interfaces), so oxPeerAccepted
+      -- enforces loopback by rejecting any non-loopback peer before reading.
+      -- Confirmed on-engine: Tor-forwarded onion connections are accepted here.
+      accept connections on port pLocalPort with message "oxPeerAccepted"
+      if the result is not empty then
+         -- The listener did not bind (most often the local port is already in use
+         -- by a prior run or another app). Fail closed: with no listener, Tor
+         -- forwards inbound onion traffic to a dead port and the visitor gets an
+         -- empty response, which looks exactly like a broken onion.
+         delete variable sServices[tHandle]
+         return "OnionXT: cannot listen on 127.0.0.1:" & pLocalPort & " (" & the result & ")"
+      end if
+      put true into sServices[tHandle]["listening"]
+   end if
+   put tHandle into sLocalToService[pLocalPort]
+   return tHandle
+end oxStartService
+
+private command oxHandleAddOnionReply pHandle, pReply
+   -- Parse ServiceID (and PrivateKey unless discarded) from the ADD_ONION reply
+   -- (docs/03 step 3). On failure, fail closed and tear the half-built service.
+   local tLine
+   if char 1 to 3 of (line 1 of pReply) is not "250" and "ServiceID=" is not in pReply then
+      oxRemoveService pHandle
+      oxStatusUpdate "control", "error: ADD_ONION failed (" & (line 1 of pReply) & ")"
+      exit oxHandleAddOnionReply
+   end if
+   repeat for each line tLine in pReply
+      if "ServiceID=" is in tLine then
+         put oxFieldAfter(tLine, "ServiceID=") into sServices[pHandle]["serviceID"]
+      else if "PrivateKey=" is in tLine then
+         put oxFieldAfter(tLine, "PrivateKey=") into sServices[pHandle]["privateKey"]
+      end if
+   end repeat
+   if sServices[pHandle]["serviceID"] is not empty then
+      put sServices[pHandle]["serviceID"] & ".onion" into sServices[pHandle]["address"]
+      oxStatusUpdate "service", sServices[pHandle]["address"]
+   end if
+end oxHandleAddOnionReply
+
+command oxRemoveService pService
+   -- DEL_ONION and stop the listener. Idempotent: a stale handle is a no-op.
+   if sServices[pService]["localPort"] is empty then
+      exit oxRemoveService
+   end if
+   local tServiceID, tLocalPort
+   put sServices[pService]["serviceID"] into tServiceID
+   put sServices[pService]["localPort"] into tLocalPort
+   if tServiceID is not empty and sControlState is "authenticated" then
+      oxCtlSend "DEL_ONION " & tServiceID, "del_onion:" & pService
+   end if
+   -- Stop accepting on the loopback port, but ONLY if WE own the listener
+   -- (oxCreateService / oxCreateServiceFromSeed). A publish-only service
+   -- (oxPublishService) forwards to a socket an external server owns; leave it
+   -- alone, or we would close it out from under that server.
+   if sServices[pService]["external"] is not true then
+      if sLocalToService[tLocalPort] is pService then
+         oxSafeCloseSocket tLocalPort
+         delete variable sLocalToService[tLocalPort]
+      end if
+   end if
+   delete variable sServices[pService]
+end oxRemoveService
+
+function oxServiceAddress pService
+   return sServices[pService]["address"]
+end oxServiceAddress
+
+function oxServiceIsReady pService
+   return (sServices[pService]["ready"] is true)
+end oxServiceIsReady
+
+command oxPeerAccepted pSocketID
+   -- Tor forwarded an inbound onion connection to our loopback listener. Enforce
+   -- loopback (security-critical: reject any non-loopback peer before reading a
+   -- byte), wrap the accepted socket as an inbound stream, and hand it to the app.
+   -- Emit a diagnostic notice with the RAW accepted id so a misparse is visible.
+   oxStatusUpdate "notice", "accepted connection id=[" & pSocketID & "]"
+   local tPeerHost
+   put oxHostOfSocket(pSocketID) into tPeerHost
+   if not oxHostIsLoopback(tPeerHost) then
+      -- Not a Tor-forwarded loopback connection: refuse it (docs LiveCode ref;
+      -- the listener may be bound to all interfaces). Print the RAW id next to
+      -- the parsed host, because since oxHostIsLoopback stopped treating an
+      -- unparseable id as loopback this notice is also how a socket-id spelling
+      -- oxHostOfSocket does not know announces itself (it arrives here with an
+      -- empty host); one self-contained line is what a tester can act on.
+      oxStatusUpdate "notice", "rejected non-loopback peer host [" & tPeerHost & \
+         "] from id [" & pSocketID & "]"
+      oxSafeCloseSocket pSocketID
+      exit oxPeerAccepted
+   end if
+   local tHandle
+   put oxAllocHandle() into tHandle
+   put pSocketID into sStreams[tHandle]["socketID"]
+   put "connected" into sStreams[tHandle]["state"]
+   put "inbound" into sStreams[tHandle]["kind"]
+   put empty into sStreams[tHandle]["callback"]
+   put tHandle into sSockToStream[pSocketID]
+   -- Hand the stream to the app FIRST so it can register a stream callback (the
+   -- dispatch is synchronous), THEN arm the read so no inbound chunk is delivered
+   -- before there is a callback to receive it.
+   oxDispatch sPeerCallback, tHandle, oxGuessService(pSocketID), tPeerHost
+   if sSockToStream[pSocketID] is not empty then
+      read from socket pSocketID with message "oxStreamData"
+   end if
+end oxPeerAccepted
+
+private function oxGuessService pSocketID
+   -- Best-effort service association for the peer callback. The accept callback
+   -- carries the PEER address, not our local port, so we cannot always know which
+   -- service was reached (VERIFY the accepted-socket id format on-engine). If a
+   -- single service is live, return it; otherwise return empty and let the app
+   -- key on distinct local ports.
+   local tKeys, tCount, tKey
+   put the keys of sServices into tKeys
+   put the number of lines of tKeys into tCount
+   if tCount is 1 then
+      return line 1 of tKeys
+   end if
+   return empty
+end oxGuessService
+
+private function oxHostIsLoopback pHost
+   -- Accept a Tor-forwarded peer no matter how the engine spells the local
+   -- address in the accepted-socket id, and NOTHING else: `accept connections on
+   -- port` takes no bind address (see oxStartService), so the listener may be
+   -- reachable from the network and this is the only thing standing between a
+   -- routable peer and our stream tables. Takes the host oxHostOfSocket parsed,
+   -- so the brackets of "[::1]" are already gone and there is exactly one
+   -- spelling of each address to test. Comparisons are case-insensitive by
+   -- default, so "::FFFF:" matches "::ffff:" without folding anything.
+   --
+   -- EMPTY IS A REFUSAL NOW, and that is the point of this change rather than a
+   -- side effect. It used to return true, with "some engines report no host for
+   -- a local accept" as the reason - but the old parser handed this guard an
+   -- empty string for EVERY IPv6-shaped id, so "the engine reported no host" and
+   -- "we could not parse this id" were indistinguishable, and the permissive
+   -- branch let "::ffff:203.0.113.9:1234" - a routable peer wearing an
+   -- IPv4-mapped hat - in as loopback. A guard whose default is accept is a
+   -- fail-open guard; CLAUDE.md rule 4 says fail closed on anything we do not
+   -- understand. So an unrecognized spelling is refused and oxPeerAccepted
+   -- prints the RAW id alongside the parsed host: if a real engine is ever seen
+   -- spelling an accepted id with no host at all (or with the fully expanded
+   -- "0:0:0:0:0:0:0:1"), the fix is to teach oxHostOfSocket that spelling, never
+   -- to re-open this branch.
+   local tHost
+   put pHost into tHost
+   if tHost is empty then
+      return false
+   end if
+   if tHost is kOxHost then
+      return true
+   end if
+   if tHost begins with "127." then
+      return true
+   end if
+   if tHost is "::1" then
+      return true
+   end if
+   if tHost begins with "::ffff:" then
+      -- The IPv4-mapped form a dual-stack listener can report. It is the SAME
+      -- address with a prefix, so strip it and re-test the v4 rules: that admits
+      -- "::ffff:127.0.0.1" (genuinely loopback, and unroutable) and refuses
+      -- "::ffff:203.0.113.9" (genuinely routable), which the old empty-item-1
+      -- parse could not tell apart.
+      delete char 1 to 7 of tHost
+      if tHost is kOxHost or tHost begins with "127." then
+         return true
+      end if
+      return false
+   end if
+   if tHost is "localhost" then
+      return true
+   end if
+   return false
+end oxHostIsLoopback
+
+-- ==========================================================================
+-- Address helpers: a v3 .onion address IS an ed25519 public key
+-- (docs/04-onion-rendezvous.md). base32 and the layout are pure byte work; only
+-- the checksum needs SHA3-256, which is composed from SodiumXT (docs/08).
+-- ==========================================================================
+
+function oxPublicKeyFromAddress pOnionAddress
+   -- Strip ".onion", base32-decode 56 chars -> 35 bytes, return the first 32 (the
+   -- ed25519 public key). No crypto needed. Empty on a structural error.
+   local tCore, tRaw
+   put oxNormalizeAddress(pOnionAddress) into tCore
+   if the number of chars of tCore is not 56 then
+      return empty
+   end if
+   put oxBase32Decode(tCore) into tRaw
+   if the number of bytes of tRaw is not 35 then
+      return empty
+   end if
+   if byteToNum(byte 35 of tRaw) is not 3 then
+      return empty            -- not a version-3 address
+   end if
+   return byte 1 to 32 of tRaw
+end oxPublicKeyFromAddress
+
+function oxAddressFromPublicKey pEd25519Pub
+   -- base32( pubkey || checksum || 0x03 ) & ".onion" (docs/04). The checksum is
+   -- SHA3-256(".onion checksum" || pubkey || 0x03)[:2], composed from SodiumXT;
+   -- absent that primitive, return a clear error rather than a wrong address.
+   if the number of bytes of pEd25519Pub is not 32 then
+      return "OnionXT: oxAddressFromPublicKey needs a 32-byte ed25519 public key"
+   end if
+   local tChecksum
+   put oxOnionChecksum(pEd25519Pub) into tChecksum
+   if the number of bytes of tChecksum is not 2 then
+      return tChecksum         -- capability error, surfaced verbatim
+   end if
+   return oxBase32Encode(pEd25519Pub & tChecksum & numToByte(3)) & ".onion"
+end oxAddressFromPublicKey
+
+function oxIsValidAddress pOnionAddress
+   -- Structural checks always (length, alphabet, version byte); checksum
+   -- verification too when SodiumXT SHA3-256 is available (docs/04, docs/08).
+   local tCore, tRaw
+   put oxNormalizeAddress(pOnionAddress) into tCore
+   if the number of chars of tCore is not 56 then
+      return false
+   end if
+   local tI, tCh
+   repeat with tI = 1 to 56
+      put char tI of tCore into tCh
+      if offset(tCh, kOxBase32Alphabet) is 0 then
+         return false
+      end if
+   end repeat
+   put oxBase32Decode(tCore) into tRaw
+   if the number of bytes of tRaw is not 35 then
+      return false
+   end if
+   if byteToNum(byte 35 of tRaw) is not 3 then
+      return false
+   end if
+   -- Checksum verification when we can compute it; otherwise structural-only
+   -- (the real authentication is Tor's connect-time descriptor-signature check).
+   local tChecksum
+   put oxOnionChecksum(byte 1 to 32 of tRaw) into tChecksum
+   if the number of bytes of tChecksum is not 2 then
+      return true             -- no SHA3-256 available; accept the structure
+   end if
+   return oxConstantTimeEqual(tChecksum, byte 33 to 34 of tRaw)
+end oxIsValidAddress
+
+private function oxNormalizeAddress pOnionAddress
+   -- Trim, lowercase, and strip a trailing ".onion".
+   local tCore
+   put oxTrim(pOnionAddress) into tCore
+   put toLower(tCore) into tCore
+   if tCore ends with ".onion" then
+      put char 1 to -7 of tCore into tCore
+   end if
+   return tCore
+end oxNormalizeAddress
+
+private function oxPow2 pN
+   -- 2 to the pN, as an exact integer, WITHOUT the ^ operator (some xTalk
+   -- parsers reject `^` in a div/mod expression). pN is small in base32 (0..12),
+   -- so this is a few multiplies and stays well within exact-integer range.
+   local tR, tI
+   put 1 into tR
+   repeat with tI = 1 to pN
+      multiply tR by 2
+   end repeat
+   return tR
+end oxPow2
+
+private function oxIntDiv pA, pB
+   -- Integer division (floor, for the non-negative operands base32 uses) WITHOUT
+   -- the `div` operator, to sidestep any xTalk parser that mishandles div/mod/^
+   -- inside a compound expression. Operands here are small (base32 bit math).
+   return trunc(pA / pB)
+end oxIntDiv
+
+private function oxIntMod pA, pB
+   -- pA modulo pB WITHOUT the `mod` operator (see oxIntDiv).
+   return pA - pB * oxIntDiv(pA, pB)
+end oxIntMod
+
+private function oxBase32Encode pData
+   -- RFC 4648 base32, lowercase, no padding. Pure bit-packing: accumulate input
+   -- bytes MSB-first into a small buffer and emit 5-bit groups. The buffer is
+   -- masked to its pending bits each iteration so it never grows past ~13 bits
+   -- (staying in exact-integer range; a 280-bit accumulator would lose precision).
+   local tOut, tBits, tValue, tI, tN, tIndex
+   put "" into tOut
+   put 0 into tBits
+   put 0 into tValue
+   put the number of bytes of pData into tN
+   repeat with tI = 1 to tN
+      put tValue * 256 + byteToNum(byte tI of pData) into tValue
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         put oxIntMod(oxIntDiv(tValue, oxPow2(tBits)), 32) into tIndex
+         put char (tIndex + 1) of kOxBase32Alphabet after tOut
+      end repeat
+      put oxIntMod(tValue, oxPow2(tBits)) into tValue        -- keep only the pending bits
+   end repeat
+   if tBits > 0 then
+      -- Left-align the final partial group and emit it (canonical no-pad tail).
+      put oxIntMod(tValue * oxPow2(5 - tBits), 32) into tIndex
+      put char (tIndex + 1) of kOxBase32Alphabet after tOut
+   end if
+   return tOut
+end oxBase32Encode
+
+private function oxBase32Decode pText
+   -- Inverse of oxBase32Encode. Accumulate 5 bits per input char and emit a byte
+   -- whenever 8 bits are available; leftover (< 5) bits of the final group are
+   -- discarded (canonical). Returns empty on any character outside the alphabet.
+   local tOut, tBits, tValue, tI, tN, tCh, tIndex, tByteOut
+   put "" into tOut
+   put 0 into tBits
+   put 0 into tValue
+   put the number of chars of pText into tN
+   repeat with tI = 1 to tN
+      put char tI of pText into tCh
+      put offset(tCh, kOxBase32Alphabet) into tIndex     -- 1..32, or 0 if absent
+      if tIndex is 0 then
+         return empty
+      end if
+      put tValue * 32 + (tIndex - 1) into tValue
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put oxIntMod(oxIntDiv(tValue, oxPow2(tBits)), 256) into tByteOut
+         put numToByte(tByteOut) after tOut
+         put oxIntMod(tValue, oxPow2(tBits)) into tValue
+      end if
+   end repeat
+   return tOut
+end oxBase32Decode
+
+private function oxOnionChecksum pEd25519Pub
+   -- SHA3-256(".onion checksum" || pubkey || 0x03)[:2] (docs/04). H = SHA3-256 is
+   -- a SodiumXT primitive (docs/08); compose it and report a capability error if
+   -- it is absent, never hand-roll a hash (CLAUDE.md rule 1).
+   local tPreimage, tHash
+   put textEncode(kOxChecksumPrefix, "UTF-8") & pEd25519Pub & numToByte(3) into tPreimage
+   put oxSha3_256(tPreimage) into tHash
+   -- A valid SHA3-256 is exactly 32 bytes; any other length is the capability
+   -- error string from oxSha3_256, surfaced verbatim (robust against comparing a
+   -- string prefix against binary data).
+   if the number of bytes of tHash is not 32 then
+      return tHash
+   end if
+   return byte 1 to 2 of tHash
+end oxOnionChecksum
+
+private function oxExpandedKeyFromSeed pSeed
+   -- Compose SodiumXT's ABI-6 helper (docs/08 gap #1, now SHIPPED): a 32-byte seed
+   -- becomes the 64-byte Tor ED25519-V3 expanded secret key (SHA-512(seed) with the
+   -- ed25519 scalar clamp, all done inside SodiumXT so OnionXT hand-rolls nothing).
+   -- This is exactly the key ADD_ONION ED25519-V3:<key> wants (docs/04), and its
+   -- public key equals sxSignKeypairFromSeed(pSeed)'s, so the .onion address and the
+   -- app's signing identity stay consistent. Requires SodiumXT ABI >= 6.
+   local tExpanded
+   try
+      put sxSignSeedToExpandedKey(pSeed) into tExpanded
+   catch tError
+      return "OnionXT: oxCreateServiceFromSeed needs SodiumXT sxSignSeedToExpandedKey (requires SodiumXT ABI >= 6; see docs/08)"
+   end try
+   if the number of bytes of tExpanded is not 64 then
+      return "OnionXT: sxSignSeedToExpandedKey returned " & the number of bytes of tExpanded & " bytes, expected 64"
+   end if
+   return tExpanded
+end oxExpandedKeyFromSeed
+
+-- ==========================================================================
+-- Pluggable transport seam (docs/06). Thin wrappers so any higher-layer protocol
+-- can treat OnionXT as a transport: dial by rendezvous address, listen at a
+-- seed-derived address, send/recv bytes. OnionXT stays a transport: no crypto,
+-- no framing opinion; the payload is sealed by the app via SodiumXT.
+-- ==========================================================================
+
+function oxTransportInfo
+   -- Advertise the transport and which optional SodiumXT-backed capabilities are
+   -- available, so a caller can negotiate transports and fall back visibly
+   -- rather than silently (docs/06). Returns a LiveCode array.
+   local tInfo
+   put "ox" into tInfo["transport"]
+   put kOxVersion into tInfo["version"]
+   put (oxSodiumHasHmac() and oxSodiumHasRandom()) into tInfo["safeCookieAuth"]
+   put oxSodiumHasExpansion() into tInfo["deterministicOnion"]
+   put oxSodiumHasSha3() into tInfo["offlineAddress"]
+   return tInfo
+end oxTransportInfo
+
+command oxTransportDial pAddress, pPort
+   -- Dial a rendezvous address. Accepts a full <56>.onion, or a 32-byte ed25519
+   -- public key / 64-hex string, which it maps to an address first (docs/06).
+   local tPort, tHost
+   if pPort is empty then
+      put 80 into tPort
+   else
+      put pPort into tPort
+   end if
+   put pAddress into tHost
+   if not (tHost ends with ".onion") then
+      local tPub
+      if the number of chars of tHost is 64 then
+         put oxHexToBytes(tHost) into tPub
+      else
+         put tHost into tPub
+      end if
+      if the number of bytes of tPub is 32 then
+         put oxAddressFromPublicKey(tPub) into tHost
+         if tHost begins with "OnionXT:" then
+            return tHost
+         end if
+      end if
+   end if
+   oxDial tHost, tPort
+   return the result
+end oxTransportDial
+
+command oxTransportListen pSeed, pVirtualPort, pLocalPort
+   -- Publish a reproducible rendezvous point from a seed (docs/06).
+   oxCreateServiceFromSeed pSeed, pVirtualPort, pLocalPort
+   return the result
+end oxTransportListen
+
+command oxTransportSend pStream, pData
+   oxWrite pStream, pData
+   return the result
+end oxTransportSend
+
+command oxTransportRecv pStream, pHandlerName
+   -- Register where inbound bytes are delivered (the stream callback).
+   oxSetStreamCallback pStream, pHandlerName
+   return the result
+end oxTransportRecv
+
+-- ==========================================================================
+-- Lifecycle and teardown. Central socket-message handlers and a master
+-- oxShutdown so an app can free everything it opened, e.g. on closeStack (there
+-- is no deterministic unload hook in OXT; CLAUDE.md handles-and-state).
+-- ==========================================================================
+
+command oxShutdown
+   -- Idempotent: close every stream, remove every service, disconnect control.
+   -- Safe to call twice.
+   local tKey, tKeys
+   put the keys of sStreams into tKeys
+   repeat for each line tKey in tKeys
+      oxCloseStream tKey
+   end repeat
+   put the keys of sServices into tKeys
+   repeat for each line tKey in tKeys
+      oxRemoveService tKey
+   end repeat
+   oxDisconnectControl
+end oxShutdown
+
+on socketError pSocketID, pError
+   -- The engine's socket-failure message. If the socket closes because of an
+   -- error, this arrives instead of socketClosed. Look up the owner and fail
+   -- closed (docs LiveCode ref). A message for an unknown id is a clean no-op.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      oxStreamFail tHandle, "socket error: " & pError
+      exit socketError
+   end if
+   if pSocketID is sControlSocket then
+      oxStatusUpdate "control", "error: " & pError
+      oxDisconnectControl
+   end if
+end socketError
+
+on socketClosed pSocketID
+   -- The remote side closed cleanly. Deliver "closed" to a stream's app callback
+   -- and forget it; for the control socket, mark disconnected.
+   local tHandle
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      oxInvokeStreamCallback tHandle, "closed", empty
+      delete variable sSockToStream[pSocketID]
+      delete variable sStreams[tHandle]
+      exit socketClosed
+   end if
+   if pSocketID is sControlSocket then
+      oxStatusUpdate "control", "disconnected"
+      oxDisconnectControl
+   end if
+end socketClosed
+
+on socketTimeout pSocketID
+   -- socketTimeout REPEATS every interval while a read/write is pending (docs
+   -- LiveCode ref), so it is only fatal during a handshake; on a connected stream
+   -- it is just an idle read and must be ignored. Tear down only handshakes.
+   local tHandle, tState
+   put sSockToStream[pSocketID] into tHandle
+   if tHandle is not empty then
+      put sStreams[tHandle]["state"] into tState
+      if tState is not "connected" then
+         oxStreamFail tHandle, "SOCKS handshake timed out"
+      end if
+      exit socketTimeout
+   end if
+   -- Control socket: only fatal before authentication completes.
+   if pSocketID is sControlSocket and sControlState is not "authenticated" then
+      oxStatusUpdate "control", "error: control handshake timed out"
+      oxDisconnectControl
+   end if
+end socketTimeout
+
+-- ==========================================================================
+-- Optional Mode B: launch and supervise a bundled tor (docs/07). This is a
+-- CONVENIENCE layer, NOT the default and NOT the tested path; the assume-running
+-- daemon (Mode A) is the trusted, recommended base. VERIFY every step on-engine.
+-- ==========================================================================
+
+command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
+   -- Write a minimal torrc into pDataDir and launch pTorPath against it, so tor
+   -- exits with the app (__OwningControllerProcess) and uses cookie auth. Returns
+   -- empty on a clean launch attempt, or an error string. The caller then polls
+   -- oxConnectControl / oxBootstrapProgress; this does not wait for bootstrap.
+   if pTorPath is empty or pDataDir is empty then
+      return "OnionXT: oxLaunchTor needs a tor binary path and a data directory"
+   end if
+   local tSocks, tControl, tTorrc, tRcPath
+   if pSocksPort is empty then
+      put kOxSocksPortDefault into tSocks
+   else
+      put pSocksPort into tSocks
+   end if
+   if pControlPort is empty then
+      put kOxControlPortDefault into tControl
+   else
+      put pControlPort into tControl
+   end if
+   put "SocksPort " & tSocks & oxCrlf() after tTorrc
+   put "ControlPort " & tControl & oxCrlf() after tTorrc
+   put "CookieAuthentication 1" & oxCrlf() after tTorrc
+   put "DataDirectory " & pDataDir & oxCrlf() after tTorrc
+   -- Tie tor's lifetime to this process where the platform supports it.
+   put "__OwningControllerProcess " & oxProcessId() & oxCrlf() after tTorrc
+   put pDataDir & "/onionxt-torrc" into tRcPath
+   put tTorrc into url ("binfile:" & tRcPath)
+   oxSetSocksPort tSocks
+   oxSetControlPort tControl
+   -- open process is platform-specific; launch tor detached with -f <torrc>.
+   -- QUOTE BOTH PATHS. The command line is split on whitespace, so an unquoted
+   -- "C:/Program Files/Tor/tor.exe" arrives as the two arguments "C:/Program"
+   -- and "Files/Tor/tor.exe" and the launch fails - and a data directory under
+   -- "Application Support" or a user folder with a space in the name is the
+   -- normal case on Windows and macOS, not an edge case. The same applies to
+   -- the torrc path, which is derived from pDataDir.
+   -- VERIFY: process launch and teardown on your target OXT build.
+   open process (quote & pTorPath & quote & " -f " & quote & tRcPath & quote) for read
+   return empty
+end oxLaunchTor
+
+command oxStopTor
+   -- Ask tor to shut down over the control port, then disconnect. If Mode B was
+   -- not used this simply disconnects control (idempotent).
+   if sControlState is "authenticated" then
+      oxCtlSend "SIGNAL SHUTDOWN", "signal"
+   end if
+   oxDisconnectControl
+end oxStopTor
+
+-- ==========================================================================
+-- SodiumXT composition helpers (requires SodiumXT ABI >= 6 for the deterministic
+-- onion and SAFECOOKIE paths). Each sx* primitive is called DIRECTLY and wrapped
+-- in try/catch: an absent handler raises a catchable execution error, so a missing
+-- primitive degrades to a clear capability error rather than crashing, and the
+-- function's return value comes back unambiguously (CLAUDE.md rule 1; no crypto is
+-- hand-rolled here). base32 and the base64 encode are pure byte ops, NOT here.
+-- ==========================================================================
+
+private function oxSha3_256 pData
+   -- Composed since SodiumXT ABI 7 (docs/08 gap #2, closed 2026-08-11):
+   -- sxSha3_256 is the vendored FIPS-202 primitive SodiumXT ships precisely
+   -- for this checksum. Against an older installed SodiumXT the absent handler
+   -- still raises here and degrades to the clear capability error below. The
+   -- checksum is a nicety, not a security dependency (tor authenticates the
+   -- onion at connect time), so callers degrade to structural-only checks.
+   local tOut
+   try
+      put sxSha3_256(pData) into tOut
+   catch tError
+      return "OnionXT: the offline .onion checksum needs SodiumXT SHA3-256 (sxSha3_256, ABI 7+; this SodiumXT predates it - docs/08 #2)"
+   end try
+   return tOut
+end oxSha3_256
+
+private function oxHmac pKeyString, pMessage
+   -- HMAC-SHA256 (SodiumXT ABI >= 6). The ASCII key string crosses as its bytes.
+   local tOut
+   try
+      put sxHmacSha256(textEncode(pKeyString, "UTF-8"), pMessage) into tOut
+   catch tError
+      return "OnionXT: SAFECOOKIE auth needs SodiumXT HMAC-SHA256 (sxHmacSha256, SodiumXT ABI >= 6, docs/08)"
+   end try
+   return tOut
+end oxHmac
+
+private function oxRandomBytes pCount
+   local tOut
+   try
+      put sxRandomBytes(pCount) into tOut
+   catch tError
+      return empty
+   end try
+   return tOut
+end oxRandomBytes
+
+private function oxConstantTimeEqual pA, pB
+   -- Prefer SodiumXT's constant-time compare; fall back to a plain compare only
+   -- when it is unavailable (acceptable on a loopback control port).
+   local tOut
+   try
+      put sxMemEqual(pA, pB) into tOut
+      return (tOut is true)
+   catch tError
+      return (pA is pB)
+   end try
+end oxConstantTimeEqual
+
+private function oxSodiumHasHmac
+   -- True if SodiumXT (ABI >= 6) provides HMAC-SHA256. A benign 1-byte probe.
+   local tOut
+   try
+      put sxHmacSha256(numToByte(0), numToByte(0)) into tOut
+      return (the number of bytes of tOut is 32)
+   catch tError
+      return false
+   end try
+end oxSodiumHasHmac
+
+private function oxSodiumHasRandom
+   local tOut
+   try
+      put sxRandomBytes(1) into tOut
+      return (the number of bytes of tOut is 1)
+   catch tError
+      return false
+   end try
+end oxSodiumHasRandom
+
+private function oxSodiumHasSha3
+   -- Capability probe: true on SodiumXT ABI 7+ (sxSha3_256 shipped 2026-08-11,
+   -- docs/08 #2 CLOSED); false only against an older installed SodiumXT.
+   try
+      get sxSha3_256(empty)
+      return true
+   catch tError
+      return false
+   end try
+end oxSodiumHasSha3
+
+private function oxSodiumHasExpansion
+   -- True if SodiumXT (ABI >= 6) provides the seed -> expanded-key helper.
+   local tOut
+   try
+      put sxSignSeedToExpandedKey(oxZeroBytes(32)) into tOut
+      return (the number of bytes of tOut is 64)
+   catch tError
+      return false
+   end try
+end oxSodiumHasExpansion
+
+private function oxLoadCookie
+   -- Read the 32 raw cookie bytes from the authoritative PROTOCOLINFO path
+   -- (docs/03). binfile is binary-safe. Returns true on a plausible 32-byte read.
+   if sControlCookieFile is empty then
+      return false
+   end if
+   local tBytes
+   put url ("binfile:" & sControlCookieFile) into tBytes
+   if the number of bytes of tBytes is not 32 then
+      return false
+   end if
+   put tBytes into sControlCookieBytes
+   return true
+end oxLoadCookie
+
+-- ==========================================================================
+-- Small pure helpers.
+-- ==========================================================================
+
+private function effectiveSocksPort
+   if sSocksPort is empty then
+      return kOxSocksPortDefault
+   end if
+   return sSocksPort
+end effectiveSocksPort
+
+private function effectiveControlPort
+   if sControlPort is empty then
+      return kOxControlPortDefault
+   end if
+   return sControlPort
+end effectiveControlPort
+
+private function oxAllocHandle
+   -- Monotonic; 0 is never a valid handle so a zero/empty is always a clean miss.
+   if sNextHandle is empty then
+      put 0 into sNextHandle
+   end if
+   add 1 to sNextHandle
+   return sNextHandle
+end oxAllocHandle
+
+private command oxSafeCloseSocket pSocketID
+   -- Idempotent close: only close ids the engine still lists as open, so closing
+   -- a stale/unknown id is a clean no-op (VERIFY the engine tolerates it anyway).
+   if pSocketID is empty then
+      exit oxSafeCloseSocket
+   end if
+   if pSocketID is among the lines of the openSockets then
+      close socket pSocketID
+   end if
+end oxSafeCloseSocket
+
+private command oxInvokeStreamCallback pStream, pEvent, pData
+   oxDispatch sStreams[pStream]["callback"], pStream, pEvent, pData
+end oxInvokeStreamCallback
+
+private command oxDispatch pHandlerName, pArg1, pArg2, pArg3
+   -- Deliver to the app; a missing handler is a clean no-op so an app wires only
+   -- the callbacks it uses. Guard the call so a throwing app handler cannot break
+   -- the state machine.
+   if pHandlerName is empty then
+      exit oxDispatch
+   end if
+   local tTarget
+   put oxCallbackTarget() into tTarget      -- a local, not a function call inline
+   try
+      dispatch pHandlerName to tTarget with pArg1, pArg2, pArg3
+   catch tIgnore
+      -- Swallow app-side callback errors; the transport must keep running.
+   end try
+end oxDispatch
+
+private function oxCallbackTarget
+   -- The object the app callbacks live in. Explicitly set is authoritative;
+   -- otherwise the topStack is the best default (VERIFY it is the app's stack).
+   if sCallbackOwner is not empty then
+      return sCallbackOwner
+   end if
+   return the topStack
+end oxCallbackTarget
+
+private function oxCrlf
+   -- The wire line terminator as explicit bytes-to-be (U+000D U+000A), so the
+   -- byte value never depends on how the engine defines the `crlf` constant.
+   return numToChar(13) & numToChar(10)
+end oxCrlf
+
+private function oxStripLineEnd pLine
+   -- Strip a trailing LF and/or CR from a decoded reply line, in either order.
+   -- A plain function (returns the trimmed line) rather than a @-by-reference
+   -- command, to avoid the less-common reference-parameter construct.
+   repeat while pLine is not empty and (the last char of pLine is numToChar(10) or the last char of pLine is numToChar(13))
+      delete the last char of pLine
+   end repeat
+   return pLine
+end oxStripLineEnd
+
+private function oxFieldAfter pText, pMarker
+   -- The whitespace-delimited token immediately following pMarker in pText, or
+   -- empty. Used for METHODS=, PROGRESS=, ServiceID=, version=, SERVERHASH=, etc.
+   -- itemDelimiter is global mutable state, so save and restore it (gotcha 7).
+   local tPos, tRest, tSaved, tOut
+   put offset(pMarker, pText) into tPos
+   if tPos is 0 then
+      return empty
+   end if
+   put char (tPos + the number of chars of pMarker) to -1 of pText into tRest
+   -- Stop at the first space (values here are single tokens; quoted values use
+   -- oxQuotedValueAfter instead).
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to space
+   put item 1 of tRest into tOut
+   set the itemDelimiter to tSaved
+   return tOut
+end oxFieldAfter
+
+private function oxQuotedValueAfter pText, pMarker
+   -- The C-quoted string value following pMarker (e.g. COOKIEFILE="..."). Returns
+   -- the raw (still-escaped) inside of the quotes; the caller un-escapes.
+   local tPos, tRest, tOut, tI, tCh, tEsc
+   put offset(pMarker, pText) into tPos
+   if tPos is 0 then
+      return empty
+   end if
+   put char (tPos + the number of chars of pMarker) to -1 of pText into tRest
+   if char 1 of tRest is not quote then
+      -- Unquoted value: take up to the next space (save/restore itemDelimiter).
+      -- tOut is already declared at the handler top; only tSaved is new here.
+      local tSaved
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to space
+      put item 1 of tRest into tOut
+      set the itemDelimiter to tSaved
+      return tOut
+   end if
+   -- Walk from just after the opening quote to the matching unescaped quote.
+   put empty into tOut
+   put false into tEsc
+   repeat with tI = 2 to the number of chars of tRest
+      put char tI of tRest into tCh
+      if tEsc then
+         put tCh after tOut
+         put false into tEsc
+      else if tCh is "\" then
+         put tCh after tOut
+         put true into tEsc
+      else if tCh is quote then
+         exit repeat
+      else
+         put tCh after tOut
+      end if
+   end repeat
+   return tOut
+end oxQuotedValueAfter
+
+private function oxCUnescape pStr
+   -- Undo Tor's C-style string escapes (docs/03): \n \t \r, octal \0..\377, and
+   -- backslash-before-any-other-char is that literal char.
+   local tOut, tI, tN, tCh, tNext, tOct
+   put empty into tOut
+   put the number of chars of pStr into tN
+   put 1 into tI
+   repeat while tI <= tN
+      put char tI of pStr into tCh
+      if tCh is "\" and tI < tN then
+         put char (tI + 1) of pStr into tNext
+         if tNext is "n" then
+            put numToChar(10) after tOut
+            add 2 to tI
+         else if tNext is "t" then
+            put numToChar(9) after tOut
+            add 2 to tI
+         else if tNext is "r" then
+            put numToChar(13) after tOut
+            add 2 to tI
+         else if tNext is in "01234567" then
+            -- Up to 3 octal digits.
+            put empty into tOct
+            add 1 to tI
+            repeat while tI <= tN and (the number of chars of tOct) < 3 and (char tI of pStr) is in "01234567"
+               put char tI of pStr after tOct
+               add 1 to tI
+            end repeat
+            put numToChar(oxOctalToNum(tOct)) after tOut
+         else
+            put tNext after tOut
+            add 2 to tI
+         end if
+      else
+         put tCh after tOut
+         add 1 to tI
+      end if
+   end repeat
+   return tOut
+end oxCUnescape
+
+private function oxOctalToNum pOct
+   local tVal, tI
+   put 0 into tVal
+   repeat with tI = 1 to the number of chars of pOct
+      put tVal * 8 + (charToNum(char tI of pOct) - 48) into tVal
+   end repeat
+   return tVal
+end oxOctalToNum
+
+private function oxQuoteEscape pStr
+   -- Escape backslash and double-quote for a control-port QuotedString.
+   local tOut
+   put pStr into tOut
+   replace "\" with "\\" in tOut
+   replace quote with ("\" & quote) in tOut
+   return tOut
+end oxQuoteEscape
+
+private function oxBytesToHex pData
+   -- Lowercase hex (high nibble first). H* unpacks the whole run. binaryDecode is
+   -- a FUNCTION (it returns the count decoded and fills the output variable, which
+   -- must already exist), so it must be called as a function; `get` discards the
+   -- count into `it` while tHex is filled.
+   local tHex
+   get binaryDecode("H*", pData, tHex)
+   return tHex
+end oxBytesToHex
+
+private function oxHexToBytes pHex
+   return binaryEncode("H*", pHex)
+end oxHexToBytes
+
+private function oxByteHex pNum
+   -- Two-digit hex for one byte value (for error messages).
+   return oxBytesToHex(numToByte(pNum))
+end oxByteHex
+
+private function oxHostOfSocket pSocketID
+   -- The HOST part of an engine socket id: "host:port", optionally with a
+   -- "|name" suffix (we mint "127.0.0.1:9050|oxs3" ourselves; an ACCEPTED id is
+   -- whatever the engine spells the PEER address as, so its shape is the
+   -- engine's choice, not ours).
+   --
+   -- This is security-critical input, not a display helper: oxPeerAccepted feeds
+   -- the result straight to oxHostIsLoopback, which decides whether an inbound
+   -- peer is let in. The obvious "item 1 with the itemDelimiter set to colon"
+   -- was wrong in BOTH directions on an IPv6 id, and one of those directions
+   -- FAILED OPEN:
+   --   "::1:54321"                -> item 1 is EMPTY, and the guard's old
+   --                                 empty-is-loopback branch accepted it;
+   --   "::ffff:203.0.113.9:1234"  -> item 1 is EMPTY too, so a ROUTABLE peer in
+   --                                 IPv4-mapped form was accepted as loopback;
+   --   "[::1]:54321"              -> item 1 is "[", so a real loopback peer was
+   --                                 refused (the harmless direction).
+   -- Parse by SHAPE instead, which also makes the guard's "::1" branch reachable
+   -- for the first time (it never could be: item 1 of anything containing a
+   -- colon cannot itself contain one):
+   --   1. drop any "|name" suffix - the name half is ours and never part of the
+   --      host, and it can carry digits that would otherwise look like a port;
+   --   2. a bracketed group IS the host, verbatim and unbracketed - the brackets
+   --      exist precisely to separate an IPv6 host's colons from the port colon,
+   --      and stripping them here means the guard sees ONE spelling of ::1;
+   --   3. otherwise the host is everything up to the LAST colon, which is right
+   --      for "127.0.0.1:9050" and for a bare "::1:54321" alike;
+   --   4. a colon-less id has no port to strip, so it is all host.
+   -- Anything this cannot make sense of comes back EMPTY, which oxHostIsLoopback
+   -- now REFUSES (it used to accept it); that is the fail-closed direction.
+   local tSaved, tRaw, tCut, tOut
+   put pSocketID into tRaw
+   put offset("|", tRaw) into tCut
+   if tCut > 0 then
+      delete char tCut to -1 of tRaw
+   end if
+   if char 1 of tRaw is "[" then
+      put offset("]", tRaw) into tCut
+      if tCut < 3 then
+         return empty              -- unclosed or empty brackets: not a host
+      end if
+      return char 2 to (tCut - 1) of tRaw
+   end if
+   if ":" is not in tRaw then
+      return tRaw
+   end if
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to ":"
+   -- `item 1 to -2` REJOINS its items with the delimiter, which is exactly what
+   -- a bare IPv6 host needs: the three empty/short items of "::1:54321" come
+   -- back as "::1", while "127.0.0.1:9050" comes back unchanged.
+   put item 1 to -2 of tRaw into tOut
+   set the itemDelimiter to tSaved
+   return tOut
+end oxHostOfSocket
+
+private function oxMethodOffered pMethod
+   -- sControlMethods is a comma list; force comma before testing membership.
+   local tSaved, tResult
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put (pMethod is among the items of sControlMethods) into tResult
+   set the itemDelimiter to tSaved
+   return tResult
+end oxMethodOffered
+
+private function oxStripWhitespace pStr
+   local tOut
+   put pStr into tOut
+   replace numToChar(10) with empty in tOut
+   replace numToChar(13) with empty in tOut
+   replace space with empty in tOut
+   replace tab with empty in tOut
+   return tOut
+end oxStripWhitespace
+
+private function oxTrim pStr
+   -- The `tOut is not empty` guard is essential: the empty string is "in" every
+   -- string, so without it an all-whitespace or empty input would loop forever
+   -- (the first/last char of empty is empty, which `is in` any charset).
+   local tOut, tWhite
+   put pStr into tOut
+   put space & tab & numToChar(10) & numToChar(13) into tWhite
+   repeat while tOut is not empty and (the first char of tOut) is in tWhite
+      delete the first char of tOut
+   end repeat
+   repeat while tOut is not empty and (the last char of tOut) is in tWhite
+      delete the last char of tOut
+   end repeat
+   return tOut
+end oxTrim
+
+private function oxZeroBytes pCount
+   local tOut, tI
+   put empty into tOut
+   repeat with tI = 1 to pCount
+      put numToByte(0) after tOut
+   end repeat
+   return tOut
+end oxZeroBytes
+
+private function oxProcessId
+   -- Best-effort current process id for __OwningControllerProcess (Mode B).
+   -- VERIFY the available accessor on your OXT build; empty is tolerated by tor.
+   return the processId
+end oxProcessId
+
+-- ---- onionxt/src/onion-httpd.livecodescript ----
+-- onion-httpd.livecodescript - a small, self-contained HTTP/1.1 server for Tor
+-- onion services, built ENTIRELY on OnionXT's accept loop (oxCreateService).
+--
+-- WHY this instead of the engine's HTTPD Library: LiveCode's built-in HTTPD
+-- Library is not present on every OpenXTalk engine (httpdStart raised "handler
+-- not found" on-engine). This module needs nothing but OnionXT, which already
+-- owns the socket, enforces loopback, and streams inbound bytes - the path the
+-- main demo proved works. So it runs wherever OnionXT runs.
+--
+-- USAGE (in an app that has `start using` onionxt.livecodescript AND this file):
+--   oxSetCallbackOwner the long id of me     -- your stack owns onStatus + routes
+--   oxSetStatusCallback "onStatus"
+--   oxhInit the long id of me                -- where your route handlers live
+--   oxhSetRoot "/path/to/site"               -- optional: serve static files
+--   oxhRoute "GET", "/hello", "myHello"      -- optional: a dynamic route
+--   ... oxConnectControl, and when authenticated:
+--   oxhServe 80, 8090                         -- publish an onion + serve HTTP on it
+-- A route handler:  command myHello pStream, pRequest ; oxhReply pStream, 200, "hi",
+--   "Content-Type: text/plain" ; end myHello
+--
+-- Public API: oxhInit / oxhServe / oxhSetRoot / oxhServeFiles / oxhRoute /
+-- oxhUnroute / oxhReply / oxhStop.
+-- It composes OnionXT (ox*); it adds no cryptography and owns no long-lived socket
+-- of its own (OnionXT does). Public API `oxhCamelCase`, matching the family style.
+
+constant kOxhCloseDelay = 500     -- ms to let the response flush before closing
+constant kOxhMaxRequest = 262144  -- refuse a request head bigger than 256 KB (abuse guard)
+
+local sOxhRoot        -- static-file root folder, or empty
+local sOxhAutoIndex   -- true: auto-generate a directory-listing page for folders
+local sOxhRoutes      -- array: (METHOD & space & path) -> handler name
+local sOxhReq         -- array: stream handle -> accumulated request bytes
+local sOxhServed      -- array: stream handle -> true once answered
+local sOxhOwner       -- object whose script holds the route handlers
+
+-- ==========================================================================
+-- Public API
+-- ==========================================================================
+
+command oxhInit pOwner
+   -- Remember where the app's route handlers live (default: the topStack).
+   put pOwner into sOxhOwner
+end oxhInit
+
+command oxhServe pVirtualPort, pLocalPort
+   -- Publish an onion and serve HTTP on it via OnionXT's accept loop (OnionXT owns
+   -- the socket and rejects non-loopback peers - the proven path). Point OnionXT's
+   -- peer callback at this module first, then create the service. Reports the
+   -- service handle through `the result` (an integer on success).
+   oxSetPeerCallback "oxhPeer"
+   oxCreateService pVirtualPort, pLocalPort
+   return the result
+end oxhServe
+
+command oxhSetRoot pFolder
+   -- Static-site mode: serve files from pFolder ("/" maps to /index.html); a folder
+   -- with no index.html is a 404 (no directory listing - the safe default for a
+   -- site). Empty disables static serving.
+   put oxhStripTrailingSlash(pFolder) into sOxhRoot
+   put false into sOxhAutoIndex
+end oxhSetRoot
+
+command oxhServeFiles pFolder
+   -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
+   -- directory-listing page (names and download links; no sizes, because
+   -- `the detailedFiles` is an OXT compile-time bad factor) for "/" and each
+   -- subfolder, so a visitor can browse and download without you writing an index.
+   -- A folder's own index.html, if present, still takes precedence over the listing.
+   put oxhStripTrailingSlash(pFolder) into sOxhRoot
+   put true into sOxhAutoIndex
+end oxhServeFiles
+
+command oxhRoute pMethod, pPath, pHandler
+   -- Register a dynamic route (exact path match in v1). pHandler is a command in
+   -- the owner's script, called as: pHandler pStream, pRequest.
+   put pHandler into sOxhRoutes[toUpper(pMethod) & space & pPath]
+end oxhRoute
+
+command oxhUnroute pMethod, pPath
+   -- Remove a route registered with oxhRoute. Lets an app switch what a path serves
+   -- at runtime (e.g. drop the "/" route so a shared folder's listing shows there
+   -- instead). Removing an unregistered route is a harmless no-op.
+   delete variable sOxhRoutes[toUpper(pMethod) & space & pPath]
+end oxhUnroute
+
+command oxhStop pService
+   -- Tear down one served onion (DEL_ONION + stop OnionXT's listener).
+   oxRemoveService pService
+end oxhStop
+
+command oxhReply pStream, pCode, pBodyText, pHeaders
+   -- Send a text response (HTML, JSON, plain) from a route handler. pBodyText is
+   -- TEXT; it is UTF-8 encoded and its exact byte length becomes Content-Length.
+   oxhSendBytes pStream, pCode, textEncode(pBodyText, "UTF-8"), pHeaders
+end oxhReply
+
+-- ==========================================================================
+-- OnionXT callbacks (public: reached through the message path). OnionXT has
+-- already enforced loopback before oxhPeer fires.
+-- ==========================================================================
+
+command oxhPeer pStream, pService, pPeerAddr
+   oxSetStreamCallback pStream, "oxhStream"
+   put empty into sOxhReq[pStream]
+   put false into sOxhServed[pStream]
+end oxhPeer
+
+command oxhStream pStream, pEvent, pData
+   if pEvent is "data" then
+      if sOxhServed[pStream] is true then
+         exit oxhStream           -- already answered; ignore the rest of the request
+      end if
+      put pData after sOxhReq[pStream]
+      if the number of bytes of sOxhReq[pStream] > kOxhMaxRequest then
+         put true into sOxhServed[pStream]
+         delete variable sOxhReq[pStream]     -- free the buffer now; do not hold it
+         oxhSendBytes pStream, 413, textEncode("Request too large", "UTF-8"), "Content-Type: text/plain"
+         exit oxhStream
+      end if
+      if oxhRequestComplete(sOxhReq[pStream]) then
+         put true into sOxhServed[pStream]
+         oxhHandle pStream, sOxhReq[pStream]
+         delete variable sOxhReq[pStream]
+      end if
+   else if pEvent is "closed" or pEvent is "error" then
+      delete variable sOxhReq[pStream]
+      delete variable sOxhServed[pStream]
+   end if
+end oxhStream
+
+-- ==========================================================================
+-- Request framing and parsing. Byte discipline on the raw request; text ops only
+-- on the decoded (ASCII) header block.
+-- ==========================================================================
+
+private function oxhHeaderEnd pData
+   -- 1-indexed byte position of the first CR of the CRLFCRLF that ends the header
+   -- block, or 0 if not present yet. No char/line on binary (gotcha): scan bytes.
+   -- Bytes go into locals so the match is a single-line `if` (the static gate does
+   -- not join `\` continuations, and a long condition would look unbalanced).
+   local tN, tI, tB1, tB2, tB3, tB4
+   put the number of bytes of pData into tN
+   if tN < 4 then
+      return 0
+   end if
+   repeat with tI = 1 to tN - 3
+      put byteToNum(byte tI of pData) into tB1
+      if tB1 is 13 then
+         put byteToNum(byte (tI + 1) of pData) into tB2
+         put byteToNum(byte (tI + 2) of pData) into tB3
+         put byteToNum(byte (tI + 3) of pData) into tB4
+         if tB2 is 10 and tB3 is 13 and tB4 is 10 then
+            return tI
+         end if
+      end if
+   end repeat
+   return 0
+end oxhHeaderEnd
+
+private function oxhRequestComplete pData
+   local tHeadEnd, tHeaders, tContentLen, tBodyStart, tHave
+   put oxhHeaderEnd(pData) into tHeadEnd
+   if tHeadEnd is 0 then
+      return false             -- headers not fully received yet
+   end if
+   put oxhParseHeaders(byte 1 to (tHeadEnd - 1) of pData) into tHeaders
+   put tHeaders["content-length"] into tContentLen
+   if tContentLen is empty or tContentLen is not an integer then
+      return true              -- no declared body (typical GET)
+   end if
+   put tHeadEnd + 4 into tBodyStart
+   put (the number of bytes of pData) - tBodyStart + 1 into tHave
+   return (tHave >= tContentLen)
+end oxhRequestComplete
+
+private function oxhParseHeaders pHeaderBytes
+   -- pHeaderBytes is the ASCII header block (request line + header lines, no body).
+   -- Returns an array: lowercased header names -> values, plus __method / __path /
+   -- __query / __resource from the request line. Save and restore the delimiters.
+   local tText, tSavedLD, tSavedID, tReqLine, tRes, tI, tLine, tColon, tName, tValue, tOut
+   put textDecode(pHeaderBytes, "UTF-8") into tText     -- headers are ASCII
+   put the lineDelimiter into tSavedLD
+   put the itemDelimiter into tSavedID
+   set the lineDelimiter to (numToChar(13) & numToChar(10))
+   put line 1 of tText into tReqLine
+   put word 1 of tReqLine into tOut["__method"]
+   put word 2 of tReqLine into tOut["__resource"]
+   set the itemDelimiter to "?"
+   put item 1 of tOut["__resource"] into tOut["__path"]
+   if the number of items of tOut["__resource"] > 1 then
+      put item 2 to -1 of tOut["__resource"] into tOut["__query"]
+   end if
+   repeat with tI = 2 to the number of lines of tText
+      put line tI of tText into tLine
+      if tLine is empty then
+         next repeat
+      end if
+      put offset(":", tLine) into tColon
+      if tColon > 1 then
+         put toLower(oxhTrim(char 1 to (tColon - 1) of tLine)) into tName
+         put oxhTrim(char (tColon + 1) to -1 of tLine) into tValue
+         put tValue into tOut[tName]
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLD
+   set the itemDelimiter to tSavedID
+   return tOut
+end oxhParseHeaders
+
+-- ==========================================================================
+-- Routing: a registered route, else a static file, else 404.
+-- ==========================================================================
+
+private command oxhHandle pStream, pData
+   local tHeadEnd, tHeaders, tKey, tBodyStart, tContentLen, tBodyEnd
+   put oxhHeaderEnd(pData) into tHeadEnd
+   put oxhParseHeaders(byte 1 to (tHeadEnd - 1) of pData) into tHeaders
+   -- Attach the raw body bytes for a POST handler, CAPPED to the declared
+   -- Content-Length. Without the cap, trailing or pipelined bytes in the same read
+   -- would bleed into __body and a form/upload route would parse the next request
+   -- as part of this body.
+   put tHeadEnd + 4 into tBodyStart
+   put tHeaders["content-length"] into tContentLen
+   if tContentLen is an integer and tContentLen > 0 and (the number of bytes of pData) >= tBodyStart then
+      put tBodyStart + tContentLen - 1 into tBodyEnd
+      if tBodyEnd > the number of bytes of pData then
+         put the number of bytes of pData into tBodyEnd   -- defensive clamp
+      end if
+      put byte tBodyStart to tBodyEnd of pData into tHeaders["__body"]
+   else
+      put empty into tHeaders["__body"]
+   end if
+   put toUpper(tHeaders["__method"]) & space & tHeaders["__path"] into tKey
+   if sOxhRoutes[tKey] is not empty then
+      dispatch sOxhRoutes[tKey] to oxhOwnerObject() with pStream, tHeaders
+      exit oxhHandle
+   end if
+   if sOxhRoot is not empty and tHeaders["__method"] is "GET" then
+      oxhServeStatic pStream, tHeaders["__path"]
+      exit oxhHandle
+   end if
+   oxhSendBytes pStream, 404, textEncode("Not found", "UTF-8"), "Content-Type: text/plain; charset=utf-8"
+end oxhHandle
+
+private command oxhServeStatic pStream, pRawPath
+   local tPath, tFile, tIndex
+   put urlDecode(pRawPath) into tPath        -- %20 etc. -> real chars for disk mapping
+   if tPath is empty then
+      put "/" into tPath
+   end if
+   -- Path-traversal guard AFTER decoding (catches %2e%2e), before touching disk.
+   if ".." is in tPath then
+      oxhSendBytes pStream, 403, textEncode("Forbidden", "UTF-8"), "Content-Type: text/plain; charset=utf-8"
+      exit oxhServeStatic
+   end if
+   put sOxhRoot & tPath into tFile
+   if there is a folder tFile then
+      -- A folder URL must end in "/" so relative links in the listing resolve;
+      -- redirect if it does not (send the browser back with the slash added).
+      if the last char of tPath is not "/" then
+         oxhSendBytes pStream, 301, empty, "Location: " & pRawPath & "/"
+         exit oxhServeStatic
+      end if
+      put tFile & "index.html" into tIndex    -- tFile ends with "/" here
+      if there is a file tIndex then
+         oxhSendFile pStream, tIndex, "index.html"
+      else if sOxhAutoIndex is true then
+         oxhSendBytes pStream, 200, textEncode(oxhListingHtml(tFile, tPath), "UTF-8"), "Content-Type: text/html; charset=utf-8"
+      else
+         oxhSendBytes pStream, 404, textEncode("Not found", "UTF-8"), "Content-Type: text/plain; charset=utf-8"
+      end if
+      exit oxhServeStatic
+   end if
+   if there is a file tFile then
+      oxhSendFile pStream, tFile, tPath
+      exit oxhServeStatic
+   end if
+   oxhSendBytes pStream, 404, textEncode("Not found", "UTF-8"), "Content-Type: text/plain; charset=utf-8"
+end oxhServeStatic
+
+private command oxhSendFile pStream, pDiskPath, pForMime
+   -- Read a file as bytes and serve it with a MIME type from pForMime's extension.
+   local tContent
+   put url ("binfile:" & pDiskPath) into tContent
+   if the result is not empty then
+      oxhSendBytes pStream, 404, textEncode("Not found", "UTF-8"), "Content-Type: text/plain; charset=utf-8"
+      exit oxhSendFile
+   end if
+   oxhSendBytes pStream, 200, tContent, "Content-Type: " & oxhMimeType(pForMime)
+end oxhSendFile
+
+private function oxhListingHtml pDiskFolder, pUrlPath
+   -- Build a directory-listing page for pDiskFolder (a disk path ending in "/"),
+   -- served at pUrlPath (a URL path ending in "/"). Uses `the files` / `the folders`
+   -- (portable; `the detailedFiles` is not recognized on every OXT engine and is a
+   -- compile-time "bad factor" there). Names are HTML-escaped (a file named
+   -- "<script>" cannot inject) and path-encoded for the hrefs; links are relative
+   -- to pUrlPath, so a subfolder link browses in and ".." goes up.
+   local tSaved, tFiles, tFolders, tName, tOut
+   put the defaultFolder into tSaved
+   set the defaultFolder to pDiskFolder
+   put the files into tFiles
+   put the folders into tFolders
+   set the defaultFolder to tSaved
+   put "<!doctype html><html><head><meta charset='utf-8'><title>Shared files</title>" into tOut
+   put "<style>body{font-family:system-ui,sans-serif;max-width:44em;margin:2em auto;padding:0 1em}h1{font-size:1.2em}ul{list-style:none;padding:0}li{padding:.3em 0;border-bottom:1px solid #eee}a{text-decoration:none}</style>" after tOut
+   put "</head><body><h1>Shared files: " & oxhHtmlEscape(pUrlPath) & "</h1><ul>" after tOut
+   if pUrlPath is not "/" then
+      put "<li><a href='../'>.. (up)</a></li>" after tOut
+   end if
+   repeat for each line tName in tFolders
+      if tName is "." or tName is ".." then
+         next repeat
+      end if
+      put "<li><a href='" & oxhPathEncode(tName) & "/'>" & oxhHtmlEscape(tName) & "/</a></li>" after tOut
+   end repeat
+   repeat for each line tName in tFiles
+      if tName is empty then
+         next repeat
+      end if
+      put "<li><a href='" & oxhPathEncode(tName) & "'>" & oxhHtmlEscape(tName) & "</a></li>" after tOut
+   end repeat
+   put "</ul></body></html>" after tOut
+   return tOut
+end oxhListingHtml
+
+-- ==========================================================================
+-- Response building. The proven demo pattern: exact BYTE Content-Length,
+-- Connection: close, then a delayed close so the write flushes cleanly.
+-- ==========================================================================
+
+private command oxhSendBytes pStream, pCode, pBodyBytes, pHeaders
+   local tCrlf, tResp
+   put (numToChar(13) & numToChar(10)) into tCrlf
+   put "HTTP/1.1 " & pCode & space & oxhReason(pCode) & tCrlf into tResp
+   if pHeaders is not empty then
+      put oxhNormalizeHeaders(pHeaders) after tResp
+   end if
+   put "Content-Length: " & (the number of bytes of pBodyBytes) & tCrlf after tResp
+   put "Connection: close" & tCrlf after tResp
+   put tCrlf after tResp
+   oxWrite pStream, (textEncode(tResp, "UTF-8") & pBodyBytes)
+   send ("oxhClose " & pStream) to me in kOxhCloseDelay milliseconds
+end oxhSendBytes
+
+command oxhClose pStream
+   -- Deferred, idempotent close of a served connection (public: reached via send).
+   -- Clear BOTH per-stream tables here as the catch-all: oxCloseStream removes the
+   -- OnionXT stream, so no later socketClosed/"closed" event will arrive to clean
+   -- the HTTP state, and every response path (200/404/413/301/...) routes through
+   -- oxhSendBytes which schedules this. A double-delete on the normal path is a
+   -- harmless no-op.
+   oxCloseStream pStream
+   delete variable sOxhReq[pStream]
+   delete variable sOxhServed[pStream]
+end oxhClose
+
+private function oxhNormalizeHeaders pHeaders
+   -- Turn caller headers ("Name: value", LF- or CRLF-separated) into CRLF lines,
+   -- dropping any Content-Length / Connection (this module sets those).
+   local tCrlf, tSaved, tI, tLine, tOut, tLow
+   put (numToChar(13) & numToChar(10)) into tCrlf
+   put the lineDelimiter into tSaved
+   set the lineDelimiter to lf
+   put empty into tOut
+   repeat with tI = 1 to the number of lines of pHeaders
+      put line tI of pHeaders into tLine
+      if the last char of tLine is (numToChar(13)) then
+         delete the last char of tLine   -- tolerate CRLF-separated input
+      end if
+      if tLine is empty then
+         next repeat
+      end if
+      put toLower(tLine) into tLow
+      if tLow begins with "content-length" or tLow begins with "connection" then
+         next repeat
+      end if
+      put tLine & tCrlf after tOut
+   end repeat
+   set the lineDelimiter to tSaved
+   return tOut
+end oxhNormalizeHeaders
+
+-- ==========================================================================
+-- Small helpers.
+-- ==========================================================================
+
+private function oxhMimeType pPath
+   local tSaved, tExtn
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to "."
+   put toLower(the last item of pPath) into tExtn
+   set the itemDelimiter to tSaved
+   if tExtn is "html" or tExtn is "htm" then
+      return "text/html; charset=utf-8"
+   else if tExtn is "css" then
+      return "text/css; charset=utf-8"
+   else if tExtn is "js" then
+      return "application/javascript; charset=utf-8"
+   else if tExtn is "json" then
+      return "application/json; charset=utf-8"
+   else if tExtn is "txt" then
+      return "text/plain; charset=utf-8"
+   else if tExtn is "png" then
+      return "image/png"
+   else if tExtn is "jpg" or tExtn is "jpeg" then
+      return "image/jpeg"
+   else if tExtn is "gif" then
+      return "image/gif"
+   else if tExtn is "svg" then
+      return "image/svg+xml"
+   else if tExtn is "ico" then
+      return "image/x-icon"
+   else if tExtn is "wasm" then
+      return "application/wasm"
+   else if tExtn is "pdf" then
+      return "application/pdf"
+   end if
+   return "application/octet-stream"
+end oxhMimeType
+
+private function oxhReason pCode
+   if pCode is 200 then
+      return "OK"
+   else if pCode is 204 then
+      return "No Content"
+   else if pCode is 301 then
+      return "Moved Permanently"
+   else if pCode is 302 then
+      return "Found"
+   else if pCode is 400 then
+      return "Bad Request"
+   else if pCode is 403 then
+      return "Forbidden"
+   else if pCode is 404 then
+      return "Not Found"
+   else if pCode is 405 then
+      return "Method Not Allowed"
+   else if pCode is 413 then
+      return "Payload Too Large"
+   else if pCode is 500 then
+      return "Internal Server Error"
+   end if
+   return "OK"
+end oxhReason
+
+private function oxhTrim pText
+   -- Strip leading/trailing spaces and tabs. Guard the empty-string-is-in trap.
+   local tOut, tTab
+   put pText into tOut
+   put numToChar(9) into tTab
+   repeat while tOut is not empty and (the first char of tOut is space or the first char of tOut is tTab)
+      delete the first char of tOut
+   end repeat
+   repeat while tOut is not empty and (the last char of tOut is space or the last char of tOut is tTab)
+      delete the last char of tOut
+   end repeat
+   return tOut
+end oxhTrim
+
+private function oxhOwnerObject
+   if sOxhOwner is not empty then
+      return sOxhOwner
+   end if
+   return the topStack
+end oxhOwnerObject
+
+private function oxhStripTrailingSlash pFolder
+   local tOut
+   put pFolder into tOut
+   if tOut is not empty and (the last char of tOut is "/" or the last char of tOut is "\") then
+      delete the last char of tOut
+   end if
+   return tOut
+end oxhStripTrailingSlash
+
+private function oxhPathEncode pName
+   -- Encode a name for a URL PATH segment. urlEncode uses "+" for space (form
+   -- style); a path wants "%20", so fix that up.
+   local tEnc
+   put urlEncode(pName) into tEnc
+   replace "+" with "%20" in tEnc
+   return tEnc
+end oxhPathEncode
+
+private function oxhHtmlEscape pText
+   -- Escape a value for HTML text/attribute context so a crafted file name cannot
+   -- inject markup. `&` first, then the rest.
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   return tOut
+end oxhHtmlEscape
+
+-- <<< END EMBEDDED LIBRARIES <<<
+
 constant kPollMs = 250
 constant kPollLiveMs = 33
 constant kPaintMs = 250
@@ -989,7 +6969,7 @@ command raProbe
       -- library absent; reported below
    end try
    if sHaveLib is not "true" then
-      uiStatus "Riptide library NOT in the message path: start using stack" && quote & "riptide" & quote & ".", "bad"
+      uiStatus "Riptide library missing. It is EMBEDDED in this demo, so this means the embedded copy is damaged - re-paste the whole file, or run tools/sync-demo-embeds.py.", "bad"
    else if sCaps["canCrypto"] is not true then
       uiStatus "SodiumXT missing, and identity cannot exist without it: install org.openxtalk.library.sodium.", "bad"
    else if sCaps["hasTorrent"] is not true then

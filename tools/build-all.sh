@@ -171,11 +171,7 @@ run_gates() {
   fi
   # Generated-standalone freshness (onionxt): the committed standalones must
   # match what the generator would emit from the current sources.
-  if [ -f "$m/tools/build-standalone.py" ]; then
-    echo "== $m: tools/build-standalone.py --check =="
-    ( cd "$m" && python3 tools/build-standalone.py --check )
-  fi
-  # Embedded-Kit freshness (box2dxt): the same shape as build-standalone.py
+  # Embedded-Kit freshness (box2dxt): the same shape as sync-demo-embeds.py
   # above - src/box2dxt-kit.livecodescript is the master, and each of the six
   # example stacks carries a verbatim copy between sentinels so it stays
   # paste-and-run. Its docstring has always said "--check exits non-zero ... so
@@ -413,7 +409,7 @@ fi
 # harness. If a member's tests change and nobody rebuilds, the file a maintainer
 # pastes into an engine is no longer the one the sources describe - and it will
 # still run, and still go green, about code that moved. Same failure and same
-# gate shape as onionxt's build-standalone.py.
+# gate shape as tools/sync-demo-embeds.py.
 if [ -f tools/build-suite-selftest.py ]; then
   echo "== suite: tools/build-suite-selftest.py --check =="
   python3 tools/build-suite-selftest.py --check
@@ -429,6 +425,14 @@ fi
 # shims - so it goes stale at the next ABI bump exactly as the suite harness
 # goes stale on a test change. --check re-derives them and re-proves the three
 # invariants the generated stack depends on.
+# Every demo carries the script libraries it needs, so a reader can paste one
+# file and have it run - no `start using` wiring. The sources under <member>/src
+# stay the single source of truth; this proves the copies inside the demos have
+# not drifted from them.
+if [ -f tools/sync-demo-embeds.py ]; then
+  echo "== suite: tools/sync-demo-embeds.py --check =="
+  python3 tools/sync-demo-embeds.py --check
+fi
 if [ -f tools/build-preflight.py ]; then
   echo "== suite: tools/build-preflight.py --check =="
   python3 tools/build-preflight.py --check

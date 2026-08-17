@@ -34,15 +34,16 @@ ROOT = os.path.dirname(HERE)
 LAUNCHER = os.path.join(ROOT, "start-here.livecodescript")
 
 # adopter -> the file the launcher offers instead, with the reason
+#
+# THE TWO ONIONXT ENTRIES ARE GONE (2026-08-17), and their absence is the
+# point. They mapped onionxt-demo -> onionxt-demo-standalone and spike ->
+# standalone, because the demo needed `start using` wiring and only the
+# GENERATED twin could be pasted and run. That is exactly the confusion the
+# demo-embed pass removed: every demo now carries the script libraries it
+# needs (tools/sync-demo-embeds.py), so the demo IS the launchable artifact
+# and there is no twin to redirect to. Both generated standalones and the
+# generator that produced them were retired in the same change.
 LAUNCH_AS = {
-    os.path.join("onionxt", "examples", "onionxt-demo.livecodescript"):
-        (os.path.join("onionxt", "examples",
-                      "onionxt-demo-standalone.livecodescript"),
-         "the generated all-in-one needs no start-using setup"),
-    os.path.join("onionxt", "examples", "onion-httpd", "spike.livecodescript"):
-        (os.path.join("onionxt", "examples", "onion-httpd",
-                      "standalone.livecodescript"),
-         "the generated all-in-one needs no start-using setup"),
     os.path.join("tests", "suite-selftest.core.livecodescript"):
         (os.path.join("tests", "suite-selftest.livecodescript"),
          "the core is a build input; the generated fold is what runs"),
