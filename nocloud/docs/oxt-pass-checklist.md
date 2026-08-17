@@ -163,7 +163,7 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 - [ ] From a page on a *different* origin, a preflighted `fetch` (`PUT`, or `POST` with a custom
       header) to a `cors` route **succeeds** (the browser does not block it).
 
-## 6. Editor login throttle (LAN editor enabled + cryptoXT present)
+## 6. Editor login throttle (LAN editor enabled + SodiumXT present)
 
 - [ ] Editor **off by default**; `/_edit` -> `404` to a Tor/public visitor.
 - [ ] Several wrong passwords in a row -> `429` with a **`Retry-After:` header** whose seconds
@@ -219,7 +219,7 @@ Inspect the raw headers on any file response (curl `-I`, or the webapp Backend i
 
 ## 8. Fail-closed extensions & clean shutdown
 
-- [ ] Without **cryptoXT** -> encryption / editor / Tor off with a clear message; Share-code and
+- [ ] Without **SodiumXT** -> encryption / editor / Tor off with a clear message; Share-code and
       Web-link still work.
 - [ ] Without **OnionXT** -> Private/Tor path off; the other two work.
 - [ ] Quit via window close **and** via a standalone Cmd-Q -> `qsStop` runs (session stops, Tor
@@ -236,7 +236,7 @@ S2's item **7** the Tor half), and a half-finished pass that reports only its fa
 cannot be told apart from one that never reached those items at all. `PASS` = every item in the
 section passed; `FAIL` = at least one did not (the failure itself goes in Results below);
 `PARTIAL` = some items were not reached — say which; `SKIP` = the whole section was out of reach
-(no Tor daemon, no second machine, cryptoXT absent).
+(no Tor daemon, no second machine, SodiumXT absent).
 
 ```
 0.  Build & smoke                    ____      4.  Response headers & HTTP    ____

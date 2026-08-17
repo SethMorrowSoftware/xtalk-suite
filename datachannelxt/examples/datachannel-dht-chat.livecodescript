@@ -89,7 +89,6 @@ script "DataChannelDhtChat"
 -- and locals by lexical position.
 
 -- ---- datachannelxt/examples/datachannel-helpers.livecodescript ----
-script "dataChannelHelpers"
 
 -- datachannel-helpers.livecodescript - the script-side poll dispatcher and
 -- sugar for DataChannelXT. Insert this script into the message path (e.g.

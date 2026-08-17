@@ -57,7 +57,6 @@ script "coinXTDemo"
 -- and locals by lexical position.
 
 -- ---- coinxt/src/coinxt.livecodescript ----
-script "coinxt"
 
 -- coinxt.livecodescript - the CoinXT script layer (phase 3: encodings and
 -- addresses; phase 4: BIP-39 mnemonics and BIP-32 HD derivation; phase 5:

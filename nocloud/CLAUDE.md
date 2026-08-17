@@ -6,7 +6,7 @@ override default behavior; follow them exactly.**
 
 This is the operational as-built record and the hard-won-lesson list for **No Cloud
 Quick Share**, in the same spirit as the `CLAUDE.md` files in the sibling OpenXTalk
-extensions it is built on (TorrentXT, cryptoXT/SodiumXT, OnionXT, and their
+extensions it is built on (TorrentXT, SodiumXT/SodiumXT, OnionXT, and their
 ancestors Box2Dxt and ShowControl). Most rules below were earned at the cost of a
 runtime error, a crash, or a silent misbehavior — several of them in this app.
 
@@ -91,8 +91,8 @@ The app is a **binding consumer**: it calls into prebuilt OXT extensions. It doe
 | Extension | Library id | Handlers | Required? | Without it |
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | **REQUIRED** | no session; the app cannot run |
-| **cryptoXT** (SodiumXT) | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor (see below) — everything else works |
-| **OnionXT** | (Tor onion transport) | `ox*` | optional | no "Private / Tor" path; the other two work. Needs cryptoXT **and** a local Tor daemon |
+| **SodiumXT** (SodiumXT) | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor (see below) — everything else works |
+| **OnionXT** | (Tor onion transport) | `ox*` | optional | no "Private / Tor" path; the other two work. Needs SodiumXT **and** a local Tor daemon |
 | Internet library (libURL) | — | `load URL` | optional | only the public-IP lookup on the web-link path; harmless if absent (try-guarded) |
 
 **The fail-closed rule (non-negotiable).** Every optional-extension call site is
@@ -102,14 +102,14 @@ boolean and never calls a guarded handler outside its guard or a `try`:
 - `qsCanEncrypt()` → `sCanEncrypt` — a guarded `sxSecretBox`/`sxSecretBoxOpen`
   round-trip. Gates every `sx*` call.
 - `qsHasOnion()` → `sHasOnion` — requires `sCanEncrypt` first (OnionXT depends on
-  cryptoXT), then a guarded `oxVersion()`. Gates every `ox*` call.
+  SodiumXT), then a guarded `oxVersion()`. Gates every `ox*` call.
 - `sTorReady` / `qsOnionReadyNow()` (`oxIsReady()`) — the Tor daemon's **live**
   bootstrap state, cached by a callback but **re-checked at the moment of use**.
   Never trust the cached live flag for a go/no-go decision.
 
 When a dependency is missing the affected feature reports a clear "install
 org.openxtalk.library.sodium" / "install OnionXT + a local Tor daemon" message and
-**every other feature keeps working**. This is the pattern cryptoXT taught the
+**every other feature keeps working**. This is the pattern SodiumXT taught the
 family; do not break it.
 
 ## The three safety rules (inherited, and why they still bind here)
@@ -203,9 +203,9 @@ rule and not a hedge.
    listener, and deletes temp `.enc` files. Don't add a teardown that only runs on
    `closeStack`.
 
-## The optional-extension / encryption discipline (cryptoXT)
+## The optional-extension / encryption discipline (SodiumXT)
 
-Encryption is **cryptoXT (libsodium)**, never OXT's built-in `encrypt using
+Encryption is **SodiumXT (libsodium)**, never OXT's built-in `encrypt using
 "aes-256-cbc"`. The flow: a passphrase derives a key with **Argon2id** (`sxPwHash`),
 files are sealed with **`sxEncryptFile`** (streaming `crypto_secretstream`,
 authenticated — truncation is detected on decrypt), and small tokens/verifiers with
@@ -289,7 +289,7 @@ The app is standalone-ready:
 - The UI self-builds every launch (nothing needs to persist in the stackfile).
 - Downloads land in `Documents/No Cloud Quick Share` on every platform.
 - In the standalone builder: include **org.openxtalk.library.torrent** (required),
-  and **org.openxtalk.library.sodium** (cryptoXT) + **OnionXT** for the optional
+  and **org.openxtalk.library.sodium** (SodiumXT) + **OnionXT** for the optional
   encryption / Tor features — both fail closed when absent. Include the **Internet
   library** for the (try-guarded) public-IP lookup. No other inclusions, externals,
   or native resources are needed. See `docs/building-a-standalone.md`.

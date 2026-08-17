@@ -23,14 +23,14 @@ safe" always means "safe against whom".
 Carried verbatim from the plan (section 7.1), because it is the sentence every
 other claim must stay consistent with:
 
-> Model C hides WHERE (both IPs) and, composed with cryptoXT, WHAT and
+> Model C hides WHERE (both IPs) and, composed with SodiumXT, WHAT and
 > authenticates WHO. It does not hide WHEN, HOW MUCH, or THAT-you-use-Tor, and
 > plaintext-anon does not authenticate the sender.
 
 ## Adversary tiers
 
 "Defeated" below means: by design, assuming the invariants in this page hold;
-see the status note. "Passphrase" means the optional cryptoXT layer (Argon2id
+see the status note. "Passphrase" means the optional SodiumXT layer (Argon2id
 key derivation, `crypto_secretstream` file sealing, the sealed verifier in the
 share code).
 

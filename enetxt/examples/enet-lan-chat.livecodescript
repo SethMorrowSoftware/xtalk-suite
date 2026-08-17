@@ -47,7 +47,6 @@ script "EnetLanChat"
 -- and locals by lexical position.
 
 -- ---- enetxt/examples/enet-helpers.livecodescript ----
-script "enetHelpers"
 
 -- enet-helpers.livecodescript - the script-side poll dispatcher and sugar for
 -- enetxt. Insert this script into the message path (e.g. `start using stack

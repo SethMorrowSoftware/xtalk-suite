@@ -121,6 +121,39 @@ def names(text):
     return handlers, decls
 
 
+SCRIPT_HEADER = re.compile(r'^script\s+"[^"]*"[^\n]*\n', re.M)
+
+
+def strip_script_header(text, rel):
+    """Drop a provider's leading `script "Name"` line before embedding it.
+
+    THIS IS THE BUG THAT SHIPPED AND CAME BACK FROM AN ENGINE (2026-08-17).
+    Four of the six providers open with one - enet-helpers, datachannel-helpers,
+    coinxt, riptide - and embedding them verbatim put a SECOND `script "..."`
+    line into the middle of a demo that already had its own on line 1. The
+    engine does not treat that as decoration: everything after it lands outside
+    the scope the demo's own declarations are in, so a perfectly ordinary
+    `local sPeers` near the top stops resolving by the time a handler nine
+    hundred lines down reads it. The reported symptom was
+    `Chunk: error in object expression` on `the number of keys of sPeers` -
+    LiveCodeScript had evaluated the undeclared name to the literal text
+    "sPeers" and then tried to read a chunk out of it, which is the same
+    undeclared-name failure mode this tree keeps meeting in new clothes.
+
+    The name is meaningful only when the file IS its own stack. Inside an
+    embed it is not just redundant, it is wrong - so it comes off, and
+    build_block asserts below that none survived.
+
+    The collision check could never have caught this: the two names did not
+    clash, and nothing about them is a duplicate DEFINITION. It is a structural
+    marker, not an identifier, which is why it needed its own rule."""
+    stripped, n = SCRIPT_HEADER.subn("", text, count=1)
+    if n and not SCRIPT_HEADER.match(text):
+        # only strip it when it is genuinely the file's opening line
+        return text
+    return stripped
+
+
 def read(rel):
     with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
         return fh.read()
@@ -140,7 +173,7 @@ def build_block(demo_rel, provider_rels, demo_text):
            "-- and locals by lexical position.",
            ""]
     for rel in provider_rels:
-        text = read(rel)
+        text = strip_script_header(read(rel), rel)
         ph, pd = names(text)
         clash_h, clash_d = seen_h & ph, seen_d & pd
         if clash_h or clash_d:
@@ -156,7 +189,15 @@ def build_block(demo_rel, provider_rels, demo_text):
         out.append(text.rstrip("\n"))
         out.append("")
     out.append(END)
-    return "\n".join(out)
+    block = "\n".join(out)
+    stray = [ln for ln in block.split("\n") if re.match(r'^script\s+"', ln)]
+    if stray:
+        raise SystemExit(
+            f"sync-demo-embeds: {demo_rel}: a provider's `script \"...\"` header "
+            f"survived into the embed ({stray[0]!r}). A second script-name line "
+            "mid-file puts everything after it outside the demo's own "
+            "declaration scope - see strip_script_header.")
+    return block
 
 
 def splice(demo_text, block):

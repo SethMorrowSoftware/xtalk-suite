@@ -206,7 +206,7 @@ as an opaque `pConn` and replies via `qsHttpReply` (§1.3).
   exist" — no `.git`/`.env`/editor-dropping leak). Decodes `%xx` before the disk touch.
 - **Editor** (`qsEdit*`, OFF by default): every route gates on `qsEditReachable`
   (`qsEditIsLocal` reads the **TCP peer address**, never a header; Tor is always remote →
-  refused) **then** an Argon2id password (`qsEditAuthed`, needs cryptoXT — **fails closed**
+  refused) **then** an Argon2id password (`qsEditAuthed`, needs SodiumXT — **fails closed**
   without it). A Tor/public visitor gets `404` and never learns the editor exists. Writes
   are confined by `qsEditSafePath` (lexical: rejects `..`, `:`, control bytes; rebuilds
   from clean segments; **symlink caveat** is documented).
@@ -226,7 +226,7 @@ as an opaque `pConn` and replies via `qsHttpReply` (§1.3).
    RAM.
 2. **Smuggling-aware framing** — `__dupcl`, chunked refusal, the `__`-namespace guard, the
    256 KB cap, and framing-before-dispatch are more than most hand-rolled servers do.
-3. **Fail-closed everywhere** — no cryptoXT ⇒ no editor; no OnionXT ⇒ no Tor; each probed
+3. **Fail-closed everywhere** — no SodiumXT ⇒ no editor; no OnionXT ⇒ no Tor; each probed
    once and guarded.
 4. **Privacy-first defaults** — dotfiles are `404`, the editor is invisible off-LAN, no
    request/response logging leaves the machine, `Cache-Control: no-cache` suits a
@@ -408,7 +408,7 @@ invisible (`404`) to Tor/public — identical trust model to the existing editor
 |---|---|---|---|
 | `GET /.well-known/security.txt` | Standard security-contact/disclosure file (from a sharer-set value or a sane default). | Public. Priv: note — it lives under a dot-segment, which the static path hides; serve it via a **route**, not the static tree. | S / low |
 | `GET /_qs/integrity/:path` | Per-file `{size, sha256, mime}` — the single-file companion to `/_qs/hashes`, cheap to compute on demand. | Public. Priv: none new. | S / med |
-| `POST /_qs/verify-passphrase` | For the encrypted path: a challenge that confirms the visitor's passphrase is correct **before** any ciphertext download, using the existing cryptoXT verifier shape (`BTXQS1:`-style authenticator). Mirrors the "verify up front" rule. | Public but **cryptoXT-gated** (fails closed). Priv: reveals only correct/incorrect, never the key. Must reuse the versioned marker discipline. | M / med |
+| `POST /_qs/verify-passphrase` | For the encrypted path: a challenge that confirms the visitor's passphrase is correct **before** any ciphertext download, using the existing SodiumXT verifier shape (`BTXQS1:`-style authenticator). Mirrors the "verify up front" rule. | Public but **SodiumXT-gated** (fails closed). Priv: reveals only correct/incorrect, never the key. Must reuse the versioned marker discipline. | M / med |
 | `GET /_qs/encrypted` | Boolean: is this share end-to-end encrypted? Lets a client show a lock badge honestly. (Could just be a field in `/_qs/info`.) | Public. Priv: a boolean. | S / low |
 
 ---
@@ -484,7 +484,7 @@ duplication debt **before** it's multiplied by new endpoints; Phases 3–5 build
 - **Two gates + OXT pass.** Mirror every new pure-logic helper in the golden; claim only
   "verified statically; needs an OXT pass" for anything you can't observe on a running
   engine.
-- **Fail-closed.** Anything touching cryptoXT (`sx*`) or OnionXT (`ox*`) is probed once and
+- **Fail-closed.** Anything touching SodiumXT (`sx*`) or OnionXT (`ox*`) is probed once and
   guarded; a missing dependency degrades that one feature and nothing else.
 - **Single thread, stream everything.** No new endpoint may read a whole file (or buffer a
   whole response) into memory; reuse the bounded pump. Hashing/zip/search must be
