@@ -37,7 +37,7 @@ S1's hour is the right first hour of every longer session.
 ### S1 - one machine, one hour, no daemon (~60 min; +35 min stretch)
 
 Prerequisites, once: a Linux or Windows engine, x64 or x86 (every native
-member's library is committed for those - section 2.1); all five packaged
+member's library is committed for those - section 2.1); all six packaged
 extensions installed from the current tree, with SodiumXT repackaged at
 **ABI 9** (section 3.2 step -1; on a non-mac row, repackage normally). The
 coinxt, onionxt and riptide script layers are embedded in the suite paste -
@@ -52,7 +52,7 @@ Ordered by yield per minute:
 | 1 | `tests/suite-selftest.livecodescript` (paste + reopen per 3.1) | green `stSummary`, zero failures - and FOUR things this paste settles for the first time: the sodiumxt section **"ristretto255 (ABI 8)"** RUNS instead of SKIPping (the five `sxRistretto*` handlers, row 11); the coinxt section **"WIF (wallet import format)"** (row 12); riptide's **"phase 6 - LAN sync records (drafts, feed state, presence)"** plus the serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`) inside **"phase 7 - the anon persona, the guard, and BTXO framing"** (row 13); and the three malformed-UTF-8 refusal checks that came back RED on 2026-08-15 - the `rsBytesAreUtf8` fix's first observed run (row 13) | flips rows 11-13's labels: the sodiumxt api-reference ristretto section, all three coinxt WIF labels, riptide's compute-half phase-6/7 labels. Tick: BREADTH, plus rows 11-13 in the ADDED block | 12 |
 | 2 | `holde-em/src/holdem.livecodescript` (paste + reopen), then `heRunSelftest` in the message box | the report panel ends `==== N pass, 0 fail, M skip ====` and `RESULT: green`; **section 16** (`heTestLevel2Run`) RUNS rather than SKIPs on an ABI-8 SodiumXT (row 15); **section 17** (`heTestOnionRun`) pins the 2f headless slice; the deal sections drive the two rewritten handlers - `heXorSeedsHex`, `heDeckFromStreamKey` - against the KAT pins (row 14) | flips row 14 (the fold blockquote's "needs an OXT re-pass" on both deal handlers) and row 15 (the L2 `sx*` call shapes). Tick: rows 14-15 | 12 |
 | 3 | the three HIGHEST-GATING restyle re-opens (the 2026-08-14 blockquote), one OXT launch each: `torrentxt/examples/torrent-quickshare.livecodescript` (gates item 5 and the #31-#33 stack), `torrentxt/examples/torrent-dht-channels.livecodescript` (gates #31-#33), `riptide/examples/riptide-social.livecodescript` (gates rows 16/17/19; unlock an identity, confirm build + pump) | each window BUILDS in the v2 card look, the probe/status line is clean, no error dialog on open or close | each flips its own "UI unified 2026-08-14; needs an OXT re-pass" label; tick the matching DEMOS rows - "UI built, probe clean, no live leg" is the honest wording on a no-daemon day | 12 |
-| 4 | holde-em hotseat: 2-3 hands in item 2's launch (blinds through showdown; force a side pot if you can) | hands complete with no error dialog; the report header names `kHeVersion` 0.20.0 and the harness version | first post-fold hotseat evidence on the v0.20.0 tree. Tick: the hotseat line in the ADDED block | 10 |
+| 4 | holde-em hotseat: 2-3 hands in item 2's launch (blinds through showdown; force a side pot if you can) | hands complete with no error dialog; the report header names `kHeVersion` 0.24.3 and the harness version | first post-fold hotseat evidence on the v0.24.3 tree. Tick: the hotseat line in the ADDED block | 10 |
 | 5 | the remaining restyle re-opens: `onionxt/examples/onionxt-demo-standalone.livecodescript` (probes must FAIL CLOSED with no tor - that IS tonight's pass), `enetxt/examples/enet-lan-chat.livecodescript`, `datachannelxt/examples/datachannel-loopback.livecodescript`, `torrentxt/examples/torrent-client.livecodescript` (fresh launch), `coinxt/examples/coinxt-demo.livecodescript` (`start using stack "coinxt"` first, 4.6) | as item 3 | as item 3; tick the DEMOS rows | 14 |
 | S | STRETCH: `nocloud/src/nocloudquickshare.livecodescript`, then the web-link half of `nocloud/docs/oxt-pass-checklist.md` (sections 0-6a over a LAN web link; skip every Tor column) | per that checklist's own action -> expected lines | row 22's web-link half; the checklist file is its own record sheet | 35 |
 
@@ -353,7 +353,7 @@ kept as pointers so the same fact is never book-kept twice:
 | 12 | **coinxt WIF** (`cxWifEncode` / `cxWifDecode`, built 2026-08-15 - the last two coinxt handlers with no engine run) | the three-argument call shape, the boolean flag both directions, the array return, and both refusal paths | `coinxt/README.md` (the status sentence and the WIF paragraph), `coinxt/CLAUDE.md` (the WIF entry), `coinxt/docs/api-reference.md` (the intro and the WIF note) | S1 |
 | 13 | **riptide 0.9.0 compute additions in the suite paste** (built 2026-08-15): the phase-6 LAN sync-records section, the phase-7 serving seams (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`), and the `rsBytesAreUtf8` re-pass (the three checks that were RED on the 2026-08-15 engine run) | the compute halves run green on an engine; the LIVE criteria stay rows 16, 17 and 19 | `riptide/CLAUDE.md`, the phase-6 and phase-7 bullets (their compute-half sentences only) | S1 |
 | 14 | **holde-em deal-path re-pass** (the fold's two rewrites: `heXorSeedsHex` lost its ignored `repeat ... step 2`, `heDeckFromStreamKey` lost its throw-in-catch) | the rewritten handlers match the KAT pins on-engine - and settles which stream the PRE-fold on-engine runs dealt from | `holde-em/CLAUDE.md`, the fold blockquote's "needs an OXT re-pass" sentence | S1 |
-| 15 | **holde-em Level 2 compute** (v0.19.0; harness section 16, `heTestLevel2Run`, behind the ABI-8 probe - STILL NOT in the suite paste as of 2026-08-16: holde-em's harness lives embedded in its 15k-line game stack, and the fold was assessed and deferred against five named blockers - see `holde-em/CLAUDE.md`. Run it as its own paste via `heRunSelftest`) | the `sx*` call shapes the L2 algebra assumes, and the 24 pinned `l2_*` values on-engine (the 4f deal-time budget stays orchestration-era work) | `holde-em/IMPLEMENTATION-PLAN.md`, the Phase 4 blockquote; `holde-em/CLAUDE.md`, the v0.19.0 L2 entry | S1 (wants row 11's ABI 8 installed) |
+| 15 | **holde-em Level 2 compute** (harness section 16, `he1heTestLevel2Run`, behind the ABI-8 probe). **CORRECTED 2026-08-17: it IS in the suite paste** - holde-em folded as the ninth harness on 2026-08-16 (commit `7f55839`) and the paste now carries **380** `he1*` handlers, so this row runs inside row 1 and costs no separate launch. The "STILL NOT in the paste / run it as its own paste" text that stood here was written before the fold and would have spent an OXT launch re-pasting a 15k-line stack for a section already on screen. **The standalone paste is still wanted - but by row 4, for hotseat PLAY, not for this harness**: `check-suite-selftest.py`'s check 7d deliberately keeps `heRunSelftest` UNREACHABLE in the fold (it drives an overlay, the clipboard and `msg`), so the folded run exercises the compute and never the game | the `sx*` call shapes the L2 algebra assumes, and the 24 pinned `l2_*` values on-engine (the 4f deal-time budget stays orchestration-era work) | `holde-em/IMPLEMENTATION-PLAN.md`, the Phase 4 blockquote; `holde-em/CLAUDE.md`, the L2 entry | S1 (wants row 11's ABI 8 installed) |
 | 16 | **riptide phase 5** - the dc call plus the spec-6.2 typing lane (both demo wiring, never run) | `CALL CONNECTED` on both sides, a `typ srflx` `via` line across two networks, the typing indicator appearing and clearing | `riptide/CLAUDE.md`, the phase-5 bullet; the script is `riptide/docs/two-machine-runbook.md` phase 5 | S3 |
 | 17 | **riptide phase 6** - the LAN mesh live: the welcome round, the draft-appears done-criterion, the stranger test | mutual admission, drafts converging both directions, presence expiring, the stranger refused with nothing crossing | `riptide/CLAUDE.md`, the phase-6 bullet; the script is the two-machine runbook phase 6 | S3 |
 | 18 | **holde-em 2d** - online Level 0 play, multi-machine (written v0.17.0, netsim-pinned on one machine) | a multi-hand rp1 session across real machines with receipts matching on every seat | `holde-em/IMPLEMENTATION-PLAN.md`, the 2d status line ("needs the multi-machine OXT pass") | S3 |
@@ -362,7 +362,7 @@ kept as pointers so the same fact is never book-kept twice:
 | 21 | **Quick Share Channels anon, #31 / #32 / #33** - POINTERS ONLY: built 2026-08-15, registered in `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3, and ticked THERE per 4.7's rule | #31: the single-machine ON / OFF / tor-absent behaviour; #32: the card-only anon follow with the DHT off; #33: the onion-only release download with a clean capture | the three 12.3 register rows themselves | #31 S2; #32/#33 S4 |
 | 22 | **nocloud HTTP-host checklist** (`nocloud/docs/oxt-pass-checklist.md`: routes, headers, conditional GET, CORS, the editor, shutdown - over BOTH transports) | per that file's own action -> expected lines; it is its own record sheet | the checklist's intro paragraph ("verified statically; needs an OXT pass") | web-link half S1 stretch; Tor half S2 |
 | 23 | **sodiumxt ABI-8 mingw DLLs' Windows re-proof** (`x86_64-win32` + `x86-win32`, cross-built 2026-08-15; the 2026-08-12 ABI-7 pass is the precedent) | the DLLs load and the full SodiumXT section - SHA3 and ristretto included - runs green on a real Windows engine | the "needs its Windows engine pass" notes on the two Windows rows of `sodiumxt/CLAUDE.md`'s ABI table | S5 |
-| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> **9** (was written as 6 -> 8 before the 2026-08-15 DLEQ bump; the gap grows every bump this row goes unbuilt, and it BLOCKS every crypto-dependent test on a Mac); first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt (coinxt is now ABI 5) | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
+| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> **9** (was written as 6 -> 8 before the 2026-08-15 DLEQ bump; the gap grows every bump this row goes unbuilt, and it BLOCKS every crypto-dependent test on a Mac); first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt (coinxt is now ABI 6) | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
 | 25 | **sodiumxt ABI 9 - the DLEQ/batch algebra** (`sxRistrettoAdd` / `Sub` / `ScalarMultBase` / `ScalarMultBatch` / `ScalarAdd` / `ScalarMul`, built 2026-08-15). Row 11 covers ABI 8's five handlers ONLY; these six are a separate never-marshalled surface, and holde-em's Phase 5 proofs sit directly on them | the six handlers marshal on a real engine - in particular `sxRistrettoScalarMultBatch`, whose whole point is ONE FFI crossing for all 52 card points, and whose atomic-failure contract (any bad element fails the call with a 1-based index, nothing usable in out) has never been observed from script | `sodiumxt/docs/api-reference.md`, the ABI 9 section; `sodiumxt/CLAUDE.md`'s ABI table row for 9 | S1 (with row 11) |
 | 26 | **holde-em 4d/4e - void-and-audit + the cheater bots** (v0.22.0, built 2026-08-15; harness sections 18-19) | the void-and-audit state machine runs on-engine: a bad shuffle/unmask step voids the hand, bets return, and the mandatory full-reveal audit NAMES THE SIGNER of the first bad step. The five scripted attacks (deck-stacker, duplicate-point shuffler, rollback replayer, wrong-scalar unmasker, deal staller) are each detected and correctly attributed | `holde-em/IMPLEMENTATION-PLAN.md` Phase 4d/4e blockquotes; `holde-em/CLAUDE.md` v0.22.0 entry | S1 (wants rows 11 + 25 installed) |
 | 27 | **holde-em Phase 5 - Chaum-Pedersen DLEQ proofs** (v0.22.0; derandomized nonce, domain-tagged Fiat-Shamir, batch verification, soundness pinned negatively) | on a `dleq=1` table a wrong unmask step is refused INSTANTLY rather than costing a void-and-audit round - the whole point of the phase - and forged proofs still verify false on a real engine | `holde-em/holdem-spec.md` 7.4; `holde-em/CLAUDE.md` Phase 5 entry | S1 (wants row 25) |
@@ -528,12 +528,12 @@ are the exact files the engine dlopen()s when `coinxt/src/coinxt.lcb` binds
 `c:coinxt>`, so **on Linux and Windows, 32- or 64-bit, there is nothing to build**:
 coinxt installs like any other member and the run below is just a run.
 
-> **All four are current as of the 2026-08-16 memzero change (ABI 5)**, and
+> **All four are current as of the 2026-08-16 Schnorr/Taproot change (ABI 6)**, and
 > `coinxt/tools/check-binary-freshness.py` says so on every push. One note on how
 > the `x86-linux` one was produced: the environment that built the other three has
 > no 32-bit libc, so it was cross-compiled with **Zig** (`zig cc -target
 > x86-linux-gnu.2.25`) rather than `gcc -m32`. The artifact is a 32-bit i386 ELF
-> with exactly the 30 `cnx_*` exports, needing only `libc.so.6` at the documented
+> with exactly the 43 `cnx_*` exports, needing only `libc.so.6` at the documented
 > GLIBC 2.25 floor, and CI **executes** it against the published vectors on every
 > push (see the "Execute the COMMITTED library's vectors" step in
 > `native-coinxt.yml`), which is a stronger check than any other committed library
@@ -696,7 +696,7 @@ so the artifact and the repository can never disagree.
 
 The harness is **generated where Python lives and committed** — on a dev machine or in
 CI, never on the engine box. `tools/build-suite-selftest.py` is a build-time tool for
-whoever edits a member harness; the tester's input is a finished ~430 KB
+whoever edits a member harness; the tester's input is a finished ~1.5 MB
 `.livecodescript`. The same is true of the two onionxt standalones. So the answer to
 "can the generation be automated, or is it a separate step?" is: **it is already
 automated, and it already happens somewhere else.** All three generated files are
@@ -731,7 +731,7 @@ Ordered by (value of the result) divided by (setup cost):
 
 | Order | Stack | Needs | Why here |
 |---|---|---|---|
-| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all five packaged extensions installed; the coinxt, onionxt, and Riptide script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all seven member harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's 48 sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, and Riptide's 24 sections (phases 1-4, 6, 7 + the 8.3 sealed-anon-DM crypto) against the suite's session. If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The two deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3. |
+| 0 | **`tests/suite-selftest.livecodescript`** — **START HERE.** | all six packaged extensions installed (box2dxt is the sixth, folded 2026-08-16); the coinxt, onionxt, Riptide and b2k-Kit script layers are embedded in the paste (any absent member SKIPs) | **The whole suite in one paste.** It carries all **nine** folded harnesses: sodiumxt's `sxSelfTest`, onionxt's `oxSelfTest`, coinxt's sections, torrentxt's full harness, the synchronous halves of enetxt and datachannelxt, Riptide's sections (phases 1-4, 6, 7 + the 8.3 sealed-anon-DM crypto), **box2dxt's physics + b2k Kit harness** (folded 2026-08-16, commit `ef73172`, which took suite coverage 411/429 -> 724/742) and **holde-em's** (folded the same day, commit `7f55839`, 380 `he1*` handlers - the only fold that carries a whole APPLICATION, because its game and its tests are one file). If this is green, rows 1, 4, 5, and 6 are redundant unless chasing a failure. The deliberate exceptions are the ENet and DataChannel **async loopbacks** in rows 2 and 3, and - by `check-suite-selftest.py` check 7d - holde-em's live game, which stays unreachable from the folded harness. |
 | 1 | `sodiumxt/examples/sodium-tests.livecodescript` (`put sxSelfTest()`) | sodiumxt only | No I/O at all, no network, runs in a second. Everything else composes sodiumxt, so a failure here invalidates results further down. |
 | 2 | `enetxt/tests/enet-selftest.livecodescript` | enetxt only | Loopback UDP on 127.0.0.1, no daemon, no second machine. Also the fastest way to discover a machine that blocks loopback UDP, which would also sink datachannelxt (see trap 5.5). |
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send, and the a=candidate / offer-answer-role pins. |
@@ -985,7 +985,7 @@ what a failure would have looked like:
   `true`/`false`.
 
 **A pass looks like:** `stSummary` green, zero failures. Sections in order: the ABI
-guard (**ABI 5** now), the thirteen length accessors, Keccak-256, SHA3-256
+guard (**ABI 6** now), the thirteen length accessors, Keccak-256, SHA3-256
 **and the aliasing trap** (SHA3 and Keccak differ by a padding byte alone, so a
 crossed wire is a plausible wrong answer and on Ethereum a wrong address), SHA-2,
 RIPEMD-160, RFC 4231 HMAC cases 1 and 2, the BIP-39 seed vector, empty-input
@@ -1004,8 +1004,16 @@ written, and `coin-selftest` now drives all **78** handlers, not just the curve.
 Expect green sections for hex/Base58Check/Bech32/RLP/addresses, BIP-39/32/44,
 and the phase-5 `stRunTransactions` KATs (BIP-143 / EIP-155 / EIP-1559) - the
 last of which is NEW offline surface (runbook inventory item 8) having its first
-engine pass. The only genuinely-absent surface is Schnorr/BIP-340, deferred with
-Taproot; `cxBtcAddressP2TR` encodes an output key it is GIVEN and does not tweak.
+engine pass. **Schnorr/BIP-340 and the BIP-341 tweak SHIPPED 2026-08-16 at ABI 6**
+(commit `affdf1c`, upstream bitcoin-core/secp256k1 vendored), so the sentence that
+stood here - "the only genuinely-absent surface is Schnorr" - is retired; expect
+`cxSchnorrSign`/`cxSchnorrVerify` and the tweak among the sections instead, all of
+them having their FIRST engine pass. `cxBtcAddressP2TR` is deliberately UNCHANGED
+and still encodes an output key it is GIVEN: making it tweak would turn every
+existing correct call into a permanently unspendable double tweak, so the full
+BIP-341 path is a separately named handler. The one surface genuinely absent is a
+BIP-341 **sighash builder** - coinxt signs a sighash it is handed and cannot
+compute one.
 
 **What flips:** the "PHASE 2 STATUS" block and the "STILL VERIFIED STATICALLY"
 paragraph in the `coinxt/src/coinxt.lcb` header, the matching sentences in
@@ -1015,7 +1023,7 @@ residuals in `coinxt/IMPLEMENTATION-PLAN.md`, the Status section of
 root `README.md`. A green run retires the phase-1 residual (12 handlers) and the
 phase-2 one (15 handlers) at once, and closes phase 2 outright.
 
-> **All four committed libraries are current for ABI 4**, including `x86-linux`
+> **All four committed libraries are current for ABI 6**, including `x86-linux`
 > (cross-compiled with Zig; see 2.4). So `cxCheckABI` should be silent on every
 > supported platform. If it does throw "ABI mismatch — reinstall CoinXT", that is
 > the stale-binary guard working, not a phase-2 defect: it means the extension you
@@ -1403,7 +1411,7 @@ S4 two machines +tor, S5 mac/windows)
 [ ] 14 holde-em deal re-pass: heXorSeedsHex / heDeckFromStreamKey
        lines green (pre-fold stream question answered? ______)
 [ ] 15 holde-em section 16 (L2) RAN, not skipped   sx* shapes ok? ___
-[ ] -- holde-em hotseat on v0.20.0 (hands played: ___  side pot? ___)
+[ ] -- holde-em hotseat on v0.24.3 (hands played: ___  side pot? ___)
 [ ] -- restyle re-opens (UI built, probe clean): quickshare ___
        dht-channels ___  riptide-social ___  onionxt-demo ___
        enet-lan-chat ___  dc-loopback ___  torrent-client ___

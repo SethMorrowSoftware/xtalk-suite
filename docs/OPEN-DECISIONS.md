@@ -10,6 +10,24 @@ re-verified at its primary source and the tree was swept for owner-decision
 language the audit missed; the finds and the already-decided entries are noted
 in the closing section.
 
+**CITATION CONVENTION, CHANGED 2026-08-17 - and why the old attestation was
+retired.** This preamble used to say every citation had been "re-verified against
+the tree on the compile date", and on that date it was true. It stopped being true
+within a day, because **a line number is a fact about a file's current shape, and
+this tree reshapes faster than its documents are re-read**: six citations here
+landed in unrelated prose (A.10's Schnorr entry pointed at the punch list's summary
+paragraph; the riptide feed-retention decision pointed three sections short of
+§12; the `cnx_memzero` cite landed on a comment about `use com.livecode.foreign`).
+An owner following one of those does not get a five-minute brief.
+
+So citations here are being converted from `file:line` to **`file` plus a quoted
+ANCHOR PHRASE** - text that moves WITH the thing it names - and
+`tools/check-doc-anchors.py` re-resolves every anchor on every push, failing when
+one no longer appears in its file and printing the line where it now lives. The
+conversion is incremental: the six that had drifted are done, and any citation
+touched from here on gets an anchor. An un-anchored `file:line` below has NOT been
+re-verified since 2026-08-16 - treat it as a hint, not a fact.
+
 **The ledger rule.** A decision taken from this file gets recorded at its
 PRIMARY source (the plan section, spec section, or member doc each brief
 cites), in the same change that acts on it, exactly as `REMAINING-WORK.md`
@@ -74,7 +92,7 @@ the owner can make.
 Schnorr deferral as "a scope decision, recorded here rather than left as a
 silent omission" and defers the vendoring question to the Taproot phase.
 `coinxt/SPEC.md:161-163` still specs `cnx_schnorr_sign/verify` and the x-only
-helper. `docs/REMAINING-WORK.md:140-144` (A.10) marks the whole Schnorr +
+helper. `docs/REMAINING-WORK.md` ("coinxt Schnorr/BIP-340 + the Taproot tweak", A.10) marks the whole Schnorr +
 Taproot item "Waits on a secp256k1-zkp vendoring decision". Today
 `cxBtcAddressP2TR` encodes a pre-tweaked key and cannot compute the BIP-341
 tweak (same A.10 entry).
@@ -114,7 +132,7 @@ app's complexity budget.
 `nocloud/docs/http-server-deep-dive.md:417-431` (section 8, "Open questions
 for you": priorities; public-vs-LAN introspection default; how far routes go;
 integrity appetite; compression), `:356-389` (the phased plan whose ordering
-hangs on question 1; Phase 3 at 380-381), `docs/REMAINING-WORK.md:154-157`
+hangs on question 1; Phase 3 at 380-381), `docs/REMAINING-WORK.md` ("nocloud HTTP-host Phase 3: per-route streaming/params")
 (A.13 names Phase 3 the one open ledger item).
 
 **Options (per question, compressed):**
@@ -251,7 +269,7 @@ internally consistent; the only missing ingredient is the reserved approval.
 OTHER people's feeds alive: a network-citizenship and abuse-surface tradeoff,
 and the one spec-section-12 decision the build has not made by construction.
 
-**Evidence (verified 2026-08-16):** `docs/RIPTIDE-SOCIAL-SPEC.md:724-726`
+**Evidence (verified 2026-08-16; citation re-anchored 2026-08-17):** `docs/RIPTIDE-SOCIAL-SPEC.md` ("## 12. Open decisions for the owner")
 (decision 4: BEP44 items expire unless republished; how aggressively does a
 follower re-seed a followee's head?). As built, only the OWN head republishes
 on post (`riptide/examples/riptide-social.livecodescript:747,1541`); no
@@ -385,7 +403,7 @@ the probe is a checklist line in the pass they run. (This is an engine
 QUESTION more than a judgment call; it is briefed here because it is recorded
 open and only the owner can close it.)
 
-**Evidence (verified 2026-08-16):** `nocloud/docs/oxt-pass-checklist.md:90-93`
+**Evidence (verified 2026-08-16; citation re-anchored 2026-08-17):** `nocloud/docs/oxt-pass-checklist.md` ("cheap single-file mtime")
 ("Would improve the validator": does the engine expose a cheap single-file
 modification date without scanning the folder? Conditional GET shipped
 without it; the `W/"size-seed-gen"` ETag stands in; a cheap mtime would let
@@ -581,7 +599,7 @@ E-class").
 
 **RECOMMENDATION (the suite's, not a decision):** strike now (free), and if a
 consumer ever materializes, ship it bundled with the next planned ABI bump
-(the recorded `cnx_memzero` fix at `coinxt/src/coinxt.lcb:124-134` wants one
+(the recorded `cnx_memzero` fix at `coinxt/src/coinxt.lcb` ("private foreign handler _cnx_memzero") wants one
 too) so the binary-refresh cost is paid once.
 
 ---
@@ -593,7 +611,7 @@ policy (gates assume no external dependencies); overriding that policy for
 one lane, and accepting pip-installed third-party packages into CI, is the
 owner's supply-chain and policy call.
 
-**Evidence (verified 2026-08-16):** `coinxt/CLAUDE.md:876-891`: the
+**Evidence (verified 2026-08-16; citation re-anchored 2026-08-17):** `coinxt/CLAUDE.md` ("THE ENGINE PASS LANDED 2026-08-12"): the
 independent-decoder run (python-bitcointx + eth-account accepting
 script-built transactions in all four families) "is an ACCEPTANCE run, NOT a
 CI gate", with the rationale at `:885-889` (pip packages the suite does not
