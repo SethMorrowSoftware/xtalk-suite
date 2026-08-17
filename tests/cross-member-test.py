@@ -15,10 +15,25 @@ container has.
 
 STATUS 2026-08-08: the engine pass has now happened, and the suite selftest
 reported all four of these invariants green THROUGH THE SCRIPT LAYER as well.
-That does not retire this file - it promotes it. This remains the only check of
-the four that runs headlessly on every push, so it is the regression net: if a
-future shim change breaks one of these invariants, CI says so here in seconds
-rather than waiting for the next human at an engine.
+That does not retire this file - it promotes it. This is the only check of the
+four that can run headlessly at all, so it is the regression net: if a future
+shim change breaks one of these invariants, CI says so here in seconds rather
+than waiting for the next human at an engine.
+
+CORRECTED 2026-08-17. The paragraph above used to say "runs headlessly on every
+push", and that was false for as long as it stood. This file's ONE caller is
+tools/build-all.sh, BELOW its `--gates` early exit - and both CI invocations
+(suite-gates.yml, release-binaries.yml) pass --gates. So it ran in no lane at
+all; it ran only when a human did a full local walk. Worse, the shape of the
+skip meant that even when someone did run it without the shims built, it
+printed the two header checks, a SKIP line, and then "every cross-member
+invariant holds (measured natively, not reasoned)" and exited 0 - a green run
+of a file whose entire value is the word "natively". Both halves are fixed:
+CROSSMEMBER_REQUIRE_ALL (see report()) makes a skip a FAILURE where a skip is
+indistinguishable from a pass, and suite-gates.yml gained a scoped job that
+does the full walk and sets it. The lesson is the tree's own, from the root
+CLAUDE.md: shipped is not run, and a docstring asserting a lane exists is not
+that lane.
 
 So this file takes the cross-member claims that do NOT depend on the script
 layer and settles them where they can actually be settled: ctypes against the
@@ -56,6 +71,8 @@ ordinary public DHT exactly as any client would, and nothing waits on a reply.
 
 SKIPS, LOUDLY, when a shim has not been built. It drives the artifacts that
 tools/build-all.sh produces, so it runs in the FULL walk, not in --gates.
+Set CROSSMEMBER_REQUIRE_ALL=1 to turn every such skip into a failure; CI does,
+because there a skip and a pass print almost the same thing and exit 0 alike.
 """
 
 import ctypes
@@ -75,6 +92,31 @@ F_DHT_SEED = 113
 
 failures = []
 notes = []
+
+# The LEGS, at the granularity at which this file can actually stop running -
+# which is five, not the docstring's four. The BEP44 invariant splits at the
+# session boundary: building the canonical bytes and signing them needs only
+# the two shims, while the half that gives it its meaning (a SECOND ed25519
+# implementation verifying that signature, and refusing one made for another
+# seq) needs a live libtorrent session on top. Counting it as one leg would
+# report "4 of 4" for a run that proved libsodium can sign - which nobody
+# doubted - and never asked libtorrent whether it agreed.
+LEGS = [
+    "the shared 60000-byte budget",
+    "one seed, one identity (the same ed25519 public key)",
+    "the two secret-key spellings (seed||pk vs the expanded form)",
+    "SodiumXT signs BEP44 canonical bytes",
+    "libtorrent VERIFIES that foreign signature (and refuses a wrong-seq one)",
+]
+ran_legs = []
+
+
+def leg(name):
+    """Mark a leg as having actually executed. Called at the point its checks
+    run, not where they are declared: the difference is the whole point of the
+    summary line, which otherwise reports intent rather than coverage."""
+    assert name in LEGS, f"cross-member-test: unknown leg {name!r}"
+    ran_legs.append(name)
 
 
 def check(name, cond, detail=""):
@@ -138,6 +180,7 @@ def main():
           f"{dcx['DCX_MAX_MESSAGE']}; an app that switches transports at runtime "
           f"would silently lose messages between those two numbers")
     check("the shared budget is 60000", enx["ENX_MAX_MESSAGE"] == 60000)
+    leg(LEGS[0])
 
     sod_path = os.path.join(ROOT, "sodiumxt", "build", "sodiumxt.so")
     tor_path = os.path.join(ROOT, "torrentxt", "build", "torrentxt.so")
@@ -214,6 +257,7 @@ def main():
     check("libsodium and libtorrent derive the SAME ed25519 public key",
           sod_pk.hex() == bt_pk_hex,
           f"libsodium {sod_pk.hex()}\n        libtorrent {bt_pk_hex}")
+    leg(LEGS[1])
 
     exp = out_buf(exp_len)
     rc = sod.sxt_sign_seed_to_expanded_key(exp, exp_len, seed, len(seed))
@@ -226,6 +270,7 @@ def main():
     # bytes" is not what is being asserted.
     check("...and NOT libsodium's own seed||pk secret key",
           sk.raw[:sk_len].hex() != bt_sk_hex)
+    leg(LEGS[2])
 
     # ---- 3. SodiumXT signs a BEP44 item libtorrent accepts -------------------
     print("\n== SodiumXT signs a BEP44 item TorrentXT verifies ==")
@@ -253,6 +298,7 @@ def main():
     sig = out_buf(sig_len)
     rc = sod.sxt_sign_detached(sig, sig_len, buf, len(buf), sk, sk_len)
     check("SodiumXT signed those exact bytes", rc >= 0 and sig_len == 64)
+    leg(LEGS[3])
 
     wbuf, _ = signbuf(wrong_seq)
     wsig = out_buf(sig_len)
@@ -275,6 +321,7 @@ def main():
                                         value, len(value),
                                         wsig.raw[:sig_len].hex().encode())
             check("libtorrent REFUSES a signature made for another seq", rc < 0)
+            leg(LEGS[4])
         finally:
             tor.btx_session_free(s)
 
@@ -284,9 +331,45 @@ def main():
 def report():
     for n in notes:
         print(f"\ncross-member-test: {n}")
+
+    # SAY WHAT RAN. Without this line the only difference between a full run
+    # and one that measured two #defines and stopped is a SKIP paragraph three
+    # lines above a sentence containing the word "natively" - and the eye reads
+    # the sentence. The count is the honest headline, and it names the missing
+    # legs rather than only counting them, so the reader does not have to know
+    # what the five are to see which one is gone.
+    missing = [n for n in LEGS if n not in ran_legs]
+    print(f"\ncross-member-test: {len(ran_legs)} of {len(LEGS)} invariant legs ran")
+    for n in missing:
+        print(f"                   NOT run: {n}")
+
     if failures:
         print(f"\ncross-member-test: {len(failures)} FAILED: {failures}")
         return 1
+
+    # A skip is right for a contributor who has not built the shims; it is
+    # WRONG for CI, where "the native half silently did not run" and "the
+    # native half passed" print almost the same thing and exit 0 either way.
+    # Same split, and the same env-var shape, as coinxt's
+    # COINXT_REQUIRE_CROSSCHECK (coinxt/tools/coin-kat.py,
+    # coinxt/tools/check-selftest-vectors.py). Checked HERE rather than at each
+    # skip site because the skips are appended from two places and a future
+    # third would otherwise have to remember to opt in - which is the shape of
+    # the omission that left this file uncalled in the first place.
+    if notes and os.environ.get("CROSSMEMBER_REQUIRE_ALL"):
+        print(f"\ncross-member-test: CROSSMEMBER_REQUIRE_ALL is set and "
+              f"{len(notes)} leg group(s) were SKIPPED, so this run settled less "
+              f"than it claims - build the shims (tools/build-all.sh) or unset "
+              f"the variable")
+        return 1
+
+    if missing:
+        # Reachable only without CROSSMEMBER_REQUIRE_ALL: still exit 0 (a
+        # contributor's partial run is not a failure), but do not let the
+        # closing sentence overstate what was measured.
+        print("\ncross-member-test: the invariants that RAN hold "
+              "(measured natively, not reasoned); the rest were not settled")
+        return 0
     print("\ncross-member-test: every cross-member invariant holds "
           "(measured natively, not reasoned)")
     return 0
