@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""sync-demo-embeds.py - every demo carries the script libraries it needs.
+
+WHY THIS EXISTS
+    A demo that requires `start using stack "coinxt"` before it will run is a
+    demo most people meet as an error message. The libraries are pure script,
+    so there is no reason a reader should have to wire them up by hand just to
+    look at the thing: paste the demo into a stack script, open it, and it
+    works. That is the whole goal - one file per demo, no wiring.
+
+    The pieces stay usable both ways. `<member>/src/*.livecodescript` remains
+    the single source of truth and the right dependency for a real project;
+    this tool copies it into each demo between sentinels so the SHIPPED demo is
+    self-contained. Nobody hand-edits inside the sentinels, and `--check` fails
+    the build when a copy drifts from its source - the same contract
+    box2dxt/tools/sync-embedded-kit.py has for the embedded b2k Kit, and the
+    same one onionxt/tools/build-standalone.py has for its standalones.
+
+ORDER IS LOAD-BEARING, NOT COSMETIC
+    The embedded block goes ABOVE the demo's own code, and the providers go in
+    dependency order within it. OXT resolves script-level `constant` and
+    `local` names by LEXICAL POSITION - the root CLAUDE.md records a fold that
+    put 106 declarations below their first reader and produced a tidy wrong
+    answer rather than an error, because LiveCodeScript evaluates an undeclared
+    name as the literal text of its own name. Libraries first is what keeps
+    that from happening here.
+
+COLLISIONS ARE REFUSED, NEVER MERGED
+    If a demo and a library define the same handler, or the same column-0
+    declaration, the merged script would not compile - and the maintainer would
+    meet that at PASTE TIME on an engine, which is the scarce resource this
+    whole tree is organised around protecting. So this tool refuses to write,
+    names both sides, and stops.
+
+    One real collision is known and deliberately NOT worked around here:
+    torrentxt/examples/torrent-quickshare.livecodescript defines
+    socketError/socketClosed/socketTimeout with genuine clearweb-server logic
+    that `pass`es everything else through to OnionXT's copies. Those are not
+    pass-through stubs that can be dropped, and merging two real bodies is a
+    behaviour change to an unverified inbound path, not a packaging change. It
+    is recorded in the registry below with its reason instead of being forced.
+
+THE BANNER DELIBERATELY AVOIDS ONE PHRASE
+    tools/check-ui-kit-drift.py and tools/check-harness-scaffold-drift.py both
+    SKIP any file whose first 4000 characters contain "GENERATED - do not
+    edit". These demos are only PARTLY generated - the region between the
+    sentinels - so bannering them with that phrase would silently switch off
+    UI-kit drift checking for every demo this tool touches. The header below
+    says the same thing in words that do not trip that test, and this paragraph
+    exists so nobody "tidies" it back.
+
+USAGE
+    python3 tools/sync-demo-embeds.py            # write every embed
+    python3 tools/sync-demo-embeds.py --check    # verify the committed copies
+    Exit 0 when clean, 1 when a copy is stale or a collision is found.
+"""
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+BEGIN = "-- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>"
+END = "-- <<< END EMBEDDED LIBRARIES <<<"
+
+# demo -> the libraries it needs, IN DEPENDENCY ORDER (a library that uses
+# another must come after it).
+REGISTRY = {
+    "coinxt/examples/coinxt-demo.livecodescript": [
+        "coinxt/src/coinxt.livecodescript"],
+    "enetxt/examples/enet-lan-chat.livecodescript": [
+        "enetxt/examples/enet-helpers.livecodescript"],
+    "datachannelxt/examples/datachannel-loopback.livecodescript": [
+        "datachannelxt/examples/datachannel-helpers.livecodescript"],
+    "datachannelxt/examples/datachannel-dht-chat.livecodescript": [
+        "datachannelxt/examples/datachannel-helpers.livecodescript"],
+    # The demo carries its own self-test harness too, because the About tab
+    # runs it - this is exactly what the retired onionxt-demo-standalone.
+    # livecodescript used to bundle, now folded into the demo itself so there
+    # is ONE onionxt demo file rather than a source and a generated twin.
+    "onionxt/examples/onionxt-demo.livecodescript": [
+        "onionxt/src/onionxt.livecodescript",
+        "onionxt/src/onion-httpd.livecodescript",
+        "onionxt/examples/onionxt-tests.livecodescript"],
+    "onionxt/examples/onion-httpd/spike.livecodescript": [
+        "onionxt/src/onionxt.livecodescript",
+        "onionxt/src/onion-httpd.livecodescript"],
+    "torrentxt/examples/torrent-dht-channels.livecodescript": [
+        "onionxt/src/onionxt.livecodescript"],
+    "riptide/examples/riptide-social.livecodescript": [
+        "riptide/src/riptide.livecodescript",
+        "onionxt/src/onionxt.livecodescript",
+        "onionxt/src/onion-httpd.livecodescript"],
+}
+
+# Demos deliberately NOT embedded, each with the reason. An entry here is a
+# standing admission, not a way to quiet the tool.
+NOT_EMBEDDED = {
+    "torrentxt/examples/torrent-quickshare.livecodescript":
+        "defines socketError/socketClosed/socketTimeout with real clearweb "
+        "logic that passes through to OnionXT's copies; embedding OnionXT "
+        "would define all three twice. Merging two live bodies is a behaviour "
+        "change to the inbound socket path, which has no engine pass yet "
+        "(runbook S2). Keeps its optional `start using onionxt` for Tor.",
+}
+
+DEF = re.compile(r'^(?:private\s+)?(?:command|function|on|getprop|setprop)\s+(\w+)', re.M)
+DECL = re.compile(r'^(?:local|constant)\s+(.+)$', re.M)
+
+
+def names(text):
+    """Script-level handler and declaration names. Column 0 only: an indented
+    `local` is a HANDLER local, scoped to its handler, and cannot collide."""
+    handlers = set(DEF.findall(text))
+    decls = set()
+    for line in DECL.findall(text):
+        for part in line.split(","):
+            n = part.split("=")[0].strip()
+            if re.fullmatch(r"[A-Za-z_]\w*", n):
+                decls.add(n)
+    return handlers, decls
+
+
+def read(rel):
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def build_block(demo_rel, provider_rels, demo_text):
+    """The embedded region, providers in order, collisions refused."""
+    seen_h, seen_d = names(demo_text)
+    # the demo's own names minus anything inside a previous embed
+    out = [BEGIN,
+           "-- Pasted from the sources below so this demo runs with NO `start",
+           "-- using` wiring. Do not edit inside these sentinels: run",
+           "-- `python3 tools/sync-demo-embeds.py` instead. The sources under",
+           "-- src/ stay the single source of truth for real projects.",
+           "--",
+           "-- Libraries come FIRST because OXT resolves script-level constants",
+           "-- and locals by lexical position.",
+           ""]
+    for rel in provider_rels:
+        text = read(rel)
+        ph, pd = names(text)
+        clash_h, clash_d = seen_h & ph, seen_d & pd
+        if clash_h or clash_d:
+            raise SystemExit(
+                f"sync-demo-embeds: {demo_rel} collides with {rel}\n"
+                f"  handlers: {sorted(clash_h) or '-'}\n"
+                f"  declarations: {sorted(clash_d) or '-'}\n"
+                "  A merged script would not compile. Resolve the collision at "
+                "the source, or record the demo in NOT_EMBEDDED with a reason.")
+        seen_h |= ph
+        seen_d |= pd
+        out.append(f"-- ---- {rel} ----")
+        out.append(text.rstrip("\n"))
+        out.append("")
+    out.append(END)
+    return "\n".join(out)
+
+
+def splice(demo_text, block):
+    """Put the block above the demo's own CODE but below its own HEADER.
+
+    Two things must stay on top and the first version of this got both wrong.
+    A leading `script "Name"` line is not a comment, so a naive
+    skip-while-comment stopped at line 1 and pushed the script name down past
+    two hundred lines of library - five of the seven demos start that way.
+    And the demo's header prose is what a reader opens the file for: burying
+    it under an embedded library makes the file LESS readable, which is the
+    opposite of the point.
+
+    So: an optional leading `script "..."`, then the whole leading comment
+    header, and the libraries go after that - purpose first, machinery second,
+    demo code last."""
+    if BEGIN in demo_text:
+        start = demo_text.index(BEGIN)
+        end = demo_text.index(END) + len(END)
+        return demo_text[:start] + block + demo_text[end:]
+    lines = demo_text.split("\n")
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i < len(lines) and re.match(r'^script\s+"', lines[i]):
+        i += 1
+    while i < len(lines) and (not lines[i].strip() or lines[i].lstrip().startswith("--")):
+        i += 1
+    head, tail = lines[:i], lines[i:]
+    return "\n".join(head + ["", block, ""] + tail)
+
+
+def main(argv):
+    check = "--check" in argv
+    stale, wrote = [], 0
+    for demo_rel, provider_rels in sorted(REGISTRY.items()):
+        demo_path = os.path.join(ROOT, demo_rel)
+        current = read(demo_rel)
+        # strip any existing embed before collision-checking, or the demo
+        # appears to collide with the copy of the library it already carries.
+        bare = current
+        if BEGIN in bare:
+            s, e = bare.index(BEGIN), bare.index(END) + len(END)
+            bare = bare[:s] + bare[e:]
+        block = build_block(demo_rel, provider_rels, bare)
+        want = splice(current, block)
+        if want == current:
+            continue
+        if check:
+            stale.append(demo_rel)
+        else:
+            with open(demo_path, "w", encoding="utf-8") as fh:
+                fh.write(want)
+            wrote += 1
+            print(f"sync-demo-embeds: wrote {demo_rel} "
+                  f"({len(provider_rels)} librar{'y' if len(provider_rels)==1 else 'ies'})")
+    if stale:
+        for s in stale:
+            print(f"sync-demo-embeds: {s} is STALE - run "
+                  f"`python3 tools/sync-demo-embeds.py`")
+        print(f"sync-demo-embeds: {len(stale)} demo(s) out of date")
+        return 1
+    total = len(REGISTRY)
+    if check:
+        print(f"sync-demo-embeds: OK ({total} demo(s) carry their libraries; "
+              f"{len(NOT_EMBEDDED)} recorded as not embedded, with reasons)")
+    elif not wrote:
+        print(f"sync-demo-embeds: {total} demo(s) already up to date")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
