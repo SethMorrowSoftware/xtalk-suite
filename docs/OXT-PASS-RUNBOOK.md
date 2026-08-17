@@ -1297,6 +1297,33 @@ does not expose one at all. Use a system tor on `127.0.0.1:9051`, or Tor Browser
 listening there - it is not an onionxt bug. Confirm the
 `Opening Control listener on 127.0.0.1:9051` line in tor's log before blaming script.
 
+### 5.3.1 Mode B will collide with the daemon you already have running
+
+**`oxLaunchTor` defaults to SocksPort 9050 and ControlPort 9051** - exactly the
+ports a system tor already holds. If you are running S2 in the normal way (a
+system daemon up, per 2.3), then leg F's `oxLaunchTor` launches a SECOND tor
+against those same ports, the bind fails, and the symptom is a tor that starts
+and dies rather than an error OnionXT can report. It reads like "Mode B is
+broken". It is a port collision.
+
+Added 2026-08-17 because nothing in this tree said so, and Mode B is the one
+path in onionxt that has never had an engine pass - so the first person to run
+it is the most likely to misread the failure as the defect it is meant to find.
+
+Two ways through, and the first is better:
+
+- **Pass explicit high ports:** `oxLaunchTor tPath, tDir, 9250, 9251`. Both
+  daemons coexist, Mode A stays up for the other items, and `oxLaunchTor`
+  calls `oxSetSocksPort`/`oxSetControlPort` for you, so the rest of the API
+  follows the launched one automatically. This also proves the port arguments
+  actually marshal, which the defaults never would.
+- **Stop the system daemon first**, run leg F alone, then restart it. Simpler
+  to reason about, but it costs you the daemon every other S2 item wants.
+
+Either way, record WHICH you did: "Mode B on 9250/9251 beside a running system
+tor" and "Mode B on 9050/9051 with the system daemon stopped" are different
+claims, and only the first proves the ports are honoured.
+
 ### 5.4 An ephemeral ADD_ONION service dies with its control connection
 
 A transient control-socket drop (or a reconnect) un-publishes the service while its
