@@ -157,6 +157,46 @@ this file stays the ledger.
 
 ---
 
+**THE 2026-08-17 ENGINE PASS: THE LARGEST GREEN RUN THIS PROJECT HAS HAD.**
+Windows x86_64, NT 10.0, OXT 9.6.3. **1,836 folded member checks, ZERO
+failures, 7 skips** - every skip a live-transport or daemon leg no single
+machine can run. The previous best was 617 folded checks (2026-08-13), so this
+is roughly a threefold increase, and it is the first run in which every one of
+the nine folded harnesses was green at once. All six packaged extensions loaded
+at exactly the ABI their guard expects.
+
+Per member: holde-em 538, box2dxt 374, riptide 338, coinxt 278, torrentxt 101,
+sodiumxt 99, onionxt 61, datachannelxt 26, enetxt 21.
+
+**What it closed, all of it shipped between 08-15 and 08-17 and never before
+run:** coinxt's BIP-340 Schnorr and BIP-341 Taproot tweak (ABI 6), coinxt WIF,
+`cnx_memzero`'s `.lcb` call sites, and SodiumXT's ristretto255 at both ABI 8 and
+ABI 9. Every marshalling question `coinxt/CLAUDE.md` recorded as owed came back
+answered, including the one never proven before: an EMPTY `Data` reaching the
+shim as length 0 in an OPTIONAL argument slot.
+
+**It also confirmed all five defects fixed by READING earlier the same day**,
+each by the check written for it - onionxt's loopback fail-open (`the guard
+refuses an empty host (it used to accept one)`), torrentxt's three destructive
+refusal legs plus `btAddMagnet`, datachannelxt's embedded-NUL refusal and exact
+error codes, box2dxt's duck rebuild keeping its collision filter, and holde-em's
+election skipping a sitting-out seat. **And one the new coverage ratchet found
+hours before the run**: `heHandStart` had survived only inside a test LABEL, and
+its real check passes.
+
+`tests/preflight.livecodescript`, written that day and never executed, ran first
+and did its job: six LOADED rows in about a minute.
+
+**What it did NOT close**, and this list is the honest remainder: the 7 skips
+(riptide's anon onion create + serving; holde-em's live onion table,
+three-machine oracle round, onion-hosted oracle, live timed table, live tor
+redial), every two-machine leg (S3/S4), the Tor evening (S2), the macOS and
+Windows-package gaps (S5/C.1), and the async loopbacks that stay deliberately
+unfolded. Section B's live legs are untouched by this run except where struck
+below.
+
+---
+
 ## A. Unbuilt phases and features (16)
 
 > **2026-08-15 wave-1 closures (commits `0a1f79d`, `4029e50`, and the WIF
@@ -197,7 +237,13 @@ and one functional hole.
    needed, KATs cross-checked between libsodium and the independent RFC 9496
    reference now in `holde-em/tools/protocol-kat.py`, all four non-mac
    binaries rebuilt). Remaining from this item: the handlers' first OXT pass
-   (they are engine-unexercised - the harness section SKIPs on a pre-ABI-8
+   (**CLOSED 2026-08-17**: both the ABI-8 and the ABI-9 ristretto sections ran
+   green in the Windows engine pass - the mask/unmask roundtrip, the batch over
+   three points, the DLEQ-shaped `k*(P+Q) == k*P + k*Q` identity, and the
+   failure the batch API exists to get right: one bad point fails the whole
+   batch, NAMING index 2 of 3. What remains from this item is only the recorded
+   Phase 5 follow-ons. The old text said they were engine-unexercised, the
+   section SKIPping on a pre-ABI-8
    package), the Windows engine re-proof of the mingw cross-built DLLs, and
    the recorded Phase 5 follow-ons (ScalarMultBatch, point add/sub, base
    mult for DLEQ).

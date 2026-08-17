@@ -914,7 +914,9 @@ untouched (no shim change: this is pure script over the existing primitives).
   The Ethereum half SKIPS loudly without eth-account, the same contract as the Bitcoin half, and
   `--require` fails on any skip. A live testnet broadcast remains the one bar left.
 
-**WIF - BUILT 2026-08-15, executed headlessly; verified statically, needs an OXT pass.** The last
+**WIF - BUILT 2026-08-15; ENGINE-PROVEN 2026-08-17.** All fourteen WIF checks ran green in the 2026-08-17 engine pass (Windows x86_64, OXT 9.6.3; coinxt 278/278 green),
+including the refusal that matters: an xprv is rejected on its payload LENGTH, not its version byte.
+The last
 designed encoding: `cxWifEncode` / `cxWifDecode` in `src/coinxt.livecodescript`, no shim change, the
 surface now 80 public handlers (35 `.lcb` + 45 script). Base58Check over `version || key || optional
 0x01 compressed marker`, 0x80 mainnet / 0xEF testnet. The decisions worth knowing before editing it:
@@ -1325,11 +1327,15 @@ The rest is the engineering, and the decisions worth knowing before editing any 
   EXECUTED against the published wallet vectors; `tools/check-selftest-vectors.py` green at 78 of
   120 constants re-derived and mutation-tested (five, all caught); the suite coverage gate at 90/90
   for coinxt; all four committed binaries rebuilt at ABI 6 with 43 exports each and both manifests
-  refreshed. **NOTHING IN THE `.lcb` OR THE SCRIPT LAYER HAS RUN ON AN ENGINE**: verified statically
-  and executed headlessly, needs an OXT pass. What that pass owes, specifically: `cxSchnorrSign`'s
-  three-argument shape; an EMPTY `Data` reaching the shim as length 0 in the aux and merkle-root
-  slots (proven for an empty INPUT in 2026-08-08, never yet for an OPTIONAL argument);
-  `cxSchnorrVerify`'s Boolean both ways; and `cxTaprootTweak`'s array return read back by name.
+  refreshed. **ENGINE-PROVEN 2026-08-17** - the 2026-08-17 engine pass (Windows x86_64, OXT 9.6.3; coinxt 278/278 green). Every question this
+  entry listed as owed came back answered: `cxSchnorrSign`'s three-argument shape marshals; an EMPTY
+  `Data` reaches the shim as length 0 in the aux slot (`an absent aux gives two DIFFERENT signatures`,
+  and both verify) and in the merkle-root slot (`an EMPTY merkle root is not a 32-zero root`) - so the
+  OPTIONAL-argument case, never before proven, now is; `cxSchnorrVerify` answered Boolean both ways,
+  including the distinction the design turns on (a key that is not on the curve answers FALSE, while a
+  33-byte key is refused as a LENGTH error - a caller bug, not a verdict); and `cxTaprootTweak`'s array
+  return read back by name. `cxBtcAddressP2TR` confirmed still NOT tweaking, which is the deliberate
+  non-change that keeps every existing correct call spendable.
 
 **THE WINDOWS DLLs IN THIS CHANGE ARE AGAIN BELOW THIS MEMBER'S OWN BAR, RECORDED THE SAME WAY
 (2026-08-16).** The precedent set by the ABI-5 change applies verbatim: this environment has no

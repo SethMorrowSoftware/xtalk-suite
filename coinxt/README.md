@@ -223,9 +223,10 @@ folded into the suite selftest - 205/206 on the first pass (the trailing-separat
 then **207/207** on the same-day re-run with the fix and the script layer embedded in the paste. All
 65 public `cx*` handlers (35 in the `.lcb`, 30 in the script layer) had by then executed on a real
 engine against the published vectors. Phase 5 (2026-08-11) added 13 more, for 78, and the
-2026-08-12 engine pass (230/230, Windows x64) closed them too. The two WIF handlers (2026-08-15,
-below) are the one exception: every other public handler has run green on a real engine; those two
-are verified statically and executed headlessly, and await their OXT pass.
+2026-08-12 engine pass (230/230, Windows x64) closed them too - and the **2026-08-17 pass took
+coinxt to 278/278 on a real engine**, closing the WIF, `cnx_memzero`, Schnorr/BIP-340 and
+BIP-341 Taproot surfaces that had shipped since. Every public handler has now run green on an
+engine. The one bar left before "broadcastable" is unchanged: a live testnet broadcast.
 
 **Phase 5, transaction building and signing, is BUILT** (2026-08-11) and adds 13 script handlers,
 which brought the surface to 78 public handlers (35 in the `.lcb`, 43 in the script layer; 80 and
@@ -284,7 +285,8 @@ off the curve, has_even_y(R) false, a negated message, a negated s, two infinity
 field-size / group-order edges), plus all 7 BIP-341 `scriptPubKey` vectors and all 7
 `keyPathSpending` inputs walked private key -> internal key -> tweaked key -> the published witness
 signature. `native/build.sh asan` is clean over the new code. The `.lcb` and script layers are
-verified statically and executed headlessly; they **need an OXT pass**.
+**ENGINE-PROVEN 2026-08-17** (Windows x86_64, OXT 9.6.3): all 19 published BIP-340 vectors
+including the 10 negatives, and the BIP-341 wallet vectors, ran green as part of coinxt's 278/278.
 
 **ABI 5, the recorded secret-hygiene fix, is SHIPPED (2026-08-16).** The shim gains one
 export, `cnx_memzero(ptr, len)` - a wrap of the vendored trezor-crypto `memzero.c`
