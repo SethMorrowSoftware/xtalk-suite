@@ -164,14 +164,48 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > derefs both - Unbind, MoveTo; Play was v25's; Remove/Anim/Frame/Flipped
 > already tolerated it). The player region holds no other sprite calls, so
 > this section has no throw left to find.
-> **STILL OPEN, needing engine investigation rather than a blind guess --
-> three failures in PRE-EXISTING behaviour sections, possibly real Kit
-> defects:** the ghost-layer ball passing the solid-layer platform (y 365 --
-> filtering), gravity after b2kClear (the player landed at y 289 where the
-> test expects a longer fall), and the crawl-under-ceiling stall (x 269
-> against 350 expected). Unchanged across all three runs. Each has
-> engine-verified history behind it, so suspect a real regression or an
-> environment-order effect before the test.
+> **THE FOURTH RUN (2026-08-17) CLEARED THE THROW AND CRACKED THE
+> GHOST-LAYER CASE:** 365/4 at v26 -- the player-API section ran to its end
+> for the first time, which surfaced one new failure and let the three old
+> ones be diagnosed against stable numbers instead of guessed at. What v27
+> + the Kit fix did about each:
+> - **`b2kPlayerStandUp restores full height` (new, was hidden behind the
+>   throw): a test wrong twice over.** The default duckScale is >= 1, so
+>   `b2kPlayerDuckSet true` was a complete NO-OP (its guard exits), and the
+>   asserted 48 was the REQUEST -- a 48-request control is padded by the
+>   capsule fit, the halfW/halfH lesson again. v27 sets duckScale 0.5 and
+>   asserts the ROUND-TRIP (duck shrinks what make built; stand-up restores
+>   exactly what it found), so the pair now exercises the reshape at all.
+> - **The ghost-layer failure is a REAL KIT DEFECT, found from the engine's
+>   own number.** y 365 = resting ON the platform = the platform's category
+>   never landed. Root cause: Box2D v3.1 filter bits are uint64, a DEFAULT
+>   mask reads back as 2^64-1, and the shim's `filter_bits_ok` guard (2^53-1,
+>   the double-exact ceiling) makes `b2SetShapeFilter` refuse the whole call
+>   SILENTLY when that readback is passed straight back in -- which
+>   `b2kSetCategory` did. The shape kept default category 1, which is ALSO
+>   the first named layer's bit (b2kDefineLayer starts at 1), so the "ghost"
+>   ball collided normally. The clincher: `b2kPlayerDropStart` has carried
+>   the exact clamp with the exact reasoning since the drop-through window
+>   shipped -- the lesson was learned once and never propagated, the
+>   one-copy-fixed shape the checker-drift gate exists for, here inside one
+>   file. Fixed in all three public filter wrappers (SetCategory, SetMask's
+>   category readback, SetCollisionGroup's both -- that last was a silent
+>   no-op for EVERY body with an unlowered mask); b2kNoCollide was never
+>   affected (b2FilterJoint, no round-trip).
+> - **The post-b2kClear gravity failure VINDICATED the Kit: it is a test
+>   under-wait.** 40 steps of free fall from y 200 at this world's pinned
+>   gravity (the first behaviour test pins 30 steps -> 200 px/s, i.e.
+>   400 px/s^2) is exactly 89 px -- y 289, the engine's number to the pixel,
+>   mid-fall at NORMAL gravity with the floor at 500 ~70 steps away. v27
+>   steps until grounded (bounded at 150) before asserting the landing.
+> - **The crawl stall STAYS OPEN, now instrumented.** x 269 is short of the
+>   ceiling's edge at 300, so nothing in the geometry blocks it there, and
+>   ~35 px/s net against a 110 px/s crawl target says the controller itself
+>   is impeding -- but which of state/grounded/vx is wrong is not decidable
+>   from one coordinate. v27's assert reports state, halfH, grounded and vx
+>   at the stall, so the next run diagnoses itself.
+> Expected next paste: 368/1 if the two Kit-side fixes hold (the crawl line
+> still red, now talkative), holde-em steady at 507/0.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has

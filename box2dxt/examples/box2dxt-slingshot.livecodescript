@@ -2777,14 +2777,27 @@ function b2kLayerBits pLayerList
 end b2kLayerBits
 
 command b2kSetCategory pControl, pLayerList
-   local s
+   local s, tM
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetCategory
-   b2SetShapeFilter s, b2kLayerBits(pLayerList), b2ShapeFilterMask(s), b2ShapeFilterGroup(s)
+   -- ENGINE-FOUND 2026-08-17 (the ghost-layer harness failure, stable
+   -- across four runs): Box2D v3.1 filter bits are uint64, so a DEFAULT
+   -- mask reads back as 2^64-1 -- above the shim's 2^53-1 double guard,
+   -- which made b2SetShapeFilter refuse the whole call SILENTLY, so the
+   -- category never landed and the shape kept the default bit (which is
+   -- also the FIRST named layer's bit: b2kDefineLayer starts at 1).
+   -- b2kPlayerDropStart had this exact clamp, with this exact reasoning,
+   -- since the drop-through window shipped -- it was never propagated to
+   -- the public filter wrappers. Clamp every readback that feeds back in:
+   -- every category this Kit can mint lives below 2^32, so "all 32 kit
+   -- bits" is behaviour-identical.
+   put b2ShapeFilterMask(s) into tM
+   if tM > 4294967295 then put 4294967295 into tM
+   b2SetShapeFilter s, b2kLayerBits(pLayerList), tM, b2ShapeFilterGroup(s)
 end b2kSetCategory
 
 command b2kSetMask pControl, pLayerList
-   local s
+   local s, tC
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetMask
    -- a named-layer mask means OBJECT rules, not "fall through the
@@ -2792,16 +2805,28 @@ command b2kSetMask pControl, pLayerList
    -- custom-masked bodies still stand on b2kChain ground. To really
    -- pass through chains use raw b2SetShapeFilter (the player's
    -- drop-through window does exactly that, internally).
-   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2kLayerBits(pLayerList) bitOr 2147483648, b2ShapeFilterGroup(s)
+   -- The category readback is clamped like b2kSetCategory's mask (the
+   -- 2^53 shim-guard trap): a default category is 1, but a raw-call
+   -- category above 2^32 must not silently void THIS wrapper's write.
+   put b2ShapeFilterCategory(s) into tC
+   if tC > 4294967295 then put 4294967295 into tC
+   b2SetShapeFilter s, tC, b2kLayerBits(pLayerList) bitOr 2147483648, b2ShapeFilterGroup(s)
 end b2kSetMask
 
 -- Group index: bodies sharing a NEGATIVE group never collide; a POSITIVE group
 -- always collide. Overrides category/mask. 0 (default) = use category/mask.
 command b2kSetCollisionGroup pControl, pGroup
-   local s
+   local s, tC, tM
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetCollisionGroup
-   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2ShapeFilterMask(s), pGroup
+   -- both readbacks feed back in, so both get the 2^53 shim-guard clamp
+   -- (see b2kSetCategory): a default mask made this whole command a
+   -- silent no-op for every body whose mask was never lowered.
+   put b2ShapeFilterCategory(s) into tC
+   if tC > 4294967295 then put 4294967295 into tC
+   put b2ShapeFilterMask(s) into tM
+   if tM > 4294967295 then put 4294967295 into tM
+   b2SetShapeFilter s, tC, tM, pGroup
 end b2kSetCollisionGroup
 
 -- =====================================================================
