@@ -47,7 +47,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "26"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "27"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -1207,6 +1207,16 @@ command stTestSwimClear
    stStep 40
    stAssert "after b2kClear: the new player does NOT swim (no stale zone, got " \
          & b2kPlayerState() & ")", (b2kPlayerState() is not "swim")
+   -- Run 4's arithmetic vindicated the Kit here: 40 steps of free fall from
+   -- y 200 at this world's pinned gravity (the first test: 30 steps ->
+   -- 200 px/s, i.e. 400 px/s^2) is exactly 89 px -- y 289, the engine's own
+   -- number, mid-fall at NORMAL gravity. The floor at 500 needs ~70 steps,
+   -- so the fixed budget asserted before the landing could happen. Step
+   -- until grounded (bounded), then assert the landing.
+   repeat with i = 1 to 150
+      b2kStepOnce
+      if b2kPlayerOnGround() is true then exit repeat
+   end repeat
    stAssert "after b2kClear: gravity is normal -- it falls and lands (y " & round(stY(tRef)) & ")", \
          (b2kPlayerOnGround() is true and stY(tRef) > 400)
 end stTestSwimClear
@@ -1430,7 +1440,7 @@ end stTestPlatformCarry
 -- Wave 5: duck capsule reshape (duckScale < 1). The capsule shrinks for a
 -- crawl, stand-up is blocked under a low ceiling, and clears once past it.
 command stTestDuckReshape
-   local tRef, tFullH, tDuckH, i
+   local tRef, tFullH, tDuckH, i, tVx
    stNewWorld "player: duck capsule reshape (crawl)"
    stSlab "st_ground", 50, 500, 900, 560
    stSlab "st_ceil", 300, 400, 600, 462       -- a low ceiling (underside y462)
@@ -1450,7 +1460,16 @@ command stTestDuckReshape
       b2kStepOnce
       if stX(tRef) > 360 then exit repeat
    end repeat
-   stAssert "crawled under the low ceiling (x " & round(stX(tRef)) & " > 350)", (stX(tRef) > 350)
+   -- STILL OPEN after four engine runs (x stalls ~269, short of the
+   -- ceiling's edge at 300, at ~35 px/s net against a 110 px/s crawl
+   -- target): nothing in the geometry blocks it there, so the next run
+   -- must say what the controller thinks it is doing at the stall --
+   -- self-diagnose rather than re-report one number.
+   set the itemDelimiter to comma
+   put round(item 1 of b2kVelocity(tRef)) into tVx
+   stAssert "crawled under the low ceiling (x " & round(stX(tRef)) & " > 350; state " \
+         & b2kPlayerState() & ", halfH " & round(b2kPlayerHalfH()) & ", grounded " \
+         & b2kPlayerOnGround() & ", vx " & tVx & ")", (stX(tRef) > 350)
    -- release DOWN under the ceiling: the headroom check keeps it crouched
    b2kInputInject "right"
    stStep 6
@@ -2299,7 +2318,7 @@ end stTestKitSoundApi
 
 -- The player API surface around the controller behaviour tested above.
 command stTestKitPlayerApi
-   local tRef, tBody, tGrav0
+   local tRef, tBody, tGrav0, tH0
    stNewWorld "kit api: player tuning, art, and the state entry points"
    stSlab "st_ground", 60, 500, 800, 540
    stAssert "b2kPlayerDefault knows the shipped run speed", \
@@ -2331,12 +2350,21 @@ command stTestKitPlayerApi
    b2kPlayerShowState 0, 0
    b2kPlayerTick
    stAssert "an explicit tick leaves the player standing", (b2kPlayerOnGround() is true)
-   -- duck and stand, by the explicit entry points
+   -- duck and stand, by the explicit entry points. Run 4 taught this pair
+   -- twice over: the default duckScale is >= 1, so without setting it the
+   -- whole pair was a silent no-op -- and the control's REAL height is not
+   -- the requested 48 (the capsule fit pads it), so asserting the request
+   -- was the halfW/halfH lesson again. Assert the ROUND-TRIP instead: duck
+   -- shrinks what make built, stand-up restores exactly what it found.
+   b2kPlayerSet "duckScale", 0.5
+   put the height of tRef into tH0
    b2kPlayerDuckSet true
-   stAssert "b2kPlayerDuckSet ducks", (b2kPlayerState() is not empty)
+   stAssert "b2kPlayerDuckSet shrinks the capsule (h " & the height of tRef \
+         & " < " & tH0 & ")", (the height of tRef < tH0)
    b2kPlayerStandUp
    stStep 2
-   stAssert "b2kPlayerStandUp restores full height", (the height of tRef is 48)
+   stAssert "b2kPlayerStandUp restores the standing height (got " & the height of tRef \
+         & " of " & tH0 & ")", (the height of tRef is tH0)
    -- THE FOUR GRAVITY-PARKING PAIRS. Climb, swim and dash each stash the
    -- body's gravity scale and write their own; the matching End must put
    -- the stashed one back. A pair that leaks is the bug class this member
@@ -4241,14 +4269,27 @@ function b2kLayerBits pLayerList
 end b2kLayerBits
 
 command b2kSetCategory pControl, pLayerList
-   local s
+   local s, tM
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetCategory
-   b2SetShapeFilter s, b2kLayerBits(pLayerList), b2ShapeFilterMask(s), b2ShapeFilterGroup(s)
+   -- ENGINE-FOUND 2026-08-17 (the ghost-layer harness failure, stable
+   -- across four runs): Box2D v3.1 filter bits are uint64, so a DEFAULT
+   -- mask reads back as 2^64-1 -- above the shim's 2^53-1 double guard,
+   -- which made b2SetShapeFilter refuse the whole call SILENTLY, so the
+   -- category never landed and the shape kept the default bit (which is
+   -- also the FIRST named layer's bit: b2kDefineLayer starts at 1).
+   -- b2kPlayerDropStart had this exact clamp, with this exact reasoning,
+   -- since the drop-through window shipped -- it was never propagated to
+   -- the public filter wrappers. Clamp every readback that feeds back in:
+   -- every category this Kit can mint lives below 2^32, so "all 32 kit
+   -- bits" is behaviour-identical.
+   put b2ShapeFilterMask(s) into tM
+   if tM > 4294967295 then put 4294967295 into tM
+   b2SetShapeFilter s, b2kLayerBits(pLayerList), tM, b2ShapeFilterGroup(s)
 end b2kSetCategory
 
 command b2kSetMask pControl, pLayerList
-   local s
+   local s, tC
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetMask
    -- a named-layer mask means OBJECT rules, not "fall through the
@@ -4256,16 +4297,28 @@ command b2kSetMask pControl, pLayerList
    -- custom-masked bodies still stand on b2kChain ground. To really
    -- pass through chains use raw b2SetShapeFilter (the player's
    -- drop-through window does exactly that, internally).
-   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2kLayerBits(pLayerList) bitOr 2147483648, b2ShapeFilterGroup(s)
+   -- The category readback is clamped like b2kSetCategory's mask (the
+   -- 2^53 shim-guard trap): a default category is 1, but a raw-call
+   -- category above 2^32 must not silently void THIS wrapper's write.
+   put b2ShapeFilterCategory(s) into tC
+   if tC > 4294967295 then put 4294967295 into tC
+   b2SetShapeFilter s, tC, b2kLayerBits(pLayerList) bitOr 2147483648, b2ShapeFilterGroup(s)
 end b2kSetMask
 
 -- Group index: bodies sharing a NEGATIVE group never collide; a POSITIVE group
 -- always collide. Overrides category/mask. 0 (default) = use category/mask.
 command b2kSetCollisionGroup pControl, pGroup
-   local s
+   local s, tC, tM
    put sShapeH[the long id of pControl] into s
    if s is empty then exit b2kSetCollisionGroup
-   b2SetShapeFilter s, b2ShapeFilterCategory(s), b2ShapeFilterMask(s), pGroup
+   -- both readbacks feed back in, so both get the 2^53 shim-guard clamp
+   -- (see b2kSetCategory): a default mask made this whole command a
+   -- silent no-op for every body whose mask was never lowered.
+   put b2ShapeFilterCategory(s) into tC
+   if tC > 4294967295 then put 4294967295 into tC
+   put b2ShapeFilterMask(s) into tM
+   if tM > 4294967295 then put 4294967295 into tM
+   b2SetShapeFilter s, tC, tM, pGroup
 end b2kSetCollisionGroup
 
 -- =====================================================================
