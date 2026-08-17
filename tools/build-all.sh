@@ -216,6 +216,10 @@ fi
 # headless. This is the gate that would have caught the shipped example calling
 # sxHashKey (a handler that never existed). It is repo-wide, so it runs once
 # rather than per member.
+if [ -f tools/test-handler-calls.py ]; then
+  echo "== suite: tools/test-handler-calls.py =="
+  python3 tools/test-handler-calls.py
+fi
 if [ -f tools/check-handler-calls.py ]; then
   echo "== suite: tools/check-handler-calls.py =="
   python3 tools/check-handler-calls.py
