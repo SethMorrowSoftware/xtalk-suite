@@ -876,10 +876,21 @@ on enetDisconnect pEvent
          uiStatus "Connect FAILED - see the log.", "bad"
       end if
       put "false" into sReady
-      -- either way the half-open client host is useless now; release it so
-      -- Join works again without a manual Leave first
-      enStopPolling sHost
-      enHostDestroy sHost
+      -- Either way the half-open client host is useless now; release it so
+      -- Join works again without a manual Leave first.
+      --
+      -- THE GUARD IS NOT DEFENSIVE PADDING. enHostDestroy is declared
+      -- `in pHost as Integer`, and this handler empties sHost two lines down -
+      -- so the SECOND enetDisconnect to arrive (ENet delivers one per peer,
+      -- and a failed connect produces one of its own) handed the engine an
+      -- empty value for a typed parameter. That is a hard runtime error -
+      -- "type conversion error" - which killed the poll chain and left the
+      -- demo silently dead. The same file already guards sHost this way in
+      -- ten other places; this was the one path that did not.
+      if sHost is not empty and sHost is not 0 then
+         enStopPolling sHost
+         enHostDestroy sHost
+      end if
       put empty into sHost
       put empty into sServerPeer
    end if

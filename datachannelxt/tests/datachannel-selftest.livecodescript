@@ -550,14 +550,28 @@ end stOtherPeer
 
 command stFinish
    stSection "teardown"
-   stAssert "dcCloseChannel returns 0", dcCloseChannel(sChanA) is 0
-   dcFreeChannel(sChanA)
-   dcFreeChannel(sChanA)   -- double free: no-op
-   stAssert "double dcFreeChannel survived", true
-   dcFreePeer(sPeerA)
-   dcFreePeer(sPeerB)
-   dcFreePeer(sPeerA)      -- double free: no-op
-   stAssert "freed peer answers -1", dcPeerState(sPeerA) is -1
+   -- THE HANDLES MAY NEVER HAVE BEEN MINTED, and until 2026-08-18 this
+   -- section assumed they were. Every dc* handler below takes a typed
+   -- Integer parameter, and an EMPTY value does not convert - it is a hard
+   -- "type conversion error", not a no-op. So on a machine where the
+   -- loopback could not start (blocked UDP is the documented case), the run
+   -- did not lose the loopback section: it lost EVERYTHING, at teardown,
+   -- with an engine error dialog instead of a report. The suite's own
+   -- history has this exact shape written down - one uncaught error taking
+   -- six harnesses' results with it - and this is the same failure one layer
+   -- down. A skip is a result; a dead run is not.
+   if sPeerA is empty and sPeerB is empty then
+      stSkip "teardown", "no peers were created, so there is nothing to tear down"
+   else
+      stAssert "dcCloseChannel returns 0", dcCloseChannel(sChanA) is 0
+      dcFreeChannel(sChanA)
+      dcFreeChannel(sChanA)   -- double free: no-op
+      stAssert "double dcFreeChannel survived", true
+      dcFreePeer(sPeerA)
+      dcFreePeer(sPeerB)
+      dcFreePeer(sPeerA)      -- double free: no-op
+      stAssert "freed peer answers -1", dcPeerState(sPeerA) is -1
+   end if
    stAssert "dcCleanup returns 0", dcCleanup() is 0
    stAssert "dcCleanup idempotent", dcCleanup() is 0
    put empty into sPeerA

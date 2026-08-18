@@ -277,9 +277,43 @@ launch path itself has never run on an engine - it is the one remaining VERIFY
 in onionxt, scheduled as runbook S2 item 2. **See trap 5.3.1:** it defaults to
 the same ports a system tor already holds.
 
-### 6.4 UNRESOLVED: `dispatch` of a poll event raised "type conversion error"
+### 6.4 An EMPTY value into a typed `.lcb` parameter is "type conversion error"
+**OBSERVED 2026-08-18 on Linux**, twice, from two different demos.
+
+`"type conversion error"` is **LiveCode Builder's** error for a value that will
+not convert to a declared parameter type. Every public `.lcb` handler in this
+suite declares its parameter types and **none of the 630 has an optional
+parameter**, so every one of them is a place a script can hand the engine
+something it must refuse - at runtime, on a GUI engine, in front of a person.
+
+The confirmed instance is `enet-lan-chat`:
+
+```
+enHostDestroy sHost          -- enHostDestroy(in pHost as Integer)
+put empty into sHost         -- ...one line later
+```
+
+`enetDisconnect` empties the handle it just used, so the SECOND disconnect
+(ENet delivers one per peer, and a failed connect produces one of its own)
+passed **empty** to an `Integer` parameter. Not a no-op - a throw, which killed
+the poll chain and left the demo silently dead. The same file guards `sHost`
+this way in ten other places.
+
+**Rule:** empty is not a value for `Integer`, `Real`, `Number` or `Boolean`.
+Guard any handle before passing it, especially on a teardown path, and
+especially in a harness - an uncaught throw at teardown costs the WHOLE run,
+not the section.
+
+**Gate:** `tools/check-lcb-call-types.py` checks the script-to-`.lcb` boundary
+argument by argument - arity, emptied handles, and event keys the module's own
+`_fieldKey` cannot return. It found the defect above plus eight teardown paths
+where a setup that never ran would have turned a clean skip into a dead run.
+
+### 6.5 STILL UNRESOLVED: the datachannel dispatch line
 **OBSERVED 2026-08-18 on Linux**, hosting a chat in
-`datachannelxt/examples/datachannel-dht-chat.livecodescript`:
+`datachannelxt/examples/datachannel-dht-chat.livecodescript`. 6.4 explains
+the ENet demo's failure completely; this one is NOT yet explained, because
+the gate that found the ENet defect reports the datachannel demo clean:
 
 ```
 execution error at line 178 (call: type conversion error), char 1

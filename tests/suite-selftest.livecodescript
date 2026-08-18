@@ -17699,16 +17699,27 @@ end en1stHandleClient
 command en1stFinish
    local en1tPS, en1tHS
    en1stSection "retirement + teardown"
-   put enPeerStatus(en1sClientPeer) into en1tPS
-   en1stAssert "client peer retired after disconnect", the number of lines of the keys of en1tPS is 0
-   -- the AFTER-disconnect half of the live enHostStatus pair: the host
-   -- outlives its one peer, so the record must still populate and count zero
-   -- (a host that still counted the departed peer would leak the slot).
-   put enHostStatus(en1sServer) into en1tHS
-   en1stAssert "live enHostStatus counts zero peers after disconnect", en1tHS["peerCount"] is 0
-   en1stAssert "enHostDestroy(server) is 0", enHostDestroy(en1sServer) is 0
-   en1stAssert "double destroy is a no-op 0", enHostDestroy(en1sServer) is 0
-   en1stAssert "enHostDestroy(client) is 0", enHostDestroy(en1sClient) is 0
+   -- THE HOSTS MAY NEVER HAVE BEEN CREATED. enHostStatus/enHostDestroy take a
+   -- typed Integer, and EMPTY does not convert - it throws "type conversion
+   -- error" rather than answering the harmless no-op these lines are written
+   -- to expect. Blocked loopback UDP is the documented way to reach that
+   -- state (trap 5.5), and this harness is FOLDED into the suite paste - so
+   -- an unguarded teardown here does not cost the enet section, it costs the
+   -- whole run, at the very end, for every member. Skip is a result.
+   if en1sServer is empty and en1sClient is empty then
+      en1stSkip "retirement + teardown", "no hosts were created, so there is nothing to retire"
+   else
+      put enPeerStatus(en1sClientPeer) into en1tPS
+      en1stAssert "client peer retired after disconnect", the number of lines of the keys of en1tPS is 0
+      -- the AFTER-disconnect half of the live enHostStatus pair: the host
+      -- outlives its one peer, so the record must still populate and count zero
+      -- (a host that still counted the departed peer would leak the slot).
+      put enHostStatus(en1sServer) into en1tHS
+      en1stAssert "live enHostStatus counts zero peers after disconnect", en1tHS["peerCount"] is 0
+      en1stAssert "enHostDestroy(server) is 0", enHostDestroy(en1sServer) is 0
+      en1stAssert "double destroy is a no-op 0", enHostDestroy(en1sServer) is 0
+      en1stAssert "enHostDestroy(client) is 0", enHostDestroy(en1sClient) is 0
+   end if
    en1stAssert "enDeinitialize returns 0", enDeinitialize() is 0
    en1stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
    put empty into en1sServer
@@ -18075,14 +18086,28 @@ end dc1stOtherPeer
 
 command dc1stFinish
    dc1stSection "teardown"
-   dc1stAssert "dcCloseChannel returns 0", dcCloseChannel(dc1sChanA) is 0
-   dcFreeChannel(dc1sChanA)
-   dcFreeChannel(dc1sChanA)   -- double free: no-op
-   dc1stAssert "double dcFreeChannel survived", true
-   dcFreePeer(dc1sPeerA)
-   dcFreePeer(dc1sPeerB)
-   dcFreePeer(dc1sPeerA)      -- double free: no-op
-   dc1stAssert "freed peer answers -1", dcPeerState(dc1sPeerA) is -1
+   -- THE HANDLES MAY NEVER HAVE BEEN MINTED, and until 2026-08-18 this
+   -- section assumed they were. Every dc* handler below takes a typed
+   -- Integer parameter, and an EMPTY value does not convert - it is a hard
+   -- "type conversion error", not a no-op. So on a machine where the
+   -- loopback could not start (blocked UDP is the documented case), the run
+   -- did not lose the loopback section: it lost EVERYTHING, at teardown,
+   -- with an engine error dialog instead of a report. The suite's own
+   -- history has this exact shape written down - one uncaught error taking
+   -- six harnesses' results with it - and this is the same failure one layer
+   -- down. A skip is a result; a dead run is not.
+   if dc1sPeerA is empty and dc1sPeerB is empty then
+      dc1stSkip "teardown", "no peers were created, so there is nothing to tear down"
+   else
+      dc1stAssert "dcCloseChannel returns 0", dcCloseChannel(dc1sChanA) is 0
+      dcFreeChannel(dc1sChanA)
+      dcFreeChannel(dc1sChanA)   -- double free: no-op
+      dc1stAssert "double dcFreeChannel survived", true
+      dcFreePeer(dc1sPeerA)
+      dcFreePeer(dc1sPeerB)
+      dcFreePeer(dc1sPeerA)      -- double free: no-op
+      dc1stAssert "freed peer answers -1", dcPeerState(dc1sPeerA) is -1
+   end if
    dc1stAssert "dcCleanup returns 0", dcCleanup() is 0
    dc1stAssert "dcCleanup idempotent", dcCleanup() is 0
    put empty into dc1sPeerA

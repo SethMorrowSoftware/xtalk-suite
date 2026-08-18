@@ -404,6 +404,22 @@ if [ -f tools/check-handler-calls.py ]; then
   python3 tools/check-handler-calls.py
 fi
 
+# --- suite-level: the script -> .lcb boundary, argument by argument ----------
+# check-handler-calls proves a called NAME exists; check-lcb-signatures proves
+# the .lcb agrees with the C. Between them sat the direction that actually
+# failed on an engine: a script handing a typed .lcb parameter a value it
+# cannot convert. Every public .lcb parameter is typed and NONE is optional, so
+# an empty value into an Integer is a hard runtime error, not a no-op - which
+# is how enet-lan-chat's unguarded enHostDestroy killed its poll chain.
+if [ -f tools/test-lcb-call-types.py ]; then
+  echo "== suite: tools/test-lcb-call-types.py --mutate =="
+  python3 tools/test-lcb-call-types.py --mutate
+fi
+if [ -f tools/check-lcb-call-types.py ]; then
+  echo "== suite: tools/check-lcb-call-types.py =="
+  python3 tools/check-lcb-call-types.py
+fi
+
 # --- suite-level: the unified self-test harness is BUILT, so it can go stale ---
 # tests/suite-selftest.livecodescript is assembled from every member's own
 # harness. If a member's tests change and nobody rebuilds, the file a maintainer

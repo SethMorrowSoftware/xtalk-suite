@@ -484,16 +484,27 @@ end stHandleClient
 command stFinish
    local tPS, tHS
    stSection "retirement + teardown"
-   put enPeerStatus(sClientPeer) into tPS
-   stAssert "client peer retired after disconnect", the number of lines of the keys of tPS is 0
-   -- the AFTER-disconnect half of the live enHostStatus pair: the host
-   -- outlives its one peer, so the record must still populate and count zero
-   -- (a host that still counted the departed peer would leak the slot).
-   put enHostStatus(sServer) into tHS
-   stAssert "live enHostStatus counts zero peers after disconnect", tHS["peerCount"] is 0
-   stAssert "enHostDestroy(server) is 0", enHostDestroy(sServer) is 0
-   stAssert "double destroy is a no-op 0", enHostDestroy(sServer) is 0
-   stAssert "enHostDestroy(client) is 0", enHostDestroy(sClient) is 0
+   -- THE HOSTS MAY NEVER HAVE BEEN CREATED. enHostStatus/enHostDestroy take a
+   -- typed Integer, and EMPTY does not convert - it throws "type conversion
+   -- error" rather than answering the harmless no-op these lines are written
+   -- to expect. Blocked loopback UDP is the documented way to reach that
+   -- state (trap 5.5), and this harness is FOLDED into the suite paste - so
+   -- an unguarded teardown here does not cost the enet section, it costs the
+   -- whole run, at the very end, for every member. Skip is a result.
+   if sServer is empty and sClient is empty then
+      stSkip "retirement + teardown", "no hosts were created, so there is nothing to retire"
+   else
+      put enPeerStatus(sClientPeer) into tPS
+      stAssert "client peer retired after disconnect", the number of lines of the keys of tPS is 0
+      -- the AFTER-disconnect half of the live enHostStatus pair: the host
+      -- outlives its one peer, so the record must still populate and count zero
+      -- (a host that still counted the departed peer would leak the slot).
+      put enHostStatus(sServer) into tHS
+      stAssert "live enHostStatus counts zero peers after disconnect", tHS["peerCount"] is 0
+      stAssert "enHostDestroy(server) is 0", enHostDestroy(sServer) is 0
+      stAssert "double destroy is a no-op 0", enHostDestroy(sServer) is 0
+      stAssert "enHostDestroy(client) is 0", enHostDestroy(sClient) is 0
+   end if
    stAssert "enDeinitialize returns 0", enDeinitialize() is 0
    stAssert "extra deinitialize is a no-op 0", enDeinitialize() is 0
    put empty into sServer

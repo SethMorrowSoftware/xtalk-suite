@@ -3137,7 +3137,13 @@ end cpCSaveDrop
 
 command cpCResumeReady pBytes
    put pBytes into url ("binfile:" & cpTempDir() & "/" & kResumeFile)
-   get btRemoveTorrent(sSession, sLeechTorrent, false)
+   -- btRemoveTorrent takes a typed Integer, and this handler empties the
+   -- handle below - so a second resume-data event (libtorrent can emit more
+   -- than one, and cpCSaveDrop can be clicked twice) reached it with EMPTY,
+   -- which throws rather than no-oping. Guarded, a repeat is silent.
+   if sLeechTorrent is an integer and sLeechTorrent > 0 then
+      get btRemoveTorrent(sSession, sLeechTorrent, false)
+   end if
    put empty into sLeechTorrent
    cpSay "cpCOut", "PASS resume data (" & the number of bytes of pBytes && "bytes) saved to disk and the torrent dropped. Resume now - or quit OXT, relaunch, re-paste, Start session, and Resume: that is the restart gate."
 end cpCResumeReady
