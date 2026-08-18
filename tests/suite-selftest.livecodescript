@@ -15643,8 +15643,8 @@ private command ox1testConfigurationSetters
    ox1oxCheck (oxIsReady() is ox1tWasReady), "clearing the ports and password is harmless too"
 
    -- The three DISPATCH setters do not clear, and the reason is a real bug this
-   -- section would otherwise have introduced. tools/build-standalone.py bundles
-   -- this file into examples/onionxt-demo-standalone.livecodescript, where the
+   -- section would otherwise have introduced. tools/sync-demo-embeds.py bundles
+   -- this file into examples/onionxt-demo.livecodescript, where the
    -- About tab runs ox1oxSelfTest inside the running demo - and that demo sets its
    -- callback owner and status handler ONCE, in preOpenStack. Clearing them here
    -- would leave a demo that had already opened with no status dispatch at all,

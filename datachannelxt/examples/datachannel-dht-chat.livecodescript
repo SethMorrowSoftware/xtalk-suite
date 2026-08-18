@@ -288,7 +288,14 @@ constant kWxDefaultIce = "stun:stun.l.google.com:19302"
 local sSession          -- TorrentXT session handle (0/empty = none)
 local sHaveBt           -- "true" once the TorrentXT probe succeeds
 local sHaveDc           -- "true" once the DataChannelXT probe succeeds
-local sPolling          -- "true" while the timer loops are armed
+local sChatPolling      -- "true" while THIS DEMO's timer loops are armed.
+                        -- Renamed from sPolling 2026-08-18: the embedded
+                        -- dataChannelHelpers declares its own sPolling for the
+                        -- dc poll chain, and two script-level locals of one name
+                        -- in one script is a hard compile error - "name shadows
+                        -- another variable or constant". They were always two
+                        -- different flags; before the embed they lived in two
+                        -- stacks, so nothing collided.
 local sDhtReady         -- "true" once the DHT has nodes (gates a helpful log)
 local sRole             -- "host" / "join" / empty
 local sPhase            -- idle/gathering/waiting-answer/fetch-offer/connecting/open/lost
@@ -765,7 +772,7 @@ end wxAddTips
 -- probe pattern): when one is missing the demo fails CLOSED - buttons log a
 -- clear install message and nothing else breaks.
 command wxStart
-   if sPolling is "true" then
+   if sChatPolling is "true" then
       exit wxStart -- a re-fired openStack must not stack a second set of loops
    end if
    put wxProbeDc() into sHaveDc
@@ -802,7 +809,7 @@ command wxStart
    btDhtAddBootstrap sSession, "router.utorrent.com", 6881
    btDhtAddBootstrap sSession, "dht.transmissionbt.com", 6881
    put "idle" into sPhase
-   put "true" into sPolling
+   put "true" into sChatPolling
    put "false" into sDhtReady
    wxLog "Ready. DHT bootstrapping - Host (or Join) once the node count in the status line is above zero."
    -- dc events dispatch through the helpers (100 ms = chat-grade latency);
@@ -812,7 +819,7 @@ command wxStart
    try
       dcStartPolling the long id of this card, 100
    catch tErr
-      put "false" into sPolling
+      put "false" into sChatPolling
       wxLog "The poll dispatcher is missing. It is EMBEDDED in this file, so this means the embedded copy is damaged - re-paste the whole file, or run tools/sync-demo-embeds.py."
       wxSetStatus "Helpers stack missing - see the log."
       exit wxStart
@@ -826,7 +833,7 @@ command wxStart
 end wxStart
 
 command wxStop
-   put "false" into sPolling
+   put "false" into sChatPolling
    try
       dcStopPolling
    catch tErr
@@ -1137,7 +1144,7 @@ end wxGatherWatch
 -- kill the loop, then no-ops unless a handshake is actually in flight.
 command wxSignalTick
    local tWant
-   if sPolling is not "true" then
+   if sChatPolling is not "true" then
       exit wxSignalTick -- the chain ends with the stack
    end if
    send "wxSignalTick" to me in kWxTickMs milliseconds
@@ -1182,7 +1189,7 @@ end wxSignalTick
 -- the demo needs TorrentXT's EXTENSION, not its example files.)
 command wxBtPollOnce
    local tEvents, tEvent
-   if sPolling is not "true" then
+   if sChatPolling is not "true" then
       exit wxBtPollOnce
    end if
    if sSession is not empty and sSession is not 0 then
@@ -1515,7 +1522,7 @@ end wxSendMessage
 -- ---- the 1 Hz dashboard ------------------------------------------------------
 command wxDashOnce
    local tDht, tState, tLine
-   if sPolling is not "true" then
+   if sChatPolling is not "true" then
       exit wxDashOnce
    end if
    put btDhtState(sSession) into tDht

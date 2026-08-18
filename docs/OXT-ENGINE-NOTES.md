@@ -74,6 +74,35 @@ string. ASCII `"` and `'` only. **Gate:** the static checker enforces zero.
 so xTalk evaluates the keyword, not your variable. It compiles and silently
 misbehaves. **Gate:** the `k`/`p`/`s`/`t` shadow-trap check.
 
+### 1.6 Two script-level declarations of one name is a HARD compile error
+**OBSERVED 2026-08-18**, on `datachannel-dht-chat` after it was made
+self-contained:
+
+```
+stack "Untitled 1": compilation error at line 291 (local: name shadows
+another variable or constant) near "sPolling", char 1
+```
+
+The demo declared `local sPolling` for its own timer, and so did
+`datachannel-helpers` for the dc poll chain. Before the embed those were two
+`local`s in two different STACKS and nothing collided; carrying the helper into
+the demo put both in one script. Two genuinely different flags, one name.
+
+This is the useful counterpart to 2.1: a *missing* declaration is silent and
+produces a plausible wrong answer, while a *duplicate* one is loud and stops
+the compile at paste time. Loud is better, but it still costs an engine pass to
+find, which is why it is gated rather than left to the engine.
+
+**Rule:** when any script is assembled from more than one source - an embed, a
+fold, a paste - the union of column-0 `local`/`constant` names must be unique.
+Rename at the source; never merge two declarations.
+**Gate:** `tools/sync-demo-embeds.py` refuses to write a colliding embed, and
+`tools/build-suite-selftest.py` prefixes every folded name for the same reason.
+Both gates are only as good as their name parser - see the note in
+`tools/test-demo-embeds.py` about the version of this one that could not see a
+declaration carrying a trailing comment, which is how the error above reached
+an engine at all.
+
 ---
 
 ## 2. Evaluation

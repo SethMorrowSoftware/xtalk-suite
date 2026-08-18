@@ -137,11 +137,12 @@ def main():
 
     # every stack that CARRIES the marker must be registered - member examples
     # (subdirectories included), app sources, and the suite-level stacks in
-    # root tests/ alike. Generated files (the onionxt standalones, the folded
-    # suite harness) inherit their source part's block and are checked at the
-    # SOURCE, so a generated carrier is skipped rather than registered - its
-    # freshness gate (build-standalone.py --check / build-suite-selftest.py
-    # --check) already pins it to the checked source.
+    # root tests/ alike. Generated files (the folded suite harness) inherit their
+    # source part's block and are checked at the SOURCE, so a generated carrier is
+    # skipped rather than registered - its freshness gate
+    # (build-suite-selftest.py --check) already pins it to the checked source.
+    # A demo's EMBEDDED region is the same case: sync-demo-embeds.py --check pins
+    # it to the provider, and the provider is registered in its own right.
     carriers = []
     for pattern in ("*.livecodescript",
                     "*/examples/*.livecodescript",

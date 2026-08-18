@@ -59,7 +59,7 @@ Ordered by yield per minute:
 | 2 | `holde-em/src/holdem.livecodescript` (paste + reopen), then `heRunSelftest` in the message box | the report panel ends `==== N pass, 0 fail, M skip ====` and `RESULT: green`; **section 16** (`heTestLevel2Run`) RUNS rather than SKIPs on an ABI-8 SodiumXT (row 15); **section 17** (`heTestOnionRun`) pins the 2f headless slice; the deal sections drive the two rewritten handlers - `heXorSeedsHex`, `heDeckFromStreamKey` - against the KAT pins (row 14) | flips row 14 (the fold blockquote's "needs an OXT re-pass" on both deal handlers) and row 15 (the L2 `sx*` call shapes). Tick: rows 14-15 | 12 |
 | 3 | the three HIGHEST-GATING restyle re-opens (the 2026-08-14 blockquote), one OXT launch each: `torrentxt/examples/torrent-quickshare.livecodescript` (gates item 5 and the #31-#33 stack), `torrentxt/examples/torrent-dht-channels.livecodescript` (gates #31-#33), `riptide/examples/riptide-social.livecodescript` (gates rows 16/17/19; unlock an identity, confirm build + pump) | each window BUILDS in the v2 card look, the probe/status line is clean, no error dialog on open or close | each flips its own "UI unified 2026-08-14; needs an OXT re-pass" label; tick the matching DEMOS rows - "UI built, probe clean, no live leg" is the honest wording on a no-daemon day | 12 |
 | 4 | holde-em hotseat: 2-3 hands in item 2's launch (blinds through showdown; force a side pot if you can) | hands complete with no error dialog; the report header names `kHeVersion` 0.24.3 and the harness version | first post-fold hotseat evidence on the v0.24.3 tree. Tick: the hotseat line in the ADDED block | 10 |
-| 5 | the remaining restyle re-opens: `onionxt/examples/onionxt-demo-standalone.livecodescript` (probes must FAIL CLOSED with no tor - that IS tonight's pass), `enetxt/examples/enet-lan-chat.livecodescript`, `datachannelxt/examples/datachannel-loopback.livecodescript`, `torrentxt/examples/torrent-client.livecodescript` (fresh launch), `coinxt/examples/coinxt-demo.livecodescript` (`start using stack "coinxt"` first, 4.6) | as item 3 | as item 3; tick the DEMOS rows | 14 |
+| 5 | the remaining restyle re-opens: `onionxt/examples/onionxt-demo.livecodescript` (probes must FAIL CLOSED with no tor - that IS tonight's pass), `enetxt/examples/enet-lan-chat.livecodescript`, `datachannelxt/examples/datachannel-loopback.livecodescript`, `torrentxt/examples/torrent-client.livecodescript` (fresh launch), `coinxt/examples/coinxt-demo.livecodescript` | as item 3 | as item 3; tick the DEMOS rows | 14 |
 | S | STRETCH: `nocloud/src/nocloudquickshare.livecodescript`, then the web-link half of `nocloud/docs/oxt-pass-checklist.md` (sections 0-6a over a LAN web link; skip every Tor column) | per that checklist's own action -> expected lines | row 22's web-link half; the checklist file is its own record sheet | 35 |
 
 ### S2 - one machine plus a tor daemon (~3 h with setup)
@@ -566,13 +566,15 @@ Install in this order:
 4. **datachannelxt** (`org.openxtalk.library.datachannel`).
 5. **onionxt** (`org.openxtalk.library.onion`). Not a packaged extension: copy
    `onionxt/src/onionxt.livecodescript` and `onionxt/src/onion-httpd.livecodescript`
-   into your app and `start using` them, or paste one of the two **already-built**
-   standalones - `onionxt/examples/onion-httpd/standalone.livecodescript` and
-   `onionxt/examples/onionxt-demo-standalone.livecodescript`. Both are committed and
-   gated current, so there is nothing to run here:
-   `onionxt/tools/build-standalone.py` is for whoever EDITS a part, not for the
-   tester (see `onionxt/docs/10-usage-guide.md`). (If all you are running is the
-   SUITE harness, skip this step: it embeds the whole ox* surface itself.)
+   into your app and `start using` them - or, for testing, just open the demo:
+   `onionxt/examples/onionxt-demo.livecodescript` and
+   `onionxt/examples/onion-httpd/spike.livecodescript` each CARRY those libraries
+   embedded, so they are one paste with no wiring. (Before 2026-08-17 those were
+   separate generated `*-standalone` twins; `tools/sync-demo-embeds.py` embeds in
+   place instead, so there is one file to open, not two. It is for whoever EDITS a
+   part, not for the tester - see `onionxt/docs/10-usage-guide.md`.) If all you are
+   running is the SUITE harness, skip this step: it embeds the whole ox* surface
+   itself.
 6. **coinxt**: see 2.4.
 
 Packaged members install through `Tools > Extension Manager` like any OXT extension;
@@ -861,23 +863,23 @@ Ordered by (value of the result) divided by (setup cost):
 | 3 | `datachannelxt/tests/datachannel-selftest.livecodescript` | datachannelxt only | Two real WebRTC peers in one process: offer, answer, ICE, DTLS, SCTP, text and binary round-trips, teardown. Its synchronous half ran green folded into the suite harness 2026-08-10 (every public `dc*` handler called by name); what only THIS stack still adds is its own async loopback's live halves - `dcSendText` on an open channel, `dcBufferedAmount`, `dcGatheringState`, `dcSelectedCandidatePair`, the `dcBufferedLow` event after a cap-sized send, and the a=candidate / offer-answer-role pins. |
 | 4 | `torrentxt/tests/torrent-selftest.livecodescript` | torrentxt only, **and nothing else torrent-flavoured open** | 96 checks in the current harness. Read trap 5.1 first: one session per OXT process. |
 | 5 | `onionxt/examples/onionxt-tests.livecodescript` (`put oxSelfTest()`) | onionxt + sodiumxt; **no daemon needed** | Deliberately pure and offline: address/base32 vectors, fail-closed contracts, idempotent teardown, and the two sodiumxt ABI-6 primitives. Read trap 5.6: it really does tear down live state. |
-| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged, **plus its script layer in the message path** (`start using stack "coinxt"`) - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) closed 2026-08-12 at 230/230** - after the headless-execution net (`check-script-vectors.py`, 251 checks) caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on that very run. Fully synchronous. See 4.6. |
+| 6 | `coinxt/tests/coin-selftest.livecodescript` | coinxt packaged; the script layer is EMBEDDED in the file since 2026-08-17 (`tools/sync-demo-embeds.py`), so no `start using` step - see 4.6 | Drives the whole public `cx*` surface (78 handlers): the `.lcb` handlers (hashes, curve, the two BIP-32 tweaks, the BIP-39 wordlist) and the `src/coinxt.livecodescript` ones (encodings, addresses, BIP-39/32/44, and the phase-5 transaction KATs - BIP-143 / EIP-155 / EIP-1559). Phases 1-4 ran green folded 2026-08-10 (207/207 on the re-run); **phase 5 (`stRunTransactions`) closed 2026-08-12 at 230/230** - after the headless-execution net (`check-script-vectors.py`, 251 checks) caught and fixed a trailing-empty-scriptSig defect that would have failed `cxBtcTxEncode` on that very run. Fully synchronous. See 4.6. |
 
 **Step 2 - the demos (depth on real transports).**
 
 | Order | Demo | Needs |
 |---|---|---|
-| 7 | `datachannelxt/examples/datachannel-loopback.livecodescript` | datachannelxt + `datachannel-helpers.livecodescript` |
-| 8 | `enetxt/examples/enet-lan-chat.livecodescript` | enetxt + `enet-helpers.livecodescript`; **two machines** for the real test |
+| 7 | `datachannelxt/examples/datachannel-loopback.livecodescript` | datachannelxt only (the helpers are embedded) |
+| 8 | `enetxt/examples/enet-lan-chat.livecodescript` | enetxt only (the helpers are embedded); **two machines** for the real test |
 | 9 | `torrentxt/examples/torrent-quickshare.livecodescript` | torrentxt (+ sodiumxt for the passphrase lock) |
 | 10 | `torrentxt/examples/torrent-client.livecodescript` | torrentxt |
-| 11 | onionxt against a live daemon: `onionxt/examples/onionxt-demo.livecodescript`, or the paste-and-run standalone `onionxt/examples/onionxt-demo-standalone.livecodescript` | onionxt + sodiumxt + tor with the control port |
+| 11 | onionxt against a live daemon: `onionxt/examples/onionxt-demo.livecodescript` (paste-and-run: it embeds the ox* layer, the httpd and its own tests) | sodiumxt packaged + tor with the control port |
 | 12 | `torrentxt/examples/torrent-quickshare.livecodescript` **with the Tor toggle on** | torrentxt + onionxt + sodiumxt + tor daemon. Inventory item 5. |
-| 13 | `datachannelxt/examples/datachannel-dht-chat.livecodescript` | datachannelxt **and** torrentxt; **two machines** |
+| 13 | `datachannelxt/examples/datachannel-dht-chat.livecodescript` | datachannelxt **and** torrentxt (the helpers are embedded); **two machines** |
 | 14 | `torrentxt/examples/torrent-dht-channels.livecodescript` and `torrent-rp1-chat.livecodescript` | torrentxt; **two machines** |
 | 15 | onionxt **Mode B**: `oxLaunchTor` against a real tor binary. Inventory item 4. | a tor binary on disk |
-| 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt, with `start using stack "coinxt"` first; sodiumxt optional (only the Generate button needs it) |
-| 17 | `riptide/examples/riptide-social.livecodescript` - the phase 1-7 flagship on four cards (Feed + media, Messages + Call, Devices, Anon). **TWO-MACHINE RECORD**: feeds both directions 2026-08-13; media fetched-and-played and DMs both ways 2026-08-15. The remaining legs (the call, the mesh, anon over Tor) are scripted in `riptide/docs/two-machine-runbook.md`, which supersedes this row for riptide | sodiumxt + torrentxt (+ enetxt/datachannelxt/onionxt per leg) + `start using stack "riptide"`; takes THE torrent session (trap 5.1) |
+| 16 | `coinxt/examples/coinxt-demo.livecodescript` - the phase-6 demo: mnemonic to accounts, addresses, sign/verify, and a decoded, signed BTC + ETH transaction | coinxt packaged (the script layer is embedded); sodiumxt optional (only the Generate button needs it) |
+| 17 | `riptide/examples/riptide-social.livecodescript` - the phase 1-7 flagship on four cards (Feed + media, Messages + Call, Devices, Anon). **TWO-MACHINE RECORD**: feeds both directions 2026-08-13; media fetched-and-played and DMs both ways 2026-08-15. The remaining legs (the call, the mesh, anon over Tor) are scripted in `riptide/docs/two-machine-runbook.md`, which supersedes this row for riptide | sodiumxt + torrentxt (+ enetxt/datachannelxt per leg) packaged; the rs*, ox* and httpd script layers are EMBEDDED; takes THE torrent session (trap 5.1) |
 | 18 | `tests/suite-closing-pass.livecodescript` - ONE stack for the remaining legs, so the closing sessions are a checklist, not an expedition. Six sections, each printing PASS lines: **A** datachannel local async (item 3's still-static live halves, single machine), **B** enet two-machine chat (closes item 8), **C** torrent seed/leech with a hash-verified payload plus resume saved to disk and re-added across an OXT restart, **D** rp1 chat over a DHT rendezvous (with C, closes item 14's legs), **E** datachannel chat signaled over the real DHT (closes item 13's shape), **F** Mode B `oxLaunchTor` plus a live onion echo - listen, dial your own onion through the Tor network, exact bytes both ways (closes item 15 and the seven live-Tor coverage exemptions' `oxTransport*` half) | sodiumxt + torrentxt + enetxt + datachannelxt packaged; onionxt in the message path for F; takes THE torrent session (trap 5.1); **install on both machines** for B/C/D/E |
 
 Items 8, 13, and 14 are genuine two-machine tests; item 18 packages their
@@ -1013,32 +1015,34 @@ The probes for the three layers remain, as tripwires rather than setup checks: a
 `FAIL` on one now means the generated paste itself is damaged, not that a step
 was missed.
 
-**The `start using` lines are still required for a member's STANDALONE
-harness.** `coinxt/tests/coin-selftest.livecodescript` and onionxt's own
-examples are pasted without the suite's embeds, so running one of those alone
-still needs its layer in the message path:
+**And since 2026-08-17 the standalone harnesses do not need them either.**
+`tools/sync-demo-embeds.py` carries each pure-script layer into the files that
+call it, so `coinxt/tests/coin-selftest.livecodescript`,
+`onionxt/examples/onionxt-demo.livecodescript`,
+`tests/suite-closing-pass.livecodescript` and
+`riptide/examples/riptide-social.livecodescript` are each ONE paste with no
+wiring. The registry in that tool is the list; a demo that is deliberately NOT
+embedded is recorded there with its reason (today: `torrent-quickshare`, whose
+own `socketError`/`socketClosed`/`socketTimeout` would collide with OnionXT's -
+it keeps its optional `start using stack "onionxt"` for the Tor leg).
 
-```
-start using stack "coinxt"     -- before coin-selftest standalone
-start using stack "onionxt"    -- before onionxt's standalone examples
-```
+**`start using` is still the right thing in a real project.** The sources under
+`<member>/src/` remain the single source of truth and the correct dependency;
+the embeds exist so a READER can open a demo without wiring it.
 
 ### 4.6 coinxt (inventory item 2 — CLOSED 2026-08-08; this is now the residual)
 
-**PHASE 3+ IS A SECOND, SEPARATE LOAD — when running coinxt's harness STANDALONE.**
+**PHASE 3+ COMES FROM A SECOND LAYER, and both pastes now carry it.**
 The hash and curve handlers come from the `.lcb` extension. The encoders and address
 builders come from `coinxt/src/coinxt.livecodescript`, which is a SCRIPT. The SUITE
-harness carries that script embedded (see "Setup the suite harness NO LONGER needs"
-above), but a standalone paste of `coin-selftest` does not, so there it must be in
-the message path first:
-
-```
-start using stack "coinxt"     -- or insert its script into the back
-```
+harness embeds that script (see "Setup the suite harness NO LONGER needs" above),
+and since 2026-08-17 so does the standalone `coin-selftest` paste, so neither
+needs `start using stack "coinxt"`.
 
 If every phase-3+ section fails with `handler not found` while the earlier ones pass,
-that is the symptom of the script not being loaded - a setup problem, not a defect.
-Fix it and re-run before reporting anything.
+that is the symptom of the script layer not being present - which now means the
+paste itself is damaged or truncated, not that a setup step was missed. Re-copy
+the whole file and re-run before reporting anything.
 
 **The address checks are stronger than they look.** `cxBtcAddressP2WPKH` of G must equal
 `bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4` and `cxBtcAddressP2TR` of x-only G must equal

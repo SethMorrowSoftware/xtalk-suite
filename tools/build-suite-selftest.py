@@ -9,7 +9,7 @@ anyone touches the original - and a drifted test harness is worse than no harnes
 because it reports green about code that no longer exists. So the suite harness is
 BUILT from the member harnesses, and `--check` (in the gate set) fails if the
 committed file is not what the sources currently produce. Same pattern, and the
-same reason, as onionxt/tools/build-standalone.py.
+same reason, as tools/sync-demo-embeds.py and box2dxt/tools/sync-embedded-kit.py.
 
 TWO MARKERS, AND WHY THE SECOND ONE EXISTS. The core carries
 `-- GENERATED MEMBER DECLARATIONS GO HERE --` (above every handler) and

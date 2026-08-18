@@ -13,8 +13,11 @@ WHY THIS EXISTS
     this tool copies it into each demo between sentinels so the SHIPPED demo is
     self-contained. Nobody hand-edits inside the sentinels, and `--check` fails
     the build when a copy drifts from its source - the same contract
-    box2dxt/tools/sync-embedded-kit.py has for the embedded b2k Kit, and the
-    same one onionxt/tools/build-standalone.py has for its standalones.
+    box2dxt/tools/sync-embedded-kit.py has for the embedded b2k Kit and
+    tools/build-suite-selftest.py has for the folded suite harness. It also
+    REPLACED onionxt/tools/build-standalone.py, which used to emit generated
+    `*-standalone` twins beside their sources; embedding in place means there is
+    one file to open rather than a source and a launchable copy of it.
 
 ORDER IS LOAD-BEARING, NOT COSMETIC
     The embedded block goes ABOVE the demo's own code, and the providers go in
@@ -121,12 +124,37 @@ DECL = re.compile(r'^(?:local|constant)\s+(.+)$', re.M)
 
 def names(text):
     """Script-level handler and declaration names. Column 0 only: an indented
-    `local` is a HANDLER local, scoped to its handler, and cannot collide."""
+    `local` is a HANDLER local, scoped to its handler, and cannot collide.
+
+    THE TRAILING COMMENT MUST COME OFF FIRST, and the first version of this
+    function did not do it - so it was very nearly blind. It matched the
+    declaration line, then required the remainder to be a bare identifier:
+
+        local sPolling          -- "true" while the timer loop is armed
+
+    fails that test on the comment, and nearly every declaration in this
+    codebase carries one. Only `constant kFoo = "bar"` survived, because
+    splitting on "=" happened to cut the comment off with the value. The
+    result was a collision checker that reported CLEAN over a real duplicate
+    and let it reach an engine, where it is a hard compile error:
+    `name shadows another variable or constant near "sPolling"`.
+
+    That is this session's own recurring failure - a gate that looks like it
+    checks something and does not - built into the gate meant to prevent it.
+    Comments off, then commas, then values."""
     handlers = set(DEF.findall(text))
     decls = set()
     for line in DECL.findall(text):
+        line = line.split("--", 1)[0].split("#", 1)[0]
+        # `=` BEFORE `,`, not after. `constant kDeck = "Ac,Ad,Ah"` splits on
+        # commas into `Ad` and `Ah`, which look exactly like identifiers - a
+        # tree-wide scan built the other way round reported holde-em as
+        # declaring `Ac`, `bank` and `ante` several times each, in a file that
+        # compiles clean and has run 538 checks green on an engine. Take the
+        # left of the first `=` (the declared names), then split THAT on commas.
+        line = line.split("=", 1)[0]
         for part in line.split(","):
-            n = part.split("=")[0].strip()
+            n = part.strip()
             if re.fullmatch(r"[A-Za-z_]\w*", n):
                 decls.add(n)
     return handlers, decls
