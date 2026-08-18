@@ -45,10 +45,34 @@ SELFTEST = os.path.normpath(os.path.join(HERE, "..", "tests",
 KAT = os.path.join(HERE, "coin-kat.py")
 
 
+EMBED_BEGIN = "-- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>"
+EMBED_END = "-- <<< END EMBEDDED LIBRARIES <<<"
+
+
 def load_constants(path):
-    """Pull `constant kName = "value"` out of the harness, in file order."""
+    """Pull `constant kName = "value"` out of the harness, in file order.
+
+    THE EMBEDDED LIBRARY SPAN IS CUT FIRST (2026-08-17). Since the harness
+    became self-contained - it carries src/coinxt.livecodescript so it can be
+    pasted and run without `start using stack "coinxt"` - a naive scan also
+    finds the LIBRARY's own constants (kCxBase58Alphabet, kCxBech32Charset,
+    kCxBip32MasterKey and friends) and demands this gate re-derive them. That
+    would be the wrong question asked of the wrong file: those are the
+    implementation's own tables, they are not test VECTORS, and the thing that
+    checks them is the library's own KAT run.
+
+    This is the same cut tools/check-suite-coverage.py makes for the paste's
+    embedded script layers, and for the same reason: once a file carries a
+    verbatim copy of something else, every tool that scans it has to know which
+    half it is looking at, or it measures the wrong text. That failure has now
+    appeared three times in this tree, so it is worth stating as a rule rather
+    than a special case."""
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
+    if EMBED_BEGIN in text and EMBED_END in text:
+        start = text.index(EMBED_BEGIN)
+        end = text.index(EMBED_END) + len(EMBED_END)
+        text = text[:start] + text[end:]
     found = re.findall(r'^constant (k\w+) = "([^"]*)"', text, re.M)
     return dict(found)
 

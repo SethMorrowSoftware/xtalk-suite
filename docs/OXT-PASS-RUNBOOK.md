@@ -2,6 +2,12 @@
 
 **Scope: the whole suite. Audience: the person sitting at a real OpenXTalk engine.**
 
+> **Read [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md) first, and add to it after.**
+> It is the list of things the engine does that no gate here predicted - the
+> verbatim symptoms, what each one broke, and whether anything now catches it.
+> Most of it was paid for in sessions like the one you are about to run, and the
+> fastest way to make that cost worth paying twice is to write down what you see.
+
 Everything in this repository that reads *"verified statically; needs an OXT pass"*
 is waiting on this session, and only on this session. OXT is a GUI runtime with no
 headless way to compile or run `.lcb` / `.livecodescript`, so CI can prove the native
@@ -1550,6 +1556,17 @@ DEMOS
 [ ] torrent-dht-channels / torrent-rp1-chat   (two machines)
 [ ] onionxt Mode B: oxLaunchTor               processId: ______  bootstrapped: ___
 [ ] coinxt-demo (phase 6: mnemonic -> decoded, signed BTC+ETH tx)
+[ ] sodium-demo
+[ ] onion-httpd spike (Share a Folder; needs a tor daemon)
+[ ] suite-closing-pass legs                    (which legs ran: ______)
+--  box2dxt's five GAMES had no rows here until 2026-08-17, so no session was
+--  ever told to open them. Its selftest runs inside the suite paste; these do
+--  not, and each is a window nobody has confirmed builds.
+[ ] box2dxt-demo               (the showcase: shapes, joints, events)
+[ ] box2dxt-platformer         (levels, camera, player states)
+[ ] box2dxt-slingshot
+[ ] box2dxt-contraption-builder
+[ ] box2dxt-spike-gamekit
 [x] riptide-social  2026-08-13: TWO machines - identities created on both
                     sides, feeds published and received in BOTH directions
                     through the real DHT; every rendered post ingest-verified

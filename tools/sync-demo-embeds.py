@@ -87,6 +87,17 @@ REGISTRY = {
         "onionxt/src/onion-httpd.livecodescript"],
     "torrentxt/examples/torrent-dht-channels.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
+    # Both of these are offered by the launcher, so a reader can pick them and
+    # meet the same wiring error the demos used to give. coin-selftest is also
+    # FOLDED into the suite paste, which already embeds coinxt once as a script
+    # layer - so build-suite-selftest.py cuts this copy back out (strip_spans on
+    # the coin row), exactly as it does for box2dxt's embedded Kit. Without that
+    # cut the paste would define every cx* handler twice, and the maintainer
+    # would meet it at paste time on an engine.
+    "coinxt/tests/coin-selftest.livecodescript": [
+        "coinxt/src/coinxt.livecodescript"],
+    "tests/suite-closing-pass.livecodescript": [
+        "onionxt/src/onionxt.livecodescript"],
     "riptide/examples/riptide-social.livecodescript": [
         "riptide/src/riptide.livecodescript",
         "onionxt/src/onionxt.livecodescript",

@@ -232,6 +232,18 @@ MEMBERS = [
         "stRun", "CoinXT: the full cx* self-test",
         "28 sections across all four phases: hashes, the secp256k1 curve, the "
         "encoders and addresses, BIP-39/32/44, and the fail-closed regressions.",
+        # THE SECOND HARNESS THAT CARRIES ITS OWN LIBRARY (2026-08-17), and the
+        # cut is the same one box2dxt needs for its Kit. coin-selftest embeds
+        # coinxt/src/coinxt.livecodescript so it can be pasted and run on its
+        # own - it used to require `start using stack "coinxt"`, which is the
+        # wiring step this suite removed from every launchable stack. But the
+        # paste ALREADY embeds that layer once, unprefixed, below; folding this
+        # copy in too would define all 47 script-side cx* handlers twice, which
+        # is a compile error the maintainer meets at PASTE TIME on an engine.
+        # Cut here, embedded once there.
+        strip_spans=((
+            "-- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>",
+            "-- <<< END EMBEDDED LIBRARIES <<<"),),
     ),
     Member(
         "torrent", "torrentxt/tests/torrent-selftest.livecodescript", "bt1",

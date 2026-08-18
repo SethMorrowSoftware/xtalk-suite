@@ -216,6 +216,13 @@ machinery but never leaves the host.
 
 ## LiveCodeScript / LCB / OXT gotchas (carried; OXT is stricter than LiveCode)
 
+> **Engine BEHAVIOUR - as opposed to the conventions below - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and whether a gate now holds it. Keep
+> member-specific gotchas here; put anything the ENGINE does there, so there is
+> one authoritative list instead of six that drift.
+
+
 1. **No smart/curly quotes anywhere** — they fail OXT compilation; ASCII only.
 2. **Avoid names whose full spelling lowercases to a reserved token** (the `tExt`
    == `text` class); the static checker flags them.

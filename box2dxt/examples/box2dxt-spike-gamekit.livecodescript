@@ -18,6 +18,10 @@
 -- file is throwaway scaffolding - it is not an example of Kit style.
 -- =====================================================================
 
+-- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
+-- inside the suite paste, but this GAME does not - no session has confirmed
+-- its window builds or that it plays. It had no runbook tick-sheet row at
+-- all until 2026-08-17, which is why: nothing ever asked anyone to open it.
 local gSpikeGen, gSpikeTest, gExtOK, gEnvDone, gReportN
 local gProbeN, gProbeLast, gProbeSum, gProbeMax
 local gS1MaxChord, gS1Seen, gS1RawDown, gS1RawUp
