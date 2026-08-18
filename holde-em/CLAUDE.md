@@ -1012,6 +1012,13 @@ cosmetic here by design (spec section 11).
 
 ## LiveCodeScript / OXT gotchas (carried from Box2Dxt, original numbering kept)
 
+> **Engine BEHAVIOUR - as opposed to the conventions below - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and whether a gate now holds it. Keep
+> member-specific gotchas here; put anything the ENGINE does there, so there is
+> one authoritative list instead of six that drift.
+
+
 `holdem-spec.md` cites these by number, so the Box2Dxt numbering is preserved; gaps are
 lessons that only apply to platformer-style games and were left behind. OXT's compiler
 is **stricter than LiveCode's**; every one of these broke a real build or shipped a real

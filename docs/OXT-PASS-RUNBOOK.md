@@ -2,6 +2,12 @@
 
 **Scope: the whole suite. Audience: the person sitting at a real OpenXTalk engine.**
 
+> **Read [OXT-ENGINE-NOTES.md](OXT-ENGINE-NOTES.md) first, and add to it after.**
+> It is the list of things the engine does that no gate here predicted - the
+> verbatim symptoms, what each one broke, and whether anything now catches it.
+> Most of it was paid for in sessions like the one you are about to run, and the
+> fastest way to make that cost worth paying twice is to write down what you see.
+
 Everything in this repository that reads *"verified statically; needs an OXT pass"*
 is waiting on this session, and only on this session. OXT is a GUI runtime with no
 headless way to compile or run `.lcb` / `.livecodescript`, so CI can prove the native
