@@ -85,7 +85,7 @@ runbook trap 5.2). Watch the pill at the top right:
 
 | Pill | Meaning |
 |---|---|
-| `Tor: no extension` / `Tor: needs cryptoXT` | Step 2 incomplete on this machine |
+| `Tor: no extension` / `Tor: needs SodiumXT` | Step 2 incomplete on this machine |
 | `Tor: no daemon` | Step 1 incomplete - no control port answered on 9051 or 9151 |
 | `Tor: connecting NN%` | Daemon reached; Tor is bootstrapping (tens of seconds) |
 | `Tor: ready` | Anonymous sends and receives will work |

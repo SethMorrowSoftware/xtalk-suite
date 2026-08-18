@@ -20,9 +20,9 @@ package.
    Without it there is no session and the app cannot run.
 2. **Include the optional extensions** if you want their features — both fail closed
    with a clear message when absent, so it is safe to ship with or without them:
-   - `org.openxtalk.library.sodium` (**cryptoXT**) — the passphrase encryption and the
+   - `org.openxtalk.library.sodium` (**SodiumXT**) — the passphrase encryption and the
      LAN web-editor password.
-   - **OnionXT** — the Private / Tor path. It also needs cryptoXT, and at runtime a
+   - **OnionXT** — the Private / Tor path. It also needs SodiumXT, and at runtime a
      **local Tor daemon** on the user's machine (system tor on `127.0.0.1:9051`, or Tor
      Browser on `9151`).
 3. **Include the Internet library (libURL).** It is used only for the public-IP lookup
@@ -58,5 +58,5 @@ package.
 - Tor features require the end user to have a Tor daemon running; that is a runtime
   dependency on their machine, not something you bundle.
 - Test each packaged target with at least the **Share code** and **Web link** paths (no
-  extra runtime dependencies) and, if you shipped cryptoXT/OnionXT, a passphrase share
+  extra runtime dependencies) and, if you shipped SodiumXT/OnionXT, a passphrase share
   and a Tor share with a daemon running.

@@ -5,7 +5,7 @@ here.** The torrentxt demos now do their optional encryption through SodiumXT
 (Argon2id `sxPwHash` + `sxSecretBox` + `sxEncryptFile`), with the feed marker
 moved `BTXENC1:` -> `BTXENC2:` and the old AES path deliberately DROPPED with
 no read-both-formats fallback (breakage accepted) - see `torrentxt/CLAUDE.md`,
-"Example demos: cryptoXT dependency", which is the as-built record. This
+"Example demos: SodiumXT dependency", which is the as-built record. This
 document stays as the design rationale (the weak-KDF and unauthenticated-CBC
 arguments below are why the migration happened); its "TorrentXT today"
 mapping table describes the pre-migration state and its phased plan was not

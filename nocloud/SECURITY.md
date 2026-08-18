@@ -34,7 +34,7 @@ the file or the metadata.
 
 - **Optional end-to-end encryption.** If the sender types a passphrase before sharing,
   the file is encrypted **end-to-end** on the sender's machine before it ever enters the
-  swarm. Encryption is provided by the optional **cryptoXT** extension
+  swarm. Encryption is provided by the optional **SodiumXT** extension
   (`org.openxtalk.library.sodium`, libsodium):
   - The key is derived from the passphrase with **Argon2id** (a memory-hard KDF) over a
     fresh random 16-byte salt. The salt travels inside the share code, not the passphrase.
@@ -63,10 +63,10 @@ the file or the metadata.
   in-browser editor for a shared folder. Because that is a write path reachable from a
   browser, it is deliberately locked down:
   - **Off by default.** It must be explicitly enabled.
-  - **Password protected.** The edit password is run through Argon2id (cryptoXT); a
+  - **Password protected.** The edit password is run through Argon2id (SodiumXT); a
     login is proven against a sealed verifier (`BTXEDIT1`), and a correct login mints a
     fresh random **session token** (192 bits) that invalidates any prior one. A wrong
-    password returns 401 with no hint about what was wrong. Without cryptoXT the editor
+    password returns 401 with no hint about what was wrong. Without SodiumXT the editor
     cannot be enabled at all — it fails closed.
   - **LAN-only, always.** Editor routes refuse any request that is not from the local
     network, and refuse **all** Tor requests, based on the TCP peer address the engine
@@ -132,11 +132,11 @@ relying on it for anything sensitive.
   is golden-tested, but the code has **not** undergone a formal independent security
   audit. Treat it accordingly.
 
-- **Encryption requires the optional cryptoXT extension.** End-to-end encryption, the
-  passphrase verifier, and the editor password all depend on cryptoXT
-  (`org.openxtalk.library.sodium`) being installed. If cryptoXT is absent, those features
+- **Encryption requires the optional SodiumXT extension.** End-to-end encryption, the
+  passphrase verifier, and the editor password all depend on SodiumXT
+  (`org.openxtalk.library.sodium`) being installed. If SodiumXT is absent, those features
   are unavailable and **fail closed**: a passphrase share cannot be created (the app tells
-  you to install cryptoXT rather than sharing in the clear silently at that step), and the
+  you to install SodiumXT rather than sharing in the clear silently at that step), and the
   editor cannot be enabled. Unencrypted sharing over BitTorrent, Tor, and web links
-  continues to work without cryptoXT, but it is exactly that — unencrypted. If you need
-  confidentiality, install cryptoXT and set a passphrase.
+  continues to work without SodiumXT, but it is exactly that — unencrypted. If you need
+  confidentiality, install SodiumXT and set a passphrase.

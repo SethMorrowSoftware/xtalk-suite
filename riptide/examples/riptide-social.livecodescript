@@ -137,7 +137,6 @@ script "riptideSocialApp"
 -- and locals by lexical position.
 
 -- ---- riptide/src/riptide.livecodescript ----
-script "RiptideSocial"
 -- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
 -- layer, the DM layer, the LAN mesh admission + sync layer, and the

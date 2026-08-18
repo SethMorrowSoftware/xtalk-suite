@@ -31,7 +31,7 @@ run - torrentxt's Tor path against a live daemon - runbook item 5.
 
 ## 2. Ground rules carried from both projects
 
-Single-thread playbook, OXT compiler footguns, fail-closed capability probes (mirroring the existing cryptoXT
+Single-thread playbook, OXT compiler footguns, fail-closed capability probes (mirroring the existing SodiumXT
 `sCanEncrypt` pattern), and the honesty convention (verified statically; needs an on-engine OXT pass).
 
 Both demos are self-contained stack scripts that will each receive a copy of the section-3 substrate under their
@@ -94,9 +94,9 @@ end <pfx>HasOnion
 Call it once in `qsStart` (qs 300, right after `put qsCanEncrypt() into sCanEncrypt`) / `chStart` (ch 471) →
 `put <pfx>HasOnion() into sHasOnion`. This is a one-shot boolean; the extension does not appear or vanish mid-run.
 
-Note the hard dependency chain (§9.3): OnionXT itself requires cryptoXT, so `sCanEncrypt` is a **necessary**
+Note the hard dependency chain (§9.3): OnionXT itself requires SodiumXT, so `sCanEncrypt` is a **necessary**
 precondition for anon mode even for a no-passphrase transfer. `<pfx>HasOnion` therefore reads as "OnionXT loaded
-AND `sCanEncrypt`"; when `sCanEncrypt` is false the anon path is inert with the §13.3 "needs cryptoXT" message,
+AND `sCanEncrypt`"; when `sCanEncrypt` is false the anon path is inert with the §13.3 "needs SodiumXT" message,
 distinct from "no Tor".
 
 **Stage 2 — `sTorReady` is LIVE, never a one-shot.** Two consumers, two different reads:
@@ -136,7 +136,7 @@ constant kOnionVirtualPort = "80"        -- the onion service's advertised port 
 constant kOnionMagic       = "BTXO"      -- 4 ASCII bytes, file-transfer frame sync
 constant kOnionVer         = 1
 constant kOnionChunk       = 65536       -- 64 KiB payload slice (hard cap on any single frame)
-constant kFlagEnc          = 1           -- header flags bit0: payload is cryptoXT .enc
+constant kFlagEnc          = 1           -- header flags bit0: payload is SodiumXT .enc
 constant kSendTimeout      = 30000       -- ms idle-gap watchdog, sender
 constant kRecvTimeout      = 60000       -- ms idle-gap watchdog, receiver (Tor handshakes are slow)
 constant kMaxNameLen       = 1024        -- reject a header nameLen beyond this (anti-DoS)
@@ -174,7 +174,7 @@ ch 906, 1 Hz — comfortably inside the ≤4 Hz UI rule). Pill states:
 | Condition | Pill text |
 |---|---|
 | Toggle off (default) | `Tor: off` |
-| `sHasOnion` false | `Tor: no extension` (or `Tor: needs cryptoXT` when OnionXT loaded but `sCanEncrypt` false) |
+| `sHasOnion` false | `Tor: no extension` (or `Tor: needs SodiumXT` when OnionXT loaded but `sCanEncrypt` false) |
 | `oxConnectControl` failed on both port pairs | `Tor: no daemon (start Tor on 127.0.0.1:9051 or 9151)` |
 | Connected, `oxBootstrapProgress() < 100` | `Tor: connecting NN%` |
 | `oxIsReady()` true | `Tor: ready` |
@@ -196,7 +196,7 @@ existing `btStopSession`:
 
 **Failure UX — all fail-closed, everything else intact:**
 
-- **Absent extension / absent cryptoXT** (`sHasOnion` false): the "Anonymous (Tor)" toggle is present but disabled
+- **Absent extension / absent SodiumXT** (`sHasOnion` false): the "Anonymous (Tor)" toggle is present but disabled
   with the matching tooltip. Public sharing/publishing/downloading all work normally.
 - **Absent daemon** (`oxConnectControl` failed both pairs): toggle disabled, pill names the fix. Clearnet path
   unaffected.
@@ -261,7 +261,7 @@ can no longer escape the save folder).
 clear message if short. These bounds live in the design body, not only in the golden test.
 
 Integrity is layered, not re-invented: the Tor circuit gives TLS-grade integrity endpoint-to-endpoint; when
-`kFlagEnc` is set, cryptoXT's `crypto_secretstream` gives per-chunk auth + a final tag (truncation is detected on
+`kFlagEnc` is set, SodiumXT's `crypto_secretstream` gives per-chunk auth + a final tag (truncation is detected on
 decrypt); for the plaintext case the `totalLen` check catches a short transfer. **Endpoint authenticity is NOT
 provided by the plaintext path** — see §7.3/M3: plaintext anon hides the route but does not authenticate the
 sender, and the "anon" badge must never imply it does.
@@ -461,12 +461,12 @@ time from `field "qsSendPass"`; the toggle is read from `sTorSend`.
 | `qsSendPass` | Tor toggle (`sTorSend`) | Transport | Contents | Share code |
 |---|---|---|---|---|
 | empty | off (default) | clearnet BitTorrent | plaintext | bare 40/64-hex info-hash (unchanged) |
-| set | off | clearnet BitTorrent | cryptoXT `.enc` | `BTXQS1:` … (unchanged) |
+| set | off | clearnet BitTorrent | SodiumXT `.enc` | `BTXQS1:` … (unchanged) |
 | empty | on | Tor onion stream | plaintext (circuit-encrypted only; **sender NOT authenticated**) | `BTXTOR1:<onion>:<b64name>::` |
-| set | on | Tor onion stream | cryptoXT `.enc` (**recommended**) | `BTXTOR1:<onion>:<b64name>:<b64salt>:<b64verify>` |
+| set | on | Tor onion stream | SodiumXT `.enc` (**recommended**) | `BTXTOR1:<onion>:<b64name>:<b64salt>:<b64verify>` |
 
 Tor-on always implies **no torrent** for that file. The bottom-right cell (Tor + passphrase) is the recommended
-"both" mode and is strongly steered: the circuit hides both IPs, cryptoXT hides the contents from the peer and at
+"both" mode and is strongly steered: the circuit hides both IPs, SodiumXT hides the contents from the peer and at
 rest **and authenticates the sender** (the plaintext cell does neither — see M3/§7.3).
 
 ### 5.1 UI affordances (edits inside `qsBuild`, line 127)
@@ -487,7 +487,7 @@ shrink.
 
 **Disabled-with-reason** is driven from `qsOnionPill` (runs on every status change and every 1 s `qsDashOnce`).
 `qsOnionPill` additionally:
-- disables `button "qsTorToggle"` (true) when `not sHasOnion` (tooltip "Needs OnionXT + cryptoXT + a local Tor
+- disables `button "qsTorToggle"` (true) when `not sHasOnion` (tooltip "Needs OnionXT + SodiumXT + a local Tor
   daemon.") or when the control port never connected (tooltip "Start a local Tor daemon on 127.0.0.1:9051 or
   9151.");
 - enables it (false) once control is connected (bootstrap may still be < 100%; the send-time guard handles that);
@@ -548,7 +548,7 @@ step 3).
 ```
 if sTorSend is "true" then
    if not sHasOnion then
-      qsLog "Turn off 'Send privately over Tor' or install OnionXT + cryptoXT + a local Tor daemon."
+      qsLog "Turn off 'Send privately over Tor' or install OnionXT + SodiumXT + a local Tor daemon."
       exit qsShareFile
    end if
    if not qsOnionReadyNow() then                              -- live, authoritative (§3.1)
@@ -620,8 +620,8 @@ byte-progress bar (§5.5). No `torrentAdded`/`metadataReceived` events ever appe
 
 1. **Parse.** `set the itemDelimiter to ":"`; `tOnion = item 1`, `tB64 = item 2`, `tB64Salt = item 3`,
    `tB64Verify = item 4` of the post-prefix rest. Reject with a clear log if `oxIsValidAddress(tOnion)` is false.
-2. **Capability gate.** If `not sHasOnion`: log "This is a private Tor share, but OnionXT (or cryptoXT) is not
-   installed - ask your friend to share it normally, or install OnionXT + cryptoXT + Tor." and exit. Decode the
+2. **Capability gate.** If `not sHasOnion`: log "This is a private Tor share, but OnionXT (or SodiumXT) is not
+   installed - ask your friend to share it normally, or install OnionXT + SodiumXT + Tor." and exit. Decode the
    name through `qsSafeLeaf(textDecode(base64Decode(tB64),"UTF-8"))`; fall back to `"shared-file"` if empty.
 3. **Passphrase, verified locally BEFORE dialing.** If `tB64Verify` is not empty (encrypted share): require
    `sCanEncrypt` and a non-empty `qsRecvPass` (else prompt/exit). Derive `tKey = sxPwHash(...)` and call
@@ -691,7 +691,7 @@ growth is a known minor limit for very long-lived apps).
 
 ### 5.6 Fallbacks, cleanup, and early close
 
-- **No OnionXT/cryptoXT (`sHasOnion` false):** `qsTorToggle` disabled with tooltip; the onion branch is unreachable
+- **No OnionXT/SodiumXT (`sHasOnion` false):** `qsTorToggle` disabled with tooltip; the onion branch is unreachable
   (guarded twice); plain and `BTXQS1:` paths byte-for-byte unchanged. A pasted `BTXTOR1:` code is refused with a
   clear install message (§5.4 step 2) — never a crash.
 - **No Tor daemon:** toggle disabled, pill names the fix; anon send/receive refuse; clearnet unaffected.
@@ -760,7 +760,7 @@ states compose:
 | off | empty | `Name` | public swarm + public DHT feed (today's default) |
 | off | set | `Name (private)` | public swarm of *ciphertext*, secretbox feed on DHT |
 | on | empty | `Name (anon)` | feed+files over Tor; IPs hidden; no DHT graph (sender not authenticated beyond the pubkey-bound onion) |
-| on | set | `Name (private) (anon)` | Tor route **and** cryptoXT contents (recommended) |
+| on | set | `Name (private) (anon)` | Tor route **and** SodiumXT contents (recommended) |
 
 ### 6.1 Identity unification — an anon channel needs no new key
 
@@ -823,7 +823,7 @@ mirrored to stack prop `uFollowAnon`, loaded in `chLoadFollows` (685) and saved 
 **Backward-compat (#17):** `chLoadFollows` must default `uFollowAnon` to empty on old saved stacks.
 
 **`command chSetAnon`** (new; modeled on `chSetPrivacy` 620):
-1. If `not sHasOnion` → `answer` "Anonymous channels need OnionXT + cryptoXT and a local Tor daemon
+1. If `not sHasOnion` → `answer` "Anonymous channels need OnionXT + SodiumXT and a local Tor daemon
    (127.0.0.1:9050/9051 or 9150/9151). Public channels are unaffected." ; exit.
 2. If `not sOnionIdentityOk` → refuse with the VERIFY-failed message; exit.
 3. `answer` the full privacy explanation (files+feed over Tor only; no DHT/swarm; IP hidden between onion
@@ -1044,7 +1044,7 @@ Anon and passphrase are **independent layers that stack**, and the steer is to c
 
 - **Tor route** (anon) hides *who* and *where*: both IPs behind onion circuits; no magnet, no DHT feed, so the
   follow graph and swarm membership never appear publicly.
-- **cryptoXT contents** (pass) hides *what*, from the peer and at rest: the feed value is `BTXENC2:`+secretbox and
+- **SodiumXT contents** (pass) hides *what*, from the peer and at rest: the feed value is `BTXENC2:`+secretbox and
   each file is `sxEncryptFile` ciphertext under a neutral name, authenticated per-chunk with a final tag — **and it
   authenticates the sender**, which the plaintext-anon path does not.
 
@@ -1222,8 +1222,8 @@ is not the peer. "GPA" = global passive adversary watching both endpoints' Tor g
 | Receiver/follower IP, from the peer | **Hidden** | **Hidden** | receiver dials out through Tor via `oxDial` |
 | Receiver/follower IP, from third parties | **Hidden** | **Hidden** | |
 | File bytes, in transit | **Hidden** | **Hidden** | onion circuit is layer-encrypted end to end |
-| File bytes, from the receiving peer | Exposed unless cryptoXT on | Exposed unless cryptoXT on | the endpoint receives the bytes; the passphrase withholds plaintext from a merely-relaying peer |
-| File bytes, at rest | Exposed unless cryptoXT on | Exposed unless cryptoXT on | with cryptoXT the received `.enc` decrypts only under the passphrase |
+| File bytes, from the receiving peer | Exposed unless SodiumXT on | Exposed unless SodiumXT on | the endpoint receives the bytes; the passphrase withholds plaintext from a merely-relaying peer |
+| File bytes, at rest | Exposed unless SodiumXT on | Exposed unless SodiumXT on | with SodiumXT the received `.enc` decrypts only under the passphrase |
 | Real filename / release title | **Hidden** from third parties | **Hidden** from third parties | rides inside the encrypted stream/feed |
 | Feed / file-list contents | n/a | **Hidden** from third parties | served over the onion and/or `sxSecretBox`-sealed; never `btDhtPutMutable` |
 | Subscription graph | n/a | **Hidden** from third parties | follows resolve via `oxDial`, not clearnet `btDhtGetMutable` from your IP |
@@ -1234,7 +1234,7 @@ is not the peer. "GPA" = global passive adversary watching both endpoints' Tor g
 | App's overall DHT presence | **Not hidden** | **Not hidden** | the host is still a DHT node; the IP claim is scoped to the anon file bytes only |
 | Channel online-presence | n/a | **Leaks a coarse oracle** | a deterministic-from-seed `.onion` descriptor reveals "reachable now" to anyone holding the address (7.6) |
 
-Read as: **Model C hides WHERE (both IPs) and, composed with cryptoXT, WHAT and authenticates WHO. It does not hide
+Read as: **Model C hides WHERE (both IPs) and, composed with SodiumXT, WHAT and authenticates WHO. It does not hide
 WHEN, HOW MUCH, or THAT-you-use-Tor, and plaintext-anon does not authenticate the sender.**
 
 ### 7.2 Onion-to-onion avoids exit nodes entirely (why we rejected Model A)
@@ -1270,7 +1270,7 @@ shows an anon badge. (3) Dual-availability: `qsAssertNotClearnet` treats anon an
 requires an explicit "yes, also seed this publicly" that visibly drops the anon badge. (4) `enable_lsd` only ever
 announces torrents; since anon files are never added, LSD cannot leak them.
 
-**Channels guards:** (1) An anon channel must **not** `btDhtPutMutable` its feed — it serves the (cryptoXT-sealed)
+**Channels guards:** (1) An anon channel must **not** `btDhtPutMutable` its feed — it serves the (SodiumXT-sealed)
 feed from `oxCreateServiceFromSeed(seed)` and followers fetch over Tor; skip it in the `chChannelTick` DHT-put loop
 exactly as a fail-closed private channel is skipped (926–930). (2) An anon channel takes the onion-publish branch,
 writing an `onion:<relId>` locator, never a magnet; **`chAssertNotClearnet` HARD-BLOCKS setting `["anon"]` true on a
@@ -1282,7 +1282,7 @@ property; a channel is all-clearnet or all-onion, and flipping it is refused whi
 > **Resolved review findings (§7.3).** H4 → the Channels anon-ON path is a **hard block**, consistent with §6.2/§6.7.
 > M3 → plaintext-anon endpoint authenticity is called out as NOT provided, in the table and in-UI (§5.4).
 
-### 7.4 Composing with cryptoXT: Tor hides the route, libsodium hides the contents
+### 7.4 Composing with SodiumXT: Tor hides the route, libsodium hides the contents
 
 Recommend **both**, reusing the existing crypto path unchanged. Encrypt to a temp `.enc`, stream the `.enc` over the
 onion; the receiver writes frames to a temp `.enc` and `sxDecryptFile`s it.
@@ -1290,7 +1290,7 @@ onion; the receiver writes frames to a temp `.enc` and `sxDecryptFile`s it.
 - **Tor alone (passphrase blank):** both IPs hidden; bytes encrypted in transit. **Exposed:** the receiving peer
   gets plaintext, plaintext lands on both disks, **and the sender is not authenticated.** Fine for a file you
   *intend* the peer to read from a source you trust out-of-band; wrong if the peer/disk/channel is untrusted.
-- **cryptoXT alone (today's clearnet encrypted mode):** contents secret from the swarm and at rest. **Exposed:** the
+- **SodiumXT alone (today's clearnet encrypted mode):** contents secret from the swarm and at rest. **Exposed:** the
   info-hash is on the DHT + tracker and both IPs are visible — *who*, *who*, *when*, *how big* are public.
 - **Both (recommended):** IPs hidden *and* contents secret *and* sender authenticated. **Residual:** timing/volume
   correlation by a GPA, Tor-usage visibility, the presence oracle (7.6), trust in the local Tor daemon (7.5).
@@ -1302,7 +1302,7 @@ file and the sender is not verified. Add a passphrase to keep it secret, tamper-
 
 OnionXT speaks SOCKS5 on `127.0.0.1:9050`/`9150` and control on `:9051`/`:9151`. The local Tor process is
 **trusted**: it sees **every `.onion` you dial**, **holds and serves your onion-service private key**, and a
-compromised local Tor can impersonate your service or de-anonymize you. It does **not** see plaintext when cryptoXT
+compromised local Tor can impersonate your service or de-anonymize you. It does **not** see plaintext when SodiumXT
 is layered (7.4). **Loopback only, always** — `oxSetControlPort`/`oxSetSocksPort` must point at `127.0.0.1`;
 pointing the control port at a remote host would hand full de-anonymization to that host. Control-port auth
 (cookie/password) is Tor's; the demo surfaces a clear "cannot reach / authenticate to local Tor" failure rather
@@ -1432,7 +1432,7 @@ is the BEHAVIOURAL Model C run (torrentxt's Tor path against a daemon), tracked 
   `oxSetStreamCallback`, `oxBootstrapProgress`/`oxIsReady`, `oxDial`/`oxWrite`/`oxCloseStream`,
   `oxCreateService`/`oxCreateServiceFromSeed`/`oxRemoveService`/`oxServiceAddress`, and the address helpers
   `oxAddressFromPublicKey`/`oxPublicKeyFromAddress`/`oxIsValidAddress`.
-- **cryptoXT (`sx*`) — reuse the existing path.** `sxEncryptFile`/`sxDecryptFile`, `sxPwHash`/`sxSecretBox`/
+- **SodiumXT (`sx*`) — reuse the existing path.** `sxEncryptFile`/`sxDecryptFile`, `sxPwHash`/`sxSecretBox`/
   `sxSecretBoxOpen`, `sxSignKeypairFromSeed` (the H5 offline VERIFY), `sxRandomBytes`, `sxHex2Bin`. Nothing new.
 - **Bounded file streaming** uses built-in `open/read/seek/close file` — no extension.
 
@@ -1456,10 +1456,10 @@ Toggle wired into `qsBuild` (`qsTorToggle`), branch added to `qsShareFile`/`qsGe
 
 ### 9.3 Dependency notes
 
-- **OnionXT depends on cryptoXT (SodiumXT).** OnionXT computes the onion identity and address with SodiumXT
-  primitives, so the **anonymous path requires cryptoXT even for a no-passphrase transfer**, independent of the
+- **OnionXT depends on SodiumXT (SodiumXT).** OnionXT computes the onion identity and address with SodiumXT
+  primitives, so the **anonymous path requires SodiumXT even for a no-passphrase transfer**, independent of the
   demos' own optional encryption. `sCanEncrypt` is therefore a *necessary* precondition for anon mode. Both demos
-  already fail closed when cryptoXT is absent; anon mode reuses that gate and adds `oxVersion()` on top. **VERIFY**
+  already fail closed when SodiumXT is absent; anon mode reuses that gate and adds `oxVersion()` on top. **VERIFY**
   (§12.3 #26): confirm the dependency, the minimum SodiumXT ABI, and that anon-without-passphrase truly still needs
   SodiumXT.
 - Record the SodiumXT floor in the demo header comments alongside the existing "requires
@@ -1694,7 +1694,7 @@ Runnable where the real libs load; each is a hard gate on the phase noted.
 - **Concurrent services** — OnionXT can run N services at once (one per anon channel) — Phase 2.
 - **Cookie-auth model of `oxConnectControl`** (does it read Tor's cookie file itself, or need a passed credential)
   — Phase 0.
-- **#26/§9.3 OnionXT ⇒ cryptoXT dependency**, the minimum SodiumXT ABI, and that anon-without-passphrase still needs
+- **#26/§9.3 OnionXT ⇒ SodiumXT dependency**, the minimum SodiumXT ABI, and that anon-without-passphrase still needs
   SodiumXT — Phase 0.
 - **#27/§11.3 libtorrent-ed25519 == libsodium-ed25519 for one seed** — the offline
   `btDhtKeypair` vs `sxSignKeypairFromSeed` byte-compare **and** the live `oxServiceAddress == chChannelOnionAddr`
@@ -1764,7 +1764,7 @@ Ordered probe, each step gating the next, surfaced in the pill/status field via 
 (fed by `oxSetStatusCallback`, coalesced):
 
 1. `oxVersion()` in a `try` — is **OnionXT** loaded?
-2. `sCanEncrypt` — is **cryptoXT** present? (OnionXT hard-needs it — §9.3.)
+2. `sCanEncrypt` — is **SodiumXT** present? (OnionXT hard-needs it — §9.3.)
 3. `oxConnectControl` on **9051, then 9151** — is a **Tor daemon** reachable and will it accept the control
    connection? (This implements the dual-port-pair promise; it is not hardcoded to one pair.)
 4. `oxBootstrapProgress()` 0→100 (rendered live: "Tor: connecting NN%").
@@ -1779,7 +1779,7 @@ never downgrades to clearnet, never queues onto the swarm).
 | stage that failed | user sees (log + toggle state) |
 |---|---|
 | OnionXT missing | "Anonymous mode needs the OnionXT extension (org.openxtalk.library.onion), which isn't installed. Public sharing still works." — toggle disabled. |
-| cryptoXT missing | "Anonymous mode also needs cryptoXT (org.openxtalk.library.sodium). Install it. Public sharing still works." — toggle disabled. (Distinct from "no Tor" — §11.4.) |
+| SodiumXT missing | "Anonymous mode also needs SodiumXT (org.openxtalk.library.sodium). Install it. Public sharing still works." — toggle disabled. (Distinct from "no Tor" — §11.4.) |
 | mobile device | "Anonymous mode isn't available on this device (it needs a local Tor daemon). Public sharing still works." — toggle disabled. |
 | Tor not reachable | "Couldn't reach Tor on 127.0.0.1:9051 or 9151. Start Tor (or Tor Browser) and try again. Your public sharing is unaffected." |
 | control refused / auth | "Reached Tor but it refused the control connection. Enable ControlPort 9051 + cookie auth in your torrc (see onboarding), then retry." |

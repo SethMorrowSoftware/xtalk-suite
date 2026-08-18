@@ -23,7 +23,7 @@ BitTorrent DHT, with optional Tor anonymity and end-to-end encryption.
 | **Web link** | A plain `http://` link that opens in any browser. Serve a file, a folder, or a whole website. | No | No | No — any browser |
 | **Private / Tor** | The bytes ride a Tor onion; both IP addresses are hidden and no torrent is created. | **Yes** | Optional (passphrase) | Single file: yes; folder/browser: no |
 
-Any file can be locked with a **passphrase** (optional, needs cryptoXT): the network
+Any file can be locked with a **passphrase** (optional, needs SodiumXT): the network
 only ever sees ciphertext under a neutral name, and a wrong passphrase is caught
 before anything downloads.
 
@@ -33,7 +33,7 @@ before anything downloads.
    9.6.3+, but OXT is the target.)
 2. **Install the extensions** via `Tools > Extension Manager`:
    - **TorrentXT** — `org.openxtalk.library.torrent` — **required**.
-   - *(optional)* **cryptoXT** — `org.openxtalk.library.sodium` — for the passphrase
+   - *(optional)* **SodiumXT** — `org.openxtalk.library.sodium` — for the passphrase
      encryption and the LAN web editor.
    - *(optional)* **OnionXT** + a local **Tor daemon** — for the Private / Tor path.
    The app detects each and **fails closed with a clear message** when one is missing;
@@ -71,8 +71,8 @@ operational limit (there is no "upload and walk away").
 | Extension | Library id | Required? | Provides |
 |---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | **Yes** | the session, DHT, BitTorrent, magnets, UPnP |
-| **cryptoXT** | `org.openxtalk.library.sodium` | No | passphrase encryption (Argon2id + secretstream); LAN editor password |
-| **OnionXT** + local Tor | — | No | the Private / Tor path (needs cryptoXT too) |
+| **SodiumXT** | `org.openxtalk.library.sodium` | No | passphrase encryption (Argon2id + secretstream); LAN editor password |
+| **OnionXT** + local Tor | — | No | the Private / Tor path (needs SodiumXT too) |
 | Internet library (libURL) | — | No | public-IP lookup for the web link (try-guarded) |
 
 ## The bundled web app
@@ -88,7 +88,7 @@ the live `/_qs/info` backend route. See [docs/webapp.md](docs/webapp.md).
 ## Building a standalone
 
 The app is standalone-ready (self-building UI, clean shutdown on quit, per-user save
-folder). Include the TorrentXT extension (required) and cryptoXT/OnionXT (optional)
+folder). Include the TorrentXT extension (required) and SodiumXT/OnionXT (optional)
 in the standalone builder. See [docs/building-a-standalone.md](docs/building-a-standalone.md).
 
 ## Development
@@ -109,7 +109,7 @@ OpenXTalk-runtime lessons. Report issues privately per **[SECURITY.md](SECURITY.
 ## License
 
 MIT — see [LICENSE](LICENSE). Built on the OpenXTalk extension family (TorrentXT /
-cryptoXT / OnionXT), which wrap libtorrent-rasterbar (BSD-3), libsodium (ISC), and
+SodiumXT / OnionXT), which wrap libtorrent-rasterbar (BSD-3), libsodium (ISC), and
 Boost (Boost Software License) under their own permissive terms.
 
 ---

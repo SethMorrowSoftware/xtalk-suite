@@ -50,7 +50,7 @@ only to the person you mean to.
 
 Without a passphrase, the file — **and its real filename** — travel in the
 clear; anyone in the swarm can read both. If you type a **passphrase** before
-dropping the file, encryption is real and end-to-end: cryptoXT (libsodium)
+dropping the file, encryption is real and end-to-end: SodiumXT (libsodium)
 derives a key from your passphrase with Argon2id and seals the file with
 `crypto_secretstream`. The swarm then only ever sees the **ciphertext, under a
 neutral `.enc` name** — the true filename and the key-derivation salt ride
@@ -91,7 +91,7 @@ link" offers a single file — both open in **Tor Browser with no app**, both
 still hide both IPs, but because a browser can't decrypt, both are **unencrypted
 and the sender is not verified**.)
 
-For a single file, adding a **passphrase** layers on cryptoXT encryption *and*
+For a single file, adding a **passphrase** layers on SodiumXT encryption *and*
 authentication: the bytes are sealed, and a wrong passphrase is rejected up
 front rather than handing over a file that can't be opened. Without a passphrase
 the single-file Tor transfer still hides both IPs, but the content is not
@@ -99,7 +99,7 @@ encrypted at the application layer beyond Tor's own transport and is not tied to
 a secret only your recipient knows. This path needs the OnionXT extension and a
 **local Tor daemon** (start Tor or Tor Browser on your machine — the app finds
 it on control port 9051 or 9151); the passphrase features additionally need
-cryptoXT. When those pieces are missing the path simply isn't offered, and the
+SodiumXT. When those pieces are missing the path simply isn't offered, and the
 other two paths keep working.
 
 ## What is never hidden
