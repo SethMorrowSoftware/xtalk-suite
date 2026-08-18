@@ -229,6 +229,32 @@ measurement.
 `b2kTeardown` from `closeCard`. A tree-wide audit that greps for `on closeStack`
 will report them as having no teardown, wrongly - which happened on 2026-08-17.
 
+### 5.3 `the playLoudness` does not read back exactly on every platform
+**OBSERVED 2026-08-18 on LINUX.** box2dxt's harness did
+
+```
+b2kSoundVolume 73        -- set the playLoudness to round(clamp(73,0,100))
+stAssert "playLoudness readback", (the playLoudness is 73)
+```
+
+and the assertion was FALSE. The identical check had been green on Windows
+x86_64 (NT 10.0, OXT 9.6.3) the day before. **What the value actually was is
+not known** - the check reported nothing but its own name, so a scarce engine
+session yielded "some number is not 73". The harness now probes two points and
+prints both, so the next pass on any platform reports the scale instead of
+re-asking; do not promote a mechanism into this entry until it does.
+
+**Rule:** `playLoudness` is a request, not a register. Set it and move on; do
+not read it back and compare against what you wrote, and do not compute from
+it. The ordering (a higher write is louder) is the only property to rely on.
+
+**The wider lesson is about assertions, not audio.** Every other check in that
+section names the value it saw - `(got 200)`, `(hScroll 1120)`, `(owner:
+b2kcam_view)` - and this one did not, which is exactly the check that went red
+on a platform nobody had run before. An assertion's failure message is the
+whole product of an engine pass. Write it as though the run costs a day,
+because it does.
+
 ---
 
 ## 6. Sockets and processes
@@ -250,6 +276,69 @@ group first, else take everything up to the LAST colon.
 launch path itself has never run on an engine - it is the one remaining VERIFY
 in onionxt, scheduled as runbook S2 item 2. **See trap 5.3.1:** it defaults to
 the same ports a system tor already holds.
+
+### 6.4 An EMPTY value into a typed `.lcb` parameter is "type conversion error"
+**OBSERVED 2026-08-18 on Linux**, twice, from two different demos.
+
+`"type conversion error"` is **LiveCode Builder's** error for a value that will
+not convert to a declared parameter type. Every public `.lcb` handler in this
+suite declares its parameter types and **none of the 630 has an optional
+parameter**, so every one of them is a place a script can hand the engine
+something it must refuse - at runtime, on a GUI engine, in front of a person.
+
+The confirmed instance is `enet-lan-chat`:
+
+```
+enHostDestroy sHost          -- enHostDestroy(in pHost as Integer)
+put empty into sHost         -- ...one line later
+```
+
+`enetDisconnect` empties the handle it just used, so the SECOND disconnect
+(ENet delivers one per peer, and a failed connect produces one of its own)
+passed **empty** to an `Integer` parameter. Not a no-op - a throw, which killed
+the poll chain and left the demo silently dead. The same file guards `sHost`
+this way in ten other places.
+
+**Rule:** empty is not a value for `Integer`, `Real`, `Number` or `Boolean`.
+Guard any handle before passing it, especially on a teardown path, and
+especially in a harness - an uncaught throw at teardown costs the WHOLE run,
+not the section.
+
+**Gate:** `tools/check-lcb-call-types.py` checks the script-to-`.lcb` boundary
+argument by argument - arity, emptied handles, and event keys the module's own
+`_fieldKey` cannot return. It found the defect above plus eight teardown paths
+where a setup that never ran would have turned a clean skip into a dead run.
+
+### 6.5 STILL UNRESOLVED: the datachannel dispatch line
+**OBSERVED 2026-08-18 on Linux**, hosting a chat in
+`datachannelxt/examples/datachannel-dht-chat.livecodescript`. 6.4 explains
+the ENet demo's failure completely; this one is NOT yet explained, because
+the gate that found the ENet defect reports the datachannel demo clean:
+
+```
+execution error at line 178 (call: type conversion error), char 1
+```
+
+Line 178 is the poll dispatcher's `dispatch tName to sPollTarget with tEvent`.
+
+**This entry names a symptom, not a cause, and it is filed that way on
+purpose.** Three different bugs produce exactly this line - the dispatch
+itself refusing its arguments, the target no longer resolving, or a THROW
+inside a handler the dispatch reached - and the message distinguishes none of
+them. The obvious suspect is already ruled out: `dispatch <name> to <obj> with
+<array>` is engine-proven elsewhere in this suite, where `onion-httpd` routes
+an array of parsed headers that way and serves real pages through Tor.
+
+Do not promote this entry to a mechanism until a run reports one. The
+dispatcher in `datachannel-helpers.livecodescript` now isolates each event,
+keeps the timer chain alive, and records the first failure with the event's
+name for `dcPollLastError()`; both demos that carry it surface that line in
+their own log. The next occurrence should arrive with the event named.
+
+**The general rule this is the second example of in two days** (see 5.3): an
+engine session's entire output is its error messages. A bare statement plus a
+phrase costs another session; a message that names the value, the target and
+the operation usually costs none.
 
 ---
 

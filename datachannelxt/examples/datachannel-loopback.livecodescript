@@ -75,6 +75,7 @@ script "DataChannelLoopback"
 local sPollTarget       -- object that receives the semantic event messages
 local sPollInterval     -- milliseconds between drains (the latency/CPU knob)
 local sPolling          -- "true" while the timer loop is armed
+local sPollNote         -- most recent dispatch failure, "" while healthy
 
 -- dcStartPolling TARGET, INTERVALMS
 -- Begin draining events and dispatching them to TARGET. If TARGET is empty,
@@ -117,23 +118,100 @@ end dcStopPolling
 
 -- One drain pass: pull all pending events with a single dcPoll, dispatch
 -- each, then reschedule.
+--
+-- WHY THIS IS WRAPPED, AND WHY THE WRAP IS NOT BELT-AND-BRACES.
+-- The 2026-08-18 Linux pass reported, on hosting a chat:
+--
+--   execution error at line 178 (call: type conversion error), char 1
+--
+-- - line 178 of the merged demo being the `dispatch tName` below. That is the
+-- whole product of an engine session: a statement, and a phrase. It does not
+-- say which EVENT was in flight, whether the target still resolved, or
+-- whether the throw came from the dispatch itself or from a handler it
+-- reached, and those are three different bugs. Static reading could not tell
+-- them apart either: `dispatch <name> to <obj> with <array>` is proven
+-- on-engine elsewhere in this suite (onion-httpd routes an array of headers
+-- that way and serves real pages), so the obvious suspect is already ruled
+-- out. So this pass now records what it saw.
+--
+-- It also STOPS TAKING THE CHAIN DOWN. An uncaught throw here kills the timer
+-- and the app goes quiet with no further symptom - the failure mode that makes
+-- an intermittent event bug cost several passes instead of one. Each event is
+-- isolated: one bad event is reported and skipped, the rest of the drain and
+-- every later drain still run. The note is READ, not printed, because printing
+-- from a library into an app it knows nothing about is how a diagnostic
+-- becomes a nuisance: see dcPollLastError.
 command dcChannelPollOnce
-   local tEvents, tEvent, tName
+   local tEvents, tEvent, tName, tErr, tTarget, tProbe
    if sPolling is not "true" then
       exit dcChannelPollOnce
+   end if
+   -- Resolve the target ONCE per pass and prove it still RESOLVES. A long id
+   -- whose object has gone (a closed stack, a rebuilt card) is the classic way
+   -- a dispatch target goes stale.
+   --
+   -- The probe is a guarded property READ, not `there is an object tTarget`.
+   -- That spelling reads better and nothing in this suite has ever compiled
+   -- it, so putting it here would risk trading a reported error for an
+   -- unreported one in three demo files at once. The try/catch shape below is
+   -- the one box2dxt's harness uses to re-resolve a stale long id, and it has
+   -- run green on an engine.
+   put sPollTarget into tTarget
+   put empty into tProbe
+   if tTarget is not empty then
+      try
+         put the short name of tTarget into tProbe
+      catch tErr
+         put empty into tProbe
+      end try
+   end if
+   if tProbe is empty then
+      put the long id of this card into tTarget
+      if sPollNote is empty then
+         put "poll target no longer resolves; fell back to this card" into sPollNote
+      end if
    end if
    put dcPoll() into tEvents
    repeat for each element tEvent in tEvents
       put tEvent["name"] into tName
-      if tName is not empty then
-         dispatch tName to sPollTarget with tEvent
-      end if
-      -- also fire a catch-all so one handler can observe the whole stream
-      dispatch "dataChannelEvent" to sPollTarget with tEvent
+      try
+         if tName is not empty then
+            dispatch tName to tTarget with tEvent
+         end if
+         -- also fire a catch-all so one handler can observe the whole stream
+         dispatch "dataChannelEvent" to tTarget with tEvent
+      catch tErr
+         -- Keep the FIRST failure: it is the one with a clean cause. Later
+         -- ones are usually the same bug repeating at 10 Hz, and overwriting
+         -- would leave whichever event happened to be last.
+         if sPollNote is empty then
+            put "dispatch of" && tName & " failed: " & line 1 of tErr into sPollNote
+         end if
+      end try
    end repeat
-   -- reschedule (the native queue keeps buffering between drains)
+   -- Reschedule (the native queue keeps buffering between drains). The
+   -- interval is guarded because `in () milliseconds` on an empty value is
+   -- itself a type conversion error - and a poll loop that dies while
+   -- reporting a poll error would be a poor diagnostic.
+   if sPollInterval is not a number or sPollInterval < 1 then
+      put 33 into sPollInterval
+   end if
    send "dcChannelPollOnce" to me in (sPollInterval) milliseconds
 end dcChannelPollOnce
+
+-- dcPollLastError() -- empty while the dispatcher is healthy; otherwise the
+-- FIRST dispatch failure since the last dcPollClearError, naming the event.
+-- An app that shows this in its own log turns "the demo went quiet" into a
+-- line a maintainer can act on.
+function dcPollLastError
+   return sPollNote
+end dcPollLastError
+
+-- Clear it, so an app can report each distinct failure once rather than
+-- repeating one line forever.
+command dcPollClearError
+   put empty into sPollNote
+end dcPollClearError
 
 -- dcStateName N -- map a kPeerState* int to a label for status displays.
 function dcStateName pState
@@ -707,11 +785,24 @@ end connectLoopback
 -- is not slow, it is stuck - the known cause is a machine that blocks ALL
 -- UDP, even to itself. Say so instead of hanging silently.
 command lbConnectWatch
+   local tPollErr
    put empty into sWatchArmed
    if sOpenSeen is "true" then
       exit lbConnectWatch
    end if
    if sPeerA is empty or sPeerA is 0 then
+      exit lbConnectWatch
+   end if
+   -- Blocked UDP is the usual reason this deadline is reached, but it is not
+   -- the only one: a dispatch that threw would ALSO look exactly like this -
+   -- peers created, nothing ever opening - and blaming a firewall for a
+   -- script fault sends the reader somewhere there is nothing to find. So ask
+   -- the dispatcher first and report whichever cause is real.
+   put dcPollLastError() into tPollErr
+   if tPollErr is not empty then
+      dcPollClearError
+      uiStatus "The event dispatcher failed - see the logs. This is NOT a firewall problem.", "bad"
+      logLine sPeerA, "* event dispatch problem:" && tPollErr
       exit lbConnectWatch
    end if
    uiStatus "Still not open after" && (kLbDeadlineMs div 1000) && "s - this machine may block UDP to itself (VPN/firewall). See the logs.", "bad"
