@@ -1,3 +1,7 @@
+-- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
+-- inside the suite paste, but this GAME does not - no session has confirmed
+-- its window builds or that it plays. It had no runbook tick-sheet row until
+-- 2026-08-17, which is why: nothing ever asked anyone to open it.
 -- #####################################################################
 -- #  Box2Dxt  -  SELF-CONTAINED DEMO  (Kit + showcase in one file)    #
 -- #                                                                   #

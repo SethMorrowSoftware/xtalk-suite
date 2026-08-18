@@ -55,6 +55,10 @@
 --   7. R / 1-3 / ESC / M work mid-flight; stack reopen = clean rebuild.
 -- =====================================================================
 
+-- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
+-- inside the suite paste, but this GAME does not - no session has confirmed
+-- its window builds or that it plays. It had no runbook tick-sheet row at
+-- all until 2026-08-17, which is why: nothing ever asked anyone to open it.
 local gMode              -- menu | play | clear | retry | won
 local gLevel             -- 1..3
 local gScore             -- running total (rolls back on a retry)

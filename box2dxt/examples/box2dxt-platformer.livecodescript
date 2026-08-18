@@ -1,3 +1,7 @@
+-- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
+-- inside the suite paste, but this GAME does not - no session has confirmed
+-- its window builds or that it plays. It had no runbook tick-sheet row until
+-- 2026-08-17, which is why: nothing ever asked anyone to open it.
 -- =====================================================================
 -- box2dxt-platformer.livecodescript  /  Game Kit Phases 1+2+3+4 showcase
 --
@@ -363,6 +367,10 @@
 --      win screen says ALL SEVEN LEVELS CLEAR. (Multi-key/switch puzzles: slice 3.)
 -- =====================================================================
 
+-- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
+-- inside the suite paste, but this GAME does not - no session has confirmed
+-- its window builds or that it plays. It had no runbook tick-sheet row at
+-- all until 2026-08-17, which is why: nothing ever asked anyone to open it.
 local gStarted, gHero, gHeroSpr, gHudLast, gHurtLock
 -- Phase G: the chosen hero SKIN (beige/green/pink/purple/yellow). One word; the
 -- hero anim defs and the creation frame interpolate it, so a rebuild re-skins the

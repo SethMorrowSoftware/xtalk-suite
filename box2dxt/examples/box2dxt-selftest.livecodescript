@@ -43,6 +43,8 @@
 --      report it with the line's numbers.
 -- =====================================================================
 
+-- STATUS: last run GREEN in the 2026-08-17 engine pass (Windows x86_64, NT 10.0, OXT 9.6.3) - 374/374 at harness v29, folded
+-- into tests/suite-selftest.livecodescript.
 local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 

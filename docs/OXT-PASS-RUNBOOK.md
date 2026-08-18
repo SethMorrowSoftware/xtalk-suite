@@ -1550,6 +1550,17 @@ DEMOS
 [ ] torrent-dht-channels / torrent-rp1-chat   (two machines)
 [ ] onionxt Mode B: oxLaunchTor               processId: ______  bootstrapped: ___
 [ ] coinxt-demo (phase 6: mnemonic -> decoded, signed BTC+ETH tx)
+[ ] sodium-demo
+[ ] onion-httpd spike (Share a Folder; needs a tor daemon)
+[ ] suite-closing-pass legs                    (which legs ran: ______)
+--  box2dxt's five GAMES had no rows here until 2026-08-17, so no session was
+--  ever told to open them. Its selftest runs inside the suite paste; these do
+--  not, and each is a window nobody has confirmed builds.
+[ ] box2dxt-demo               (the showcase: shapes, joints, events)
+[ ] box2dxt-platformer         (levels, camera, player states)
+[ ] box2dxt-slingshot
+[ ] box2dxt-contraption-builder
+[ ] box2dxt-spike-gamekit
 [x] riptide-social  2026-08-13: TWO machines - identities created on both
                     sides, feeds published and received in BOTH directions
                     through the real DHT; every rendered post ingest-verified

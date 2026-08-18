@@ -39,6 +39,10 @@ script "enetSelfTest"
 -- byte-exact compares under caseSensitive, and zero-argument calls BARE in
 -- statement position.
 
+-- STATUS: the SYNC half last ran GREEN in the 2026-08-17 engine pass (Windows x86_64, NT 10.0, OXT 9.6.3) - 21/21, folded into
+-- tests/suite-selftest.livecodescript. The ASYNC loopback is deliberately
+-- NOT folded (two state machines in one process race for the event
+-- handlers) and is verified by running this file on its own.
 constant kStTitle = "enetxt - API Self-Test"
 constant kStWidth = 660
 constant kStHeight = 620
