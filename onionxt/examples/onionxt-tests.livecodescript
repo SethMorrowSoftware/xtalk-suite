@@ -450,8 +450,8 @@ private command testConfigurationSetters
    oxCheck (oxIsReady() is tWasReady), "clearing the ports and password is harmless too"
 
    -- The three DISPATCH setters do not clear, and the reason is a real bug this
-   -- section would otherwise have introduced. tools/build-standalone.py bundles
-   -- this file into examples/onionxt-demo-standalone.livecodescript, where the
+   -- section would otherwise have introduced. tools/sync-demo-embeds.py bundles
+   -- this file into examples/onionxt-demo.livecodescript, where the
    -- About tab runs oxSelfTest inside the running demo - and that demo sets its
    -- callback owner and status handler ONCE, in preOpenStack. Clearing them here
    -- would leave a demo that had already opened with no status dispatch at all,
@@ -488,7 +488,7 @@ end testConfigurationSetters
 -- HOW IT REACHES A PRIVATE HANDLER. oxHostOfSocket / oxHostIsLoopback are
 -- private to src/onionxt.livecodescript, so they resolve only where this harness
 -- and that library share one script - which is how it actually runs on an
--- engine: tools/build-standalone.py concatenates them into the demo standalone
+-- engine: tools/sync-demo-embeds.py concatenates them into the demo itself
 -- (whose About tab runs oxSelfTest), and the suite generator does the same for
 -- tests/suite-selftest.livecodescript. Run instead as two library stacks, the
 -- call raises a catchable "no such handler" execution error - the same mechanism

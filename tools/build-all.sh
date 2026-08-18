@@ -429,6 +429,16 @@ fi
 # file and have it run - no `start using` wiring. The sources under <member>/src
 # stay the single source of truth; this proves the copies inside the demos have
 # not drifted from them.
+# Its collision detector shipped blind once - it required the remainder of a
+# declaration line to be a bare identifier, so every commented `local` was
+# invisible and a duplicate `sPolling` reached an engine as a hard compile
+# error. The fixtures run FIRST, and --mutate proves they still discriminate
+# against the pre-fix implementation, so "the checker is clean" means the
+# checker can see.
+if [ -f tools/test-demo-embeds.py ]; then
+  echo "== suite: tools/test-demo-embeds.py --mutate =="
+  python3 tools/test-demo-embeds.py --mutate
+fi
 if [ -f tools/sync-demo-embeds.py ]; then
   echo "== suite: tools/sync-demo-embeds.py --check =="
   python3 tools/sync-demo-embeds.py --check

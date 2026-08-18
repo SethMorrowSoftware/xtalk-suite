@@ -142,8 +142,8 @@ Install through the OpenXTalk / LiveCode **Extension Manager** the same way you
 install any extension; the engine resolves the native library automatically —
 no loose library, no `sudo`, no `LD_LIBRARY_PATH`, no rename. **OnionXT is the
 exception**: it is pure LiveCodeScript with no packaged extension — copy its
-two `src/*.livecodescript` libraries into your app (`start using`), or build a
-paste-and-run standalone with `onionxt/tools/build-standalone.py` (see
+two `src/*.livecodescript` libraries into your app (`start using`), or just open
+`onionxt/examples/onionxt-demo.livecodescript`, which carries them (see
 `onionxt/docs/10-usage-guide.md`). Install only the
 members you need, or the whole suite. Verify from the message box — each member
 answers a load-check handler:
