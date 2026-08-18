@@ -319,15 +319,21 @@ LCB Line    234
 ```
 
 The line is read from the **source file the IDE can see**, which is not
-necessarily the source the **installed extension was compiled from**. On this
-tree the two differ by nine lines across the `kErrInvalidArg` addition, so the
-same report points at `if sDrainCap < pNeed then` in one checkout and
-`if not tOk then` in another - two different statements, two different bugs.
+necessarily the source the **installed extension was compiled from**. Nine
+lines of drift between two checkouts moves this report from
+`if sDrainCap < pNeed then` to `if not tOk then` - two different statements,
+two different bugs, one identical error text.
 
 **Rule:** before reasoning from an LCB line number, confirm the installed
 extension was packaged from the checkout being read. A behaviour visible in the
 run is the cheapest proof - `dcSendText refuses an embedded NUL with -3` only
 passes on a build carrying `kErrInvalidArg`.
+
+**How this entry was written is itself the caution.** It first asserted that
+this tree's two branches DID differ by nine lines there, and that was wrong: it
+came from diffing against a stale `origin/main` fetched before the branch was
+merged. Re-fetched, the file is byte-identical on both, and line 234 is
+unambiguous. A cached remote ref is a stale source too.
 
 ### 6.6 STILL UNRESOLVED: the datachannel poll failure
 **OBSERVED 2026-08-18 on Linux**, hosting a chat in
