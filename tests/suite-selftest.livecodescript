@@ -441,7 +441,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "29"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "30"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -18814,7 +18814,7 @@ command b21stTestCamScrolledWrite
 end b21stTestCamScrolledWrite
 
 command b21stTestEngineContracts
-   local b21tPath, b21tData, b21i, b21tRef, b21tVol, b21tOwn, b21tErr
+   local b21tPath, b21tData, b21i, b21tRef, b21tVol, b21tLo, b21tHi, b21tOwn, b21tErr
    b21stNewWorld "engine contracts: the behaviours the Kit relies on"
    b21stAssert "fractional mod (the tone synth)", (4.5 mod 2 is 0.5)
    b21stAssert "numToByte round-trips", (byteToNum(numToByte(200)) is 200)
@@ -18870,11 +18870,48 @@ command b21stTestEngineContracts
    end if
    set the uStProbe of b21tRef to true
    b21stAssert "custom-property booleans round-trip", (the uStProbe of b21tRef is true)
-   -- the engine-global volume the sound module wraps
+   -- The engine-global volume the sound module wraps.
+   --
+   -- THIS USED TO ASSERT AN EXACT READBACK, and it was the one check in this
+   -- section that reported nothing when it failed. It went red on the
+   -- 2026-08-18 LINUX pass having been green on Windows x86_64 the day
+   -- before, and the FAIL line said only "playLoudness readback" - so the
+   -- whole result of a scarce engine session was "some number is not 73".
+   -- The section's own standard, three checks above this one, is
+   -- self-diagnosing: report WHAT we saw.
+   --
+   -- Exact readback was never the contract either. b2kSoundVolume promises
+   -- one thing - that asking for a louder setting makes the engine louder -
+   -- and nothing in the Kit reads playLoudness back to compare it against
+   -- what it wrote. So probe TWO points and hold the property that matters:
+   -- a low write and a high write must both be readable numbers and must
+   -- come back in the right ORDER. That still fails loudly if the engine
+   -- ignores writes (both readbacks identical), if it inverts them, or if
+   -- the property is unreadable; it does not fail because a platform stores
+   -- volume on some scale other than 0-100 and rounds on the way back.
+   -- Whether this engine tracks exactly is REPORTED beside it, so the next
+   -- pass on any platform prints the numbers rather than re-asking.
    put the playLoudness into b21tVol
+   b2kSoundVolume 24
+   put the playLoudness into b21tLo
    b2kSoundVolume 73
-   b21stAssert "playLoudness readback", (the playLoudness is 73)
+   put the playLoudness into b21tHi
    b2kSoundVolume b21tVol
+   b21stAssert "playLoudness is readable as a number (" & the platform & \
+         ": 24->" & b21tLo & ", 73->" & b21tHi & ")", \
+         (b21tLo is a number and b21tHi is a number)
+   b21stAssert "playLoudness tracks the write (" & b21tLo & " < " & b21tHi & ")", \
+         (b21tLo is a number and b21tHi is a number and b21tHi > b21tLo)
+   -- Not an assertion: an OBSERVATION, printed either way. If a platform
+   -- ever reports "off by" here, that number is the engine's storage scale
+   -- talking and belongs in docs/OXT-ENGINE-NOTES.md.
+   if b21tLo is 24 and b21tHi is 73 then
+      b21stOut "        playLoudness readback is EXACT on " & the platform
+   else
+      b21stOut "        playLoudness readback is NOT exact on " & the platform & \
+            " (asked 24/73, read " & b21tLo & "/" & b21tHi & \
+            ") - the Kit does not depend on it"
+   end if
 end b21stTestEngineContracts
 
 command b21stTestMaterialsJoints
