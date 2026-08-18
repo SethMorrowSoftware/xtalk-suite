@@ -26,6 +26,7 @@ script "enetHelpers"
 local sPollHosts        -- comma list of host handles being pumped
 local sPollTarget       -- object that receives the semantic event messages
 local sPollInterval     -- milliseconds between drains (the latency knob)
+local sPollNote         -- most recent pump failure, empty while healthy
 local sPolling          -- "true" while the timer loop is armed
 
 -- enStartPolling HOST, TARGET, INTERVALMS
@@ -107,7 +108,7 @@ end enStopPolling
 -- One pump pass: enPoll each registered host, dispatch each event by name,
 -- then reschedule.
 command enetPollOnce
-   local tHost, tEvents, tEvent, tName, tSavedDelim
+   local tHost, tEvents, tEvent, tName, tSavedDelim, tErr
    if sPolling is not "true" then
       exit enetPollOnce
    end if
@@ -119,20 +120,55 @@ command enetPollOnce
    -- message. Restored before we reschedule.
    put the itemDelimiter into tSavedDelim
    set the itemDelimiter to comma
+   -- BOTH THE DRAIN AND THE DISPATCH ARE GUARDED, and each event is isolated.
+   -- Two things this loop does can throw on a real engine: enPoll itself (its
+   -- .lcb buffer helper is where the datachannel sibling reported "cannot
+   -- convert value"), and the app code a dispatch reaches. Unguarded, either
+   -- one kills the timer chain and the demo goes quiet with no symptom at all
+   -- - the failure mode that turns one bug into several engine passes. A
+   -- reported, skipped event costs one line of log; a dead pump costs a
+   -- session. The note is READ rather than printed: see enPollLastError.
    repeat for each item tHost in sPollHosts
-      put enPoll(tHost) into tEvents
+      put empty into tEvents
+      try
+         put enPoll(tHost) into tEvents
+      catch tErr
+         if sPollNote is empty then
+            put "enPoll failed on host" && tHost & ": " & line 1 of tErr into sPollNote
+         end if
+         put empty into tEvents
+      end try
       repeat for each element tEvent in tEvents
          put tEvent["name"] into tName
-         if tName is not empty then
-            dispatch tName to sPollTarget with tEvent
-         end if
-         -- also fire a catch-all so one handler can observe the whole stream
-         dispatch "enetEvent" to sPollTarget with tEvent
+         try
+            if tName is not empty then
+               dispatch tName to sPollTarget with tEvent
+            end if
+            -- also fire a catch-all so one handler can observe the whole stream
+            dispatch "enetEvent" to sPollTarget with tEvent
+         catch tErr
+            if sPollNote is empty then
+               put "dispatch of" && tName & " failed: " & line 1 of tErr into sPollNote
+            end if
+         end try
       end repeat
    end repeat
    set the itemDelimiter to tSavedDelim
    send "enetPollOnce" to me in (sPollInterval) milliseconds
 end enetPollOnce
+
+-- enPollLastError() -- empty while the pump is healthy; otherwise the FIRST
+-- failure since the last enPollClearError, naming what threw. An app that
+-- shows this in its own log turns "the demo went quiet" into a line a
+-- maintainer can act on.
+function enPollLastError
+   return sPollNote
+end enPollLastError
+
+-- Clear it, so an app can report each distinct failure once.
+command enPollClearError
+   put empty into sPollNote
+end enPollClearError
 
 -- enStateName N -- map a kPeerState* value (enPeerStatus "state") to a label.
 function enStateName pState

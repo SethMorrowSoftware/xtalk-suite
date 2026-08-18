@@ -171,7 +171,24 @@ command dcChannelPollOnce
          put "poll target no longer resolves; fell back to this card" into sPollNote
       end if
    end if
-   put dcPoll() into tEvents
+   -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
+   -- that wrong. It guarded the dispatch, because the engine had named the
+   -- dispatch line - but the NEXT report named datachannel.lcb line 234, which
+   -- is inside dcPoll's buffer helper. That throw happens HERE, on the way in,
+   -- and an unguarded `put dcPoll() into tEvents` takes the timer chain down
+   -- before any dispatch is attempted. Guarding only the half you have already
+   -- been shown is how a diagnostic costs two passes instead of one.
+   put empty into tEvents
+   try
+      put dcPoll() into tEvents
+   catch tErr
+      if sPollNote is empty then
+         put "dcPoll failed: " & line 1 of tErr into sPollNote
+      end if
+      -- Do NOT stop polling: a transient drain failure must not silently end
+      -- the app's event delivery. Reschedule below and try again.
+      put empty into tEvents
+   end try
    repeat for each element tEvent in tEvents
       put tEvent["name"] into tName
       try

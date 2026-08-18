@@ -309,11 +309,39 @@ argument by argument - arity, emptied handles, and event keys the module's own
 `_fieldKey` cannot return. It found the defect above plus eight teardown paths
 where a setup that never ran would have turned a clean skip into a dead run.
 
-### 6.5 STILL UNRESOLVED: the datachannel dispatch line
+### 6.5 An LCB error's LINE NUMBER resolves against the source tree on disk
+**OBSERVED 2026-08-18.** An LCB failure reports like this:
+
+```
+LCB Error   cannot convert value
+LCB File    .../datachannelxt/src/datachannel.lcb
+LCB Line    234
+```
+
+The line is read from the **source file the IDE can see**, which is not
+necessarily the source the **installed extension was compiled from**. On this
+tree the two differ by nine lines across the `kErrInvalidArg` addition, so the
+same report points at `if sDrainCap < pNeed then` in one checkout and
+`if not tOk then` in another - two different statements, two different bugs.
+
+**Rule:** before reasoning from an LCB line number, confirm the installed
+extension was packaged from the checkout being read. A behaviour visible in the
+run is the cheapest proof - `dcSendText refuses an embedded NUL with -3` only
+passes on a build carrying `kErrInvalidArg`.
+
+### 6.6 STILL UNRESOLVED: the datachannel poll failure
 **OBSERVED 2026-08-18 on Linux**, hosting a chat in
 `datachannelxt/examples/datachannel-dht-chat.livecodescript`. 6.4 explains
 the ENet demo's failure completely; this one is NOT yet explained, because
-the gate that found the ENet defect reports the datachannel demo clean:
+the gate that found the ENet defect reports the datachannel demo clean.
+
+**Narrowed 2026-08-18 (second report, Windows):** the throw is not in the
+dispatch at all - it is inside `dcPoll`, in `_ensureDrain`, before any handler
+is reached. The first wrap guarded only the dispatch, because the dispatch line
+was what the first report named; guarding only the half you have been shown is
+how one diagnostic costs two passes. Both the drain and the dispatch are
+guarded now, in the ENet pump as well. What is still unknown is WHICH value
+will not convert, and 6.5 is why the line number alone cannot settle it:
 
 ```
 execution error at line 178 (call: type conversion error), char 1
