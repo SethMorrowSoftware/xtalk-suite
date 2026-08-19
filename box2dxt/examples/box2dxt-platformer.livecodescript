@@ -1088,6 +1088,11 @@ end pfCardReveal
 -- pGen guards against a stale ramp left when a newer cover superseded this one.
 command pfCardFadeStep pGen
    local tC
+   -- Delayed by `send`, so the defaultStack is whatever is current WHEN IT
+   -- ARRIVES, not the stack that armed it. Unqualified control references
+   -- below resolve against that, so pin it first (gate:
+   -- tools/check-timer-stack-pin.py; the idiom is holde-em's, engine-proven).
+   set the defaultStack to the short name of this stack
    if pGen is not gCardGen then exit pfCardFadeStep
    if there is no graphic "pfCardShade" then exit pfCardFadeStep
    add 12 to gCardFade

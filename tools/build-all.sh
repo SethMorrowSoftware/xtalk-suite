@@ -420,6 +420,18 @@ if [ -f tools/check-lcb-call-types.py ]; then
   python3 tools/check-lcb-call-types.py
 fi
 
+# --- suite-level: a delayed message must know which stack it is on ----------
+# An unqualified `field "x"` resolves against the DEFAULTSTACK, not the stack
+# whose script is running. Inside openStack those are the same, which is why
+# every demo's startup status line always worked; a handler arriving from
+# `send ... in` has no such guarantee. enet-lan-chat's dashboard threw
+# "Chunk: error in object expression" once a second, and dht-chat hid the same
+# fault behind an existence guard - its status line just stopped updating.
+if [ -f tools/check-timer-stack-pin.py ]; then
+  echo "== suite: tools/check-timer-stack-pin.py =="
+  python3 tools/check-timer-stack-pin.py
+fi
+
 # --- suite-level: the unified self-test harness is BUILT, so it can go stale ---
 # tests/suite-selftest.livecodescript is assembled from every member's own
 # harness. If a member's tests change and nobody rebuilds, the file a maintainer
