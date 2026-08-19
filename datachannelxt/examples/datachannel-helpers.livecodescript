@@ -35,6 +35,7 @@ local sPollTarget       -- object that receives the semantic event messages
 local sPollInterval     -- milliseconds between drains (the latency/CPU knob)
 local sPolling          -- "true" while the timer loop is armed
 local sPollNote         -- most recent dispatch failure, "" while healthy
+local sPollDrains       -- drains attempted, so a failure can name which
 
 -- dcStartPolling TARGET, INTERVALMS
 -- Begin draining events and dispatching them to TARGET. If TARGET is empty,
@@ -63,6 +64,9 @@ command dcStartPolling pTarget, pIntervalMs
    -- this is a trap laid for the NEXT caller rather than a live regression.
    if sPolling is not "true" then
       put "true" into sPolling
+      if sPollDrains is not a number then
+         put 0 into sPollDrains
+      end if
       -- kick the loop immediately; it reschedules itself
       send "dcChannelPollOnce" to me in 0 milliseconds
    end if
@@ -130,7 +134,33 @@ command dcChannelPollOnce
          put "poll target no longer resolves; fell back to this card" into sPollNote
       end if
    end if
-   put dcPoll() into tEvents
+   -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
+   -- that wrong. It guarded the dispatch, because the engine had named the
+   -- dispatch line - but the NEXT report named datachannel.lcb line 234, which
+   -- is inside dcPoll's buffer helper. That throw happens HERE, on the way in,
+   -- and an unguarded `put dcPoll() into tEvents` takes the timer chain down
+   -- before any dispatch is attempted. Guarding only the half you have already
+   -- been shown is how a diagnostic costs two passes instead of one.
+   add 1 to sPollDrains
+   put empty into tEvents
+   try
+      put dcPoll() into tEvents
+   catch tErr
+      if sPollNote is empty then
+         -- NAME THE DRAIN NUMBER. _ensureDrain has exactly two callers and
+         -- they are told apart by WHEN they run: the first drain passes the
+         -- constant kDrainCap, and only a later one can reach the
+         -- grow-and-retry path that computes its size from the shim's return.
+         -- "cannot convert value" on drain 1 and on drain 400 are different
+         -- bugs, and this counter is the whole difference between them - at
+         -- no cost, and with no extension rebuild to find out.
+         put "dcPoll failed on drain #" & (sPollDrains + 1) & ": " & \
+               line 1 of tErr into sPollNote
+      end if
+      -- Do NOT stop polling: a transient drain failure must not silently end
+      -- the app's event delivery. Reschedule below and try again.
+      put empty into tEvents
+   end try
    repeat for each element tEvent in tEvents
       put tEvent["name"] into tName
       try
