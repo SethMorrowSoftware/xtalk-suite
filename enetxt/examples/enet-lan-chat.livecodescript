@@ -913,7 +913,7 @@ on enetConnect pEvent
          exit enetConnect
       end if
       put pEvent["address"] into sPeers[pEvent["peer"]]
-      ecLog "* " & pEvent["address"] && "joined (" & the number of keys of sPeers & " here)"
+      ecLog "* " & pEvent["address"] && "joined (" & the number of lines of the keys of sPeers & " here)"
       ecRelay "* " & pEvent["address"] && "joined"
    else
       put "true" into sReady
@@ -1048,7 +1048,7 @@ command ecDashOnce
       exit ecDashOnce
    end if
    if sIsServer is "true" then
-      uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
+      uiStatus "Hosting on port" && kEcPort && "-" && the number of lines of the keys of sPeers && "peer(s)", "ok"
    else if sServerPeer is not empty and sServerPeer is not 0 then
       put enPeerStatus(sServerPeer) into tPS
       if the number of lines of the keys of tPS is 0 then

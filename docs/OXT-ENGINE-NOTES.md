@@ -74,6 +74,30 @@ string. ASCII `"` and `'` only. **Gate:** the static checker enforces zero.
 so xTalk evaluates the keyword, not your variable. It compiles and silently
 misbehaves. **Gate:** the `k`/`p`/`s`/`t` shadow-trap check.
 
+### 1.5b `the number of keys of X` does not parse
+**OBSERVED 2026-08-18.** enet-lan-chat's dashboard, once a second:
+
+```
+Chunk: error in object expression
+Line: uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
+```
+
+`keys` is not a CHUNK, so `the number of keys of sPeers` is not a count - the
+engine reads `keys of sPeers` as an OBJECT expression and fails to resolve it.
+The correct spelling is `the number of lines of the keys of sPeers`.
+
+**Why this survived so long, and why it is filed as a lesson rather than a
+typo.** BOTH spellings were in the tree at once. The correct one was in ten
+files, three of whose harnesses have run green on an engine; the broken one was
+in nine places across three demos, every one of them on a path no engine run
+had ever reached. Nothing distinguished them to a reader, and nothing checked
+them. That shape - two idioms for one job, one carrying evidence and one not -
+is worth looking for deliberately, because the tree cannot tell you which is
+which and a green gate will not either.
+
+**Gate:** the unified `check-livecodescript.py` antipattern set, fixture-tested
+in `tools/test-checker.py` against both spellings.
+
 ### 1.6 Two script-level declarations of one name is a HARD compile error
 **OBSERVED 2026-08-18**, on `datachannel-dht-chat` after it was made
 self-contained:

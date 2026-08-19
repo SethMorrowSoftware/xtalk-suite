@@ -8819,7 +8819,7 @@ command raLanSyncTick
    if sMasterSeed is empty or sLanName is empty then
       exit raLanSyncTick
    end if
-   if the number of keys of sLanDevices is 0 then
+   if the number of lines of the keys of sLanDevices is 0 then
       exit raLanSyncTick
    end if
    set the caseSensitive to true
@@ -9013,7 +9013,7 @@ command raLanPaintDrafts
       exit raLanPaintDrafts
    end if
    set the caseSensitive to true
-   if the number of keys of sLanPeerDraft is 0 then
+   if the number of lines of the keys of sLanPeerDraft is 0 then
       put "No drafts from your other devices yet." into tRows
    else
       put empty into tRows
@@ -9064,7 +9064,7 @@ command raLanPaintDevices
       repeat for each key tDev in sLanPeerSeen
          put "true" into tSet[tDev]
       end repeat
-      if the number of keys of tSet is 0 then
+      if the number of lines of the keys of tSet is 0 then
          if sLanIsServer is "true" then
             put "Hosting. No devices admitted yet." into tRows
          else
@@ -9118,7 +9118,7 @@ command raLanSendMedia
       uiStatus "Unlock on the Feed card first; the handoff record signs under your master seed.", "warn"
       exit raLanSendMedia
    end if
-   if the number of keys of sLanDevices is 0 then
+   if the number of lines of the keys of sLanDevices is 0 then
       raLanLog "No admitted devices to offer media to; Host or Join first."
       exit raLanSendMedia
    end if
@@ -9167,7 +9167,7 @@ command raLanSendMedia
    put sLanName && "(this device)" into sLanMediaFrom
    raLanPaintMediaOffer
    raLanLog "offered" && quote & tShortName & quote && "(" & tSize && \
-         "bytes) to" && the number of keys of sLanDevices && \
+         "bytes) to" && the number of lines of the keys of sLanDevices && \
          "admitted device(s); it seeds from where it sits."
 end raLanSendMedia
 

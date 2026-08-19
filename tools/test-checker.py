@@ -82,6 +82,18 @@ FIXTURES = [
      'library org.test.t\n\nconstant kFoo is 1\n\npublic handler tGo()\n   variable tX as Integer\n   put kFoo into tX\nend handler\n\nend library\n',
      None),
 
+    # -- `the number of keys of` (2026-08-18, enet-lan-chat's dashboard) -----
+    # The engine reads `keys of X` as an OBJECT expression, so this raises
+    # "Chunk: error in object expression" rather than counting anything.
+    ("the number of keys of X is refused",
+     "t.livecodescript",
+     'on tGo\n   put the number of keys of sPeers into tN\nend tGo\n',
+     "not a chunk"),
+    ("the number of LINES of the keys of X is accepted (the proven idiom)",
+     "t.livecodescript",
+     'on tGo\n   put the number of lines of the keys of sPeers into tN\nend tGo\n',
+     None),
+
     # -- engine-hostile constructs -------------------------------------------
     ("throw inside catch fires",
      "t.livecodescript",
