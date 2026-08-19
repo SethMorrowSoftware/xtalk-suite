@@ -101,7 +101,16 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 
 | name | extra keys | meaning |
 |---|---|---|
-| `dcLocalDescription` | `sdp`, `sdpType` | SHIP to the far peer |
+| `dcLocalDescriptionReady` | `sdp`, `sdpType` | SHIP to the far peer |
+
+> **Why `...Ready` and not `dcLocalDescription`?** xTalk has one message
+> namespace, and `dcLocalDescription(pPeer)` above is a public getter. An
+> event dispatched under that name resolves to the GETTER, which wants an
+> Integer and receives the event array - so the app's handler is never
+> reached and the engine reports "cannot convert value". The event was
+> renamed 2026-08-18 because the event is the side that had never worked.
+> `tools/check-lcb-call-types.py` refuses any future collision.
+
 | `dcLocalCandidate` | `candidate`, `mid` | SHIP to the far peer |
 | `dcStateChange` | `state` (kPeerState*) | connection state walked |
 | `dcGatheringStateChange` | `state` (kGathering*) | 2 = complete -> one-blob signaling ready |

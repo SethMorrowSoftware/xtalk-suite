@@ -152,8 +152,32 @@ MUTATIONS = {
 }
 
 
+def check_event_name_fixtures():
+    """CHECK 4, driven the way load_lcb() feeds it: (file, name, clashes)."""
+    bad = []
+    got = clct.check_event_names([("x.lcb", "dcFreePeer", True)], SIGS)
+    if len(got) != 1 or "EVENT NAME COLLISION" not in got[0][4]:
+        bad.append("an event name equal to a public handler is not reported")
+    got = clct.check_event_names([("x.lcb", "dcSomethingHappened", False)], SIGS)
+    if got:
+        bad.append("a non-colliding event name was reported")
+    # and the real tree, at the real entry point: the one historical collision
+    # must stay fixed, so this fails again if _eventName is ever reverted.
+    _sigs, _keys, events = clct.load_lcb()
+    if not any(n == "dcLocalDescriptionReady" for _, n, _ in events):
+        bad.append("the .lcb no longer emits dcLocalDescriptionReady - the "
+                   "collision fix has been reverted or renamed")
+    if any(n == "dcLocalDescription" for _, n, _ in events):
+        bad.append("the .lcb emits dcLocalDescription as an EVENT again; it is "
+                   "a public getter, so no app handler could ever be reached")
+    return bad
+
+
 def main(argv):
     failures = 0
+    for msg in check_event_name_fixtures():
+        print(f"FAIL event-name: {msg}")
+        failures += 1
     for msg in run_fixtures():
         print(f"FAIL fixture: {msg}")
         failures += 1
@@ -181,7 +205,7 @@ def main(argv):
     if failures:
         print(f"test-lcb-call-types: {failures} failure(s)")
         return 1
-    print(f"test-lcb-call-types: OK ({len(FIXTURES)} fixtures + the real tree)")
+    print(f"test-lcb-call-types: OK ({len(FIXTURES)} fixtures + 4 event-name checks + the real tree)")
     return 0
 
 

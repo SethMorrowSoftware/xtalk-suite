@@ -17938,7 +17938,10 @@ command dc1stPump
    put dcPoll() into dc1tEvents
    repeat for each element dc1tEvent in dc1tEvents
       -- the in-script signaling shuttle (the whole point of the loopback)
-      if dc1tEvent["name"] is "dcLocalDescription" then
+      -- Either spelling: the .lcb emits "dcLocalDescriptionReady" since
+      -- 2026-08-18, an extension packaged before that still emits the old
+      -- name. Accepting both keeps this green across the transition.
+      if dc1tEvent["name"] is among the items of "dcLocalDescription,dcLocalDescriptionReady" then
          put dc1stOtherPeer(dc1tEvent["peer"]) into dc1tDest
          if dc1tDest is not empty then
             dcSetRemoteDescription dc1tDest, dc1tEvent["sdp"], dc1tEvent["sdpType"]

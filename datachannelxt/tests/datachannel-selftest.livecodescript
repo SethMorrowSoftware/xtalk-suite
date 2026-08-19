@@ -402,7 +402,10 @@ command stPump
    put dcPoll() into tEvents
    repeat for each element tEvent in tEvents
       -- the in-script signaling shuttle (the whole point of the loopback)
-      if tEvent["name"] is "dcLocalDescription" then
+      -- Either spelling: the .lcb emits "dcLocalDescriptionReady" since
+      -- 2026-08-18, an extension packaged before that still emits the old
+      -- name. Accepting both keeps this green across the transition.
+      if tEvent["name"] is among the items of "dcLocalDescription,dcLocalDescriptionReady" then
          put stOtherPeer(tEvent["peer"]) into tDest
          if tDest is not empty then
             dcSetRemoteDescription tDest, tEvent["sdp"], tEvent["sdpType"]

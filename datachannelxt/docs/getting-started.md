@@ -67,9 +67,9 @@ implementation is just four handlers:
 put dcCreatePeer("stun:stun.l.google.com:19302") into sPeer
 put dcCreateChannel(sPeer, "chat") into sChan   -- triggers the offer
 
-on dcLocalDescription pEvent
+on dcLocalDescriptionReady pEvent
    -- send pEvent["sdp"] and pEvent["sdpType"] to machine B somehow
-end dcLocalDescription
+end dcLocalDescriptionReady
 
 on dcLocalCandidate pEvent
    -- send pEvent["candidate"] and pEvent["mid"] to machine B somehow
@@ -84,7 +84,7 @@ end dcLocalCandidate
 -- ANSWERER (machine B)
 put dcCreatePeer("stun:stun.l.google.com:19302") into sPeer
 -- apply A's offer; DataChannelXT auto-creates the answer, which arrives as
--- B's own dcLocalDescription event -> ship it back to A
+-- B's own dcLocalDescriptionReady event -> ship it back to A
 dcSetRemoteDescription sPeer, tOfferSdp, "offer"
 
 on dcChannelIncoming pEvent
@@ -143,7 +143,7 @@ One server per line in the `dcCreatePeer` argument.
 `examples/datachannel-loopback.livecodescript` runs both peers in one stack and
 does its "signaling" in four script lines. Open it (with the helpers loaded),
 click **Connect**, watch the states go `connecting -> connected`, then chat
-between the two panes. Its `dcLocalDescription`/`dcLocalCandidate` handlers are
+between the two panes. Its `dcLocalDescriptionReady`/`dcLocalCandidate` handlers are
 the template for real signaling: replace "hand it to the other local peer" with
 "transmit it".
 

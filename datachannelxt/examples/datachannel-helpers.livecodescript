@@ -17,7 +17,7 @@ script "dataChannelHelpers"
 --
 -- The messages dispatched to the target (each with the event array as its
 -- parameter; keys per docs/api-reference.md):
---   dcLocalDescription  pEvent["peer"], ["sdp"], ["sdpType"] - SHIP THESE to
+--   dcLocalDescriptionReady  pEvent["peer"], ["sdp"], ["sdpType"] - SHIP
 --   dcLocalCandidate    pEvent["candidate"], ["mid"]           the far peer
 --   dcStateChange       pEvent["state"] (see dcStateName below)
 --   dcGatheringStateChange  pEvent["state"]
@@ -163,6 +163,18 @@ command dcChannelPollOnce
    end try
    repeat for each element tEvent in tEvents
       put tEvent["name"] into tName
+      -- TRANSITION SHIM, and it is what makes this work without reinstalling
+      -- the extension. Before 2026-08-18 the shim emitted "dcLocalDescription"
+      -- for this event - a name this library ALSO exports as a getter. xTalk
+      -- has one message namespace, so dispatching it reached
+      -- dcLocalDescription(in pPeer as Integer) with the event Array and threw
+      -- "cannot convert value"; no app handler was ever reached. The .lcb now
+      -- emits the ...Ready spelling, but an extension packaged before that
+      -- still emits the old one, so map it here and apps work against either.
+      -- REMOVE THIS when no supported build emits the old name.
+      if tName is "dcLocalDescription" then
+         put "dcLocalDescriptionReady" into tName
+      end if
       try
          if tName is not empty then
             dispatch tName to tTarget with tEvent

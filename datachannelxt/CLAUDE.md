@@ -273,7 +273,7 @@ machinery but never leaves the host.
 
 Everything is asynchronous and **signaling is the app's job**: create a peer,
 create a channel (auto-negotiation makes the offer), ship each
-`dcLocalDescription` / `dcLocalCandidate` event's payload to the far peer over
+`dcLocalDescriptionReady` / `dcLocalCandidate` event's payload to the far peer over
 ANY existing channel (TorrentXT DHT, copy/paste, a server), feed the far side's
 into `dcSetRemoteDescription` / `dcAddRemoteCandidate`, and wait for
 `dcChannelOpen`. Non-trickle variant: wait for `dcGatheringStateChange` ==
