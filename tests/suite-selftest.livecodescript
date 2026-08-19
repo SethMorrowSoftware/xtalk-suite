@@ -30828,6 +30828,11 @@ end he1heBetSliderSync
 command he1heBetSliderFromThumb
    -- deferred: read wherever the engine left the thumb and mirror it into the
    -- amount box. Guarded against the slider having been hidden since the send.
+   -- Delayed by `send`, so the defaultStack is whatever is current WHEN IT
+   -- ARRIVES, not the stack that armed it. Unqualified control references
+   -- below resolve against that, so pin it first (gate:
+   -- tools/check-timer-stack-pin.py; the idiom is holde-em's, engine-proven).
+   set the defaultStack to the short name of this stack
    if there is not a scrollbar "heBetSlider" then
       exit he1heBetSliderFromThumb
    end if

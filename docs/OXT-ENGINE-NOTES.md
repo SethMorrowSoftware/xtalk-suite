@@ -229,7 +229,39 @@ measurement.
 `b2kTeardown` from `closeCard`. A tree-wide audit that greps for `on closeStack`
 will report them as having no teardown, wrongly - which happened on 2026-08-17.
 
-### 5.3 `the playLoudness` does not read back exactly on every platform
+### 5.3 An unqualified control resolves against THE DEFAULTSTACK
+**OBSERVED 2026-08-18.** enet-lan-chat's once-a-second dashboard threw, from
+inside the UI kit's `uiStatus`:
+
+```
+Chunk: error in object expression        (Hint: ecDashOnce, REPEATEDLY)
+```
+
+`put pText into field "uiStatus"` resolves `field "uiStatus"` against **the
+defaultStack**, not against the stack whose script is running. Inside
+`openStack` those are the same object, which is why every demo's STARTUP status
+line has always worked and why this had never been seen. A handler arriving
+from `send ... in` has no such guarantee: with another stack in front, the
+write lands on the wrong stack or resolves to nothing.
+
+**The quiet half is the instructive one.** datachannel-dht-chat had the same
+fault and never threw, because it guards with `if there is a field "uiStatus"`.
+Its status line simply stopped updating - silently, on the exact path a person
+is least likely to report. A guard converts this bug from loud to invisible,
+which is an argument for a gate rather than for more guards.
+
+**Rule:** a handler that can arrive from a delayed message must pin the stack
+before touching an unqualified control:
+
+```
+set the defaultStack to the short name of this stack
+```
+
+**Gate:** `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
+plus the ui* kit handlers those targets call. 71 delayed handlers across 26
+files today; it found three more of these in box2dxt's games and holde-em.
+
+### 5.4 `the playLoudness` does not read back exactly on every platform
 **OBSERVED 2026-08-18 on LINUX.** box2dxt's harness did
 
 ```
