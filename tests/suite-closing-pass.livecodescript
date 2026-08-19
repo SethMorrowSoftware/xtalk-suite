@@ -2797,7 +2797,10 @@ command cpOnDcEvent pEvent
    local tDest, tPair, tOk
    -- the in-process shuttle for section A only; section E ships blobs via
    -- the DHT instead, so its peers never appear in this branch
-   if pEvent["name"] is "dcLocalDescription" then
+   -- Either spelling: the .lcb emits "dcLocalDescriptionReady" since
+   -- 2026-08-18, an extension packaged before that still emits the old
+   -- name. Accepting both keeps this green across the transition.
+   if pEvent["name"] is among the items of "dcLocalDescription,dcLocalDescriptionReady" then
       put cpAOther(pEvent["peer"]) into tDest
       if tDest is not empty then
          dcSetRemoteDescription tDest, pEvent["sdp"], pEvent["sdpType"]

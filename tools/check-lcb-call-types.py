@@ -75,6 +75,7 @@ strip_noise = _chc.strip_noise
 
 SIG = re.compile(r'^public handler (\w+)\s*\(([^)]*)\)(.*)$', re.M)
 FIELDKEY = re.compile(r'private handler _fieldKey\b.*?\nend handler', re.S)
+EVENTNAME = re.compile(r'private handler _eventName\b.*?\nend handler', re.S)
 RETURNS_STR = re.compile(r'return\s+"([^"]*)"')
 HANDLER_START = re.compile(
     r'^(?:private\s+)?(?:command|function|on|getprop|setprop)\s+(\w+)')
@@ -108,17 +109,52 @@ def parse_params(text):
 
 
 def load_lcb():
-    """Public handler signatures, and the event-field key set per module."""
-    sigs, fieldkeys = {}, set()
+    """Public handler signatures, the event-field keys, and the event NAMES."""
+    sigs, fieldkeys, events = {}, set(), []
     for lcb in sorted(glob.glob(os.path.join(ROOT, "*", "src", "*.lcb"))):
         text = open(lcb, encoding="utf-8").read()
         rel = os.path.relpath(lcb, ROOT)
+        pub = set()
         for m in SIG.finditer(text):
             sigs[m.group(1)] = (rel, parse_params(m.group(2)))
+            pub.add(m.group(1))
         fk = FIELDKEY.search(text)
         if fk:
             fieldkeys |= {k for k in RETURNS_STR.findall(fk.group(0)) if k}
-    return sigs, fieldkeys
+        en = EVENTNAME.search(text)
+        if en:
+            for name in RETURNS_STR.findall(en.group(0)):
+                if name:
+                    events.append((rel, name, name in pub))
+    return sigs, fieldkeys, events
+
+
+def check_event_names(events, sigs):
+    """CHECK 4: an event name may not equal a public handler name.
+
+    xTalk has ONE message namespace, so a dispatched event name is resolved
+    exactly like a call. If the module that emits the event also EXPORTS a
+    handler of that name, the library wins and the app's `on <name>` is never
+    reached - silently, because an unhandled dispatch is not an error.
+
+    That is not hypothetical. `_eventName` returned "dcLocalDescription", which
+    is also `dcLocalDescription(in pPeer as Integer)`, so the poll pump handed
+    the getter an event Array and the engine answered "cannot convert value".
+    datachannel-loopback had shipped `on dcLocalDescription` since the day it
+    was written and it had never fired once; the getting-started guide taught
+    the same unreachable shape.
+    """
+    out = []
+    for rel, name, clashes in events:
+        if clashes:
+            lcb_rel, params = sigs[name]
+            shape = ", ".join(f"{n} as {t}" for n, t in params) or ""
+            out.append((rel, 0, "_eventName", name,
+                        f"EVENT NAME COLLISION: the dispatched event {name!r} is also "
+                        f"a public handler {name}({shape}) in {lcb_rel} - one message "
+                        "namespace, so the library wins and no app handler is ever "
+                        "reached", f'return "{name}"'))
+    return out
 
 
 def join_continuations(text):
@@ -288,13 +324,13 @@ def check_file(rel, sigs, fieldkeys):
 
 
 def main(argv):
-    sigs, fieldkeys = load_lcb()
-    if len(sigs) < 300 or len(fieldkeys) < 5:
+    sigs, fieldkeys, events = load_lcb()
+    if len(sigs) < 300 or len(fieldkeys) < 5 or len(events) < 5:
         print(f"check-lcb-call-types: read only {len(sigs)} signature(s) and "
-              f"{len(fieldkeys)} event key(s) - the .lcb parse is broken, and a "
-              "clean report would be a lie")
+              f"{len(fieldkeys)} event key(s) and {len(events)} event name(s) - "
+              "the .lcb parse is broken, and a clean report would be a lie")
         return 1
-    findings, positions, nfiles = [], 0, 0
+    findings, positions, nfiles = check_event_names(events, sigs), 0, 0
     for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.livecodescript"),
                                  recursive=True)):
         rel = os.path.relpath(path, ROOT)
@@ -314,7 +350,8 @@ def main(argv):
         return 1
     print(f"check-lcb-call-types: OK ({nfiles} script file(s), {len(sigs)} public "
           f".lcb handlers, {positions} argument(s) checked into a "
-          f"{'/'.join(NUMERIC)} parameter)")
+          f"{'/'.join(NUMERIC)} parameter, {len(events)} event name(s) checked "
+          "against the handler namespace)")
     return 0
 
 

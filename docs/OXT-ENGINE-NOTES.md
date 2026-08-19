@@ -335,7 +335,37 @@ came from diffing against a stale `origin/main` fetched before the branch was
 merged. Re-fetched, the file is byte-identical on both, and line 234 is
 unambiguous. A cached remote ref is a stale source too.
 
-### 6.6 STILL UNRESOLVED: the datachannel poll failure
+### 6.7 An event name and a handler name share ONE namespace
+**OBSERVED 2026-08-18, and it closes 6.6.** The demo's own log, once the poll
+pump was made to report instead of die:
+
+```
+Event dispatch problem: dispatch of dcLocalDescription failed: 899,258,1
+```
+
+Line 258 is `dispatch tName to tTarget with tEvent`. The demo defines no
+`on dcLocalDescription` - but **DataChannelXT exports one**:
+`dcLocalDescription(in pPeer as Integer)`, the getter for the current local
+SDP. xTalk resolves a dispatched message exactly like a call, through the same
+single namespace, so the dispatch reached the LIBRARY handler and handed it the
+event Array where it wanted an Integer.
+
+**The part worth carrying is how long it hid.** An unhandled dispatch is not an
+error, so a colliding name looks exactly like "no handler here" until the
+colliding handler happens to be strict about its arguments.
+`datachannel-loopback` shipped `on dcLocalDescription` from the day it was
+written and it **never fired once**; `docs/getting-started.md` taught the same
+shape; and the suite harness stayed green throughout because it compares
+`tEvent["name"]` in an if/else and never dispatches at all. Every layer agreed,
+and every layer was testing something else.
+
+**Rule:** a dispatched event name may never equal a public handler name in the
+module that emits it. When they collide, rename the EVENT - the getter is
+exercised, the event demonstrably is not.
+**Gate:** `tools/check-lcb-call-types.py` check 4, over every `_eventName`
+return in every module, with the historical case pinned in its test.
+
+### 6.6 RESOLVED by 6.7: the datachannel poll failure
 **OBSERVED 2026-08-18 on Linux**, hosting a chat in
 `datachannelxt/examples/datachannel-dht-chat.livecodescript`. 6.4 explains
 the ENet demo's failure completely; this one is NOT yet explained, because

@@ -402,9 +402,23 @@ end handler
 
 -- Map a stable event code to the semantic message name the poll dispatcher
 -- sends (see examples/datachannel-helpers.livecodescript).
+--
+-- AN EVENT NAME MAY NOT EQUAL A PUBLIC HANDLER NAME. xTalk has ONE message
+-- namespace, so a dispatched event name is looked up exactly like a call: if
+-- this library also exports a handler by that name, the LIBRARY wins and the
+-- app's `on <name>` is never reached. Until 2026-08-18 this returned
+-- "dcLocalDescription", which is also the public getter
+-- dcLocalDescription(in pPeer as Integer) - so dispatching the event called
+-- the GETTER with the event Array where it wanted an Integer, and the engine
+-- answered "cannot convert value". The app handler was unreachable, and had
+-- been since the day it was written: datachannel-loopback shipped an
+-- `on dcLocalDescription` that never fired once, and the docs taught the same
+-- unusable shape. Renamed to the ...Ready spelling because the EVENT is the
+-- side that has never worked - the getter is exercised and green.
+-- tools/check-lcb-call-types.py refuses any future collision.
 private handler _eventName(in pCode as Integer) returns String
    if pCode is kEventLocalDescription then
-      return "dcLocalDescription"
+      return "dcLocalDescriptionReady"
    else if pCode is kEventLocalCandidate then
       return "dcLocalCandidate"
    else if pCode is kEventStateChange then
@@ -552,7 +566,7 @@ end handler
 -- Returns a positive peer handle, or 0 on failure (see dcLastError).
 -- Auto-negotiation is on: creating the first channel produces the offer, and
 -- applying a remote offer produces the answer - both arrive as
--- dcLocalDescription events for YOUR signaling code to deliver.
+-- dcLocalDescriptionReady events for YOUR signaling code to deliver.
 public handler dcCreatePeer(in pIceServers as String) returns Integer
    variable tPeer as Integer
    _checkABI()
@@ -591,7 +605,7 @@ public handler dcSetLocalDescription(in pPeer as Integer, in pType as String) re
 end handler
 
 -- Apply the REMOTE side's description, received over your signaling channel.
--- pType is "offer" or "answer" (the dcLocalDescription event on their side
+-- pType is "offer" or "answer" (the dcLocalDescriptionReady event on their side
 -- carried it as "sdpType"). Applying an offer auto-emits our answer.
 public handler dcSetRemoteDescription(in pPeer as Integer, in pSdp as String, in pType as String) returns Integer
    variable tR as Integer

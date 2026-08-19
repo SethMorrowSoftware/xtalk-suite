@@ -49,9 +49,9 @@ put dcCreatePeer("stun:stun.l.google.com:19302") into tPeer
 put dcCreateChannel(tPeer, "chat") into tChan
 -- creating the first channel starts negotiation; now catch the artifacts:
 
-on dcLocalDescription pEvent
+on dcLocalDescriptionReady pEvent
    -- ship pEvent["sdp"] + pEvent["sdpType"] to the far peer over ANY channel
-end dcLocalDescription
+end dcLocalDescriptionReady
 
 on dcLocalCandidate pEvent
    -- ship pEvent["candidate"] + pEvent["mid"] the same way
