@@ -44,8 +44,9 @@ stays.)
 That opens a clickable directory of every sample, demo and harness stack,
 listed by the path it has in this repository. Click one to read what it is
 and what it needs; **double-click (or press Open) to launch it** right from
-where the download put it — helper stacks are put in use for you, and its
-**Setup help** button explains the rest in plain language. Everything here
+where the download put it — each stack carries the script libraries it needs,
+so nothing has to be wired up first, and its **Setup help** button explains
+the rest in plain language. Everything here
 is a script-only stack that builds its own window when opened, so there is
 nothing to install or copy first; a stack missing an extension says so in
 red at the top rather than breaking. (`tools/check-launcher-registry.py`
@@ -64,7 +65,7 @@ authority; this is the summary:
 | enetxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phase 1 complete; member selftest passed 2026-08-07, a live loopback plus the 60000-byte fragmentation contract re-confirmed 2026-08-08, and the isolated abrupt-teardown section ran green 2026-08-10 (folded sync half). The standalone async loopback - the live `enHostStatus` pair and the `enPeerStatus` statistics included - ran green 2026-08-13, so nothing in its selftest is static any more; only the two-machine LAN chat stays open |
 | datachannelxt | yes | Linux x64/x86, Windows x64/x86 (**macOS build pending**) | Phases 1-2 (data channels). **First engine evidence 2026-08-08**: a live loopback negotiated, opened, and round-tripped byte-for-byte. All 31 public `dc*` handlers have been called on-engine (2026-08-10, folded sync half). The standalone **async loopback** ran green 2026-08-15 - real SDP carrying ICE candidates, correct offer/answer roles, gathering complete on both peers, a selected candidate pair, text and binary (NUL included) byte-for-byte, `dcCreateChannelEx` label/protocol round-trip, and a cap-sized send - so nothing in its selftest is static any more; only browser interop and a two-network call stay open |
 | onionxt | no — pure LiveCodeScript | n/a | On-engine proven against a live Tor daemon; the daemon-free address and capability paths re-confirmed 2026-08-08, and the full `oxSelfTest()` (43 checks on the 2026-08-12 engine run; section 10 added 18 more, so it attempts 41-61 depending on what is installed) ran green on-engine 2026-08-12, folded. Mode B (launching tor) still unexercised |
-| box2dxt | yes | **all 5 platforms** + `MANIFEST.sha256` (added in the fold) | The family ancestor, mature and feature-frozen upstream. The 2026-08-14 fold replaced its pre-unification checker with the suite's (first contact found ~1550 violations: mostly the pre-ASCII character set, plus 29 real `repeat with ... step` engine traps in the platformer, all fixed). **The folded `stSelfTest` has run on a real engine FIVE times 2026-08-16/17** (346/11 -> 348/9 -> 353/4 -> 365/4 -> 366/3): the engine corrected blind first-contact coverage tests with its own numbers and surfaced FOUR real Kit defects nothing headless could reach - sprite entry points throwing on an empty control ref (no-op guards across the whole sprite surface), event-buffer readers answering STALE controls after `b2kEventsReset` (count-guarded), the public filter wrappers silently no-opping (Box2D v3.1's uint64 default mask reads back as 2^64-1, above the shim's 2^53 guard, so the round-tripped `b2SetShapeFilter` call was refused whole - the clamp existed in the player's drop-through path all along and is now in all three wrappers), and - run 5's instrumented find - the player's duck reshape never physically shrinking the capsule (OXT does not resize a polygon graphic by a height-set, so the crawl wedged on the ceiling's face at full height while the halfH bookkeeping insisted the pill was short; `b2kReshape` now takes explicit dims and the duck/stand rebuilds pass the canonical capsule dims captured at attach). All three remaining reds trace to that one defect; the next paste is expected fully green. The games and the raw `b2*` layer still owe their own re-pass |
+| box2dxt | yes | **all 5 platforms** + `MANIFEST.sha256` (added in the fold) | The family ancestor, mature and feature-frozen upstream. The 2026-08-14 fold replaced its pre-unification checker with the suite's (first contact found ~1550 violations: mostly the pre-ASCII character set, plus 29 real `repeat with ... step` engine traps in the platformer, all fixed). **The folded `stSelfTest` was driven through FIVE real-engine runs over 2026-08-16/17 to clear its first-contact reds** (346/11 -> 348/9 -> 353/4 -> 365/4 -> 366/3): the engine corrected blind first-contact coverage tests with its own numbers and surfaced FOUR real Kit defects nothing headless could reach - sprite entry points throwing on an empty control ref (no-op guards across the whole sprite surface), event-buffer readers answering STALE controls after `b2kEventsReset` (count-guarded), the public filter wrappers silently no-opping (Box2D v3.1's uint64 default mask reads back as 2^64-1, above the shim's 2^53 guard, so the round-tripped `b2SetShapeFilter` call was refused whole - the clamp existed in the player's drop-through path all along and is now in all three wrappers), and - run 5's instrumented find - the player's duck reshape never physically shrinking the capsule (OXT does not resize a polygon graphic by a height-set, so the crawl wedged on the ceiling's face at full height while the halfH bookkeeping insisted the pill was short; `b2kReshape` now takes explicit dims and the duck/stand rebuilds pass the canonical capsule dims captured at attach). All three remaining reds traced to that one defect, and the next paste confirmed it: **374/374 at harness v29 on Windows x86_64 (NT 10.0, OXT 9.6.3), 2026-08-17** - fully green, folded into that day's suite pass (`docs/REMAINING-WORK.md`). The same v29 harness ran on **LINUX 2026-08-18 at 373/374**; the single red was the harness's own assertion that `the playLoudness` reads back exactly what was written, which is the HARNESS being wrong about the engine rather than the Kit being broken (`docs/OXT-ENGINE-NOTES.md` 5.4), and it is now two self-diagnosing assertions plus a printed observation. That makes the harness **v30, which carries 375 assertions where v29 had 374, so a v30 total is not comparable to a v29 one - and no v30 total has been observed on either platform yet.** The games and the raw `b2*` layer still owe their own re-pass |
 | coinxt | yes (source + `native/build.sh`; ASan self-test + KATs green) | Linux x64/x86, Windows x64/x86 (**macOS build pending**) + `MANIFEST.sha256` | **All five phases engine-proven.** Phase 1 closed 2026-08-08; **phases 2, 3 and 4 closed 2026-08-10** — the member harness ran folded into the suite selftest at 205/206, and the one red line was a real parser fail-open (`cxHdDerivePath` of `"m/"`), fixed, re-modelled in the headless interpreter, and confirmed at **207/207** the same day. The headless gates still cross-verify on every push: RFC 6979 vectors, an independent `ecdsa` library, and `check-script-vectors.py` driving the real `.livecodescript` down BIP-44/BIP-84/Ethereum paths to their published addresses. **Phase 5 (transactions) is ENGINE-PASSED (2026-08-12, Windows x64, 230/230)**: Bitcoin legacy + BIP-143 SegWit and Ethereum EIP-155 + EIP-1559, model-verified against the BIP-143/EIP-155 published examples, driven through the real `.livecodescript` by `check-script-vectors.py` (251 checks) — which caught and fixed a would-be-red engine defect (`cxBtcTxEncode` refused the reference tx over a trailing-empty scriptSig) — and then confirmed on a real engine, the BIP-143 signed tx byte for byte. The independent-decoder bar is met (2026-08-12, extended 2026-08-13 to all four tx families: python-bitcointx accepts fresh legacy + segwit spends under consensus rules, eth-account recovers the exact sender from fresh EIP-155 + EIP-1559 txs); a live testnet broadcast is the one bar left before "broadcastable" **ABI 6 (2026-08-16)** adds BIP-340 Schnorr and the BIP-341 tweak on a second vendored library (upstream bitcoin-core/secp256k1, hash-verified against its pin); the new surface **ran green on a real engine 2026-08-16**, hours after it shipped - all 19 BIP-340 vectors and all 14 BIP-341 wallet vectors through the binding, on the day's first paste. The Windows DLLs still carry static checks only until the next release dispatch |
 
 **Where the suite stands after the 2026-08-08 and 2026-08-10 passes.** On
@@ -96,6 +97,31 @@ real-session publish/request, and synthetic ingest-verifier sections. This
 closes the single-engine half of runbook item 10; cross-machine DHT propagation
 remains part of item 6.
 
+**The 2026-08-17 pass is the largest green run this project has had.** Windows
+x86_64, NT 10.0, OXT 9.6.3: **1,836 folded member checks, zero failures, 7
+skips** - every skip a live-transport or daemon leg no single machine can run.
+Per member: holde-em 538, box2dxt 374, riptide 338, coinxt 278, torrentxt 101,
+sodiumxt 99, onionxt 61, datachannelxt 26, enetxt 21. All six packaged
+extensions loaded at exactly the ABI their guard expects, and it is the first
+run in which every one of the NINE folded harnesses was green at once - roughly
+threefold the 617-check run recorded above. `docs/REMAINING-WORK.md` and
+`docs/OXT-PASS-RUNBOOK.md` carry that record and what it closed; nothing here
+re-derives it.
+
+**The 2026-08-18 pass was the folded harness's first run on LINUX, and it
+carries no suite total** - none was recorded, and inventing one from a partial
+observation is exactly what the honesty convention forbids. What the run
+measured is one number and one lesson: box2dxt's harness came back **373/374,
+the run's only failure**, and the red was the HARNESS being wrong rather than
+the Kit being broken - exact readback was never `b2kSoundVolume`'s contract, so
+the check is now two self-diagnosing probes plus a printed observation
+(`docs/OXT-ENGINE-NOTES.md` 5.4). That rewrite makes it harness v30, one
+assertion more than the v29 that produced the 374, so no v30 total is observed
+on any platform yet. The session's other OBSERVED engine findings - the
+defaultStack trap under a timer, the `keys of X` parse, the event/handler
+namespace collision - are written up in the same file, each marked OBSERVED,
+INFERRED or DOCUMENTED so a reader can tell measurement from reasoning.
+
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed
 on a real engine is labelled **"verified statically; needs an OXT pass"** (Tor
@@ -103,8 +129,9 @@ paths: "+ live-Tor pass"). No member claims a runtime behaviour it has not
 measured. `docs/OXT-PASS-RUNBOOK.md` is the runbook for closing that gap: what is
 still unproven and where each label lives, the install order, the run order, and
 what to record. The convention cuts both ways — a label is removed only for what
-a run actually exercised, so each recorded pass (2026-08-08, 2026-08-10) promoted
-the handlers it called and left the ones it did not still labelled, member by
+a run actually exercised, so each recorded suite-harness pass (2026-08-08,
+2026-08-10, 2026-08-12, 2026-08-17, 2026-08-18) promoted the handlers it
+called and left the ones it did not still labelled, member by
 member — and both async-loopback halves have since closed the same way (enet
 with the 2026-08-13 standalone pass, datachannel with the 2026-08-15 one),
 leaving no member-selftest label standing.
@@ -166,8 +193,10 @@ It is not a sampler. It carries **every member's own deep self-test**, folded in
 whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (10 groups, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, box2dxt's `stSelfTest` (50 handlers, ~372 assertions driving
-the real b2k Kit hand-stepped one fixed 1/60 tick at a time), riptide's
+and datachannelxt, box2dxt's `stSelfTest` (51 handlers, 377 `stAssert` call sites of which 375 run, at
+harness v30 driving the real b2k Kit hand-stepped one fixed 1/60 tick at a
+time; v29's 374 ran green on Windows x86_64 on 2026-08-17, and no v30 total
+has been observed on any platform yet), riptide's
 harness (phases 1-4 + 6 + 7, including the live feed, media, DM, LAN-admission,
 and anon-persona layers), and — since 2026-08-16 — holde-em's `heSelfTest` (21
 sections over the evaluator, the betting engine and side pots, the whole deal
@@ -221,12 +250,16 @@ tool's member list with the numbers behind the call:
   370 LC_API exports**, up from 53 the same morning, running in `build-all.sh`
   and under ASan/UBSan in `native-box2dxt.yml`. `check-lcb-signatures.py` holds
   the 370 binds against the 370 definitions on every push.
-- **holde-em's `he*` surface** — **measured 2026-08-17.** It is 380 public
-  handlers in ONE file that is the game *and* its harness — **329 game + 51
-  harness**, not the 379 quoted before. The gate splits the file at its selftest
+- **holde-em's `he*` surface** — **measured 2026-08-19.** It is 381 public
+  handlers in ONE file that is the game *and* its harness — **330 game + 51
+  harness**; the 379 quoted before the gate existed, and the 380 measured on
+  2026-08-17, are both superseded by one handler (`heAwardedPot`, added by the
+  uncalled-bet fix that same evening). The gate splits the file at its selftest
   boundary and asks its question across the cut, which is the same move as the
-  embedded-span cut done with a boundary line instead of a sentinel: **120 of
-  329 game handlers are exercised, 209 are named by nothing that runs** (20
+  embedded-span cut done with a boundary line instead of a sentinel: **121 of
+  330 game handlers are exercised** — 120 named by a body reachable from
+  `heSelfTest`, plus one dispatched by name through `heRunSection` that the
+  literal-blanking cannot see — and **209 are named by nothing that runs** (20
   live-transport, 9 engine-media, 41 host-window, 139 simply untested). The row
   is ADVISORY — it prints the number without failing the build — but everything
   that would make that number a lie IS enforced, including a denominator floor
@@ -315,10 +348,20 @@ monorepo**):
 
 - **`suite-gates.yml`** — every member's compiler-free gates on every push: the
   LiveCodeScript checker, docs house-style, all golden-vector suites, the
-  record registries, the known-answer harnesses, standalone freshness, the
-  `MANIFEST.sha256` integrity checks, and the suite-level carried-block and
-  budget gates (the UI-kit and harness-scaffold drift gates — one look, one
-  scaffold, byte-identical everywhere, adoption enforced — plus the 720p
+  record registries, the known-answer harnesses, the carried-copy freshness
+  gates that replaced the retired generated-standalone check
+  (`tools/sync-demo-embeds.py --check` plus its `tools/test-demo-embeds.py
+  --mutate` fixtures, so every demo carries a CURRENT copy of the libraries it
+  pastes with, and box2dxt's `tools/sync-embedded-kit.py --check` for the same
+  shape one level down), the launcher registry
+  (`tools/check-launcher-registry.py`, so start-here cannot point at a stack
+  that moved), the script-to-script and script-to-`.lcb` call gates
+  (`check-handler-calls.py` / `test-handler-calls.py` and
+  `check-lcb-call-types.py` / `test-lcb-call-types.py --mutate`),
+  `tools/check-timer-stack-pin.py`, the `MANIFEST.sha256` integrity checks, and
+  the suite-level carried-block and budget gates (the UI-kit and
+  harness-scaffold drift gates — one look, one scaffold, byte-identical
+  everywhere, adoption enforced — plus the 720p
   stack-size budget: every sample window fits 1200 x 640).
 - **`native-<member>.yml`** — the per-member native matrix, plus that member's
   sanitizer lanes, scoped by `paths:` so only the member you touched builds. The
@@ -333,8 +376,11 @@ monorepo**):
   user's machine.
 
 - **`release-binaries.yml`** — the assembly step, run by hand
-  (`workflow_dispatch`). One dispatch builds every member for every platform it
-  can be built for (20 build jobs: five members x four platforms), asserts each artifact, runs coinxt's
+  (`workflow_dispatch`). One dispatch builds five of the six members that ship
+  committed binaries, for every platform it
+  can be built for (20 build jobs: five members x four platforms) - **box2dxt is
+  absent from that workflow with no recorded reason, so its committed libraries
+  have no dispatch that refreshes them**, asserts each artifact, runs coinxt's
   published vectors against the real cross-built DLL on a Windows runner,
   publishes one bundle, and then **installs each library into its own member's
   `src/code/<platform-id>/`, refreshes the manifests, and commits**. It calls

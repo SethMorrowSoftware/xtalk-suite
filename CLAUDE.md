@@ -24,8 +24,11 @@ openxtalk-libraries/
   start-here.livecodescript
                        the RUNNABLE front door: open it in OXT for a
                        clickable directory of every demo/harness stack by
-                       repo-relative path (launches them in place, putting
-                       helper stacks in use first); a kit adopter, held
+                       repo-relative path (launches them in place; each
+                       stack now CARRIES the libraries it needs, so no
+                       helper is put in use first - the registry gate
+                       prints "no row advertises a helper it already
+                       carries"); a kit adopter, held
                        true to the tree by tools/check-launcher-registry.py
   CLAUDE.md            this file
   LICENSE              MIT + third-party attributions for every bundled lib
@@ -110,6 +113,16 @@ These are summarized in `README.md`; the operational point for editing is:
 6. **The honesty convention** — "verified statically; needs an OXT pass"
    (Tor: "+ live-Tor pass") for anything not observed on a real engine.
 
+> **Engine BEHAVIOUR - as opposed to the conventions above - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and whether a gate now holds it. That file is
+> where the four member gotcha sections already point, and this root file holds
+> engine lessons of exactly that class - the `dcCleanup()` statement call, the
+> DECLARED-is-not-IN-SCOPE fold, the undeclared name that evaluates to its own
+> spelling - so read it as the authoritative list and treat the accounts below
+> as the dated stories behind particular entries. Anything the ENGINE does goes
+> there; what belongs here is what is true across the members.
+
 **Demo UI is ONE carried kit, and adoption is enforced (v2, 2026-08-14).**
 `tools/ui-kit.livecodescript` is the master for the family look. v1 was the
 flat style; **v2 is the "card look"** absorbed from its best implementations
@@ -144,6 +157,89 @@ totals. Harnesses are deliberately NOT kit adopters (a second 300-line
 block would bloat every paste); the scaffold matches the kit's look BY
 VALUE, and the kit gate's exemption list records exactly that.
 
+**Every demo carries the libraries it needs, and the ORDER is load-bearing
+(2026-08-17).** `tools/sync-demo-embeds.py` is the third carried-block family
+here, and it works like the two above: the master is
+`<member>/src/*.livecodescript` - still the single source of truth and the right
+dependency for a real project - a verbatim copy lives between sentinels in each
+shipped demo, and `--check` is in the gate set and fails the build when a copy
+drifts. TEN demos carry a library today; nobody hand-edits inside the sentinels.
+The point is that `start using stack "coinxt"` is a wiring step most readers
+meet as an error message, so a demo stays ONE file you paste and open. **The
+embed goes ABOVE the demo's own code** (below its `script "..."` line and its
+header prose, which is what a reader opened the file for) **and the providers go
+in dependency order within it**, because OXT resolves script-level `constant` and
+`local` by lexical position - the same rule the 106-declaration fold recorded
+below cost an engine pass to learn, and it fails the same way, as a tidy wrong
+answer rather than an error. **Collisions are refused, never merged**: a demo and
+a library defining the same handler or the same column-0 declaration would not
+compile, and the maintainer meets that at PASTE time on an engine, so the tool
+names both sides and stops. Unlike the ui-kit gate it does not scan the tree - it
+is registry-driven, and a demo it does not list is a demo it does not see - so
+the one non-embed is recorded in `NOT_EMBEDDED` with its reason
+(torrent-quickshare's real `socketError`/`socketClosed`/`socketTimeout` bodies
+that pass through to OnionXT's copies; merging two live bodies is a behaviour
+change to an inbound path with no engine pass). Two couplings are easy to break
+by tidying, and both are in the tool with the reason: the embed banner must NOT
+say "GENERATED - do not edit", because `check-ui-kit-drift.py` and
+`check-harness-scaffold-drift.py` SKIP any file whose first 4000 characters
+contain that phrase and these demos are only PARTLY generated - bannering them
+would silently switch UI-kit drift checking off for every one; and a provider's
+leading `script "..."` line is stripped before embedding, because a second
+script-name line mid-file puts everything after it outside the demo's own
+declaration scope. This replaced `onionxt/tools/build-standalone.py` and both
+generated `*-standalone` twins: embedding in place leaves one file to open rather
+than a source and a launchable copy of it.
+
+**The gates added on 2026-08-17/18, and what each one is standing in for.** All
+of them document behaviour already recorded in `docs/OXT-ENGINE-NOTES.md`; none
+of them has been through an engine pass of its own, and none upgrades an honesty
+label. **`tools/check-lcb-call-types.py`** (with `tools/test-lcb-call-types.py`
+proving its fixtures still discriminate) walks the script -> `.lcb` boundary
+argument by argument, because that boundary is TYPED and none of the 630 public
+`.lcb` handlers has an optional parameter: an empty value into `in pHost as
+Integer` is a hard runtime error, not a no-op (engine notes 6.4), which is how
+`enet-lan-chat`'s unguarded `enHostDestroy` killed its own poll chain, and how
+eight teardown paths in the folded harnesses would have taken the whole
+~1900-check paste down on a setup that should merely have SKIPPED. Its check 4 asks a
+different question on the same data and is the one that found a shipped defect:
+an event name and a handler name share ONE xTalk message namespace (engine notes
+6.7), so dispatching the event `dcLocalDescription` reached the public getter
+`dcLocalDescription(in pPeer as Integer)` with the event Array - which is why
+`datachannel-loopback`'s `on dcLocalDescription` had never fired once since the
+day it was written, and why `datachannelxt/docs/getting-started.md` taught the
+same unreachable shape. **`tools/check-timer-stack-pin.py`** holds the rule that
+an unqualified control reference inside a delayed handler resolves against THE
+DEFAULTSTACK, not the stack whose script is running (engine notes 5.3): inside `openStack` those
+are the same object, which is exactly why every demo's startup status line always
+worked and every `send ... in` status line did not. The fix lives in the ui-kit
+MASTER (`uiStatus`, `uiCopyFlashReset`) and is re-carried, never patched in an
+adopter. **`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
+paragraph above; the fixtures exist because that tool's collision detector
+shipped blind - it required the remainder of a declaration line to be a bare
+identifier, so a `local` with a trailing comment was invisible to it and a
+duplicate `local sPolling` reached an engine as a hard compile error.
+**`tools/build-preflight.py`** generates `tests/preflight.livecodescript`, the
+one-paste "can this machine run the pass at all?" stack, rather than letting
+anyone hand-copy its six expected ABI numbers: those are C macros in the members'
+shims, and a hand-copied number goes stale SILENTLY at the next bump, which is
+the failure this file already records for every other copied constant. Extracting
+them buys three cross-checks free - the C macro against the `.lcb` binding
+literal, every ABI guard's throw text actually containing `ABI `, and the macOS
+sodiumxt-skew sentence quoted from `sodiumxt/CLAUDE.md` rather than paraphrased.
+Four older suite gates had never been named here either, and each is worth
+knowing before you push: `check-handler-calls.py` (with `test-handler-calls.py`)
+proves every handler CALLED across a member boundary actually exists, the gate
+that would have caught the shipped example calling `sxHashKey`;
+`check-shim-scaffold-drift.py` holds the one handle table that lives in three C++
+shims, so rule 4 does not get quietly weaker in two members;
+`check-binary-freshness.py` is the automated half of rule 5, catching a shim that
+gained, lost or renamed an export without its committed library being rebuilt;
+and `check-stack-size.py` reads each stack's own window size and holds it inside
+the family's 720p budget, because the two-machine passes happen on whatever
+hardware is in the room and a section below the bottom edge is a leg that does
+not get closed.
+
 ## The unified self-test is GENERATED
 
 `tests/suite-selftest.livecodescript` is the one script a maintainer pastes into
@@ -155,6 +251,29 @@ python3 tools/build-suite-selftest.py --check    # in the gate set
 python3 tools/check-suite-selftest.py            # the checks a compiler would make
 python3 tools/check-suite-coverage.py            # does it actually reach the suite?
 ```
+
+Those four are the harness's own gates, not the whole set. **The authoritative
+list of suite-level gates is the `== suite: tools/...` block in
+`tools/build-all.sh`**, and `tools/build-all.sh --gates` runs that block plus
+every member's own `run_gates` walk, compiler-free - the same set
+`suite-gates.yml` runs on every push. Read the script when you want to know what
+will fail, because it is the thing that runs. Deliberately no count is written
+here: a number would be true the day it was measured and false the next time a
+gate lands, silently, which is the same failure this file records for
+hand-copied ABI numbers and for the coinxt constant gate that reported what it
+had parsed as what it had checked. Do not build the list by globbing `tools/*.py`
+either. **The example this sentence used to give has expired, and how it expired
+is the better argument.** It read: `check-doc-anchors.py` sits there invoked by
+nothing, so a glob would name a gate that does not run. That tool was wired into
+the suite gate block on 2026-08-19 and today every one of the 21 files in
+`tools/` is invoked by `build-all.sh` - so the glob would now be accidentally
+right, which is worse than being wrong, because nothing would tell you when it
+stopped being. The durable reason stands: those 21 are not 21 GATES. Four are
+fixture tests (`test-*.py`), four are generators and installers
+(`build-suite-selftest.py`, `build-preflight.py`, `sync-demo-embeds.py`,
+`install-release-binaries.py`) that WRITE the tree rather than judging it, and a
+glob would silently adopt whatever lands in the directory next. Read the script.
+The paragraphs above and below name only the gates whose WHY needs prose.
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
@@ -169,11 +288,24 @@ embedded VERBATIM (no prefixing: the tests must call them by their real names).
 The embed exists because the old "two `start using` lines" setup step cost a
 real engine pass: a fresh harness ran against a stale in-memory coinxt stack
 and reported exactly the failures whose fix was already merged. One paste now
-carries the code its tests test, and `--check` pins both to one tree — which
-also means **a script-layer edit is not done until the harness is rebuilt**,
-exactly like a member-harness edit. Edit the member file, not the generated one.
+carries the code its tests test, and `--check` pins both to one tree - which
+also means **a script-layer edit is not done until every carrier of that layer
+is re-run**, exactly like a member-harness edit. Since 2026-08-17 there are TWO:
+`python3 tools/build-suite-selftest.py` for the suite paste, and
+`python3 tools/sync-demo-embeds.py` for the demos, which carry these same
+libraries verbatim between sentinels so a demo is one paste-and-run file (10
+demos in its REGISTRY; onionxt's layer alone is in five of them). Both
+`--check`s are in the gate set, so skipping one fails the build rather than
+shipping a demo that runs last week's library - but the build failing is the
+backstop, not the instruction. **The two carrier sets overlap and neither
+contains the other**: `box2dxt/src/box2dxt-kit.livecodescript` is in the paste
+and in no demo (its second carrier is `box2dxt/tools/sync-embedded-kit.py`,
+below), while `onionxt/src/onion-httpd.livecodescript` is in three demos and
+deliberately NOT in the paste - it is an app over the `ox*` surface, not part of
+it, and `check-suite-coverage.py` measures that surface against
+`src/onionxt.livecodescript` only. Edit the member file, not any generated copy.
 
-Five things about it are worth knowing before you touch it:
+Eight things about it are worth knowing before you touch it:
 
 - **The embedded libraries sit between sentinel lines, and the coverage gate
   depends on them.** A library's body names nearly its whole own API
@@ -306,8 +438,10 @@ implementations - measured later, the "drift" was in fact TWO independent
 checkers (one lineage in sodiumxt/onionxt/coinxt/riptide, another in
 torrentxt/enetxt/datachannelxt), each with real checks the other lacked. **The
 copies are UNIFIED now (2026-08-12)**: one implementation carrying the union of
-both lineages' checks, byte-identical in all seven members, with
-`tools/check-checker-drift.py` failing the build on any divergence and
+both lineages' checks, byte-identical in every member that carries one - seven
+at unification, TEN today, because nocloud (2026-08-13), box2dxt (2026-08-14)
+and holde-em (2026-08-15) each carried the unified copy in on its own fold -
+with `tools/check-checker-drift.py` failing the build on any divergence and
 `tools/test-checker.py` fixture-testing every rule in every copy - so "a fix
 applied to one copy is not applied to the suite" is no longer a state the tree
 can quietly be in. The self-containment survives: each member still ships its
@@ -374,7 +508,7 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
 That gap is invisible from the inside: the harness was ~4400 lines running ~580
-checks when this was learned (34879 lines today, and the lesson still holds - and it landed again on
+checks when this was learned (35377 lines as of 2026-08-19, and the lesson still holds - and it landed again on
 2026-08-16, when box2dxt joined the gate and **211 of its Kit's 313 public
 handlers turned out never to have been named by a test**, many of them handlers
 that RUN on every existing test through `b2kStepOnce`),
@@ -398,8 +532,15 @@ admissions:
 
 - **box2dxt's raw `b2*` `.lcb` binding** - 376 public handlers over **373**
   foreign declarations (370 binding into the member's own library; the "374"
-  that stood here was a `grep -c` counting one line of prose), of which **244
-  are named by no script anywhere in that member**. Ratcheting the SCRIPT side
+  that stood here was a `grep -c` counting one line of prose), of which **245
+  are named by no script anywhere in that member** - 245 and not 244, which this
+  paragraph said until 2026-08-19. Both numbers are real and they differ by the
+  measuring CONVENTION: the gate strips comments and blanks string literals
+  before it looks (`tools/check-suite-coverage.py`), which is 131 named / 245
+  unnamed; counting raw tokens instead finds one more name in a comment or a
+  literal, giving 132 / 244. `box2dxt/CLAUDE.md` carries the same pair with that
+  explanation; the root file had the other half of it and no annotation, which is
+  how one number can be wrong in two places for a reason nobody wrote down. Ratcheting the SCRIPT side
   would mean ~375 assertions written blind against a foreign-bound API in one
   pass, so it stays open.
   **The C side is no longer unmeasured, and the numbers moved a long way on
@@ -414,21 +555,27 @@ admissions:
   shipped-is-not-run lesson, one level down in the toolchain. Signatures across
   the boundary are now gated too (`box2dxt/tools/check-lcb-signatures.py`: 370
   binds vs 370 definitions, return type, arity, and every parameter type).
-- **holde-em's `he*` surface** - **MEASURED 2026-08-17; the mechanism this
-  paragraph said did not exist now exists.** The old text said a row would read
-  **0/379** or **379/379**, that only **163/379** were named by a test, and that
-  the honest number was "not one this gate can compute". Every figure in that
-  sentence is superseded, including the denominator: the file defines **380**
-  public `he*` handlers, **329 game + 51 harness**, not 379.
+- **holde-em's `he*` surface** - **MEASURED 2026-08-17, re-measured 2026-08-19;
+  the mechanism this paragraph said did not exist now exists.** The old text
+  said a row would read **0/379** or **379/379**, that only **163/379** were
+  named by a test, and that the honest number was "not one this gate can
+  compute". Every figure in that sentence is superseded, including the
+  denominator: the file defines **381** public `he*` handlers, **330 game + 51
+  harness**, not 379. The 2026-08-17 measurement read 380 (329 game); what moved
+  it is `heAwardedPot`, the uncalled-bet rule added later that same day in
+  07bbf4f, and it is instructive that the drift was SILENT - a new game handler
+  that arrives with its own test enters numerator and denominator together, so
+  every ratio here still looked right while every absolute number had gone
+  stale.
 
   The gate splits the ONE file into a GAME region and a HARNESS region at its
   selftest boundary - the same move as the embedded-span cut, done with a
   boundary line instead of a sentinel - and asks its own question across the
-  cut. **119/329 game handlers are named by a body REACHABLE from the selftest
-  entry point**, +1 dispatched by name = **120/329 exercised, 209 named by
+  cut. **120/330 game handlers are named by a body REACHABLE from the selftest
+  entry point**, +1 dispatched by name = **121/330 exercised, 209 named by
   nothing that runs** (20 live-transport, 9 engine-media, 41 host-window, 139
   simply untested). The unrestricted closure that `check-suite-selftest.py`
-  check 7d computes over the same graph scores 264/329, and refusing that
+  check 7d computes over the same graph scores 265/330, and refusing that
   inflation is exactly why the row has its own stopping rule.
 
   **TWO STRING CONVENTIONS, DELIBERATELY DIFFERENT, and the difference is two
@@ -476,10 +623,19 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
 
 - **Member docs** live in `<member>/docs/` and describe that one extension
   (its api-reference, architecture, building, getting-started).
-- **Suite docs** live in the top-level `docs/` and span more than one member:
-  the roadmap (`NEXT-EXTENSIONS-PLAN.md`), the Tor-transport integration
-  (`ONIONXT-INTEGRATION-PLAN.md`), and the five-extension capstone design
-  (`RIPTIDE-SOCIAL-SPEC.md`). See `docs/README.md`.
+- **Suite docs** live in the top-level `docs/` and span more than one member.
+  `docs/README.md` indexes every one of them with its scope and a one-line
+  description; this file names only the two that are operational rather than
+  descriptive, because an engine session starts with both.
+  `docs/OXT-PASS-RUNBOOK.md` is what to do: what is still unproven and why, the
+  install order, the run order shortest-feedback-first, and which honesty labels
+  each result flips - read it before sitting down at an engine.
+  `docs/OXT-ENGINE-NOTES.md` is what the engine actually does, with each entry
+  marked OBSERVED, INFERRED, DOCUMENTED or UNEVIDENCED, because the class is the point - read
+  it before an engine session and add to it after one. Everything else - the
+  roadmap, the Tor-transport integration plan, the capstone specs, the dated
+  audits - is catalogued in `docs/README.md` rather than duplicated here, so
+  this paragraph does not go stale the next time a document lands.
 
 > **Cross-reference caveat (consolidation debt; swept 2026-08-15).** Members
 > and suite docs were moved verbatim, so internal path references read as if
@@ -504,8 +660,16 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   tests registered" can never pass silently), runs coinxt's
   `native/build.sh asan` self-test and KAT harness, and runs every member's
   static gates (script checker, docs style, golden vectors, record registries,
-  KATs, standalone freshness, and the MANIFEST.sha256 integrity checks).
-  OnionXT is pure script — nothing to compile.
+  KATs, embedded-Kit freshness, and the MANIFEST.sha256 integrity checks).
+  OnionXT is pure script — nothing to compile. Suite-level, after the per-member
+  walk, it also proves the GENERATED copies have not drifted from their sources:
+  the pasteable harness (`tools/build-suite-selftest.py --check`) and the script
+  libraries each demo carries inside itself (`tools/sync-demo-embeds.py --check`,
+  with `tools/test-demo-embeds.py --mutate` run first so a blind collision
+  detector cannot pass as a clean one). The second of those is what replaced
+  onionxt's per-member `build-standalone.py`, retired 2026-08-17 along with the
+  two generated twins it emitted - which is why "standalone freshness" no longer
+  appears in the per-member list above.
 - Build under **gcc** with `-fsanitize=address,undefined` while iterating on any
   shim (clang's ASan runtime is not installed in this environment). Treat every
   native-library header as a **system header** (`-isystem`) so its warnings do
@@ -523,8 +687,14 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   upload each built library as an **artifact** and never commit one: they fire on
   every push, so a commit step there would land binaries nobody asked for on
   somebody else's change. `release-binaries.yml` is the manual assembly step over
-  the top: one `workflow_dispatch` builds every member for every platform it can (20
-  jobs: five members x four platforms), asserts each artifact, then installs each library into its member's
+  the top: one `workflow_dispatch` builds FIVE of the SIX members that ship
+  committed binaries, for every platform it can (20
+  jobs: five members x four platforms). **box2dxt is not in it**, although
+  `box2dxt/src/code/` carries all five platform directories and a
+  `MANIFEST.sha256`; no reason for the omission is recorded anywhere, and its own
+  `native-box2dxt.yml` matrix uploads artifacts and never commits, so box2dxt's
+  committed libraries have no dispatch that refreshes them. This paragraph said
+  "every member" until 2026-08-19, asserts each artifact, then installs each library into its member's
   `src/code/<platform-id>/`, refreshes the manifests, runs the whole gate set,
   and commits (`commit_mode`: `branch` / `pr` / `none`). That still satisfies
   rule 5, whose point is that a committed binary traces to a human decision - the

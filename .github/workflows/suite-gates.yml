@@ -4,10 +4,22 @@
 # on every push: the LiveCodeScript static checker, the docs house-style gates,
 # every golden-vector suite (wire formats, BEP44, the file server), the
 # record-schema registry checks, the known-answer harnesses (onionxt pure
-# python; coinxt compiles its small shim in a temp dir), the generated-
-# standalone freshness check, and the committed-binary / vendored-source
+# python; coinxt compiles its small shim in a temp dir), the carried-copy
+# freshness gates (sync-demo-embeds.py --check and box2dxt's
+# sync-embedded-kit.py --check: every demo pastes with a CURRENT copy of the
+# libraries embedded in it), and the committed-binary / vendored-source
 # MANIFEST.sha256 integrity checks. No engine needed; the only compiler use is
 # coinxt's tiny KAT build, so the job stays fast.
+#
+# That list is an ENUMERATION, and an enumeration goes stale: the entry replaced
+# above named a generated-standalone freshness check after 2b8b184 had deleted
+# the generator and both generated twins, so this header described a gate the
+# job could not have been running. What actually holds is the MECHANISM in the
+# step below - the job runs `bash tools/build-all.sh --gates`, so every suite
+# gate placed above that script's GATES_ONLY early exit runs here with NO change
+# to this YAML, and the gates added since this header was last rewritten arrived
+# exactly that way. Add the next one to build-all.sh; do not add a step here,
+# because a step here would be a second place that has to agree with the script.
 #
 # Heavy native matrix builds (libtorrent, libdatachannel, libsodium, ENet,
 # Box2D, trezor-crypto, across five platforms) run from the ROOT

@@ -119,6 +119,12 @@ pollute `-Wall -Wextra`, and bump an ABI version + a `checkABI()` guard on every
 
 ## Socket and engine I/O gotchas (the NEW hard-won lessons; verify each on-engine)
 
+> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and the gate (if any) that now holds it. Keep
+> member-specific gotchas in this file; put anything the ENGINE does there, so
+> there is one authoritative list instead of ten that drift.
+
 These are OnionXT's own territory, not carried from a sibling, so treat every one as a hypothesis to
 confirm on the engine and record the result here as it is learned.
 

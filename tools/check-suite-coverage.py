@@ -114,7 +114,7 @@ one file - which is the same move as the embedded-span cut above, done with a
 boundary line instead of a sentinel:
 
     holde-em/src/holdem.livecodescript
-      lines 1 .. <boundary>     the GAME - the denominator, 329 public he*
+      lines 1 .. <boundary>     the GAME - the denominator, 330 public he*
       <boundary> .. EOF         the HARNESS - the scanned text, 51 handlers
 
 The boundary is `command heRunSelftest`, the first of the two entry points, and
@@ -156,9 +156,10 @@ this tree is going to get:
 THE NUMBER, AND WHAT IT MEANS - stated in full because four earlier attempts at
 it gave four different answers (304/379, 161/313/66, 146/282/97, 174/205; those
 are carried as history, not re-derived here) and every one of them measured
-something slightly different. Note that all four say 379 and this says 380:
-2026-08-17's heTestHelpersRun brought a handler with it, which is a small
-reminder that a figure written into prose is a snapshot and this one is not:
+something slightly different. Note that all four say 379 and this says 381:
+2026-08-17's heTestHelpersRun brought a handler with it and 07bbf4f brought
+another later the same day, which is a small reminder that a figure written into
+prose is a snapshot and this one is not:
 
     119 / 329   public he* handlers DEFINED IN THE GAME REGION that are named
                 by the body of a harness-region handler REACHABLE from
@@ -166,10 +167,19 @@ reminder that a figure written into prose is a snapshot and this one is not:
                 +1 (heProbeSodium, above) = 120 actually exercised.
                 209 are named by nothing that runs.
 
+                MOVED, and the paragraph above predicted it: 07bbf4f
+                (2026-08-17) extracted heAwardedPot from the fold loop so an
+                assertion could reach it, above the boundary, and every figure
+                here shifted by one. The tool prints 120 / 330, +1 = 121 / 330,
+                and the file now defines 381 public he* - 330 game + 51
+                harness. 209 is unchanged, because the numerator and the
+                denominator both grew. The four historical answers above stay
+                as written; they are history.
+
 Not a closure: a handler the game calls internally does not count, exactly as
 cxMnemonicNormalize does not count for coinxt. The 7d-style closure of the same
-graph scores 264/329, and that number is the inflation this whole file exists
-to refuse. Whole-region scan and reachable-bodies scan agree today (119 both),
+graph scores 265/330, and that number is the inflation this whole file exists
+to refuse. Whole-region scan and reachable-bodies scan agree today (120 both),
 because every harness handler except the three interactive-delivery ones is
 reachable - which the gate now checks, so an unwired test section is a failure
 rather than a silent contributor to the numerator.
@@ -231,8 +241,16 @@ MEMBERS = [
     #     game-facing API, pure LiveCodeScript, embedded in the suite paste
     #     and driven by box2dxt's folded harness. RATCHETED, below.
     #   src/box2dxt.lcb                  376 public b2* handlers - a 1:1
-    #     binding over the C shim (374 foreign declarations for 376 public
-    #     handlers; the bodies are checkABI + unsafe + call). NOT ratcheted.
+    #     binding over the C shim (373 foreign declarations, 370 of them
+    #     binding into this member's own library; the bodies are checkABI +
+    #     unsafe + call). NOT ratcheted. The other three binds are libc -
+    #     _dlopen, _dlerror and _realpath, box2dxt.lcb:460/461/465 - which is
+    #     why `grep -c 'binds to'` says 373 and `grep -c 'c:box2dxt>'` says
+    #     370, and neither is wrong. This line used to say 374, retracted in
+    #     root CLAUDE.md: that came from `grep -c 'foreign handler'`, which
+    #     also matches box2dxt.lcb:16, a sentence of header PROSE about the
+    #     foreign handlers. A number is only as good as the command that
+    #     produced it, which is this file's own subject.
     #
     # The reason is measurement, not convenience. Of those 376, the Kit names
     # 131 and **245 are named by no script anywhere in box2dxt** - not the
@@ -1019,7 +1037,7 @@ def main(argv):
     # holde-em rides its own measurement, and its number is deliberately NOT
     # merged into the totals below. The rows above share one denominator rule
     # (a member's library file) and are enforced; this one splits a single file
-    # by region and is advisory. Adding 120/329 into 724/742 would produce a
+    # by region and is advisory. Adding 121/330 into 724/742 would produce a
     # ratio that means neither thing, and the headline number is the one people
     # quote.
     holdem_row, holdem_problems, holdem_notes = holdem_region_report()

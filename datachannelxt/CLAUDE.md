@@ -190,8 +190,12 @@ machinery but never leaves the host.
   `record_golden_test.py` + `record_handle_test.cpp` pin the same literal bytes.
 - **Adding a handler:** `dcx_*` in the shim (validate handle; `DCX_GUARD_*`; obey
   the lock discipline) -> `private foreign handler` + public `dc*` wrapper in the
-  `.lcb` -> MSVC .def list in CMakeLists -> bump ABI if changed -> smoke-test
-  assertion -> rebuild + `tools/package-extension.py` in the same change.
+  `.lcb` -> **check the new public name collides with no name `_eventName` can
+  return** (and, adding an EVENT, that its name collides with no public `dc*`
+  handler - see gotcha 11; the suite gate `../tools/check-lcb-call-types.py`
+  enforces it) -> MSVC .def list in CMakeLists -> bump ABI if changed ->
+  smoke-test assertion -> rebuild + `tools/package-extension.py` in the same
+  change.
 
 ## C++ gotchas (paid for, again, this session)
 
@@ -258,6 +262,30 @@ machinery but never leaves the host.
    binary with `numToByte`); and `is` is case-INsensitive, so byte-exact Data
    comparison needs `set the caseSensitive to true` first. The checker now
    flags the first two statically (`LCS_ANTIPATTERNS`).
+11. **AN EVENT NAME MAY NEVER EQUAL A PUBLIC `dc*` HANDLER NAME.** The names
+   `_eventName` returns share ONE xTalk message namespace with every public
+   handler this module exports, because a DISPATCHED name resolves exactly
+   like a called one. When the two collide the LIBRARY handler wins and the
+   app's `on <name>` is never reached - not "sometimes", never. Observed
+   2026-08-18 (Linux) on `dcLocalDescription`, which was simultaneously the
+   emitted event name and the public getter
+   `dcLocalDescription(in pPeer as Integer)`: the dispatch landed in the
+   getter with the event Array and threw "cannot convert value", and because
+   the poll pump died silently the throw was read as a DRAIN failure for two
+   passes. See [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md) 6.7
+   for the verbatim symptom and how long it hid. **When they collide, rename
+   the EVENT, not the getter** - the getter is exercised by the harness and
+   the event demonstrably was not, so the event is the side with nothing to
+   lose. The suite gate `../tools/check-lcb-call-types.py` (check 4, run from
+   the suite root by `tools/build-all.sh --gates`) refuses any future
+   collision, so this is now caught statically rather than on an engine.
+   **The transition shim, and its removal condition:**
+   `examples/datachannel-helpers.livecodescript` maps the legacy
+   `dcLocalDescription` name onto the `...Ready` spelling as it drains, so an
+   app runs against an extension packaged BEFORE 2026-08-18 without a
+   reinstall; sites that COMPARE `tEvent["name"]` accept both spellings
+   (`tests/datachannel-selftest.livecodescript:405-408`). The shim comes out
+   when no supported build emits the old name.
 
 ## The single-threaded performance playbook (carried)
 
@@ -349,6 +377,27 @@ calls BARE in statement position"). All six copies of
 was tested against the bug, against all three working forms, and against a
 `.lcb`.
 
+[Annotated 2026-08-19; the sentence above is left as it was written. Both of
+its present-tense halves have been overtaken, and the second one by this
+section's own lesson. The COUNT was right on the day - six extensions were
+the only members carrying a checker - but the copies had by then drifted into
+TWO independent implementations, and they were UNIFIED on 2026-08-12
+(ae629fb) into one carrying the union of both lineages' checks: seven
+members at that commit, and every member folded in since carries the same
+bytes. Measured today: ten copies (box2dxt, coinxt, datachannelxt, enetxt,
+holde-em, nocloud, onionxt, riptide, sodiumxt, torrentxt), byte-identical,
+with tools/check-checker-drift.py failing the build on any divergence - so
+the number is a property of the tree now rather than of this sentence, and
+that is why the suite root's copy of this narrative states none. The
+ATTESTATION is the sharper correction. "Each copy was tested" was a one-time
+claim about a run nobody could re-execute, which is the same shape as the
+comment the meta-lesson below is about. It is not an attestation any more:
+the fixtures for this bug and for all three legal forms - the bare statement
+call, the expression-position call, and the .lcb spelling - are COMMITTED in
+tools/test-checker.py and run against every copy in the gate set on every
+build (75 fixtures x 10 copies = 750 runs today). Shipped is not run applies
+to a gate's evidence exactly as it applies to the code the gate reads.]
+
 **The meta-lesson, which is worse than the bug.** The suite harness carried a
 comment asserting that both spellings were fine, reasoning that datachannelxt
 shipped the parenthesised form so it must work. Shipped is not run: this
@@ -359,7 +408,11 @@ circular. Do not promote an unexecuted line to evidence, in either direction.
 
 - Develop on the per-task branch; commit there; draft PR if none exists.
 - A `.lcb` change is only "done" once `tools/check-livecodescript.py` AND
-  `tools/check-record-registry.py` pass; a shim change once the smoke test is
+  `tools/check-record-registry.py` pass - both member-local - AND once the
+  SUITE gate `../tools/check-lcb-call-types.py` passes, which is not a member
+  tool and is run from the suite root by `tools/build-all.sh --gates`: it types
+  the script -> `.lcb` boundary argument by argument and refuses an event name
+  that collides with a public handler. A shim change is done once the smoke test is
   green under ASan/UBSan AND TSan; an ABI change once `DCX_ABI_VERSION` +
   `kABIVersion` moved together.
 - A native-library change is only "done" once `tools/package-extension.py` has

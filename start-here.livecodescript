@@ -22,11 +22,18 @@ script "SuiteStartHere"
 -- line, SET its script (a compile error surfaces right here, with the
 -- demo's name on it), GO to it so openStack builds the window, nudge
 -- openStack once if the card arrived empty, then reveal the finished
--- window. Helper stacks (the poll dispatchers, the coinxt/riptide script
--- layers) get the same treatment minus the window: created invisibly,
--- then `start using` BY NAME - nothing ever depends on loading a stack
--- FILE. Relaunching raises the running window; a closed one reopens with
--- its script refreshed from disk (never yanked under a running stack).
+-- window. There is nothing to wire up before that: a stack that needs a
+-- script library CARRIES it, embedded verbatim by tools/sync-demo-embeds.py,
+-- so not one registry row declares a helper today - and
+-- tools/check-launcher-registry.py now refuses a row that names a helper its
+-- own file embeds, so the field cannot quietly go stale again. The helper
+-- mechanism stays anyway, because one demo is on record as unable to embed
+-- its library (the reason is in that tool's NOT_EMBEDDED table, and it is a
+-- behaviour change to a path with no engine pass, not an oversight) - a
+-- helper named in a row gets the same treatment minus the window: created
+-- invisibly, then `start using` BY NAME - nothing ever depends on loading a
+-- stack FILE. Relaunching raises the running window; a closed one reopens
+-- with its script refreshed from disk (never yanked under a running stack).
 --
 -- WHAT IT CANNOT DO FOR YOU: install the native extensions. Each entry
 -- names what it needs (Tools > Extension Manager ids are in each member's
@@ -132,11 +139,19 @@ command uiStatus pText, pKind
    -- against the stack whose script is running. Inside openStack those are the
    -- same thing, which is why every demo's startup status line always worked.
    -- A handler arriving from `send ... in` has no such guarantee: with a second
-   -- stack in front, the write lands in the wrong stack or resolves to nothing,
-   -- and enet-lan-chat's once-a-second dashboard threw
-   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18. dht-chat hid
-   -- the same fault behind its own `if there is a field` guard - its status line
-   -- simply stopped updating, silently, which is the worse outcome of the two.
+   -- stack in front, the write lands in the wrong stack or resolves to nothing.
+   --
+   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
+   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
+   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
+   -- hiding the same fault behind a guard. Neither half held up: that throw was
+   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
+   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
+   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
+   -- master had no existence check until the same commit that added this pin.
+   -- What a guarded call site WOULD do if the defaultStack diverged is fail
+   -- silently, which is the argument for a gate rather than for more guards.
+   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
    --
    -- The pin is holde-em's idiom, engine-proven there, and its comment names
    -- this exact hazard. The existence check stays as well: a demo may call the
@@ -533,17 +548,17 @@ end slClearGeneratedUI
 function slRegistry
    local tR
    put "sodiumxt/examples/sodium-demo.livecodescript||the sodiumxt extension (org.openxtalk.library.sodium)||A tabbed tour of the crypto surface: authenticated boxes, signatures, hashing, file crypto, deterministic identities from a passphrase, and key rollover." & return into tR
-   put "coinxt/examples/coinxt-demo.livecodescript|coinxt/src/coinxt.livecodescript|the coinxt extension (org.openxtalk.library.coin); sodiumxt only for Generate new|This is a demo, not a wallet - never type a mnemonic that guards real funds.|From a mnemonic to addresses to a SIGNED Bitcoin and Ethereum transaction, every step decoded on screen." & return after tR
-   put "enetxt/examples/enet-lan-chat.livecodescript|enetxt/examples/enet-helpers.livecodescript|the enetxt extension (org.openxtalk.library.enet)|Two machines on a LAN (or two stacks on one machine). Allow the engine through the HOST machine's firewall - inbound UDP 27099.|Reliable-UDP LAN chat: one machine Hosts, everyone else Joins its ip. One broadcast relays every line." & return after tR
-   put "datachannelxt/examples/datachannel-loopback.livecodescript|datachannelxt/examples/datachannel-helpers.livecodescript|the datachannelxt extension (org.openxtalk.library.datachannel)||Two WebRTC peers in ONE stack, signaling shuttled in script: the whole pipeline (offer/answer, ICE, DTLS, SCTP) with zero infrastructure." & return after tR
-   put "datachannelxt/examples/datachannel-dht-chat.livecodescript|datachannelxt/examples/datachannel-helpers.livecodescript|datachannelxt AND torrentxt extensions|Two machines, ideally on different networks. SESSION: uses the one torrent session.|P2P chat where the BitTorrent DHT carries the WebRTC handshake - no server anywhere, then the chat rides the direct encrypted channel." & return after tR
+   put "coinxt/examples/coinxt-demo.livecodescript||the coinxt extension (org.openxtalk.library.coin); sodiumxt only for Generate new|This is a demo, not a wallet - never type a mnemonic that guards real funds. Self-contained: carries coinxt.|From a mnemonic to addresses to a SIGNED Bitcoin and Ethereum transaction, every step decoded on screen." & return after tR
+   put "enetxt/examples/enet-lan-chat.livecodescript||the enetxt extension (org.openxtalk.library.enet)|Two machines on a LAN (or two stacks on one machine). Allow the engine through the HOST machine's firewall - inbound UDP 27099. Self-contained: carries enet-helpers.|Reliable-UDP LAN chat: one machine Hosts, everyone else Joins its ip. One broadcast relays every line." & return after tR
+   put "datachannelxt/examples/datachannel-loopback.livecodescript||the datachannelxt extension (org.openxtalk.library.datachannel)|Self-contained: carries datachannel-helpers.|Two WebRTC peers in ONE stack, signaling shuttled in script: the whole pipeline (offer/answer, ICE, DTLS, SCTP) with zero infrastructure." & return after tR
+   put "datachannelxt/examples/datachannel-dht-chat.livecodescript||datachannelxt AND torrentxt extensions|Two machines, ideally on different networks. SESSION: uses the one torrent session. Self-contained: carries datachannel-helpers.|P2P chat where the BitTorrent DHT carries the WebRTC handshake - no server anywhere, then the chat rides the direct encrypted channel." & return after tR
    put "torrentxt/examples/torrent-client.livecodescript||the torrentxt extension (org.openxtalk.library.torrent)|SESSION: one torrent stack per OXT launch.|The full client: add magnets/files/URLs, seed, inspect, tune, save resume data - the whole bt* surface in one window." & return after tR
    put "torrentxt/examples/torrent-dht-channels.livecodescript||torrentxt; sodiumxt for the private-feed features; onionxt + a tor daemon for anonymous channels|SESSION: one torrent stack per OXT launch.|Serverless publish/subscribe: signed channel feeds over BEP44 mutable items, with content-addressed releases - or make a whole channel anonymous over Tor." & return after tR
    put "torrentxt/examples/torrent-quickshare.livecodescript||torrentxt; sodiumxt for passphrase locking; onionxt + a tor daemon for Private/Tor|SESSION: one torrent stack per OXT launch.|Send a file with a code, privately over Tor, or via a web link - the small sibling of the nocloud app." & return after tR
    put "torrentxt/examples/torrent-rp1-chat.livecodescript||the torrentxt extension|Two machines. SESSION: one torrent stack per OXT launch.|The rp1 transport test: a phantom swarm, a DHT rendezvous, and opaque bytes peer to peer - the channel Riptide rides." & return after tR
    put "onionxt/examples/onionxt-demo.livecodescript||a local tor daemon with ControlPort 9051 (or Tor Browser: 9151)|Self-contained: carries onionxt, onion-httpd and its own self-test.|Tor from xTalk: control-port status, anonymous dials, hosting v3 onion services, self-authenticating addresses." & return after tR
    put "onionxt/examples/onion-httpd/spike.livecodescript||a local tor daemon with ControlPort 9051|Self-contained: carries onionxt and onion-httpd.|The smallest onion site: pick a folder, get a .onion, serve it - three buttons." & return after tR
-   put "riptide/examples/riptide-social.livecodescript|riptide/src/riptide.livecodescript|sodiumxt AND torrentxt; coinxt or sodiumxt ABI 7 for the onion spelling|Two machines to see propagation. SESSION: uses the one torrent session.|The capstone: one sealed identity, signed public feeds published and verified over the real DHT (phases 1-2)." & return after tR
+   put "riptide/examples/riptide-social.livecodescript||sodiumxt AND torrentxt; coinxt or sodiumxt ABI 7 for the onion spelling|Two machines to see propagation. SESSION: uses the one torrent session. Self-contained: carries riptide, onionxt and onion-httpd.|The capstone: one sealed identity, signed public feeds published and verified over the real DHT (phases 1-2)." & return after tR
    put "nocloud/src/nocloudquickshare.livecodescript||torrentxt; sodiumxt and onionxt optional (each feature fails closed without its piece)|SESSION: one torrent stack per OXT launch.|The SHIPPED app: No Cloud Quick Share - send any file to anyone, no server, no account, no size limit." & return after tR
    put "box2dxt/examples/box2dxt-demo.livecodescript||the box2dxt extension (org.openxtalk.box2dxt)||The physics showcase: scenes for shapes, joints, forces, queries and the Kit's control-backed bodies." & return after tR
    put "box2dxt/examples/box2dxt-platformer.livecodescript||the box2dxt extension||A complete platformer on the b2k game Kit: sprites, input, camera, one-way platforms, hazards - a game, not a widget." & return after tR
@@ -552,12 +567,13 @@ function slRegistry
    put "box2dxt/examples/box2dxt-spike-gamekit.livecodescript||the box2dxt extension||The game-Kit capability spike: timers, keyboard, sprites, rays, camera - one button per probe." & return after tR
    put "box2dxt/examples/box2dxt-selftest.livecodescript||the box2dxt extension||box2dxt's own harness: the b2* binding surface exercised end to end." & return after tR
    put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online.|Serverless Texas Hold'em: hotseat now, online tables over the DHT, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
-   put "tests/suite-selftest.livecodescript||every extension you have (absent ones SKIP, not fail)|SESSION: starts the one torrent session. GENERATED from the member harnesses.|The whole suite's self-test in one window: ~600 checks across all six members plus riptide, with a Copy-results button for the pass record." & return after tR
+   put "tests/preflight.livecodescript||every extension you have (absent ones SKIP, not fail)|GENERATED from the C shims' ABI macros. Nothing to install first, no start-using step. It TAKES the one torrent session and gives it straight back, so run it BEFORE any SESSION stack in this OXT launch.|Answers the pass's first question - can this machine run it at all? - in the first minute: one table of LOADED/ABSENT rows, each extension's own ABI guard doing the checking." & return after tR
+   put "tests/suite-selftest.livecodescript||every extension you have (absent ones SKIP, not fail)|SESSION: starts the one torrent session. GENERATED from the member harnesses.|The whole suite's self-test in one window: NINE folded harnesses - the six extensions plus riptide, box2dxt and holde-em - over the core's own cross-member sections. The 2026-08-17 Windows pass ran 1,836 folded member checks with zero failures and 7 skips; the core's sections run on top of that. Copy-results button for the pass record." & return after tR
    put "tests/suite-closing-pass.livecodescript||varies by section (each says what it needs)|Two machines for sections B-E; a tor binary for F. SESSION.|The remaining runbook legs as a checklist: ENet chat, torrent resume-from-disk, rp1 chat, DHT-signalled WebRTC, live Tor." & return after tR
    put "enetxt/tests/enet-selftest.livecodescript||the enetxt extension||enetxt's own deep harness: the sync surface plus a live async loopback on this machine." & return after tR
    put "datachannelxt/tests/datachannel-selftest.livecodescript||the datachannelxt extension||datachannelxt's own deep harness: stale-handle surface plus a live in-process loopback." & return after tR
-   put "torrentxt/tests/torrent-selftest.livecodescript||the torrentxt extension|SESSION: one torrent stack per OXT launch.|torrentxt's own deep harness: 96 checks over the whole bt* surface." & return after tR
-   put "coinxt/tests/coin-selftest.livecodescript|coinxt/src/coinxt.livecodescript|the coinxt extension||coinxt's own deep harness: every phase against the published vectors, 230 checks." & return after tR
+   put "torrentxt/tests/torrent-selftest.livecodescript||the torrentxt extension|SESSION: one torrent stack per OXT launch.|torrentxt's own deep harness: 101 checks over the whole bt* surface (2026-08-17 pass)." & return after tR
+   put "coinxt/tests/coin-selftest.livecodescript||the coinxt extension|Self-contained: carries coinxt.|coinxt's own deep harness: every phase against the published vectors, 278 checks (2026-08-17 pass)." & return after tR
    return tR
 end slRegistry
 

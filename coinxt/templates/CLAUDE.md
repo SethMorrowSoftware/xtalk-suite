@@ -25,7 +25,7 @@
 > `onionxt/templates/CLAUDE.md` and `coinxt/templates/CLAUDE.md`), and the suite gate
 > `tools/check-checker-drift.py` FAILS the build if the copies differ. Edit one copy and copy it
 > byte-identically to the others in the same change; never patch one copy alone.
-> **Last synced to the family's lessons: 2026-08-15.**
+> **Last synced to the family's lessons: 2026-08-18.**
 
 House style: no em-dashes (use hyphens, commas, colons, parentheses). ASCII only in `.lcb` /
 `.livecodescript`, even in comments and strings. Comment the *why*, densely; match the surrounding
@@ -240,6 +240,17 @@ on-engine pass. Keep both gates green in CI on every push / PR.
 12. **Socket / control ids are the engine's, not yours.** `open socket to host` and `accept connections`
    name sockets by their `host:port` string (with a numeric or `|`-suffix for multiples). Store the EXACT
    id the engine hands you and use it verbatim in `read` / `write` / `close`; never reconstruct it.
+13. **`the number of keys of X` DOES NOT PARSE.** `keys` is not a CHUNK, so the engine reads
+   `keys of X` as an OBJECT expression and fails: `Chunk: error in object expression`. The message
+   names objects and chunks, nowhere near the array you were counting, and it is raised where the
+   ARGUMENT is evaluated - in the caller - not in the handler you were passing it to, which is where
+   any hint points. The correct spelling is `the number of lines of the keys of X`. Both spellings
+   can sit in one tree at once, indistinguishable to a reader: in this family the correct one was in
+   files with green engine runs behind them and the broken one only on paths no run had ever reached,
+   which is why it survived. Two idioms for one job, one carrying evidence and one not, is a shape
+   worth hunting deliberately - the tree cannot tell you which is which, and a green gate will not
+   either. GATE: the unified checker's LCS antipattern set (`.livecodescript` only), with fixtures
+   for BOTH spellings in `tools/test-checker.py`.
 
 ## 6. Operators that look like functions (and vice versa)
 
@@ -309,6 +320,20 @@ wait for it.
   usually but not always the app's stack.
 - **Late binding is a feature.** Calling a handler that is not loaded raises a CATCHABLE execution error
   (or `dispatch` reports `"unhandled"`). Lean on this for capability-gating (section 10).
+- **An EVENT NAME and a public HANDLER NAME share ONE namespace.** xTalk resolves a dispatched message
+  exactly like a call, so a module that emits an event named the same as one of its own public getters
+  does not reach YOUR `on <name>` - it reaches the LIBRARY's, and hands it the event Array where the
+  getter wanted its own argument type. The rule when they collide is: rename the EVENT, not the getter.
+  The getter is exercised; the event demonstrably is not. Have the poll pump map the legacy event name
+  onward, so apps built against an extension packaged BEFORE the rename keep working without a
+  reinstall. Confirmed on-engine (2026-08-18) - and the part worth carrying is how long it hid: an
+  unhandled dispatch is NOT an error, so a colliding name looks exactly like "no handler here" until
+  the colliding handler happens to be strict about its arguments. A shipped example carried
+  `on <name>` from the day it was written and never fired ONCE, the getting-started doc taught the
+  same unreachable shape, and the self-test stayed green because it compared the event's name field
+  in an if/else and never dispatched at all. Every layer agreed, and every layer was testing
+  something else. GATE: `tools/check-lcb-call-types.py` CHECK 4, over every event-name return in
+  every module, with the historical case pinned in its test.
 
 ## 10. Composition and capability-gating
 
@@ -358,7 +383,24 @@ still apply to any control you create beside it:
 - **`set the enabled of <control> to <boolean>`** greys a control AND stops it receiving mouse messages -
   ideal for gating a flow (a disabled button that cannot be clicked tells the user what is not yet valid).
 - **Reference any control generically with `control "name"`** - it resolves across types (button / field
-  / graphic), which is what you want when toggling a mixed group's visibility.
+  / graphic), which is what you want when toggling a mixed group's visibility. **But an UNQUALIFIED
+  control reference resolves against THE DEFAULTSTACK, not against the stack whose script is running.**
+  Inside `preOpenStack` / `openStack` those are the same object, which is why a demo's STARTUP status
+  line has always worked and why this is so easy to never meet; a handler arriving from `send ... in`
+  has no such guarantee, and with another stack in front the write lands on the wrong stack or
+  resolves to nothing. Pin the stack first in every handler that can arrive from a delayed message,
+  and in every shared UI helper such a handler calls:
+  ```
+  set the defaultStack to the short name of this stack
+  ```
+  Pin rather than guard. Wrapping the write in `if there is a field "uiStatus"` converts a LOUD
+  `Chunk: error in object expression` into a status line that silently stops updating - on the exact
+  path a person is least likely to report - so a guard makes this bug invisible instead of fixing it.
+  That is the argument for the pin and for a gate over it, and it holds on documented `defaultStack`
+  resolution alone: this family has not yet watched the unpinned form fail on a dated run (see the
+  log entry in section 16, filed 2026-08-18 and reclassed 2026-08-19), and the pin is cheap and
+  harmless either way. GATE: `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
+  plus the shared kit handlers those targets call.
 - **A single `mouseUp` router + a "prefix:role" naming scheme** dispatches every click: parse
   `the short name of the target`, split on the delimiter, route by prefix. Disabled controls never reach
   it.
@@ -537,3 +579,104 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
            Never trust a decode to throw.
   GATE:    none in the static checker today; the round-trip helper plus a malformed-bytes test
            per parser is the defence.
+- SYMPTOM: `Chunk: error in object expression`, once a second, from a dashboard line that does
+           nothing but count an array: `the number of keys of sPeers`.
+  CAUSE:   confirmed on-engine (2026-08-18): `keys` is not a CHUNK, so the engine reads
+           `keys of sPeers` as an OBJECT expression and fails to resolve it. The error talks about
+           objects and chunks, nowhere near the array; and because it is the ARGUMENT that fails,
+           it is raised in the CALLER, not in the handler the hint names.
+  FIX:     `the number of lines of the keys of X` (section 5). Expect BOTH spellings to be present
+           at once in any tree old enough to have grown them, with only the correct one on paths
+           that have actually run.
+  GATE:    the unified checker's LCS antipattern set (`.livecodescript` only), with fixtures for
+           BOTH spellings in `tools/test-checker.py`.
+- SYMPTOM: `compilation error at line N (local: name shadows another variable or constant) near
+           "sPolling", char 1` - in a file that compiled yesterday, right after two sources were
+           merged into one script.
+  CAUSE:   confirmed on-engine (2026-08-18): TWO script-level declarations of one name is a hard
+           compile error. Before the merge they were two `local`s in two different STACKS and
+           nothing collided; carried into one script they are two genuinely different flags
+           wearing one name. This is the useful counterpart to the missing-declaration
+           trap (section 5, item 7): a MISSING declaration is silent and yields a
+           plausible wrong answer, a DUPLICATE one is loud and stops the compile at
+           paste time.
+  FIX:     whenever a script is assembled from more than one source - an embed, a fold, a paste -
+           the union of column-0 `local` / `constant` names must be UNIQUE. Rename at the source;
+           never merge two declarations into one.
+  GATE:    the tool that assembles the script must refuse a colliding name (an embed tool, or a
+           fold that prefixes every folded name). Loud is better than silent, but it still costs
+           an engine pass to find. And such a gate is only as good as its name parser: the version
+           of ours that could not see a declaration carrying a TRAILING COMMENT reported CLEAN over
+           a real duplicate, which is how the error above reached an engine at all.
+- SYMPTOM: (none observed - this entry is HYGIENE, and is filed here so nobody re-derives it). A
+           concatenated script carries a second `script "Name"` line partway down: the header of
+           the file that was embedded into it.
+  CAUSE:   a `script "..."` line is a stack-NAME marker, meaningful only when the file IS its own
+           stack; inside an embedded fragment it names a stack that is not there. This family once
+           filed a scope-breaking engine failure against it and later traced that failure to a
+           different cause entirely, so what the engine actually does with the second line is NOT
+           known here. The rule survives on structure, not on knowledge - which is the honest way
+           to hold it, and reason enough to keep it.
+  FIX:     exactly one `script "..."` line per script, and it is the FIRST line. When concatenating
+           sources, strip the header from every part but the first.
+  GATE:    the tool that assembles the script strips the header and asserts none survived. Worth
+           keeping precisely because it needs no engine pass to justify.
+- SYMPTOM: (DOCUMENTED behaviour, not a failure this family has watched on a dated run.) A handler
+           arriving from `send ... in` does `put pText into field "uiStatus"` and the text lands on
+           another stack, or nowhere.
+  CAUSE:   an unqualified control reference resolves against THE DEFAULTSTACK, not against the
+           stack whose script is running. Inside `preOpenStack` / `openStack` those are the same
+           object, so the startup status line always works and the hazard never shows itself; a
+           delayed handler has no such guarantee. Filed 2026-08-18 against an observed throw and
+           reclassed DOCUMENTED on 2026-08-19 when that throw was traced to the keys-of spelling
+           above - the mechanism is documented engine semantics, the failure was somebody else's.
+  FIX:     `set the defaultStack to the short name of this stack`, at the top of any handler that
+           can arrive from a delayed message and in any shared UI helper it calls (section 11). Do
+           NOT reach for `if there is a field "..."` instead: the guard turns a loud chunk error
+           into a status line that quietly stops updating, on the path a person is least likely to
+           report. Making a bug invisible is not fixing it.
+  GATE:    `tools/check-timer-stack-pin.py` - every `send ... to me in` target, plus the shared kit
+           handlers those targets call.
+- SYMPTOM: `type conversion error` at runtime, on a GUI engine, in front of a person - in one case
+           killing a poll chain and leaving the app silently dead rather than reporting anything.
+  CAUSE:   confirmed on-engine (2026-08-18, on Linux): EMPTY is not a value for a DECLARED `.lcb`
+           parameter type. `Integer`, `Real`, `Number` and `Boolean` all refuse it, and LiveCode
+           Builder has no optional parameters - so every typed parameter of every public handler is
+           a place a script can hand the engine something it must refuse. The instance: a teardown
+           emptied the handle it had just used, and the SECOND teardown message (transports deliver
+           one per peer, and a failed connect produces one of its own) passed empty to an `Integer`.
+           Not a no-op: a throw.
+  FIX:     guard any handle before passing it, especially on a TEARDOWN path and especially inside
+           a harness, where an uncaught throw costs the WHOLE run instead of the one section that
+           should have SKIPped.
+  GATE:    check the script-to-`.lcb` boundary argument by argument - arity, emptied handles, and
+           event keys the module's own key function cannot return
+           (`tools/check-lcb-call-types.py`). Ours found the defect above plus a set of teardown
+           paths where a setup that never ran would have turned a clean skip into a dead run.
+- SYMPTOM: `dispatch of <name> failed: 899,258,1` from a poll pump - or, for as long as nobody
+           made the pump report, nothing at all: a documented event handler that simply never fires.
+  CAUSE:   confirmed on-engine (2026-08-18): an EVENT name and a public HANDLER name share ONE
+           xTalk namespace (section 9). The module emitted an event whose name was also one of its
+           own public getters, so `dispatch` resolved it exactly like a call and reached the LIBRARY
+           handler, handing it the event Array where an Integer was declared. It hid because an
+           unhandled dispatch is not an error, so the collision looks exactly like "no handler here"
+           until the colliding handler turns out to be strict about its arguments.
+  FIX:     rename the EVENT, never the getter (the getter is exercised; the event demonstrably is
+           not), and map the legacy event name in the poll pump so apps built against the
+           previously packaged extension keep working without a reinstall.
+  GATE:    `tools/check-lcb-call-types.py` CHECK 4, over every event-name return in every module,
+           with the historical case pinned in its test.
+- SYMPTOM: `set the playLoudness to N`, then `the playLoudness is N` compared FALSE.
+  CAUSE:   OBSERVED 2026-08-18 on LINUX; the identical check had been green on Windows x86_64
+           (NT 10.0, OXT 9.6.3) the day before. WHAT THE VALUE ACTUALLY WAS IS NOT KNOWN - the
+           assertion printed nothing but its own name - so no scale, no mapping and no
+           platform rule is claimed here. Only this: the readback is not guaranteed to equal the
+           write.
+  FIX:     treat `playLoudness` as a request, not a register. Set it and move on; do not read it
+           back and compare against what you wrote, and do not compute from it. The ordering (a
+           higher write is louder) is the only property to lean on.
+  GATE:    none. The defence is the wider lesson, and it is about assertions rather than audio:
+           every other check in that section named the value it saw and this one did not, and it
+           is exactly the one that went red on a platform nobody had run before. An assertion's
+           failure message is the whole product of an engine pass - write it as though the run
+           costs a day, because it does.

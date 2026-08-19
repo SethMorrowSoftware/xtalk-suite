@@ -307,7 +307,7 @@
               <text x="61" y="158" text-anchor="middle" fill="#7f8bb0" font-size="9.5">DHT · web</text>
 
               <rect x="115" y="100" width="90" height="66" rx="11" fill="rgba(139,92,246,.14)" stroke="#8b5cf6" stroke-width="1.5"/>
-              <text x="160" y="126" text-anchor="middle" fill="#8b5cf6" font-size="12.5" font-weight="700">cryptoXT</text>
+              <text x="160" y="126" text-anchor="middle" fill="#8b5cf6" font-size="12.5" font-weight="700">SodiumXT</text>
               <text x="160" y="144" text-anchor="middle" fill="#7f8bb0" font-size="10">libsodium</text>
               <text x="160" y="158" text-anchor="middle" fill="#7f8bb0" font-size="9.5">Argon2id</text>
 
@@ -329,7 +329,7 @@
 
         <ul class="tech-notes">
           <li><b>Fail-closed by design.</b> Every optional extension is probed once at startup into a
-            boolean and never called outside its guard. Missing cryptoXT? Encryption is simply off and
+            boolean and never called outside its guard. Missing SodiumXT? Encryption is simply off and
             everything else works. Missing Tor? The other two paths carry on.</li>
           <li><b>Single-threaded, on purpose.</b> Script, the FFI and rendering share one interpreted
             thread. Inbound BitTorrent events are <i>poll-drained</i> off a 250&nbsp;ms timer, so no
@@ -343,15 +343,15 @@
             security-critical helpers (range parsing, path confinement, MIME, header sanitising) in
             plain Python, so a regression is caught before it ships.</li>
           <li><b>Extends the family.</b> It stands on the same OpenXTalk extensions its siblings do —
-            <span class="mono">TorrentXT</span>, <span class="mono">cryptoXT/SodiumXT</span>,
+            <span class="mono">TorrentXT</span>, <span class="mono">SodiumXT</span>,
             <span class="mono">OnionXT</span> — sharing their hard-won safety rules.</li>
         </ul>
       </div>
 
       <div class="deps">
         <div class="dep"><b>TorrentXT</b><span>org.openxtalk.library.torrent — required; the DHT + web transports</span></div>
-        <div class="dep"><b>cryptoXT</b><span>org.openxtalk.library.sodium — optional; passphrase encryption</span></div>
-        <div class="dep"><b>OnionXT</b><span>optional; the Tor path (needs cryptoXT + a local Tor daemon)</span></div>
+        <div class="dep"><b>SodiumXT</b><span>org.openxtalk.library.sodium — optional; passphrase encryption</span></div>
+        <div class="dep"><b>OnionXT</b><span>optional; the Tor path (needs SodiumXT + a local Tor daemon)</span></div>
         <div class="dep"><b>Internet library</b><span>optional; the public-IP lookup on the web-link path</span></div>
       </div>
     </section>
@@ -407,7 +407,7 @@
         <div class="card start-card">
           <h3>As a standalone app</h3>
           <p class="muted">In the standalone builder, include <b>TorrentXT</b> (required) and — for the
-            optional features — <b>cryptoXT</b>, <b>OnionXT</b>, the <b>Internet library</b> and the
+            optional features — <b>SodiumXT</b>, <b>OnionXT</b>, the <b>Internet library</b> and the
             <b>JSON library</b>. Every one fails closed, so it's safe to ship with or without them.</p>
           <p class="muted">No other inclusions, externals, fonts or native resources are needed. Ships
             for Windows, macOS and Linux; downloads land in <span class="mono">Documents/No Cloud Quick Share</span>.</p>
@@ -497,7 +497,7 @@
         <b>Built on</b>
         <a href="https://openxtalk.org" rel="noopener">OpenXTalk</a>
         <span class="mono muted">TorrentXT · libtorrent</span>
-        <span class="mono muted">cryptoXT · libsodium</span>
+        <span class="mono muted">SodiumXT · libsodium</span>
         <span class="mono muted">OnionXT · Tor</span>
       </nav>
     </div>

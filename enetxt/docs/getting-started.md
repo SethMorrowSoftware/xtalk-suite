@@ -97,7 +97,13 @@ channel 0.
 `examples/enet-lan-chat.livecodescript` is the worked example: Host on one
 machine, Join from others, lines relayed with one `enBroadcast`, presence
 from the connect/disconnect events, RTT in the status line from
-`enPeerStatus`. Open it alongside the helpers and read it as a template.
+`enPeerStatus`. It is one paste-and-run file: it carries a verbatim copy of
+the helpers between the sentinels the suite-root `tools/sync-demo-embeds.py`
+owns, so paste it into a single stack script and read it as a template on its
+own - opening `enet-helpers.livecodescript` beside it buys nothing here. The
+separate helpers file is still what a REAL app puts on its message path
+(section 1); the embed exists for the shipped demo, and that file stays the
+single source of truth for both.
 
 ## 6. Where enetxt sits in the family
 

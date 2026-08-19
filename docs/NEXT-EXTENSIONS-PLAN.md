@@ -522,7 +522,19 @@ callbacks** make it the hardest of the three. MPL-2.0.
 | `dcCloseChannel(channel)` / `dcDeletePeer(peer)` | `rtcClose` / `rtcDeletePeerConnection` | idempotent |
 | `dcPoll(out, cap)` | drain the mutex queue | the event firehose |
 
-Events: `dcLocalDescription` (type, sdp), `dcLocalCandidate` (cand, mid),
+Events: `dcLocalDescriptionReady` (type, sdp), `dcLocalCandidate` (cand, mid),
+
+> **AN EVENT NAME MAY NOT EQUAL A PUBLIC HANDLER NAME** - added 2026-08-19, and
+> this table is where the collision came from. xTalk has ONE message namespace, so a
+> dispatched event name resolves exactly like a call. This line originally read
+> `dcLocalDescription`, which DataChannelXT also exports as the getter
+> `dcLocalDescription(in pPeer as Integer)` - so the poll pump's dispatch reached the
+> GETTER with the event array and the engine answered "cannot convert value". The
+> app handler was unreachable from the day it was written, and both a shipped demo
+> and `docs/getting-started.md` taught the unreachable shape for months.
+> Any new extension's event table must be checked against that extension's own
+> public surface; `tools/check-lcb-call-types.py` check 4 now does it mechanically.
+> See `docs/OXT-ENGINE-NOTES.md` 6.7.
 `dcStateChange` (state), `dcGatheringStateChange`, `dcChannelOpen`,
 `dcChannelClosed`, `dcMessage` (channel, data), `dcError` (message).
 

@@ -23,7 +23,7 @@ liveness layer (street checkpoints, show/muck, online History, host election —
 since v0.23.0, act timers with a per-hand time-bank, sit-out/return, late-join
 seating, and onion auto-redial), plus the Phase 3 deck oracle, the Phase 4a-4d
 Level 2 layer (compute + void-and-audit) with its 4e adversarial harness, and Phase
-5's DLEQ proofs — one paste-and-run stack, at v0.24.1, sized 1024x640 inside
+5's DLEQ proofs — one paste-and-run stack, at v0.24.5, sized 1024x640 inside
 the suite's 720p budget (re-layout verified by rect arithmetic; the confirming eye
 is the OXT pass's). v0.24.0 is a correction pass over that liveness layer: ten
 reviewed defects (a redial that could kill the host election, a catching-up client

@@ -6223,11 +6223,19 @@ command uiStatus pText, pKind
    -- against the stack whose script is running. Inside openStack those are the
    -- same thing, which is why every demo's startup status line always worked.
    -- A handler arriving from `send ... in` has no such guarantee: with a second
-   -- stack in front, the write lands in the wrong stack or resolves to nothing,
-   -- and enet-lan-chat's once-a-second dashboard threw
-   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18. dht-chat hid
-   -- the same fault behind its own `if there is a field` guard - its status line
-   -- simply stopped updating, silently, which is the worse outcome of the two.
+   -- stack in front, the write lands in the wrong stack or resolves to nothing.
+   --
+   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
+   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
+   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
+   -- hiding the same fault behind a guard. Neither half held up: that throw was
+   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
+   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
+   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
+   -- master had no existence check until the same commit that added this pin.
+   -- What a guarded call site WOULD do if the defaultStack diverged is fail
+   -- silently, which is the argument for a gate rather than for more guards.
+   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
    --
    -- The pin is holde-em's idiom, engine-proven there, and its comment names
    -- this exact hazard. The existence check stays as well: a demo may call the
@@ -6974,8 +6982,9 @@ command raBuildAnonCard
          & " reachable ONLY as an onion service - it never publishes to the" \
          & " DHT, seeds a torrent, or opens an rp1 peer (that would leak its" \
          & " IP and link it to your public feed). The guard enforces that at" \
-         & " every transport branch. Publish + serve needs onionxt AND" \
-         & " onion-httpd in use, plus a running tor daemon (control port" \
+         & " every transport branch. Publish + serve carries onionxt AND" \
+         & " onion-httpd embedded in this file, so it needs only a running" \
+         & " tor daemon (control port" \
          & " enabled); it serves the feed page at /, the signed prekey at" \
          & " /prekey, and accepts sealed intros POSTed to /dm. Serving is" \
          & " verified statically; needs an OXT + live-Tor pass." \
@@ -9401,8 +9410,13 @@ command raAnonPublish
       raAnonLog "prekey body refused:" && rsLastError()
       exit raAnonPublish
    end if
-   -- the onion-httpd routes; fail closed when the oxh* library is absent
-   -- (it is a separate file - onionxt alone is not enough to SERVE)
+   -- The onion-httpd routes, still fail-closed. NOTE the reason changed: this
+   -- stack now EMBEDS onion-httpd (tools/sync-demo-embeds.py), so "the library
+   -- is absent" is no longer a state a reader can be in by forgetting a
+   -- `start using`. A throw here means the embedded copy is damaged or an oxh*
+   -- call genuinely failed - and the refusal message has to say that, because
+   -- telling somebody to load a file they already have sends them to look
+   -- where there is nothing to find.
    try
       oxSetCallbackOwner the long id of me
       oxSetStatusCallback "raAnonStatus"
@@ -9412,9 +9426,11 @@ command raAnonPublish
       oxhRoute "POST", "/dm", "raAnonRouteDm"
       oxSetPeerCallback "oxhPeer"
    catch tErr
-      raAnonLog "onion-httpd is not loaded, so the persona cannot serve." && \
-            "Put onionxt/src/onion-httpd.livecodescript in use (start" && \
-            "using) and click Publish + serve again. (" & tErr & ")"
+      raAnonLog "The persona cannot serve: an onion-httpd call threw." && \
+            "This stack EMBEDS onion-httpd, so this is not a missing" && \
+            "`start using` - re-paste the whole file (or re-run" && \
+            "tools/sync-demo-embeds.py) if the embedded copy looks damaged," && \
+            "otherwise report the error text. (" & tErr & ")"
       exit raAnonPublish
    end try
    put tPage into sAnonPage

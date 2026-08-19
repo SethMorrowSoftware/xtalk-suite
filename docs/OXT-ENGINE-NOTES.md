@@ -20,19 +20,38 @@ Each entry carries a class, and the class is the point:
 - **DOCUMENTED** - from the LiveCode/OXT language reference, never confirmed
   here. Treat as a claim, not a fact: this tree has been wrong about a
   documented behaviour before.
+- **UNEVIDENCED** - a rule this tree keeps for HYGIENE, with no engine
+  observation and no reference behind it. The weakest class, added 2026-08-19
+  because entry 1.1 needed it and the other three all lied about it: its
+  observed failure was later re-attributed to a different mechanism (1.6), so
+  OBSERVED was gone; INFERRED requires an observed failure to derive from, and
+  there was no longer one; and nobody has checked whether the reference says
+  anything, so DOCUMENTED would be a second guess dressed as a citation. An
+  entry sits here when the RULE is worth keeping on its own argument and the
+  ENGINE BEHAVIOUR is simply unknown.
 
 **Do not promote an entry between classes without a dated run.** An unexecuted
 line is not evidence in either direction - that is the "shipped is not run"
 lesson the root `CLAUDE.md` records, and it applies to this file first.
+
+**A note on the dates in this file, because one session produced two of them.**
+Entries are dated by the COMMIT that recorded them, which is UTC. The debugging
+session that produced 1.7, 5.3, 6.4, 6.5 and 6.7 ran across UTC midnight - its
+commits are stamped 2026-08-18 20:54 through 2026-08-19 01:27 - so entries from
+one continuous evening carry both dates. That is not two sessions and not a
+contradiction; it is the clock the commits use. When an entry's date matters,
+correlate it with the commit hash the entry names rather than with another
+entry's date.
 
 ---
 
 ## 1. Parsing and scope
 
 ### 1.1 A second `script "Name"` line silently breaks declaration scope
-**OBSERVED 2026-08-17.** A demo whose stack script contained its own
-`script "EnetLanChat"` on line 1 and an embedded library's `script "enetHelpers"`
-200 lines down threw, from a handler 700 lines below both:
+**UNEVIDENCED** (filed OBSERVED 2026-08-17, then INFERRED, until the note below). A demo whose
+stack script contained its own `script "EnetLanChat"` on line 1 and an embedded
+library's `script "enetHelpers"` 200 lines down threw, from a handler 700 lines
+below both:
 
 ```
 Chunk: error in object expression
@@ -43,6 +62,33 @@ uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers ...
 line put everything after it outside the scope the first file's declarations
 were in, so `sPeers` resolved as an undeclared name (see 2.1), and
 `the number of keys of` a *string* is a chunk expression against a non-object.
+
+**SUPERSEDED 2026-08-19 - the symptom above was not this.** The quoted error was
+traced on 2026-08-18 to the ARGUMENT SPELLING, not to scope: `keys` is not a
+chunk, so `the number of keys of X` fails whether or not X is declared (1.7,
+commit 61c14ea). The header had already been stripped from this demo in
+`b9fa4b3` - at that commit `enetxt/examples/enet-lan-chat.livecodescript` has
+exactly one `script "..."` line and the dashboard still reads
+`the number of keys of sPeers` - and the same error on the same line recurred
+afterwards, cleared only by the rewrite to
+`the number of lines of the keys of X`. The companion attribution made at the
+time, that datachannel-dht-chat's `sPolling` compile error had the same cause,
+was superseded by 1.6 (commit `de91770`): that error was a duplicate
+`local sPolling`, which survived the header strip and was still present at both
+declaration sites afterwards. So nothing observable changed when the second
+script line came off, and no dated run distinguishes this mechanism from the
+spelling bug. That is why the class is not OBSERVED - and because the
+failure it was inferred from was later attributed elsewhere, the inference rests
+on nothing observed either, which is what UNEVIDENCED exists to say out loud. Only a deliberate run would settle it, and that
+run would get its own date.
+
+**The rule survives on hygiene, not on knowledge, and it should be read that
+way.** A `script "..."` line is a stack-NAME marker, meaningful only when the
+file IS its own stack. Inside an embedded fragment it names a stack that is not
+there, so it is wrong whatever the engine does with it. That argument needs no
+engine pass, which is exactly why the gate stays: the strip is correct on
+structure alone, and this entry no longer claims to know what happens if you
+skip it.
 
 **Rule:** exactly one `script "..."` line per script, and it is the first line.
 When concatenating sources, strip the header from every part but the first.
@@ -74,30 +120,6 @@ string. ASCII `"` and `'` only. **Gate:** the static checker enforces zero.
 so xTalk evaluates the keyword, not your variable. It compiles and silently
 misbehaves. **Gate:** the `k`/`p`/`s`/`t` shadow-trap check.
 
-### 1.5b `the number of keys of X` does not parse
-**OBSERVED 2026-08-18.** enet-lan-chat's dashboard, once a second:
-
-```
-Chunk: error in object expression
-Line: uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
-```
-
-`keys` is not a CHUNK, so `the number of keys of sPeers` is not a count - the
-engine reads `keys of sPeers` as an OBJECT expression and fails to resolve it.
-The correct spelling is `the number of lines of the keys of sPeers`.
-
-**Why this survived so long, and why it is filed as a lesson rather than a
-typo.** BOTH spellings were in the tree at once. The correct one was in ten
-files, three of whose harnesses have run green on an engine; the broken one was
-in nine places across three demos, every one of them on a path no engine run
-had ever reached. Nothing distinguished them to a reader, and nothing checked
-them. That shape - two idioms for one job, one carrying evidence and one not -
-is worth looking for deliberately, because the tree cannot tell you which is
-which and a green gate will not either.
-
-**Gate:** the unified `check-livecodescript.py` antipattern set, fixture-tested
-in `tools/test-checker.py` against both spellings.
-
 ### 1.6 Two script-level declarations of one name is a HARD compile error
 **OBSERVED 2026-08-18**, on `datachannel-dht-chat` after it was made
 self-contained:
@@ -127,6 +149,38 @@ Both gates are only as good as their name parser - see the note in
 declaration carrying a trailing comment, which is how the error above reached
 an engine at all.
 
+### 1.7 `the number of keys of X` does not parse
+**OBSERVED 2026-08-18.** enet-lan-chat's dashboard, once a second:
+
+```
+Chunk: error in object expression
+Line: uiStatus "Hosting on port" && kEcPort && "-" && the number of keys of sPeers && "peer(s)", "ok"
+```
+
+`keys` is not a CHUNK, so `the number of keys of sPeers` is not a count - the
+engine reads `keys of sPeers` as an OBJECT expression and fails to resolve it.
+The correct spelling is `the number of lines of the keys of sPeers`.
+
+**Why this survived so long, and why it is filed as a lesson rather than a
+typo.** BOTH spellings were in the tree at once. Measured at the commit that
+fixed it, the correct one was in fifteen files - eight distinct sources once the
+box2dxt Kit's line and its six carried copies are counted once and the generated
+`tests/suite-selftest.livecodescript` is set aside - and three of those files are
+harnesses that have run green on an engine; the broken one was in nine places
+across three demos, every one of them on a path no engine run had ever reached.
+Nothing distinguished them to a reader, and nothing checked them. That shape -
+two idioms for one job, one carrying evidence and one not - is worth looking for
+deliberately, because the tree cannot tell you which is which and a green gate
+will not either.
+
+**Gate:** the unified `check-livecodescript.py` antipattern set, fixture-tested
+in `tools/test-checker.py` against both spellings.
+
+(Filed as `1.5b` on the day it was written, which is the number commit `61c14ea`
+cites. Renumbered to 1.7 on 2026-08-19 so section 1 ascends: a letter suffix is
+for an entry that must sit BEFORE a later-numbered neighbour, and this one has
+no such constraint. 1.6 keeps its number, because `de91770` cites it.)
+
 ---
 
 ## 2. Evaluation
@@ -138,9 +192,17 @@ failure surfaces far downstream wearing someone else's clothes:
 
 - as `add "cx1sPassed" to sPassed` -> "error in source expression" (1.2);
 - as a digest compared against the string `"cx1kBip39Mnemonic"` -> a tidy FAIL
-  that reads like a real library defect;
-- as `the number of keys of "sPeers"` -> `Chunk: error in object expression`
-  (1.1).
+  that reads like a real library defect.
+
+**The inverse does NOT hold, and a third bullet here asserted that it did.** It
+read `the number of keys of "sPeers"` -> `Chunk: error in object expression`,
+offered as a demonstration of this behaviour. It is not one: that expression
+fails identically with a properly declared array, because `keys` is not a chunk
+(1.7). A chunk or object error says only that something in the expression did
+not resolve; it is not by itself evidence of an undeclared name, and reading it
+as one is what sent this tree after the wrong mechanism, twice, for two days
+(1.1). The bullet is gone rather than re-pointed - 2.1 keeps its OBSERVED class
+on the two above, which are independently evidenced.
 
 **Rule:** every name declared, always. There is no compiler to catch this and
 the runtime will not either. **Gate:** several, including the undeclared-constant
@@ -254,12 +316,23 @@ measurement.
 will report them as having no teardown, wrongly - which happened on 2026-08-17.
 
 ### 5.3 An unqualified control resolves against THE DEFAULTSTACK
-**OBSERVED 2026-08-18.** enet-lan-chat's once-a-second dashboard threw, from
-inside the UI kit's `uiStatus`:
+**DOCUMENTED** (filed OBSERVED 2026-08-18 until the correction below).
+enet-lan-chat's once-a-second dashboard threw, from inside the UI kit's
+`uiStatus`:
 
 ```
 Chunk: error in object expression        (Hint: ecDashOnce, REPEATEDLY)
 ```
+
+**CORRECTED 2026-08-19.** This throw was traced the same session to the ARGUMENT
+evaluated at the `ecDashOnce` call site - `the number of keys of sPeers`, entry
+1.7 - which is evaluated in the CALLER and so never reached `uiStatus`. The
+commit that fixed it says so in as many words, and the pin landed one commit
+earlier without stopping it. This entry has no dated engine observation behind
+it. DOCUMENTED is therefore the honest class: the resolution rule below is
+documented `defaultStack` behaviour, not something this tree has watched fail.
+It is not INFERRED either - INFERRED needs an observed failure to derive from,
+and the only failure ever offered here belongs to another entry.
 
 `put pText into field "uiStatus"` resolves `field "uiStatus"` against **the
 defaultStack**, not against the stack whose script is running. Inside
@@ -268,11 +341,20 @@ line has always worked and why this had never been seen. A handler arriving
 from `send ... in` has no such guarantee: with another stack in front, the
 write lands on the wrong stack or resolves to nothing.
 
-**The quiet half is the instructive one.** datachannel-dht-chat had the same
-fault and never threw, because it guards with `if there is a field "uiStatus"`.
-Its status line simply stopped updating - silently, on the exact path a person
-is least likely to report. A guard converts this bug from loud to invisible,
-which is an argument for a gate rather than for more guards.
+**The quiet half is a CONDITIONAL, and this entry used to state it as an
+outcome.** It said datachannel-dht-chat had the same fault and never threw,
+because it guards with `if there is a field "uiStatus"` - two outcomes of one
+mechanism. Neither half of that holds. dht-chat never carried the broken
+argument, so it had no fault to hide; and the guard credited to the kit was not
+in the kit, because before `db0f9e3` the master's `uiStatus` had no existence
+check at all (`git show 1dad0e1:tools/ui-kit.livecodescript`). The guard is
+dht-chat's OWN wrapper `wxSetStatus`, in
+`datachannelxt/examples/datachannel-dht-chat.livecodescript`, which calls into
+the kit only `if there is a field "uiStatus"`. What survives is the shape of the
+hazard, in the tense it belongs in: a guarded call site WOULD fail silently if
+the defaultStack diverged - the status line simply stops updating, on the exact
+path a person is least likely to report. A guard would convert this bug from
+loud to invisible, which is an argument for a gate rather than for more guards.
 
 **Rule:** a handler that can arrive from a delayed message must pin the stack
 before touching an unqualified control:
@@ -284,6 +366,12 @@ set the defaultStack to the short name of this stack
 **Gate:** `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
 plus the ui* kit handlers those targets call. 71 delayed handlers across 26
 files today; it found three more of these in box2dxt's games and holde-em.
+Those three - `pfCardFadeStep`, `sgCardFadeStep`, `heBetSliderFromThumb` - are
+STATIC findings, not observed failures, and nothing above argues against the
+pin: it is cheap, harmless, and defensible on documented engine semantics.
+Only the evidence label changed. Putting this entry back at OBSERVED costs one
+deliberate run - open a second stack in front and let a `send ... in` handler
+write an unqualified `field "uiStatus"` - and that run gets its own date.
 
 ### 5.4 `the playLoudness` does not read back exactly on every platform
 **OBSERVED 2026-08-18 on LINUX.** box2dxt's harness did
@@ -330,8 +418,9 @@ group first, else take everything up to the LAST colon.
 ### 6.3 A launched child process needs `__OwningControllerProcess` to die with you
 **DOCUMENTED**, used by `oxLaunchTor` so a spawned tor exits with the app. The
 launch path itself has never run on an engine - it is the one remaining VERIFY
-in onionxt, scheduled as runbook S2 item 2. **See trap 5.3.1:** it defaults to
-the same ports a system tor already holds.
+in onionxt, scheduled as runbook S2 item 2. **See runbook trap 5.3.1** - that
+is `docs/OXT-PASS-RUNBOOK.md`, not a subsection of this file's 5.3 - it defaults
+to the same ports a system tor already holds.
 
 ### 6.4 An EMPTY value into a typed `.lcb` parameter is "type conversion error"
 **OBSERVED 2026-08-18 on Linux**, twice, from two different demos.
@@ -375,10 +464,10 @@ LCB Line    234
 ```
 
 The line is read from the **source file the IDE can see**, which is not
-necessarily the source the **installed extension was compiled from**. Nine
-lines of drift between two checkouts moves this report from
-`if sDrainCap < pNeed then` to `if not tOk then` - two different statements,
-two different bugs, one identical error text.
+necessarily the source the **installed extension was compiled from**. Ten
+lines of drift between two checkouts (this file's 234 and 244) moves this
+report from `if sDrainCap < pNeed then` to `if not tOk then` - two different
+statements, two different bugs, one identical error text.
 
 **Rule:** before reasoning from an LCB line number, confirm the installed
 extension was packaged from the checkout being read. A behaviour visible in the
@@ -390,36 +479,6 @@ this tree's two branches DID differ by nine lines there, and that was wrong: it
 came from diffing against a stale `origin/main` fetched before the branch was
 merged. Re-fetched, the file is byte-identical on both, and line 234 is
 unambiguous. A cached remote ref is a stale source too.
-
-### 6.7 An event name and a handler name share ONE namespace
-**OBSERVED 2026-08-18, and it closes 6.6.** The demo's own log, once the poll
-pump was made to report instead of die:
-
-```
-Event dispatch problem: dispatch of dcLocalDescription failed: 899,258,1
-```
-
-Line 258 is `dispatch tName to tTarget with tEvent`. The demo defines no
-`on dcLocalDescription` - but **DataChannelXT exports one**:
-`dcLocalDescription(in pPeer as Integer)`, the getter for the current local
-SDP. xTalk resolves a dispatched message exactly like a call, through the same
-single namespace, so the dispatch reached the LIBRARY handler and handed it the
-event Array where it wanted an Integer.
-
-**The part worth carrying is how long it hid.** An unhandled dispatch is not an
-error, so a colliding name looks exactly like "no handler here" until the
-colliding handler happens to be strict about its arguments.
-`datachannel-loopback` shipped `on dcLocalDescription` from the day it was
-written and it **never fired once**; `docs/getting-started.md` taught the same
-shape; and the suite harness stayed green throughout because it compares
-`tEvent["name"]` in an if/else and never dispatches at all. Every layer agreed,
-and every layer was testing something else.
-
-**Rule:** a dispatched event name may never equal a public handler name in the
-module that emits it. When they collide, rename the EVENT - the getter is
-exercised, the event demonstrably is not.
-**Gate:** `tools/check-lcb-call-types.py` check 4, over every `_eventName`
-return in every module, with the historical case pinned in its test.
 
 ### 6.6 RESOLVED by 6.7: the datachannel poll failure
 **OBSERVED 2026-08-18 on Linux**, hosting a chat in
@@ -455,10 +514,54 @@ keeps the timer chain alive, and records the first failure with the event's
 name for `dcPollLastError()`; both demos that carry it surface that line in
 their own log. The next occurrence should arrive with the event named.
 
-**The general rule this is the second example of in two days** (see 5.3): an
+**CLOSED 2026-08-18 by 6.7, and the narrowing above did not hold.** The next
+occurrence arrived with the event named, exactly as this entry asked: the pump
+reports a drain failure and a dispatch failure distinctly
+(`dcPoll failed on drain #N` versus `dispatch of <name> failed`), and what the
+run printed was the DISPATCH form. So the drain completed, and the throw was the
+dispatch - not `_ensureDrain`. Read the paragraphs above as the reasoning of the
+day rather than as findings: the instruction not to promote a mechanism was
+satisfied by 6.7, and the `_ensureDrain` location was an inference from an LCB
+line number, superseded by an observation. Why the second report named
+`datachannel.lcb` line 234 - which is `if sDrainCap < pNeed then` on this tree,
+and where no revision of that file has ever placed `dcLocalDescription` - is
+still not established, and is left here as an unexplained observation rather
+than promoted into a second mechanism.
+
+**The general rule this is the second example of in two days** (see 5.4): an
 engine session's entire output is its error messages. A bare statement plus a
 phrase costs another session; a message that names the value, the target and
 the operation usually costs none.
+
+### 6.7 An event name and a handler name share ONE namespace
+**OBSERVED 2026-08-18, and it closes 6.6.** The demo's own log, once the poll
+pump was made to report instead of die:
+
+```
+Event dispatch problem: dispatch of dcLocalDescription failed: 899,258,1
+```
+
+Line 258 is `dispatch tName to tTarget with tEvent`. The demo defines no
+`on dcLocalDescription` - but **DataChannelXT exports one**:
+`dcLocalDescription(in pPeer as Integer)`, the getter for the current local
+SDP. xTalk resolves a dispatched message exactly like a call, through the same
+single namespace, so the dispatch reached the LIBRARY handler and handed it the
+event Array where it wanted an Integer.
+
+**The part worth carrying is how long it hid.** An unhandled dispatch is not an
+error, so a colliding name looks exactly like "no handler here" until the
+colliding handler happens to be strict about its arguments.
+`datachannel-loopback` shipped `on dcLocalDescription` from the day it was
+written and it **never fired once**; `docs/getting-started.md` taught the same
+shape; and the suite harness stayed green throughout because it compares
+`tEvent["name"]` in an if/else and never dispatches at all. Every layer agreed,
+and every layer was testing something else.
+
+**Rule:** a dispatched event name may never equal a public handler name in the
+module that emits it. When they collide, rename the EVENT - the getter is
+exercised, the event demonstrably is not.
+**Gate:** `tools/check-lcb-call-types.py` check 4, over every `_eventName`
+return in every module, with the historical case pinned in its test.
 
 ---
 

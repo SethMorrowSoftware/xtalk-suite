@@ -16,11 +16,18 @@ daemon.
 ## Setup, once per machine
 
 1. Install the extensions: sodiumxt (required), torrentxt (feed, media,
-   DMs), enetxt (LAN mesh), datachannelxt (calls), onionxt + a tor daemon
-   (anon persona only).
-2. Open `riptide/src/riptide.livecodescript` as a stack and
-   `start using` it, then open `examples/riptide-social.livecodescript`
-   (or launch both from `start-here.livecodescript`).
+   DMs), enetxt (LAN mesh), datachannelxt (calls). OnionXT is not in that
+   list because it is not a packaged extension at all - it is pure script,
+   and this demo already carries it (see step 2); the anon persona needs
+   only a tor daemon.
+2. Open `examples/riptide-social.livecodescript`, paste it into a new
+   one-card mainstack's stack script, apply, close and reopen (or launch
+   it from `start-here.livecodescript`, which performs that ritual for
+   you). Nothing else to wire: since the demo-embed pass the stack
+   CARRIES the riptide, onionxt and onion-httpd script libraries between
+   its sentinel lines, so opening `riptide/src/riptide.livecodescript`
+   and `start using` it as well - which this step used to ask for -
+   only loads a second copy of every rs* handler.
 3. Firewalls: torrent/DHT traffic for phases 2-4; UDP 27099 for the LAN
    mesh; the dc call uses ephemeral UDP via STUN.
 
@@ -171,10 +178,11 @@ The serving is BUILT as of 2026-08-15 (the 8.2 feed page, the 8.3
 wiring), verified statically; this pass is what flips its label.
 
 1. Run a tor daemon with the control port enabled (see
-   `onionxt/docs/03-control-port.md` for the torrc lines). Put BOTH
-   onionxt libraries in use: `onionxt/src/onionxt.livecodescript` AND
-   `onionxt/src/onion-httpd.livecodescript` (the demo refuses with a
-   clear message if the second is missing).
+   `onionxt/docs/03-control-port.md` for the torrc lines). Both onionxt
+   libraries are already embedded in the demo, so there is nothing to
+   put in use; the demo's "onion-httpd is not loaded" refusal now means
+   the embedded copy is damaged - re-paste the file, or re-run
+   `tools/sync-demo-embeds.py`.
 2. Anon card: type a line or two into "anon feed entries", `Reveal
    persona 0`, then `Publish + serve`. A cold tor means the first click
    only connects the control port (watch the `tor:` lines in the log);

@@ -96,9 +96,14 @@ one-process loopback — connect data, reliable echo, broadcast, byte-exact
 payloads, the keyhole partial-drain (lossless at any buffer size), handle
 retirement, teardown — and runs under **ASan+UBSan with ENet itself
 instrumented**. `record_handle_test` + the Python golden pin the wire format;
-`check-record-registry.py` enforces registry/ABI/budget sync; the
-LiveCodeScript static gate carries all three of the family's OXT-compile
-antipattern rules.
+`check-record-registry.py` enforces registry/ABI/budget sync; and
+`tools/check-livecodescript.py` is the family's unified static gate - one
+implementation, carried byte-identical in every member, held there by the
+suite's `tools/check-checker-drift.py` and fixture-tested rule by rule by the
+suite's `tools/test-checker.py`. It carries the per-dialect antipattern sets
+for both `.lcb` and `.livecodescript`, including the `the number of keys of X`
+rule that came out of this member's own `examples/enet-lan-chat.livecodescript`
+on 2026-08-18.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENETXT_BUILD_TESTS=ON
@@ -112,8 +117,18 @@ selftest (`tests/enet-selftest.livecodescript`) ran green on 2026-08-07, the
 fragmentation contract, and the folded synchronous half ran green twice on
 2026-08-10 (21 checks), and the full standalone selftest — async loopback,
 live host/peer status and the statistics assertions included — ran green on
-2026-08-13. Nothing in the selftest is verified statically any more; the
-member's one remaining un-exercised surface is the two-machine LAN chat.
+2026-08-13. Nothing in the selftest is verified statically any more. The LAN
+chat demo is a separate question, and it was open longer than this line used to
+admit: it first reached an engine on 2026-08-18 (Linux), on ONE machine, and it
+carried two defects that no earlier run could have missed had one ever
+happened - `ecDashOnce`'s `the number of keys of sPeers`, which threw once a
+second on the host path, and an emptied `sHost` handed to
+`enHostDestroy(in pHost as Integer)` on the disconnect path, which killed the
+poll chain silently. Both are recorded in
+[`../docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md) 1.7 and 6.4, and
+both are fixed. Host/join chat on one machine was confirmed working by the
+maintainer at the end of that session; the two-machine leg is the surface that
+still needs an OXT pass.
 
 ## License
 

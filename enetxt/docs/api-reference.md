@@ -29,7 +29,7 @@ latency floor: 16–33 ms for real-time feel, 100+ ms for chat-grade traffic.
 |---|---|---|
 | `enHostCreateServer(pBindHost, pPort, pMaxPeers, pChannels, pInBW, pOutBW)` | Integer | bind + listen; pBindHost "" (or "*") = every interface; peers 1..4095, channels 1..255 (fixed for the host's life), bandwidth bytes/sec (0 = unlimited) |
 | `enHostCreateClient(pMaxPeers, pChannels, pInBW, pOutBW)` | Integer | unbound host; initiates only |
-| `enHostDestroy(pHost)` | Integer | destroys the socket and retires every peer riding it; idempotent |
+| `enHostDestroy(pHost)` | Integer | destroys the socket and retires every peer riding it; idempotent for a numeric handle - empty throws, see rule 3 |
 | `enHostStatus(pHost)` | Array | keys `host`, `address` (the real bound socket — a port-0 server shows its actual ephemeral port; an unbound CLIENT host shows `0.0.0.0:0`), `peerCount`; {} when stale |
 | `enSetHostBandwidth(pHost, pInBW, pOutBW)` | Integer | live re-throttle |
 | `enFlush(pHost)` | Integer | push queued sends NOW without servicing inbound |
@@ -91,6 +91,22 @@ The helpers also fire a catch-all `enetEvent`, and provide
 registration; one loop pumps them all), plus `enStateName(n)` and
 `enFormatBytes(n)`.
 
+**The pump reports rather than dies, so an app has to READ the report.** Both
+halves of a pass are guarded - the `enPoll` drain and each dispatch, with every
+event isolated - and the next tick is scheduled whichever way they go. That is
+deliberate: an unguarded throw takes the timer chain with it and the app goes
+quiet with no symptom at all, which is how one diagnostic costs several engine
+passes. The cost of the trade is that a failure is now SILENT unless something
+asks. `enPollLastError()` returns empty while the pump is healthy, otherwise the
+FIRST failure since the last clear, naming what threw (the drain reports the
+host, a dispatch reports the event name). It is first-wins and sticky: nothing
+clears it but `enPollClearError` - bare in statement position, like
+`enDeinitialize` - not even stopping and restarting the pump, so an app that
+reports each distinct failure must clear after reading. An app that never reads
+it sees a working timer and missing events. (Structure read from
+`examples/enet-helpers.livecodescript`; the throw paths themselves are verified
+statically and need an OXT pass.)
+
 ## Constants (mirrored from the native registries; checker-enforced)
 
 Peer states (from `enPeerStatus`'s `state`; ENet's own ladder): 0
@@ -111,5 +127,36 @@ Budget: 60000. The record/event registry constants (`kField*`, `kEvent*`,
    timeouts/retransmissions — keep it running while a host lives.
 3. **A peer handle is live from its birth (enConnect / the enetConnect
    event) until its enetDisconnect drains** (or a `now`/`reset` call). Stale
-   handles are harmless: getters return {}, actions return -2.
+   handles are harmless: getters return {}, actions return -2
+   (`ENX_ERR_STALE` in `src/enx_abi.h`) - and that holds for any NUMERIC
+   handle you can still name, 0 included.
+
+   **An EMPTY handle is not a stale handle. It is not a value at all, and it
+   THROWS.** Every one of the 23 public handlers in `src/enet.lcb` declares
+   its parameter types, and every handle parameter is `in ... as Integer`;
+   empty does not convert to an Integer, so the engine refuses the call at
+   runtime with LiveCode Builder's "type conversion error" instead of
+   returning -2. Inside a poll-driven app that is the worst shape a failure
+   can take: the throw unwinds out of the pump, the timer chain stops, and the
+   app goes quiet with no symptom at all - not degraded, silently dead. So the
+   stale rule is no licence to skip a guard on any path that CLEARS a handle,
+   which teardown paths do by construction:
+
+   ```
+   if tHost is not empty and tHost is not 0 then
+      enHostDestroy tHost
+   end if
+   put empty into tHost
+   ```
+
+   This member's own `examples/enet-lan-chat.livecodescript` shipped exactly
+   that defect on its disconnect path - `enetDisconnect` emptied `sHost` one
+   line after using it, and ENet delivers one disconnect per peer - and it
+   killed the demo on an engine (OBSERVED 2026-08-18 on Linux;
+   [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md) 6.4 in the
+   suite root is the dated entry). It guards now. The suite's
+   repository-root `tools/check-lcb-call-types.py` checks this boundary
+   argument by argument across the whole family, so a new unguarded handle
+   fails a gate rather than an engine pass.
+
 4. **Channel counts are fixed at host create** — both sides should agree.

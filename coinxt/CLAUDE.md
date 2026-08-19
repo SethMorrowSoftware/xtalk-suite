@@ -288,6 +288,12 @@ The single most expensive thing the family has learned. Change nothing here with
 
 ## LiveCodeScript / LCB / OXT gotchas (carried; see [templates/CLAUDE.md](templates/CLAUDE.md) for the full list)
 
+> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and the gate (if any) that now holds it. Keep
+> member-specific gotchas in this file; put anything the ENGINE does there, so
+> there is one authoritative list instead of ten that drift.
+
 The generic list applies verbatim. The ones most likely to bite CoinXT:
 - No smart/curly quotes anywhere (fails OXT compilation).
 - The prefixed-token-shadow trap (`t/p/s/k` name whose full spelling is a reserved token); the checker's
@@ -325,7 +331,15 @@ future feature ever needs C-side state, use SodiumXT's generation-tagged handle-
   `tests/suite-selftest.livecodescript` (one paste carries the library its tests call, so a stale
   in-memory copy cannot masquerade as a failing fix - that happened, 2026-08-10). A script-layer edit
   therefore additionally requires `python3 tools/build-suite-selftest.py` at the suite root; the gate
-  set's `--check` fails the build otherwise.
+  set's `--check` fails the build otherwise. It is ALSO carried verbatim into
+  `examples/coinxt-demo.livecodescript` (2026-08-17) and `tests/coin-selftest.livecodescript`
+  (2026-08-18), between the sentinels
+  `tools/sync-demo-embeds.py` (at the suite root) owns, so each is paste-and-run without a
+  `start using stack "coinxt"` step. Nobody edits inside the sentinels. So a `src/coinxt.livecodescript`
+  edit is not done until that tool has been re-run too - CoinXT's own `tools/` does not carry it, and the
+  member gates cannot see the drift; the suite gate set's `--check` is what fails. The suite paste already
+  embeds this layer once as a script layer, so `build-suite-selftest.py` cuts the coin-selftest copy back
+  out (`strip_spans` on the coin row); the demo is not folded at all.
 - A change that ships a native binary refreshes the committed per-platform binary AND a
   `MANIFEST.sha256` in the same change (the SodiumXT model). Vendored trezor-crypto files are third-party
   code: record the upstream commit and any local patch in `VENDOR.md`; hash the sources and the wordlist
@@ -767,6 +781,12 @@ this into "avoid catch".
 - **The gates now refuse both constructs**, in all six copies of
   `check-livecodescript.py`, `.livecodescript` only, mutation-tested 6/6 including
   that `return`-in-catch is NOT flagged.
+
+[Annotated 2026-08-19: the sentence above keeps its original figure, as a dated
+record. There are TEN copies of `check-livecodescript.py` today, held
+byte-identical by `tools/check-checker-drift.py` and fixture-tested by
+`tools/test-checker.py` (75 fixtures x 10 copies = 750 runs). The count in the
+prose is the count on the day it was written, not a live number.]
 
 **A note on method, learned twice in one session.** Two mutations were first reported as NOT CAUGHT
 and both times the PROBE was wrong, not the gate: one exercised only the encode direction while the

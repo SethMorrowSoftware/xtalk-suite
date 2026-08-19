@@ -397,9 +397,12 @@ switch puzzles), and the remainder was tied to the unpursued Phases H–J.
 - **The embedded-Kit sync is law:** edit `src/box2dxt-kit.livecodescript`, then
   `python3 tools/sync-embedded-kit.py` and commit the re-synced examples in the
   same change. Most expansion work is example-side and won't touch the Kit.
-- **Static gates before OXT:** `tools/check-livecodescript.py` (quotes, handler &
-  control-structure balance, embedded-Kit drift) **and** `tools/audit-platformer.py`
-  (geometry) must be clean. Extend the audit alongside each new maker.
+- **Static gates before OXT:** three commands, not two - the script checker does
+  not do the embedded-Kit's job. `tools/check-livecodescript.py` (quotes, handler
+  and control-structure balance) **and** `tools/sync-embedded-kit.py --check`
+  (embedded-Kit drift) must both be clean, and `tools/audit-platformer.py`
+  (geometry) is advisory per its own docstring - read each finding with the
+  level's intent in mind. Extend the audit alongside each new maker.
 - **Self-test:** bump `kStHarnessV` and add an assertion **only when the Kit
   changes**; example-only content does not bump it.
 - **OXT is the truth for runtime/feel:** claim "verified statically; needs an OXT

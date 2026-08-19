@@ -20,8 +20,9 @@ script "EnetLanChat"
 --     command form: OXT cannot compile a zero-argument `name()` statement).
 --
 -- HOW TO USE (two+ machines on a LAN, or two stacks on one machine):
---   1. Install the enetxt extension on both. Open enet-helpers and this
---      script as stacks (the helpers are embedded in this file already).
+--   1. Install the enetxt extension on both. Open THIS script as a stack -
+--      the helpers are embedded in this file already, so there is nothing
+--      else to load.
 --   2. Machine A clicks Host. Machine B types A's ip (port defaults to
 --      27099) and clicks Join. Chat.
 --
@@ -366,11 +367,19 @@ command uiStatus pText, pKind
    -- against the stack whose script is running. Inside openStack those are the
    -- same thing, which is why every demo's startup status line always worked.
    -- A handler arriving from `send ... in` has no such guarantee: with a second
-   -- stack in front, the write lands in the wrong stack or resolves to nothing,
-   -- and enet-lan-chat's once-a-second dashboard threw
-   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18. dht-chat hid
-   -- the same fault behind its own `if there is a field` guard - its status line
-   -- simply stopped updating, silently, which is the worse outcome of the two.
+   -- stack in front, the write lands in the wrong stack or resolves to nothing.
+   --
+   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
+   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
+   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
+   -- hiding the same fault behind a guard. Neither half held up: that throw was
+   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
+   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
+   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
+   -- master had no existence check until the same commit that added this pin.
+   -- What a guarded call site WOULD do if the defaultStack diverged is fail
+   -- silently, which is the argument for a gate rather than for more guards.
+   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
    --
    -- The pin is holde-em's idiom, engine-proven there, and its comment names
    -- this exact hazard. The existence check stays as well: a demo may call the

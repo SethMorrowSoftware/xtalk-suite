@@ -36,7 +36,9 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
   `LC_API` definitions in `src/box2d_lc.c` for return type, arity and each
   parameter type, and reports a bind with no definition or an export with no
   bind. Green today; each refusal class is mutation-tested. Not yet in
-  `tools/build-all.sh`.
+  `tools/build-all.sh`. [Corrected: it was wired into `tools/build-all.sh`'s
+  `run_gates` in this same 2026-08-17 change; the sentence was wrong when
+  written.]
 - Folded into the xtalk-suite monorepo (2026-08-14): the unified suite checker
   replaced the local copy (an ~1550-violation ASCII sweep followed, including 29
   real `repeat ... step` loop bugs in the platformer, rewritten), all five

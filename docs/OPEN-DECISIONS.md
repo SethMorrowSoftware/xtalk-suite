@@ -22,8 +22,20 @@ An owner following one of those does not get a five-minute brief.
 
 So citations here are being converted from `file:line` to **`file` plus a quoted
 ANCHOR PHRASE** - text that moves WITH the thing it names - and
-`tools/check-doc-anchors.py` re-resolves every anchor on every push, failing when
-one no longer appears in its file and printing the line where it now lives. The
+`tools/check-doc-anchors.py` re-resolves every anchor, failing when one no longer
+appears in its file and printing the line where it now lives.
+
+**This claim was false, then true, inside one day, and both halves are worth
+keeping.** The sentence originally said the anchors were re-checked "on every
+push", which was the intent and had never been the tree: the tool was invoked by
+no script and no workflow, so an anchor that drifted drifted silently until
+somebody typed the command. That was corrected on 2026-08-19 to say the tool is
+run by hand - and then, later the same day, the tool was wired into the suite
+gate block in `tools/build-all.sh`, above the `--gates` exit, so
+`.github/workflows/suite-gates.yml` now runs it on every push. **It is a real
+gate now.** The lesson that survives both corrections is the one this file keeps
+catching in other people's numbers: a doc that describes what SHOULD happen reads
+identically to one that describes what does. The
 conversion is incremental: the six that had drifted are done, and any citation
 touched from here on gets an anchor. An un-anchored `file:line` below has NOT been
 re-verified since 2026-08-16 - treat it as a hint, not a fact.

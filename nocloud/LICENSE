@@ -26,7 +26,7 @@ No Cloud Quick Share is built on the OpenXTalk extension family:
 
   - TorrentXT   (org.openxtalk.library.torrent)  - MIT; wraps libtorrent-rasterbar
                 (BSD-3-Clause) and Boost (Boost Software License).
-  - cryptoXT    (org.openxtalk.library.sodium)   - MIT; wraps libsodium (ISC).  Optional.
+  - SodiumXT    (org.openxtalk.library.sodium)   - MIT; wraps libsodium (ISC).  Optional.
   - OnionXT                                       - MIT; Tor onion streams.      Optional.
 
 Those extensions are separate projects under their own (permissive) licenses;

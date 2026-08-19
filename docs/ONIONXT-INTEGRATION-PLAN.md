@@ -1456,7 +1456,7 @@ Toggle wired into `qsBuild` (`qsTorToggle`), branch added to `qsShareFile`/`qsGe
 
 ### 9.3 Dependency notes
 
-- **OnionXT depends on SodiumXT (SodiumXT).** OnionXT computes the onion identity and address with SodiumXT
+- **OnionXT depends on SodiumXT.** OnionXT computes the onion identity and address with SodiumXT
   primitives, so the **anonymous path requires SodiumXT even for a no-passphrase transfer**, independent of the
   demos' own optional encryption. `sCanEncrypt` is therefore a *necessary* precondition for anon mode. Both demos
   already fail closed when SodiumXT is absent; anon mode reuses that gate and adds `oxVersion()` on top. **VERIFY**
