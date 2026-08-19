@@ -169,12 +169,10 @@ run_gates() {
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )
   fi
-  # Generated-standalone freshness (onionxt): the committed standalones must
-  # match what the generator would emit from the current sources.
-  # Embedded-Kit freshness (box2dxt): the same shape as sync-demo-embeds.py
-  # above - src/box2dxt-kit.livecodescript is the master, and each of the six
-  # example stacks carries a verbatim copy between sentinels so it stays
-  # paste-and-run. Its docstring has always said "--check exits non-zero ... so
+  # Embedded-Kit freshness (box2dxt): the same shape as
+  # tools/sync-demo-embeds.py below - src/box2dxt-kit.livecodescript is the
+  # master, and each of the six example stacks carries a verbatim copy between
+  # sentinels so it stays paste-and-run. Its docstring has always said "--check exits non-zero ... so
   # CI fails until sync-embedded-kit.py is re-run", and until 2026-08-17 that
   # was a claim with no caller behind it: the whole tree held five PROSE
   # mentions of this tool and zero invocations. A drifted copy is the demo-kit
@@ -317,6 +315,28 @@ if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="
   python3 tools/check-launcher-registry.py
 fi
+# The anchored citations in docs/ still resolve. This gate's own docstring
+# records the failure it was built for: docs/OPEN-DECISIONS.md opened by
+# attesting that every one of its `file:line` citations had been "re-verified
+# against the tree on the compile date". That was true on the compile date and
+# false a day later - a line number is a fact about a file's CURRENT shape, and
+# this tree reshapes faster than its documents are re-read - so six of them had
+# drifted into unrelated prose while the attestation still read as fresh. It
+# re-resolves the citations that carry an ANCHOR PHRASE (text that moves WITH
+# the thing it names) and deliberately only COUNTS the bare ones, because
+# guessing at those produced 93 false alarms in its first draft. Run with -v:
+# the brief that cites this tool claims two things of it, that it fails on an
+# anchor that no longer appears AND that it prints where the anchor now lives,
+# and only -v prints the second - the failure path has no line to print, since
+# an anchor that has vanished has no location. -v does not change the exit code.
+# Wired 2026-08-19, and until then this gate was itself the thing it exists to
+# stop: a claim with no caller behind it - the same failure the
+# sync-embedded-kit.py block above records for box2dxt's Kit - and the one tool
+# in tools/ that no script and no workflow invoked.
+if [ -f tools/check-doc-anchors.py ]; then
+  echo "== suite: tools/check-doc-anchors.py -v =="
+  python3 tools/check-doc-anchors.py -v
+fi
 
 # --- static gates for every member (always run) ---
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
@@ -411,6 +431,10 @@ fi
 # cannot convert. Every public .lcb parameter is typed and NONE is optional, so
 # an empty value into an Integer is a hard runtime error, not a no-op - which
 # is how enet-lan-chat's unguarded enHostDestroy killed its poll chain.
+# Check 4 is the same boundary from the other side: a dispatched event name
+# resolves through that one namespace too, so an event named identically to a
+# public handler reaches the library handler instead of the app's - which is
+# exactly what dcLocalDescription did.
 if [ -f tools/test-lcb-call-types.py ]; then
   echo "== suite: tools/test-lcb-call-types.py --mutate =="
   python3 tools/test-lcb-call-types.py --mutate

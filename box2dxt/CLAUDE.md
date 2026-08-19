@@ -143,6 +143,21 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   contact/sensor-register families, and they are the next slice. Those
 >   assertions are deliberately shallow, exactly like the Kit's v23 coverage
 >   sections, and say so in their banner.
+>   **CORRECTED 2026-08-18: the "374 foreign declarations" above is a grep
+>   artifact, and it is the same mistake as the "60" two paragraphs down.**
+>   Measured: `grep -c 'binds to' src/box2dxt.lcb` is **373**, of which **370**
+>   bind into this member's own library (`c:box2dxt>`); the other three are the
+>   Linux loader assist's POSIX binds - `_dlopen`, `_dlerror` and `_realpath`,
+>   which `b2LoadNativeLibHere` uses to preload the library by exact path. The
+>   374 came from `grep -c 'foreign handler'`, which also matches line 16's
+>   PROSE ("The foreign handlers bind to the shared library "box2dxt""). So the
+>   binding is not quite the flat 1:1 the line calls it: 376 public handlers
+>   over 370 member binds plus 3 libc binds. The suite root CLAUDE.md carried
+>   this correction from 2026-08-17; this copy had not. The "131 ... 245" pair
+>   beside it is NOT wrong and is left alone: with comments and string literals
+>   stripped the Kit names 131 of the 376 (245 unnamed), while counting raw
+>   tokens it names 132 (244 unnamed), which is the figure the root file quotes
+>   - two definitions of "named", neither of them a defect.
 > - None of this is runtime-verifiable here: **verified statically; needs an
 >   OXT pass**, and the v23 sections are first-contact code, so expect the
 >   usual arithmetic slips on the first run.
@@ -269,6 +284,33 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > could not have distinguished this: its duck failures were all about the
 > capsule's HEIGHT, and a filter that resets silently keeps every halfH reading
 > correct.
+>
+> **THE SIXTH RUN (2026-08-17, Windows x86_64, NT 10.0, OXT 9.6.3) MET THE v29
+> EXPECTATION EXACTLY: 374/374, the whole member green** - the first run in this
+> chain where the predicted number and the observed number are the same number,
+> which is what five runs of reading the engine's arithmetic instead of guessing
+> at it bought. That run is recorded suite-side as part of the 1,836-check
+> nine-harness pass.
+> **THE SEVENTH RUN (2026-08-18, LINUX, still v29) came back 373/1, and the one
+> red was the HARNESS being wrong about the engine rather than the Kit being
+> broken.** `playLoudness readback` wrote 73 to the property and then asserted
+> `the playLoudness is 73` - a contract the Kit never made. `b2kSoundVolume`
+> promises only that asking for louder makes it louder, and nothing in the Kit
+> ever reads the property back, so an engine that stores a scaled or rounded
+> value breaks the test and nothing else. It also printed nothing but its own
+> name when it failed, which is the second defect: a first-contact assertion that
+> cannot say what it saw costs a whole engine pass to diagnose. Rewritten at v30
+> as TWO self-diagnosing assertions - both readbacks readable as numbers, and
+> ordered (louder reads louder) - plus a PRINTED observation of whether this
+> platform tracks the written value exactly. Exactness is now an observation; the
+> ordering is the assertion. It still fails loudly on the three ways the engine
+> could actually be broken: writes ignored (both readbacks equal), writes
+> inverted, or the property unreadable.
+> **So v30 carries ONE MORE assertion than v29, and no v29 total is comparable to
+> a v30 one.** No v30 total has been observed on any platform - not Windows, not
+> Linux - so the next paste's expected number is not yet known: **verified
+> statically; needs an OXT pass**. Do not read 374 as this harness's current
+> expectation; it is v29's, and v29 is gone.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
@@ -280,6 +322,9 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > predates the fold). The library namespace stays `org.openxtalk.box2dxt` -
 > it predates the family's `org.openxtalk.library.*` convention and is
 > shipped; renaming would break every installed user for zero gain.
+>
+> [Annotated 2026-08-19: ten copies today, byte-identical, fixture-tested at
+> 75 x 10 = 750 runs. The figure above is the one from the dated record.]
 
 ## What this is
 
@@ -389,14 +434,15 @@ raises; it reads a garbage register and hands script a plausible number. The
 regex is anchored on the `c:box2dxt>` token, so the three POSIX binds in the
 loader assist drop out without an exemption list. It is green today, and each of
 its five refusal classes is mutation-tested (drive the gate the way the build
-will, not the way its docstring reads). **Not yet wired into
-`tools/build-all.sh`'s gate set** - that file was owned by another change in the
-same wave; adding the line is the next step.
+will, not the way its docstring reads). It runs in `tools/build-all.sh`'s
+per-member gate walk (inside `run_gates`, so it also rides `build-all.sh
+--gates` and therefore the suite-gates CI job on every push); wired 2026-08-17,
+in the same change that added the gate.
 
 **Static verification for the script layer.** OXT/LiveCode is a GUI runtime — there is **no
 headless way to compile or run the `.livecodescript` here**. The user compiles and tests in OXT.
-Your job is to catch what's statically catchable *before* they do. One command bundles the gates
-(and CI runs the same script):
+Your job is to catch what's statically catchable *before* they do. One command bundles the
+SCRIPT-LAYER gates (and CI runs the same script):
 
 ```sh
 python3 tools/check-livecodescript.py
@@ -404,17 +450,28 @@ python3 tools/check-livecodescript.py
 
 It checks the Kit and every example for: **smart/curly quotes** (any one fails OXT compilation),
 **handler balance** (every `on`/`command`/`function`/`getprop`/`setprop` has its `end <name>`),
-**control-structure balance** (`if`/`repeat`/`switch`/`try` blocks closed inside their handler),
-and **embedded-Kit drift** (delegates to `sync-embedded-kit.py --check`). Exit non-zero on any
-failure. Run it after **every** `.livecodescript` edit.
+and **control-structure balance** (`if`/`repeat`/`switch`/`try` blocks closed inside their
+handler). Exit non-zero on any failure. Run it after **every** `.livecodescript` edit. It walks
+8 files here: the seven `.livecodescript` (the Kit plus the six examples) and `src/box2dxt.lcb`.
+
+**Embedded-Kit freshness is NOT part of that command, and assuming it is will ship a stale
+embed.** The unified checker asks only what the engine would refuse to COMPILE; it does not
+read the sentinels and it shells out to nothing. The drift gate is a second command,
+`python3 tools/sync-embedded-kit.py --check`, which `tools/build-all.sh` runs under its own
+banner. So a Kit edit needs both: the checker for the six example stacks' own script, and the
+sync check for the verbatim copy of the Kit each of them carries between its sentinels - a
+stale one compiles perfectly and runs last week's physics. The rules for that sync are already
+written above (the sentinel block) and under Git / workflow notes; `README.md` states the pair
+in the shape to match. The FFI signature gate is a third command, `python3
+tools/check-lcb-signatures.py`, covered above.
 
 **Do not claim runtime behavior you cannot observe** — say "verified statically; needs an OXT
 pass" and let the user confirm.
 
 **The self-test harness** (`examples/box2dxt-selftest.livecodescript`) is the runtime safety net:
-377 deterministic assertions across 51 test handlers (currently **v29**) driving the real Kit
+**377 `stAssert` call sites** across 51 test handlers (currently **v30**), of which **375 execute** in a green run, driving the real Kit
 (paused world + `b2kStepOnce` hand-stepping + `b2kInputInject` scripted keys). It is in TWO
-halves and the file says so where they meet: the first 37 handlers are BEHAVIOUR tests, each
+halves and the file says so where they meet: the first 38 handlers are BEHAVIOUR tests, each
 one a lesson learned on real hardware; the 13 added in v23 are **Kit API coverage** - broad,
 deliberately shallow, and there because the suite's `check-suite-coverage.py` measured that
 211 of the Kit's 313 public handlers had never been named by any test. A handler that earns a
@@ -569,6 +626,33 @@ OXT's compiler is **stricter than LiveCode's**. These are the recurring footguns
    forever). Fix: declare the constant above its first use, or inline the literal
    value. Distinct from gotcha 6 (constant *values* must be literals) — this is
    about the *order* of declaration vs use. (Confirmed in OXT.)
+30. **An unqualified control resolves against THE DEFAULTSTACK, not against the
+   stack whose script is running.** `set the visible of graphic "pfCardShade" to
+   false` finds that graphic on whatever stack is currently the defaultStack.
+   Inside `openStack`, or in anything called straight down from a mouse click on
+   this stack, those are the same object - which is why the games' build-time and
+   input-path code has always worked, and why nothing here ever went looking. A
+   handler that arrives from a delayed `send ... in` has no such guarantee: by
+   delivery time the defaultStack is whatever is frontmost, so the write lands on
+   another stack or resolves to nothing. Pin it first, as the first statement of
+   the handler: `set the defaultStack to the short name of this stack`.
+   **The guarded form is the dangerous one.** A handler that checks `if there is
+   a graphic ...` does not throw - it simply stops doing its job, on exactly the
+   path nobody reports. This member's `pfCardFadeStep` (platformer) and
+   `sgCardFadeStep` (slingshot) are both guarded, both were wrong, and neither
+   was ever reported by anyone: the suite's `tools/check-timer-stack-pin.py`
+   found them (71 delayed handlers across 26 files today). Both now carry the
+   pin; **verified statically; needs an OXT pass**. Note the honesty class of
+   the rule itself, because it is easy to overstate: the resolution behaviour is
+   DOCUMENTED `defaultStack` behaviour, not something this tree has watched fail.
+   A suite-side throw on Linux 2026-08-18 was filed against it and then traced,
+   the same session, to a different bug in the caller - so nobody here has SEEN a
+   delayed handler write to the wrong stack, and a guarded one could not be seen
+   doing it. That asymmetry is the argument for the gate rather than for more
+   guards. This applies directly to the playbook's deferred-rebuild idiom below
+   - `send "nextLevel" to me in 80 milliseconds` needs the pin as well as the
+   stale-send guard, and the guard is what would hide its absence. Full record:
+   the suite's `docs/OXT-ENGINE-NOTES.md`, section 5.3.
 
 ## The single-threaded performance playbook
 

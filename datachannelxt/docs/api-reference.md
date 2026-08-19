@@ -101,16 +101,7 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 
 | name | extra keys | meaning |
 |---|---|---|
-| `dcLocalDescriptionReady` | `sdp`, `sdpType` | SHIP to the far peer |
-
-> **Why `...Ready` and not `dcLocalDescription`?** xTalk has one message
-> namespace, and `dcLocalDescription(pPeer)` above is a public getter. An
-> event dispatched under that name resolves to the GETTER, which wants an
-> Integer and receives the event array - so the app's handler is never
-> reached and the engine reports "cannot convert value". The event was
-> renamed 2026-08-18 because the event is the side that had never worked.
-> `tools/check-lcb-call-types.py` refuses any future collision.
-
+| `dcLocalDescriptionReady` | `sdp`, `sdpType` | SHIP to the far peer - named `...Ready` to keep clear of the getter, see the note below the table |
 | `dcLocalCandidate` | `candidate`, `mid` | SHIP to the far peer |
 | `dcStateChange` | `state` (kPeerState*) | connection state walked |
 | `dcGatheringStateChange` | `state` (kGathering*) | 2 = complete -> one-blob signaling ready |
@@ -122,6 +113,16 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 | `dcBufferedLow` | `channel` | send buffer drained under the armed threshold |
 | `dcQueueOverflow` | `dropped` | the app stopped polling and the bounded queue shed that many events |
 
+> **Why `...Ready` and not `dcLocalDescription`?** xTalk has one message
+> namespace, and `dcLocalDescription(pPeer)` above is a public getter. An
+> event dispatched under that name resolves to the GETTER, which wants an
+> Integer and receives the event array - so the app's handler is never
+> reached and the engine reports "cannot convert value". The event was
+> renamed 2026-08-18 because the event is the side that had never worked.
+> The suite gate `../tools/check-lcb-call-types.py` (run from the suite root
+> by `tools/build-all.sh --gates`, not a member tool) refuses any future
+> collision.
+
 The helpers also fire a catch-all `dataChannelEvent` for every event, and
 provide `dcStartPolling target, intervalMs` / `dcStopPolling`, plus the sugar
 `dcStateName(n)`, `dcGatheringName(n)`, `dcFormatBytes(n)`. `dcStartPolling` is
@@ -129,6 +130,29 @@ safe to call again while polling — it re-points the target and interval, and
 does NOT arm a second timer chain (a second chain would not duplicate events,
 since each pass drains the whole queue, but it would double the drain rate for
 the life of the app).
+
+**The poll pump's diagnostic pair: `dcPollLastError()` / `dcPollClearError`.**
+The pump no longer takes the timer chain down on a bad drain, a bad dispatch,
+or a poll target that stopped resolving - it isolates each event, keeps
+rescheduling, and records a note instead. The note is the FIRST such fault
+since the last clear rather than the most recent, because the first one carries
+the clean cause and the rest are usually the same bug repeating at the poll
+rate. Each kind says which it was: a drain failure carries a drain counter, so
+an early failure and a four-hundredth-drain failure are told apart (they are
+different bugs - only a later drain can reach the grow-and-retry path); a
+dispatch failure names the event in flight, which is what finally identified
+the `dcLocalDescription` collision; and a target that no longer resolves says
+it fell back to this card. `dcPollLastError()` returns that note and is empty
+while healthy; `dcPollClearError` resets it, which is how an app reports each
+distinct failure once instead of repeating one line at the poll rate. Note that
+`dcStartPolling` does NOT clear the note - only `dcPollClearError` does - so a
+note survives a stop/start. The helpers deliberately never print it: printing
+from a library into an app it knows nothing about is how a diagnostic becomes a
+nuisance, so the note is read, not shown, and the app decides where it goes.
+This is what turns "the demo went quiet" into a line a maintainer can act on.
+The guards landed 2026-08-18, AFTER the Linux pass whose report motivated them,
+and no failure branch has itself been observed: **verified statically; needs an
+OXT pass**.
 
 ## Constants (mirrored from the native registries; checker-enforced)
 

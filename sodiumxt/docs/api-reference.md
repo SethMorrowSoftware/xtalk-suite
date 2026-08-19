@@ -70,12 +70,13 @@ new cryptography. Points and scalars are 32-byte `Data`; the from-hash input is
 one 64-byte digest - `sxHash(tData, 64)` (BLAKE2b-512) produces it, which is why
 the plan's conditional "sxHash512" needed no new handler. Batch multiplication
 and point add/sub were the plan's recorded Phase 5 follow-ons; they shipped as
-the ABI 9 subsection below (2026-08-15). NOT yet observed on an engine: the C
-layer's KATs (cross-checked
+the ABI 9 subsection below (2026-08-15). The C layer's KATs (cross-checked
 against an independent RFC 9496 reference in holde-em/tools/protocol-kat.py)
-ran green under ASan/UBSan 2026-08-15, and every handler below is **verified
-statically; needs an OXT pass** - the harness section SKIPs cleanly on a
-pre-ABI-8 package.
+ran green under ASan/UBSan 2026-08-15, and the script surface is **OBSERVED ON AN ENGINE 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, reporting ABI 9) and again 2026-08-18 (Linux), both times folded into the suite paste.
+**This paragraph said "NOT yet observed on an engine" until 2026-08-19**, which
+by then denied two dated runs - the direction of drift the honesty convention
+does not tolerate, because a stale "needs a pass" costs somebody a pass. The
+harness section still SKIPs cleanly on a pre-ABI-8 package.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -96,9 +97,11 @@ thin wrappers over `crypto_core_ristretto255_*` /
 `crypto_scalarmult_ristretto255_*`, no new cryptography, vectors pinned from
 the built libsodium and re-derived by the independent RFC 9496 reference (the
 base-mult of 7 additionally equals RFC 9496's own small-multiples entry B[7]).
-Every handler below is **verified statically; needs an OXT pass** - the harness
-probes this subsection separately, so an ABI-8 package SKIPs only these checks
-and still runs the ABI-8 half.
+Every handler below is **OBSERVED ON AN ENGINE 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3, reporting ABI 9) and again 2026-08-18 (Linux), both times folded into the suite paste - the run reported ABI 9, so this
+subsection executed rather than SKIPping, and it included the failure the batch
+API exists to get right: one bad point fails the whole call, naming index 2 of
+3. The harness still probes this subsection separately, so an ABI-8 package
+SKIPs only these checks and still runs the ABI-8 half.
 
 | Handler | Returns | Notes |
 |---|---|---|
@@ -244,10 +247,11 @@ server's tx and vice versa. rx is for receiving, tx for sending.
   old caveat that the recorded pass predated the newer sections. The ABI-7 additions
   (`sxSha3_256` and its FIPS 202 vectors, 71 checks total) had their pass on **2026-08-12**,
   on Windows x64 - so nothing in this file below ABI 8 is "verified statically" any more
-  (the ristretto255 sections - ABI 8 and the ABI-9 DLEQ/batch follow-ons, both added
-  2026-08-15 - are the one exception: their C KATs are
-  green under ASan and cross-checked, but no `sxRistretto*` handler has run on an engine
-  yet - the sections above say exactly that). The 2026-08-08 suite pass
+  (and since **2026-08-17** the ristretto255 sections - ABI 8 and the ABI-9 DLEQ/batch
+  follow-ons, both added 2026-08-15 - are no longer the exception they used to be:
+  they ran on Windows x86_64 at ABI 9, and again on Linux 2026-08-18. This
+  parenthesis claimed "no `sxRistretto*` handler has run on an engine yet" until
+  2026-08-19, two runs after it stopped being true). The 2026-08-08 suite pass
   had already proven the cross-member half from the outside: `sxSignSeedToExpandedKey`'s
   64-byte expanded key equals, on-engine, the DHT secret key libtorrent derives from the
   same seed.

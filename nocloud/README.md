@@ -35,9 +35,19 @@ before anything downloads.
    - **TorrentXT** — `org.openxtalk.library.torrent` — **required**.
    - *(optional)* **SodiumXT** — `org.openxtalk.library.sodium` — for the passphrase
      encryption and the LAN web editor.
-   - *(optional)* **OnionXT** + a local **Tor daemon** — for the Private / Tor path.
    The app detects each and **fails closed with a clear message** when one is missing;
    every other feature still works.
+
+   *(optional, and NOT an Extension Manager item)* **OnionXT** is pure
+   LiveCodeScript, so `org.openxtalk.library.onion` is the id it goes by rather than
+   an installable package: put it in the MESSAGE PATH instead, by opening
+   `../onionxt/src/onionxt.livecodescript` as a stack and
+   `start using stack "onionxt"` (see `../onionxt/docs/10-usage-guide.md` section 2).
+   That, plus a local **Tor daemon** with its control port enabled, is what the
+   Private / Tor path needs, and it fails closed the same way the two above do when
+   it is absent. Only `onionxt.livecodescript` is wanted: Quick Share calls the
+   `ox*` layer and never the `oxh*` one, because it carries its own HTTP server, so
+   `onion-httpd.livecodescript` is not part of the wiring.
 3. **Run the app** (it builds its own UI — no manual layout):
    1. `File > New Mainstack` (a one-card stack).
    2. `Object > Stack Script`.
@@ -88,8 +98,9 @@ the live `/_qs/info` backend route. See [docs/webapp.md](docs/webapp.md).
 ## Building a standalone
 
 The app is standalone-ready (self-building UI, clean shutdown on quit, per-user save
-folder). Include the TorrentXT extension (required) and SodiumXT/OnionXT (optional)
-in the standalone builder. See [docs/building-a-standalone.md](docs/building-a-standalone.md).
+folder). Include the TorrentXT extension (required) and SodiumXT (optional) in the
+standalone builder. **OnionXT is not an extension** and cannot be ticked there -
+see the note above; copy its script library into the app instead. See [docs/building-a-standalone.md](docs/building-a-standalone.md).
 
 ## Development
 

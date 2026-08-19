@@ -9,13 +9,30 @@ machines chatting across the internet with no server — that is section 6.
 > C++ smoke test under sanitizers, and on **2026-08-08** the `.lcb` binding was
 > observed loading and working on a real OXT engine — the suite selftest ran
 > green, negotiating a live loopback and round-tripping a payload byte-for-byte.
-> The example stacks this guide walks through have **not** themselves been run
-> on an engine. Every public `dc*` handler has now been called on one — the
+> Every public `dc*` handler has now been called on one — the
 > **2026-08-10** suite pass folded the member harness's synchronous half in,
-> and the **2026-08-15** standalone run closed the async loopback too, so
-> nothing in the member selftest is static any more. Treat the step-by-step
-> flow described here as designed behaviour until the demos themselves are
-> run.
+> and the **2026-08-15** standalone run closed the async loopback too. That run
+> is what it covered, not the file as it stands: the assertions added to
+> `tests/datachannel-selftest.livecodescript` since it - the exact-code
+> stale-handle checks, the embedded-NUL refusal and its last-error clearing,
+> and the skip-on-failed-setup teardown branch - are **verified statically;
+> needs an OXT pass** on a build carrying `kErrInvalidArg`.
+>
+> The demos this guide walks through are now SPLIT evidence, and the split is
+> exactly where a second machine begins. Section 6's
+> `datachannel-dht-chat.livecodescript` HAS been run on a real engine -
+> **2026-08-18**, on Linux and again on Windows, one machine hosting a chat -
+> and three things surfaced there that no gate had caught: the duplicate
+> `local sPolling` the embed introduced, which stopped the compile outright
+> (engine notes 1.6); a poll pump that died on a bad event instead of naming
+> it, which is why the next failure cost two passes (6.6); and the cause that
+> was hiding behind it - an event name and a public handler name sharing one
+> xTalk namespace, so the `dcLocalDescription` event dispatched into the
+> LIBRARY getter of the same name and had never fired once (6.7). All three
+> are fixed and gated; the verbatim engine output is in
+> [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md), sections 1.6,
+> 6.6 and 6.7. What has NO recorded run: the loopback demo of section 5, and
+> section 6's own two-machine flow. Treat those steps as designed behaviour.
 
 ## 1. Install the extension
 
@@ -34,7 +51,7 @@ Also put `examples/datachannel-helpers.livecodescript` where your app can
 
 ```livecodescript
 on openStack
-   dcInit()                                    -- optional, but moves the one-time
+   dcInit                                      -- optional, but moves the one-time
                                                -- DTLS certificate cost off your
                                                -- first connection
    start using stack "dataChannelHelpers"
@@ -43,7 +60,13 @@ end openStack
 
 on closeStack
    dcStopPolling
-   dcCleanup()   -- MANDATORY: there is no automatic unload hook; skipping this
+   -- BARE, not dcCleanup(): a zero-argument call in STATEMENT position parses
+   -- as a command whose argument is `()`, and `()` is not an expression, so
+   -- the parenthesised spelling does not compile - and a .livecodescript
+   -- compiles as ONE unit, so it takes the whole stack script with it.
+   -- dcStopPolling on the line above is the same idiom. The parens are
+   -- required only in EXPRESSION position, as in `dcCleanup() is 0`.
+   dcCleanup     -- MANDATORY: there is no automatic unload hook; skipping this
                  -- leaks the native worker threads at quit
 end closeStack
 ```
@@ -141,11 +164,12 @@ One server per line in the `dcCreatePeer` argument.
 ## 5. The loopback demo
 
 `examples/datachannel-loopback.livecodescript` runs both peers in one stack and
-does its "signaling" in four script lines. Open it (with the helpers loaded),
-click **Connect**, watch the states go `connecting -> connected`, then chat
-between the two panes. Its `dcLocalDescriptionReady`/`dcLocalCandidate` handlers are
-the template for real signaling: replace "hand it to the other local peer" with
-"transmit it".
+does its "signaling" in four script lines. It is ONE paste-and-run file - the
+poll dispatcher is carried inside it, so there is no helpers stack to put in
+use first. Open it, click **Connect**, watch the states go
+`connecting -> connected`, then chat between the two panes. Its
+`dcLocalDescriptionReady`/`dcLocalCandidate` handlers are the template for real
+signaling: replace "hand it to the other local peer" with "transmit it".
 
 ## 6. The flagship demo: DHT-signalled chat (two machines, no server)
 
@@ -171,7 +195,7 @@ Worth stealing from it even if you never run it:
   from offer to answer is what lets "Reconnect" reuse a room code safely.
 
 It needs BOTH extensions installed (TorrentXT is probed at startup and the
-demo fails closed with an install message when absent) plus the helpers stack.
+demo fails closed with an install message when absent).
 
 ## 7. Where to go next
 

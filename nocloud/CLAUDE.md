@@ -6,7 +6,7 @@ override default behavior; follow them exactly.**
 
 This is the operational as-built record and the hard-won-lesson list for **No Cloud
 Quick Share**, in the same spirit as the `CLAUDE.md` files in the sibling OpenXTalk
-extensions it is built on (TorrentXT, SodiumXT/SodiumXT, OnionXT, and their
+extensions it is built on (TorrentXT, SodiumXT, OnionXT, and their
 ancestors Box2Dxt and ShowControl). Most rules below were earned at the cost of a
 runtime error, a crash, or a silent misbehavior — several of them in this app.
 
@@ -91,7 +91,7 @@ The app is a **binding consumer**: it calls into prebuilt OXT extensions. It doe
 | Extension | Library id | Handlers | Required? | Without it |
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | **REQUIRED** | no session; the app cannot run |
-| **SodiumXT** (SodiumXT) | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor (see below) — everything else works |
+| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | optional | no passphrase encryption, no LAN-editor password, no Tor (see below) — everything else works |
 | **OnionXT** | (Tor onion transport) | `ox*` | optional | no "Private / Tor" path; the other two work. Needs SodiumXT **and** a local Tor daemon |
 | Internet library (libURL) | — | `load URL` | optional | only the public-IP lookup on the web-link path; harmless if absent (try-guarded) |
 
@@ -134,6 +134,12 @@ built on is what keeps the app stable:
    takes the stack down.
 
 ## App-layer OXT runtime lessons (THIS APP — earned the hard way)
+
+> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and the gate (if any) that now holds it. Keep
+> member-specific gotchas in this file; put anything the ENGINE does there, so
+> there is one authoritative list instead of ten that drift.
 
 These are the bugs the app hit on real OpenXTalk passes. They are not catchable by
 the static gate; they are the reason "verified statically; needs an OXT pass" is a

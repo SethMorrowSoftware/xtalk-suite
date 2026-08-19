@@ -999,7 +999,7 @@
       '<li>the folder is shared over a <b>direct web link</b> (never Tor &mdash; remote hands must not edit)</li>' +
       '<li>you are on the <b>same local network</b> as the sharing machine</li>' +
       '<li>the sharer turned the editor <b>on</b> and set a password (it ships off)</li>' +
-      '<li>the host has cryptoXT for the password check</li></ul>' +
+      '<li>the host has SodiumXT for the password check</li></ul>' +
       '<p class="muted">Anywhere else this page is a shop window: you can see what the admin ' +
       'does, and the host answers <kbd>404</kbd> as if no editor existed.</p></div>';
   }

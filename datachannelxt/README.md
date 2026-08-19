@@ -79,8 +79,9 @@ same stack; `docs/getting-started.md` walks the real thing.
 
 ## Try it now (no network, no setup)
 
-Open `examples/datachannel-loopback.livecodescript` as a stack script alongside
-the helpers: two real WebRTC peers negotiate inside one process — offer, answer,
+Open `examples/datachannel-loopback.livecodescript` as a stack script - one
+paste-and-run file, the poll dispatcher carried inside it, nothing to load
+alongside: two real WebRTC peers negotiate inside one process — offer, answer,
 ICE, DTLS, SCTP — and you chat between two panes. If that works, the whole
 pipeline works; real signaling is the only thing left to add.
 
@@ -105,8 +106,12 @@ pipeline works; real signaling is the only thing left to add.
 > SDP carrying ICE candidates, correct offer/answer roles, gathering
 > complete on both peers with a selected candidate pair, text and binary
 > (embedded NUL included) byte-for-byte, the `dcCreateChannelEx`
-> label/protocol round-trip, and a cap-sized send. **Nothing in the
-> selftest is verified statically any more.** Still open: browser interop
+> label/protocol round-trip, and a cap-sized send. **That run closed the async
+> loopback; it vouches for the file it ran, not for the file as it stands.**
+> The assertions added since - the exact-code stale-handle checks, the
+> embedded-NUL refusal and its last-error clearing, and the
+> skip-on-failed-setup teardown branch - are **verified statically; needs an
+> OXT pass** on a build carrying `kErrInvalidArg`. Still open: browser interop
 > (a real Chrome/Firefox peer) and a call across two networks with real
 > NAT traversal.
 

@@ -155,6 +155,14 @@ the rest have been found overstating twice in two days. See
 `docs/HEADLESS-BACKLOG-2026-08-17.md`, which is the live index for that work;
 this file stays the ledger.
 
+> **Annotated 2026-08-19, not rewritten** (the paragraph above is dated
+> 2026-08-17 and was written before commit `0a298c5` landed the same day).
+> "Two layers ship with no ratchet at all" is now one and a half: holde-em's
+> `he*` surface HAS a ratchet - built, measuring, and ADVISORY rather than
+> armed, see C.4 - while box2dxt's raw `.lcb` script side is still genuinely
+> unratcheted. Its C side is no longer unmeasured either; gcov puts the smoke
+> test at 53 -> 194 of 370 exports entered.
+
 ---
 
 **THE 2026-08-17 ENGINE PASS: THE LARGEST GREEN RUN THIS PROJECT HAS HAD.**
@@ -194,6 +202,70 @@ redial), every two-machine leg (S3/S4), the Tor evening (S2), the macOS and
 Windows-package gaps (S5/C.1), and the async loopbacks that stay deliberately
 unfolded. Section B's live legs are untouched by this run except where struck
 below.
+
+---
+
+**THE 2026-08-18 LINUX PASS: THE FIRST RUN THIS PROJECT HAS HAD ON LINUX, AND
+IT PAID FOR ITSELF IN DEMOS RATHER THAN IN HARNESS CHECKS.** Named for where it
+started, not for where it ended: a SECOND report came back from Windows the same
+day, and `docs/OXT-ENGINE-NOTES.md` 6.6 carries both - including the fact that
+the Windows narrowing (`Narrowed 2026-08-18 (second report, Windows)`, which
+moved the datachannel throw out of the dispatch and into `_ensureDrain`) **did
+not hold**; 6.7 closed the entry with the dispatch after all, and the narrowing
+is left in place as the reasoning of the day rather than struck, because an
+inference from an LCB line number is exactly the kind of evidence this file
+teaches you to date and keep.
+
+**No suite-wide check total is recorded in any commit from this run, so none is
+quoted here.** What IS recorded is one member's: box2dxt's own harness went
+**373/374 at v29** - the run's only failure, per commit `597ce0c` - having been
+374/374 on Windows x86_64 the day before, which is the figure the 08-17 banner
+above carries. The check was the harness being wrong about the engine, not the
+Kit: `the playLoudness` does not read back exactly on every platform
+(OXT-ENGINE-NOTES 5.4). It is now two self-diagnosing assertions plus a printed
+observation, and **harness v30 has one assertion MORE than v29**, so a v30 total
+is not comparable to the v29 374/374 figure - and no v30 total has been observed
+on any platform.
+
+**What the run found is best named by ENTRY rather than by count**, because a
+count of it has been wrong twice: the session reported three demo symptoms, the
+tree files four defects behind them, and a fifth entry filed from this pass was
+reclassified the following day and is no longer one. The four, all carrying
+OBSERVED evidence and all in `docs/OXT-ENGINE-NOTES.md` - three runtime, one a
+compile error met at paste time - are: **1.7**, `the
+number of keys of X` does not parse - `keys` is not a chunk, so the engine reads
+`keys of X` as an OBJECT expression - nine occurrences across `enet-lan-chat`,
+`riptide-social` and `torrent-rp1-chat`, every one on a path no engine run had
+ever reached, while the correct spelling already stood in fifteen files including
+three harnesses that had run green; **1.6**, two script-level declarations of one
+name is a HARD compile error, found the moment the demos began carrying their own
+libraries and a demo's `local sPolling` met the helper's; **6.4**, an EMPTY value
+into a typed `.lcb` parameter is a THROW and not a no-op - `enet-lan-chat`'s
+teardown handing empty to `enHostDestroy(in pHost as Integer)`, which killed the
+poll chain and left the demo silently dead; and **6.7**, an event name and a
+handler name share ONE xTalk message namespace - the datachannel root cause, in
+which the emitted event `dcLocalDescription` collided with the public getter of
+the same name, so `datachannel-loopback`'s `on dcLocalDescription` had never
+fired once since the day it was written and `getting-started.md` taught the same
+unreachable shape (the EVENT is renamed to `dcLocalDescriptionReady`; the pump
+maps the legacy name so an app built against an older package still works).
+**5.3 is deliberately NOT in that list**: it was filed OBSERVED from this pass
+and CORRECTED to DOCUMENTED on 2026-08-19, because its throw was traced to the
+argument evaluated at the call site - which is entry 1.7's defect, in the caller,
+never reaching the handler the entry blamed.
+
+Each of the four has a NEW gate, which is the point of recording the pass here at
+all: the unified checker's LCS antipattern set (1.7, fixtures for both
+spellings), `tools/test-demo-embeds.py` and `tools/sync-demo-embeds.py`'s
+collision detector (1.6), `tools/check-lcb-call-types.py` (6.4) and its check 4
+(6.7, which refuses any future event-name/handler-name collision).
+`tools/check-timer-stack-pin.py` landed in the same sweep and pinned 71 delayed
+handlers across 26 files.
+
+**The fixes are verified statically; they need an OXT pass.** Every one of them
+was written after the run and none has been re-run on an engine, so nothing here
+upgrades a demo's label: B.1's tick-sheet rows stay unticked, and this banner
+records what the engine SHOWED, not that the repairs work.
 
 ---
 
@@ -422,8 +494,11 @@ Built and statically verified; pending under the honesty convention.
 
 5. **box2dxt member-wide re-pass + platform verdicts** (large). The fold's
    ~1550-fix sweep re-opened the whole member; macOS/Linux verdicts (risk R1)
-   and the polish plan's feel/facing/scale pass (incl. L7's vertical camera)
-   ride the same sessions.
+   - Linux now has its FIRST data point, 2026-08-18: the member harness ran
+   373/374 at v29, its one failure a harness assumption about `playLoudness`
+   rather than a Kit defect, so the member-wide re-pass and a v30 total are
+   still owed on BOTH platforms - and the polish plan's feel/facing/scale pass
+   (incl. L7's vertical camera) ride the same sessions.
    — `box2dxt/CLAUDE.md:72-74`, `box2dxt/plan.md:46-47`
 
 6. **datachannelxt browser interop + two-network NAT call** (medium). The
@@ -521,22 +596,44 @@ Built and statically verified; pending under the honesty convention.
    — `box2dxt/CLAUDE.md:34-47`
 
 4. **holde-em into the suite selftest ~~and coverage gate~~ — SPLIT
-   2026-08-17; the selftest half is DONE, the coverage half is not.**
+   2026-08-17; ~~the selftest half is DONE, the coverage half is not~~ BOTH
+   HALVES BUILT, and what survives is one decision: whether to ARM the
+   coverage row.**
    - ~~Suite selftest~~ **DONE 2026-08-16** (commit `7f55839`): holde-em is the
      ninth folded harness and `check-suite-selftest.py` reports
      `holde-em=380`. Its fold needed only `drop_extra` plus one `@PREFIX@`
      rewrite, because its game and its harness are the SAME FILE and both
      sides rename together.
-   - **Coverage gate — STILL OPEN.** The member is folded but NOT ratcheted,
-     so its surface is in no numerator. Measured 2026-08-17: **379 public
-     `he*` handlers, 174 named by a `heTest*`/`heProbe*` body, 205 named by
-     nothing.** (The 163 quoted elsewhere in this file is stale — the harness
-     grew.) What is missing is a way to scan the harness REGION of a
-     single-file member; the graph walk itself already exists as
-     `check-suite-selftest.py`'s check 7d and should be lifted rather than
-     rewritten. **Compute the number under the coverage gate's string
-     convention, and commit measurement-only first**, so the honest figure is
-     recorded before the ratchet bites.
+   - ~~Coverage gate — STILL OPEN~~ **BUILT 2026-08-17** (commit `0a298c5`),
+     and ADVISORY - not yet armed as a floor. ~~The member is folded but NOT
+     ratcheted, so its surface is in no numerator. Measured 2026-08-17: 379
+     public `he*` handlers, 174 named by a `heTest*`/`heProbe*` body, 205
+     named by nothing. (The 163 quoted elsewhere in this file is stale — the
+     harness grew.)~~ Superseded, and not a like-for-like comparison: that
+     count asked which handlers were NAMED by any test-shaped body, the gate
+     asks which are named by a body REACHABLE from `heSelfTest`, and the
+     denominator has moved too (329 game handlers on 08-17, 330 today). ~~What
+     is missing is a way to scan the harness REGION of a single-file member;
+     the graph walk itself already exists as `check-suite-selftest.py`'s check
+     7d and should be lifted rather than rewritten.~~ As built,
+     `tools/check-suite-coverage.py` splits the one file at its selftest
+     boundary (`HOLDEM_BOUNDARY_RE` matches `command heRunSelftest`) into a
+     GAME region and a HARNESS region and asks the coverage question across
+     the cut - a boundary LINE where the embedded script layers use sentinels,
+     because a single-file member has no sentinel to cut on.
+     **Measured 2026-08-19 by `python3 tools/check-suite-coverage.py`** - a
+     gate run, not an engine run: **121/330 exercised in the GAME region**
+     (120 named by a body reachable from `heSelfTest`, +1 dispatched by name
+     through `heRunSection`, which the coverage convention's literal-blanking
+     cannot see); **209 named by nothing that runs**, split 20 live-transport
+     / 9 engine-media / 41 host-window / 139 no-test; the HARNESS region is 51
+     handlers, 48 reachable from `heSelfTest`, 3 interactive-delivery by
+     design.
+     **What is still open is the arming.** The row prints in both modes so CI
+     records the number and does not fail the build. Armed absolutely it would
+     fail on 209 today; armed as a FLOOR - no NEW gaps - it would fail on 0,
+     which is the honest next step and the one worth taking. The gate prints
+     both figures itself, so neither has to be re-derived to act on this.
    — `holde-em/CLAUDE.md` (fold record), `tools/build-suite-selftest.py`,
    `tools/check-suite-coverage.py`
 

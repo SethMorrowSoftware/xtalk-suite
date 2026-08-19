@@ -15,9 +15,13 @@ ever runs script); exceptions never cross the FFI; handles are
 generation-tagged so a stale one is a no-op, never a crash; and anything
 not observed on a real engine is labelled "verified statically; needs an
 OXT pass". The generated `tests/suite-selftest.livecodescript` reaches
-384 of the 402 coverage-counted public handlers (the 18 unreached are all
+724 of the 742 coverage-counted public handlers (the 18 unreached are all
 onionxt's, each with a written reason: engine socket callbacks and
-live-daemon paths).
+live-daemon paths). Two script layers ride outside that ratchet and are
+reported separately: holde-em's `he*` surface, an advisory row at 121/330
+that prints but does not fail the build, and box2dxt's raw `b2*` `.lcb`
+binding, which is not coverage-counted at all. Every figure in this
+paragraph re-measured 2026-08-19 by `tools/check-suite-coverage.py`.
 
 ## sodiumxt — modern cryptography (`sx*`)
 
@@ -155,7 +159,16 @@ Binaries: Linux + Windows x64/x86 (no macOS yet).
 bundled third-party code. Speaks SOCKS5 and the Tor control protocol over
 engine sockets to a **local tor daemon** (loopback only). 45 public `ox*`
 handlers plus the 11-handler `oxh*` HTTP layer. Installed by copying two
-script libraries (or via generated paste-and-run standalones).
+script libraries (`onionxt/src/onionxt.livecodescript` and
+`onionxt/src/onion-httpd.livecodescript`) into the message path. The two
+FULL demos - `onionxt/examples/onionxt-demo.livecodescript` and
+`onionxt/examples/onion-httpd/spike.livecodescript` - instead CARRY those
+libraries, embedded between the sentinels `tools/sync-demo-embeds.py`
+owns, so each is one paste with no `start using` step; the `socks-dial`
+and `onion-roundtrip` snippets are glue and still expect the library in
+the message path (2026-08-18: the standalone GENERATOR and both of its
+generated twins were deleted, so there is no longer a standalone to
+look for).
 
 - **Anonymous TCP streams** — dial any host through Tor; names resolve
   inside Tor, never via local DNS: `oxDial`, `oxWrite`,
@@ -354,11 +367,14 @@ tables) are optional and probed.
   INDEPENDENT reference rather than a port, ride `build-all.sh`; the
   1024x640 layout is re-derived from the builders on every push by
   `tools/check-table-layout.py`.
-- Status: v0.24.3. Five engine runs (2026-08-16/17) took it to 507/0 on
-  the folded harness. The pending exit gates are all multi-machine: a
-  multi-hand rp1 session on real networks, a two-machine onion table
-  over live tor, a three-machine oracle round, and a timed liveness
-  session. Phase 4f and Phase 5's hostile review + soak remain open.
+- Status: v0.24.5. Five engine runs (2026-08-16/17) took it to 507/0 on
+  the folded harness at stack v0.24.3 / harness v40; the harness has grown
+  since (`kHeHarnessV` 40 -> 41, bumped by v0.24.4), so that total is not
+  comparable to one taken today and none has been. The pending exit gates
+  are all multi-machine: a multi-hand rp1 session on real networks, a
+  two-machine onion table over live tor, a three-machine oracle round,
+  and a timed liveness session. Phase 4f and Phase 5's hostile review +
+  soak remain open.
 
 ## How they fit together
 

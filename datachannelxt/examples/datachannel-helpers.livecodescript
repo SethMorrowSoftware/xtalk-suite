@@ -34,7 +34,9 @@ script "dataChannelHelpers"
 local sPollTarget       -- object that receives the semantic event messages
 local sPollInterval     -- milliseconds between drains (the latency/CPU knob)
 local sPolling          -- "true" while the timer loop is armed
-local sPollNote         -- most recent dispatch failure, "" while healthy
+local sPollNote         -- the FIRST poll fault since the last clear - a bad
+                        -- drain, a bad dispatch, or a target that stopped
+                        -- resolving; "" while healthy
 local sPollDrains       -- drains attempted, so a failure can name which
 
 -- dcStartPolling TARGET, INTERVALMS
@@ -137,10 +139,21 @@ command dcChannelPollOnce
    -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
    -- that wrong. It guarded the dispatch, because the engine had named the
    -- dispatch line - but the NEXT report named datachannel.lcb line 234, which
-   -- is inside dcPoll's buffer helper. That throw happens HERE, on the way in,
-   -- and an unguarded `put dcPoll() into tEvents` takes the timer chain down
-   -- before any dispatch is attempted. Guarding only the half you have already
-   -- been shown is how a diagnostic costs two passes instead of one.
+   -- is inside dcPoll's buffer helper, so the throw was read as happening HERE,
+   -- on the way in. Guarding only the half you have already been shown is how a
+   -- diagnostic costs two passes instead of one, and THAT lesson stands: an
+   -- unguarded `put dcPoll() into tEvents` takes the timer chain down before any
+   -- dispatch is attempted, so both halves are guarded and both stay guarded.
+   --
+   -- WHERE THE THROW ACTUALLY WAS (OXT-ENGINE-NOTES 6.7, 2026-08-18). Once this
+   -- pump reported the two halves distinctly - "dcPoll failed on drain #N"
+   -- versus "dispatch of <name> failed" - the run printed the DISPATCH form,
+   -- naming dcLocalDescription: an event name colliding with a public library
+   -- handler of the same name. The drain was clean. So line 234 was an
+   -- INFERENCE from a line number, not a location, and why that number was
+   -- reported at all is still unexplained. That is not a reason to drop this
+   -- guard: it is here because a throw on the way in kills the timer chain,
+   -- which is true whether or not it has happened yet.
    add 1 to sPollDrains
    put empty into tEvents
    try
@@ -154,7 +167,14 @@ command dcChannelPollOnce
          -- "cannot convert value" on drain 1 and on drain 400 are different
          -- bugs, and this counter is the whole difference between them - at
          -- no cost, and with no extension rebuild to find out.
-         put "dcPoll failed on drain #" & (sPollDrains + 1) & ": " & \
+         --
+         -- NO `+ 1` HERE. The increment happens above, BEFORE the try, so
+         -- sPollDrains already counts this drain: the first one is #1. The
+         -- version that shipped added one anyway and reported the first drain
+         -- as #2 - inverting the single discrimination the counter exists to
+         -- make, in the same commit whose message argued for it. An off-by-one
+         -- in a diagnostic is not cosmetic; it is a diagnostic that lies.
+         put "dcPoll failed on drain #" & sPollDrains & ": " & \
                line 1 of tErr into sPollNote
       end if
       -- Do NOT stop polling: a transient drain failure must not silently end
@@ -201,7 +221,10 @@ command dcChannelPollOnce
 end dcChannelPollOnce
 
 -- dcPollLastError() -- empty while the dispatcher is healthy; otherwise the
--- FIRST dispatch failure since the last dcPollClearError, naming the event.
+-- FIRST fault since the last dcPollClearError: a drain failure (carrying a
+-- drain counter, so an early one and a late one are distinguishable), a
+-- dispatch failure (naming the event), or a poll target that stopped
+-- resolving (saying it fell back to this card).
 -- An app that shows this in its own log turns "the demo went quiet" into a
 -- line a maintainer can act on.
 function dcPollLastError

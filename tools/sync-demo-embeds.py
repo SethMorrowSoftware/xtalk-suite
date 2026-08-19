@@ -166,26 +166,31 @@ SCRIPT_HEADER = re.compile(r'^script\s+"[^"]*"[^\n]*\n', re.M)
 def strip_script_header(text, rel):
     """Drop a provider's leading `script "Name"` line before embedding it.
 
-    THIS IS THE BUG THAT SHIPPED AND CAME BACK FROM AN ENGINE (2026-08-17).
-    Four of the six providers open with one - enet-helpers, datachannel-helpers,
-    coinxt, riptide - and embedding them verbatim put a SECOND `script "..."`
-    line into the middle of a demo that already had its own on line 1. The
-    engine does not treat that as decoration: everything after it lands outside
-    the scope the demo's own declarations are in, so a perfectly ordinary
-    `local sPeers` near the top stops resolving by the time a handler nine
-    hundred lines down reads it. The reported symptom was
-    `Chunk: error in object expression` on `the number of keys of sPeers` -
-    LiveCodeScript had evaluated the undeclared name to the literal text
-    "sPeers" and then tried to read a chunk out of it, which is the same
-    undeclared-name failure mode this tree keeps meeting in new clothes.
+    THE JUSTIFICATION IS STRUCTURAL, NOT EMPIRICAL - which is a correction to
+    what this docstring said until 2026-08-19. A `script "..."` line is a
+    stack-NAME marker, meaningful only when the file IS its own stack. Four of
+    the six providers open with one - enet-helpers, datachannel-helpers, coinxt,
+    riptide - and embedding them verbatim drops a SECOND marker into the middle
+    of a demo that already carries its own on line 1, naming a stack that is not
+    there. That is wrong on structure alone, whatever the engine does with it,
+    which is why the strip is unconditional and build_block asserts below that
+    none survived. Hygiene needs no engine pass to justify it.
 
-    The name is meaningful only when the file IS its own stack. Inside an
-    embed it is not just redundant, it is wrong - so it comes off, and
-    build_block asserts below that none survived.
+    WHAT THIS DOCSTRING USED TO CLAIM, AND WHY IT DOES NOT ANY MORE. It opened
+    "THIS IS THE BUG THAT SHIPPED AND CAME BACK FROM AN ENGINE (2026-08-17)"
+    and read the engine's `Chunk: error in object expression` on
+    `the number of keys of sPeers` as proof that everything below a second
+    marker falls out of the demo's declaration scope. It was not proof of that.
+    `keys` is not a chunk, so `the number of keys of X` fails whether or not X
+    is declared: the same error recurred on the same line AFTER this function
+    had stripped that demo's header (b9fa4b3) and went quiet only when the
+    spelling was rewritten (61c14ea). See docs/OXT-ENGINE-NOTES.md 1.7 for the
+    spelling and 1.1 for the scope claim, now filed INFERRED with nothing
+    observed under it. The rule survives; the story behind it did not.
 
-    The collision check could never have caught this: the two names did not
-    clash, and nothing about them is a duplicate DEFINITION. It is a structural
-    marker, not an identifier, which is why it needed its own rule."""
+    The collision check could never have caught this either way: the two names
+    do not clash, and nothing about them is a duplicate DEFINITION. It is a
+    structural marker, not an identifier, which is why it needs its own rule."""
     stripped, n = SCRIPT_HEADER.subn("", text, count=1)
     if n and not SCRIPT_HEADER.match(text):
         # only strip it when it is genuinely the file's opening line
@@ -233,9 +238,9 @@ def build_block(demo_rel, provider_rels, demo_text):
     if stray:
         raise SystemExit(
             f"sync-demo-embeds: {demo_rel}: a provider's `script \"...\"` header "
-            f"survived into the embed ({stray[0]!r}). A second script-name line "
-            "mid-file puts everything after it outside the demo's own "
-            "declaration scope - see strip_script_header.")
+            f"survived into the embed ({stray[0]!r}). A `script \"...\"` line "
+            "names the stack the file IS, so a second one mid-file names a "
+            "stack that is not there - see strip_script_header.")
     return block
 
 

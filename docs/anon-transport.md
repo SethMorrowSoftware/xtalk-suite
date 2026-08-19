@@ -74,7 +74,7 @@ over-promises; the threat-model page carries the per-adversary detail.
 What follows is the behaviour of the built code, per the status note above.
 
 **Capability probe, fail closed.** At startup the demo probes once for OnionXT
-(which itself requires SodiumXT/sodiumxt, even for a plaintext transfer) and
+(which itself requires SodiumXT, even for a plaintext transfer) and
 connects to the local Tor daemon's control port - stock tor's 9051 first, Tor
 Browser's 9151 as a one-shot retry. A live pill reports the state (`Tor: no
 extension` / `no daemon` / `connecting NN%` / `ready`), and every anonymous

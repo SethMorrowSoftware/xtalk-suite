@@ -27,8 +27,39 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > STANDALONE, green end to end — the live `enHostStatus` pair (while
 > connected, and counting zero peers after the disconnect) and the
 > `enPeerStatus` statistics half (rtt, packetLoss, the packet/byte
-> counters), added that same day, are all runtime results now. Still
-> un-exercised: the LAN chat demo between two real machines.
+> counters), added that same day, are all runtime results now.
+> A fifth pass on 2026-08-18 finally put the LAN chat DEMO on an engine, on
+> ONE machine (Linux; the suite's
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md) 6.4 is the dated
+> entry, and the session's later Windows report there is datachannelxt's, not
+> this member's). It reported two defects in this demo, and fixing the first
+> did not end the hunt, which is why both are recorded here rather than only
+> the one that finished it. (1) `enHostDestroy sHost` on the disconnect path,
+> declared `in pHost as Integer`, handed EMPTY by the second
+> `enetDisconnect` - ENet delivers one per peer and a failed connect makes one
+> of its own - which is a throw, not a no-op: it killed the poll chain and
+> left the demo silently dead (6.4). The same file already guarded `sHost` in
+> ten other places, and this was the one path that did not. (2) `the number of
+> keys of sPeers` does not parse at all - `keys` is not a chunk, so the engine
+> reads `keys of sPeers` as an OBJECT expression (1.7, filed that day as
+> 1.5b). Two
+> occurrences in this file, the join log in `enetConnect` and the dashboard in
+> `ecDashOnce`, both rewritten to `the number of lines of the keys of sPeers`,
+> the spelling that already had engine evidence behind it. The once-a-second
+> "Chunk: error in object expression" was credited to the UI kit's `uiStatus`
+> first, and the defaultStack pin that went into the kit master for it is a
+> real hardening resting on documented resolution semantics - but an argument
+> is evaluated in the CALLER and never reaches the handler it is passed to, so
+> (2) is what had been throwing all along, and 5.3 is classed DOCUMENTED
+> rather than OBSERVED for exactly that reason. The pin lives in the suite's
+> `tools/ui-kit.livecodescript` and was re-carried byte-identical, never
+> patched into this demo. The poll pump gained a guarded DRAIN as well as a
+> guarded dispatch in the same session, plus `enPollLastError()` /
+> `enPollClearError`, which the demo surfaces in its own log. At the end of
+> that session the maintainer reported single-machine host/join chat working.
+> Still un-exercised: the LAN chat demo between two real MACHINES - the demo
+> is a single-machine engine pass 2026-08-18, and the two-machine leg needs an
+> OXT pass.
 
 ## The rules that carry over unchanged
 

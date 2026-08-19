@@ -21,7 +21,7 @@ WHY THIS EXISTS
 
 WHAT IS DECIDABLE HERE, AND WHAT IS NOT
     Full type inference over LiveCodeScript is not on the table - it is an
-    untyped language whose values coerce freely. Three things ARE decidable,
+    untyped language whose values coerce freely. Four things ARE decidable,
     and each one is a real runtime error rather than a style opinion:
 
     1. ARITY. Too few arguments is not "the rest default to empty" when the
@@ -42,6 +42,20 @@ WHAT IS DECIDABLE HERE, AND WHAT IS NOT
        return reads as EMPTY, so passing it to a numeric parameter is a certain
        type conversion error. The valid key set is read from the .lcb, so this
        check cannot go stale against a renamed field.
+
+    4. AN EVENT NAME THAT IS ALSO A HANDLER NAME. xTalk has ONE message
+       namespace, so a dispatched event name is resolved exactly like a call.
+       When the module that emits the event also EXPORTS a handler of that
+       name, the library wins and the app's `on <name>` is never reached -
+       silently, because an unhandled dispatch is not an error, so a colliding
+       name is indistinguishable from "no handler here" until the colliding
+       handler is strict about its arguments. `_eventName` returned
+       "dcLocalDescription", which is also `dcLocalDescription(in pPeer as
+       Integer)`, so the pump handed the getter an event Array;
+       datachannel-loopback had shipped `on dcLocalDescription` from the day it
+       was written and it never fired once. This is check 4: 17 event names,
+       read from every `_eventName` in the tree, each compared against the
+       public handler set of the MODULE THAT EMITS IT.
 
 THREE PARSING LESSONS ARE BUILT IN, EACH PAID FOR BY THIS FILE'S OWN DRAFTS
     - JOIN CONTINUATIONS FIRST. A trailing `\\` continues the statement. The

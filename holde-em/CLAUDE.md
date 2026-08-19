@@ -198,11 +198,24 @@ hard way across the sibling repos so it never has to be re-learned here.
 >   The gate splits this ONE file at its selftest boundary into a GAME region
 >   and a HARNESS region - the same move as the embedded-span cut, done with a
 >   boundary line instead of a sentinel - and asks its question across the cut.
->   **119/329 game handlers are named by a body reachable from the selftest
->   entry point; +1 dispatched by name = 120/329 exercised, 209 named by
+>   **120/330 game handlers are named by a body reachable from the selftest
+>   entry point; +1 dispatched by name = 121/330 exercised, 209 named by
 >   nothing that runs** (20 live-transport, 9 engine-media, 41 host-window, 139
->   simply untested). The denominator is **329 game + 51 harness = 380** public
->   `he*` handlers, not the 379 this file and three others quoted.
+>   simply untested). The denominator is **330 game + 51 harness = 381** public
+>   `he*` handlers.
+>
+>   **That denominator has moved twice, for two DIFFERENT reasons, and the
+>   difference is the whole point of quoting it.** 379 -> 380 was a MISCOUNT
+>   corrected: the gate's own docstring records it as 2026-08-17's
+>   `heTestHelpersRun` bringing a handler with it, so the file had always had
+>   380 and four documents had said 379. 380 -> 381 is a real CODE change:
+>   `heAwardedPot`, added 2026-08-17 by `07bbf4f`'s uncalled-pot fix, which the
+>   coverage ratchet ITSELF pushed above the harness boundary rather than
+>   letting it sit below and quietly leave the denominator. And it is a
+>   good-news number, which is the part a future reader needs: the new handler
+>   lands in the NUMERATOR as well, which is why both moved by exactly one and
+>   the 209 gap did not move at all. A denominator that grows while the gap
+>   holds is the shape that proves the ratchet worked.
 >
 >   The old dead ends still explain the design: **0/379** blind and **379/379**
 >   with the prefix taught (permanently, because the folded section IS the game
@@ -404,7 +417,7 @@ since v0.23.0, act timers + time-bank, sit-out/return, late-join, onion
 auto-redial) + the Phase 3 deck oracle written, on Phase 1 hotseat, plus the Phase
 4a-4d Level 2 layer (compute + void-and-audit sequencing), the 4e adversarial
 bots, and Phase 5's DLEQ proofs on SodiumXT ABI 9 (all pure; nothing plays on
-Level 2 yet), at v0.24.3 -- **THE FOLDED HARNESS RAN ON A REAL ENGINE
+Level 2 yet), at v0.24.5 (harness v41) -- **THE FOLDED HARNESS RAN ON A REAL ENGINE
 2026-08-16, three suite-paste runs the same day, and the third was FULLY GREEN:
 507/0 (stack v0.24.3, harness v40).** Each red run found a real defect no
 headless gate could reach, both in the v0.23.0 liveness layer and both fixed
@@ -419,7 +432,23 @@ timeoutSent latch went stale and hand 2 sat unsettled; the key now carries
 hand-street as a fourth item the tick never parses, derived identically on
 every client from the folds). Section 20's whole headless slice is
 engine-verified now; the TIMED wall-clock session below is what the label still
-owes -- v0.23.0 brought the table inside the suite's 720p
+owes.
+**507 IS A v40 NUMBER AND NOTHING SHOULD EXPECT IT AGAIN.** The harness has
+grown 35 static `heTAssert` call sites since that run - 374 at v0.24.3/v40, 404
+at v0.24.4 (`kHeHarnessV` 40 -> 41), 409 at v0.24.5, which added five sites
+WITHOUT a further harness bump, so "harness v41" names two different totals and
+the printed version alone will not tell them apart. Those are call sites, not
+checks: a site inside a repeat runs many times, which is why v40's 374 sites
+reported 507 checks. **The largest green run is 2026-08-17** - Windows x86_64,
+NT 10.0, OXT 9.6.3, inside the suite paste: 538 holde-em checks with zero
+failures anywhere in that 1,836-check run (7 skips across all nine folded
+harnesses, live-transport and daemon legs; the record does not split them per
+member). That run was stack v0.24.4 / harness v41, before v0.24.5's five sites
+landed, so **no total has been observed for the tree as it stands** - the
+v0.24.5 harness has never met an engine. See the suite's
+`docs/REMAINING-WORK.md` and `docs/OXT-PASS-RUNBOOK.md` for the full 2026-08-17
+record (this member has no `docs/` of its own, so those are repo-root paths).
+v0.23.0 brought the table inside the suite's 720p
 budget (1024x640; the check-stack-size SKIP is gone, and since 2026-08-16 the
 control rects inside that window have their own gate,
 tools/check-table-layout.py, because the re-layout's arithmetic was originally

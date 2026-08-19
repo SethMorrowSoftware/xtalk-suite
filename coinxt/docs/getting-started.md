@@ -120,5 +120,8 @@ build handlers and the transactions section of
 [api-reference.md](api-reference.md) documents every handler and its
 contract; [SPEC.md](../SPEC.md) is the design; [CLAUDE.md](../CLAUDE.md) is
 the as-built record and the hard-won lessons;
-`tests/coin-selftest.livecodescript` is the 230-check engine harness, and the
-gates listed in the README keep all of it honest on every push.
+`tests/coin-selftest.livecodescript` is the engine harness - read its own
+STATUS line at the top of the file for the last run and its total, rather
+than any count quoted on a page like this one, which can only ever be true of
+the day it was written - and the gates listed in the README keep all of it
+honest on every push.

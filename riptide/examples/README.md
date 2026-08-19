@@ -38,16 +38,23 @@ Status, by phase (each a maintainer's dated account):
   over that seam is a torrent in this suite.
   Phase 7 now includes the 8.2/8.3 onion SERVING (2026-08-15): Publish +
   serve registers onion-httpd routes for the feed page at `/`, the signed
-  prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs BOTH
-  `onionxt/src/onionxt.livecodescript` and
-  `onionxt/src/onion-httpd.livecodescript` in use, plus a tor daemon with
-  the control port enabled.
+  prekey at `/prekey`, and a POST `/dm` sealed-intro drop; it needs a tor
+  daemon with the control port enabled.
 
 ## Setup
 
-1. Install the packaged sodiumxt (required) and torrentxt (required for
-   publish/fetch) extensions.
-2. Put the riptide library in the message path: `start using stack "riptide"`.
+1. Install the packaged extensions: sodiumxt (required everywhere), torrentxt
+   (required for publish/fetch and for the phase-3 media rail),
+   datachannelxt (required for the phase-5 call) and enetxt (required for the
+   phase-6 LAN mesh). The body of this stack calls `dcCreatePeer` and
+   `enHostCreate` directly, so phases 5 and 6 are dark without those two.
+2. Nothing to wire: this stack CARRIES `riptide`, `onionxt` and `onion-httpd`
+   embedded between the sentinels that `tools/sync-demo-embeds.py` (at the
+   suite root) owns, so there is no `start using` step and no second stack to
+   open beside it. Putting `riptide` in the message path as well - which this
+   step used to ask for - only loads a second copy of every rs* handler, which
+   is the stale-in-memory-library hazard the embed exists to remove. Edit the
+   sources under `../src/` and `onionxt/src/`, never inside the sentinels.
 3. Paste the stack script into a new one-card stack, apply, close, reopen.
 4. One TorrentXT session per process: close every other torrent-flavoured
    stack first, and restart OXT before any re-paste of this script.

@@ -8,6 +8,13 @@ what is operational and riptide-specific. The root `CLAUDE.md` and the
 member files it points to still apply; when they conflict, this file wins
 inside `riptide/`.
 
+
+> **Engine BEHAVIOUR - as opposed to the conventions here - is collected in
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md)**, with the verbatim
+> symptom, what each one broke, and the gate (if any) that now holds it. Keep
+> member-specific gotchas in this file; put anything the ENGINE does there, so
+> there is one authoritative list instead of ten that drift.
+
 ## What this is
 
 The suite capstone app, pure LiveCodeScript over the installed extension
@@ -787,3 +794,15 @@ edits with no wire-format change, no new golden vector, and no new public
   gap in tests/riptide-selftest.livecodescript and regenerate. A
   script-layer or harness edit here is not done until
   `python3 tools/build-suite-selftest.py` has rebuilt the suite paste.
+  `examples/riptide-social.livecodescript` carries three libraries
+  verbatim between the sentinels `tools/sync-demo-embeds.py` (at the
+  suite root) owns - `src/riptide.livecodescript` plus OnionXT's
+  `onionxt` and `onion-httpd` layers, so the demo pastes and runs with
+  no `start using` step, and nobody edits inside the sentinels. A
+  `src/riptide.livecodescript` edit is therefore not done until
+  `python3 tools/sync-demo-embeds.py` has been re-run at the suite root
+  either. That copy is NOT cut back out of the suite paste (the riptide
+  row has no `strip_spans`); the demo is simply never folded. Riptide's
+  own `tools/` does not carry the sync tool, so this drift is invisible
+  to the member gates and surfaces only as `--check` failing the suite
+  build.

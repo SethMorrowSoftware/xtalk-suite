@@ -96,7 +96,7 @@ mutation-tested rather than attested:
 - **C7, the holde-em ratchet - the largest item here - is BUILT and ADVISORY.**
   It splits the one 15k-line file at its selftest boundary into a GAME region
   and a HARNESS region and asks the coverage question across the cut:
-  **120/329 exercised, 209 named by nothing that runs.** The denominator is
+  **120/329 exercised, 209 named by nothing that runs.** **(Dated 2026-08-17 record - kept verbatim. Measured again 2026-08-19: 121/330 exercised, denominator 381 = 330 game + 51 harness, `holde-em=382` folded handlers, paste 1,646,557 bytes / 35,377 lines. The figures moved because heAwardedPot was added above the selftest boundary and the sweep re-measured; the rows below are NOT updated, per the annotate-do-not-rewrite rule for dated records.)** The denominator is
   **380** public `he*` handlers (329 game + 51 harness), not the 379 four
   documents quoted. It prints without failing, but every property that would
   make its number a lie IS enforced - and that mattered immediately: a mutation
@@ -248,10 +248,10 @@ survey. Measured discrepancies include:
 |---|---|
 | coverage :667-674 -> 377/395, no box2dxt row | gate -> **724/742** |
 | :531/:988/:1018 coinxt "ABI 5"/"ABI 4" | `coinxt/native/coinxt.c:105` -> **6** |
-| :55, :1406 `kHeVersion 0.20.0` | `holdem.livecodescript:980` -> **0.24.3** |
-| :699 "~430 KB" | `wc -c` -> **1,583,595** |
+| :55, :1406 `kHeVersion 0.20.0` | `holdem.livecodescript:980` -> **0.24.3** (**0.24.5** since 2026-08-19; this row is a dated 2026-08-17 record and keeps its original figure) |
+| :699 "~430 KB" | `wc -c` -> **1,583,595** (1,646,557 on 2026-08-19) |
 | :734 "all seven member harnesses" | **nine** folded |
-| row 15 :356 holde-em "STILL NOT in the suite paste - run it as its own paste" | the paste carries **380** `he1*` handlers |
+| row 15 :356 holde-em "STILL NOT in the suite paste - run it as its own paste" | the paste carries **380** `he1*` handlers (382 on 2026-08-19) |
 
 Row 15 alone costs an OXT launch in a sheet budgeting 12 minutes per row.
 **Rewrite it rather than delete it** - the standalone paste is still wanted
@@ -542,6 +542,34 @@ more compile-time constants that can never refuse.
   are all small and all listed. What remains is the async loopbacks, which
   root `CLAUDE.md` deliberately excludes from the fold because two state
   machines race for the event handlers - an engine, not a keyboard.
+
+  > **Annotated 2026-08-19.** The ratios above still hold - re-measured that
+  > day by `tools/check-suite-coverage.py`, still 23/23 and 31/31 - but the
+  > verdict "an engine, not a keyboard" did not. On 2026-08-18 both layers
+  > yielded defects a static gate can decide. An EVENT NAME may not equal a
+  > public handler name, because xTalk resolves a dispatched message through
+  > the same single namespace as a call: datachannelxt's `_eventName` returned
+  > `"dcLocalDescription"`, which is also the public getter
+  > `dcLocalDescription(in pPeer as Integer)`, so the dispatch reached the
+  > LIBRARY and the app's handler was never reached - `datachannel-loopback`
+  > shipped an `on dcLocalDescription` that never fired once from the day it
+  > was written, and `getting-started.md` taught the same shape; commit
+  > `1dad0e1` renamed the EVENT to `dcLocalDescriptionReady`. And an EMPTIED
+  > HANDLE passed to a typed `Integer` parameter THROWS rather than no-opping:
+  > `enHostDestroy sHost` on enet-lan-chat's second `enetDisconnect`, which
+  > killed the poll chain and left the demo silently dead (commit `7812241`).
+  > Both classes are now held headlessly by `tools/check-lcb-call-types.py`,
+  > in the gate set. **Measured:** that gate, run over this audit's own survey
+  > commit `c5b531a`, reports **11 findings - 10 of them in these two
+  > layers** (1 in `datachannelxt/src/datachannel.lcb`, 1 in
+  > `enetxt/examples/enet-lan-chat.livecodescript`, and 8 unguarded teardowns
+  > split evenly between the two folded harnesses, where a failed setup would
+  > have taken the whole ~1900-check paste instead of skipping); the 11th is
+  > in `tests/suite-closing-pass.livecodescript` and is outside these layers.
+  > Note the provenance honestly: the datachannel collision was SURFACED by
+  > the 2026-08-18 engine pass, not by a headless sweep. What is proved here
+  > is that it was headlessly DECIDABLE all along - which is exactly what this
+  > bullet denied.
 - **riptide's wire-format pinning.** 40 of 66 constants re-derived, every
   format covered except kind C (A2). After that pin lands there is nothing
   left to pin in that layer.
@@ -555,8 +583,22 @@ more compile-time constants that can never refuse.
   genuinely-open measurement hole and the only large one needing **no scarce
   resource at all**. It is not in section A only because C3 must land first;
   it should be the first thing promoted when it does.
+
+  > **SUPERSEDED 2026-08-17 - see the same-day banner above.** The `60` was a
+  > `grep -c` artifact: it counted the file's `extern` DECLARATION block, and
+  > six exports sat there declared and never called. A declaration is not a
+  > call. Measured by gcov instead, the banner records **53 -> 194 of 370
+  > exports entered**. The ranking survives the correction - the remaining
+  > exports are still the largest headless measurement hole in the tree - but
+  > the number here does not.
 - **holde-em's 379-handler surface**, unratcheted (C7): **174 named by a
   test, 205 by nothing**.
+
+  > **SUPERSEDED 2026-08-17 - see the WAVE 2 banner above.** The ratchet is
+  > BUILT and advisory; the denominator is **380** (329 game + 51 harness; 381 = 330 + 51 on 2026-08-19),
+  > not the 379 four documents quoted; and the gate asks which handlers are
+  > REACHABLE from `heSelfTest`, not which are NAMED by a test-shaped body, so
+  > the 174/205 split above does not convert into it.
 - **nocloud**: nothing anywhere executes a line of its shipped script, and
   until commit `395b267` its gate was blind to a third of it.
 - **onionxt at 27/45**, the suite's only member with exemptions - and D12
@@ -564,14 +606,46 @@ more compile-time constants that can never refuse.
 
 ---
 
-## THE THREE TO DO FIRST
+## THE THREE THAT WERE TO DO FIRST - and what leads the remainder
 
-1. **C2 + C7 together** - decide the string convention once, stop the
-   coverage gate counting prose, then compute holde-em's honest number under
-   it. Two gates that currently overstate become two that do not.
-2. **B1** - the runbook sweep. Highest engine-minute return in the survey:
-   row 15 alone costs an OXT launch, and six never-marshalled surfaces have
-   no box to tick.
-3. **C3, then box2dxt's C ABI** - one word and three `if` blocks converts
-   four written attestations into executed tests, and unblocks the largest
-   headless measurement hole in the tree.
+**Rewritten 2026-08-19.** This section closed the file with a live to-do list,
+which is the natural place a reader scrolls to for "what next" - and every item
+on it had already been struck by this file's own banners, five hundred lines
+above. That is the same failure the file diagnoses in the tree at large: the
+rate of change outruns the rate of self-description, and the last screen is
+where it shows. The ranking is kept, because the reasoning that produced it is
+the evidence for the numbers in section F; only its tense is corrected. The
+closures below are cited by the BANNERS' OWN WORDS rather than by line number,
+because the surveyor's line numbers were already off by 1 to 23 when this was
+written and will drift again.
+
+1. ~~**C2 + C7 together**~~ **CLOSED.** C2 by the same-day banner - "Closed:
+   C1-C6, ..." - which also struck C2's own entry in place with "FIXED
+   2026-08-17"; C7 by the WAVE 2 banner, "the holde-em ratchet - the largest
+   item here - is BUILT and ADVISORY". Both halves of the instruction were
+   carried out: the string convention was decided (and the WAVE 2 banner
+   records why the two conventions deliberately DIFFER - reachability keeps
+   literals because a section is wired by one, coverage blanks them because a
+   literal is a label until proven otherwise), and the ratchet computes
+   holde-em's number under it.
+2. ~~**B1** - the runbook sweep~~ **CLOSED** by the same-day banner, which
+   lists B1 among "Closed: C1-C6, C8-C16, C19-C21, B1, B3, B6, ...".
+3. **C3, then box2dxt's C ABI** - SPLIT, because only the first half closed.
+   - ~~C3~~ **CLOSED**: box2dxt sits in `tools/build-all.sh`'s
+     `CMAKE_MEMBERS`, and both `sync-embedded-kit.py --check` and
+     `check-lcb-signatures.py` run in the gate set.
+   - **box2dxt's C ABI is NOT closed**, and it is what this file has ranked as
+     the largest headless measurement hole throughout. The same-day banner
+     puts it "half closed and now MEASURED BY GCOV: 53 -> 194 of 370 exports
+     entered" - so the exports that remain unentered are the hole, and no
+     figure beyond the subtraction those two numbers license is stated here.
+     Freshening it means running gcov and dating the run, not re-quoting this
+     line.
+
+**What leads the remainder is already written above, and no new ranking is
+invented here.** The WAVE 2 banner's own sentence is the answer: "Still open:
+all of section A, B4, B7, D4, D9, D14, and every one of section E" - and it
+characterises the first of those in the same breath, "Section A is now the bulk
+of what remains, and it is genuine feature work rather than measurement." Read
+section E's table for what each of its rows waits on; every one of them waits on
+a resource, which is why none of them is here.
