@@ -199,6 +199,24 @@ private function oxhParseHeaders pHeaderBytes
       if tColon > 1 then
          put toLower(oxhTrim(char 1 to (tColon - 1) of tLine)) into tName
          put oxhTrim(char (tColon + 1) to -1 of tLine) into tValue
+         -- "__" IS OUR RESERVED PSEUDO-FIELD NAMESPACE, and until 2026-08-19
+         -- a client could write into it. The request line is parsed ABOVE, so
+         -- __method / __path / __query / __resource are already in this array
+         -- when the header loop starts - and this line put an attacker-chosen
+         -- name straight into the same array. A request carrying a header
+         -- literally named `__path` therefore REPLACED the parsed path, which
+         -- oxhHandle then uses both to select a route and as the argument to
+         -- oxhServeStatic. On an inbound path reachable by anyone who has the
+         -- onion address. (__body was never exposed: oxhHandle writes it after
+         -- this parse returns, so it overwrote the client's value rather than
+         -- the other way round - which is luck, not design.)
+         --
+         -- nocloud's qsHttpParseHead has carried this exact guard since it was
+         -- written, in the same words. Real HTTP header names never begin
+         -- "__", so refusing them costs nothing.
+         if tName begins with "__" then
+            next repeat
+         end if
          put tValue into tOut[tName]
       end if
    end repeat

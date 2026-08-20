@@ -15436,6 +15436,7 @@ function ox1oxSelfTest
    ox1testSodiumComposition
    ox1testConfigurationSetters
    ox1testLoopbackGuard
+   ox1testHttpdHelpers
 
    local ox1tSummary
    -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
@@ -15711,6 +15712,87 @@ private command ox1testConfigurationSetters
    oxSetPeerCallback empty
    ox1oxCheck (oxIsReady() is ox1tWasReady), "restoring the dispatch configuration is harmless too"
 end ox1testConfigurationSetters
+
+private command ox1testHttpdHelpers
+   ox1oxSection "oxh* HTTP layer (pure compute: parse, frame, escape, MIME)"
+   local ox1tProbe, ox1tError, ox1tCRLF, ox1tReq, ox1tH, ox1tBody
+
+   try
+      put oxhTrim("  x  ") into ox1tProbe
+   catch ox1tError
+      ox1oxSkip "the oxh* helpers are private to onion-httpd.livecodescript; " & \
+         "run the onionxt demo, where sync-demo-embeds makes the harness " & \
+         "and that layer one script"
+      exit ox1testHttpdHelpers
+   end try
+   ox1oxCheck (ox1tProbe is "x"), "oxhTrim strips surrounding whitespace"
+
+   put numToChar(13) & numToChar(10) into ox1tCRLF
+
+   -- ---- the request line ------------------------------------------------
+   put "GET /a/b?x=1&y=2 HTTP/1.1" & ox1tCRLF & "Host: example.onion" & ox1tCRLF into ox1tReq
+   put oxhParseHeaders(textEncode(ox1tReq, "UTF-8")) into ox1tH
+   ox1oxCheck (ox1tH["__method"] is "GET"), "oxhParseHeaders reads the method"
+   ox1oxCheck (ox1tH["__path"] is "/a/b"), "oxhParseHeaders splits the path from the query"
+   ox1oxCheck (ox1tH["__query"] is "x=1&y=2"), "oxhParseHeaders keeps the whole query"
+   ox1oxCheck (ox1tH["__resource"] is "/a/b?x=1&y=2"), "oxhParseHeaders keeps the raw resource"
+   ox1oxCheck (ox1tH["host"] is "example.onion"), "a header name is lowercased and its value trimmed"
+
+   -- ---- THE REGRESSION THIS SECTION EXISTS FOR --------------------------
+   -- A client header named __path used to be written into the SAME array the
+   -- request line had already populated, so it replaced the parsed path -
+   -- which oxhHandle uses to pick a route and to call oxhServeStatic. Fixed
+   -- 2026-08-19 by refusing any header name in the "__" namespace, the guard
+   -- nocloud's qsHttpParseHead has always carried.
+   put "GET /safe HTTP/1.1" & ox1tCRLF & "__path: /../../etc/passwd" & ox1tCRLF & \
+       "__method: DELETE" & ox1tCRLF & "__query: evil=1" & ox1tCRLF & \
+       "Host: example.onion" & ox1tCRLF into ox1tReq
+   put oxhParseHeaders(textEncode(ox1tReq, "UTF-8")) into ox1tH
+   ox1oxCheck (ox1tH["__path"] is "/safe"), \
+         "a client header named __path CANNOT replace the parsed path"
+   ox1oxCheck (ox1tH["__method"] is "GET"), \
+         "a client header named __method CANNOT replace the parsed method"
+   ox1oxCheck (ox1tH["__query"] is empty), \
+         "a client header named __query CANNOT invent a query string"
+   ox1oxCheck (ox1tH["host"] is "example.onion"), \
+         "refusing the __ namespace does not disturb ordinary headers"
+
+   -- ---- framing ---------------------------------------------------------
+   put "GET / HTTP/1.1" & ox1tCRLF & "Host: h" & ox1tCRLF & ox1tCRLF into ox1tReq
+   ox1oxCheck (oxhHeaderEnd(textEncode(ox1tReq, "UTF-8")) > 0), \
+         "oxhHeaderEnd finds the blank line that ends the head"
+   ox1oxCheck (oxhHeaderEnd(textEncode("GET / HTTP/1.1" & ox1tCRLF, "UTF-8")) is 0), \
+         "oxhHeaderEnd answers 0 while the head is still incomplete"
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq, "UTF-8")) is true), \
+         "a bodyless GET is complete once its head is"
+
+   -- a declared Content-Length is not satisfied until the body arrives
+   put "POST /x HTTP/1.1" & ox1tCRLF & "Content-Length: 5" & ox1tCRLF & ox1tCRLF into ox1tReq
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq, "UTF-8")) is false), \
+         "a POST is incomplete while its declared body is missing"
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq & "hello", "UTF-8")) is true), \
+         "...and complete once the declared bytes are all there"
+
+   -- ---- escaping and encoding -------------------------------------------
+   put oxhHtmlEscape("<a href=" & quote & "x" & quote & ">&</a>") into ox1tBody
+   ox1oxCheck (ox1tBody contains "&lt;"), "oxhHtmlEscape escapes <"
+   ox1oxCheck (ox1tBody contains "&gt;"), "oxhHtmlEscape escapes >"
+   ox1oxCheck (ox1tBody contains "&amp;"), "oxhHtmlEscape escapes &"
+   ox1oxCheck (not (ox1tBody contains "<a href")), \
+         "oxhHtmlEscape leaves no raw markup (the directory listing's whole defence)"
+
+   ox1oxCheck (oxhPathEncode("a b") contains "%20"), "oxhPathEncode encodes a space"
+   ox1oxCheck (oxhStripTrailingSlash("/x/y/") is "/x/y"), "oxhStripTrailingSlash trims one slash"
+   ox1oxCheck (oxhStripTrailingSlash("/x/y") is "/x/y"), "...and leaves a bare path alone"
+
+   -- ---- MIME and status reasons -----------------------------------------
+   ox1oxCheck (oxhMimeType("/a/b.html") contains "text/html"), "oxhMimeType maps .html"
+   ox1oxCheck (oxhMimeType("/a/b.png") contains "image/png"), "oxhMimeType maps .png"
+   ox1oxCheck (oxhMimeType("/a/b.unknownext") is not empty), \
+         "oxhMimeType falls back rather than answering empty"
+   ox1oxCheck (oxhReason(200) is not empty), "oxhReason names 200"
+   ox1oxCheck (oxhReason(404) is not empty), "oxhReason names 404"
+end ox1testHttpdHelpers
 
 private command ox1testLoopbackGuard
    ox1oxSection "inbound loopback guard (socket id parse + verdict)"
