@@ -97,6 +97,22 @@ real-session publish/request, and synthetic ingest-verifier sections. This
 closes the single-engine half of runbook item 10; cross-machine DHT propagation
 remains part of item 6.
 
+**SUPERSEDED 2026-08-20 - the record is now a WHOLE-RUN one.** A Windows pass
+that day finished the suite paste end to end: **1,981 passed, 0 failed, 1
+skipped, 1,982 total**, of which **1,868 are folded member checks** (sodiumxt
+99, onionxt 61, coinxt 278, torrentxt 101, enetxt 34, datachannelxt 39, box2dxt
+375, riptide 338, holde-em 543). Two things make it a different KIND of result
+rather than a bigger number. It reached the end: both live loopbacks negotiated
+and delivered, the 60000-byte budget was checked on both transports, SCTP
+cleared its 16 KiB floor, and teardown released the ENet hosts, the WebRTC peers
+and THE libtorrent session. And it settled runbook row 13 - riptide's phase-6
+LAN sync records, the phase-7 serving seams, and all three `rsBytesAreUtf8`
+checks that were RED on 2026-08-15. The `1 skipped` is not a miscount: riptide's
+2 and holde-em's 5 are printed on a second line their own harnesses word as
+prose, which `stMergeReturned` deliberately refuses to parse (its comment says
+why); onionxt's 1 is inline and merges. The 2026-08-17 record below is kept
+verbatim as the dated account of the fold's first compile.
+
 **The 2026-08-17 pass is the largest green run this project has had.** Windows
 x86_64, NT 10.0, OXT 9.6.3: **1,836 folded member checks, zero failures, 7
 skips** - every skip a live-transport or daemon leg no single machine can run.
@@ -116,11 +132,15 @@ the run's only failure**, and the red was the HARNESS being wrong rather than
 the Kit being broken - exact readback was never `b2kSoundVolume`'s contract, so
 the check is now two self-diagnosing probes plus a printed observation
 (`docs/OXT-ENGINE-NOTES.md` 5.4). That rewrite makes it harness v30, one
-assertion more than the v29 that produced the 374, so no v30 total is observed
-on any platform yet. The session's other OBSERVED engine findings - the
-defaultStack trap under a timer, the `keys of X` parse, the event/handler
-namespace collision - are written up in the same file, each marked OBSERVED,
-INFERRED or DOCUMENTED so a reader can tell measurement from reasoning.
+assertion more than the v29 that produced the 374. **v30 has since been observed
+on Windows - 375/0 on 2026-08-20**, with the rewritten check reporting
+`Win32: 24->24, 73->73` and an exact readback; **Linux, the platform that
+failed, has not run v30 yet.** The session's other engine findings - the
+`keys of X` parse and the event/handler namespace collision, both OBSERVED, and
+the defaultStack trap under a timer, filed OBSERVED and **reclassed DOCUMENTED**
+on 2026-08-19 when its throw was traced to the `keys of X` spelling instead -
+are written up in the same file, each marked OBSERVED, INFERRED, DOCUMENTED or
+UNEVIDENCED so a reader can tell measurement from reasoning.
 
 **The honesty convention, suite-wide.** OXT is a GUI runtime — there is no
 headless way to compile or run `.lcb` / `.livecodescript`. Anything not observed

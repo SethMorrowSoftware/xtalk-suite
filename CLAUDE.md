@@ -237,9 +237,16 @@ same unreachable shape. **`tools/check-timer-stack-pin.py`** holds the rule that
 an unqualified control reference inside a delayed handler resolves against THE
 DEFAULTSTACK, not the stack whose script is running (engine notes 5.3): inside `openStack` those
 are the same object, which is exactly why every demo's startup status line always
-worked and every `send ... in` status line did not. The fix lives in the ui-kit
-MASTER (`uiStatus`, `uiCopyFlashReset`) and is re-carried, never patched in an
-adopter. **`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
+worked and every `send ... in` status line did not. The kit half of the fix lives
+in the ui-kit MASTER (`uiStatus`, `uiCopyFlashReset`) and is re-carried, never
+patched in an adopter. **The gate was widened on 2026-08-20 from one hop to a
+real closure** - same-file callees plus the kit, stopping at any handler that
+already pins, because below a pin the defaultStack is set - and the widening is
+the lesson: asking only "does this call an unpinned `ui*` handler?" was a check
+for the bug already found. As a closure it named 40 unpinned timer chains across
+15 files, every demo's own log/refresh/status helper reached from its poll tick;
+all 33 distinct handlers are pinned at the timer ENTRY POINT, where one line
+covers everything downstream. **`tools/sync-demo-embeds.py` / `tools/test-demo-embeds.py`** are the
 paragraph above; the fixtures exist because that tool's collision detector
 shipped blind - it required the remainder of a declaration line to be a bare
 identifier, so a `local` with a trailing comment was invisible to it and a
@@ -533,7 +540,7 @@ a gate.** `--check` proves the pasteable file is what the sources produce;
 whether the harness *reaches* anything, so a member could ship a public handler,
 never test it, and both stay green about a file that does not touch the new code.
 That gap is invisible from the inside: the harness was ~4400 lines running ~580
-checks when this was learned (35377 lines as of 2026-08-19, and the lesson still holds - and it landed again on
+checks when this was learned (36143 lines as of 2026-08-20, and the lesson still holds - and it landed again on
 2026-08-16, when box2dxt joined the gate and **211 of its Kit's 313 public
 handlers turned out never to have been named by a test**, many of them handlers
 that RUN on every existing test through `b2kStepOnce`),

@@ -399,8 +399,11 @@ still apply to any control you create beside it:
   That is the argument for the pin and for a gate over it, and it holds on documented `defaultStack`
   resolution alone: this family has not yet watched the unpinned form fail on a dated run (see the
   log entry in section 16, filed 2026-08-18 and reclassed 2026-08-19), and the pin is cheap and
-  harmless either way. GATE: `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
-  plus the shared kit handlers those targets call.
+  harmless either way. GATE: `tools/check-timer-stack-pin.py` - every `send ... to me in` target
+  and everything REACHABLE from it: a closure over the handlers in the same file plus the shared
+  kit, stopping at any handler that already pins. Widened from a one-hop kit check on 2026-08-20,
+  which found 40 unpinned timer chains across 15 files - every demo's own log/refresh helper,
+  reached from its poll tick. Pin at the timer ENTRY POINT: one line there covers the closure.
 - **A single `mouseUp` router + a "prefix:role" naming scheme** dispatches every click: parse
   `the short name of the target`, split on the delimiter, route by prefix. Disabled controls never reach
   it.
@@ -635,8 +638,10 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
            NOT reach for `if there is a field "..."` instead: the guard turns a loud chunk error
            into a status line that quietly stops updating, on the path a person is least likely to
            report. Making a bug invisible is not fixing it.
-  GATE:    `tools/check-timer-stack-pin.py` - every `send ... to me in` target, plus the shared kit
-           handlers those targets call.
+  GATE:    `tools/check-timer-stack-pin.py` - every `send ... to me in` target and everything
+           REACHABLE from it (same-file closure + the shared kit, stopping at any handler that
+           already pins). A one-hop check is a check for the bug you already found: widening it
+           on 2026-08-20 turned up 40 unpinned chains across 15 files.
 - SYMPTOM: `type conversion error` at runtime, on a GUI engine, in front of a person - in one case
            killing a poll chain and leaving the app silently dead rather than reporting anything.
   CAUSE:   confirmed on-engine (2026-08-18, on Linux): EMPTY is not a value for a DECLARED `.lcb`

@@ -307,10 +307,16 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > could actually be broken: writes ignored (both readbacks equal), writes
 > inverted, or the property unreadable.
 > **So v30 carries ONE MORE assertion than v29, and no v29 total is comparable to
-> a v30 one.** No v30 total has been observed on any platform - not Windows, not
-> Linux - so the next paste's expected number is not yet known: **verified
-> statically; needs an OXT pass**. Do not read 374 as this harness's current
-> expectation; it is v29's, and v29 is gone.
+> a v30 one.** **v30 IS NOW OBSERVED: 375/0 on Windows x86_64, 2026-08-20**,
+> folded in the suite paste - the header's 375 and the engine's now agree, so
+> that is this harness's expectation and a delta against it IS a regression. The
+> rewritten check reported what it was rewritten to report: `playLoudness is
+> readable as a number (Win32: 24->24, 73->73)`, `playLoudness tracks the write
+> (24 < 73)`, and the printed observation `playLoudness readback is EXACT on
+> Win32`. **LINUX is still unobserved at v30**, which matters more here than
+> usual: Linux is the platform where the v29 check FAILED, so the platform that
+> motivated the rewrite has not yet run the rewrite. Do not read 374 as this
+> harness's expectation; it is v29's, and v29 is gone.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has

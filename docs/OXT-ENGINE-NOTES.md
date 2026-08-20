@@ -364,14 +364,41 @@ set the defaultStack to the short name of this stack
 ```
 
 **Gate:** `tools/check-timer-stack-pin.py` - every `send ... to me in` target,
-plus the ui* kit handlers those targets call. 71 delayed handlers across 26
-files today; it found three more of these in box2dxt's games and holde-em.
-Those three - `pfCardFadeStep`, `sgCardFadeStep`, `heBetSliderFromThumb` - are
-STATIC findings, not observed failures, and nothing above argues against the
-pin: it is cheap, harmless, and defensible on documented engine semantics.
-Only the evidence label changed. Putting this entry back at OBSERVED costs one
+and everything REACHABLE from it: a closure over the handlers defined in the
+same file, plus the ui* kit master, stopping at any handler that already pins
+(below a pin the defaultStack is set, so following through would name a hazard
+that cannot happen). 75 delayed handlers across 26 files today.
+
+**WIDENED 2026-08-20, and the widening is the point.** Until then it asked one
+question - "does this armed handler call an unpinned ui* handler?" - which is a
+check for the bug already found, since the ui-kit fix had closed exactly that
+hop. It knew about ONE carried block and never asked the same question about
+anything else, including the other one: the suite core's `stPump` is armed by
+`send "stPump" to me in 33 milliseconds` and calls `stShow`, which writes
+`field "stResults"` unqualified; the gate read stPump's own body, found no
+control reference, checked the kit list, and passed. As a closure it found **40
+unpinned timer chains across 15 files** - every demo's own log / refresh /
+status helper, reached from its poll or dashboard tick. All 33 distinct
+handlers are pinned now, at the timer entry point, which is where the ambiguity
+starts and where one line covers everything downstream.
+
+Those 40 are STATIC findings, like the three (`pfCardFadeStep`,
+`sgCardFadeStep`, `heBetSliderFromThumb`) the narrower gate had found before
+them - not observed failures. Nothing above argues against the pin: it is
+cheap, harmless, and defensible on documented engine semantics. Only the
+evidence label changed. Putting this entry back at OBSERVED costs one
 deliberate run - open a second stack in front and let a `send ... in` handler
 write an unqualified `field "uiStatus"` - and that run gets its own date.
+
+**A near miss worth recording, because it is how this entry could have gone
+wrong a second time.** On 2026-08-20 two Windows pastes of the suite harness
+ended mid-CROSS-section, and a first-tick throw in `stShow` fitted the evidence
+exactly: the report would freeze at precisely the last synchronous render,
+which is what both looked like. That diagnosis was written up as fact and was
+wrong - the third run, same build, completed 1981/0/1 through both loopbacks,
+teardown and the summary; the first two were copied before the async half
+finished. A mechanism that explains the symptom is not an observation of it,
+which is the same distinction the 2026-08-19 correction above turns on.
 
 ### 5.4 `the playLoudness` does not read back exactly on every platform
 **OBSERVED 2026-08-18 on LINUX.** box2dxt's harness did
@@ -387,6 +414,17 @@ not known** - the check reported nothing but its own name, so a scarce engine
 session yielded "some number is not 73". The harness now probes two points and
 prints both, so the next pass on any platform reports the scale instead of
 re-asking; do not promote a mechanism into this entry until it does.
+
+**HALF ANSWERED 2026-08-20 (Windows).** The two-point probe ran folded at
+harness v30 and reported `playLoudness is readable as a number (Win32: 24->24,
+73->73)` with the third line `playLoudness readback is EXACT on Win32`. So the
+Windows half of the original discrepancy is now positively characterised rather
+than merely green: the value round-trips unchanged there. **Linux is still
+unmeasured by the new probe** - the entry's whole reason for existing is the
+platform where it did NOT round-trip, and that run has not happened since the
+check was rewritten. The rule below stands unchanged until it does: one platform
+reporting exact readback is not a property of the engine, it is a property of
+that platform.
 
 **Rule:** `playLoudness` is a request, not a register. Set it and move on; do
 not read it back and compare against what you wrote, and do not compute from
