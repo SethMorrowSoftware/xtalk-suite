@@ -846,6 +846,8 @@ end uiFooter
 on openStack
    wxBuild
    wxStart
+   -- LAST, not first: the check reads the state wxStart establishes.
+   wxScRun
 end openStack
 
 on closeStack
@@ -1797,3 +1799,222 @@ end wxRandomNonce
 function wxTrim pText
    return word 1 to -1 of pText
 end wxTrim
+
+-- ---- the boot self-check ------------------------------------------------------
+-- The plumbing is CARRIED (master: tools/demo-selfcheck.livecodescript; gate:
+-- tools/check-demo-selfcheck-drift.py). What this file owns is the list of
+-- assertions below - what is true about THIS demo at boot.
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
+command scBegin pLogField
+   put pLogField into sScLogField
+   put empty into sScLines
+   put 0 into sScPassed
+   put 0 into sScFailed
+   put 0 into sScSkipped
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
+
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
+   end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
+
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      if there is no field tName and there is no button tName then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
+         & "below it is the end of the block"
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
+
+-- THE ONE CHECK THAT NEEDS A TIMER.
+--
+-- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
+-- handler resolves against THE DEFAULTSTACK, not the stack whose script is
+-- running - and that entry is classed DOCUMENTED, not OBSERVED, because this
+-- tree has never actually watched the unpinned form fail. It also names the run
+-- that would settle it: open a second stack in front and let a `send ... in`
+-- handler write an unqualified field.
+--
+-- So this probe READS the defaultStack before pinning and PRINTS what it found.
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
+   local tWas, tPrev, tPrevColor, tGot, tErr
+   put the defaultStack into tWas
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
+   end if
+   -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
+   -- handing it back "ok" would repaint a "bad" line green - so a stack whose
+   -- extension is missing would end this probe claiming to be fine.
+   put field "uiStatus" into tPrev
+   put the foregroundColor of field "uiStatus" into tPrevColor
+   try
+      uiStatus kScProbe, empty
+      put field "uiStatus" into tGot
+   catch tErr
+      put "THREW:" && tErr into tGot
+   end try
+   uiStatus tPrev, empty
+   set the foregroundColor of field "uiStatus" to tPrevColor
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
+
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+         & sScSkipped & " skipped - select this block and copy it into the " \
+         & "OXT pass record"
+   if sScFailed is 0 then
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
+   else
+      scLine "      boot self-check has FAILURES above - report them before " \
+            & "running any live leg"
+   end if
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
+
+-- Every control name this script references, derived from the source rather
+-- than hand-picked: a subset would go stale the first time somebody renames
+-- one, and a missing control is not cosmetic - it is the "Chunk: error in
+-- object expression" class, found at boot instead of when somebody clicks.
+constant kWxScControls = "uiFooter,uiStatus,uiTitle,wxAgain,wxCode,wxDrop,wxHost,wxIce,wxJoin,wxLog,wxMsg,wxName"
+
+command wxScRun
+   local tMissing, tVer, tState, tGather, tBytes, tPollErr, tErr, tPort
+   scBegin "wxLog"
+   put scMissing(kWxScControls) into tMissing
+   scAssert "all 12 controls this script names exist (missing: " \
+         & scShow(tMissing) & ")", (tMissing is empty)
+
+   -- Nothing may be live at boot. A surviving peer or channel would hold a UDP
+   -- port and its threads while the UI claims to be idle.
+   scAssert "no peer connection at boot (sPeer is " & scShow(sPeer) & ")", \
+         (sPeer is empty or sPeer is 0)
+   scAssert "no data channel at boot (sChan is " & scShow(sChan) & ")", \
+         (sChan is empty or sChan is 0)
+   scAssert "the phase machine starts idle (got " & scShow(sPhase) & ")", \
+         (sPhase is "idle")
+
+   if sHaveDc is not "true" then
+      scSkip "the datachannelxt surface and the carried helpers layer", \
+            "the extension is not installed"
+   else
+      put dcLibraryVersion() into tVer
+      scAssert "dcLibraryVersion names libdatachannel (" & tVer & ")", \
+            (tVer contains "libdatachannel")
+      put dcPeerState(0) into tState
+      scAssert "dcPeerState(0) is -1 for a stale handle (got " & tState & ")", \
+            (tState is -1)
+      put dcLastError() into tErr
+      scAssert "dcLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+      -- The helpers layer this file CARRIES: a demo running a stale copy of the
+      -- library its own poll pump depends on is what the embedding prevents.
+      put dcStateName(0) into tState
+      scAssert "dcStateName(0) is new (got " & scShow(tState) & ")", (tState is "new")
+      put dcGatheringName(0) into tGather
+      scAssert "dcGatheringName(0) answers (got " & scShow(tGather) & ")", \
+            (tGather is not empty)
+      put dcFormatBytes(0) into tBytes
+      scAssert "dcFormatBytes(0) answers (got " & scShow(tBytes) & ")", \
+            (tBytes is not empty)
+      put dcPollLastError() into tPollErr
+      scAssert "the dc poll pump reports no error (" & scShow(tPollErr) & ")", \
+            (tPollErr is empty)
+   end if
+
+   -- The DHT half. This demo needs BOTH members: datachannelxt carries the
+   -- media, torrentxt carries the signaling that introduces the two peers.
+   if sHaveBt is not "true" or sSession is empty or sSession is 0 then
+      scSkip "the torrentxt DHT that carries the signaling", \
+            "no session - the extension is absent, or another TorrentXT stack " \
+            & "holds THE session (runbook trap 5.1)"
+   else
+      put btListenPort(sSession) into tPort
+      scAssert "the session is listening (handle " & scShow(sSession) \
+            & ", port " & scShow(tPort) & ")", (tPort > 0)
+      put btLastError() into tErr
+      scAssert "btLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+      scAssert "the demo's own poll loops are armed", (sChatPolling is "true")
+   end if
+   scArmProbe
+end wxScRun

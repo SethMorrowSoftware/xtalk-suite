@@ -287,6 +287,13 @@ if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
   python3 tools/check-harness-scaffold-drift.py
 fi
+# The fourth carried block: the demos' boot self-check. Registered here in the
+# same change that created it, because a drift gate nobody runs is the shape
+# this file's own history keeps warning about.
+if [ -f tools/check-demo-selfcheck-drift.py ]; then
+  echo "== suite: tools/check-demo-selfcheck-drift.py =="
+  python3 tools/check-demo-selfcheck-drift.py
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal

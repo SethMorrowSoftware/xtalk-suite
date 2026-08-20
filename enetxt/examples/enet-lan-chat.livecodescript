@@ -303,14 +303,6 @@ local sReady            -- "true" once hosting/joined and (client) connected
 local sHaveEn           -- "true" once the extension probe succeeded
 local sDashOn           -- "true" while the 1 Hz dashboard chain may reschedule
 
--- ---- the boot self-check's own state -----------------------------------------
--- The sentinel is a CONSTANT so the probe compares against one spelling; a
--- literal repeated at the write and the read is a check that can pass while
--- disagreeing with itself.
-constant kEcScProbe = "self-check: delayed write reached the status line"
-local sScLines          -- the accumulated PASS/FAIL/SKIP block
-local sScPassed, sScFailed, sScSkipped
-
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
 -- control construction; the adopting demo owns layout (explicit rects) and
@@ -1113,104 +1105,103 @@ function ecTrim pText
 end ecTrim
 
 -- ---- the boot self-check ------------------------------------------------------
--- WHY A DEMO ASSERTS ANYTHING AT ALL. Until 2026-08-20 an engine pass of this
--- stack produced a human judgement - "the window built, it looked right" - and
--- no honesty label can quote that. The suite paste settles ~1,980 checks in one
--- run because it PRINTS; a demo settled nothing recordable, which made the
--- fleet-wide demo re-pass the most expensive engine time in the project and the
--- least recoverable. These lines are the same claim in a pasteable form.
---
--- NON-DESTRUCTIVE, ON PURPOSE. Nothing here hosts, connects, or binds a port. A
--- self-check that took 27099 would be indistinguishable from a demo that could
--- not get it, and the person running this is about to press Host for real.
--- Everything below is pure compute, a stale-handle no-op, or a read.
---
--- It runs on every open, not behind a button, because the run we care about is
--- the one somebody does anyway.
-command ecScRun
+-- The plumbing is CARRIED (master: tools/demo-selfcheck.livecodescript; gate:
+-- tools/check-demo-selfcheck-drift.py). What this file owns is the list of
+-- assertions below - what is true about THIS demo at boot.
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
+command scBegin pLogField
+   put pLogField into sScLogField
    put empty into sScLines
    put 0 into sScPassed
    put 0 into sScFailed
    put 0 into sScSkipped
-   ecScLine "== boot self-check (nothing is hosted, connected, or bound) =="
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
 
-   -- 1. THE WINDOW. Every one of these is named by a handler below - ecLog by
-   -- ecLog, ecMsg by ecSendLine, ecAddr by ecJoin, ecName by ecHost/ecJoin,
-   -- uiStatus by the kit. A missing one is not cosmetic: it is the
-   -- "Chunk: error in object expression" class, and finding it at boot beats
-   -- finding it when a person clicks Send.
-   ecScAssert "field ecLog exists (this log)", (there is a field "ecLog")
-   ecScAssert "field ecMsg exists (ecSendLine reads it)", (there is a field "ecMsg")
-   ecScAssert "field ecAddr exists (ecJoin reads it)", (there is a field "ecAddr")
-   ecScAssert "field ecName exists (both roles read it)", (there is a field "ecName")
-   ecScAssert "field uiStatus exists (the kit's status line)", \
-         (there is a field "uiStatus")
-   ecScAssert "the four buttons exist (Host / Join / Leave / Send)", \
-         (there is a button "ecHost" and there is a button "ecJoin" \
-          and there is a button "ecLeave" and there is a button "ecSend")
-
-   -- 2. STATE AT BOOT. ecStart must leave nothing live: a handle here means a
-   -- previous run leaked one, and on a re-opened stack that is exactly how a
-   -- port stays held while the UI claims to be Ready.
-   ecScAssert "no host handle at boot (sHost is " & ecScShow(sHost) & ")", \
-         (sHost is empty or sHost is 0)
-   ecScAssert "no peers at boot", (sPeers is empty)
-   ecScAssert "the 1 Hz dashboard chain is armed", (sDashOn is "true")
-
-   -- 3. THE EXTENSION. SKIP, never FAIL, when it is absent - a missing member
-   -- is an environment, and the family convention is that only a present-and-
-   -- broken member fails.
-   if sHaveEn is not "true" then
-      ecScSkip "enetxt surface", "the extension is not installed"
-      ecScSkip "the embedded enet-helpers layer", "no extension to poll"
-   else
-      ecScRunEnet
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
    end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
 
-   -- 4. The delayed-write probe finishes the report; see ecScTickProbe. 400ms
-   -- lands it before the dashboard's first 800ms tick, so nothing races for the
-   -- status line.
-   --
-   -- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness now
-   -- carries a RUN NOT FINISHED trailer: a report that simply stops reads
-   -- exactly like a report that ended, and the difference cost that harness a
-   -- round trip on 2026-08-19. One line is cheaper than the ambiguity.
-   ecScLine "      ...one delayed-write check still to come; the count line " \
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      if there is no field tName and there is no button tName then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
          & "below it is the end of the block"
-   send "ecScTickProbe" to me in 400 milliseconds
-end ecScRun
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
 
--- The extension half, split out only so ecScRun above reads as a list.
-command ecScRunEnet
-   local tVer, tRc, tName, tBytes, tPollErr
-
-   put enLibraryVersion() into tVer
-   ecScAssert "enLibraryVersion names enet (" & tVer & ")", \
-         (tVer contains "enet")
-   -- The one destructive-looking call that is not: handle 0 is never live, and
-   -- the shim's contract is that a stale handle is a harmless no-op. Asserting
-   -- it here proves the binding is reached at all, without touching our own.
-   put enHostDestroy(0) into tRc
-   ecScAssert "enHostDestroy(0) is a harmless no-op (got " & tRc & ")", (tRc is 0)
-   ecScAssert "enLastError is empty after a clean boot (" \
-         & ecScShow(enLastError()) & ")", (enLastError() is empty)
-
-   -- The embedded helpers layer, which this file CARRIES (sync-demo-embeds.py).
-   -- If these disagree, the demo is running a stale copy of the library its own
-   -- poll pump depends on - the exact failure the embedding exists to prevent.
-   put enStateName(0) into tName
-   ecScAssert "enStateName(0) is disconnected (got " & ecScShow(tName) & ")", \
-         (tName is "disconnected")
-   put enFormatBytes(0) into tBytes
-   ecScAssert "enFormatBytes(0) answers (got " & ecScShow(tBytes) & ")", \
-         (tBytes is not empty)
-   put enPollLastError() into tPollErr
-   ecScAssert "the poll pump reports no error (" & ecScShow(tPollErr) & ")", \
-         (tPollErr is empty)
-end ecScRunEnet
-
--- THE ONE CHECK THAT NEEDS A TIMER, and the reason this file gets a self-check
--- before the other demos.
+-- THE ONE CHECK THAT NEEDS A TIMER.
 --
 -- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
 -- handler resolves against THE DEFAULTSTACK, not the stack whose script is
@@ -1220,84 +1211,95 @@ end ecScRunEnet
 -- handler write an unqualified field.
 --
 -- So this probe READS the defaultStack before pinning and PRINTS what it found.
--- On a normal run that line is just context. On a run with another window in
--- front it is the measurement 5.3 is missing, taken for free and at no risk,
--- because the pin goes in immediately afterwards and the write is verified.
-command ecScTickProbe
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
    local tWas, tPrev, tPrevColor, tGot, tErr
    put the defaultStack into tWas
-   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
-   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
    set the defaultStack to the short name of this stack
    if there is no field "uiStatus" then
-      ecScSkip "a delayed handler can write the status line", \
-            "the chrome is not built"
-      ecScFinish
-      exit ecScTickProbe
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
    end if
    -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
    -- handing it back "ok" would repaint a "bad" line green - so a stack whose
-   -- extension is missing would end this probe claiming to be fine. Reading the
-   -- colour back and writing it is exact and costs two lines.
+   -- extension is missing would end this probe claiming to be fine.
    put field "uiStatus" into tPrev
    put the foregroundColor of field "uiStatus" into tPrevColor
    try
-      uiStatus kEcScProbe, empty
+      uiStatus kScProbe, empty
       put field "uiStatus" into tGot
    catch tErr
       put "THREW:" && tErr into tGot
    end try
    uiStatus tPrev, empty
    set the foregroundColor of field "uiStatus" to tPrevColor
-   ecScAssert "a delayed handler writes the status line " \
-         & "(defaultStack on entry: " & ecScShow(tWas) & ")", \
-         (tGot is kEcScProbe)
-   ecScFinish
-end ecScTickProbe
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
 
--- ---- the self-check's plumbing ------------------------------------------------
-command ecScAssert pName, pOk
-   if pOk then
-      add 1 to sScPassed
-      ecScLine "PASS  " & pName
-   else
-      add 1 to sScFailed
-      ecScLine "FAIL  " & pName
-   end if
-end ecScAssert
-
-command ecScSkip pName, pReason
-   add 1 to sScSkipped
-   ecScLine "SKIP  " & pName & " (" & pReason & ")"
-end ecScSkip
-
--- Each line is LOGGED as it is made, not accumulated and flushed at the end.
--- The first draft did both - a flush after the synchronous half and another
--- after the probe - which printed every synchronous line twice. sScLines is
--- still kept whole so a Copy button has something to hand to the clipboard.
-command ecScLine pText
-   put pText & return after sScLines
-   ecLog pText
-end ecScLine
-
--- An empty value prints as nothing, which reads as a missing check rather than
--- an answer of empty; every observed value in this block goes through here.
-function ecScShow pValue
-   if pValue is empty then
-      return "empty"
-   end if
-   return pValue
-end ecScShow
-
-command ecScFinish
-   ecScLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
          & sScSkipped & " skipped - select this block and copy it into the " \
          & "OXT pass record"
    if sScFailed is 0 then
-      ecScLine "      boot self-check GREEN; the two-machine legs are what is " \
-            & "left (runbook item 6)"
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
    else
-      ecScLine "      boot self-check has FAILURES above - report them before " \
-            & "running the two-machine leg"
+      scLine "      boot self-check has FAILURES above - report them before " \
+            & "running any live leg"
    end if
-end ecScFinish
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
+
+-- Every control name this script references, derived from the source rather
+-- than hand-picked: a subset would go stale the first time somebody renames
+-- one, and a missing control is not cosmetic - it is the "Chunk: error in
+-- object expression" class, found at boot instead of when somebody clicks.
+constant kEcScControls = "ecAddr,ecHost,ecJoin,ecLeave,ecLog,ecMsg,ecName,ecSend,uiFooter,uiStatus,uiTitle"
+
+command ecScRun
+   local tMissing, tVer, tRc, tName, tBytes, tPollErr, tErr
+   scBegin "ecLog"
+   put scMissing(kEcScControls) into tMissing
+   scAssert "all 11 controls this script names exist (missing: " \
+         & scShow(tMissing) & ")", (tMissing is empty)
+
+   -- A live handle here means the previous run leaked one, and on a re-opened
+   -- stack that is exactly how port 27099 stays held while the UI says Ready.
+   scAssert "no host handle at boot (sHost is " & scShow(sHost) & ")", \
+         (sHost is empty or sHost is 0)
+   scAssert "no peers at boot", (sPeers is empty)
+   scAssert "the 1 Hz dashboard chain is armed", (sDashOn is "true")
+
+   if sHaveEn is not "true" then
+      scSkip "the enetxt surface and the carried enet-helpers layer", \
+            "the extension is not installed"
+   else
+      put enLibraryVersion() into tVer
+      scAssert "enLibraryVersion names enet (" & tVer & ")", (tVer contains "enet")
+      -- The one destructive-looking call that is not: handle 0 is never live,
+      -- and the shim's contract is that a stale handle is a harmless no-op.
+      put enHostDestroy(0) into tRc
+      scAssert "enHostDestroy(0) is a harmless no-op (got " & tRc & ")", (tRc is 0)
+      put enLastError() into tErr
+      scAssert "enLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+      -- The helpers layer this file CARRIES. If these disagree, the demo is
+      -- running a stale copy of the library its own poll pump depends on -
+      -- the exact failure the embedding exists to prevent.
+      put enStateName(0) into tName
+      scAssert "enStateName(0) is disconnected (got " & scShow(tName) & ")", \
+            (tName is "disconnected")
+      put enFormatBytes(0) into tBytes
+      scAssert "enFormatBytes(0) answers (got " & scShow(tBytes) & ")", \
+            (tBytes is not empty)
+      put enPollLastError() into tPollErr
+      scAssert "the poll pump reports no error (" & scShow(tPollErr) & ")", \
+            (tPollErr is empty)
+   end if
+   scArmProbe
+end ecScRun
