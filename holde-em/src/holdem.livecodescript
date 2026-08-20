@@ -3906,6 +3906,9 @@ on heNetPollTick
    -- the bring-up state machine plus the stream-buffer drain -- guarded the
    -- same way, and the re-arm below ALWAYS runs either way.
    local tEvents, tEv, tPollErr
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["online"] is not "true" then
       exit heNetPollTick
    end if
@@ -6197,6 +6200,9 @@ on heNetNextHandTick
    -- it was parked from the between-hands pause or straight from
    -- heNetStartGame -- the phase-only guard let the re-armed beat die on its
    -- first firing in the second case, and the table could never resume.
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["online"] is not "true" or gGame["isHost"] is not "true" then
       exit heNetNextHandTick
    end if
@@ -9468,6 +9474,9 @@ end hePaceMs
 on heRevealStep
    -- guarded against stale sends (playbook: defer world changes, then gate on
    -- our own phase lock so a Deal/new-hand cannot let a late reveal double-fire)
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["phase"] is not "reveal" then
       exit heRevealStep
    end if
@@ -9514,6 +9523,9 @@ end heScheduleRunout
 
 on heRunoutStep
    local tStateA
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["phase"] is not "runout" then
       exit heRunoutStep
    end if
@@ -9573,6 +9585,9 @@ end heScheduleShowdown
 
 on heSettleStep
    -- guarded against stale sends: only the showdown we set up may settle
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["phase"] is not "showdown" then
       exit heSettleStep
    end if
@@ -9604,6 +9619,9 @@ end heHandSettle
 
 on heNextHandTick
    -- guarded against stale sends (playbook: defer world changes, then gate)
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gGame["phase"] is not "between" then
       exit heNextHandTick
    end if
@@ -11760,6 +11778,9 @@ command heHudMark
 end heHudMark
 
 on heHudTick
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gHudTickOn is not true then
       exit heHudTick
    end if

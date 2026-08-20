@@ -2710,6 +2710,9 @@ end cpSay
 -- orphan the session (trap 5.1.1).
 command cpPump
    local tEvents, tEvent, tErr
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sPolling is not "true" then
       exit cpPump
    end if
@@ -3028,6 +3031,9 @@ end cpBStart
 -- tries; the definitive FAIL arrives as an enetDisconnect with no prior
 -- enetConnect.
 command cpBCheckStuck
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sEnRole is not "join" or sEnConnected is "true" then
       exit cpBCheckStuck
    end if
@@ -3489,6 +3495,9 @@ end cpFLaunch
 -- connect until it authenticates, and give up loudly rather than forever.
 command cpFConnect
    local tR
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if oxIsControlAuthenticated() then
       exit cpFConnect
    end if

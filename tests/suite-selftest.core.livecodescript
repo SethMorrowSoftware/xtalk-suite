@@ -196,6 +196,8 @@ constant kStHeight = 640
 -- hand-maintained file; renaming there would touch a shipped library and
 -- re-carry its six embedded copies for this file's convenience.
 local sAsyncRunning
+-- Set once, the first time a render inside the pump throws. See stPump.
+local sRenderNoted
 
 -- probe results (one flag per member; "reason" strings carry the SKIP note)
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
@@ -404,6 +406,24 @@ function stReportText
 end stReportText
 
 command stShow
+   -- PIN THE STACK, AND FAIL CLOSED IF THE WINDOW IS NOT THERE. An unqualified
+   -- `field "stResults"` resolves against THE DEFAULTSTACK, not against the
+   -- stack whose script is running (OXT-ENGINE-NOTES 5.3). Inside openStack
+   -- those are the same object, which is why the synchronous half of every run
+   -- has always rendered. This handler is ALSO called from an async pump, on a
+   -- `send ... in` tick, where they are not: with another window in front the
+   -- write would throw "Chunk: error in object expression", and in the suite
+   -- core that throw lands in stPump, which is where the timer re-arms.
+   -- PRECAUTIONARY, NOT DIAGNOSED. It was written on 2026-08-20 while chasing
+   -- two engine reports that ended mid-CROSS-section, and that was the wrong
+   -- cause: the third run, same build, completed 1981/0/1 through both
+   -- loopbacks and the summary. Those two were early Copies, which is what the
+   -- trailer in stReportText now says out loud. What stands on its own is the
+   -- hazard class - engine-observed in enet-lan-chat's ecDashOnce on
+   -- 2026-08-18 - and the fact that this is the same fault, and the same fix,
+   -- as the ui-kit's uiStatus, one carried block over.
+   set the defaultStack to the short name of this stack
+   if there is no field "stResults" then exit stShow
    put stReportText() into field "stResults"
    put sPassed & " passed, " & sFailed & " failed, " & sSkipped & " skipped, " \
          & sTotal & " total" into field "stSummary"
@@ -419,6 +439,10 @@ end stShow
 -- paint the results list: red FAIL, green PASS, amber SKIP, muted the rest
 command stPaint
    local tN, tI, tLine, tErr
+   -- Pinned for the reason stShow above is: stReportDone calls this one too,
+   -- and an async harness reaches stReportDone from a timer tick.
+   set the defaultStack to the short name of this stack
+   if there is no field "stResults" then exit stPaint
    put the number of lines of field "stResults" into tN
    lock screen
    try
@@ -1779,7 +1803,36 @@ command stPump
       exit stPump
    end if
 
-   stShow
+   -- THE RE-ARM IS THE ONE STATEMENT THAT MUST ALWAYS BE REACHED, and until
+   -- 2026-08-20 the render above it was the only thing in this handler that
+   -- was not contained. The comment at the top of stPump already had the whole
+   -- argument - a throw out of the pump breaks the timer chain, so nothing
+   -- ever reaches stFinish and the hosts, peers and libtorrent session leak -
+   -- and it had been applied to the two poll blocks and not to this line.
+   -- stShow writes `field "stResults"` unqualified, which resolves against the
+   -- DEFAULTSTACK (engine notes 5.3); on a `send ... in` tick that is not
+   -- guaranteed to be this stack, so the write can throw.
+   --
+   -- NOT A POST-MORTEM. Two 2026-08-20 engine reports ended mid-CROSS-section
+   -- and this was the shape that fit: a first-tick throw here would freeze the
+   -- report at exactly the last synchronous render, which is what both looked
+   -- like. It was wrong - the third run, same build, completed 1981/0/1
+   -- through both loopbacks, teardown and the summary; the first two were
+   -- copied before the async half finished. The containment stays because the
+   -- reasoning at the top of this handler always applied to this line and had
+   -- only ever been applied to the two poll blocks, and because a report is
+   -- assembled in a variable: losing a render must never cost the run.
+   try
+      stShow
+   catch tError
+      if sRenderNoted is not "true" then
+         put "true" into sRenderNoted
+         stAssert "the report rendered from the pump", false
+         stNote "it raised:" && tError
+         stNote "the run continues; the report is assembled in a variable and"
+         stNote "does not depend on the field it failed to write"
+      end if
+   end try
    send "stPump" to me in 33 milliseconds
 end stPump
 

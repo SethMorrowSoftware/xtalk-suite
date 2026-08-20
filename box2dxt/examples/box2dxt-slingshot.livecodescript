@@ -753,6 +753,9 @@ command sgLevelClear
 end sgLevelClear
 
 command sgNextLevel
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if gMode is not "clear" then exit sgNextLevel   -- an R beat us here
    if gLevel >= 3 then
       sgShowWin
