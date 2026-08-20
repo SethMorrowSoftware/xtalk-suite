@@ -2108,12 +2108,32 @@ command stStartEnetLoopback
    -- handle rule, spot-checked (the member selftest covers the whole surface).
    stAssert "enHostDestroy(0) is a harmless no-op", enHostDestroy(0) is 0
 
+   -- A HELD PORT IS AN ENVIRONMENT, NOT A DEFECT, and until 2026-08-20 this
+   -- section said otherwise. It asserted the bind FIRST and only then noticed
+   -- the port was taken, so a machine where something already holds
+   -- kStPortEnet reported a red FAIL and then, one line later, explained that
+   -- it was skipping. The commonest cause is the most innocent one: a previous
+   -- run of this harness in the SAME OXT process still owns the socket, which
+   -- is exactly what a maintainer re-pasting the file does all day. Reporting
+   -- that as a failure sends somebody to look for a bug in enetxt.
+   --
+   -- The bind is now PROBED and skipped; only the client host - which needs no
+   -- port at all, and so cannot be blocked by the environment - keeps a hard
+   -- assertion. That distinction is the whole point: one of these can be
+   -- somebody else's socket, and the other cannot.
    put enHostCreateServer("127.0.0.1", kStPortEnet, 4, 2, 0, 0) into sEnServer
+   if sEnServer <= 0 then
+      stSkip "enetxt loopback", "UDP port " & kStPortEnet & " is already held" && \
+            "(usually a previous run of this harness in the same OXT process -" && \
+            "reopen OXT and re-paste to clear it). The loopback needs that port," && \
+            "so this section skips; enetxt itself is not implicated."
+      put "failed" into sPhaseEn
+      exit stStartEnetLoopback
+   end if
    stAssert "enet server host bound", sEnServer > 0
    put enHostCreateClient(1, 2, 0, 0) into sEnClient
    stAssert "enet client host created", sEnClient > 0
-   if sEnServer <= 0 or sEnClient <= 0 then
-      stNote "UDP port " & kStPortEnet & " may already be held; skipping the loopback"
+   if sEnClient <= 0 then
       put "failed" into sPhaseEn
       exit stStartEnetLoopback
    end if
