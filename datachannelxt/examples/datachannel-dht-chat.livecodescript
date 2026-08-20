@@ -1955,13 +1955,13 @@ end scFinish
 -- than hand-picked: a subset would go stale the first time somebody renames
 -- one, and a missing control is not cosmetic - it is the "Chunk: error in
 -- object expression" class, found at boot instead of when somebody clicks.
-constant kWxScControls = "uiFooter,uiStatus,uiTitle,wxAgain,wxCode,wxDrop,wxHost,wxIce,wxJoin,wxLog,wxMsg,wxName"
+constant kWxScControls = "uiFooter,uiStatus,uiTitle,wxAgain,wxCode,wxCodeCap,wxCopy,wxDrop,wxHost,wxIce,wxIceCap,wxJoin,wxLog,wxMsg,wxName,wxNameCap,wxSend,wxTagline"
 
 command wxScRun
    local tMissing, tVer, tState, tGather, tBytes, tPollErr, tErr, tPort
    scBegin "wxLog"
    put scMissing(kWxScControls) into tMissing
-   scAssert "all 12 controls this script names exist (missing: " \
+   scAssert "all 18 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    -- Nothing may be live at boot. A surviving peer or channel would hold a UDP

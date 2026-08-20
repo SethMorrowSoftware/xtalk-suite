@@ -1259,13 +1259,13 @@ end scFinish
 -- than hand-picked: a subset would go stale the first time somebody renames
 -- one, and a missing control is not cosmetic - it is the "Chunk: error in
 -- object expression" class, found at boot instead of when somebody clicks.
-constant kEcScControls = "ecAddr,ecHost,ecJoin,ecLeave,ecLog,ecMsg,ecName,ecSend,uiFooter,uiStatus,uiTitle"
+constant kEcScControls = "ecAddr,ecAddrCap,ecHost,ecJoin,ecLeave,ecLog,ecMsg,ecName,ecNameCap,ecSend,ecTagline,uiFooter,uiStatus,uiTitle"
 
 command ecScRun
    local tMissing, tVer, tRc, tName, tBytes, tPollErr, tErr
    scBegin "ecLog"
    put scMissing(kEcScControls) into tMissing
-   scAssert "all 11 controls this script names exist (missing: " \
+   scAssert "all 14 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    -- A live handle here means the previous run leaked one, and on a re-opened

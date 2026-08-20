@@ -44,6 +44,13 @@ ADOPTERS = {
                  "torrent-rp1-chat.livecodescript"): "rc",
     os.path.join("torrentxt", "examples",
                  "torrent-dht-channels.livecodescript"): "ch",
+    os.path.join("torrentxt", "examples",
+                 "torrent-client.livecodescript"): "tc",
+    os.path.join("torrentxt", "examples",
+                 "torrent-quickshare.livecodescript"): "qs",
+    os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"): "qs",
+    os.path.join("datachannelxt", "examples",
+                 "datachannel-loopback.livecodescript"): "lb",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "
@@ -96,9 +103,13 @@ def main():
         elif "scBegin" not in text:
             problems.append("%s: defines %s but never calls scBegin - the "
                             "block would ship and report nothing" % (rel, run))
-        if not re.search(r"^on openStack\b[\s\S]{0,600}?\b%s\b" % run,
+        # EITHER lifecycle hook. Three demos build their window in
+        # preOpenStack and never define openStack at all; requiring the one
+        # spelling would have kept the block out of them for no reason.
+        if not re.search(r"^on (?:pre)?[oO]penStack\b[\s\S]{0,600}?\b%s\b" % run,
                          text, re.M):
-            problems.append("%s: %s is never reached from openStack" % (rel, run))
+            problems.append("%s: %s is never reached from openStack or "
+                            "preOpenStack" % (rel, run))
 
     for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.livecodescript"),
                                  recursive=True)):

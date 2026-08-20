@@ -6809,13 +6809,13 @@ end scFinish
 -- than hand-picked: a subset would go stale the first time somebody renames
 -- one, and a missing control is not cosmetic - it is the "Chunk: error in
 -- object expression" class, found at boot instead of when somebody clicks.
-constant kChScControls = "chAddMagnet,chAnon,chChannelMenu,chCopyKey,chCopyMag,chDelChan,chDownload,chDropResult,chFeedCaption,chFetchBtn,chFetchCode,chFiles,chFilesCaption,chFilesHeader,chFollow,chFollowKey,chHelp,chLock,chLog,chMagnetField,chMyKey,chMyKeyLabel,chNewChan,chNowPub,chOpenFolder,chPauseXfer,chPickCap,chPin,chPinCode,chPinCopy,chPinText,chPrivacy,chPublish,chRefresh,chRemoveXfer,chRename,chResumeXfer,chSubs,chSubsHeader,chTor,chUnfollow,chXferHeader,chXfers,uiFooter,uiStatus,uiTitle"
+constant kChScControls = "chAddMagnet,chAnon,chCardBottom,chCardLeft,chCardRight,chChannelMenu,chCopyKey,chCopyMag,chDelChan,chDownload,chDropResult,chFeedCaption,chFetchBtn,chFetchCode,chFiles,chFilesCaption,chFilesHeader,chFollow,chFollowKey,chHelp,chLock,chLog,chMagnetField,chMyKey,chMyKeyLabel,chNewChan,chNowPub,chOpenFolder,chPauseXfer,chPickCap,chPin,chPinCode,chPinCopy,chPinText,chPrivacy,chPublish,chRefresh,chRemoveXfer,chRename,chResumeXfer,chSecDrop,chSecMine,chSecSubs,chSecXfer,chSubs,chSubsHeader,chTor,chUnfollow,chXferHeader,chXfers,uiFooter,uiStatus,uiTitle"
 
 command chScRun
    local tMissing, tPort, tErr
    scBegin "chLog"
    put scMissing(kChScControls) into tMissing
-   scAssert "all 46 controls this script names exist (missing: " \
+   scAssert "all 53 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    if sSession is empty or sSession is 0 then

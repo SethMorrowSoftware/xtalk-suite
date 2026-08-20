@@ -955,13 +955,13 @@ end scFinish
 -- than hand-picked: a subset would go stale the first time somebody renames
 -- one, and a missing control is not cosmetic - it is the "Chunk: error in
 -- object expression" class, found at boot instead of when somebody clicks.
-constant kRcScControls = "rcJoin,rcLog,rcMsg,rcName,rcRoom,uiFooter,uiStatus,uiTitle"
+constant kRcScControls = "rcJoin,rcLog,rcMsg,rcName,rcNameCap,rcRoom,rcRoomCap,rcSend,rcTagline,uiFooter,uiStatus,uiTitle"
 
 command rcScRun
    local tMissing, tPort, tErr, tCount
    scBegin "rcLog"
    put scMissing(kRcScControls) into tMissing
-   scAssert "all 8 controls this script names exist (missing: " \
+   scAssert "all 12 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    scAssert "not joined to a room at boot (sRoomId is " & scShow(sRoomId) & ")", \
