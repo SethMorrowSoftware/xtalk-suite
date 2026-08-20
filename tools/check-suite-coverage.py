@@ -233,6 +233,30 @@ MEMBERS = [
     # riptide is the capstone APP, not an extension, but its rs* surface is a
     # public API its folded harness must reach, so it rides the same ratchet.
     ("riptide", "rs", ["riptide/src/riptide.livecodescript"]),
+    # THE TWO POLL DISPATCHERS ARE NOT HERE, AND A ROW WOULD LIE (2026-08-19).
+    # enetxt/examples/enet-helpers.livecodescript and its datachannelxt twin are
+    # SHIPPED libraries - the layer every demo drives and every doc teaches -
+    # and the enetxt/datachannelxt rows below scope to src/, so this gate has
+    # never seen their 15 public handlers. Measured before anything was done
+    # about it: the suite paste named ZERO of them.
+    #
+    # They are tested now (a section in each member harness, carried in by
+    # tools/sync-demo-embeds.py so harness and library are one script), but a
+    # ROW here would still be dishonest, and the reason is worth carrying:
+    #
+    #   the fold puts the library's own BODY into the paste, and the fold does
+    #   not keep the sync-demo-embeds sentinels. cut_embedded_spans() below cuts
+    #   `GENERATED EMBED` spans - the four script layers - so it cannot cut
+    #   these. The scan would therefore count `command dcStartPolling` and the
+    #   `send "dcChannelPollOnce"` INSIDE that library as coverage of itself,
+    #   and report 8/8 for a surface whose tests deliberately arm neither.
+    #
+    # That is exactly the fake 309/309 this file's header records from before
+    # the span cut existed, arrived at from the other direction. Ratcheting
+    # these needs a way to tell an embedded library from a test - the sentinels
+    # surviving the fold, most likely - not a row added on top of a number that
+    # counts a library naming itself.
+    #
     # BOX2DXT IS MEASURED AS ITS KIT, AND THE RAW b2* BINDING IS NOT IN THIS
     # RATCHET. That is a deliberate scope call, and the numbers behind it are
     # here so the next reader can re-take it rather than inherit it:
