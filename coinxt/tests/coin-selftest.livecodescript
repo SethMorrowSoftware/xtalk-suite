@@ -2492,6 +2492,27 @@ end cxBtcSighashLegacy
 
 private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
    local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
+   -- Neither preimage builder below branches on pSighashType: both always
+   -- commit to every prevout, every sequence and every output, which IS the
+   -- SIGHASH_ALL algorithm. The other types change WHICH of those the digest
+   -- covers - SIGHASH_NONE drops the outputs, SINGLE keeps only the output at
+   -- this index, ANYONECANPAY (0x80) drops the other inputs. The type byte was
+   -- nonetheless appended verbatim to the preimage, so asking for type 3 got a
+   -- digest that says "3" over data hashed as if it were 1: a signature that
+   -- looks right, verifies nowhere, and commits to outputs the signer believed
+   -- it had excluded. Silent, and in a signing path.
+   --
+   -- Refusing is the whole fix HERE. Implementing the variants is a separate,
+   -- larger change with its own published vectors; until it lands, a caller
+   -- that wants them must know they do not exist rather than discover it from
+   -- a rejected transaction. (docs/api-reference.md already scopes both
+   -- handlers to SIGHASH_ALL - the parameter simply never enforced it.)
+   if pSighashType is not 1 then
+      throw "CoinXT: " & "cxBtcSighashLegacy" & ": only SIGHASH_ALL (1) is implemented; got " & \
+            pSighashType & ". SIGHASH_NONE/SINGLE/ANYONECANPAY change which " & \
+            "inputs and outputs the digest covers, and this builder does not."
+   end if
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
@@ -2548,6 +2569,27 @@ end cxBtcSighashSegwit
 
 private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
+   -- Neither preimage builder below branches on pSighashType: both always
+   -- commit to every prevout, every sequence and every output, which IS the
+   -- SIGHASH_ALL algorithm. The other types change WHICH of those the digest
+   -- covers - SIGHASH_NONE drops the outputs, SINGLE keeps only the output at
+   -- this index, ANYONECANPAY (0x80) drops the other inputs. The type byte was
+   -- nonetheless appended verbatim to the preimage, so asking for type 3 got a
+   -- digest that says "3" over data hashed as if it were 1: a signature that
+   -- looks right, verifies nowhere, and commits to outputs the signer believed
+   -- it had excluded. Silent, and in a signing path.
+   --
+   -- Refusing is the whole fix HERE. Implementing the variants is a separate,
+   -- larger change with its own published vectors; until it lands, a caller
+   -- that wants them must know they do not exist rather than discover it from
+   -- a rejected transaction. (docs/api-reference.md already scopes both
+   -- handlers to SIGHASH_ALL - the parameter simply never enforced it.)
+   if pSighashType is not 1 then
+      throw "CoinXT: " & "cxBtcSighashSegwit" & ": only SIGHASH_ALL (1) is implemented; got " & \
+            pSighashType & ". SIGHASH_NONE/SINGLE/ANYONECANPAY change which " & \
+            "inputs and outputs the digest covers, and this builder does not."
+   end if
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."

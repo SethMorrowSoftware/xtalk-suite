@@ -1095,6 +1095,25 @@ def check_vectors(c, ip):
     c.ck("cxBtcSighashSegwit refuses an empty outputs list",
          throws("cxBtcSighashSegwit", 1, F["outpoints"], F["sequences"], 2,
                 F["sc1"], 0x23c34600, "", 17, 1), True)
+    # A SIGHASH TYPE THIS BUILDER DOES NOT IMPLEMENT IS REFUSED, NOT
+    # APPROXIMATED. Neither preimage builder branches on the type: both always
+    # commit to every prevout, sequence and output, which is SIGHASH_ALL. The
+    # type byte was nonetheless appended verbatim, so asking for SINGLE got a
+    # digest that SAYS 3 over data hashed as if it were 1 - a signature that
+    # looks right, verifies nowhere, and commits to outputs the signer believed
+    # it had excluded. throw_text, not throws: the surrounding guards (index
+    # range, parallel lists) refuse some of these inputs too, so only the
+    # MESSAGE distinguishes "refused for the right reason".
+    for _ty, _label in ((0, "0"), (2, "SIGHASH_NONE"), (3, "SIGHASH_SINGLE"),
+                        (0x81, "ALL|ANYONECANPAY"), (0x83, "SINGLE|ANYONECANPAY")):
+        c.ck("cxBtcSighashLegacy refuses " + _label,
+             "only SIGHASH_ALL" in throw_text(
+                 "cxBtcSighashLegacy", 1, F["outpoints"], F["sequences"], 1,
+                 F["sc0"], F["outputs"], 17, _ty), True)
+        c.ck("cxBtcSighashSegwit refuses " + _label,
+             "only SIGHASH_ALL" in throw_text(
+                 "cxBtcSighashSegwit", 1, F["outpoints"], F["sequences"], 2,
+                 F["sc1"], 0x23c34600, F["outputs"], 17, _ty), True)
     c.ck("cxBtcSighashLegacy refuses an out-of-range input index",
          throws("cxBtcSighashLegacy", 1, F["outpoints"], F["sequences"], 3,
                 F["sc0"], F["outputs"], 17, 1), True)

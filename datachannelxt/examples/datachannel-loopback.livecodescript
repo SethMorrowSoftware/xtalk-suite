@@ -258,6 +258,18 @@ command dcChannelPollOnce
    if sPollInterval is not a number or sPollInterval < 1 then
       put 33 into sPollInterval
    end if
+   -- DO NOT RE-ARM IF A DISPATCH STOPPED US. The pass above runs app code, and
+   -- app code legitimately calls dcStopPolling from inside a handler this
+   -- very loop dispatched - enet-lan-chat does exactly that in `on
+   -- enetDisconnect`. Re-arming unconditionally leaves a tick in flight after
+   -- the flag went false, and the arm-once guard in dcStartPolling tests that
+   -- same flag: the next start sees "not polling", arms a SECOND chain, and
+   -- the stale tick then re-arms the first. Two permanent chains, neither
+   -- stoppable on its own because both read one flag - which is the trap the
+   -- arm-once guard was added to prevent, reached from the other side.
+   if sPolling is not "true" then
+      exit dcChannelPollOnce
+   end if
    send "dcChannelPollOnce" to me in (sPollInterval) milliseconds
 end dcChannelPollOnce
 
