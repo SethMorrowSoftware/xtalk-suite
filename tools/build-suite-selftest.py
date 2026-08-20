@@ -171,6 +171,11 @@ DROP_HANDLERS = {
     # window half; stResetCounters/stReportDone are NOT here - members call
     # them mid-run, and stReportDone's stShow/stPaint calls hit the stubs
     "stmonofont",
+    # ...and so is the report renderer: stReportText() is read only by stShow
+    # and stCopyResults, both of which are dropped above. The CORE keeps its
+    # own copy (it is not folded), which is the one that decides what a
+    # maintainer's Copy actually carries.
+    "streporttext",
 }
 
 # Of those, the ones a member's runner still calls mid-run. They become no-op

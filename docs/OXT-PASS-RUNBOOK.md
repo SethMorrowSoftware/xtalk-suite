@@ -822,6 +822,10 @@ what you still have to install.
 Do **not** treat a green suite selftest as a substitute for the per-member harnesses.
 It is breadth; the per-member selftests are depth.
 
+Do **not** copy its report until the last section reads `summary`, either: the run
+ends in two live loopbacks on a timer chain and stops looking busy long before it
+is done. See 4.1.1 - this cost a round trip on 2026-08-19.
+
 **How complete is it, exactly.** Not a judgement call any more -
 `tools/check-suite-coverage.py` measures it, and the gate set runs it on every push.
 **The table below is a TRANSCRIPTION of that tool's output, not a second source**, so
@@ -986,19 +990,23 @@ The three self-building selftests (torrentxt, enetxt, datachannelxt) share one U
 a bold `stSummary` field carrying the passed / failed / total counts (green when
 clean, red when not), a scrolling `stResults` field of per-check lines, and an
 `stRerun` button. `tests/suite-selftest.livecodescript` (step 0) shares that UI and adds
-a **`Copy results`** button: click it and the per-check lines are already on the
-clipboard. It copies `stResults` only, so read the `stSummary` counts across yourself.
+a **`Copy results`** button: click it and the whole record is on the clipboard -
+the `passed / failed / skipped / total` counts as the first line, then a blank
+line, then every per-check line. Paste that straight into your notes.
 
-Click the selftest window so it is the default stack, then from the message box:
+Until 2026-08-20 the button copied the per-check lines ONLY and this section
+taught a message-box incantation to fetch the counts across by hand; the counts
+ride along now, so there is nothing to remember. If you are on an older paste and
+the first line is not a count, click the selftest window so it is the default
+stack and run:
 
 ```
 set the clipboardData["text"] to (the text of field "stSummary" of this stack) & \
    return & (the text of field "stResults" of this stack)
 ```
 
-Paste that whole block into your notes. **Copy the full result text, not just the
-summary count** - the per-check lines are what let a failure be diagnosed without a
-second session.
+**Copy the full result text, not just the summary count** - the per-check lines
+are what let a failure be diagnosed without a second session.
 
 For the two function-style harnesses (`sxSelfTest()`, `oxSelfTest()`), the message box
 already holds the full report; copy it directly.
@@ -1006,6 +1014,36 @@ already holds the full report; copy it directly.
 Alongside each result, record: **OXT version, OS and architecture, the date, and
 which extensions were loaded.** A result with no environment attached cannot be
 turned into a claim.
+
+#### 4.1.1 WAIT FOR THE `summary` SECTION. A run that looks finished usually is not.
+
+The suite harness (and enetxt's and datachannelxt's own) ends with **async**
+sections: two live loopbacks driven by a 33 ms timer chain, with a **40-second**
+worst-case deadline (`kStDeadlineMs`). The report is a live surface - it is
+re-rendered on every tick - so while those run the list simply STOPS growing at
+whatever section the pump had reached, with nothing to say it is mid-run. Copy
+then and you get a report that ends in the middle of a section and reads exactly
+like a hang.
+
+That is not hypothetical: it is what happened to the 2026-08-19 Windows pass. A
+**fully green** run came back ending inside `CROSS: the 60000-byte budget both
+transports share`, missing the enet and datachannel loopback deliveries, the
+CROSS OnionXT capabilities, teardown and the summary - and nothing in the text
+could tell an early Copy from a stalled pump.
+
+**The run is over when the report's last section is `summary`,** and only then.
+Since 2026-08-20 an unfinished report prints its own trailer -
+
+```
+      RUN NOT FINISHED - this is NOT the end of the report.
+      An async section is still running. Wait for the SUMMARY
+      section at the bottom, then Copy.
+```
+
+- and `Copy results` carries that trailer onto the clipboard and says so in its
+dialog, so an early copy can no longer be mistaken for a complete one in either
+direction. The trailer lives in `tools/harness-scaffold.livecodescript`, so
+every carrier of the scaffold gets it.
 
 ### 4.2 datachannelxt (inventory item 1 - CLOSED, async residual included)
 

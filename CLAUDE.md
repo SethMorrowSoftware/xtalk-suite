@@ -149,7 +149,20 @@ evidence.
 window + counters + assertion plumbing (Copy results, SKIP as a first-class
 outcome, per-line result paint, per-section failure isolation), carried
 byte-identical into the four member selftests and the suite core with
-`tools/check-harness-scaffold-drift.py` in the gate set. The fold machinery
+`tools/check-harness-scaffold-drift.py` in the gate set. Since 2026-08-20 it
+also owns **the report's own completeness marker**, and the reason is the
+house failure shape one level out from the code: the report is a LIVE surface
+re-rendered every 33 ms tick, so a run still in its async loopbacks simply
+STOPS growing - at whatever section the pump had reached, with no marker - and
+reads exactly like a hang. A fully green Windows pass came back that way on
+2026-08-19, ending mid-CROSS-section, and nothing in the pasted text could
+tell an early Copy from a stalled pump. Every render now goes through
+`stReportText()`, which appends a `RUN NOT FINISHED` trailer until
+`stReportDone`; `Copy results` carries that trailer onto the clipboard, says
+so in its dialog, and takes the counts with it (they live in a second field
+and the runbook used to teach a message-box incantation to fetch them by
+hand). The deadline is 40s, so "it looks finished" is the normal state of a
+run that is not. The fold machinery
 keeps its split: the generator drops the scaffold's window half from folded
 members and stubs `stShow`/`stPaint`; the counters and plumbing fold in and
 run, and `stMergeCounted` now carries member skip counts into the suite
