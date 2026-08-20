@@ -894,6 +894,9 @@ end ecJoin
 -- blocked port reads as a hang. Name the usual causes while it still tries;
 -- the definitive verdict arrives in enetDisconnect below.
 command ecJoinWatch
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sIsServer is "true" or sReady is "true" then
       exit ecJoinWatch
    end if
@@ -1050,6 +1053,9 @@ command ecDashOnce
    -- the chain dies with the stack: ecStop clears the flag and this exit
    -- path does NOT reschedule (the old version rescheduled unconditionally
    -- and outlived closeStack forever)
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sDashOn is not "true" then
       exit ecDashOnce
    end if

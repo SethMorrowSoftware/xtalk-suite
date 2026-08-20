@@ -899,6 +899,9 @@ end connectLoopback
 -- UDP, even to itself. Say so instead of hanging silently.
 command lbConnectWatch
    local tPollErr
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    put empty into sWatchArmed
    if sOpenSeen is "true" then
       exit lbConnectWatch

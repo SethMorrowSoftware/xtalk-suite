@@ -1322,6 +1322,9 @@ end wxRepublish
 -- "gathering" forever with nothing on the wire and nothing on screen. Name
 -- it; the phase machine is untouched (gathering may still complete late).
 command wxGatherWatch
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sPhase is not "gathering" then
       exit wxGatherWatch
    end if
@@ -1334,6 +1337,9 @@ end wxGatherWatch
 -- kill the loop, then no-ops unless a handshake is actually in flight.
 command wxSignalTick
    local tWant
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sChatPolling is not "true" then
       exit wxSignalTick -- the chain ends with the stack
    end if
@@ -1379,6 +1385,9 @@ end wxSignalTick
 -- the demo needs TorrentXT's EXTENSION, not its example files.)
 command wxBtPollOnce
    local tEvents, tEvent
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sChatPolling is not "true" then
       exit wxBtPollOnce
    end if
@@ -1712,6 +1721,9 @@ end wxSendMessage
 -- ---- the 1 Hz dashboard ------------------------------------------------------
 command wxDashOnce
    local tDht, tState, tLine, tPollErr
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sChatPolling is not "true" then
       exit wxDashOnce
    end if

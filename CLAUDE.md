@@ -162,7 +162,19 @@ tell an early Copy from a stalled pump. Every render now goes through
 so in its dialog, and takes the counts with it (they live in a second field
 and the runbook used to teach a message-box incantation to fetch them by
 hand). The deadline is 40s, so "it looks finished" is the normal state of a
-run that is not. The fold machinery
+run that is not. It settled its own question on first use: the next paste
+came back CARRYING the trailer, and the run after it - same build, allowed to
+finish - completed **1981/0/1** through both live loopbacks, teardown and the
+summary. All three truncated reports were early copies; nothing was ever wrong
+with the pump, and the mid-diagnosis guess that a first-tick throw had killed
+the timer chain was wrong. What that guess left behind is still worth having and
+is recorded honestly as precautionary: `stShow`/`stPaint` now pin the
+defaultStack, `stPump`'s render is contained so a lost render can never cost the
+run, and `tools/check-timer-stack-pin.py` walks a real same-file closure instead
+of one hard-coded callee list - which found **40 unpinned timer chains across 15
+files**, every demo's own log/refresh helper reached from its poll tick. That
+class IS engine-observed (enet-lan-chat's `ecDashOnce`, 2026-08-18); these 40
+are not, and the gate's docstring says so. The fold machinery
 keeps its split: the generator drops the scaffold's window half from folded
 members and stubs `stShow`/`stPaint`; the counters and plumbing fold in and
 run, and `stMergeCounted` now carries member skip counts into the suite

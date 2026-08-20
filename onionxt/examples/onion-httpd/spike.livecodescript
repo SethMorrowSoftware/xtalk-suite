@@ -3030,6 +3030,9 @@ end onStatus
 -- the upload may still land late and Stop stays the user's call, so nothing
 -- is torn down here - the wait just stops masquerading as progress at 90 s.
 command demoPublishWatch
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sSvcReady is true then
       exit demoPublishWatch
    end if

@@ -1175,6 +1175,9 @@ end qsDropText
 -- under the currently selected method. Repainted by qsSyncMethod on every
 -- method change, and by a short timer after a share preview (qsShareFile).
 command qsDropHint
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sTorSend is "true" then
       qsDropText "Drag & drop to send privately over Tor", \
          "both IP addresses stay hidden - or click to browse (the buttons below always work)"
@@ -1338,6 +1341,9 @@ end qsStop
 
 command qsPollOnce
    local tEvents, tEvent
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sPolling is not "true" then
       exit qsPollOnce
    end if
@@ -1352,6 +1358,9 @@ command qsPollOnce
 end qsPollOnce
 
 command qsDashOnce
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
    if sPolling is not "true" then
       exit qsDashOnce
    end if
