@@ -333,17 +333,60 @@ def http_header_end(data):
     return 0 if i < 0 else i + 1
 
 
-def _content_length(head_bytes):
+# ---- qsHttpParseHead, mirrored properly ------------------------------------
+# THE STAND-IN THIS REPLACES WAS WRONG, and wrong on the input the whole
+# exercise is about. It scanned for a Content-Length and RETURNED ON THE FIRST
+# one; qsHttpParseHead does `put tValue into tOut[tName]` unconditionally, so
+# the LAST one wins. On `Content-Length: 5` followed by `Content-Length: 10`
+# the server frames 10 and this file said 5 - a mirror disagreeing with the
+# thing it mirrors, about request smuggling's classic lever, in the file whose
+# job is to pin that framing.
+#
+# It also modelled none of the parser's other decisions, so none of them could
+# be tested: the __dupcl conflict flag the 400-refusals read, and the refusal
+# to let a client header shadow the "__" pseudo-field namespace.
+def parse_head(head_bytes):
+    """Mirror qsHttpParseHead: lowercased header names -> values, plus the
+    synthetic __method / __path / __query / __resource and the __dupcl flag."""
     text = head_bytes.decode("utf-8", "replace")
-    for line in text.split("\r\n")[1:]:          # skip the request line
+    lines = text.split("\r\n")
+    out = {}
+    req = lines[0] if lines else ""
+    words = req.split()
+    out["__method"] = words[0] if words else ""
+    out["__resource"] = words[1] if len(words) > 1 else ""
+    res = out["__resource"]
+    out["__path"] = res.split("?", 1)[0]
+    out["__query"] = res.split("?", 1)[1] if "?" in res else ""
+    for line in lines[1:]:
+        if not line:
+            continue
         name, sep, val = line.partition(":")
-        if sep and name.strip().lower() == "content-length":
-            v = val.strip()
-            try:
-                return int(v) if "." not in v else None
-            except ValueError:
-                return None
-    return None
+        if not sep or not name.strip():
+            continue
+        nm = name.strip().lower()
+        v = val.strip()
+        # "__" is the reserved pseudo-field namespace; a client may not shadow it
+        if nm.startswith("__"):
+            continue
+        # a CONFLICTING duplicate Content-Length is the smuggling lever: flag it
+        # and let the serve handlers answer 400. An identical repeat is not a
+        # conflict and must NOT set the flag.
+        if nm == "content-length" and out.get(nm) not in (None, "") and out[nm] != v:
+            out["__dupcl"] = "true"
+        out[nm] = v                       # LAST wins, exactly as the engine does
+    return out
+
+
+def _content_length(head_bytes):
+    """The declared body length, or None when there is none or it is unusable."""
+    v = parse_head(head_bytes).get("content-length")
+    if v is None:
+        return None
+    try:
+        return int(v) if "." not in v else None
+    except ValueError:
+        return None
 
 
 def http_req_complete(data):
@@ -1156,6 +1199,44 @@ def main():
     n2 = http_req_length(pair2)
     check("reqlen POST length includes body", n2, len(post_hdr) + 5)
     check("reqlen POST remainder is next GET", pair2[n2:], get_full)
+    # ---- qsHttpParseHead's own decisions, none of which had a test ---------
+    # DUPLICATE CONTENT-LENGTH IS THE SMUGGLING LEVER. The engine takes the
+    # LAST value and flags the conflict; the stand-in this mirror replaced took
+    # the FIRST and modelled no flag, so it disagreed with the server about
+    # exactly this input.
+    dup = b"POST /x HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\n"
+    h = parse_head(dup[:http_header_end(dup) - 1])
+    check("parse_head duplicate CL: LAST wins", h.get("content-length"), "10")
+    check("parse_head duplicate CL: conflict flagged", h.get("__dupcl"), "true")
+    check("framing follows the last CL", _content_length(dup[:http_header_end(dup) - 1]), 10)
+
+    same = b"POST /x HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\n"
+    hs = parse_head(same[:http_header_end(same) - 1])
+    check("parse_head identical repeat is not a conflict", hs.get("__dupcl"), None)
+    check("parse_head identical repeat still frames", hs.get("content-length"), "5")
+
+    # A CLIENT MAY NOT SHADOW THE "__" PSEUDO-FIELD NAMESPACE. __params is
+    # unforgeable only because this refusal exists; onionxt shipped the same
+    # parser WITHOUT it until 2026-08-19, where a header named __path replaced
+    # the parsed path.
+    inj = (b"GET /safe HTTP/1.1\r\n__path: /../../etc/passwd\r\n"
+           b"__method: DELETE\r\n__params: forged\r\nHost: h\r\n\r\n")
+    hi = parse_head(inj[:http_header_end(inj) - 1])
+    check("parse_head: __path cannot be shadowed", hi.get("__path"), "/safe")
+    check("parse_head: __method cannot be shadowed", hi.get("__method"), "GET")
+    check("parse_head: __params cannot be forged", hi.get("__params"), None)
+    check("parse_head: an ordinary header still lands", hi.get("host"), "h")
+
+    # the request line, which nothing pinned either
+    rl = b"GET /a/b?x=1&y=2 HTTP/1.1\r\nHost: h\r\n\r\n"
+    hr = parse_head(rl[:http_header_end(rl) - 1])
+    check("parse_head method", hr.get("__method"), "GET")
+    check("parse_head path", hr.get("__path"), "/a/b")
+    check("parse_head query", hr.get("__query"), "x=1&y=2")
+    check("parse_head resource", hr.get("__resource"), "/a/b?x=1&y=2")
+    check("parse_head no query is empty, not absent",
+          parse_head(b"GET /a HTTP/1.1\r\nHost: h").get("__query"), "")
+
     # non-integer Content-Length frames as no body (matches http_req_complete)
     check("reqlen non-integer CL -> head only", http_req_length(
         b"POST /api HTTP/1.1\r\nContent-Length: abc\r\n\r\n"),

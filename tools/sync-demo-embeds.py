@@ -99,6 +99,17 @@ REGISTRY = {
     # would meet it at paste time on an engine.
     "coinxt/tests/coin-selftest.livecodescript": [
         "coinxt/src/coinxt.livecodescript"],
+    # The two POLL DISPATCHERS are shipped libraries that live under examples/,
+    # which is why tools/check-suite-coverage.py could not see them: its enetxt
+    # and datachannelxt rows scope to src/. Measured 2026-08-19, the suite paste
+    # named ZERO of their 15 public handlers - the layer every demo drives, every
+    # doc teaches, and this session edited twice. Carrying them into each
+    # member's own harness is what lets that harness test them, and the fold
+    # then prefixes both together so the paste tests them too.
+    "enetxt/tests/enet-selftest.livecodescript": [
+        "enetxt/examples/enet-helpers.livecodescript"],
+    "datachannelxt/tests/datachannel-selftest.livecodescript": [
+        "datachannelxt/examples/datachannel-helpers.livecodescript"],
     "tests/suite-closing-pass.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
     "riptide/examples/riptide-social.livecodescript": [

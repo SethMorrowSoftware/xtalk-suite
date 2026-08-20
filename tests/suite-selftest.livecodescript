@@ -402,6 +402,11 @@ local bt1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local bt1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- ENetXT: the synchronous half of the en* self-test ----
+local en1sPollHosts        -- comma list of host handles being pumped
+local en1sPollTarget       -- object that receives the semantic event messages
+local en1sPollInterval     -- milliseconds between drains (the latency knob)
+local en1sPollNote         -- most recent pump failure, empty while healthy
+local en1sPolling          -- "true" while the timer loop is armed
 constant en1kStTitle = "enetxt - API Self-Test"
 constant en1kStWidth = 660
 constant en1kStHeight = 620
@@ -420,6 +425,11 @@ local en1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local en1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- DataChannelXT: the synchronous half of the dc* self-test ----
+local dc1sPollTarget       -- object that receives the semantic event messages
+local dc1sPollInterval     -- milliseconds between drains (the latency/CPU knob)
+local dc1sPolling          -- "true" while the timer loop is armed
+local dc1sPollNote         -- the FIRST poll fault since the last clear - a bad
+local dc1sPollDrains       -- drains attempted, so a failure can name which
 constant dc1kStTitle = "DataChannelXT - API Self-Test"
 constant dc1kStWidth = 660
 constant dc1kStHeight = 620
@@ -2232,7 +2242,18 @@ end stStartDcLoopback
 command stDcEvent pEvent
    local tName, tDest, tPayload
    put pEvent["name"] into tName
-   if tName is "dcLocalDescription" then
+   -- EITHER SPELLING. The .lcb emits "dcLocalDescriptionReady" since
+   -- 2026-08-19 (the old name collided with the public getter
+   -- dcLocalDescription, so dispatching it reached the LIBRARY handler - engine
+   -- note 6.7). An extension packaged before that still emits the old name.
+   --
+   -- THIS LINE WAS MISSED BY THE RENAME, and it is the one that mattered most:
+   -- the member selftest and the closing-pass stack were both updated, but this
+   -- is the handler that DRIVES the loopback in the ~1900-check paste, so the
+   -- offer would simply never have been shuttled and a section green on the two
+   -- previous passes would have failed with no obvious cause. A comparison is
+   -- not a dispatch, so nothing in the collision gate could see it.
+   if tName is among the items of "dcLocalDescription,dcLocalDescriptionReady" then
       put stDcOtherPeer(pEvent["peer"]) into tDest
       if tDest is not empty then
          dcSetRemoteDescription tDest, pEvent["sdp"], pEvent["sdpType"]
@@ -4991,6 +5012,27 @@ end cxBtcSighashLegacy
 
 private function cxBtcSighashLegacyInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
    local tCount, tI, tBuf, tScript, tOutBytes, tOutCount
+   -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
+   -- Neither preimage builder below branches on pSighashType: both always
+   -- commit to every prevout, every sequence and every output, which IS the
+   -- SIGHASH_ALL algorithm. The other types change WHICH of those the digest
+   -- covers - SIGHASH_NONE drops the outputs, SINGLE keeps only the output at
+   -- this index, ANYONECANPAY (0x80) drops the other inputs. The type byte was
+   -- nonetheless appended verbatim to the preimage, so asking for type 3 got a
+   -- digest that says "3" over data hashed as if it were 1: a signature that
+   -- looks right, verifies nowhere, and commits to outputs the signer believed
+   -- it had excluded. Silent, and in a signing path.
+   --
+   -- Refusing is the whole fix HERE. Implementing the variants is a separate,
+   -- larger change with its own published vectors; until it lands, a caller
+   -- that wants them must know they do not exist rather than discover it from
+   -- a rejected transaction. (docs/api-reference.md already scopes both
+   -- handlers to SIGHASH_ALL - the parameter simply never enforced it.)
+   if pSighashType is not 1 then
+      throw "CoinXT: " & "cxBtcSighashLegacy" & ": only SIGHASH_ALL (1) is implemented; got " & \
+            pSighashType & ". SIGHASH_NONE/SINGLE/ANYONECANPAY change which " & \
+            "inputs and outputs the digest covers, and this builder does not."
+   end if
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashLegacy: the outpoint and sequence lists must be parallel and non-empty."
@@ -5040,6 +5082,27 @@ end cxBtcSighashSegwit
 
 private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tCount, tI, tPrevouts, tSequencesRaw, tOutputsRaw, tScript, tBuf, tOutCount
+   -- SIGHASH_ALL ONLY, AND IT IS REFUSED RATHER THAN APPROXIMATED.
+   -- Neither preimage builder below branches on pSighashType: both always
+   -- commit to every prevout, every sequence and every output, which IS the
+   -- SIGHASH_ALL algorithm. The other types change WHICH of those the digest
+   -- covers - SIGHASH_NONE drops the outputs, SINGLE keeps only the output at
+   -- this index, ANYONECANPAY (0x80) drops the other inputs. The type byte was
+   -- nonetheless appended verbatim to the preimage, so asking for type 3 got a
+   -- digest that says "3" over data hashed as if it were 1: a signature that
+   -- looks right, verifies nowhere, and commits to outputs the signer believed
+   -- it had excluded. Silent, and in a signing path.
+   --
+   -- Refusing is the whole fix HERE. Implementing the variants is a separate,
+   -- larger change with its own published vectors; until it lands, a caller
+   -- that wants them must know they do not exist rather than discover it from
+   -- a rejected transaction. (docs/api-reference.md already scopes both
+   -- handlers to SIGHASH_ALL - the parameter simply never enforced it.)
+   if pSighashType is not 1 then
+      throw "CoinXT: " & "cxBtcSighashSegwit" & ": only SIGHASH_ALL (1) is implemented; got " & \
+            pSighashType & ". SIGHASH_NONE/SINGLE/ANYONECANPAY change which " & \
+            "inputs and outputs the digest covers, and this builder does not."
+   end if
    put the number of items of pOutpoints into tCount
    if tCount is 0 or the number of items of pSequences is not tCount then
       throw "CoinXT: cxBtcSighashSegwit: the outpoint and sequence lists must be parallel and non-empty."
@@ -15383,6 +15446,7 @@ function ox1oxSelfTest
    ox1testSodiumComposition
    ox1testConfigurationSetters
    ox1testLoopbackGuard
+   ox1testHttpdHelpers
 
    local ox1tSummary
    -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
@@ -15658,6 +15722,87 @@ private command ox1testConfigurationSetters
    oxSetPeerCallback empty
    ox1oxCheck (oxIsReady() is ox1tWasReady), "restoring the dispatch configuration is harmless too"
 end ox1testConfigurationSetters
+
+private command ox1testHttpdHelpers
+   ox1oxSection "oxh* HTTP layer (pure compute: parse, frame, escape, MIME)"
+   local ox1tProbe, ox1tError, ox1tCRLF, ox1tReq, ox1tH, ox1tBody
+
+   try
+      put oxhTrim("  x  ") into ox1tProbe
+   catch ox1tError
+      ox1oxSkip "the oxh* helpers are private to onion-httpd.livecodescript; " & \
+         "run the onionxt demo, where sync-demo-embeds makes the harness " & \
+         "and that layer one script"
+      exit ox1testHttpdHelpers
+   end try
+   ox1oxCheck (ox1tProbe is "x"), "oxhTrim strips surrounding whitespace"
+
+   put numToChar(13) & numToChar(10) into ox1tCRLF
+
+   -- ---- the request line ------------------------------------------------
+   put "GET /a/b?x=1&y=2 HTTP/1.1" & ox1tCRLF & "Host: example.onion" & ox1tCRLF into ox1tReq
+   put oxhParseHeaders(textEncode(ox1tReq, "UTF-8")) into ox1tH
+   ox1oxCheck (ox1tH["__method"] is "GET"), "oxhParseHeaders reads the method"
+   ox1oxCheck (ox1tH["__path"] is "/a/b"), "oxhParseHeaders splits the path from the query"
+   ox1oxCheck (ox1tH["__query"] is "x=1&y=2"), "oxhParseHeaders keeps the whole query"
+   ox1oxCheck (ox1tH["__resource"] is "/a/b?x=1&y=2"), "oxhParseHeaders keeps the raw resource"
+   ox1oxCheck (ox1tH["host"] is "example.onion"), "a header name is lowercased and its value trimmed"
+
+   -- ---- THE REGRESSION THIS SECTION EXISTS FOR --------------------------
+   -- A client header named __path used to be written into the SAME array the
+   -- request line had already populated, so it replaced the parsed path -
+   -- which oxhHandle uses to pick a route and to call oxhServeStatic. Fixed
+   -- 2026-08-19 by refusing any header name in the "__" namespace, the guard
+   -- nocloud's qsHttpParseHead has always carried.
+   put "GET /safe HTTP/1.1" & ox1tCRLF & "__path: /../../etc/passwd" & ox1tCRLF & \
+       "__method: DELETE" & ox1tCRLF & "__query: evil=1" & ox1tCRLF & \
+       "Host: example.onion" & ox1tCRLF into ox1tReq
+   put oxhParseHeaders(textEncode(ox1tReq, "UTF-8")) into ox1tH
+   ox1oxCheck (ox1tH["__path"] is "/safe"), \
+         "a client header named __path CANNOT replace the parsed path"
+   ox1oxCheck (ox1tH["__method"] is "GET"), \
+         "a client header named __method CANNOT replace the parsed method"
+   ox1oxCheck (ox1tH["__query"] is empty), \
+         "a client header named __query CANNOT invent a query string"
+   ox1oxCheck (ox1tH["host"] is "example.onion"), \
+         "refusing the __ namespace does not disturb ordinary headers"
+
+   -- ---- framing ---------------------------------------------------------
+   put "GET / HTTP/1.1" & ox1tCRLF & "Host: h" & ox1tCRLF & ox1tCRLF into ox1tReq
+   ox1oxCheck (oxhHeaderEnd(textEncode(ox1tReq, "UTF-8")) > 0), \
+         "oxhHeaderEnd finds the blank line that ends the head"
+   ox1oxCheck (oxhHeaderEnd(textEncode("GET / HTTP/1.1" & ox1tCRLF, "UTF-8")) is 0), \
+         "oxhHeaderEnd answers 0 while the head is still incomplete"
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq, "UTF-8")) is true), \
+         "a bodyless GET is complete once its head is"
+
+   -- a declared Content-Length is not satisfied until the body arrives
+   put "POST /x HTTP/1.1" & ox1tCRLF & "Content-Length: 5" & ox1tCRLF & ox1tCRLF into ox1tReq
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq, "UTF-8")) is false), \
+         "a POST is incomplete while its declared body is missing"
+   ox1oxCheck (oxhRequestComplete(textEncode(ox1tReq & "hello", "UTF-8")) is true), \
+         "...and complete once the declared bytes are all there"
+
+   -- ---- escaping and encoding -------------------------------------------
+   put oxhHtmlEscape("<a href=" & quote & "x" & quote & ">&</a>") into ox1tBody
+   ox1oxCheck (ox1tBody contains "&lt;"), "oxhHtmlEscape escapes <"
+   ox1oxCheck (ox1tBody contains "&gt;"), "oxhHtmlEscape escapes >"
+   ox1oxCheck (ox1tBody contains "&amp;"), "oxhHtmlEscape escapes &"
+   ox1oxCheck (not (ox1tBody contains "<a href")), \
+         "oxhHtmlEscape leaves no raw markup (the directory listing's whole defence)"
+
+   ox1oxCheck (oxhPathEncode("a b") contains "%20"), "oxhPathEncode encodes a space"
+   ox1oxCheck (oxhStripTrailingSlash("/x/y/") is "/x/y"), "oxhStripTrailingSlash trims one slash"
+   ox1oxCheck (oxhStripTrailingSlash("/x/y") is "/x/y"), "...and leaves a bare path alone"
+
+   -- ---- MIME and status reasons -----------------------------------------
+   ox1oxCheck (oxhMimeType("/a/b.html") contains "text/html"), "oxhMimeType maps .html"
+   ox1oxCheck (oxhMimeType("/a/b.png") contains "image/png"), "oxhMimeType maps .png"
+   ox1oxCheck (oxhMimeType("/a/b.unknownext") is not empty), \
+         "oxhMimeType falls back rather than answering empty"
+   ox1oxCheck (oxhReason(200) is not empty), "oxhReason names 200"
+   ox1oxCheck (oxhReason(404) is not empty), "oxhReason names 404"
+end ox1testHttpdHelpers
 
 private command ox1testLoopbackGuard
    ox1oxSection "inbound loopback guard (socket id parse + verdict)"
@@ -17456,6 +17601,197 @@ end bt1stCleanup
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
+command en1enStartPolling pHost, pTarget, pIntervalMs
+   local en1tSavedDelim
+   if pHost is empty or pHost is 0 then
+      exit en1enStartPolling
+   end if
+   -- en1sPollHosts is a COMMA list, but `among the items of` splits on whatever
+   -- the itemDelimiter currently is - global mutable state this handler
+   -- INHERITS from whoever called it (the family's LCS gotcha: set it
+   -- immediately before use, never assume it). Set it around our own read and
+   -- put back what we found: a helper must not decide the delimiter for the
+   -- handler that called it. The writes below are delimiter-free (they append
+   -- a literal comma), so only the read needs bracketing.
+   put the itemDelimiter into en1tSavedDelim
+   set the itemDelimiter to comma
+   if pHost is not among the items of en1sPollHosts then
+      if en1sPollHosts is empty then
+         put pHost into en1sPollHosts
+      else
+         put comma & pHost after en1sPollHosts
+      end if
+   end if
+   set the itemDelimiter to en1tSavedDelim
+   if pTarget is empty then
+      put the long id of this card into en1sPollTarget
+   else
+      put pTarget into en1sPollTarget
+   end if
+   if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
+      put 33 into en1sPollInterval
+   else
+      put pIntervalMs into en1sPollInterval
+   end if
+   if en1sPolling is not "true" then
+      put "true" into en1sPolling
+      send "en1enetPollOnce" to me in 0 milliseconds
+   end if
+end en1enStartPolling
+
+command en1enStopPolling pHost
+   local en1tI, en1tNew, en1tSavedDelim
+   if pHost is empty then
+      put empty into en1sPollHosts
+      put "false" into en1sPolling
+      exit en1enStopPolling
+   end if
+   put empty into en1tNew
+   -- Same bracketing as en1enStartPolling: this walk re-splits the comma list, so
+   -- it sets the delimiter it needs and restores the caller's. Dropping the
+   -- restore would leave OUR comma behind in the caller's handler, which is
+   -- the same class of bug from the other direction.
+   put the itemDelimiter into en1tSavedDelim
+   set the itemDelimiter to comma
+   repeat for each item en1tI in en1sPollHosts
+      if en1tI is not pHost then
+         if en1tNew is empty then
+            put en1tI into en1tNew
+         else
+            put comma & en1tI after en1tNew
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to en1tSavedDelim
+   put en1tNew into en1sPollHosts
+   if en1sPollHosts is empty then
+      put "false" into en1sPolling
+   end if
+end en1enStopPolling
+
+command en1enetPollOnce
+   local en1tHost, en1tEvents, en1tEvent, en1tName, en1tSavedDelim, en1tErr
+   if en1sPolling is not "true" then
+      exit en1enetPollOnce
+   end if
+   -- The pump pass OWNS the delimiter for its whole length, not just for the
+   -- split: every dispatch below runs app code, and app code that set the
+   -- itemDelimiter would otherwise decide how the pump set is read for the
+   -- rest of this pass. Comma is also the engine default, so a dispatched
+   -- handler sees the same delimiter it would have seen from a bare timer
+   -- message. Restored before we reschedule.
+   put the itemDelimiter into en1tSavedDelim
+   set the itemDelimiter to comma
+   -- BOTH THE DRAIN AND THE DISPATCH ARE GUARDED, and each event is isolated.
+   -- Two things this loop does can throw on a real engine: enPoll itself (its
+   -- .lcb buffer helper is where the datachannel sibling reported "cannot
+   -- convert value"), and the app code a dispatch reaches. Unguarded, either
+   -- one kills the timer chain and the demo goes quiet with no symptom at all
+   -- - the failure mode that turns one bug into several engine passes. A
+   -- reported, skipped event costs one line of log; a dead pump costs a
+   -- session. The note is READ rather than printed: see en1enPollLastError.
+   repeat for each item en1tHost in en1sPollHosts
+      put empty into en1tEvents
+      try
+         put enPoll(en1tHost) into en1tEvents
+      catch en1tErr
+         if en1sPollNote is empty then
+            put "enPoll failed on host" && en1tHost & ": " & line 1 of en1tErr into en1sPollNote
+         end if
+         put empty into en1tEvents
+      end try
+      repeat for each element en1tEvent in en1tEvents
+         put en1tEvent["name"] into en1tName
+         try
+            if en1tName is not empty then
+               dispatch en1tName to en1sPollTarget with en1tEvent
+            end if
+            -- also fire a catch-all so one handler can observe the whole stream
+            dispatch "enetEvent" to en1sPollTarget with en1tEvent
+         catch en1tErr
+            if en1sPollNote is empty then
+               put "dispatch of" && en1tName & " failed: " & line 1 of en1tErr into en1sPollNote
+            end if
+         end try
+      end repeat
+   end repeat
+   set the itemDelimiter to en1tSavedDelim
+   -- DO NOT RE-ARM IF A DISPATCH STOPPED US. The pass above runs app code, and
+   -- app code legitimately calls en1enStopPolling from inside a handler this
+   -- very loop dispatched - enet-lan-chat does exactly that in `on
+   -- enetDisconnect`. Re-arming unconditionally leaves a tick in flight after
+   -- the flag went false, and the arm-once guard in en1enStartPolling tests that
+   -- same flag: the next start sees "not polling", arms a SECOND chain, and
+   -- the stale tick then re-arms the first. Two permanent chains, neither
+   -- stoppable on its own because both read one flag - which is the trap the
+   -- arm-once guard was added to prevent, reached from the other side.
+   if en1sPolling is not "true" then
+      exit en1enetPollOnce
+   end if
+   send "en1enetPollOnce" to me in (en1sPollInterval) milliseconds
+end en1enetPollOnce
+
+function en1enPollLastError
+   return en1sPollNote
+end en1enPollLastError
+
+command en1enPollClearError
+   put empty into en1sPollNote
+end en1enPollClearError
+
+function en1enStateName pState
+   switch pState
+      case 0
+         return "disconnected"
+      case 1
+      case 2
+      case 3
+      case 4
+         return "connecting"
+      case 5
+         return "connected"
+      case 6
+      case 7
+      case 8
+         return "disconnecting"
+      case 9
+         return "zombie"
+      default
+         return "unknown"
+   end switch
+end en1enStateName
+
+function en1enFormatBytes pBytes
+   local en1tUnits, en1tVal, en1tI, en1tSavedDelim, en1tOut
+   if pBytes is empty or pBytes is not a number then
+      return "0 B"
+   end if
+   put "B,KiB,MiB,GiB,TiB" into en1tUnits
+   put pBytes into en1tVal
+   put 1 into en1tI
+   -- TWO reads need the comma, not one: the loop guard COUNTS the units and
+   -- the return picks one. The `set` used to sit BETWEEN them, so the guard
+   -- counted under whatever delimiter was in force rather than the one this
+   -- data is written in - and under any delimiter but comma that string is a
+   -- ONE-item list, so the loop never runs and a gigabyte reports itself in
+   -- bytes. Set once before the FIRST read; restore before returning, since a
+   -- humaniser has no business changing its caller's delimiter (the family's
+   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
+   -- before use, and put back what you found). Not a precaution: holde-em's
+   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
+   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
+   -- answered all three with save-and-restore.
+   put the itemDelimiter into en1tSavedDelim
+   set the itemDelimiter to comma
+   repeat while en1tVal >= 1024 and en1tI < the number of items of en1tUnits
+      put en1tVal / 1024 into en1tVal
+      add 1 to en1tI
+   end repeat
+   put (the round of (en1tVal * 10) / 10) && (item en1tI of en1tUnits) into en1tOut
+   set the itemDelimiter to en1tSavedDelim
+   return en1tOut
+end en1enFormatBytes
+
 command en1stResetCounters
    put 0 into en1sTotal
    put 0 into en1sPassed
@@ -17543,6 +17879,38 @@ command en1stRun
    -- never sent. It takes the same stale-handle path as enSend.
    en1stAssert "enBroadcast(0) errors", enBroadcast(0, 0, en1stTinyData(), 0) < 0
    en1stAssert "enBroadcastText(0) errors", enBroadcastText(0, 0, "x", 0) < 0
+
+   -- ---- the poll dispatcher library --------------------------------------
+   -- enet-helpers.livecodescript is a SHIPPED library - the layer enet-lan-chat
+   -- drives and every doc teaches - and until 2026-08-19 not one of its seven
+   -- public handlers was named by any test in the tree. It lives under
+   -- examples/, so tools/check-suite-coverage.py could not even see it: the
+   -- enetxt row scopes to src/. It is carried into this harness by
+   -- tools/sync-demo-embeds.py so the two are one script and these can run.
+   en1stSection "the poll dispatcher library (enet-helpers, embedded above)"
+   en1stAssert "en1enStateName(0) is disconnected", en1enStateName(0) is "disconnected"
+   en1stAssert "en1enStateName names the connected state", en1enStateName(5) is not empty
+   en1stAssert "en1enStateName answers something for every state 0..9", \
+         (en1enStateName(0) is not empty) and (en1enStateName(9) is not empty)
+   en1stAssert "en1enStateName does not answer empty for an unknown state", \
+         en1enStateName(99) is not empty
+   en1stAssert "en1enFormatBytes(0)", en1enFormatBytes(0) is "0 B"
+   en1stAssert "en1enFormatBytes refuses a non-number, fail-closed", en1enFormatBytes("x") is "0 B"
+   en1stAssert "en1enFormatBytes refuses empty", en1enFormatBytes(empty) is "0 B"
+   en1stAssert "en1enFormatBytes scales past a kilobyte", en1enFormatBytes(2048) is not "2048 B"
+   en1enPollClearError
+   en1stAssert "en1enPollLastError is empty while the pump is healthy", en1enPollLastError() is empty
+   -- fail-closed: a bad host arms nothing and must not throw
+   en1enStartPolling 0, empty, 33
+   en1stAssert "en1enStartPolling(0) is a harmless no-op", en1enPollLastError() is empty
+   en1enStartPolling empty, empty, 33
+   en1stAssert "en1enStartPolling(empty) is a harmless no-op", en1enPollLastError() is empty
+   -- the pump exits at its own guard when nothing is armed (this is also the
+   -- 2026-08-19 re-arm guard: it must NOT schedule a chain from here)
+   en1enetPollOnce
+   en1stAssert "en1enetPollOnce with nothing armed is a no-op", en1enPollLastError() is empty
+   en1enStopPolling empty
+   en1stAssert "en1enStopPolling(empty) clears every registered host", en1enPollLastError() is empty
 
    en1stSection "tuning + abrupt teardown (isolated: nothing listens on 27099)"
    -- These four binds have no place in the graceful loopback below: a second
@@ -17783,6 +18151,236 @@ end en1stRepeatByte
 -- perturbed by, any other member's copy of the same scaffolding.
 -- ==========================================================================
 
+command dc1dcStartPolling pTarget, pIntervalMs
+   if pTarget is empty then
+      put the long id of this card into dc1sPollTarget
+   else
+      put pTarget into dc1sPollTarget
+   end if
+   if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
+      put 33 into dc1sPollInterval
+   else
+      put pIntervalMs into dc1sPollInterval
+   end if
+   -- Arm the chain ONCE - the guard enet-helpers has carried since it was
+   -- written, and the one this file lacked. A second chain does not duplicate
+   -- EVENTS: each pass drains the whole queue in one dcPoll, so the second
+   -- chain mostly finds it empty. What doubles, permanently, is the FFI drain
+   -- RATE and the timer churn - and neither chain can be stood down on its
+   -- own, because both read this one flag. Every in-tree caller
+   -- (datachannel-loopback, datachannel-dht-chat) arms once at startup, so
+   -- this is a trap laid for the NEXT caller rather than a live regression.
+   if dc1sPolling is not "true" then
+      put "true" into dc1sPolling
+      if dc1sPollDrains is not a number then
+         put 0 into dc1sPollDrains
+      end if
+      -- kick the loop immediately; it reschedules itself
+      send "dc1dcChannelPollOnce" to me in 0 milliseconds
+   end if
+end dc1dcStartPolling
+
+command dc1dcStopPolling
+   put "false" into dc1sPolling
+end dc1dcStopPolling
+
+command dc1dcChannelPollOnce
+   local dc1tEvents, dc1tEvent, dc1tName, dc1tErr, dc1tTarget, dc1tProbe
+   if dc1sPolling is not "true" then
+      exit dc1dcChannelPollOnce
+   end if
+   -- Resolve the target ONCE per pass and prove it still RESOLVES. A long id
+   -- whose object has gone (a closed stack, a rebuilt card) is the classic way
+   -- a dispatch target goes stale.
+   --
+   -- The probe is a guarded property READ, not `there is an object dc1tTarget`.
+   -- That spelling reads better and nothing in this suite has ever compiled
+   -- it, so putting it here would risk trading a reported error for an
+   -- unreported one in three demo files at once. The try/catch shape below is
+   -- the one box2dxt's harness uses to re-resolve a stale long id, and it has
+   -- run green on an engine.
+   put dc1sPollTarget into dc1tTarget
+   put empty into dc1tProbe
+   if dc1tTarget is not empty then
+      try
+         put the short name of dc1tTarget into dc1tProbe
+      catch dc1tErr
+         put empty into dc1tProbe
+      end try
+   end if
+   if dc1tProbe is empty then
+      put the long id of this card into dc1tTarget
+      if dc1sPollNote is empty then
+         put "poll target no longer resolves; fell back to this card" into dc1sPollNote
+      end if
+   end if
+   -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
+   -- that wrong. It guarded the dispatch, because the engine had named the
+   -- dispatch line - but the NEXT report named datachannel.lcb line 234, which
+   -- is inside dcPoll's buffer helper, so the throw was read as happening HERE,
+   -- on the way in. Guarding only the half you have already been shown is how a
+   -- diagnostic costs two passes instead of one, and THAT lesson stands: an
+   -- unguarded `put dcPoll() into dc1tEvents` takes the timer chain down before any
+   -- dispatch is attempted, so both halves are guarded and both stay guarded.
+   --
+   -- WHERE THE THROW ACTUALLY WAS (OXT-ENGINE-NOTES 6.7, 2026-08-18). Once this
+   -- pump reported the two halves distinctly - "dcPoll failed on drain #N"
+   -- versus "dispatch of <name> failed" - the run printed the DISPATCH form,
+   -- naming dcLocalDescription: an event name colliding with a public library
+   -- handler of the same name. The drain was clean. So line 234 was an
+   -- INFERENCE from a line number, not a location, and why that number was
+   -- reported at all is still unexplained. That is not a reason to drop this
+   -- guard: it is here because a throw on the way in kills the timer chain,
+   -- which is true whether or not it has happened yet.
+   add 1 to dc1sPollDrains
+   put empty into dc1tEvents
+   try
+      put dcPoll() into dc1tEvents
+   catch dc1tErr
+      if dc1sPollNote is empty then
+         -- NAME THE DRAIN NUMBER. _ensureDrain has exactly two callers and
+         -- they are told apart by WHEN they run: the first drain passes the
+         -- constant kDrainCap, and only a later one can reach the
+         -- grow-and-retry path that computes its size from the shim's return.
+         -- "cannot convert value" on drain 1 and on drain 400 are different
+         -- bugs, and this counter is the whole difference between them - at
+         -- no cost, and with no extension rebuild to find out.
+         --
+         -- NO `+ 1` HERE. The increment happens above, BEFORE the try, so
+         -- dc1sPollDrains already counts this drain: the first one is #1. The
+         -- version that shipped added one anyway and reported the first drain
+         -- as #2 - inverting the single discrimination the counter exists to
+         -- make, in the same commit whose message argued for it. An off-by-one
+         -- in a diagnostic is not cosmetic; it is a diagnostic that lies.
+         put "dcPoll failed on drain #" & dc1sPollDrains & ": " & \
+               line 1 of dc1tErr into dc1sPollNote
+      end if
+      -- Do NOT stop polling: a transient drain failure must not silently end
+      -- the app's event delivery. Reschedule below and try again.
+      put empty into dc1tEvents
+   end try
+   repeat for each element dc1tEvent in dc1tEvents
+      put dc1tEvent["name"] into dc1tName
+      -- TRANSITION SHIM, and it is what makes this work without reinstalling
+      -- the extension. Before 2026-08-18 the shim emitted "dcLocalDescription"
+      -- for this event - a name this library ALSO exports as a getter. xTalk
+      -- has one message namespace, so dispatching it reached
+      -- dcLocalDescription(in pPeer as Integer) with the event Array and threw
+      -- "cannot convert value"; no app handler was ever reached. The .lcb now
+      -- emits the ...Ready spelling, but an extension packaged before that
+      -- still emits the old one, so map it here and apps work against either.
+      -- REMOVE THIS when no supported build emits the old name.
+      if dc1tName is "dcLocalDescription" then
+         put "dcLocalDescriptionReady" into dc1tName
+      end if
+      try
+         if dc1tName is not empty then
+            dispatch dc1tName to dc1tTarget with dc1tEvent
+         end if
+         -- also fire a catch-all so one handler can observe the whole stream
+         dispatch "dataChannelEvent" to dc1tTarget with dc1tEvent
+      catch dc1tErr
+         -- Keep the FIRST failure: it is the one with a clean cause. Later
+         -- ones are usually the same bug repeating at 10 Hz, and overwriting
+         -- would leave whichever event happened to be last.
+         if dc1sPollNote is empty then
+            put "dispatch of" && dc1tName & " failed: " & line 1 of dc1tErr into dc1sPollNote
+         end if
+      end try
+   end repeat
+   -- Reschedule (the native queue keeps buffering between drains). The
+   -- interval is guarded because `in () milliseconds` on an empty value is
+   -- itself a type conversion error - and a poll loop that dies while
+   -- reporting a poll error would be a poor diagnostic.
+   if dc1sPollInterval is not a number or dc1sPollInterval < 1 then
+      put 33 into dc1sPollInterval
+   end if
+   -- DO NOT RE-ARM IF A DISPATCH STOPPED US. The pass above runs app code, and
+   -- app code legitimately calls dc1dcStopPolling from inside a handler this
+   -- very loop dispatched - enet-lan-chat does exactly that in `on
+   -- enetDisconnect`. Re-arming unconditionally leaves a tick in flight after
+   -- the flag went false, and the arm-once guard in dc1dcStartPolling tests that
+   -- same flag: the next start sees "not polling", arms a SECOND chain, and
+   -- the stale tick then re-arms the first. Two permanent chains, neither
+   -- stoppable on its own because both read one flag - which is the trap the
+   -- arm-once guard was added to prevent, reached from the other side.
+   if dc1sPolling is not "true" then
+      exit dc1dcChannelPollOnce
+   end if
+   send "dc1dcChannelPollOnce" to me in (dc1sPollInterval) milliseconds
+end dc1dcChannelPollOnce
+
+function dc1dcPollLastError
+   return dc1sPollNote
+end dc1dcPollLastError
+
+command dc1dcPollClearError
+   put empty into dc1sPollNote
+end dc1dcPollClearError
+
+function dc1dcStateName pState
+   switch pState
+      case 0
+         return "new"
+      case 1
+         return "connecting"
+      case 2
+         return "connected"
+      case 3
+         return "disconnected"
+      case 4
+         return "failed"
+      case 5
+         return "closed"
+      default
+         return "unknown"
+   end switch
+end dc1dcStateName
+
+function dc1dcGatheringName pState
+   switch pState
+      case 0
+         return "new"
+      case 1
+         return "gathering"
+      case 2
+         return "complete"
+      default
+         return "unknown"
+   end switch
+end dc1dcGatheringName
+
+function dc1dcFormatBytes pBytes
+   local dc1tUnits, dc1tVal, dc1tI, dc1tSavedDelim, dc1tOut
+   if pBytes is empty or pBytes is not a number then
+      return "0 B"
+   end if
+   put "B,KiB,MiB,GiB" into dc1tUnits
+   put pBytes into dc1tVal
+   put 1 into dc1tI
+   -- TWO reads need the comma, not one: the loop guard COUNTS the units and
+   -- the return picks one. The `set` used to sit BETWEEN them, so the guard
+   -- counted under whatever delimiter was in force rather than the one this
+   -- data is written in - and under any delimiter but comma that string is a
+   -- ONE-item list, so the loop never runs and a gigabyte reports itself in
+   -- bytes. Set once before the FIRST read; restore before returning, since a
+   -- humaniser has no business changing its caller's delimiter (the family's
+   -- LCS gotcha: itemDelimiter is global mutable state - set it immediately
+   -- before use, and put back what you found). Not a precaution: holde-em's
+   -- v0.15 audit found three real leaks of exactly this shape - heStackFolder
+   -- returning with the delimiter left at a slash, heSwapExt at a dot - and
+   -- answered all three with save-and-restore.
+   put the itemDelimiter into dc1tSavedDelim
+   set the itemDelimiter to comma
+   repeat while dc1tVal >= 1024 and dc1tI < the number of items of dc1tUnits
+      put dc1tVal / 1024 into dc1tVal
+      add 1 to dc1tI
+   end repeat
+   put (the round of (dc1tVal * 10) / 10) && (item dc1tI of dc1tUnits) into dc1tOut
+   set the itemDelimiter to dc1tSavedDelim
+   return dc1tOut
+end dc1dcFormatBytes
+
 command dc1stResetCounters
    put 0 into dc1sTotal
    put 0 into dc1sPassed
@@ -17920,6 +18518,41 @@ command dc1stRun
    dc1stAssert "dcSendText refuses an embedded NUL with -3", dc1tNulR is -3
    dc1stAssert "the NUL refusal cleared the shim last-error", dcLastError() is empty
    dcClearError
+
+   -- ---- the poll dispatcher library --------------------------------------
+   -- datachannel-helpers.livecodescript is a SHIPPED library, and until
+   -- 2026-08-19 none of its eight public handlers was named by any test. It
+   -- lives under examples/, so tools/check-suite-coverage.py could not see it
+   -- (the datachannelxt row scopes to src/). tools/sync-demo-embeds.py carries
+   -- it into this harness so the two are one script.
+   --
+   -- WHAT THIS SECTION DELIBERATELY DOES NOT DO: arm the pump. dc1dcStartPolling
+   -- registers a target and schedules dc1dcChannelPollOnce, which calls dcPoll and
+   -- DISPATCHES what it drains. This harness's synchronous half is folded into
+   -- the suite paste, where the core drives its own DataChannel loopback off
+   -- the same queue - so arming a second drainer here would steal the events
+   -- that loopback is waiting for. It is the same "two state machines racing
+   -- for the event handlers" rule that keeps this member's async loopback out
+   -- of the fold, and those two handlers carry it as a written coverage
+   -- exemption rather than a test that would be unsafe where it runs.
+   dc1stSection "the poll dispatcher library (datachannel-helpers, embedded above)"
+   dc1stAssert "dc1dcStateName(0) is new", dc1dcStateName(0) is "new"
+   dc1stAssert "dc1dcStateName(2) is connected", dc1dcStateName(2) is "connected"
+   dc1stAssert "dc1dcStateName answers for an unknown state", dc1dcStateName(99) is not empty
+   dc1stAssert "dc1dcGatheringName(0) is not empty", dc1dcGatheringName(0) is not empty
+   dc1stAssert "dc1dcGatheringName(2) names the complete state", dc1dcGatheringName(2) is not empty
+   dc1stAssert "dc1dcGatheringName answers for an unknown state", dc1dcGatheringName(99) is not empty
+   dc1stAssert "dc1dcStateName and dc1dcGatheringName are different maps", \
+         dc1dcStateName(1) is not dc1dcGatheringName(1)
+   dc1stAssert "dc1dcFormatBytes(0)", dc1dcFormatBytes(0) is "0 B"
+   dc1stAssert "dc1dcFormatBytes refuses a non-number, fail-closed", dc1dcFormatBytes("x") is "0 B"
+   dc1stAssert "dc1dcFormatBytes refuses empty", dc1dcFormatBytes(empty) is "0 B"
+   dc1stAssert "dc1dcFormatBytes scales past a kilobyte", dc1dcFormatBytes(2048) is not "2048 B"
+   dc1dcPollClearError
+   dc1stAssert "dc1dcPollLastError is empty while the pump is healthy", dc1dcPollLastError() is empty
+   -- safe on its own: it only lowers the flag, and nothing here raised it
+   dc1dcStopPolling
+   dc1stAssert "dc1dcStopPolling is safe when nothing is polling", dc1dcPollLastError() is empty
 
    -- GENERATED CUT (tools/build-suite-selftest.py). Everything below
    -- this point in datachannelxt/tests/datachannel-selftest.livecodescript

@@ -1515,7 +1515,18 @@ end stStartDcLoopback
 command stDcEvent pEvent
    local tName, tDest, tPayload
    put pEvent["name"] into tName
-   if tName is "dcLocalDescription" then
+   -- EITHER SPELLING. The .lcb emits "dcLocalDescriptionReady" since
+   -- 2026-08-19 (the old name collided with the public getter
+   -- dcLocalDescription, so dispatching it reached the LIBRARY handler - engine
+   -- note 6.7). An extension packaged before that still emits the old name.
+   --
+   -- THIS LINE WAS MISSED BY THE RENAME, and it is the one that mattered most:
+   -- the member selftest and the closing-pass stack were both updated, but this
+   -- is the handler that DRIVES the loopback in the ~1900-check paste, so the
+   -- offer would simply never have been shuttled and a section green on the two
+   -- previous passes would have failed with no obvious cause. A comparison is
+   -- not a dispatch, so nothing in the collision gate could see it.
+   if tName is among the items of "dcLocalDescription,dcLocalDescriptionReady" then
       put stDcOtherPeer(pEvent["peer"]) into tDest
       if tDest is not empty then
          dcSetRemoteDescription tDest, pEvent["sdp"], pEvent["sdpType"]

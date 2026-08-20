@@ -2303,6 +2303,24 @@ private function oxhParseHeaders pHeaderBytes
       if tColon > 1 then
          put toLower(oxhTrim(char 1 to (tColon - 1) of tLine)) into tName
          put oxhTrim(char (tColon + 1) to -1 of tLine) into tValue
+         -- "__" IS OUR RESERVED PSEUDO-FIELD NAMESPACE, and until 2026-08-19
+         -- a client could write into it. The request line is parsed ABOVE, so
+         -- __method / __path / __query / __resource are already in this array
+         -- when the header loop starts - and this line put an attacker-chosen
+         -- name straight into the same array. A request carrying a header
+         -- literally named `__path` therefore REPLACED the parsed path, which
+         -- oxhHandle then uses both to select a route and as the argument to
+         -- oxhServeStatic. On an inbound path reachable by anyone who has the
+         -- onion address. (__body was never exposed: oxhHandle writes it after
+         -- this parse returns, so it overwrote the client's value rather than
+         -- the other way round - which is luck, not design.)
+         --
+         -- nocloud's qsHttpParseHead has carried this exact guard since it was
+         -- written, in the same words. Real HTTP header names never begin
+         -- "__", so refusing them costs nothing.
+         if tName begins with "__" then
+            next repeat
+         end if
          put tValue into tOut[tName]
       end if
    end repeat
@@ -2696,6 +2714,7 @@ function oxSelfTest
    testSodiumComposition
    testConfigurationSetters
    testLoopbackGuard
+   testHttpdHelpers
 
    local tSummary
    -- THE SHAPE OF THIS LINE IS A CONTRACT with the suite core's
@@ -3100,6 +3119,103 @@ end testConfigurationSetters
 -- worse trade: it would put two internals in the published ABI (docs/05) and in
 -- the suite coverage denominator forever.
 -- ==========================================================================
+
+-- ==========================================================================
+-- The oxh* HTTP layer: 11 public handlers and a dozen private helpers that,
+-- until 2026-08-19, no test in this tree named even once. It is PURE COMPUTE -
+-- header parsing, framing, escaping, MIME - and it is the layer riptide's anon
+-- persona and nocloud's Tor path both serve through, reachable by anyone who
+-- has the onion address. That combination is the argument for testing it.
+--
+-- SAME PRIVATE-HANDLER PROBLEM as the loopback guard above, and the same
+-- answer: these helpers are private to onion-httpd.livecodescript, so they
+-- resolve only where the harness and that file are ONE script. That is the
+-- onionxt DEMO (sync-demo-embeds carries onionxt + onion-httpd + this harness
+-- into it). It is deliberately NOT the suite paste, which carries the ox*
+-- surface but not the httpd app on top of it - so this section SKIPs there,
+-- honestly, rather than reporting a phantom failure.
+-- ==========================================================================
+
+private command testHttpdHelpers
+   oxSection "oxh* HTTP layer (pure compute: parse, frame, escape, MIME)"
+   local tProbe, tError, tCRLF, tReq, tH, tBody
+
+   try
+      put oxhTrim("  x  ") into tProbe
+   catch tError
+      oxSkip "the oxh* helpers are private to onion-httpd.livecodescript; " & \
+         "run the onionxt demo, where sync-demo-embeds makes the harness " & \
+         "and that layer one script"
+      exit testHttpdHelpers
+   end try
+   oxCheck (tProbe is "x"), "oxhTrim strips surrounding whitespace"
+
+   put numToChar(13) & numToChar(10) into tCRLF
+
+   -- ---- the request line ------------------------------------------------
+   put "GET /a/b?x=1&y=2 HTTP/1.1" & tCRLF & "Host: example.onion" & tCRLF into tReq
+   put oxhParseHeaders(textEncode(tReq, "UTF-8")) into tH
+   oxCheck (tH["__method"] is "GET"), "oxhParseHeaders reads the method"
+   oxCheck (tH["__path"] is "/a/b"), "oxhParseHeaders splits the path from the query"
+   oxCheck (tH["__query"] is "x=1&y=2"), "oxhParseHeaders keeps the whole query"
+   oxCheck (tH["__resource"] is "/a/b?x=1&y=2"), "oxhParseHeaders keeps the raw resource"
+   oxCheck (tH["host"] is "example.onion"), "a header name is lowercased and its value trimmed"
+
+   -- ---- THE REGRESSION THIS SECTION EXISTS FOR --------------------------
+   -- A client header named __path used to be written into the SAME array the
+   -- request line had already populated, so it replaced the parsed path -
+   -- which oxhHandle uses to pick a route and to call oxhServeStatic. Fixed
+   -- 2026-08-19 by refusing any header name in the "__" namespace, the guard
+   -- nocloud's qsHttpParseHead has always carried.
+   put "GET /safe HTTP/1.1" & tCRLF & "__path: /../../etc/passwd" & tCRLF & \
+       "__method: DELETE" & tCRLF & "__query: evil=1" & tCRLF & \
+       "Host: example.onion" & tCRLF into tReq
+   put oxhParseHeaders(textEncode(tReq, "UTF-8")) into tH
+   oxCheck (tH["__path"] is "/safe"), \
+         "a client header named __path CANNOT replace the parsed path"
+   oxCheck (tH["__method"] is "GET"), \
+         "a client header named __method CANNOT replace the parsed method"
+   oxCheck (tH["__query"] is empty), \
+         "a client header named __query CANNOT invent a query string"
+   oxCheck (tH["host"] is "example.onion"), \
+         "refusing the __ namespace does not disturb ordinary headers"
+
+   -- ---- framing ---------------------------------------------------------
+   put "GET / HTTP/1.1" & tCRLF & "Host: h" & tCRLF & tCRLF into tReq
+   oxCheck (oxhHeaderEnd(textEncode(tReq, "UTF-8")) > 0), \
+         "oxhHeaderEnd finds the blank line that ends the head"
+   oxCheck (oxhHeaderEnd(textEncode("GET / HTTP/1.1" & tCRLF, "UTF-8")) is 0), \
+         "oxhHeaderEnd answers 0 while the head is still incomplete"
+   oxCheck (oxhRequestComplete(textEncode(tReq, "UTF-8")) is true), \
+         "a bodyless GET is complete once its head is"
+
+   -- a declared Content-Length is not satisfied until the body arrives
+   put "POST /x HTTP/1.1" & tCRLF & "Content-Length: 5" & tCRLF & tCRLF into tReq
+   oxCheck (oxhRequestComplete(textEncode(tReq, "UTF-8")) is false), \
+         "a POST is incomplete while its declared body is missing"
+   oxCheck (oxhRequestComplete(textEncode(tReq & "hello", "UTF-8")) is true), \
+         "...and complete once the declared bytes are all there"
+
+   -- ---- escaping and encoding -------------------------------------------
+   put oxhHtmlEscape("<a href=" & quote & "x" & quote & ">&</a>") into tBody
+   oxCheck (tBody contains "&lt;"), "oxhHtmlEscape escapes <"
+   oxCheck (tBody contains "&gt;"), "oxhHtmlEscape escapes >"
+   oxCheck (tBody contains "&amp;"), "oxhHtmlEscape escapes &"
+   oxCheck (not (tBody contains "<a href")), \
+         "oxhHtmlEscape leaves no raw markup (the directory listing's whole defence)"
+
+   oxCheck (oxhPathEncode("a b") contains "%20"), "oxhPathEncode encodes a space"
+   oxCheck (oxhStripTrailingSlash("/x/y/") is "/x/y"), "oxhStripTrailingSlash trims one slash"
+   oxCheck (oxhStripTrailingSlash("/x/y") is "/x/y"), "...and leaves a bare path alone"
+
+   -- ---- MIME and status reasons -----------------------------------------
+   oxCheck (oxhMimeType("/a/b.html") contains "text/html"), "oxhMimeType maps .html"
+   oxCheck (oxhMimeType("/a/b.png") contains "image/png"), "oxhMimeType maps .png"
+   oxCheck (oxhMimeType("/a/b.unknownext") is not empty), \
+         "oxhMimeType falls back rather than answering empty"
+   oxCheck (oxhReason(200) is not empty), "oxhReason names 200"
+   oxCheck (oxhReason(404) is not empty), "oxhReason names 404"
+end testHttpdHelpers
 
 private command testLoopbackGuard
    oxSection "inbound loopback guard (socket id parse + verdict)"

@@ -233,6 +233,30 @@ MEMBERS = [
     # riptide is the capstone APP, not an extension, but its rs* surface is a
     # public API its folded harness must reach, so it rides the same ratchet.
     ("riptide", "rs", ["riptide/src/riptide.livecodescript"]),
+    # THE TWO POLL DISPATCHERS ARE NOT HERE, AND A ROW WOULD LIE (2026-08-19).
+    # enetxt/examples/enet-helpers.livecodescript and its datachannelxt twin are
+    # SHIPPED libraries - the layer every demo drives and every doc teaches -
+    # and the enetxt/datachannelxt rows below scope to src/, so this gate has
+    # never seen their 15 public handlers. Measured before anything was done
+    # about it: the suite paste named ZERO of them.
+    #
+    # They are tested now (a section in each member harness, carried in by
+    # tools/sync-demo-embeds.py so harness and library are one script), but a
+    # ROW here would still be dishonest, and the reason is worth carrying:
+    #
+    #   the fold puts the library's own BODY into the paste, and the fold does
+    #   not keep the sync-demo-embeds sentinels. cut_embedded_spans() below cuts
+    #   `GENERATED EMBED` spans - the four script layers - so it cannot cut
+    #   these. The scan would therefore count `command dcStartPolling` and the
+    #   `send "dcChannelPollOnce"` INSIDE that library as coverage of itself,
+    #   and report 8/8 for a surface whose tests deliberately arm neither.
+    #
+    # That is exactly the fake 309/309 this file's header records from before
+    # the span cut existed, arrived at from the other direction. Ratcheting
+    # these needs a way to tell an embedded library from a test - the sentinels
+    # surviving the fold, most likely - not a row added on top of a number that
+    # counts a library naming itself.
+    #
     # BOX2DXT IS MEASURED AS ITS KIT, AND THE RAW b2* BINDING IS NOT IN THIS
     # RATCHET. That is a deliberate scope call, and the numbers behind it are
     # here so the next reader can re-take it rather than inherit it:
@@ -789,6 +813,173 @@ def holdem_handler_blocks(text):
     return blocks
 
 
+# --------------------------------------------------------------------------
+# THE RAW b2* BINDING: AN ADVISORY ROW WITH A FLOOR, ADDED 2026-08-19.
+#
+# The block beside MEMBERS explains why box2dxt is ratcheted as its KIT and the
+# raw binding is not: closing 245 handlers would mean writing ~245 assertions
+# blind against a foreign-bound API in one pass. That call stands. What did NOT
+# have to stand is the number being free to grow - a new b2* handler that no
+# script anywhere names could land tomorrow and nothing would say so, which is
+# how 245 became 245 in the first place.
+#
+# So this measures the same thing the prose already claims, and fails only on
+# the three ways the baseline can stop matching the tree - the identical
+# structure to the holde-em floor above:
+#
+#   unlisted  a b2* handler named by NO script and not in the baseline. The
+#             floor: 245 cannot quietly become 246.
+#   promoted  a baseline name a script now DOES name. Left in, it inflates
+#             every later reading of "245".
+#   stale     a baseline name the .lcb no longer declares (renamed/removed).
+#
+# CONVENTIONS MATCH THE GATE, NOT A GREP. Comments are stripped and string
+# literals blanked before scanning, which is what makes this 131/245 rather
+# than the 132/244 a raw token count gives - the pair root CLAUDE.md now
+# records with that explanation.
+B2_RAW_SCRIPTS = "box2dxt/**/*.livecodescript"
+B2_RAW_LCB = "box2dxt/src/box2dxt.lcb"
+
+B2_RAW_BASELINE = frozenset((
+    "b2AABBLowerX", "b2AABBLowerY", "b2AABBUpperX", "b2AABBUpperY",
+    "b2ApplyForceAt", "b2ApplyImpulseAt", "b2ApplyMassFromShapes",
+    "b2BodyAABBUpdate", "b2BodyEnableContactEvents",
+    "b2BodyEnableHitEvents", "b2BodyIsFixedRotation",
+    "b2BodyIsSleepEnabled", "b2BodyJointAt", "b2BodyJointCount",
+    "b2BodyLocalCenterX", "b2BodyLocalCenterY",
+    "b2BodyLocalPointVelocityX", "b2BodyLocalPointVelocityY",
+    "b2BodyLocalPointX", "b2BodyLocalPointY", "b2BodyLocalVectorX",
+    "b2BodyLocalVectorY", "b2BodyMassDataUpdate", "b2BodyMoveCount",
+    "b2BodyMoveFellAsleep", "b2BodyRotationalInertia", "b2BodyShapeAt",
+    "b2BodyShapeCount", "b2BodyWorldPointVelocityX",
+    "b2BodyWorldPointVelocityY", "b2BodyWorldPointX", "b2BodyWorldPointY",
+    "b2BodyWorldVectorX", "b2BodyWorldVectorY", "b2ChainFriction",
+    "b2ChainIsValid", "b2ChainRestitution", "b2ChainSegmentAt",
+    "b2ChainSegmentCount", "b2ContactBeginCount", "b2ContactHitBodyA",
+    "b2ContactHitBodyB", "b2ContactHitCount", "b2ContactHitNormalX",
+    "b2ContactHitNormalY", "b2ContactHitSpeed", "b2ContactHitX",
+    "b2ContactHitY", "b2DestroyChain", "b2DistanceCurrentLength",
+    "b2DistanceEnableMotor", "b2DistanceIsLimitEnabled",
+    "b2DistanceIsMotorEnabled", "b2DistanceIsSpringEnabled",
+    "b2DistanceMaxLength", "b2DistanceMaxMotorForce",
+    "b2DistanceMinLength", "b2DistanceMotorForce", "b2DistanceMotorSpeed",
+    "b2DistanceSetMaxMotorForce", "b2DistanceSetMotorSpeed",
+    "b2DistanceSpringDamping", "b2DistanceSpringHertz",
+    "b2EnableSpeculative", "b2HitEventThreshold", "b2IsContinuousEnabled",
+    "b2IsSleepingEnabled", "b2IsWarmStartingEnabled", "b2JointBodyA",
+    "b2JointBodyB", "b2JointCollideConnected", "b2JointConstraintForceX",
+    "b2JointConstraintForceY", "b2JointConstraintTorque",
+    "b2JointLocalAnchorAX", "b2JointLocalAnchorAY", "b2JointLocalAnchorBX",
+    "b2JointLocalAnchorBY", "b2JointType", "b2JointWakeBodies",
+    "b2LoadNativeLib", "b2LoadNativeLibError", "b2LoadNativeLibHere",
+    "b2MassDataCenterX", "b2MassDataCenterY", "b2MassDataInertia",
+    "b2MassDataMass", "b2MaximumLinearSpeed", "b2MotorAngularOffset",
+    "b2MotorCorrectionFactor", "b2MotorLinearOffsetX",
+    "b2MotorLinearOffsetY", "b2MotorMaxForce", "b2MotorMaxTorque",
+    "b2MotorSetAngularOffset", "b2MotorSetCorrectionFactor",
+    "b2MotorSetLinearOffset", "b2MotorSetMaxForce", "b2MotorSetMaxTorque",
+    "b2MouseMaxForce", "b2MouseSetMaxForce", "b2MouseSetSpringDamping",
+    "b2MouseSetSpringHertz", "b2MouseSpringDamping", "b2MouseSpringHertz",
+    "b2MouseTargetX", "b2MouseTargetY", "b2NewDynamicBody",
+    "b2NewKinematicBody", "b2NewThreadedWorld", "b2OverlapPoint",
+    "b2OverlapShape", "b2PrismaticEnableSpring",
+    "b2PrismaticIsLimitEnabled", "b2PrismaticIsMotorEnabled",
+    "b2PrismaticIsSpringEnabled", "b2PrismaticLowerLimit",
+    "b2PrismaticMaxMotorForce", "b2PrismaticMotorForce",
+    "b2PrismaticMotorSpeed", "b2PrismaticSetMotorSpeed",
+    "b2PrismaticSetSpringDamping", "b2PrismaticSetSpringHertz",
+    "b2PrismaticSpeed", "b2PrismaticSpringDamping",
+    "b2PrismaticSpringHertz", "b2PrismaticUpperLimit", "b2QueryCount",
+    "b2QueryFraction", "b2QueryNormalX", "b2QueryNormalY", "b2QueryShape",
+    "b2QueryX", "b2QueryY", "b2RayShape", "b2RestitutionThreshold",
+    "b2RevoluteEnableSpring", "b2RevoluteIsLimitEnabled",
+    "b2RevoluteIsMotorEnabled", "b2RevoluteIsSpringEnabled",
+    "b2RevoluteLowerLimit", "b2RevoluteMaxMotorTorque",
+    "b2RevoluteMotorSpeed", "b2RevoluteMotorTorque",
+    "b2RevoluteSetMaxMotorTorque", "b2RevoluteSetMotorSpeed",
+    "b2RevoluteSetSpringDamping", "b2RevoluteSetSpringHertz",
+    "b2RevoluteSpringDamping", "b2RevoluteSpringHertz",
+    "b2RevoluteUpperLimit", "b2SensorBeginCount", "b2SetChainFriction",
+    "b2SetChainRestitution", "b2SetHitEventThreshold",
+    "b2SetJointCollideConnected", "b2SetMassData", "b2SetShapeCapsule",
+    "b2SetShapeCircle", "b2SetShapeMaterialId", "b2SetShapePolygon",
+    "b2SetShapeSegment", "b2SetTargetTransform", "b2ShapeAABBUpdate",
+    "b2ShapeCapsuleRadius", "b2ShapeCapsuleUpdate", "b2ShapeCapsuleX1",
+    "b2ShapeCapsuleX2", "b2ShapeCapsuleY1", "b2ShapeCapsuleY2",
+    "b2ShapeCast", "b2ShapeCircleRadius", "b2ShapeCircleUpdate",
+    "b2ShapeCircleX", "b2ShapeCircleY", "b2ShapeClosestPointX",
+    "b2ShapeClosestPointY", "b2ShapeContactEventsEnabled",
+    "b2ShapeDefEnableContactEvents", "b2ShapeDefEnableHitEvents",
+    "b2ShapeDefEnablePreSolveEvents", "b2ShapeDefMaterialId",
+    "b2ShapeDensity", "b2ShapeEnableContactEvents",
+    "b2ShapeEnableHitEvents", "b2ShapeEnablePreSolveEvents",
+    "b2ShapeEnableSensorEvents", "b2ShapeFriction",
+    "b2ShapeHitEventsEnabled", "b2ShapeIsSensor", "b2ShapeMassDataUpdate",
+    "b2ShapeMaterialId", "b2ShapePolygonCount", "b2ShapePolygonRadius",
+    "b2ShapePolygonUpdate", "b2ShapePolygonVertexX",
+    "b2ShapePolygonVertexY", "b2ShapeRayCast", "b2ShapeRayFraction",
+    "b2ShapeRayNormalX", "b2ShapeRayNormalY", "b2ShapeRayX", "b2ShapeRayY",
+    "b2ShapeRestitution", "b2ShapeSegmentUpdate", "b2ShapeSegmentX1",
+    "b2ShapeSegmentX2", "b2ShapeSegmentY1", "b2ShapeSegmentY2",
+    "b2ShapeSensorCapacity", "b2ShapeSensorEventsEnabled",
+    "b2ShapeSensorOverlapAt", "b2ShapeSensorOverlapCount",
+    "b2ShapeSensorOverlapsUpdate", "b2ShapeType", "b2WeldAngularDamping",
+    "b2WeldAngularHertz", "b2WeldLinearDamping", "b2WeldLinearHertz",
+    "b2WeldReferenceAngle", "b2WeldSetReferenceAngle",
+    "b2WheelEnableLimit", "b2WheelIsLimitEnabled", "b2WheelIsMotorEnabled",
+    "b2WheelIsSpringEnabled", "b2WheelLowerLimit", "b2WheelMaxMotorTorque",
+    "b2WheelMotorSpeed", "b2WheelMotorTorque", "b2WheelSetLimits",
+    "b2WheelSpringDamping", "b2WheelSpringHertz", "b2WheelUpperLimit",
+    "b2WorldBodyCount", "b2WorldContactCount", "b2WorldCountersUpdate",
+    "b2WorldGravityX", "b2WorldGravityY", "b2WorldIslandCount",
+    "b2WorldJointCount", "b2WorldProfilePairs", "b2WorldProfileRefit",
+    "b2WorldProfileSensors", "b2WorldShapeCount", "b2WorldThreadCount",
+))
+
+
+def box2dxt_raw_report():
+    """The raw b2* binding measured against every script in the member."""
+    problems, notes = [], []
+    api = public_api("b2", [B2_RAW_LCB])
+    if len(api) < 300:
+        problems.append("box2dxt raw b2* scan found only %d public handler(s) - "
+                        "the .lcb parse is broken, and a clean row would be a lie"
+                        % len(api))
+        return None, problems, notes
+    blob = []
+    for path in sorted(glob.glob(os.path.join(ROOT, B2_RAW_SCRIPTS),
+                                 recursive=True)):
+        text = open(path, encoding="utf-8", errors="replace").read()
+        blob.append(blank_string_literals(strip_comments(text, path)))
+    blob = "\n".join(blob)
+    named = {n for n in api if re.search(r"\b" + re.escape(n) + r"\b", blob)}
+    unnamed = api - named
+
+    unlisted = sorted(unnamed - B2_RAW_BASELINE)
+    promoted = sorted(B2_RAW_BASELINE & named)
+    stale = sorted(B2_RAW_BASELINE - api)
+    if unlisted:
+        problems.append("box2dxt raw b2*: NEW UNNAMED handler(s) - no script in "
+                        "the member names these, and they are not in the "
+                        "recorded baseline: " + ", ".join(unlisted))
+    if promoted:
+        problems.append("box2dxt raw b2*: NOW NAMED (a script reaches these; "
+                        "drop them from B2_RAW_BASELINE so the count stays "
+                        "honest): " + ", ".join(promoted))
+    if stale:
+        problems.append("box2dxt raw b2*: BASELINE STALE (the .lcb no longer "
+                        "declares these): " + ", ".join(stale))
+    notes.append("box2dxt (raw b2* binding, ADVISORY with a FLOOR - see "
+                 "B2_RAW_BASELINE in tools/check-suite-coverage.py)")
+    notes.append("  %d/%d public b2* handlers are named by some script in the "
+                 "member (comments stripped, string literals blanked)"
+                 % (len(named), len(api)))
+    notes.append("  %d named by nothing - the recorded baseline, not a failure. "
+                 "Today: %d new / %d promoted / %d stale"
+                 % (len(unnamed), len(unlisted), len(promoted), len(stale)))
+    return (len(named), len(api), len(unnamed)), problems, notes
+
+
 def holdem_region_report():
     """Measure holde-em by splitting its one file into game and harness.
 
@@ -949,18 +1140,41 @@ def holdem_region_report():
     notes.append(f"  harness region: {len(blocks)} handlers, {len(reach)} "
                  f"reachable from heSelfTest, "
                  f"{len(HOLDEM_DELIVERY)} interactive-delivery by design")
+    # ARMED AS A FLOOR, 2026-08-19. The 209 standing gaps are NOT a failure -
+    # ratcheting them would mean writing 209 assertions blind in one pass, and
+    # this row exists to stop the number growing, not to pretend it is small.
+    # What DOES fail is the three ways the recorded baseline can stop matching
+    # the tree, and all three measured 0 on the day this was armed:
+    #
+    #   unlisted  a NEW gap - a public game handler exercised by nothing and
+    #             claimed by no worklist category. This is the floor itself.
+    #   promoted  a worklist entry a test now DOES reach. Left in, it is a
+    #             standing excuse for debt already paid, and every later
+    #             reading of "209" is inflated by it.
+    #   stale     a worklist entry naming a handler holde-em no longer defines.
+    #             A rename would otherwise leave a permanent exemption behind
+    #             it - the exact failure `check-suite-coverage` already refuses
+    #             for the onionxt per-handler reasons.
+    #
+    # The last two are the "a stale excuse cannot outlive its handler" rule
+    # this file applies everywhere else; the row was advisory only because
+    # nobody had separated them from the 209.
     if stale:
-        notes.append("  WORKLIST STALE (holde-em no longer defines these; drop "
-                     "them from HOLDEM_WORKLIST): " + ", ".join(stale))
+        problems.append("holde-em WORKLIST STALE (holde-em no longer defines "
+                        "these; drop them from HOLDEM_WORKLIST): "
+                        + ", ".join(stale))
     if promoted:
-        notes.append("  NOW EXERCISED (a test names these; drop them from "
-                     "HOLDEM_WORKLIST): " + ", ".join(promoted))
+        problems.append("holde-em NOW EXERCISED (a test names these; drop them "
+                        "from HOLDEM_WORKLIST so the gap count stays honest): "
+                        + ", ".join(promoted))
     if unlisted:
-        notes.append("  NEW GAP (named by no test and in no HOLDEM_WORKLIST "
-                     "category): " + ", ".join(unlisted))
-    notes.append(f"  if this row were armed today it would fail on {len(gaps)} "
-                 f"handler(s); armed as a floor - no NEW gaps - it would fail "
-                 f"on {len(unlisted) + len(promoted) + len(stale)}")
+        problems.append("holde-em NEW GAP (named by no test and in no "
+                        "HOLDEM_WORKLIST category): " + ", ".join(unlisted))
+    notes.append(f"  ARMED AS A FLOOR: the {len(gaps)} standing gap(s) are the "
+                 f"recorded baseline and do not fail; a NEW gap, a promoted "
+                 f"entry or a stale entry does. Today: "
+                 f"{len(unlisted)} new / {len(promoted)} promoted / "
+                 f"{len(stale)} stale")
     return (len(hit) + len(dispatched), len(game_api), len(gaps)), problems, notes
 
 
@@ -1042,6 +1256,11 @@ def main(argv):
     # quote.
     holdem_row, holdem_problems, holdem_notes = holdem_region_report()
     problems.extend(holdem_problems)
+
+    # Same shape, same reason, different surface: advisory row, enforced floor.
+    b2_row, b2_problems, b2_notes = box2dxt_raw_report()
+    problems.extend(b2_problems)
+    holdem_notes = holdem_notes + [""] + b2_notes
 
     # A stale excuse is worse than none: it reads as a considered decision about
     # a handler that no longer exists, and it hides the next one that lands.

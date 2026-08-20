@@ -143,6 +143,97 @@ def load_lcb():
     return sigs, fieldkeys, events
 
 
+def check_event_literals(events):
+    """CHECK 5: a script literal naming an event must name one something EMITS.
+
+    The event rename of 2026-08-19 updated the member selftest and the
+    closing-pass stack and MISSED `tests/suite-selftest.core.livecodescript`,
+    which is the handler that drives the DataChannel loopback in the ~1900-check
+    paste. The offer would simply never have been shuttled, and a section green
+    on the two previous engine passes would have failed with no obvious cause -
+    on the next pass, not on this machine.
+
+    A COMPARISON IS NOT A DISPATCH, which is why check 4 could not see it: check
+    4 asks whether an emitted name collides with a handler name; this asks the
+    opposite question, whether a name a script tests for is one anything emits.
+
+    The transition idiom stays legal. A handler that mentions a retired name
+    ALONGSIDE a current one is mapping the old spelling forward (the poll pumps
+    do exactly that), so the rule is per-handler: a retired name is fine if a
+    current one appears in the same handler, and a lie if it appears alone.
+    """
+    emitted = {name for _rel, name, _clash in events}
+    if not emitted:
+        return []
+    prefixes = tuple(sorted({n[:2] for n in emitted}))
+    out = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.livecodescript"),
+                                 recursive=True)):
+        rel = os.path.relpath(path, ROOT)
+        if rel.startswith(".git"):
+            continue
+        raw = open(path, encoding="utf-8", errors="replace").read()
+        cur, start, body = None, 0, []
+        for lineno, line in join_continuations(raw):
+            t = line.strip()
+            m = HANDLER_START.match(t)
+            if m:
+                cur, start, body = m.group(1), lineno, []
+                continue
+            if closes_handler(t, cur):
+                if cur:
+                    out += _literal_findings(rel, cur, start, body, emitted, prefixes)
+                cur = None
+                continue
+            if cur is not None:
+                body.append((lineno, line))
+    return out
+
+
+def _literal_findings(rel, handler, hline, body, emitted, prefixes):
+    """Event-shaped literals in one handler, judged together.
+
+    SCOPED TO HANDLERS THAT READ ["name"]. Without that scope the check fired on
+    `send "dcChannelPollOnce" to me in ...` - a TIMER message name, which is the
+    same shape as an event name and is not one. The scope is what the rule
+    actually means: this handler is looking at an event's name, so the names it
+    tests for had better be names something emits.
+    """
+    text = "\n".join(l for _n, l in body)
+    if '["name"]' not in text:
+        return []
+    # A MAPPING SHIM is legal: a handler that ASSIGNS a current name is
+    # translating an old spelling forward (both poll pumps do exactly that).
+    # Anything else is judged literal by literal.
+    for em in emitted:
+        if re.search(r'put\s+"' + re.escape(em) + r'"\s+into\b', text):
+            return []
+
+    out = []
+    for lineno, line in body:
+        code = line.split("--", 1)[0]
+        for lit in re.findall(r'"([^"]*)"', code):
+            names = [n.strip() for n in lit.split(",")]
+            shaped = [n for n in names
+                      if n.startswith(prefixes) and re.fullmatch(r'[a-z]{2}[A-Z]\w+', n)]
+            if not shaped:
+                continue
+            # JUDGE THE LITERAL, NOT THE HANDLER. Judging the handler was this
+            # check's first shape and it was blind: stDcEvent tests for six
+            # event names, so one retired name sat beside five live ones and
+            # the handler "contained a current name" either way. The comma
+            # form "old,new" is the transition idiom and still passes, because
+            # the names inside ONE literal are alternatives to each other.
+            if set(shaped) & emitted:
+                continue
+            out.append((rel, lineno, handler, shaped[0],
+                        "EVENT LITERAL: " + ", ".join(shaped) + " - no module "
+                        "emits this name, so this comparison can never be "
+                        "true. Pair it with the current name, or update it.",
+                        code.strip()[:100]))
+    return out
+
+
 def check_event_names(events, sigs):
     """CHECK 4: an event name may not equal a public handler name.
 
@@ -344,7 +435,8 @@ def main(argv):
               f"{len(fieldkeys)} event key(s) and {len(events)} event name(s) - "
               "the .lcb parse is broken, and a clean report would be a lie")
         return 1
-    findings, positions, nfiles = check_event_names(events, sigs), 0, 0
+    findings = check_event_names(events, sigs) + check_event_literals(events)
+    positions, nfiles = 0, 0
     for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.livecodescript"),
                                  recursive=True)):
         rel = os.path.relpath(path, ROOT)

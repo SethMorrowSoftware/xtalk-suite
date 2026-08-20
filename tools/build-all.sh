@@ -451,6 +451,16 @@ fi
 # `send ... in` has no such guarantee. enet-lan-chat's dashboard threw
 # "Chunk: error in object expression" once a second, and dht-chat hid the same
 # fault behind an existence guard - its status line just stopped updating.
+# --- suite-level: every foreign bind against its C definition ----------------
+# check-binary-freshness resolves all 636 binds against an exported SYMBOL;
+# this checks the SHAPE - arity, return type, parameter types. Only box2dxt had
+# such a gate before 2026-08-19, and its own (which also checks the name
+# bijection) still runs in its member gates; this covers the other five.
+if [ -f tools/check-lcb-signatures.py ]; then
+  echo "== suite: tools/check-lcb-signatures.py =="
+  python3 tools/check-lcb-signatures.py
+fi
+
 if [ -f tools/check-timer-stack-pin.py ]; then
   echo "== suite: tools/check-timer-stack-pin.py =="
   python3 tools/check-timer-stack-pin.py

@@ -60,12 +60,20 @@ KNOWN_MISSING = {
 # call is not mis-attributed to OnionXT's core ox* surface. rs is the riptide
 # app layer (pure script over the extension surfaces); he is the holde-em app
 # layer (same shape, added in the 2026-08-15 fold).
-PREFIXES = ("oxh", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he")
+# b2k is box2dxt's Kit layer, added 2026-08-19. It was missing for four days
+# after the fold, and the omission was invisible in the usual way: the gate
+# reported OK, because a prefix it does not know is a prefix it does not look
+# for. holde-em CALLS b2k handlers across the member boundary (its table art),
+# so those were exactly the cross-member calls this gate exists to check.
+# NOTE the ORDER rule above applies to b2k too - it must precede nothing here
+# (no other prefix is a prefix of it), but keep it out of the middle of the
+# oxh/ox pair.
+PREFIXES = ("oxh", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he", "b2k")
 
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
 # a variable named "extra") out of the candidate set.
-CALL_RE = re.compile(r"\b((?:oxh|sx|bt|en|dc|ox|cx|rs|he)[A-Z]\w*)\b")
+CALL_RE = re.compile(r"\b((?:oxh|b2k|sx|bt|en|dc|ox|cx|rs|he)[A-Z]\w*)\b")
 
 # Handler definitions we harvest to build the "exists" set.
 LCB_PUBLIC_RE = re.compile(r"^\s*public handler\s+(\w+)\s*\(([^)]*)\)", re.M)
