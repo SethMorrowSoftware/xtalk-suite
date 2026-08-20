@@ -173,8 +173,60 @@ def check_event_name_fixtures():
     return bad
 
 
+def check_event_literal_fixtures():
+    """CHECK 5, driven the way load_lcb() feeds it."""
+    bad = []
+    EV = [("x.lcb", "dcLocalDescriptionReady", False),
+          ("x.lcb", "dcLocalCandidate", False)]
+
+    def run(src):
+        fd, path = tempfile.mkstemp(suffix=".livecodescript", dir=ROOT)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(src)
+            saved = clct.glob.glob
+            # only look at the temp file
+            clct.glob.glob = lambda pat, **k: [path] if "livecodescript" in pat else saved(pat, **k)
+            try:
+                return clct.check_event_literals(EV)
+            finally:
+                clct.glob.glob = saved
+        finally:
+            os.unlink(path)
+
+    got = run('on foo pEvent\n   put pEvent["name"] into tN\n'
+              '   if tN is "dcLocalDescription" then\n      put 1 into tX\n   end if\nend foo\n')
+    if len(got) != 1 or "EVENT LITERAL" not in got[0][4]:
+        bad.append("a retired event literal is not reported")
+
+    got = run('on foo pEvent\n   put pEvent["name"] into tN\n'
+              '   if tN is among the items of "dcLocalDescription,dcLocalDescriptionReady" then\n'
+              '      put 1 into tX\n   end if\nend foo\n')
+    if got:
+        bad.append("the old,new transition pairing was reported")
+
+    got = run('on foo pEvent\n   put pEvent["name"] into tN\n'
+              '   if tN is "dcLocalCandidate" then\n      put 1 into tX\n   end if\nend foo\n')
+    if got:
+        bad.append("a currently-emitted event literal was reported")
+
+    got = run('on foo\n   send "dcChannelPollOnce" to me in 33 milliseconds\nend foo\n')
+    if got:
+        bad.append("a TIMER message name was reported as an event literal")
+
+    got = run('on foo pEvent\n   put pEvent["name"] into tN\n'
+              '   if tN is "dcLocalDescription" then\n'
+              '      put "dcLocalDescriptionReady" into tN\n   end if\nend foo\n')
+    if got:
+        bad.append("a mapping shim (assigns the current name) was reported")
+    return bad
+
+
 def main(argv):
     failures = 0
+    for msg in check_event_literal_fixtures():
+        print(f"FAIL event-literal: {msg}")
+        failures += 1
     for msg in check_event_name_fixtures():
         print(f"FAIL event-name: {msg}")
         failures += 1
@@ -205,7 +257,7 @@ def main(argv):
     if failures:
         print(f"test-lcb-call-types: {failures} failure(s)")
         return 1
-    print(f"test-lcb-call-types: OK ({len(FIXTURES)} fixtures + 4 event-name checks + the real tree)")
+    print(f"test-lcb-call-types: OK ({len(FIXTURES)} fixtures + 4 event-name + 5 event-literal checks + the real tree)")
     return 0
 
 
