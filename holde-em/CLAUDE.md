@@ -444,8 +444,21 @@ NT 10.0, OXT 9.6.3, inside the suite paste: 538 holde-em checks with zero
 failures anywhere in that 1,836-check run (7 skips across all nine folded
 harnesses, live-transport and daemon legs; the record does not split them per
 member). That run was stack v0.24.4 / harness v41, before v0.24.5's five sites
-landed, so **no total has been observed for the tree as it stands** - the
-v0.24.5 harness has never met an engine. See the suite's
+landed.
+
+**SUPERSEDED 2026-08-20: the tree as it stands HAS now met an engine.** Windows
+x86_64, inside the suite paste, the report identifying itself as
+`holde-em self-test  stack v0.24.5  harness v41`: **543 passed, 0 failed, 5
+skipped**, every one of the 21 sections green - the evaluator, betting and side
+pots, the deal ladder through Level 2 and the DLEQ audit, the signed wire, and
+the netplay / oracle / liveness loopbacks. The 5 skips are the member's own
+live-transport legs (the tor table, the three-machine oracle round, the
+onion-hosted oracle, the live timed table, the tor redial) - unchanged
+criteria, and they are printed on a second line that `stMergeReturned`
+deliberately does not parse, so the SUITE's skip total does not include them.
+543 is therefore the number to expect from v0.24.5 / v41, and it settles the
+"two different totals under one harness version" ambiguity above by observation
+rather than by bumping the version. See the suite's
 `docs/REMAINING-WORK.md` and `docs/OXT-PASS-RUNBOOK.md` for the full 2026-08-17
 record (this member has no `docs/` of its own, so those are repo-root paths).
 v0.23.0 brought the table inside the suite's 720p

@@ -165,6 +165,22 @@ this file stays the ledger.
 
 ---
 
+**SUPERSEDED 2026-08-20 - the record is now a WHOLE-RUN one.** A Windows pass
+that day finished the suite paste end to end: **1,981 passed, 0 failed, 1
+skipped, 1,982 total**, of which **1,868 are folded member checks** (sodiumxt
+99, onionxt 61, coinxt 278, torrentxt 101, enetxt 34, datachannelxt 39, box2dxt
+375, riptide 338, holde-em 543). Two things make it a different KIND of result
+rather than a bigger number. It reached the end: both live loopbacks negotiated
+and delivered, the 60000-byte budget was checked on both transports, SCTP
+cleared its 16 KiB floor, and teardown released the ENet hosts, the WebRTC peers
+and THE libtorrent session. And it settled runbook row 13 - riptide's phase-6
+LAN sync records, the phase-7 serving seams, and all three `rsBytesAreUtf8`
+checks that were RED on 2026-08-15. The `1 skipped` is not a miscount: riptide's
+2 and holde-em's 5 are printed on a second line their own harnesses word as
+prose, which `stMergeReturned` deliberately refuses to parse (its comment says
+why); onionxt's 1 is inline and merges. The 2026-08-17 record below is kept
+verbatim as the dated account of the fold's first compile.
+
 **THE 2026-08-17 ENGINE PASS: THE LARGEST GREEN RUN THIS PROJECT HAS HAD.**
 Windows x86_64, NT 10.0, OXT 9.6.3. **1,836 folded member checks, ZERO
 failures, 7 skips** - every skip a live-transport or daemon leg no single

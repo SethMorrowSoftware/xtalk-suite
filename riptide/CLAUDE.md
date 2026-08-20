@@ -69,9 +69,14 @@ machines, done-criteria included** (library 0.10.0; 83 public handlers,
   2026-08-17 - see the C6 record below). **Channel 2 SETTLED 2026-08-16**: bulk media
   handoff is a fourth RSL1 kind, "M", on CHANNEL 0 - a signed POINTER
   (info-hash + file name + size) at the phase-3 torrent path - and
-  channel 2 stays reserved, dark (the decision record below). Verified
-  statically; the live two-machine mesh pass - now the full
-  draft-appears done-criterion plus the media handoff - is what remains.
+  channel 2 stays reserved, dark (the decision record below). **The SYNC
+  PAYLOAD's compute half ran engine-green 2026-08-20** (Windows, in the
+  suite paste, riptide 338/0/2): the "D"/"F"/"P"/"M" record bytes against
+  their goldens, every stranger/tamper/truncation refusal, and the three
+  malformed-UTF-8 checks that came back RED on 2026-08-15 - all now
+  "refused, not thrown". So this layer is no longer "verified
+  statically". What remains is the live two-machine mesh pass - the full
+  draft-appears done-criterion plus the media handoff.
 - **Phase 7 (anon persona): BUILT, awaiting OXT + live-Tor.** The
   `rsAnon*` layer, BTXO framing, and `rsPersonaAllows` (the pure-policy
   §9.3 guard, the app's highest-severity invariant) - compute engine-green
@@ -80,9 +85,15 @@ machines, done-criteria included** (library 0.10.0; 83 public handlers,
   BUILT too (2026-08-15, later the same day): the pure serving seams
   (`rsAnonFeedPage` / `rsAnonPrekeyBody` / `rsAnonAcceptDm`,
   golden-pinned, harness-proven offline) plus the demo's onion-httpd
-  wiring (the / page, GET /prekey, POST /dm). Verified statically; the
-  live done-criterion remains (a persona reachable and served over Tor
-  with zero `bt*` calls in a trace).
+  wiring (the / page, GET /prekey, POST /dm). **The serving seams' compute
+  half ran engine-green 2026-08-20** (Windows, in the suite paste): the
+  anon feed page byte-for-byte with its entries HTML-escaped, the GET
+  /prekey body decoding to a prekey that verifies under the ANON handle,
+  and `rsAnonAcceptDm` accepting the hex-posted sealed intro plus all five
+  of its refusal legs. Not "verified statically" any more; the live
+  done-criterion remains (a persona reachable and served over Tor with
+  zero `bt*` calls in a trace), and the harness's two anon-service SKIPs
+  are exactly that leg.
 
 What remains, in one line: the live passes for 5 (the call + typing
 lane), 6 (the mesh, through the draft-appears criterion), and 7 (tor,
