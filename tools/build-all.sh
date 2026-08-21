@@ -279,6 +279,13 @@ if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
 fi
+# Fixtures beside the gate: this one reported a confident 43/27 for months while
+# measuring nothing at all in nocloud, so its three legs are proven before it
+# is trusted.
+if [ -f tools/test-stack-size.py ]; then
+  echo "== suite: tools/test-stack-size.py =="
+  python3 tools/test-stack-size.py
+fi
 if [ -f tools/check-stack-size.py ]; then
   echo "== suite: tools/check-stack-size.py =="
   python3 tools/check-stack-size.py
@@ -286,6 +293,40 @@ fi
 if [ -f tools/check-harness-scaffold-drift.py ]; then
   echo "== suite: tools/check-harness-scaffold-drift.py =="
   python3 tools/check-harness-scaffold-drift.py
+fi
+# The fourth carried block: the demos' boot self-check. Registered here in the
+# same change that created it, because a drift gate nobody runs is the shape
+# this file's own history keeps warning about.
+# Fixtures FIRST: the drift gate shipped with a dead fourth check (a substring
+# test against the whole file, defeated by the block that defines the very name
+# it looked for), so a gate here does not run unproven.
+if [ -f tools/test-demo-selfcheck-drift.py ]; then
+  echo "== suite: tools/test-demo-selfcheck-drift.py =="
+  python3 tools/test-demo-selfcheck-drift.py
+fi
+if [ -f tools/check-demo-selfcheck-drift.py ]; then
+  echo "== suite: tools/check-demo-selfcheck-drift.py =="
+  python3 tools/check-demo-selfcheck-drift.py
+fi
+# Each demo's control list is DERIVED, not maintained: a phantom name makes the
+# demo print a red FAIL on every open, which trains the operator to ignore the
+# block. Four of eleven shipped with one.
+if [ -f tools/check-demo-control-lists.py ]; then
+  echo "== suite: tools/check-demo-control-lists.py =="
+  python3 tools/check-demo-control-lists.py
+fi
+# One script is one compile unit, so a name declared twice does not warn - it
+# takes the whole file down, at PASTE time, on an engine. Four carried blocks
+# are pasted into a dozen-odd files each and only ONE of them (the embedded
+# libraries) was collision-checked against its host. Fixtures first, so a
+# scanner that cannot discriminate cannot pass as a clean one.
+if [ -f tools/test-duplicate-declarations.py ]; then
+  echo "== suite: tools/test-duplicate-declarations.py --mutate =="
+  python3 tools/test-duplicate-declarations.py --mutate
+fi
+if [ -f tools/check-duplicate-declarations.py ]; then
+  echo "== suite: tools/check-duplicate-declarations.py =="
+  python3 tools/check-duplicate-declarations.py
 fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
@@ -310,6 +351,10 @@ fi
 if [ -f tools/check-binary-freshness.py ]; then
   echo "== suite: tools/check-binary-freshness.py =="
   python3 tools/check-binary-freshness.py
+fi
+if [ -f tools/test-launcher-registry.py ]; then
+  echo "== suite: tools/test-launcher-registry.py =="
+  python3 tools/test-launcher-registry.py
 fi
 if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="

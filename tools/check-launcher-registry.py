@@ -147,10 +147,26 @@ def main():
             problems.append("registry lists %s, which does not exist" % rel)
 
     # direction 2: every runnable adopter is offered (directly or via alias)
+    #
+    # WIDENED 2026-08-20, and the omission is the lesson. This set used to be
+    # the union of the two drift gates' ADOPTERS lists, which silently excluded
+    # check-ui-kit-drift.py's EXEMPT map - and EXEMPT is not a list of
+    # non-demos. It is the list of stacks that BUILD A WINDOW and deliberately
+    # do not carry the kit: five box2dxt example games, box2dxt's own selftest,
+    # and holde-em. All seven are in slRegistry today and nothing required them
+    # to be. Proven by mutation before the fix: deleting the box2dxt-platformer
+    # row left this gate printing "OK (26 entries, all present; every runnable
+    # adopter offered ...)" - the front door quietly dropping a shipped demo,
+    # which is the exact failure direction 2's docstring claims to close. A
+    # gate whose input set is "everything that adopts a block" answers a
+    # narrower question than "everything that builds a window", and only the
+    # second one is what a front door is for.
     runnable = set()
     for rel in load_adopters("check-ui-kit-drift.py"):
         if rel == "start-here.livecodescript":
             continue  # the launcher does not list itself
+        runnable.add(rel)
+    for rel in load_attr("check-ui-kit-drift.py", "EXEMPT"):
         runnable.add(rel)
     for rel in load_adopters("check-harness-scaffold-drift.py"):
         runnable.add(rel)
@@ -163,7 +179,7 @@ def main():
         if rel in NOT_LAUNCHED:
             continue
         if offer not in listed_set and rel not in listed_set:
-            why = EXTRA_RUNNABLE.get(rel, "a carried-block adopter")
+            why = EXTRA_RUNNABLE.get(rel, "a stack that builds a window")
             problems.append("%s is a runnable stack (%s) but the launcher "
                             "does not offer it - add it to slRegistry, or to "
                             "NOT_LAUNCHED here with the reason" % (rel, why))

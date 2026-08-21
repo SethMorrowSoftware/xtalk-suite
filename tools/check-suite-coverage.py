@@ -391,13 +391,25 @@ UNTESTABLE = {
     # --- onionxt: needs a real Tor daemon ------------------------------------
     # The honesty convention this repo uses for OnionXT is "verified statically;
     # needs an OXT pass + a live-Tor pass". These are the second half of that.
+    # FOUR ENTRIES WERE DELETED FROM THIS BLOCK ON 2026-08-20, and the reason is
+    # worth keeping because a stale excuse is the thing this gate is built to
+    # refuse. oxPublishService, oxTransportListen, oxTransportSend and
+    # oxTransportRecv were all exempted as "live-daemon", and none of the four
+    # reasons survived a reading of the code. oxPublishService opens no socket
+    # and starts no process: it validates arguments, fills sServices, and calls
+    # oxCtlSend, which exits while sControlSocket is empty - what it needs is an
+    # authenticated STATE, not a daemon. The other three are ONE-LINE WRAPPERS
+    # over oxCreateServiceFromSeed, oxWrite and oxSetStreamCallback, each of
+    # which this harness had already been testing offline for months under the
+    # wrapped name. The exemption described what the WRAPPED handler does with a
+    # live stream, not what the wrapper needs in order to be exercised. Each now
+    # has a fail-closed check by its own name in onionxt/examples/onionxt-tests.
     "oxLaunchTor": "live-daemon: starts a real tor process",
     "oxStopTor": "live-daemon: stops a real tor process",
-    "oxPublishService": "live-daemon: publishes a hidden service over the control port",
-    "oxTransportDial": "live-daemon: dials through the SOCKS port",
-    "oxTransportListen": "live-daemon: listens as a hidden service",
-    "oxTransportSend": "live-daemon: writes to a live Tor stream",
-    "oxTransportRecv": "live-daemon: reads from a live Tor stream",
+    "oxTransportDial": "live-daemon: dials through the SOCKS port - unlike the "
+                       "other transport wrappers this one opens a socket "
+                       "(oxDial), so its non-argument path cannot be reached "
+                       "without a SOCKS listener",
 }
 
 

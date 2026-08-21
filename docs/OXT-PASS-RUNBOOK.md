@@ -957,6 +957,36 @@ Ordered by (value of the result) divided by (setup cost):
 
 **Step 2 - the demos (depth on real transports).**
 
+> **EVERY DEMO BELOW NOW PRINTS ITS OWN RECORD (2026-08-20).** Until this
+> change a demo pass produced a human judgement - "the window built, it looked
+> right" - and no honesty label can quote that, which made the fleet-wide
+> re-pass the most expensive engine time in this project and the least
+> recoverable. Eleven runnable stacks now run a **boot self-check** on open and
+> print a pasteable block into their own log: every control the script names or
+> builds, that nothing is live at boot, the library surface and the CARRIED
+> script layer, and one delayed-write probe. Open the demo, read the block,
+> paste it. Nothing in it hosts, connects, binds a port or takes a singleton -
+> the operator is about to do that for real.
+>
+> Three conventions worth knowing before you read one:
+> **an absent extension SKIPs, never FAILs** (a missing member is an
+> environment); **every observed value prints beside its assertion**, so a
+> failure names what it saw rather than only what it wanted; and the block
+> **paints the status line red only when something failed**, because a green
+> demo's own "Ready ..." line is the more useful thing to be reading and a red
+> one's log may be on a tab nobody has clicked.
+>
+> The last line of every block is the count. If you do not see it, the run is
+> not finished - the delayed-write probe lands 400 ms in.
+>
+> The plumbing is a carried block (`tools/demo-selfcheck.livecodescript`, gate
+> `tools/check-demo-selfcheck-drift.py`); the assertions belong to each demo.
+> **Not adopters, with reasons:** `coinxt-demo` and `sodium-demo` have no log
+> surface - their output fields ARE the demonstration - and both members are
+> covered by their own folded harnesses (278 and 99 checks); the five box2dxt
+> examples are games, exempt from the UI kit by written reason, with the Kit at
+> 375/375 in the paste.
+
 | Order | Demo | Needs |
 |---|---|---|
 | 7 | `datachannelxt/examples/datachannel-loopback.livecodescript` | datachannelxt only (the helpers are embedded) |
@@ -985,6 +1015,21 @@ That is still a real result and it is honest.
 ## 4. What to record
 
 ### 4.1 How to copy a result back
+
+**The demos, first, because there are eleven of them and it is one gesture.**
+Each prints its boot self-check into its own log field on open; select that
+block and copy it. There is no button - the demos are demos, and a Copy button
+on every one of them is chrome that has to be maintained in eleven places.
+The block is bounded top and bottom: it starts at
+`== boot self-check (nothing is hosted, connected, or bound) ==` and ends at
+the `n passed, m failed, k skipped` count line. **If the count line is not
+there, the run is not finished** - the delayed-write probe lands 400 ms in, and
+the line above the gap says so.
+
+Where each block prints, when it is not obvious: onionxt-demo uses the About
+tab's `about:testlog`, onion-httpd/spike uses `demo:out`, riptide-social uses
+the Feed card's `raIdOut`, and datachannel-loopback uses the A-side log. Every
+other adopter has one log and uses it.
 
 The three self-building selftests (torrentxt, enetxt, datachannelxt) share one UI:
 a bold `stSummary` field carrying the passed / failed / total counts (green when
