@@ -49,15 +49,18 @@
 -- 2026-08-18, LINUX, harness v29: 373 passed, 1 FAILED. The single failure was
 -- "playLoudness readback", and it was the HARNESS being wrong about the engine,
 -- not the Kit being broken - see stTestEngineContracts, where that check is now
--- two self-diagnosing assertions plus a printed observation. v30 has one more
--- assertion than v29 for that reason (375 where v29 had 374), so a v30 total is
--- not comparable to a v29 one. Neither the v30 Windows total nor the v30 Linux
+-- two self-diagnosing assertions plus a printed observation. v30 had one more
+-- assertion than v29 for that reason (375 where v29 had 374). v31 takes one
+-- back OUT - 374 - because the 2026-08-21 Linux pass showed the ordering half
+-- was asserting a property Linux does not provide and the Kit does not use
+-- (readback is a constant 0 there). No two of v29, v30 and v31 are comparable.
+-- Neither the v30 Windows total nor the v30 Linux
 -- total has been observed yet: both need a pass.
 local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "30"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "31"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -894,17 +897,24 @@ command stTestEngineContracts
    -- The section's own standard, three checks above this one, is
    -- self-diagnosing: report WHAT we saw.
    --
-   -- Exact readback was never the contract either. b2kSoundVolume promises
-   -- one thing - that asking for a louder setting makes the engine louder -
-   -- and nothing in the Kit reads playLoudness back to compare it against
-   -- what it wrote. So probe TWO points and hold the property that matters:
-   -- a low write and a high write must both be readable numbers and must
-   -- come back in the right ORDER. That still fails loudly if the engine
-   -- ignores writes (both readbacks identical), if it inverts them, or if
-   -- the property is unreadable; it does not fail because a platform stores
-   -- volume on some scale other than 0-100 and rounds on the way back.
-   -- Whether this engine tracks exactly is REPORTED beside it, so the next
-   -- pass on any platform prints the numbers rather than re-asking.
+   -- Exact readback was never the contract. Nor, it turns out, is ORDER.
+   --
+   -- v30 probed two points and ASSERTED that a high write reads back above a
+   -- low one, on the reasoning that b2kSoundVolume promises "louder is
+   -- louder" and that an engine ignoring writes should fail loudly. The
+   -- 2026-08-21 LINUX pass answered that: `24->0, 73->0`. The property reads
+   -- back a constant 0 there whatever you write - so the ordering assertion
+   -- went red on a platform doing nothing wrong, in a Kit that never reads
+   -- the value back. An assertion that fails on a healthy engine is worse
+   -- than no assertion: the next reader has to re-derive that it is noise,
+   -- and a run stops being trustworthy at a glance.
+   --
+   -- So v31 asserts ONE thing - the property is READABLE, which this harness
+   -- itself depends on - and REPORTS what it read, three ways. The report is
+   -- the deliverable: it is how the next platform's behaviour reaches
+   -- docs/OXT-ENGINE-NOTES.md 5.4 without spending another engine session
+   -- asking. Nothing in b2kSoundVolume's contract is weakened, because
+   -- nothing in the Kit ever read this back.
    put the playLoudness into tVol
    b2kSoundVolume 24
    put the playLoudness into tLo
@@ -914,17 +924,17 @@ command stTestEngineContracts
    stAssert "playLoudness is readable as a number (" & the platform & \
          ": 24->" & tLo & ", 73->" & tHi & ")", \
          (tLo is a number and tHi is a number)
-   stAssert "playLoudness tracks the write (" & tLo & " < " & tHi & ")", \
-         (tLo is a number and tHi is a number and tHi > tLo)
-   -- Not an assertion: an OBSERVATION, printed either way. If a platform
-   -- ever reports "off by" here, that number is the engine's storage scale
-   -- talking and belongs in docs/OXT-ENGINE-NOTES.md.
+   -- OBSERVATIONS from here down, printed either way, never assertions.
    if tLo is 24 and tHi is 73 then
       stOut "        playLoudness readback is EXACT on " & the platform
+   else if tLo is a number and tHi is a number and tHi > tLo then
+      stOut "        playLoudness readback is ORDERED but not exact on " & \
+            the platform & " (asked 24/73, read " & tLo & "/" & tHi & \
+            ") - a storage scale other than 0-100"
    else
-      stOut "        playLoudness readback is NOT exact on " & the platform & \
-            " (asked 24/73, read " & tLo & "/" & tHi & \
-            ") - the Kit does not depend on it"
+      stOut "        playLoudness readback does NOT track the write on " & \
+            the platform & " (asked 24/73, read " & tLo & "/" & tHi & \
+            ") - write-only here; the Kit does not depend on it"
    end if
 end stTestEngineContracts
 

@@ -453,7 +453,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "30"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "31"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-2): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -19687,17 +19687,24 @@ command b21stTestEngineContracts
    -- The section's own standard, three checks above this one, is
    -- self-diagnosing: report WHAT we saw.
    --
-   -- Exact readback was never the contract either. b2kSoundVolume promises
-   -- one thing - that asking for a louder setting makes the engine louder -
-   -- and nothing in the Kit reads playLoudness back to compare it against
-   -- what it wrote. So probe TWO points and hold the property that matters:
-   -- a low write and a high write must both be readable numbers and must
-   -- come back in the right ORDER. That still fails loudly if the engine
-   -- ignores writes (both readbacks identical), if it inverts them, or if
-   -- the property is unreadable; it does not fail because a platform stores
-   -- volume on some scale other than 0-100 and rounds on the way back.
-   -- Whether this engine tracks exactly is REPORTED beside it, so the next
-   -- pass on any platform prints the numbers rather than re-asking.
+   -- Exact readback was never the contract. Nor, it turns out, is ORDER.
+   --
+   -- v30 probed two points and ASSERTED that a high write reads back above a
+   -- low one, on the reasoning that b2kSoundVolume promises "louder is
+   -- louder" and that an engine ignoring writes should fail loudly. The
+   -- 2026-08-21 LINUX pass answered that: `24->0, 73->0`. The property reads
+   -- back a constant 0 there whatever you write - so the ordering assertion
+   -- went red on a platform doing nothing wrong, in a Kit that never reads
+   -- the value back. An assertion that fails on a healthy engine is worse
+   -- than no assertion: the next reader has to re-derive that it is noise,
+   -- and a run stops being trustworthy at a glance.
+   --
+   -- So v31 asserts ONE thing - the property is READABLE, which this harness
+   -- itself depends on - and REPORTS what it read, three ways. The report is
+   -- the deliverable: it is how the next platform's behaviour reaches
+   -- docs/OXT-ENGINE-NOTES.md 5.4 without spending another engine session
+   -- asking. Nothing in b2kSoundVolume's contract is weakened, because
+   -- nothing in the Kit ever read this back.
    put the playLoudness into b21tVol
    b2kSoundVolume 24
    put the playLoudness into b21tLo
@@ -19707,17 +19714,17 @@ command b21stTestEngineContracts
    b21stAssert "playLoudness is readable as a number (" & the platform & \
          ": 24->" & b21tLo & ", 73->" & b21tHi & ")", \
          (b21tLo is a number and b21tHi is a number)
-   b21stAssert "playLoudness tracks the write (" & b21tLo & " < " & b21tHi & ")", \
-         (b21tLo is a number and b21tHi is a number and b21tHi > b21tLo)
-   -- Not an assertion: an OBSERVATION, printed either way. If a platform
-   -- ever reports "off by" here, that number is the engine's storage scale
-   -- talking and belongs in docs/OXT-ENGINE-NOTES.md.
+   -- OBSERVATIONS from here down, printed either way, never assertions.
    if b21tLo is 24 and b21tHi is 73 then
       b21stOut "        playLoudness readback is EXACT on " & the platform
+   else if b21tLo is a number and b21tHi is a number and b21tHi > b21tLo then
+      b21stOut "        playLoudness readback is ORDERED but not exact on " & \
+            the platform & " (asked 24/73, read " & b21tLo & "/" & b21tHi & \
+            ") - a storage scale other than 0-100"
    else
-      b21stOut "        playLoudness readback is NOT exact on " & the platform & \
-            " (asked 24/73, read " & b21tLo & "/" & b21tHi & \
-            ") - the Kit does not depend on it"
+      b21stOut "        playLoudness readback does NOT track the write on " & \
+            the platform & " (asked 24/73, read " & b21tLo & "/" & b21tHi & \
+            ") - write-only here; the Kit does not depend on it"
    end if
 end b21stTestEngineContracts
 

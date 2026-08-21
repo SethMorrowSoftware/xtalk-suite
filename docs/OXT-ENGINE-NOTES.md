@@ -415,20 +415,36 @@ session yielded "some number is not 73". The harness now probes two points and
 prints both, so the next pass on any platform reports the scale instead of
 re-asking; do not promote a mechanism into this entry until it does.
 
-**HALF ANSWERED 2026-08-20 (Windows).** The two-point probe ran folded at
-harness v30 and reported `playLoudness is readable as a number (Win32: 24->24,
-73->73)` with the third line `playLoudness readback is EXACT on Win32`. So the
-Windows half of the original discrepancy is now positively characterised rather
-than merely green: the value round-trips unchanged there. **Linux is still
-unmeasured by the new probe** - the entry's whole reason for existing is the
-platform where it did NOT round-trip, and that run has not happened since the
-check was rewritten. The rule below stands unchanged until it does: one platform
-reporting exact readback is not a property of the engine, it is a property of
-that platform.
+**ANSWERED, BOTH PLATFORMS.** The two-point probe was written to make the next
+pass report the scale instead of re-asking, and it did.
+
+| Platform | asked 24 | asked 73 | verdict |
+|---|---|---|---|
+| Win32 (2026-08-20, harness v30) | 24 | 73 | EXACT |
+| Linux (2026-08-21, harness v30) | **0** | **0** | **write-only: readback is a constant 0** |
+
+So the mechanism is no longer unknown. On Linux `the playLoudness` does not
+report what was written to it at all - not a different scale, not rounding: a
+constant. The 2026-08-18 failure was never "some number is not 73"; it was
+**zero**, and one line of probe output settled what a whole engine session could
+not.
+
+**IT ALSO KILLED THE ASSERTION THAT REPLACED THE FIRST ONE, which is the part
+worth carrying.** v30 stopped asserting exactness and asserted ORDER instead -
+a high write must read back above a low one - reasoning that this still catches
+an engine that ignores writes. Linux ignores writes here, is not broken, and the
+Kit never reads the value back, so v30 went red on a healthy platform. The
+replacement assertion was better than the original and still wrong, for the same
+underlying reason: it treated a readback as a channel. **v31 asserts only that
+the property is READABLE and reports the rest.** A check that fails on a healthy
+engine is worse than no check - the next reader has to re-derive that it is
+noise, and the run stops being trustworthy at a glance.
 
 **Rule:** `playLoudness` is a request, not a register. Set it and move on; do
-not read it back and compare against what you wrote, and do not compute from
-it. The ordering (a higher write is louder) is the only property to rely on.
+not read it back and compare against what you wrote, and do not compute from it.
+**Not even the ordering** - that was this entry's rule until 2026-08-21, and
+Linux disproved it. There is NO property of the readback to rely on; treat the
+write as fire-and-forget.
 
 **The wider lesson is about assertions, not audio.** Every other check in that
 section names the value it saw - `(got 200)`, `(hScroll 1120)`, `(owner:
