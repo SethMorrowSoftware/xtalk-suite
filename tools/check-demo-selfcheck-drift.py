@@ -51,6 +51,12 @@ ADOPTERS = {
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"): "qs",
     os.path.join("datachannelxt", "examples",
                  "datachannel-loopback.livecodescript"): "lb",
+    os.path.join("onionxt", "examples",
+                 "onionxt-demo.livecodescript"): "demo",
+    os.path.join("onionxt", "examples", "onion-httpd",
+                 "spike.livecodescript"): "demo",
+    os.path.join("riptide", "examples",
+                 "riptide-social.livecodescript"): "ra",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "
@@ -59,6 +65,16 @@ BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "
 END = "-- ==== DEMO SELF-CHECK v1 END ===="
 
 GENERATED = "GENERATED - do not edit"
+
+
+def lifecycle_bodies(text):
+    """The bodies of `on openStack` / `on preOpenStack`, whole."""
+    bodies = []
+    for m in re.finditer(r"^on (pre)?[oO]pen[sS]tack\b", text, re.M):
+        rest = text[m.end():]
+        end = re.search(r"^end (pre)?[oO]pen[sS]tack\b", rest, re.M)
+        bodies.append(rest[:end.start()] if end else rest)
+    return bodies
 
 
 def extract(path):
@@ -103,11 +119,15 @@ def main():
         elif "scBegin" not in text:
             problems.append("%s: defines %s but never calls scBegin - the "
                             "block would ship and report nothing" % (rel, run))
-        # EITHER lifecycle hook. Three demos build their window in
-        # preOpenStack and never define openStack at all; requiring the one
-        # spelling would have kept the block out of them for no reason.
-        if not re.search(r"^on (?:pre)?[oO]penStack\b[\s\S]{0,600}?\b%s\b" % run,
-                         text, re.M):
+        # EITHER lifecycle hook, and the WHOLE handler body. Three demos build
+        # their window in preOpenStack and never define openStack at all, so
+        # requiring the one spelling would have kept the block out of them; and
+        # a fixed character window is not a substitute for reading the handler -
+        # the first version allowed 600 characters after the `on` line and
+        # reported both onionxt demos as never calling their run handler when
+        # each calls it perfectly well, six builder calls and a comment block
+        # further down. Extract the body, then look inside it.
+        if not any(re.search(r"\b%s\b" % run, b) for b in lifecycle_bodies(text)):
             problems.append("%s: %s is never reached from openStack or "
                             "preOpenStack" % (rel, run))
 

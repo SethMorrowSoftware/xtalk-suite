@@ -7825,10 +7825,16 @@ command scFinish
    if sScFailed is 0 then
       scLine "      boot self-check GREEN (this is the single-machine claim; " \
             & "the live legs are the runbook's)"
-   else
-      scLine "      boot self-check has FAILURES above - report them before " \
-            & "running any live leg"
+      exit scFinish
    end if
+   scLine "      boot self-check has FAILURES above - report them before " \
+         & "running any live leg"
+   -- ONLY ON FAILURE does this touch the status line, and the asymmetry is
+   -- deliberate. Green, the demo's own "Ready ..." line is the more useful
+   -- thing to be reading and the detail is in the log a few lines up. Red, the
+   -- log may be on a tab nobody has clicked - so the one surface a person is
+   -- certainly looking at has to say so. Fail loud, pass quiet.
+   uiStatus "Boot self-check: " & sScFailed & " FAILED (see the log)", "bad"
 end scFinish
 -- ==== DEMO SELF-CHECK v1 END ====
 
