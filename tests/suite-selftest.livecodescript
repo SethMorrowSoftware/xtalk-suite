@@ -15656,6 +15656,24 @@ private command ox1testFailClosedArguments
       put the result into ox1tResult
       ox1oxCheck (ox1tResult begins with "OnionXT:"), \
          "oxCreateServiceFromSeed also fails closed without an authenticated control connection"
+
+      -- THE SAME GUARD, REACHED BY THE PUBLISH AND TRANSPORT NAMES. Both were
+      -- exempted from the suite coverage ratchet as "live-daemon", and both
+      -- reasons were wrong on the code: oxPublishService opens no socket and
+      -- starts no process - it validates its arguments, fills sServices, and
+      -- calls oxCtlSend, which exits while sControlSocket is empty. What it
+      -- needs is an authenticated STATE, not a daemon. oxTransportListen is a
+      -- one-line wrapper over oxCreateServiceFromSeed, tested two lines above
+      -- under its own name and by nothing under this one.
+      oxPublishService 80, 8080
+      put the result into ox1tResult
+      ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+         "oxPublishService fails closed without an authenticated control connection"
+
+      oxTransportListen ox1testZeroSeed(), 80, 8080
+      put the result into ox1tResult
+      ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+         "oxTransportListen fails closed too (it wraps oxCreateServiceFromSeed)"
    end if
 
    put oxAddressFromPublicKey("short") into ox1tResult
@@ -15681,6 +15699,22 @@ private command ox1testUnknownHandlesAreCleanMisses
    oxWrite ox1tUnknown, "x"
    put the result into ox1tResult
    ox1oxCheck (ox1tResult begins with "OnionXT:"), "oxWrite to an unknown/unconnected stream fails closed"
+
+   -- The transport names reach the two guards above and nothing else: they are
+   -- one-line wrappers (oxTransportSend -> oxWrite, oxTransportRecv ->
+   -- oxSetStreamCallback). Both were exempted from the coverage ratchet as
+   -- "live-daemon: writes to / reads from a live Tor stream", which is what the
+   -- WRAPPED handler does with a real stream - not what the wrapper needs to be
+   -- exercised. A stale handle stops at the same state guard under either name.
+   oxTransportSend ox1tUnknown, "x"
+   put the result into ox1tResult
+   ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+      "oxTransportSend on an unknown stream fails closed (it wraps oxWrite)"
+
+   oxTransportRecv ox1tUnknown, "someHandler"
+   put the result into ox1tResult
+   ox1oxCheck (ox1tResult begins with "OnionXT:"), \
+      "oxTransportRecv on an unknown stream fails closed (it wraps oxSetStreamCallback)"
 end ox1testUnknownHandlesAreCleanMisses
 
 private command ox1testIdempotentTeardown
