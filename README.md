@@ -379,8 +379,8 @@ monorepo**):
   (`check-handler-calls.py` / `test-handler-calls.py` and
   `check-lcb-call-types.py` / `test-lcb-call-types.py --mutate`),
   `tools/check-timer-stack-pin.py`, the `MANIFEST.sha256` integrity checks, and
-  the suite-level carried-block and budget gates (the UI-kit and
-  harness-scaffold drift gates — one look, one scaffold, byte-identical
+  the suite-level carried-block and budget gates (the UI-kit, harness-scaffold
+  and demo-self-check drift gates — one look, one scaffold, byte-identical
   everywhere, adoption enforced — plus the 720p
   stack-size budget: every sample window fits 1200 x 640).
 - **`native-<member>.yml`** — the per-member native matrix, plus that member's

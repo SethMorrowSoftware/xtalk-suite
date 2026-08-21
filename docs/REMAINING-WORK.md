@@ -487,6 +487,13 @@ Built and statically verified; pending under the honesty convention.
    converted 2026-08-14 reads "UI unified 2026-08-14; needs an OXT re-pass";
    ~20 runnable stacks carry a live label; every DEMOS tick-sheet row except
    riptide-social is unchecked. The runbook says to start here.
+   **CHEAPER SINCE 2026-08-20:** eleven of those stacks now print a boot
+   self-check on open, so this item's output is a pasteable block per demo
+   rather than a judgement per demo. That does not close the item - a
+   self-check proves the stack builds, its libraries answer and its timer can
+   write, not that the demo DOES what it demonstrates - but it turns the
+   unrecordable half into a record. The non-adopters and why are listed beside
+   the runbook's step-2 table.
    — `docs/OXT-PASS-RUNBOOK.md:101-124,1186-1196`
 
 2. **Suite closing pass legs B-E (two machines)** (medium). enet LAN chat;

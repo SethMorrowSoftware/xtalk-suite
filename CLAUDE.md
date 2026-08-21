@@ -144,6 +144,38 @@ probes, guarded teardown) — so every converted stack's honesty label reads
 "UI unified 2026-08-14; needs an OXT re-pass" regardless of its earlier
 evidence.
 
+**Every demo prints its own record, from a FOURTH carried block (2026-08-20).**
+`tools/demo-selfcheck.livecodescript` is the master for the boot self-check that
+eleven runnable stacks now run on open, held byte-identical by
+`tools/check-demo-selfcheck-drift.py` in the gate set. It exists because a demo
+pass produced a human judgement - "the window built, it looked right" - and no
+honesty label can quote that, which made the fleet-wide demo re-pass the most
+expensive engine time in the project and the least recoverable. The block owns
+the counters, the PASS/FAIL/SKIP lines, the completeness trailer and the
+delayed-write probe; a demo owns only its assertions, one handler, and one line
+in `openStack` (or `preOpenStack` - three demos define no `openStack` at all).
+The gate refuses four things, and the fourth is the one a copy-paste rollout
+actually produces: a demo that carries the block, ships the plumbing, and
+reports nothing because it never calls `scBegin` or never reaches its run
+handler. It was made a carried block from the START rather than after the
+drift, which is the one lesson the three blocks above were each taught the
+expensive way.
+
+Two things about it generalise. **The control list is DERIVED from each source,
+not hand-picked** - and getting that derivation right took three passes, each
+failing the same way: matching only `field "x"` references missed five of
+datachannel-loopback's eight (it reaches both logs through a variable, so the
+kit's builder calls had to be matched too); a single-prefix filter dropped all
+26 of onionxt-demo's `about:`/`dial:`/`svc:` names; and with the filter gone,
+four demos gained a control named `x`, scraped out of the comment explaining the
+first bug. Comments are cut now by a scanner that tracks string state, because
+the usual noise-stripper blanks literals and the literals are what this scan
+reads - the third time in one session that comment-vs-literal handling silently
+changed an answer. **And the block fails LOUD but passes QUIET**: `scFinish`
+paints the status line only when something failed, because a green demo's own
+"Ready ..." line is the more useful thing to be reading and a red one's log may
+be on a tab nobody has clicked.
+
 **The five pasteable harnesses share ONE carried scaffold (2026-08-14).**
 `tools/harness-scaffold.livecodescript` is the master for the selftest
 window + counters + assertion plumbing (Copy results, SKIP as a first-class
