@@ -30,10 +30,15 @@ script "suiteClosingPass"
 -- live-Tor ones section F exists to close.
 --
 -- SETUP, per machine: install sodiumxt + torrentxt + enetxt +
--- datachannelxt (packaged), and for section F put the onionxt library in
--- the message path (start using stack "onionxt"). ONE torrent session per
--- process (runbook trap 5.1): close every other torrent-flavoured stack,
--- and restart OXT before any re-paste of this script.
+-- datachannelxt (packaged). NOTHING ELSE TO WIRE - the ox* layer for section
+-- F is CARRIED inside this file (tools/sync-demo-embeds.py, since
+-- 2026-08-17), so this is one paste. These lines used to say "for section F
+-- put the onionxt library in the message path (start using stack
+-- onionxt)", which had been false for three days short of a year's worth of
+-- engine sessions and would load a SECOND copy of every ox* handler.
+-- ONE torrent session per process (runbook trap 5.1): close every other
+-- torrent-flavoured stack, and restart OXT before any re-paste of this
+-- script.
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
@@ -2507,6 +2512,7 @@ local sEKeys           -- btDhtKeypair array (the room code IS the seed)
 local sERole           -- "host" or "join"
 local sEPhase          -- "", "gathering", "publish", "fetch-offer", "waiting-answer", "open", "done"
 local sENonce, sEPeer, sEChan, sEChunks, sEWant, sENextFetch, sESentHello
+local sEWatchArmed     -- "true" while a leg-E watchdog tick is pending
 -- F: tor
 local sTorHandle       -- the transport-listen service handle
 local sTorStream       -- the dialing (client) stream
@@ -2647,7 +2653,7 @@ command cpBuild
    uiButton "cpEJoin", "Join", "1122,208,1184,232"
    uiArea "cpEOut", "608,238,1184,330"
 
-   uiSection "cpSecF", "F. Tor, single machine: Mode B launch + a live onion echo (needs onionxt in use)", "608,336,1184,354"
+   uiSection "cpSecF", "F. Tor, single machine: Mode B launch + a live onion echo (needs a tor BINARY on disk)", "608,336,1184,354"
    uiLabel "cpFL1", "tor binary:", "608,358,688,376", 11
    uiInput "cpFTorPath", "692,358,1050,378"
    uiButton "cpFLaunch", "Launch", "1056,358,1120,382"
@@ -2692,8 +2698,16 @@ command cpProbe
    catch tErr
       put " torrentxt" after tMissing
    end try
+   -- The ox* layer is EMBEDDED in this file, so its absence is not a missing
+   -- install - it is a damaged paste, and saying so sends the operator to the
+   -- right fix (re-paste, or re-run tools/sync-demo-embeds.py).
+   try
+      get oxVersion()
+   catch tErr
+      put " onionxt (EMBEDDED - re-paste this file)" after tMissing
+   end try
    if tMissing is empty then
-      uiStatus "Ready: sodiumxt + torrentxt + enetxt + datachannelxt present. Section F additionally needs onionxt in the message path.", "ok"
+      uiStatus "Ready: sodiumxt + torrentxt + enetxt + datachannelxt present, ox* carried in this file. Section F additionally needs a tor BINARY on disk.", "ok"
    else
       uiStatus "Missing:" && tMissing & ". Sections needing them will refuse; the rest still run.", "warn"
    end if
@@ -3119,6 +3133,15 @@ command cpCShare
       end if
       -- add pointing at the PARENT so libtorrent rechecks + seeds
       put btAddTorrentFile(sSession, tMeta, cpTempDir()) into sShareTorrent
+      -- Checked because btCreateTorrent two lines up IS - the inconsistency
+      -- inside one handler is what marks this an oversight rather than a
+      -- decision. A 0 here gives btInfoHash nothing to read, so the code field
+      -- fills with a bare hash the other machine cannot fetch, and the leg
+      -- fails on the FAR side of the paste.
+      if sShareTorrent is not a number or sShareTorrent <= 0 then
+         cpSay "cpCOut", "FAIL btAddTorrentFile returned no handle:" && btLastError()
+         exit cpCShare
+      end if
       put textDecode(sxBin2Hex(sxHashFile(tFile, 32)), "ascii") into tHash
       put btInfoHash(sShareTorrent) && tHash into field "cpCCode"
       cpSay "cpCOut", "seeding; the code above carries the infohash + the payload's BLAKE2b-256. Paste it on the other machine and Fetch."
@@ -3143,6 +3166,12 @@ command cpCFetch
    put empty into sLeechDone
    try
       put btAddMagnet(sSession, "magnet:?xt=urn:btih:" & word 1 of tCode, cpTempDir()) into sLeechTorrent
+      if sLeechTorrent is not a number or sLeechTorrent <= 0 then
+         cpSay "cpCOut", "FAIL btAddMagnet returned no handle:" && btLastError() \
+               & ". Check the code was pasted whole (infohash, then a space, " \
+               & "then the BLAKE2b-256)."
+         exit cpCFetch
+      end if
       cpSay "cpCOut", "fetching via the DHT (trackerless); metadata + pieces will report here..."
    catch tErr
       cpSay "cpCOut", "fetch failed:" && tErr
@@ -3218,7 +3247,7 @@ end cpCResume
 
 -- ---- D: rp1 two-machine chat --------------------------------------------------
 command cpDJoin
-   local tRoom, tId, tErr
+   local tRoom, tId, tErr, tRc
    cpEnsureSession
    if sSession is not an integer or sSession <= 0 then
       exit cpDJoin
@@ -3231,8 +3260,24 @@ command cpDJoin
    put cpToHex(sha1Digest(tRoom)) into tId
    put tId into sRp1Room
    try
-      get btAddInfohash(sSession, tId, cpTempDir())
+      -- Both of these were `get`/bare and their returns discarded. rp1 has no
+      -- other way to find a peer: if the swarm was never joined, this machine
+      -- waits for an event that cannot arrive, and says "waiting for the other
+      -- machine" while the fault is on this one.
+      put btAddInfohash(sSession, tId, cpTempDir()) into tRc
+      if tRc is not a number or tRc <= 0 then
+         cpSay "cpDOut", "FAIL btAddInfohash did not join the rendezvous swarm:" \
+               && btLastError()
+         exit cpDJoin
+      end if
       btDhtAnnounce sSession, tId, 0
+      put the result into tRc
+      if tRc is a number and tRc < 0 then
+         cpSay "cpDOut", "FAIL btDhtAnnounce refused (" & tRc & "):" && btLastError() \
+               & ". The swarm is joined but this machine is not announcing, so " \
+               & "the other one will never see it."
+         exit cpDJoin
+      end if
       cpSay "cpDOut", "rendezvous" && char 1 to 12 of tId & "...; waiting for the other machine (both must be in the room)"
    catch tErr
       cpSay "cpDOut", "join failed:" && tErr
@@ -3323,7 +3368,54 @@ command cpEStart pRole
       put "fetch-offer" into sEPhase
       cpSay "cpEOut", "fetching the offer from the DHT..."
    end if
+   -- Arm the watchdog once per start, on leg B's model. Leg E is the leg with
+   -- the most ways to wait silently - a slow DHT, a lost chunk, a room code
+   -- pasted on one machine only - and until 2026-08-20 it had none, so a stall
+   -- looked exactly like a leg still working.
+   if sEWatchArmed is not "true" then
+      put "true" into sEWatchArmed
+      send "cpECheckStuck" to me in 20000 milliseconds
+   end if
 end cpEStart
+
+-- The leg-E watchdog. It names WHICH chunks are outstanding, because "still
+-- waiting" is the one thing the operator can already see.
+command cpECheckStuck
+   local tTarget, tMissing, tHave
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   put "false" into sEWatchArmed
+   if sEPhase is "open" or sEPhase is "done" or sEPhase is empty then
+      exit cpECheckStuck
+   end if
+   if sEPhase is "failed" then
+      exit cpECheckStuck
+   end if
+   if sEWant is empty then
+      cpSay "cpEOut", "still waiting for the other machine's head (phase" && sEPhase \
+            & "). Usual causes, in order: (1) the other machine has not pressed " \
+            & "its button yet; (2) the room code differs - it must be the SAME " \
+            & "64 hex characters on both; (3) this machine's DHT has no nodes " \
+            & "yet - section A's node count says so."
+   else
+      put 0 into tMissing
+      put 0 into tHave
+      repeat for each item tTarget in sEWant
+         if sEChunks[tTarget] is empty then
+            add 1 to tMissing
+         else
+            add 1 to tHave
+         end if
+      end repeat
+      cpSay "cpEOut", "head arrived but" && tMissing && "of" && (tMissing + tHave) \
+            && "chunk(s) are still missing; re-asking every" && (kRefetchMs div 1000) \
+            & "s. If this does not clear, the DHT is not propagating between " \
+            & "these two machines - try leg D first, which uses the same DHT."
+   end if
+   put "true" into sEWatchArmed
+   send "cpECheckStuck" to me in 20000 milliseconds
+end cpECheckStuck
 
 command cpEOnGathering pEvent
    if pEvent["peer"] is not sEPeer or pEvent["state"] is not 2 then
@@ -3335,7 +3427,7 @@ command cpEOnGathering pEvent
 end cpEOnGathering
 
 command cpEPublish
-   local tSalt, tBody, tZip, tChunk, tTargets, tHead, tStart
+   local tSalt, tBody, tZip, tChunk, tTargets, tHead, tStart, tTarget, tRc
    if sERole is "host" then
       put kSaltOffer into tSalt
       put "waiting-answer" into sEPhase
@@ -3351,14 +3443,42 @@ command cpEPublish
    put 1 into tStart
    repeat while tStart <= the number of bytes of tZip
       put byte tStart to (tStart + kChunkMax - 1) of tZip into tChunk
+      -- CHECK THE PUT. btDhtPutImmutable returns the EMPTY STRING on failure
+      -- (torrent.lcb, both the len<=0 and count<=0 paths), and this line used
+      -- to append it unchecked. One failed chunk therefore produced a target
+      -- list with a doubled or trailing comma; the head was still published
+      -- claiming N chunks; the joining machine then issued a get for an EMPTY
+      -- target, which no event can ever answer, so its assembly loop hit
+      -- `if sEChunks[tTarget] is empty then exit` on every later chunk -
+      -- forever, silently, on both machines. Refusing to publish a head that
+      -- does not describe the DHT is the only honest exit.
+      put btDhtPutImmutable(sSession, tChunk) into tTarget
+      if tTarget is empty then
+         cpSay "cpEOut", "FAIL btDhtPutImmutable refused a chunk:" && btLastError() \
+               & ". Not publishing a head that would name it - the other " \
+               & "machine would wait on a target that does not exist. Re-run " \
+               & "this leg."
+         put "failed" into sEPhase
+         exit cpEPublish
+      end if
       if tTargets is not empty then
          put comma after tTargets
       end if
-      put btDhtPutImmutable(sSession, tChunk) after tTargets
+      put tTarget after tTargets
       add kChunkMax to tStart
    end repeat
    put textEncode(kHeadMagic & tTargets, "UTF-8") into tHead
-   get btDhtPutMutable(sSession, sEKeys["publicKey"], sEKeys["secretKey"], tSalt, tHead)
+   put btDhtPutMutable(sSession, sEKeys["publicKey"], sEKeys["secretKey"], tSalt, tHead) into tRc
+   -- Same class, one level up: a negative rc here means the head never went out,
+   -- and claiming "published" would send the operator looking at the OTHER
+   -- machine for a fault that is on this one.
+   if tRc is a number and tRc < 0 then
+      cpSay "cpEOut", "FAIL btDhtPutMutable refused the head (" & tRc & "):" \
+            && btLastError() & ". The chunks are on the DHT but nothing points " \
+            & "at them. Re-run this leg."
+      put "failed" into sEPhase
+      exit cpEPublish
+   end if
    cpSay "cpEOut", "published" && dcLocalDescriptionType(sEPeer) && "as" && (the number of items of tTargets) && "chunk(s)"
 end cpEPublish
 
@@ -3399,12 +3519,30 @@ command cpEOnMutable pEvent
 end cpEOnMutable
 
 command cpEWantChunks pHeadText
-   local tList, tTarget
+   local tList, tTarget, tMissing
    if char 1 to 4 of pHeadText is not kHeadMagic then
       exit cpEWantChunks
    end if
    put char 5 to -1 of pHeadText into tList
    if tList is sEWant then
+      -- A REPEAT HEAD IS A RETRY, NOT A NO-OP. This used to exit here, which
+      -- meant the 4-second cpETick head-refetch re-fetched the HEAD and never
+      -- re-asked for a single missing chunk. DHT propagation is eventual and a
+      -- first get routinely misses, so one lost chunk left both machines
+      -- waiting with nothing on either screen and no way to tell why. Re-issue
+      -- for the outstanding targets only; the arrived ones are already in
+      -- sEChunks and a duplicate answer is harmless.
+      put empty into tMissing
+      repeat for each item tTarget in sEWant
+         if sEChunks[tTarget] is empty then
+            get btDhtGetImmutable(sSession, tTarget)
+            add 1 to tMissing
+         end if
+      end repeat
+      if tMissing > 0 then
+         cpSay "cpEOut", "re-asking the DHT for" && tMissing && "chunk(s) still missing of" \
+               && (the number of items of sEWant)
+      end if
       exit cpEWantChunks
    end if
    put tList into sEWant
@@ -3477,17 +3615,25 @@ command cpFLaunch
       oxSetCallbackOwner the long id of this card
       oxSetStatusCallback "cpOnTorStatus"
       oxSetPeerCallback "cpOnTorPeer"
-      oxLaunchTor tPath, tDir, "", ""
+      -- EXPLICIT PORTS, and this is the difference between settling Mode B and
+      -- appearing to. Empty ports default to kOxSocksPortDefault /
+      -- kOxControlPortDefault - 9050 and 9051, which is exactly where a SYSTEM
+      -- tor listens. On a machine already running tor (likely: the other Tor
+      -- legs want one) the launched process cannot bind them, and the
+      -- oxConnectControl that follows then authenticates against the system
+      -- daemon instead - so leg F prints PASS for a tor it did not launch,
+      -- which is a false PASS on the single claim it exists to make.
+      oxLaunchTor tPath, tDir, 9250, 9251
       put the result into tR
       if tR is not empty then
          cpSay "cpFOut", "oxLaunchTor refused:" && tR
          exit cpFLaunch
       end if
-      cpSay "cpFOut", "PASS oxLaunchTor accepted (torrc written, process started; processId" && the processId & ")"
+      cpSay "cpFOut", "PASS oxLaunchTor accepted on SOCKS 9250 / control 9251 (not the system pair; torrc written, process started; processId" && the processId & ")"
       put 0 into sTorConnectTries
       send "cpFConnect" to me in 2000 milliseconds
    catch tErr
-      cpSay "cpFOut", "launch failed (is onionxt in use?):" && tErr
+      cpSay "cpFOut", "launch failed (the ox* layer is embedded in this file, so a throw here means the paste is damaged):" && tErr
    end try
 end cpFLaunch
 
