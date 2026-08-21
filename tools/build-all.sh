@@ -279,6 +279,13 @@ if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
 fi
+# Fixtures beside the gate: this one reported a confident 43/27 for months while
+# measuring nothing at all in nocloud, so its three legs are proven before it
+# is trusted.
+if [ -f tools/test-stack-size.py ]; then
+  echo "== suite: tools/test-stack-size.py =="
+  python3 tools/test-stack-size.py
+fi
 if [ -f tools/check-stack-size.py ]; then
   echo "== suite: tools/check-stack-size.py =="
   python3 tools/check-stack-size.py
@@ -344,6 +351,10 @@ fi
 if [ -f tools/check-binary-freshness.py ]; then
   echo "== suite: tools/check-binary-freshness.py =="
   python3 tools/check-binary-freshness.py
+fi
+if [ -f tools/test-launcher-registry.py ]; then
+  echo "== suite: tools/test-launcher-registry.py =="
+  python3 tools/test-launcher-registry.py
 fi
 if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="
