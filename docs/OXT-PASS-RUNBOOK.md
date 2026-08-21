@@ -109,12 +109,26 @@ session - fresh OXT launch each (5.1.1). Setup ~15 min.
 
 Prerequisites, once: the current tree's extensions installed on BOTH machines
 (section 2); `tests/suite-closing-pass.livecodescript` pasted on both for
-item 1; the same LAN with UDP allowed (27099 for the riptide mesh; trap 5.5
-if anything loopback-flavoured fails); for item 2's done-criterion, two
-DIFFERENT networks (one machine on a phone hotspot); riptide identity
-discipline per the two-machine runbook's setup table (DIFFERENT identities
-for the call, the SAME identity for the mesh); one OXT process per stack
-instance in item 4 (trap 5.1).
+item 1 — **one paste, nothing to `start using`**: the ox* layer leg F needs is
+carried inside that file; the same LAN — **not guest wifi**, which isolates
+devices — with UDP allowed; for item 2's done-criterion, two DIFFERENT networks
+(one machine on a phone hotspot); riptide identity discipline per the
+two-machine runbook's setup table (DIFFERENT identities for the call, the SAME
+identity for the mesh); one OXT process per stack instance in item 4 (trap 5.1).
+
+**Open the right port, on the right machine.** This paragraph used to name only
+27099, which is not the port item 1 uses — an operator preparing the firewall
+from it opens the wrong one for the first thing they run, and finds out fifteen
+seconds into a stall, on the other machine.
+
+| Item | Port | On which machine |
+|---|---|---|
+| 1 — closing pass leg B | **UDP 27300** (`kEnetPort`) | inbound, on the machine that clicks **Host** |
+| 1 — legs C/D/E | libtorrent's listen port, **dynamic** — read it with `btListenPort`; section A prints it | inbound on both is ideal; the DHT usually traverses without it |
+| 2, 3 — riptide call + mesh | **UDP 27099** (`kLanPort`) | inbound, on the machine that hosts the mesh |
+| 3 — enet LAN chat demo | **UDP 27099** (`kEcPort`) | inbound, on the machine that clicks **Host** |
+
+Trap 5.5 if anything loopback-flavoured fails.
 
 | # | Run | Expect | Record | ~min |
 |---|---|---|---|---|
