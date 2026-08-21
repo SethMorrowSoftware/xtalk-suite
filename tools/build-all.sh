@@ -294,6 +294,19 @@ if [ -f tools/check-demo-selfcheck-drift.py ]; then
   echo "== suite: tools/check-demo-selfcheck-drift.py =="
   python3 tools/check-demo-selfcheck-drift.py
 fi
+# One script is one compile unit, so a name declared twice does not warn - it
+# takes the whole file down, at PASTE time, on an engine. Four carried blocks
+# are pasted into a dozen-odd files each and only ONE of them (the embedded
+# libraries) was collision-checked against its host. Fixtures first, so a
+# scanner that cannot discriminate cannot pass as a clean one.
+if [ -f tools/test-duplicate-declarations.py ]; then
+  echo "== suite: tools/test-duplicate-declarations.py --mutate =="
+  python3 tools/test-duplicate-declarations.py --mutate
+fi
+if [ -f tools/check-duplicate-declarations.py ]; then
+  echo "== suite: tools/check-duplicate-declarations.py =="
+  python3 tools/check-duplicate-declarations.py
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal
