@@ -15,10 +15,19 @@ Four failure modes, all fatal:
   - a file carrying the BEGIN marker that is not registered (adoption must be
     deliberate);
   - a registered adopter with no marker;
-  - a registered adopter that carries the block but never calls scBegin, which
-    would be a demo that ships the plumbing and reports nothing. That last one
-    is the failure this gate is most likely to actually catch, because it is
-    the one a copy-paste rollout produces.
+  - a registered adopter whose <pfx>ScRun body does not actually drive the
+    block: no scBegin, no assertion, or no scArmProbe. That last one is the
+    failure a copy-paste rollout produces - a demo that ships the plumbing and
+    reports nothing.
+
+    THAT CHECK WAS DEAD CODE UNTIL 2026-08-20 and this is the lesson worth
+    keeping. It was written as `"scBegin" not in text`, tested against the
+    WHOLE FILE - and every adopter carries the master block, which DEFINES
+    `command scBegin`. The substring is present in every carrier by
+    construction, so the branch was unreachable. Proven by mutation: deleting
+    the only real call, `scBegin "ecLog"` in enet-lan-chat, left the gate
+    printing OK with exit 0. A check must look where the thing it forbids would
+    actually be, and "is this string in the file" is almost never that place.
 
 Generated files are skipped: they are pinned to their sources by their own
 --check.
@@ -65,6 +74,16 @@ BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "
 END = "-- ==== DEMO SELF-CHECK v1 END ===="
 
 GENERATED = "GENERATED - do not edit"
+
+
+def handler_body(text, name):
+    """The body of `command <name>` / `on <name>`, or None."""
+    m = re.search(r"^(?:command|on)\s+%s\b" % re.escape(name), text, re.M)
+    if not m:
+        return None
+    rest = text[m.end():]
+    end = re.search(r"^end\s+%s\b" % re.escape(name), rest, re.M)
+    return rest[:end.start()] if end else None
 
 
 def lifecycle_bodies(text):
@@ -116,9 +135,27 @@ def main():
         if ("command %s" % run) not in text:
             problems.append("%s: carries the block but defines no %s"
                             % (rel, run))
-        elif "scBegin" not in text:
-            problems.append("%s: defines %s but never calls scBegin - the "
-                            "block would ship and report nothing" % (rel, run))
+        else:
+            body = handler_body(text, run)
+            if body is None:
+                problems.append("%s: %s has no `end %s`" % (rel, run, run))
+            else:
+                nbegin = len(re.findall(r"\bscBegin\b", body))
+                narm = len(re.findall(r"\bscArmProbe\b", body))
+                nsay = len(re.findall(r"\bsc(?:Assert|Skip)\b", body))
+                if nbegin != 1:
+                    problems.append("%s: %s calls scBegin %d times (want 1) - "
+                                    "without it the block reports nothing"
+                                    % (rel, run, nbegin))
+                if nsay == 0:
+                    problems.append("%s: %s makes no assertion - it would print "
+                                    "a header and a count of zero" % (rel, run))
+                if narm != 1:
+                    problems.append(
+                        "%s: %s calls scArmProbe %d times (want 1) - without it "
+                        "scTickProbe never fires, so scFinish never runs and the "
+                        "report ends on its own \"still to come\" line, which is "
+                        "indistinguishable from a hang" % (rel, run, narm))
         # EITHER lifecycle hook, and the WHOLE handler body. Three demos build
         # their window in preOpenStack and never define openStack at all, so
         # requiring the one spelling would have kept the block out of them; and

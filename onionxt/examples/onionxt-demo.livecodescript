@@ -4731,7 +4731,14 @@ function scMissing pList
    local tName, tMissing
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      if there is no field tName and there is no button tName then
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
          put tName & comma after tMissing
       end if
    end repeat
@@ -4821,13 +4828,13 @@ constant kScBadOnion = "3gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid
 
 -- Every control name this script names OR builds, derived from the source with
 -- comments cut and string literals kept.
-constant kDemoScControls = "about:caps,about:testlog,addr:paste,addr:pubkey,addr:reencoded,chrome:statusbar,dial:host,dial:log,dial:msg,dial:port,dial:send,stat:connect,stat:ctl,stat:disconnect,stat:socks,stat:version,svc:address,svc:folder,svc:html,svc:lport,svc:page,svc:remove,svc:vport,uiFooter,uiStatus,uiTitle"
+constant kDemoScControls = "about:caps,about:testlog,addr:paste,addr:pubkey,addr:reencoded,chrome:statusbar,dial:host,dial:log,dial:msg,dial:port,dial:send,stat:connect,stat:ctl,stat:disconnect,stat:socks,stat:version,svc:address,svc:folder,svc:html,svc:lport,svc:page,svc:remove,svc:vport,uiStatus,uiTitle"
 
 command demoScRun
    local tMissing, tVer, tInfo, tErr
    scBegin "about:testlog"
    put scMissing(kDemoScControls) into tMissing
-   scAssert "all 26 controls this script names exist (missing: " \
+   scAssert "all 25 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    -- OnionXT is a PURE-SCRIPT layer this file carries between its sentinels,

@@ -7755,7 +7755,14 @@ function scMissing pList
    local tName, tMissing
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      if there is no field tName and there is no button tName then
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
          put tName & comma after tMissing
       end if
    end repeat
@@ -7844,13 +7851,13 @@ end scFinish
 -- because that demo reaches its two logs through a variable. A missing control
 -- is not cosmetic - it is the "Chunk: error in object expression" class, found
 -- at boot instead of when somebody clicks.
-constant kQsScControls = "qsActPanel,qsChooseFile,qsChooseFolder,qsCode,qsCodeCap,qsCopy,qsDrop,qsDropBg,qsEditHint,qsEditPass,qsEditPassCap,qsEditToggle,qsGet,qsLog,qsMethodCap,qsMethodCode,qsMethodCodeD,qsMethodTor,qsMethodTorD,qsMethodWeb,qsMethodWebD,qsMoreCap,qsMoreLine,qsPassSuggest,qsRates,qsRecvCap,qsRecvCode,qsRecvPanel,qsRecvPass,qsRecvPassCap,qsSendPanel,qsSendPass,qsSendPassCap,qsSharing,qsTagline,qsTorPill,qsWebCheck,qsWebCopy,qsWebLink,qsXferCopy,qsXferFolder,qsXferHead,qsXferHint,qsXferInfo,qsXferPanel,qsXferStop,qsXfers,uiFooter,uiStatus,uiTitle"
+constant kQsScControls = "qsActPanel,qsChooseFile,qsChooseFolder,qsCode,qsCodeCap,qsCopy,qsDrop,qsDropBg,qsEditHint,qsEditPass,qsEditPassCap,qsEditToggle,qsGet,qsLog,qsMethodCap,qsMethodCode,qsMethodCodeD,qsMethodTor,qsMethodTorD,qsMethodWeb,qsMethodWebD,qsMoreCap,qsMoreLine,qsPassSuggest,qsRates,qsRecvCap,qsRecvCode,qsRecvPanel,qsRecvPass,qsRecvPassCap,qsSendPanel,qsSendPass,qsSendPassCap,qsSharing,qsTagline,qsTorPill,qsWebCheck,qsWebCopy,qsWebLink,qsXferCopy,qsXferFolder,qsXferHead,qsXferHint,qsXferInfo,qsXferPanel,qsXferStop,qsXfers,uiStatus,uiTitle"
 
 command qsScRun
    local tMissing, tPort, tErr
    scBegin "qsLog"
    put scMissing(kQsScControls) into tMissing
-   scAssert "all 50 controls this script names exist (missing: " \
+   scAssert "all 49 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
    scAssert "nothing shared yet (sShareCode is " & scShow(sShareCode) & ")", \
          (sShareCode is empty)

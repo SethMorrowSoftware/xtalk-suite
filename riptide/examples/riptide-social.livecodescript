@@ -9805,7 +9805,14 @@ function scMissing pList
    local tName, tMissing
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      if there is no field tName and there is no button tName then
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
          put tName & comma after tMissing
       end if
    end repeat
@@ -9890,13 +9897,13 @@ end scFinish
 
 -- Every control name this script names OR builds, derived from the source with
 -- comments cut and string literals kept.
-constant kRaScControls = "Attached,Handed,raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoLanFromFeed,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
+constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoLanFromFeed,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
 
 command raScRun
    local tMissing, tVer, tErr
    scBegin "raIdOut"
    put scMissing(kRaScControls) into tMissing
-   scAssert "all 77 controls this script names exist (missing: " \
+   scAssert "all 75 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    if sHaveLib is not "true" then

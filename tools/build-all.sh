@@ -290,9 +290,23 @@ fi
 # The fourth carried block: the demos' boot self-check. Registered here in the
 # same change that created it, because a drift gate nobody runs is the shape
 # this file's own history keeps warning about.
+# Fixtures FIRST: the drift gate shipped with a dead fourth check (a substring
+# test against the whole file, defeated by the block that defines the very name
+# it looked for), so a gate here does not run unproven.
+if [ -f tools/test-demo-selfcheck-drift.py ]; then
+  echo "== suite: tools/test-demo-selfcheck-drift.py =="
+  python3 tools/test-demo-selfcheck-drift.py
+fi
 if [ -f tools/check-demo-selfcheck-drift.py ]; then
   echo "== suite: tools/check-demo-selfcheck-drift.py =="
   python3 tools/check-demo-selfcheck-drift.py
+fi
+# Each demo's control list is DERIVED, not maintained: a phantom name makes the
+# demo print a red FAIL on every open, which trains the operator to ignore the
+# block. Four of eleven shipped with one.
+if [ -f tools/check-demo-control-lists.py ]; then
+  echo "== suite: tools/check-demo-control-lists.py =="
+  python3 tools/check-demo-control-lists.py
 fi
 # One script is one compile unit, so a name declared twice does not warn - it
 # takes the whole file down, at PASTE time, on an engine. Four carried blocks

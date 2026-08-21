@@ -874,7 +874,14 @@ function scMissing pList
    local tName, tMissing
    set the defaultStack to the short name of this stack
    repeat for each item tName in pList
-      if there is no field tName and there is no button tName then
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
          put tName & comma after tMissing
       end if
    end repeat
