@@ -306,17 +306,29 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > ordering is the assertion. It still fails loudly on the three ways the engine
 > could actually be broken: writes ignored (both readbacks equal), writes
 > inverted, or the property unreadable.
-> **So v30 carries ONE MORE assertion than v29, and no v29 total is comparable to
-> a v30 one.** **v30 IS NOW OBSERVED: 375/0 on Windows x86_64, 2026-08-20**,
+> **SUPERSEDED BY v31 (2026-08-21), and v30's own new assertion is why.** The
+> Linux pass that day ran v30 folded and came back **374/1** - the single red
+> being `playLoudness tracks the write (0 < 0)`. Linux reads that property back
+> as a CONSTANT 0 whatever is written to it, so v30 had replaced an assertion
+> wrong about EXACTNESS with one wrong about ORDER, on a platform doing nothing
+> wrong, in a Kit that never reads the value back. An assertion that fails on a
+> healthy engine is worse than no assertion. v31 demotes it to a printed
+> observation - three-way now: exact / ordered-not-exact / does-not-track - so
+> **the expectation is 374 again**, and no two of v29, v30 and v31 are comparable
+> totals. What the probe bought is the answer itself: `docs/OXT-ENGINE-NOTES.md`
+> 5.4 is settled on BOTH platforms now, from one line of printed output rather
+> than another engine session. The v30 record below stands as written.
+>
+> **So v30 carried ONE MORE assertion than v29, and no v29 total is comparable to
+> a v30 one.** **v30 WAS OBSERVED: 375/0 on Windows x86_64, 2026-08-20**,
 > folded in the suite paste - the header's 375 and the engine's now agree, so
 > that is this harness's expectation and a delta against it IS a regression. The
 > rewritten check reported what it was rewritten to report: `playLoudness is
 > readable as a number (Win32: 24->24, 73->73)`, `playLoudness tracks the write
 > (24 < 73)`, and the printed observation `playLoudness readback is EXACT on
-> Win32`. **LINUX is still unobserved at v30**, which matters more here than
-> usual: Linux is the platform where the v29 check FAILED, so the platform that
-> motivated the rewrite has not yet run the rewrite. Do not read 374 as this
-> harness's expectation; it is v29's, and v29 is gone.
+> Win32`. **LINUX ran it on 2026-08-21 and answered:** `24->0, 73->0`. The
+> platform that motivated the rewrite settled the question the rewrite existed
+> to ask - see the v31 note above.
 > - The `docs/holde-em/` spec moved UP to the suite's `docs/holde-em/`: it
 >   composes torrentxt + sodiumxt + box2dxt, which makes it a CROSS-MEMBER
 >   capstone design (Riptide's sibling), not a box2dxt document. (It has
@@ -475,7 +487,7 @@ tools/check-lcb-signatures.py`, covered above.
 pass" and let the user confirm.
 
 **The self-test harness** (`examples/box2dxt-selftest.livecodescript`) is the runtime safety net:
-**377 `stAssert` call sites** across 51 test handlers (currently **v30**), of which **375 execute** in a green run, driving the real Kit
+**376 `stAssert` call sites** across 51 test handlers (currently **v31**), of which **374 execute** in a green run, driving the real Kit
 (paused world + `b2kStepOnce` hand-stepping + `b2kInputInject` scripted keys). It is in TWO
 halves and the file says so where they meet: the first 38 handlers are BEHAVIOUR tests, each
 one a lesson learned on real hardware; the 13 added in v23 are **Kit API coverage** - broad,
