@@ -97,6 +97,16 @@ real-session publish/request, and synthetic ingest-verifier sections. This
 closes the single-engine half of runbook item 10; cross-machine DHT propagation
 remains part of item 6.
 
+**GREEN ON BOTH PLATFORMS 2026-08-21.** The suite paste now has a fully green
+run on Linux as well as Windows - **1,984 passed, 0 failed, 1 skipped, 1,985
+total** - and that is the label that changed, not the number. Every previous
+Linux run of the whole paste carried at least one red (373/1 on 2026-08-18,
+1,983/2/1 earlier the same day), and both were the same harness-vs-engine
+disagreement over `the playLoudness`, not a defect in any member. The two
+platforms differ by four checks and the reason is recorded: onionxt gained four
+fail-closed checks when four of its coverage exemptions turned out to be
+factually wrong, which Windows has not run since.
+
 **SUPERSEDED 2026-08-20 - the record is now a WHOLE-RUN one.** A Windows pass
 that day finished the suite paste end to end: **1,981 passed, 0 failed, 1
 skipped, 1,982 total**, of which **1,868 are folded member checks** (sodiumxt

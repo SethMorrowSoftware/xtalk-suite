@@ -422,6 +422,7 @@ pass report the scale instead of re-asking, and it did.
 |---|---|---|---|
 | Win32 (2026-08-20, harness v30) | 24 | 73 | EXACT |
 | Linux (2026-08-21, harness v30) | **0** | **0** | **write-only: readback is a constant 0** |
+| Linux (2026-08-21, harness v31) | 0 | 0 | same, now reported rather than asserted |
 
 So the mechanism is no longer unknown. On Linux `the playLoudness` does not
 report what was written to it at all - not a different scale, not rounding: a

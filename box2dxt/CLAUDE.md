@@ -306,6 +306,16 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 > ordering is the assertion. It still fails loudly on the three ways the engine
 > could actually be broken: writes ignored (both readbacks equal), writes
 > inverted, or the property unreadable.
+> **v31 IS OBSERVED: 374/0 on LINUX, 2026-08-21**, folded in the suite paste -
+> the predicted number and the observed number are the same number, which is the
+> second time in this chain that has happened and the standard this harness is
+> now held to. Its three-way observation printed the branch it was written for,
+> on the platform it was written for: `playLoudness readback does NOT track the
+> write on Linux (asked 24/73, read 0/0) - write-only here; the Kit does not
+> depend on it`. **Windows has not run v31**; nothing about the demotion is
+> platform-specific, so 374 is the expectation there too, but that is reasoning,
+> not a reading.
+>
 > **SUPERSEDED BY v31 (2026-08-21), and v30's own new assertion is why.** The
 > Linux pass that day ran v30 folded and came back **374/1** - the single red
 > being `playLoudness tracks the write (0 < 0)`. Linux reads that property back
