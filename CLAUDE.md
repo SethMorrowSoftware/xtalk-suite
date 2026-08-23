@@ -622,10 +622,11 @@ handler cannot leave a permanent exemption behind it. It is a floor, not a ceili
 "called by name" is not "tested well", and depth stays the member vector gates' job.
 Box2dxt's 211 were closed the same way, by 13 new sections in its own harness that
 say in their banner that they are shallow; the member is at 313/313 with zero
-exemptions, and the suite total is **830/844** (it read 724/742 until nostrxt
+exemptions, and the suite total is **841/855** (it read 724/742 until nostrxt
 folded in 2026-08-23 at 101/101 with zero exemptions - the same change that
-closed four of onionxt's old excuses - and sodiumxt's ABI-10 handler moved it
-once more the same day). TWO layers are NOT in that
+closed four of onionxt's old excuses - then 830/844 with sodiumxt's ABI-10
+handler the same day, and 841/855 later that day when coinxt's four BIP-341
+handlers and riptide's pre-OXT-pass wirings folded in). TWO layers are NOT in that
 ratchet, and each says so beside the `MEMBERS` list with its numbers, because
 "we did not measure it" and "we measured it and a row would lie" are different
 admissions:
@@ -652,7 +653,15 @@ admissions:
   DECLARATION block, and six exports sat in that block declared and never
   called, so every count of what the smoke test reached had been counting them
   as covered. **A declaration is not a call** - this file's own
-  shipped-is-not-run lesson, one level down in the toolchain. Signatures across
+  shipped-is-not-run lesson, one level down in the toolchain.
+  **RE-MEASURED 2026-08-23, and the answer is 370 of 370: no LC_API export of
+  the shim is dark.** The next slice named in box2dxt's CLAUDE.md landed - the
+  176 remaining exports across three more fixture worlds, 304 checks green
+  under Release ctest and the sanitize lane's ASan/UBSan flags, gcov-dated by
+  the same gcov-not-grep convention. Read it as ENTERED, not exhausted: the
+  sweep's assertions are deliberately shallow and say so in their banner, and
+  gcov puts LINE coverage inside the shim at ~92% with the remainder being
+  guard and allocation-failure branches. The fold record is box2dxt's. Signatures across
   the boundary are now gated too (`box2dxt/tools/check-lcb-signatures.py`: 370
   binds vs 370 definitions, return type, arity, and every parameter type).
 - **holde-em's `he*` surface** - **MEASURED 2026-08-17, re-measured 2026-08-19;
@@ -698,8 +707,12 @@ admissions:
   out of the denominator - the row went GREEN at 66/260, every number smaller
   and wrong.
 
-box2dxt's script-side row is still OPEN. holde-em's is measured, and the honest
-next step is arming it as a floor (no NEW gaps), which would fail on 0 today.
+box2dxt's script-side row is still OPEN. holde-em's is measured AND armed: the
+floor landed 2026-08-19 (the gate's own "ARMED AS A FLOOR" record), so a NEW
+gap, a promoted entry or a stale excuse fails the build; what remains open
+there is paying the recorded no-test debt down, not preventing drift. (This
+sentence said "the honest next step is arming it" until 2026-08-23, four days
+after the arming - the description-rots-checks-do-not lesson, again.)
 
 The same shape of hole was in **coinxt's own constant gate**, found while fixing this
 one: `check-selftest-vectors.py` re-derived an explicit list and then printed

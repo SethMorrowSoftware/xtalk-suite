@@ -298,11 +298,13 @@ MEMBERS = [
     # already learned to distrust (coinxt's constant gate, root CLAUDE.md).
     #
     # What that layer HAS, stated with the number rather than the adjective
-    # (measured 2026-08-17 by GCOV, not by grep): tests/smoke_test.c drives
-    # **194 of the 370 LC_API exports** - it drove 53 that morning - in
-    # build-all.sh (Release) and under ASan/UBSan in native-box2dxt.yml's
-    # sanitize job, and the Kit's own 313 handlers, every one of which is
-    # exercised here, are what call into it.
+    # (measured 2026-08-17 by GCOV, not by grep; RE-MEASURED 2026-08-23:
+    # **370 of 370 LC_API exports entered** - the 2026-08-17 figure was 194,
+    # and 53 that morning - ENTERED, not exhausted; the sweep's assertions are
+    # deliberately shallow and say so in their banner): tests/smoke_test.c
+    # runs in build-all.sh (Release) and under ASan/UBSan in
+    # native-box2dxt.yml's sanitize job, and the Kit's own 313 handlers, every
+    # one of which is exercised here, are what call into it.
     #
     # THE OLD BASELINE FOR THIS WAS 60, AND 60 WAS A GREP ARTIFACT. It came
     # from counting b2lc_* tokens in smoke_test.c, which also matched the
@@ -574,26 +576,29 @@ HOLDEM_WORKLIST = {
          "heUIPromptToAct", "heUISetStatus", "heUIShowdownReveal",
          "heWipeChrome"],
     ),
-    # THE REAL DEBT, and the only category with no excuse attached to it: 139
+    # THE REAL DEBT, and the only category with no excuse attached to it: 129
     # handlers whose bodies are arithmetic, list work, string work or state
-    # transitions, every one of which a section could name today. heHandStart
-    # is the one to read first - the hotseat hand opener, named in this harness
-    # exactly once, inside a test LABEL. Others worth a first pass because they
-    # are pure leaves: heRank5, heCardRankVal, heCardSuitVal, heTwoDigits,
-    # heCountItems, heNextInList, heByteXor, heU32BEData, heHexId.
+    # transitions, every one of which a section could name today. The first
+    # tranche landed 2026-08-23 (holde-em's heTestLeafRun, section 22): the
+    # nine pure leaves this comment used to name (heRank5, heCardRankVal,
+    # heCardSuitVal, heTwoDigits, heCountItems, heNextInList, heByteXor,
+    # heU32BEData, heHexId) plus heHandStart - the measured literal-vs-call
+    # gap, exercised on its refusal guards only because past them it deals a
+    # hand - are out of this list because a section now names each with real
+    # assertions.
     "no-test": (
         "NO REASON - a pure or near-pure handler a section could name today, "
         "and none does. This is the debt, not an exemption",
         ["heActionDo", "heApplyCfg", "heApplyLevel", "heAuditDealLog",
          "heBetAfterAction", "heBetCloseStreet", "heBetFirstInHandAfter",
          "heBetInHandList", "heBetLiveCount", "heBetNextPending", "heBetPay",
-         "heBetPayDead", "heBetSeatPending", "heByteXor", "heCallAmountFor",
-         "heCancelPacedSteps", "heCardFace", "heCardRankVal",
-         "heCardSuitVal", "heCfgBody", "heCfgDefaults", "heCfgEnsure",
-         "heCountItems", "heCurrentPot", "heDealBoard", "heDeltaOfTxt",
+         "heBetPayDead", "heBetSeatPending", "heCallAmountFor",
+         "heCancelPacedSteps", "heCardFace",
+         "heCfgBody", "heCfgDefaults", "heCfgEnsure",
+         "heCurrentPot", "heDealBoard", "heDeltaOfTxt",
          "heDrawUniform", "heEngineDo", "heEnvBodyText", "heEnvWireParse",
          "heFreshPrngState", "heHandLabel", "heHandLive", "heHandSettle",
-         "heHandStart", "heHeaderTxt", "heHexId", "heHistHide", "heHistShow",
+         "heHeaderTxt", "heHistHide", "heHistShow",
          "heHostModeLabel", "heHudMark", "heHudTick", "heIdentitySeedHex",
          "heIdentitySetup", "heInviteTxt", "heIsCardList", "heKenneyFrame",
          "heL2CardPointHex", "heL2ChainOrder", "heL2PointOkHex",
@@ -612,8 +617,8 @@ HOLDEM_WORKLIST = {
          "heNetShowSeat", "heNetShowdownShow", "heNetTimeoutMiss",
          "heNetTimeoutRearm", "heNetTurnClockStart", "heNetTurnLimitSecs",
          "heNetWeDeal", "heNetXlatFlush", "heNetXlatFrom", "heNextHandTick",
-         "heNextInList", "heNextLiveAfterPos", "hePaceMs",
-         "hePrevLiveBeforePos", "heQuickAmount", "heRank5", "heReactToNotes",
+         "heNextLiveAfterPos", "hePaceMs",
+         "hePrevLiveBeforePos", "heQuickAmount", "heReactToNotes",
          "heReadableErr", "heRevealStep", "heRosterHasKey", "heRotateAfter",
          "heRunoutStep", "heScheduleReveal", "heScheduleRunout",
          "heScheduleShowdown", "heSeatAvatarPick", "heSeatsAlive",
@@ -622,7 +627,7 @@ HOLDEM_WORKLIST = {
          "heSettleStep", "heSndFilesFor", "heSndReload", "heSndVerb",
          "heSpeedMult", "heSpeedPace", "heStreamBlocksHex", "heSuitGlyph",
          "heTableLogoPick", "heTableNew", "heTempPath", "heTransportLabel",
-         "heTwoDigits", "heU32BEData", "heUIHandStart",
+         "heUIHandStart",
          "heUIShowBoardStreet", "heUIShowHole", "heVerifyDetached"],
     ),
 }

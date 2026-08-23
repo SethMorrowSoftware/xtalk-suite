@@ -8,6 +8,52 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.25.0 -- THE BATCHED SHUFFLE-MASK STEP + THE LEAF TRANCHE (2026-08-23).
+NO WIRE CHANGED -- not a byte: every pinned record format and void string
+stands, and protocol-kat's existing pins are untouched (it grew NEW pins
+for the deal-delivery wire types the same day, an additive extension).
+kHeVersion 0.24.5 -> 0.25.0, kHeHarnessV 41 -> 42 (a new section plus new
+assertions in section 16, so a stale paste identifies itself), kUIVersion
+stays 15 (no chrome moved). Verified statically; needs an OXT pass -- and
+NOTE: THIS FILE's sxRistretto* calls have not run on an engine (the
+exports themselves are engine-observed: sodiumxt's ABI-9 records,
+2026-08-17 Windows and 2026-08-18 Linux, the batch call included with its
+index-naming failure path - so the pass this member owes is its own
+caller, not the library).
+  * heL2MaskDeckHex grew a BATCH FAST PATH (plan 4f's batch handler,
+    pulled forward ahead of 4f's measure-first order -- the headless
+    backlog's A1): on SodiumXT ABI 9, gated on the same cached
+    heL2HasDleq() probe the DLEQ verifier uses, the happy path is ONE
+    atomic sxRistrettoScalarMultBatch crossing for all 52 mults -- 4 FFI
+    crossings for the whole step (hex2bin scalar, hex2bin concat, batch,
+    bin2hex) against the per-point loop's ~312. The loop STAYS, twice
+    over: it is the only path on a pre-ABI-9 SodiumXT, and it is the
+    refusal path everywhere -- the batch is atomic (one bad point throws
+    for the whole call) and its error text is never parsed; any throw
+    falls through to the loop, which re-derives the verdict with the
+    exact position-tagged "void:..." string 4d attribution switches on.
+    So the two paths cannot disagree on a refusal by construction, and
+    section 16 pins the other half: batch and loop agree byte-for-byte
+    on the fixed KAT deck (deterministic scalars, no randomness), and a
+    corrupted point still voids with its output position. The wrong
+    "52 crossings" figures in this handler's comment and in
+    IMPLEMENTATION-PLAN 4f are corrected in the same change.
+  * SECTION 22 ADDED (heTestLeafRun): the first tranche of the suite
+    coverage gate's no-test worklist -- the nine pure leaves its own
+    comment names as the place to start (heRank5, heCardRankVal,
+    heCardSuitVal, heTwoDigits, heCountItems, heNextInList, heByteXor,
+    heU32BEData, heHexId), each with real value assertions, shallow on
+    purpose and the banner says so (the box2dxt precedent). Plus
+    heHandStart -- until now named in this harness only inside a test
+    label, the gate's one measured literal-vs-call gap -- exercised on
+    its PURE PRELUDE only: both refusal guards (active phase, online)
+    asserted on a synthetic gGame with handNum-unmoved as the witness,
+    because past the guards it deals a hand, arms the paced-step timers
+    and drives the table UI, which a folded harness must never do inside
+    somebody else's paste. The ten are moved out of the suite gate's
+    no-test baseline (139 -> 129); heProbeSodium is the 23rd entry in
+    heTestRunAllSections now.
+
 v0.24.4 -- THE ELECTION'S SIT-OUT FILTER + THE HELPERS NO TEST NAMED
 (2026-08-17). NO WIRE CHANGED -- not a byte: protocol-kat's pins all still
 hold and two were ADDED beside them, so a v0.24.3 client and a v0.24.4
@@ -1046,8 +1092,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.24.5"
-constant kHeHarnessV = "41"
+constant kHeVersion = "0.25.0"
+constant kHeHarnessV = "42"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -2446,20 +2492,78 @@ end heL2DeckCheckHex
 
 function heL2MaskDeckHex pDeckList, pScalarHex, pPermList
    -- one full shuffle-mask step (spec 7.3): out[j] = k * in[sigma[j]] for
-   -- j = 1..52 -- 52 scalar-mult FFI crossings, deal-time only. Reused
-   -- verbatim by showdown re-verification (heL2RevealShuffleHex), so the
-   -- doer and the verifier can never drift. sigma is validated for
-   -- range/format ONLY, deliberately not distinctness: a repeated index
-   -- duplicates a point in the OUTPUT deck, which the public duplicate
-   -- check catches on every client. A void from the point mask comes back
-   -- with the output position appended.
+   -- j = 1..52, deal-time only. Reused verbatim by showdown
+   -- re-verification (heL2RevealShuffleHex), so the doer and the verifier
+   -- can never drift. sigma is validated for range/format ONLY,
+   -- deliberately not distinctness: a repeated index duplicates a point in
+   -- the OUTPUT deck, which the public duplicate check catches on every
+   -- client. A void from the point mask comes back with the output
+   -- position appended.
+   --
+   -- TWO PATHS, ONE CONTRACT (plan 4f's batch handler, pulled forward
+   -- 2026-08-23). On SodiumXT ABI 9 the happy path is ONE atomic
+   -- sxRistrettoScalarMultBatch crossing for all 52 mults -- 4 FFI
+   -- crossings for the whole step (one sxHex2Bin for the scalar, one for
+   -- the 52-point concatenation, the batch itself, one sxBin2Hex back) --
+   -- where the per-point loop below costs 6 per point, ~312 per step.
+   -- Gated on heL2HasDleq(), the same cached ABI-9 probe the DLEQ
+   -- verifier's batch call gates on. The batch is ATOMIC: one bad point
+   -- (invalid encoding, or an identity result) throws for the WHOLE call
+   -- with a 1-based index in the message -- and that message is NOT
+   -- parsed. ANY deviation from the happy path falls through to the
+   -- per-point loop, which re-derives the verdict with the exact
+   -- position-tagged "void:..." string 4d attribution switches on, so the
+   -- two paths can never disagree about a refusal: every refusal IS the
+   -- loop's. The pure-text format checks run BEFORE any hex crosses the
+   -- FFI (H4: heIsHex gates sxHex2Bin, which throws on malformed input),
+   -- and the loop stays the only path on a pre-ABI-9 SodiumXT. Harness
+   -- section 16 pins batch-vs-loop byte agreement on the KAT deck.
    local tOutPos, tSrcPos, tSrcHex, tMaskedHex, tOutList
+   local tFastOk, tConcatHex, tBatchHex, tBatchErr
    set the itemDelimiter to comma
    if the number of items of pDeckList is not 52 then
       return "void:deck-size"
    end if
    if the number of items of pPermList is not 52 then
       return "void:perm-size"
+   end if
+   if heL2HasDleq() and heIsHex(pScalarHex, 64) then
+      put "true" into tFastOk
+      put empty into tConcatHex
+      repeat for each item tSrcPos in pPermList
+         if tSrcPos is not an integer or tSrcPos < 1 or tSrcPos > 52 then
+            put "false" into tFastOk
+            exit repeat
+         end if
+         put item tSrcPos of pDeckList into tSrcHex
+         if not heIsHex(tSrcHex, 64) then
+            put "false" into tFastOk
+            exit repeat
+         end if
+         put tSrcHex after tConcatHex
+      end repeat
+      if tFastOk is "true" then
+         try
+            put heBin2HexS(sxRistrettoScalarMultBatch(heHex2BinD(pScalarHex), \
+                  heHex2BinD(tConcatHex))) into tBatchHex
+            put empty into tOutList
+            put 1 into tOutPos
+            repeat while tOutPos <= 52
+               put char (tOutPos * 64 - 63) to (tOutPos * 64) of tBatchHex into tMaskedHex
+               if tOutList is empty then
+                  put tMaskedHex into tOutList
+               else
+                  put comma & tMaskedHex after tOutList
+               end if
+               add 1 to tOutPos
+            end repeat
+            return tOutList
+         catch tBatchErr
+            -- an invalid point or an identity result somewhere in the
+            -- deck (the batch's merged, atomic failure): fall through --
+            -- the loop below re-derives WHICH point and names it exactly
+         end try
+      end if
    end if
    put empty into tOutList
    put 0 into tOutPos
@@ -12314,8 +12418,9 @@ function heSelfTest
    -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
    -- than left as a claim that reads better than it is: this used to say "and
    -- no msg", and the LAST entry in heTestRunAllSections is heProbeSodium
-   -- (section 21 when that was written, the 22nd entry since v0.24.4 put the
-   -- pure-helpers section ahead of it), whose last lines are
+   -- (section 21 when that was written; the 22nd entry since v0.24.4 put the
+   -- pure-helpers section ahead of it, the 23rd since v0.25.0 added the
+   -- leaf-tranche section too), whose last lines are
    -- `put return & tRpt after gRpt` and then a BARE `put tRpt` -- and a bare
    -- put writes to msg. That echo is deliberate and documented at its own site
    -- (running heProbeSodium standalone from the message box should print), and
@@ -12393,6 +12498,7 @@ command heTestRunAllSections
    heRunSection "heTestLevel2VoidRun"
    heRunSection "heTestLivenessRun"
    heRunSection "heTestHelpersRun"
+   heRunSection "heTestLeafRun"
    heRunSection "heProbeSodium"
 end heTestRunAllSections
 
@@ -13529,6 +13635,7 @@ command heTestLevel2Run
    local tBaseList, tDeck1, tDeck2, tDeck3, tChainTxt, tVal1, tVal2, tVal3
    local tHole0, tHole1, tHole2, tDupList, tBad2, tBad3, tPermBad
    local tTablePt, tRndK, tRndMask, tRndBack
+   local tLoopDeck, tLoopPoint, tSrcPos, tCorruptList, tFirstSrc
    put return & "-- 16. Level 2 mental poker: ristretto255 deal algebra (spec 7.3)" & return after gRpt
    if not heHasSodium() then
       heTSkip "level2: ristretto255 deal algebra", "SodiumXT not installed"
@@ -13546,6 +13653,37 @@ command heTestLevel2Run
    heTAssert "level2: scalar inversion (k1^-1 mod L)", heL2ScalarInvertHex(kKatL2Scalar1), kKatL2Inv1
    put heL2MaskDeckHex(tBaseList, kKatL2Scalar1, kKatL2Perm1) into tDeck1
    heTAssert "level2: seat 1 shuffle-mask step (52 mults + sigma)", tDeck1, kKatL2Deck1
+   -- the batch fast path vs the per-point fallback (plan 4f, 2026-08-23):
+   -- on ABI 9 the deck call above took ONE sxRistrettoScalarMultBatch
+   -- crossing; re-derive the same step through heL2MaskPointHex -- the
+   -- fallback, verbatim -- and hold the two byte-for-byte on the fixed
+   -- KAT scalars (deterministic end to end, no randomness). Below ABI 9
+   -- there is only one path, so the agreement leg SKIPs by name.
+   set the itemDelimiter to comma   -- gotcha 5: set before every parse
+   if heL2HasDleq() then
+      put empty into tLoopDeck
+      repeat for each item tSrcPos in kKatL2Perm1
+         put heL2MaskPointHex(kKatL2Scalar1, item tSrcPos of tBaseList) into tLoopPoint
+         if tLoopDeck is empty then
+            put tLoopPoint into tLoopDeck
+         else
+            put comma & tLoopPoint after tLoopDeck
+         end if
+      end repeat
+      heTAssert "level2: batch fast path and per-point fallback agree byte-for-byte", \
+            tLoopDeck, tDeck1
+   else
+      heTSkip "level2: batch-vs-fallback agreement", \
+            "SodiumXT pre-ABI-9 (no batch surface; the per-point loop is the only path)"
+   end if
+   -- a corrupted point voids on EITHER path: the batch's atomic throw
+   -- falls through to the loop, which names the first output position to
+   -- meet it (sigma1's first source index), same as a pre-ABI-9 run
+   put item 1 of kKatL2Perm1 into tFirstSrc
+   put tBaseList into tCorruptList
+   put kKatL2BadPoint into item tFirstSrc of tCorruptList
+   heTAssert "level2: a corrupted point voids with its output position (both paths)", \
+         heL2MaskDeckHex(tCorruptList, kKatL2Scalar1, kKatL2Perm1), "void:invalid-point:1"
    put heL2MaskDeckHex(tDeck1, kKatL2Scalar2, kKatL2Perm2) into tDeck2
    put heL2MaskDeckHex(tDeck2, kKatL2Scalar3, kKatL2Perm3) into tDeck3
    heTAssert "level2: three-seat masked table deck", tDeck3, kKatL2MaskedDeck
@@ -15032,6 +15170,126 @@ command heTestHelpersRun
    heTAssert "pot: no seats is an empty pot, not an error", \
          heAwardedPot(tHandBy, empty), 0
 end heTestHelpersRun
+
+command heTestLeafRun
+   -- 22: FIRST TRANCHE of the coverage worklist's no-test category -- the
+   -- pure leaves the suite gate's own comment names as the place to start
+   -- (heRank5, heCardRankVal, heCardSuitVal, heTwoDigits, heCountItems,
+   -- heNextInList, heByteXor, heU32BEData, heHexId), plus heHandStart's
+   -- refusal guards. SHALLOW ON PURPOSE and this banner says so (the
+   -- box2dxt 211-handler precedent): a value pin per branch, claiming
+   -- "this leaf computes what its contract says" and nothing deeper.
+   -- heHandStart DEALS A HAND past its guards -- the deal arms the paced
+   -- reveal/settle timers and drives the table UI, exactly what the fold
+   -- record forbids a folded harness to do inside somebody else's paste --
+   -- so this section exercises its PURE PRELUDE only: the phase guard and
+   -- the online guard, both real exits asserted on real state, with
+   -- "handNum unmoved" as the witness that no deal began. The dealt path
+   -- itself stays with the hotseat OXT pass, where it runs on every hand.
+   local tSaved, tHexTxt, tCh, tBadN, tData
+   put return & "-- 22. Leaf tranche: no-test worklist, first pass (shallow)" & return after gRpt
+   set the itemDelimiter to comma
+
+   -- heCardRankVal / heCardSuitVal: the two halves of the card index
+   -- convention (index 1..52: rank (i-1) div 4 + 2, suit (i-1) mod 4 + 1),
+   -- pinned at both edges and one interior point each
+   heTAssert "leaf: heCardRankVal of card 1 (2c) is 2", heCardRankVal(1), 2
+   heTAssert "leaf: heCardRankVal of card 52 (As) is 14", heCardRankVal(52), 14
+   heTAssert "leaf: heCardRankVal of card 23 (7h) is 7", heCardRankVal(23), 7
+   heTAssert "leaf: heCardSuitVal of card 1 (2c) is 1 (clubs)", heCardSuitVal(1), 1
+   heTAssert "leaf: heCardSuitVal of card 2 (2d) is 2 (diamonds)", heCardSuitVal(2), 2
+   heTAssert "leaf: heCardSuitVal of card 52 (As) is 4 (spades)", heCardSuitVal(52), 4
+
+   -- heTwoDigits: the evaluator's fixed-width field builder. The WIDTH is
+   -- the contract (six 2-digit fields so plain numeric comparison orders
+   -- hands), and `is` compares "09" and 9 as equal numbers, so the char
+   -- count is asserted beside the value
+   heTAssert "leaf: heTwoDigits pads a single digit", heTwoDigits(9), "09"
+   heTAssert "leaf: heTwoDigits padded width is exactly 2 chars", \
+         the number of chars of heTwoDigits(9), 2
+   heTAssert "leaf: heTwoDigits leaves two digits alone", heTwoDigits(14), 14
+   heTAssert "leaf: heTwoDigits pads zero to width 2", \
+         the number of chars of heTwoDigits(0), 2
+
+   -- heCountItems: the empty edge is the whole reason it exists (empty has
+   -- one item to the engine, zero seats to a card game)
+   heTAssert "leaf: heCountItems of empty is 0", heCountItems(empty), 0
+   heTAssert "leaf: heCountItems of one entry", heCountItems("4"), 1
+   heTAssert "leaf: heCountItems of six seats", heCountItems("1,2,3,4,5,6"), 6
+
+   -- heNextInList: the circular successor the button rotation rides
+   heTAssert "leaf: heNextInList steps forward", heNextInList("1,3,5", 3), 5
+   heTAssert "leaf: heNextInList wraps at the end", heNextInList("1,3,5", 5), 1
+   heTAssert "leaf: heNextInList of an absent entry falls to item 1", \
+         heNextInList("1,3,5", 4), 1
+   heTAssert "leaf: heNextInList of a lone seat is that seat", heNextInList("7", 7), 7
+
+   -- heByteXor: the pure-integer XOR that keeps H7's no-bitwise law
+   -- (bitXor throws double/binary on this engine, v0.4.1)
+   heTAssert "leaf: heByteXor identity (x xor 0)", heByteXor(200, 0), 200
+   heTAssert "leaf: heByteXor self-inverse (x xor x)", heByteXor(170, 170), 0
+   heTAssert "leaf: heByteXor complement (170 xor 85)", heByteXor(170, 85), 255
+   heTAssert "leaf: heByteXor of 1 and 2", heByteXor(1, 2), 3
+   heTAssert "leaf: heByteXor passes 255 through", heByteXor(255, 0), 255
+
+   -- heU32BEData: the 4-byte big-endian block counter fed into sxHash.
+   -- Its output is ENGINE-built binary (numToByte), not FFI-bridged, so
+   -- byteToNum over a plain local is the H6-corollary-safe read (coinxt's
+   -- engine-passed idiom): each byte asserted, MSB first
+   put heU32BEData(305419896) into tData
+   heTAssert "leaf: heU32BEData byte 1 (MSB) of 305419896", byteToNum(byte 1 of tData), 18
+   heTAssert "leaf: heU32BEData byte 2", byteToNum(byte 2 of tData), 52
+   heTAssert "leaf: heU32BEData byte 3", byteToNum(byte 3 of tData), 86
+   heTAssert "leaf: heU32BEData byte 4 (LSB)", byteToNum(byte 4 of tData), 120
+   put heU32BEData(0) into tData
+   heTAssert "leaf: heU32BEData of 0 is four zero bytes", \
+         byteToNum(byte 1 of tData) + byteToNum(byte 2 of tData) \
+         + byteToNum(byte 3 of tData) + byteToNum(byte 4 of tData), 0
+
+   -- heHexId: random by design, so the DETERMINISTIC properties are the
+   -- pin -- length and alphabet (lowercase by construction: it draws from
+   -- a lowercase literal)
+   put heHexId(64) into tHexTxt
+   heTAssert "leaf: heHexId(64) is 64 chars", the number of chars of tHexTxt, 64
+   put 0 into tBadN
+   repeat for each char tCh in tHexTxt
+      if offset(tCh, "0123456789abcdef") is 0 then
+         add 1 to tBadN
+      end if
+   end repeat
+   heTAssert "leaf: heHexId draws only hex chars", tBadN, 0
+   heTAssert "leaf: heHexId(16) is 16 chars", the number of chars of heHexId(16), 16
+
+   -- heRank5: the 5-card core under heEval7. Section 1 pins the 7-card
+   -- surface exhaustively; nothing had ever named the 5-card entry
+   -- itself. One vector per category boundary that matters, through the
+   -- same heTIdxOf the evaluator section uses
+   heTAssert "leaf: heRank5 royal flush", heRank5(heTIdxOf("As Ks Qs Js Ts")), "081400000000"
+   heTAssert "leaf: heRank5 steel wheel (5-high straight flush)", \
+         heRank5(heTIdxOf("Ah 2h 3h 4h 5h")), "080500000000"
+   heTAssert "leaf: heRank5 quads with kicker", \
+         heRank5(heTIdxOf("Qc Qd Qh Qs Ad")), "071214000000"
+   heTAssert "leaf: heRank5 wheel straight mixed suits", \
+         heRank5(heTIdxOf("Ad 2c 3h 4s 5d")), "040500000000"
+   heTAssert "leaf: heRank5 high card reads all five kickers", \
+         heRank5(heTIdxOf("Ac Kd Qh Js 9c")), "001413121109"
+
+   -- heHandStart, GUARDS ONLY (the banner's reason): drive both refusal
+   -- exits on a synthetic gGame and prove the deal did not begin
+   put gGame into tSaved
+   put empty into gGame
+   put "hand" into gGame["phase"]
+   put 7 into gGame["handNum"]
+   heHandStart
+   heTAssert "leaf: heHandStart refuses to deal over an active phase", gGame["handNum"], 7
+   heTAssert "leaf: ...and leaves the phase standing", gGame["phase"], "hand"
+   put "between" into gGame["phase"]
+   put "true" into gGame["online"]
+   heHandStart
+   heTAssert "leaf: heHandStart refuses the hotseat deal while online", gGame["handNum"], 7
+   heTContains "leaf: ...and says why on the status line", gGame["statusTxt"], "hotseat"
+   put tSaved into gGame
+end heTestLeafRun
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames

@@ -58,6 +58,8 @@ Exit status is non-zero on any failure (CI gate).
 """
 
 import hashlib
+import os
+import re
 import sys
 
 # --------------------------------------------------------------------------
@@ -279,6 +281,12 @@ def deal_signature(deck, occ_txt, button):
 
 GENESIS = bytes(32)
 
+# Every wire type make_wire builds during compute_all, recorded so the A6
+# coverage assertion in main() can hold "each source vocabulary type has at
+# least one pinned wire" against what actually ran, not against a hand-kept
+# list (the coinxt constant-gate lesson: report what was CHECKED).
+WIRE_TYPES_BUILT = set()
+
 
 def content_line(v, table, hand, from_pub, mtype, body_text):
     return "\t".join([str(v), table.hex(), str(hand), from_pub.hex(), mtype,
@@ -286,11 +294,41 @@ def content_line(v, table, hand, from_pub, mtype, body_text):
 
 
 def make_wire(v, table, hand, sender_seed, mtype, body_text, seq, prev, host_seed):
+    WIRE_TYPES_BUILT.add(mtype)
     content = content_line(v, table, hand, ed_publickey(sender_seed), mtype, body_text)
     sender_sig = ed_sign(content.encode("utf-8"), sender_seed).hex()
     env_line = content + "\t" + sender_sig + "\t" + str(seq) + "\t" + prev.hex()
     host_sig = ed_sign(env_line.encode("utf-8"), host_seed).hex()
     return env_line + "\t" + host_sig
+
+
+def source_wire_vocabulary():
+    """The online wire-type vocabulary, parsed OUT OF THE SOURCE (backlog
+    A6's prescription): every quoted type that heNetApplyWire compares
+    tTypeTxt against - the roster/cfg pair it folds itself plus the game
+    vocabulary it routes to heNetFoldGameWire. Parsed from the dispatcher's
+    CODE rather than kept as a list here, so a NEW type cannot arrive
+    unpinned: the moment the dispatcher learns it, this list grows and
+    main() fails unless a wire of that type was built (and therefore
+    pinned) by compute_all. The floor guards the parse itself: a regex that
+    stops matching must FAIL, not pass vacuously (the coinxt constant-gate
+    lesson)."""
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "..", "src", "holdem.livecodescript")
+    text = open(src, encoding="utf-8").read()
+    m = re.search(r'^command heNetApplyWire\b(.*?)^end heNetApplyWire\b',
+                  text, re.S | re.M)
+    if not m:
+        raise AssertionError(
+            "heNetApplyWire not found in src/holdem.livecodescript - the "
+            "wire-vocabulary parse is measuring nothing")
+    types = sorted(set(re.findall(r'tTypeTxt is "([A-Za-z0-9]+)"', m.group(1))))
+    if len(types) < 22:
+        raise AssertionError(
+            "wire-vocabulary parse found only %d types (expected >= 22: the "
+            "20-type game vocabulary plus roster and cfg) - the dispatcher's "
+            "shape changed and this parse no longer sees it" % len(types))
+    return types
 
 
 def chain_next(wire):
@@ -1352,7 +1390,87 @@ def compute_all():
     out["timeout_bid_body"] = "amount=2,seat=3,timeout=1,bank=1"
     w13 = make_wire(1, TABLE, 1, HOST_SEED, "bidBB", out["timeout_bid_body"],
                     13, h12, HOST_SEED)
-    out["timeout_bid_head13"] = chain_next(w13).hex()
+    h13 = chain_next(w13)
+    out["timeout_bid_head13"] = h13.hex()
+
+    # -- the deal-delivery wires (backlog A6, 2026-08-23): the types in the
+    # dispatcher's vocabulary that had ZERO pinned occurrences - the whole
+    # deal-delivery half of the protocol could have changed format with
+    # every pin green. Bodies HAND-CONSTRUCTED from the shipped builders'
+    # documented formats (the heNetSendAction call sites in
+    # src/holdem.livecodescript: join in heNetGameReact step 1, handStart /
+    # dealLevel in heNetHandKick, seedSeal in react step 3, bidAnte in step
+    # 5, holeDeliver in heNetDealerDeal, board in heNetDealerBoard,
+    # seedReveal in step 8, settle in step 9 via heNetComputeSettleTxt's
+    # "seat:delta|..." shape, receipt in step 10, audit in step 11) - not
+    # copied out of a run. Pinned as the seq 14..24 extension of the same
+    # transcript, chained from head 13: ADDITIVE, no earlier pin moves.
+    # Senders follow the per-type authority the fold enforces: handStart /
+    # dealLevel / settle host-authored; holeDeliver / board from this
+    # hand's dealer (the button seat, seat 1 - ID_SEEDS[0], which is also
+    # the host key in this fixture); everything seat-scoped from the key
+    # that owns the seat.
+    # TWO bodies carry an sxSeal blob in real play (seedSeal, holeDeliver).
+    # sxSeal is RANDOMIZED, so a real seal cannot be pinned from fixed
+    # inputs; what IS pinnable - and pinned - is the FRAME: field names,
+    # the hex discipline, and the blob length (sealed = 48 bytes overhead
+    # + plaintext). The stand-ins are deterministic tagged-hash blobs of
+    # exactly the real lengths (64-char hex seed -> 112 bytes; a two-card
+    # index pair like "48,33" -> 53 bytes).
+    out["join_box_pub"] = H(b"HOLDEM-KAT-v1|boxpub|" + bytes([2])).hex()
+    out["join_body"] = "box=" + out["join_box_pub"]
+    w14 = make_wire(1, TABLE, 0, ID_SEEDS[1], "join", out["join_body"],
+                    14, h13, HOST_SEED)
+    h14 = chain_next(w14)
+    out["handstart_body"] = "seats=1|2|3,button=1"
+    w15 = make_wire(1, TABLE, 1, HOST_SEED, "handStart", out["handstart_body"],
+                    15, h14, HOST_SEED)
+    h15 = chain_next(w15)
+    out["deallevel_body"] = "level=0,dealer=1,count=3"
+    # the same builder's ORACLE branch (spec 7.2: level=1 IS the oracle
+    # marker, dealer=0 = no seat) - a format pin beside the level-0 wire
+    out["deallevel_body_oracle"] = "level=1,dealer=0,count=3"
+    w16 = make_wire(1, TABLE, 1, HOST_SEED, "dealLevel", out["deallevel_body"],
+                    16, h15, HOST_SEED)
+    h16 = chain_next(w16)
+    seal_seed = (H(b"HOLDEM-KAT-v1|seal-standin|seedSeal") * 4)[:48 + 64]
+    out["seedseal_body"] = "pos=2,sealed=" + seal_seed.hex()
+    w17 = make_wire(1, TABLE, 1, ID_SEEDS[1], "seedSeal", out["seedseal_body"],
+                    17, h16, HOST_SEED)
+    h17 = chain_next(w17)
+    out["bidante_body"] = "amount=1"
+    w18 = make_wire(1, TABLE, 1, ID_SEEDS[1], "bidAnte", out["bidante_body"],
+                    18, h17, HOST_SEED)
+    h18 = chain_next(w18)
+    seal_hole = (H(b"HOLDEM-KAT-v1|seal-standin|holeDeliver") * 2)[:48 + 5]
+    out["holedeliver_body"] = "seat=2,sealed=" + seal_hole.hex()
+    w19 = make_wire(1, TABLE, 1, ID_SEEDS[0], "holeDeliver", out["holedeliver_body"],
+                    19, h18, HOST_SEED)
+    h19 = chain_next(w19)
+    out["board_body"] = "street=flop,cards=" + out["flop"].replace(",", "|")
+    w20 = make_wire(1, TABLE, 1, ID_SEEDS[0], "board", out["board_body"],
+                    20, h19, HOST_SEED)
+    h20 = chain_next(w20)
+    out["seedreveal_body"] = "pos=2,seed=" + out["deal_seeds"][1]
+    w21 = make_wire(1, TABLE, 1, ID_SEEDS[1], "seedReveal", out["seedreveal_body"],
+                    21, h20, HOST_SEED)
+    h21 = chain_next(w21)
+    out["settle_body"] = "deltas=1:-4|2:8|3:-4"
+    w22 = make_wire(1, TABLE, 1, HOST_SEED, "settle", out["settle_body"],
+                    22, h21, HOST_SEED)
+    h22 = chain_next(w22)
+    out["receipt_body"] = "head=%s,sig=%s" % (rh1, receipt_sig(rh1, ID_SEEDS[1]))
+    w23 = make_wire(1, TABLE, 1, ID_SEEDS[1], "receipt", out["receipt_body"],
+                    23, h22, HOST_SEED)
+    h23 = chain_next(w23)
+    out["audit_body"] = "result=pass"
+    w24 = make_wire(1, TABLE, 1, ID_SEEDS[1], "audit", out["audit_body"],
+                    24, h23, HOST_SEED)
+    out["deal_wires_head24"] = chain_next(w24).hex()
+    # the vocabulary itself, pinned: a type added to (or renamed in) the
+    # dispatcher moves this value LOUDLY, beside the coverage assertion in
+    # main() that requires the new type's wire
+    out["wire_vocabulary"] = ",".join(source_wire_vocabulary())
     # the onion hello's compatible extension (2e auto-redial): the admission
     # token frame with the sender's APPLIED SEQ as a trailing tab item (the
     # redial resync mark -- heAdmitTokenVerify reads items 1..3 only, so an
@@ -1792,6 +1910,27 @@ PINNED = {
  "sitback_head12": "f69afd084f98085581135c43346641dea04f2937952becc641e9922709ea6cdc",
  "timeout_bid_body": "amount=2,seat=3,timeout=1,bank=1",
  "timeout_bid_head13": "6324a6371f62ec9819d0a53acace305c3faefd274efe5db87bf869e1b4a57fcd",
+ # the deal-delivery wires (backlog A6, 2026-08-23): bodies hand-built from
+ # the shipped builders' documented formats, pinned as the seq 14..24
+ # extension of the same transcript (additive; the sealed blobs are
+ # deterministic stand-ins at the real sxSeal lengths, because a randomized
+ # seal cannot be pinned - the FRAME is the pin). wire_vocabulary is parsed
+ # out of heNetApplyWire on every run, so a new or renamed type moves it.
+ "join_box_pub": "25e78030eed382878e1b7f67aac76a8fdf398a3932ab8b76d313cf09d2be899f",
+ "join_body": "box=25e78030eed382878e1b7f67aac76a8fdf398a3932ab8b76d313cf09d2be899f",
+ "handstart_body": "seats=1|2|3,button=1",
+ "deallevel_body": "level=0,dealer=1,count=3",
+ "deallevel_body_oracle": "level=1,dealer=0,count=3",
+ "seedseal_body": "pos=2,sealed=f9f1b39c105158ea01a32b8f52450b2e1a9426941842cbe7e046e3a8478e32d8f9f1b39c105158ea01a32b8f52450b2e1a9426941842cbe7e046e3a8478e32d8f9f1b39c105158ea01a32b8f52450b2e1a9426941842cbe7e046e3a8478e32d8f9f1b39c105158ea01a32b8f52450b2e",
+ "bidante_body": "amount=1",
+ "holedeliver_body": "seat=2,sealed=3658667e2ead6b9185d65e584fa2373acb0921211b1174c52e6fe3653c475b1f3658667e2ead6b9185d65e584fa2373acb0921211b",
+ "board_body": "street=flop,cards=4h|2c|6d",
+ "seedreveal_body": "pos=2,seed=f7badd5dc86a8a5dce0984ef43bcb7ec228398e08a854a8a8c455ff895dc8a49",
+ "settle_body": "deltas=1:-4|2:8|3:-4",
+ "receipt_body": "head=53ed9ccc64863dc05c1b76cd7953e19bba73895b8dd22ea00e6c9ff40f423cef,sig=6c2ae423fd05768c28b164893f566f910e79b9e9953b6efba941e6fc5d9c167cc0abe02aa39cc73d7b6b4e541e965e659dac1aae698d8e3c18dd9f1019a06008",
+ "audit_body": "result=pass",
+ "deal_wires_head24": "2ac5e70a472bd5e18903b062c8e742900a1589bce12701ecfa18dba188a71d42",
+ "wire_vocabulary": "act,audit,bidAnte,bidBB,bidSB,board,cfg,ckpt,dealLevel,handStart,holeDeliver,join,muck,receipt,roster,seedCommit,seedReveal,seedSeal,settle,show,sit,stand",
  "hello_trim_frame": "h\t833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10\tplayer\td02b1e826f4351264cd3a77a1580921495f9c7df5f0f29a370ebb5fdd69b9a1c5c1c9226ae2865919622a266df124ac755b57141a6d8a77e0eb8b6f7d89de208\t42",
  # spec 9 host election: the deterministic successor (lowest live pubkey)
  "elected_host": "833fed8ee30a882bd877555a9df260d4322224fa095513d84972a660e7ad6b10",
@@ -1980,6 +2119,21 @@ def main():
     if extra:
         print("FAIL  computed keys missing from PINNED: %s" % ", ".join(extra))
         fails += 1
+
+    # backlog A6's coverage assertion: every type the SOURCE dispatcher
+    # names must have at least one wire built (and therefore pinned) by
+    # compute_all - so a NEW wire type cannot arrive unpinned. Checked
+    # against WIRE_TYPES_BUILT, the set make_wire actually recorded on this
+    # run, never against a hand-kept list.
+    vocab = source_wire_vocabulary()
+    unpinned = sorted(t for t in vocab if t not in WIRE_TYPES_BUILT)
+    if unpinned:
+        print("FAIL  wire types in heNetApplyWire's vocabulary with no pinned "
+              "wire: %s" % ", ".join(unpinned))
+        fails += 1
+    else:
+        print("PASS  wire-type coverage: all %d source vocabulary types have "
+              "a pinned wire" % len(vocab))
 
     print()
     if fails:

@@ -25,8 +25,11 @@ adds native surface, and `rs*` never becomes a library other members may
 call.
 
 **All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.10.0; 83 public handlers,
-83/83 exercised by the suite harness):
+machines, done-criteria included** (library 0.11.0; 90 public handlers -
+83/83 exercised by the suite paste as last generated, and the seven
+2026-08-23 handlers carry their harness sections in
+tests/riptide-selftest.livecodescript, entering the 90/90 ratchet the
+moment tools/build-suite-selftest.py regenerates the paste):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -788,6 +791,76 @@ edits with no wire-format change, no new golden vector, and no new public
   `src/` and `examples/`; a reconnect mints fresh streams, so the old
   symptom was silence and never a false auth failure. Do not overstate
   it in the changelog.
+
+## The 2026-08-23 headless batch (A2 / A3 / B4 / B7 / A.9 / D14; do not re-litigate)
+
+Six backlog items closed headlessly (library 0.10.0 -> 0.11.0, seven new
+public handlers). Everything here is verified statically and vector-pinned;
+NOTHING in this batch has an engine pass, and the honesty labels say so at
+each site.
+
+- **A2, the kind-C chunked-post rail - PINNED FIRST, then built.** Kind C
+  was the only unpinned riptide wire format; the oracle now derives
+  chunk1Target/chunk2Target/postC/postCTarget (real chunk texts whose
+  concatenation is the post's full text, plus a media attachment BEHIND
+  the chunk list so the kind-C tail parse is pinned), held in all three
+  holders per rule 2 - after this there is nothing left to pin in the
+  record layer. Then the rail: rsChunkPostText (full 1000-byte chunks by
+  BYTE - a boundary may split a UTF-8 sequence, which is why the
+  reassembly validates the CONCATENATION, never a chunk alone),
+  rsPostTextCapacity (the D-or-C arithmetic as API, so the demo never
+  hand-copies 880), rsPublishChunkedPost (compute and sign BEFORE the
+  session is touched; a mid-publish failure strands only harmless
+  content-addressed orphans), rsIngestBlob (content addressing is what
+  extends the authorSig from the named targets to fetched bytes), and
+  rsAssembleChunkText (re-hash every part, then one UTF-8 round-trip
+  decode of the whole). The demo's walker now BRANCHES ON KIND - before
+  this it rendered tPost["text"] unconditionally, so a kind-C post
+  displayed as a verified post with BLANK text, the worst failure shape
+  because authorSig passes - rendering an honest placeholder, walking the
+  parts one immutable await at a time beside the chain walk (one
+  reassembly at a time, the one-conversation precedent), and printing the
+  full text under the post's own number; raPost auto-chunks over the
+  capacity. Expiry and refusal keep the placeholder and say why.
+- **A3, the BTXO receive path.** rsBtxoStreamStep is the pure
+  length-prefix stream state machine (the builders existed; no reader
+  could find a boundary). Single-step by design: accumulate, step, act,
+  delete `used` bytes, repeat - which is what lets the harness prove
+  reassembly at EVERY byte boundary offline, plus concatenated frames and
+  each hostile-input refusal. The caps are PORTED from nocloud's working
+  receiver (name 1024 - refused from the first 8 bytes, before the name
+  is ever buffered; total 8 GiB; frame 65536), not re-derived. It reuses
+  rsBtxoParseHeader for the strict header parse rather than restating it.
+- **B4** - the Devices panel appends a live `rtt N ms, loss P%` suffix
+  per DIRECTLY-LINKED device from enPeerStatus (stats are a LINK
+  property; a relayed device's row stays bare on purpose - printing the
+  host's numbers under its name would lie). Probe-guarded and
+  try-wrapped; a stale peer's `{}` degrades to nothing.
+- **B7** - rsMediaStreamPlan, a SEPARATE handler from rsMediaFetch on
+  purpose (the fetch is btAddMagnet: no metadata, no piece table, so a
+  deadline at fetch time would name pieces that do not exist). The demo
+  arms it from the metadataReceived event on either watched fetch; the
+  front 8 pieces get spaced deadlines as a playback PRIMER. Refusals are
+  non-fatal everywhere - the fetch stays sequential - including on a
+  torrentxt predating btSetPieceDeadline.
+- **A.9** - the profileMeta READER (the publish half landed 2026-08-15).
+  Fetching a foreign head - the feed walk or Start DM - now also fetches
+  its profileMeta target and prints the display name once
+  content-verified (rsIngestBlob, then 1..64 bytes and a UTF-8 ROUND
+  TRIP, because textDecode is lossy - the demo cannot reach the library's
+  private rsBytesAreUtf8, so the idiom is restated at raProfileLine).
+  Absent, refused, or late all degrade honestly to the head's own name.
+- **D14** - the spec 9.3 attestation corrected AS AN ATTESTATION, not
+  built as a runtime fix (the backlog is explicit: no active-persona
+  state exists in the demo, and 16 more guard calls would be 16
+  compile-time constants that can never refuse). The sentence now states
+  what is asserted where: the full truth table in the harness, the live
+  guard panel, and the demo's two real persona decisions.
+- **D.1 (riptide half)** - the stale labels synced to the recorded
+  2026-08-20 Windows run (riptide 338/0/2 in the suite paste): the src
+  header and the demo scope block no longer call the 8.2/8.3 serving
+  seams "verified statically" - their COMPUTE half is engine-green; what
+  remains is the live-Tor leg (and, for the demo, its own route wiring).
 
 ## Suite integration status
 

@@ -86,8 +86,12 @@ def main(argv):
         "kRsGoldRoomSalt": "a chosen session salt for the roomId vector",
         "kRsGoldPost1Text": "chosen post text",
         "kRsGoldPost2Text": "chosen post text",
+        "kRsGoldChunk1Text": "chosen kind-C chunk text (part one of the "
+                             "chunked post's full text)",
+        "kRsGoldChunk2Text": "chosen kind-C chunk text (part two)",
         "kRsGoldTs1": "chosen post timestamp",
         "kRsGoldTs2": "chosen post timestamp",
+        "kRsGoldTs3": "chosen chunked-post timestamp",
         "kRsGoldHeadSeq": "chosen head sequence number",
         "kRsGoldHeadName": "chosen display name",
         "kRsGoldPrekeyTarget": "a chosen 40-hex placeholder target",
@@ -157,6 +161,22 @@ def main(argv):
     post2_target = ref["immutable_target"](post2)
     want("kRsGoldPost2Target", post2_target)
 
+    # the kind-C chunked post (A2, 2026-08-23) - the last unpinned riptide
+    # wire format: the chunk VALUES are the chosen texts' UTF-8 bytes, the
+    # targets their content addresses, and the record carries the media
+    # attachment BEHIND the chunk list so the kind-C tail parse is pinned
+    chunk1 = k["kRsGoldChunk1Text"].encode("utf-8")
+    chunk2 = k["kRsGoldChunk2Text"].encode("utf-8")
+    chunk1_target = ref["immutable_target"](chunk1)
+    chunk2_target = ref["immutable_target"](chunk2)
+    want("kRsGoldChunk1Target", chunk1_target)
+    want("kRsGoldChunk2Target", chunk2_target)
+    post_c = ref["build_post_chunked"](int(k["kRsGoldTs3"]), post2_target,
+                                       [chunk1_target, chunk2_target],
+                                       [k["kRsGoldMediaTarget"]], id_seed)
+    want("kRsGoldPostCHex", post_c.hex())
+    want("kRsGoldPostCTarget", ref["immutable_target"](post_c))
+
     head = ref["build_head"](int(k["kRsGoldHeadSeq"]),
                              k["kRsGoldHeadName"], post2_target,
                              k["kRsGoldPrekeyTarget"],
@@ -197,6 +217,16 @@ def main(argv):
     # head really names the newest post
     if post2[12:52] != post1_target.encode("ascii"):
         failures.append("post 2 does not chain to post 1's target")
+    if post_c[12:52] != post2_target.encode("ascii"):
+        failures.append("the kind-C post does not chain to post 2's target")
+    if post_c[52:53] != b"C" or post_c[53] != 2:
+        failures.append("the kind-C post does not carry kind C with 2 chunks")
+    if post_c[54:94] != chunk1_target.encode("ascii") or \
+            post_c[94:134] != chunk2_target.encode("ascii"):
+        failures.append("the kind-C chunk list is not the two golden "
+                        "targets in order")
+    if len(post_c) > 1000:
+        failures.append("the kind-C golden record exceeds the BEP44 cap")
     if head[20:60] != post2_target.encode("ascii"):
         failures.append("the head does not name post 2 as latest")
     if len(head) > 1000 or len(post1) > 1000 or len(post2) > 1000:

@@ -139,10 +139,32 @@ Box2Dxt member of the xtalk-suite monorepo (`box2dxt/`).
 >   the whole `b2lc_body_*` and `b2lc_shape_*` surface plus the four readback
 >   registers they fill (AABB, mass data, the polygon builder, the one-shot
 >   shape def), 134 exports, every one green under ASan/UBSan. **194 of 370
->   executed**; the 176 still dark are the world, joint, query, mouse, chain and
->   contact/sensor-register families, and they are the next slice. Those
+>   executed**; the 176 still dark were the world, joint, query, mouse, chain
+>   and contact/sensor-register families, named there as the next slice. Those
 >   assertions are deliberately shallow, exactly like the Kit's v23 coverage
 >   sections, and say so in their banner.
+>   **THE NEXT SLICE LANDED 2026-08-23, and the re-measured answer is 370 of
+>   370: no LC_API export of this shim is dark.** The same harness now drives
+>   all 176 across three more fixture worlds - world tuning/info/profile/
+>   counters, the closest-ray and query readback registers, contact end + hit
+>   events, sensor end events, chain accessors + destroy, and the whole
+>   per-kind joint get/set surface (filter joint included, plus the generic
+>   joint layer's anchors/bodies/forces/wake/destroy) - re-measured with the
+>   same gcov-not-grep convention on 2026-08-23: every export entered at least
+>   once, green under Release ctest and under the native-box2dxt.yml sanitize
+>   lane's exact ASan/UBSan flags (304 checks, 0 failed). Nothing in the
+>   family needed a context a C harness cannot mint: the shim collects its
+>   callback-based queries into readback registers, so even those are plain C
+>   calls. Read the number for what it is - ENTERED, not exhausted. The sweep's
+>   assertions stay deliberately shallow and say so in their banner (gcov puts
+>   LINE coverage inside the shim at ~92%, the unhit remainder being guard and
+>   allocation-failure branches), and an export that earns a real lesson should
+>   still graduate into a behaviour section. Two fixture lessons worth keeping:
+>   an UNLOADED wheel-joint motor reaches its speed inside one step and its
+>   torque meter then reads ~0, so the fixture loads the wheel with angular
+>   damping to make the meter show sustained effort; and Box2D v3.1 solves the
+>   distance-joint MOTOR only in soft (spring) mode, where a speed-0 motor
+>   brake holds the CURRENT separation, not the rest length.
 >   **CORRECTED 2026-08-18: the "374 foreign declarations" above is a grep
 >   artifact, and it is the same mistake as the "60" two paragraphs down.**
 >   Measured: `grep -c 'binds to' src/box2dxt.lcb` is **373**, of which **370**

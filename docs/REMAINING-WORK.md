@@ -161,7 +161,8 @@ this file stays the ledger.
 > `he*` surface HAS a ratchet - built, measuring, and ADVISORY rather than
 > armed, see C.4 - while box2dxt's raw `.lcb` script side is still genuinely
 > unratcheted. Its C side is no longer unmeasured either; gcov puts the smoke
-> test at 53 -> 194 of 370 exports entered.
+> test at 53 -> 194 of 370 exports entered. *(2026-08-23: 370 of 370 -
+> entered, not exhausted; box2dxt/CLAUDE.md carries the dated record.)*
 
 ---
 
@@ -403,8 +404,11 @@ and one functional hole.
    Its live confirmation rides B.4's phase-5 two-machine pass.
    — `docs/RIPTIDE-SOCIAL-SPEC.md` §5
 
-9. **Riptide profileMeta has a PUBLISHER and a PARSER but NO READER** (small;
-   rewritten 2026-08-17, not struck — the original said "the demo never
+9. **~~Riptide profileMeta has a PUBLISHER and a PARSER but NO READER~~
+   BUILT; struck 2026-08-23.** The demo-side reader now fetches the
+   profileMeta target and shows the display name, which was the half this
+   entry said remained. (Original entry kept below as the record; small;
+   rewritten 2026-08-17, not struck then — the original said "the demo never
    populates it", and that half is now false). `raPost` publishes the
    display-name blob through `rsPublishImmutable` and passes the target to
    `rsBuildHead`, with a non-fatal refusal path; `rsBuildHead`'s parse writes
@@ -429,7 +433,12 @@ and one functional hole.
     the script layer's OXT pass, the Windows DLLs' execution proof (both
     already counted in section B), and one genuine gap now recorded in
     coinxt's docs rather than assumed - there is NO BIP-341 sighash builder;
-    coinxt signs a sighash it is handed and cannot compute one.
+    coinxt signs a sighash it is handed and cannot compute one. **(That gap
+    CLOSED 2026-08-23: `cxBtcSighashTaproot` ships the full BIP-341 SigMsg -
+    every type incl. the ANYONECANPAY forms and the tapleaf extension - plus
+    `cxTapLeafHash` / `cxTapBranchHash` / `cxTapControlBlock` for script-path
+    spending, pure script over the ABI 6 surface, pinned to the published
+    wallet vectors headlessly; needs its OXT pass. coinxt is 94 handlers now.)**
     — `coinxt/CLAUDE.md` (the dated rule-change entry), `coinxt/SPEC.md` 2.1
 
 11. **~~coinxt WIF encode/decode~~ SHIPPED 2026-08-15; struck 2026-08-17.**
@@ -689,7 +698,18 @@ Built and statically verified; pending under the honesty convention.
 > (item 5).
 
 
-1. **Stale honesty labels lagging recorded passes — one sync pass** (medium).
+1. **~~Stale honesty labels lagging recorded passes — one sync pass~~
+   CLOSED; struck 2026-08-23 after re-reading every named file rather than
+   the entry** (the rows-8/9 lesson a third time - stated precisely: FOUR of
+   the five named halves were already closed in the tree, and the fifth was
+   closed by the same change that struck this entry, not found closed).
+   sodium.lcb's header records the retired caveat and the 2026-08-10/12
+   passes; sodium-tests reads "Engine-verified through ABI 9"; coinxt's
+   phase-5 STATUS records both bars met with only the live-broadcast bar
+   unclaimed; riptide's header records the phase-3/4 two-machine closures;
+   and the platformer's slice-3 comments were corrected to SHIPPED in this
+   change (dated in place, recorded in box2dxt's CHANGELOG).
+   (Original entry kept as the record, medium).
    `sodiumxt/src/sodium.lcb:10-20` + `sodium-tests:18` (closed by the 71-check
    2026-08-12 pass); `coinxt/src/coinxt.livecodescript:1976-1979` phase-5
    STATUS (engine + decoder bars met); `riptide/src/riptide.livecodescript:21-29`
@@ -747,7 +767,14 @@ Built and statically verified; pending under the honesty convention.
    `check-holdem-idioms.py` is retired; holde-em/CLAUDE.md's fold record
    carries the detail.)
 
-6. **nocloud doc surface lagging the newest features** (medium). SECURITY.md's
+6. **~~nocloud doc surface lagging the newest features~~ CLOSED 2026-08-23**
+   (the D.6 sweep): SECURITY.md's contact names GitHub private vulnerability
+   reporting as the working default; sw.js's header corrects its own stale
+   "can never serve a stale file" claim and records the out-of-band-edit
+   caveat; the webapp docs and demo cover `.qsroutes.json`, `config.json`
+   and conditional GET (weak ETag / 304), labeled "verified statically +
+   golden-pinned; needs an OXT pass"; CONTRIBUTING's mirror table is
+   reconciled. (Original entry kept as the record, medium). SECURITY.md's
    unfilled contact placeholder and missing .qsroutes.json model bullet;
    CONTRIBUTING's half-stale golden-mirror table; webapp docs/demo omitting
    .qsroutes.json, config.json, ETag/304; sw.js's now-conditionally-wrong
@@ -758,8 +785,13 @@ Built and statically verified; pending under the honesty convention.
    (small). Ship it (sha3.c already vendors it) or mark the two mentions.
    — `coinxt/SPEC.md:33` vs `:164`
 
-8. **torrentxt api-reference "fields not yet populated" reconcile** (small).
-   — `torrentxt/docs/api-reference.md:10-14,734-736`
+8. **~~torrentxt api-reference "fields not yet populated" reconcile~~ ALREADY
+   CLOSED IN THE TREE; struck 2026-08-23 after re-reading the file rather than
+   the entry** (the same lesson as row 9 below). `torrentxt/docs/api-reference.md:10-16`
+   has carried the close since 2026-08-15: "that gap has closed (audited
+   2026-08-15: every field id registered in `src/btx_record.h` is written by
+   `src/torrent_shim.cpp`)", with one deliberate surviving caveat about a
+   libtorrent-omitted counter. The row outlived the work by eight days.
 
 9. **~~Two riptide gate scripts want hardening~~ FALSE ON BOTH HALVES; struck
    2026-08-17 after re-reading the files rather than the entry.**

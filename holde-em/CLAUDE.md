@@ -421,7 +421,7 @@ Level 2 yet), at v0.24.5 (harness v41) -- **THE FOLDED HARNESS RAN ON A REAL ENG
 2026-08-16, three suite-paste runs the same day, and the third was FULLY GREEN:
 507/0 (stack v0.24.3, harness v40).** Each red run found a real defect no
 headless gate could reach, both in the v0.23.0 liveness layer and both fixed
-with NO wire change (protocol-kat's 114 pins untouched): run 1's six-failure
+with NO wire change (protocol-kat's 114 pins untouched - 132 pins since 2026-08-23): run 1's six-failure
 cluster was the forced-post miss reset (v0.24.2 -- a bid is a blind or an ante,
 posted by a seat whose human has walked away, so resetting the miss counter on
 it made "two missed turns" unreachable across hands; only a voluntary ACT is
@@ -556,9 +556,17 @@ not "the rules are right": a bug living in both the xTalk and its twin passes un
 them against a SECOND, independently-written evaluator and side-pot settlement (plus
 whole-game invariants: chip conservation, no negative stacks, termination). It runs the
 evaluator EXHAUSTIVELY (all 2,598,960 five-card hands → exactly 7462 classes) and fuzzes
-settlement/games over ~90k configs with fixed seeds (~30 s; `--full` does the exhaustive
-order-isomorphism, `--quick` a 5 s smoke). This is the committed backing for any
-"verified sound by property tests" claim — do not make that claim without it.
+settlement/games over ~90k configs with fixed seeds. Since 2026-08-23 (backlog A5) it
+also property-fuzzes the Level 2 VOID-AND-AUDIT ATTRIBUTION machine - randomized
+scripted attackers against three properties: an honest transcript never voids, a voided
+hand names exactly one contributor, and the named contributor is the injected one -
+and its docstring says plainly that those trials exercise protocol-kat's l2_void_* TWIN,
+not the shipped xTalk (the KAT pins plus heTestLevel2VoidRun are what hold twin and
+engine together). Measured 2026-08-23: the full run is ~80 s (it was ~78 s before the
+void-audit section - the "~30 s" this sentence used to claim was already stale) and
+`--quick` is ~16 s (the old "5 s smoke" claim was the pre-A5 shape). This is the
+committed backing for any "verified sound by property tests" claim — do not make that
+claim without it.
 
 The KAT vectors are also embedded in the stack's own self-test (`heRunSelftest` in the
 message box), so a green harness run on-engine plus green KATs in CI pins the xTalk to
@@ -780,7 +788,7 @@ contracts to keep intact when touching these:
 **2e liveness remainder + the 720p re-layout (v0.23.0, 2026-08-16), with the
 v0.24.0 CORRECTIONS folded in below (2026-08-16: ten reviewed defects in this
 layer, all local state-ordering/control-flow -- NO wire changed, protocol-kat's
-114 pins are untouched, so v0.23.0 and v0.24.0 clients speak the identical
+114 pins are untouched (132 since 2026-08-23), so v0.23.0 and v0.24.0 clients speak the identical
 protocol). Verified statically; the timed live pass and the re-layout's
 confirming eye are what the OXT pass owes.** The contracts to keep intact when
 touching the liveness layer:
@@ -970,7 +978,7 @@ user confirms in the IDE. This discipline is house law across the family.
 | Extension | Library id | Prefix | Needed from | Notes |
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
-| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*`) **and Phase 5's DLEQ/batch surface too** (ABI 9, same day: add/sub, base-mult, batch, scalar add/mul) — cross-checked KATs green, no `sxRistretto*` handler has run on an engine yet. |
+| **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*`) **and Phase 5's DLEQ/batch surface too** (ABI 9, same day: add/sub, base-mult, batch, scalar add/mul) — cross-checked KATs green. (Corrected 2026-08-23: the "no `sxRistretto*` handler has run on an engine yet" that stood here went stale on 2026-08-17/18 - sodiumxt's ABI-9 section ran on both engines, batch included; what is still unrun is THIS member's calls to them.) |
 | **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 

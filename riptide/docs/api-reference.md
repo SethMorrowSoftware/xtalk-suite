@@ -1,8 +1,10 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.10.0,
-phases 1-7 plus the 8.2/8.3 onion serving seams and the phase-6 sync
-records, media handoff included). Pure LiveCodeScript over the installed suite extensions; the
+The public `rs*` surface of `src/riptide.livecodescript` (library 0.11.0,
+phases 1-7 plus the 8.2/8.3 onion serving seams, the phase-6 sync
+records with the media handoff, and - since 2026-08-23 - the kind-C
+chunked-post rail, the BTXO receive-path stream machine, and the media
+streaming plan). Pure LiveCodeScript over the installed suite extensions; the
 byte-exact wire layouts are documented at the top of the library and
 pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
 the harness constants, with `tools/check-selftest-vectors.py` holding the
@@ -15,9 +17,13 @@ silent fix.
 > machines, feeds both directions, every rendered post ingest-verified).
 > Phase 3 (media) and phase 4 (DMs chatting both ways) passed on two
 > machines 2026-08-15, the same day the whole phase 4-7 COMPUTE surface ran
-> green in the suite selftest. The LAN welcome leg, the phase-5 call, and
-> the anon flows are statically verified; `docs/two-machine-runbook.md`
-> scripts their passes.
+> green in the suite selftest. The phase-6 sync records' and 8.2/8.3
+> serving seams' COMPUTE halves ran engine-green 2026-08-20 (Windows, in
+> the suite paste; label synced 2026-08-23); the live legs - the phase-5
+> call, the two-machine mesh, and anything over a real tor - remain, and
+> `docs/two-machine-runbook.md` scripts each. The 2026-08-23 handlers
+> (the kind-C rail, `rsBtxoStreamStep`, `rsMediaStreamPlan`) are verified
+> statically and vector-pinned; none has an engine pass yet.
 
 ## Conventions
 
@@ -85,6 +91,9 @@ strings, matching `sxKdfDerive`.
 | `rsBuildPostChunked(pTimestamp, pPrevTarget, pChunkTargets, pMediaList, pIdentitySeed)` | Data | a signed kind-C post naming 1..16 immutable text chunks in order |
 | `rsParsePost(pBytes)` | Array | `timestamp`, `prevPostTarget`, `kind`, `text` (D) or `chunkTargets` (C), `mediaTargets`. Parsing does not verify the signature |
 | `rsVerifyPost(pBytes, pHandleHex)` | Boolean | true only if the record parses strictly AND its trailing 64 bytes are a valid ed25519 signature by the handle over everything before them |
+| `rsPostTextCapacity(pMediaCount)` | Integer | how many UTF-8 text bytes fit a DIRECT (kind-D) post beside that many attachments - the RSP1 layout against the 1000-byte cap, published so the app's D-or-C decision never hand-copies 880 |
+| `rsChunkPostText(pTextContent)` | Array | split text into kind-C chunk VALUES (keys 1..count): full 1000-byte immutable items by BYTE, remainder last; over 16000 UTF-8 bytes refuses, never truncates. A boundary may split a UTF-8 sequence - reassembly decodes the concatenation, never a chunk alone |
+| `rsAssembleChunkText(pChunkTargets, pParts)` | String | the reassembling verify: `pParts` keyed by lowercase target (from `rsIngestBlob`); every part is re-hashed against its own content address BEFORE a byte is believed, then the CONCATENATION must round-trip as UTF-8. Empty names the first missing chunk - the honest-placeholder path |
 
 ## BEP44 plumbing and ingest verifiers
 
@@ -95,6 +104,7 @@ strings, matching `sxKdfDerive`.
 | `rsImmutableTarget(pValue)` | String | SHA-1 of the bencoded value: the immutable item's 40-hex target (what `btDhtPutImmutable` returns for the same bytes) |
 | `rsIngestHead(pEvent, pExpectedHandleHex)` | Array | the parsed head, only if the drained `dhtMutableItem` event is for that handle and salt, the value is a strict RSH1 record, the embedded and BEP44 seqs agree, and the BEP44 signature verifies under the handle |
 | `rsIngestPost(pEvent, pExpectedTarget, pAuthorHandleHex)` | Array | the parsed post, only if the event answers the expected target, the value's recomputed SHA-1 IS that target, and the author's signature verifies |
+| `rsIngestBlob(pEvent, pExpectedTarget)` | Data | the verified bytes of a raw content-addressed blob (a kind-C text chunk, a profileMeta display-name blob): the event answers the awaited target and the value hashes to it - rsIngestPost minus the post parse, because content addressing is what extends the naming record's authorSig to these bytes |
 
 ## The live feed layer (session-taking)
 
@@ -116,6 +126,7 @@ trust never rests on the transport.
 | `rsPublishPost(pSession, pPostBytes)` | String | a strict RSP1 parse refuses malformed records before the network hears about them, then `rsPublishImmutable` |
 | `rsRequestHead(pSession, pHandleHex)` | Boolean | queue the mutable lookup (handle + salt `"riptide-head"`) |
 | `rsRequestImmutable(pSession, pTarget)` | Boolean | queue the immutable lookup; the zero target is refused |
+| `rsPublishChunkedPost(pSession, pTimestamp, pPrevTarget, pTextContent, pMediaList, pIdentitySeed)` | String | the kind-C producer: split, store every chunk, publish the signed post naming them in order; the post's 40-hex target. Everything is computed and signed BEFORE the session is touched, so a refusal costs no network writes; a mid-publish failure strands only harmless content-addressed orphans |
 
 The tamper-evident chain walk is these calls in the app's event loop, no
 more:
@@ -141,6 +152,7 @@ author signature) at that link.
 | `rsMediaCreate(pSession, pPath)` | String | seed a file in place as a trackerless torrent; its 40-hex info-hash (what a post's media list carries) |
 | `rsMediaFetch(pSession, pInfoHash, pSaveFolder, pSequential)` | Integer | fetch-and-co-seed by hash; sequential mode for playback; the torrent handle |
 | `rsMediaStatus(pTorrent)` | Array | `btTorrentStatus` plus the first file's resolved `filePath`, `fileSize`, `fileProgress` - what a player paints from |
+| `rsMediaStreamPlan(pTorrent)` | Integer | piece deadlines on the FRONT pieces (up to 8, spaced 1 s) once metadata has arrived - a SEPARATE step from the fetch because `btAddMagnet` has no piece table; call it from the `metadataReceived` event. A refusal is always safe to ignore (the fetch stays sequential), including on a torrentxt predating `btSetPieceDeadline` |
 
 ## DMs (phase 4): keys, records, transport
 
@@ -243,6 +255,7 @@ instantly).
 | `rsBtxoParseHeader(pBytes)` | Array | `name`, `total`, `flags` |
 | `rsBtxoDataFrame(pPayload)` | Data | u32-BE length + bytes (non-empty) |
 | `rsBtxoTerminator()` | Data | the 4-byte zero-length end-of-stream frame |
+| `rsBtxoStreamStep(pBuffer, pPhase)` | Array | the RECEIVE path (2026-08-23): the pure single-step stream state machine - the app accumulates bytes, calls with phase `"header"`/`"body"`, acts on `status` (`need`/`header`/`frame`/`end`/`refused`) and deletes `used` bytes from the front. Caps ported from nocloud's working receiver (name 1024, refused before the name is buffered; total 8 GiB; frame 65536); `refused` means abort, and rsLastError() says why |
 
 Sealed DMs TO a persona (spec 8.3) are the phase-4 machinery composed with
 the anon subkeys - no separate crypto handlers: `rsBuildPrekey(kxPub,

@@ -579,6 +579,43 @@ def main(argv):
         elif not terse:
             print("  OK  an empty merkle root really does differ from a zero root")
 
+        # BIP-341 script trees + the sighash builder (added 2026-08-23). The
+        # internal key and the two leaf SCRIPTS are published fixtures (they
+        # are inputs, listed below); every hash the harness pins - the leaf
+        # hashes, the sorted branch fold, the control block, the scriptPubKey
+        # and both sighash digests over the harness's own synthetic one-input
+        # spend - is re-derived here through the model whose import self-check
+        # anchors it to bitcoin/bips' wallet-test-vectors.json. The parity bit
+        # in the control block and the output key in the spk are COMPUTED from
+        # the tweak, not read back from the harness, so a mismatched pair
+        # cannot agree by construction.
+        tleaf0 = ref.tap_leaf_hash(0xC0, bytes.fromhex(k.get("kTapLeafScript0", "")))
+        tleaf1 = ref.tap_leaf_hash(0xFA, bytes.fromhex(k.get("kTapLeafScript1", "")))
+        want("kTapLeafHash0", tleaf0.hex(), "coin_reference")
+        want("kTapLeafHash1", tleaf1.hex(), "coin_reference")
+        troot = ref.tap_branch_hash(tleaf0, tleaf1)
+        want("kTapMerkleRoot", troot.hex(), "coin_reference")
+        tint = bytes.fromhex(k.get("kTapInternal", ""))
+        toutk, tpar = ref.taproot_tweak_pubkey(tint, troot)
+        want("kTapSpk", "5120" + toutk.hex(), "coin_reference")
+        want("kTapControlBlock0",
+             (bytes([0xC0 | tpar]) + tint + tleaf1).hex(), "coin_reference")
+        # The harness spends kTxid0's output 0 (sequence 0xfffffffe, 50000 sat)
+        # to kTxOut0, version 2, locktime 0, SIGHASH_DEFAULT - the same call it
+        # makes through cxBtcSighashTaproot, rebuilt here argument for argument.
+        toutpoint = bytes.fromhex(k.get("kTxid0", ""))[::-1] + (0).to_bytes(4, "little")
+        tspk = bytes.fromhex(k.get("kTapSpk", ""))
+        touts = [bytes.fromhex(k.get("kTxOut0", ""))]
+        want("kTapSighashKeyPath",
+             ref.btc_sighash_taproot(2, 0, [toutpoint], [50000], [tspk],
+                                     [4294967294], touts, 0, 0).hex(),
+             "coin_reference")
+        want("kTapSighashScriptPath",
+             ref.btc_sighash_taproot(2, 0, [toutpoint], [50000], [tspk],
+                                     [4294967294], touts, 0, 0,
+                                     tapleaf=tleaf0).hex(),
+             "coin_reference")
+
     # --- the structural claims the harness makes beyond the fixed digests ----
     short = hashlib.pbkdf2_hmac("sha512", mnemonic, salt, 2048, 20).hex()
     if short != k.get("kBip39Seed", "")[:40]:
@@ -657,6 +694,17 @@ def main(argv):
         "kTapInternal1": "BIP-341 scriptPubKey vector 1's internal key, an "
                          "input; the output key and address are re-derived",
         "kTapRoot1": "BIP-341 scriptPubKey vector 1's merkle root, i.e. an input",
+        # BIP-341 script-tree inputs (published fixtures from bitcoin/bips'
+        # wallet-test-vectors.json scriptPubKey vector 3
+        # (0-based, the file's own convention, same as kTapInternal1 = index 1); everything derived
+        # FROM them - leaf hashes, root, spk, control block, both sighashes -
+        # is re-derived above)
+        "kTapInternal": "BIP-341 scriptPubKey vector 3's internal key, an input",
+        "kTapLeafScript0": "BIP-341 scriptPubKey vector 3's first leaf script, "
+                           "an input; its leaf hash is re-derived",
+        "kTapLeafScript1": "BIP-341 scriptPubKey vector 3's second leaf script "
+                           "(the 0xfa leaf-version case), an input; its leaf "
+                           "hash is re-derived",
     }
     uncovered = sorted(set(k) - checked - set(inputs))
     if uncovered:

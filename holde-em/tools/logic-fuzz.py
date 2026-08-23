@@ -24,6 +24,19 @@ Independence, concretely:
     exactly 7462 classes (the known count of distinct 5-card hand ranks).
   * Settlement: the mirror walks bet LEVELS; the reference PEELS the smallest
     remaining stake into successive pots. Different algorithms, same deltas.
+  * Void-and-audit attribution (backlog A5, 2026-08-23): the Level 2 4d
+    machine -- the highest-consequence pure logic in the project, naming a
+    cheater from signed records -- gets randomized scripted-attacker trials
+    against three PROPERTIES (an honest transcript never voids; a voided hand
+    names exactly one contributor; the named contributor is the injected one),
+    where the KATs pin only six fixed scenarios. THE HONEST CAVEAT, stated
+    here because the backlog demands exactly this honesty: these trials
+    exercise the TWIN -- protocol-kat.py's l2_void_* / l2_dleq_* mirrors of
+    the heL2Void* / heL2Dleq* handlers, driven by its independent RFC 9496
+    reference -- NOT the shipped xTalk. What holds twin and xTalk together is
+    the KAT pin set plus heTestLevel2VoidRun re-checking the same pinned
+    verdicts on-engine; a bug the twin and the xTalk share is exactly what
+    the properties here can still miss on the engine side.
 
 Usage::
 
@@ -33,6 +46,7 @@ Usage::
 Exit status is non-zero on any mismatch (CI gate).
 """
 
+import hashlib
 import importlib.util
 import itertools
 import pathlib
@@ -51,6 +65,7 @@ def _load(name, rel):
 
 ev = _load("evkat", "tools/evaluator-kat.py")   # mirror of heRank5 / heEval7
 bk = _load("bkat", "tools/betting-kat.py")       # mirror of heBetApply / heSettleOf
+pk = _load("pkat", "tools/protocol-kat.py")      # twin of heL2Void*/heL2Dleq* + RFC 9496 ref
 
 
 # --------------------------------------------------------------------------
@@ -436,6 +451,401 @@ def check_games(sessions):
     return fails == 0
 
 
+# --------------------------------------------------------------------------
+# Level 2 void-and-audit attribution (backlog A5). EXERCISES THE TWIN, NOT
+# THE SHIPPED XTALK: every machine step below goes through protocol-kat.py's
+# l2_void_* / l2_dleq_* functions, which are line-for-line mirrors of the
+# heL2Void* / heL2Dleq* handlers driven by that file's independent RFC 9496
+# reference. The engine-side halves of the equivalence are the KAT pins and
+# heTestLevel2VoidRun. Properties (the backlog's three):
+#   P1  an honest transcript never voids (and its mandatory audit is clean);
+#   P2  a voided hand names exactly ONE contributor (directly, or through
+#       the audit when attribution is deferred);
+#   P3  the named contributor is the injected one.
+# The group math is memoized (below) so hundreds of trials over the same
+# fixture decks stay affordable; memoizing a PURE function cannot change a
+# verdict, only its cost.
+# --------------------------------------------------------------------------
+
+def _memoize_pk_group_ops():
+    """Value-cache protocol-kat's pure ristretto primitives in place. Every
+    l2_* function resolves these through pk's module globals, so rebinding
+    them here routes the whole twin through the caches."""
+    for name in ("r255_scalarmult", "r255_decode", "r255_scalarmult_base",
+                 "r255_point_add"):
+        raw = getattr(pk, name)
+        cache = {}
+
+        def cached(*args, _raw=raw, _cache=cache):
+            if args not in _cache:
+                _cache[args] = _raw(*args)
+            return _cache[args]
+        setattr(pk, name, cached)
+
+
+_memoize_pk_group_ops()
+
+
+def _l2_fixture(n):
+    """Deterministic honest Level 2 fixture for n contributors: scalars
+    (reduced mod L), inverses, permutations (from the committed keyed-stream
+    Fisher-Yates, like the KAT's), the chained masked decks d0..dn, the
+    commitment keys, and one fixed WRONG scalar for the lying attacks."""
+    base = pk.l2_base_deck()
+    ks, invs, perms, cks = [], [], [], []
+    decks = [base]
+    for i in range(1, n + 1):
+        raw = hashlib.blake2b(("HOLDEM-VOIDFUZZ-v1|scalar|%d|%d" % (n, i))
+                              .encode(), digest_size=32).digest()
+        k = ((int.from_bytes(raw, "little") % pk.R255_L) or 1) \
+            .to_bytes(32, "little").hex()
+        perm = ",".join(str(c) for c in pk.shuffle_from_stream(pk.stream_bytes(
+            pk.H(("HOLDEM-VOIDFUZZ-v1|perm|%d|%d" % (n, i)).encode()), 16)))
+        d = pk.l2_mask_deck(decks[-1], k, perm)
+        assert not d.startswith("void:"), d
+        ks.append(k)
+        invs.append(pk.l2_scalar_invert(k))
+        perms.append(perm)
+        cks.append(pk.l2_commit_key(k))
+        decks.append(d)
+    wraw = hashlib.blake2b(("HOLDEM-VOIDFUZZ-v1|wrongk|%d" % n).encode(),
+                           digest_size=32).digest()
+    wrong_k = ((int.from_bytes(wraw, "little") % pk.R255_L) or 1) \
+        .to_bytes(32, "little").hex()
+    return {"n": n, "base": base, "ks": ks, "invs": invs, "perms": perms,
+            "cks": cks, "decks": decks, "wrong_k": wrong_k,
+            "wrong_inv": pk.l2_scalar_invert(wrong_k)}
+
+
+def _l2_reveals(fx, lie_pos=0, refuse_pos=0):
+    """The audit's reveal lines (pos TAB k TAB sigma): truthful except an
+    optional lying k at lie_pos and/or an omitted line at refuse_pos."""
+    lines = []
+    for i in range(1, fx["n"] + 1):
+        if i == refuse_pos:
+            continue
+        k = fx["wrong_k"] if i == lie_pos else fx["ks"][i - 1]
+        lines.append("%d\t%s\t%s" % (i, k, fx["perms"][i - 1]))
+    return "\n".join(lines)
+
+
+def _l2_shuffle_all(fx, st, with_ck):
+    """Apply every contributor's honest shuffleStep in order."""
+    for i in range(1, fx["n"] + 1):
+        ck = fx["cks"][i - 1] if with_ck else ""
+        st = pk.l2_void_shuffle(st, i, pk.l2_shuffle_body(i, ck, fx["decks"][i]))
+        assert st["phase"] != "void", st["why"]
+    return st
+
+
+def _l2_chain_step(fx, slot, chain):
+    """The next honest unmask value for a slot: prev is the chain's last
+    value (the masked table point when the chain is empty)."""
+    prev = chain[-1] if chain else fx["decks"][fx["n"]].split(",")[slot - 1]
+    return prev
+
+
+def _named_from_outcome(outcome):
+    """Parse 'void|<why>|named=<X>|bets-return|reveal-required'. Returns
+    (named_txt, problems) -- P2's exactly-one-name is the format itself, so
+    a malformed outcome is a reported violation, not an exception."""
+    problems = []
+    parts = outcome.split("|")
+    if not outcome.startswith("void|"):
+        problems.append("outcome does not read as a void: %r" % outcome)
+        return "", problems
+    named = [p[6:] for p in parts if p.startswith("named=")]
+    if len(named) != 1:
+        problems.append("outcome names %d contributors (want exactly one): %r"
+                        % (len(named), outcome))
+        return "", problems
+    if "bets-return" not in parts or "reveal-required" not in parts:
+        problems.append("void without bets-return/reveal-required: %r" % outcome)
+    return named[0], problems
+
+
+def _named_from_audit(verdict):
+    """Parse 'named=<N>|<why>' from l2_void_audit."""
+    head = verdict.split("|", 1)[0]
+    if not head.startswith("named="):
+        return -1
+    try:
+        return int(head[6:])
+    except ValueError:
+        return -1
+
+
+def _honest_trial(fx, rng, dleq):
+    """One honest hand: full shuffle (dup re-posts sprinkled in), a random
+    slot layout dealt to completion in random slot interleaving (dups again),
+    then the audit over truthful reveals. Returns a list of violations."""
+    bad = []
+    n = fx["n"]
+    slots = sorted(rng.sample(range(1, 9), rng.randint(1, 3)))
+    owners = {}
+    for s in slots:
+        if rng.random() < 0.4:
+            owners[s] = rng.randint(1, n)
+    owners_txt = ",".join("%d:%d" % (s, o) for s, o in sorted(owners.items()))
+    st = pk.l2_void_new(n, fx["base"], dleq, owners_txt)
+    for i in range(1, n + 1):
+        ck = fx["cks"][i - 1] if (dleq or rng.random() < 0.3) else ""
+        body = pk.l2_shuffle_body(i, ck, fx["decks"][i])
+        st = pk.l2_void_shuffle(st, i, body)
+        if st["phase"] == "void":
+            bad.append("P1: honest shuffleStep voided: %s" % st["why"])
+            return bad
+        if rng.random() < 0.3:                     # rp1 redelivery: harmless dup
+            applied_before = st["applied"]
+            st = pk.l2_void_shuffle(st, i, body)
+            if st["phase"] == "void" or st["last"] != "dup" \
+                    or st["applied"] != applied_before:
+                bad.append("P1: identical shuffle re-post was not a dup")
+                return bad
+    if st["phase"] != "deal":
+        bad.append("P1: %d honest shuffle steps did not open the deal" % n)
+        return bad
+    # deal the slots to completion, interleaved at random
+    chains = {s: [] for s in slots}
+    need = {s: (n - 1 if owners.get(s, 0) else n) for s in slots}
+    order = {s: [p for p in range(1, n + 1) if p != owners.get(s, 0)]
+             for s in slots}
+    last_body = {}
+    while any(len(chains[s]) < need[s] for s in slots):
+        s = rng.choice([x for x in slots if len(chains[x]) < need[x]])
+        p = order[s][len(chains[s])]
+        prev = _l2_chain_step(fx, s, chains[s])
+        val = pk.l2_mask_point(fx["invs"][p - 1], prev)
+        proof = pk.l2_dleq_prove(fx["ks"][p - 1], val, prev) if dleq else ""
+        body = pk.l2_unmask_body(p, s, val, proof)
+        st = pk.l2_void_unmask(st, p, body)
+        if st["phase"] == "void":
+            bad.append("P1: honest unmaskStep voided: %s" % st["why"])
+            return bad
+        chains[s].append(val)
+        last_body[s] = (p, body)
+        if rng.random() < 0.2:
+            st = pk.l2_void_unmask(st, p, body)
+            if st["phase"] == "void" or st["last"] != "dup":
+                bad.append("P1: identical unmask re-post was not a dup")
+                return bad
+    for s in slots:
+        if owners.get(s, 0):
+            if st["holeUp"].get(s) != "true":
+                bad.append("P1: completed hole chain not marked delivered (slot %d)" % s)
+        else:
+            if not st["card"].get(s, "").startswith("card:"):
+                bad.append("P1: completed public chain has no card (slot %d)" % s)
+    if pk.l2_void_outcome(st) != "deal":
+        bad.append("P1: honest hand's outcome is not the live phase")
+    if pk.l2_void_audit(st, _l2_reveals(fx)) != "named=0|audit-clean":
+        bad.append("P1: honest hand's audit is not clean")
+    return bad
+
+
+def _attack_trial(fx, rng, kind):
+    """One scripted attack. Returns (expected_culprit, resolved_name,
+    violations): resolved_name is the machine's direct name, or the audit's
+    when the outcome defers (named=audit) -- and for the staller/ck kinds
+    the audit is ALSO run to prove it keeps (or takes over) the name."""
+    bad = []
+    n = fx["n"]
+
+    def resolve(st, reveals):
+        outcome = pk.l2_void_outcome(st)
+        named_txt, probs = _named_from_outcome(outcome)
+        bad.extend(probs)
+        if probs:
+            return -1
+        if named_txt == "audit":
+            return _named_from_audit(pk.l2_void_audit(st, reveals))
+        try:
+            direct = int(named_txt)
+        except ValueError:
+            bad.append("unparseable named= field: %r" % outcome)
+            return -1
+        if not 1 <= direct <= n:
+            bad.append("named contributor out of range: %r" % outcome)
+            return -1
+        return direct
+
+    if kind == "dup-shuffler":
+        culprit = rng.randint(1, n)
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        for i in range(1, culprit):
+            st = pk.l2_void_shuffle(st, i, pk.l2_shuffle_body(i, "", fx["decks"][i]))
+        dd = fx["decks"][culprit].split(",")
+        j = rng.randint(1, 51)
+        dd[j] = dd[j - 1]
+        st = pk.l2_void_shuffle(st, culprit,
+                                pk.l2_shuffle_body(culprit, "", ",".join(dd)))
+        return culprit, resolve(st, _l2_reveals(fx)), bad
+
+    if kind == "equivocator":
+        culprit = rng.randint(1, n)
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        st = _l2_shuffle_all(fx, st, False)
+        dd = fx["decks"][culprit].split(",")
+        dd[0], dd[1] = dd[1], dd[0]
+        st = pk.l2_void_shuffle(st, culprit,
+                                pk.l2_shuffle_body(culprit, "", ",".join(dd)))
+        return culprit, resolve(st, _l2_reveals(fx)), bad
+
+    if kind == "order-skipper":
+        culprit = rng.randint(2, n)
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        for i in range(1, culprit - 1):
+            st = pk.l2_void_shuffle(st, i, pk.l2_shuffle_body(i, "", fx["decks"][i]))
+        st = pk.l2_void_shuffle(st, culprit,
+                                pk.l2_shuffle_body(culprit, "", fx["decks"][culprit]))
+        return culprit, resolve(st, _l2_reveals(fx)), bad
+
+    if kind == "wrong-scalar-unmasker":
+        slot = rng.randint(1, 8)
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        st = _l2_shuffle_all(fx, st, False)
+        culprit_idx = rng.randrange(n)
+        chain = []
+        for step, p in enumerate(range(1, n + 1)):
+            prev = _l2_chain_step(fx, slot, chain)
+            inv = fx["wrong_inv"] if step == culprit_idx else fx["invs"][p - 1]
+            val = pk.l2_mask_point(inv, prev)
+            st = pk.l2_void_unmask(st, p, pk.l2_unmask_body(p, slot, val, ""))
+            chain.append(val)
+        if st["phase"] != "void":
+            bad.append("wrong-scalar chain completed without voiding")
+            return culprit_idx + 1, -1, bad
+        return culprit_idx + 1, resolve(st, _l2_reveals(fx)), bad
+
+    if kind in ("staller", "reveal-refuser", "ck-liar"):
+        # the culprit owes the next step of a public slot and never posts it;
+        # for ck-liar its shuffleStep also carried ANOTHER contributor's ck,
+        # and for reveal-refuser it then refuses the mandatory reveal
+        culprit = rng.randint(1, n)
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        if kind == "ck-liar":
+            for i in range(1, n + 1):
+                ck = fx["cks"][i % n] if i == culprit else fx["cks"][i - 1]
+                st = pk.l2_void_shuffle(st, i, pk.l2_shuffle_body(i, ck, fx["decks"][i]))
+                assert st["phase"] != "void", st["why"]
+        else:
+            st = _l2_shuffle_all(fx, st, rng.random() < 0.5)
+        slot = rng.randint(1, 8)
+        chain = []
+        for p in range(1, culprit):
+            prev = _l2_chain_step(fx, slot, chain)
+            val = pk.l2_mask_point(fx["invs"][p - 1], prev)
+            st = pk.l2_void_unmask(st, p, pk.l2_unmask_body(p, slot, val, ""))
+            chain.append(val)
+        st = pk.l2_void_timeout(st, culprit)
+        refuse = culprit if kind == "reveal-refuser" else 0
+        got = resolve(st, _l2_reveals(fx, refuse_pos=refuse))
+        # the outcome names the staller directly; the audit must agree (or,
+        # for ck-liar, take the name over on the binding check) -- run it
+        # even though resolve() did not need it
+        audit_named = _named_from_audit(
+            pk.l2_void_audit(st, _l2_reveals(fx, refuse_pos=refuse)))
+        if audit_named != culprit:
+            bad.append("%s: audit named %s, injected %d"
+                       % (kind, audit_named, culprit))
+        return culprit, got, bad
+
+    if kind == "liar-outranks-staller":
+        # TWO dishonest parties: s stalls, b reveals a lying k. Spec 7.3's
+        # "first bad one" rule: the audit re-verifies everything signed and
+        # the LIAR is named -- a recorded staller keeps its name only when
+        # every signed step re-verifies. The expected name is b.
+        s = rng.randint(1, n)
+        b = rng.choice([x for x in range(1, n + 1) if x != s]) if n > 1 else s
+        st = pk.l2_void_new(n, fx["base"], False, "")
+        st = _l2_shuffle_all(fx, st, False)
+        st = pk.l2_void_timeout(st, s)
+        return b, _named_from_audit(
+            pk.l2_void_audit(st, _l2_reveals(fx, lie_pos=b))), bad
+
+    if kind == "dleq-wrong-scalar":
+        slot = rng.randint(1, 8)
+        st = pk.l2_void_new(n, fx["base"], True, "")
+        st = _l2_shuffle_all(fx, st, True)
+        culprit_idx = rng.randrange(n)
+        chain = []
+        for step, p in enumerate(range(1, n + 1)):
+            prev = _l2_chain_step(fx, slot, chain)
+            if step == culprit_idx:
+                # the KAT's 4e bot shape: a wrong-inverse value, proved by
+                # the honest procedure over the FALSE statement
+                val = pk.l2_mask_point(fx["wrong_inv"], prev)
+                proof = pk.l2_dleq_prove(fx["ks"][p - 1], val, prev)
+                st = pk.l2_void_unmask(st, p, pk.l2_unmask_body(p, slot, val, proof))
+                break
+            val = pk.l2_mask_point(fx["invs"][p - 1], prev)
+            proof = pk.l2_dleq_prove(fx["ks"][p - 1], val, prev)
+            st = pk.l2_void_unmask(st, p, pk.l2_unmask_body(p, slot, val, proof))
+            chain.append(val)
+        return culprit_idx + 1, resolve(st, _l2_reveals(fx)), bad
+
+    if kind == "dleq-missing-proof":
+        slot = rng.randint(1, 8)
+        st = pk.l2_void_new(n, fx["base"], True, "")
+        st = _l2_shuffle_all(fx, st, True)
+        culprit = 1
+        prev = _l2_chain_step(fx, slot, [])
+        val = pk.l2_mask_point(fx["invs"][0], prev)
+        st = pk.l2_void_unmask(st, culprit, pk.l2_unmask_body(culprit, slot, val, ""))
+        return culprit, resolve(st, _l2_reveals(fx)), bad
+
+    raise AssertionError("unknown attack kind %r" % kind)
+
+
+ATTACK_KINDS = ["dup-shuffler", "equivocator", "order-skipper",
+                "wrong-scalar-unmasker", "staller", "reveal-refuser",
+                "ck-liar", "liar-outranks-staller", "dleq-wrong-scalar",
+                "dleq-missing-proof"]
+
+
+def check_void_attribution(honest_trials, attack_trials):
+    """Randomized property trials over the 4d void/audit/attribution TWIN
+    (see the module docstring's caveat: the twin, not the shipped xTalk).
+    Seeded RNG, so any failure is reproducible."""
+    rng = random.Random(4242)
+    fixtures = {n: _l2_fixture(n) for n in (2, 3)}
+    fails = 0
+
+    honest_ok = 0
+    for t in range(honest_trials):
+        fx = fixtures[rng.choice([2, 3])]
+        bad = _honest_trial(fx, rng, dleq=(rng.random() < 0.4))
+        if bad:
+            fails += len(bad)
+            for b in bad[:4]:
+                print("  VOID-P1 trial %d (n=%d): %s" % (t, fx["n"], b))
+        else:
+            honest_ok += 1
+    print("  void-audit P1 (honest never voids): %d/%d trials clean"
+          % (honest_ok, honest_trials))
+
+    per_kind = Counter()
+    attack_ok = 0
+    for t in range(attack_trials):
+        fx = fixtures[rng.choice([2, 3])]
+        kind = rng.choice(ATTACK_KINDS)
+        per_kind[kind] += 1
+        culprit, named, bad = _attack_trial(fx, rng, kind)
+        if named != culprit:
+            bad.append("named %s, injected %d" % (named, culprit))
+        if bad:
+            fails += len(bad)
+            for b in bad[:4]:
+                print("  VOID-P2/P3 trial %d (n=%d, %s): %s"
+                      % (t, fx["n"], kind, b))
+        else:
+            attack_ok += 1
+    print("  void-audit P2+P3 (one name, the injected one): %d/%d trials, "
+          "kinds %s" % (attack_ok, attack_trials,
+                        ", ".join("%s x%d" % kv for kv in sorted(per_kind.items()))))
+    return fails == 0
+
+
 def main():
     quick = "--quick" in sys.argv
     full = "--full" in sys.argv
@@ -456,6 +866,11 @@ def main():
 
     print("games: whole-game conservation / no-negative / termination")
     results.append(("games", check_games(game_sessions)))
+
+    print("void-audit: L2 attribution properties vs scripted attackers "
+          "(the protocol-kat TWIN, not the shipped xTalk)")
+    results.append(("void-audit", check_void_attribution(
+        8 if quick else 24, 20 if quick else 80)))
 
     print()
     bad = [name for name, ok in results if not ok]

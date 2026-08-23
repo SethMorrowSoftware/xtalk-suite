@@ -135,6 +135,50 @@ check("chunked kind", chunked[52:53], b"C")
 check("chunked count", chunked[53], 2)
 check("chunked first", chunked[54:94], ("11" * 20).encode("ascii"))
 
+# --- the kind-C chunked post, pinned BYTE-FOR-BYTE (A2, 2026-08-23) --------
+# The last riptide wire format that had no full pin. The chunk VALUES are
+# real text (their concatenation is the post's full text), the targets are
+# content addresses, and the media attachment rides BEHIND the chunk list
+# so the kind-C tail parse is pinned as well. The same bytes live as
+# kRsGoldPostCHex (and friends) in the harness, re-derived by
+# tools/check-selftest-vectors.py.
+
+CHUNK1 = "chunked text, part one; ".encode("utf-8")
+CHUNK2 = "part two closes the record.".encode("utf-8")
+CHUNK1_TARGET = "b9122511adc47fd591ae37523f47a3b0ff8bb837"
+CHUNK2_TARGET = "6b30810b837c9d22db507c3c62988f70eac7fc92"
+POSTC_HEX = (
+    "5253503100000000689933e83231643031383038353565663437303834666438"
+    "6139383235663465633835313636303831363161430262393132323531316164"
+    "6334376664353931616533373532336634376133623066663862623833373662"
+    "3330383130623833376339643232646235303763336336323938386637306561"
+    "6337666339320165656565656565656565656565656565656565656565656565"
+    "65656565656565656565656565656596faa39d774097d62eea9ef9c06a04aecb"
+    "abde8aac498055164a52fb1bc8a3f54ecae3058bf235eb5024e867f730321400"
+    "d199072e35676554bfd186fb317508")
+POSTC_TARGET = "d7d0cb72bc85a5dd4f35523bb442a484ca108373"
+
+check("chunk1 target", ref["immutable_target"](CHUNK1), CHUNK1_TARGET)
+check("chunk2 target", ref["immutable_target"](CHUNK2), CHUNK2_TARGET)
+post_c = ref["build_post_chunked"](1754870760, POST2_TARGET,
+                                   [CHUNK1_TARGET, CHUNK2_TARGET],
+                                   ["ee" * 20], ID_SEED)
+check("postC bytes", post_c.hex(), "".join(POSTC_HEX.split()))
+check("postC target", ref["immutable_target"](post_c), POSTC_TARGET)
+check("postC chains to post2", post_c[12:52], POST2_TARGET.encode("ascii"))
+check("postC chunk list in order", post_c[54:134],
+      (CHUNK1_TARGET + CHUNK2_TARGET).encode("ascii"))
+check("postC media rides behind the chunk list", post_c[135:175],
+      ("ee" * 20).encode("ascii"))
+check("postC sig", post_c[-64:], ref["ed25519_sign"](post_c[:-64], ID_SEED))
+# the reassembly CONTRACT: the concatenated chunk values decode to the
+# post's full text (the script reassembler validates the concatenation,
+# never a chunk alone - a producer may split inside a UTF-8 sequence)
+check("postC reassembled text", (CHUNK1 + CHUNK2).decode("utf-8"),
+      "chunked text, part one; part two closes the record.")
+check_raises("chunk count over cap", lambda: ref["build_post_chunked"](
+    1, ZERO, [CHUNK1_TARGET] * 17, [], ID_SEED))
+
 # --- RSH1 head -------------------------------------------------------------
 
 HEAD_HEX = (

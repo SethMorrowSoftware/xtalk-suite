@@ -124,7 +124,56 @@ mutation-tested rather than attested:
 
 **Still open: all of section A, B4, B7, D4, D9, D14, and every one of section
 E.** Section A is now the bulk of what remains, and it is genuine feature work
-rather than measurement.
+rather than measurement. **(Superseded 2026-08-23 - see the banner below: all
+of section A, B4, B7 and D14 closed that day; D4, D9 and section E remain.)**
+
+---
+
+## WHAT CLOSED 2026-08-23 - the pre-OXT-pass sweep
+
+The "genuine feature work" the sentence above named is built, by the same
+disjoint-file-set pattern as the two waves above, gate suite green at the end.
+**Closed: A1-A6, B4, B7, D14.** Each with the measurement:
+
+- **A1**: `heL2MaskDeckHex` gained the batch fast path behind `heL2HasDleq()`
+  calling `sxRistrettoScalarMultBatch`, per-point loop kept as the fallback;
+  the two wrong "52" figures fixed in the same change; harness section 16
+  (heTestLevel2Run) pins batch-vs-loop byte agreement and the
+  corrupted-point void on both paths. holde-em's calls to the batch export
+  have not run on an engine; the export itself has (sodiumxt's ABI-9
+  engine records, 2026-08-17/18), so the pass owed is the caller's.
+- **A2/A3**: riptide's kind-C chunked-post rail and the BTXO receive path are
+  both built end to end (producer + reassembling walker; frame parser +
+  length-prefix stream reassembler with nocloud's caps ported, not
+  re-derived), pinned in `riptide_reference.py` before building, demo wiring
+  included - no riptide wire format is unpinned now.
+- **A4**: `onion_frame_golden.py` pins BTXC/BTXF per the integration plan's
+  own section 12.2, and `chSafeLeaf` is mirrored with agreement rows against
+  the pinned `qsSafeLeaf`.
+- **A5**: the void-and-audit attribution machine has its property fuzz
+  (`tools/logic-fuzz.py check_void_attribution`): an honest transcript never
+  voids, a voided hand names exactly one contributor, the named one is the
+  injected one - and the docstring states it exercises the twin, per the rule
+  this file wrote.
+- **A6**: `protocol-kat.py` went from 117 to 132 pins and now parses the
+  20-type vocabulary out of the source and asserts every type has a pinned
+  body, so a new wire type cannot arrive unpinned.
+- **B4/B7**: `enPeerStatus` feeds the Devices panel, and the piece-deadline
+  handler exists as its own post-metadata call rather than the one-liner this
+  file warned against.
+- **D14**: riptide's section 9.3 attestation is corrected AS an attestation
+  (the 16 unguarded transport sites are counted and characterized, not
+  papered over), which is
+  what its entry said the fix had to be.
+
+The same sweep also landed work this 2026-08-17 file never listed because it
+was not visible yet: the nostrxt member (2026-08-23, 101/101 in the coverage
+ratchet), sodiumxt ABI 10, coinxt's BIP-341 sighash builder + script-path
+spending (90 -> 94 handlers), the lcs-interp execution gates for nostrxt and
+coinxt, and box2dxt's C smoke sweep - the "largest headless measurement hole"
+in the closing section - now at **370/370 exports entered, gcov-dated**.
+Everything new is "verified statically; needs an OXT pass"; nothing here
+upgrades an honesty label.
 
 ---
 
@@ -183,7 +232,7 @@ structural blindness, not a hidden dead call.
 ## A. BUILD NOW - substantial unbuilt slices
 
 **A1. Batch the Level 2 mask step: 312 FFI crossings -> ~56** - holde-em,
-medium. **[S]** `heL2MaskDeckHex` (`holdem.livecodescript:2366-2402`) masks
+medium. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** `heL2MaskDeckHex` (`holdem.livecodescript:2366-2402`) masks
 52 points one at a time through `heL2MaskPointHex`, six FFI crossings each;
 the batch handler that exists to fix this has one caller. Add a fast path
 behind `heL2HasDleq()` calling `sxRistrettoScalarMultBatch`
@@ -195,7 +244,7 @@ into "confirm a fix", and gives `sxRistrettoScalarMultBatch` its first real
 caller.
 
 **A2. Chunked-post rail: producer + reassembling walker** - riptide, medium.
-**[S]** `rsBuildPostChunked` (`riptide.livecodescript:809`) and the kind-C
+**[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** `rsBuildPostChunked` (`riptide.livecodescript:809`) and the kind-C
 parse branch (:950-977) both exist; nothing produces or reassembles one. The
 demo renders `tPost["text"]` with no kind branch, so a kind-C post displays
 as a **verified post with blank text** - the worst failure shape, because
@@ -204,7 +253,7 @@ as a **verified post with blank text** - the worst failure shape, because
 build. Kind C is the ONLY unpinned riptide wire format.
 
 **A3. BTXO receive path: frame parser + stream reassembler** - riptide,
-medium. **[S]** Four `rsBtxo*` handlers, all builders; no frame parser and no
+medium. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** Four `rsBtxo*` handlers, all builders; no frame parser and no
 length-prefix state machine, and `rsBtxoParseHeader` refuses unless the
 caller already knows the header's length, so a stream reader cannot find the
 boundary. Port caps from nocloud's working reference rather than re-deriving.
@@ -212,7 +261,7 @@ boundary. Port caps from nocloud's working reference rather than re-deriving.
 of parser bugs.
 
 **A4. Pin the Channels BTXC/BTXF wire in `onion_frame_golden.py`** -
-torrentxt, medium. **[S]** `ONIONXT-INTEGRATION-PLAN.md:1645-1646` requires
+torrentxt, medium. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** `ONIONXT-INTEGRATION-PLAN.md:1645-1646` requires
 it; the golden contains neither token. `chSafeLeaf` is a separate
 implementation from the pinned `qsSafeLeaf`, so it is genuinely unpinned.
 This layer is scheduled for S2 item 4 and S4 items 1-2 - the two scarcest
@@ -220,7 +269,7 @@ session types. A framing bug caught by a golden costs minutes; the same bug
 on a two-machine Tor session costs the session.
 
 **A5. Property-fuzz the Level 2 void-and-audit attribution machine** -
-holde-em, medium. **[S]** The highest-consequence pure logic in the project -
+holde-em, medium. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** The highest-consequence pure logic in the project -
 naming a cheater from signed records - is covered by a hand transcription
 plus 15 pinned keys over six fixed situations, while every other pure layer
 has an independent second opinion. Assert: an honest transcript never voids;
@@ -230,7 +279,7 @@ xTalk.** *Buys:* attribution bugs are the class an engine session cannot
 find, because the engine runs the same six scenarios.
 
 **A6. Pin the wire bodies `protocol-kat.py` never touches** - holde-em,
-medium. **[S]** Ten of the 20 types in the vocabulary at
+medium. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** Ten of the 20 types in the vocabulary at
 `holdem.livecodescript:4244-4250` have zero occurrences as a quoted wire type
 in `protocol-kat.py`. The whole deal-delivery half of the protocol can change
 format with all 114 pins green. Add a COVERAGE assertion parsing the type
@@ -276,7 +325,7 @@ at 7.5x the designed interval risks a slot spent chasing sluggishness that is
 a constant in the source. **Gate the repaint trio behind a timestamp** - a
 straight fast tier would raise them from 4 Hz to 30 Hz.
 
-**B4. Wire `enPeerStatus` into the Devices panel** - riptide, small. **[S]**
+**B4. Wire `enPeerStatus` into the Devices panel** - riptide, small. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.**
 Spec :360-362 promises a live RTT/loss readout; the handler exists
 (`enet.lcb:672`); grep across riptide returns zero hits. Sequence after C6.
 *Buys:* turns "the draft was slow" into a report line.
@@ -297,7 +346,7 @@ wrong. This file is the script for S1 row S and S2 item 7; items that do not
 exist do not get run.
 
 **B7. Apply `btSetPieceDeadline` on the sequential media fetch** - riptide,
-small. **[S]** Note the correction: it is *per piece* and `rsMediaFetch`'s
+small. **[S]** **CLOSED 2026-08-23 - see the 2026-08-23 banner.** Note the correction: it is *per piece* and `rsMediaFetch`'s
 path is `btAddMagnet` - no metadata, no piece table - so a one-liner there
 would set deadlines on pieces that do not exist. Add a separate handler
 called once metadata arrives.
@@ -512,7 +561,8 @@ riptide's §9.3 attestation claims `rsPersonaAllows` guards "every
 send/publish branch" when 16 transport sites are unguarded - **but that one
 must be corrected as an attestation, not built as a runtime fix**, because
 there is no active-persona state in the demo and 16 more calls would be 16
-more compile-time constants that can never refuse.
+more compile-time constants that can never refuse. **(That correction - the
+D14 item - landed 2026-08-23; see the banner.)**
 
 ---
 
@@ -634,8 +684,10 @@ written and will drift again.
    - ~~C3~~ **CLOSED**: box2dxt sits in `tools/build-all.sh`'s
      `CMAKE_MEMBERS`, and both `sync-embedded-kit.py --check` and
      `check-lcb-signatures.py` run in the gate set.
-   - **box2dxt's C ABI is NOT closed**, and it is what this file has ranked as
-     the largest headless measurement hole throughout. The same-day banner
+   - **box2dxt's C ABI is NOT closed** *(it is now - CLOSED 2026-08-23,
+     370/370 exports entered, gcov-dated; see the 2026-08-23 banner)*, and it
+     is what this file has ranked as the largest headless measurement hole
+     throughout. The same-day banner
      puts it "half closed and now MEASURED BY GCOV: 53 -> 194 of 370 exports
      entered" - so the exports that remain unentered are the hole, and no
      figure beyond the subtraction those two numbers license is stated here.
@@ -643,7 +695,9 @@ written and will drift again.
      line.
 
 **What leads the remainder is already written above, and no new ranking is
-invented here.** The WAVE 2 banner's own sentence is the answer: "Still open:
+invented here.** *(2026-08-23: the sentence quoted below is itself superseded
+by that day's banner - section A, B4, B7 and D14 are closed; what remains open
+is D4, D9 and section E, every row of which waits on a resource.)* The WAVE 2 banner's own sentence is the answer: "Still open:
 all of section A, B4, B7, D4, D9, D14, and every one of section E" - and it
 characterises the first of those in the same breath, "Section A is now the bulk
 of what remains, and it is genuine feature work rather than measurement." Read

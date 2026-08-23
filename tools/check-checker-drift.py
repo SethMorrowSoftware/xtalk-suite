@@ -36,6 +36,12 @@ COPY_SETS = {
                                 "holde-em", "nostrxt"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
                             "nostrxt"],
+    # ONE interpreter, two carriers (2026-08-23): the nostrxt execution gate
+    # extended coinxt's lcs-interp.py IN ITS HOME (coinxt's 300-check gate is
+    # the regression proof that the extension is additive) and carries a
+    # byte-identical copy, the checker model exactly - so an interpreter
+    # lesson learned in one member cannot quietly not apply to the other.
+    "lcs-interp.py": ["coinxt", "nostrxt"],
 }
 
 # carried document name -> the members that must carry a byte-identical copy

@@ -34,7 +34,18 @@ script "RiptideSocial"
 -- mesh, tor) still await their passes; docs/two-machine-runbook.md
 -- scripts each. The 8.2/8.3 onion SERVING seams (rsAnonFeedPage /
 -- rsAnonPrekeyBody / rsAnonAcceptDm, 2026-08-15) are golden-pinned and
--- verified statically; they need an OXT + live-Tor pass.
+-- their COMPUTE half ran engine-green 2026-08-20 (Windows, in the suite
+-- paste: the page bytes, the /prekey body, and rsAnonAcceptDm's accept
+-- plus all five refusal legs; label synced 2026-08-23) - the live
+-- done-criterion (a persona actually served over tor) still needs the
+-- OXT + live-Tor pass. The phase-6 SYNC records' compute half ran
+-- engine-green in that same 2026-08-20 run (riptide 338/0/2); the live
+-- two-machine mesh remains. The 2026-08-23 additions - the kind-C
+-- chunked-post rail (rsChunkPostText / rsPublishChunkedPost /
+-- rsIngestBlob / rsAssembleChunkText / rsPostTextCapacity, backlog A2),
+-- the BTXO receive-path stream machine (rsBtxoStreamStep, A3), and the
+-- piece-deadline streaming plan (rsMediaStreamPlan, B7) - are verified
+-- statically and vector-pinned headlessly; none has an engine pass yet.
 --
 -- WHAT THIS LAYER OWNS
 --   - the master seed and the RIPTKEY1 sealed key file (Argon2id + secretbox,
@@ -44,7 +55,17 @@ script "RiptideSocial"
 --   - identity -> handle (ed25519 public key, 64 hex) -> .onion address
 --   - the rendezvous derivations: inboxId and roomId
 --   - the RSH1 feed-head and RSP1 post-record framings, build + parse +
---     signature verification, caps enforced on BOTH sides
+--     signature verification, caps enforced on BOTH sides - including,
+--     since 2026-08-23 (backlog A2), the kind-C CHUNKED rail end to end:
+--     the producer split (rsChunkPostText, full 1000-byte chunks by BYTE
+--     - reassembly validates the concatenation, never a chunk alone),
+--     the D-or-C capacity arithmetic (rsPostTextCapacity), the one-call
+--     producer (rsPublishChunkedPost: chunks stored, then the signed
+--     kind-C post naming them), the raw-blob ingest verifier
+--     (rsIngestBlob: content addressing is what extends the authorSig
+--     from the named targets to the fetched bytes), and the reassembling
+--     verify (rsAssembleChunkText: every part re-hashed, the whole
+--     decoded by UTF-8 round trip)
 --   - the LIVE feed layer (phase 2): head publish through the external-
 --     signing seam (btDhtBep44SignBuf semantics rebuilt in script, signed by
 --     sxSignDetached, stored by btDhtPutSigned - the identity secret never
@@ -101,7 +122,10 @@ script "RiptideSocial"
 --     identity from a subkey-100+n seed (rsAnonHandle / rsAnonOnion,
 --     derivable offline), the probe-gated onion-service wrapper
 --     (rsAnonCreateService), the BTXO framed-chunk protocol for files over
---     a Tor stream (rsBtxo*), and rsPersonaAllows - the pure-policy
+--     a Tor stream (rsBtxo* - build AND, since 2026-08-23, RECEIVE:
+--     rsBtxoStreamStep is the pure length-prefix stream state machine,
+--     nocloud's caps ported, fail-closed on hostile lengths), and
+--     rsPersonaAllows - the pure-policy
 --     DEANONYMIZATION GUARD (spec 9.3) every transport branch asserts
 --     through, fail-closed: an anon persona may use ONLY the onion, a
 --     public persona may use anything EXCEPT the anon onion, and an
@@ -194,7 +218,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.10.0"
+constant kRsVersion = "0.11.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -219,6 +243,25 @@ constant kRsLanMaxFile = 255
 constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
+-- the BTXO RECEIVE path's stream caps (A3, 2026-08-23), PORTED from
+-- nocloud's working receiver (kOnionMaxName / kOnionMaxTotal /
+-- kOnionChunk in nocloudquickshare.livecodescript) rather than
+-- re-derived: those three numbers have carried real Tor transfers, and
+-- a re-derivation is exactly the class of constant that drifts. The
+-- name cap refuses BEFORE the name is buffered (anti-DoS: a hostile
+-- u16 nameLen must not make a receiver hold 65535 bytes hostage), the
+-- total is the 8 GiB transfer ceiling, and the chunk cap bounds one
+-- data frame - a length above it is hostile, not big
+constant kRsBtxoMaxName = 1024
+constant kRsBtxoMaxTotal = 8589934592
+constant kRsBtxoChunk = 65536
+-- the sequential-fetch streaming plan (B7, 2026-08-23): once metadata
+-- arrives, the FRONT pieces get libtorrent deadlines (soonest deadlines
+-- win) so the playback head is prioritized against stalls. Eight pieces
+-- spaced a second apart is a PRIMER, not a schedule - sequential mode
+-- already orders the rest, and a player seeking is the app's own re-plan
+constant kRsMediaPlanPieces = 8
+constant kRsMediaPlanSpacingMs = 1000
 -- the POST /dm body: the sealed RSI1 intro as strict lowercase hex -
 -- (48 sxSeal bytes + the 268-byte intro) * 2 hex chars = 632, exactly
 constant kRsAnonDmBodyLen = 632
@@ -1029,6 +1072,114 @@ function rsVerifyPost pBytes, pHandleHex
    end try
 end rsVerifyPost
 
+-- How many UTF-8 text bytes fit a DIRECT (kind-D) post beside pMediaCount
+-- attachments. The arithmetic is the RSP1 layout itself against the BEP44
+-- 1000-byte value cap, published as API so the app's D-or-C decision can
+-- never drift from the builder's refusal - a hand-copied 880 in a demo is
+-- exactly the class of constant this repo keeps finding stale. Returns
+-- the byte budget, or empty on a media count outside 0..8.
+function rsPostTextCapacity pMediaCount
+   local tCount
+   put pMediaCount into tCount
+   if tCount is empty then put 0 into tCount
+   if tCount is not an integer or tCount < 0 or tCount > kRsMaxMedia then
+      rsSetError "rsPostTextCapacity: media count must be 0 to" && kRsMaxMedia
+      return empty
+   end if
+   -- magic(4) + timestamp(8) + prevTarget(40) + kind(1) + textLen(2)
+   -- + mediaCount(1) + 40 per media + authorSig(64), inside kRsMaxRecord
+   return kRsMaxRecord - (4 + 8 + 40 + 1 + 2 + 1 + 64) - 40 * tCount
+end rsPostTextCapacity
+
+-- Split post text into kind-C chunk VALUES: full 1000-byte immutable
+-- items in order, the last one carrying the remainder. The split is by
+-- BYTE, deliberately - a boundary may fall inside a UTF-8 sequence, and
+-- that is fine because reassembly validates and decodes the CONCATENATION,
+-- never a chunk alone (rsAssembleChunkText). The split policy is
+-- producer-local (any 1..16-chunk split of the same bytes reassembles
+-- identically); the CAPS are the wire format's - at most 16 chunks of at
+-- most 1000 bytes, so 16000 UTF-8 bytes is the most text a kind-C post
+-- can carry, refused over (never truncated). Returns a numerically keyed
+-- array (1..count) of chunk byte strings, or empty.
+function rsChunkPostText pTextContent
+   local tBytes, tLen, tPos, tTake, tI, tOut
+   put textEncode(pTextContent, "UTF-8") into tBytes
+   put the number of bytes in tBytes into tLen
+   if tLen < 1 then
+      rsSetError "rsChunkPostText: the text is empty"
+      return empty
+   end if
+   if tLen > kRsMaxChunks * kRsMaxRecord then
+      rsSetError "rsChunkPostText: the text is over" && \
+            kRsMaxChunks * kRsMaxRecord && "UTF-8 bytes (" & kRsMaxChunks && \
+            "chunks of" && kRsMaxRecord & "); refusing, not truncating"
+      return empty
+   end if
+   put 0 into tPos
+   put 0 into tI
+   repeat while tPos < tLen
+      put tLen - tPos into tTake
+      if tTake > kRsMaxRecord then put kRsMaxRecord into tTake
+      add 1 to tI
+      put byte (tPos + 1) to (tPos + tTake) of tBytes into tOut[tI]
+      add tTake to tPos
+   end repeat
+   return tOut
+end rsChunkPostText
+
+-- The reassembling half of the kind-C rail. pChunkTargets is the VERIFIED
+-- post's chunk list (rsParsePost's comma-joined spelling - the order is
+-- the wire's); pParts an array keyed by lowercase 40-hex target holding
+-- the fetched chunk values (rsIngestBlob's output). Every part is
+-- re-verified against its own content address BEFORE a byte of it is
+-- believed - the chunks carry no signature of their own; the authorSig
+-- covers the TARGETS, and the SHA-1 recompute is what extends it to the
+-- bytes - and the CONCATENATION must round-trip as UTF-8 (per-part
+-- validation would refuse valid posts split inside a sequence). Returns
+-- the full text, or empty with the first missing target named - which is
+-- how a caller renders an honest placeholder while parts are in flight.
+function rsAssembleChunkText pChunkTargets, pParts
+   local tCount, tItem, tNorm, tPart, tBytes, tErr
+   set the itemDelimiter to comma
+   put the number of items in pChunkTargets into tCount
+   if tCount < 1 or tCount > kRsMaxChunks then
+      rsSetError "rsAssembleChunkText: chunk count must be 1 to" && \
+            kRsMaxChunks
+      return empty
+   end if
+   put empty into tBytes
+   repeat for each item tItem in pChunkTargets
+      put rsNormalizeTarget(tItem) into tNorm
+      if tNorm is empty or tNorm is kRsZeroTarget then
+         rsSetError "rsAssembleChunkText: a chunk target must be 40" && \
+               "non-zero hex"
+         return empty
+      end if
+      put pParts[tNorm] into tPart
+      if tPart is empty then
+         rsSetError "rsAssembleChunkText: missing chunk" && tNorm
+         return empty
+      end if
+      if rsImmutableTarget(tPart) is not tNorm then
+         rsSetError "rsAssembleChunkText: chunk" && tNorm && \
+               "does not hash to its own target"
+         return empty
+      end if
+      put tPart after tBytes
+   end repeat
+   if not rsBytesAreUtf8(tBytes) then
+      rsSetError "rsAssembleChunkText: the reassembled text is not" && \
+            "valid UTF-8"
+      return empty
+   end if
+   try
+      return textDecode(tBytes, "UTF-8")
+   catch tErr
+      rsSetError "rsAssembleChunkText:" && tErr
+      return empty
+   end try
+end rsAssembleChunkText
+
 --------------------------------------------------------------------------
 -- BEP44 helpers
 --------------------------------------------------------------------------
@@ -1234,6 +1385,38 @@ function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
    return rsParsePost(tValue)
 end rsIngestPost
 
+-- Verify one drained dhtImmutableItem EVENT as a raw content-addressed
+-- blob (a kind-C text chunk, a profileMeta display-name blob): the event
+-- must answer the awaited target, and the value's recomputed SHA-1 must
+-- BE that target - a lying node is refused, and the returned bytes are
+-- exactly the ones the (already verified) record named. This is
+-- rsIngestPost minus the post parse: a blob carries no signature of its
+-- own, and content addressing is what extends the author's signature
+-- from the record that named the target to the fetched bytes. Returns
+-- the value bytes, or empty.
+function rsIngestBlob pEvent, pExpectedTarget
+   local tExpected, tEventTarget, tValue, tComputed
+   put rsNormalizeTarget(pExpectedTarget) into tExpected
+   if tExpected is empty or tExpected is kRsZeroTarget then
+      rsSetError "rsIngestBlob: the expected target must be 40 non-zero" && \
+            "hex chars"
+      return empty
+   end if
+   put toLower(pEvent["target"]) into tEventTarget
+   if tEventTarget is not tExpected then
+      rsSetError "rsIngestBlob: the event names a different target"
+      return empty
+   end if
+   put pEvent["value"] into tValue
+   put rsImmutableTarget(tValue) into tComputed
+   if tComputed is empty then return empty
+   if tComputed is not tExpected then
+      rsSetError "rsIngestBlob: the value does not hash to its own target"
+      return empty
+   end if
+   return tValue
+end rsIngestBlob
+
 --------------------------------------------------------------------------
 -- phase 2 - the live feed layer, session half (spec section 4)
 --
@@ -1354,6 +1537,44 @@ function rsPublishPost pSession, pPostBytes
    end if
    return rsPublishImmutable(pSession, pPostBytes)
 end rsPublishPost
+
+-- The kind-C PRODUCER (backlog A2): split pTextContent into full
+-- immutable chunks, store each, and publish the signed kind-C post that
+-- names them in order. Everything is computed and signed BEFORE the
+-- session is touched (chunk targets are content addresses, re-derivable
+-- offline), so any refusal costs no network writes; a mid-publish
+-- failure leaves already-stored chunks behind as harmless orphans -
+-- content-addressed, author-anonymous immutable items nothing
+-- references. Returns the post's 40-hex target (what the head's
+-- latestPostTarget names, exactly rsPublishPost's contract), or empty.
+function rsPublishChunkedPost pSession, pTimestamp, pPrevTarget, pTextContent, pMediaList, pIdentitySeed
+   local tParts, tCount, tI, tTargets, tPost, tStored
+   put rsChunkPostText(pTextContent) into tParts
+   if tParts is empty then return empty
+   put the number of elements in tParts into tCount
+   put empty into tTargets
+   repeat with tI = 1 to tCount
+      if tTargets is not empty then put comma after tTargets
+      put rsImmutableTarget(tParts[tI]) after tTargets
+   end repeat
+   put rsBuildPostChunked(pTimestamp, pPrevTarget, tTargets, pMediaList, \
+         pIdentitySeed) into tPost
+   if tPost is empty then return empty
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishChunkedPost: pSession is not a live torrent" && \
+            "session handle"
+      return empty
+   end if
+   repeat with tI = 1 to tCount
+      put rsPublishImmutable(pSession, tParts[tI]) into tStored
+      if tStored is empty then
+         rsSetError "rsPublishChunkedPost: chunk" && tI && "of" && \
+               tCount && "refused:" && rsLastError()
+         return empty
+      end if
+   end repeat
+   return rsPublishPost(pSession, tPost)
+end rsPublishChunkedPost
 
 -- Ask the DHT for a followee's current head. Asynchronous: true means the
 -- lookup was accepted; the value arrives as a dhtMutableItem event, which
@@ -1616,6 +1837,62 @@ function rsMediaStatus pTorrent
    end if
    return tS
 end rsMediaStatus
+
+-- The piece-deadline STREAMING PLAN (backlog B7, 2026-08-23), a SEPARATE
+-- step from rsMediaFetch on purpose: the fetch path is btAddMagnet, and
+-- a magnet has NO metadata and NO piece table at add time, so a deadline
+-- set there would name pieces that do not exist. Call this once metadata
+-- has arrived - the app's poll loop sees the metadataReceived event
+-- (rsMediaStatus's filePath turning non-empty is the same moment). It
+-- puts libtorrent deadlines on the FRONT pieces (btSetPieceDeadline:
+-- soonest deadlines win), so the playback head is prioritized against
+-- stalls that plain sequential ordering rides out slowly. A refusal is
+-- always safe to ignore: the fetch stays sequential without it - which
+-- is also the degrade for a torrentxt predating btSetPieceDeadline
+-- (try-guarded, the probe-never-assume rule). Returns the number of
+-- pieces planned, or empty.
+function rsMediaStreamPlan pTorrent
+   local tS, tPieces, tPlan, tI, tCode, tErr
+   if pTorrent is not an integer or pTorrent <= 0 then
+      rsSetError "rsMediaStreamPlan: pTorrent is not a torrent handle"
+      return empty
+   end if
+   try
+      put btTorrentStatus(pTorrent) into tS
+   catch tErr
+      rsSetError "rsMediaStreamPlan: needs torrentxt (btTorrentStatus):" && \
+            tErr
+      return empty
+   end try
+   if the keys of tS is empty then
+      rsSetError "rsMediaStreamPlan: not a live torrent handle"
+      return empty
+   end if
+   put tS["numPieces"] into tPieces
+   if tPieces is not an integer or tPieces < 1 then
+      rsSetError "rsMediaStreamPlan: metadata has not arrived yet (no" && \
+            "piece table to set deadlines on)"
+      return empty
+   end if
+   put tPieces into tPlan
+   if tPlan > kRsMediaPlanPieces then put kRsMediaPlanPieces into tPlan
+   repeat with tI = 0 to tPlan - 1
+      try
+         btSetPieceDeadline pTorrent, tI, (tI + 1) * kRsMediaPlanSpacingMs
+         put the result into tCode
+      catch tErr
+         rsSetError "rsMediaStreamPlan: this torrentxt has no" && \
+               "btSetPieceDeadline (the fetch stays sequential):" && tErr
+         return empty
+      end try
+      if tCode is not 0 then
+         rsSetError "rsMediaStreamPlan: btSetPieceDeadline refused (" & \
+               tCode & ") at piece" && tI
+         return empty
+      end if
+   end repeat
+   return tPlan
+end rsMediaStreamPlan
 
 --------------------------------------------------------------------------
 -- the DM layer (phase 4) - sealed first contact, then a pairwise
@@ -3273,6 +3550,123 @@ end rsBtxoDataFrame
 function rsBtxoTerminator
    return binaryEncode("N", 0)
 end rsBtxoTerminator
+
+-- THE RECEIVE PATH (backlog A3, 2026-08-23): the length-prefix stream
+-- state machine the four builders above never had. Without it a stream
+-- reader cannot find a frame boundary - rsBtxoParseHeader refuses unless
+-- handed EXACTLY the header's bytes, and nothing in this library owns a
+-- socket. So the machine is PURE and single-step, and the APP owns the
+-- buffer: accumulate incoming bytes, call this with the buffer and the
+-- phase ("header" until the header has been consumed, "body" after),
+-- act on the status, delete the consumed bytes from the front, repeat
+-- until "need". One call extracts at most ONE thing - the header, one
+-- data frame, or the terminator - which is what makes reassembly
+-- provable at every byte boundary offline (the harness splits a stream
+-- at every offset and requires identical results).
+--
+-- Returns an array, or empty only on a CALLER bug (a phase this machine
+-- does not have):
+--   status  "need"    - not enough bytes yet; used is 0, wait for more
+--           "header"  - a strict header was consumed; name/total/flags
+--                       ride alongside, used names its byte count
+--           "frame"   - one data frame was consumed; payload alongside
+--           "end"     - the zero-length terminator; the stream is over
+--           "refused" - hostile or malformed; used is 0 and
+--                       rsLastError() says why. ABORT the stream: a
+--                       refused stream has no next boundary to find.
+--   used    bytes consumed from the FRONT of the buffer (0 unless
+--           something was extracted) - `delete byte 1 to used` is the
+--           caller's compaction, nocloud's drain-and-compact discipline.
+--
+-- The caps are nocloud's, ported not re-derived (see kRsBtxoMaxName and
+-- friends above): a nameLen over 1024 refuses BEFORE the name is
+-- awaited, a total over 8 GiB refuses the transfer, and a frame length
+-- over 65536 is hostile - fail closed, never buffer toward a liar's
+-- number.
+function rsBtxoStreamStep pBuffer, pPhase
+   local tLen, tNameLen, tHeaderLen, tParsed, tFrameLen, tOut
+   put the number of bytes in pBuffer into tLen
+   put 0 into tOut["used"]
+   if pPhase is "header" then
+      if tLen < 8 then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      if textDecode(byte 1 to 4 of pBuffer, "ASCII") is not kRsBtxoMagic then
+         rsSetError "rsBtxoStreamStep: bad magic, not a BTXO stream"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if byteToNum(byte 5 of pBuffer) is not kRsBtxoVer then
+         rsSetError "rsBtxoStreamStep: unsupported BTXO version"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put rsReadBEu16(byte 7 to 8 of pBuffer) into tNameLen
+      if tNameLen > kRsBtxoMaxName then
+         rsSetError "rsBtxoStreamStep: header name length" && tNameLen && \
+               "is over the" && kRsBtxoMaxName && "cap (refused before" && \
+               "buffering toward it)"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put 8 + tNameLen + 8 into tHeaderLen
+      if tLen < tHeaderLen then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      -- the strict whole-header parse (magic, version, exact length,
+      -- the UTF-8 round trip on the name) is the EXISTING parser's:
+      -- reuse it on exactly the header's bytes, never re-derive it
+      put rsBtxoParseHeader(byte 1 to tHeaderLen of pBuffer) into tParsed
+      if tParsed is empty then
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if tParsed["total"] > kRsBtxoMaxTotal then
+         rsSetError "rsBtxoStreamStep: total size" && tParsed["total"] && \
+               "is over the" && kRsBtxoMaxTotal && "transfer ceiling"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put "header" into tOut["status"]
+      put tHeaderLen into tOut["used"]
+      put tParsed["name"] into tOut["name"]
+      put tParsed["total"] into tOut["total"]
+      put tParsed["flags"] into tOut["flags"]
+      return tOut
+   end if
+   if pPhase is "body" then
+      if tLen < 4 then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      put rsReadBEu32(byte 1 to 4 of pBuffer) into tFrameLen
+      if tFrameLen is 0 then
+         put "end" into tOut["status"]
+         put 4 into tOut["used"]
+         return tOut
+      end if
+      if tFrameLen > kRsBtxoChunk then
+         rsSetError "rsBtxoStreamStep: frame length" && tFrameLen && \
+               "is over the" && kRsBtxoChunk && "cap - hostile; abort" && \
+               "the stream"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if tLen < 4 + tFrameLen then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      put "frame" into tOut["status"]
+      put 4 + tFrameLen into tOut["used"]
+      put byte 5 to (4 + tFrameLen) of pBuffer into tOut["payload"]
+      return tOut
+   end if
+   rsSetError "rsBtxoStreamStep: pPhase must be" && quote & "header" & \
+         quote && "or" && quote & "body" & quote
+   return empty
+end rsBtxoStreamStep
 
 --------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32

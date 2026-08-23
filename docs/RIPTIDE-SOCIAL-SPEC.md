@@ -526,10 +526,23 @@ DM over rp1 still leaks both IPs.
 
 The single rule that keeps the "anonymous" label honest: **an anon-persona code
 path calls no `bt*` DHT/torrent/rp1 handler, and a public-persona path never
-routes through the anon onion.** Enforce it with a persona-scoped dispatcher —
-the active persona's descriptor carries a boolean `isAnon`, and the transport
-selectors assert on it at every send/publish branch, failing closed (refuse +
-visible message) rather than silently falling back to a clearnet path. This
+routes through the anon onion.** As built (attestation corrected
+2026-08-23): the enforcement point is `rsPersonaAllows(isAnon, transport)`, a
+pure fail-closed policy function - an unknown transport refuses for BOTH
+personas - whose full truth table (all eight transports, both personas, plus
+the unknown-transport refusal) is asserted by the folded suite harness, and
+which the demo's Anon card paints as a LIVE panel read straight from the
+function, so what the user sees cannot drift from what the code enforces. The
+demo asserts it at its two real persona decisions - the dc call dials only if
+`rsPersonaAllows(false, "dc")` passes, and the anon publish serves only if
+`rsPersonaAllows(true, "onion")` does; its other 16 transport call sites sit
+on compile-time public-persona paths with no active-persona state to branch
+on, so a guard call at each would be a constant that can never refuse - and
+the sentence that stood here, claiming the transport selectors assert at
+EVERY send/publish branch, overstated what is built. The normative rule
+stands: an app that adds persona state must route every new transport branch
+through the guard, failing closed (refuse + visible message) rather than
+silently falling back to a clearnet path. This
 mirrors the Model C §7 guard set and is the highest-severity invariant in the
 app.
 

@@ -250,7 +250,7 @@ explicitly declined here with reasons - either outcome is a close.
 
 **Risk retired:** scope creep; the NIP space is unbounded and this member's scope is not.
 
-## Phase 10 - Possible: a headless execution gate for the compute core - OPEN
+## Phase 10 - Possible: a headless execution gate for the compute core - CLOSED 2026-08-23
 
 **Goal:** close the shipped-is-not-run gap for the pure nx* paths without an engine.
 
@@ -269,6 +269,19 @@ which it cannot.
 
 **Risk retired:** an engine pass spent on the class of bug a headless run could have caught for
 free.
+
+**How it closed (2026-08-23):** every Done-when clause, literally. The interpreter was extended
+in coinxt's copy (its home; coinxt's own gate at 300 checks is the additive-regression proof),
+the byte-identical nostrxt copy is drift-gated beside the checker copies, and
+`tools/check-script-vectors.py` runs in the member gate walk (build-all probes the filename
+generically): 81 checks executing the serializer, bech32/NIP-19, the padding table, hex/base64,
+and the complete NIP-44 path over the real committed sibling binaries via ctypes.
+`tools/test-script-vectors.py` seeded four faithful defects and the gate failed on each - the
+adoption bar this phase wrote for itself. Its docstring names the executed surface and the two
+deliberate stand-ins (a deterministic sxRandomBytes, hashlib for the engine's sha1Digest). The
+first run also delivered the phase's promised risk retirement in miniature: a wrong MODEL of
+array comparisons was caught against riptide's engine-proven refusal idiom before it could
+misattribute a defect to healthy code (docs/08 question 9 carries the story).
 
 ## Cross-cutting: what "done" always means
 

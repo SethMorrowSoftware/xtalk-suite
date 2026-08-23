@@ -134,12 +134,21 @@ answer to "whose Schnorr is this".
   sub-licenses, so it is one row in the suite `LICENSE` and one entry in
   [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md), against trezor-crypto's six exceptions.
 
-**What this does NOT deliver, stated so nobody plans around a gap.** There is no BIP-341 sighash
-builder: the `SigMsg` algorithm is not `cxBtcSighashSegwit`'s and is not implemented, so CoinXT can
-receive to Taproot end to end and can sign a 32-byte BIP-341 sighash it is handed, but it cannot
-compute one. Script-path spending is also absent - leaf hashes, merkle proofs and control blocks
-are not built, and the merkle root crosses the API as opaque bytes. Both are additive script-layer
-work over the surface this change adds, not another vendoring.
+**What this did NOT deliver at ABI 6, and what closed on 2026-08-23.** The paragraph that stood
+here named two gaps, and both are now script-layer handlers over the ABI 6 surface, exactly the
+"additive script-layer work, not another vendoring" it predicted. The BIP-341 sighash builder is
+`cxBtcSighashTaproot` (the full `SigMsg`: every base type plus the three ANYONECANPAY forms, the
+tapleaf extension for script-path signing, epoch 0x00 included). Script-path spending's byte work
+is `cxTapLeafHash`, `cxTapBranchHash` and `cxTapControlBlock`, so leaf hashes, the sorted branch
+fold and control blocks are built in script and the merkle root no longer has to cross the API as
+opaque bytes an app computed elsewhere. Three bounds still hold, stated so nobody plans around
+them: there is no OP_CODESEPARATOR support (the extension always writes position 0xffffffff) and
+no annex; tree ASSEMBLY above one fold - choosing a shape and accumulating the path - stays the
+app's loop over `cxTapBranchHash`; and the builder is a builder, not a signer - it returns the
+32-byte digest and the app hands that to `cxSchnorrSign` with the tweaked key, per rule 3's
+signing split. All of it is verified statically and vector-pinned headlessly (the published
+bitcoin/bips wallet vectors, all seven sighashes and all six trees, through
+`tools/check-script-vectors.py`); no OXT pass yet.
 
 **What is NOT changed.** No cryptography is implemented in CoinXT. No operation moved from one
 library to the other. Nothing is reimplemented against both. A future maintainer moving an

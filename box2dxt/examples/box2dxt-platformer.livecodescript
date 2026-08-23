@@ -364,7 +364,9 @@
 --      patrol without falling off; the spike-slime leap to L14 is fair; spinner
 --      timing reads (tune pPerX if frantic); a missing enemies.png leaves the
 --      spinner spots safe but KEEPS the native slimes/frog (still a climb). The
---      win screen says ALL SEVEN LEVELS CLEAR. (Multi-key/switch puzzles: slice 3.)
+--      win screen says ALL SEVEN LEVELS CLEAR. (Multi-key/switch puzzles were
+--      slice 3, and they SHIPPED - into L2, not here; see pfL2Scene and the L7
+--      banner. This line read as a still-to-come pointer; corrected 2026-08-23.)
 -- =====================================================================
 
 -- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
@@ -4941,9 +4943,12 @@ end pfL5Cast
 -- of floating dirt columns. Backdrop is the (also unused) dark
 -- background_solid_dirt. Built on proven L3/L5 recipes (chains ghost-
 -- padded a tile past the art each side; goal-step corners; pits a 64px
--- multiple). Slice 1 reuses the existing slime/snail cast; the block
--- slime and the conveyor (Phase B's headline mechanics) land in the
--- next slices.
+-- multiple). Slice 1 reused the existing slime/snail cast; the block
+-- slime (slice 2) and the conveyor (slice 3) - Phase B's headline
+-- mechanics - SHIPPED into this level: pfMakeConveyor deploys twice in
+-- pfL6Scene, pfMakeBlockSlime twice in pfL6Cast. This banner said they
+-- were still to come long after they landed - corrected 2026-08-23; the
+-- suite's REMAINING-WORK item 1 records the class (labels flip both ways).
 -- =====================================================================
 command pfL6Scene
    local tX

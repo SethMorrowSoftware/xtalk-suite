@@ -73,7 +73,7 @@ Two of the mirrors — `qsEditSafePath` and `qsEditIsLocal` — gate a path that
 
 ### 3. The suite gates (since the 2026-08-13 fold)
 
-The monorepo's cross-member gates walk this directory on every push: **checker-drift** (proves the checker copy above is byte-identical to every member's — which is why `tools/check-livecodescript.py` must **never be edited here alone**; a checker fix is a suite change), **ui-kit-drift** (the carried UI-kit block in the stack must match the suite master byte-for-byte), **handler-calls**, and **stack-size** (the 720p budget). You don't need to run them one by one — run the set the way CI does, from the suite root:
+The monorepo's cross-member gates walk this directory on every push. This guide used to enumerate them ("checker-drift, ui-kit-drift, handler-calls, stack-size"); audited 2026-08-23, that list had gone stale silently - the suite had since grown gates that also read this member (among them demo-selfcheck drift, demo control lists, the timer-defaultStack-pin closure, and the script-to-`.lcb` call-type check, several of which glob every `.livecodescript` in the tree), and a hand-copied list here rots every time one lands (the suite root `CLAUDE.md` records this exact failure shape for hand-copied ABI numbers). The authoritative set is the `== suite: tools/...` block in the suite root's `tools/build-all.sh` - the same set CI runs; read the script, not this paragraph. The one member-specific rule worth restating: `tools/check-livecodescript.py` must **never be edited here alone** - it is the suite's drift-gated unified copy, so a checker fix is a suite change. You don't need to run the gates one by one - run the set the way CI does, from the suite root:
 
 ```sh
 tools/build-all.sh --gates
@@ -127,7 +127,7 @@ If a handler is genuinely all I/O (it opens a socket, reads a file, sets a UI pr
 
 - [ ] `python3 tools/check-livecodescript.py` is clean
 - [ ] `python3 tests/fileserver_golden.py` is OK
-- [ ] The suite gates are clean too: `tools/build-all.sh --gates` at the suite root (checker-drift, ui-kit-drift, handler-calls, stack-size all walk this directory)
+- [ ] The suite gates are clean too: `tools/build-all.sh --gates` at the suite root (that script's suite block is the authoritative gate list; several of its gates walk this directory)
 - [ ] `tools/check-livecodescript.py` was not edited here alone (it is the suite's drift-gated unified copy)
 - [ ] New pure-logic helpers are mirrored + covered in the golden, and listed in its docstring index
 - [ ] Layout changed? `kQsUiVersion` bumped

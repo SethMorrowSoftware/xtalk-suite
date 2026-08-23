@@ -2621,6 +2621,257 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    return cxHash256(tBuf)
 end cxBtcSighashSegwitInner
 
+-- --------------------------------------------------------------------------
+-- BIP-341: the Taproot signature hash and the script-path tree (2026-08-23).
+-- The SPEC.md gap this closes read "there is NO BIP-341 sighash builder;
+-- coinxt signs a sighash it is handed and cannot compute one" - additive
+-- script-layer work over the ABI-6 surface, no shim change, exactly as that
+-- sentence promised. Every value below is pinned to bitcoin/bips'
+-- wallet-test-vectors.json (all 7 keyPathSpending inputs - the full sighash
+-- type set 0/1/2/3/0x81/0x82/0x83 - all 6 script trees' leaf hashes and
+-- merkle roots, and all 12 published control blocks), derived by
+-- tools/coin_reference.py and EXECUTED through this file by
+-- tools/check-script-vectors.py. Rule 3 stands: these build DIGESTS and
+-- byte structures; the app still confirms intent and calls the signer.
+-- --------------------------------------------------------------------------
+
+private function cxTapTagged pTag, pData
+   -- BIP-340/341 tagged hash: sha256(sha256(tag) || sha256(tag) || data).
+   -- The tag doubling is the domain separation; do not "optimise" it away.
+   local tTagHash
+   put cxSha256(pTag) into tTagHash
+   return cxSha256(tTagHash & tTagHash & pData)
+end cxTapTagged
+
+-- The BIP-341 leaf hash: tagged TapLeaf over version || compact_size(script)
+-- || script. pLeafVersion is the EVEN byte from the control block (0xc0 for
+-- tapscript); scripts here stay under 253 bytes, so a longer one is refused
+-- rather than given a wrong one-byte size prefix.
+function cxTapLeafHash pLeafVersion, pScriptHex
+   local tScript
+   if pLeafVersion < 0 or pLeafVersion > 254 or cxIntMod(pLeafVersion, 2) is not 0 then
+      throw "CoinXT: cxTapLeafHash: the leaf version must be an even byte (0xc0 for tapscript)."
+   end if
+   -- 0x50 is even but RESERVED: BIP-341 excludes it because a control block
+   -- starting 0x50 would be ambiguous with the annex marker.
+   if pLeafVersion is 80 then
+      throw "CoinXT: cxTapLeafHash: leaf version 0x50 is reserved (ambiguous with the annex)."
+   end if
+   put cxHexDecode(pScriptHex) into tScript
+   if the number of bytes of tScript >= 253 then
+      throw "CoinXT: cxTapLeafHash: scripts of 253+ bytes are not supported (compact size)."
+   end if
+   return cxHexEncode(cxTapTagged("TapLeaf", numToByte(pLeafVersion) & \
+         numToByte(the number of bytes of tScript) & tScript))
+end cxTapLeafHash
+
+-- A BIP-341 inner node: tagged TapBranch over the two child hashes in
+-- LEXICOGRAPHIC byte order. The sort is the CONSENSUS rule - an unsorted
+-- branch is a different root and a different address - and it compares BYTE
+-- VALUES through cxCompareBytes, never `<` (two hex strings that both look
+-- numeric would compare as numbers; discipline 3).
+function cxTapBranchHash pAHex, pBHex
+   local tA, tB
+   put cxHexDecode(pAHex) into tA
+   put cxHexDecode(pBHex) into tB
+   if the number of bytes of tA is not 32 or the number of bytes of tB is not 32 then
+      throw "CoinXT: cxTapBranchHash: each child must be 32 bytes of hex."
+   end if
+   if cxCompareBytes(tA, tB) > 0 then
+      return cxHexEncode(cxTapTagged("TapBranch", tB & tA))
+   end if
+   return cxHexEncode(cxTapTagged("TapBranch", tA & tB))
+end cxTapBranchHash
+
+-- The script-path control block: (leafVersion | parity) || internal x-only
+-- key || the merkle path (the SIBLING hashes from the leaf to the root, in
+-- leaf-to-root order, as a comma list of 64-hex; empty for a single-leaf
+-- tree). pParity is the 0/1 the tweak reported (cxTaprootTweak's "parity").
+function cxTapControlBlock pLeafVersion, pParity, pInternalKeyHex, pPathHex
+   local tError
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxTapControlBlockInner(pLeafVersion, pParity, pInternalKeyHex, pPathHex) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxTapControlBlock
+
+private function cxTapControlBlockInner pLeafVersion, pParity, pInternalKeyHex, pPathHex
+   local tKey, tBuf, tI, tNode
+   if pLeafVersion < 0 or pLeafVersion > 254 or cxIntMod(pLeafVersion, 2) is not 0 then
+      throw "CoinXT: cxTapControlBlock: the leaf version must be an even byte."
+   end if
+   -- the 0x50 refusal is not pedantry here: a control block whose FIRST BYTE
+   -- is 0x50 is exactly what BIP-341 reserves the value to avoid, because a
+   -- witness element starting 0x50 is read as the annex.
+   if pLeafVersion is 80 then
+      throw "CoinXT: cxTapControlBlock: leaf version 0x50 is reserved (ambiguous with the annex)."
+   end if
+   if pParity is not 0 and pParity is not 1 then
+      throw "CoinXT: cxTapControlBlock: the parity must be 0 or 1 (the tweak's own report)."
+   end if
+   put cxHexDecode(pInternalKeyHex) into tKey
+   if the number of bytes of tKey is not 32 then
+      throw "CoinXT: cxTapControlBlock: the internal key must be 32 bytes of hex (x-only)."
+   end if
+   put numToByte(pLeafVersion + pParity) & tKey into tBuf
+   if pPathHex is not "" then
+      -- BIP-341 caps a control block at 33 + 32*128 bytes; a longer path is
+      -- not a bigger tree, it is an invalid witness element.
+      if the number of items of pPathHex > 128 then
+         throw "CoinXT: cxTapControlBlock: a merkle path is at most 128 nodes (BIP-341)."
+      end if
+      repeat with tI = 1 to the number of items of pPathHex
+         put cxHexDecode(item tI of pPathHex) into tNode
+         if the number of bytes of tNode is not 32 then
+            throw "CoinXT: cxTapControlBlock: every path element must be 32 bytes of hex."
+         end if
+         put tBuf & tNode into tBuf
+      end repeat
+   end if
+   return cxHexEncode(tBuf)
+end cxTapControlBlockInner
+
+-- The BIP-341 signature hash. Unlike BIP-143 it commits to EVERY spent
+-- output, so beside the outpoint and sequence lists it takes the PER-INPUT
+-- amounts and scriptPubKeys of everything the transaction spends (parallel
+-- comma lists, one item per input, none of them optional). pOutputs is the
+-- serialized outputs as in the segwit form. pTapleafHex chooses the path:
+-- empty for key-path, the 64-hex cxTapLeafHash for script-path spending
+-- (key_version 0, no OP_CODESEPARATOR - codesep position 0xffffffff - the
+-- common tapscript case; a script using OP_CODESEPARATOR needs a builder
+-- this layer does not have, and says so rather than guessing). No annex.
+-- The full type set IS implemented here - 0 (default), 1, 2, 3 and their
+-- ANYONECANPAY forms - each pinned to a published keyPathSpending vector,
+-- which is what the segwit builder's SIGHASH_ALL-only refusal said the
+-- variants would need before they could exist.
+function cxBtcSighashTaproot pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
+   local tError
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashTaprootInner(pVersion, pOutpoints, pSequences, pAmountsSat, \
+            pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashTaproot
+
+private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
+   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount
+   -- the valid type set is BIP-341's own: 0x80 alone is NOT a type.
+   if pSighashType is not 0 and pSighashType is not 1 and pSighashType is not 2 \
+         and pSighashType is not 3 and pSighashType is not 129 \
+         and pSighashType is not 130 and pSighashType is not 131 then
+      throw "CoinXT: cxBtcSighashTaproot: invalid sighash type (0, 1, 2, 3, 0x81, 0x82 or 0x83)."
+   end if
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 then
+      throw "CoinXT: cxBtcSighashTaproot: the outpoint list is empty."
+   end if
+   -- BIP-341 commits to every spent output, so all four per-input lists must
+   -- be parallel. No item may be empty (every input HAS an amount and a
+   -- scriptPubKey), so a trailing-empty item - which the engine's chunk rule
+   -- would count short - is malformed here and the strict count guard is the
+   -- right one, unlike the tx encoder's deliberately-loose scriptSig list.
+   if the number of items of pSequences is not tCount \
+         or the number of items of pAmountsSat is not tCount \
+         or the number of items of pScriptPubkeys is not tCount then
+      throw "CoinXT: cxBtcSighashTaproot: the outpoint, sequence, amount and scriptPubKey lists must be parallel."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashTaproot: the input index is out of range (it is 1-based)."
+   end if
+   put 0 into tAnyoneCanPay
+   put pSighashType into tBase
+   if pSighashType >= 129 then
+      put 1 into tAnyoneCanPay
+      put pSighashType - 128 into tBase
+   end if
+   if tBase is 3 and pIndex > the number of items of pOutputs then
+      throw "CoinXT: cxBtcSighashTaproot: SIGHASH_SINGLE with no matching output is invalid under BIP-341."
+   end if
+   -- epoch 0x00, then the type, version and locktime.
+   put numToByte(0) & numToByte(pSighashType) into tBuf
+   put tBuf & cxUIntToBytesLE(pVersion, 4) & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   if tAnyoneCanPay is 0 then
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxHexDecode(item tI of pOutpoints) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxUIntToBytesLE(item tI of pAmountsSat, 8) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put cxHexDecode(item tI of pScriptPubkeys) into tSpk
+         put tRaw & cxVarInt(the number of bytes of tSpk) & tSpk into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxUIntToBytesLE(item tI of pSequences, 4) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+   end if
+   if tBase is not 2 and tBase is not 3 then
+      put "" into tRaw
+      put the number of items of pOutputs into tOutCount
+      repeat with tI = 1 to tOutCount
+         put tRaw & cxHexDecode(item tI of pOutputs) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+   end if
+   -- spend_type: ext_flag (1 for script path) * 2 + annex_present (never).
+   if pTapleafHex is "" then
+      put tBuf & numToByte(0) into tBuf
+   else
+      put tBuf & numToByte(2) into tBuf
+   end if
+   if tAnyoneCanPay is 1 then
+      put cxHexDecode(item pIndex of pScriptPubkeys) into tSpk
+      put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+      put tBuf & cxUIntToBytesLE(item pIndex of pAmountsSat, 8) into tBuf
+      put tBuf & cxVarInt(the number of bytes of tSpk) & tSpk into tBuf
+      put tBuf & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   else
+      put tBuf & cxUIntToBytesLE(pIndex - 1, 4) into tBuf
+   end if
+   if tBase is 3 then
+      put tBuf & cxSha256(cxHexDecode(item pIndex of pOutputs)) into tBuf
+   end if
+   if pTapleafHex is not "" then
+      put cxHexDecode(pTapleafHex) into tLeaf
+      if the number of bytes of tLeaf is not 32 then
+         throw "CoinXT: cxBtcSighashTaproot: the tapleaf hash must be 32 bytes of hex (cxTapLeafHash)."
+      end if
+      put tBuf & tLeaf & numToByte(0) into tBuf
+      put tBuf & numToByte(255) & numToByte(255) & numToByte(255) & numToByte(255) into tBuf
+   end if
+   return cxTapTagged("TapSighash", tBuf)
+end cxBtcSighashTaprootInner
+
 -- A serialized SegWit witness stack for one input: the CompactSize item count,
 -- then each item as CompactSize-length + bytes. pItems is a comma list of item
 -- hex (empty string for an input with no witness).
@@ -3082,6 +3333,25 @@ constant kTxScriptSig0 = "4830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf3
 constant kTxWitness1 = "0247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
 constant kTxSignedRaw = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
 constant kTxTxid = "e8151a2af31c368a35053ddd4bdb285a8595c769a3ad83e0fa02314a602d4609"
+
+-- BIP-341 (2026-08-23). The tree pieces are the PUBLISHED wallet-test-vectors
+-- values (scriptPubKey vector with the two-leaf tree; the 0xfa leaf version is
+-- the vectors' own unusual-but-legal case); the two sighashes are DERIVED by
+-- tools/coin_reference.py over a one-input transaction reusing kTxid0/kTxOut0,
+-- because the published keyPathSpending tx is nine inputs of fixture - the
+-- FULL published sweep (all 7 inputs, all 6 trees, all 12 control blocks) is
+-- executed on every build by tools/check-script-vectors.py, and this section
+-- pins one engine-checkable case per handler on top of it.
+constant kTapInternal = "ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592"
+constant kTapLeafScript0 = "20387671353e273264c495656e27e39ba899ea8fee3bb69fb2a680e22093447d48ac"
+constant kTapLeafScript1 = "06424950333431"
+constant kTapLeafHash0 = "8ad69ec7cf41c2a4001fd1f738bf1e505ce2277acdcaa63fe4765192497f47a7"
+constant kTapLeafHash1 = "f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a"
+constant kTapMerkleRoot = "6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef"
+constant kTapControlBlock0 = "c0ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a"
+constant kTapSpk = "5120712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5"
+constant kTapSighashKeyPath = "b381cd222933416aa1b7b8854446926452ee7f2407f9d0a9fba0c924a8e0f3ac"
+constant kTapSighashScriptPath = "51f1c8afa1e5ad26f0f97c23ada20a4dfd88afaa75ba4b0e478fe9424837a4fb"
 constant kEthSeckey = "4646464646464646464646464646464646464646464646464646464646464646"
 constant kEthTo = "3535353535353535353535353535353535353535"
 constant kEthGasPrice = "04a817c800"
@@ -3472,6 +3742,7 @@ command stRun
    stRunBip32
    stRunBip44
    stRunTransactions
+   stRunTaproot341
    stRunSchnorr
    stRunTaproot
    stRunFailOpen
@@ -4738,6 +5009,61 @@ command stRunTransactions
       stSectionFailed "transactions", tError
    end try
 end stRunTransactions
+
+command stRunTaproot341
+   local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local tOutpoint, tLeaf0, tLeaf1, tRoot, tD0, tD1
+   stSection "BIP-341: taproot sighash + script tree"
+   try
+      -- the published two-leaf tree: leaf hashes (the 0xfa version included),
+      -- the sorted branch fold, and the published control block byte for byte.
+      put cxTapLeafHash(192, kTapLeafScript0) into tLeaf0
+      stAssert "leaf 0 hashes to the published TapLeaf value", tLeaf0 is kTapLeafHash0
+      put cxTapLeafHash(250, kTapLeafScript1) into tLeaf1
+      stAssert "leaf 1 (version 0xfa) hashes to the published value", tLeaf1 is kTapLeafHash1
+      stAssert "the branch folds to the published merkle root (sorted)", \
+            cxTapBranchHash(tLeaf0, tLeaf1) is kTapMerkleRoot
+      stAssert "the argument order cannot change the root (the sort is inside)", \
+            cxTapBranchHash(tLeaf1, tLeaf0) is kTapMerkleRoot
+      stAssert "the control block assembles to the published bytes", \
+            cxTapControlBlock(192, 0, kTapInternal, kTapLeafHash1) is kTapControlBlock0
+      -- the sighash builder, one derived case per path over kTxid0/kTxOut0.
+      put cxHexEncode(cxBtcOutpoint(kTxid0, 0)) into tOutpoint
+      put cxBtcSighashTaproot(2, tOutpoint, "4294967294", "50000", kTapSpk, kTxOut0, 1, 0, 0, "") into tD0
+      stAssert "the key-path sighash matches the derived vector", cxHexEncode(tD0) is kTapSighashKeyPath
+      put cxBtcSighashTaproot(2, tOutpoint, "4294967294", "50000", kTapSpk, kTxOut0, 1, 0, 0, tLeaf0) into tD1
+      stAssert "the script-path sighash matches (tapleaf extension)", cxHexEncode(tD1) is kTapSighashScriptPath
+      stAssert "and the two paths genuinely differ", cxHexEncode(tD0) is not cxHexEncode(tD1)
+      -- the refusals that make the builder safe to hold.
+      stAssert "0x80 alone is refused (not a BIP-341 type)", \
+            stThrowsTaproot(tOutpoint, 1, 128, "")
+      stAssert "SIGHASH_SINGLE past the last output is refused", \
+            stThrowsTaproot(tOutpoint, 1, 3, "single-past-end")
+      stAssert "an odd leaf version is refused", stThrows2("cxTapLeafHash", 193, "51")
+      stAssert "leaf version 0x50 is refused (annex ambiguity)", \
+            stThrows2("cxTapLeafHash", 80, "51")
+   catch tError
+      stSectionFailed "BIP-341", tError
+   end try
+end stRunTaproot341
+
+-- The taproot refusal probe: builds the argument list the two negatives need.
+-- The SINGLE-past-the-end case uses an EMPTY outputs list with index 1 + type
+-- 3, so there is no output for the signed input - the invalid-under-BIP-341
+-- shape (pre-taproot it silently signed the number 1).
+private function stThrowsTaproot pOutpoint, pIndex, pType, pMode
+   local tError, tOutputs
+   put kTxOut0 into tOutputs
+   if pMode is "single-past-end" then
+      put "" into tOutputs
+   end if
+   try
+      get cxBtcSighashTaproot(2, pOutpoint, "4294967294", "50000", kTapSpk, tOutputs, pIndex, 0, pType, "")
+   catch tError
+      return true
+   end try
+   return false
+end stThrowsTaproot
 
 -- ==============================================================================
 -- The fail-closed regression set. Read the note above its constants: each of

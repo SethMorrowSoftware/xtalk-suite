@@ -23,9 +23,14 @@ liveness layer (street checkpoints, show/muck, online History, host election —
 since v0.23.0, act timers with a per-hand time-bank, sit-out/return, late-join
 seating, and onion auto-redial), plus the Phase 3 deck oracle, the Phase 4a-4d
 Level 2 layer (compute + void-and-audit) with its 4e adversarial harness, and Phase
-5's DLEQ proofs — one paste-and-run stack, at v0.24.5, sized 1024x640 inside
+5's DLEQ proofs — one paste-and-run stack, at v0.25.0, sized 1024x640 inside
 the suite's 720p budget (re-layout verified by rect arithmetic; the confirming eye
-is the OXT pass's). v0.24.0 is a correction pass over that liveness layer: ten
+is the OXT pass's). v0.25.0 (2026-08-23) batches the Level 2 shuffle-mask step on
+SodiumXT ABI 9 - one atomic `sxRistrettoScalarMultBatch` crossing for all 52 mults,
+4 FFI crossings per step against the per-point loop's ~312, with that loop kept as
+the pre-ABI-9 fallback AND the refusal path so no void string changes - and adds the
+leaf-tranche harness section (no wire change; the deal-delivery wire bodies gained
+their own protocol-kat pins the same day). v0.24.0 is a correction pass over that liveness layer: ten
 reviewed defects (a redial that could kill the host election, a catching-up client
 that refused every later timeout, consensus state written around folds the engine
 had refused, a table parked for sit-outs that could never resume, ghost seats for

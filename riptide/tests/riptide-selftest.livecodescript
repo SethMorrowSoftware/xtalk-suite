@@ -31,8 +31,11 @@ constant kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162eb7f
 constant kRsGoldRoomSalt = "golden-salt"
 constant kRsGoldPost1Text = "hello, riptide"
 constant kRsGoldPost2Text = "second post"
+constant kRsGoldChunk1Text = "chunked text, part one; "
+constant kRsGoldChunk2Text = "part two closes the record."
 constant kRsGoldTs1 = "1754870400"
 constant kRsGoldTs2 = "1754870460"
+constant kRsGoldTs3 = "1754870760"
 constant kRsGoldDmTs = "1754870520"
 constant kRsGoldMsgTs = "1754870580"
 constant kRsGoldDmMsgText = "hello, dm"
@@ -68,6 +71,10 @@ constant kRsGoldPost1Hex = "5253503100000000689932803030303030303030303030303030
 constant kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
 constant kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
+constant kRsGoldChunk1Target = "b9122511adc47fd591ae37523f47a3b0ff8bb837"
+constant kRsGoldChunk2Target = "6b30810b837c9d22db507c3c62988f70eac7fc92"
+constant kRsGoldPostCHex = "5253503100000000689933e83231643031383038353565663437303834666438613938323566346563383531363630383136316143026239313232353131616463343766643539316165333735323366343761336230666638626238333736623330383130623833376339643232646235303763336336323938386637306561633766633932016565656565656565656565656565656565656565656565656565656565656565656565656565656596faa39d774097d62eea9ef9c06a04aecbabde8aac498055164a52fb1bc8a3f54ecae3058bf235eb5024e867f730321400d199072e35676554bfd186fb317508"
+constant kRsGoldPostCTarget = "d7d0cb72bc85a5dd4f35523bb442a484ca108373"
 constant kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
@@ -121,6 +128,7 @@ function rsSelfTest
       rstSectionKeyFile
       rstSectionHead
       rstSectionPosts
+      rstSectionChunked tCaps
       rstSectionHelpers
       rstSectionBep44
       rstSectionIngest
@@ -128,6 +136,7 @@ function rsSelfTest
       rstSectionLan
       rstSectionLanSync
       rstSectionAnon tCaps
+      rstSectionBtxoStream
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
    else
@@ -449,6 +458,156 @@ private command rstSectionPosts
    rstCheck (rsBuildPost(-5, empty, "x", empty, tSeed) is empty), \
          "a negative timestamp is refused"
 end rstSectionPosts
+
+-- The kind-C chunked-post rail END TO END (backlog A2, 2026-08-23): the
+-- wire format's golden pin (it was the last unpinned riptide format),
+-- the producer split, the raw-blob ingest verifier, and the reassembling
+-- verify. The live tail stores real chunks on the local session where
+-- torrentxt is present; nothing waits on a network.
+private command rstSectionChunked pCaps
+   local tSeed, tPost, tParsed, tPartsIn, tText, tBig, tHuge, tPad
+   local tSplit, tParts, tTargets, tI, tEvent, tSession, tTarget
+   rstSection "phase 2b - the kind-C chunked-post rail"
+   put rstBin(kRsGoldIdSeedHex) into tSeed
+   -- the golden pin: chunk values are the chosen texts' UTF-8 bytes,
+   -- their targets content addresses, the record byte-for-byte
+   rstCheck (rsImmutableTarget(textEncode(kRsGoldChunk1Text, "UTF-8")) is \
+         kRsGoldChunk1Target), "chunk 1's content address matches golden"
+   rstCheck (rsImmutableTarget(textEncode(kRsGoldChunk2Text, "UTF-8")) is \
+         kRsGoldChunk2Target), "chunk 2's content address matches golden"
+   put rsBuildPostChunked(kRsGoldTs3, kRsGoldPost2Target, \
+         kRsGoldChunk1Target & comma & kRsGoldChunk2Target, \
+         kRsGoldMediaTarget, tSeed) into tPost
+   rstCheck (rstHex(tPost) is kRsGoldPostCHex), \
+         "the kind-C post bytes match golden (the wire format is pinned)"
+   rstCheck (rstHex(sha1Digest(rsBencodeBytes(tPost))) is \
+         kRsGoldPostCTarget), "its DHT target re-derives via SHA-1"
+   rstCheck (rsVerifyPost(tPost, kRsGoldHandle) is true), \
+         "the golden kind-C post verifies under the golden handle"
+   put rsParsePost(tPost) into tParsed
+   rstCheck (tParsed["mediaTargets"] is kRsGoldMediaTarget), \
+         "the media attachment parses BEHIND the chunk list"
+   -- the reassembling verify: parts keyed by target, each re-hashed
+   -- before a byte is believed, the CONCATENATION decoded as one buffer
+   put textEncode(kRsGoldChunk1Text, "UTF-8") into \
+         tPartsIn[kRsGoldChunk1Target]
+   put textEncode(kRsGoldChunk2Text, "UTF-8") into \
+         tPartsIn[kRsGoldChunk2Target]
+   put rsAssembleChunkText(tParsed["chunkTargets"], tPartsIn) into tText
+   rstCheck (tText is kRsGoldChunk1Text & kRsGoldChunk2Text), \
+         "the chunks reassemble to the full text in wire order"
+   put rstFlipByte(tPartsIn[kRsGoldChunk2Target], 3) into \
+         tPartsIn[kRsGoldChunk2Target]
+   rstCheck (rsAssembleChunkText(tParsed["chunkTargets"], tPartsIn) is \
+         empty), "a tampered chunk fails its own content address"
+   delete variable tPartsIn[kRsGoldChunk2Target]
+   rstCheck (rsAssembleChunkText(tParsed["chunkTargets"], tPartsIn) is \
+         empty), "a missing chunk refuses (the honest-placeholder path)"
+   rstCheck (rsLastError() contains kRsGoldChunk2Target), \
+         "and the refusal names WHICH chunk is missing"
+   -- the capacity arithmetic the app's D-or-C decision rides on
+   rstCheck (rsPostTextCapacity(0) is 880), \
+         "capacity with no media is 880 bytes"
+   rstCheck (rsPostTextCapacity(8) is 560), \
+         "each attachment costs its 40-hex spelling"
+   rstCheck (rsPostTextCapacity(9) is empty), \
+         "a media count over the cap is refused"
+   put "x" into tHuge
+   repeat 14 times
+      put tHuge & tHuge into tHuge
+   end repeat
+   rstCheck (rsBuildPost(1, empty, char 1 to 880 of tHuge, empty, tSeed) \
+         is not empty), "a direct post takes exactly the stated capacity"
+   rstCheck (rsBuildPost(1, empty, char 1 to 881 of tHuge, empty, tSeed) \
+         is empty), "and refuses one byte more"
+   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   put empty into tBig
+   repeat 250 times
+      put "0123456789" after tBig
+   end repeat
+   put rsChunkPostText(tBig) into tParts
+   rstCheck (the number of elements in tParts is 3), \
+         "2500 bytes split into three chunks"
+   rstCheck (the number of bytes in tParts[1] is 1000 and \
+         the number of bytes in tParts[2] is 1000 and \
+         the number of bytes in tParts[3] is 500), \
+         "full chunks first, the remainder last"
+   rstCheck (tParts[1] & tParts[2] & tParts[3] is \
+         textEncode(tBig, "UTF-8")), "and nothing is lost or reordered"
+   rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
+   rstCheck (rsChunkPostText(tHuge) is empty), \
+         "text over 16000 UTF-8 bytes is refused, never truncated"
+   -- 16 is the wire's kRsMaxChunks; a library constant is not visible
+   -- from this separate script, and the number here is the FORMAT's
+   rstCheck ((the number of elements in \
+         rsChunkPostText(char 1 to 16000 of tHuge)) is 16), \
+         "exactly 16000 bytes takes exactly 16 chunks"
+   -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
+   -- the reassembly (which validates the concatenation, never a part
+   -- alone) must reproduce the text exactly
+   put empty into tPad
+   repeat 999 times
+      put "a" after tPad
+   end repeat
+   put tPad & textDecode(rstBin("c3a9"), "UTF-8") into tSplit
+   put rsChunkPostText(tSplit) into tParts
+   rstCheck (the number of elements in tParts is 2 and \
+         the number of bytes in tParts[2] is 1), \
+         "a multi-byte character splits across the chunk boundary"
+   put empty into tTargets
+   put empty into tPartsIn
+   repeat with tI = 1 to the number of elements in tParts
+      if tTargets is not empty then put comma after tTargets
+      put rsImmutableTarget(tParts[tI]) after tTargets
+      put tParts[tI] into tPartsIn[rsImmutableTarget(tParts[tI])]
+   end repeat
+   rstCheck (rsAssembleChunkText(tTargets, tPartsIn) is tSplit), \
+         "and reassembly reproduces the text across that boundary"
+   -- the raw-blob ingest verifier (synthetic drained events, the
+   -- rstSectionIngest convention)
+   put kRsGoldChunk1Target into tEvent["target"]
+   put textEncode(kRsGoldChunk1Text, "UTF-8") into tEvent["value"]
+   rstCheck (rsIngestBlob(tEvent, kRsGoldChunk1Target) is \
+         textEncode(kRsGoldChunk1Text, "UTF-8")), \
+         "rsIngestBlob returns the verified chunk bytes"
+   rstCheck (rsIngestBlob(tEvent, kRsGoldChunk2Target) is empty), \
+         "an event for a different target is refused"
+   put textEncode(kRsGoldChunk2Text, "UTF-8") into tEvent["value"]
+   rstCheck (rsIngestBlob(tEvent, kRsGoldChunk1Target) is empty), \
+         "a value that does not hash to its target is refused (lying node)"
+   rstCheck (rsIngestBlob(tEvent, rsZeroTarget()) is empty), \
+         "the zero target is refused"
+   -- the producer's refusal paths run with no torrentxt at all
+   rstCheck (rsPublishChunkedPost(0, kRsGoldTs3, empty, "hi", empty, \
+         tSeed) is empty), \
+         "rsPublishChunkedPost refuses a dead session handle"
+   rstCheck (rsLastError() contains "session"), "and says why"
+   rstCheck (rsPublishChunkedPost(0, kRsGoldTs3, empty, empty, empty, \
+         tSeed) is empty), "and refuses empty text before the session"
+   if pCaps["hasTorrent"] is not true then
+      rstSkip "chunked-post store on a session: torrentxt is not installed"
+      exit rstSectionChunked
+   end if
+   put rstAcquireSession() into tSession
+   if tSession is 0 then
+      rstSkip "chunked-post store on a session: could not start a session"
+      exit rstSectionChunked
+   end if
+   -- deterministic inputs, so the stored target must equal the offline
+   -- recomputation of the exact record the producer had to build
+   put rsPublishChunkedPost(tSession, kRsGoldTs3, empty, tBig, empty, \
+         tSeed) into tTarget
+   put rsChunkPostText(tBig) into tParts
+   put empty into tTargets
+   repeat with tI = 1 to the number of elements in tParts
+      if tTargets is not empty then put comma after tTargets
+      put rsImmutableTarget(tParts[tI]) after tTargets
+   end repeat
+   put rsBuildPostChunked(kRsGoldTs3, empty, tTargets, empty, tSeed) \
+         into tPost
+   rstCheck (tTarget is rsImmutableTarget(tPost)), \
+         "the stored kind-C target equals the offline recomputation"
+end rstSectionChunked
 
 private command rstSectionHelpers
    local tValue
@@ -777,6 +936,137 @@ private command rstSectionAnon pCaps
    rstSkip "anon onion SERVING (the / page, /prekey, POST /dm as routes):" && \
          "needs onion-httpd + a live tor daemon"
 end rstSectionAnon
+
+-- The BTXO RECEIVE path (backlog A3, 2026-08-23): rsBtxoStreamStep, the
+-- pure length-prefix stream state machine. Entirely offline: the whole
+-- point is that boundary-finding, caps, and refusal shapes are provable
+-- without a Tor stream, so the scarce live-Tor slot spends its minutes on
+-- reachability instead of parser bugs. The caps are nocloud's, ported.
+private command rstSectionBtxoStream
+   local tStream, tBuf, tStep, tPhase, tGotName, tGotTotal, tPayloads
+   local tSawEnd, tRefused, tI, tHostile
+   rstSection "phase 7b - the BTXO receive path (stream reassembly)"
+   -- a full golden stream: header + one data frame + the terminator
+   put rstBin(kRsGoldBtxoHeaderHex) & rstBin(kRsGoldBtxoFrameHex) & \
+         rsBtxoTerminator() into tStream
+   -- (1) whole-buffer: three steps, exact consumption, nothing left over
+   put tStream into tBuf
+   put rsBtxoStreamStep(tBuf, "header") into tStep
+   rstCheck (tStep["status"] is "header" and tStep["name"] is \
+         "secret.txt" and tStep["total"] is 11 and tStep["flags"] is 0), \
+         "step 1 consumes the header and reports name/total/flags"
+   rstCheck (tStep["used"] is the number of bytes in \
+         rstBin(kRsGoldBtxoHeaderHex)), \
+         "and used names exactly the header's bytes"
+   delete byte 1 to tStep["used"] of tBuf
+   put rsBtxoStreamStep(tBuf, "body") into tStep
+   rstCheck (tStep["status"] is "frame" and tStep["payload"] is \
+         textEncode("hello world", "ASCII")), \
+         "step 2 extracts exactly one data frame"
+   delete byte 1 to tStep["used"] of tBuf
+   put rsBtxoStreamStep(tBuf, "body") into tStep
+   rstCheck (tStep["status"] is "end" and tStep["used"] is 4), \
+         "step 3 sees the zero-length terminator"
+   delete byte 1 to tStep["used"] of tBuf
+   rstCheck (the number of bytes in tBuf is 0), \
+         "nothing is left over after the terminator"
+   -- (2) EVERY byte boundary: feed the same stream one byte at a time
+   -- and require the identical header, payload, and end - the arrival
+   -- pattern must never change the answer
+   put empty into tBuf
+   put "header" into tPhase
+   put empty into tGotName
+   put empty into tPayloads
+   put false into tSawEnd
+   put false into tRefused
+   repeat with tI = 1 to the number of bytes in tStream
+      put byte tI of tStream after tBuf
+      repeat forever
+         put rsBtxoStreamStep(tBuf, tPhase) into tStep
+         if tStep["status"] is "need" then
+            exit repeat
+         end if
+         if tStep["status"] is "refused" then
+            put true into tRefused
+            exit repeat
+         end if
+         if tStep["status"] is "header" then
+            put tStep["name"] into tGotName
+            put tStep["total"] into tGotTotal
+            put "body" into tPhase
+         else if tStep["status"] is "frame" then
+            put tStep["payload"] after tPayloads
+         else if tStep["status"] is "end" then
+            put true into tSawEnd
+         end if
+         delete byte 1 to tStep["used"] of tBuf
+      end repeat
+   end repeat
+   rstCheck (tGotName is "secret.txt" and tGotTotal is 11), \
+         "byte-at-a-time arrival yields the same header"
+   rstCheck (tPayloads is textEncode("hello world", "ASCII")), \
+         "and the same reassembled payload"
+   rstCheck (tSawEnd is true and tRefused is false and \
+         the number of bytes in tBuf is 0), \
+         "and the same clean end, with nothing refused or left over"
+   -- (3) concatenated frames: one call extracts exactly one frame and
+   -- keeps the remainder
+   put rstBin(kRsGoldBtxoFrameHex) & rstBin(kRsGoldBtxoFrameHex) into tBuf
+   put rsBtxoStreamStep(tBuf, "body") into tStep
+   rstCheck (tStep["status"] is "frame" and tStep["used"] is \
+         (the number of bytes in tBuf) div 2), \
+         "two concatenated frames: the first extracts alone"
+   delete byte 1 to tStep["used"] of tBuf
+   put rsBtxoStreamStep(tBuf, "body") into tStep
+   rstCheck (tStep["status"] is "frame" and tStep["payload"] is \
+         textEncode("hello world", "ASCII")), \
+         "and the remainder is exactly the second frame"
+   -- (4) the fail-closed refusals, each with used 0 (never consume
+   -- toward a hostile boundary)
+   put binaryEncode("N", 65537) & textEncode("x", "ASCII") into tHostile
+   put rsBtxoStreamStep(tHostile, "body") into tStep
+   rstCheck (tStep["status"] is "refused" and tStep["used"] is 0), \
+         "a frame length over the 65536 cap is refused (hostile length)"
+   -- a hostile nameLen refuses on the FIRST 8 BYTES, before the name
+   -- would ever be buffered (the anti-DoS half of the cap)
+   put textEncode("BTXO", "ASCII") & numToByte(1) & numToByte(0) & \
+         binaryEncode("n", 2000) into tHostile
+   put rsBtxoStreamStep(tHostile, "header") into tStep
+   rstCheck (tStep["status"] is "refused"), \
+         "a name length over 1024 is refused before the name arrives"
+   -- a total over the 8 GiB ceiling (hi u32 = 2, lo u32 = 1)
+   put textEncode("BTXO", "ASCII") & numToByte(1) & numToByte(0) & \
+         binaryEncode("n", 1) & textEncode("a", "ASCII") & \
+         binaryEncode("NN", 2, 1) into tHostile
+   put rsBtxoStreamStep(tHostile, "header") into tStep
+   rstCheck (tStep["status"] is "refused"), \
+         "a total over the 8 GiB transfer ceiling is refused"
+   put textEncode("XXXXXXXX", "ASCII") into tHostile
+   put rsBtxoStreamStep(tHostile, "header") into tStep
+   rstCheck (tStep["status"] is "refused"), "a bad magic is refused"
+   put textEncode("BTXO", "ASCII") & numToByte(9) & numToByte(0) & \
+         binaryEncode("n", 1) into tHostile
+   put rsBtxoStreamStep(tHostile, "header") into tStep
+   rstCheck (tStep["status"] is "refused"), \
+         "an unsupported version is refused"
+   -- a header whose name bytes are invalid UTF-8 reaches the strict
+   -- parse and is refused, not thrown (the never-throw contract, reused)
+   put rstBin("4254584f01000001ff000000000000000b") into tHostile
+   put rsBtxoStreamStep(tHostile, "header") into tStep
+   rstCheck (tStep["status"] is "refused"), \
+         "a non-UTF-8 name is refused through the strict parse"
+   -- incompleteness is "need", never a guess
+   put rsBtxoStreamStep(byte 1 to 3 of tStream, "header") into tStep
+   rstCheck (tStep["status"] is "need"), \
+         "three bytes of header is need, not a verdict"
+   put binaryEncode("N", 5) & textEncode("ab", "ASCII") into tHostile
+   put rsBtxoStreamStep(tHostile, "body") into tStep
+   rstCheck (tStep["status"] is "need"), \
+         "a frame missing payload bytes is need, not a verdict"
+   -- the one caller bug: a phase this machine does not have
+   rstCheck (rsBtxoStreamStep(tStream, "junk") is empty), \
+         "an unknown phase is a caller bug (empty, rsLastError says why)"
+end rstSectionBtxoStream
 
 -- The phase-6 LAN admission layer. Entirely pure crypto (no transport),
 -- so it runs on SodiumXT alone - which is right: the admission proof is
@@ -1375,6 +1665,13 @@ private command rstSectionMedia pCaps
          "rsMediaFetch refuses a dead session handle"
    rstCheck (rsMediaStatus(0) is empty), \
          "rsMediaStatus refuses a dead torrent handle"
+   -- B7: the streaming plan's refusal paths run everywhere too - the
+   -- handle gate needs no torrentxt, and a bogus handle refuses either
+   -- way (bad handle with torrentxt, needs-torrentxt without)
+   rstCheck (rsMediaStreamPlan(0) is empty), \
+         "rsMediaStreamPlan refuses a dead torrent handle"
+   rstCheck (rsMediaStreamPlan(999999999) is empty), \
+         "rsMediaStreamPlan refuses a bogus handle"
    if pCaps["hasTorrent"] is not true then
       rstSkip "media create/seed/fetch/status: torrentxt is not installed"
       exit rstSectionMedia
@@ -1418,6 +1715,13 @@ private command rstSectionMedia pCaps
          "progress is a 0..1 fraction"
    rstCheck (rsMediaStatus(999999999) is empty), \
          "rsMediaStatus refuses a bogus handle"
+   -- B7 live: the local seed HAS metadata (its piece table exists), so
+   -- the plan applies right here; on a real magnet fetch the app calls
+   -- this from its metadataReceived event. The payload is tiny, so the
+   -- plan covers 1..8 front pieces.
+   put rsMediaStreamPlan(tH) into tCode
+   rstCheck (tCode is not empty and tCode >= 1 and \
+         tCode <= 8), "rsMediaStreamPlan sets deadlines on the front pieces"
    -- tidy: drop the seed we added so a re-run starts clean; the payload
    -- file stays (temp folder) and the session stays live (the harness rule)
    try
