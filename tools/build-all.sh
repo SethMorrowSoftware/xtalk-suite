@@ -332,6 +332,22 @@ if [ -f tools/check-duplicate-declarations.py ]; then
   echo "== suite: tools/check-duplicate-declarations.py =="
   python3 tools/check-duplicate-declarations.py
 fi
+# One name, one LIBRARY, suite-wide: the per-file gate above cannot see two
+# libraries claiming the same name, and the embed tools compare only the
+# combinations actually registered. This one holds the whole library corpus
+# disjoint (handlers, script-level names, the engine socket messages' pass
+# discipline, and the public-prefix ratchet), so ANY pair stays co-loadable
+# and co-embeddable - the interoperability the suite advertises. The fixture
+# test mutates real corpus files in place and restores them, proving each
+# check fires the way this build runs it.
+if [ -f tools/test-cross-library-names.py ]; then
+  echo "== suite: tools/test-cross-library-names.py =="
+  python3 tools/test-cross-library-names.py
+fi
+if [ -f tools/check-cross-library-names.py ]; then
+  echo "== suite: tools/check-cross-library-names.py =="
+  python3 tools/check-cross-library-names.py
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal

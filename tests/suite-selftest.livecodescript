@@ -406,10 +406,10 @@ local bt1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- ENetXT: the synchronous half of the en* self-test ----
 local en1sPollHosts        -- comma list of host handles being pumped
-local en1sPollTarget       -- object that receives the semantic event messages
-local en1sPollInterval     -- milliseconds between drains (the latency knob)
-local en1sPollNote         -- most recent pump failure, empty while healthy
-local en1sPolling          -- "true" while the timer loop is armed
+local en1sEnPollTarget       -- object that receives the semantic event messages
+local en1sEnPollInterval     -- milliseconds between drains (the latency knob)
+local en1sEnPollNote         -- most recent pump failure, empty while healthy
+local en1sEnPolling          -- "true" while the timer loop is armed
 constant en1kStTitle = "enetxt - API Self-Test"
 constant en1kStWidth = 660
 constant en1kStHeight = 620
@@ -428,10 +428,10 @@ local en1sResultText          -- the accumulated PASS/FAIL/SKIP/section lines
 local en1sStRunDone           -- "true" once the run finished (drives the color)
 
 -- ---- DataChannelXT: the synchronous half of the dc* self-test ----
-local dc1sPollTarget       -- object that receives the semantic event messages
-local dc1sPollInterval     -- milliseconds between drains (the latency/CPU knob)
-local dc1sPolling          -- "true" while the timer loop is armed
-local dc1sPollNote         -- the FIRST poll fault since the last clear - a bad
+local dc1sDcPollTarget       -- object that receives the semantic event messages
+local dc1sDcPollInterval     -- milliseconds between drains (the latency/CPU knob)
+local dc1sDcPolling          -- "true" while the timer loop is armed
+local dc1sDcPollNote         -- the FIRST poll fault since the last clear - a bad
 local dc1sPollDrains       -- drains attempted, so a failure can name which
 constant dc1kStTitle = "DataChannelXT - API Self-Test"
 constant dc1kStWidth = 660
@@ -6931,7 +6931,17 @@ on socketError pSocketID, pError
    if pSocketID is sControlSocket then
       oxStatusUpdate "control", "error: " & pError
       oxDisconnectControl
+      exit socketError
    end if
+   -- NOT OURS: pass it on (2026-08-23). These three names are the ENGINE's,
+   -- shared by every socket library in the message path, and the family rule
+   -- this file itself documents for apps (docs/05, docs/10) applies to the
+   -- library too: swallowing another library's socket event is a silent HANG
+   -- there. Found by the suite's cross-library name gate when nostrxt's
+   -- relay layer became the second library defining these. Verified
+   -- statically; needs an OXT re-pass (the own-socket branches above are
+   -- the engine-proven ones and are unchanged).
+   pass socketError
 end socketError
 
 on socketClosed pSocketID
@@ -6948,7 +6958,10 @@ on socketClosed pSocketID
    if pSocketID is sControlSocket then
       oxStatusUpdate "control", "disconnected"
       oxDisconnectControl
+      exit socketClosed
    end if
+   -- NOT OURS: pass it on (see socketError above).
+   pass socketClosed
 end socketClosed
 
 on socketTimeout pSocketID
@@ -6964,11 +6977,17 @@ on socketTimeout pSocketID
       end if
       exit socketTimeout
    end if
-   -- Control socket: only fatal before authentication completes.
-   if pSocketID is sControlSocket and sControlState is not "authenticated" then
-      oxStatusUpdate "control", "error: control handshake timed out"
-      oxDisconnectControl
+   -- Control socket (ours even when authenticated - an idle timeout there
+   -- is normal): only fatal before authentication completes.
+   if pSocketID is sControlSocket then
+      if sControlState is not "authenticated" then
+         oxStatusUpdate "control", "error: control handshake timed out"
+         oxDisconnectControl
+      end if
+      exit socketTimeout
    end if
+   -- NOT OURS: pass it on (see socketError above).
+   pass socketTimeout
 end socketTimeout
 
 command oxLaunchTor pTorPath, pDataDir, pSocksPort, pControlPort
@@ -21386,17 +21405,17 @@ command en1enStartPolling pHost, pTarget, pIntervalMs
    end if
    set the itemDelimiter to en1tSavedDelim
    if pTarget is empty then
-      put the long id of this card into en1sPollTarget
+      put the long id of this card into en1sEnPollTarget
    else
-      put pTarget into en1sPollTarget
+      put pTarget into en1sEnPollTarget
    end if
    if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
-      put 33 into en1sPollInterval
+      put 33 into en1sEnPollInterval
    else
-      put pIntervalMs into en1sPollInterval
+      put pIntervalMs into en1sEnPollInterval
    end if
-   if en1sPolling is not "true" then
-      put "true" into en1sPolling
+   if en1sEnPolling is not "true" then
+      put "true" into en1sEnPolling
       send "en1enetPollOnce" to me in 0 milliseconds
    end if
 end en1enStartPolling
@@ -21405,7 +21424,7 @@ command en1enStopPolling pHost
    local en1tI, en1tNew, en1tSavedDelim
    if pHost is empty then
       put empty into en1sPollHosts
-      put "false" into en1sPolling
+      put "false" into en1sEnPolling
       exit en1enStopPolling
    end if
    put empty into en1tNew
@@ -21427,13 +21446,13 @@ command en1enStopPolling pHost
    set the itemDelimiter to en1tSavedDelim
    put en1tNew into en1sPollHosts
    if en1sPollHosts is empty then
-      put "false" into en1sPolling
+      put "false" into en1sEnPolling
    end if
 end en1enStopPolling
 
 command en1enetPollOnce
    local en1tHost, en1tEvents, en1tEvent, en1tName, en1tSavedDelim, en1tErr
-   if en1sPolling is not "true" then
+   if en1sEnPolling is not "true" then
       exit en1enetPollOnce
    end if
    -- The pump pass OWNS the delimiter for its whole length, not just for the
@@ -21457,8 +21476,8 @@ command en1enetPollOnce
       try
          put enPoll(en1tHost) into en1tEvents
       catch en1tErr
-         if en1sPollNote is empty then
-            put "enPoll failed on host" && en1tHost & ": " & line 1 of en1tErr into en1sPollNote
+         if en1sEnPollNote is empty then
+            put "enPoll failed on host" && en1tHost & ": " & line 1 of en1tErr into en1sEnPollNote
          end if
          put empty into en1tEvents
       end try
@@ -21466,13 +21485,13 @@ command en1enetPollOnce
          put en1tEvent["name"] into en1tName
          try
             if en1tName is not empty then
-               dispatch en1tName to en1sPollTarget with en1tEvent
+               dispatch en1tName to en1sEnPollTarget with en1tEvent
             end if
             -- also fire a catch-all so one handler can observe the whole stream
-            dispatch "enetEvent" to en1sPollTarget with en1tEvent
+            dispatch "enetEvent" to en1sEnPollTarget with en1tEvent
          catch en1tErr
-            if en1sPollNote is empty then
-               put "dispatch of" && en1tName & " failed: " & line 1 of en1tErr into en1sPollNote
+            if en1sEnPollNote is empty then
+               put "dispatch of" && en1tName & " failed: " & line 1 of en1tErr into en1sEnPollNote
             end if
          end try
       end repeat
@@ -21487,18 +21506,18 @@ command en1enetPollOnce
    -- the stale tick then re-arms the first. Two permanent chains, neither
    -- stoppable on its own because both read one flag - which is the trap the
    -- arm-once guard was added to prevent, reached from the other side.
-   if en1sPolling is not "true" then
+   if en1sEnPolling is not "true" then
       exit en1enetPollOnce
    end if
-   send "en1enetPollOnce" to me in (en1sPollInterval) milliseconds
+   send "en1enetPollOnce" to me in (en1sEnPollInterval) milliseconds
 end en1enetPollOnce
 
 function en1enPollLastError
-   return en1sPollNote
+   return en1sEnPollNote
 end en1enPollLastError
 
 command en1enPollClearError
-   put empty into en1sPollNote
+   put empty into en1sEnPollNote
 end en1enPollClearError
 
 function en1enStateName pState
@@ -21915,14 +21934,14 @@ end en1stRepeatByte
 
 command dc1dcStartPolling pTarget, pIntervalMs
    if pTarget is empty then
-      put the long id of this card into dc1sPollTarget
+      put the long id of this card into dc1sDcPollTarget
    else
-      put pTarget into dc1sPollTarget
+      put pTarget into dc1sDcPollTarget
    end if
    if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
-      put 33 into dc1sPollInterval
+      put 33 into dc1sDcPollInterval
    else
-      put pIntervalMs into dc1sPollInterval
+      put pIntervalMs into dc1sDcPollInterval
    end if
    -- Arm the chain ONCE - the guard enet-helpers has carried since it was
    -- written, and the one this file lacked. A second chain does not duplicate
@@ -21932,8 +21951,8 @@ command dc1dcStartPolling pTarget, pIntervalMs
    -- own, because both read this one flag. Every in-tree caller
    -- (datachannel-loopback, datachannel-dht-chat) arms once at startup, so
    -- this is a trap laid for the NEXT caller rather than a live regression.
-   if dc1sPolling is not "true" then
-      put "true" into dc1sPolling
+   if dc1sDcPolling is not "true" then
+      put "true" into dc1sDcPolling
       if dc1sPollDrains is not a number then
          put 0 into dc1sPollDrains
       end if
@@ -21943,12 +21962,12 @@ command dc1dcStartPolling pTarget, pIntervalMs
 end dc1dcStartPolling
 
 command dc1dcStopPolling
-   put "false" into dc1sPolling
+   put "false" into dc1sDcPolling
 end dc1dcStopPolling
 
 command dc1dcChannelPollOnce
    local dc1tEvents, dc1tEvent, dc1tName, dc1tErr, dc1tTarget, dc1tProbe
-   if dc1sPolling is not "true" then
+   if dc1sDcPolling is not "true" then
       exit dc1dcChannelPollOnce
    end if
    -- Resolve the target ONCE per pass and prove it still RESOLVES. A long id
@@ -21961,7 +21980,7 @@ command dc1dcChannelPollOnce
    -- unreported one in three demo files at once. The try/catch shape below is
    -- the one box2dxt's harness uses to re-resolve a stale long id, and it has
    -- run green on an engine.
-   put dc1sPollTarget into dc1tTarget
+   put dc1sDcPollTarget into dc1tTarget
    put empty into dc1tProbe
    if dc1tTarget is not empty then
       try
@@ -21972,8 +21991,8 @@ command dc1dcChannelPollOnce
    end if
    if dc1tProbe is empty then
       put the long id of this card into dc1tTarget
-      if dc1sPollNote is empty then
-         put "poll target no longer resolves; fell back to this card" into dc1sPollNote
+      if dc1sDcPollNote is empty then
+         put "poll target no longer resolves; fell back to this card" into dc1sDcPollNote
       end if
    end if
    -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
@@ -21999,7 +22018,7 @@ command dc1dcChannelPollOnce
    try
       put dcPoll() into dc1tEvents
    catch dc1tErr
-      if dc1sPollNote is empty then
+      if dc1sDcPollNote is empty then
          -- NAME THE DRAIN NUMBER. _ensureDrain has exactly two callers and
          -- they are told apart by WHEN they run: the first drain passes the
          -- constant kDrainCap, and only a later one can reach the
@@ -22015,7 +22034,7 @@ command dc1dcChannelPollOnce
          -- make, in the same commit whose message argued for it. An off-by-one
          -- in a diagnostic is not cosmetic; it is a diagnostic that lies.
          put "dcPoll failed on drain #" & dc1sPollDrains & ": " & \
-               line 1 of dc1tErr into dc1sPollNote
+               line 1 of dc1tErr into dc1sDcPollNote
       end if
       -- Do NOT stop polling: a transient drain failure must not silently end
       -- the app's event delivery. Reschedule below and try again.
@@ -22045,8 +22064,8 @@ command dc1dcChannelPollOnce
          -- Keep the FIRST failure: it is the one with a clean cause. Later
          -- ones are usually the same bug repeating at 10 Hz, and overwriting
          -- would leave whichever event happened to be last.
-         if dc1sPollNote is empty then
-            put "dispatch of" && dc1tName & " failed: " & line 1 of dc1tErr into dc1sPollNote
+         if dc1sDcPollNote is empty then
+            put "dispatch of" && dc1tName & " failed: " & line 1 of dc1tErr into dc1sDcPollNote
          end if
       end try
    end repeat
@@ -22054,8 +22073,8 @@ command dc1dcChannelPollOnce
    -- interval is guarded because `in () milliseconds` on an empty value is
    -- itself a type conversion error - and a poll loop that dies while
    -- reporting a poll error would be a poor diagnostic.
-   if dc1sPollInterval is not a number or dc1sPollInterval < 1 then
-      put 33 into dc1sPollInterval
+   if dc1sDcPollInterval is not a number or dc1sDcPollInterval < 1 then
+      put 33 into dc1sDcPollInterval
    end if
    -- DO NOT RE-ARM IF A DISPATCH STOPPED US. The pass above runs app code, and
    -- app code legitimately calls dc1dcStopPolling from inside a handler this
@@ -22066,18 +22085,18 @@ command dc1dcChannelPollOnce
    -- the stale tick then re-arms the first. Two permanent chains, neither
    -- stoppable on its own because both read one flag - which is the trap the
    -- arm-once guard was added to prevent, reached from the other side.
-   if dc1sPolling is not "true" then
+   if dc1sDcPolling is not "true" then
       exit dc1dcChannelPollOnce
    end if
-   send "dc1dcChannelPollOnce" to me in (dc1sPollInterval) milliseconds
+   send "dc1dcChannelPollOnce" to me in (dc1sDcPollInterval) milliseconds
 end dc1dcChannelPollOnce
 
 function dc1dcPollLastError
-   return dc1sPollNote
+   return dc1sDcPollNote
 end dc1dcPollLastError
 
 command dc1dcPollClearError
-   put empty into dc1sPollNote
+   put empty into dc1sDcPollNote
 end dc1dcPollClearError
 
 function dc1dcStateName pState

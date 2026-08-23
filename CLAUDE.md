@@ -258,6 +258,27 @@ declaration scope. This replaced `onionxt/tools/build-standalone.py` and both
 generated `*-standalone` twins: embedding in place leaves one file to open rather
 than a source and a launchable copy of it.
 
+**One name, one library, suite-wide (2026-08-23).** The interoperability the
+suite advertises - any libraries co-loaded, any pair co-embedded into one
+paste - puts every library's names into ONE namespace, and until 2026-08-23 no
+gate looked ACROSS libraries: `check-duplicate-declarations.py` is per-file by
+design, and the embed tools compare only the combinations actually registered.
+Measured the day nostrxt landed, the gap was real twice over: the enet and
+datachannel helper layers shared four script-local names (`sPolling` among
+them, the name that already reached an engine once as 1.6's collision), and
+TWO libraries defined the engine's socket messages with only one passing
+foreign sockets on - onionxt's own copies swallowed them, which co-loaded with
+nostrxt's relay layer is the silent-hang rule onionxt itself documents for
+apps. Both fixed; `tools/check-cross-library-names.py` now holds the whole
+library corpus disjoint (handlers public and private, column-0 declarations,
+the engine messages' `pass` discipline, and a public-prefix ratchet that
+catches the NEXT collision before a second claimant exists), and
+`tools/test-cross-library-names.py` mutation-proves each check by editing a
+real corpus file in place and expecting the gate to fire - exercised the way
+the build runs it, per this file's own mutation-test lesson. Stack-shaped
+files (demos, harnesses, the apps) are deliberately out of that corpus, with
+the reason written in the gate's docstring.
+
 **The gates added on 2026-08-17/18, and what each one is standing in for.** All
 of them document behaviour already recorded in `docs/OXT-ENGINE-NOTES.md`; none
 of them has been through an engine pass of its own, and none upgrades an honesty

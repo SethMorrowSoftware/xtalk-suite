@@ -130,3 +130,19 @@ cmake --build build-asan --parallel && ./build-asan/enet_smoke_test
 gcc for the sanitizer lane (clang's runtimes are not installed in this
 environment). A shim change is "done" only with the smoke test green under
 ASan/UBSan.
+
+## As-built note, 2026-08-23: the poll dispatcher's script-locals carry the member stem
+
+`examples/enet-helpers.livecodescript` renamed its four script-locals
+(`sPolling` and friends became `sEnPolling` / `sEnPollTarget` /
+`sEnPollInterval` / `sEnPollNote`), because the datachannel helper layer
+declared the SAME four names and two libraries sharing a column-0 name can
+never be co-embedded into one paste-and-run file - `sPolling` is the exact
+name that already reached an engine once as a demo-vs-helper collision
+(root `docs/OXT-ENGINE-NOTES.md` 1.6). Behavior-neutral standalone
+(script-locals are file-scoped) and no carrier reads them directly
+(measured: every demo and the selftest go through the `enPoll*` handlers),
+but the embedded copies changed, so every carrier was regenerated and the
+rename is verified statically pending the next OXT re-pass. The suite's
+`tools/check-cross-library-names.py` now holds all library names disjoint
+so this class cannot recur.
