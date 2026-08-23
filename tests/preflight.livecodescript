@@ -675,9 +675,9 @@ command pfProbeBox2d
    end if
 end pfProbeBox2d
 
--- The two members that ship a SECOND, pure-script half. Neither is needed for
--- the suite paste - which embeds both - so an absent one is a SKIP with the one
--- line that makes it run, not a defect.
+-- The members that ship a SECOND, pure-script half (or, for nostrxt, ARE pure
+-- script). None is needed for the suite paste - which embeds them - so an
+-- absent one is a SKIP with the one line that makes it run, not a defect.
 command pfProbeScriptLayers
    local tError, tVersion, tHex
 
@@ -711,6 +711,23 @@ command pfProbeScriptLayers
    else
       stAssert "CoinXT script layer answers a known vector", false
       pfNote "CoinXT script layer: cxHexEncode returned " & tHex & " where " & quote & "dead" & quote & " was expected"
+   end if
+
+   put empty into tHex
+   try
+      -- A real vector again: nxHexEncode of the same two bytes through the
+      -- nostrxt core (its own hex, not coinxt's), so a present layer WORKS.
+      put nxHexEncode(numToByte(222) & numToByte(173)) into tHex
+   catch tError
+      put empty into tHex
+   end try
+   if tHex is "dead" then
+      stAssert "NostrXT script layer answers a known vector", true
+   else if tHex is empty then
+      stSkip "NostrXT script layer", "start using stack " & quote & "nostrxt" & quote & " - the suite paste embeds it, so this is not needed for that run"
+   else
+      stAssert "NostrXT script layer answers a known vector", false
+      pfNote "NostrXT script layer: nxHexEncode returned " & tHex & " where " & quote & "dead" & quote & " was expected"
    end if
 end pfProbeScriptLayers
 

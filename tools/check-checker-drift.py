@@ -33,8 +33,9 @@ COPY_SETS = {
     "check-livecodescript.py": ["sodiumxt", "torrentxt", "enetxt",
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
-                                "holde-em"],
-    "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide"],
+                                "holde-em", "nostrxt"],
+    "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
+                            "nostrxt"],
 }
 
 # carried document name -> the members that must carry a byte-identical copy

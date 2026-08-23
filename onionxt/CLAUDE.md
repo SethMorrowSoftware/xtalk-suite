@@ -486,6 +486,15 @@ troubleshooting):
   act only on our own sockets, `pass` the rest), which is the family's usual signal that something
   belongs in the tree's written rules rather than in each app's head. The exact message-path ordering
   is the engine's and is recorded as those two apps found it: verified statically; needs an OXT pass.
+  **CLOSED FOR THE LIBRARY ITSELF 2026-08-23: OnionXT's own three handlers now `pass` a socket
+  that is not theirs.** They used to swallow it (fall through to `end` with no pass), which made
+  OnionXT the one library that broke the rule it documents: co-loaded with a second socket
+  library (nostrxt's relay layer became the first), whichever sat earlier in the message path
+  starved the other of its socket events - the same silent hang, now between LIBRARIES. Found
+  and held by the suite's `tools/check-cross-library-names.py` (its pass-discipline check, with
+  a mutation fixture that strips a `pass` and expects the gate to fire). The own-socket branches
+  are untouched and keep their engine evidence; the new pass lines are verified statically and
+  need an OXT re-pass.
 
 ## Git / workflow
 

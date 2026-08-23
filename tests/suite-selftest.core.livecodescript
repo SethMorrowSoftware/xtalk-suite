@@ -203,6 +203,7 @@ local sRenderNoted
 local sHaveSodium, sHaveTorrent, sHaveEnet, sHaveDc, sHaveOnion, sHaveCoin
 local sHaveCoinScript      -- coinxt ships in TWO pieces; see stProbe
 local sHaveRiptideScript   -- the embedded riptide layer; same tripwire shape
+local sHaveNostrScript     -- the embedded nostrxt core layer; same tripwire shape
 local sHaveBox2d           -- the box2dxt EXTENSION (its Kit is embedded); see stProbe
 local sTorrentNote         -- why torrent is unavailable, when it is
 
@@ -835,6 +836,18 @@ command stProbe
       put false into sHaveRiptideScript
    end try
    stProbeLine "Riptide (script layer)", sHaveRiptideScript, \
+         "embedded in this paste; a FAIL means the paste is damaged"
+
+   -- NostrXT's core layer rides the same embed mechanism; the probe is a real
+   -- derivation (the RFC 6455 sample accept: sha1 + base64 through the
+   -- embedded layer), not a version sniff, so a present layer is a WORKING one.
+   put false into sHaveNostrScript
+   try
+      put (nxWsAcceptFor("dGhlIHNhbXBsZSBub25jZQ==") is "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") into sHaveNostrScript
+   catch tError
+      put false into sHaveNostrScript
+   end try
+   stProbeLine "NostrXT (script layer)", sHaveNostrScript, \
          "embedded in this paste; a FAIL means the paste is damaged"
 
    -- BOX2DXT IS THE SECOND TWO-PIECE MEMBER, and its pieces sit the other way
@@ -2220,6 +2233,25 @@ command stRunMemberHarnesses
    else
       stSkip "Riptide deep self-test", \
             "the riptide script layer is not present; the paste is damaged"
+   end if
+
+   -- NostrXT is another protocol layer over the extensions: its harness
+   -- probes CoinXT/SodiumXT itself (sections SKIP with names when they are
+   -- absent), and its nxr* relay-layer section SKIPS here BY DESIGN - that
+   -- layer defines the engine's socket handlers, which the embedded onionxt
+   -- layer already defines, so it is deliberately not in this paste
+   -- (nostrxt/CLAUDE.md, the two-file split).
+   if sHaveNostrScript then
+      try
+         -- floor 1: catastrophic only, not measured (the riptide precedent;
+         -- a first engine pass will give this member its measured floor)
+         stMergeReturned "NostrXT", nx1nxSelfTest(), 1
+      catch tError
+         stSectionFailed "NostrXT deep self-test", tError
+      end try
+   else
+      stSkip "NostrXT deep self-test", \
+            "the nostrxt script layer is not present; the paste is damaged"
    end if
 
    -- HOLDE-EM RUNS LAST, and unlike every other member there is nothing to

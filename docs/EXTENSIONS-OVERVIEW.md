@@ -274,6 +274,50 @@ handlers, ABI 6. Binaries: Linux + Windows x64/x86 (macOS pending).
   278/278 on a real engine. The one bar left before "broadcastable": a live
   testnet broadcast.
 
+## nostrxt — the Nostr protocol, pure script (`nx*` / `nxr*`)
+
+**Pure LiveCodeScript over composed siblings** — no native code and no
+bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
+`cxSchnorrSign`/`cxSchnorrVerify`, `cxXOnlyPubkey`, `cxEcdh`,
+`cxHmacSha256` — the hard dependency for signing and ids) and SodiumXT
+(`sxRandomBytes`, `sxMemEqual` — soft). Added 2026-08-23.
+
+- **NIP-01 events**, with an OWNED canonical serializer (exactly the seven
+  mandated escapes, other control bytes verbatim — the rule a stock JSON
+  encoder breaks, producing wrong event ids), sha256 ids, BIP-340
+  signatures, verify-then-trust (`nxEventVerify`), tags, filters, and both
+  directions of the relay wire protocol with byte-exact message types.
+- **NIP-19 entities** (`npub`/`nsec`/`note` and the TLV
+  `nprofile`/`nevent`/`naddr`), on the member's own uncapped bech32 —
+  NIP-19 waives BIP-173's 90-character limit, which coinxt's encoder
+  enforces, so nostrxt carries its own and its KAT asserts the deviation
+  on purpose. `nxUriEncode` refuses to wrap a secret key.
+- **NIP-44 v2 payloads**: conversation key (unhashed ECDH x +
+  HKDF-extract), message keys (HKDF-expand), the power-of-two padding and
+  the MAC-before-cipher order are all built and vector-pinned today;
+  encrypt/decrypt fail CLOSED behind the one missing upstream primitive
+  (SodiumXT `sxChaCha20IetfXor`, the standing entry in
+  `tools/check-handler-calls.py`'s KNOWN_MISSING and
+  `nostrxt/docs/07-capabilities-required.md`).
+- **A websocket relay client** (`nxr*`, a second file so the suite paste
+  never carries a second `socketError` definition): RFC 6455 in pure
+  script over engine sockets, verification-on-by-default event delivery,
+  NIP-42 auth, ping/pong, fail-closed framing caps. `ws://` mirrors
+  onionxt's engine-proven socket idioms; `wss://` is written and labeled —
+  nothing in this suite has ever opened a TLS socket.
+- Also aboard: NIP-05 and NIP-11 parsing, NIP-13 proof-of-work checks,
+  NIP-21 URIs, and builders for the core kinds (metadata, replies with
+  NIP-10 markers, reactions, deletions, contacts, relay lists, auth).
+- **Design**: a stateless pure-compute core (the riptide shape: no I/O,
+  offline-testable, embedded in the suite paste) plus a stateful socket
+  layer (the onionxt shape: handles, watchdogs, idempotent teardown).
+- **Status**: verified statically; needs an OXT pass + a live-relay pass.
+  Nothing has met an engine. What is machine-verified headlessly:
+  `tools/nostr-kat.py` sweeps the complete published BIP-340 csv, the full
+  official NIP-44 v2 vector set, the BIP-173 strings and the NIP-19
+  examples through an independent oracle, and every constant the harness
+  pins re-derives by name on every build.
+
 ## riptide — Riptide Social, the capstone app (`rs*`)
 
 **An app, not an extension**: the serverless social network of

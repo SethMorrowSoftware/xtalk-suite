@@ -52,6 +52,7 @@ ADOPTERS = [
     os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
+    os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
 ]
 
 BEGIN = ("-- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: "

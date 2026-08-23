@@ -73,10 +73,10 @@ script "EnetLanChat"
 
 -- script-local poll state (declared at top; LiveCode Script script-locals)
 local sPollHosts        -- comma list of host handles being pumped
-local sPollTarget       -- object that receives the semantic event messages
-local sPollInterval     -- milliseconds between drains (the latency knob)
-local sPollNote         -- most recent pump failure, empty while healthy
-local sPolling          -- "true" while the timer loop is armed
+local sEnPollTarget       -- object that receives the semantic event messages
+local sEnPollInterval     -- milliseconds between drains (the latency knob)
+local sEnPollNote         -- most recent pump failure, empty while healthy
+local sEnPolling          -- "true" while the timer loop is armed
 
 -- enStartPolling HOST, TARGET, INTERVALMS
 -- Add HOST to the pump set and (first call) arm the loop. TARGET empty means
@@ -105,17 +105,17 @@ command enStartPolling pHost, pTarget, pIntervalMs
    end if
    set the itemDelimiter to tSavedDelim
    if pTarget is empty then
-      put the long id of this card into sPollTarget
+      put the long id of this card into sEnPollTarget
    else
-      put pTarget into sPollTarget
+      put pTarget into sEnPollTarget
    end if
    if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
-      put 33 into sPollInterval
+      put 33 into sEnPollInterval
    else
-      put pIntervalMs into sPollInterval
+      put pIntervalMs into sEnPollInterval
    end if
-   if sPolling is not "true" then
-      put "true" into sPolling
+   if sEnPolling is not "true" then
+      put "true" into sEnPolling
       send "enetPollOnce" to me in 0 milliseconds
    end if
 end enStartPolling
@@ -128,7 +128,7 @@ command enStopPolling pHost
    local tI, tNew, tSavedDelim
    if pHost is empty then
       put empty into sPollHosts
-      put "false" into sPolling
+      put "false" into sEnPolling
       exit enStopPolling
    end if
    put empty into tNew
@@ -150,7 +150,7 @@ command enStopPolling pHost
    set the itemDelimiter to tSavedDelim
    put tNew into sPollHosts
    if sPollHosts is empty then
-      put "false" into sPolling
+      put "false" into sEnPolling
    end if
 end enStopPolling
 
@@ -158,7 +158,7 @@ end enStopPolling
 -- then reschedule.
 command enetPollOnce
    local tHost, tEvents, tEvent, tName, tSavedDelim, tErr
-   if sPolling is not "true" then
+   if sEnPolling is not "true" then
       exit enetPollOnce
    end if
    -- The pump pass OWNS the delimiter for its whole length, not just for the
@@ -182,8 +182,8 @@ command enetPollOnce
       try
          put enPoll(tHost) into tEvents
       catch tErr
-         if sPollNote is empty then
-            put "enPoll failed on host" && tHost & ": " & line 1 of tErr into sPollNote
+         if sEnPollNote is empty then
+            put "enPoll failed on host" && tHost & ": " & line 1 of tErr into sEnPollNote
          end if
          put empty into tEvents
       end try
@@ -191,13 +191,13 @@ command enetPollOnce
          put tEvent["name"] into tName
          try
             if tName is not empty then
-               dispatch tName to sPollTarget with tEvent
+               dispatch tName to sEnPollTarget with tEvent
             end if
             -- also fire a catch-all so one handler can observe the whole stream
-            dispatch "enetEvent" to sPollTarget with tEvent
+            dispatch "enetEvent" to sEnPollTarget with tEvent
          catch tErr
-            if sPollNote is empty then
-               put "dispatch of" && tName & " failed: " & line 1 of tErr into sPollNote
+            if sEnPollNote is empty then
+               put "dispatch of" && tName & " failed: " & line 1 of tErr into sEnPollNote
             end if
          end try
       end repeat
@@ -212,10 +212,10 @@ command enetPollOnce
    -- the stale tick then re-arms the first. Two permanent chains, neither
    -- stoppable on its own because both read one flag - which is the trap the
    -- arm-once guard was added to prevent, reached from the other side.
-   if sPolling is not "true" then
+   if sEnPolling is not "true" then
       exit enetPollOnce
    end if
-   send "enetPollOnce" to me in (sPollInterval) milliseconds
+   send "enetPollOnce" to me in (sEnPollInterval) milliseconds
 end enetPollOnce
 
 -- enPollLastError() -- empty while the pump is healthy; otherwise the FIRST
@@ -223,12 +223,12 @@ end enetPollOnce
 -- shows this in its own log turns "the demo went quiet" into a line a
 -- maintainer can act on.
 function enPollLastError
-   return sPollNote
+   return sEnPollNote
 end enPollLastError
 
 -- Clear it, so an app can report each distinct failure once.
 command enPollClearError
-   put empty into sPollNote
+   put empty into sEnPollNote
 end enPollClearError
 
 -- enStateName N -- map a kPeerState* value (enPeerStatus "state") to a label.

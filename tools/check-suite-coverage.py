@@ -233,6 +233,15 @@ MEMBERS = [
     # riptide is the capstone APP, not an extension, but its rs* surface is a
     # public API its folded harness must reach, so it rides the same ratchet.
     ("riptide", "rs", ["riptide/src/riptide.livecodescript"]),
+    # nostrxt's TWO script files share the nx stem (nxr is the relay layer,
+    # the oxh-to-ox relationship). The relay file is deliberately NOT
+    # embedded in the paste (it defines the engine's socket handlers, which
+    # the onionxt layer already defines), so its handlers are reached by the
+    # folded harness's probe-guarded section: every nxr* name appears in a
+    # real call that SKIPS at runtime in the paste and RUNS in the demo,
+    # which is what keeps this row exemption-free.
+    ("nostrxt", "nx", ["nostrxt/src/nostrxt.livecodescript",
+                       "nostrxt/src/nostr-relay.livecodescript"]),
     # THE TWO POLL DISPATCHERS ARE NOT HERE, AND A ROW WOULD LIE (2026-08-19).
     # enetxt/examples/enet-helpers.livecodescript and its datachannelxt twin are
     # SHIPPED libraries - the layer every demo drives and every doc teaches -

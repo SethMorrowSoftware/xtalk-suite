@@ -1,0 +1,124 @@
+# 08 - Open Questions
+
+The honest to-do list, numbered so answers can cite what they close. Nothing in this
+member has run on a real OXT engine; every question below is either an engine
+behaviour we have assumed and labeled, a scope decision deliberately not yet made,
+or a performance question deliberately not yet optimized. When one is answered, the
+answer goes where the family keeps that class of fact: engine behaviour into
+`docs/OXT-ENGINE-NOTES.md` at the suite root, member consequences into
+`nostrxt/CLAUDE.md`'s as-built notes, and the question is struck here with a date.
+
+## Engine unknowns (the OXT pass owes these)
+
+**1. `base64Encode` wrap behaviour.** The engine's `base64Encode` is documented in
+LiveCode lineage to wrap its output with line breaks; every wire format here
+(NIP-44 payloads, `Sec-WebSocket-Key`, the accept derivation) is single-line, so
+`nxB64Encode` strips both break bytes unconditionally - correct whether the engine
+wraps with CRLF, LF, or not at all, since base64's alphabet contains neither byte.
+What the engine ACTUALLY emits, and at what line length, is still marked
+`VERIFY (on-engine)` in the source; the first pass should record it so the strip
+stops being a defensive guess.
+
+**2. `textDecode` UTF-8 round-trip fidelity for non-BMP content.** The canonical
+serializer works on UTF-8 bytes via `textEncode` / `textDecode`, and event C in the
+member harness exists to measure exactly this: its content is built with
+`textDecode` over pinned bytes (a euro sign and a four-byte emoji, so both a
+three-byte and a surrogate-pair codepoint are in play) and its id is pinned. A FAIL
+on that line on a real engine is a REAL finding about engine text round-tripping,
+not harness noise - which is why the fixture bytes are constants and the harness
+file itself stays pure ASCII.
+
+**3. Secure sockets (wss://).** The big one, and it has its own entry as gap #2 in
+`07-capabilities-required.md`: `open secure socket` appears nowhere else in the
+suite, the root engine notes have no TLS entry, and the questions an engine pass
+must answer (certificate and hostname verification, SNI, failure delivery, TLS
+versions) are listed there. Until it is measured, wss:// is written, labeled, and
+unproven - and the live-relay pass should start on ws:// or plan for the `.onion`
+composition path (question 7).
+
+**4. Socket write backpressure on large frames.** The relay layer writes whole
+frames with `write to socket` - fine for REQs and typical events, but a large
+publish (the frame cap is megabytes) raises a question nothing in the suite has
+measured: does a large `write to socket` block the interpreter thread until the OS
+buffer drains, queue internally, or partially write? OnionXT's engine hours never
+pushed writes that size. If the engine blocks, big publishes need chunking or a
+size ceiling below the protocol cap; do not guess - measure, then record it in the
+root engine notes.
+
+## Protocol scope (deliberately not yet decided)
+
+**5. Which NIPs next.** Three candidates, in dependency order:
+
+- **NIP-17 / NIP-59 (private DMs via gift wrap)** is the one users will ask for
+  first, and it is BLOCKED on the cipher gap: gift wrap is three nested layers of
+  NIP-44 encryption, so nothing can ship until SodiumXT lands `sxChaCha20IetfXor`
+  (`07-capabilities-required.md` gap #1). The moment it does, the building blocks
+  (kind builders, NIP-44, `nxrSendRaw` for the wrapped kinds) are already here.
+- **NIP-65 outbox routing** - the relay-list event is already built and parsed
+  (`nxRelayListBuild` / `nxRelayListParse`); what is NOT decided is the routing
+  STRATEGY: read from the author's write relays, write to the recipient's read
+  relays, with what fallback and what cap. That is policy, and it belongs above
+  the library or in a considered pool layer (question 6), not improvised inside
+  the relay client.
+- **NIP-42 is done; NIP-13 is done** (build/answer and difficulty/check
+  respectively); anything beyond rides `nxrSendRaw` until it earns handlers.
+
+**6. A relay pool abstraction.** Today one handle is one relay and the app owns
+multiplexing. A pool layer (dial several, deduplicate events by id, track per-relay
+subscription state, reconnect policy) is the natural next layer - but it is policy
+with real design choices (when is an event "seen"? which relay's EOSE ends a
+query?), and v0.1 deliberately does not guess. If it comes, it comes as a THIRD
+file composing `nxr*`, the same shape as OnionXT's `onion-httpd` over `ox*`, so the
+relay client stays a transport.
+
+## Performance (measure before optimizing - the OnionXT native-last law)
+
+**7. Byte-loop JSON parsing cost on an interpreter.** `nxRelayParse` /
+`nxEventFromJson` walk every byte of every inbound message in interpreted script.
+For chat-sized events that is nothing; for a 100 KB kind-30023 article or a fat
+contact list, nobody has measured it on a real engine. The family's law (proven in
+OnionXT: default to script; reach for native last, and only after an on-engine pass
+shows script is too slow) applies verbatim. If it IS too slow, the remedy ladder
+is: parse less (the verbatim-slice design already avoids re-serializing), then a
+narrow native helper as an upstream request - never a borrowed engine JSON library,
+for the canonical-bytes reason in `06-api-reference.md`.
+
+**8. The arithmetic byte-xor in frame masking.** RFC 6455 masking xors EVERY
+payload byte, and `nxByteXor` builds each xor from an 8-iteration div/mod loop
+because the portable-arithmetic discipline (no `bitXor` - the family has been
+bitten by operator portability) applies to the whole file. That is roughly eight
+divisions per payload byte, per direction; on a megabyte frame that is millions of
+operations in interpreted script. Candidate fixes exist (a 256x256 lookup table is
+the classic one; masking only applies client-to-server, so inbound server frames -
+unmasked per RFC 6455 - already skip it entirely). Do not take any of them until a
+real engine shows a real stall: the harness pins the masked-frame bytes, so any
+optimization has a byte-exact regression net waiting.
+
+## Gates (the machinery this member does not have yet)
+
+**9. Headless EXECUTION of the script layer - the `lcs-interp` idea.** CoinXT's
+`tools/check-script-vectors.py` runs its REAL shipped script headlessly through
+`tools/lcs-interp.py` (an interpreter for the LiveCodeScript subset its encoders
+use) against published vectors, and it has caught engine-shaped defects no static
+gate could - including a chunk-counting rule the model had to learn from a real
+engine failure. NostrXT's vector spine today is oracle-only: the KAT proves the
+EXPECTED answers are right, not that the script derives them. Extending the
+interpreter to this member's dialect would close that gap for the serializer,
+bech32 and the NIP-44 schedule - the paths where a silent wrong answer costs the
+most. What it would take, measured against what the core actually uses:
+`repeat with` loops (including `down to`), `... is among the keys of ...` and the
+nested-array writes the tag shape needs, `textEncode` / `textDecode` over UTF-8,
+`byte`/`char` chunk expressions with the engine's counting rules, and stubbing the
+`cx*`/`sx*` calls the way CoinXT's gate feeds its shim through ctypes. Substantial
+but bounded, and the payoff precedent is CoinXT's: its interpreter found a
+would-be-red engine line the day it was wired up. Until then, the honest label
+stands: the vectors are derived independently, the script is verified statically,
+and the first engine pass is what executes it.
+
+**10. The doc-handler agreement gate.** `06-api-reference.md` promises every public
+handler appears exactly once, and `tools/check-doc-handlers.py` is the gate that
+holds docs and source to it (the CoinXT `check-doc-handlers` model: a shipped
+handler missing from the page, or a documented name no handler defines, each fail
+the build). Keeping it honest as the surface grows - especially around the
+engine-called handlers, which are documented but not app-facing API - is part of
+this member's gate maintenance, not a one-time check.

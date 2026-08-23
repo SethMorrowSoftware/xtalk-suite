@@ -120,10 +120,10 @@ script "DataChannelDhtChat"
 -- plus a catch-all "dataChannelEvent" fired for EVERY event.
 
 -- script-local poll state (declared at top; LiveCode Script script-locals)
-local sPollTarget       -- object that receives the semantic event messages
-local sPollInterval     -- milliseconds between drains (the latency/CPU knob)
-local sPolling          -- "true" while the timer loop is armed
-local sPollNote         -- the FIRST poll fault since the last clear - a bad
+local sDcPollTarget       -- object that receives the semantic event messages
+local sDcPollInterval     -- milliseconds between drains (the latency/CPU knob)
+local sDcPolling          -- "true" while the timer loop is armed
+local sDcPollNote         -- the FIRST poll fault since the last clear - a bad
                         -- drain, a bad dispatch, or a target that stopped
                         -- resolving; "" while healthy
 local sPollDrains       -- drains attempted, so a failure can name which
@@ -136,14 +136,14 @@ local sPollDrains       -- drains attempted, so a failure can name which
 -- second chain.
 command dcStartPolling pTarget, pIntervalMs
    if pTarget is empty then
-      put the long id of this card into sPollTarget
+      put the long id of this card into sDcPollTarget
    else
-      put pTarget into sPollTarget
+      put pTarget into sDcPollTarget
    end if
    if pIntervalMs is empty or pIntervalMs is not a number or pIntervalMs < 1 then
-      put 33 into sPollInterval
+      put 33 into sDcPollInterval
    else
-      put pIntervalMs into sPollInterval
+      put pIntervalMs into sDcPollInterval
    end if
    -- Arm the chain ONCE - the guard enet-helpers has carried since it was
    -- written, and the one this file lacked. A second chain does not duplicate
@@ -153,8 +153,8 @@ command dcStartPolling pTarget, pIntervalMs
    -- own, because both read this one flag. Every in-tree caller
    -- (datachannel-loopback, datachannel-dht-chat) arms once at startup, so
    -- this is a trap laid for the NEXT caller rather than a live regression.
-   if sPolling is not "true" then
-      put "true" into sPolling
+   if sDcPolling is not "true" then
+      put "true" into sDcPolling
       if sPollDrains is not a number then
          put 0 into sPollDrains
       end if
@@ -167,7 +167,7 @@ end dcStartPolling
 -- only - the native queue keeps buffering, bounded, until you poll again or
 -- call dcCleanup.)
 command dcStopPolling
-   put "false" into sPolling
+   put "false" into sDcPolling
 end dcStopPolling
 
 -- One drain pass: pull all pending events with a single dcPoll, dispatch
@@ -197,7 +197,7 @@ end dcStopPolling
 -- becomes a nuisance: see dcPollLastError.
 command dcChannelPollOnce
    local tEvents, tEvent, tName, tErr, tTarget, tProbe
-   if sPolling is not "true" then
+   if sDcPolling is not "true" then
       exit dcChannelPollOnce
    end if
    -- Resolve the target ONCE per pass and prove it still RESOLVES. A long id
@@ -210,7 +210,7 @@ command dcChannelPollOnce
    -- unreported one in three demo files at once. The try/catch shape below is
    -- the one box2dxt's harness uses to re-resolve a stale long id, and it has
    -- run green on an engine.
-   put sPollTarget into tTarget
+   put sDcPollTarget into tTarget
    put empty into tProbe
    if tTarget is not empty then
       try
@@ -221,8 +221,8 @@ command dcChannelPollOnce
    end if
    if tProbe is empty then
       put the long id of this card into tTarget
-      if sPollNote is empty then
-         put "poll target no longer resolves; fell back to this card" into sPollNote
+      if sDcPollNote is empty then
+         put "poll target no longer resolves; fell back to this card" into sDcPollNote
       end if
    end if
    -- THE DRAIN IS INSIDE THE TRY TOO, and the first version of this wrap got
@@ -248,7 +248,7 @@ command dcChannelPollOnce
    try
       put dcPoll() into tEvents
    catch tErr
-      if sPollNote is empty then
+      if sDcPollNote is empty then
          -- NAME THE DRAIN NUMBER. _ensureDrain has exactly two callers and
          -- they are told apart by WHEN they run: the first drain passes the
          -- constant kDrainCap, and only a later one can reach the
@@ -264,7 +264,7 @@ command dcChannelPollOnce
          -- make, in the same commit whose message argued for it. An off-by-one
          -- in a diagnostic is not cosmetic; it is a diagnostic that lies.
          put "dcPoll failed on drain #" & sPollDrains & ": " & \
-               line 1 of tErr into sPollNote
+               line 1 of tErr into sDcPollNote
       end if
       -- Do NOT stop polling: a transient drain failure must not silently end
       -- the app's event delivery. Reschedule below and try again.
@@ -294,8 +294,8 @@ command dcChannelPollOnce
          -- Keep the FIRST failure: it is the one with a clean cause. Later
          -- ones are usually the same bug repeating at 10 Hz, and overwriting
          -- would leave whichever event happened to be last.
-         if sPollNote is empty then
-            put "dispatch of" && tName & " failed: " & line 1 of tErr into sPollNote
+         if sDcPollNote is empty then
+            put "dispatch of" && tName & " failed: " & line 1 of tErr into sDcPollNote
          end if
       end try
    end repeat
@@ -303,8 +303,8 @@ command dcChannelPollOnce
    -- interval is guarded because `in () milliseconds` on an empty value is
    -- itself a type conversion error - and a poll loop that dies while
    -- reporting a poll error would be a poor diagnostic.
-   if sPollInterval is not a number or sPollInterval < 1 then
-      put 33 into sPollInterval
+   if sDcPollInterval is not a number or sDcPollInterval < 1 then
+      put 33 into sDcPollInterval
    end if
    -- DO NOT RE-ARM IF A DISPATCH STOPPED US. The pass above runs app code, and
    -- app code legitimately calls dcStopPolling from inside a handler this
@@ -315,10 +315,10 @@ command dcChannelPollOnce
    -- the stale tick then re-arms the first. Two permanent chains, neither
    -- stoppable on its own because both read one flag - which is the trap the
    -- arm-once guard was added to prevent, reached from the other side.
-   if sPolling is not "true" then
+   if sDcPolling is not "true" then
       exit dcChannelPollOnce
    end if
-   send "dcChannelPollOnce" to me in (sPollInterval) milliseconds
+   send "dcChannelPollOnce" to me in (sDcPollInterval) milliseconds
 end dcChannelPollOnce
 
 -- dcPollLastError() -- empty while the dispatcher is healthy; otherwise the
@@ -329,13 +329,13 @@ end dcChannelPollOnce
 -- An app that shows this in its own log turns "the demo went quiet" into a
 -- line a maintainer can act on.
 function dcPollLastError
-   return sPollNote
+   return sDcPollNote
 end dcPollLastError
 
 -- Clear it, so an app can report each distinct failure once rather than
 -- repeating one line forever.
 command dcPollClearError
-   put empty into sPollNote
+   put empty into sDcPollNote
 end dcPollClearError
 
 -- dcStateName N -- map a kPeerState* int to a label for status displays.

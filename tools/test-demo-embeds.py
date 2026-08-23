@@ -120,11 +120,21 @@ def pipeline_collision(fn):
     that rename IN MEMORY and asserts the pipeline refuses the result. That
     is the exact input the build saw when it reported CLEAN.
 
+    UPDATED 2026-08-23: the HELPER's side is renamed too (`sDcPolling`, the
+    cross-library disjointness pass; enetxt's helper claimed the same four
+    names, held now by tools/check-cross-library-names.py), so the
+    reconstruction targets the provider's CURRENT name - colliding with a
+    name the provider no longer declares would test nothing, which is
+    exactly how this fixture caught the rename.
+
     Returns None when the collision is refused (correct), or a string
     describing what happened instead.
     """
     demo_rel = "datachannelxt/examples/datachannel-dht-chat.livecodescript"
     provider = "datachannelxt/examples/datachannel-helpers.livecodescript"
+    if "local sDcPolling" not in sde.read(provider):
+        return ("the helper no longer declares sDcPolling - this check has "
+                "gone stale and is testing nothing")
     text = sde.read(demo_rel)
     # drop the embed the demo already carries, exactly as main() does
     if sde.BEGIN in text:
@@ -133,18 +143,18 @@ def pipeline_collision(fn):
     if "sChatPolling" not in text:
         return ("the demo no longer declares sChatPolling - this check has "
                 "gone stale and is testing nothing")
-    text = text.replace("sChatPolling", "sPolling")
+    text = text.replace("sChatPolling", "sDcPolling")
     saved, sde.names = sde.names, fn
     try:
         sde.build_block(demo_rel, [provider], text)
     except SystemExit as exc:
         msg = str(exc)
-        if "sPolling" not in msg:
-            return f"refused, but did not name sPolling: {msg!r}"
+        if "sDcPolling" not in msg:
+            return f"refused, but did not name sDcPolling: {msg!r}"
         return None
     finally:
         sde.names = saved
-    return "build_block ACCEPTED a script with two `local sPolling` lines"
+    return "build_block ACCEPTED a script with two `local sDcPolling` lines"
 
 
 def pipeline_clean(fn):

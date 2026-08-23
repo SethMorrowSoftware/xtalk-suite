@@ -116,6 +116,16 @@ REGISTRY = {
         "riptide/src/riptide.livecodescript",
         "onionxt/src/onionxt.livecodescript",
         "onionxt/src/onion-httpd.livecodescript"],
+    # The nostrxt demo carries its harness for the self-test button (the
+    # onionxt-demo precedent). Order is load-bearing: the relay layer calls
+    # the core, and the harness calls both, so core -> relay -> tests. The
+    # relay layer is the one that defines socketError/socketClosed/
+    # socketTimeout, which is fine HERE (this demo embeds no other socket
+    # library) and is exactly why it stays out of the suite paste.
+    "nostrxt/examples/nostrxt-demo.livecodescript": [
+        "nostrxt/src/nostrxt.livecodescript",
+        "nostrxt/src/nostr-relay.livecodescript",
+        "nostrxt/examples/nostrxt-tests.livecodescript"],
 }
 
 # Demos deliberately NOT embedded, each with the reason. An entry here is a

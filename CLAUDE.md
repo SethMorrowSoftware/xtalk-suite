@@ -10,7 +10,7 @@ them and what the consolidation changed.
 
 ## What this repo is
 
-The OpenXTalk library suite: seven sibling extensions for OXT / the xTalk family,
+The OpenXTalk library suite: eight sibling extensions for OXT / the xTalk family,
 each a thin binding over a proven native library (or, for OnionXT, pure
 LiveCodeScript over a local Tor daemon), consolidated into one repository so
 they release, version, and interoperate as a suite. This monorepo is the
@@ -37,6 +37,16 @@ openxtalk-libraries/
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
                        member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
+  nostrxt/             the Nostr member, added 2026-08-23: pure LiveCodeScript
+                       over coinxt (BIP-340, sha256, ECDH) and sodiumxt
+                       (randomness); NIP-01 events with an OWNED canonical
+                       serializer, NIP-19 bech32/TLV (uncapped, the NIP's own
+                       waiver), the NIP-44 v2 construction fail-closed behind
+                       the one missing upstream cipher (sxChaCha20IetfXor,
+                       its docs/07), and a websocket relay client SPLIT into
+                       a second file so the suite paste never carries a
+                       second socketError definition; verified statically,
+                       vector-pinned headlessly, no engine pass yet
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification
@@ -247,6 +257,27 @@ script-name line mid-file puts everything after it outside the demo's own
 declaration scope. This replaced `onionxt/tools/build-standalone.py` and both
 generated `*-standalone` twins: embedding in place leaves one file to open rather
 than a source and a launchable copy of it.
+
+**One name, one library, suite-wide (2026-08-23).** The interoperability the
+suite advertises - any libraries co-loaded, any pair co-embedded into one
+paste - puts every library's names into ONE namespace, and until 2026-08-23 no
+gate looked ACROSS libraries: `check-duplicate-declarations.py` is per-file by
+design, and the embed tools compare only the combinations actually registered.
+Measured the day nostrxt landed, the gap was real twice over: the enet and
+datachannel helper layers shared four script-local names (`sPolling` among
+them, the name that already reached an engine once as 1.6's collision), and
+TWO libraries defined the engine's socket messages with only one passing
+foreign sockets on - onionxt's own copies swallowed them, which co-loaded with
+nostrxt's relay layer is the silent-hang rule onionxt itself documents for
+apps. Both fixed; `tools/check-cross-library-names.py` now holds the whole
+library corpus disjoint (handlers public and private, column-0 declarations,
+the engine messages' `pass` discipline, and a public-prefix ratchet that
+catches the NEXT collision before a second claimant exists), and
+`tools/test-cross-library-names.py` mutation-proves each check by editing a
+real corpus file in place and expecting the gate to fire - exercised the way
+the build runs it, per this file's own mutation-test lesson. Stack-shaped
+files (demos, harnesses, the apps) are deliberately out of that corpus, with
+the reason written in the gate's docstring.
 
 **The gates added on 2026-08-17/18, and what each one is standing in for.** All
 of them document behaviour already recorded in `docs/OXT-ENGINE-NOTES.md`; none
