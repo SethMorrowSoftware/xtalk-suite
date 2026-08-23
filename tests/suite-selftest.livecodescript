@@ -14929,9 +14929,9 @@ function nxProbeCapabilities
       put false into tCaps["hasSodium"]
    end try
    try
-      -- The upstream NIP-44 cipher (docs/07). Probe with a 1-byte xor; absent
-      -- today (SodiumXT has not shipped it), so this is expected to be false
-      -- until that lands - the probe is the seam, not a promise.
+      -- The upstream NIP-44 cipher (docs/07; shipped in SodiumXT ABI 10,
+      -- 2026-08-23). Probe with a 1-byte xor; false only when the INSTALLED
+      -- SodiumXT predates ABI 10 - the probe is the seam, not a promise.
       put sxChaCha20IetfXor(nxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"), nxHexDecode("000000000000000000000000"), numToByte(0)) into tOut
       if the number of bytes of tOut is 1 then
          put true into tCaps["canNip44Cipher"]
@@ -17408,15 +17408,17 @@ private function nxNip44Unpad pPadded
 end nxNip44Unpad
 
 private function nxChaCha20 pKeyData, pNonceData, pData
-   -- THE CIPHER SEAM (docs/07): composes SodiumXT's sxChaCha20IetfXor when
-   -- it ships (RFC 8439 ChaCha20, 12-byte nonce, counter 0). Until then the
-   -- call raises and this returns empty with the capability error recorded.
-   -- Family law forbids hand-rolling the cipher here (rule 1).
+   -- THE CIPHER SEAM (docs/07): composes SodiumXT's sxChaCha20IetfXor
+   -- (RFC 8439 ChaCha20, 12-byte nonce, counter 0; shipped upstream in
+   -- SodiumXT ABI 10, 2026-08-23). On an installed SodiumXT older than that
+   -- the call raises and this returns empty with the capability error
+   -- recorded - the fail-closed branch is the old-install path, not dead
+   -- code. Family law forbids hand-rolling the cipher here (rule 1).
    local tError, tOut
    try
       put sxChaCha20IetfXor(pKeyData, pNonceData, pData) into tOut
    catch tError
-      nxSetError "nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped upstream; docs/07-capabilities-required.md)"
+      nxSetError "nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)"
       return empty
    end try
    if the number of bytes of tOut is not the number of bytes of pData then
@@ -18434,6 +18436,7 @@ function sx1sxSelfTest
    sx1testPadding
    sx1testHashExtras
    sx1testRistretto
+   sx1testChaCha20
    sx1testDiagnostics
 
    put return & "----" & return after sx1sLog
@@ -19132,6 +19135,82 @@ on sx1testRistretto
    end try
    sx1sxCheck sx1tCaught, "an invalid operand encoding refuses to add (throws)"
 end sx1testRistretto
+
+on sx1testChaCha20
+   local sx1tProbe
+   local sx1tErr
+   local sx1tCaught
+   local sx1tKey
+   local sx1tNonce
+   local sx1tZeros
+   local sx1tOut
+   local sx1tPlain
+   local sx1tCipher
+   local sx1tBack
+   sx1sxSection "raw IETF ChaCha20 stream xor (ABI 10)"
+   -- SKIP cleanly on a pre-ABI-10 package: the probe call throws (handler not
+   -- found on an older .lcb, or the ABI-mismatch guard on a mixed package)
+   -- instead of answering, and this section must not take the whole run down
+   -- with it (the suite's stMergeCounted lesson).
+   put sxHex2Bin(textEncode("0000000000000000000000000000000000000000000000000000000000000000", "ascii")) into sx1tKey
+   put sxHex2Bin(textEncode("000000000000000000000000", "ascii")) into sx1tNonce
+   try
+      put sxChaCha20IetfXor(sx1tKey, sx1tNonce, numToByte(0)) into sx1tProbe
+   catch sx1tErr
+      sx1sxCheck true, "SKIP: this SodiumXT package predates the raw ChaCha20 surface (ABI 10)"
+      exit sx1testChaCha20
+   end try
+   -- RFC 8439 Appendix A.2 #1: all-zero key and nonce at counter 0 over 64
+   -- zero bytes is the raw keystream. The same bytes are pinned in the C
+   -- smoke test and cross-derived from nostrxt's independent RFC 8439
+   -- reference, so this compares THREE implementations, not one.
+   put sxHex2Bin(textEncode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "ascii")) into sx1tZeros
+   put sxChaCha20IetfXor(sx1tKey, sx1tNonce, sx1tZeros) into sx1tOut
+   sx1sxCheck (sx1sxHexOf(sx1tOut) is "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7" \
+         & "da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586"), \
+         "counter-0 keystream matches RFC 8439 A.2 #1"
+   sx1sxCheck (the number of bytes in sx1tOut is the number of bytes in sx1tZeros), \
+         "the output length equals the input length"
+   -- the section 2.4.2 sunscreen plaintext under that section's key and nonce
+   -- but at COUNTER 0 (the raw-xor configuration this handler fixes; 2.4.2
+   -- itself starts at counter 1, so its published ciphertext does not apply).
+   -- Expected bytes derived from nostrxt's independent RFC 8439 reference and
+   -- pinned identically in the C smoke test.
+   put sxHex2Bin(textEncode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "ascii")) into sx1tKey
+   put sxHex2Bin(textEncode("000000000000004a00000000", "ascii")) into sx1tNonce
+   put sx1sxUtf8("Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.") into sx1tPlain
+   put sxChaCha20IetfXor(sx1tKey, sx1tNonce, sx1tPlain) into sx1tCipher
+   sx1sxCheck (sx1sxHexOf(sx1tCipher) is "e3647a29ded31528ef56bac70f7a7ac3b735c7444da42d99823ef9938c8ebfdc" \
+         & "f05bb71a822c62981aa1ea608f47933f2ed755b62d9312ae72037674f3e93e24" \
+         & "4c2328d32f75bcc15bb7574fde0c6fcdf87b7aa25b5972970c2ae6cced86a10b" \
+         & "e9496fc61c407dfdc01510ed8f4eb35d0d62"), \
+         "counter-0 sunscreen ciphertext matches the independent reference"
+   -- the call is its own inverse: the same handler decrypts. Compared as hex
+   -- (both sides through sx1sxHexOf), because `is` on the raw bytes folds case
+   -- and would call "Ladies" and "lADIES" the same plaintext.
+   put sxChaCha20IetfXor(sx1tKey, sx1tNonce, sx1tCipher) into sx1tBack
+   sx1sxCheck (sx1sxHexOf(sx1tBack) is sx1sxHexOf(sx1tPlain)), "xor twice with the same key and nonce is the identity"
+   -- an empty input is legal and returns empty.
+   put sxChaCha20IetfXor(sx1tKey, sx1tNonce, textEncode("", "ascii")) into sx1tOut
+   sx1sxCheck (the number of bytes in sx1tOut is 0), "an empty input returns empty"
+   -- firewall: the shim refuses any other key or nonce length, and the
+   -- refusal arrives as a throw (the .lcb error convention), never as
+   -- truncated or garbage output.
+   put false into sx1tCaught
+   try
+      put sxChaCha20IetfXor(sxHex2Bin(textEncode("00", "ascii")), sx1tNonce, sx1tPlain) into sx1tOut
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a 1-byte key is refused"
+   put false into sx1tCaught
+   try
+      put sxChaCha20IetfXor(sx1tKey, sxHex2Bin(textEncode("0000", "ascii")), sx1tPlain) into sx1tOut
+   catch sx1tErr
+      put true into sx1tCaught
+   end try
+   sx1sxCheck sx1tCaught, "a 2-byte nonce is refused"
+end sx1testChaCha20
 
 on sx1testDiagnostics
    local sx1tErr
@@ -39824,10 +39903,11 @@ end he1heTestFoldRun
 --
 -- 17 sections, all OFFLINE and deterministic: canonical serialization, the
 -- JSON parser, NIP-19 bech32/TLV, the NIP-44 schedule, padding and the
--- fail-closed cipher seam, filters, wire messages, websocket framing math,
--- PoW, and the builders. Signing sections SKIP without CoinXT; the nxr*
--- relay-layer section SKIPS here by design (that layer defines the engine's
--- socket handlers, which the embedded onionxt layer also defines, so it is
+-- cipher seam (round-trip on SodiumXT ABI 10+, fail-closed on older
+-- installs), filters, wire messages, websocket framing math, PoW, and the
+-- builders. Signing sections SKIP without CoinXT; the nxr* relay-layer
+-- section SKIPS here by design (that layer defines the engine's socket
+-- handlers, which the embedded onionxt layer also defines, so it is
 -- deliberately NOT in this paste - the onion-httpd precedent).
 --
 -- GENERATED from nostrxt/examples/nostrxt-tests.livecodescript by
@@ -40313,11 +40393,11 @@ private command nx1nxtTestNip44Seam
       put nxNip44Encrypt(nx1kNxVecN44Sec1, nx1kNxVecN44Pub2, "a", nx1kNxVecN44Nonce) into nx1tOut
       nx1nxtCheck nx1tOut is nx1kNxVecN44Payload, "and re-encrypts byte-identically"
    else
-      -- The documented gap: the MAC verifies, then the cipher fails CLOSED
-      -- with the capability error naming the upstream primitive.
+      -- The pre-ABI-10 install: the MAC verifies, then the cipher fails
+      -- CLOSED with the capability error naming the upstream primitive.
       put nxNip44Decrypt(nx1kNxVecN44Sec1, nx1kNxVecN44Pub2, nx1kNxVecN44Payload) into nx1tOut
       nx1nxtCheck nx1tOut is empty, "the untampered vector reaches the cipher and fails closed"
-      nx1nxtCheck nxLastError() contains "sxChaCha20IetfXor", "naming the missing upstream primitive"
+      nx1nxtCheck nxLastError() contains "sxChaCha20IetfXor", "naming the primitive absent from the installed SodiumXT"
       nx1nxtCheck nxNip44Encrypt(nx1kNxVecN44Sec1, nx1kNxVecN44Pub2, "a", nx1kNxVecN44Nonce) is empty, "encrypt fails closed the same way"
    end if
 end nx1nxtTestNip44Seam

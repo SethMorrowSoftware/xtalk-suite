@@ -19,8 +19,11 @@
  * ristretto255 group surface for mental-poker deals (holde-em Workstream U);
  * (ABI 9) that plan's recorded Phase 5 follow-ons - ristretto255 point
  * add/sub, base-point and one-crossing batch scalar multiplication, and
- * scalar add/mul mod L - the DLEQ-proof algebra. The ABI is versioned by
- * SXT_ABI_VERSION below; bump it on any signature change.
+ * scalar add/mul mod L - the DLEQ-proof algebra; (ABI 10) the raw IETF
+ * ChaCha20 stream xor for spec-pinned constructions that carry their own
+ * MAC (NIP-44 the named consumer; the loud reason is in docs/security.md
+ * and at the declaration). The ABI is versioned by SXT_ABI_VERSION below;
+ * bump it on any signature change.
  */
 #ifndef SODIUMXT_SODIUM_SHIM_H
 #define SODIUMXT_SODIUM_SHIM_H
@@ -50,7 +53,7 @@ extern "C" {
  * clear "reinstall the extension" error on skew, instead of corrupting memory
  * on first use against a mismatched native library.
  */
-#define SXT_ABI_VERSION 9
+#define SXT_ABI_VERSION 10
 
 /*
  * The largest single in-memory out-buffer we will service. The return value of
@@ -744,6 +747,56 @@ SXT_API int SXT_CALL sxt_ristretto_scalar_add(unsigned char *out, int cap,
 SXT_API int SXT_CALL sxt_ristretto_scalar_mul(unsigned char *out, int cap,
                                               const unsigned char *x, int xlen,
                                               const unsigned char *y, int ylen);
+
+/* --- ABI 10: raw IETF ChaCha20 stream xor (NIP-44, nostrxt docs/07) -------- */
+
+/*
+ * THE LOUD REASON, stated here because this export contradicts two of this
+ * member's own rules on their face (CLAUDE.md rules 3 and 4: no
+ * bring-your-own-nonce entry points, never a raw unauthenticated stream
+ * cipher) and exists anyway, on an argued exception (docs/security.md
+ * carries the full argument; nostrxt/docs/07-capabilities-required.md is
+ * the request that owed it):
+ *
+ *   - This is a BUILDING BLOCK for published constructions that carry their
+ *     own MAC, not a sealing API. The named consumer is NIP-44 v2, whose
+ *     authentication is HMAC-SHA256 over nonce||ciphertext, keyed by an
+ *     HKDF slice and verified BEFORE the cipher runs on decrypt. That is
+ *     the construction the official vector set pins byte for byte; an AEAD
+ *     here would emit payloads no other Nostr client can read.
+ *   - The nonce discipline lives in the construction, not the caller: the
+ *     12-byte nonce is an HKDF-expand slice over a fresh random 32-byte
+ *     per-message nonce, never a caller-chosen value in anger.
+ *   - The alternative is worse by the family's stronger rule: without this
+ *     export the only path to NIP-44 conformance is a hand-rolled ChaCha20
+ *     in script, which the suite forbids outright. A thin wrap of
+ *     libsodium's audited crypto_stream_chacha20_ietf_xor is the rules
+ *     being obeyed at the family level, not waived.
+ *
+ * Anything that just wants bytes sealed still uses sxt_secretbox /
+ * sxt_aead_encrypt / secretstream, which authenticate and mint nonces.
+ */
+
+/* ChaCha20-IETF key length (32) and nonce length (12), as functions so the
+ * LCB layer never hardcodes them (the house rule for every length here). */
+SXT_API int SXT_CALL sxt_chacha20_ietf_keybytes(void);
+SXT_API int SXT_CALL sxt_chacha20_ietf_noncebytes(void);
+
+/*
+ * out = in XOR ChaCha20-IETF keystream (crypto_stream_chacha20_ietf_xor):
+ * RFC 8439 ChaCha20, 32-byte key, 12-byte nonce, initial block counter 0.
+ * UNAUTHENTICATED and length-preserving: writes exactly inlen bytes, and the
+ * call is its own inverse (running it twice with the same key and nonce
+ * returns the input). key must be exactly sxt_chacha20_ietf_keybytes() and
+ * nonce exactly sxt_chacha20_ietf_noncebytes(); an empty input is legal
+ * (writes 0, returns 0). Returns inlen, or -inlen when cap is short, or a
+ * hard error. In-place (out == in) is supported by libsodium but the LCB
+ * layer never uses it (it always fills a fresh buffer).
+ */
+SXT_API int SXT_CALL sxt_chacha20_ietf_xor(unsigned char *out, int cap,
+                                           const unsigned char *key, int keylen,
+                                           const unsigned char *nonce, int noncelen,
+                                           const unsigned char *in, int inlen);
 
 #ifdef __cplusplus
 }

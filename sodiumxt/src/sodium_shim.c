@@ -2774,3 +2774,69 @@ SXT_API int SXT_CALL sxt_ristretto_scalar_mul(unsigned char *out, int cap,
                                crypto_core_ristretto255_scalar_mul,
                                out, cap, x, xlen, y, ylen);
 }
+
+/* --- ABI 10: raw IETF ChaCha20 stream xor (NIP-44, nostrxt docs/07) -------- */
+
+SXT_API int SXT_CALL sxt_chacha20_ietf_keybytes(void)
+{ return (int)crypto_stream_chacha20_ietf_KEYBYTES; }
+
+SXT_API int SXT_CALL sxt_chacha20_ietf_noncebytes(void)
+{ return (int)crypto_stream_chacha20_ietf_NONCEBYTES; }
+
+/*
+ * The one deliberately unauthenticated entry point on this surface; the loud
+ * reason lives with the declaration (sodium_shim.h) and in docs/security.md.
+ * The body is a thin wrap: every byte of keystream comes from libsodium's
+ * crypto_stream_chacha20_ietf_xor at initial counter 0, no state is held, and
+ * there is no transient key copy to zero (the key stays the caller's buffer).
+ */
+SXT_API int SXT_CALL sxt_chacha20_ietf_xor(unsigned char *out, int cap,
+                                           const unsigned char *key, int keylen,
+                                           const unsigned char *nonce, int noncelen,
+                                           const unsigned char *in, int inlen)
+{
+    clear_error();
+    if (ensure_init() != SXT_OK) {
+        return SXT_ERR_INIT;
+    }
+    if (keylen < 0 || noncelen < 0 || inlen < 0) {
+        set_error("sxt_chacha20_ietf_xor: negative length");
+        return SXT_ERR_BADARG;
+    }
+    if (keylen != (int)crypto_stream_chacha20_ietf_KEYBYTES) {
+        set_error("sxt_chacha20_ietf_xor: wrong key length");
+        return SXT_ERR_BADARG;
+    }
+    if (noncelen != (int)crypto_stream_chacha20_ietf_NONCEBYTES) {
+        set_error("sxt_chacha20_ietf_xor: wrong nonce length");
+        return SXT_ERR_BADARG;
+    }
+    if (inlen >= SXT_MAX_BUFFER) {
+        set_error("sxt_chacha20_ietf_xor: input too large");
+        return SXT_ERR_BADARG;
+    }
+    if (cap < inlen) {
+        return -inlen;
+    }
+    if (inlen == 0) {
+        return 0;
+    }
+    if (out == NULL) {
+        set_error("sxt_chacha20_ietf_xor: null output buffer");
+        return SXT_ERR_BADARG;
+    }
+    if (key == NULL || nonce == NULL) {
+        set_error("sxt_chacha20_ietf_xor: null key or nonce");
+        return SXT_ERR_BADARG;
+    }
+    if (in == NULL) {
+        set_error("sxt_chacha20_ietf_xor: null input");
+        return SXT_ERR_BADARG;
+    }
+    if (crypto_stream_chacha20_ietf_xor(out, in, (unsigned long long)inlen,
+                                        nonce, key) != 0) {
+        set_error("sxt_chacha20_ietf_xor: libsodium refused the call");
+        return SXT_ERR_BADARG;
+    }
+    return inlen;
+}

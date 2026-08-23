@@ -65,8 +65,8 @@ NOT_A_HANDLER = {
     "nxNip44": (
         "convention", None,
         "the prefix of the seam's own error string ('nxNip44 needs SodiumXT "
-        "sxChaCha20IetfXor ...'), quoted VERBATIM by docs 04/06/07/09; a "
-        "message fragment, not a call."),
+        "sxChaCha20IetfXor (shipped in SodiumXT ABI 10; ...)'), quoted "
+        "VERBATIM by docs 04/06/07/09; a message fragment, not a call."),
     "nxWs": (
         "convention", None,
         "the family-stem glob nxWs* the docs use for the websocket helper "

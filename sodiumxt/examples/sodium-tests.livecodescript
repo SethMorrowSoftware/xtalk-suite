@@ -57,6 +57,7 @@ function sxSelfTest
    testPadding
    testHashExtras
    testRistretto
+   testChaCha20
    testDiagnostics
 
    put return & "----" & return after sLog
@@ -760,6 +761,82 @@ on testRistretto
    end try
    sxCheck tCaught, "an invalid operand encoding refuses to add (throws)"
 end testRistretto
+
+on testChaCha20
+   local tProbe
+   local tErr
+   local tCaught
+   local tKey
+   local tNonce
+   local tZeros
+   local tOut
+   local tPlain
+   local tCipher
+   local tBack
+   sxSection "raw IETF ChaCha20 stream xor (ABI 10)"
+   -- SKIP cleanly on a pre-ABI-10 package: the probe call throws (handler not
+   -- found on an older .lcb, or the ABI-mismatch guard on a mixed package)
+   -- instead of answering, and this section must not take the whole run down
+   -- with it (the suite's stMergeCounted lesson).
+   put sxHex2Bin(textEncode("0000000000000000000000000000000000000000000000000000000000000000", "ascii")) into tKey
+   put sxHex2Bin(textEncode("000000000000000000000000", "ascii")) into tNonce
+   try
+      put sxChaCha20IetfXor(tKey, tNonce, numToByte(0)) into tProbe
+   catch tErr
+      sxCheck true, "SKIP: this SodiumXT package predates the raw ChaCha20 surface (ABI 10)"
+      exit testChaCha20
+   end try
+   -- RFC 8439 Appendix A.2 #1: all-zero key and nonce at counter 0 over 64
+   -- zero bytes is the raw keystream. The same bytes are pinned in the C
+   -- smoke test and cross-derived from nostrxt's independent RFC 8439
+   -- reference, so this compares THREE implementations, not one.
+   put sxHex2Bin(textEncode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "ascii")) into tZeros
+   put sxChaCha20IetfXor(tKey, tNonce, tZeros) into tOut
+   sxCheck (sxHexOf(tOut) is "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7" \
+         & "da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586"), \
+         "counter-0 keystream matches RFC 8439 A.2 #1"
+   sxCheck (the number of bytes in tOut is the number of bytes in tZeros), \
+         "the output length equals the input length"
+   -- the section 2.4.2 sunscreen plaintext under that section's key and nonce
+   -- but at COUNTER 0 (the raw-xor configuration this handler fixes; 2.4.2
+   -- itself starts at counter 1, so its published ciphertext does not apply).
+   -- Expected bytes derived from nostrxt's independent RFC 8439 reference and
+   -- pinned identically in the C smoke test.
+   put sxHex2Bin(textEncode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "ascii")) into tKey
+   put sxHex2Bin(textEncode("000000000000004a00000000", "ascii")) into tNonce
+   put sxUtf8("Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.") into tPlain
+   put sxChaCha20IetfXor(tKey, tNonce, tPlain) into tCipher
+   sxCheck (sxHexOf(tCipher) is "e3647a29ded31528ef56bac70f7a7ac3b735c7444da42d99823ef9938c8ebfdc" \
+         & "f05bb71a822c62981aa1ea608f47933f2ed755b62d9312ae72037674f3e93e24" \
+         & "4c2328d32f75bcc15bb7574fde0c6fcdf87b7aa25b5972970c2ae6cced86a10b" \
+         & "e9496fc61c407dfdc01510ed8f4eb35d0d62"), \
+         "counter-0 sunscreen ciphertext matches the independent reference"
+   -- the call is its own inverse: the same handler decrypts. Compared as hex
+   -- (both sides through sxHexOf), because `is` on the raw bytes folds case
+   -- and would call "Ladies" and "lADIES" the same plaintext.
+   put sxChaCha20IetfXor(tKey, tNonce, tCipher) into tBack
+   sxCheck (sxHexOf(tBack) is sxHexOf(tPlain)), "xor twice with the same key and nonce is the identity"
+   -- an empty input is legal and returns empty.
+   put sxChaCha20IetfXor(tKey, tNonce, textEncode("", "ascii")) into tOut
+   sxCheck (the number of bytes in tOut is 0), "an empty input returns empty"
+   -- firewall: the shim refuses any other key or nonce length, and the
+   -- refusal arrives as a throw (the .lcb error convention), never as
+   -- truncated or garbage output.
+   put false into tCaught
+   try
+      put sxChaCha20IetfXor(sxHex2Bin(textEncode("00", "ascii")), tNonce, tPlain) into tOut
+   catch tErr
+      put true into tCaught
+   end try
+   sxCheck tCaught, "a 1-byte key is refused"
+   put false into tCaught
+   try
+      put sxChaCha20IetfXor(tKey, sxHex2Bin(textEncode("0000", "ascii")), tPlain) into tOut
+   catch tErr
+      put true into tCaught
+   end try
+   sxCheck tCaught, "a 2-byte nonce is refused"
+end testChaCha20
 
 on testDiagnostics
    local tErr

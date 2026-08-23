@@ -41,9 +41,11 @@ openxtalk-libraries/
                        over coinxt (BIP-340, sha256, ECDH) and sodiumxt
                        (randomness); NIP-01 events with an OWNED canonical
                        serializer, NIP-19 bech32/TLV (uncapped, the NIP's own
-                       waiver), the NIP-44 v2 construction fail-closed behind
-                       the one missing upstream cipher (sxChaCha20IetfXor,
-                       its docs/07), and a websocket relay client SPLIT into
+                       waiver), the NIP-44 v2 construction COMPLETE since
+                       2026-08-23 over sodiumxt ABI 10's sxChaCha20IetfXor
+                       (its docs/07 request, shipped the same day; the seam
+                       still fails closed on an older installed sodiumxt),
+                       and a websocket relay client SPLIT into
                        a second file so the suite paste never carries a
                        second socketError definition; verified statically,
                        vector-pinned headlessly, no engine pass yet

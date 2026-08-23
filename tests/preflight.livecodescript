@@ -46,7 +46,7 @@
 -- before it writes this file - so these six lines and the twelve places they
 -- come from cannot disagree without failing the suite build.
 -- sodiumxt/src/sodium_shim.h (SXT_ABI_VERSION), cross-checked against sodiumxt/src/sodium.lcb
-constant kAbiSodium = 9
+constant kAbiSodium = 10
 -- torrentxt/src/btx_abi.h (BTX_ABI_VERSION), cross-checked against torrentxt/src/torrent.lcb
 constant kAbiTorrent = 11
 -- enetxt/src/enx_abi.h (ENX_ABI_VERSION), cross-checked against enetxt/src/enet.lcb
@@ -786,7 +786,7 @@ command pfNextSection
       stNote ""
       stNote "MACOS: a SodiumXT ABI SKEW above is the KNOWN RECORDED STATE here,"
       stNote "not a new defect - the committed universal-mac dylib is at ABI 6"
-      stNote "against this binding's 9 (sodiumxt/CLAUDE.md's platform table;"
+      stNote "against this binding's 10 (sodiumxt/CLAUDE.md's platform table;"
       stNote "runbook section 2.1's warning). Record it once and move to what a"
       stNote "Mac CAN run today (runbook S5); it needs the manual lipo build."
    end if

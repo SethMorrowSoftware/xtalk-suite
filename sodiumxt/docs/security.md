@@ -13,9 +13,12 @@ what that gets you and the few rules you must follow to keep it.
   `encrypt ... using "aes-256-cbc"` path, which is unauthenticated.
 - **Strong, memory-hard password hashing.** Passphrases are run through Argon2id, which is
   expensive to brute-force, not a fast hash.
-- **Misuse-resistant nonces.** You never supply a nonce. One-shot ciphers generate a fresh
-  random nonce and prepend it; the streaming cipher derives per-chunk nonces from a random
-  header. Nonce reuse - the classic catastrophic mistake - is designed out of the API.
+- **Misuse-resistant nonces.** For everything that seals bytes, you never supply a nonce.
+  One-shot ciphers generate a fresh random nonce and prepend it; the streaming cipher derives
+  per-chunk nonces from a random header. Nonce reuse - the classic catastrophic mistake - is
+  designed out of the sealing API. The single caller-supplied-nonce entry point on the whole
+  surface is `sxChaCha20IetfXor`, a building block for published constructions that derive
+  their nonces internally; its argued exception is below.
 - **A real CSPRNG.** `sxRandomBytes` and `sxRandomUniform` come from the operating system
   cryptographic random source.
 
@@ -31,6 +34,7 @@ what that gets you and the few rules you must follow to keep it.
 | Signatures (`sxSign*`) | ed25519 |
 | Hashing (`sxHash`, `sxHashFile`) | BLAKE2b |
 | Key derivation / exchange | BLAKE2b KDF / X25519 (crypto_kx) |
+| Raw stream xor for MAC-carrying constructions (`sxChaCha20IetfXor`) | ChaCha20-IETF (RFC 8439), unauthenticated by design - see the exception below |
 
 ## Rules you must follow
 
@@ -74,14 +78,54 @@ more than necessary.
 
 To keep misuse hard, some libsodium features are intentionally omitted:
 
-- **Raw, unauthenticated stream ciphers** (plain XSalsa20 / XChaCha20 / AES-CTR). Everything
-  here authenticates.
-- **Bring-your-own-nonce variants.** Nonces are managed for you.
+- **Raw, unauthenticated stream ciphers** (plain XSalsa20 / XChaCha20 / AES-CTR) - with ONE
+  argued exception, `sxChaCha20IetfXor`, below. Everything that SEALS bytes here
+  authenticates.
+- **Bring-your-own-nonce variants of the sealing API.** Nonces are managed for you.
 - **Raw scalar multiplication / unhashed Diffie-Hellman**, and other low-level primitives that
   are easy to hold wrong.
 
 If you have a concrete need for one of these, that is a discussion for an issue, not something
 to work around with hand-rolled crypto next to SodiumXT.
+
+## The one argued exception: `sxChaCha20IetfXor` (ABI 10, 2026-08-23)
+
+This member's own rules say never a raw unauthenticated stream cipher and never a
+bring-your-own-nonce entry point without a very loud reason. `sxChaCha20IetfXor` (RFC 8439
+ChaCha20: 32-byte key, 12-byte nonce, initial counter 0, length-preserving, its own inverse)
+is BOTH, and it shipped anyway. This section is the loud reason, argued rather than waved
+through, because the request that owed it
+(`nostrxt/docs/07-capabilities-required.md`) named exactly what had to be established:
+
+1. **The nonce discipline lives in the construction, not the caller.** In the named
+   consumer - the NIP-44 v2 encrypted-payload construction - the 12-byte ChaCha20 nonce is
+   never chosen by an app: it is an HKDF-expand slice over a fresh random 32-byte
+   per-message nonce drawn inside the construction. Nonce reuse would require an HKDF
+   collision, not a caller mistake.
+2. **Authentication is provided one layer up, per a published specification.** NIP-44 does
+   not use Poly1305: its authentication is HMAC-SHA256 over nonce||ciphertext, keyed by a
+   third HKDF slice and verified BEFORE the cipher runs on decrypt. That is the construction
+   the official vector set pins byte for byte. An AEAD here would emit payloads no other
+   Nostr client can read - sixteen tag bytes in the wrong place and a MAC the spec does not
+   define. The property the never-a-raw-stream rule exists to guarantee is held; it is held
+   by HMAC rather than Poly1305.
+3. **The alternative is worse by the family's stronger rule.** Without this export the only
+   path to NIP-44 conformance is a hand-rolled ChaCha20 in script, which the suite forbids
+   outright (no member adds cryptography). A thin wrap of libsodium's audited
+   `crypto_stream_chacha20_ietf_xor` is the rules being obeyed at the family level, not
+   waived.
+4. **Containment.** The handler is documented everywhere it appears as a BUILDING BLOCK for
+   composed, spec-pinned constructions that carry their own MAC - never as a sealing API.
+   To encrypt bytes, use `sxSecretBox` / `sxAeadEncrypt` / the secretstream family, which
+   authenticate and mint nonces. If you find yourself calling `sxChaCha20IetfXor` outside a
+   published construction with its own verified MAC and its own internal nonce derivation,
+   you are holding it wrong, and the right tool is one line up this paragraph.
+
+The precedent is `sxSha3_256` (ABI 7): a sibling-requested primitive, argued in the
+requester's capability ledger, shipped as a thin wrap of audited code. The evidence
+standard is the house one: C KATs under ASan/UBSan cross-checked against an independent
+RFC 8439 implementation (three implementations agree on the pinned vectors), verified
+statically on the script side; the handler still needs an OXT pass.
 
 ## Provenance and reporting
 

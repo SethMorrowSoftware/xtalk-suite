@@ -525,7 +525,8 @@ MEMBERS = [
         "nxSelfTest", "NostrXT: the full nx* self-test",
         "17 sections, all OFFLINE and deterministic: canonical serialization, "
         "the JSON parser, NIP-19 bech32/TLV, the NIP-44 schedule, padding and "
-        "the fail-closed cipher seam, filters, wire messages, websocket "
+        "the cipher seam (round-trip on SodiumXT ABI 10+, fail-closed on "
+        "older installs), filters, wire messages, websocket "
         "framing math, PoW, and the builders. Signing sections SKIP without "
         "CoinXT; the nxr* relay-layer section SKIPS here by design (that "
         "layer defines the engine's socket handlers, which the embedded "

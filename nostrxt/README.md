@@ -13,11 +13,12 @@ dumb websocket relays) without adding one line of cryptography of its own:
 2. **NIP-19 entities** - `npub` / `nsec` / `note` and the TLV forms
    (`nprofile` / `nevent` / `naddr`), plus `nostr:` URIs, over a bech32
    implementation pinned to the BIP-173 vectors.
-3. **NIP-44 v2 encrypted payloads** - the conversation key, message keys,
-   padding and MAC are implemented and vector-pinned today; the raw ChaCha20
-   cipher call is the one primitive missing upstream, so encrypt/decrypt
-   fail closed with a clear capability error until SodiumXT ships it
-   (see `docs/07-capabilities-required.md`).
+3. **NIP-44 v2 encrypted payloads** - the COMPLETE construction: conversation
+   key, message keys, padding, MAC, and (since 2026-08-23) the raw ChaCha20
+   cipher itself, composed from SodiumXT ABI 10's `sxChaCha20IetfXor` and
+   swept against the full official vector set headlessly. On an installed
+   SodiumXT older than ABI 10, encrypt/decrypt still fail closed with a
+   clear capability error (see `docs/07-capabilities-required.md`).
 4. **NIP-01 filters and relay messages** - filter building, client-side
    filter matching, and the REQ / CLOSE / EVENT / AUTH wire messages,
    with a strict owned JSON parser for what relays send back.
@@ -47,9 +48,9 @@ dumb websocket relays) without adding one line of cryptography of its own:
      cxXOnlyPubkey, cxEcdh,                 the user can change them)
      cxHmacSha256, cxSeckeyIsValid
    SodiumXT (sx*, soft):
-     sxRandomBytes, sxMemEqual
-     [sxChaCha20IetfXor: requested
-      upstream, not yet shipped]
+     sxRandomBytes, sxMemEqual,
+     sxChaCha20IetfXor (needs the
+      ABI 10 package, 2026-08-23)
 ```
 
 ## Why this matters
@@ -90,13 +91,14 @@ rewrite (`docs/08-open-questions.md`).
   calls. What NostrXT owns in pure script is exactly the checksummed byte
   shuffling family law allows there: JSON bytes, bech32 bit packing, the
   NIP-44 key schedule and padding, websocket framing math.
-- **Encrypted DMs are not complete until the upstream cipher ships.**
-  NIP-44's raw ChaCha20 exists nowhere in the suite; the requested SodiumXT
-  primitive is `sxChaCha20IetfXor` (`docs/07-capabilities-required.md`).
-  Until it lands, `nxNip44Encrypt` / `nxNip44Decrypt` fail closed with a
-  capability error naming it - the key schedule, padding and MAC paths work
-  and are vector-pinned today, and the harness already proves the
-  MAC-before-cipher order.
+- **Encrypted payloads are complete against a current SodiumXT (2026-08-23).**
+  The once-missing raw ChaCha20 shipped upstream as SodiumXT ABI 10's
+  `sxChaCha20IetfXor` (`docs/07-capabilities-required.md` is the closed
+  request). On an installed SodiumXT older than ABI 10, `nxNip44Encrypt` /
+  `nxNip44Decrypt` fail closed with a capability error naming it - the key
+  schedule, padding and MAC paths work either way, and the harness proves
+  the MAC-before-cipher order on any install. The complete path is
+  engine-unproven (needs an OXT pass), like everything else here.
 
 ## Layout
 
@@ -113,7 +115,7 @@ nostrxt/                    (the NostrXT member of the xtalk-suite monorepo)
     04-nip44-payloads.md    the v2 payload: key schedule, padding, MAC, the cipher seam
     05-relay-client.md      the nxr* websocket state machine and callback contract
     06-api-reference.md     the public nx* / nxr* surface
-    07-capabilities-required.md  the one upstream gap (sxChaCha20IetfXor) and its tension
+    07-capabilities-required.md  the capability ledger (sxChaCha20IetfXor CLOSED 2026-08-23; TLS open)
     08-open-questions.md    the honest to-do list (wss://, onion relays, NIP-17)
     09-usage-guide.md       from-zero guide for any OXT app that uses NostrXT
   src/
@@ -224,10 +226,13 @@ CoinXT extension and re-open the stack (the capability probe is cached;
 
 ### `nxNip44Encrypt` / `nxNip44Decrypt` return empty naming `sxChaCha20IetfXor`
 
-Expected today, not a setup error: the raw ChaCha20 primitive has not
-shipped in SodiumXT yet (`docs/07-capabilities-required.md`). The payload
-is refused fail-closed at the cipher seam; everything up to it (conversation
-key, message keys, padding, MAC) works and is vector-pinned.
+The installed SodiumXT predates ABI 10 (2026-08-23), which is where
+`sxChaCha20IetfXor` shipped (`docs/07-capabilities-required.md`). The remedy
+is upgrading the installed SodiumXT package; then re-open the stack, or use
+`nxNip44HasCipher()`, the live re-probe (the `nxProbeCapabilities` row is
+cached per session). On the old package the payload is refused fail-closed
+at the cipher seam; everything up to it (conversation key, message keys,
+padding, MAC) works and is vector-pinned.
 
 ### Relay verbs throw "can't find handler" (nxWsUrlParse, nxClientReq, ...)
 

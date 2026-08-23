@@ -306,7 +306,7 @@ MAC_EXEMPTION = (
 MAC_MEMBER_NOTE = {
     "sodiumxt":
         "and README.md's release matrix already records the verdict this gate "
-        "would reach: \"sodiumxt | ... `universal-mac` still ABI 6, three "
+        "would reach: \"sodiumxt | ... `universal-mac` still ABI 6, four "
         "behind, pending the manual `lipo` build\" - so this dylib is KNOWN "
         "stale, and a red build every run over a recorded, deliberate, "
         "externally-blocked state is noise somebody deletes within a week",

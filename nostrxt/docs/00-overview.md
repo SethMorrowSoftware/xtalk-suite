@@ -30,10 +30,11 @@ Nostr is a deliberately small protocol built from three ideas:
    the app decides how the secret key lives at rest, and NostrXT deliberately is not a key
    vault.
 
-Encrypted DMs ride the same event stream as NIP-44 payloads (`04-nip44-payloads.md`), with one
-honest caveat carried throughout these docs: the raw ChaCha20 cipher is the single primitive
-the suite is missing, so encrypt/decrypt fail closed until SodiumXT ships it
-(`07-capabilities-required.md`).
+Encrypted DMs ride the same event stream as NIP-44 payloads (`04-nip44-payloads.md`). The
+honest caveat these docs carried at first writing - the raw ChaCha20 cipher was the single
+primitive the suite was missing - CLOSED on 2026-08-23 when SodiumXT shipped it as ABI 10's
+`sxChaCha20IetfXor`; encrypt/decrypt still fail closed, by design, on an installed SodiumXT
+older than that (`07-capabilities-required.md`).
 
 ## The architecture: two files, and why the split is load-bearing
 
@@ -86,8 +87,10 @@ Load the core first.
   degrades silently.
 - **SodiumXT (soft):** `sxRandomBytes` (key and nonce generation - key generation refuses
   outright without it) and `sxMemEqual` (constant-time compare, with a pure-script
-  accumulate-loop standing in when absent). Plus the one requested primitive,
-  `sxChaCha20IetfXor`, which does not exist yet (`07-capabilities-required.md`).
+  accumulate-loop standing in when absent). Plus the once-requested primitive,
+  `sxChaCha20IetfXor`, which shipped upstream in SodiumXT ABI 10 on 2026-08-23
+  (`07-capabilities-required.md`); an installed SodiumXT older than that still
+  makes NIP-44 fail closed, by design.
 - **bech32 is implemented in this member, not borrowed from CoinXT**, for a reason worth
   knowing: CoinXT's copy enforces BIP-173's 90-character cap (correct for its Bitcoin
   callers) and keeps its 8-to-5 bit converters private, while NIP-19 waives the cap for TLV
@@ -127,8 +130,10 @@ label at every point where an engine behaviour is assumed rather than measured.
 6. `05-relay-client.md` - the nxr* state machine, the callback contract, and
    verify-before-deliver.
 7. `06-api-reference.md` - the public nx* / nxr* surface, handler by handler.
-8. `07-capabilities-required.md` - the one upstream gap (`sxChaCha20IetfXor`), what it
-   blocks, and the documented tension with SodiumXT's own rules.
+8. `07-capabilities-required.md` - the capability ledger: the one crypto gap this
+   member opened with (`sxChaCha20IetfXor`, CLOSED 2026-08-23 as SodiumXT ABI 10),
+   the documented tension with SodiumXT's own rules and where the loud reason
+   landed, and the one engine unknown that remains (TLS).
 9. `08-open-questions.md` - the honest to-do list: the engine pass, the live-relay pass,
    wss://, onion relays, NIP-17.
 10. `09-usage-guide.md` - from zero to a signed event on a relay, for any OXT app.

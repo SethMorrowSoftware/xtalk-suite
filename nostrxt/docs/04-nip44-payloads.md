@@ -75,20 +75,21 @@ extended form land, supporting it is a deliberate change with new KAT rows, neve
 quiet edit. Unpadding is strict in the same spirit: the declared length, the slice,
 and the recomputed padded length must all agree or the payload refuses.
 
-### 5. ChaCha20, THROUGH THE SEAM (the one missing primitive)
+### 5. ChaCha20, THROUGH THE SEAM (the composed primitive)
 
 The padded plaintext is XORed with a ChaCha20 keystream: RFC 8439 ChaCha20, the
 12-byte nonce from step 3, counter 0, unauthenticated stream xor. **That cipher
-exists nowhere in the suite today.** The family's split-the-change law says a
-missing primitive is an upstream feature landed first, never a cipher hand-rolled
-here (this member's rule 1), so the core calls the seam `sxChaCha20IetfXor` - the
-requested SodiumXT primitive - inside a try, and until SodiumXT ships it:
+shipped upstream in SodiumXT ABI 10 (2026-08-23).** The family's split-the-change
+law says a missing primitive is an upstream feature landed first, never a cipher
+hand-rolled here (this member's rule 1), and that is exactly how it went: the core
+calls the seam `sxChaCha20IetfXor` inside a try, and on an installed SodiumXT
+older than ABI 10:
 
 - `nxNip44Encrypt` and `nxNip44Decrypt` fail closed, returning empty with
   `nxLastError()` reading exactly:
 
   ```
-  nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped upstream; docs/07-capabilities-required.md)
+  nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)
   ```
 
 - `nxNip44HasCipher()` is a LIVE probe of the seam (a 1-byte xor against the zero
@@ -144,7 +145,7 @@ all fail closed, in order:
 | Padding and unpadding, the 1..65535 policy | vector-pinned today: all 24 pairs, plus the invalid lengths refusing |
 | MAC-before-cipher order, constant-time compare | proven today by the harness's tamper test on the official payload |
 | Version byte, size floors, `#` flag, base64 strictness | exercised today by the harness's refusal checks |
-| The ChaCha20 keystream itself, end-to-end encrypt/decrypt through nx* | **fails closed today**; the oracle proves the construction against the full published encrypt/decrypt vectors (long-message rows included), so the day `sxChaCha20IetfXor` ships, the harness's seam section stops expecting the capability error and starts asserting that the official payload vector decrypts and re-encrypts byte-identically - that branch is already written |
+| The ChaCha20 keystream itself, end-to-end encrypt/decrypt through nx* | **composed via SodiumXT ABI 10 since 2026-08-23**; the oracle proves the construction against the full published encrypt/decrypt vectors (long-message rows included), the harness's seam section asserts the official payload vector decrypts and re-encrypts byte-identically against a current SodiumXT, and still asserts the fail-closed capability error against a pre-ABI-10 install; the complete path needs an OXT pass |
 
 And the standing labels: every "today" above means machine-verified headlessly;
 the whole pipeline still needs an OXT pass, because none of it has run on an

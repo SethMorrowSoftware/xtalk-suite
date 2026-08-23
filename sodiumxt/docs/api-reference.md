@@ -26,8 +26,12 @@ conventions, then [recipes.md](recipes.md) for end-to-end examples and
   native message is also available via `sxLastError()`.
 - **Never compare secrets with `is` / `=`.** Use `sxMemEqual` (constant time).
 - **Never reuse a nonce with a key.** The one-shot calls draw and prepend a random
-  nonce for you; secretstream derives per-chunk nonces from a random header. There
-  is no bring-your-own-nonce entry point, by design.
+  nonce for you; secretstream derives per-chunk nonces from a random header. The
+  sealing API has no bring-your-own-nonce entry point, by design. The ONE
+  caller-supplied-nonce handler on the surface is `sxChaCha20IetfXor` (ABI 10), a
+  building block for published constructions that derive their nonces internally
+  and carry their own MAC - its argued exception is in `security.md`, and it is
+  not a sealing API.
 
 ## Init and diagnostics
 
@@ -111,6 +115,20 @@ SKIPs only these checks and still runs the ABI-8 half.
 | `sxRistrettoScalarMultBatch(pScalar, pPoints)` | `Data` | `pScalar * point[i]` over a CONCATENATION of 32-byte encodings, one FFI crossing; returns the same-length concatenation of results in order. ATOMIC: one bad point (invalid encoding, or an identity result from a zero scalar) throws for the WHOLE call with the 1-based failing index in the message - a deal that meets one bad point voids the whole step anyway, so a partial result would only invite using half a masked deck. |
 | `sxRistrettoScalarAdd(pX, pY)` | `Data` | `pX + pY mod L` (the DLEQ response `z = w + c*k mod L`). Reduce semantics: each 32-byte input is read as a little-endian 256-bit integer and the result is fully reduced mod L; zero is a legal operand and result, so only a wrong length throws. |
 | `sxRistrettoScalarMul(pX, pY)` | `Data` | `pX * pY mod L` (the `c*k` term). Same reduce semantics and failure surface as `sxRistrettoScalarAdd`. |
+
+### Raw ChaCha20-IETF stream xor (ABI 10 - the NIP-44 building block)
+
+The one deliberately UNAUTHENTICATED handler on this surface, shipped 2026-08-23 on the
+argued exception in `security.md` (read it before calling this). It exists so a sibling
+extension can compose a published construction that carries its own MAC - NostrXT's NIP-44
+v2 is the named consumer (`nostrxt/docs/07-capabilities-required.md` is the request that
+owed the argument). It is NOT a sealing API: to encrypt bytes, use `sxSecretBox` /
+`sxAeadEncrypt` / secretstream above. Verified statically (C KATs under ASan/UBSan,
+cross-checked against an independent RFC 8439 reference); needs an OXT pass.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `sxChaCha20IetfXor(pKey, pNonce, pData)` | `Data` | `pData` XOR the RFC 8439 ChaCha20 keystream: 32-byte key, 12-byte nonce, initial block counter 0. Length-preserving and its own inverse (the same call encrypts and decrypts). Throws on any other key or nonce length; an empty `pData` returns empty. UNAUTHENTICATED: the caller's construction must MAC the result (NIP-44 uses HMAC-SHA256 over nonce||ciphertext, verified before decrypting) and must derive the nonce inside the construction (NIP-44's is an HKDF slice over a fresh random per-message nonce), never accept one from outside. |
 
 ### Multipart hash (data assembled incrementally)
 
