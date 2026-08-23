@@ -24,8 +24,10 @@ It wraps the audited libsodium library, so you can delete hand-rolled crypto and
 The stock `encrypt ... using "aes-256-cbc" with password ...` path in xTalk has a weak key
 derivation and no integrity checking: a corrupted or tampered ciphertext decrypts to garbage
 instead of failing. SodiumXT fixes both. Argon2id makes passphrases expensive to guess, and
-every cipher carries an authentication tag, so a wrong key or a single flipped byte is
-detected and rejected.
+every SEALING cipher carries an authentication tag, so a wrong key or a single flipped byte
+is detected and rejected. (The one deliberately unauthenticated handler on the surface,
+`sxChaCha20IetfXor`, is a building block for published constructions that carry their own
+MAC, never a way to encrypt bytes - the argued exception in `docs/security.md`.)
 
 ## Requirements
 
@@ -46,8 +48,8 @@ detected and rejected.
    ```
    put sxVersion()
    -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
-   -- (the Windows binaries are built from libsodium 1.0.22 via vcpkg, so they
-   --  report 1.0.22; see docs/security.md)
+   -- (every committed binary reports the pinned 1.0.20 since the 2026-08-15
+   --  mingw rebuilds; the superseded vcpkg-built Windows DLLs reported 1.0.22)
    ```
 
 Once installed, the `sx*` handlers are in scope in your stacks. See
@@ -98,7 +100,10 @@ Two ready-to-run stacks are in [`examples/`](examples):
 SodiumXT is designed so the easy way is the safe way:
 
 - Nonces are handled for you (a fresh random nonce is generated and prepended, or derived
-  per chunk). There is no error-prone "bring your own nonce" entry point.
+  per chunk). The sealing API has no error-prone "bring your own nonce" entry point; the
+  one caller-supplied-nonce handler, `sxChaCha20IetfXor` (ABI 10), is a building block for
+  published constructions that derive their nonces internally - see the argued exception in
+  `docs/security.md` before touching it.
 - Compare secrets with `sxMemEqual` (constant time), never with `is` or `=`.
 - Use `sxRandomBytes` / `sxRandomUniform` for anything that must be unguessable, never the
   engine `random()`.

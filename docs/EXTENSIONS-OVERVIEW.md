@@ -25,8 +25,9 @@ paragraph re-measured 2026-08-19 by `tools/check-suite-coverage.py`.
 
 ## sodiumxt — modern cryptography (`sx*`)
 
-Wraps **libsodium** (1.0.20 on every committed binary since the 2026-08-23
-mingw rebuild; the earlier vcpkg-built Windows DLLs carried 1.0.22). 73
+Wraps **libsodium** (1.0.20 on every committed binary since the 2026-08-15
+mingw rebuilds, the ABI-10 pair of 2026-08-23 included; the vcpkg-built
+Windows DLLs they superseded carried 1.0.22). 73
 public handlers. Binaries committed for **all five platforms** (Linux and
 Windows x64/x86 at ABI 10: ABI 8 added the ristretto255 group surface
 2026-08-15, ABI 9, the same day, its DLEQ/batch follow-ons, and ABI 10

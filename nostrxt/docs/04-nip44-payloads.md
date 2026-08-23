@@ -1,9 +1,11 @@
 # 04 - NIP-44 v2 Encrypted Payloads
 
-> STATUS: verified statically; needs an OXT pass - and one step of the pipeline
-> cannot run AT ALL yet: the raw ChaCha20 cipher exists nowhere in the suite, so
-> `nxNip44Encrypt` / `nxNip44Decrypt` fail closed today (details below). Every
-> OTHER step is vector-pinned headlessly: `tools/nostr-kat.py` sweeps the complete
+> STATUS: verified statically; needs an OXT pass. The pipeline is COMPLETE
+> since 2026-08-23: the raw ChaCha20 cipher shipped upstream as SodiumXT ABI
+> 10's `sxChaCha20IetfXor`, so `nxNip44Encrypt` / `nxNip44Decrypt` run end to
+> end against a current SodiumXT and fail closed, by design, on an installed
+> package older than that (details below). Every
+> step is vector-pinned headlessly: `tools/nostr-kat.py` sweeps the complete
 > official NIP-44 v2 vector set (conversation keys valid and invalid, message keys,
 > the padding pairs, encrypt/decrypt including the long-message sha256 rows, the
 > invalid payloads, and the invalid plaintext lengths) through the independent

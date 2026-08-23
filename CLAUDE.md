@@ -622,7 +622,10 @@ handler cannot leave a permanent exemption behind it. It is a floor, not a ceili
 "called by name" is not "tested well", and depth stays the member vector gates' job.
 Box2dxt's 211 were closed the same way, by 13 new sections in its own harness that
 say in their banner that they are shallow; the member is at 313/313 with zero
-exemptions, and the suite total is **724/742**. TWO layers are NOT in that
+exemptions, and the suite total is **830/844** (it read 724/742 until nostrxt
+folded in 2026-08-23 at 101/101 with zero exemptions - the same change that
+closed four of onionxt's old excuses - and sodiumxt's ABI-10 handler moved it
+once more the same day). TWO layers are NOT in that
 ratchet, and each says so beside the `MEMBERS` list with its numbers, because
 "we did not measure it" and "we measured it and a row would lie" are different
 admissions:

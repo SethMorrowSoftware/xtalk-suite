@@ -19,8 +19,8 @@ scope in your stacks. Confirm it is working from the message box:
 ```
 put sxVersion()
 -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
--- (on Windows the binaries are built from libsodium 1.0.22 via vcpkg, so they
---  report 1.0.22; see docs/security.md)
+-- (every committed binary reports the pinned 1.0.20 since the 2026-08-15
+--  mingw rebuilds; the superseded vcpkg-built Windows DLLs reported 1.0.22)
 ```
 
 ## Five conventions
@@ -78,8 +78,11 @@ exception: an invalid result is a normal `false`, not an error, so you test them
 
 ### 5. Let SodiumXT manage nonces, and compare secrets safely
 
-You never pass a nonce: the one-shot ciphers draw a fresh random nonce and prepend it, and the
-streaming cipher derives per-chunk nonces from a random header. And when you need to compare two
+For everything that seals bytes, you never pass a nonce: the one-shot ciphers draw a fresh
+random nonce and prepend it, and the streaming cipher derives per-chunk nonces from a random
+header. (The one exception, `sxChaCha20IetfXor`, is not a sealing call - it is a building
+block for published constructions that derive their own nonces and carry their own MAC;
+read `docs/security.md` before going anywhere near it.) And when you need to compare two
 secret values (a MAC, a tag, a token), use `sxMemEqual` (constant time), never `is` or `=`.
 
 ## Your first call

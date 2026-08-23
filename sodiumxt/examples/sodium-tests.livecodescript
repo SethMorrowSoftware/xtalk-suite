@@ -15,17 +15,21 @@
 -- (the ASCII bytes); textDecode them here when a String is wanted. A passphrase
 -- is textEncoded to UTF-8 before it crosses.
 --
--- Engine-verified through ABI 7: the "run it in OXT to confirm" label that
+-- Engine-verified through ABI 9: the "run it in OXT to confirm" label that
 -- stood here is retired by recorded passes - the complete harness ran green
--- on-engine 2026-08-10 (68 checks, zero failures, twice in one day) and again
+-- on-engine 2026-08-10 (68 checks, zero failures, twice in one day), again
 -- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202
--- vectors); both are recorded in docs/api-reference.md. The one section those
--- passes do not cover is testRistretto (the ABI 8 group surface added
--- 2026-08-15, and the ABI 9 DLEQ/batch follow-ons added the same day behind
--- their own probe, so an ABI-8 package still runs the ABI-8 half): verified
--- statically (tools/check-livecodescript.py), vectors pinned against the C
--- KATs and the independent RFC 9496 reference, not yet run on an engine - that
--- section is the part still waiting on an OXT pass.
+-- vectors), and testRistretto (the ABI 8 group surface plus the ABI 9
+-- DLEQ/batch follow-ons behind their own probe, so an ABI-8 package still
+-- runs the ABI-8 half) ran green on-engine 2026-08-17 (Windows) and
+-- 2026-08-18 (Linux) - the "not yet run on an engine" claim that stood here
+-- about it was corrected 2026-08-23, the third stale copy of that sentence
+-- fixed that day (docs/api-reference.md corrected its own 2026-08-19,
+-- src/sodium.lcb's the same day as this one). The ONE section with no engine
+-- run today is testChaCha20 (the ABI 10 raw stream xor added 2026-08-23):
+-- verified statically (tools/check-livecodescript.py), vectors pinned against
+-- the C KATs and the independent RFC 8439 reference, still waiting on an OXT
+-- pass.
 
 local sLog
 local sPass
