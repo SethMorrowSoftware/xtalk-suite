@@ -25,6 +25,12 @@ the bare binding name. A platform with no flag is left untouched.
     python3 tools/package-extension.py --win64 ~/dl/box2dxt-windows-x64.dll \
                                        --mac   ~/dl/libbox2dxt-macos-universal.dylib
 
+    # The sibling-shaped form the suite's release workflow drives (every other
+    # member's packager takes exactly this pair, and release-binaries.yml calls
+    # all of them through one shared step): find the freshly built library
+    # under the build dir and file it into the named slot.
+    python3 tools/package-extension.py --platform-id x86_64-linux --build-dir build
+
 PLATFORM-ID FORMAT: <architecture>-<platform>, verified against the LiveCode/OXT
 engine + IDE source (the IDE's code-folder matcher filters on `the processor`
 first, then the platform). The architecture comes FIRST -- e.g. x86_64-linux,
@@ -62,8 +68,32 @@ def main():
     ap.add_argument("--win64", help="source .dll for code/x86_64-win32/")
     ap.add_argument("--win32", help="source .dll for code/x86-win32/")
     ap.add_argument("--mac", help="source .dylib for code/universal-mac/")
+    ap.add_argument("--platform-id", choices=sorted(CODE_LAYOUT),
+                    help="slot to refresh, located via --build-dir (the sibling packagers' interface)")
+    ap.add_argument("--build-dir", help="CMake build dir to search for the freshly built library")
     ap.add_argument("--check", action="store_true", help="list/validate the committed src/code/ tree and exit")
     args = ap.parse_args()
+
+    # --platform-id/--build-dir is sugar over the per-platform flags: locate
+    # the built library (CMake names it libbox2dxt.* on Unix, box2dxt.dll
+    # under Release/ with MSVC) and route it through the same plan below.
+    if bool(args.platform_id) != bool(args.build_dir):
+        print("--platform-id and --build-dir go together", file=sys.stderr)
+        return 1
+    if args.platform_id:
+        attr, bare = CODE_LAYOUT[args.platform_id]
+        ext = os.path.splitext(bare)[1]
+        bdir = args.build_dir if os.path.isabs(args.build_dir) else os.path.join(ROOT, args.build_dir)
+        candidates = [os.path.join(bdir, sub, name)
+                      for sub in ("", "Release")
+                      for name in (f"libbox2dxt{ext}", f"box2dxt{ext}")]
+        found = next((c for c in candidates if os.path.isfile(c)), None)
+        if not found:
+            print(f"--build-dir: no built library for {args.platform_id} under "
+                  f"{args.build_dir} (looked for libbox2dxt{ext} / box2dxt{ext}, "
+                  f"also under Release/)", file=sys.stderr)
+            return 1
+        setattr(args, attr, found)
 
     code_root = os.path.join(ROOT, os.path.dirname(LCB_SRC), "code")
     rel = lambda p: os.path.relpath(p, ROOT)

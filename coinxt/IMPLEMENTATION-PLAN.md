@@ -255,7 +255,7 @@ Explicitly optional: the primitive layer (phases 1-4) is useful and shippable wi
   have landed: FOUR platforms are committed and manifest-pinned (`x86_64-linux`, `x86-linux`,
   `x86_64-win32`, `x86-win32` - the 2026-08-12 release run refreshed all four), and
   `tools/package-extension.py` exists. What is still genuinely phase 6 on the packaging side is the
-  `universal-mac` build alone, a deliberate manual `lipo` step (CI builds no macOS lanes; see the
+  `universal-mac` build alone, a deliberate manual `lipo` step (superseded 2026-08-23: `release-binaries.yml` now carries a coinxt mac lane building the universal dylib via a multi-arch CC, both slices KAT-driven on the runner; see the
   suite runbook).
 - A demo stack and a pure offline self-test harness, formatted like OnionXT's
   (`onionxt-demo` / `onionxt-tests` split): show key gen, address derivation, sign/verify, an HD wallet

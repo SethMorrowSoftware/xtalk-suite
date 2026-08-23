@@ -589,12 +589,21 @@ Built and statically verified; pending under the honesty convention.
 
 ## C. Release and CI (7)
 
-1. **macOS universal binaries** (large). torrentxt, enetxt, datachannelxt,
-   coinxt ship none; sodiumxt's is one ABI behind (sxSha3_256 dark on Macs; a
-   Mac repackage throws an ABI mismatch on the first sx* call); torrentxt
-   additionally needs codesign + notarization with credentials CI does not
-   hold. Deliberately manual lipo builds on real hardware.
-   — `docs/OXT-PASS-RUNBOOK.md` §2.1/§2.4, `sodiumxt/CLAUDE.md:54-59`
+1. **~~macOS universal binaries~~ CI LANES BUILT for four of six, 2026-08-23**
+   (the entry's own figures had drifted anyway - sodiumxt's dylib is FOUR ABIs
+   behind now, not one). `release-binaries.yml` carries universal mac lanes
+   for sodiumxt, coinxt, enetxt and box2dxt: both slices cross-compiled in one
+   pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64
+   under Rosetta 2, coinxt's KATs driven through BOTH slices, unsigned (the
+   linker's ad-hoc signature; no notarization). The lanes are WRITTEN and the
+   first dispatch is what proves them - no mac lane has produced a committed
+   binary yet, so every committed dylib keeps its age until someone presses
+   "Run workflow". Still open: torrentxt (static universal
+   libtorrent+Boost+OpenSSL stack, plus notarization credentials CI does not
+   hold) and datachannelxt (system-OpenSSL DTLS; brew's OpenSSL is thin and
+   per-arch) - the two-thin-builds-and-lipo route is written up in the
+   workflow header for whoever takes it.
+   — `.github/workflows/release-binaries.yml` (the header), `sodiumxt/CLAUDE.md:54-59`
 
 2. **~~box2dxt as the eighth folded harness member~~ SHIPPED statically
    2026-08-16** (commit `ef73172`). Suite coverage **411/429 -> 724/742**;

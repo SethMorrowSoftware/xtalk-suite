@@ -86,7 +86,13 @@ jobs:
             os: macos-15
             platform_id: universal-mac
             acquire: none
-            cmake_args: ""
+            # Both slices, not the runner's own arch: this lane stages its
+            # artifact under the universal-mac name, and until 2026-08-23 it
+            # built with no arch flag on an arm64-only runner - a THIN arm64
+            # dylib wearing a universal label. Artifact-only, never committed,
+            # but exactly the mislabel the suite installer refuses; the
+            # release workflow's mac lane carries the same flag.
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"'
           - name: windows-x86_64
             os: windows-2025
             platform_id: x86_64-win32

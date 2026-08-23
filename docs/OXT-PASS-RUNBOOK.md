@@ -563,8 +563,10 @@ stock checkout.
 > `"SodiumXT: ABI mismatch - the native sodium library does not match this extension"`
 > before it does any work. It is not a broken build and not a bad install: the dylib
 > is simply four ABI bumps stale (7 added the AEAD surface, 8 the ristretto255
-> group, 9 the DLEQ/batch algebra, 10 the raw ChaCha20 xor), because macOS is the one platform CI cannot
-> build for and the `lipo` build is done by hand. Consequences for a pass on a Mac:
+> group, 9 the DLEQ/batch algebra, 10 the raw ChaCha20 xor), because macOS was the one platform CI could not
+> build for and the `lipo` build was done by hand (since 2026-08-23
+> `release-binaries.yml` carries universal mac lanes for four members, so the
+> unblock is a workflow dispatch; the committed dylib stays ABI 6 until one runs). Consequences for a pass on a Mac:
 > **every sodiumxt test, and everything downstream of it — the sealed lanes, the
 > Level 0 committed shuffle, all of holde-em's online and Level 2 play, riptide's
 > whole crypto layer — cannot run there at all.** Do not spend a Mac session on
@@ -575,11 +577,15 @@ stock checkout.
 **macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib and
 NEITHER is proven: sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the
 warning below), and box2dxt's has never been read by any gate. torrentxt, enetxt,
-datachannelxt and coinxt need the manual `lipo` build (and, for torrentxt, codesigning
-and notarization). CI deliberately builds no macOS lane — `macos-15` runners are
-arm64-only, so an automated lane would emit a thin dylib and silently regress
-sodiumxt's genuine two-architecture binary into one that fails on every Intel Mac.
-So on a Mac, expect to build before you can run any member but sodiumxt.
+datachannelxt and coinxt need a mac dylib built (and, for torrentxt, codesigning
+and notarization). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
+runners are arm64-only, so a naive automated lane would emit a thin dylib and silently
+regress sodiumxt's genuine two-architecture binary into one that fails on every Intel
+Mac. `release-binaries.yml` now carries universal mac lanes for sodiumxt, coinxt,
+enetxt and box2dxt (both slices in one pass, asserted at birth; torrentxt and
+datachannelxt stay manual with reasons in the workflow header) — but no dispatch has
+run them yet, so on a Mac TODAY, still expect to build (or dispatch) before you can
+run any member but sodiumxt.
 
 ### 2.2 The dependency graph (this is the install order)
 
@@ -723,9 +729,10 @@ coinxt installs like any other member and the run below is just a run.
 **macOS is the only gap**, and it is the same gap the native members share
 (box2dxt, folded home 2026-08-14, is the one already shipping all five
 platforms - it has a 2.1 row of its own now, and has been the EIGHTH folded
-harness since 2026-08-16): CI builds no macOS lane on purpose (the runners are arm64-only, so an
-automated lane would emit a thin dylib). Build it first - one command, and it puts
-the file where the engine expects it:
+harness since 2026-08-16): until 2026-08-23 CI built no macOS lane on purpose (the
+runners are arm64-only, so a naive automated lane would emit a thin dylib; the
+release workflow's universal mac lanes now exist but are dispatch-driven). Build it
+first - one command, and it puts the file where the engine expects it:
 
 ```
 cd coinxt && sh native/build.sh pack

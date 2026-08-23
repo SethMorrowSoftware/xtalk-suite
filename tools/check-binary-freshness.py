@@ -292,12 +292,14 @@ MAC_EXEMPTION = (
     "universal-mac is a WRITTEN EXEMPTION. Reading it needs a third container "
     "reader (Mach-O, and a FAT one - both committed dylibs carry x86_64 and "
     "arm64), which `nm` on a Linux host cannot stand in for: it answers "
-    "\"file format not recognized\". That reader is not written because macOS "
-    "is the platform the suite cannot currently rebuild for at all - "
-    "release-binaries.yml deliberately builds no macOS lane (an arm64-only "
-    "runner would replace a genuine two-architecture dylib with a thin one "
-    "that fails on every Intel Mac), so macOS stays a manual `lipo` build. A "
-    "gate cannot be actioned on a platform nobody can rebuild for"
+    "\"file format not recognized\". The reader is STILL not written, but the "
+    "reason it was parked changed on 2026-08-23: it used to be that macOS was "
+    "the one platform the suite could not rebuild for at all, and "
+    "release-binaries.yml now carries universal mac lanes for four members "
+    "(both slices cross-compiled in one pass and asserted at birth - the "
+    "naive arm64-only build that would regress a fat dylib to thin is exactly "
+    "what those lanes refuse). The fat-header reader is actionable follow-up "
+    "work now rather than unactionable; until it exists, this skip stands"
 )
 
 # Said per member, because the two dylibs are in DIFFERENT states and one
@@ -307,9 +309,11 @@ MAC_MEMBER_NOTE = {
     "sodiumxt":
         "and README.md's release matrix already records the verdict this gate "
         "would reach: \"sodiumxt | ... `universal-mac` still ABI 6, four "
-        "behind, pending the manual `lipo` build\" - so this dylib is KNOWN "
-        "stale, and a red build every run over a recorded, deliberate, "
-        "externally-blocked state is noise somebody deletes within a week",
+        "behind, pending the first mac dispatch of `release-binaries.yml` - "
+        "its mac lanes landed 2026-08-23 - or a manual `lipo` build\" - so "
+        "this dylib is KNOWN stale, and a red build every run over a "
+        "recorded, deliberate, dispatch-pending state is noise somebody "
+        "deletes within a week",
     "box2dxt":
         "and box2dxt's README row claims \"all 5 platforms\" with no ABI "
         "caveat - but nothing in this tree has ever read this dylib's export "

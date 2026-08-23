@@ -83,4 +83,4 @@ Each lane uploads its library as an artifact; binaries are committed
 deliberately by a maintainer rather than pushed by CI. Four platforms are
 committed today (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
 per `src/code/MANIFEST.sha256`, landed by the 2026-08-08 release run);
-macOS remains the manual `lipo` build.
+macOS: `release-binaries.yml` carries a universal mac lane since 2026-08-23 (both slices in one `CMAKE_OSX_ARCHITECTURES` pass); a manual `lipo` build remains equivalent.
