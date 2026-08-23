@@ -581,11 +581,10 @@ datachannelxt and coinxt need a mac dylib built (and, for torrentxt, codesigning
 and notarization). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
 runners are arm64-only, so a naive automated lane would emit a thin dylib and silently
 regress sodiumxt's genuine two-architecture binary into one that fails on every Intel
-Mac. `release-binaries.yml` now carries universal mac lanes for sodiumxt, coinxt,
-enetxt and box2dxt (both slices in one pass, asserted at birth; torrentxt and
-datachannelxt stay manual with reasons in the workflow header) — but no dispatch has
-run them yet, so on a Mac TODAY, still expect to build (or dispatch) before you can
-run any member but sodiumxt.
+Mac. `release-binaries.yml` now carries universal mac lanes for ALL SIX members (both
+slices asserted at birth; torrentxt and datachannelxt via a two-slice-lipo job) — but
+no dispatch has run them yet, so on a Mac TODAY, still expect to build (or dispatch)
+before you can run any member but sodiumxt.
 
 ### 2.2 The dependency graph (this is the install order)
 

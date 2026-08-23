@@ -26,7 +26,9 @@ WHAT IT CHECKS. Four legs, in decreasing order of how portable they are:
      committed library actually EXPORTS. This is the load-time failure, stated
      directly: the engine resolves that bind string by exact name, so a symbol
      that is not in the export table is a `.lcb` that cannot load. 636 binds
-     over 24 committed libraries as of 2026-08-17.
+     over 24 committed libraries as of 2026-08-17; 26 libraries since
+     2026-08-23, when the fat Mach-O reader below brought both committed
+     `universal-mac` dylibs under the same legs.
   2. THE SOURCE ORACLE (enforced). Every non-`static` `<prefix>_*` function
      defined at column 0 in the member's shim must be exported too. The bind
      oracle alone would not notice a shim export the `.lcb` has not bound yet
@@ -65,6 +67,17 @@ decode fine, because its `b2lc_abi_version` is a leaf with no buffers and got
 no prologue. Which is the point of decoding rather than assuming: the answer is
 read per file, and a file that does not read says so.
 
+Since 2026-08-23 the Mach-O reader adds the two `universal-mac` dylibs, and
+BOTH slices of each decode - through two shapes the pair above does not cover,
+because the mac release lanes compile at -O0 and keep the frame pointer even in
+a leaf constant function: the x86_64 slices read `push rbp ; mov rbp,rsp ;
+mov eax, imm32 ; pop rbp ; ret` (an exact second shape the decoder accepts, not
+a scan of the body) and the arm64 slices read `MOVZ w0, #imm16 ; RET`
+(`decode_return_constant_arm64`). A fat dylib therefore contributes TWO decoded
+constants, and they are held to AGREE with each other before either is held to
+the header - two slices disagreeing means the fat file was assembled from two
+different builds, which no single rebuild produces.
+
 The decoder is not asked to be believed. Where the host CAN load a library
 (HOST_PLATFORM below - the one committed platform whose word size and OS match
 this process), leg 4 ALSO loads it in a SUBPROCESS and calls the real function,
@@ -88,19 +101,21 @@ ABI decoder is cross-checked against the loader.
 
 WHAT IS SKIPPED, AND WHY EACH SKIP IS WRITTEN DOWN RATHER THAN INFERRED:
 
-  * `universal-mac` - a WRITTEN EXEMPTION, per member, in MAC_MEMBER_NOTE.
-    The shared half is in MAC_EXEMPTION: reading a FAT Mach-O needs a third
-    container reader, `nm` on a Linux host answers "file format not
-    recognized", and macOS is the one platform the suite currently cannot
-    rebuild for at all, so a red build here would be a red build nobody could
-    action. The per-member half is written per member BECAUSE THE TWO DYLIBS
-    ARE IN DIFFERENT STATES, and one text covering both would state as fact
-    about box2dxt something only measured about sodiumxt: README.md's release
-    matrix records sodiumxt's as knowingly four ABI versions behind, while
-    box2dxt's row claims "all 5 platforms" and nothing in this tree has ever
-    read that dylib's export table. A third member committing a dylib gets no
-    default: it fails until somebody writes its reason down. When a `lipo`
-    build lands, delete both and write the reader.
+  * `universal-mac` WAS the first skip here - a written exemption, per member,
+    RETIRED 2026-08-23 when the fat Mach-O reader (`read_macho_fat`) landed:
+    both committed dylibs now go through the same four legs as every ELF and
+    PE, both slices each, plus a cross-slice leg of their own (the two
+    architectures must export the IDENTICAL name set, because a fat file whose
+    slices ship different APIs binds on one Mac and fails on the other).
+    MAC_EXEMPTION keeps the dated history of why the reader was parked. What
+    still prints as a SKIP on every run is sodiumxt's dylib measured against
+    CURRENT source: it is recorded, deliberately, at a stale ABI -
+    MAC_KNOWN_STALE parses the number out of sodiumxt/CLAUDE.md's own platform
+    table rather than hand-copying it, the reader CONFIRMS the committed file
+    decodes exactly that number, and a red build every run over a recorded,
+    dispatch-pending state would be noise somebody deletes within a week. The
+    allowance deletes itself: a refreshed dylib stops matching the record, and
+    the MAC_KNOWN_STALE row becomes a hard failure until it is removed.
   * Six of the twelve committed Windows DLLs' ABI constants (see above). Their
     BIND, SOURCE and CLOSURE legs all still run - only the ABI number is
     unreadable there.
@@ -165,7 +180,11 @@ MEMBERS = [
         "abi_symbol": "sxt_abi_version",
         # Measured 2026-08-17: exports == definitions exactly, on all four
         # readable platforms. libsodium is linked in but not re-exported.
-        "closure": {"elf": [], "pe": []},
+        # Measured 2026-08-23, the day the Mach-O reader landed: the mac
+        # dylib's 105 exports (both slices) are all shim definitions too -
+        # FEWER than today's source defines, which is its recorded staleness,
+        # but nothing beyond the source. The mac linker adds no _init/_fini.
+        "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
         "name": "torrentxt",
@@ -255,6 +274,10 @@ MEMBERS = [
             # a clean export set" and "this leg cannot run for this member".
             "elf": [r"^_init$", r"^_fini$"],
             "pe": [],
+            # Measured 2026-08-23: the mac dylib exports exactly the shim's
+            # 370 definitions on both slices, nothing else - the mac linker
+            # adds no _init/_fini, so the tolerance list is empty.
+            "macho": [],
         },
     },
     {
@@ -288,37 +311,64 @@ PLATFORMS = {
     "universal-mac": ("dylib", "macho"),
 }
 
+# RETIRED 2026-08-23, kept as the dated record - nothing skips on this text
+# any more. universal-mac was a WRITTEN EXEMPTION from the day this gate
+# landed: reading it needs a third container reader (Mach-O, and a FAT one -
+# both committed dylibs carry x86_64 and arm64), which `nm` on a Linux host
+# cannot stand in for (it answers "file format not recognized"), and macOS was
+# the one platform the suite could not rebuild for at all, so a red build here
+# would have been a red build nobody could action. The parking reason expired
+# in two steps, both on 2026-08-23: release-binaries.yml gained universal mac
+# lanes for four members (both slices cross-compiled in one pass and asserted
+# at birth - the naive arm64-only build that would regress a fat dylib to thin
+# is exactly what those lanes refuse), and the reader (`read_macho_fat` below)
+# landed the same day, so both committed dylibs now go through the same legs
+# as every ELF and PE.
 MAC_EXEMPTION = (
-    "universal-mac is a WRITTEN EXEMPTION. Reading it needs a third container "
-    "reader (Mach-O, and a FAT one - both committed dylibs carry x86_64 and "
-    "arm64), which `nm` on a Linux host cannot stand in for: it answers "
-    "\"file format not recognized\". The reader is STILL not written, but the "
-    "reason it was parked changed on 2026-08-23: it used to be that macOS was "
-    "the one platform the suite could not rebuild for at all, and "
-    "release-binaries.yml now carries universal mac lanes for four members "
-    "(both slices cross-compiled in one pass and asserted at birth - the "
-    "naive arm64-only build that would regress a fat dylib to thin is exactly "
-    "what those lanes refuse). The fat-header reader is actionable follow-up "
-    "work now rather than unactionable; until it exists, this skip stands"
+    "universal-mac WAS a written exemption until 2026-08-23; the fat Mach-O "
+    "reader in this file now reads both committed dylibs, both slices each. "
+    "See the comment above this string for the history of why it was parked"
 )
 
-# Said per member, because the two dylibs are in DIFFERENT states and one
-# exemption text covering both would state as fact about box2dxt something only
-# measured about sodiumxt.
+# Written per member while the exemption stood, because the two dylibs were in
+# DIFFERENT states and one text covering both would have stated as fact about
+# box2dxt something only measured about sodiumxt. Updated 2026-08-23, the day
+# the reader landed, so neither entry states something the gate now disproves
+# on every run; nothing gates on this dict any more - the operative table for
+# the one remaining per-member state is MAC_KNOWN_STALE below.
 MAC_MEMBER_NOTE = {
     "sodiumxt":
-        "and README.md's release matrix already records the verdict this gate "
-        "would reach: \"sodiumxt | ... `universal-mac` still ABI 6, four "
-        "behind, pending the first mac dispatch of `release-binaries.yml` - "
-        "its mac lanes landed 2026-08-23 - or a manual `lipo` build\" - so "
-        "this dylib is KNOWN stale, and a red build every run over a "
-        "recorded, deliberate, dispatch-pending state is noise somebody "
-        "deletes within a week",
+        "recorded stale, and since 2026-08-23 VERIFIED stale rather than "
+        "cited: MAC_KNOWN_STALE parses the recorded ABI out of "
+        "sodiumxt/CLAUDE.md's own platform table, and the reader holds both "
+        "slices' decoded constant to that number - the SKIP that prints is a "
+        "confirmed record, not an unread claim",
     "box2dxt":
-        "and box2dxt's README row claims \"all 5 platforms\" with no ABI "
-        "caveat - but nothing in this tree has ever read this dylib's export "
-        "table, so that row is UNVERIFIED here rather than confirmed. Do not "
-        "read this skip as evidence either way",
+        "this entry used to say \"nothing in this tree has ever read this "
+        "dylib's export table ... UNVERIFIED\". False since 2026-08-23: the "
+        "reader reads both slices' export tables on every run and every leg "
+        "is enforced, so the README row's \"all 5 platforms\" claim is now "
+        "checked here rather than taken on faith",
+}
+
+# The one recorded-stale mac state. The RECORD is the member's own platform
+# table row; the number is PARSED out of it on every run, never hand-copied,
+# because a hand-copied constant goes stale silently at the next bump - the
+# exact failure build-preflight.py exists to prevent for the ABI macros, one
+# document over. The flow in check_fat_macho: decoded == recorded means the
+# KNOWN state (one SKIP, with the measured deltas); decoded == the source's
+# define means the dylib was refreshed and this row is now a stale excuse (a
+# hard failure until it is deleted); anything else is unrecorded skew (a hard
+# failure, with all three numbers named). A member with no row here gets no
+# allowance at all - its dylib is simply held to every leg.
+MAC_KNOWN_STALE = {
+    "sodiumxt": {
+        "record": "sodiumxt/CLAUDE.md",
+        # The platform table row: | `universal-mac` | 6 | STALE, ... |
+        "pattern": r"^\|\s*`universal-mac`\s*\|\s*(\d+)\s*\|\s*STALE",
+        "cite": "sodiumxt/CLAUDE.md's platform table row for universal-mac "
+                "(echoed by README.md's release matrix)",
+    },
 }
 
 # Files that legitimately sit inside src/code/ without being a library.
@@ -694,11 +744,205 @@ def read_pe(path):
     return exports, code_at
 
 
+# Mach-O CPU types, from <mach/machine.h>: CPU_ARCH_ABI64 (0x01000000) OR'd
+# onto CPU_TYPE_X86 (7) and CPU_TYPE_ARM (12). `universal-mac` PROMISES
+# exactly these two architectures - a fat file missing either is the
+# thin-regression tools/install-release-binaries.py refuses at install time,
+# refused here at commit time too.
+MACHO_CPUS = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+
+LC_SYMTAB = 0x2
+LC_SEGMENT_64 = 0x19
+
+
+def read_macho_slice(blob, arch):
+    """Defined external symbols of ONE 64-bit Mach-O slice, plus a code
+    reader - the same (exports, code_at) contract read_elf and read_pe keep,
+    per slice.
+
+    Exports come from LC_SYMTAB's nlist_64 table: not a stab ((n_type & 0xE0)
+    == 0, the debugger entries), external (N_EXT, 0x01 - something another
+    image can bind), and defined in a section (N_SECT, (n_type & 0x0E) ==
+    0x0E - an undefined external is an IMPORT). The loader's own by-name
+    structure is strictly the export TRIE (LC_DYLD_INFO / LC_DYLD_EXPORTS_
+    TRIE); the nlist walk is used here because it is a fraction of the code
+    and, on these builds, the same answer - the release lanes pass no
+    -exported_symbols_list (which is also what makes ld keep unlisted names
+    GLOBAL in the nlist), and the set was cross-checked at landing
+    (2026-08-23): box2dxt's slices carry exactly the shim's 370 definitions,
+    sodiumxt's exactly 105 of today's 124, zero names beyond source on
+    either. A divergence in the dangerous direction - a name here the trie
+    does not carry - would be a name the shim does not define, and the
+    closure leg fails on those.
+
+    Every LC_SYMTAB offset is relative to the SLICE, not the fat file; the
+    caller hands this function the slice's own bytes, so they are used as-is.
+    """
+    if len(blob) < 32:
+        raise ReadError(f"{arch} slice: truncated before mach_header_64")
+    magic = struct.unpack_from("<I", blob, 0)[0]
+    if magic != 0xFEEDFACF:
+        raise ReadError(f"{arch} slice: magic 0x%08x is not MH_MAGIC_64 - "
+                        f"both promised architectures are 64-bit "
+                        f"little-endian, so anything else is the wrong "
+                        f"binary" % magic)
+    ncmds = struct.unpack_from("<I", blob, 16)[0]
+
+    symtab = None
+    segments = []
+    off = 32                                  # mach_header_64 is 8 u32s
+    for index in range(ncmds):
+        if off + 8 > len(blob):
+            raise ReadError(f"{arch} slice: load command {index} runs off "
+                            f"the end of the slice")
+        cmd, cmdsize = struct.unpack_from("<II", blob, off)
+        if cmdsize < 8 or off + cmdsize > len(blob):
+            raise ReadError(f"{arch} slice: load command {index} declares "
+                            f"an implausible cmdsize {cmdsize}")
+        if cmd == LC_SYMTAB:
+            if cmdsize < 24:
+                raise ReadError(f"{arch} slice: LC_SYMTAB shorter than its "
+                                f"own fixed layout")
+            symtab = struct.unpack_from("<IIII", blob, off + 8)
+        elif cmd == LC_SEGMENT_64:
+            if cmdsize < 72:
+                raise ReadError(f"{arch} slice: LC_SEGMENT_64 shorter than "
+                                f"its own fixed layout")
+            # segname[16] at +8; vmaddr/vmsize/fileoff/filesize at +24. All
+            # segments join the address map (like the ELF reader's PT_LOAD
+            # walk); only filesize counts, because past it the bytes exist
+            # only once the loader has zero-filled them.
+            vmaddr, _vmsize, fileoff, filesize = struct.unpack_from(
+                "<QQQQ", blob, off + 24)
+            segments.append((vmaddr, filesize, fileoff))
+        off += cmdsize
+    if symtab is None:
+        raise ReadError(f"{arch} slice: no LC_SYMTAB, so the symbol table "
+                        f"cannot be located - refusing rather than "
+                        f"reporting no exports")
+    symoff, nsyms, stroff, strsize = symtab
+    if symoff + 16 * nsyms > len(blob) or stroff + strsize > len(blob):
+        raise ReadError(f"{arch} slice: LC_SYMTAB points outside the slice")
+
+    exports, addresses = set(), {}
+    for index in range(nsyms):
+        base = symoff + 16 * index
+        n_strx, n_type, _n_sect, _n_desc, n_value = struct.unpack_from(
+            "<IBBHQ", blob, base)
+        if n_type & 0xE0:                     # N_STAB
+            continue
+        if not (n_type & 0x01):               # not N_EXT
+            continue
+        if (n_type & 0x0E) != 0x0E:           # not N_SECT: an import
+            continue
+        if n_strx >= strsize:
+            raise ReadError(f"{arch} slice: symbol {index} names a string "
+                            f"offset outside the string table")
+        end = blob.find(b"\x00", stroff + n_strx, stroff + strsize)
+        if end < 0:
+            raise ReadError(f"{arch} slice: symbol {index}'s name is not "
+                            f"NUL-terminated inside the string table")
+        name = blob[stroff + n_strx:end].decode("ascii", "replace")
+        # Mach-O prepends `_` to every C symbol; the bind string and the shim
+        # both spell the name WITHOUT it, so exactly one leading underscore
+        # is stripped.
+        if name.startswith("_"):
+            name = name[1:]
+        exports.add(name)
+        addresses[name] = n_value
+
+    def code_at(name, count=16):
+        # n_value is a vmaddr (unslid; these dylibs' __TEXT starts at 0).
+        # Map it through the segment table exactly as the ELF reader maps
+        # st_value through PT_LOAD.
+        vmaddr = addresses.get(name)
+        if vmaddr is None:
+            return None
+        for seg_vmaddr, filesize, fileoff in segments:
+            if seg_vmaddr <= vmaddr < seg_vmaddr + filesize:
+                offset = fileoff + vmaddr - seg_vmaddr
+                return blob[offset:offset + count]
+        return None
+
+    return exports, code_at
+
+
+def read_macho_fat(path):
+    """Both slices of a universal (fat) Mach-O: [(arch, exports, code_at)].
+
+    The fat HEADER is big-endian even though both slices inside it are
+    little-endian 64-bit images - the one place Mach-O keeps network order.
+    Layout: magic u32 (0xCAFEBABE), nfat_arch u32, then per slice a fat_arch
+    of five u32s (cputype, cpusubtype, offset, size, align). This is the same
+    layout tools/install-release-binaries.py's `fat_archs` reads at install
+    time; it is REIMPLEMENTED here rather than imported because this gate
+    stays self-contained the way its ELF and PE readers already are - and
+    because that tool needs only the arch names, while this one extracts the
+    slices themselves.
+
+    Raises ReadError on anything short of two well-formed slices, one per
+    promised architecture. A thin Mach-O gets its own message: it is the
+    naive single-arch build the install tool refuses, named as such.
+    """
+    with open(path, "rb") as fh:
+        image = fh.read()
+    if len(image) < 8:
+        raise ReadError("truncated before the fat header")
+    magic = struct.unpack_from(">I", image, 0)[0]
+    if magic in (0xFEEDFACE, 0xFEEDFACF, 0xCEFAEDFE, 0xCFFAEDFE):
+        raise ReadError(
+            "a THIN Mach-O where universal-mac promises a fat one - the "
+            "single-architecture build tools/install-release-binaries.py "
+            "refuses at install time, refused here at commit time too")
+    if magic != 0xCAFEBABE:
+        raise ReadError("magic 0x%08x is not FAT_MAGIC" % magic)
+    nfat = struct.unpack_from(">I", image, 4)[0]
+    if not 0 < nfat <= 16:
+        # A real fat file has a handful of slices; a larger count is a
+        # corrupt field being read as a length.
+        raise ReadError("implausible fat_arch count %d" % nfat)
+    slices = {}
+    for index in range(nfat):
+        base = 8 + 20 * index
+        if base + 20 > len(image):
+            raise ReadError("fat header truncated at slice %d" % index)
+        cputype, _cpusub, offset, size, _align = struct.unpack_from(
+            ">IIIII", image, base)
+        arch = MACHO_CPUS.get(cputype)
+        if arch is None:
+            raise ReadError("slice %d has cputype 0x%08x, which is neither "
+                            "x86_64 nor arm64 - not an architecture "
+                            "universal-mac promises, so not one this gate "
+                            "will guess about" % (index, cputype))
+        if offset + size > len(image):
+            raise ReadError(f"{arch} slice claims bytes [{offset}, "
+                            f"{offset + size}) but the file ends at "
+                            f"{len(image)} - truncated")
+        if arch in slices:
+            raise ReadError(f"two {arch} slices - legal in the format, and "
+                            f"not something any build in this tree produces")
+        slices[arch] = image[offset:offset + size]
+    missing = sorted(set(MACHO_CPUS.values()) - set(slices))
+    if missing:
+        raise ReadError("no %s slice - universal-mac PROMISES both x86_64 "
+                        "and arm64, and a fat container carrying one loads "
+                        "for whoever built it and for nobody else"
+                        % " or ".join(missing))
+    out = []
+    for arch in sorted(slices):               # deterministic order
+        exports, code_at = read_macho_slice(slices[arch], arch)
+        out.append((arch, exports, code_at))
+    return out
+
+
 def read_container(path, fmt):
     if fmt == "elf":
         return read_elf(path)
     if fmt == "pe":
         return read_pe(path)
+    # macho does not go through here: a fat file is per-slice (exports,
+    # code_at) PAIRS, and flattening them would hide exactly the cross-slice
+    # disagreements check_fat_macho exists to catch.
     raise ReadError("no reader for format %r" % fmt)
 
 
@@ -709,6 +953,11 @@ def read_container(path, fmt):
 # `endbr64` / `endbr32`: an Intel CET landing pad the toolchain puts at the top
 # of every indirectly-callable function. It is not part of the value.
 ENDBR = (b"\xf3\x0f\x1e\xfa", b"\xf3\x0f\x1e\xfb")
+
+# `push rbp ; mov rbp, rsp` - the frame-pointer prologue clang emits at -O0
+# even for a leaf constant function. Its epilogue is `pop rbp` (0x5d) before
+# the `ret`.
+FRAME_X86_64 = b"\x55\x48\x89\xe5"
 
 
 def decode_return_constant(code):
@@ -724,12 +973,55 @@ def decode_return_constant(code):
     ABI number reported confidently is worse than no ABI number: it is the
     coinxt-constant-gate lesson (a gate that overstates its coverage answers
     the question nobody asks twice).
+
+    A second exact shape was ADDED 2026-08-23, when the Mach-O reader landed:
+    `push rbp ; mov rbp,rsp ; mov eax, imm32 ; pop rbp ; ret`, which is what
+    the mac release lanes' clang emits at -O0 (frame pointer kept, no stack
+    check - measured on both committed dylibs' x86_64 slices). It is still an
+    exact instruction sequence with nothing variable but the immediate, not a
+    scan; a /GS-style prologue still returns None.
     """
     if code is None:
         return None
     start = 4 if code[:4] in ENDBR else 0
     if len(code) >= start + 6 and code[start] == 0xB8 and code[start + 5] == 0xC3:
         return struct.unpack_from("<I", code, start + 1)[0]
+    if (code[start:start + 4] == FRAME_X86_64 and len(code) >= start + 11
+            and code[start + 4] == 0xB8 and code[start + 9] == 0x5D
+            and code[start + 10] == 0xC3):
+        return struct.unpack_from("<I", code, start + 5)[0]
+    return None
+
+
+# AArch64 fixed-width instructions, little-endian u32s.
+RET_ARM64 = 0xD65F03C0
+NOP_ARM64 = 0xD503201F
+
+
+def decode_return_constant_arm64(code):
+    """`MOVZ w0, #imm16 ; RET` -> imm16, else None.
+
+    The arm64 half of the same bargain decode_return_constant strikes: the
+    narrowest decoder that reads the committed code, and None (a named SKIP)
+    for anything else. The MOVZ match is (insn & 0xFFE0001F) == 0x52800000 -
+    the mask pins sf=0 (32-bit), opc=MOVZ, hw=0 (no shift) and Rd=w0, so the
+    imm16 at bits 20:5 IS the value the function returns. RET must be the
+    very next instruction (it is, on both committed slices) or separated only
+    by NOPs: any other intervening instruction could rewrite w0, and decoding
+    past one would be the confident wrong answer this file refuses everywhere
+    else.
+    """
+    if code is None or len(code) < 8:
+        return None
+    insn = struct.unpack_from("<I", code, 0)[0]
+    if (insn & 0xFFE0001F) != 0x52800000:
+        return None
+    for off in range(4, len(code) - 3, 4):
+        nxt = struct.unpack_from("<I", code, off)[0]
+        if nxt == RET_ARM64:
+            return (insn >> 5) & 0xFFFF
+        if nxt != NOP_ARM64:
+            return None
     return None
 
 
@@ -834,6 +1126,231 @@ def cross_check_with_nm(path, exports, notes):
 
 # --------------------------------------------------------------------------
 
+def check_export_legs(member, where, fmt, binds, defs, exports,
+                      problems, skips, stats):
+    """Legs 1-3 against ONE export set.
+
+    Factored out of check_member on 2026-08-23, when the Mach-O reader
+    landed, so the fat dylibs are held to the SAME text and the same
+    tolerances as every ELF and PE rather than to a re-worded copy that
+    could drift.
+    """
+    name = member["name"]
+
+    # Leg 1: the bind oracle.
+    missing = sorted(binds - exports)
+    if missing:
+        problems.append(
+            f"{where}: the .lcb binds {len(missing)} symbol(s) this "
+            f"library does NOT export, e.g. {missing[:6]} - the "
+            f"extension would fail to bind at LOAD time on this "
+            f"platform. Rebuild it and refresh "
+            f"{name}/src/code/MANIFEST.sha256 in the same change "
+            f"(suite rule 5)")
+    else:
+        stats["binds"] += len(binds)
+
+    # Leg 2: the source oracle.
+    unexported = sorted(defs - exports)
+    if unexported:
+        problems.append(
+            f"{where}: {member['shim']} defines {len(unexported)} "
+            f"non-static {member['prefix']}* function(s) this library does "
+            f"not export, e.g. {unexported[:6]} - the committed binary "
+            f"predates the source")
+
+    # Leg 3: the export closure.
+    tolerated = member["closure"].get(fmt)
+    if tolerated is None:
+        # Fail CLOSED: a member cannot ship a container format its row has
+        # made no closure decision about. This is how a THIRD member
+        # committing its first dylib is met - not with sodiumxt's allowance
+        # inherited by default, but with a demand for its own written row.
+        problems.append(
+            f"{where}: this member's `closure` table has no entry for "
+            f"{fmt!r} - write one (a tolerance list, or a string reason "
+            f"for skipping), so the closure leg is a decision rather than "
+            f"a gap")
+        return
+    if isinstance(tolerated, str):
+        skips.append(f"{where} export closure - {tolerated}")
+        return
+    patterns = [re.compile(p) for p in tolerated]
+    extra = sorted(e for e in exports - defs
+                   if not any(p.search(e) for p in patterns))
+    if extra:
+        problems.append(
+            f"{where}: exports {len(extra)} name(s) the shim does "
+            f"not define and no tolerance covers, e.g. {extra[:6]} "
+            f"- most often a library built WITHOUT its version "
+            f"script, which leaks vendored symbols into the "
+            f"engine's process")
+
+
+def recorded_mac_stale_abi(stale):
+    """The ABI number the member's own record says its mac dylib is stuck at.
+
+    PARSED out of the record on every run, never hand-copied into this file:
+    a hand-copied number goes stale silently at the next bump, which is the
+    failure the root CLAUDE.md records for every other copied constant. None
+    means the record no longer parses - the caller turns that into a hard
+    problem, because an allowance whose written basis has gone unreadable is
+    an allowance standing on nothing.
+    """
+    try:
+        with open(os.path.join(ROOT, stale["record"]), encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    m = re.search(stale["pattern"], text, re.M)
+    return int(m.group(1)) if m else None
+
+
+def check_fat_macho(member, path, where, binds, defs, want_abi,
+                    problems, skips, stats):
+    """All four legs, plus a cross-slice leg, for one committed fat dylib.
+
+    Returns 1 when the library was opened and judged (the caller's vacuity
+    guard counts it), 0 when it could not be read at all.
+
+    The order matters. Cross-slice identity comes FIRST, because every later
+    verdict is stated about "the export set" in the singular and that phrase
+    is only honest once the two architectures are proven to ship the same
+    API - a fat file whose slices differ binds on one Mac and fails on the
+    other, and no per-set verdict can be trusted about it. The ABI decode
+    runs per slice and the two constants must agree with each other BEFORE
+    either is compared with the header, because two slices disagreeing means
+    the fat file was assembled from two different builds - a defect no
+    single rebuild produces and no header comparison would name.
+    """
+    try:
+        slices = read_macho_fat(path)
+    except ReadError as exc:
+        # Fail CLOSED, same as the ELF/PE path: the platform id told us what
+        # this file claims to be, so "could not read it" is a finding.
+        problems.append(f"{where}: a MACHO image whose export table could "
+                        f"not be read ({exc}) - a library whose exports "
+                        f"cannot be established is what this gate exists to "
+                        f"stop")
+        return 0
+    stats["libs"] += 1
+    stats["mac"] += 1
+
+    (arch_a, exports_a, _), (arch_b, exports_b, _) = slices
+    if exports_a != exports_b:
+        only_a = sorted(exports_a - exports_b)[:4]
+        only_b = sorted(exports_b - exports_a)[:4]
+        problems.append(
+            f"{where}: the {arch_a} and {arch_b} slices export DIFFERENT "
+            f"name sets ({arch_a}-only {only_a}, {arch_b}-only {only_b}) - "
+            f"the two architectures ship different APIs, so the same stack "
+            f"binds on one Mac and fails to load on the other. No leg "
+            f"verdict is meaningful on a self-inconsistent library, so none "
+            f"is attempted")
+        return 1
+    exports = exports_a
+
+    # Leg 4's raw material: decode each slice's constant.
+    values = {}
+    for arch, _, code_at in slices:
+        code = code_at(member["abi_symbol"], 24)
+        if arch == "x86_64":
+            value = decode_return_constant(code)
+        else:
+            value = decode_return_constant_arm64(code)
+        if value is None:
+            skips.append(
+                f"{where} ABI pin ({arch} slice) - {member['abi_symbol']}'s "
+                f"code is not a shape this file decodes, and scanning the "
+                f"body for a plausible immediate would be a guess")
+        else:
+            values[arch] = value
+            stats["abi"] += 1
+    decoded = None
+    if len(values) == 2:
+        if values[arch_a] != values[arch_b]:
+            problems.append(
+                f"{where}: the two slices DISAGREE about their own ABI - "
+                f"{arch_a} returns {values[arch_a]}, {arch_b} returns "
+                f"{values[arch_b]} - so the fat file was assembled from two "
+                f"different builds, which no single rebuild produces")
+        else:
+            decoded = values[arch_a]
+    elif len(values) == 1:
+        decoded = next(iter(values.values()))
+
+    stale = MAC_KNOWN_STALE.get(member["name"])
+    if stale is not None:
+        recorded = recorded_mac_stale_abi(stale)
+        if recorded is None:
+            problems.append(
+                f"{where}: MAC_KNOWN_STALE cites {stale['record']} but its "
+                f"universal-mac STALE table row no longer parses - either "
+                f"the dylib was refreshed and this member's MAC_KNOWN_STALE "
+                f"row should be DELETED, or the table was reformatted and "
+                f"the pattern here must follow it. Fix that before trusting "
+                f"any mac verdict on this member")
+            return 1
+        if decoded is not None and decoded == want_abi:
+            # The stale-excuse refusal, same as check-suite-coverage's: an
+            # allowance must not outlive the state it excuses.
+            problems.append(
+                f"{where}: decodes ABI {decoded} == {member['abi_define']}, "
+                f"so the dylib has been REFRESHED and this member's "
+                f"MAC_KNOWN_STALE row is now a stale excuse - delete it (and "
+                f"the {stale['record']} STALE row it cites), then this "
+                f"library is simply held to every leg like the rest")
+            # Fall through: a refreshed dylib gets the full legs right away.
+        elif decoded is not None and decoded != recorded:
+            problems.append(
+                f"{where}: decodes ABI {decoded}, but {stale['cite']} "
+                f"records {recorded} and {member['abi_header']} defines "
+                f"{member['abi_define']} {want_abi} - a skew NOBODY wrote "
+                f"down, which the recorded-stale allowance does not cover")
+            # Fall through: the legs report what else disagrees.
+        else:
+            # decoded == recorded (or undecodable, in which case the record
+            # is cited rather than confirmed and the skip says which).
+            missing = sorted(binds - exports)
+            unexported = sorted(defs - exports)
+            extra = sorted(exports - defs)
+            confirm = (f"decodes ABI {decoded} on both slices, exactly the "
+                       f"recorded number"
+                       if decoded is not None else
+                       f"decodes on neither slice, so the recorded number "
+                       f"is CITED here, not confirmed")
+            skips.append(
+                f"{where} bind/source/closure/ABI legs vs CURRENT source - "
+                f"this dylib is the KNOWN recorded stale state, not a new "
+                f"finding: {stale['cite']} records it at ABI {recorded} "
+                f"while {member['abi_header']} defines "
+                f"{member['abi_define']} {want_abi}, and the committed file "
+                f"{confirm}. Measured against today's source: {len(missing)} "
+                f"of {len(binds)} binds unresolved (e.g. {missing[:3]}), "
+                f"{len(unexported)} shim definitions unexported, "
+                f"{len(extra)} exported name(s) beyond the source - the "
+                f"deltas a binary that predates the source is recorded to "
+                f"have. This allowance deletes itself: a refreshed dylib "
+                f"decodes {want_abi}, which turns the MAC_KNOWN_STALE row "
+                f"into a hard failure until it is removed")
+            return 1
+
+    check_export_legs(member, where, "macho", binds, defs, exports,
+                      problems, skips, stats)
+
+    # Leg 4 proper: the agreed constant against the header. No loader
+    # cross-check is possible for this format - no Linux host can dlopen a
+    # Mach-O - which is the same evidence state as the cross-built DLLs.
+    if decoded is not None and decoded != want_abi:
+        problems.append(
+            f"{where}: {member['abi_symbol']}() returns {decoded} "
+            f"but {member['abi_header']} defines "
+            f"{member['abi_define']} {want_abi} - the committed "
+            f"binary predates an ABI change, which is the exact "
+            f"skew the member's runtime ABI check refuses")
+    return 1
+
+
 def check_member(member, problems, skips, notes, stats):
     name, lib, prefix = member["name"], member["lib"], member["prefix"]
 
@@ -906,25 +1423,10 @@ def check_member(member, problems, skips, notes, stats):
                                 f"({lib}.{suffix}) and not a known non-library "
                                 f"file - a binary nothing checks")
                 continue
-            # Presence is recorded here, BEFORE the macOS exemption and before
-            # any read can fail: `ships` is a claim about what the tree
-            # contains, and an unreadable file is still a file that is there.
+            # Presence is recorded here, BEFORE any read can fail: `ships` is
+            # a claim about what the tree contains, and an unreadable file is
+            # still a file that is there.
             found.add(platform)
-            if fmt == "macho":
-                extra_note = MAC_MEMBER_NOTE.get(name)
-                if extra_note is None:
-                    # A third member committing a dylib is a decision somebody
-                    # made; it does not get to inherit sodiumxt's written
-                    # reason by default.
-                    problems.append(
-                        f"{name}/src/code/{platform}/{fn}: a committed Mach-O "
-                        f"with no row in MAC_MEMBER_NOTE - the macOS exemption "
-                        f"is written per member on purpose, so this one needs "
-                        f"its own written reason before it can be skipped")
-                    continue
-                skips.append(f"{name}/src/code/{platform}/{fn} - "
-                             f"{MAC_EXEMPTION}, {extra_note}")
-                continue
 
             actual = detect_format(path)
             if actual != fmt:
@@ -932,6 +1434,15 @@ def check_member(member, problems, skips, notes, stats):
                                 f"id promises {fmt.upper()} but the file's magic "
                                 f"says {actual.upper()} - the wrong binary is "
                                 f"installed here")
+                continue
+            if fmt == "macho":
+                # The per-member skip that stood here until 2026-08-23 is
+                # RETIRED (see MAC_EXEMPTION for its history): the fat reader
+                # runs instead. It keeps its own leg order, so it does not
+                # share the ELF/PE tail below - only check_export_legs.
+                checked_here += check_fat_macho(
+                    member, path, f"{name}/src/code/{platform}/{fn}",
+                    binds, defs, want_abi, problems, skips, stats)
                 continue
             try:
                 exports, code_at = read_container(path, fmt)
@@ -950,43 +1461,9 @@ def check_member(member, problems, skips, notes, stats):
             stats["libs"] += 1
             where = f"{name}/src/code/{platform}/{fn}"
 
-            # Leg 1: the bind oracle.
-            missing = sorted(binds - exports)
-            if missing:
-                problems.append(
-                    f"{where}: the .lcb binds {len(missing)} symbol(s) this "
-                    f"library does NOT export, e.g. {missing[:6]} - the "
-                    f"extension would fail to bind at LOAD time on this "
-                    f"platform. Rebuild it and refresh "
-                    f"{name}/src/code/MANIFEST.sha256 in the same change "
-                    f"(suite rule 5)")
-            else:
-                stats["binds"] += len(binds)
-
-            # Leg 2: the source oracle.
-            unexported = sorted(defs - exports)
-            if unexported:
-                problems.append(
-                    f"{where}: {member['shim']} defines {len(unexported)} "
-                    f"non-static {prefix}* function(s) this library does not "
-                    f"export, e.g. {unexported[:6]} - the committed binary "
-                    f"predates the source")
-
-            # Leg 3: the export closure.
-            tolerated = member["closure"].get(fmt)
-            if isinstance(tolerated, str):
-                skips.append(f"{where} export closure - {tolerated}")
-            else:
-                patterns = [re.compile(p) for p in tolerated]
-                extra = sorted(e for e in exports - defs
-                               if not any(p.search(e) for p in patterns))
-                if extra:
-                    problems.append(
-                        f"{where}: exports {len(extra)} name(s) the shim does "
-                        f"not define and no tolerance covers, e.g. {extra[:6]} "
-                        f"- most often a library built WITHOUT its version "
-                        f"script, which leaks vendored symbols into the "
-                        f"engine's process")
+            # Legs 1-3, shared with the Mach-O path since 2026-08-23.
+            check_export_legs(member, where, fmt, binds, defs, exports,
+                              problems, skips, stats)
 
             # Leg 4: the ABI pin.
             decoded = decode_return_constant(code_at(member["abi_symbol"], 24))
@@ -1045,7 +1522,8 @@ def check_member(member, problems, skips, notes, stats):
 
 def main():
     problems, skips, notes = [], [], []
-    stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0}
+    stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0,
+             "mac": 0}
 
     assert_table_covers_tree(problems)
     for member in MEMBERS:
@@ -1067,11 +1545,14 @@ def main():
     # it had CHECKED. So: libraries actually opened, distinct binds resolved,
     # and how many of those resolutions each library was held to.
     print(f"{TAG}: OK - {stats['libs']} committed libraries across "
-          f"{len(MEMBERS)} members. {stats['distinct']} distinct .lcb binds, "
-          f"{stats['binds']} bind-vs-export resolutions; every non-static shim "
-          f"definition exported; {stats['abi']} ABI constants decoded from "
-          f"committed code, {stats['confirmed']} of them confirmed by loading "
-          f"the library and calling the function")
+          f"{len(MEMBERS)} members ({stats['mac']} of them universal mac "
+          f"dylibs, both slices read). {stats['distinct']} distinct .lcb "
+          f"binds, {stats['binds']} bind-vs-export resolutions; every "
+          f"non-static shim definition exported, outside any recorded-stale "
+          f"mac state printed above; {stats['abi']} ABI constants decoded "
+          f"from committed code (a fat dylib contributes one per slice), "
+          f"{stats['confirmed']} of them confirmed by loading the library "
+          f"and calling the function")
     return 0
 
 
