@@ -54,6 +54,10 @@ INPUTS = {
     "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff":
         "the all-ones id whose difficulty is zero by inspection - an input "
         "to nxPowDifficulty, not a derived value",
+    "6EA6C7B5B5373CC1881DF20C8F80BB5F5577F3AC4C41747A55ACA40382436D46":
+        "kNxVecIdB UPPERCASED - the input to the wire-lowercase refusal "
+        "check (nxEventFromJson must refuse an uppercase id); the lowercase "
+        "form re-derives by name as kNxVecIdB above",
 }
 
 CONST_RE = re.compile(r'^constant (kNxVec\w+) = "(.*)"\s*$', re.M)

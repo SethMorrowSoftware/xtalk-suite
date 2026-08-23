@@ -54,7 +54,9 @@ socket rules, inherited whole).
 The pure math lives in the core (`nxWs*`); this layer drives it:
 
 - **Upgrade request** (`nxWsHandshakeRequest`): `GET <path> HTTP/1.1` with `Host`
-  (port included only when not 80/443, as section 4.1 asks of a client),
+  (the port is omitted only at the scheme's OWN default, 80 for ws and 443 for
+  wss, as section 4.1 asks of a client; a cross-scheme port like ws://host:443
+  stays in the header),
   `Upgrade: websocket`, `Connection: Upgrade`, a fresh 16-random-byte
   `Sec-WebSocket-Key`, and `Sec-WebSocket-Version: 13`. CRLF line endings, blank
   line terminated.

@@ -200,7 +200,7 @@ command nxrWsOpened pSocketID
       exit nxrWsOpened
    end if
    put "handshake" into sNxrRelays[tHandle]["state"]
-   put nxWsHandshakeRequest(sNxrRelays[tHandle]["host"], sNxrRelays[tHandle]["port"], sNxrRelays[tHandle]["path"], sNxrRelays[tHandle]["wsKey"]) into tRequest
+   put nxWsHandshakeRequest(sNxrRelays[tHandle]["host"], sNxrRelays[tHandle]["port"], sNxrRelays[tHandle]["path"], sNxrRelays[tHandle]["wsKey"], sNxrRelays[tHandle]["secure"]) into tRequest
    if tRequest is empty then
       nxrFail tHandle, "could not build the handshake request:" && nxLastError()
       exit nxrWsOpened
@@ -295,7 +295,7 @@ private command nxrProcessHandshake pRelay
       put char 1 to (tColonPos - 1) of tLineText into tHeaderName
       -- Header names are case-insensitive by HTTP's own rule, so the folded
       -- compare `is` gives here is the CORRECT one for once.
-      if nxToLowerAscii(tHeaderName) is "sec-websocket-accept" then
+      if nxrToLowerAscii(tHeaderName) is "sec-websocket-accept" then
          put char (tColonPos + 1) to (the number of chars of tLineText) of tLineText into tAcceptValue
          repeat while char 1 of tAcceptValue is " "
             delete char 1 of tAcceptValue
@@ -317,6 +317,26 @@ private command nxrProcessHandshake pRelay
    put "open" into sNxrRelays[pRelay]["state"]
    nxrDispatch pRelay, "open", empty, empty
 end nxrProcessHandshake
+
+private function nxrToLowerAscii pText
+   -- ASCII lowercase by byte value. Local copy for the same reason as
+   -- nxrStrEq below: the core's nxToLowerAscii is PRIVATE to its own
+   -- script when the two files load as separate stacks, and a private
+   -- handler called cross-script is an execution error at the first
+   -- handshake (the adversarial review traced exactly that).
+   local tOut, tI, tCount, tCode
+   put empty into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         put numToChar(tCode + 32) after tOut
+      else
+         put numToChar(tCode) after tOut
+      end if
+   end repeat
+   return tOut
+end nxrToLowerAscii
 
 private function nxrStrEq pA, pB
    -- Byte-exact equality (the accept value is base64: case matters and `is`
@@ -643,23 +663,55 @@ private command nxrSafeCloseSocket pSocketID
    end if
 end nxrSafeCloseSocket
 
+private command nxrDispatchTo pHandler, pRelay, pKind, pArgOne, pArgTwo
+   -- nxrDispatch by EXPLICIT handler name, for callbacks delivered after
+   -- the relay's table entry is already gone (teardown saves the name
+   -- first). Same try guard, same clean-miss contract.
+   local tError
+   if pHandler is empty then
+      exit nxrDispatchTo
+   end if
+   try
+      dispatch pHandler to nxrCallbackTarget() with pRelay, pKind, pArgOne, pArgTwo
+   catch tError
+      -- Swallowed on purpose: the app broke, the transport must not.
+   end try
+end nxrDispatchTo
+
 private command nxrTeardown pRelay, pReason
-   -- Close, forget, tell the app once. Safe to call twice.
-   local tSocketID
+   -- Close and FORGET FIRST, tell the app once AFTER: the callback runs
+   -- app code synchronously, and an app that answers "disconnected" by
+   -- calling nxrDisconnect on the same handle must find the clean no-op
+   -- the contract promises - dispatching while the tables were still
+   -- populated re-entered a relay that looked fully open (a second close
+   -- frame on the wire, a second callback, unbounded recursion; the
+   -- adversarial review traced the loop). Safe to call twice.
+   local tSocketID, tCallback
    put sNxrRelays[pRelay]["socketID"] into tSocketID
    if tSocketID is empty then
       exit nxrTeardown
    end if
-   nxrDispatch pRelay, "disconnected", pReason, empty
+   put sNxrRelays[pRelay]["callback"] into tCallback
    nxrSafeCloseSocket tSocketID
    delete variable sNxrSockToRelay[tSocketID]
    delete variable sNxrRelays[pRelay]
+   nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
 end nxrTeardown
 
 private command nxrFail pRelay, pReason
-   -- A wire error: surface it, then tear the relay down (rule 4).
-   nxrDispatch pRelay, "error", pReason, empty
-   nxrTeardown pRelay, pReason
+   -- A wire error: tear down FIRST (the reentrancy rule above), then
+   -- surface "error" and "disconnected" from the saved callback name.
+   local tSocketID, tCallback
+   put sNxrRelays[pRelay]["socketID"] into tSocketID
+   if tSocketID is empty then
+      exit nxrFail
+   end if
+   put sNxrRelays[pRelay]["callback"] into tCallback
+   nxrSafeCloseSocket tSocketID
+   delete variable sNxrSockToRelay[tSocketID]
+   delete variable sNxrRelays[pRelay]
+   nxrDispatchTo tCallback, pRelay, "error", pReason, empty
+   nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
 end nxrFail
 
 command nxrDisconnect pRelay

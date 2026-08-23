@@ -217,6 +217,9 @@ private command nxtTestHexAndHelpers
    nxtCheck not (tB64Text contains numToChar(10)), "nxB64Encode emits one line"
    nxtCheck nxB64Decode("a!b=") is empty, "nxB64Decode refuses foreign characters"
    nxtCheck nxB64Decode("abcde") is empty, "nxB64Decode refuses a bad length"
+   nxtCheck nxB64Decode("AB===") is empty, "nxB64Decode refuses three pads"
+   nxtCheck nxB64Decode(kNxVecN44Payload & "A===") is empty, "nxB64Decode refuses a one-data-char final group (the lenient-engine trap)"
+   nxtCheck nxB64Decode("A=BC") is empty, "nxB64Decode refuses padding before the end"
    nxtCheck nxUnixNow() is an integer, "nxUnixNow is an integer"
    nxtCheck nxUnixNow() > 1700000000, "nxUnixNow is after the fixture era"
 end nxtTestHexAndHelpers
@@ -264,7 +267,12 @@ private command nxtTestJsonParse
    nxtCheck nxJsonType("[" & quote & "unterminated", empty) is "missing", "an unterminated string refuses"
    nxtCheck nxJsonType("[" & quote & "\ud83d" & quote & "]", empty) is "missing", "a lone high surrogate refuses"
    nxtCheck nxJsonType("[" & quote & "\q" & quote & "]", empty) is "missing", "an unknown escape refuses"
-   nxtCheck nxJsonType("[07]", empty) is "missing", "this parser is strict about words it does not know"
+   nxtCheck nxJsonType("[07]", empty) is "missing", "a leading-zero number refuses (RFC 8259 grammar)"
+   nxtCheck nxJsonType("[2e]", empty) is "missing", "an exponent with no digits refuses"
+   nxtCheck nxJsonType("[+5]", empty) is "missing", "a leading plus refuses"
+   nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
+   nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
+   nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
    put empty into tDeep
    repeat with tI = 1 to 70
       put "[" after tDeep
@@ -293,6 +301,12 @@ private command nxtTestEventShape
    nxtCheck nxEventBuild(-1, empty, empty, 1) is empty, "kind -1 refuses"
    nxtCheck nxEventBuild(65536, empty, empty, 1) is empty, "kind 65536 refuses"
    nxtCheck nxEventBuild(1, empty, empty, -5) is empty, "a negative created_at refuses"
+   nxtCheck nxEventBuild(1, empty, empty, "1e3") is empty, "a coerced created_at spelling refuses (1e3 is an integer to this dialect; the preimage must be canonical)"
+   nxtCheck nxEventBuild("07", empty, empty, 1) is empty, "a leading-zero kind spelling refuses"
+   put empty into tOther
+   put "e" into tOther[2][1]
+   put kNxVecTagEventId into tOther[2][2]
+   nxtCheck nxEventBuild(1, empty, tOther, 1) is empty, "a gapped tags table refuses instead of silently dropping the unreachable tag"
    put nxtEventB() into tOther
    put empty into tOther["pubkey"]
    nxtCheck nxEventSerialize(tOther) is empty, "serializing without a pubkey refuses"
@@ -327,6 +341,17 @@ private command nxtTestEventShape
    nxtCheck nxEventFromJson(tJson) is empty, "a created_at of 1e3 refuses (non-canonical number)"
    put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[[1]]}" into tJson
    nxtCheck nxEventFromJson(tJson) is empty, "a non-string tag item refuses"
+   put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[[]]}" into tJson
+   nxtCheck nxEventFromJson(tJson) is empty, "an empty tag refuses (it would gap the rebuilt keys)"
+   put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[]," & quote & "id" & quote & ":" & quote & "6EA6C7B5B5373CC1881DF20C8F80BB5F5577F3AC4C41747A55ACA40382436D46" & quote & "}" into tJson
+   nxtCheck nxEventFromJson(tJson) is empty, "an UPPERCASE wire id refuses (NIP-01: lowercase hex on the wire)"
+   -- the tags text form's one non-round-trippable shape
+   put empty into tTags
+   put "e" into tTags[1][1]
+   put kNxVecTagEventId into tTags[1][2]
+   put empty into tTags[1][3]
+   nxtCheck nxTagsToText(tTags) is empty, "a trailing empty tag item refuses (the engine eats one trailing delimiter)"
+   nxtCheck nxCtEqualHex("6ea6", "6EA6") is true, "nxCtEqualHex normalizes case identically on BOTH of its paths"
 end nxtTestEventShape
 
 private function nxSeqLikeCount pArray
@@ -438,6 +463,11 @@ private command nxtTestNip19Bare
    put nxBech32Decode(tTampered) into tDecoded
    nxtCheck tDecoded["spec"] is "bech32m", "bech32m round-trips and self-identifies"
    nxtCheck tDecoded["hex"] is "0011ff", "and carries its payload"
+   -- the empty-payload edge BIP-173's own vectors pin (the checksum IS the
+   -- data part; the first cut's separator bound refused these)
+   put nxBech32Encode("a", empty, "bech32") into tTampered
+   put nxBech32Decode(tTampered) into tDecoded
+   nxtCheck tDecoded["hrp"] is "a" and tDecoded["hex"] is empty, "an empty payload encodes and decodes (BIP-173's A12UEL5L class)"
 end nxtTestNip19Bare
 
 -- ==========================================================================
@@ -478,10 +508,20 @@ private command nxtTestNip19Tlv
    nxtCheck nxNeventDecode(kNxVecNpub) is empty, "an npub into nxNeventDecode refuses"
    -- URIs
    nxtCheck nxUriEncode(kNxVecNpub) is "nostr:" & kNxVecNpub, "nxUriEncode wraps a shareable entity"
+   nxtCheck nxUriEncode("nostr:" & kNxVecNpub) is "nostr:" & kNxVecNpub, "and is idempotent on an already-prefixed input"
    nxtCheck nxUriEncode(kNxVecNsec) is empty, "nxUriEncode REFUSES a secret key"
    put nxUriDecode("nostr:" & kNxVecNpub) into tFields
    nxtCheck tFields["pubkey"] is kNxVecNpubHex, "nxUriDecode yields the fields"
    nxtCheck nxUriDecode(kNxVecNpub) is empty, "nxUriDecode wants the prefix"
+   nxtCheck nxUriDecode("nostr:" & kNxVecNsec) is empty, "nxUriDecode refuses a secret-key URI (the encode hygiene, inbound)"
+   -- the identifier-refusal masking trap: an over-long naddr identifier
+   -- must refuse even when relay TLVs would refill the payload
+   local tLongIdent, tIdentIx
+   put empty into tLongIdent
+   repeat with tIdentIx = 1 to 256
+      put "x" after tLongIdent
+   end repeat
+   nxtCheck nxNaddrEncode(tLongIdent, kNxVecPubkey, 1, "wss://r.io") is empty, "a 256-byte naddr identifier refuses, relays or not"
 end nxtTestNip19Tlv
 
 -- ==========================================================================
@@ -714,12 +754,16 @@ private command nxtTestWsPure
    nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
    nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
-   put nxWsHandshakeRequest("r.io", 80, "/", kNxVecWsKey) into tRequest
+   put nxWsHandshakeRequest("r.io", 80, "/", kNxVecWsKey, false) into tRequest
    nxtCheck tRequest begins with "GET / HTTP/1.1", "the request line"
-   nxtCheck tRequest contains "Host: r.io" & numToChar(13), "a default port stays out of Host"
+   nxtCheck tRequest contains "Host: r.io" & numToChar(13), "the scheme's default port stays out of Host"
    nxtCheck tRequest contains "Sec-WebSocket-Version: 13", "protocol version 13"
-   put nxWsHandshakeRequest("r.io", 7443, "/", kNxVecWsKey) into tRequest
+   put nxWsHandshakeRequest("r.io", 7443, "/", kNxVecWsKey, false) into tRequest
    nxtCheck tRequest contains "Host: r.io:7443", "a non-default port joins Host"
+   put nxWsHandshakeRequest("r.io", 443, "/", kNxVecWsKey, false) into tRequest
+   nxtCheck tRequest contains "Host: r.io:443", "443 is NOT ws://'s default: it stays in Host (RFC 6455 4.1 is per scheme)"
+   put nxWsHandshakeRequest("r.io", 443, "/", kNxVecWsKey, true) into tRequest
+   nxtCheck tRequest contains "Host: r.io" & numToChar(13), "and IS wss://'s default, so there it comes out"
    nxtCheck nxWsAcceptFor(kNxVecWsKey) is kNxVecWsAccept, "the accept derivation matches the sample"
    -- frames
    put nxWsFrameEncode(1, textEncode("Hello", "UTF-8"), kNxVecWsMask) into tFrame

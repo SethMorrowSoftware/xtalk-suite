@@ -15065,6 +15065,19 @@ function nxB64Decode pText
    if nxIntMod(tCount, 4) is not 0 then
       return empty
    end if
+   if tPadFrom is not 0 then
+      -- At most two pads, only at the very end, and the final group must
+      -- carry a legal data residue: pads + (data mod 4) is exactly 4.
+      -- Without this, strings every conforming decoder refuses (extra or
+      -- misplaced '=', a one-data-char final group) reached the engine's
+      -- LENIENT decoder and could round to a valid payload.
+      if tCount - tPadFrom + 1 > 2 then
+         return empty
+      end if
+      if nxIntMod(tPadFrom - 1, 4) + (tCount - tPadFrom + 1) is not 4 then
+         return empty
+      end if
+   end if
    return base64Decode(pText)
 end nxB64Decode
 
@@ -15153,13 +15166,19 @@ function nxCtEqualHex pAHex, pBHex
    -- interpreter's timing is noisy, and this guards against the gross
    -- early-exit leak, not a lab-grade side channel (the onionxt
    -- oxConstantTimeEqual acceptability argument).
-   local tError, tA, tB, tDiff, tI, tCount
+   local tError, tA, tB, tDiff, tI, tCount, tLowA, tLowB
    if the number of chars of pAHex is not the number of chars of pBHex then
       return false
    end if
+   -- ONE predicate on both paths: normalize case first, so the verdict
+   -- cannot depend on whether SodiumXT happens to be installed (the
+   -- sxMemEqual path compared decoded bytes, case-blind; the fallback
+   -- compared hex TEXT, case-sensitive - same input, opposite answers).
+   put nxToLowerAscii(pAHex) into tLowA
+   put nxToLowerAscii(pBHex) into tLowB
    try
-      put nxHexDecode(pAHex) into tA
-      put nxHexDecode(pBHex) into tB
+      put nxHexDecode(tLowA) into tA
+      put nxHexDecode(tLowB) into tB
       if tA is not empty and tB is not empty then
          return sxMemEqual(tA, tB)
       end if
@@ -15167,9 +15186,9 @@ function nxCtEqualHex pAHex, pBHex
       -- fall through to the pure-script loop
    end try
    put 0 into tDiff
-   put the number of chars of pAHex into tCount
+   put the number of chars of tLowA into tCount
    repeat with tI = 1 to tCount
-      if byteToNum(char tI of pAHex) is not byteToNum(char tI of pBHex) then
+      if byteToNum(char tI of tLowA) is not byteToNum(char tI of tLowB) then
          add 1 to tDiff
       end if
    end repeat
@@ -15280,7 +15299,7 @@ end nxJsonParseValue
 private function nxJsonParseObject
    -- Opening byte 123 confirmed by the caller. Builds parallel 1-based key
    -- and child lists so key order survives (xTalk array keys do not).
-   local tNode, tByte, tN, tKeyNode, tChild
+   local tNode, tByte, tN, tKeyNode, tChild, tDup
    put "o" into tNode["t"]
    put 0 into tN
    add 1 to sNxJsonPos
@@ -15309,6 +15328,16 @@ private function nxJsonParseObject
       if sNxJsonErr is not empty then
          return empty
       end if
+      -- Refuse duplicate member names, fail closed: first-wins readers and
+      -- last-wins readers of the same document otherwise disagree about
+      -- what it says - the classic duplicate-key desync a relay could use
+      -- to show a verifier one content and a reader another.
+      repeat with tDup = 1 to tN
+         if nxStrEqExact(tNode["k"][tDup], tKeyNode["v"]) then
+            put "duplicate object key" into sNxJsonErr
+            return empty
+         end if
+      end repeat
       add 1 to tN
       put tKeyNode["v"] into tNode["k"][tN]
       put tChild into tNode["c"][tN]
@@ -15532,32 +15561,81 @@ private function nxJsonWordAt pWord
 end nxJsonWordAt
 
 private function nxJsonParseNumber
-   -- JSON number grammar, collected as TEXT (Nostr's numbers are integer
-   -- timestamps and kinds; keeping the source text avoids float rounding).
-   local tNode, tOut, tByte, tSeenDigit
+   -- The RFC 8259 number grammar, enforced: -?(0|[1-9][0-9]*)(.[0-9]+)?
+   -- ([eE][+-]?[0-9]+)?. The first cut of this collected any run of
+   -- number-ish bytes, which accepted "07", "1e", "1-2" and "+5" - and a
+   -- "number" like "1e" reaching `+ 0` downstream is a hard engine error
+   -- from a never-throw library (the adversarial review's trace). Collected
+   -- as TEXT so integer spellings survive verbatim.
+   local tNode, tOut, tByte
    put "n" into tNode["t"]
    put empty into tOut
-   put false into tSeenDigit
    if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 45 then
       put "-" after tOut
       add 1 to sNxJsonPos
    end if
-   repeat while sNxJsonPos <= sNxJsonLen
-      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
-      if tByte >= 48 and tByte <= 57 then
-         put numToChar(tByte) after tOut
-         put true into tSeenDigit
-         add 1 to sNxJsonPos
-      else if tByte is 46 or tByte is 101 or tByte is 69 or tByte is 43 or tByte is 45 then
-         put numToChar(tByte) after tOut
-         add 1 to sNxJsonPos
-      else
-         exit repeat
-      end if
-   end repeat
-   if tSeenDigit is false then
+   -- int part: one zero, or a nonzero digit then any digits
+   if sNxJsonPos > sNxJsonLen then
       put "not a number" into sNxJsonErr
       return empty
+   end if
+   put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+   if tByte is 48 then
+      put "0" after tOut
+      add 1 to sNxJsonPos
+   else if tByte >= 49 and tByte <= 57 then
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
+   else
+      put "not a number" into sNxJsonErr
+      return empty
+   end if
+   -- optional fraction: "." then at least one digit
+   if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 46 then
+      put "." after tOut
+      add 1 to sNxJsonPos
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) < 48 or byteToNum(byte sNxJsonPos of sNxJsonBytes) > 57 then
+         put "a fraction needs at least one digit" into sNxJsonErr
+         return empty
+      end if
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
+   end if
+   -- optional exponent: e/E, optional sign, at least one digit
+   if sNxJsonPos <= sNxJsonLen and (byteToNum(byte sNxJsonPos of sNxJsonBytes) is 101 or byteToNum(byte sNxJsonPos of sNxJsonBytes) is 69) then
+      put numToChar(byteToNum(byte sNxJsonPos of sNxJsonBytes)) after tOut
+      add 1 to sNxJsonPos
+      if sNxJsonPos <= sNxJsonLen and (byteToNum(byte sNxJsonPos of sNxJsonBytes) is 43 or byteToNum(byte sNxJsonPos of sNxJsonBytes) is 45) then
+         put numToChar(byteToNum(byte sNxJsonPos of sNxJsonBytes)) after tOut
+         add 1 to sNxJsonPos
+      end if
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) < 48 or byteToNum(byte sNxJsonPos of sNxJsonBytes) > 57 then
+         put "an exponent needs at least one digit" into sNxJsonErr
+         return empty
+      end if
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
    end if
    put tOut into tNode["v"]
    return tNode
@@ -15587,7 +15665,11 @@ private function nxJsonPathNode pJson, pPath
          put 0 into tFound
          put nxSeqCount(tNode["k"]) into tKidCount
          repeat with tJ = 1 to tKidCount
-            if tNode["k"][tJ] is tStep then
+            -- BYTE-EXACT, not `is`: `is` folds case AND compares numerically,
+            -- so "NAME" would match "name" and "1000" would match "1e3" -
+            -- the adversarial review's headline find (it broke every
+            -- single-letter tag filter through the #e/#E probe loop).
+            if nxStrEqExact(tNode["k"][tJ], tStep) then
                put tJ into tFound
                exit repeat
             end if
@@ -15599,7 +15681,9 @@ private function nxJsonPathNode pJson, pPath
          end if
          put tNode["c"][tFound] into tNode
       else if tNode["t"] is "a" then
-         if tStep is not an integer or tStep < 1 or tStep > nxSeqCount(tNode["c"]) then
+         -- Digit runs only: "2.0" and "03" pass `is an integer` by numeric
+         -- fold, then miss the STRING-keyed child table silently.
+         if not nxIsDigits(tStep) or tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
             set the itemDelimiter to tSavedDelim
             nxSetError "nxJson: no element" && tStep
             return empty
@@ -15692,6 +15776,56 @@ private function nxIsDigits pText
    return true
 end nxIsDigits
 
+private function nxIsCanonInt pText
+   -- The canonical integer spelling the id preimage may carry: a digit run
+   -- with no leading zero (a lone "0" is fine). "07", "1e3" and "5.0" all
+   -- coerce to integers in this dialect, and a non-canonical spelling that
+   -- reaches the serializer signs an event no conforming client recomputes.
+   local tCount
+   if not nxIsDigits(pText) then
+      return false
+   end if
+   put the number of chars of pText into tCount
+   if tCount > 1 and byteToNum(char 1 of pText) is 48 then
+      return false
+   end if
+   return true
+end nxIsCanonInt
+
+private function nxIsLowerHex pText, pLen
+   -- nxIsHex plus the wire rule: NIP-01 ids, pubkeys and sigs are
+   -- LOWERCASE hex on the wire, and this member refuses rather than
+   -- normalizing what it did not produce (fail closed).
+   local tI, tCount, tCode
+   if not nxIsHex(pText, pLen) then
+      return false
+   end if
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 70 then
+         return false
+      end if
+   end repeat
+   return true
+end nxIsLowerHex
+
+private function nxKeyCount pArray
+   -- How many keys pArray carries IN TOTAL (nxSeqCount stops at the first
+   -- gap, so the two disagreeing is how a gapped table is detected). The
+   -- keys join with the return constant; the lineDelimiter is global
+   -- mutable state, so guard the read.
+   local tSavedLineDelim, tCount
+   if pArray is not an array then
+      return 0
+   end if
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the number of lines of the keys of pArray into tCount
+   set the lineDelimiter to tSavedLineDelim
+   return tCount
+end nxKeyCount
+
 private function nxStrEqExact pA, pB
    local tA, tB, tI, tN
    put textEncode(pA, "UTF-8") into tA
@@ -15769,15 +15903,18 @@ function nxEventBuild pKind, pContent, pTags, pCreatedAt
    -- An unsigned event array. pTags is a nested tag array (nxTagsFromText
    -- converts text) or empty; pCreatedAt empty means now.
    local tEvent, tStamp
-   if pKind is not an integer or pKind < 0 or pKind > 65535 then
-      nxSetError "nxEventBuild: kind must be an integer between 0 and 65535"
+   if pKind is not an integer or pKind < 0 or pKind > 65535 or not nxIsCanonInt(pKind) then
+      nxSetError "nxEventBuild: kind must be a plain integer between 0 and 65535"
       return empty
    end if
    if pCreatedAt is empty then
       put nxUnixNow() into tStamp
    else
-      if pCreatedAt is not an integer or pCreatedAt < 0 then
-         nxSetError "nxEventBuild: created_at must be a non-negative integer"
+      -- nxIsCanonInt as well as the range: "1e3" and "1700000000 " pass
+      -- `is an integer` by coercion, get stored VERBATIM, and would be
+      -- signed into a preimage no conforming client recomputes.
+      if pCreatedAt is not an integer or pCreatedAt < 0 or not nxIsCanonInt(pCreatedAt) then
+         nxSetError "nxEventBuild: created_at must be a plain non-negative integer"
          return empty
       end if
       put pCreatedAt into tStamp
@@ -15825,8 +15962,8 @@ function nxEventSerialize pEvent
    -- hashes. Refuses an event whose pubkey is not yet filled in: serializing
    -- a half-built event would produce a well-formed WRONG preimage.
    local tOut
-   if not nxIsHex(pEvent["pubkey"], 64) then
-      nxSetError "nxEventSerialize: the event has no 64-hex pubkey yet (sign fills it in)"
+   if not nxIsLowerHex(pEvent["pubkey"], 64) then
+      nxSetError "nxEventSerialize: the event needs a 64-hex LOWERCASE pubkey (the canonical form; sign fills it in)"
       return empty
    end if
    if not nxEventHasValidShape(pEvent) then
@@ -15929,12 +16066,12 @@ function nxEventHasValidShape pEvent
    -- hex fields (when present) the right length, tags an array of arrays of
    -- strings whose first item is non-empty.
    local tI, tJ, tTagCount, tItemCount
-   if pEvent["kind"] is not an integer or pEvent["kind"] < 0 or pEvent["kind"] > 65535 then
-      nxSetError "event shape: kind must be an integer between 0 and 65535"
+   if pEvent["kind"] is not an integer or pEvent["kind"] < 0 or pEvent["kind"] > 65535 or not nxIsCanonInt(pEvent["kind"]) then
+      nxSetError "event shape: kind must be a plain integer between 0 and 65535"
       return false
    end if
-   if pEvent["created_at"] is not an integer or pEvent["created_at"] < 0 then
-      nxSetError "event shape: created_at must be a non-negative integer"
+   if pEvent["created_at"] is not an integer or pEvent["created_at"] < 0 or not nxIsCanonInt(pEvent["created_at"]) then
+      nxSetError "event shape: created_at must be a plain non-negative integer"
       return false
    end if
    if pEvent["id"] is not empty and not nxIsHex(pEvent["id"], 64) then
@@ -15959,12 +16096,23 @@ function nxEventHasValidShape pEvent
          return false
       end if
       put nxSeqCount(pEvent["tags"]) into tTagCount
+      -- DENSE 1-based keys or refuse: nxSeqCount stops at the first gap, so
+      -- a 0-based or gapped caller table would sign an event with the
+      -- unreachable tags silently DROPPED (fail-open data loss).
+      if nxKeyCount(pEvent["tags"]) is not tTagCount then
+         nxSetError "event shape: tags keys must be 1-based and dense"
+         return false
+      end if
       repeat with tI = 1 to tTagCount
          if pEvent["tags"][tI] is not an array then
             nxSetError "event shape: tag" && tI && "is not an array"
             return false
          end if
          put nxSeqCount(pEvent["tags"][tI]) into tItemCount
+         if nxKeyCount(pEvent["tags"][tI]) is not tItemCount then
+            nxSetError "event shape: tag" && tI && "keys must be 1-based and dense"
+            return false
+         end if
          if tItemCount < 1 or pEvent["tags"][tI][1] is empty then
             nxSetError "event shape: tag" && tI && "has no name"
             return false
@@ -16021,24 +16169,40 @@ function nxEventFromJson pJson
       put tRoot["k"][tI] into tKeyText
       put tRoot["c"][tI] into tNode
       if nxStrEqExact(tKeyText, "id") and tNode["t"] is "s" then
+         -- NIP-01: hex fields are lowercase on the wire; refuse rather
+         -- than normalize what this library did not produce.
+         if not nxIsLowerHex(tNode["v"], 64) then
+            nxSetError "nxEventFromJson: id must be 64 lowercase hex characters"
+            return empty
+         end if
          put tNode["v"] into tEvent["id"]
       else if nxStrEqExact(tKeyText, "pubkey") and tNode["t"] is "s" then
+         if not nxIsLowerHex(tNode["v"], 64) then
+            nxSetError "nxEventFromJson: pubkey must be 64 lowercase hex characters"
+            return empty
+         end if
          put tNode["v"] into tEvent["pubkey"]
       else if nxStrEqExact(tKeyText, "sig") and tNode["t"] is "s" then
+         if not nxIsLowerHex(tNode["v"], 128) then
+            nxSetError "nxEventFromJson: sig must be 128 lowercase hex characters"
+            return empty
+         end if
          put tNode["v"] into tEvent["sig"]
       else if nxStrEqExact(tKeyText, "content") and tNode["t"] is "s" then
          put tNode["v"] into tEvent["content"]
       else if nxStrEqExact(tKeyText, "created_at") and tNode["t"] is "n" then
-         -- Digits only: "1e3" and "1.5" coerce to integers in this dialect,
-         -- but a non-canonical number spelling must never reach the
-         -- serializer, where it would silently change the id preimage.
-         if not nxIsDigits(tNode["v"]) then
+         -- Canonical digits only: "1e3", "1.5" and "07" coerce to integers
+         -- in this dialect, but a non-canonical number spelling must never
+         -- reach the serializer, where it would silently change the id
+         -- preimage. (The JSON grammar already refuses "07"; the check
+         -- stays here so the invariant does not depend on the parser.)
+         if not nxIsCanonInt(tNode["v"]) then
             nxSetError "nxEventFromJson: created_at is not a plain integer"
             return empty
          end if
          put tNode["v"] into tEvent["created_at"]
       else if nxStrEqExact(tKeyText, "kind") and tNode["t"] is "n" then
-         if not nxIsDigits(tNode["v"]) then
+         if not nxIsCanonInt(tNode["v"]) then
             nxSetError "nxEventFromJson: kind is not a plain integer"
             return empty
          end if
@@ -16052,6 +16216,12 @@ function nxEventFromJson pJson
                return empty
             end if
             put nxSeqCount(tTagNode["c"][tJ]["c"]) into tItemCount
+            if tItemCount is 0 then
+               -- An empty inner tag would leave a GAP in the rebuilt keys,
+               -- hiding every later tag from nxSeqCount consumers.
+               nxSetError "nxEventFromJson: tag" && tJ && "has no name"
+               return empty
+            end if
             repeat with tN = 1 to tItemCount
                if tTagNode["c"][tJ]["c"][tN]["t"] is not "s" then
                   nxSetError "nxEventFromJson: tag" && tJ && "item" && tN && "is not a string"
@@ -16120,6 +16290,13 @@ function nxTagsToText pTags
          put pTags[tI][tJ] into tItemText
          if tItemText contains tab or tItemText contains numToChar(10) or tItemText contains numToChar(13) then
             nxSetError "nxTagsToText: tag" && tI && "item" && tJ && "contains a tab or line break; use the array form"
+            return empty
+         end if
+         if tJ is tItemCount and tItemText is empty then
+            -- The engine ignores one trailing delimiter when counting
+            -- items (engine notes 2.2), so a trailing empty item cannot
+            -- round-trip through the text form: refuse, never corrupt.
+            nxSetError "nxTagsToText: tag" && tI && "ends with an empty item, which the text form cannot round-trip; use the array form"
             return empty
          end if
          if tJ > 1 then
@@ -16656,7 +16833,11 @@ function nxBech32Decode pText
          exit repeat
       end if
    end repeat
-   if tPos < 2 or tPos + 7 > tCount then
+   -- The data part must be at least the 6 checksum characters: tPos + 6,
+   -- not + 7 (the reference's 0-based pos+7 bound, re-based). The first
+   -- cut carried the 0-based spelling and refused every valid empty-
+   -- payload string, including BIP-173's own "A12UEL5L" vector.
+   if tPos < 2 or tPos + 6 > tCount then
       nxSetError "nxBech32Decode: bad separator position"
       return empty
    end if
@@ -16879,6 +17060,14 @@ function nxNaddrEncode pIdentifier, pPubkeyHex, pKind, pRelayLines
       return empty
    end if
    put nxTlvAppend(empty, 0, textEncode(pIdentifier, "UTF-8")) into tPayload
+   if tPayload is empty then
+      -- Checked HERE, before the relay TLVs could refill the payload and
+      -- mask the refusal: an over-255-byte identifier would otherwise be
+      -- silently DROPPED from a checksum-valid naddr naming the wrong
+      -- coordinate. (An empty identifier still yields its 2-byte header,
+      -- so this guard cannot false-positive.)
+      return empty
+   end if
    put nxTlvRelays(tPayload, pRelayLines) into tPayload
    if tPayload is empty then
       return empty
@@ -17033,17 +17222,34 @@ function nxUriEncode pEntity
       nxSetError "nxUriEncode: refusing to build a URI around a secret key"
       return empty
    end if
+   if char 1 to 6 of pEntity is "nostr:" then
+      -- Idempotent: the decoder above accepts a prefixed input, so without
+      -- this an existing URI would come back double-prefixed.
+      return pEntity
+   end if
    return "nostr:" & pEntity
 end nxUriEncode
 
 function nxUriDecode pUri
    -- The entity fields of a nostr: URI (nxEntityDecode already accepts the
    -- prefix; this spelling exists so intent reads at the call site).
+   local tFields
    if char 1 to 6 of pUri is not "nostr:" then
       nxSetError "nxUriDecode: not a nostr: URI"
       return empty
    end if
-   return nxEntityDecode(pUri)
+   put nxEntityDecode(pUri) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if nxStrEqExact(tFields["type"], "nsec") then
+      -- NIP-21 defines the scheme for the SHAREABLE entities; a secret key
+      -- arriving through a clicked link must refuse, the same hygiene
+      -- nxUriEncode enforces outbound.
+      nxSetError "nxUriDecode: refusing a URI that carries a secret key"
+      return empty
+   end if
+   return tFields
 end nxUriDecode
 
 function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
@@ -17169,7 +17375,17 @@ private function nxNip44Unpad pPadded
       return empty
    end if
    put byte 3 to (2 + tLen) of pPadded into tBytes
-   return textDecode(tBytes, "UTF-8")
+   -- UTF-8 validity by ROUND TRIP: textDecode is lossy and never throws
+   -- (the riptide rsBytesAreUtf8 lesson), so decode, re-encode, and
+   -- require byte equality - a key-holding peer sending non-UTF-8 padded
+   -- bytes gets a refusal, as every conforming implementation gives.
+   local tText
+   put textDecode(tBytes, "UTF-8") into tText
+   if textEncode(tText, "UTF-8") is not tBytes then
+      nxSetError "nxNip44: the plaintext is not valid UTF-8"
+      return empty
+   end if
+   return tText
 end nxNip44Unpad
 
 private function nxChaCha20 pKeyData, pNonceData, pData
@@ -17801,18 +18017,25 @@ function nxWsUrlParse pUrl
    return tOut
 end nxWsUrlParse
 
-function nxWsHandshakeRequest pHost, pPort, pPath, pKeyB64
+function nxWsHandshakeRequest pHost, pPort, pPath, pKeyB64, pSecure
    -- The client upgrade request, CRLF line endings, blank line terminated.
-   -- The Host header carries the port only when it is not a default (80 or
-   -- 443), which is what RFC 6455 section 4.1 asks of a client.
-   local tOut, tCrlf, tHostHeader
+   -- The Host header omits the port only at the SCHEME'S default (80 for
+   -- ws, 443 for wss - RFC 6455 section 4.1 defines them per scheme, so a
+   -- cross-scheme port like ws://host:443 must stay in the header or a
+   -- name-routing proxy serves the wrong vhost). pSecure true means wss.
+   local tOut, tCrlf, tHostHeader, tDefaultPort
    if pHost is empty or pPath is empty or pKeyB64 is empty then
       nxSetError "nxWsHandshakeRequest: host, path and key are all required"
       return empty
    end if
    put numToChar(13) & numToChar(10) into tCrlf
+   if pSecure is true then
+      put 443 into tDefaultPort
+   else
+      put 80 into tDefaultPort
+   end if
    put pHost into tHostHeader
-   if pPort is not empty and pPort is not 80 and pPort is not 443 then
+   if pPort is not empty and pPort is not tDefaultPort then
       put ":" & pPort after tHostHeader
    end if
    put "GET " & pPath & " HTTP/1.1" & tCrlf into tOut
@@ -39711,6 +39934,9 @@ private command nx1nxtTestHexAndHelpers
    nx1nxtCheck not (nx1tB64Text contains numToChar(10)), "nxB64Encode emits one line"
    nx1nxtCheck nxB64Decode("a!b=") is empty, "nxB64Decode refuses foreign characters"
    nx1nxtCheck nxB64Decode("abcde") is empty, "nxB64Decode refuses a bad length"
+   nx1nxtCheck nxB64Decode("AB===") is empty, "nxB64Decode refuses three pads"
+   nx1nxtCheck nxB64Decode(nx1kNxVecN44Payload & "A===") is empty, "nxB64Decode refuses a one-data-char final group (the lenient-engine trap)"
+   nx1nxtCheck nxB64Decode("A=BC") is empty, "nxB64Decode refuses padding before the end"
    nx1nxtCheck nxUnixNow() is an integer, "nxUnixNow is an integer"
    nx1nxtCheck nxUnixNow() > 1700000000, "nxUnixNow is after the fixture era"
 end nx1nxtTestHexAndHelpers
@@ -39750,7 +39976,12 @@ private command nx1nxtTestJsonParse
    nx1nxtCheck nxJsonType("[" & quote & "unterminated", empty) is "missing", "an unterminated string refuses"
    nx1nxtCheck nxJsonType("[" & quote & "\ud83d" & quote & "]", empty) is "missing", "a lone high surrogate refuses"
    nx1nxtCheck nxJsonType("[" & quote & "\q" & quote & "]", empty) is "missing", "an unknown escape refuses"
-   nx1nxtCheck nxJsonType("[07]", empty) is "missing", "this parser is strict about words it does not know"
+   nx1nxtCheck nxJsonType("[07]", empty) is "missing", "a leading-zero number refuses (RFC 8259 grammar)"
+   nx1nxtCheck nxJsonType("[2e]", empty) is "missing", "an exponent with no digits refuses"
+   nx1nxtCheck nxJsonType("[+5]", empty) is "missing", "a leading plus refuses"
+   nx1nxtCheck nxJsonType("{" & quote & "a" & quote & ":1," & quote & "a" & quote & ":2}", empty) is "missing", "duplicate object keys refuse (the first-wins/last-wins desync)"
+   nx1nxtCheck nxJsonType("{" & quote & "NAME" & quote & ":1}", "name") is "missing", "object keys are case-sensitive (is folds; the walk must not)"
+   nx1nxtCheck nxJsonType("[1,2,3]", "2.0") is "missing", "array paths are digit runs, not numeric folds"
    put empty into nx1tDeep
    repeat with nx1tI = 1 to 70
       put "[" after nx1tDeep
@@ -39775,6 +40006,12 @@ private command nx1nxtTestEventShape
    nx1nxtCheck nxEventBuild(-1, empty, empty, 1) is empty, "kind -1 refuses"
    nx1nxtCheck nxEventBuild(65536, empty, empty, 1) is empty, "kind 65536 refuses"
    nx1nxtCheck nxEventBuild(1, empty, empty, -5) is empty, "a negative created_at refuses"
+   nx1nxtCheck nxEventBuild(1, empty, empty, "1e3") is empty, "a coerced created_at spelling refuses (1e3 is an integer to this dialect; the preimage must be canonical)"
+   nx1nxtCheck nxEventBuild("07", empty, empty, 1) is empty, "a leading-zero kind spelling refuses"
+   put empty into nx1tOther
+   put "e" into nx1tOther[2][1]
+   put nx1kNxVecTagEventId into nx1tOther[2][2]
+   nx1nxtCheck nxEventBuild(1, empty, nx1tOther, 1) is empty, "a gapped tags table refuses instead of silently dropping the unreachable tag"
    put nx1nxtEventB() into nx1tOther
    put empty into nx1tOther["pubkey"]
    nx1nxtCheck nxEventSerialize(nx1tOther) is empty, "serializing without a pubkey refuses"
@@ -39809,6 +40046,17 @@ private command nx1nxtTestEventShape
    nx1nxtCheck nxEventFromJson(nx1tJson) is empty, "a created_at of 1e3 refuses (non-canonical number)"
    put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[[1]]}" into nx1tJson
    nx1nxtCheck nxEventFromJson(nx1tJson) is empty, "a non-string tag item refuses"
+   put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[[]]}" into nx1tJson
+   nx1nxtCheck nxEventFromJson(nx1tJson) is empty, "an empty tag refuses (it would gap the rebuilt keys)"
+   put "{" & quote & "kind" & quote & ":1," & quote & "created_at" & quote & ":5," & quote & "content" & quote & ":" & quote & quote & "," & quote & "tags" & quote & ":[]," & quote & "id" & quote & ":" & quote & "6EA6C7B5B5373CC1881DF20C8F80BB5F5577F3AC4C41747A55ACA40382436D46" & quote & "}" into nx1tJson
+   nx1nxtCheck nxEventFromJson(nx1tJson) is empty, "an UPPERCASE wire id refuses (NIP-01: lowercase hex on the wire)"
+   -- the tags text form's one non-round-trippable shape
+   put empty into nx1tTags
+   put "e" into nx1tTags[1][1]
+   put nx1kNxVecTagEventId into nx1tTags[1][2]
+   put empty into nx1tTags[1][3]
+   nx1nxtCheck nxTagsToText(nx1tTags) is empty, "a trailing empty tag item refuses (the engine eats one trailing delimiter)"
+   nx1nxtCheck nxCtEqualHex("6ea6", "6EA6") is true, "nxCtEqualHex normalizes case identically on BOTH of its paths"
 end nx1nxtTestEventShape
 
 private function nx1nxSeqLikeCount pArray
@@ -39912,6 +40160,11 @@ private command nx1nxtTestNip19Bare
    put nxBech32Decode(nx1tTampered) into nx1tDecoded
    nx1nxtCheck nx1tDecoded["spec"] is "bech32m", "bech32m round-trips and self-identifies"
    nx1nxtCheck nx1tDecoded["hex"] is "0011ff", "and carries its payload"
+   -- the empty-payload edge BIP-173's own vectors pin (the checksum IS the
+   -- data part; the first cut's separator bound refused these)
+   put nxBech32Encode("a", empty, "bech32") into nx1tTampered
+   put nxBech32Decode(nx1tTampered) into nx1tDecoded
+   nx1nxtCheck nx1tDecoded["hrp"] is "a" and nx1tDecoded["hex"] is empty, "an empty payload encodes and decodes (BIP-173's A12UEL5L class)"
 end nx1nxtTestNip19Bare
 
 private command nx1nxtTestNip19Tlv
@@ -39948,10 +40201,20 @@ private command nx1nxtTestNip19Tlv
    nx1nxtCheck nxNeventDecode(nx1kNxVecNpub) is empty, "an npub into nxNeventDecode refuses"
    -- URIs
    nx1nxtCheck nxUriEncode(nx1kNxVecNpub) is "nostr:" & nx1kNxVecNpub, "nxUriEncode wraps a shareable entity"
+   nx1nxtCheck nxUriEncode("nostr:" & nx1kNxVecNpub) is "nostr:" & nx1kNxVecNpub, "and is idempotent on an already-prefixed input"
    nx1nxtCheck nxUriEncode(nx1kNxVecNsec) is empty, "nxUriEncode REFUSES a secret key"
    put nxUriDecode("nostr:" & nx1kNxVecNpub) into nx1tFields
    nx1nxtCheck nx1tFields["pubkey"] is nx1kNxVecNpubHex, "nxUriDecode yields the fields"
    nx1nxtCheck nxUriDecode(nx1kNxVecNpub) is empty, "nxUriDecode wants the prefix"
+   nx1nxtCheck nxUriDecode("nostr:" & nx1kNxVecNsec) is empty, "nxUriDecode refuses a secret-key URI (the encode hygiene, inbound)"
+   -- the identifier-refusal masking trap: an over-long naddr identifier
+   -- must refuse even when relay TLVs would refill the payload
+   local nx1tLongIdent, nx1tIdentIx
+   put empty into nx1tLongIdent
+   repeat with nx1tIdentIx = 1 to 256
+      put "x" after nx1tLongIdent
+   end repeat
+   nx1nxtCheck nxNaddrEncode(nx1tLongIdent, nx1kNxVecPubkey, 1, "wss://r.io") is empty, "a 256-byte naddr identifier refuses, relays or not"
 end nx1nxtTestNip19Tlv
 
 private command nx1nxtTestNip44Schedule
@@ -40157,12 +40420,16 @@ private command nx1nxtTestWsPure
    nx1nxtCheck nxWsUrlParse("ws://") is empty, "an empty host refuses"
    nx1nxtCheck nxWsUrlParse("ws://h:99999") is empty, "an out-of-range port refuses"
    nx1nxtCheck nxWsUrlParse("ws://a b") is empty, "whitespace refuses"
-   put nxWsHandshakeRequest("r.io", 80, "/", nx1kNxVecWsKey) into nx1tRequest
+   put nxWsHandshakeRequest("r.io", 80, "/", nx1kNxVecWsKey, false) into nx1tRequest
    nx1nxtCheck nx1tRequest begins with "GET / HTTP/1.1", "the request line"
-   nx1nxtCheck nx1tRequest contains "Host: r.io" & numToChar(13), "a default port stays out of Host"
+   nx1nxtCheck nx1tRequest contains "Host: r.io" & numToChar(13), "the scheme's default port stays out of Host"
    nx1nxtCheck nx1tRequest contains "Sec-WebSocket-Version: 13", "protocol version 13"
-   put nxWsHandshakeRequest("r.io", 7443, "/", nx1kNxVecWsKey) into nx1tRequest
+   put nxWsHandshakeRequest("r.io", 7443, "/", nx1kNxVecWsKey, false) into nx1tRequest
    nx1nxtCheck nx1tRequest contains "Host: r.io:7443", "a non-default port joins Host"
+   put nxWsHandshakeRequest("r.io", 443, "/", nx1kNxVecWsKey, false) into nx1tRequest
+   nx1nxtCheck nx1tRequest contains "Host: r.io:443", "443 is NOT ws://'s default: it stays in Host (RFC 6455 4.1 is per scheme)"
+   put nxWsHandshakeRequest("r.io", 443, "/", nx1kNxVecWsKey, true) into nx1tRequest
+   nx1nxtCheck nx1tRequest contains "Host: r.io" & numToChar(13), "and IS wss://'s default, so there it comes out"
    nx1nxtCheck nxWsAcceptFor(nx1kNxVecWsKey) is nx1kNxVecWsAccept, "the accept derivation matches the sample"
    -- frames
    put nxWsFrameEncode(1, textEncode("Hello", "UTF-8"), nx1kNxVecWsMask) into nx1tFrame

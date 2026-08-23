@@ -184,6 +184,29 @@ here as they are learned (that is what this section is for).
 - Suite integration: the core embeds in the suite paste as a script layer; the harness folds
   under prefix nx1; the relay layer stays out of the paste (see "What this is"); the demo
   carries core + relay + harness between sync-demo-embeds sentinels.
+- **The pre-engine adversarial pass (2026-08-23), and what it caught.** Eight independent
+  reviewers traced the hand-written algorithms against their specs before anything shipped,
+  because hand-simulation is the only execution this code gets before an engine. They found
+  25 defects; every one was fixed AND pinned as a harness regression check in the same
+  change. The ones worth remembering: the JSON path walk compared object keys with `is`
+  (folded case and numerics), which broke EVERY single-letter tag filter through the #e/#E
+  probe loop and let "1000" match "1e3" as a NIP-05 name; duplicate JSON object keys
+  desynced first-wins readers (nxJsonGet) from last-wins readers (nxEventFromJson), the
+  classic show-the-verifier-one-content trick, refused outright now; the number parser
+  accepted "07"/"1e"/"1-2", and a "number" like "1e" reaching `+ 0` was a hard engine error
+  from a never-throw library; the bech32 separator bound carried the reference's 0-based
+  `pos + 7` into 1-based code and refused BIP-173's own "A12UEL5L" vector (TWO harness pins
+  would have gone red on a healthy engine - the exact failure class the runbook warns
+  about); nxCtEqualHex's two paths disagreed about hex case, so a verify verdict depended on
+  whether SodiumXT was installed; an over-255-byte naddr identifier was silently DROPPED
+  (not refused) whenever a relay TLV refilled the payload; the relay layer called the core's
+  PRIVATE nxToLowerAscii cross-script, which broke every handshake in the documented
+  two-stack deployment while the demo embed masked it; and nxrTeardown dispatched
+  "disconnected" before clearing its tables, so an app answering with nxrDisconnect
+  re-entered an open-looking relay (a second close frame, unbounded recursion) - teardown
+  now deletes first and dispatches from saved values. The fold/embed audit came back clean.
+  None of this is engine evidence; it is why the "verified statically" label is worth more
+  than it was in the morning.
 
 ## Git / workflow
 

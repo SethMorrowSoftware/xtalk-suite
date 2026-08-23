@@ -235,7 +235,7 @@ needs them directly to build its own transport.
 | Handler | Kind | Purpose |
 |---|---|---|
 | `nxWsUrlParse(pUrl)` | function | `ws://` / `wss://` into `scheme`, `secure`, `host`, `port` (default 80 / 443), `path`. IPv6 bracket literals refuse (documented limit). |
-| `nxWsHandshakeRequest(pHost, pPort, pPath, pKeyB64)` | function | The client upgrade request, CRLF-terminated; the Host header carries the port only when non-default, as RFC 6455 asks. |
+| `nxWsHandshakeRequest(pHost, pPort, pPath, pKeyB64, pSecure)` | function | The client upgrade request, CRLF-terminated; the Host header omits the port only at the SCHEME'S default (80 for ws, 443 for wss, per RFC 6455 section 4.1), which is why the secure flag is an argument. |
 | `nxWsAcceptFor(pKeyB64)` | function | The `Sec-WebSocket-Accept` a compliant server must answer: base64 of SHA-1 over the key then the RFC GUID. `sha1Digest` is the engine's own builtin - the one engine-proven builtin hash in this tree. |
 | `nxWsFrameEncode(pOpcode, pPayload, pMaskHex)` | function | One client frame: FIN set, MASKED (RFC 6455 requires a client to mask), no fragmentation. `pMaskHex` is 8 hex chars; the relay layer draws it fresh per frame - a fixed mask is for KATs. |
 | `nxWsFrameDecode(pBuffer)` | function | Parse ONE frame at the head of a buffer. `complete` false means read more (`needMore` says how much when known); `error` non-empty means the stream is unrecoverable - fail closed and close the socket (hostile length, reserved bits, oversized control frame). When complete: `fin`, `opcode`, `masked`, `payload` (unmasked), `consumed`. |
