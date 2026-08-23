@@ -131,9 +131,12 @@ statically on the script side; the handler still needs an OXT pass.
 
 SodiumXT statically links a pinned release of libsodium, so the cryptography you run is the
 upstream audited code, unmodified. On the Linux and macOS builds that release is fetched by exact
-version and verified against a pinned SHA256 before it is compiled. The Windows build links the
-libsodium that vcpkg provides, which is held to the same libsodium 1.0.x line rather than the
-SHA256 pin; every platform must then pass the same known-answer tests (BLAKE2b, Argon2id, ed25519,
+version and verified against a pinned SHA256 before it is compiled - and since the 2026-08-15
+mingw cross-builds the COMMITTED Windows DLLs are built the same way, from the same pinned
+tarball (the release workflow's own Windows lanes instead link the libsodium vcpkg provides,
+held to the same 1.0.x line rather than the SHA256 pin; a dispatch of that workflow supersedes
+the mingw pair, as `CLAUDE.md`'s platform table records). Every platform must pass the same
+known-answer tests (BLAKE2b, Argon2id, ed25519,
 KDF) before its binary ships, which is the functional guard against any drift. The committed native
 binaries under `src/code/` carry a `MANIFEST.sha256` that the suite CI verifies on every push,
 and the root `native sodiumxt` workflow rebuilds and tests all five platforms from the pinned

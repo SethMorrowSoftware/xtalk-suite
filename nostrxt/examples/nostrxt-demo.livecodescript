@@ -5148,11 +5148,15 @@ private command nxtTestNip44Seam
    nxtCheck nxNip44Decrypt(kNxVecN44Sec1, kNxVecN44Pub2, tTampered) is empty, "a tampered payload refuses"
    nxtCheck nxLastError() contains "MAC", "at the MAC, before any cipher runs"
    if tHasCipher is true then
-      -- The upstream primitive shipped: the official vector must round-trip.
+      -- The upstream primitive shipped (SodiumXT ABI 10, 2026-08-23): the
+      -- official vector must round-trip. Compared through nxHexEncode on
+      -- BOTH sides, because `is` folds case and base64 is case-significant -
+      -- these two lines are the assertions that certify NIP-44 on an engine,
+      -- so they enforce exactly what their labels claim (member rule 2).
       put nxNip44Decrypt(kNxVecN44Sec1, kNxVecN44Pub2, kNxVecN44Payload) into tOut
-      nxtCheck tOut is "a", "the official encrypt_decrypt vector decrypts"
+      nxtCheck nxHexEncode(tOut) is nxHexEncode("a"), "the official encrypt_decrypt vector decrypts"
       put nxNip44Encrypt(kNxVecN44Sec1, kNxVecN44Pub2, "a", kNxVecN44Nonce) into tOut
-      nxtCheck tOut is kNxVecN44Payload, "and re-encrypts byte-identically"
+      nxtCheck nxHexEncode(tOut) is nxHexEncode(kNxVecN44Payload), "and re-encrypts byte-identically"
    else
       -- The pre-ABI-10 install: the MAC verifies, then the cipher fails
       -- CLOSED with the capability error naming the upstream primitive.

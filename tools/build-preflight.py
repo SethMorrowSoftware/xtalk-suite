@@ -10,7 +10,7 @@ WHY THIS EXISTS
     shape now that it is sparse (the runbook's own sparse-access plan budgets S1
     at SIXTY MINUTES). And the failure it is supposed to catch is not
     hypothetical: sodiumxt's committed `universal-mac` dylib is at ABI 6 against
-    a binding that demands 9 with strict equality, so on a Mac every sodiumxt
+    a binding that demands 10 with strict equality, so on a Mac every sodiumxt
     check - and everything downstream of it, which is most of the suite - is
     blocked. Discovered by hand, that costs the first quarter of the session.
 
@@ -26,8 +26,8 @@ WHAT IS GENERATED, AND WHY IT IS GENERATED RATHER THAN WRITTEN
     is a build failure rather than a note:
 
       1. THE C MACRO AND THE BINDING LITERAL MUST AGREE. Every member declares
-         its expected ABI twice - once in C (`#define SXT_ABI_VERSION 9`) and
-         once in the `.lcb` that binds to it (`constant kSXTABIVersion is 9`,
+         its expected ABI twice - once in C (`#define SXT_ABI_VERSION 10`) and
+         once in the `.lcb` that binds to it (`constant kSXTABIVersion is 10`,
          or, in box2dxt's case, a bare `4` inside checkABI()). A shim bump that
          forgot the binding ships a library the binding refuses, which is the
          wrong-ABI hazard manufactured at home. Nothing in the tree compared the

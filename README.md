@@ -2,14 +2,14 @@
 
 **A family of native extensions that give OpenXTalk (OXT) / the xTalk family
 (also LiveCode 9.6.3+) the modern capabilities app authors actually reach for:
-cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor, and coin
-primitives — each behind a small, friendly set of xTalk handlers, each with the
-native library bundled inside the extension so there is nothing to install
-separately.**
+cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor, coin
+primitives, 2-D physics with a game kit, and the Nostr protocol — each behind a
+small, friendly set of xTalk handlers, each with any native library bundled
+inside the extension so there is nothing to install separately.**
 
 Every member is a thin, well-behaved binding over a proven C/C++ library (or,
-for OnionXT, pure LiveCodeScript over a local Tor daemon), built to one shared
-set of engineering rules so the seven read as one system. They interoperate: your
+for OnionXT and NostrXT, pure LiveCodeScript), built to one shared
+set of engineering rules so the eight read as one system. They interoperate: your
 identity, your transport, and your storage can come from different members and
 compose cleanly — the flagship of that idea is the **Riptide Social** design
 (`docs/RIPTIDE-SOCIAL-SPEC.md`), a serverless social app that uses all of them.
@@ -23,7 +23,7 @@ compose cleanly — the flagship of that idea is the **Riptide Social** design
 | **[enetxt](enetxt/)** | `en*` | ENet 1.3.18 | Game-grade reliable-UDP: reliable / unreliable-sequenced / unsequenced delivery on independent channels, one-call broadcast |
 | **[datachannelxt](datachannelxt/)** | `dc*` | libdatachannel | Browser-interoperable WebRTC data channels with real NAT traversal (ICE) and per-channel reliability |
 | **[onionxt](onionxt/)** | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services, HTTP-over-onion hosting |
-| **[nostrxt](nostrxt/)** | `nx*` / `nxr*` | the Nostr protocol (pure script; crypto composed from coinxt + sodiumxt) | NIP-01 events with canonical ids and BIP-340 signatures, NIP-19 bech32 entities, the NIP-44 v2 payload construction (fail-closed until SodiumXT ships the one missing cipher primitive), filters, and a websocket relay client with verify-before-deliver |
+| **[nostrxt](nostrxt/)** | `nx*` / `nxr*` | the Nostr protocol (pure script; crypto composed from coinxt + sodiumxt) | NIP-01 events with canonical ids and BIP-340 signatures, NIP-19 bech32 entities, the complete NIP-44 v2 payload construction (over SodiumXT ABI 10's `sxChaCha20IetfXor` since 2026-08-23; fails closed on an older installed SodiumXT), filters, and a websocket relay client with verify-before-deliver |
 | **[box2dxt](box2dxt/)** | `b2*` / `b2k*` | Box2D v3.1.0 | The family ANCESTOR, folded home 2026-08-14: full rigid-body physics (bodies, joints, motors, sensors, queries) plus the pure-script **b2k game Kit** - control-backed bodies in pixels/degrees, sprites, input, a player controller and a camera - the game-engine half that pairs with enetxt's game-grade networking |
 | **[coinxt](coinxt/)** | `cx*` | trezor-crypto + libsecp256k1 | Bitcoin + Ethereum primitives. **Built:** the hash surface (Keccak-256/SHA3/SHA-2/RIPEMD-160/HMAC/PBKDF2), the secp256k1 curve (ECDSA RFC 6979, recoverable + `ecrecover`, ECDH), the encodings and addresses (hex, Base58Check, Bech32/Bech32m, RLP, P2PKH/P2WPKH/P2TR/ETH + EIP-55), HD wallets (BIP-39 mnemonics, BIP-32/BIP-44 derivation, xprv/xpub), and (phase 5) transactions (Bitcoin legacy + BIP-143 SegWit, Ethereum EIP-155 + EIP-1559) — engine-passed 2026-08-12. **BIP-340 Schnorr + the BIP-341 Taproot tweak shipped 2026-08-16** (ABI 6), on a second vendored library - upstream bitcoin-core/secp256k1, pinned and hash-verified, since trezor-crypto has no BIP-340 - driven by all 19 published BIP-340 vectors (10 negative) and all 14 BIP-341 wallet vectors; **ENGINE-VERIFIED 2026-08-16** (the 278-check `cxSelfTest` ran green folded into the suite paste, Schnorr and Taproot sections included). There is still no BIP-341 sighash builder - coinxt signs a sighash it is handed, it cannot compute one |
 
@@ -152,8 +152,8 @@ measured. `docs/OXT-PASS-RUNBOOK.md` is the runbook for closing that gap: what i
 still unproven and where each label lives, the install order, the run order, and
 what to record. The convention cuts both ways — a label is removed only for what
 a run actually exercised, so each recorded suite-harness pass (2026-08-08,
-2026-08-10, 2026-08-12, 2026-08-17, 2026-08-18) promoted the handlers it
-called and left the ones it did not still labelled, member by
+2026-08-10, 2026-08-12, 2026-08-17, 2026-08-18, 2026-08-20) promoted the
+handlers it called and left the ones it did not still labelled, member by
 member — and both async-loopback halves have since closed the same way (enet
 with the 2026-08-13 standalone pass, datachannel with the 2026-08-15 one),
 leaving no member-selftest label standing.
@@ -213,13 +213,17 @@ own UI, probes for every member, and reports PASS / FAIL / SKIP in one list — 
 member you did not install skips, it never fails.
 
 It is not a sampler. It carries **every member's own deep self-test**, folded in
-whole: sodiumxt's `sxSelfTest` (21 groups), onionxt's `oxSelfTest` (10 groups, all
+whole: sodiumxt's `sxSelfTest` (23 groups since the ABI-10 ChaCha20 section
+landed 2026-08-23), onionxt's `oxSelfTest` (10 groups, all
 offline), coinxt's sections (encodings, addresses, HD, and the phase-5
 transaction KATs), torrentxt's full harness, the synchronous halves of enetxt
-and datachannelxt, box2dxt's `stSelfTest` (51 handlers, 377 `stAssert` call sites of which 375 run, at
+and datachannelxt, nostrxt's 17-section `nxSelfTest` (canonical serialization,
+NIP-19, the complete NIP-44 construction, websocket framing math - folded in
+2026-08-23, nothing in it engine-observed yet), box2dxt's `stSelfTest` (51 handlers, 377 `stAssert` call sites of which 375 run, at
 harness v30 driving the real b2k Kit hand-stepped one fixed 1/60 tick at a
-time; v29's 374 ran green on Windows x86_64 on 2026-08-17, and no v30 total
-has been observed on any platform yet), riptide's
+time; v29's 374 ran green on Windows x86_64 on 2026-08-17, and v30 has since
+been observed once - 375/0 on Windows, 2026-08-20; Linux, the platform whose
+373/374 prompted the v30 rewrite, has not run v30 yet), riptide's
 harness (phases 1-4 + 6 + 7, including the live feed, media, DM, LAN-admission,
 and anon-persona layers), and — since 2026-08-16 — holde-em's `heSelfTest` (21
 sections over the evaluator, the betting engine and side pots, the whole deal
@@ -246,15 +250,16 @@ would race — those stay in `enetxt/tests/` and `datachannelxt/tests/`. See
 
 **How much of the suite it actually reaches is measured, not asserted.**
 `tools/check-suite-coverage.py` runs in the gate set and holds it at
-**724 of 742 public handlers**:
+**830 of 844 public handlers**:
 
-| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide | box2dxt (Kit) |
-|---|---|---|---|---|---|---|---|
-| 72/72 | 27/45 | 90/90 | 85/85 | 23/23 | 31/31 | 83/83 | 313/313 |
+| sodiumxt | onionxt | coinxt | torrentxt | enetxt | datachannelxt | riptide | nostrxt | box2dxt (Kit) |
+|---|---|---|---|---|---|---|---|---|
+| 73/73 | 31/45 | 90/90 | 85/85 | 23/23 | 31/31 | 83/83 | 101/101 | 313/313 |
 
-The eighteen it does not reach are all onionxt's, and each carries a written
-reason in that tool: eleven are **engine socket callbacks** (the engine supplies
-a socket id no harness can mint) and seven need a **live tor daemon**. The gate
+The fourteen it does not reach are all onionxt's, and each carries a written
+per-handler reason in that tool: **engine socket callbacks and watchdogs** (the
+engine supplies a socket id, or a live connection arms the timer, that no
+harness can mint) and the legs that need a **live tor daemon**. The gate
 fails both on a new public handler that nothing exercises and on a stale excuse
 left behind by a rename, so the shortfall can only ever be a decision somebody
 wrote down. It counts handlers *reached*, not handlers tested well — depth is
@@ -266,8 +271,12 @@ tool's member list with the numbers behind the call:
 - **box2dxt's raw `b2*` extension binding** — 376 public handlers over 373
   foreign declarations (370 of them binding into the member's own library; the
   "374" quoted here until 2026-08-17 was a `grep -c` that counted one line of
-  prose), of which **244 are named by no script anywhere in that
-  member**. The b2k Kit above it is the game-facing API and is held at 313/313.
+  prose), of which **245 are named by no script anywhere in that member** by
+  the gate's counting convention (comments stripped, string literals blanked;
+  counting raw tokens instead finds one more name in a comment or literal,
+  which is the 244 this line used to give - both numbers are real, the
+  convention decides). The b2k Kit above it is the game-facing API and is held
+  at 313/313.
   The raw layer's cover is `box2dxt/tests/smoke_test.c`, and since 2026-08-17
   that cover is *measured* rather than asserted: gcov puts it at **194 of the
   370 LC_API exports**, up from 53 the same morning, running in `build-all.sh`
@@ -333,6 +342,14 @@ The members are deliberately non-overlapping, so real apps mix them:
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.
+- **The open social wire.** nostrxt speaks a PUBLIC protocol rather than a
+  suite-internal one: the same coinxt BIP-340 key that signs a Bitcoin
+  Taproot spend signs a Nostr event, sodiumxt supplies the randomness and
+  (since ABI 10) the NIP-44 cipher, and the relay client rides the same
+  engine-socket idioms onionxt proved — so an xTalk app can talk to the
+  existing Nostr relay ecosystem, not only to other suite apps. The planned
+  composition hedge runs it the other way: a `.onion` relay over onionxt's
+  transport needs no TLS at all.
 - **The game stack.** box2dxt's b2k Kit is a working game engine (physics,
   sprites, input, camera - the platformer and contraption-builder examples
   are complete games), and enetxt is game-grade networking; together they
@@ -429,5 +446,6 @@ cross-cutting documents.
 The suite and every member are **MIT** (see `LICENSE`, which also lists each
 member's bundled third-party library and its license — libtorrent (BSD-3) +
 Boost, libsodium (ISC), ENet (MIT), libdatachannel (MPL-2.0) + usrsctp (BSD-3),
-trezor-crypto (MIT)). OnionXT ships no third-party code; it talks to a Tor
-daemon you run.
+trezor-crypto + bitcoin-core/libsecp256k1 (both MIT), Box2D v3 (MIT)). OnionXT
+and NostrXT ship no third-party code — OnionXT talks to a Tor daemon you run,
+and NostrXT is pure script over its sibling extensions.

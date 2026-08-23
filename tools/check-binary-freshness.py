@@ -96,7 +96,7 @@ WHAT IS SKIPPED, AND WHY EACH SKIP IS WRITTEN DOWN RATHER THAN INFERRED:
     action. The per-member half is written per member BECAUSE THE TWO DYLIBS
     ARE IN DIFFERENT STATES, and one text covering both would state as fact
     about box2dxt something only measured about sodiumxt: README.md's release
-    matrix records sodiumxt's as knowingly three ABI versions behind, while
+    matrix records sodiumxt's as knowingly four ABI versions behind, while
     box2dxt's row claims "all 5 platforms" and nothing in this tree has ever
     read that dylib's export table. A third member committing a dylib gets no
     default: it fails until somebody writes its reason down. When a `lipo`
