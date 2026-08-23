@@ -598,11 +598,12 @@ Built and statically verified; pending under the honesty convention.
    linker's ad-hoc signature; no notarization). The lanes are WRITTEN and the
    first dispatch is what proves them - no mac lane has produced a committed
    binary yet, so every committed dylib keeps its age until someone presses
-   "Run workflow". Still open: torrentxt (static universal
-   libtorrent+Boost+OpenSSL stack, plus notarization credentials CI does not
-   hold) and datachannelxt (system-OpenSSL DTLS; brew's OpenSSL is thin and
-   per-arch) - the two-thin-builds-and-lipo route is written up in the
-   workflow header for whoever takes it.
+   "Run workflow". torrentxt and datachannelxt joined later the same day via
+   the two-slice-lipo job (per-arch pinned OpenSSL, both thin slices built
+   and tested, `lipo -create`; skippable deliberately via the `mac_lipo`
+   dispatch input), so ALL SIX members have mac lanes. Still open:
+   notarization only (credentials CI does not hold; the owner accepted
+   unsigned distribution 2026-08-23), and the lanes' first execution.
    — `.github/workflows/release-binaries.yml` (the header), `sodiumxt/CLAUDE.md:54-59`
 
 2. **~~box2dxt as the eighth folded harness member~~ SHIPPED statically

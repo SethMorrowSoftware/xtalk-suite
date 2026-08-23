@@ -801,9 +801,9 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   every push, so a commit step there would land binaries nobody asked for on
   somebody else's change. `release-binaries.yml` is the manual assembly step over
   the top: one `workflow_dispatch` builds ALL SIX members that ship committed
-  binaries, for every platform it can (28 build jobs since 2026-08-23: box2dxt
+  binaries, for every platform it can (30 build jobs since 2026-08-23: box2dxt
   joined - closing the omission this paragraph used to record as having no
-  recorded reason - and FOUR members gained macOS lanes; the paragraph said "20
+  recorded reason - and ALL SIX members gained macOS lanes; the paragraph said "20
   jobs: five members x four platforms" until that day and "every member" until
   2026-08-19), asserts each artifact, then installs each library into its member's
   `src/code/<platform-id>/`, refreshes the manifests, runs the whole gate set,
@@ -823,10 +823,14 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   (the linker's automatic ad-hoc signature; no notarization). The installer
   refuses a thin Mach-O AND a fat container missing a slice, so a regressed
   lane or a hand-assembled bundle cannot land either. torrentxt and
-  datachannelxt stay manual `lipo` builds with the reasons written in the
-  workflow header (a static universal libtorrent+Boost+OpenSSL stack, and
-  system-OpenSSL DTLS, respectively; torrentxt's notarization additionally
-  needs credentials CI does not hold) - and NO mac lane has produced a
+  datachannelxt cannot single-pass a universal build (a static
+  libtorrent+Boost+OpenSSL stack; system-OpenSSL DTLS), so they ride a
+  separate two-slice-lipo job added later the same day: per-arch builds of
+  the PINNED OpenSSL, each thin slice built and tested (arm64 native, x86_64
+  under Rosetta), `lipo -create`, the same both-slices assertion - skippable
+  deliberately via the `mac_lipo` dispatch input on a first run. What no
+  lane does anywhere is notarize (credentials CI does not hold) - and NO mac
+  lane has produced a
   committed binary yet: the lanes are written, the first dispatch is what
   proves them, and the committed universal-mac dylibs keep their current ages
   until someone presses "Run workflow". Nor does the workflow claim an

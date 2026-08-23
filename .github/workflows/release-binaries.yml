@@ -61,15 +61,19 @@
 # browser-downloaded zip additionally needs its quarantine attribute cleared,
 # which is the recorded cost of shipping without notarization.
 #
-# TWO MEMBERS STAY MANUAL, each with its reason written where a planner will
-# meet it: torrentxt statically links libtorrent + Boost + OpenSSL, and a
-# universal build of that stack needs per-arch dependency trees lipo'd together
-# (plus notarization for the smooth end-user story, with Apple Developer
-# credentials CI does not hold); datachannelxt takes its DTLS from the SYSTEM
-# OpenSSL, and brew's OpenSSL is thin and lives at a different prefix per
-# architecture. Both are buildable the two-thin-builds-and-lipo way when
-# someone does the work; until then their universal-mac stays a manual build,
-# and the installer's refusals hold the line for hand-assembled bundles too.
+# THE LAST TWO MEMBERS RIDE THE TWO-SLICE-LIPO JOB (added later on 2026-08-23;
+# the paragraph here recorded them as staying manual for a few hours).
+# torrentxt statically links libtorrent + Boost + OpenSSL and datachannelxt
+# takes its DTLS from OpenSSL, so neither can single-pass a universal build -
+# the mac-lipo job instead builds the PINNED OpenSSL (and, for torrentxt, the
+# pinned Boost headers) per architecture, builds and tests each thin slice
+# (arm64 natively, x86_64 under Rosetta), and `lipo -create`s the final
+# dylib, which then passes the same both-slices assertions as every other mac
+# artifact. These are the heaviest and newest lanes, so the `mac_lipo`
+# dispatch input can skip them DELIBERATELY on a first run. What still does
+# not exist anywhere: notarization (Apple Developer credentials CI does not
+# hold) - the dylibs ship with the linker's ad-hoc signature only, and the
+# installer's refusals keep holding the line for hand-assembled bundles.
 name: release binaries
 
 on:
@@ -80,6 +84,12 @@ on:
         type: choice
         options: [branch, pr, none]
         default: branch
+        required: false
+      mac_lipo:
+        description: "Run the two-slice-lipo mac lanes (torrentxt, datachannelxt) - the heaviest, newest lanes. 'false' skips them DELIBERATELY (the skip is visible in the run), for a first dispatch that proves the rest before betting on these."
+        type: choice
+        options: ["true", "false"]
+        default: "true"
         required: false
 
 concurrency:
@@ -734,9 +744,160 @@ jobs:
           COINXT_REQUIRE_CROSSCHECK: "1"
         run: python3 coinxt/tools/coin-kat.py --check --lib dll/coinxt.dll
 
+  # ------------------------------------------------------------- mac two-slice
+  # torrentxt and datachannelxt cannot single-pass a universal build: torrentxt
+  # statically links libtorrent + Boost + OpenSSL, datachannelxt's DTLS is
+  # OpenSSL, and OpenSSL does not build both architectures in one configure.
+  # So this job does what the workflow header's old refusal said macOS "needs
+  # work this workflow does not do": build each slice thin - against a
+  # PER-ARCH build of the same pinned OpenSSL the manylinux lane uses - test
+  # each slice (arm64 natively, x86_64 under Rosetta, the same enumerate-and-
+  # wrap pattern as the single-pass mac lanes), and `lipo -create` the final
+  # dylib. The result passes the same both-slices birth assertion as every
+  # other mac artifact, and the installer re-checks the slice table before
+  # anything is committed.
+  #
+  # These are the heaviest and newest lanes (two OpenSSL builds plus two
+  # full member builds each), so the `mac_lipo` dispatch input can skip the
+  # whole job deliberately on a first run - the skip is visible in the run,
+  # and the commit job accepts a SKIPPED result (an input choice) while
+  # refusing a FAILED one (a broken build).
+  mac-lipo:
+    name: ${{ matrix.member }} universal-mac (two slices + lipo)
+    if: github.event.inputs.mac_lipo != 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - member: torrentxt
+            needs_boost: "1"
+            build_jobs: 3
+          - member: datachannelxt
+            build_jobs: 3
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ${{ matrix.member }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Rosetta 2 (for the x86_64 test legs)
+        shell: bash
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+
+      # The same pinned, hash-checked OpenSSL tarball as the manylinux lane -
+      # ONE pin, three build recipes (linux static, darwin arm64, darwin
+      # x86_64). OpenSSL's own darwin64-*-cc targets carry the -arch flag, so
+      # each build is a clean thin static tree under its own prefix.
+      - name: Build the pinned OpenSSL, once per architecture
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o openssl.tar.gz \
+            https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz
+          echo "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  openssl.tar.gz" | shasum -a 256 -c -
+          tar -xzf openssl.tar.gz
+          for arch in arm64 x86_64; do
+            cp -R openssl-3.5.4 "ossl-src-$arch"
+            ( cd "ossl-src-$arch"
+              ./Configure "darwin64-$arch-cc" no-shared no-module no-tests \
+                --prefix="$RUNNER_TEMP/ossl-$arch" --libdir=lib >/dev/null
+              make -s -j4 >/dev/null 2>&1
+              make -s install_sw >/dev/null 2>&1 )
+            echo "built OpenSSL for $arch -> $RUNNER_TEMP/ossl-$arch"
+          done
+
+      # Boost is HEADERS ONLY for torrentxt (the manylinux lane's reasoning
+      # verbatim: libtorrent builds via FetchContent and links nothing from
+      # Boost), so one extraction serves both slices.
+      - name: Acquire the pinned Boost headers (torrentxt)
+        if: matrix.needs_boost
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o boost.tar.gz \
+            https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
+          echo "2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26  boost.tar.gz" | shasum -a 256 -c -
+          tar -xzf boost.tar.gz boost-1.86.0/boost
+
+      - name: Build and test both slices
+        shell: bash
+        run: |
+          set -euo pipefail
+          flag="$(printf '%s' "${{ matrix.member }}" | tr '[:lower:]' '[:upper:]')_BUILD_TESTS"
+          extra=""
+          if [ -n "${{ matrix.needs_boost }}" ]; then
+            extra="-DBOOST_ROOT=$RUNNER_TEMP/boost-1.86.0"
+          fi
+          for arch in arm64 x86_64; do
+            cmake -S . -B "build-$arch" -DCMAKE_BUILD_TYPE=Release "-D${flag}=ON" \
+              -DCMAKE_OSX_ARCHITECTURES="$arch" \
+              -DOPENSSL_ROOT_DIR="$RUNNER_TEMP/ossl-$arch" \
+              -DOPENSSL_USE_STATIC_LIBS=ON $extra
+            cmake --build "build-$arch" --parallel ${{ matrix.build_jobs }}
+            if [ "$arch" = arm64 ]; then
+              ctest --test-dir "build-$arch" --output-on-failure --no-tests=error
+            else
+              # The x86_64 slice under Rosetta: enumerate from ctest's JSON and
+              # wrap each TEST BINARY in `arch -x86_64` directly (same reasoning
+              # as the single-pass mac lanes: a fat/thin child spawned from an
+              # arm64 parent would run arm64 again; here the binaries are thin
+              # x86_64, so the wrapper is what lets an arm64 host run them).
+              ctest --test-dir "build-$arch" --show-only=json-v1 > /tmp/ctest-x86.json
+              python3 - <<'PYEOF'
+          import json, subprocess, sys
+          tests = json.load(open("/tmp/ctest-x86.json"))["tests"]
+          if not tests:
+              sys.exit("no tests registered - nothing proves the x86_64 slice")
+          for t in tests:
+              cmd = t.get("command")
+              if not cmd:
+                  continue
+              cwd = None
+              for prop in t.get("properties", []):
+                  if prop.get("name") == "WORKING_DIRECTORY":
+                      cwd = prop.get("value")
+              print(f"x86_64: {t['name']}", flush=True)
+              subprocess.run(["arch", "-x86_64"] + cmd, cwd=cwd, check=True)
+          print(f"x86_64 slice: {len(tests)} test(s) passed under Rosetta")
+          PYEOF
+            fi
+          done
+
+      - name: Lipo the two slices and stage through the member's own packager
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage
+          lipo -create \
+            "build-arm64/${{ matrix.member }}.dylib" \
+            "build-x86_64/${{ matrix.member }}.dylib" \
+            -output "stage/${{ matrix.member }}.dylib"
+          python3 tools/package-extension.py --platform-id universal-mac --build-dir stage
+
+      - name: Assert the dylib is genuinely universal
+        shell: bash
+        run: |
+          set -euo pipefail
+          archs=$(lipo -archs "src/code/universal-mac/${{ matrix.member }}.dylib")
+          echo "slices: $archs"
+          case " $archs " in *" x86_64 "*) : ;; *) echo "FAIL: no x86_64 slice"; exit 1 ;; esac
+          case " $archs " in *" arm64 "*)  : ;; *) echo "FAIL: no arm64 slice";  exit 1 ;; esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.member }}-universal-mac
+          path: ${{ matrix.member }}/src/code/universal-mac/
+          if-no-files-found: error
+
   bundle:
     name: collect one bundle
-    needs: [cmake-members, coinxt, kat-windows]
+    needs: [cmake-members, coinxt, kat-windows, mac-lipo]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -777,12 +938,17 @@ jobs:
   # is worse than no release, because the missing one looks deliberate afterwards.
   commit-binaries:
     name: install into each extension and commit
-    needs: [cmake-members, coinxt, kat-windows, bundle]
+    needs: [cmake-members, coinxt, kat-windows, mac-lipo, bundle]
+    # mac-lipo alone may be SKIPPED (the mac_lipo input is a deliberate,
+    # visible choice, and the bundle then simply carries no torrentxt/
+    # datachannelxt mac dylib to install); a FAILED mac-lipo still refuses
+    # the commit like any other failure - a broken build is not a choice.
     if: >-
       github.event.inputs.commit_mode != 'none' &&
       needs.cmake-members.result == 'success' &&
       needs.coinxt.result == 'success' &&
       needs.kat-windows.result == 'success' &&
+      (needs.mac-lipo.result == 'success' || needs.mac-lipo.result == 'skipped') &&
       needs.bundle.result == 'success'
     runs-on: ubuntu-24.04
     permissions:

@@ -575,7 +575,7 @@ D14 item - landed 2026-08-23; see the banner.)**
 | Riptide phases 5-7 live passes | two machines, two networks; tor |
 | The Tor evening (7 live-daemon exemptions, Mode B) | a tor daemon |
 | Suite closing pass legs B-E | two machines |
-| macOS universal binaries; torrentxt notarization | a Mac; credentials *(2026-08-23: dissolved for sodiumxt/coinxt/enetxt/box2dxt - release-binaries.yml mac lanes; torrentxt/datachannelxt + notarization remain)* |
+| macOS universal binaries; torrentxt notarization | a Mac; credentials *(2026-08-23: dissolved for ALL SIX - release-binaries.yml mac lanes, the last two via the two-slice-lipo job; only notarization remains, and the owner accepted unsigned)* |
 | coinxt Windows execution proof; sodiumxt mingw re-proof | a Windows box |
 | box2dxt release lane glibc floor | an owner decision *(2026-08-23: taken conservatively - box2dxt's release x64 row floors at glibc 2.28 in the same manylinux container as torrentxt's, loosenable later)* |
 | nocloud §8 priority questions; Riptide feed retention | an owner decision |
