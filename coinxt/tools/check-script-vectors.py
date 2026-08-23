@@ -1169,6 +1169,151 @@ def check_vectors(c, ip):
     c.ck("cxEth1559Encode txhash", res1559["txhash"], F["txhash1559"].hex())
 
 
+
+
+
+# BIP-341 wallet-test-vectors.json, transcribed MECHANICALLY from the
+# fetched file (bitcoin/bips bip-0341), 2026-08-23: the shared unsigned tx
+# as the comma lists the script handlers take, all 7 keyPathSpending rows
+# (the complete sighash type set), and all 6 script trees with their
+# published leaf hashes, merkle roots and control blocks. Never hand-edit
+# a value here; re-transcribe from the source file.
+TAPROOT_FIXTURE = {'version': 2, 'locktime': 500000000, 'outpoints': '7de20cbff686da83a54981d2b9bab3586f4ca7e48f57f5b55963115f3b334e9c01000000,d7b7cab57b1393ace2d064f4d4a2cb8af6def61273e127517d44759b6dafdd9900000000,f8e1f583384333689228c5d28eac13366be082dc57441760d957275419a4184200000000,f0689180aa63b30cb162a73c6d2a38b7eeda2a83ece74310fda0843ad604853b01000000,aa5202bdf6d8ccd2ee0f0202afbbb7461d9264a25e5bfd3c5a52ee1239e0ba6c00000000,956149bdc66faa968eb2be2d2faa29718acbfe3941215893a2a3446d32acd05000000000,e664b9773b88c09c32cb70a2a3e4da0ced63b7ba3b22f848531bbb1d5d5f4c9401000000,e9aa6b8e6c9de67619e6a3924ae25696bb7b694bb677a632a74ef7eadfd4eabf00000000,a778eb6a263dc090464cd125c466b5a99667720b1c110468831d058aa1b82af101000000', 'sequences': '0,4294967295,4294967295,4294967294,4294967294,0,0,4294967295,4294967295', 'amounts': '420000000,462000000,294000000,504000000,630000000,378000000,672000000,546000000,588000000', 'spks': '512053a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343,5120147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3,76a914751e76e8199196d454941c45d1b3a323f1433bd688ac,5120e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e,512091b64d5324723a985170e4dc5a0f84c041804f2cd12660fa5dec09fc21783605,00147dd65592d0ab2fe0d0257d571abf032cd9db93dc,512075169f4001aa68f15bbed28b218df1d0a62cbbcf1188c6665110c293c907b831,5120712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5,512077e30a5522dd9f894c3f8b8bd4c4b2cf82ca7da8a3ea6a239655c39c050ab220', 'outputs': '00ca9a3b000000001976a91406afd46bcdfd22ef94ac122aa11f241244a37ecc88ac,807840cb0000000020ac9a87f5594be208f8532db38cff670c450ed2fea8fcdefcc9a663f78bab962b', 'inputs': [{'index': 1, 'hashType': 3, 'sigHash': '2514a6272f85cfa0f45eb907fcb0d121b808ed37c6ea160a5a9046ed5526d555'}, {'index': 2, 'hashType': 131, 'sigHash': '325a644af47e8a5a2591cda0ab0723978537318f10e6a63d4eed783b96a71a4d'}, {'index': 4, 'hashType': 1, 'sigHash': 'bf013ea93474aa67815b1b6cc441d23b64fa310911d991e713cd34c7f5d46669'}, {'index': 5, 'hashType': 0, 'sigHash': '4f900a0bae3f1446fd48490c2958b5a023228f01661cda3496a11da502a7f7ef'}, {'index': 7, 'hashType': 2, 'sigHash': '15f25c298eb5cdc7eb1d638dd2d45c97c4c59dcaec6679cfc16ad84f30876b85'}, {'index': 8, 'hashType': 130, 'sigHash': 'cd292de50313804dabe4685e83f923d2969577191a3e1d2882220dca88cbeb10'}, {'index': 9, 'hashType': 129, 'sigHash': 'cccb739eca6c13a8a89e6e5cd317ffe55669bbda23f2fd37b0f18755e008edd2'}], 'trees': [{'internal': '187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27', 'tree': {'id': 0, 'script': '20d85a959b0290bf19bb89ed43c916be835475d013da4b362117393e25a48229b8ac', 'leafVersion': 192}, 'leafHashes': ['5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21'], 'merkleRoot': '5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21', 'controlBlocks': ['c1187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27']}, {'internal': '93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820', 'tree': {'id': 0, 'script': '20b617298552a72ade070667e86ca63b8f5789a9fe8731ef91202a91c9f3459007ac', 'leafVersion': 192}, 'leafHashes': ['c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b'], 'merkleRoot': 'c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b', 'controlBlocks': ['c093478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820']}, {'internal': 'ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592', 'tree': [{'id': 0, 'script': '20387671353e273264c495656e27e39ba899ea8fee3bb69fb2a680e22093447d48ac', 'leafVersion': 192}, {'id': 1, 'script': '06424950333431', 'leafVersion': 250}], 'leafHashes': ['8ad69ec7cf41c2a4001fd1f738bf1e505ce2277acdcaa63fe4765192497f47a7', 'f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a'], 'merkleRoot': '6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef', 'controlBlocks': ['c0ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a', 'faee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf37865928ad69ec7cf41c2a4001fd1f738bf1e505ce2277acdcaa63fe4765192497f47a7']}, {'internal': 'f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd8', 'tree': [{'id': 0, 'script': '2044b178d64c32c4a05cc4f4d1407268f764c940d20ce97abfd44db5c3592b72fdac', 'leafVersion': 192}, {'id': 1, 'script': '07546170726f6f74', 'leafVersion': 192}], 'leafHashes': ['64512fecdb5afa04f98839b50e6f0cb7b1e539bf6f205f67934083cdcc3c8d89', '2cb2b90daa543b544161530c925f285b06196940d6085ca9474d41dc3822c5cb'], 'merkleRoot': 'ab179431c28d3b68fb798957faf5497d69c883c6fb1e1cd9f81483d87bac90cc', 'controlBlocks': ['c1f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd82cb2b90daa543b544161530c925f285b06196940d6085ca9474d41dc3822c5cb', 'c1f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd864512fecdb5afa04f98839b50e6f0cb7b1e539bf6f205f67934083cdcc3c8d89']}, {'internal': 'e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6f', 'tree': [{'id': 0, 'script': '2072ea6adcf1d371dea8fba1035a09f3d24ed5a059799bae114084130ee5898e69ac', 'leafVersion': 192}, [{'id': 1, 'script': '202352d137f2f3ab38d1eaa976758873377fa5ebb817372c71e2c542313d4abda8ac', 'leafVersion': 192}, {'id': 2, 'script': '207337c0dd4253cb86f2c43a2351aadd82cccb12a172cd120452b9bb8324f2186aac', 'leafVersion': 192}]], 'leafHashes': ['2645a02e0aac1fe69d69755733a9b7621b694bb5b5cde2bbfc94066ed62b9817', 'ba982a91d4fc552163cb1c0da03676102d5b7a014304c01f0c77b2b8e888de1c', '9e31407bffa15fefbf5090b149d53959ecdf3f62b1246780238c24501d5ceaf6'], 'merkleRoot': 'ccbd66c6f7e8fdab47b3a486f59d28262be857f30d4773f2d5ea47f7761ce0e2', 'controlBlocks': ['c0e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6fffe578e9ea769027e4f5a3de40732f75a88a6353a09d767ddeb66accef85e553', 'c0e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6f9e31407bffa15fefbf5090b149d53959ecdf3f62b1246780238c24501d5ceaf62645a02e0aac1fe69d69755733a9b7621b694bb5b5cde2bbfc94066ed62b9817', 'c0e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6fba982a91d4fc552163cb1c0da03676102d5b7a014304c01f0c77b2b8e888de1c2645a02e0aac1fe69d69755733a9b7621b694bb5b5cde2bbfc94066ed62b9817']}, {'internal': '55adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d', 'tree': [{'id': 0, 'script': '2071981521ad9fc9036687364118fb6ccd2035b96a423c59c5430e98310a11abe2ac', 'leafVersion': 192}, [{'id': 1, 'script': '20d5094d2dbe9b76e2c245a2b89b6006888952e2faa6a149ae318d69e520617748ac', 'leafVersion': 192}, {'id': 2, 'script': '20c440b462ad48c7a77f94cd4532d8f2119dcebbd7c9764557e62726419b08ad4cac', 'leafVersion': 192}]], 'leafHashes': ['f154e8e8e17c31d3462d7132589ed29353c6fafdb884c5a6e04ea938834f0d9d', '737ed1fe30bc42b8022d717b44f0d93516617af64a64753b7a06bf16b26cd711', 'd7485025fceb78b9ed667db36ed8b8dc7b1f0b307ac167fa516fe4352b9f4ef7'], 'merkleRoot': '2f6b2c5397b6d68ca18e09a3f05161668ffe93a988582d55c6f07bd5b3329def', 'controlBlocks': ['c155adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d3cd369a528b326bc9d2133cbd2ac21451acb31681a410434672c8e34fe757e91', 'c155adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312dd7485025fceb78b9ed667db36ed8b8dc7b1f0b307ac167fa516fe4352b9f4ef7f154e8e8e17c31d3462d7132589ed29353c6fafdb884c5a6e04ea938834f0d9d', 'c155adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d737ed1fe30bc42b8022d717b44f0d93516617af64a64753b7a06bf16b26cd711f154e8e8e17c31d3462d7132589ed29353c6fafdb884c5a6e04ea938834f0d9d']}]}
+
+
+
+def check_taproot_bip341(c, ip):
+    """BIP-341 (2026-08-23): the sighash builder and the script-path tree,
+    EXECUTED against the published wallet vectors. The keyPathSpending rows
+    cover the complete sighash type set (0/1/2/3 and the three ANYONECANPAY
+    forms); the trees pin every published leaf hash, merkle root and control
+    block. The script-path sighash has NO published vector in the wallet
+    file, so it is cross-checked against tools/coin_reference.py instead -
+    two implementations agreeing, said plainly rather than dressed up as a
+    published pin."""
+    f = TAPROOT_FIXTURE
+    c.note("BIP-341 taproot sighash + script tree (published wallet vectors)")
+    for row in f["inputs"]:
+        got = ip.call("cxBtcSighashTaproot",
+                      [f["version"], f["outpoints"], f["sequences"],
+                       f["amounts"], f["spks"], f["outputs"],
+                       row["index"], f["locktime"], row["hashType"], ""])
+        c.ck(f"keyPathSpending input {row['index'] - 1} (type "
+             f"{row['hashType']:#x}) sighash",
+             got.encode("latin-1").hex(), row["sigHash"])
+
+    def leaf(node):
+        return ip.call("cxTapLeafHash", [node["leafVersion"], node["script"]])
+
+    def fold(node):
+        """(root_hex, [(leaf_hex, path_items)...]) via the SCRIPT handlers."""
+        if isinstance(node, dict):
+            lh = leaf(node)
+            return lh, [(lh, [])]
+        rl, ll = fold(node[0])
+        rr, lr = fold(node[1])
+        root = ip.call("cxTapBranchHash", [rl, rr])
+        return root, ([(h, p + [rr]) for h, p in ll] +
+                      [(h, p + [rl]) for h, p in lr])
+
+    for t_i, tree in enumerate(f["trees"]):
+        root, leaves = fold(tree["tree"])
+        c.ck(f"tree {t_i}: every leaf hash matches the published list",
+             [h for h, _ in leaves], tree["leafHashes"])
+        c.ck(f"tree {t_i}: the merkle root folds to the published root",
+             root, tree["merkleRoot"])
+        for l_i, ((lh, path), cb) in enumerate(zip(leaves,
+                                                   tree["controlBlocks"])):
+            ver_par = int(cb[:2], 16)
+            got = ip.call("cxTapControlBlock",
+                          [ver_par & 0xfe, ver_par & 1, tree["internal"],
+                           ",".join(path)])
+            c.ck(f"tree {t_i} leaf {l_i}: the control block assembles "
+                 "byte for byte", got, cb)
+
+    # the script-path sighash: oracle cross-check (no published vector).
+    lh0 = ip.call("cxTapLeafHash", [0xc0, "20" + "aa" * 32 + "ac"])
+    got = ip.call("cxBtcSighashTaproot",
+                  [f["version"], f["outpoints"], f["sequences"], f["amounts"],
+                   f["spks"], f["outputs"], 1, f["locktime"], 0, lh0])
+    want = REF.btc_sighash_taproot(
+        f["version"], f["locktime"],
+        [bytes.fromhex(x) for x in f["outpoints"].split(",")],
+        [int(x) for x in f["amounts"].split(",")],
+        [bytes.fromhex(x) for x in f["spks"].split(",")],
+        [int(x) for x in f["sequences"].split(",")],
+        [bytes.fromhex(x) for x in f["outputs"].split(",")],
+        0, 0, tapleaf=bytes.fromhex(lh0))
+    c.ck("script-path sighash agrees with the independent model "
+         "(no published vector; two implementations)",
+         got.encode("latin-1").hex(), want.hex())
+
+    # refusals: what the builder must REFUSE, in the same change as what it
+    # must produce (the adversarial-review lesson).
+    def throws(label, args):
+        try:
+            ip.call("cxBtcSighashTaproot", args)
+        except LCS.Thrown:
+            c.ck(label, True, True)
+            return
+        c.ck(label, "did not throw", "a throw")
+    base = [f["version"], f["outpoints"], f["sequences"], f["amounts"],
+            f["spks"], f["outputs"], 1, f["locktime"], 0, ""]
+    bad = list(base); bad[8] = 128
+    throws("0x80 alone is refused (not a BIP-341 type)", bad)
+    bad = list(base); bad[8] = 5
+    throws("an unknown sighash type is refused", bad)
+    bad = list(base); bad[3] = ",".join(f["amounts"].split(",")[:-1])
+    throws("a short amounts list is refused (the lists must be parallel)", bad)
+    bad = list(base); bad[6] = 3; bad[8] = 3
+    throws("SIGHASH_SINGLE past the last output is refused", bad)
+    bad = list(base); bad[9] = "ab" * 16 + "cd"
+    throws("a wrong-length tapleaf hash is refused", bad)
+    try:
+        ip.call("cxTapLeafHash", [0xc1, "51"])
+        c.ck("an odd leaf version is refused", "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("an odd leaf version is refused", True, True)
+    try:
+        ip.call("cxTapBranchHash", ["ab" * 31, "cd" * 32])
+        c.ck("a short branch child is refused", "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("a short branch child is refused", True, True)
+    try:
+        ip.call("cxTapControlBlock", [0xc0, 2, "aa" * 32, ""])
+        c.ck("a parity outside 0/1 is refused", "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("a parity outside 0/1 is refused", True, True)
+    # 0x50 is even but RESERVED (BIP-341: a control block starting 0x50 would
+    # be read as the annex), so both builders must refuse it - and the model
+    # must agree, or the gate would be pinning a disagreement.
+    try:
+        REF.tap_leaf_hash(0x50, bytes.fromhex("51"))
+        c.ck("the model refuses leaf version 0x50", "did not raise", "a raise")
+    except ValueError:
+        c.ck("the model refuses leaf version 0x50", True, True)
+    try:
+        ip.call("cxTapLeafHash", [0x50, "51"])
+        c.ck("leaf version 0x50 is refused (annex ambiguity)",
+             "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("leaf version 0x50 is refused (annex ambiguity)", True, True)
+    try:
+        ip.call("cxTapControlBlock", [0x50, 0, "aa" * 32, ""])
+        c.ck("a 0x50 control block is refused (it IS the annex marker)",
+             "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("a 0x50 control block is refused (it IS the annex marker)", True, True)
+    try:
+        ip.call("cxTapControlBlock", [0xc0, 0, "aa" * 32,
+                                      ",".join(["ab" * 32] * 129)])
+        c.ck("a 129-node merkle path is refused (BIP-341 caps it at 128)",
+             "did not throw", "a throw")
+    except LCS.Thrown:
+        c.ck("a 129-node merkle path is refused (BIP-341 caps it at 128)",
+             True, True)
+
+
 def main(argv):
     terse = "--check" in argv[1:]
     c = Checker(terse)
@@ -1198,6 +1343,7 @@ def main(argv):
             c.note(f"\nrunning the shipped script ({len(ip.handlers)} handlers, "
                    f"{len(ip.constants)} constants) through tools/lcs-interp.py")
             check_vectors(c, ip)
+            check_taproot_bip341(c, ip)
 
     if c.problems:
         print("check-script-vectors: FAILED")
@@ -1209,7 +1355,7 @@ def main(argv):
     # ran" look identical on the way out otherwise, and on this surface the
     # second one is indistinguishable from a green build. Raise it when the set
     # grows; it exists to catch collapse, not to track the exact number.
-    floor = 20 if cc is None else 260
+    floor = 20 if cc is None else 300
     if c.count < floor:
         print(f"check-script-vectors: FAILED - only {c.count} checks ran, expected at "
               f"least {floor}. Something stopped the vector set early.")

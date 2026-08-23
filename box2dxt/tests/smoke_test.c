@@ -217,6 +217,191 @@ extern void   b2lc_shapedef_set_enable_hit_events(int);
 extern void   b2lc_shapedef_set_enable_presolve_events(int);
 extern void   b2lc_shapedef_set_material_id(int);
 
+/* ---- the world/joint/query/chain/event-register sweep (2026-08-23) ----
+   Like the block above, these declarations are GENERATED from the LC_API
+   definitions in src/box2d_lc.c rather than typed out (176 of them; the
+   same UB-the-linker-cannot-catch reasoning applies). They cover the
+   families gcov measured as never entered on 2026-08-17: world tuning/info/
+   profile/counters, the closest-ray and query readback registers, contact
+   end + hit events, sensor end events, chain accessors, and the whole
+   per-kind joint accessor surface. See the sweep block in main. */
+extern void   b2lc_chain_destroy(int);
+extern double b2lc_chain_friction(int);
+extern int    b2lc_chain_is_valid(int);
+extern double b2lc_chain_restitution(int);
+extern void   b2lc_chain_set_friction(int, double);
+extern void   b2lc_chain_set_restitution(int, double);
+extern int    b2lc_contact_end_a(int);
+extern int    b2lc_contact_end_b(int);
+extern int    b2lc_contact_end_count(void);
+extern int    b2lc_contact_hit_a(int);
+extern int    b2lc_contact_hit_b(int);
+extern int    b2lc_contact_hit_count(void);
+extern double b2lc_contact_hit_nx(int);
+extern double b2lc_contact_hit_ny(int);
+extern double b2lc_contact_hit_speed(int);
+extern double b2lc_contact_hit_x(int);
+extern double b2lc_contact_hit_y(int);
+extern double b2lc_distance_current_length(int);
+extern void   b2lc_distance_enable_motor(int, int);
+extern void   b2lc_distance_enable_spring(int, int, double, double);
+extern int    b2lc_distance_is_limit_enabled(int);
+extern int    b2lc_distance_is_motor_enabled(int);
+extern int    b2lc_distance_is_spring_enabled(int);
+extern double b2lc_distance_length(int);
+extern double b2lc_distance_max_length(int);
+extern double b2lc_distance_max_motor_force(int);
+extern double b2lc_distance_min_length(int);
+extern double b2lc_distance_motor_force(int);
+extern double b2lc_distance_motor_speed(int);
+extern void   b2lc_distance_set_length(int, double);
+extern void   b2lc_distance_set_length_range(int, double, double);
+extern void   b2lc_distance_set_max_motor_force(int, double);
+extern void   b2lc_distance_set_motor_speed(int, double);
+extern double b2lc_distance_spring_damping(int);
+extern double b2lc_distance_spring_hertz(int);
+extern int    b2lc_joint_body_a(int);
+extern int    b2lc_joint_body_b(int);
+extern double b2lc_joint_constraint_force_x(int);
+extern double b2lc_joint_constraint_force_y(int);
+extern double b2lc_joint_constraint_torque(int);
+extern void   b2lc_joint_destroy(int);
+extern int    b2lc_joint_filter(int, int, int);
+extern int    b2lc_joint_get_collide_connected(int);
+extern double b2lc_joint_local_anchor_a_x(int);
+extern double b2lc_joint_local_anchor_a_y(int);
+extern double b2lc_joint_local_anchor_b_x(int);
+extern double b2lc_joint_local_anchor_b_y(int);
+extern void   b2lc_joint_set_collide_connected(int, int);
+extern int    b2lc_joint_type(int);
+extern void   b2lc_joint_wake_bodies(int);
+extern double b2lc_motor_angular_offset(int);
+extern double b2lc_motor_correction_factor(int);
+extern double b2lc_motor_linear_offset_x(int);
+extern double b2lc_motor_linear_offset_y(int);
+extern double b2lc_motor_max_force(int);
+extern double b2lc_motor_max_torque(int);
+extern void   b2lc_motor_set_angular_offset(int, double);
+extern void   b2lc_motor_set_correction_factor(int, double);
+extern void   b2lc_motor_set_linear_offset(int, double, double);
+extern void   b2lc_motor_set_max_force(int, double);
+extern void   b2lc_motor_set_max_torque(int, double);
+extern double b2lc_mouse_max_force(int);
+extern void   b2lc_mouse_set_max_force(int, double);
+extern void   b2lc_mouse_set_spring_damping(int, double);
+extern void   b2lc_mouse_set_spring_hertz(int, double);
+extern double b2lc_mouse_spring_damping(int);
+extern double b2lc_mouse_spring_hertz(int);
+extern double b2lc_mouse_target_x(int);
+extern double b2lc_mouse_target_y(int);
+extern void   b2lc_prismatic_enable_limit(int, int, double, double);
+extern void   b2lc_prismatic_enable_motor(int, int, double, double);
+extern void   b2lc_prismatic_enable_spring(int, int);
+extern int    b2lc_prismatic_is_limit_enabled(int);
+extern int    b2lc_prismatic_is_motor_enabled(int);
+extern int    b2lc_prismatic_is_spring_enabled(int);
+extern double b2lc_prismatic_lower_limit(int);
+extern double b2lc_prismatic_max_motor_force(int);
+extern double b2lc_prismatic_motor_force(int);
+extern double b2lc_prismatic_motor_speed(int);
+extern void   b2lc_prismatic_set_motor_speed(int, double);
+extern void   b2lc_prismatic_set_spring_damping(int, double);
+extern void   b2lc_prismatic_set_spring_hertz(int, double);
+extern double b2lc_prismatic_speed(int);
+extern double b2lc_prismatic_spring_damping(int);
+extern double b2lc_prismatic_spring_hertz(int);
+extern double b2lc_prismatic_translation(int);
+extern double b2lc_prismatic_upper_limit(int);
+extern double b2lc_query_normal_x(int);
+extern double b2lc_query_normal_y(int);
+extern int    b2lc_query_overlap_aabb(int, double, double, double, double);
+extern int    b2lc_query_overlap_circle(int, double, double, double);
+extern int    b2lc_query_overlap_point(int, double, double);
+extern int    b2lc_query_overlap_shape(int, double);
+extern int    b2lc_query_shape(int);
+extern int    b2lc_query_shapecast(int, double, double, double);
+extern double b2lc_query_x(int);
+extern double b2lc_query_y(int);
+extern double b2lc_ray_fraction(void);
+extern double b2lc_ray_normal_x(void);
+extern double b2lc_ray_normal_y(void);
+extern int    b2lc_ray_shape(void);
+extern double b2lc_ray_x(void);
+extern double b2lc_revolute_angle(int);
+extern void   b2lc_revolute_enable_limit(int, int, double, double);
+extern void   b2lc_revolute_enable_motor(int, int, double, double);
+extern void   b2lc_revolute_enable_spring(int, int);
+extern int    b2lc_revolute_is_limit_enabled(int);
+extern int    b2lc_revolute_is_motor_enabled(int);
+extern int    b2lc_revolute_is_spring_enabled(int);
+extern double b2lc_revolute_lower_limit(int);
+extern double b2lc_revolute_max_motor_torque(int);
+extern double b2lc_revolute_motor_speed(int);
+extern double b2lc_revolute_motor_torque(int);
+extern void   b2lc_revolute_set_max_motor_torque(int, double);
+extern void   b2lc_revolute_set_motor_speed(int, double);
+extern void   b2lc_revolute_set_spring_damping(int, double);
+extern void   b2lc_revolute_set_spring_hertz(int, double);
+extern double b2lc_revolute_spring_damping(int);
+extern double b2lc_revolute_spring_hertz(int);
+extern double b2lc_revolute_upper_limit(int);
+extern int    b2lc_sensor_end_count(void);
+extern int    b2lc_sensor_end_sensor(int);
+extern int    b2lc_sensor_end_visitor(int);
+extern double b2lc_weld_angular_damping(int);
+extern double b2lc_weld_angular_hertz(int);
+extern double b2lc_weld_linear_damping(int);
+extern double b2lc_weld_linear_hertz(int);
+extern double b2lc_weld_reference_angle(int);
+extern void   b2lc_weld_set_reference_angle(int, double);
+extern void   b2lc_weld_set_stiffness(int, double, double, double, double);
+extern void   b2lc_wheel_enable_limit(int, int);
+extern void   b2lc_wheel_enable_motor(int, int, double, double);
+extern void   b2lc_wheel_enable_spring(int, int, double, double);
+extern int    b2lc_wheel_is_limit_enabled(int);
+extern int    b2lc_wheel_is_motor_enabled(int);
+extern int    b2lc_wheel_is_spring_enabled(int);
+extern double b2lc_wheel_lower_limit(int);
+extern double b2lc_wheel_max_motor_torque(int);
+extern double b2lc_wheel_motor_speed(int);
+extern double b2lc_wheel_motor_torque(int);
+extern void   b2lc_wheel_set_limits(int, double, double);
+extern double b2lc_wheel_spring_damping(int);
+extern double b2lc_wheel_spring_hertz(int);
+extern double b2lc_wheel_upper_limit(int);
+extern int    b2lc_world_awake_body_count(int);
+extern int    b2lc_world_count_bodies(void);
+extern int    b2lc_world_count_contacts(void);
+extern int    b2lc_world_count_islands(void);
+extern int    b2lc_world_count_joints(void);
+extern int    b2lc_world_count_shapes(void);
+extern void   b2lc_world_counters_update(int);
+extern void   b2lc_world_enable_continuous(int, int);
+extern void   b2lc_world_enable_sleeping(int, int);
+extern void   b2lc_world_enable_speculative(int, int);
+extern void   b2lc_world_enable_warm_starting(int, int);
+extern double b2lc_world_gravity_x(int);
+extern double b2lc_world_gravity_y(int);
+extern double b2lc_world_hit_event_threshold(int);
+extern int    b2lc_world_is_continuous_enabled(int);
+extern int    b2lc_world_is_sleeping_enabled(int);
+extern int    b2lc_world_is_warm_starting(int);
+extern double b2lc_world_maximum_linear_speed(int);
+extern double b2lc_world_profile_collide(void);
+extern double b2lc_world_profile_pairs(void);
+extern double b2lc_world_profile_refit(void);
+extern double b2lc_world_profile_sensors(void);
+extern double b2lc_world_profile_solve(void);
+extern double b2lc_world_profile_step(void);
+extern void   b2lc_world_profile_update(int);
+extern double b2lc_world_restitution_threshold(int);
+extern void   b2lc_world_set_contact_tuning(int, double, double, double);
+extern void   b2lc_world_set_gravity(int, double, double);
+extern void   b2lc_world_set_hit_event_threshold(int, double);
+extern void   b2lc_world_set_joint_tuning(int, double, double);
+extern void   b2lc_world_set_maximum_linear_speed(int, double);
+extern void   b2lc_world_set_restitution_threshold(int, double);
+
 static int g_pass = 0, g_fail = 0;
 static void check(const char *name, int ok) {
     printf("  [%s] %s\n", ok ? "PASS" : "FAIL", name);
@@ -951,6 +1136,589 @@ int main(void) {
 
     b2lc_world_destroy(w3);
     check("accessor-sweep world destroyed cleanly", 1);
+
+
+    /* ====== the world/joint/query/chain/event-register sweep (3 worlds) ======
+       Added 2026-08-23. Same charter as the 2026-08-17 body+shape sweep above:
+       gcov (2026-08-17) measured 194 of the shim's 370 LC_API exports entered,
+       and the 176 still dark were the world, joint, query, mouse, chain and
+       contact/sensor-register families -- every one an ordinary C entry point,
+       so nothing scarce stands in the way of executing all of them. These
+       assertions are deliberately SHALLOW next to the behaviour tests at the
+       top of the file: each holds "this export links, takes these arguments,
+       and reports the documented shape", getters are checked against values
+       this test WROTE (or against arithmetic pinned in a comment), and an
+       export that earns a real lesson should GRADUATE into a behaviour section.
+       Three worlds keep the fixtures independent: w4 for world tuning/info,
+       w5 for rays/queries/events/chains (region-separated on x), w6 for the
+       per-kind joint surfaces. */
+
+    /* --- world: tuning setters and their getters ---------------------------- */
+    int w4 = b2lc_world_create(0.0, -10.0, 1, 1);
+    check("tuning world created", w4 > 0);
+    b2lc_world_set_gravity(w4, 1.5, -3.25);
+    check("set_gravity round-trips through both gravity getters",
+          fabs(b2lc_world_gravity_x(w4) - 1.5) < 1e-5 &&
+          fabs(b2lc_world_gravity_y(w4) + 3.25) < 1e-5);
+    b2lc_world_set_gravity(w4, 0.0, -10.0);        /* restore for the fixture below */
+    b2lc_world_enable_sleeping(w4, 0);
+    check("is_sleeping_enabled sees enable_sleeping(0)", b2lc_world_is_sleeping_enabled(w4) == 0);
+    b2lc_world_enable_sleeping(w4, 1);
+    check("is_sleeping_enabled sees enable_sleeping(1)", b2lc_world_is_sleeping_enabled(w4) == 1);
+    b2lc_world_enable_continuous(w4, 0);
+    check("is_continuous_enabled sees enable_continuous(0)", b2lc_world_is_continuous_enabled(w4) == 0);
+    b2lc_world_enable_continuous(w4, 1);
+    check("is_continuous_enabled sees enable_continuous(1)", b2lc_world_is_continuous_enabled(w4) == 1);
+    b2lc_world_enable_warm_starting(w4, 0);
+    check("is_warm_starting sees enable_warm_starting(0)", b2lc_world_is_warm_starting(w4) == 0);
+    b2lc_world_enable_warm_starting(w4, 1);        /* leave ON: off degrades the solver */
+    check("is_warm_starting sees enable_warm_starting(1)", b2lc_world_is_warm_starting(w4) == 1);
+    b2lc_world_set_restitution_threshold(w4, 0.5);
+    check("restitution threshold round-trips", fabs(b2lc_world_restitution_threshold(w4) - 0.5) < 1e-5);
+    b2lc_world_set_hit_event_threshold(w4, 2.5);
+    check("hit-event threshold round-trips", fabs(b2lc_world_hit_event_threshold(w4) - 2.5) < 1e-5);
+    b2lc_world_set_maximum_linear_speed(w4, 50.0);
+    check("maximum linear speed round-trips", fabs(b2lc_world_maximum_linear_speed(w4) - 50.0) < 1e-5);
+    /* speculative margin and the two tuning packs have no exported getters
+       (mirroring the presolve-flag precedent above); what is assertable from
+       out here is that the writes are accepted and the world still simulates
+       -- the settle assertion below is that proof, so these writes stay sane
+       rather than exotic. */
+    b2lc_world_enable_speculative(w4, 0);
+    b2lc_world_enable_speculative(w4, 1);
+    b2lc_world_set_contact_tuning(w4, 45.0, 8.0, 3.0);
+    b2lc_world_set_joint_tuning(w4, 60.0, 5.0);
+
+    /* --- world: info, counters and the profile registers --------------------
+       A known census: ONE static ground + TWO dynamic boxes + ONE joint, so
+       every counter below is asserted against what this test built, not
+       against whatever the engine happens to hold. */
+    int cwG = b2lc_body_create(w4, 0, 0.0, 0.0, 0.0, 0, 0);
+    b2lc_shape_add_segment(cwG, -6.0, 0.0, 6.0, 0.0, 0.6, 0.0);
+    int cw1 = b2lc_body_create(w4, 2, -1.0, 3.0, 0.0, 0, 0);
+    b2lc_shape_add_box(cw1, 0.5, 0.5, 1.0, 0.4, 0.0);
+    int cw2 = b2lc_body_create(w4, 2, 1.0, 3.0, 0.0, 0, 0);
+    b2lc_shape_add_box(cw2, 0.5, 0.5, 1.0, 0.4, 0.0);
+    b2lc_joint_distance(w4, cw1, cw2, 0.0, 0.0, 0.0, 0.0, 2.0, 0);
+    /* dynamic bodies spawn awake; the static ground is never awake, so the
+       count is exactly the two boxes */
+    check("awake_body_count counts the two fresh dynamic bodies",
+          b2lc_world_awake_body_count(w4) == 2);
+    for (int i = 0; i < 120; i++) b2lc_world_step(w4, 1.0 / 60.0, 4);
+    check("the tuned world still lands its boxes (tuning writes were sane)",
+          fabs(b2lc_body_y(cw1) - 0.5) < 0.1 && fabs(b2lc_body_y(cw2) - 0.5) < 0.1);
+    /* wake the pair and take one more step so the counters see live islands
+       and the profile's last-step numbers come from a step that did work */
+    b2lc_body_apply_impulse(cw1, 0.0, 1.0, 1);
+    b2lc_world_step(w4, 1.0 / 60.0, 4);
+    b2lc_world_counters_update(w4);
+    check("count_bodies reports the built census", b2lc_world_count_bodies() == 3);
+    check("count_shapes reports the built census", b2lc_world_count_shapes() == 3);
+    check("count_joints reports the one joint", b2lc_world_count_joints() == 1);
+    check("count_contacts sees the boxes resting on the ground", b2lc_world_count_contacts() >= 1);
+    check("count_islands sees at least one island", b2lc_world_count_islands() >= 1);
+    b2lc_world_profile_update(w4);
+    /* the profile is the LAST step's timings in milliseconds; the step above
+       solved a live island, and the monotonic clock is sub-microsecond, so
+       the step total is strictly positive while every phase must simply be a
+       defined non-negative number */
+    check("profile_step is positive after a working step", b2lc_world_profile_step() > 0.0);
+    check("the six profile phases read as non-negative numbers",
+          b2lc_world_profile_pairs() >= 0.0 && b2lc_world_profile_collide() >= 0.0 &&
+          b2lc_world_profile_solve() >= 0.0 && b2lc_world_profile_refit() >= 0.0 &&
+          b2lc_world_profile_sensors() >= 0.0 && b2lc_world_profile_step() < 1e6);
+    b2lc_world_destroy(w4);
+    /* stale-world getters are harmless, and the two snapshot updaters ZERO
+       their registers on an invalid handle rather than leaving last week's
+       numbers behind (the same stale-register law as the geometry readers) */
+    check("gravity getter on a destroyed world is 0", b2lc_world_gravity_x(w4) == 0.0);
+    check("awake_body_count on a destroyed world is 0", b2lc_world_awake_body_count(w4) == 0);
+    b2lc_world_counters_update(w4);
+    check("counters_update on a destroyed world clears the census", b2lc_world_count_bodies() == 0);
+    b2lc_world_profile_update(w4);
+    check("profile_update on a destroyed world clears the timings", b2lc_world_profile_step() == 0.0);
+
+    /* --- closest-ray readback registers (w5, region x=500) ------------------ */
+    int w5 = b2lc_world_create(0.0, -10.0, 1, 1);
+    check("query/event world created", w5 > 0);
+    int rayB = b2lc_body_create(w5, 0, 500.0, 0.0, 0.0, 0, 0);
+    int rayS = b2lc_shape_add_box(rayB, 1.0, 1.0, 1.0, 0.3, 0.0);
+    /* a 2x2 box at (500,0); ray from (496,0) to (504,0) meets its left face at
+       x=499: fraction 3/8 of the 8m ray, normal pointing back along the ray */
+    check("closest ray hits the box", b2lc_cast_ray_closest(w5, 496.0, 0.0, 504.0, 0.0) == 1);
+    check("ray_shape names the shape the ray hit", b2lc_ray_shape() == rayS);
+    check("ray_x is the left face", fabs(b2lc_ray_x() - 499.0) < 1e-3);
+    check("ray normal points back along the ray",
+          b2lc_ray_normal_x() < -0.9 && fabs(b2lc_ray_normal_y()) < 1e-3);
+    check("ray fraction is distance over ray length", fabs(b2lc_ray_fraction() - 3.0 / 8.0) < 1e-3);
+    check("a missed closest ray CLEARS the registers (no stale hit)",
+          b2lc_cast_ray_closest(w5, 496.0, 40.0, 504.0, 40.0) == 0 &&
+          b2lc_ray_shape() == 0 && b2lc_ray_x() == 0.0 && b2lc_ray_fraction() == 0.0);
+
+    /* --- the world query family (w5, regions x=520 and x=540) ---------------
+       Known geometry again: a three-box stack at x=520 and one lone box at
+       x=540, all static, so every count and every row is checkable. */
+    int qs1 = b2lc_body_create(w5, 0, 520.0, 1.0, 0.0, 0, 0); b2lc_shape_add_box(qs1, 0.5, 0.5, 0.0, 0.0, 0.0);
+    int qs2 = b2lc_body_create(w5, 0, 520.0, 3.0, 0.0, 0, 0); b2lc_shape_add_box(qs2, 0.5, 0.5, 0.0, 0.0, 0.0);
+    int qs3 = b2lc_body_create(w5, 0, 520.0, 5.0, 0.0, 0, 0); b2lc_shape_add_box(qs3, 0.5, 0.5, 0.0, 0.0, 0.0);
+    int qLone = b2lc_body_create(w5, 0, 540.0, 0.0, 0.0, 0, 0);
+    b2lc_shape_add_box(qLone, 0.5, 0.5, 0.0, 0.0, 0.0);
+    int qn = b2lc_query_overlap_aabb(w5, 519.0, 0.0, 521.0, 6.0);
+    check("overlap_aabb finds exactly the three stacked boxes", qn == 3);
+    int qSawAll = 0;
+    for (int k = 0; k < qn; k++) {
+        int qb = b2lc_query_body(k);
+        if (qb == qs1) qSawAll |= 1;
+        if (qb == qs2) qSawAll |= 2;
+        if (qb == qs3) qSawAll |= 4;
+        if (b2lc_query_shape(k) == 0) qSawAll = 0;   /* every row carries its shape handle */
+    }
+    check("overlap rows name all three bodies and their shapes", qSawAll == 7);
+    qn = b2lc_query_overlap_point(w5, 540.0, 0.2);
+    check("overlap_point inside the lone box returns exactly it",
+          qn == 1 && b2lc_query_body(0) == qLone);
+    /* overlap_point stashes the QUERY point into the row, so x/y are values
+       this test wrote rather than defaults */
+    check("the overlap_point row carries the query point",
+          fabs(b2lc_query_x(0) - 540.0) < 1e-5 && fabs(b2lc_query_y(0) - 0.2) < 1e-5);
+    check("overlap_point in empty space returns nothing", b2lc_query_overlap_point(w5, 560.0, 0.0) == 0);
+    /* circle centred 1.5 above the lone box's top face, radius 1.6: reaches it */
+    qn = b2lc_query_overlap_circle(w5, 540.0, 2.0, 1.6);
+    check("overlap_circle reaches down to the lone box", qn == 1 && b2lc_query_body(0) == qLone);
+    /* proxy = a fat segment (two poly points + radius) hovering over the box;
+       its surface reaches y=0.4, below the box top at 0.5 */
+    b2lc_poly_begin();
+    b2lc_poly_add(539.7, 1.2);
+    b2lc_poly_add(540.3, 1.2);
+    qn = b2lc_query_overlap_shape(w5, 0.8);
+    check("overlap_shape (poly-builder proxy) reaches the lone box",
+          qn == 1 && b2lc_query_body(0) == qLone);
+    /* shape cast: a radius-0.5 circle proxy (one poly point) swept 10m right
+       from (535,0); its surface meets the box's left face (x=539.5) after the
+       CENTRE travels 4m, so the fraction is 0.4 */
+    b2lc_poly_begin();
+    b2lc_poly_add(535.0, 0.0);
+    qn = b2lc_query_shapecast(w5, 0.5, 10.0, 0.0);
+    check("shapecast hits the lone box", qn == 1 && b2lc_query_body(0) == qLone);
+    check("shapecast fraction is centre-travel over sweep length",
+          fabs(b2lc_query_fraction(0) - 0.4) < 0.05);
+    check("shapecast reports the contact point and its face normal",
+          fabs(b2lc_query_x(0) - 539.5) < 0.1 && b2lc_query_normal_x(0) < -0.9);
+    /* ray up through the stack: first row is the lowest box's bottom face at
+       y=0.5, i.e. fraction (0.5+1)/8, its normal pointing back down the ray */
+    qn = b2lc_query_raycast_all(w5, 520.0, -1.0, 520.0, 7.0);
+    check("upward raycast_all crosses all three stacked boxes", qn == 3);
+    check("the first row is the lowest bottom face with a downward normal",
+          fabs(b2lc_query_y(0) - 0.5) < 0.05 &&
+          fabs(b2lc_query_fraction(0) - 1.5 / 8.0) < 0.01 &&
+          b2lc_query_normal_y(0) < -0.9 && fabs(b2lc_query_normal_x(0)) < 0.1);
+
+    /* --- contact END + HIT event registers (w5, region x=560) ---------------
+       A box dropped 3.7m onto a segment: the landing arrives ~8.6 m/s, far
+       above the default 1 m/s hit threshold, so the SAME step that begins the
+       touch reports a hit event with the impact point, normal and speed. The
+       teleport afterwards separates the pair, which is what an end-touch
+       event is. (Segment endpoints are LOCAL to the ground body -- the
+       world-coordinates trap recorded at the body-level event fixture above.) */
+    int ehG = b2lc_body_create(w5, 0, 560.0, 0.0, 0.0, 0, 0);
+    int ehGS = b2lc_shape_add_segment(ehG, -3.0, 0.0, 3.0, 0.0, 0.6, 0.0);
+    int ehB = b2lc_body_create(w5, 2, 560.0, 4.0, 0.0, 0, 0);
+    int ehBS = b2lc_shape_add_box(ehB, 0.3, 0.3, 1.0, 0.3, 0.0);
+    b2lc_shape_enable_hit_events(ehGS, 1);
+    b2lc_shape_enable_hit_events(ehBS, 1);
+    int ehSawHit = 0, ehPairOk = 0;
+    double ehSpeed = 0.0, ehNy = 0.0, ehPx = 0.0, ehPy = 0.0;
+    for (int i = 0; i < 150 && !ehSawHit; i++) {
+        b2lc_world_step(w5, 1.0 / 60.0, 4);
+        b2lc_contacts_update(w5);
+        if (b2lc_contact_hit_count() > 0) {
+            ehSawHit = 1;
+            int ha = b2lc_contact_hit_a(0), hb = b2lc_contact_hit_b(0);
+            ehPairOk = (ha == ehB && hb == ehG) || (ha == ehG && hb == ehB);
+            ehSpeed = b2lc_contact_hit_speed(0);
+            ehNy = b2lc_contact_hit_ny(0);
+            ehPx = b2lc_contact_hit_x(0);
+            ehPy = b2lc_contact_hit_y(0);
+        }
+    }
+    check("the hard landing reports a hit event", ehSawHit == 1);
+    check("the hit names the box<->ground pair", ehPairOk == 1);
+    check("the hit's approach speed clears the world threshold", ehSpeed > 1.0);
+    check("the hit normal is vertical (a floor landing)", fabs(ehNy) > 0.9 && fabs(b2lc_contact_hit_nx(0)) < 0.3);
+    check("the hit point sits where the box landed", fabs(ehPx - 560.0) < 1.0 && fabs(ehPy) < 0.5);
+    b2lc_body_set_transform(ehB, 560.0, 20.0, 0.0);   /* separate the touching pair */
+    b2lc_body_set_awake(ehB, 1);
+    int ehSawEnd = 0;
+    for (int i = 0; i < 5 && !ehSawEnd; i++) {
+        b2lc_world_step(w5, 1.0 / 60.0, 4);
+        b2lc_contacts_update(w5);
+        if (b2lc_contact_end_count() > 0) {
+            int ea = b2lc_contact_end_a(0), eb = b2lc_contact_end_b(0);
+            if ((ea == ehB && eb == ehG) || (ea == ehG && eb == ehB)) ehSawEnd = 1;
+        }
+    }
+    check("teleporting the box away reports an end-touch for the pair", ehSawEnd == 1);
+    b2lc_body_destroy(ehB);   /* stop the re-fall from spamming later fixtures */
+
+    /* --- sensor END events (w5, region x=600) ------------------------------- */
+    int seB = b2lc_body_create(w5, 0, 600.0, 0.0, 0.0, 0, 0);
+    b2lc_shapedef_set_sensor(1);
+    b2lc_shapedef_set_enable_sensor_events(1);
+    int seS = b2lc_shape_add_box(seB, 1.0, 0.5, 0.0, 0.0, 0.0);
+    int seV = b2lc_body_create(w5, 2, 600.0, 0.0, 0.0, 0, 0);
+    b2lc_shapedef_set_enable_sensor_events(1);
+    int seVS = b2lc_shape_add_circle(seV, 0.0, 0.0, 0.2, 1.0, 0.0, 0.0);
+    b2lc_body_set_gravity_scale(seV, 0.0);            /* park the visitor inside */
+    int seSawBegin = 0;
+    for (int i = 0; i < 8 && !seSawBegin; i++) {
+        b2lc_world_step(w5, 1.0 / 60.0, 4);
+        if (b2lc_sensors_update(w5) > 0 &&
+            b2lc_sensor_begin_sensor(0) == seS && b2lc_sensor_begin_visitor(0) == seVS)
+            seSawBegin = 1;
+    }
+    check("the parked visitor begins the sensor overlap", seSawBegin == 1);
+    b2lc_body_set_transform(seV, 612.0, 0.0, 0.0);    /* leave the sensor */
+    b2lc_body_set_awake(seV, 1);
+    int seSawEnd = 0;
+    for (int i = 0; i < 8 && !seSawEnd; i++) {
+        b2lc_world_step(w5, 1.0 / 60.0, 4);
+        b2lc_sensors_update(w5);
+        if (b2lc_sensor_end_count() > 0 &&
+            b2lc_sensor_end_sensor(0) == seS && b2lc_sensor_end_visitor(0) == seVS)
+            seSawEnd = 1;
+    }
+    check("teleporting the visitor out reports the sensor end pair", seSawEnd == 1);
+
+    /* --- chain accessors + destroy (w5, region x=650) ----------------------- */
+    int chB = b2lc_body_create(w5, 0, 650.0, -5.0, 0.0, 0, 0);
+    b2lc_chain_begin();
+    b2lc_chain_add_point(12.0, 0.0);
+    b2lc_chain_add_point(7.0, 0.0);
+    b2lc_chain_add_point(3.0, 0.0);
+    b2lc_chain_add_point(-3.0, 0.0);
+    b2lc_chain_add_point(-7.0, 0.0);
+    b2lc_chain_add_point(-12.0, 0.0);
+    int ch = b2lc_chain_create(chB, 0, 0.8, 0.0);
+    check("accessor chain created and valid", ch > 0 && b2lc_chain_is_valid(ch) == 1);
+    b2lc_chain_set_friction(ch, 0.33);
+    check("chain friction round-trips", fabs(b2lc_chain_friction(ch) - 0.33) < 1e-5);
+    b2lc_chain_set_restitution(ch, 0.25);
+    check("chain restitution round-trips", fabs(b2lc_chain_restitution(ch) - 0.25) < 1e-5);
+    int chSegN = b2lc_chain_segment_count(ch);
+    int chSeg0 = b2lc_chain_segment_at(0);
+    check("the 6-point open chain still reports its 3 segments", chSegN == 3 && chSeg0 > 0);
+    b2lc_chain_destroy(ch);
+    check("a destroyed chain reads invalid with zeroed accessors",
+          b2lc_chain_is_valid(ch) == 0 && b2lc_chain_friction(ch) == 0.0 &&
+          b2lc_chain_segment_count(ch) == 0);
+    check("destroying the chain retires its segment shape handles",
+          b2lc_shape_body(chSeg0) == 0);
+    b2lc_chain_destroy(ch);                        /* double-destroy: must be safe */
+    b2lc_world_step(w5, 1.0 / 60.0, 4);
+    check("simulation survives chain double-destroy", 1);
+    b2lc_world_destroy(w5);
+    check("query/event world destroyed cleanly", 1);
+
+    /* --- generic joint surface (w6, region x=0) -----------------------------
+       Joint type codes are pinned from Box2D v3.1.0's b2JointType enum
+       (include/box2d/types.h): distance=0, filter=1, motor=2, mouse=3,
+       prismatic=4, revolute=5, weld=6, wheel=7. The bob is centred ON its
+       pivot (anchor B deliberately 0,0 -- written, not defaulted) so it HANGS
+       instead of swinging and the constraint force is just its weight. */
+    int w6 = b2lc_world_create(0.0, -10.0, 1, 1);
+    check("joint world created", w6 > 0);
+    int gjA = b2lc_body_create(w6, 0, 0.0, 10.0, 0.0, 0, 0);
+    int gjB = b2lc_body_create(w6, 2, 0.25, 10.5, 0.0, 0, 0);
+    b2lc_shape_add_box(gjB, 0.3, 0.3, 1.0, 0.3, 0.0);   /* 0.36 kg */
+    b2lc_body_enable_sleep(gjB, 0);   /* a slept joint would read stale forces */
+    int gj = b2lc_joint_revolute(w6, gjA, gjB, 0.25, 0.5, 0.0, 0.0, 0);
+    check("generic-surface revolute created", gj > 0);
+    check("joint_type reports revolute (5)", b2lc_joint_type(gj) == 5);
+    check("joint_body_a/b return the two body handles",
+          b2lc_joint_body_a(gj) == gjA && b2lc_joint_body_b(gj) == gjB);
+    check("local anchors read back what the constructor was given",
+          fabs(b2lc_joint_local_anchor_a_x(gj) - 0.25) < 1e-5 &&
+          fabs(b2lc_joint_local_anchor_a_y(gj) - 0.5) < 1e-5 &&
+          fabs(b2lc_joint_local_anchor_b_x(gj)) < 1e-5 &&
+          fabs(b2lc_joint_local_anchor_b_y(gj)) < 1e-5);
+    check("collide-connected defaults off", b2lc_joint_get_collide_connected(gj) == 0);
+    b2lc_joint_set_collide_connected(gj, 1);
+    check("set_collide_connected(1) reads back", b2lc_joint_get_collide_connected(gj) == 1);
+    b2lc_joint_set_collide_connected(gj, 0);
+    b2lc_body_set_awake(gjB, 0);
+    check("the bob can be put to sleep by hand", b2lc_body_is_awake(gjB) == 0);
+    b2lc_joint_wake_bodies(gj);
+    check("joint_wake_bodies wakes the bob", b2lc_body_is_awake(gjB) == 1);
+    for (int i = 0; i < 90; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    /* the pivot carries the hanging bob: |F| ~ m*g = 3.6 N; a free pivot
+       carries next to no torque, so the torque assertion is only "a defined
+       number came back", which is all this register can promise here */
+    {
+        double cfx = b2lc_joint_constraint_force_x(gj), cfy = b2lc_joint_constraint_force_y(gj);
+        double cmag = sqrt(cfx * cfx + cfy * cfy);
+        check("the pivot's constraint force carries the bob's weight", cmag > 1.0 && cmag < 20.0);
+        check("constraint torque of a free pivot reads as a small number",
+              fabs(b2lc_joint_constraint_torque(gj)) < 10.0);
+    }
+    b2lc_joint_destroy(gj);
+    check("a destroyed revolute reads type 0, not 5 (handle retired)", b2lc_joint_type(gj) == 0);
+    check("the bob no longer counts a joint", b2lc_body_joint_count(gjB) == 0);
+    b2lc_joint_destroy(gj);                        /* double-destroy: must be safe */
+    b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("simulation survives joint double-destroy", 1);
+
+    /* --- filter joint (w6, region x=10) ------------------------------------- */
+    int fjA = b2lc_body_create(w6, 2, 10.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(fjA, 0.5, 0.5, 1.0, 0.3, 0.0);
+    int fjB = b2lc_body_create(w6, 2, 10.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(fjB, 0.5, 0.5, 1.0, 0.3, 0.0);
+    b2lc_body_set_gravity_scale(fjA, 0.0);
+    b2lc_body_set_gravity_scale(fjB, 0.0);
+    int fj = b2lc_joint_filter(w6, fjA, fjB);
+    check("filter joint created", fj > 0);
+    check("joint_type reports filter (1)", b2lc_joint_type(fj) == 1);
+    int fjTouched = 0;
+    for (int i = 0; i < 30; i++) {
+        b2lc_world_step(w6, 1.0 / 60.0, 4);
+        int cn = b2lc_contacts_update(w6);
+        for (int k = 0; k < cn; k++) {
+            int a = b2lc_contact_begin_a(k), bb = b2lc_contact_begin_b(k);
+            if ((a == fjA && bb == fjB) || (a == fjB && bb == fjA)) fjTouched = 1;
+        }
+    }
+    check("filter-jointed coincident boxes never begin a contact", fjTouched == 0);
+
+    /* --- revolute joint: granular get/set (w6, region x=20) ----------------- */
+    int rvA = b2lc_body_create(w6, 0, 20.0, 10.0, 0.0, 0, 0);
+    int rvB = b2lc_body_create(w6, 2, 21.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(rvB, 0.4, 0.1, 1.0, 0.3, 0.0);   /* 0.16 kg bar, arm 1m */
+    b2lc_body_enable_sleep(rvB, 0);
+    b2lc_body_set_angular_damping(rvB, 1.0);   /* settle onto the limit, not bounce */
+    int rv = b2lc_joint_revolute(w6, rvA, rvB, 0.0, 0.0, -1.0, 0.0, 0);
+    check("granular revolute created", rv > 0);
+    b2lc_revolute_enable_spring(rv, 1);
+    check("revolute spring flag round-trips on", b2lc_revolute_is_spring_enabled(rv) == 1);
+    b2lc_revolute_set_spring_hertz(rv, 4.5);
+    check("revolute spring hertz round-trips", fabs(b2lc_revolute_spring_hertz(rv) - 4.5) < 1e-5);
+    b2lc_revolute_set_spring_damping(rv, 0.6);
+    check("revolute spring damping round-trips", fabs(b2lc_revolute_spring_damping(rv) - 0.6) < 1e-5);
+    b2lc_revolute_enable_spring(rv, 0);
+    check("revolute spring flag round-trips off", b2lc_revolute_is_spring_enabled(rv) == 0);
+    b2lc_revolute_enable_limit(rv, 1, -0.3, 0.5);
+    check("revolute limit flag + bounds round-trip",
+          b2lc_revolute_is_limit_enabled(rv) == 1 &&
+          fabs(b2lc_revolute_lower_limit(rv) + 0.3) < 1e-5 &&
+          fabs(b2lc_revolute_upper_limit(rv) - 0.5) < 1e-5);
+    b2lc_revolute_enable_motor(rv, 1, 1.5, 50.0);
+    check("revolute motor flag + speed + max torque round-trip",
+          b2lc_revolute_is_motor_enabled(rv) == 1 &&
+          fabs(b2lc_revolute_motor_speed(rv) - 1.5) < 1e-5 &&
+          fabs(b2lc_revolute_max_motor_torque(rv) - 50.0) < 1e-5);
+    b2lc_revolute_set_motor_speed(rv, 0.0);
+    check("set_motor_speed(0) makes the motor a brake", b2lc_revolute_motor_speed(rv) == 0.0);
+    b2lc_revolute_set_max_motor_torque(rv, 80.0);
+    check("set_max_motor_torque round-trips", fabs(b2lc_revolute_max_motor_torque(rv) - 80.0) < 1e-5);
+    /* the speed-0 motor holds the horizontal bar against its 1.6 Nm gravity
+       torque, so the meter must show real torque and the angle must not fall */
+    for (int i = 0; i < 60; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the braking motor holds the bar horizontal", fabs(b2lc_revolute_angle(rv)) < 0.1);
+    check("motor_torque shows the load the brake carries", fabs(b2lc_revolute_motor_torque(rv)) > 0.2);
+    b2lc_revolute_enable_motor(rv, 0, 0.0, 0.0);
+    check("revolute motor flag round-trips off", b2lc_revolute_is_motor_enabled(rv) == 0);
+    /* released, gravity swings the bar down until the lower limit stops it */
+    for (int i = 0; i < 180; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the released bar rests on the lower limit",
+          fabs(b2lc_revolute_angle(rv) + 0.3) < 0.05);
+
+    /* --- prismatic joint: granular get/set (w6, region x=30) ---------------- */
+    int prA = b2lc_body_create(w6, 0, 30.0, 10.0, 0.0, 0, 0);
+    int prB = b2lc_body_create(w6, 2, 30.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(prB, 0.3, 0.3, 1.0, 0.3, 0.0);   /* 0.36 kg slider */
+    b2lc_body_enable_sleep(prB, 0);
+    b2lc_body_set_linear_damping(prB, 1.0);
+    int pr = b2lc_joint_prismatic(w6, prA, prB, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0);
+    check("granular prismatic created (vertical axis)", pr > 0);
+    check("joint_type reports prismatic (4)", b2lc_joint_type(pr) == 4);
+    b2lc_prismatic_enable_spring(pr, 1);
+    check("prismatic spring flag round-trips on", b2lc_prismatic_is_spring_enabled(pr) == 1);
+    b2lc_prismatic_set_spring_hertz(pr, 3.0);
+    check("prismatic spring hertz round-trips", fabs(b2lc_prismatic_spring_hertz(pr) - 3.0) < 1e-5);
+    b2lc_prismatic_set_spring_damping(pr, 0.4);
+    check("prismatic spring damping round-trips", fabs(b2lc_prismatic_spring_damping(pr) - 0.4) < 1e-5);
+    b2lc_prismatic_enable_spring(pr, 0);
+    check("prismatic spring flag round-trips off", b2lc_prismatic_is_spring_enabled(pr) == 0);
+    b2lc_prismatic_enable_limit(pr, 1, -0.5, 0.5);
+    check("prismatic limit flag + bounds round-trip",
+          b2lc_prismatic_is_limit_enabled(pr) == 1 &&
+          fabs(b2lc_prismatic_lower_limit(pr) + 0.5) < 1e-5 &&
+          fabs(b2lc_prismatic_upper_limit(pr) - 0.5) < 1e-5);
+    b2lc_prismatic_enable_motor(pr, 1, 2.0, 100.0);
+    check("prismatic motor flag + speed + max force round-trip",
+          b2lc_prismatic_is_motor_enabled(pr) == 1 &&
+          fabs(b2lc_prismatic_motor_speed(pr) - 2.0) < 1e-5 &&
+          fabs(b2lc_prismatic_max_motor_force(pr) - 100.0) < 1e-5);
+    b2lc_prismatic_set_motor_speed(pr, 0.0);
+    check("prismatic set_motor_speed round-trips", b2lc_prismatic_motor_speed(pr) == 0.0);
+    /* the speed-0 motor holds the slider against its 3.6 N weight */
+    for (int i = 0; i < 60; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the braking motor holds the slider in place", fabs(b2lc_prismatic_translation(pr)) < 0.05);
+    check("motor_force shows the weight the brake carries", fabs(b2lc_prismatic_motor_force(pr)) > 1.0);
+    b2lc_prismatic_enable_motor(pr, 0, 0.0, 0.0);
+    check("prismatic motor flag round-trips off", b2lc_prismatic_is_motor_enabled(pr) == 0);
+    for (int i = 0; i < 6; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the released slider is falling along the axis", b2lc_prismatic_speed(pr) < -0.2);
+    for (int i = 0; i < 150; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the released slider rests on the lower limit",
+          fabs(b2lc_prismatic_translation(pr) + 0.5) < 0.05);
+
+    /* --- distance joint: granular get/set (w6, region x=40) ----------------- */
+    int diA = b2lc_body_create(w6, 0, 40.0, 12.0, 0.0, 0, 0);
+    int diB = b2lc_body_create(w6, 2, 40.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(diB, 0.25, 0.25, 1.0, 0.3, 0.0);   /* 0.25 kg bob */
+    b2lc_body_enable_sleep(diB, 0);
+    int di = b2lc_joint_distance(w6, diA, diB, 0.0, 0.0, 0.0, 0.0, 2.0, 0);
+    check("granular distance joint created", di > 0);
+    check("distance_length reads the constructed length", fabs(b2lc_distance_length(di) - 2.0) < 1e-5);
+    b2lc_distance_set_length(di, 2.5);
+    check("set_length round-trips", fabs(b2lc_distance_length(di) - 2.5) < 1e-5);
+    b2lc_distance_set_length_range(di, 1.0, 3.0);
+    check("set_length_range enables the limit and stores both bounds",
+          b2lc_distance_is_limit_enabled(di) == 1 &&
+          fabs(b2lc_distance_min_length(di) - 1.0) < 1e-5 &&
+          fabs(b2lc_distance_max_length(di) - 3.0) < 1e-5);
+    b2lc_distance_enable_spring(di, 1, 1.5, 0.25);
+    check("distance spring flag + hertz + damping round-trip",
+          b2lc_distance_is_spring_enabled(di) == 1 &&
+          fabs(b2lc_distance_spring_hertz(di) - 1.5) < 1e-5 &&
+          fabs(b2lc_distance_spring_damping(di) - 0.25) < 1e-5);
+    b2lc_distance_enable_motor(di, 1);
+    check("distance motor flag round-trips on", b2lc_distance_is_motor_enabled(di) == 1);
+    b2lc_distance_set_motor_speed(di, 0.5);
+    check("distance motor speed round-trips", fabs(b2lc_distance_motor_speed(di) - 0.5) < 1e-5);
+    b2lc_distance_set_max_motor_force(di, 100.0);
+    check("distance max motor force round-trips", fabs(b2lc_distance_max_motor_force(di) - 100.0) < 1e-5);
+    b2lc_distance_set_motor_speed(di, 0.0);
+    /* Box2D v3.1 solves the distance MOTOR only in soft (spring) mode, and a
+       0-hertz spring contributes no force of its own -- so with the spring
+       "on" at 0 Hz the speed-0 motor alone carries the hanging bob. A speed
+       brake holds the CURRENT separation (2.0m, where the bob spawned), not
+       the 2.5m rest length; the meter must show the bob's 2.5 N weight. */
+    b2lc_distance_enable_spring(di, 1, 0.0, 0.0);
+    for (int i = 0; i < 90; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the braking distance motor holds the spawn separation",
+          fabs(b2lc_distance_current_length(di) - 2.0) < 0.15);
+    check("distance motor_force shows the bob's weight", fabs(b2lc_distance_motor_force(di)) > 1.0);
+
+    /* --- weld joint: granular get/set (w6, region x=50) --------------------- */
+    int weA = b2lc_body_create(w6, 2, 50.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(weA, 0.3, 0.3, 1.0, 0.3, 0.0);
+    int weB = b2lc_body_create(w6, 2, 51.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(weB, 0.3, 0.3, 1.0, 0.3, 0.0);
+    b2lc_body_set_gravity_scale(weA, 0.0);
+    b2lc_body_set_gravity_scale(weB, 0.0);
+    int we = b2lc_joint_weld(w6, weA, weB, 0.0, 0.0, -1.0, 0.0, 0.25, 0);
+    check("granular weld created", we > 0);
+    check("joint_type reports weld (6)", b2lc_joint_type(we) == 6);
+    check("weld reference angle reads the constructed value",
+          fabs(b2lc_weld_reference_angle(we) - 0.25) < 1e-5);
+    b2lc_weld_set_reference_angle(we, 0.1);
+    check("set_reference_angle round-trips", fabs(b2lc_weld_reference_angle(we) - 0.1) < 1e-5);
+    b2lc_weld_set_stiffness(we, 3.0, 0.5, 4.0, 0.8);
+    check("weld stiffness pack round-trips through all four getters",
+          fabs(b2lc_weld_linear_hertz(we) - 3.0) < 1e-5 &&
+          fabs(b2lc_weld_linear_damping(we) - 0.5) < 1e-5 &&
+          fabs(b2lc_weld_angular_hertz(we) - 4.0) < 1e-5 &&
+          fabs(b2lc_weld_angular_damping(we) - 0.8) < 1e-5);
+
+    /* --- wheel joint: granular get/set (w6, region x=60) -------------------- */
+    int whA = b2lc_body_create(w6, 0, 60.0, 10.0, 0.0, 0, 0);
+    int whB = b2lc_body_create(w6, 2, 60.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_circle(whB, 0.0, 0.0, 0.3, 1.0, 0.3, 0.0);
+    b2lc_body_set_gravity_scale(whB, 0.0);
+    /* angular damping is the motor's LOAD: an unloaded wheel reaches its motor
+       speed inside the first step and the torque meter then reads ~0 (measured
+       before this fixture landed), so the damped steady state -- where the
+       motor re-supplies the damping loss every step -- is what makes the meter
+       assertable at all */
+    b2lc_body_set_angular_damping(whB, 5.0);
+    int wh = b2lc_joint_wheel(w6, whA, whB, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0);
+    check("granular wheel created", wh > 0);
+    check("joint_type reports wheel (7)", b2lc_joint_type(wh) == 7);
+    b2lc_wheel_enable_spring(wh, 1, 4.0, 0.7);
+    check("wheel spring flag + hertz + damping round-trip",
+          b2lc_wheel_is_spring_enabled(wh) == 1 &&
+          fabs(b2lc_wheel_spring_hertz(wh) - 4.0) < 1e-5 &&
+          fabs(b2lc_wheel_spring_damping(wh) - 0.7) < 1e-5);
+    b2lc_wheel_enable_limit(wh, 1);
+    check("wheel limit flag round-trips on", b2lc_wheel_is_limit_enabled(wh) == 1);
+    b2lc_wheel_set_limits(wh, -0.25, 0.25);
+    check("wheel set_limits round-trips both bounds",
+          fabs(b2lc_wheel_lower_limit(wh) + 0.25) < 1e-5 &&
+          fabs(b2lc_wheel_upper_limit(wh) - 0.25) < 1e-5);
+    b2lc_wheel_enable_motor(wh, 1, 5.0, 20.0);
+    check("wheel motor flag + speed + max torque round-trip",
+          b2lc_wheel_is_motor_enabled(wh) == 1 &&
+          fabs(b2lc_wheel_motor_speed(wh) - 5.0) < 1e-5 &&
+          fabs(b2lc_wheel_max_motor_torque(wh) - 20.0) < 1e-5);
+    /* after a second of steps the damped wheel must be turning near its
+       5 rad/s motor speed (the motor working end-to-end, read off the BODY)
+       while the torque meter shows the sustained effort against the damping
+       (measured 0.31 Nm at this inertia and damping) */
+    for (int i = 0; i < 60; i++) b2lc_world_step(w6, 1.0 / 60.0, 4);
+    check("the wheel spins near its motor speed", b2lc_body_omega(whB) > 2.0);
+    check("wheel motor_torque shows the sustained effort against its load",
+          fabs(b2lc_wheel_motor_torque(wh)) > 0.05);
+
+    /* --- motor joint: granular get/set (w6, region x=70) -------------------- */
+    int moA = b2lc_body_create(w6, 0, 70.0, 10.0, 0.0, 0, 0);
+    int moB = b2lc_body_create(w6, 2, 70.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(moB, 0.3, 0.3, 1.0, 0.3, 0.0);
+    b2lc_body_set_gravity_scale(moB, 0.0);
+    int mo = b2lc_joint_motor(w6, moA, moB, 0.0, 0.0, 0.0, 100.0, 50.0, 0.3, 0);
+    check("granular motor joint created", mo > 0);
+    check("joint_type reports motor (2)", b2lc_joint_type(mo) == 2);
+    b2lc_motor_set_linear_offset(mo, 2.0, 1.0);
+    check("motor linear offset round-trips",
+          fabs(b2lc_motor_linear_offset_x(mo) - 2.0) < 1e-5 &&
+          fabs(b2lc_motor_linear_offset_y(mo) - 1.0) < 1e-5);
+    b2lc_motor_set_angular_offset(mo, 0.3);
+    check("motor angular offset round-trips", fabs(b2lc_motor_angular_offset(mo) - 0.3) < 1e-5);
+    b2lc_motor_set_max_force(mo, 500.0);
+    check("motor max force round-trips", fabs(b2lc_motor_max_force(mo) - 500.0) < 1e-5);
+    b2lc_motor_set_max_torque(mo, 80.0);
+    check("motor max torque round-trips", fabs(b2lc_motor_max_torque(mo) - 80.0) < 1e-5);
+    b2lc_motor_set_correction_factor(mo, 0.5);
+    check("motor correction factor round-trips", fabs(b2lc_motor_correction_factor(mo) - 0.5) < 1e-5);
+
+    /* --- mouse joint: granular get/set (w6, region x=80) -------------------- */
+    int muA = b2lc_body_create(w6, 0, 80.0, 10.0, 0.0, 0, 0);
+    int muB = b2lc_body_create(w6, 2, 80.0, 10.0, 0.0, 0, 0);
+    b2lc_shape_add_box(muB, 0.3, 0.3, 1.0, 0.3, 0.0);
+    int mu = b2lc_joint_mouse(w6, muA, muB, 80.0, 10.0, 5.0, 0.7, 900.0);
+    check("granular mouse joint created", mu > 0);
+    check("joint_type reports mouse (3)", b2lc_joint_type(mu) == 3);
+    check("mouse target reads the constructed point",
+          fabs(b2lc_mouse_target_x(mu) - 80.0) < 1e-5 &&
+          fabs(b2lc_mouse_target_y(mu) - 10.0) < 1e-5);
+    b2lc_mouse_set_target(mu, 82.5, 11.0);
+    check("mouse set_target round-trips through both getters",
+          fabs(b2lc_mouse_target_x(mu) - 82.5) < 1e-5 &&
+          fabs(b2lc_mouse_target_y(mu) - 11.0) < 1e-5);
+    b2lc_mouse_set_spring_hertz(mu, 6.0);
+    check("mouse spring hertz round-trips", fabs(b2lc_mouse_spring_hertz(mu) - 6.0) < 1e-5);
+    b2lc_mouse_set_spring_damping(mu, 0.9);
+    check("mouse spring damping round-trips", fabs(b2lc_mouse_spring_damping(mu) - 0.9) < 1e-5);
+    b2lc_mouse_set_max_force(mu, 750.0);
+    check("mouse max force round-trips", fabs(b2lc_mouse_max_force(mu) - 750.0) < 1e-5);
+
+    b2lc_world_destroy(w6);
+    check("joint world destroyed cleanly", 1);
+    /* world destroy retires every child joint with the bodies: the per-kind
+       getters must answer 0 off a dead handle, never reach into freed state */
+    check("world destroy leaves the joint-family getters harmless",
+          b2lc_distance_length(di) == 0.0 && b2lc_mouse_max_force(mu) == 0.0 &&
+          b2lc_wheel_spring_hertz(wh) == 0.0 && b2lc_revolute_angle(rv) == 0.0 &&
+          b2lc_joint_type(mo) == 0);
 
     printf("\n==== %d passed, %d failed ====\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

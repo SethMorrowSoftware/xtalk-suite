@@ -10,8 +10,19 @@
 // Cache-Control: no-cache, so the BROWSER's own cache revalidates on every load. An edit
 // through the built-in LAN editor bumps the generation and shows up immediately; but an
 // out-of-band disk edit that keeps the byte size unchanged leaves the ETag intact and
-// revalidates 304-stale until the app is relaunched (a fresh per-launch seed). The
-// worker just takes control of open pages so the status shows up immediately.
+// revalidates 304-stale until the app is relaunched (a fresh per-launch seed).
+//
+// The folder's declared API routes (.qsroutes.json - the /api/* endpoints the Backend
+// tab calls, plus the host's own /_qs/* routes) pass through this worker untouched for
+// the same reason: no fetch handler, so nothing here can intercept or cache them. Their
+// freshness splits by route kind in the stack: a canned or {{...}}-templated body goes
+// out through the one-shot text sender (qsFsSendText/qsCwSendText) with Cache-Control:
+// no-cache and NO ETag, so it can never answer 304 and is re-generated on every request;
+// a "file" route (this demo's /api/config -> config.json) streams through the same file
+// server as any static asset and shares the weak-ETag model above, including its one
+// stale case. (Route behavior verified statically + golden-pinned; needs an OXT pass.)
+//
+// The worker just takes control of open pages so the status shows up immediately.
 self.addEventListener('install', function () {
   self.skipWaiting();
 });

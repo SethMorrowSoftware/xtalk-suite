@@ -434,9 +434,18 @@ The value-candidate deal. Prerequisite: Workstream U shipped.
   (against L0), wrong-scalar unmasker, duplicate-point shuffler, rollback replayer,
   deal staller — every one must be *detected and correctly attributed* in the harness
   report. Self-diagnosing asserts (print observed vs expected), per the family rule.
-- **4f. Deal-time budget check** on-engine: the 52-mult FFI burst per shuffle step must
-  not visibly hitch the table (measure; if it does, pull Workstream U's batch handler
-  forward).
+- **4f. Deal-time budget check** on-engine. **The batch handler was pulled forward
+  2026-08-23, ahead of this item's measure-first order** (recorded, not hidden: the
+  headless backlog's A1 argued the batch is cheap, gives `sxRistrettoScalarMultBatch`
+  its first real caller, and turns 4f from "spend a session measuring a hitch" into
+  "confirm a fix"). The real numbers: `heL2MaskDeckHex` on SodiumXT ABI 9 now costs
+  **4 FFI crossings per shuffle step** (one `sxHex2Bin` for the scalar, one for the
+  52-point concatenation, the ONE atomic `sxRistrettoScalarMultBatch`, one `sxBin2Hex`
+  back), gated on the cached `heL2HasDleq()` probe; the per-point loop stays as the
+  pre-ABI-9 fallback AND the refusal path (any batch throw re-derives through it, so
+  the position-tagged void strings never change) at ~6 crossings per point, ~312 per
+  step. What 4f still owes on-engine: confirm the batch step does not visibly hitch
+  the table, and that the fallback's ~312 stay acceptable on a pre-ABI-9 install.
 
 **Exit:** full Level 2 sessions across real machines at the reference **6-max** size
 (user-verified — including the deal pace: ~6 s per street over rp1 per the spec's

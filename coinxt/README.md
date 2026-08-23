@@ -257,7 +257,8 @@ wraps all of them (`cxSchnorrSign`, `cxSchnorrVerify`, `cxXOnlyPubkey`, `cxTapro
 `cxTaprootTweakSeckey`, `cxSchnorrSignatureLen`, `cxXOnlyPubkeyLen`, `cxTaprootOutputLen`) and the
 script layer adds `cxTaprootTweak` (the same tweak as a named array) and
 **`cxBtcAddressP2TRFromInternal`**, which is the P2TR address builder that actually tweaks. The
-surface is 90 public handlers (43 `.lcb` + 47 script).
+surface was 90 public handlers at that ship (43 `.lcb` + 47 script; 94 since the 2026-08-23
+script-layer BIP-341 handlers below).
 
 Three things a caller should know before using it:
 
@@ -274,11 +275,16 @@ Three things a caller should know before using it:
   `cxSchnorrSign` returns a different (equally valid) signature each time. Pass 32 bytes to
   reproduce a published vector byte for byte.
 
-What is NOT in it, so nobody plans around a gap: there is **no BIP-341 sighash builder** (the
-`SigMsg` algorithm is not `cxBtcSighashSegwit`'s), and no script-path machinery - leaf hashes,
-merkle proofs and control blocks are not built, and only the merkle ROOT crosses the API as opaque
-bytes. CoinXT can receive to Taproot end to end and can sign a BIP-341 sighash you computed
-elsewhere; it cannot yet compute one.
+The two gaps that paragraph used to name here CLOSED on 2026-08-23, as pure script over this
+surface (94 public handlers now: 43 `.lcb` + 51 script): **`cxBtcSighashTaproot`** is the BIP-341
+`SigMsg` builder - the full type set, SIGHASH_DEFAULT through the three ANYONECANPAY forms, plus
+the tapleaf extension for script-path signing - and **`cxTapLeafHash` / `cxTapBranchHash` /
+`cxTapControlBlock`** are the script-path byte work (the branch sort lives inside the handler; the
+tree SHAPE above one fold stays the app's loop). Pinned headlessly to the published bitcoin/bips
+wallet vectors - all seven keyPathSpending sighashes, all six script trees, every control block -
+by driving the real script through `tools/check-script-vectors.py`; no OP_CODESEPARATOR, no annex;
+**verified statically, no engine pass yet** (the ABI 6 engine claim below predates these four
+handlers and does not cover them).
 
 Correctness: **all 19 of BIP-340's official test vectors run, ten of them NEGATIVE** (a public key
 off the curve, has_even_y(R) false, a negated message, a negated s, two infinity cases, and the

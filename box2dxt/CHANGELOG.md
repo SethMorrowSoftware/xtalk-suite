@@ -8,6 +8,21 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **`tests/smoke_test.c`: the world/joint/query/chain/event-register sweep**
+  (2026-08-23). The 176 exports the 2026-08-17 measurement left dark - the
+  world, joint, query, mouse, chain and contact/sensor-register families - are
+  now driven and asserted across three more fixture worlds. Re-measured with
+  gcov, same convention: **370 of 370 `LC_API` exports executed; none dark.**
+  Green under Release ctest and the sanitize lane's ASan/UBSan flags (304
+  checks). Shallow by design, like the 2026-08-17 sweep, and the banner says
+  so; shim LINE coverage sits at ~92% (the remainder is guard and
+  allocation-failure branches).
+- **Platformer: two stale still-to-come slice comments corrected**
+  (2026-08-23, comments only, no behavior change). The L6 banner claimed the
+  block slime and conveyor "land in the next slices" when both ship in L6
+  itself, and the L7 verify list still pointed at "slice 3" for the multi-key/
+  switch puzzles that shipped into L2 (the `docs/REMAINING-WORK.md` item 1
+  class: labels flip both ways).
 - **Kit: `b2kPlayerDuckSet` / `b2kPlayerStandUp` no longer drop the shape's
   collision filter** (2026-08-17). `b2kReshape` resetting the material AND the
   filter is documented contract, and a hand-written reshape gets to re-apply

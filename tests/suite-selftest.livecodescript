@@ -354,6 +354,16 @@ constant cx1kTxScriptSig0 = "4830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3be
 constant cx1kTxWitness1 = "0247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357"
 constant cx1kTxSignedRaw = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"
 constant cx1kTxTxid = "e8151a2af31c368a35053ddd4bdb285a8595c769a3ad83e0fa02314a602d4609"
+constant cx1kTapInternal = "ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592"
+constant cx1kTapLeafScript0 = "20387671353e273264c495656e27e39ba899ea8fee3bb69fb2a680e22093447d48ac"
+constant cx1kTapLeafScript1 = "06424950333431"
+constant cx1kTapLeafHash0 = "8ad69ec7cf41c2a4001fd1f738bf1e505ce2277acdcaa63fe4765192497f47a7"
+constant cx1kTapLeafHash1 = "f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a"
+constant cx1kTapMerkleRoot = "6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef"
+constant cx1kTapControlBlock0 = "c0ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592f224a923cd0021ab202ab139cc56802ddb92dcfc172b9212261a539df79a112a"
+constant cx1kTapSpk = "5120712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5"
+constant cx1kTapSighashKeyPath = "b381cd222933416aa1b7b8854446926452ee7f2407f9d0a9fba0c924a8e0f3ac"
+constant cx1kTapSighashScriptPath = "51f1c8afa1e5ad26f0f97c23ada20a4dfd88afaa75ba4b0e478fe9424837a4fb"
 constant cx1kEthSeckey = "4646464646464646464646464646464646464646464646464646464646464646"
 constant cx1kEthTo = "3535353535353535353535353535353535353535"
 constant cx1kEthGasPrice = "04a817c800"
@@ -462,8 +472,11 @@ constant rs1kRsGoldConfSeedHex = "cac73f09a0478224974a525036ebd73f9727ac8932162e
 constant rs1kRsGoldRoomSalt = "golden-salt"
 constant rs1kRsGoldPost1Text = "hello, riptide"
 constant rs1kRsGoldPost2Text = "second post"
+constant rs1kRsGoldChunk1Text = "chunked text, part one; "
+constant rs1kRsGoldChunk2Text = "part two closes the record."
 constant rs1kRsGoldTs1 = "1754870400"
 constant rs1kRsGoldTs2 = "1754870460"
+constant rs1kRsGoldTs3 = "1754870760"
 constant rs1kRsGoldDmTs = "1754870520"
 constant rs1kRsGoldMsgTs = "1754870580"
 constant rs1kRsGoldDmMsgText = "hello, dm"
@@ -497,6 +510,10 @@ constant rs1kRsGoldPost1Hex = "5253503100000000689932803030303030303030303030303
 constant rs1kRsGoldPost1Target = "a161e3add5a4d78080db9219583e6a988954705c"
 constant rs1kRsGoldPost2Hex = "5253503100000000689932bc6131363165336164643561346437383038306462393231393538336536613938383935343730356344000b7365636f6e6420706f737401656565656565656565656565656565656565656565656565656565656565656565656565656565654d29a287d8ac5360688b548ee342f7754287e3ddc604fe2a5160263ce1ef7a5526f9a750dc05d0edf2c317ea0b3dca062e745d0e2fb6c1b381225c7d19dba10f"
 constant rs1kRsGoldPost2Target = "21d0180855ef47084fd8a9825f4ec8516608161a"
+constant rs1kRsGoldChunk1Target = "b9122511adc47fd591ae37523f47a3b0ff8bb837"
+constant rs1kRsGoldChunk2Target = "6b30810b837c9d22db507c3c62988f70eac7fc92"
+constant rs1kRsGoldPostCHex = "5253503100000000689933e83231643031383038353565663437303834666438613938323566346563383531363630383136316143026239313232353131616463343766643539316165333735323366343761336230666638626238333736623330383130623833376339643232646235303763336336323938386637306561633766633932016565656565656565656565656565656565656565656565656565656565656565656565656565656596faa39d774097d62eea9ef9c06a04aecbabde8aac498055164a52fb1bc8a3f54ecae3058bf235eb5024e867f730321400d199072e35676554bfd186fb317508"
+constant rs1kRsGoldPostCTarget = "d7d0cb72bc85a5dd4f35523bb442a484ca108373"
 constant rs1kRsGoldHeadHex = "525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant rs1kRsGoldHeadBufHex = "343a73616c7431323a726970746964652d68656164333a736571693765313a763230333a525348310000000000000007075269707469646532316430313830383535656634373038346664386139383235663465633835313636303831363161616261626162616261626162616261626162616261626162616261626162616261626162616261623e6c6a6b67347437706c756e786e366b6e79677a6f33336c767972663737736961763532676469746e717174756b6f757336697777653679642e6f6e696f6e63646364636463646364636463646364636463646364636463646364636463646364636463646364"
 constant rs1kRsGoldHeadSigHex = "6d4560c6c20794dfbb71e4592679c242472d459728051a90bcedb123ec2404a544882525242888eda72dcd3c820a5538a80b9fb63e09d4c1bc3487db67730b0f"
@@ -530,8 +547,8 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.24.5"
-constant he1kHeHarnessV = "41"
+constant he1kHeVersion = "0.25.0"
+constant he1kHeHarnessV = "42"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -981,7 +998,7 @@ constant kPI = 3.14159265358979
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.10.0"
+constant kRsVersion = "0.11.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -999,6 +1016,11 @@ constant kRsLanMaxFile = 255
 constant kRsZeroHandle = "0000000000000000000000000000000000000000000000000000000000000000"
 constant kRsBtxoMagic = "BTXO"
 constant kRsBtxoVer = 1
+constant kRsBtxoMaxName = 1024
+constant kRsBtxoMaxTotal = 8589934592
+constant kRsBtxoChunk = 65536
+constant kRsMediaPlanPieces = 8
+constant kRsMediaPlanSpacingMs = 1000
 constant kRsAnonDmBodyLen = 632
 constant kRsAnonPageMax = 65536
 constant kRsAnonSubkeyBase = 100
@@ -5347,6 +5369,217 @@ private function cxBtcSighashSegwitInner pVersion, pOutpoints, pSequences, pInde
    put tBuf & cxHash256(tOutputsRaw) & cxUIntToBytesLE(pLocktime, 4) & cxUIntToBytesLE(pSighashType, 4) into tBuf
    return cxHash256(tBuf)
 end cxBtcSighashSegwitInner
+
+private function cxTapTagged pTag, pData
+   -- BIP-340/341 tagged hash: sha256(sha256(tag) || sha256(tag) || data).
+   -- The tag doubling is the domain separation; do not "optimise" it away.
+   local tTagHash
+   put cxSha256(pTag) into tTagHash
+   return cxSha256(tTagHash & tTagHash & pData)
+end cxTapTagged
+
+function cxTapLeafHash pLeafVersion, pScriptHex
+   local tScript
+   if pLeafVersion < 0 or pLeafVersion > 254 or cxIntMod(pLeafVersion, 2) is not 0 then
+      throw "CoinXT: cxTapLeafHash: the leaf version must be an even byte (0xc0 for tapscript)."
+   end if
+   -- 0x50 is even but RESERVED: BIP-341 excludes it because a control block
+   -- starting 0x50 would be ambiguous with the annex marker.
+   if pLeafVersion is 80 then
+      throw "CoinXT: cxTapLeafHash: leaf version 0x50 is reserved (ambiguous with the annex)."
+   end if
+   put cxHexDecode(pScriptHex) into tScript
+   if the number of bytes of tScript >= 253 then
+      throw "CoinXT: cxTapLeafHash: scripts of 253+ bytes are not supported (compact size)."
+   end if
+   return cxHexEncode(cxTapTagged("TapLeaf", numToByte(pLeafVersion) & \
+         numToByte(the number of bytes of tScript) & tScript))
+end cxTapLeafHash
+
+function cxTapBranchHash pAHex, pBHex
+   local tA, tB
+   put cxHexDecode(pAHex) into tA
+   put cxHexDecode(pBHex) into tB
+   if the number of bytes of tA is not 32 or the number of bytes of tB is not 32 then
+      throw "CoinXT: cxTapBranchHash: each child must be 32 bytes of hex."
+   end if
+   if cxCompareBytes(tA, tB) > 0 then
+      return cxHexEncode(cxTapTagged("TapBranch", tB & tA))
+   end if
+   return cxHexEncode(cxTapTagged("TapBranch", tA & tB))
+end cxTapBranchHash
+
+function cxTapControlBlock pLeafVersion, pParity, pInternalKeyHex, pPathHex
+   local tError
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxTapControlBlockInner(pLeafVersion, pParity, pInternalKeyHex, pPathHex) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxTapControlBlock
+
+private function cxTapControlBlockInner pLeafVersion, pParity, pInternalKeyHex, pPathHex
+   local tKey, tBuf, tI, tNode
+   if pLeafVersion < 0 or pLeafVersion > 254 or cxIntMod(pLeafVersion, 2) is not 0 then
+      throw "CoinXT: cxTapControlBlock: the leaf version must be an even byte."
+   end if
+   -- the 0x50 refusal is not pedantry here: a control block whose FIRST BYTE
+   -- is 0x50 is exactly what BIP-341 reserves the value to avoid, because a
+   -- witness element starting 0x50 is read as the annex.
+   if pLeafVersion is 80 then
+      throw "CoinXT: cxTapControlBlock: leaf version 0x50 is reserved (ambiguous with the annex)."
+   end if
+   if pParity is not 0 and pParity is not 1 then
+      throw "CoinXT: cxTapControlBlock: the parity must be 0 or 1 (the tweak's own report)."
+   end if
+   put cxHexDecode(pInternalKeyHex) into tKey
+   if the number of bytes of tKey is not 32 then
+      throw "CoinXT: cxTapControlBlock: the internal key must be 32 bytes of hex (x-only)."
+   end if
+   put numToByte(pLeafVersion + pParity) & tKey into tBuf
+   if pPathHex is not "" then
+      -- BIP-341 caps a control block at 33 + 32*128 bytes; a longer path is
+      -- not a bigger tree, it is an invalid witness element.
+      if the number of items of pPathHex > 128 then
+         throw "CoinXT: cxTapControlBlock: a merkle path is at most 128 nodes (BIP-341)."
+      end if
+      repeat with tI = 1 to the number of items of pPathHex
+         put cxHexDecode(item tI of pPathHex) into tNode
+         if the number of bytes of tNode is not 32 then
+            throw "CoinXT: cxTapControlBlock: every path element must be 32 bytes of hex."
+         end if
+         put tBuf & tNode into tBuf
+      end repeat
+   end if
+   return cxHexEncode(tBuf)
+end cxTapControlBlockInner
+
+function cxBtcSighashTaproot pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
+   local tError
+   local tSavedDelim, tResult, tFailed, tFailure
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   put false into tFailed
+   try
+      put cxBtcSighashTaprootInner(pVersion, pOutpoints, pSequences, pAmountsSat, \
+            pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex) into tResult
+   catch tError
+      put true into tFailed
+      put tError into tFailure
+   end try
+   set the itemDelimiter to tSavedDelim
+   if tFailed then
+      throw tFailure
+   end if
+   return tResult
+end cxBtcSighashTaproot
+
+private function cxBtcSighashTaprootInner pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
+   local tCount, tI, tAnyoneCanPay, tBase, tBuf, tRaw, tSpk, tLeaf, tOutCount
+   -- the valid type set is BIP-341's own: 0x80 alone is NOT a type.
+   if pSighashType is not 0 and pSighashType is not 1 and pSighashType is not 2 \
+         and pSighashType is not 3 and pSighashType is not 129 \
+         and pSighashType is not 130 and pSighashType is not 131 then
+      throw "CoinXT: cxBtcSighashTaproot: invalid sighash type (0, 1, 2, 3, 0x81, 0x82 or 0x83)."
+   end if
+   put the number of items of pOutpoints into tCount
+   if tCount is 0 then
+      throw "CoinXT: cxBtcSighashTaproot: the outpoint list is empty."
+   end if
+   -- BIP-341 commits to every spent output, so all four per-input lists must
+   -- be parallel. No item may be empty (every input HAS an amount and a
+   -- scriptPubKey), so a trailing-empty item - which the engine's chunk rule
+   -- would count short - is malformed here and the strict count guard is the
+   -- right one, unlike the tx encoder's deliberately-loose scriptSig list.
+   if the number of items of pSequences is not tCount \
+         or the number of items of pAmountsSat is not tCount \
+         or the number of items of pScriptPubkeys is not tCount then
+      throw "CoinXT: cxBtcSighashTaproot: the outpoint, sequence, amount and scriptPubKey lists must be parallel."
+   end if
+   if pIndex < 1 or pIndex > tCount then
+      throw "CoinXT: cxBtcSighashTaproot: the input index is out of range (it is 1-based)."
+   end if
+   put 0 into tAnyoneCanPay
+   put pSighashType into tBase
+   if pSighashType >= 129 then
+      put 1 into tAnyoneCanPay
+      put pSighashType - 128 into tBase
+   end if
+   if tBase is 3 and pIndex > the number of items of pOutputs then
+      throw "CoinXT: cxBtcSighashTaproot: SIGHASH_SINGLE with no matching output is invalid under BIP-341."
+   end if
+   -- epoch 0x00, then the type, version and locktime.
+   put numToByte(0) & numToByte(pSighashType) into tBuf
+   put tBuf & cxUIntToBytesLE(pVersion, 4) & cxUIntToBytesLE(pLocktime, 4) into tBuf
+   if tAnyoneCanPay is 0 then
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxHexDecode(item tI of pOutpoints) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxUIntToBytesLE(item tI of pAmountsSat, 8) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put cxHexDecode(item tI of pScriptPubkeys) into tSpk
+         put tRaw & cxVarInt(the number of bytes of tSpk) & tSpk into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+      put "" into tRaw
+      repeat with tI = 1 to tCount
+         put tRaw & cxUIntToBytesLE(item tI of pSequences, 4) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+   end if
+   if tBase is not 2 and tBase is not 3 then
+      put "" into tRaw
+      put the number of items of pOutputs into tOutCount
+      repeat with tI = 1 to tOutCount
+         put tRaw & cxHexDecode(item tI of pOutputs) into tRaw
+      end repeat
+      put tBuf & cxSha256(tRaw) into tBuf
+   end if
+   -- spend_type: ext_flag (1 for script path) * 2 + annex_present (never).
+   if pTapleafHex is "" then
+      put tBuf & numToByte(0) into tBuf
+   else
+      put tBuf & numToByte(2) into tBuf
+   end if
+   if tAnyoneCanPay is 1 then
+      put cxHexDecode(item pIndex of pScriptPubkeys) into tSpk
+      put tBuf & cxHexDecode(item pIndex of pOutpoints) into tBuf
+      put tBuf & cxUIntToBytesLE(item pIndex of pAmountsSat, 8) into tBuf
+      put tBuf & cxVarInt(the number of bytes of tSpk) & tSpk into tBuf
+      put tBuf & cxUIntToBytesLE(item pIndex of pSequences, 4) into tBuf
+   else
+      put tBuf & cxUIntToBytesLE(pIndex - 1, 4) into tBuf
+   end if
+   if tBase is 3 then
+      put tBuf & cxSha256(cxHexDecode(item pIndex of pOutputs)) into tBuf
+   end if
+   if pTapleafHex is not "" then
+      put cxHexDecode(pTapleafHex) into tLeaf
+      if the number of bytes of tLeaf is not 32 then
+         throw "CoinXT: cxBtcSighashTaproot: the tapleaf hash must be 32 bytes of hex (cxTapLeafHash)."
+      end if
+      put tBuf & tLeaf & numToByte(0) into tBuf
+      put tBuf & numToByte(255) & numToByte(255) & numToByte(255) & numToByte(255) into tBuf
+   end if
+   return cxTapTagged("TapSighash", tBuf)
+end cxBtcSighashTaprootInner
 
 function cxBtcWitness pItems
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
@@ -12915,6 +13148,87 @@ function rsVerifyPost pBytes, pHandleHex
    end try
 end rsVerifyPost
 
+function rsPostTextCapacity pMediaCount
+   local tCount
+   put pMediaCount into tCount
+   if tCount is empty then put 0 into tCount
+   if tCount is not an integer or tCount < 0 or tCount > kRsMaxMedia then
+      rsSetError "rsPostTextCapacity: media count must be 0 to" && kRsMaxMedia
+      return empty
+   end if
+   -- magic(4) + timestamp(8) + prevTarget(40) + kind(1) + textLen(2)
+   -- + mediaCount(1) + 40 per media + authorSig(64), inside kRsMaxRecord
+   return kRsMaxRecord - (4 + 8 + 40 + 1 + 2 + 1 + 64) - 40 * tCount
+end rsPostTextCapacity
+
+function rsChunkPostText pTextContent
+   local tBytes, tLen, tPos, tTake, tI, tOut
+   put textEncode(pTextContent, "UTF-8") into tBytes
+   put the number of bytes in tBytes into tLen
+   if tLen < 1 then
+      rsSetError "rsChunkPostText: the text is empty"
+      return empty
+   end if
+   if tLen > kRsMaxChunks * kRsMaxRecord then
+      rsSetError "rsChunkPostText: the text is over" && \
+            kRsMaxChunks * kRsMaxRecord && "UTF-8 bytes (" & kRsMaxChunks && \
+            "chunks of" && kRsMaxRecord & "); refusing, not truncating"
+      return empty
+   end if
+   put 0 into tPos
+   put 0 into tI
+   repeat while tPos < tLen
+      put tLen - tPos into tTake
+      if tTake > kRsMaxRecord then put kRsMaxRecord into tTake
+      add 1 to tI
+      put byte (tPos + 1) to (tPos + tTake) of tBytes into tOut[tI]
+      add tTake to tPos
+   end repeat
+   return tOut
+end rsChunkPostText
+
+function rsAssembleChunkText pChunkTargets, pParts
+   local tCount, tItem, tNorm, tPart, tBytes, tErr
+   set the itemDelimiter to comma
+   put the number of items in pChunkTargets into tCount
+   if tCount < 1 or tCount > kRsMaxChunks then
+      rsSetError "rsAssembleChunkText: chunk count must be 1 to" && \
+            kRsMaxChunks
+      return empty
+   end if
+   put empty into tBytes
+   repeat for each item tItem in pChunkTargets
+      put rsNormalizeTarget(tItem) into tNorm
+      if tNorm is empty or tNorm is kRsZeroTarget then
+         rsSetError "rsAssembleChunkText: a chunk target must be 40" && \
+               "non-zero hex"
+         return empty
+      end if
+      put pParts[tNorm] into tPart
+      if tPart is empty then
+         rsSetError "rsAssembleChunkText: missing chunk" && tNorm
+         return empty
+      end if
+      if rsImmutableTarget(tPart) is not tNorm then
+         rsSetError "rsAssembleChunkText: chunk" && tNorm && \
+               "does not hash to its own target"
+         return empty
+      end if
+      put tPart after tBytes
+   end repeat
+   if not rsBytesAreUtf8(tBytes) then
+      rsSetError "rsAssembleChunkText: the reassembled text is not" && \
+            "valid UTF-8"
+      return empty
+   end if
+   try
+      return textDecode(tBytes, "UTF-8")
+   catch tErr
+      rsSetError "rsAssembleChunkText:" && tErr
+      return empty
+   end try
+end rsAssembleChunkText
+
 function rsBencodeBytes pData
    local tLen
    put the number of bytes in pData into tLen
@@ -13069,6 +13383,29 @@ function rsIngestPost pEvent, pExpectedTarget, pAuthorHandleHex
    return rsParsePost(tValue)
 end rsIngestPost
 
+function rsIngestBlob pEvent, pExpectedTarget
+   local tExpected, tEventTarget, tValue, tComputed
+   put rsNormalizeTarget(pExpectedTarget) into tExpected
+   if tExpected is empty or tExpected is kRsZeroTarget then
+      rsSetError "rsIngestBlob: the expected target must be 40 non-zero" && \
+            "hex chars"
+      return empty
+   end if
+   put toLower(pEvent["target"]) into tEventTarget
+   if tEventTarget is not tExpected then
+      rsSetError "rsIngestBlob: the event names a different target"
+      return empty
+   end if
+   put pEvent["value"] into tValue
+   put rsImmutableTarget(tValue) into tComputed
+   if tComputed is empty then return empty
+   if tComputed is not tExpected then
+      rsSetError "rsIngestBlob: the value does not hash to its own target"
+      return empty
+   end if
+   return tValue
+end rsIngestBlob
+
 private function rsValidSession pSession
    return pSession is an integer and pSession > 0
 end rsValidSession
@@ -13160,6 +13497,35 @@ function rsPublishPost pSession, pPostBytes
    end if
    return rsPublishImmutable(pSession, pPostBytes)
 end rsPublishPost
+
+function rsPublishChunkedPost pSession, pTimestamp, pPrevTarget, pTextContent, pMediaList, pIdentitySeed
+   local tParts, tCount, tI, tTargets, tPost, tStored
+   put rsChunkPostText(pTextContent) into tParts
+   if tParts is empty then return empty
+   put the number of elements in tParts into tCount
+   put empty into tTargets
+   repeat with tI = 1 to tCount
+      if tTargets is not empty then put comma after tTargets
+      put rsImmutableTarget(tParts[tI]) after tTargets
+   end repeat
+   put rsBuildPostChunked(pTimestamp, pPrevTarget, tTargets, pMediaList, \
+         pIdentitySeed) into tPost
+   if tPost is empty then return empty
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishChunkedPost: pSession is not a live torrent" && \
+            "session handle"
+      return empty
+   end if
+   repeat with tI = 1 to tCount
+      put rsPublishImmutable(pSession, tParts[tI]) into tStored
+      if tStored is empty then
+         rsSetError "rsPublishChunkedPost: chunk" && tI && "of" && \
+               tCount && "refused:" && rsLastError()
+         return empty
+      end if
+   end repeat
+   return rsPublishPost(pSession, tPost)
+end rsPublishChunkedPost
 
 function rsRequestHead pSession, pHandleHex
    local tHandle, tCode, tErr
@@ -13378,6 +13744,49 @@ function rsMediaStatus pTorrent
    end if
    return tS
 end rsMediaStatus
+
+function rsMediaStreamPlan pTorrent
+   local tS, tPieces, tPlan, tI, tCode, tErr
+   if pTorrent is not an integer or pTorrent <= 0 then
+      rsSetError "rsMediaStreamPlan: pTorrent is not a torrent handle"
+      return empty
+   end if
+   try
+      put btTorrentStatus(pTorrent) into tS
+   catch tErr
+      rsSetError "rsMediaStreamPlan: needs torrentxt (btTorrentStatus):" && \
+            tErr
+      return empty
+   end try
+   if the keys of tS is empty then
+      rsSetError "rsMediaStreamPlan: not a live torrent handle"
+      return empty
+   end if
+   put tS["numPieces"] into tPieces
+   if tPieces is not an integer or tPieces < 1 then
+      rsSetError "rsMediaStreamPlan: metadata has not arrived yet (no" && \
+            "piece table to set deadlines on)"
+      return empty
+   end if
+   put tPieces into tPlan
+   if tPlan > kRsMediaPlanPieces then put kRsMediaPlanPieces into tPlan
+   repeat with tI = 0 to tPlan - 1
+      try
+         btSetPieceDeadline pTorrent, tI, (tI + 1) * kRsMediaPlanSpacingMs
+         put the result into tCode
+      catch tErr
+         rsSetError "rsMediaStreamPlan: this torrentxt has no" && \
+               "btSetPieceDeadline (the fetch stays sequential):" && tErr
+         return empty
+      end try
+      if tCode is not 0 then
+         rsSetError "rsMediaStreamPlan: btSetPieceDeadline refused (" & \
+               tCode & ") at piece" && tI
+         return empty
+      end if
+   end repeat
+   return tPlan
+end rsMediaStreamPlan
 
 function rsDmKeys pDmSeed
    local tPub, tSec, tKeys, tErr
@@ -14745,6 +15154,91 @@ end rsBtxoDataFrame
 function rsBtxoTerminator
    return binaryEncode("N", 0)
 end rsBtxoTerminator
+
+function rsBtxoStreamStep pBuffer, pPhase
+   local tLen, tNameLen, tHeaderLen, tParsed, tFrameLen, tOut
+   put the number of bytes in pBuffer into tLen
+   put 0 into tOut["used"]
+   if pPhase is "header" then
+      if tLen < 8 then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      if textDecode(byte 1 to 4 of pBuffer, "ASCII") is not kRsBtxoMagic then
+         rsSetError "rsBtxoStreamStep: bad magic, not a BTXO stream"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if byteToNum(byte 5 of pBuffer) is not kRsBtxoVer then
+         rsSetError "rsBtxoStreamStep: unsupported BTXO version"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put rsReadBEu16(byte 7 to 8 of pBuffer) into tNameLen
+      if tNameLen > kRsBtxoMaxName then
+         rsSetError "rsBtxoStreamStep: header name length" && tNameLen && \
+               "is over the" && kRsBtxoMaxName && "cap (refused before" && \
+               "buffering toward it)"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put 8 + tNameLen + 8 into tHeaderLen
+      if tLen < tHeaderLen then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      -- the strict whole-header parse (magic, version, exact length,
+      -- the UTF-8 round trip on the name) is the EXISTING parser's:
+      -- reuse it on exactly the header's bytes, never re-derive it
+      put rsBtxoParseHeader(byte 1 to tHeaderLen of pBuffer) into tParsed
+      if tParsed is empty then
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if tParsed["total"] > kRsBtxoMaxTotal then
+         rsSetError "rsBtxoStreamStep: total size" && tParsed["total"] && \
+               "is over the" && kRsBtxoMaxTotal && "transfer ceiling"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      put "header" into tOut["status"]
+      put tHeaderLen into tOut["used"]
+      put tParsed["name"] into tOut["name"]
+      put tParsed["total"] into tOut["total"]
+      put tParsed["flags"] into tOut["flags"]
+      return tOut
+   end if
+   if pPhase is "body" then
+      if tLen < 4 then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      put rsReadBEu32(byte 1 to 4 of pBuffer) into tFrameLen
+      if tFrameLen is 0 then
+         put "end" into tOut["status"]
+         put 4 into tOut["used"]
+         return tOut
+      end if
+      if tFrameLen > kRsBtxoChunk then
+         rsSetError "rsBtxoStreamStep: frame length" && tFrameLen && \
+               "is over the" && kRsBtxoChunk && "cap - hostile; abort" && \
+               "the stream"
+         put "refused" into tOut["status"]
+         return tOut
+      end if
+      if tLen < 4 + tFrameLen then
+         put "need" into tOut["status"]
+         return tOut
+      end if
+      put "frame" into tOut["status"]
+      put 4 + tFrameLen into tOut["used"]
+      put byte 5 to (4 + tFrameLen) of pBuffer into tOut["payload"]
+      return tOut
+   end if
+   rsSetError "rsBtxoStreamStep: pPhase must be" && quote & "header" & \
+         quote && "or" && quote & "body" & quote
+   return empty
+end rsBtxoStreamStep
 
 private function rsBytesAreUtf8 pBytes
    local tDecoded, tErr
@@ -19848,6 +20342,7 @@ command cx1stRun
    cx1stRunBip32
    cx1stRunBip44
    cx1stRunTransactions
+   cx1stRunTaproot341
    cx1stRunSchnorr
    cx1stRunTaproot
    cx1stRunFailOpen
@@ -20968,6 +21463,57 @@ command cx1stRunTransactions
       cx1stSectionFailed "transactions", cx1tError
    end try
 end cx1stRunTransactions
+
+command cx1stRunTaproot341
+   local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
+   local cx1tOutpoint, cx1tLeaf0, cx1tLeaf1, cx1tRoot, cx1tD0, cx1tD1
+   cx1stSection "BIP-341: taproot sighash + script tree"
+   try
+      -- the published two-leaf tree: leaf hashes (the 0xfa version included),
+      -- the sorted branch fold, and the published control block byte for byte.
+      put cxTapLeafHash(192, cx1kTapLeafScript0) into cx1tLeaf0
+      cx1stAssert "leaf 0 hashes to the published TapLeaf value", cx1tLeaf0 is cx1kTapLeafHash0
+      put cxTapLeafHash(250, cx1kTapLeafScript1) into cx1tLeaf1
+      cx1stAssert "leaf 1 (version 0xfa) hashes to the published value", cx1tLeaf1 is cx1kTapLeafHash1
+      cx1stAssert "the branch folds to the published merkle root (sorted)", \
+            cxTapBranchHash(cx1tLeaf0, cx1tLeaf1) is cx1kTapMerkleRoot
+      cx1stAssert "the argument order cannot change the root (the sort is inside)", \
+            cxTapBranchHash(cx1tLeaf1, cx1tLeaf0) is cx1kTapMerkleRoot
+      cx1stAssert "the control block assembles to the published bytes", \
+            cxTapControlBlock(192, 0, cx1kTapInternal, cx1kTapLeafHash1) is cx1kTapControlBlock0
+      -- the sighash builder, one derived case per path over cx1kTxid0/cx1kTxOut0.
+      put cxHexEncode(cxBtcOutpoint(cx1kTxid0, 0)) into cx1tOutpoint
+      put cxBtcSighashTaproot(2, cx1tOutpoint, "4294967294", "50000", cx1kTapSpk, cx1kTxOut0, 1, 0, 0, "") into cx1tD0
+      cx1stAssert "the key-path sighash matches the derived vector", cxHexEncode(cx1tD0) is cx1kTapSighashKeyPath
+      put cxBtcSighashTaproot(2, cx1tOutpoint, "4294967294", "50000", cx1kTapSpk, cx1kTxOut0, 1, 0, 0, cx1tLeaf0) into cx1tD1
+      cx1stAssert "the script-path sighash matches (tapleaf extension)", cxHexEncode(cx1tD1) is cx1kTapSighashScriptPath
+      cx1stAssert "and the two paths genuinely differ", cxHexEncode(cx1tD0) is not cxHexEncode(cx1tD1)
+      -- the refusals that make the builder safe to hold.
+      cx1stAssert "0x80 alone is refused (not a BIP-341 type)", \
+            cx1stThrowsTaproot(cx1tOutpoint, 1, 128, "")
+      cx1stAssert "SIGHASH_SINGLE past the last output is refused", \
+            cx1stThrowsTaproot(cx1tOutpoint, 1, 3, "single-past-end")
+      cx1stAssert "an odd leaf version is refused", cx1stThrows2("cxTapLeafHash", 193, "51")
+      cx1stAssert "leaf version 0x50 is refused (annex ambiguity)", \
+            cx1stThrows2("cxTapLeafHash", 80, "51")
+   catch cx1tError
+      cx1stSectionFailed "BIP-341", cx1tError
+   end try
+end cx1stRunTaproot341
+
+private function cx1stThrowsTaproot pOutpoint, pIndex, pType, pMode
+   local cx1tError, cx1tOutputs
+   put cx1kTxOut0 into cx1tOutputs
+   if pMode is "single-past-end" then
+      put "" into cx1tOutputs
+   end if
+   try
+      get cxBtcSighashTaproot(2, pOutpoint, "4294967294", "50000", cx1kTapSpk, cx1tOutputs, pIndex, 0, pType, "")
+   catch cx1tError
+      return true
+   end try
+   return false
+end cx1stThrowsTaproot
 
 command cx1stRunFailOpen
    local cx1tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
@@ -24969,6 +25515,7 @@ function rs1rsSelfTest
       rs1rstSectionKeyFile
       rs1rstSectionHead
       rs1rstSectionPosts
+      rs1rstSectionChunked rs1tCaps
       rs1rstSectionHelpers
       rs1rstSectionBep44
       rs1rstSectionIngest
@@ -24976,6 +25523,7 @@ function rs1rsSelfTest
       rs1rstSectionLan
       rs1rstSectionLanSync
       rs1rstSectionAnon rs1tCaps
+      rs1rstSectionBtxoStream
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
    else
@@ -25288,6 +25836,151 @@ private command rs1rstSectionPosts
    rs1rstCheck (rsBuildPost(-5, empty, "x", empty, rs1tSeed) is empty), \
          "a negative timestamp is refused"
 end rs1rstSectionPosts
+
+private command rs1rstSectionChunked pCaps
+   local rs1tSeed, rs1tPost, rs1tParsed, rs1tPartsIn, rs1tText, rs1tBig, rs1tHuge, rs1tPad
+   local rs1tSplit, rs1tParts, rs1tTargets, rs1tI, rs1tEvent, rs1tSession, rs1tTarget
+   rs1rstSection "phase 2b - the kind-C chunked-post rail"
+   put rs1rstBin(rs1kRsGoldIdSeedHex) into rs1tSeed
+   -- the golden pin: chunk values are the chosen texts' UTF-8 bytes,
+   -- their targets content addresses, the record byte-for-byte
+   rs1rstCheck (rsImmutableTarget(textEncode(rs1kRsGoldChunk1Text, "UTF-8")) is \
+         rs1kRsGoldChunk1Target), "chunk 1's content address matches golden"
+   rs1rstCheck (rsImmutableTarget(textEncode(rs1kRsGoldChunk2Text, "UTF-8")) is \
+         rs1kRsGoldChunk2Target), "chunk 2's content address matches golden"
+   put rsBuildPostChunked(rs1kRsGoldTs3, rs1kRsGoldPost2Target, \
+         rs1kRsGoldChunk1Target & comma & rs1kRsGoldChunk2Target, \
+         rs1kRsGoldMediaTarget, rs1tSeed) into rs1tPost
+   rs1rstCheck (rs1rstHex(rs1tPost) is rs1kRsGoldPostCHex), \
+         "the kind-C post bytes match golden (the wire format is pinned)"
+   rs1rstCheck (rs1rstHex(sha1Digest(rsBencodeBytes(rs1tPost))) is \
+         rs1kRsGoldPostCTarget), "its DHT target re-derives via SHA-1"
+   rs1rstCheck (rsVerifyPost(rs1tPost, rs1kRsGoldHandle) is true), \
+         "the golden kind-C post verifies under the golden handle"
+   put rsParsePost(rs1tPost) into rs1tParsed
+   rs1rstCheck (rs1tParsed["mediaTargets"] is rs1kRsGoldMediaTarget), \
+         "the media attachment parses BEHIND the chunk list"
+   -- the reassembling verify: parts keyed by target, each re-hashed
+   -- before a byte is believed, the CONCATENATION decoded as one buffer
+   put textEncode(rs1kRsGoldChunk1Text, "UTF-8") into \
+         rs1tPartsIn[rs1kRsGoldChunk1Target]
+   put textEncode(rs1kRsGoldChunk2Text, "UTF-8") into \
+         rs1tPartsIn[rs1kRsGoldChunk2Target]
+   put rsAssembleChunkText(rs1tParsed["chunkTargets"], rs1tPartsIn) into rs1tText
+   rs1rstCheck (rs1tText is rs1kRsGoldChunk1Text & rs1kRsGoldChunk2Text), \
+         "the chunks reassemble to the full text in wire order"
+   put rs1rstFlipByte(rs1tPartsIn[rs1kRsGoldChunk2Target], 3) into \
+         rs1tPartsIn[rs1kRsGoldChunk2Target]
+   rs1rstCheck (rsAssembleChunkText(rs1tParsed["chunkTargets"], rs1tPartsIn) is \
+         empty), "a tampered chunk fails its own content address"
+   delete variable rs1tPartsIn[rs1kRsGoldChunk2Target]
+   rs1rstCheck (rsAssembleChunkText(rs1tParsed["chunkTargets"], rs1tPartsIn) is \
+         empty), "a missing chunk refuses (the honest-placeholder path)"
+   rs1rstCheck (rsLastError() contains rs1kRsGoldChunk2Target), \
+         "and the refusal names WHICH chunk is missing"
+   -- the capacity arithmetic the app's D-or-C decision rides on
+   rs1rstCheck (rsPostTextCapacity(0) is 880), \
+         "capacity with no media is 880 bytes"
+   rs1rstCheck (rsPostTextCapacity(8) is 560), \
+         "each attachment costs its 40-hex spelling"
+   rs1rstCheck (rsPostTextCapacity(9) is empty), \
+         "a media count over the cap is refused"
+   put "x" into rs1tHuge
+   repeat 14 times
+      put rs1tHuge & rs1tHuge into rs1tHuge
+   end repeat
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 880 of rs1tHuge, empty, rs1tSeed) \
+         is not empty), "a direct post takes exactly the stated capacity"
+   rs1rstCheck (rsBuildPost(1, empty, char 1 to 881 of rs1tHuge, empty, rs1tSeed) \
+         is empty), "and refuses one byte more"
+   -- the producer split: full 1000-byte chunks, remainder last, by BYTE
+   put empty into rs1tBig
+   repeat 250 times
+      put "0123456789" after rs1tBig
+   end repeat
+   put rsChunkPostText(rs1tBig) into rs1tParts
+   rs1rstCheck (the number of elements in rs1tParts is 3), \
+         "2500 bytes split into three chunks"
+   rs1rstCheck (the number of bytes in rs1tParts[1] is 1000 and \
+         the number of bytes in rs1tParts[2] is 1000 and \
+         the number of bytes in rs1tParts[3] is 500), \
+         "full chunks first, the remainder last"
+   rs1rstCheck (rs1tParts[1] & rs1tParts[2] & rs1tParts[3] is \
+         textEncode(rs1tBig, "UTF-8")), "and nothing is lost or reordered"
+   rs1rstCheck (rsChunkPostText(empty) is empty), "empty text is refused"
+   rs1rstCheck (rsChunkPostText(rs1tHuge) is empty), \
+         "text over 16000 UTF-8 bytes is refused, never truncated"
+   -- 16 is the wire's kRsMaxChunks; a library constant is not visible
+   -- from this separate script, and the number here is the FORMAT's
+   rs1rstCheck ((the number of elements in \
+         rsChunkPostText(char 1 to 16000 of rs1tHuge)) is 16), \
+         "exactly 16000 bytes takes exactly 16 chunks"
+   -- a chunk boundary INSIDE a UTF-8 sequence: legal on the wire, and
+   -- the reassembly (which validates the concatenation, never a part
+   -- alone) must reproduce the text exactly
+   put empty into rs1tPad
+   repeat 999 times
+      put "a" after rs1tPad
+   end repeat
+   put rs1tPad & textDecode(rs1rstBin("c3a9"), "UTF-8") into rs1tSplit
+   put rsChunkPostText(rs1tSplit) into rs1tParts
+   rs1rstCheck (the number of elements in rs1tParts is 2 and \
+         the number of bytes in rs1tParts[2] is 1), \
+         "a multi-byte character splits across the chunk boundary"
+   put empty into rs1tTargets
+   put empty into rs1tPartsIn
+   repeat with rs1tI = 1 to the number of elements in rs1tParts
+      if rs1tTargets is not empty then put comma after rs1tTargets
+      put rsImmutableTarget(rs1tParts[rs1tI]) after rs1tTargets
+      put rs1tParts[rs1tI] into rs1tPartsIn[rsImmutableTarget(rs1tParts[rs1tI])]
+   end repeat
+   rs1rstCheck (rsAssembleChunkText(rs1tTargets, rs1tPartsIn) is rs1tSplit), \
+         "and reassembly reproduces the text across that boundary"
+   -- the raw-blob ingest verifier (synthetic drained events, the
+   -- rs1rstSectionIngest convention)
+   put rs1kRsGoldChunk1Target into rs1tEvent["target"]
+   put textEncode(rs1kRsGoldChunk1Text, "UTF-8") into rs1tEvent["value"]
+   rs1rstCheck (rsIngestBlob(rs1tEvent, rs1kRsGoldChunk1Target) is \
+         textEncode(rs1kRsGoldChunk1Text, "UTF-8")), \
+         "rsIngestBlob returns the verified chunk bytes"
+   rs1rstCheck (rsIngestBlob(rs1tEvent, rs1kRsGoldChunk2Target) is empty), \
+         "an event for a different target is refused"
+   put textEncode(rs1kRsGoldChunk2Text, "UTF-8") into rs1tEvent["value"]
+   rs1rstCheck (rsIngestBlob(rs1tEvent, rs1kRsGoldChunk1Target) is empty), \
+         "a value that does not hash to its target is refused (lying node)"
+   rs1rstCheck (rsIngestBlob(rs1tEvent, rsZeroTarget()) is empty), \
+         "the zero target is refused"
+   -- the producer's refusal paths run with no torrentxt at all
+   rs1rstCheck (rsPublishChunkedPost(0, rs1kRsGoldTs3, empty, "hi", empty, \
+         rs1tSeed) is empty), \
+         "rsPublishChunkedPost refuses a dead session handle"
+   rs1rstCheck (rsLastError() contains "session"), "and says why"
+   rs1rstCheck (rsPublishChunkedPost(0, rs1kRsGoldTs3, empty, empty, empty, \
+         rs1tSeed) is empty), "and refuses empty text before the session"
+   if pCaps["hasTorrent"] is not true then
+      rs1rstSkip "chunked-post store on a session: torrentxt is not installed"
+      exit rs1rstSectionChunked
+   end if
+   put rs1rstAcquireSession() into rs1tSession
+   if rs1tSession is 0 then
+      rs1rstSkip "chunked-post store on a session: could not start a session"
+      exit rs1rstSectionChunked
+   end if
+   -- deterministic inputs, so the stored target must equal the offline
+   -- recomputation of the exact record the producer had to build
+   put rsPublishChunkedPost(rs1tSession, rs1kRsGoldTs3, empty, rs1tBig, empty, \
+         rs1tSeed) into rs1tTarget
+   put rsChunkPostText(rs1tBig) into rs1tParts
+   put empty into rs1tTargets
+   repeat with rs1tI = 1 to the number of elements in rs1tParts
+      if rs1tTargets is not empty then put comma after rs1tTargets
+      put rsImmutableTarget(rs1tParts[rs1tI]) after rs1tTargets
+   end repeat
+   put rsBuildPostChunked(rs1kRsGoldTs3, empty, rs1tTargets, empty, rs1tSeed) \
+         into rs1tPost
+   rs1rstCheck (rs1tTarget is rsImmutableTarget(rs1tPost)), \
+         "the stored kind-C target equals the offline recomputation"
+end rs1rstSectionChunked
 
 private command rs1rstSectionHelpers
    local rs1tValue
@@ -25609,6 +26302,132 @@ private command rs1rstSectionAnon pCaps
    rs1rstSkip "anon onion SERVING (the / page, /prekey, POST /dm as routes):" && \
          "needs onion-httpd + a live tor daemon"
 end rs1rstSectionAnon
+
+private command rs1rstSectionBtxoStream
+   local rs1tStream, rs1tBuf, rs1tStep, rs1tPhase, rs1tGotName, rs1tGotTotal, rs1tPayloads
+   local rs1tSawEnd, rs1tRefused, rs1tI, rs1tHostile
+   rs1rstSection "phase 7b - the BTXO receive path (stream reassembly)"
+   -- a full golden stream: header + one data frame + the terminator
+   put rs1rstBin(rs1kRsGoldBtxoHeaderHex) & rs1rstBin(rs1kRsGoldBtxoFrameHex) & \
+         rsBtxoTerminator() into rs1tStream
+   -- (1) whole-buffer: three steps, exact consumption, nothing left over
+   put rs1tStream into rs1tBuf
+   put rsBtxoStreamStep(rs1tBuf, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "header" and rs1tStep["name"] is \
+         "secret.txt" and rs1tStep["total"] is 11 and rs1tStep["flags"] is 0), \
+         "step 1 consumes the header and reports name/total/flags"
+   rs1rstCheck (rs1tStep["used"] is the number of bytes in \
+         rs1rstBin(rs1kRsGoldBtxoHeaderHex)), \
+         "and used names exactly the header's bytes"
+   delete byte 1 to rs1tStep["used"] of rs1tBuf
+   put rsBtxoStreamStep(rs1tBuf, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "frame" and rs1tStep["payload"] is \
+         textEncode("hello world", "ASCII")), \
+         "step 2 extracts exactly one data frame"
+   delete byte 1 to rs1tStep["used"] of rs1tBuf
+   put rsBtxoStreamStep(rs1tBuf, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "end" and rs1tStep["used"] is 4), \
+         "step 3 sees the zero-length terminator"
+   delete byte 1 to rs1tStep["used"] of rs1tBuf
+   rs1rstCheck (the number of bytes in rs1tBuf is 0), \
+         "nothing is left over after the terminator"
+   -- (2) EVERY byte boundary: feed the same stream one byte at a time
+   -- and require the identical header, payload, and end - the arrival
+   -- pattern must never change the answer
+   put empty into rs1tBuf
+   put "header" into rs1tPhase
+   put empty into rs1tGotName
+   put empty into rs1tPayloads
+   put false into rs1tSawEnd
+   put false into rs1tRefused
+   repeat with rs1tI = 1 to the number of bytes in rs1tStream
+      put byte rs1tI of rs1tStream after rs1tBuf
+      repeat forever
+         put rsBtxoStreamStep(rs1tBuf, rs1tPhase) into rs1tStep
+         if rs1tStep["status"] is "need" then
+            exit repeat
+         end if
+         if rs1tStep["status"] is "refused" then
+            put true into rs1tRefused
+            exit repeat
+         end if
+         if rs1tStep["status"] is "header" then
+            put rs1tStep["name"] into rs1tGotName
+            put rs1tStep["total"] into rs1tGotTotal
+            put "body" into rs1tPhase
+         else if rs1tStep["status"] is "frame" then
+            put rs1tStep["payload"] after rs1tPayloads
+         else if rs1tStep["status"] is "end" then
+            put true into rs1tSawEnd
+         end if
+         delete byte 1 to rs1tStep["used"] of rs1tBuf
+      end repeat
+   end repeat
+   rs1rstCheck (rs1tGotName is "secret.txt" and rs1tGotTotal is 11), \
+         "byte-at-a-time arrival yields the same header"
+   rs1rstCheck (rs1tPayloads is textEncode("hello world", "ASCII")), \
+         "and the same reassembled payload"
+   rs1rstCheck (rs1tSawEnd is true and rs1tRefused is false and \
+         the number of bytes in rs1tBuf is 0), \
+         "and the same clean end, with nothing refused or left over"
+   -- (3) concatenated frames: one call extracts exactly one frame and
+   -- keeps the remainder
+   put rs1rstBin(rs1kRsGoldBtxoFrameHex) & rs1rstBin(rs1kRsGoldBtxoFrameHex) into rs1tBuf
+   put rsBtxoStreamStep(rs1tBuf, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "frame" and rs1tStep["used"] is \
+         (the number of bytes in rs1tBuf) div 2), \
+         "two concatenated frames: the first extracts alone"
+   delete byte 1 to rs1tStep["used"] of rs1tBuf
+   put rsBtxoStreamStep(rs1tBuf, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "frame" and rs1tStep["payload"] is \
+         textEncode("hello world", "ASCII")), \
+         "and the remainder is exactly the second frame"
+   -- (4) the fail-closed refusals, each with used 0 (never consume
+   -- toward a hostile boundary)
+   put binaryEncode("N", 65537) & textEncode("x", "ASCII") into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused" and rs1tStep["used"] is 0), \
+         "a frame length over the 65536 cap is refused (hostile length)"
+   -- a hostile nameLen refuses on the FIRST 8 BYTES, before the name
+   -- would ever be buffered (the anti-DoS half of the cap)
+   put textEncode("BTXO", "ASCII") & numToByte(1) & numToByte(0) & \
+         binaryEncode("n", 2000) into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused"), \
+         "a name length over 1024 is refused before the name arrives"
+   -- a total over the 8 GiB ceiling (hi u32 = 2, lo u32 = 1)
+   put textEncode("BTXO", "ASCII") & numToByte(1) & numToByte(0) & \
+         binaryEncode("n", 1) & textEncode("a", "ASCII") & \
+         binaryEncode("NN", 2, 1) into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused"), \
+         "a total over the 8 GiB transfer ceiling is refused"
+   put textEncode("XXXXXXXX", "ASCII") into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused"), "a bad magic is refused"
+   put textEncode("BTXO", "ASCII") & numToByte(9) & numToByte(0) & \
+         binaryEncode("n", 1) into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused"), \
+         "an unsupported version is refused"
+   -- a header whose name bytes are invalid UTF-8 reaches the strict
+   -- parse and is refused, not thrown (the never-throw contract, reused)
+   put rs1rstBin("4254584f01000001ff000000000000000b") into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "refused"), \
+         "a non-UTF-8 name is refused through the strict parse"
+   -- incompleteness is "need", never a guess
+   put rsBtxoStreamStep(byte 1 to 3 of rs1tStream, "header") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "need"), \
+         "three bytes of header is need, not a verdict"
+   put binaryEncode("N", 5) & textEncode("ab", "ASCII") into rs1tHostile
+   put rsBtxoStreamStep(rs1tHostile, "body") into rs1tStep
+   rs1rstCheck (rs1tStep["status"] is "need"), \
+         "a frame missing payload bytes is need, not a verdict"
+   -- the one caller bug: a phase this machine does not have
+   rs1rstCheck (rsBtxoStreamStep(rs1tStream, "junk") is empty), \
+         "an unknown phase is a caller bug (empty, rsLastError says why)"
+end rs1rstSectionBtxoStream
 
 private command rs1rstSectionLan
    local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName
@@ -26178,6 +26997,13 @@ private command rs1rstSectionMedia pCaps
          "rsMediaFetch refuses a dead session handle"
    rs1rstCheck (rsMediaStatus(0) is empty), \
          "rsMediaStatus refuses a dead torrent handle"
+   -- B7: the streaming plan's refusal paths run everywhere too - the
+   -- handle gate needs no torrentxt, and a bogus handle refuses either
+   -- way (bad handle with torrentxt, needs-torrentxt without)
+   rs1rstCheck (rsMediaStreamPlan(0) is empty), \
+         "rsMediaStreamPlan refuses a dead torrent handle"
+   rs1rstCheck (rsMediaStreamPlan(999999999) is empty), \
+         "rsMediaStreamPlan refuses a bogus handle"
    if pCaps["hasTorrent"] is not true then
       rs1rstSkip "media create/seed/fetch/status: torrentxt is not installed"
       exit rs1rstSectionMedia
@@ -26221,6 +27047,13 @@ private command rs1rstSectionMedia pCaps
          "progress is a 0..1 fraction"
    rs1rstCheck (rsMediaStatus(999999999) is empty), \
          "rsMediaStatus refuses a bogus handle"
+   -- B7 live: the local seed HAS metadata (its piece table exists), so
+   -- the plan applies right here; on a real magnet fetch the app calls
+   -- this from its metadataReceived event. The payload is tiny, so the
+   -- plan covers 1..8 front pieces.
+   put rsMediaStreamPlan(rs1tH) into rs1tCode
+   rs1rstCheck (rs1tCode is not empty and rs1tCode >= 1 and \
+         rs1tCode <= 8), "rsMediaStreamPlan sets deadlines on the front pieces"
    -- tidy: drop the seed we added so a re-run starts clean; the payload
    -- file stays (temp folder) and the session stays live (the harness rule)
    try
@@ -27087,20 +27920,78 @@ end he1heL2DeckCheckHex
 
 function he1heL2MaskDeckHex pDeckList, pScalarHex, pPermList
    -- one full shuffle-mask step (spec 7.3): out[j] = k * in[sigma[j]] for
-   -- j = 1..52 -- 52 scalar-mult FFI crossings, deal-time only. Reused
-   -- verbatim by showdown re-verification (he1heL2RevealShuffleHex), so the
-   -- doer and the verifier can never drift. sigma is validated for
-   -- range/format ONLY, deliberately not distinctness: a repeated index
-   -- duplicates a point in the OUTPUT deck, which the public duplicate
-   -- check catches on every client. A void from the point mask comes back
-   -- with the output position appended.
+   -- j = 1..52, deal-time only. Reused verbatim by showdown
+   -- re-verification (he1heL2RevealShuffleHex), so the doer and the verifier
+   -- can never drift. sigma is validated for range/format ONLY,
+   -- deliberately not distinctness: a repeated index duplicates a point in
+   -- the OUTPUT deck, which the public duplicate check catches on every
+   -- client. A void from the point mask comes back with the output
+   -- position appended.
+   --
+   -- TWO PATHS, ONE CONTRACT (plan 4f's batch handler, pulled forward
+   -- 2026-08-23). On SodiumXT ABI 9 the happy path is ONE atomic
+   -- sxRistrettoScalarMultBatch crossing for all 52 mults -- 4 FFI
+   -- crossings for the whole step (one sxHex2Bin for the scalar, one for
+   -- the 52-point concatenation, the batch itself, one sxBin2Hex back) --
+   -- where the per-point loop below costs 6 per point, ~312 per step.
+   -- Gated on he1heL2HasDleq(), the same cached ABI-9 probe the DLEQ
+   -- verifier's batch call gates on. The batch is ATOMIC: one bad point
+   -- (invalid encoding, or an identity result) throws for the WHOLE call
+   -- with a 1-based index in the message -- and that message is NOT
+   -- parsed. ANY deviation from the happy path falls through to the
+   -- per-point loop, which re-derives the verdict with the exact
+   -- position-tagged "void:..." string 4d attribution switches on, so the
+   -- two paths can never disagree about a refusal: every refusal IS the
+   -- loop's. The pure-text format checks run BEFORE any hex crosses the
+   -- FFI (H4: he1heIsHex gates sxHex2Bin, which throws on malformed input),
+   -- and the loop stays the only path on a pre-ABI-9 SodiumXT. Harness
+   -- section 16 pins batch-vs-loop byte agreement on the KAT deck.
    local he1tOutPos, he1tSrcPos, he1tSrcHex, he1tMaskedHex, he1tOutList
+   local he1tFastOk, he1tConcatHex, he1tBatchHex, he1tBatchErr
    set the itemDelimiter to comma
    if the number of items of pDeckList is not 52 then
       return "void:deck-size"
    end if
    if the number of items of pPermList is not 52 then
       return "void:perm-size"
+   end if
+   if he1heL2HasDleq() and he1heIsHex(pScalarHex, 64) then
+      put "true" into he1tFastOk
+      put empty into he1tConcatHex
+      repeat for each item he1tSrcPos in pPermList
+         if he1tSrcPos is not an integer or he1tSrcPos < 1 or he1tSrcPos > 52 then
+            put "false" into he1tFastOk
+            exit repeat
+         end if
+         put item he1tSrcPos of pDeckList into he1tSrcHex
+         if not he1heIsHex(he1tSrcHex, 64) then
+            put "false" into he1tFastOk
+            exit repeat
+         end if
+         put he1tSrcHex after he1tConcatHex
+      end repeat
+      if he1tFastOk is "true" then
+         try
+            put he1heBin2HexS(sxRistrettoScalarMultBatch(he1heHex2BinD(pScalarHex), \
+                  he1heHex2BinD(he1tConcatHex))) into he1tBatchHex
+            put empty into he1tOutList
+            put 1 into he1tOutPos
+            repeat while he1tOutPos <= 52
+               put char (he1tOutPos * 64 - 63) to (he1tOutPos * 64) of he1tBatchHex into he1tMaskedHex
+               if he1tOutList is empty then
+                  put he1tMaskedHex into he1tOutList
+               else
+                  put comma & he1tMaskedHex after he1tOutList
+               end if
+               add 1 to he1tOutPos
+            end repeat
+            return he1tOutList
+         catch he1tBatchErr
+            -- an invalid point or an identity result somewhere in the
+            -- deck (the batch's merged, atomic failure): fall through --
+            -- the loop below re-derives WHICH point and names it exactly
+         end try
+      end if
    end if
    put empty into he1tOutList
    put 0 into he1tOutPos
@@ -36453,8 +37344,9 @@ function he1heSelfTest
    -- ONE HONEST EXCEPTION, corrected here at the 2026-08-16 suite fold rather
    -- than left as a claim that reads better than it is: this used to say "and
    -- no msg", and the LAST entry in he1heTestRunAllSections is he1heProbeSodium
-   -- (section 21 when that was written, the 22nd entry since v0.24.4 put the
-   -- pure-helpers section ahead of it), whose last lines are
+   -- (section 21 when that was written; the 22nd entry since v0.24.4 put the
+   -- pure-helpers section ahead of it, the 23rd since v0.25.0 added the
+   -- leaf-tranche section too), whose last lines are
    -- `put return & he1tRpt after he1gRpt` and then a BARE `put he1tRpt` -- and a bare
    -- put writes to msg. That echo is deliberate and documented at its own site
    -- (running he1heProbeSodium standalone from the message box should print), and
@@ -36532,6 +37424,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestLevel2VoidRun"
    he1heRunSection "he1heTestLivenessRun"
    he1heRunSection "he1heTestHelpersRun"
+   he1heRunSection "he1heTestLeafRun"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -37683,6 +38576,7 @@ command he1heTestLevel2Run
    local he1tBaseList, he1tDeck1, he1tDeck2, he1tDeck3, he1tChainTxt, he1tVal1, he1tVal2, he1tVal3
    local he1tHole0, he1tHole1, he1tHole2, he1tDupList, he1tBad2, he1tBad3, he1tPermBad
    local he1tTablePt, he1tRndK, he1tRndMask, he1tRndBack
+   local he1tLoopDeck, he1tLoopPoint, he1tSrcPos, he1tCorruptList, he1tFirstSrc
    put return & "-- 16. Level 2 mental poker: ristretto255 deal algebra (spec 7.3)" & return after he1gRpt
    if not he1heHasSodium() then
       he1heTSkip "level2: ristretto255 deal algebra", "SodiumXT not installed"
@@ -37700,6 +38594,37 @@ command he1heTestLevel2Run
    he1heTAssert "level2: scalar inversion (k1^-1 mod L)", he1heL2ScalarInvertHex(he1kKatL2Scalar1), he1kKatL2Inv1
    put he1heL2MaskDeckHex(he1tBaseList, he1kKatL2Scalar1, he1kKatL2Perm1) into he1tDeck1
    he1heTAssert "level2: seat 1 shuffle-mask step (52 mults + sigma)", he1tDeck1, he1kKatL2Deck1
+   -- the batch fast path vs the per-point fallback (plan 4f, 2026-08-23):
+   -- on ABI 9 the deck call above took ONE sxRistrettoScalarMultBatch
+   -- crossing; re-derive the same step through he1heL2MaskPointHex -- the
+   -- fallback, verbatim -- and hold the two byte-for-byte on the fixed
+   -- KAT scalars (deterministic end to end, no randomness). Below ABI 9
+   -- there is only one path, so the agreement leg SKIPs by name.
+   set the itemDelimiter to comma   -- gotcha 5: set before every parse
+   if he1heL2HasDleq() then
+      put empty into he1tLoopDeck
+      repeat for each item he1tSrcPos in he1kKatL2Perm1
+         put he1heL2MaskPointHex(he1kKatL2Scalar1, item he1tSrcPos of he1tBaseList) into he1tLoopPoint
+         if he1tLoopDeck is empty then
+            put he1tLoopPoint into he1tLoopDeck
+         else
+            put comma & he1tLoopPoint after he1tLoopDeck
+         end if
+      end repeat
+      he1heTAssert "level2: batch fast path and per-point fallback agree byte-for-byte", \
+            he1tLoopDeck, he1tDeck1
+   else
+      he1heTSkip "level2: batch-vs-fallback agreement", \
+            "SodiumXT pre-ABI-9 (no batch surface; the per-point loop is the only path)"
+   end if
+   -- a corrupted point voids on EITHER path: the batch's atomic throw
+   -- falls through to the loop, which names the first output position to
+   -- meet it (sigma1's first source index), same as a pre-ABI-9 run
+   put item 1 of he1kKatL2Perm1 into he1tFirstSrc
+   put he1tBaseList into he1tCorruptList
+   put he1kKatL2BadPoint into item he1tFirstSrc of he1tCorruptList
+   he1heTAssert "level2: a corrupted point voids with its output position (both paths)", \
+         he1heL2MaskDeckHex(he1tCorruptList, he1kKatL2Scalar1, he1kKatL2Perm1), "void:invalid-point:1"
    put he1heL2MaskDeckHex(he1tDeck1, he1kKatL2Scalar2, he1kKatL2Perm2) into he1tDeck2
    put he1heL2MaskDeckHex(he1tDeck2, he1kKatL2Scalar3, he1kKatL2Perm3) into he1tDeck3
    he1heTAssert "level2: three-seat masked table deck", he1tDeck3, he1kKatL2MaskedDeck
@@ -39186,6 +40111,126 @@ command he1heTestHelpersRun
    he1heTAssert "pot: no seats is an empty pot, not an error", \
          he1heAwardedPot(he1tHandBy, empty), 0
 end he1heTestHelpersRun
+
+command he1heTestLeafRun
+   -- 22: FIRST TRANCHE of the coverage worklist's no-test category -- the
+   -- pure leaves the suite gate's own comment names as the place to start
+   -- (he1heRank5, he1heCardRankVal, he1heCardSuitVal, he1heTwoDigits, he1heCountItems,
+   -- he1heNextInList, he1heByteXor, he1heU32BEData, he1heHexId), plus he1heHandStart's
+   -- refusal guards. SHALLOW ON PURPOSE and this banner says so (the
+   -- box2dxt 211-handler precedent): a value pin per branch, claiming
+   -- "this leaf computes what its contract says" and nothing deeper.
+   -- he1heHandStart DEALS A HAND past its guards -- the deal arms the paced
+   -- reveal/settle timers and drives the table UI, exactly what the fold
+   -- record forbids a folded harness to do inside somebody else's paste --
+   -- so this section exercises its PURE PRELUDE only: the phase guard and
+   -- the online guard, both real exits asserted on real state, with
+   -- "handNum unmoved" as the witness that no deal began. The dealt path
+   -- itself stays with the hotseat OXT pass, where it runs on every hand.
+   local he1tSaved, he1tHexTxt, he1tCh, he1tBadN, he1tData
+   put return & "-- 22. Leaf tranche: no-test worklist, first pass (shallow)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- he1heCardRankVal / he1heCardSuitVal: the two halves of the card index
+   -- convention (index 1..52: rank (i-1) div 4 + 2, suit (i-1) mod 4 + 1),
+   -- pinned at both edges and one interior point each
+   he1heTAssert "leaf: he1heCardRankVal of card 1 (2c) is 2", he1heCardRankVal(1), 2
+   he1heTAssert "leaf: he1heCardRankVal of card 52 (As) is 14", he1heCardRankVal(52), 14
+   he1heTAssert "leaf: he1heCardRankVal of card 23 (7h) is 7", he1heCardRankVal(23), 7
+   he1heTAssert "leaf: he1heCardSuitVal of card 1 (2c) is 1 (clubs)", he1heCardSuitVal(1), 1
+   he1heTAssert "leaf: he1heCardSuitVal of card 2 (2d) is 2 (diamonds)", he1heCardSuitVal(2), 2
+   he1heTAssert "leaf: he1heCardSuitVal of card 52 (As) is 4 (spades)", he1heCardSuitVal(52), 4
+
+   -- he1heTwoDigits: the evaluator's fixed-width field builder. The WIDTH is
+   -- the contract (six 2-digit fields so plain numeric comparison orders
+   -- hands), and `is` compares "09" and 9 as equal numbers, so the char
+   -- count is asserted beside the value
+   he1heTAssert "leaf: he1heTwoDigits pads a single digit", he1heTwoDigits(9), "09"
+   he1heTAssert "leaf: he1heTwoDigits padded width is exactly 2 chars", \
+         the number of chars of he1heTwoDigits(9), 2
+   he1heTAssert "leaf: he1heTwoDigits leaves two digits alone", he1heTwoDigits(14), 14
+   he1heTAssert "leaf: he1heTwoDigits pads zero to width 2", \
+         the number of chars of he1heTwoDigits(0), 2
+
+   -- he1heCountItems: the empty edge is the whole reason it exists (empty has
+   -- one item to the engine, zero seats to a card game)
+   he1heTAssert "leaf: he1heCountItems of empty is 0", he1heCountItems(empty), 0
+   he1heTAssert "leaf: he1heCountItems of one entry", he1heCountItems("4"), 1
+   he1heTAssert "leaf: he1heCountItems of six seats", he1heCountItems("1,2,3,4,5,6"), 6
+
+   -- he1heNextInList: the circular successor the button rotation rides
+   he1heTAssert "leaf: he1heNextInList steps forward", he1heNextInList("1,3,5", 3), 5
+   he1heTAssert "leaf: he1heNextInList wraps at the end", he1heNextInList("1,3,5", 5), 1
+   he1heTAssert "leaf: he1heNextInList of an absent entry falls to item 1", \
+         he1heNextInList("1,3,5", 4), 1
+   he1heTAssert "leaf: he1heNextInList of a lone seat is that seat", he1heNextInList("7", 7), 7
+
+   -- he1heByteXor: the pure-integer XOR that keeps H7's no-bitwise law
+   -- (bitXor throws double/binary on this engine, v0.4.1)
+   he1heTAssert "leaf: he1heByteXor identity (x xor 0)", he1heByteXor(200, 0), 200
+   he1heTAssert "leaf: he1heByteXor self-inverse (x xor x)", he1heByteXor(170, 170), 0
+   he1heTAssert "leaf: he1heByteXor complement (170 xor 85)", he1heByteXor(170, 85), 255
+   he1heTAssert "leaf: he1heByteXor of 1 and 2", he1heByteXor(1, 2), 3
+   he1heTAssert "leaf: he1heByteXor passes 255 through", he1heByteXor(255, 0), 255
+
+   -- he1heU32BEData: the 4-byte big-endian block counter fed into sxHash.
+   -- Its output is ENGINE-built binary (numToByte), not FFI-bridged, so
+   -- byteToNum over a plain local is the H6-corollary-safe read (coinxt's
+   -- engine-passed idiom): each byte asserted, MSB first
+   put he1heU32BEData(305419896) into he1tData
+   he1heTAssert "leaf: he1heU32BEData byte 1 (MSB) of 305419896", byteToNum(byte 1 of he1tData), 18
+   he1heTAssert "leaf: he1heU32BEData byte 2", byteToNum(byte 2 of he1tData), 52
+   he1heTAssert "leaf: he1heU32BEData byte 3", byteToNum(byte 3 of he1tData), 86
+   he1heTAssert "leaf: he1heU32BEData byte 4 (LSB)", byteToNum(byte 4 of he1tData), 120
+   put he1heU32BEData(0) into he1tData
+   he1heTAssert "leaf: he1heU32BEData of 0 is four zero bytes", \
+         byteToNum(byte 1 of he1tData) + byteToNum(byte 2 of he1tData) \
+         + byteToNum(byte 3 of he1tData) + byteToNum(byte 4 of he1tData), 0
+
+   -- he1heHexId: random by design, so the DETERMINISTIC properties are the
+   -- pin -- length and alphabet (lowercase by construction: it draws from
+   -- a lowercase literal)
+   put he1heHexId(64) into he1tHexTxt
+   he1heTAssert "leaf: he1heHexId(64) is 64 chars", the number of chars of he1tHexTxt, 64
+   put 0 into he1tBadN
+   repeat for each char he1tCh in he1tHexTxt
+      if offset(he1tCh, "0123456789abcdef") is 0 then
+         add 1 to he1tBadN
+      end if
+   end repeat
+   he1heTAssert "leaf: he1heHexId draws only hex chars", he1tBadN, 0
+   he1heTAssert "leaf: he1heHexId(16) is 16 chars", the number of chars of he1heHexId(16), 16
+
+   -- he1heRank5: the 5-card core under he1heEval7. Section 1 pins the 7-card
+   -- surface exhaustively; nothing had ever named the 5-card entry
+   -- itself. One vector per category boundary that matters, through the
+   -- same he1heTIdxOf the evaluator section uses
+   he1heTAssert "leaf: he1heRank5 royal flush", he1heRank5(he1heTIdxOf("As Ks Qs Js Ts")), "081400000000"
+   he1heTAssert "leaf: he1heRank5 steel wheel (5-high straight flush)", \
+         he1heRank5(he1heTIdxOf("Ah 2h 3h 4h 5h")), "080500000000"
+   he1heTAssert "leaf: he1heRank5 quads with kicker", \
+         he1heRank5(he1heTIdxOf("Qc Qd Qh Qs Ad")), "071214000000"
+   he1heTAssert "leaf: he1heRank5 wheel straight mixed suits", \
+         he1heRank5(he1heTIdxOf("Ad 2c 3h 4s 5d")), "040500000000"
+   he1heTAssert "leaf: he1heRank5 high card reads all five kickers", \
+         he1heRank5(he1heTIdxOf("Ac Kd Qh Js 9c")), "001413121109"
+
+   -- he1heHandStart, GUARDS ONLY (the banner's reason): drive both refusal
+   -- exits on a synthetic he1gGame and prove the deal did not begin
+   put he1gGame into he1tSaved
+   put empty into he1gGame
+   put "hand" into he1gGame["phase"]
+   put 7 into he1gGame["handNum"]
+   he1heHandStart
+   he1heTAssert "leaf: he1heHandStart refuses to deal over an active phase", he1gGame["handNum"], 7
+   he1heTAssert "leaf: ...and leaves the phase standing", he1gGame["phase"], "hand"
+   put "between" into he1gGame["phase"]
+   put "true" into he1gGame["online"]
+   he1heHandStart
+   he1heTAssert "leaf: he1heHandStart refuses the hotseat deal while online", he1gGame["handNum"], 7
+   he1heTContains "leaf: ...and says why on the status line", he1gGame["statusTxt"], "hotseat"
+   put he1tSaved into he1gGame
+end he1heTestLeafRun
 
 function he1heTIdxOf pNamesTxt
    local he1tOut, he1tNameTxt, he1tNames

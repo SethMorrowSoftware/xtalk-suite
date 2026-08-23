@@ -1063,6 +1063,145 @@ def taproot_tweak_seckey(sk: bytes, merkle_root) -> bytes:
     return ((d + t) % _N).to_bytes(32, "big")
 
 
+def tap_leaf_hash(leaf_version: int, script: bytes) -> bytes:
+    """BIP-341 leaf hash: tagged TapLeaf over version || compact_size(script)
+    || script. The suite's scripts stay under 253 bytes so the one-byte
+    compact size below covers them; a longer script raises rather than
+    silently emitting the wrong prefix."""
+    if not 0 <= leaf_version <= 0xfe or leaf_version % 2:
+        raise ValueError("leaf version must be an even byte")
+    if leaf_version == 0x50:
+        raise ValueError("leaf version 0x50 is reserved (BIP-341: it would be "
+                         "ambiguous with the annex marker)")
+    if len(script) >= 0xfd:
+        raise ValueError("script too long for the modelled compact size")
+    return tagged_hash("TapLeaf", bytes([leaf_version]) +
+                       len(script).to_bytes(1, "little") + script)
+
+
+def tap_branch_hash(a: bytes, b: bytes) -> bytes:
+    """BIP-341 inner node: tagged TapBranch over the two child hashes in
+    LEXICOGRAPHIC order - the sort is the consensus rule, not a convenience."""
+    if len(a) != 32 or len(b) != 32:
+        raise ValueError("branch children must be 32 bytes")
+    lo, hi = sorted([a, b])
+    return tagged_hash("TapBranch", lo + hi)
+
+
+# The BIP-341 sighash types: DEFAULT, ALL, NONE, SINGLE and the three
+# ANYONECANPAY forms. 0x80 alone is NOT valid (the spec's validation rules).
+_TAPROOT_HASH_TYPES = (0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83)
+
+
+def btc_sighash_taproot(version, locktime, prevouts, amounts, spks,
+                        sequences, outputs, index, hash_type, tapleaf=None):
+    """The BIP-341 signature hash (key path; script path when tapleaf is the
+    32-byte leaf hash - key_version 0 and codeseparator position 0xffffffff,
+    the no-OP_CODESEPARATOR case, which is the only one this model carries).
+
+    Unlike BIP-143 the message commits to EVERY spent output: prevouts is the
+    list of 36-byte outpoints, amounts the per-input satoshi ints, spks the
+    per-input scriptPubKey bytes, sequences the per-input ints, outputs the
+    serialized outputs (amount8 || compact_size || script). No annex."""
+    if hash_type not in _TAPROOT_HASH_TYPES:
+        raise ValueError("invalid taproot sighash type")
+    if not (len(prevouts) == len(amounts) == len(spks) == len(sequences)):
+        raise ValueError("the per-input lists must be parallel")
+    if not 0 <= index < len(prevouts):
+        raise ValueError("input index out of range")
+    anyonecanpay = hash_type & 0x80
+    base = hash_type & 3
+    if base == 3 and index >= len(outputs):
+        raise ValueError("SIGHASH_SINGLE with no matching output is invalid")
+    msg = b"\x00" + bytes([hash_type]) + _le(version, 4) + _le(locktime, 4)
+    if not anyonecanpay:
+        msg += sha256(b"".join(prevouts))
+        msg += sha256(b"".join(_le(a, 8) for a in amounts))
+        msg += sha256(b"".join(varint(len(s)) + s for s in spks))
+        msg += sha256(b"".join(_le(s, 4) for s in sequences))
+    if base not in (2, 3):
+        msg += sha256(b"".join(outputs))
+    msg += bytes([2 if tapleaf is not None else 0])   # spend_type; no annex
+    if anyonecanpay:
+        msg += (prevouts[index] + _le(amounts[index], 8) +
+                varint(len(spks[index])) + spks[index] +
+                _le(sequences[index], 4))
+    else:
+        msg += _le(index, 4)
+    if base == 3:
+        msg += sha256(outputs[index])
+    if tapleaf is not None:
+        if len(tapleaf) != 32:
+            raise ValueError("tapleaf hash must be 32 bytes")
+        msg += tapleaf + b"\x00" + b"\xff\xff\xff\xff"
+    return tagged_hash("TapSighash", msg)
+
+
+def _bip341_sighash_self_check():
+    """Anchor the sighash model to bitcoin/bips' wallet-test-vectors.json,
+    keyPathSpending input 0 (hashType 3, SIGHASH_SINGLE): the published
+    rawUnsignedTx and utxosSpent, transcribed mechanically from the fetched
+    file - a first HAND transcription of this block was corrupt and THIS
+    check caught it at import, which is the never-from-memory rule doing its
+    job - and the published sigHash the model must land on. The remaining
+    six inputs, the trees and the control blocks are swept by
+    check-script-vectors.py; this import check holds the piece a wrong byte
+    order would silently break."""
+    raw = bytes.fromhex(
+        "02000000097de20cbff686da83a54981d2b9bab3586f4ca7e48f57f5b559"
+        "63115f3b334e9c010000000000000000d7b7cab57b1393ace2d064f4d4a2"
+        "cb8af6def61273e127517d44759b6dafdd990000000000fffffffff8e1f5"
+        "83384333689228c5d28eac13366be082dc57441760d957275419a4184200"
+        "00000000fffffffff0689180aa63b30cb162a73c6d2a38b7eeda2a83ece7"
+        "4310fda0843ad604853b0100000000feffffffaa5202bdf6d8ccd2ee0f02"
+        "02afbbb7461d9264a25e5bfd3c5a52ee1239e0ba6c0000000000feffffff"
+        "956149bdc66faa968eb2be2d2faa29718acbfe3941215893a2a3446d32ac"
+        "d050000000000000000000e664b9773b88c09c32cb70a2a3e4da0ced63b7"
+        "ba3b22f848531bbb1d5d5f4c94010000000000000000e9aa6b8e6c9de676"
+        "19e6a3924ae25696bb7b694bb677a632a74ef7eadfd4eabf0000000000ff"
+        "ffffffa778eb6a263dc090464cd125c466b5a99667720b1c110468831d05"
+        "8aa1b82af10100000000ffffffff0200ca9a3b000000001976a91406afd4"
+        "6bcdfd22ef94ac122aa11f241244a37ecc88ac807840cb0000000020ac9a"
+        "87f5594be208f8532db38cff670c450ed2fea8fcdefcc9a663f78bab962b"
+        "0065cd1d")
+    utxos = [
+        ("512053a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343", 420000000),
+        ("5120147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3", 462000000),
+        ("76a914751e76e8199196d454941c45d1b3a323f1433bd688ac", 294000000),
+        ("5120e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e", 504000000),
+        ("512091b64d5324723a985170e4dc5a0f84c041804f2cd12660fa5dec09fc21783605", 630000000),
+        ("00147dd65592d0ab2fe0d0257d571abf032cd9db93dc", 378000000),
+        ("512075169f4001aa68f15bbed28b218df1d0a62cbbcf1188c6665110c293c907b831", 672000000),
+        ("5120712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5", 546000000),
+        ("512077e30a5522dd9f894c3f8b8bd4c4b2cf82ca7da8a3ea6a239655c39c050ab220", 588000000),
+    ]
+    prevouts, seqs = [], []
+    b, n = raw, 4                            # skip the 4-byte version
+    nin, n = b[n], n + 1
+    for _ in range(nin):
+        prevouts.append(b[n:n + 36]); n += 36
+        assert b[n] == 0; n += 1             # empty scriptSig
+        seqs.append(int.from_bytes(b[n:n + 4], "little")); n += 4
+    nout, n = b[n], n + 1
+    outs = []
+    for _ in range(nout):
+        st = n
+        n += 8
+        sl = b[n]; n += 1 + sl
+        outs.append(b[st:n])
+    assert n + 4 == len(b), "tx parse did not consume the fixture"
+    got = btc_sighash_taproot(
+        int.from_bytes(b[:4], "little"), int.from_bytes(b[-4:], "little"),
+        prevouts, [a for _, a in utxos],
+        [bytes.fromhex(s) for s, _ in utxos], seqs, outs, 0, 3)
+    assert got.hex() == ("2514a6272f85cfa0f45eb907fcb0d121"
+                         "b808ed37c6ea160a5a9046ed5526d555"), \
+        "BIP-341 sighash model does not reproduce keyPathSpending input 0"
+
+
+_bip341_sighash_self_check()
+
+
 def _bip340_self_check():
     """Anchor the model above to bitcoin/bips' published vectors. An oracle that
     is only self-consistent is worth nothing, so this runs at import and takes

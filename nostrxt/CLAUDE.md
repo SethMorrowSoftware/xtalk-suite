@@ -117,6 +117,8 @@ the suite root enforces that). A script change is only "done" once this passes.
 python3 tools/nostr-kat.py --check          # full published-vector sweep through the oracle
 python3 tools/nostr-kat.py                  # print the constants the harness pins
 python3 tools/check-selftest-vectors.py     # every harness constant re-derives BY NAME
+python3 tools/check-script-vectors.py       # EXECUTE the shipped script against the vectors
+python3 tools/test-script-vectors.py        # the mutation drive proving that gate fires (slow)
 python3 tools/check-docs-style.py           # member prose style (no dashes, no curly quotes)
 python3 tools/check-doc-handlers.py --check # docs and source agree on the public surface
 ```
@@ -125,9 +127,14 @@ ChaCha20, NIP-44, canonical serializer); it anchors to the published BIP-340 / N
 BIP-173 / NIP-19 vectors at import and REFUSES TO LOAD broken. Never hand-edit a harness
 vector: edit the fixture in the KAT, re-run it, paste the constants block.
 
-**There is no headless way to run `.livecodescript` on OXT**, so everything here is
-**"verified statically; needs an OXT pass"**, and the relay paths add **"+ a live-relay
-pass"**. Do not claim a handshake works until it has shaken hands with a real relay.
+**There is no headless way to run `.livecodescript` on OXT** - but since 2026-08-23 the
+compute core IS EXECUTED headlessly on every build: `tools/check-script-vectors.py` drives
+the real shipped file through `tools/lcs-interp.py` (byte-identical with coinxt's copy,
+drift-gated), the serializer through the complete NIP-44 path, over the real committed
+sibling binaries via ctypes. That settles LOGIC, not parser behaviour, so the labels
+stand: everything here is **"verified statically; needs an OXT pass"**, and the relay
+paths add **"+ a live-relay pass"**. Do not claim a handshake works until it has shaken
+hands with a real relay.
 
 ## Member gotchas (paid for elsewhere, carried here)
 
@@ -222,6 +229,20 @@ here as they are learned (that is what this section is for).
   now deletes first and dispatches from saved values. The fold/embed audit came back clean.
   None of this is engine evidence; it is why the "verified statically" label is worth more
   than it was in the morning.
+
+- **THE EXECUTION GATE LANDED (2026-08-23): Phase 10 closed the day it was asked for.**
+  `tools/check-script-vectors.py` executes the shipped core - 81 checks: the serializer on
+  escape-torture content, bech32/NIP-19 both directions with the over-90 deviation, the
+  full padding table, and the COMPLETE NIP-44 encrypt/decrypt over the committed coinxt
+  ABI-6 and sodiumxt ABI-10 binaries - and `tools/test-script-vectors.py` proved it fires
+  on four seeded defects (dropped escape, transposed charset, nudged padding,
+  short-circuited MAC). The lesson worth keeping came from the FIRST run: the initial
+  model of array-vs-empty comparisons "discovered" a dead tag-validation block, and
+  checking the model against riptide's engine-proven `is empty` refusal idiom showed the
+  MODEL was the bug - a populated array is NOT empty to `is` on this engine family. The
+  corrected rule is a named divergence in the interpreter's header, and no healthy code
+  was "fixed". Suspect the probe first, with evidence, before believing a new tool's
+  first finding.
 
 ## Git / workflow
 

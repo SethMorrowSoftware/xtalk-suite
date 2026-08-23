@@ -98,7 +98,30 @@ optimization has a byte-exact regression net waiting.
 
 ## Gates (the machinery this member does not have yet)
 
-**9. Headless EXECUTION of the script layer - the `lcs-interp` idea.** CoinXT's
+**9. Headless EXECUTION of the script layer - CLOSED 2026-08-23, exactly as
+sketched below.** The interpreter was extended IN ITS HOME (coinxt's
+`tools/lcs-interp.py`, whose 300-check gate is the regression proof the
+extension is additive) with the constructs this entry measured plus the ones
+only execution found (`repeat forever`, the newline named literals,
+script-level `local` state - the file-scope error slot no handler could see
+until the model learned it), and `nostrxt/tools/check-script-vectors.py` now
+EXECUTES the shipped script on every build: 81 checks - the canonical
+serializer on escape-torture content, bech32/NIP-19 both directions including
+the over-90 deviation, the full padding table, and the COMPLETE NIP-44
+encrypt/decrypt path over the real committed coinxt and sodiumxt binaries
+through ctypes. `tools/test-script-vectors.py` met the adoption bar the same
+day: four seeded defects (a dropped escape, a transposed charset, a nudged
+padding, a short-circuited MAC compare) each fail the gate, tree restored
+byte-identically. The interpreter copies are drift-gated
+(`tools/check-checker-drift.py`, the checker model). The payoff precedent
+repeated on first contact, WITH A TWIST the family should keep: the first
+model of array comparisons "found" a dead validation block that was actually
+the MODEL's bug - refuted against riptide's engine-proven `is empty` refusal
+pattern before any healthy code was "fixed". Suspect the probe first; the
+corrected model is a named divergence in the interpreter's header. The
+original entry stands below as the record of what was asked for.
+
+CoinXT's
 `tools/check-script-vectors.py` runs its REAL shipped script headlessly through
 `tools/lcs-interp.py` (an interpreter for the LiveCodeScript subset its encoders
 use) against published vectors, and it has caught engine-shaped defects no static
@@ -113,9 +136,10 @@ nested-array writes the tag shape needs, `textEncode` / `textDecode` over UTF-8,
 `byte`/`char` chunk expressions with the engine's counting rules, and stubbing the
 `cx*`/`sx*` calls the way CoinXT's gate feeds its shim through ctypes. Substantial
 but bounded, and the payoff precedent is CoinXT's: its interpreter found a
-would-be-red engine line the day it was wired up. Until then, the honest label
-stands: the vectors are derived independently, the script is verified statically,
-and the first engine pass is what executes it.
+would-be-red engine line the day it was wired up. (The label this paragraph
+closed with - "the first engine pass is what executes it" - retired 2026-08-23;
+the gate above executes it on every build. The ENGINE pass is still owed for
+parser behaviour, exactly as coinxt's gate says of its own.)
 
 **10. The doc-handler agreement gate.** `06-api-reference.md` promises every public
 handler appears exactly once, and `tools/check-doc-handlers.py` is the gate that

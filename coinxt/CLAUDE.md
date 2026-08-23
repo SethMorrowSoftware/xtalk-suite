@@ -320,6 +320,22 @@ future feature ever needs C-side state, use SodiumXT's generation-tagged handle-
 - Ship a demo and a pure offline self-test harness formatted like OnionXT's (sPass/sFail, KAT sections,
   a section that SKIPS rather than fails when an optional dependency is absent).
 
+**THE INTERPRETER GREW A SECOND MEMBER, IN THIS COPY (2026-08-23).** nostrxt's execution gate
+(its docs/08 question 9) extended `tools/lcs-interp.py` HERE - the interpreter's home - and
+carries a byte-identical copy under `nostrxt/tools/`, drift-gated by the suite's
+`check-checker-drift.py` exactly like the checker copies, so an interpreter lesson can never
+again apply to one member and not the other. The additions are the constructs nostrxt's core
+uses beyond this member's subset (command/on handlers and statement calls, chained subscripts,
+the keys-of family, the lineDelimiter as modelled state, script-level locals, UTF-8
+textEncode/textDecode, base64, a handful of operators), each a named divergence or a documented
+model in the header; everything else still refuses loudly. This member's own gate is the
+REGRESSION PROOF for every such extension: `check-script-vectors.py` ran green at 300 checks
+over the extended interpreter before and after each addition, which is the bar any future
+extension pays too. One model correction worth knowing when reading `_eq`: an array operand of
+`is` compares AS AN ARRAY (a populated array is not empty), modelled from riptide's
+engine-proven refusal idiom - the classic folds-to-empty rule was tried first and was refuted
+by the corpus.
+
 ## Git / workflow
 
 - Develop on a per-task branch; commit there, open a **draft PR** if none exists. Do not push to `main`
@@ -1099,7 +1115,8 @@ which still owes the ABI-5 item above - the first `cx*` call proving `_cnx_memze
 **ABI 6: BIP-340 SCHNORR AND THE BIP-341 TAPROOT TWEAK, over a SECOND vendored library
 (2026-08-16).** ABI 5 -> 6, `CNX_ABI_VERSION` and `kABIVersion` bumped in the same change per the
 rule. Eight new exports (43 now), five new `.lcb` public handlers plus three length accessors, and
-two new script handlers, so the public surface is 90 (43 `.lcb` + 47 script). This is the largest
+two new script handlers, so the public surface became 90 (43 `.lcb` + 47 script; 94 since the
+2026-08-23 BIP-341 script-layer entry below). This is the largest
 decision recorded in this file since the entropy correction, because it is not a feature - it is a
 change to the rule the project opened with.
 
@@ -1377,3 +1394,53 @@ lesson - so both DLLs are honestly labeled: **needs the Windows execution proof.
 the committed x86_64-linux library passed the full KAT suite including all 33 new published vectors
 in this environment (`coin-kat.py --check --lib src/code/x86_64-linux/coinxt.so`), and the x86-linux
 build is the same source through the same gcc at `-m32`, export-parity-checked.
+
+**BIP-341 SIGHASH + SCRIPT-PATH SPENDING, PURE SCRIPT OVER THE ABI 6 SURFACE (2026-08-23).** The
+two gaps ABI 6's entry recorded ("no SigMsg builder, no script-path machinery") closed as four
+public script handlers - `cxBtcSighashTaproot`, `cxTapLeafHash`, `cxTapBranchHash`,
+`cxTapControlBlock` - plus three private helpers (`cxTapTagged` and the two Inner bodies behind
+the house itemDelimiter-pinning wrapper pattern). No shim change, no ABI bump, no binary touched;
+the public surface is 94 (43 `.lcb` + 51 script). Three recorded constraints are honored, not
+revisited: `cxBtcAddressP2TR` is byte-for-byte unchanged and still does not tweak; the builder is
+a BUILDER and never signs (it returns the 32-byte digest for `cxSchnorrSign` + the tweaked key,
+the same split every sighash handler here keeps); and the segwit builder's SIGHASH_ALL-only
+refusal said the variants would need their own published vectors before they could exist - the
+taproot builder ships the FULL type set (0, 1, 2, 3, 0x81, 0x82, 0x83; 0x80 alone refused;
+SINGLE past the last output refused, invalid under BIP-341) with every one pinned to a
+bitcoin/bips keyPathSpending vector. Bounds, stated where a planner will meet them: no
+OP_CODESEPARATOR (the tapleaf extension always writes position 0xffffffff and the doc says a
+script that uses it needs a builder this layer does not have), no annex, leaf scripts stay under
+253 bytes, and tree ASSEMBLY above one fold is the app's loop over `cxTapBranchHash`.
+
+The verification stack is the phase-5 pattern one more time. `tools/coin_reference.py` gained
+`tap_leaf_hash` / `tap_branch_hash` / `btc_sighash_taproot` and an import-time
+`_bip341_sighash_self_check` anchored to the published wallet vectors - which fired on its first
+run, because the first HAND transcription of the raw tx was corrupt: the never-from-memory rule
+caught again, so the fixture was regenerated mechanically from the fetched JSON.
+`tools/check-script-vectors.py` drives the real `.livecodescript` through the interpreter against
+a mechanically transcribed `TAPROOT_FIXTURE`: all seven keyPathSpending sighashes, all six trees
+(leaf lists and roots via the script's own fold), twelve control blocks, a script-path
+oracle cross-check and eight refusals - 340 checks, floor raised 260 -> 300.
+
+**The harness pins were WRONG on first write, and the gate caught them before any engine could.**
+`stRunTaproot341`'s two synthetic sighash constants were first derived with the txid UN-reversed
+(the outpoint convention `cxBtcOutpoint` exists to get right), and
+`check-selftest-vectors.py`'s re-derivation refused them - the exact drift it was built to
+notice, doing its job on the day the constants landed. The corrected pins agree with the model
+AND with the shipped script driven through the interpreter on the harness's exact call, checked
+both ways before the fix was accepted. Everything in this entry is verified statically and
+vector-pinned headlessly; **no OXT pass yet** - the 2026-08-17 engine claim covers the ABI 6
+surface as it stood and none of these four handlers.
+
+**The same-day adversarial review found no real defect and two genuine spec edges, both now
+refused.** The reviewer independently re-fetched the BIP text and the published vector file,
+re-diffed the whole TAPROOT_FIXTURE against it (all match), and drove the shipped script through
+the interpreter on the harness's exact single-input calls - which also closed the one shape the
+9-input fixture never exercises, a single-item comma list. What it caught: leaf version 0x50 is
+EVEN but reserved (BIP-341 excludes it because a witness element starting 0x50 is read as the
+annex), and a control block caps at 128 path nodes - both were accepted, both now throw, with
+driver refusal checks pinning each (the 0x50 refusal in the model too; the model builds no
+control blocks, so the path cap is the script's alone). It also caught the gate
+comments calling the published two-leaf tree "scriptPubKey vector 6" when the file's own 0-based
+convention makes it vector 3 - a comment-only error, but the same one-number-two-conventions
+shape as the 245-vs-244 lesson above, so it is recorded rather than just fixed.

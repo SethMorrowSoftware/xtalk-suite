@@ -647,22 +647,66 @@ supply both halves: the tagged hash commits to the internal public key, so a mis
 would otherwise produce a spendable-looking key for coins it cannot touch. Pass the SAME
 `pMerkleRoot` you passed to `cxTaprootTweakPubkey`.
 
-### What is NOT here, and you will need it to spend
+### `cxBtcSighashTaproot(pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex)`
 
-**There is no BIP-341 sighash builder.** `cxBtcSighashLegacy` and `cxBtcSighashSegwit` cover the
-pre-Taproot algorithms; the BIP-341 signature message (`SigMsg`, with its `sha_prevouts` /
-`sha_amounts` / `sha_scriptpubkeys` / `sha_sequences` / `sha_outputs` and the `0x00` epoch byte) is
-a different algorithm and is not built. So today CoinXT can **receive** to Taproot end to end - key
-to internal key to address - and can sign a 32-byte BIP-341 sighash you computed elsewhere, but it
-cannot compute that sighash for you. Script-path spending (leaf hashes, merkle proofs, control
-blocks) is not here either: only the merkle ROOT crosses the API, as an opaque 32 bytes.
+> The section that stood here was headed "What is NOT here, and you will need it to
+> spend". It is here now (2026-08-23, pure script over the ABI 6 surface), pinned to
+> the published bitcoin/bips wallet vectors - all seven keyPathSpending sighashes and
+> all six script trees - through `tools/check-script-vectors.py`. Like everything in
+> this section it has NOT run on an engine yet.
+
+The BIP-341 signature message (`SigMsg`) digest for 1-based input `pIndex`, returned
+as `Data` like the other two sighash builders. Unlike BIP-143 it commits to **every**
+spent output, so beside the outpoint and sequence lists it takes the per-input
+`pAmountsSat` and `pScriptPubkeys` (hex) of everything the transaction spends -
+parallel comma lists, one item per input, none of them optional. `pOutputs` is the
+serialized-outputs list in the `cxBtcOutput` shape.
+
+- **`pSighashType` is BIP-341's own set**: 0 (SIGHASH_DEFAULT), 1, 2, 3, 0x81, 0x82,
+  0x83. `0x80` alone is refused (it is not a type), and SIGHASH_SINGLE with no
+  matching output is refused (invalid under BIP-341, where pre-Taproot it silently
+  signed the number 1). This is also where the segwit builder's SIGHASH_ALL-only
+  refusal was pointing: the variants now exist HERE, each pinned to a published
+  vector.
+- **`pTapleafHex` chooses the path**: empty for key-path; the 64-hex leaf hash from
+  `cxTapLeafHash` for script-path spending (key_version 0, codeseparator position
+  `0xffffffff` - the no-OP_CODESEPARATOR case, which is the only one this builder
+  carries, and it says so rather than guessing). No annex.
+- It is a **builder, not a signer**: it returns the 32-byte digest and you hand that
+  to `cxSchnorrSign` with the tweaked key, the same split every other sighash
+  builder here keeps.
+
+### `cxTapLeafHash(pLeafVersion, pScriptHex)` / `cxTapBranchHash(pAHex, pBHex)`
+
+Script-path spending's tree hashes, both returning 64-hex. `cxTapLeafHash` is the
+tagged `TapLeaf` hash over `version || compact_size(script) || script`;
+`pLeafVersion` is the EVEN byte (0xc0 for tapscript; 0x50 is refused even though it
+is even - BIP-341 reserves it because a control block starting 0x50 would be read as
+the annex), and scripts of 253+ bytes are refused rather than given a wrong one-byte
+size prefix. `cxTapBranchHash` is one
+inner node: tagged `TapBranch` over the two 32-byte child hashes in **lexicographic
+byte order** - the sort is the consensus rule and it lives inside the handler, so
+argument order cannot change the root. Tree ASSEMBLY above one fold - choosing a
+shape, accumulating the merkle path - stays your loop over these two.
+
+### `cxTapControlBlock(pLeafVersion, pParity, pInternalKeyHex, pPathHex)`
+
+The script-path witness's control block, as hex: `(leafVersion | parity) ||
+internal x-only key || merkle path`. `pParity` is the 0/1 the tweak reported
+(`cxTaprootTweak`'s `parity` key); `pPathHex` is the SIBLING hashes from the leaf to
+the root, leaf-to-root order, as a comma list of 64-hex - empty for a single-leaf
+tree, at most 128 nodes (BIP-341's control-block cap). Leaf version 0x50 is refused
+here too, and here the refusal is load-bearing: a witness element whose first byte
+is 0x50 IS the annex marker.
 
 ### The whole path, for a single-signature Taproot wallet
 
 ```
 put cxXOnlyPubkey(tSeckey) into tInternal
 put cxBtcAddressP2TRFromInternal(tInternal, empty) into tAddress   -- receive here
--- ... later, to spend:
+-- ... later, to spend (key path, SIGHASH_DEFAULT):
+put cxBtcSighashTaproot(2, tOutpoints, tSequences, tAmounts, tSpks, \
+      tOutputs, 1, 0, 0, empty) into tSighash32
 put cxTaprootTweakSeckey(tSeckey, empty) into tSpendKey
 put cxSchnorrSign(tSpendKey, tSighash32, empty) into tSignature
 ```

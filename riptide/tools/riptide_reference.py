@@ -1050,6 +1050,23 @@ def golden_vectors():
     post2 = build_post(1754870460, post1_target, "second post",
                        ["ee" * 20], id_seed)
     post2_target = immutable_target(post2)
+    # A2 (2026-08-23): the kind-C chunked post, pinned - it was the LAST
+    # unpinned riptide wire format, so after these rows there is nothing
+    # left to pin in the record layer. The two chunk VALUES are the chosen
+    # texts' UTF-8 bytes (their concatenation is the post's full text; the
+    # script reassembler validates and decodes the CONCATENATION, never a
+    # chunk alone, because a producer may split inside a UTF-8 sequence),
+    # their targets are content addresses, and the post carries a media
+    # attachment BEHIND the chunk list so the kind-C tail parse is pinned
+    # too, not only the list.
+    chunk1 = "chunked text, part one; ".encode("utf-8")
+    chunk2 = "part two closes the record.".encode("utf-8")
+    chunk1_target = immutable_target(chunk1)
+    chunk2_target = immutable_target(chunk2)
+    post_c = build_post_chunked(1754870760, post2_target,
+                                [chunk1_target, chunk2_target],
+                                ["ee" * 20], id_seed)
+    post_c_target = immutable_target(post_c)
     head = build_head(7, "Riptide", post2_target, prekey_t, onion, profile_t)
     head_v = bencode_bytes(head)
     head_buf = bep44_signbuf(HEAD_SALT.encode("ascii"), 7, head_v)
@@ -1113,6 +1130,10 @@ def golden_vectors():
         "post1Target": post1_target,
         "post2": post2.hex(),
         "post2Target": post2_target,
+        "chunk1Target": chunk1_target,
+        "chunk2Target": chunk2_target,
+        "postC": post_c.hex(),
+        "postCTarget": post_c_target,
         "head": head.hex(),
         "headValue": head_v.hex(),
         "headBuf": head_buf.hex(),

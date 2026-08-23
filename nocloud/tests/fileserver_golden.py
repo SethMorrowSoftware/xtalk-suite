@@ -29,6 +29,12 @@ Static file serving (both transports):
 
 HTTP framing, headers, and conditional GET:
   qsHttpHeaderEnd -> http_header_end()  (byte index of the CRLFCRLF head terminator)
+  qsHttpParseHead -> parse_head()       (request line + lowercased header map; LAST
+                                         duplicate wins, the __dupcl conflict flag,
+                                         the "__" pseudo-field namespace. Landed
+                                         2026-08-20 with the Content-Length stand-in
+                                         fix but missed this index until 2026-08-23 -
+                                         exactly the drift the index exists to stop)
   qsHttpReqComplete -> http_req_complete() (head + Content-Length body received?)
   qsHttpReqLength -> http_req_length()  (one request's exact byte length; keep-alive trim)
   qsJsonEscape    -> json_escape()      (the /_qs/info route's JSON value escaping)

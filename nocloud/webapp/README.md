@@ -36,6 +36,8 @@ or under `/<token>/` (web link) with no build step and no `<base>` tag.
 | **Raster + vector images** | the **Gallery** (8 SVG + 1 PNG) with a keyboard-navigable lightbox, list fetched from `data.json` |
 | Client-side state | the Store cart lives in `localStorage` and survives refreshes; checkout is a real receipt of real files |
 | **Live backend route** | the **Backend** tab calls `GET /_qs/info` and shows the JSON |
+| **User-declared routes** (`.qsroutes.json`) | the **Backend** tab also calls `GET /api/echo` - declared in this folder's own `.qsroutes.json`, not in LiveCode. The file ships six demo routes: canned JSON, a `{{...}}` templated echo, a `:name` path capture, `config.json` served as a `file` route at `/api/config`, and a `/go/gallery` redirect. See `../docs/user-routes.md` |
+| **Conditional GET** (weak ETag / `304`) | every file response carries `ETag: W/"size-seed-generation"` + `Cache-Control: no-cache`, so a revisiting browser revalidates instead of re-downloading; a save through `/_edit` bumps the generation. The one stale case is in `sw.js`'s header comment. *(Verified statically + golden-pinned; needs an OXT pass)* |
 | **Tor vs. web** awareness | the header badge and the **About** tab (secure-context / service-worker) |
 
 ## Files
@@ -47,6 +49,11 @@ app.js              dependency-free router + views (base-path aware)
 data.json           gallery manifest, fetched at runtime
 store.json          storefront catalog (products, prices, download files)
 blog.json           blog posts (slugs, structured bodies), fetched at runtime
+.qsroutes.json      six user-declared demo routes the host reads at share time (the
+                    Backend tab's /api/echo among them) - a dotfile, so it is read by
+                    the host but never served or listed; see ../docs/user-routes.md
+config.json         tiny JSON that the .qsroutes.json "file" route streams from disk
+                    at /api/config (Range-aware, folder-confined, like any static file)
 site.webmanifest    PWA manifest (installable)
 sw.js               minimal service worker (registers only in a secure context; no caching
                     of its own - freshness rides the host's weak-ETag revalidation, see the

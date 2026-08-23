@@ -35,7 +35,9 @@ capabilities.
 | **SPA routing, refresh-safe** | all tabs | routes are pushed with `history.pushState`; the host falls back to `index.html` for any unknown dot-free route (`qsSiteSpaTarget`) and `app.js` restores the view from `location.pathname` |
 | **Query-string deep links** | **Blog** | a post's link is `blog?post=<slug>` - shareable, refresh-safe, and safe for relative assets (see the routing rule below) |
 | **Client-side state** | **Store** | the cart lives in `localStorage` (with an in-page fallback), so it survives refreshes without the server keeping any state |
-| **Live backend route** | **Backend** tab + startup | `GET /_qs/info` is answered by the stack script (`qsHttpRoute` -> `qsHttpReply`); the tab auto-calls it and pretty-prints the JSON, and startup uses its `mode` field for the transport badge |
+| **Live backend route** | **Backend** tab + startup | `GET /_qs/info` is answered by the stack script (`qsHttpRoute` -> `qsHttpReply`); the tab auto-calls it and pretty-prints the JSON, and startup uses its `mode` field for the transport badge. The tab also fires `OPTIONS /` (the `Allow` header) and surfaces the response headers |
+| **User-declared routes** (`.qsroutes.json`) | **Backend** tab, second card | the folder ships its own `.qsroutes.json` with six demo endpoints; the tab live-calls `GET /api/echo?msg=...`, a `{{...}}`-templated route that reflects the query value back escaped - declared in the folder, not in LiveCode. See "The routes the host provides" below and `user-routes.md` |
+| **Conditional GET** (weak ETag / `304`) | every file request on a revisit | file responses carry `ETag: W/"size-seed-generation"` (`qsHttpWeakETag`) + `Cache-Control: no-cache`, so the browser revalidates each load and a matching `If-None-Match` is answered `304` with no body *(verified statically + golden-pinned; needs an OXT pass)* |
 | **Raster + vector images** | **Gallery** | eight `.svg` pieces + one `.png`, list fetched from `data.json`, keyboard-navigable lightbox with raw/download links |
 | **Service worker (secure context)** | **About** tab | `sw.js` registers only when `window.isSecureContext` - proving a Tor `.onion` counts as secure while plain public http does not |
 | **PWA manifest** | `site.webmanifest` | installable app metadata, icon, `standalone` display, relative `start_url`/`scope` |
@@ -107,6 +109,24 @@ host's LAN-only editor API - no second server, no cloud:
   `POST /_edit/api/delete`. Every one gates on `qsEditAuthed` (enabled + LAN-local +
   served-folder + session token) and confines paths with `qsEditSafePath`; over Tor or
   the public web they answer `404`. The Admin panel is a pure client of these.
+- **User-declared routes (`.qsroutes.json`).** The folder carries one, so sharing it also
+  demonstrates the declarative route layer: canned JSON (`/api/hello`, `/api/note`), the
+  `{{...}}`-templated echo the Backend tab calls (`/api/echo` - reflected values escaped
+  default-deny), a `:name` path capture (`/api/greet/:name`), `config.json` streamed
+  under `/api/config` (a `file` route: Range-aware, ETag'd and folder-confined exactly
+  like a static file), and a `/go/gallery` redirect (re-based onto the `/<token>/` mount
+  over a web link). No code runs, `/_qs` and `/_edit` stay reserved, and the dotfile
+  itself is never served or listed. The full model, its guards and its limits are
+  `user-routes.md`; the golden pins the guard logic. *(Verified statically +
+  golden-pinned; needs an OXT pass - `oxt-pass-checklist.md` is that pass's script.)*
+- **Conditional GET (weak ETag -> `304`).** Every file response - static assets and
+  `.qsroutes.json` `file` routes alike - carries `ETag: W/"size-seed-generation"`
+  (`qsHttpWeakETag`) plus `Cache-Control: no-cache`, and a full-file request with a
+  matching `If-None-Match` is answered `304 Not Modified` with no body (a `Range:`
+  request always gets bytes, never a `304`). Non-file answers (`/_qs/*`, user-route
+  bodies, listings) are sent with no validator, so they are regenerated every request.
+  This is what makes browser caching safe for the demo; the freshness caveat is in the
+  Editing notes below. *(Verified statically + golden-pinned; needs an OXT pass.)*
 
 ## The two design constraints
 
@@ -136,6 +156,9 @@ app.js              dependency-free router + views (base-path aware; transport d
 data.json           gallery manifest, fetched at runtime
 store.json          storefront catalog: products, blurbs, prices, download files
 blog.json           blog posts: slugs, dates, teasers, structured bodies (p/h/code/ul)
+.qsroutes.json      six user-declared demo routes, read by the host at share time - a
+                    dotfile, never served or listed (see user-routes.md)
+config.json         tiny JSON streamed by the .qsroutes.json "file" route at /api/config
 site.webmanifest    PWA manifest (installable; relative start_url/scope)
 sw.js               minimal service worker - registers only in a secure context; NO caching
 assets/
