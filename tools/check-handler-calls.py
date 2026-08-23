@@ -49,17 +49,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # clear error), and the entry gets DELETED the day the handler ships - at which
 # point this gate becomes the proof that the composition now resolves.
 KNOWN_MISSING = {
-    # Empty from 2026-08-11 (sxSha3_256 shipped in SodiumXT ABI 7) until
-    # 2026-08-23, when nostrxt added the next deliberate gap:
-    "sxChaCha20IetfXor":
-        "NIP-44's raw ChaCha20 (RFC 8439, 12-byte nonce, counter 0) does not "
-        "exist anywhere in the suite; the upstream SodiumXT request is "
-        "nostrxt/docs/07-capabilities-required.md gap #1. Every call site is "
-        "a try-guarded seam that fails closed with a capability error naming "
-        "this handler (nostrxt/src/nostrxt.livecodescript nxChaCha20 / "
-        "nxNip44HasCipher / nxProbeCapabilities), and the member harness "
-        "asserts the fail-closed behaviour today. Delete this entry the day "
-        "SodiumXT ships it.",
+    # Empty again since 2026-08-23: sxChaCha20IetfXor, the entry that stood
+    # here from earlier that same day, shipped in SodiumXT ABI 10 and was
+    # deleted per its own instruction - so this gate is now the proof that
+    # nostrxt's NIP-44 cipher composition resolves. (The slot was previously
+    # empty from 2026-08-11, when sxSha3_256 shipped in SodiumXT ABI 7.)
 }
 
 # The family prefixes. Order matters: oxh must be tried before ox so an oxh*

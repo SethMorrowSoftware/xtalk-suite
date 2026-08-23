@@ -31,8 +31,9 @@ Two scope decisions from phase 0 are worth restating here because they shape eve
   suite, libsodium provides no CBC so SodiumXT never will, and NIP-44 supersedes it. There is no
   phase where NIP-04 lands.
 - **NIP-44's cipher is an upstream request, not a local implementation.** The one primitive the
-  suite lacks is raw ChaCha20; phase 8 is the request (`sxChaCha20IetfXor`) and the completion, and
-  until it ships `nxNip44Encrypt` / `nxNip44Decrypt` fail closed at the seam with a capability
+  suite lacked was raw ChaCha20; phase 8 was the request (`sxChaCha20IetfXor`) and the completion,
+  and it CLOSED 2026-08-23 when SodiumXT shipped it as ABI 10. On an installed SodiumXT older
+  than that, `nxNip44Encrypt` / `nxNip44Decrypt` still fail closed at the seam with a capability
   error naming it.
 
 ## Phase 0 - Ground truth and decisions (no code that ships) - CLOSED 2026-08-23
@@ -196,7 +197,7 @@ accordingly.
 **Risk retired:** RFC 6455 on a real wire (fragmentation, interleaved control frames, server
 close behaviour), and the TLS unknown that currently gates real-world relay coverage.
 
-## Phase 8 - The upstream cipher and NIP-44 completion - OPEN
+## Phase 8 - The upstream cipher and NIP-44 completion - CLOSED 2026-08-23 (engine sweep still owed)
 
 **Goal:** encrypted payloads work end to end, with the cipher living where family law puts it.
 
@@ -213,6 +214,16 @@ close behaviour), and the TLS unknown that currently gates real-world relay cove
   the harness's cipher branch is already written) - the work here is running the official
   encrypt/decrypt vector sweep through the now-complete path on an engine, and turning the
   capability docs from "requested" to "shipped, ABI N".
+
+**How it closed (2026-08-23):** exactly as written above. SodiumXT shipped
+`sxChaCha20IetfXor` as ABI 10, with the loud reason argued in `sodiumxt/docs/security.md`
+(the four points docs/07 demanded), C KATs cross-checked against this member's own oracle
+plus the pinned libsodium tarball's expectation file, ASan/UBSan green, and all four non-mac
+platform binaries refreshed in the same change. NostrXT's seam, probes and harness branch
+flipped with zero code changes; the capability docs turned from "requested" to "shipped,
+ABI 10". The one deliverable this phase still owes is the ENGINE sweep of the now-complete
+path (runbook rows; the honesty label stays "verified statically; needs an OXT pass"), which
+rides the member's first OXT pass rather than standing as its own phase.
 
 **Done when:** SodiumXT ships the primitive; `nxNip44Encrypt` / `nxNip44Decrypt` round-trip the
 official vectors on an engine (the harness's seam section goes green on its cipher branch); and
@@ -268,4 +279,5 @@ free.
   app frees what it opens.
 - The honesty rules hold: "verified statically; needs an OXT pass" (relay paths: "+ a live-relay
   pass") until a real engine, and for the relay a real relay, says otherwise - and no open item
-  (wss://, the cipher gap, NIP-17) is presented as solved.
+  (wss://, NIP-17, the NIP-44 engine sweep; the cipher gap itself closed 2026-08-23) is
+  presented as solved.

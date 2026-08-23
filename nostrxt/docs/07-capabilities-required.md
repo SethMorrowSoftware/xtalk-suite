@@ -7,24 +7,37 @@ family's split-the-change law holds throughout: a missing primitive is an **upst
 feature request landed first** (with its own ABI bump and tests), then composed here
 - never a hand-rolled cipher, hash or curve op in this member. OnionXT's
 `docs/08-capabilities-required.md` is the model and the precedent: all three of its
-gaps shipped upstream and were composed, which is the trajectory this file expects
-for its one crypto gap.
+gaps shipped upstream and were composed, which is the trajectory this file expected
+for its one crypto gap - and the trajectory it then followed (closed 2026-08-23,
+below).
 
-**Status as of v0.1.0:** ONE crypto gap (the NIP-44 cipher, SodiumXT, not shipped)
-and ONE engine unknown (TLS sockets, nobody's extension). Everything else NostrXT
-needs already exists: CoinXT ABI 6 carries `cxSha256`, `cxSchnorrSign`,
+**Status as of 2026-08-23 (updated the same day v0.1.0 shipped):** ZERO crypto gaps
+and ONE engine unknown (TLS sockets, nobody's extension). The one crypto gap this
+ledger opened with - the NIP-44 cipher - shipped upstream the same day, as SodiumXT
+ABI 10's `sxChaCha20IetfXor` (the record below). Everything else NostrXT needs
+already existed: CoinXT ABI 6 carries `cxSha256`, `cxSchnorrSign`,
 `cxSchnorrVerify`, `cxXOnlyPubkey`, `cxEcdh`, `cxHmacSha256` and `cxSeckeyIsValid`;
 SodiumXT carries `sxRandomBytes` and `sxMemEqual`.
 
 ## SodiumXT gaps
 
-### 1. `sxChaCha20IetfXor` (raw IETF ChaCha20) - NOT SHIPPED
+### 1. `sxChaCha20IetfXor` (raw IETF ChaCha20) - SHIPPED (SodiumXT ABI 10, 2026-08-23)
 
-**Status: OPEN.** The one cryptographic primitive NIP-44 v2 needs that exists
-nowhere in the suite. Everything else in the construction is composed and
-vector-pinned today.
+**Status: CLOSED, the way OnionXT's three gaps closed.** Shipped upstream as
+SodiumXT ABI 10 with its own C KATs (green under ASan/UBSan, cross-checked against
+an independent RFC 8439 reference - three implementations agree on the pinned
+vectors), a probe-guarded section in SodiumXT's own harness, and the written loud
+reason this ledger owed (it landed in `sodiumxt/docs/security.md`; see below).
+NostrXT's seam needed NO code change - the try-guarded call, both probes and the
+harness's round-trip branch flipped live, exactly as designed. The complete
+NIP-44 path now sweeps the official encrypt/decrypt vectors headlessly; no part
+of it has met an engine yet (the honesty label stays "verified statically; needs
+an OXT pass"). On an installed SodiumXT older than ABI 10 the seam still fails
+closed with the capability error, by design - the paragraphs below describe that
+path in the present tense because it remains a real deployment state, not a
+historical one.
 
-**Exactly what is requested:**
+**Exactly what was requested (and shipped, signature for signature):**
 
 ```
 sxChaCha20IetfXor(pKey as Data, pNonce as Data, pData as Data) returns Data
@@ -36,7 +49,9 @@ sxChaCha20IetfXor(pKey as Data, pNonce as Data, pData as Data) returns Data
   operation is its own inverse (encrypt and decrypt are the same call).
 - libsodium already ships exactly this as `crypto_stream_chacha20_ietf_xor`, so the
   upstream change is a thin wrap of audited code, not new cryptography - the same
-  shape as OnionXT's `sxSha3_256` request, which shipped.
+  shape as OnionXT's `sxSha3_256` request, which shipped. (And so it went: the
+  shipped `sxt_chacha20_ietf_xor` is that thin wrap, with the shim's standard
+  length/pointer firewall around it and the 32/12 length getters beside it.)
 
 **Why NIP-44 needs the UNAUTHENTICATED stream, stated plainly because it looks like
 a mistake until it is stated:** NIP-44 v2 does not use Poly1305. Its authentication
@@ -51,8 +66,11 @@ composed here from CoinXT's `cxHmacSha256`.
 **The documented tension with SodiumXT's own rules, and what the loud reason must
 argue.** SodiumXT's CLAUDE.md rule 3 says "do not expose a bring-your-own-nonce
 entry point without a very loud reason" and rule 4 says "never a raw unauthenticated
-stream cipher". This request is BOTH, so proposing it upstream owes a written loud
-reason in SodiumXT's own docs, and that reason must argue, at minimum:
+stream cipher". This request is BOTH, so proposing it upstream owed a written loud
+reason in SodiumXT's own docs. THAT DEBT IS PAID: the argument below is now written,
+point for point, in `sodiumxt/docs/security.md` ("The one argued exception"), at the
+declaration in `sodiumxt/src/sodium_shim.h`, and as dated exceptions inside rules 3
+and 4 themselves. It had to argue, at minimum:
 
 - **The nonce discipline lives in the construction, not the caller.** The 12-byte
   ChaCha20 nonce handed to this primitive is never chosen by an app: it is the
@@ -73,12 +91,15 @@ reason in SodiumXT's own docs, and that reason must argue, at minimum:
   (NIP-44 is the named consumer), not as a sealing API - so nobody mistakes it for
   `sxSecretboxEasy`.
 
-**What fails closed until it ships, and the exact error.** `nxNip44Encrypt` and
-`nxNip44Decrypt` return empty with `nxLastError()` reading:
+**What fails closed on a pre-ABI-10 install, and the exact error.** `nxNip44Encrypt`
+and `nxNip44Decrypt` return empty with `nxLastError()` reading:
 
 ```
-nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped upstream; docs/07-capabilities-required.md)
+nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)
 ```
+
+(Until 2026-08-23 the parenthetical read "not yet shipped upstream"; the remedy
+now is upgrading the installed SodiumXT package to ABI 10 or later.)
 
 `nxProbeCapabilities()` reports `canNip44Cipher` false (cached per session), and
 `nxNip44HasCipher()` answers false (a live probe, so an upgraded SodiumXT is noticed
@@ -92,17 +113,19 @@ MAC-before-cipher order is provable today**: the member harness tampers inside t
 ciphertext region of the official payload vector and asserts the refusal happens at
 the MAC, before any cipher runs.
 
-**How the harness self-upgrades the day it ships.** The seam section of
-`examples/nostrxt-tests.livecodescript` branches on `nxNip44HasCipher()` at run
-time: while the probe is false it asserts the fail-closed path (the untampered
-official vector reaches the cipher and refuses, naming `sxChaCha20IetfXor`); the
-moment a SodiumXT carrying the primitive is installed, the SAME harness, unchanged,
-starts asserting that the official encrypt_decrypt vector decrypts to its published
-plaintext and re-encrypts byte-identically under the fixed vector nonce. The oracle
-(`tools/nostr_reference.py`) has carried its own RFC 8439 ChaCha20 since day one and
-already sweeps the full encrypt/decrypt vector set headlessly, so the pinned
-constants the harness will start exercising are derived and gate-checked now, not
-written later.
+**How the harness self-upgrades - designed before the ship, true after it.** The
+seam section of `examples/nostrxt-tests.livecodescript` branches on
+`nxNip44HasCipher()` at run time: while the probe is false (an installed SodiumXT
+older than ABI 10) it asserts the fail-closed path (the untampered official vector
+reaches the cipher and refuses, naming `sxChaCha20IetfXor`); against a current
+package the SAME harness, unchanged, asserts that the official encrypt_decrypt
+vector decrypts to its published plaintext and re-encrypts byte-identically under
+the fixed vector nonce. The oracle (`tools/nostr_reference.py`) has carried its own
+RFC 8439 ChaCha20 since day one and sweeps the full encrypt/decrypt vector set
+headlessly, so the pinned constants the round-trip branch exercises were derived
+and gate-checked before the primitive existed - and the SodiumXT side reused that
+same oracle to derive ITS smoke-test KATs, which is what makes the two members'
+evidence independent of libsodium agreeing with itself.
 
 ## Engine capabilities to confirm (not extension gaps)
 

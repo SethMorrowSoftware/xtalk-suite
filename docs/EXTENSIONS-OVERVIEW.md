@@ -25,11 +25,14 @@ paragraph re-measured 2026-08-19 by `tools/check-suite-coverage.py`.
 
 ## sodiumxt — modern cryptography (`sx*`)
 
-Wraps **libsodium** (1.0.20; the Windows builds carry 1.0.22). 72 public
-handlers. Binaries committed for **all five platforms** (Linux and Windows
-x64/x86 at ABI 9: ABI 8 added the ristretto255 group surface 2026-08-15 and
-ABI 9, the same day, its DLEQ/batch follow-ons;
-`universal-mac` three ABIs behind, pending the manual `lipo` build).
+Wraps **libsodium** (1.0.20 on every committed binary since the 2026-08-23
+mingw rebuild; the earlier vcpkg-built Windows DLLs carried 1.0.22). 73
+public handlers. Binaries committed for **all five platforms** (Linux and
+Windows x64/x86 at ABI 10: ABI 8 added the ristretto255 group surface
+2026-08-15, ABI 9, the same day, its DLEQ/batch follow-ons, and ABI 10
+(2026-08-23) the raw IETF ChaCha20 stream xor for NIP-44, on the argued
+exception in `sodiumxt/docs/security.md`;
+`universal-mac` four ABIs behind, pending the manual `lipo` build).
 
 - **Secret-key authenticated encryption** — XChaCha20-Poly1305, with or
   without associated data: `sxSecretBox`, `sxAeadEncrypt`.
@@ -292,13 +295,15 @@ bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
   NIP-19 waives BIP-173's 90-character limit, which coinxt's encoder
   enforces, so nostrxt carries its own and its KAT asserts the deviation
   on purpose. `nxUriEncode` refuses to wrap a secret key.
-- **NIP-44 v2 payloads**: conversation key (unhashed ECDH x +
-  HKDF-extract), message keys (HKDF-expand), the power-of-two padding and
-  the MAC-before-cipher order are all built and vector-pinned today;
-  encrypt/decrypt fail CLOSED behind the one missing upstream primitive
-  (SodiumXT `sxChaCha20IetfXor`, the standing entry in
-  `tools/check-handler-calls.py`'s KNOWN_MISSING and
-  `nostrxt/docs/07-capabilities-required.md`).
+- **NIP-44 v2 payloads**: the COMPLETE construction - conversation key
+  (unhashed ECDH x + HKDF-extract), message keys (HKDF-expand), the
+  power-of-two padding, the MAC-before-cipher order, and (since
+  2026-08-23) the ChaCha20 cipher itself, composed from SodiumXT ABI 10's
+  `sxChaCha20IetfXor` (the once-standing KNOWN_MISSING entry in
+  `tools/check-handler-calls.py` is deleted per its own instruction;
+  `nostrxt/docs/07-capabilities-required.md` is the closed request).
+  Encrypt/decrypt still fail CLOSED, by design, on an installed SodiumXT
+  older than ABI 10.
 - **A websocket relay client** (`nxr*`, a second file so the suite paste
   never carries a second `socketError` definition): RFC 6455 in pure
   script over engine sockets, verification-on-by-default event delivery,

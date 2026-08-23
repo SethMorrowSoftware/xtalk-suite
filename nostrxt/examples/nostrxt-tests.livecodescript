@@ -578,10 +578,12 @@ private command nxtTestNip44Padding
 end nxtTestNip44Padding
 
 -- ==========================================================================
--- 11. The NIP-44 cipher seam. The MAC path is provable TODAY (it runs
--- before the cipher); the cipher call fails closed until SodiumXT ships
--- sxChaCha20IetfXor - and the moment it does, the official payload vector
--- here starts round-tripping with no harness change.
+-- 11. The NIP-44 cipher seam. The MAC path is provable on any SodiumXT (it
+-- runs before the cipher). sxChaCha20IetfXor shipped upstream in SodiumXT
+-- ABI 10 (2026-08-23), so against a current package the official payload
+-- vector round-trips here; against an older installed SodiumXT the cipher
+-- still fails closed and this section asserts THAT instead - the branch is
+-- the probe's answer, exactly as designed the day the seam was written.
 -- ==========================================================================
 
 private command nxtTestNip44Seam
@@ -616,11 +618,11 @@ private command nxtTestNip44Seam
       put nxNip44Encrypt(kNxVecN44Sec1, kNxVecN44Pub2, "a", kNxVecN44Nonce) into tOut
       nxtCheck tOut is kNxVecN44Payload, "and re-encrypts byte-identically"
    else
-      -- The documented gap: the MAC verifies, then the cipher fails CLOSED
-      -- with the capability error naming the upstream primitive.
+      -- The pre-ABI-10 install: the MAC verifies, then the cipher fails
+      -- CLOSED with the capability error naming the upstream primitive.
       put nxNip44Decrypt(kNxVecN44Sec1, kNxVecN44Pub2, kNxVecN44Payload) into tOut
       nxtCheck tOut is empty, "the untampered vector reaches the cipher and fails closed"
-      nxtCheck nxLastError() contains "sxChaCha20IetfXor", "naming the missing upstream primitive"
+      nxtCheck nxLastError() contains "sxChaCha20IetfXor", "naming the primitive absent from the installed SodiumXT"
       nxtCheck nxNip44Encrypt(kNxVecN44Sec1, kNxVecN44Pub2, "a", kNxVecN44Nonce) is empty, "encrypt fails closed the same way"
    end if
 end nxtTestNip44Seam

@@ -7,8 +7,10 @@ xtalk-suite monorepo (`nostrxt/`).
 > [docs/01-protocol-model.md](docs/01-protocol-model.md) (what a relay can and cannot do to you),
 > [docs/02-nip01-events.md](docs/02-nip01-events.md) (the canonical bytes, the one thing this
 > member must never get wrong), [docs/04-nip44-payloads.md](docs/04-nip44-payloads.md) and
-> [docs/07-capabilities-required.md](docs/07-capabilities-required.md) (the one crypto gap and
-> whose it is), and [docs/05-relay-client.md](docs/05-relay-client.md) (the socket state machine).
+> [docs/07-capabilities-required.md](docs/07-capabilities-required.md) (the capability ledger:
+> the crypto gap this member opened with, CLOSED 2026-08-23 as SodiumXT ABI 10, and the TLS
+> engine unknown that remains), and [docs/05-relay-client.md](docs/05-relay-client.md) (the
+> socket state machine).
 > [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) is the phased HOW. This file is the
 > operational as-built record and the hard-won-lesson list, in the same spirit as the sibling
 > `CLAUDE.md` files; most lessons below are CARRIED from OnionXT (sockets), CoinXT (vectors and
@@ -73,10 +75,11 @@ that SKIP in the paste.
 
 1. **Add no cryptography. Compose CoinXT and SodiumXT.** SHA-256, BIP-340 Schnorr, x-only
    keys, ECDH and HMAC-SHA256 are cx* calls; randomness and constant-time compare are sx*
-   calls. The one missing primitive (NIP-44's raw ChaCha20) is an UPSTREAM SodiumXT feature
-   request (`sxChaCha20IetfXor`, docs/07), never a hand-rolled cipher here: until it ships,
-   `nxNip44Encrypt` / `nxNip44Decrypt` fail closed with a capability error naming it, and the
-   harness proves the MAC-verifies-before-cipher order today.
+   calls. NIP-44's raw ChaCha20 went UPSTREAM as a SodiumXT feature request, never a
+   hand-rolled cipher here, and shipped as ABI 10's `sxChaCha20IetfXor` (2026-08-23; docs/07
+   is the closed request). On an installed SodiumXT older than ABI 10, `nxNip44Encrypt` /
+   `nxNip44Decrypt` still fail closed with a capability error naming it, and the harness
+   proves the MAC-verifies-before-cipher order on any install.
 2. **Verify, then trust.** An event from a relay is untrusted text until `nxEventVerify`
    passes (id recomputed from the fields AND the signature checked). The relay layer verifies
    by default and delivers failures as "invalid", never as events; turning that off is a
@@ -181,6 +184,18 @@ here as they are learned (that is what this section is for).
   (docs/07). The harness self-upgrades: the moment a SodiumXT with that primitive is
   installed, the seam section stops expecting the capability error and starts KATing the
   official payload vector.
+- **THE GAP CLOSED THE SAME DAY (2026-08-23): `sxChaCha20IetfXor` shipped as SodiumXT ABI
+  10**, with C KATs cross-checked against this member's own oracle (nostr_reference.py's RFC
+  8439 ChaCha20 derived SodiumXT's smoke-test vectors, so the two members' evidence is two
+  independent implementations agreeing, plus the pinned libsodium tarball's own expectation
+  file as a third). The seam, both probes and the harness branch flipped with ZERO code
+  changes here - exactly the self-upgrade the bullet above promised - and the only script
+  edits were prose, the capability error's parenthetical (now "shipped in SodiumXT ABI 10;
+  the installed SodiumXT predates it"), and the gate bookkeeping (the KNOWN_MISSING entry
+  deleted from tools/check-handler-calls.py per its own instruction, so that gate now PROVES
+  the composition resolves). The complete NIP-44 path sweeps the official encrypt/decrypt
+  vectors headlessly; nothing about it has met an engine, so the honesty label is unchanged:
+  verified statically; needs an OXT pass.
 - Suite integration: the core embeds in the suite paste as a script layer; the harness folds
   under prefix nx1; the relay layer stays out of the paste (see "What this is"); the demo
   carries core + relay + harness between sync-demo-embeds sentinels.
@@ -216,8 +231,10 @@ here as they are learned (that is what this section is for).
   tools/build-suite-selftest.py` and `python3 tools/sync-demo-embeds.py` at the suite root),
   and it has had, or is clearly flagged as needing, an on-engine pass.
 - A change that needs a new CoinXT or SodiumXT primitive splits: the upstream feature lands
-  first (with its own ABI bump and tests), then NostrXT composes it. `sxChaCha20IetfXor` is
-  the standing example (docs/07).
+  first (with its own ABI bump and tests), then NostrXT composes it. `sxChaCha20IetfXor` was
+  the standing example and is now the second PROOF of the law after `sxSha3_256`: requested
+  in docs/07, shipped upstream as SodiumXT ABI 10 (2026-08-23), composed here with zero code
+  changes.
 - A change to the canonical serializer, the bech32 layer, or the NIP-44 construction is
   interop-visible: new KAT rows land in the SAME change, and the honesty label resets to
   "needs an OXT re-pass".

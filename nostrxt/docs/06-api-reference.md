@@ -59,7 +59,7 @@ answer for the session, and a missing extension disables exactly its feature.
 |---|---|---|
 | `nxVersion()` | function | The member name and version string. |
 | `nxLastError()` | function | The reason the most recent failing `nx*` call recorded. Read it immediately; any later failure overwrites it. |
-| `nxProbeCapabilities()` | function | Cached capability array: `hasCoin`, `hasSodium`, `canSign`, `canNip44Cipher`, `version`. `canNip44Cipher` stays false until SodiumXT ships the NIP-44 cipher (`07-capabilities-required.md`); for a live re-probe of that one seam use `nxNip44HasCipher()`. |
+| `nxProbeCapabilities()` | function | Cached capability array: `hasCoin`, `hasSodium`, `canSign`, `canNip44Cipher`, `version`. `canNip44Cipher` is false when the installed SodiumXT predates ABI 10, where the NIP-44 cipher shipped 2026-08-23 (`07-capabilities-required.md`); for a live re-probe of that one seam use `nxNip44HasCipher()`. |
 
 ## Hex and encoding helpers
 
@@ -187,13 +187,14 @@ return-delimited lines.
 
 ## NIP-44 v2 encrypted payloads
 
-Every step is vector-pinned by the KAT EXCEPT the cipher call itself: raw ChaCha20
-exists nowhere in the suite today, and family law says a missing primitive is an
-upstream feature request (SodiumXT `sxChaCha20IetfXor`,
-`07-capabilities-required.md`), never a hand-rolled cipher here. Until it ships,
-`nxNip44Encrypt(...)` / `nxNip44Decrypt(...)` fail closed with a capability error
-naming it; the conversation key, message keys, padding and the MAC path all work and
-are pinned TODAY. On decrypt the MAC verifies BEFORE the cipher runs, over
+Every step is vector-pinned by the KAT, the cipher call included since 2026-08-23:
+family law says a missing primitive is an upstream feature request, never a
+hand-rolled cipher here, and the request shipped as SodiumXT ABI 10's
+`sxChaCha20IetfXor` (`07-capabilities-required.md` is the closed record). On an
+installed SodiumXT older than ABI 10, `nxNip44Encrypt(...)` / `nxNip44Decrypt(...)`
+fail closed with a capability error naming it; the conversation key, message keys,
+padding and the MAC path work either way. On decrypt the MAC verifies BEFORE the
+cipher runs, over
 nonce||ciphertext, compared constant-time - the member harness proves that order now,
 cipher or no cipher.
 
@@ -207,8 +208,8 @@ extended 6-byte prefix has no vectors yet (`08-open-questions.md`).
 | `nxNip44MessageKeys(pConvKeyHex, pNonceHex)` | function | HKDF-expand to 76 bytes, sliced into `chachaKey` (32B), `chachaNonce` (12B), `hmacKey` (32B), all hex. |
 | `nxNip44PaddedLen(pLen)` | function | The padded length of a `pLen`-byte plaintext (the vectors' pair table pins it). |
 | `nxNip44HasCipher()` | function | A LIVE probe of the cipher seam, so an upgraded SodiumXT is noticed without restarting (unlike the cached `nxProbeCapabilities()` row). |
-| `nxNip44Encrypt(pSeckeyHex, pPubkeyHex, pPlaintext, pNonceHex)` | function | The full versioned payload, standard base64. `pNonceHex` empty draws 32 fresh SodiumXT bytes; a fixed nonce is for KATs ONLY - never reuse one in anger. Fails closed until the upstream cipher ships. |
-| `nxNip44Decrypt(pSeckeyHex, pPubkeyHex, pPayload)` | function | MAC-verify, then decrypt and unpad, strict at every step (version byte, length floors, padding agreement). Fails closed until the upstream cipher ships. |
+| `nxNip44Encrypt(pSeckeyHex, pPubkeyHex, pPlaintext, pNonceHex)` | function | The full versioned payload, standard base64. `pNonceHex` empty draws 32 fresh SodiumXT bytes; a fixed nonce is for KATs ONLY - never reuse one in anger. Fails closed on a SodiumXT older than ABI 10. |
+| `nxNip44Decrypt(pSeckeyHex, pPubkeyHex, pPayload)` | function | MAC-verify, then decrypt and unpad, strict at every step (version byte, length floors, padding agreement). Fails closed on a SodiumXT older than ABI 10. |
 
 ## Filters and the wire messages
 
@@ -409,10 +410,10 @@ Everything hex is LOWERCASE on this API; binary never crosses it.
   extension produces a reason naming exactly the handler it needs, so an app can
   branch on the probe rather than parse the string:
   `"nxEventId needs CoinXT cxSha256: ..."`,
-  `"nxKeyGenerate needs SodiumXT sxRandomBytes"`, and the one standing gap,
-  `"nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped upstream;
-  docs/07-capabilities-required.md)"`. Probe with `nxProbeCapabilities()` (cached)
-  and `nxNip44HasCipher()` (live).
+  `"nxKeyGenerate needs SodiumXT sxRandomBytes"`, and the pre-ABI-10-SodiumXT one,
+  `"nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the
+  installed SodiumXT predates it - docs/07-capabilities-required.md)"`. Probe with
+  `nxProbeCapabilities()` (cached) and `nxNip44HasCipher()` (live).
 
 ## What is deliberately NOT here
 

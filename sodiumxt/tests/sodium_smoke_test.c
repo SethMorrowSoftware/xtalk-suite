@@ -1459,6 +1459,129 @@ static void test_ristretto_abi9(void)
               == SXT_ERR_BADARG, "a null scalar_add output buffer is refused");
 }
 
+static void test_chacha20(void)
+{
+    /* ABI 10: the raw IETF ChaCha20 stream xor. KAT provenance (2026-08-23):
+     * every expected value below was derived from an INDEPENDENT RFC 8439
+     * implementation (nostrxt/tools/nostr_reference.py, import-anchored to
+     * the official NIP-44 vector set), and vectors A and B additionally
+     * match the pinned libsodium 1.0.20 tarball's own expectation file
+     * (test/default/chacha20.exp, tv_ietf rows 1 and 5 at counter 0) - so a
+     * pass here is two implementations agreeing, not libsodium agreeing
+     * with itself. Vector A is RFC 8439 Appendix A.2 #1 (the keystream at
+     * counter 0); C is the section 2.4.2 sunscreen plaintext under that
+     * section's key and nonce but at counter 0, the raw-xor configuration
+     * this export fixes (2.4.2 itself starts at counter 1, so its published
+     * ciphertext deliberately does NOT apply). */
+    unsigned char key[32];
+    unsigned char nonce[12];
+    unsigned char in[160];
+    unsigned char out[160];
+    unsigned char back[160];
+    char hex[2 * 160 + 1];
+    int i;
+    static const char *kSunscreen =
+        "Ladies and Gentlemen of the class of '99: If I could offer you "
+        "only one tip for the future, sunscreen would be it.";
+
+    printf("raw IETF ChaCha20 stream xor (ABI 10):\n");
+
+    CHECK(sxt_chacha20_ietf_keybytes() == 32, "ChaCha20-IETF key width is 32");
+    CHECK(sxt_chacha20_ietf_noncebytes() == 12, "ChaCha20-IETF nonce width is 12");
+
+    /* A: zero key, zero nonce, 64 zero bytes -> the RFC 8439 A.2 #1 keystream. */
+    memset(key, 0, sizeof key);
+    memset(nonce, 0, sizeof nonce);
+    memset(in, 0, sizeof in);
+    fill_sentinel(out, (int)sizeof out);
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                in, 64) == 64,
+          "xor writes exactly the input length (64)");
+    sxt_bin2hex(hex, (int)sizeof hex, out, 64);
+    CHECK(strcmp(hex,
+            "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7"
+            "da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586") == 0,
+          "counter-0 keystream matches RFC 8439 A.2 #1");
+    memcpy(back, out, 64);
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                in, 64) == 64 && memcmp(out, back, 64) == 0,
+          "the stream is deterministic");
+
+    /* B: nonce ...02, a 96-byte patterned plaintext - crosses the 64-byte
+     * block boundary and ends mid-block, so the partial-block tail is real. */
+    nonce[11] = 0x02;
+    for (i = 0; i < 96; i++) {
+        in[i] = (unsigned char)((i * 7 + 3) & 0xFF);
+    }
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                in, 96) == 96,
+          "multi-block xor writes exactly the input length (96)");
+    sxt_bin2hex(hex, (int)sizeof hex, out, 96);
+    CHECK(strcmp(hex,
+            "c1cc5c2f93f31b0371a04de9b8cd5aa169f1a3003c493932d919cf9b9320f21b"
+            "697dfff66a5a19e7b3ac5d2ba0fcc3bb0cd5a3f18762fee6718b1399f4b558d1"
+            "d95bf95458a82fa00820cbb1802a29798804da71d7a18347623a138b331a3e4e") == 0,
+          "patterned 96-byte vector matches the independent reference");
+
+    /* C: the sunscreen plaintext under the 2.4.2 key/nonce at counter 0. */
+    for (i = 0; i < 32; i++) {
+        key[i] = (unsigned char)i;
+    }
+    CHECK(sxt_hex2bin(nonce, 12, "000000000000004a00000000", 24) == 12,
+          "the 2.4.2 nonce decodes");
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                (const unsigned char *)kSunscreen, 114) == 114,
+          "sunscreen xor writes exactly the input length (114)");
+    sxt_bin2hex(hex, (int)sizeof hex, out, 114);
+    CHECK(strcmp(hex,
+            "e3647a29ded31528ef56bac70f7a7ac3b735c7444da42d99823ef9938c8ebfdc"
+            "f05bb71a822c62981aa1ea608f47933f2ed755b62d9312ae72037674f3e93e24"
+            "4c2328d32f75bcc15bb7574fde0c6fcdf87b7aa25b5972970c2ae6cced86a10b"
+            "e9496fc61c407dfdc01510ed8f4eb35d0d62") == 0,
+          "counter-0 sunscreen ciphertext matches the independent reference");
+
+    /* The call is its own inverse: xor the ciphertext back to the plaintext. */
+    CHECK(sxt_chacha20_ietf_xor(back, (int)sizeof back, key, 32, nonce, 12,
+                                out, 114) == 114 &&
+              memcmp(back, kSunscreen, 114) == 0,
+          "xor twice with the same key and nonce is the identity");
+
+    /* In-place is supported (the LCB layer never uses it, but libsodium
+     * guarantees it and a regression here would be a real behaviour change).
+     * `hex` still holds the expected sunscreen ciphertext from vector C. */
+    memcpy(out, kSunscreen, 114);
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                out, 114) == 114,
+          "in-place call returns the input length");
+    {
+        char hex2[2 * 160 + 1];
+        sxt_bin2hex(hex2, (int)sizeof hex2, out, 114);
+        CHECK(strcmp(hex2, hex) == 0,
+              "in-place ciphertext is identical to the out-of-place one");
+    }
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                out, 114) == 114 &&
+              memcmp(out, kSunscreen, 114) == 0,
+          "in-place round-trip restores the plaintext");
+
+    /* Firewall: empty input legal; exact lengths enforced; short cap -> -needed. */
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 12,
+                                in, 0) == 0,
+          "an empty input is legal and writes nothing");
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 31, nonce, 12,
+                                in, 64) == SXT_ERR_BADARG,
+          "a 31-byte key is refused");
+    CHECK(sxt_chacha20_ietf_xor(out, (int)sizeof out, key, 32, nonce, 11,
+                                in, 64) == SXT_ERR_BADARG,
+          "an 11-byte nonce is refused");
+    CHECK(sxt_chacha20_ietf_xor(out, 10, key, 32, nonce, 12, in, 64) == -64,
+          "a short output buffer -> -needed (64)");
+    CHECK(sxt_chacha20_ietf_xor(NULL, (int)sizeof out, key, 32, nonce, 12,
+                                in, 64) == SXT_ERR_BADARG,
+          "a null output buffer is refused");
+    CHECK(last_error_len() > 0, "the refusal left an error message");
+}
+
 static void test_handle_table_stress(void)
 {
     unsigned char key[32];
@@ -1623,6 +1746,7 @@ int main(void)
     test_sha3();
     test_ristretto();
     test_ristretto_abi9();
+    test_chacha20();
     test_handle_table_stress();
 
     printf("-------------------\n");

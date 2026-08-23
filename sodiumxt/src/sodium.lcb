@@ -20,13 +20,15 @@
 -- 2026-08-12 on Windows x64 at 71 checks with the ABI-7 sxSha3_256 / FIPS 202
 -- additions (both recorded in docs/api-reference.md and CLAUDE.md). So the LCB
 -- marshaling of everything in this file below ABI 8 is a runtime result. The
--- ONE surface those passes do not cover is the ristretto255 sections - ABI 8
--- (the group surface) and ABI 9 (the DLEQ/batch follow-ons: point add/sub,
--- base-point and batch scalar multiplication, scalar add/mul), both added
--- 2026-08-15: their C KATs are green under ASan/UBSan and cross-checked
--- against an independent RFC 9496 reference, but no sxRistretto* handler has
--- run on an engine yet - those sections are verified statically and need an
--- OXT pass. The conventions below were settled
+-- ristretto255 sections - ABI 8 (the group surface) and ABI 9 (the
+-- DLEQ/batch follow-ons), both added 2026-08-15 - joined it on-engine
+-- 2026-08-17/18 (Windows x86_64 at ABI 9, then Linux; the "no sxRistretto*
+-- handler has run on an engine yet" sentence that stood here was corrected
+-- 2026-08-23, four days after docs/api-reference.md corrected its own copy
+-- of the same stale claim). The ONE surface with no engine run today is the
+-- ABI 10 raw ChaCha20 xor (added 2026-08-23; its C KATs are green under
+-- ASan/UBSan and cross-checked against an independent RFC 8439 reference) -
+-- that section is verified statically and needs an OXT pass. The conventions below were settled
 -- against a real OXT compile and a crash audit; they are recorded so they are
 -- not relearned:
 --   * an LCB library is a bracketed block: it must end with `end library`;
@@ -50,7 +52,7 @@
 --   * out parameters are passed by reference: command form `sxBoxKeypair tPk, tSk`,
 --     or inside a function call `put sxSecretStreamInitPush(tKey, tHeader) into h`.
 -- The native C layer is independently tested (KATs + ASan/UBSan);
--- the current C ABI is SXT_ABI_VERSION 9 (kSXTABIVersion below must match).
+-- the current C ABI is SXT_ABI_VERSION 10 (kSXTABIVersion below must match).
 -- ==========================================================================
 
 library org.openxtalk.library.sodium
@@ -68,7 +70,7 @@ metadata summary    is "Modern cryptography for xTalk via libsodium (authenticat
 --   kSXTABIVersion == SXT_ABI_VERSION ; kSXTErrBase == SXT_ERR_BASE.
 -- Declared before first use (OXT resolves a constant by lexical position; a
 -- forward reference silently evaluates to nothing).
-constant kSXTABIVersion is 9
+constant kSXTABIVersion is 10
 constant kSXTErrBase is -2000000000
 
 -- The engine MCStringEncoding enum value for UTF-8 (libfoundation: ASCII=0,
@@ -221,6 +223,12 @@ foreign handler _sxt_ristretto_scalarmult_base(in pOut as Pointer, in pCap as CI
 foreign handler _sxt_ristretto_scalarmult_batch(in pOut as Pointer, in pOutCap as CInt, in pN as Pointer, in pNLen as CInt, in pPoints as Pointer, in pPointsLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalarmult_batch"
 foreign handler _sxt_ristretto_scalar_add(in pOut as Pointer, in pCap as CInt, in pX as Pointer, in pXLen as CInt, in pY as Pointer, in pYLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_add"
 foreign handler _sxt_ristretto_scalar_mul(in pOut as Pointer, in pCap as CInt, in pX as Pointer, in pXLen as CInt, in pY as Pointer, in pYLen as CInt) returns CInt binds to "c:sodiumxt>sxt_ristretto_scalar_mul"
+-- ABI 10: the raw IETF ChaCha20 stream xor (NIP-44's cipher; nostrxt docs/07).
+-- The shim also exports the 32/12 length getters; this layer does not bind
+-- them because the output length here is the INPUT length and the key/nonce
+-- lengths are validated in the shim (unbound exports are the house norm -
+-- they are the next release's binds).
+foreign handler _sxt_chacha20_ietf_xor(in pOut as Pointer, in pCap as CInt, in pKey as Pointer, in pKeyLen as CInt, in pNonce as Pointer, in pNonceLen as CInt, in pIn as Pointer, in pInLen as CInt) returns CInt binds to "c:sodiumxt>sxt_chacha20_ietf_xor"
 
 -- --------------------------------------------------------------------------
 -- Private helpers. Each wraps its foreign call(s) in `unsafe`, so the public
@@ -1910,6 +1918,49 @@ public handler sxRistrettoScalarMul(in pX as Data, in pY as Data) returns Data
       put _sxt_ristretto_scalar_mul(tOut, tBytes, tXPtr, tXLen, tYPtr, tYLen) into tWritten
    end unsafe
    return sFinish("sxRistrettoScalarMul", tOut, tWritten)
+end handler
+
+-- --------------------------------------------------------------------------
+-- ABI 10: the raw IETF ChaCha20 stream xor (2026-08-23).
+-- THE ONE DELIBERATELY UNAUTHENTICATED HANDLER ON THIS SURFACE, and the one
+-- bring-your-own-nonce entry point, on the argued exception rules 3 and 4
+-- demand (the loud reason: docs/security.md, src/sodium_shim.h, and the
+-- request that owed it, nostrxt/docs/07-capabilities-required.md). It is a
+-- BUILDING BLOCK for published constructions that carry their own MAC and
+-- derive their nonces inside the construction - NIP-44 v2 is the named
+-- consumer (HMAC-SHA256 over nonce||ciphertext, verified before the cipher
+-- runs; the 12-byte nonce is an HKDF slice, never caller-chosen in anger).
+-- It is NOT a sealing API: to just encrypt bytes, use sxSecretBox /
+-- sxAeadEncrypt / the secretstream family, which authenticate and mint
+-- nonces. Verified statically; needs an OXT pass.
+-- --------------------------------------------------------------------------
+
+-- out = pData XOR ChaCha20-IETF keystream (RFC 8439: 32-byte key, 12-byte
+-- nonce, initial block counter 0). Length-preserving and its own inverse
+-- (the same call encrypts and decrypts). The shim refuses a key or nonce of
+-- any other length; an empty pData returns empty. UNAUTHENTICATED by design:
+-- the caller's construction must MAC the result (see the banner above).
+public handler sxChaCha20IetfXor(in pKey as Data, in pNonce as Data, in pData as Data) returns Data
+   variable tOut as Pointer
+   variable tKeyPtr as Pointer
+   variable tKeyLen as Integer
+   variable tNoncePtr as Pointer
+   variable tNonceLen as Integer
+   variable tInPtr as Pointer
+   variable tInLen as Integer
+   variable tWritten as Integer
+   sPrepare()
+   put sDataLen(pKey) into tKeyLen
+   put sDataPtr(pKey) into tKeyPtr
+   put sDataLen(pNonce) into tNonceLen
+   put sDataPtr(pNonce) into tNoncePtr
+   put sDataLen(pData) into tInLen
+   put sDataPtr(pData) into tInPtr
+   put sAlloc(tInLen + 1) into tOut
+   unsafe
+      put _sxt_chacha20_ietf_xor(tOut, tInLen + 1, tKeyPtr, tKeyLen, tNoncePtr, tNonceLen, tInPtr, tInLen) into tWritten
+   end unsafe
+   return sFinish("sxChaCha20IetfXor", tOut, tWritten)
 end handler
 
 end library

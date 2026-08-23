@@ -60,10 +60,11 @@ script "nostrxt"
 --     cxSchnorrVerify, cxXOnlyPubkey, cxEcdh, cxHmacSha256, cxSeckeyIsValid.
 --   SodiumXT (soft): sxRandomBytes (key/nonce generation), sxMemEqual
 --     (constant-time compare; a masked accumulate-loop stands in when absent).
---   SodiumXT sxChaCha20IetfXor (NOT YET SHIPPED, docs/07): the one NIP-44
---     primitive missing upstream. nxNip44Encrypt/Decrypt fail closed with a
---     clear capability error until it lands; every other NIP-44 step works
---     and is vector-pinned today.
+--   SodiumXT sxChaCha20IetfXor (SHIPPED upstream in SodiumXT ABI 10,
+--     2026-08-23; docs/07): the NIP-44 cipher. On an installed SodiumXT
+--     older than ABI 10 nxNip44Encrypt/Decrypt still fail closed with a
+--     clear capability error, by design; with ABI 10+ the full construction
+--     runs and is vector-pinned headlessly (it still needs an OXT pass).
 
 -- ==========================================================================
 -- Constants. Declared before first use (OXT resolves a constant by lexical
@@ -160,9 +161,9 @@ function nxProbeCapabilities
       put false into tCaps["hasSodium"]
    end try
    try
-      -- The upstream NIP-44 cipher (docs/07). Probe with a 1-byte xor; absent
-      -- today (SodiumXT has not shipped it), so this is expected to be false
-      -- until that lands - the probe is the seam, not a promise.
+      -- The upstream NIP-44 cipher (docs/07; shipped in SodiumXT ABI 10,
+      -- 2026-08-23). Probe with a 1-byte xor; false only when the INSTALLED
+      -- SodiumXT predates ABI 10 - the probe is the seam, not a promise.
       put sxChaCha20IetfXor(nxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"), nxHexDecode("000000000000000000000000"), numToByte(0)) into tOut
       if the number of bytes of tOut is 1 then
          put true into tCaps["canNip44Cipher"]
@@ -2566,12 +2567,13 @@ end nxUriDecode
 
 -- ==========================================================================
 -- NIP-44 v2 encrypted payloads. Every step here is vector-pinned
--- (tools/nostr-kat.py sweeps the full official set) EXCEPT the cipher call
--- itself: raw ChaCha20 exists nowhere in the suite today, and family law
--- says a missing primitive is an UPSTREAM feature request (SodiumXT
--- sxChaCha20IetfXor, docs/07), never a hand-rolled cipher here. Until it
--- ships, nxNip44Encrypt/Decrypt fail closed with a clear capability error;
--- the key schedule, padding and MAC all work and are testable today.
+-- (tools/nostr-kat.py sweeps the full official set), INCLUDING the cipher
+-- since 2026-08-23: family law said the missing primitive was an UPSTREAM
+-- feature request, never a hand-rolled cipher here, and that request
+-- shipped as SodiumXT ABI 10's sxChaCha20IetfXor (docs/07). On an installed
+-- SodiumXT older than ABI 10, nxNip44Encrypt/Decrypt still fail closed with
+-- a clear capability error; the key schedule, padding and MAC work either
+-- way. The complete path is engine-unproven (needs an OXT pass).
 -- ==========================================================================
 
 function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
@@ -2711,15 +2713,17 @@ private function nxNip44Unpad pPadded
 end nxNip44Unpad
 
 private function nxChaCha20 pKeyData, pNonceData, pData
-   -- THE CIPHER SEAM (docs/07): composes SodiumXT's sxChaCha20IetfXor when
-   -- it ships (RFC 8439 ChaCha20, 12-byte nonce, counter 0). Until then the
-   -- call raises and this returns empty with the capability error recorded.
-   -- Family law forbids hand-rolling the cipher here (rule 1).
+   -- THE CIPHER SEAM (docs/07): composes SodiumXT's sxChaCha20IetfXor
+   -- (RFC 8439 ChaCha20, 12-byte nonce, counter 0; shipped upstream in
+   -- SodiumXT ABI 10, 2026-08-23). On an installed SodiumXT older than that
+   -- the call raises and this returns empty with the capability error
+   -- recorded - the fail-closed branch is the old-install path, not dead
+   -- code. Family law forbids hand-rolling the cipher here (rule 1).
    local tError, tOut
    try
       put sxChaCha20IetfXor(pKeyData, pNonceData, pData) into tOut
    catch tError
-      nxSetError "nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped upstream; docs/07-capabilities-required.md)"
+      nxSetError "nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)"
       return empty
    end try
    if the number of bytes of tOut is not the number of bytes of pData then

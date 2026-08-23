@@ -47,16 +47,16 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 
 | platform id | ABI | note |
 |---|---|---|
-| `x86_64-linux` | **9** | rebuilt with the ristretto255 DLEQ/batch follow-ons (2026-08-15, same day as the ABI-8 group surface); ctest + the ASan/UBSan lane green on this exact build |
-| `x86_64-win32` | **9** | mingw64 cross-build 2026-08-15 per the PROVEN fallback recipe below; the three checks pass (121/121 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0x9,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
-| `x86-linux` | **9** | rebuilt 2026-08-15 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
-| `x86-win32` | **9** | mingw32 cross-build 2026-08-15, same recipe and checks as the x64 row |
-| `universal-mac` | 6 | STALE, now THREE ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
+| `x86_64-linux` | **10** | rebuilt 2026-08-23 with the ABI-10 raw ChaCha20 xor; ctest + the ASan/UBSan lane green on this exact build, and the freshness gate's loader leg confirmed the committed binary answers 10 |
+| `x86_64-win32` | **10** | mingw64 cross-build 2026-08-23 per the PROVEN fallback recipe below (driven through the member CMake this time, plus `-static-libgcc` - the note in the recipe paragraph); the three checks pass (124/124 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0xa,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
+| `x86-linux` | **10** | rebuilt 2026-08-23 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
+| `x86-win32` | **10** | mingw32 cross-build 2026-08-23, same recipe and checks as the x64 row (`_sxt_abi_version` disassembles to `mov $0xa,%eax` under the 32-bit underscore decoration) |
+| `universal-mac` | 6 | STALE, now FOUR ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
 
 Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
 the older ABI-6 package end to end, where `sxSha3_256` and the `sxRistretto*` surface
 simply do not exist and the composing members degrade the way they were written to, or
-(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 9.
+(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 10.
 The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
 canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
 cross-builds the same way run 31551536144 superseded the 2026-08-11 one.
@@ -82,6 +82,14 @@ it). So a mingw64 cross-build is a PROVEN fallback path for this member when no 
 available. The committed row has since been refreshed by `release-binaries.yml` run
 31551536144 with its own build, verified by `tools/install-release-binaries.py` and the
 full gate set; the mingw episode stands as the record that the fallback works.
+**The 2026-08-23 ABI-10 rebuild drove the SAME fallback through the member CMake instead
+of by hand** (`-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc
+"-DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=x86_64-w64-mingw32"` and the i686 twins,
+tests OFF since the .exe cannot run here), and learned one thing the hand-built episode
+never met: the CMake-linked DLL imported `libgcc_s_seh-1.dll` / `libgcc_s_dw2-1.dll`
+until `-DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc` was added - the import-table check
+above is what caught it, which is why that check exists. Both DLLs then pass all three
+checks; the platform table rows carry the details.
 
 **THE COMMITTED BINARIES ARE EXECUTED IN CI NOW, NOT ONLY INSPECTED (2026-08-16).**
 Until this date every lane in `native-sodiumxt.yml` built fresh from source and asked
@@ -96,7 +104,7 @@ build overwrites it and drives the published **RFC 9496 Appendix A.1** encodings
 point. The expected ABI is READ FROM `src/sodium_shim.h`, never a literal (coinxt's
 lane carried a literal and the 4 -> 5 bump turned it red for no reason but the
 workflow file). Linux `.so` lanes only: `universal-mac` is deliberately not driven
-because that hand-lipo'd blob is still recorded at ABI 6, three behind this header, so
+because that hand-lipo'd blob is still recorded at ABI 6, four behind this header, so
 an assertion there would fail on a known documented state rather than on a regression.
 It starts being driven when the manual mac build lands.
 
@@ -143,10 +151,18 @@ That flips three of TorrentXT's defining rules. Do not cargo-cult them.
    surface is designed so misuse is hard: one-shot calls **generate a fresh random nonce and
    prepend it** to the ciphertext; file and stream encryption use **secretstream**, which
    derives per-chunk nonces internally from a random header. Do not expose a "bring your own
-   nonce" entry point without a very loud reason.
+   nonce" entry point without a very loud reason. THE LOUD REASON WAS GIVEN ONCE (2026-08-23):
+   `sxChaCha20IetfXor`, the ABI 10 building block for NIP-44, whose nonce is an HKDF slice
+   derived inside the consuming construction, never caller-chosen in anger. The written
+   argument lives in `docs/security.md` and at the declaration in `src/sodium_shim.h`; the
+   rule stands for everything else.
 4. **Authenticate everything. Compare in constant time.** Use the AEAD / `_easy` / `secretbox`
    / `secretstream` forms (which carry a Poly1305 tag), never a raw unauthenticated stream
-   cipher. Verify tags and password hashes with `sodium_memcmp` / the library's own verify
+   cipher - with the SAME single written exception as rule 3: `sxChaCha20IetfXor` is raw and
+   unauthenticated by design, because its named consumer (NIP-44 v2) authenticates one layer
+   up with HMAC-SHA256 per its published spec and an AEAD would break interop; the argued
+   containment is in `docs/security.md`. Verify tags and password hashes with
+   `sodium_memcmp` / the library's own verify
    calls; **never** compare a MAC, tag, or hash in script with `is` (that is a timing leak).
 5. **Zero secret material when you are done with it (C-side), and be honest about what you
    cannot protect.** Use `sodium_memzero` on transient key/scratch buffers in the shim. Be
@@ -317,7 +333,9 @@ ops.** The rules:
   packs them into its output) so you can re-derive and so you can raise the cost later
   without breaking old data.
 - **AEAD over plain ciphers.** Always carry the Poly1305 tag; reject on tag failure and tell
-  the caller "wrong key or tampered", never silently return garbage.
+  the caller "wrong key or tampered", never silently return garbage. (`sxChaCha20IetfXor` is
+  the one argued exception - rule 4 above - and anything composed over it must verify its
+  own MAC BEFORE running the cipher, the way NIP-44 does.)
 - **secretstream for files**: it gives per-chunk authentication, ordering, and a FINAL tag
   that makes **truncation detectable** (a cut-off file fails to verify). Hand-rolled chunk
   framing does not get this for free.

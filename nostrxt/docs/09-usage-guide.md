@@ -42,8 +42,8 @@ command showCapabilities
    if tCaps["hasSodium"] is not true then
       answer "SodiumXT is not installed: key generation is unavailable"
    end if
-   -- tCaps["canNip44Cipher"] stays false until SodiumXT ships the NIP-44
-   -- cipher (docs/07); nxNip44HasCipher() re-probes that one seam live.
+   -- tCaps["canNip44Cipher"] is false when the installed SodiumXT predates
+   -- ABI 10 (docs/07); nxNip44HasCipher() re-probes that one seam live.
 end showCapabilities
 ```
 
@@ -362,11 +362,13 @@ end answerAuthChallenge
 
 ## 9. NIP-44, as it stands
 
-The honest recipe. The conversation key, message keys, padding and MAC work TODAY
-and are pinned against the official vectors; the raw cipher is the one upstream gap
-(SodiumXT `sxChaCha20IetfXor`, `07-capabilities-required.md`), so encrypt and
-decrypt FAIL CLOSED until it ships. Probe the seam live - the day an upgraded
-SodiumXT is installed, this same code starts encrypting with no change.
+The honest recipe. The whole construction works against a current SodiumXT: the
+once-missing raw cipher shipped upstream as ABI 10's `sxChaCha20IetfXor` on
+2026-08-23 (`07-capabilities-required.md` is the closed request). On an installed
+SodiumXT older than that, encrypt and decrypt FAIL CLOSED with the capability
+error. Probe the seam live either way - this same code branches correctly on any
+install, which is why the recipe below has not changed since the day the gap was
+open.
 
 ```livecodescript
 command demoNip44 pTheirPubkeyHex
@@ -387,11 +389,12 @@ command demoNip44 pTheirPubkeyHex
       put nxNip44Decrypt(sSeckey, pTheirPubkeyHex, tPayload) into tPlain
       -- tPlain is "hello"; a tampered payload refuses AT THE MAC.
    else
-      -- Today's path: fail closed, with the reason naming the gap.
+      -- The pre-ABI-10 install path: fail closed, naming the remedy.
       get nxNip44Encrypt(sSeckey, pTheirPubkeyHex, "hello", empty)
       answer nxLastError()
-      -- "nxNip44 needs SodiumXT sxChaCha20IetfXor (not yet shipped
-      --  upstream; docs/07-capabilities-required.md)"
+      -- "nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT
+      --  ABI 10; the installed SodiumXT predates it -
+      --  docs/07-capabilities-required.md)"
    end if
 end demoNip44
 ```

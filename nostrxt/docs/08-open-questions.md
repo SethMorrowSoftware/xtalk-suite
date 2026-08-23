@@ -50,10 +50,12 @@ root engine notes.
 **5. Which NIPs next.** Three candidates, in dependency order:
 
 - **NIP-17 / NIP-59 (private DMs via gift wrap)** is the one users will ask for
-  first, and it is BLOCKED on the cipher gap: gift wrap is three nested layers of
-  NIP-44 encryption, so nothing can ship until SodiumXT lands `sxChaCha20IetfXor`
-  (`07-capabilities-required.md` gap #1). The moment it does, the building blocks
-  (kind builders, NIP-44, `nxrSendRaw` for the wrapped kinds) are already here.
+  first, and its blocker CLEARED on 2026-08-23: gift wrap is three nested layers
+  of NIP-44 encryption, and SodiumXT shipped `sxChaCha20IetfXor` as ABI 10
+  (`07-capabilities-required.md` gap #1, closed). The building blocks (kind
+  builders, the now-complete NIP-44, `nxrSendRaw` for the wrapped kinds) are all
+  here; what gift wrap still deserves before design starts is the NIP-44 OXT
+  pass, so the layer under it is engine-proven rather than merely vector-proven.
 - **NIP-65 outbox routing** - the relay-list event is already built and parsed
   (`nxRelayListBuild` / `nxRelayListParse`); what is NOT decided is the routing
   STRATEGY: read from the author's write relays, write to the recipient's read
