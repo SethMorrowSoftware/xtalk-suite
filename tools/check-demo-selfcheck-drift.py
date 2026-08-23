@@ -66,6 +66,8 @@ ADOPTERS = {
                  "spike.livecodescript"): "demo",
     os.path.join("riptide", "examples",
                  "riptide-social.livecodescript"): "ra",
+    os.path.join("nostrxt", "examples",
+                 "nostrxt-demo.livecodescript"): "nd",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "

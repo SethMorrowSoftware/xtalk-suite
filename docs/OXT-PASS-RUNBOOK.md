@@ -529,6 +529,8 @@ kept as pointers so the same fact is never book-kept twice:
 | 30 | ~~**coinxt ABI 6 - BIP-340 Schnorr + the BIP-341 Taproot tweak**~~ **CLOSED 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3): "all 19 published Schnorr vectors including the 10 negatives, and the wallet vectors: key-path output key, script-tree root, the tweaked private key signing for the tweaked public key, and `cxBtcAddressP2TR` confirmed still NOT tweaking". The FFI shapes this row asked about are recorded in `docs/OXT-ENGINE-NOTES.md` section 4 with 2026-08-17 as their first-proven date: an empty `Data` in an OPTIONAL argument slot, the three-argument foreign call, and an array return read back by name. No tick line (see row 25). Row kept for the record: **coinxt ABI 6 - BIP-340 Schnorr + the BIP-341 Taproot tweak** (built 2026-08-16 on a second vendored library, upstream bitcoin-core/secp256k1; 19 published BIP-340 vectors incl. 10 negative and 14 BIP-341 wallet vectors green in CI, ASan clean) | the script layer marshals on a real engine - specifically `cxSchnorrSign`'s three-argument shape, an empty `Data` reaching the shim as length 0 in an OPTIONAL slot (proven for an empty INPUT in 2026-08-08, never for an optional argument), `cxSchnorrVerify`'s Boolean in both directions, and `cxTaprootTweak`'s array return read back by name. Also that `cxBtcAddressP2TR` and `cxBtcAddressP2TRFromInternal` really do differ on the same 32 bytes - the double-tweak trap this design exists to avoid | `coinxt/docs/api-reference.md` ABI 6 section; `coinxt/CLAUDE.md`'s dated rule-change entry | **CLOSED 2026-08-17** |
 | 31 | **box2dxt as the eighth folded harness** (2026-08-16). The suite paste grew from ~13.7k to **20,616 lines** and now carries box2dxt's harness plus the b2k Kit as a fourth embedded script layer; suite coverage went 411/429 to **724/742**. Read this BEFORE planning S1: the paste is half again as large. **CORRECTED 2026-08-19: this row's "372 of its assertions have never run" is SUPERSEDED, and the stale claim misled further than the stale number did.** box2dxt HAS run folded, green: **374/0 at harness v29** in the 2026-08-17 Windows pass recorded in the blockquote above, and **373/1 at v29 on Linux 2026-08-18** - and that one failure was the HARNESS being wrong about the engine, not the Kit (`playLoudness` readback; `docs/OXT-ENGINE-NOTES.md` 5.4). The harness is at **v30** now. Its own header records 375 where v29 had 374 - one assertion added when the playLoudness check became two self-diagnosing assertions plus a printed observation (commit `597ce0c`: one `stAssert` removed, two added in `stTestEngineContracts`). That 375 was what the HEADER RECORDED and not an observed result until **2026-08-20, when v30 ran folded on Windows at 375/0** - the header's number and the engine's now agree, and `playLoudness` reported `Win32: 24->24, 73->73` with the readback EXACT, which is the engine note 5.4 behaviour the two new self-diagnosing assertions were written to name | that box2dxt's 50 harness handlers and its full assertion set run green folded at v30 - and the operative instruction is that the next pass **RECORDS the v30 total, it does not match a number**: neither 372 nor 374 is the expectation, and a delta against either is not a regression. Including 13 NEW 'Kit API coverage' sections written in one pass against a member whose own ledger warns to expect first-contact arithmetic errors, so treat a failure there as suspect-the-test first. Also that the Kit's message path works: `b2kFell` / `b2kSensorEnter` / `b2kContact` are dispatched by LITERAL name and are the fold's only unprefixed handlers - if those three report zero events, the prefixing is wrong, not the dispatcher | `box2dxt/CLAUDE.md` fold record; `tools/check-suite-coverage.py` (the b2k row, and the 245-handler open item beside it) | S1 |
 | 32 | ~~**holde-em as the NINTH folded harness**~~ **CLOSED 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3): the fold COMPILED - 1,836 folded member checks across nine harnesses with ZERO failures, `he1heSelfTest` reporting readably at **538** checks in the per-member table, and no stray timer symptom in the cross-member async phase. No tick line (see row 25). Row kept for the record: **holde-em as the NINTH folded harness** (2026-08-16). The suite paste grew from 20,616 to **34,130 lines** and 928 to **1,308 handlers**; suite coverage is unchanged at **724/742** because holde-em deliberately has no row in that ratchet (its game and its harness are one file, so any scan measures the game naming its own API - the numbers are beside `tools/check-suite-coverage.py`'s member list). Read this BEFORE planning S1: the paste is two-thirds larger again, and ONE compile error takes all 34k lines down | that the fold COMPILES at all - this is the first paste of it, and it is the only fold carrying a whole application rather than a test file. Then that `he1heSelfTest` reports readably: the core needs EXACTLY ONE line of its report to parse as `n passed, m failed`, which was verified statically against every string literal in the file but never on an engine. Then its 21 sections themselves - the evaluator, betting and side pots, the deal ladder to Level 2 and the DLEQ audit, the signed wire, and the netplay/oracle/liveness loopbacks - none of which has run inside another paste. Watch specifically for a stray timer: the sweep is widened to the `he1` prefix by the fold, and if anything holde-em armed is still ticking it will fire during the cross-member async phase, after the member has already reported | `holde-em/CLAUDE.md` fold record; `tools/check-suite-selftest.py` checks 7d/7e (the reachability and guest-behaviour invariants) | **CLOSED 2026-08-17** |
+| 33 | **nostrxt as the TENTH folded harness, and the whole member's first engine contact** (2026-08-23). The paste grew to carry the nx* core as a fifth embedded script layer plus the folded 17-section harness (prefix `nx1`); suite coverage went 724/742 to **829/843** with ZERO new exemptions. Nothing in this member has ever met an engine | that the fold COMPILES (one bad line takes the whole paste); that `nx1nxSelfTest` reports readably; then the sections themselves - the canonical serializer producing the oracle's exact bytes (event ids depend on it), the JSON parser's refusals, bech32/NIP-19 against the published examples, the NIP-44 schedule against the official vectors, the MAC-before-cipher order and the fail-closed `sxChaCha20IetfXor` seam, websocket framing math, and every fail-closed argument path. The signing sections need CoinXT installed (they SKIP otherwise, counted); the nxr* relay section SKIPS here BY DESIGN (the layer is not in the paste; its offline paths run in the demo). UTF-8 event C is a genuine engine question: it measures `textDecode` round-trip fidelity for non-BMP content, and a FAIL is a real finding about engine text handling, not noise | `nostrxt/CLAUDE.md`, the As-built notes ("nothing has met an engine yet"); `nostrxt/README.md`, the status section; the root `README.md` release-matrix row | S1 |
+| 34 | **the nostrxt live-relay legs, and the wss:// engine question nothing in this tree can answer** (`nostrxt/examples/nostrxt-demo.livecodescript`: connect, subscribe, publish, the ok/eose/notice callbacks, NIP-42 auth). ws:// mirrors onionxt's engine-proven socket idioms but has never run; wss:// uses `open secure socket`, WHICH NO FILE IN THIS SUITE HAS EVER EXECUTED - `docs/OXT-ENGINE-NOTES.md` has no TLS entry at all. A local relay (e.g. nostr-rs-relay on loopback) makes the ws:// half a one-machine leg with a NEW resource: a relay binary, the way S2 needs a tor binary | the handshake reaching "open" against a real relay; a REQ answered with EVENTs that VERIFY; a publish answered by its ok callback; then, separately, whatever `open secure socket` actually does - record the TLS behaviour (verification, versions, failure delivery) in `docs/OXT-ENGINE-NOTES.md` section 6 WHATEVER the answer is, because it is the suite's first measurement of it | `nostrxt/src/nostr-relay.livecodescript`, the STATUS header and the VERIFY block at the `open secure socket` call; `nostrxt/docs/05-relay-client.md`; `nostrxt/docs/07-capabilities-required.md` gap #2 | a new resource class: one machine + a local relay daemon (ws://); + a TLS relay for wss:// |
 
 ---
 
@@ -1406,6 +1408,33 @@ in the same follow-up pass, so the suite front door and the members never disagr
 
 ---
 
+### 4.9 nostrxt (inventory items 33 and 34 - the member with NO engine evidence yet)
+
+Everything is first-time here, so record generously. The folded run (item 33)
+rides the suite paste: copy the `NostrXT` line of the per-member table and any
+red lines verbatim into `nostrxt/CLAUDE.md`'s As-built notes. Three specific
+things to write down:
+
+- The UTF-8 event C check ("event C id matches (raw UTF-8 content)"): pass or
+  fail, it is the suite's first measurement of `textDecode` round-trip
+  fidelity for non-BMP content - if it fails, that is an engine-notes entry
+  (section 2, evaluation), not a nostrxt bug to patch around silently.
+- The NIP-44 seam section's verdict lines. On today's SodiumXT the expected
+  record is "the untampered vector reaches the cipher and fails closed" plus
+  "naming the missing upstream primitive"; if a future SodiumXT ships
+  `sxChaCha20IetfXor`, the same section KATs the official payload vector
+  instead - either way, copy the lines.
+- Which sections SKIPped and why (CoinXT absent vs the relay layer absent):
+  the counts feed the member's first measured floor, which replaces the
+  placeholder floor 1 in `tests/suite-selftest.core.livecodescript`'s
+  `stMergeReturned "NostrXT"` call site.
+
+The live-relay legs (item 34) are the demo's: label flips live in
+`nostrxt/src/nostr-relay.livecodescript`'s STATUS header, `nostrxt/CLAUDE.md`
+gotcha 7, and `nostrxt/docs/05-relay-client.md`. The wss:// result - WHATEVER
+it is - goes to `docs/OXT-ENGINE-NOTES.md` section 6 as the suite's first TLS
+socket measurement.
+
 ## 5. Known traps
 
 These are all from the members' own hard-won notes. Each cost someone a debugging
@@ -1700,6 +1729,7 @@ PREREQ  <- one paste answers all but the last line: tests/preflight.livecodescri
        CoinXT ........... LOADED / NOT INSTALLED / ABI SKEW
        Box2Dxt .......... found ABI ______ vs expected ______ (the one READ number)
        OnionXT script layer present? ____   CoinXT script layer present? ____
+       NostrXT script layer present? ____
     The expected numbers are printed BY the table - `tools/build-preflight.py`
     reads them out of the six C shims and `--check` re-derives them on every
     push - so nothing here needs retyping when an ABI is bumped. A SKIP is not a
@@ -1769,6 +1799,11 @@ BREADTH
                                              on any platform.
 
 DEPTH (per-member selftests)  <- closed 2026-08-10 via the folded suite runs
+[ ] nostrxt folded sections (nx1, inside the suite paste - item 33): summary
+    line ____ passed ____ failed ____ skipped; event C utf-8 verdict ____;
+    NIP-44 seam verdict ____
+[ ] nostrxt live relay (item 34): ws:// handshake/REQ/publish ____ ;
+    wss:// observed behaviour recorded in engine notes? ____
 [x] sodiumxt   sxSelfTest()                   2026-08-12: 71/0 (latest folded run)
 [x] enetxt     enet-selftest                  2026-08-10: 21/0 (folded, twice);
                async loopback standalone 2026-08-07; and CLOSED 2026-08-13:

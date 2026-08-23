@@ -49,11 +49,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # clear error), and the entry gets DELETED the day the handler ships - at which
 # point this gate becomes the proof that the composition now resolves.
 KNOWN_MISSING = {
-    # Empty since 2026-08-11: sxSha3_256 (the one former entry, onionxt's
-    # deferred gap #2) shipped in SodiumXT ABI 7, so this gate now PROVES that
-    # composition resolves instead of tolerating it. The mechanism stays for
-    # the next deliberate gap: an entry here is a standing admission, not a
-    # way to quiet the gate.
+    # Empty from 2026-08-11 (sxSha3_256 shipped in SodiumXT ABI 7) until
+    # 2026-08-23, when nostrxt added the next deliberate gap:
+    "sxChaCha20IetfXor":
+        "NIP-44's raw ChaCha20 (RFC 8439, 12-byte nonce, counter 0) does not "
+        "exist anywhere in the suite; the upstream SodiumXT request is "
+        "nostrxt/docs/07-capabilities-required.md gap #1. Every call site is "
+        "a try-guarded seam that fails closed with a capability error naming "
+        "this handler (nostrxt/src/nostrxt.livecodescript nxChaCha20 / "
+        "nxNip44HasCipher / nxProbeCapabilities), and the member harness "
+        "asserts the fail-closed behaviour today. Delete this entry the day "
+        "SodiumXT ships it.",
 }
 
 # The family prefixes. Order matters: oxh must be tried before ox so an oxh*
@@ -68,12 +74,15 @@ KNOWN_MISSING = {
 # NOTE the ORDER rule above applies to b2k too - it must precede nothing here
 # (no other prefix is a prefix of it), but keep it out of the middle of the
 # oxh/ox pair.
-PREFIXES = ("oxh", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he", "b2k")
+# nxr is the nostrxt relay layer and nx its core; nxr must precede nx (the
+# oxh/ox rule) or every nxr* call would be checked against the nx* surface.
+PREFIXES = ("oxh", "nxr", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he",
+            "b2k", "nx")
 
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
 # a variable named "extra") out of the candidate set.
-CALL_RE = re.compile(r"\b((?:oxh|b2k|sx|bt|en|dc|ox|cx|rs|he)[A-Z]\w*)\b")
+CALL_RE = re.compile(r"\b((?:oxh|nxr|b2k|sx|bt|en|dc|ox|cx|rs|he|nx)[A-Z]\w*)\b")
 
 # Handler definitions we harvest to build the "exists" set.
 LCB_PUBLIC_RE = re.compile(r"^\s*public handler\s+(\w+)\s*\(([^)]*)\)", re.M)

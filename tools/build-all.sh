@@ -112,6 +112,10 @@ run_gates() {
     echo "== $m: tools/coin-kat.py --check =="
     ( cd "$m" && python3 tools/coin-kat.py --check )
   fi
+  if [ -f "$m/tools/nostr-kat.py" ]; then
+    echo "== $m: tools/nostr-kat.py --check =="
+    ( cd "$m" && python3 tools/nostr-kat.py --check )
+  fi
   # holde-em's pure-logic gates: the docs smart-quote scan, the table-layout
   # arithmetic, seven KAT mirrors of the game's pure handlers (evaluator,
   # betting/settlement, shuffle, crypto protocol, transcript fold, card
@@ -387,7 +391,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt; do
   if [ -d "$m" ]; then run_gates "$m"; fi
 done
 

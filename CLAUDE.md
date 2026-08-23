@@ -10,7 +10,7 @@ them and what the consolidation changed.
 
 ## What this repo is
 
-The OpenXTalk library suite: seven sibling extensions for OXT / the xTalk family,
+The OpenXTalk library suite: eight sibling extensions for OXT / the xTalk family,
 each a thin binding over a proven native library (or, for OnionXT, pure
 LiveCodeScript over a local Tor daemon), consolidated into one repository so
 they release, version, and interoperate as a suite. This monorepo is the
@@ -37,6 +37,16 @@ openxtalk-libraries/
   .github/workflows/   the CI that runs: suite-gates + a native matrix per
                        member (member .github dirs are inert here)
   sodiumxt/  torrentxt/  enetxt/  datachannelxt/  onionxt/  coinxt/
+  nostrxt/             the Nostr member, added 2026-08-23: pure LiveCodeScript
+                       over coinxt (BIP-340, sha256, ECDH) and sodiumxt
+                       (randomness); NIP-01 events with an OWNED canonical
+                       serializer, NIP-19 bech32/TLV (uncapped, the NIP's own
+                       waiver), the NIP-44 v2 construction fail-closed behind
+                       the one missing upstream cipher (sxChaCha20IetfXor,
+                       its docs/07), and a websocket relay client SPLIT into
+                       a second file so the suite paste never carries a
+                       second socketError definition; verified statically,
+                       vector-pinned headlessly, no engine pass yet
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification

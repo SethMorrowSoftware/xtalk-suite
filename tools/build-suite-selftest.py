@@ -520,6 +520,18 @@ MEMBERS = [
    end repeat"""),
         ),
     ),
+    Member(
+        "nostr", "nostrxt/examples/nostrxt-tests.livecodescript", "nx1",
+        "nxSelfTest", "NostrXT: the full nx* self-test",
+        "17 sections, all OFFLINE and deterministic: canonical serialization, "
+        "the JSON parser, NIP-19 bech32/TLV, the NIP-44 schedule, padding and "
+        "the fail-closed cipher seam, filters, wire messages, websocket "
+        "framing math, PoW, and the builders. Signing sections SKIP without "
+        "CoinXT; the nxr* relay-layer section SKIPS here by design (that "
+        "layer defines the engine's socket handlers, which the embedded "
+        "onionxt layer also defines, so it is deliberately NOT in this "
+        "paste - the onion-httpd precedent).",
+    ),
 ]
 
 
@@ -573,6 +585,17 @@ SCRIPT_LAYERS = [
         "extensions, phase 1 (identity + the feed wire formats). Embedded so "
         "the folded riptide harness tests the code it ships with, same as the "
         "coinxt and onionxt layers.",
+    ),
+    Layer(
+        "nostrxt", "nostrxt/src/nostrxt.livecodescript",
+        "NostrXT script layer (the real library, embedded)",
+        "The nx* CORE only - events, canonical JSON, NIP-19, the NIP-44 "
+        "schedule, filters, wire messages, websocket framing math. Pure "
+        "compute, no I/O, so it embeds exactly like the layers above. The "
+        "nxr* relay layer is deliberately NOT here: it defines socketError / "
+        "socketClosed / socketTimeout, which the onionxt layer above already "
+        "defines, and this generator rightly refuses a double definition "
+        "(nostrxt/CLAUDE.md, the two-file split).",
     ),
 ]
 
