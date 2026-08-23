@@ -66,6 +66,10 @@ ADOPTERS = {
                  "spike.livecodescript"): "demo",
     os.path.join("riptide", "examples",
                  "riptide-social.livecodescript"): "ra",
+    # Not a demo: the two-machine session stack. It adopts the same block so a
+    # closing-pass run records every member's boot surface on BOTH machines
+    # before a single leg is attempted.
+    os.path.join("tests", "suite-closing-pass.livecodescript"): "cp",
 }
 
 BEGIN = ("-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: "

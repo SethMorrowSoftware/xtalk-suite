@@ -2522,6 +2522,11 @@ local sTorGotEcho, sTorConnectTries
 on openStack
    cpBuild
    cpProbe
+   -- Section 0 runs on OPEN, not behind a button, for the reason the demos'
+   -- boot self-checks do: the run we care about is the one somebody does
+   -- anyway, and a record nobody remembers to produce is a record that does
+   -- not exist. It costs nothing - no port, no session of its own, no daemon.
+   cpScRun
    if sPolling is not "true" then
       put "true" into sPolling
       send "cpPump" to me in kPollMs milliseconds
@@ -2618,7 +2623,7 @@ command cpBuild
    -- check-stack-size.py cap): A/B/C left, D/E/F right
    uiChrome "Suite closing pass - the remaining runbook legs", 1200, 640
 
-   uiSection "cpSecA", "A. DataChannel local async (single machine; the last static harness halves)", "16,58,592,76"
+   uiSection "cpSecA", "0 + A. Boot surface (prints on open) then DataChannel local async - both single-machine", "16,58,592,76"
    uiButton "cpARun", "Run A", "16,80,120,104"
    uiArea "cpAOut", "130,80,592,168"
 
@@ -3791,3 +3796,304 @@ function cpRepeatByte pCode, pCount
    end repeat
    return byte 1 to pCount of tOut
 end cpRepeatByte
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
+command scBegin pLogField
+   put pLogField into sScLogField
+   put empty into sScLines
+   put 0 into sScPassed
+   put 0 into sScFailed
+   put 0 into sScSkipped
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
+
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
+   end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
+
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
+         & "below it is the end of the block"
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
+
+-- THE ONE CHECK THAT NEEDS A TIMER.
+--
+-- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
+-- handler resolves against THE DEFAULTSTACK, not the stack whose script is
+-- running - and that entry is classed DOCUMENTED, not OBSERVED, because this
+-- tree has never actually watched the unpinned form fail. It also names the run
+-- that would settle it: open a second stack in front and let a `send ... in`
+-- handler write an unqualified field.
+--
+-- So this probe READS the defaultStack before pinning and PRINTS what it found.
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
+   local tWas, tPrev, tPrevColor, tGot, tErr
+   put the defaultStack into tWas
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
+   end if
+   -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
+   -- handing it back "ok" would repaint a "bad" line green - so a stack whose
+   -- extension is missing would end this probe claiming to be fine.
+   put field "uiStatus" into tPrev
+   put the foregroundColor of field "uiStatus" into tPrevColor
+   try
+      uiStatus kScProbe, empty
+      put field "uiStatus" into tGot
+   catch tErr
+      put "THREW:" && tErr into tGot
+   end try
+   uiStatus tPrev, empty
+   set the foregroundColor of field "uiStatus" to tPrevColor
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
+
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+         & sScSkipped & " skipped - select this block and copy it into the " \
+         & "OXT pass record"
+   if sScFailed is 0 then
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
+      exit scFinish
+   end if
+   scLine "      boot self-check has FAILURES above - report them before " \
+         & "running any live leg"
+   -- ONLY ON FAILURE does this touch the status line, and the asymmetry is
+   -- deliberate. Green, the demo's own "Ready ..." line is the more useful
+   -- thing to be reading and the detail is in the log a few lines up. Red, the
+   -- log may be on a tab nobody has clicked - so the one surface a person is
+   -- certainly looking at has to say so. Fail loud, pass quiet.
+   uiStatus "Boot self-check: " & sScFailed & " FAILED (see the log)", "bad"
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
+
+-- torproject.org's real v3 onion, and the same address with ONE character
+-- changed so its checksum fails. Pure compute: no daemon is touched.
+constant kCpScRealOnion = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
+constant kCpScBadOnion = "3gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
+
+-- ---- section 0: the boot surface ----------------------------------------------
+-- The plumbing is CARRIED (master: tools/demo-selfcheck.livecodescript; gate:
+-- tools/check-demo-selfcheck-drift.py). What this file owns is the list below.
+--
+-- WHY THIS SECTION IS HERE. Eleven demos each print a boot self-check, and the
+-- half of each that is about a MEMBER rather than about that demo's own window
+-- is the same half. Running it once, in the stack the operator installs on both
+-- machines anyway, means a two-machine session records the state of every
+-- extension on BOTH machines before a single leg is attempted - which is the
+-- question a failed leg makes you ask afterwards, from the wrong end.
+--
+-- WHAT IT DELIBERATELY DOES NOT COVER, so nobody reads it as more than it is:
+--   * each demo's own CONTROLS - eleven windows cannot be one window, and the
+--     eleven prefixes collide anyway (two demos use qs, two use demo);
+--   * the CARRIED HELPER LAYERS (enet-helpers, datachannel-helpers) - all three
+--     of those files and this one declare `sPolling`, so no two of them can
+--     share a script. That is not a limitation to work around: it is a hard
+--     compile error, and tools/check-duplicate-declarations.py exists to refuse
+--     it. Their coverage lives in the member selftests, folded into the suite
+--     paste.
+--   * the DEEP member harnesses - that is tests/suite-selftest.livecodescript,
+--     one machine, ~1985 checks.
+--
+-- Nothing here hosts, connects, binds a port or takes a singleton beyond the
+-- session cpProbe already opened.
+
+-- Every control name this script names OR builds, derived from the source with
+-- comments cut and string literals kept.
+constant kCpScControls = "cpAOut,cpARun,cpBAddr,cpBHost,cpBJoin,cpBL1,cpBOut,cpCCode,cpCFetch,cpCL1,cpCOut,cpCResume,cpCSaveDrop,cpCShare,cpDJoin,cpDL1,cpDOut,cpDRoom,cpDSend,cpECode,cpEHost,cpEJoin,cpEL1,cpEOut,cpFDataDir,cpFEcho,cpFL1,cpFL2,cpFLaunch,cpFOut,cpFStop,cpFTorPath,cpSecA,cpSecB,cpSecC,cpSecD,cpSecE,cpSecF,uiFooter,uiStatus,uiTitle"
+
+command cpScRun
+   local tMissing, tVer, tRc, tErr, tState, tPort, tInfo
+   scBegin "cpAOut"
+   put scMissing(kCpScControls) into tMissing
+   scAssert "all 41 controls this script names exist (missing: " \
+         & scShow(tMissing) & ")", (tMissing is empty)
+
+   -- SodiumXT: the one member every other leg composes with.
+   -- Each member is probed HERE rather than read off a flag: cpProbe builds a
+   -- one-line "Missing: ..." summary for the status line and keeps no per-member
+   -- state, and a second guarded call is cheaper than a flag that could drift
+   -- from what the extension actually does.
+   put empty into tVer
+   try
+      put sxVersion() into tVer
+   catch tErr
+      put empty into tVer
+   end try
+   if tVer is empty then
+      scSkip "sodiumxt", "not installed - legs C and E seal their payloads with it"
+   else
+      scAssert "sxVersion names libsodium (" & tVer & ")", (tVer contains "libsodium")
+   end if
+
+   -- TorrentXT: legs C, D and E all ride this ONE session.
+   if sSession is empty or sSession is 0 then
+      scSkip "the torrentxt session (legs C, D, E)", \
+            "no session - the extension is absent, or another TorrentXT stack " \
+            & "holds THE session (runbook trap 5.1). Those three legs will refuse."
+   else
+      put btListenPort(sSession) into tPort
+      scAssert "the session is listening (handle " & scShow(sSession) \
+            & ", port " & scShow(tPort) & ")", (tPort > 0)
+      put btLastError() into tErr
+      scAssert "btLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+   end if
+
+   -- ENetXT: leg B. enHostDestroy(0) is the stale-handle contract, and the one
+   -- destructive-looking call that is not - handle 0 is never live.
+   put empty into tVer
+   try
+      put enLibraryVersion() into tVer
+   catch tErr
+      put empty into tVer
+   end try
+   if tVer is empty then
+      scSkip "enetxt (leg B)", "not installed"
+   else
+      scAssert "enLibraryVersion names enet (" & tVer & ")", (tVer contains "enet")
+      put enHostDestroy(0) into tRc
+      scAssert "enHostDestroy(0) is a harmless no-op (got " & tRc & ")", (tRc is 0)
+      put enLastError() into tErr
+      scAssert "enLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+   end if
+
+   -- DataChannelXT: legs A and E.
+   put empty into tVer
+   try
+      put dcLibraryVersion() into tVer
+   catch tErr
+      put empty into tVer
+   end try
+   if tVer is empty then
+      scSkip "datachannelxt (legs A and E)", "not installed"
+   else
+      scAssert "dcLibraryVersion names libdatachannel (" & tVer & ")", \
+            (tVer contains "libdatachannel")
+      put dcPeerState(0) into tState
+      scAssert "dcPeerState(0) is -1 for a stale handle (got " & tState & ")", \
+            (tState is -1)
+      put dcLastError() into tErr
+      scAssert "dcLastError is empty after a clean boot (" & scShow(tErr) & ")", \
+            (tErr is empty)
+   end if
+
+   -- OnionXT: leg F. The layer is CARRIED in this file, so an absent oxVersion
+   -- is a damaged paste, not a missing install - and these four are pure
+   -- compute: no daemon is touched, so they answer the same before and after
+   -- Launch.
+   put empty into tVer
+   try
+      put oxVersion() into tVer
+   catch tErr
+      put empty into tVer
+   end try
+   if tVer is empty then
+      scSkip "the carried onionxt layer (leg F)", \
+            "oxVersion did not answer - the embedded copy is damaged; re-paste " \
+            & "this file, or run tools/sync-demo-embeds.py"
+   else
+      scAssert "oxVersion answers (" & tVer & ")", (tVer is not empty)
+      put oxTransportInfo() into tInfo
+      scAssert "oxTransportInfo's version agrees with oxVersion", \
+            (tInfo["version"] is tVer)
+      -- A true here would mean a control connection inherited from an earlier
+      -- run in this process, which changes what leg F is proving.
+      scAssert "oxIsReady is false before anything connects", (oxIsReady() is false)
+      scAssert "oxIsValidAddress accepts a real v3 address and refuses a " \
+            & "tampered one", \
+            (oxIsValidAddress(kCpScRealOnion) is true \
+             and oxIsValidAddress(kCpScBadOnion) is false)
+   end if
+   scArmProbe
+end cpScRun
