@@ -51,12 +51,12 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 | `x86_64-win32` | **10** | mingw64 cross-build 2026-08-23 per the PROVEN fallback recipe below (driven through the member CMake this time, plus `-static-libgcc` - the note in the recipe paragraph); the three checks pass (124/124 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0xa,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); needs its Windows engine pass, exactly as the 2026-08-11 DLL did before its 2026-08-12 proof |
 | `x86-linux` | **10** | rebuilt 2026-08-23 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
 | `x86-win32` | **10** | mingw32 cross-build 2026-08-23, same recipe and checks as the x64 row (`_sxt_abi_version` disassembles to `mov $0xa,%eax` under the 32-bit underscore decoration) |
-| `universal-mac` | 6 | STALE, now FOUR ABIs behind: the release workflow builds no macOS lanes by design (arm64-only runners would regress the fat binary); needs the manual `lipo` build |
+| `universal-mac` | 6 | STALE, now FOUR ABIs behind: needs the first mac dispatch of `release-binaries.yml` (its universal mac lanes landed 2026-08-23 - both slices in one pass, asserted at birth; before that the workflow built no macOS lanes because a naive arm64-only build would regress the fat binary) or a manual `lipo` build |
 
 Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
 the older ABI-6 package end to end, where `sxSha3_256` and the `sxRistretto*` surface
 simply do not exist and the composing members degrade the way they were written to, or
-(b) do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 10.
+(b) dispatch `release-binaries.yml` (its mac lane builds this member's universal dylib since 2026-08-23) or do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 10.
 The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
 canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
 cross-builds the same way run 31551536144 superseded the 2026-08-11 one.

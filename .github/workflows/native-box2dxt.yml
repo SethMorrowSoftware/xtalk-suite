@@ -159,10 +159,15 @@ jobs:
             os: macos-latest
             # Intel + Apple Silicon in one dylib; AVX2 off keeps the x86
             # slice portable. Quoted so bash does not split on the ';'.
-            # NOTE this is the ONE member whose universal build works on a
-            # plain macos runner: CMAKE_OSX_ARCHITECTURES fans out both
-            # slices in one configure, unlike the sodiumxt-style rebundle
-            # that regressed to thin dylibs and keeps macOS manual there.
+            # (CORRECTED 2026-08-23: a note here claimed box2dxt was "the ONE
+            # member whose universal build works on a plain macos runner".
+            # Measured against the tree instead: native-sodiumxt.yml has
+            # carried the same CMAKE_OSX_ARCHITECTURES recipe - with the
+            # multi-arch CFLAGS reaching its libsodium sub-build - and
+            # release-binaries.yml now runs universal mac lanes for four
+            # members. What the old note got right is that the naive flagless
+            # build on an arm64 runner emits a thin dylib; the flag is the
+            # whole difference.)
             cmake_args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBOX2D_AVX2=OFF'
             lib: libbox2dxt.dylib
             asset: libbox2dxt-macos-universal.dylib

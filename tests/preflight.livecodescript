@@ -788,7 +788,7 @@ command pfNextSection
       stNote "not a new defect - the committed universal-mac dylib is at ABI 6"
       stNote "against this binding's 10 (sodiumxt/CLAUDE.md's platform table;"
       stNote "runbook section 2.1's warning). Record it once and move to what a"
-      stNote "Mac CAN run today (runbook S5); it needs the manual lipo build."
+      stNote "Mac CAN run today (runbook S5); it needs the release workflow mac dispatch or the manual lipo build."
    end if
 
    stNote ""

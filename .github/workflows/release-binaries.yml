@@ -39,24 +39,37 @@
 #                        `python3 tools/install-release-binaries.py <dir>`
 #                        yourself.
 #
-# NO macOS LANES AT ALL, and this is a correctness decision rather than a
-# convenience one. GitHub's macos-15 runners are arm64-only, so a plain build
-# there produces a THIN arm64 dylib - and the engine's directory for macOS is
-# `universal-mac`, which promises the opposite. Committing that would have
-# actively REGRESSED the suite: sodiumxt/src/code/universal-mac/sodiumxt.dylib
-# is today a genuine fat binary carrying two architectures, and a release run
-# would have replaced it with an arm64-only file that fails to load on every
-# Intel Mac, silently and only for users. torrentxt has documented its own
-# version of this trap for a while (see
-# torrentxt/src/code/universal-mac/README.md); it turns out to apply to every
-# member, not just that one.
+# macOS LANES EXIST SINCE 2026-08-23, FOR FOUR OF SIX MEMBERS - and the
+# paragraph that stood here ("NO macOS LANES AT ALL") is kept in spirit as the
+# rule the lanes must obey. The trap it described is real: GitHub's macos-15
+# runners are arm64-only, so a PLAIN build there produces a THIN arm64 dylib -
+# and the engine's directory for macOS is `universal-mac`, which promises the
+# opposite. A naive lane would have replaced sodiumxt's genuine two-architecture
+# dylib with a file that fails to load on every Intel Mac, silently and only
+# for users. What dissolves the trap is not an Intel runner but the compiler:
+# clang cross-compiles both slices in one invocation (CMAKE_OSX_ARCHITECTURES
+# for the CMake members, a multi-arch CC for coinxt's build.sh), the recipe
+# sodiumxt's and box2dxt's own native-*.yml mac lanes had already proven in CI.
+# Every mac lane here ASSERTS `lipo -archs` contains both x86_64 and arm64 at
+# birth, tests the arm64 slice natively and the x86_64 slice under Rosetta 2,
+# and tools/install-release-binaries.py refuses both a thin Mach-O AND a fat
+# container missing a slice - so a lane that regresses cannot land its output.
 #
-# Shipping macOS properly needs work this workflow does not do: build each slice
-# and `lipo` them into one fat library, and for torrentxt additionally codesign
-# and notarize with Apple Developer credentials CI does not hold. Until that
-# exists, the macOS libraries stay a deliberate manual build - and
-# tools/install-release-binaries.py REFUSES a thin Mach-O under universal-mac,
-# so a hand-assembled bundle cannot make this mistake either.
+# The dylibs are UNSIGNED in the distribution sense (arm64 code always carries
+# the linker's automatic ad-hoc signature; that is what unsigned means on
+# macOS). They load from a git checkout or an installed extension; a
+# browser-downloaded zip additionally needs its quarantine attribute cleared,
+# which is the recorded cost of shipping without notarization.
+#
+# TWO MEMBERS STAY MANUAL, each with its reason written where a planner will
+# meet it: torrentxt statically links libtorrent + Boost + OpenSSL, and a
+# universal build of that stack needs per-arch dependency trees lipo'd together
+# (plus notarization for the smooth end-user story, with Apple Developer
+# credentials CI does not hold); datachannelxt takes its DTLS from the SYSTEM
+# OpenSSL, and brew's OpenSSL is thin and lives at a different prefix per
+# architecture. Both are buildable the two-thin-builds-and-lipo way when
+# someone does the work; until then their universal-mac stays a manual build,
+# and the installer's refusals hold the line for hand-assembled bundles too.
 name: release binaries
 
 on:
@@ -81,9 +94,10 @@ permissions:
   contents: read
 
 jobs:
-  # ---------------------------------------------------------------- CMake four
-  # sodiumxt, torrentxt, enetxt and datachannelxt all build through CMake with
-  # the same shape, so one matrix covers them. Each member's own
+  # ---------------------------------------------------------------- CMake five
+  # sodiumxt, torrentxt, enetxt, datachannelxt and (since 2026-08-23) box2dxt
+  # all build through CMake with the same shape, so one matrix covers them.
+  # Each member's own
   # tools/package-extension.py does the placing and stripping, exactly as the
   # per-member workflows do - this is an assembly workflow, not a second build
   # system, and it must not diverge from what those lanes produce.
@@ -140,6 +154,16 @@ jobs:
             triplet: x86-windows-static
             msvc_arch: x86
             win_style: nmake
+          # The universal recipe is native-sodiumxt.yml's own, ported verbatim:
+          # CMAKE_OSX_ARCHITECTURES fans the shim out to both slices, and the
+          # multi-arch CFLAGS reach the libsodium sub-build so its configure
+          # compiles fat objects too (clang accepts two -arch flags in one
+          # invocation; this is the documented alternative to per-arch builds
+          # plus lipo, and the one that lane has been running green).
+          - member: sodiumxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DSODIUMXT_LIBSODIUM_CFLAGS="-arch arm64 -arch x86_64"
 
           # ---- torrentxt: Boost + OpenSSL + zlib; libtorrent from vcpkg on Windows
           #
@@ -162,6 +186,7 @@ jobs:
             os: ubuntu-24.04
             container: quay.io/pypa/manylinux_2_28_x86_64
             manylinux: "1"
+            manylinux_deps: "1"    # Boost + static OpenSSL; torrentxt alone needs them
             cmake_args: -DBOOST_ROOT=/opt/boost-1.86.0 -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
             build_jobs: 2          # libtorrent from source OOMs a runner at -j4
           - member: torrentxt
@@ -202,6 +227,54 @@ jobs:
             platform_id: x86-win32
             os: windows-2025
             cmake_args: -A Win32
+          # ENet has no external dependency, so the universal build is the
+          # plain two-arch flag. (native-enetxt.yml's mac lane omitted this
+          # flag until 2026-08-23 and was staging a THIN arm64 dylib under the
+          # universal-mac name - artifact-only, never committed, but exactly
+          # the mislabel the installer exists to refuse.)
+          - member: enetxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+          # ---- box2dxt: added 2026-08-23, closing a recorded oddity - the
+          # member ships committed binaries for all five platforms and had no
+          # dispatch that could refresh any of them. Box2D builds from source
+          # inside the member's CMake, so every row is dependency-free; the
+          # SIMD flags are ported from native-box2dxt.yml with its reasons
+          # (AVX2 off keeps the x86_64 slice portable across CPUs; 32-bit x86
+          # is scalar so the DLL/so needs no specific CPU features).
+          # The x64 row runs in the SAME manylinux container as torrentxt's,
+          # and that is a decision being taken conservatively rather than
+          # dodged: "box2dxt release lane glibc floor" sat in the ledgers as
+          # an open owner decision, and a stock ubuntu-24.04 build would have
+          # quietly answered it with glibc 2.39. Flooring at 2.28 like the
+          # suite's other containerized release .so costs nothing here (Box2D
+          # has no external deps) and is loosenable later; the floor assertion
+          # below holds it either way.
+          - member: box2dxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            cmake_args: -DBOX2D_AVX2=OFF
+          - member: box2dxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: g++-multilib gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32 -DBOX2D_DISABLE_SIMD=ON
+          - member: box2dxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64 -DBOX2D_AVX2=OFF
+          - member: box2dxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32 -DBOX2D_DISABLE_SIMD=ON
+          - member: box2dxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBOX2D_AVX2=OFF
 
           # ---- datachannelxt: OpenSSL, including the i386 one for the 32-bit lane
           - member: datachannelxt
@@ -259,17 +332,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_i386 }}
 
-      # The manylinux lane's dependencies are PINNED DOWNLOADS, hash-checked
-      # before use (the libsodium discipline: the pin is the integrity gate).
       # The image supplies the old-glibc toolchain (gcc-toolset on PATH) and a
       # CPython under /opt/python; cmake and ninja come from that CPython's
       # pip, so the lane never depends on which build tools a given image tag
-      # happens to bundle. Boost is HEADERS ONLY (libtorrent builds via
-      # FetchContent and needs nothing linked from Boost), extracted from the
-      # b2-nodocs release archive, which carries the flattened boost/ tree.
-      # OpenSSL builds static (no-shared no-module) so the resulting .so
-      # carries its TLS stack instead of requiring a host libssl soname.
-      - name: Acquire pinned deps (manylinux lane)
+      # happens to bundle. Shared by every containerized row (torrentxt and,
+      # since 2026-08-23, box2dxt), which is why it is a separate step from
+      # the Boost/OpenSSL acquisition below - box2dxt needs the tools and
+      # none of the dependencies.
+      - name: Provision build tools (manylinux lanes)
         if: matrix.manylinux
         shell: bash
         working-directory: /
@@ -281,6 +351,20 @@ jobs:
           ln -sf "$PYBIN/cmake"   /usr/local/bin/cmake
           ln -sf "$PYBIN/ctest"   /usr/local/bin/ctest
           ln -sf "$PYBIN/ninja"   /usr/local/bin/ninja
+
+      # torrentxt's dependencies are PINNED DOWNLOADS, hash-checked before use
+      # (the libsodium discipline: the pin is the integrity gate). Boost is
+      # HEADERS ONLY (libtorrent builds via FetchContent and needs nothing
+      # linked from Boost), extracted from the b2-nodocs release archive,
+      # which carries the flattened boost/ tree. OpenSSL builds static
+      # (no-shared no-module) so the resulting .so carries its TLS stack
+      # instead of requiring a host libssl soname.
+      - name: Acquire pinned deps (torrentxt manylinux lane)
+        if: matrix.manylinux_deps
+        shell: bash
+        working-directory: /
+        run: |
+          set -euo pipefail
           command -v perl >/dev/null    # OpenSSL's Configure needs it; the image ships it
           curl -fsSL -o /tmp/boost.tar.gz \
             https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
@@ -353,9 +437,46 @@ jobs:
       # --no-tests=error: ctest exits 0 on an EMPTY test set, so without this a
       # misconfigured lane reports green having run nothing. A release artifact
       # that passed no test is worse than no artifact.
+      #
+      # On the mac lanes this run is the arm64 slice, natively; the x86_64
+      # slice gets its own execution below.
       - name: Test
         if: matrix.win_style != 'nmake'
         run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      # The x86_64 slice, EXECUTED, not just linked. Rosetta 2 runs it on the
+      # arm64 runner; the install is idempotent (and `|| true` because on
+      # images that preinstall it the updater can exit non-zero - if Rosetta
+      # is genuinely absent the test loop below fails loudly anyway). The
+      # tests are enumerated from ctest's own JSON rather than run through
+      # `arch -x86_64 ctest`, because ctest itself need not carry an x86_64
+      # slice and a fat TEST BINARY spawned from an arm64 parent would run
+      # arm64 again - the `arch` preference has to wrap the test executable
+      # itself, so each registered command is launched under it directly.
+      - name: Test the x86_64 slice under Rosetta (mac lanes)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          ctest --test-dir build --show-only=json-v1 > /tmp/ctest-tests.json
+          python3 - <<'PYEOF'
+          import json, subprocess, sys
+          tests = json.load(open("/tmp/ctest-tests.json"))["tests"]
+          if not tests:
+              sys.exit("no tests registered - nothing proves the x86_64 slice")
+          for t in tests:
+              cmd = t.get("command")
+              if not cmd:
+                  continue
+              cwd = None
+              for prop in t.get("properties", []):
+                  if prop.get("name") == "WORKING_DIRECTORY":
+                      cwd = prop.get("value")
+              print(f"x86_64: {t['name']}", flush=True)
+              subprocess.run(["arch", "-x86_64"] + cmd, cwd=cwd, check=True)
+          print(f"x86_64 slice: {len(tests)} test(s) passed under Rosetta")
+          PYEOF
 
       - name: Stage the per-platform library
         shell: bash
@@ -368,6 +489,29 @@ jobs:
         run: |
           ls -l "src/code/${{ matrix.platform_id }}/"
           test -n "$(ls src/code/${{ matrix.platform_id }}/${{ matrix.member }}.* 2>/dev/null)"
+
+      # The mac lanes' CONTRACT, asserted where the artifact is born (the
+      # manylinux pattern): `universal-mac` promises BOTH slices, and this is
+      # the check that turns a dropped CMAKE_OSX_ARCHITECTURES flag into a red
+      # job instead of a thin dylib wearing a universal name. The installer
+      # re-checks the slice table on the Linux side before anything is
+      # committed; this copy fails the lane while the failure is still cheap.
+      - name: Assert the dylib is genuinely universal (mac lanes)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="src/code/${{ matrix.platform_id }}/${{ matrix.member }}.dylib"
+          archs=$(lipo -archs "$f")
+          echo "slices: $archs"
+          case " $archs " in
+            *" x86_64 "*) : ;;
+            *) echo "FAIL: no x86_64 slice in $f"; exit 1 ;;
+          esac
+          case " $archs " in
+            *" arm64 "*) : ;;
+            *) echo "FAIL: no arm64 slice in $f"; exit 1 ;;
+          esac
 
       # The manylinux lane's CONTRACT, asserted where the artifact is born:
       # nothing dynamic beyond glibc and the loader (OpenSSL, libstdc++,
@@ -436,12 +580,27 @@ jobs:
           - platform_id: x86-win32
             os: ubuntu-24.04
             acquire: mingw32
+          # The mac build runs build.sh's own dylib path (exported_symbols_list
+          # generated from the objects, strip -x, the universal-mac id it has
+          # carried since the manual-lipo days) - the only addition is a
+          # multi-arch CC, which makes every object and the final link fat in
+          # one pass. nm reads fat objects fine; each symbol just appears once
+          # per slice, and build.sh's sort -u already collapses that.
+          - platform_id: universal-mac
+            os: macos-15
+            acquire: mac
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: coinxt
     steps:
       - uses: actions/checkout@v4
+      # The mac KAT leg below wants a pip that can install ecdsa without
+      # negotiating with a brew-managed interpreter (PEP 668).
+      - uses: actions/setup-python@v5
+        if: matrix.acquire == 'mac'
+        with:
+          python-version: "3.x"
 
       - name: Acquire toolchain
         shell: bash
@@ -451,6 +610,7 @@ jobs:
             linux32) sudo apt-get update && sudo apt-get install -y gcc-multilib ;;
             mingw64) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 ;;
             mingw32) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 ;;
+            mac)     : ;;   # clang ships with the runner
           esac
 
       # build.sh takes CC/NM/STRIP from the environment precisely so a cross
@@ -470,6 +630,8 @@ jobs:
               export CC=x86_64-w64-mingw32-gcc NM=x86_64-w64-mingw32-nm STRIP=x86_64-w64-mingw32-strip ;;
             mingw32)
               export CC=i686-w64-mingw32-gcc NM=i686-w64-mingw32-nm STRIP=i686-w64-mingw32-strip ;;
+            mac)
+              export CC="cc -arch arm64 -arch x86_64" ;;
           esac
           sh native/build.sh pack ${{ matrix.platform_id }}
 
@@ -489,6 +651,13 @@ jobs:
               leaked=$($tc-objdump -p "$d/coinxt.dll" \
                        | awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&/^$/{exit} f{print $NF}' \
                        | grep -v '^cnx_' || true) ;;
+            universal-mac)
+              # Mach-O globals carry a leading underscore, and nm on a fat
+              # file prints per-arch header lines - the grep for '^_' keeps
+              # symbols only, and any export outside _cnx_ leaks. Both slices
+              # are listed, so a symbol leaking from EITHER is caught.
+              leaked=$(nm -gU "$d/coinxt.dylib" | awk '{print $NF}' \
+                       | grep '^_' | sed 's/^_//' | grep -v '^cnx_' || true) ;;
           esac
           if [ -n "$leaked" ]; then
             echo "coinxt exports symbols outside the cnx_ surface:" >&2
@@ -496,6 +665,39 @@ jobs:
             exit 1
           fi
           echo "export surface OK"
+
+      # Both slices, EXECUTED through the published vectors on the runner that
+      # built them - the kat-windows discipline, applied where no second job is
+      # needed because the build host IS a mac. The arm64 leg runs natively
+      # with the independent-library crosscheck required (the same bar the
+      # Windows DLL meets); the x86_64 leg runs the full KAT table under
+      # Rosetta through Apple's own /usr/bin/python3, which is universal - the
+      # setup-python interpreter need not carry an x86_64 slice, and a fat
+      # ctypes dlopen follows the PYTHON process's architecture, so the
+      # interpreter choice is what selects the slice under test. That leg
+      # skips only the ecdsa crosscheck (system python, no pip packages); the
+      # vectors themselves all run.
+      - name: Drive the dylib through the published vectors, both slices (mac)
+        if: matrix.acquire == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          pip install --quiet ecdsa
+          COINXT_REQUIRE_CROSSCHECK=1 python3 tools/coin-kat.py --check \
+            --lib src/code/universal-mac/coinxt.dylib
+          arch -x86_64 /usr/bin/python3 tools/coin-kat.py --check \
+            --lib src/code/universal-mac/coinxt.dylib
+
+      - name: Assert the dylib is genuinely universal (mac)
+        if: matrix.acquire == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archs=$(lipo -archs src/code/universal-mac/coinxt.dylib)
+          echo "slices: $archs"
+          case " $archs " in *" x86_64 "*) : ;; *) echo "FAIL: no x86_64 slice"; exit 1 ;; esac
+          case " $archs " in *" arm64 "*)  : ;; *) echo "FAIL: no arm64 slice";  exit 1 ;; esac
 
       - uses: actions/upload-artifact@v4
         with:

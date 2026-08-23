@@ -8,7 +8,7 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > milestones 0–3 are built: the full `enx_` ABI (v2), the LCB layer
 > (`org.openxtalk.library.enet`, public `en*`), helpers, the LAN chat demo,
 > the OXT selftest, all static gates, CI, and the four committed
-> Linux/Windows binaries (macOS stays a manual build).
+> Linux/Windows binaries (macOS: a `release-binaries.yml` mac lane builds the universal dylib since 2026-08-23; until a dispatch runs it, the committed one is still the manual build).
 > The OXT runtime pass happened 2026-08-07: `tests/enet-selftest.livecodescript`
 > runs green in OXT — all tests pass. That retires the `MCStringEncode`
 > first-runtime-use flag from the pre-pass audit (the selftest's `enSendText`

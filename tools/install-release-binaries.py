@@ -138,6 +138,37 @@ def read_format(path):
     return None, "unrecognised object format"
 
 
+# Mach-O CPU types, from <mach/machine.h>: CPU_ARCH_ABI64 (0x01000000) OR'd
+# onto CPU_TYPE_X86 (7) and CPU_TYPE_ARM (12).
+_MACHO_CPU = {0x00000007: "x86", 0x01000007: "x86_64",
+              0x0000000C: "arm", 0x0100000C: "arm64"}
+
+
+def fat_archs(path):
+    """The architecture names inside a FAT Mach-O header, or None when the
+    file is not one. A fat MAGIC alone is not a universal binary - the header
+    carries a slice COUNT and per-slice cputypes, and a fat file with one
+    slice (or two of the same arch) is legal and loads exactly like a thin
+    one: for whoever built it, and for nobody else. Now that CI lanes emit
+    these, the promise `universal-mac` makes has to be checked against the
+    slice table, not the magic."""
+    with open(path, "rb") as fh:
+        head = fh.read(8)
+        if len(head) < 8 or struct.unpack_from(">I", head, 0)[0] != 0xCAFEBABE:
+            return None
+        nfat = struct.unpack_from(">I", head, 4)[0]
+        if not 0 < nfat <= 16:      # a real fat file has a handful of slices
+            return None
+        archs = []
+        body = fh.read(20 * nfat)   # fat_arch: cputype,cpusubtype,offset,size,align
+        if len(body) < 20 * nfat:
+            return None
+        for i in range(nfat):
+            cputype = struct.unpack_from(">I", body, 20 * i)[0]
+            archs.append(_MACHO_CPU.get(cputype, f"cputype {cputype:#x}"))
+        return sorted(archs)
+
+
 def coinxt_exports(path):
     """The cnx_-filtered export list of an ELF, or None when unreadable here."""
     try:
@@ -205,18 +236,39 @@ def main(argv):
                 # file, and a thin dylib breaks it in the worst way available:
                 # it loads perfectly on the machine that built it and fails only
                 # for users on the other architecture. This is not hypothetical -
-                # macos-15 runners are arm64-only, so the obvious CI lane builds
+                # macos-15 runners are arm64-only, so the OBVIOUS CI lane builds
                 # exactly this, and committing one would have replaced
                 # sodiumxt's genuine 2-architecture dylib with an arm64-only
-                # file. release-binaries.yml has no macOS lanes for that reason;
-                # this check is what stops a hand-assembled bundle doing it too.
-                # Build each slice and `lipo -create` them.
+                # file. (Until 2026-08-23 release-binaries.yml had no macOS
+                # lanes for that reason; its mac lanes now build BOTH slices via
+                # CMAKE_OSX_ARCHITECTURES / multi-arch CC and assert `lipo
+                # -archs` at birth, and this check plus the slice check below
+                # are what stop a hand-assembled bundle - or a regressed lane -
+                # from landing anything less.) Build each slice and
+                # `lipo -create` them.
                 problems.append(
                     f"{member}/{platform_id}/{want}: a THIN Mach-O, but "
                     f"{platform_id} promises a universal binary - it would load "
                     f"for whoever built it and fail for everyone on the other "
                     f"architecture. lipo the two slices together first")
                 continue
+            elif got_arch == "universal":
+                # The fat MAGIC is not the promise; the slice table is. A fat
+                # container carrying one slice - or two of the same arch - is
+                # legal Mach-O and fails users exactly like the thin case above.
+                archs = fat_archs(src)
+                if archs is None:
+                    problems.append(
+                        f"{member}/{platform_id}/{want}: fat Mach-O magic but "
+                        f"the slice table is unreadable - refusing a file this "
+                        f"tool cannot verify")
+                    continue
+                if not {"x86_64", "arm64"} <= set(archs):
+                    problems.append(
+                        f"{member}/{platform_id}/{want}: a fat Mach-O carrying "
+                        f"only {'+'.join(archs)} - universal-mac promises BOTH "
+                        f"x86_64 and arm64 slices")
+                    continue
 
             if member == "coinxt" and kind == "linux":
                 exports = coinxt_exports(src)
@@ -351,6 +403,17 @@ def _bytes_thin_macho():
     return b"\xcf\xfa\xed\xfe" + bytes(60)
 
 
+def _bytes_fat_macho(cputypes):
+    """A FAT Mach-O header with the given cputype list - the slice TABLE is
+    what universal-mac actually promises, so the fixtures must be able to
+    spell both the honest two-arch case and the one-slice container that
+    carries the fat magic while breaking the promise."""
+    head = bytearray(struct.pack(">II", 0xCAFEBABE, len(cputypes)))
+    for cpu in cputypes:
+        head += struct.pack(">IIIII", cpu, 0, 0, 0, 0)
+    return bytes(head)
+
+
 def _put(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as fh:
@@ -438,6 +501,21 @@ def selftest():
         rc, out = _capture([os.path.join(tmp, "thin"), "--dry-run"])
         check("a THIN Mach-O under universal-mac is REFUSED",
               rc == 1 and "THIN Mach-O" in out, out)
+
+        # The fat magic alone must not be enough: a one-slice fat container is
+        # legal Mach-O and fails users exactly like the thin case. This is the
+        # shape a mac CI lane regresses to if its CMAKE_OSX_ARCHITECTURES flag
+        # is dropped and someone "fixes" the thin refusal by wrapping the lone
+        # slice in a fat header.
+        _put(os.path.join(tmp, "oneslice", "box2dxt", "universal-mac",
+                          "box2dxt.dylib"), _bytes_fat_macho([0x0100000C]))
+        rc, out = _capture([os.path.join(tmp, "oneslice"), "--dry-run"])
+        check("a fat Mach-O carrying ONLY arm64 is REFUSED",
+              rc == 1 and "carrying only arm64" in out, out)
+        check("  ...and the real committed dylib carries both slices",
+              fat_archs(dylib) is not None
+              and {"x86_64", "arm64"} <= set(fat_archs(dylib)),
+              fat_archs(dylib))
 
         _put(os.path.join(tmp, "arch", "box2dxt", "x86-linux", "box2dxt.so"),
              _bytes_elf(2, 0x3E))

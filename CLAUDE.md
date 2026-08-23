@@ -800,27 +800,40 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   upload each built library as an **artifact** and never commit one: they fire on
   every push, so a commit step there would land binaries nobody asked for on
   somebody else's change. `release-binaries.yml` is the manual assembly step over
-  the top: one `workflow_dispatch` builds FIVE of the SIX members that ship
-  committed binaries, for every platform it can (20
-  jobs: five members x four platforms). **box2dxt is not in it**, although
-  `box2dxt/src/code/` carries all five platform directories and a
-  `MANIFEST.sha256`; no reason for the omission is recorded anywhere, and its own
-  `native-box2dxt.yml` matrix uploads artifacts and never commits, so box2dxt's
-  committed libraries have no dispatch that refreshes them. This paragraph said
-  "every member" until 2026-08-19, asserts each artifact, then installs each library into its member's
+  the top: one `workflow_dispatch` builds ALL SIX members that ship committed
+  binaries, for every platform it can (28 build jobs since 2026-08-23: box2dxt
+  joined - closing the omission this paragraph used to record as having no
+  recorded reason - and FOUR members gained macOS lanes; the paragraph said "20
+  jobs: five members x four platforms" until that day and "every member" until
+  2026-08-19), asserts each artifact, then installs each library into its member's
   `src/code/<platform-id>/`, refreshes the manifests, runs the whole gate set,
   and commits (`commit_mode`: `branch` / `pr` / `none`). That still satisfies
   rule 5, whose point is that a committed binary traces to a human decision - the
   decision is the person pressing "Run workflow". The verification is the same
   code either way, because the job runs `tools/install-release-binaries.py`
-  rather than reimplementing it. It builds NO macOS lanes: `macos-15` runners are
-  arm64-only, so they would emit a thin dylib into `universal-mac` and regress
+  rather than reimplementing it. **The macOS lanes (2026-08-23: sodiumxt,
+  coinxt, enetxt, box2dxt) build genuinely UNIVERSAL dylibs**, dissolving the
+  trap that kept macOS out of CI: `macos-15` runners are arm64-only, so a plain
+  build emits a thin dylib into `universal-mac` and would have regressed
   sodiumxt's genuine two-architecture binary into one that fails on every Intel
-  Mac. macOS stays a manual `lipo` build (plus codesigning/notarization for
-  torrentxt, which needs credentials CI does not hold), and the installer
-  refuses a thin Mach-O. Nor does it claim an unexecuted artifact works, which
-  is why the coinxt Windows lane's output is driven through the published
-  vectors on a Windows runner before it is bundled. The per-member `.github/workflows/` files are kept
+  Mac. The lanes cross-compile both slices in one pass
+  (`CMAKE_OSX_ARCHITECTURES`; a multi-arch `CC` for coinxt's build.sh), assert
+  `lipo -archs` carries both at birth, run the arm64 tests natively and the
+  x86_64 slice under Rosetta 2, and ship UNSIGNED in the distribution sense
+  (the linker's automatic ad-hoc signature; no notarization). The installer
+  refuses a thin Mach-O AND a fat container missing a slice, so a regressed
+  lane or a hand-assembled bundle cannot land either. torrentxt and
+  datachannelxt stay manual `lipo` builds with the reasons written in the
+  workflow header (a static universal libtorrent+Boost+OpenSSL stack, and
+  system-OpenSSL DTLS, respectively; torrentxt's notarization additionally
+  needs credentials CI does not hold) - and NO mac lane has produced a
+  committed binary yet: the lanes are written, the first dispatch is what
+  proves them, and the committed universal-mac dylibs keep their current ages
+  until someone presses "Run workflow". Nor does the workflow claim an
+  unexecuted artifact works, which is why the coinxt Windows lane's output is
+  driven through the published vectors on a Windows runner before it is
+  bundled - and the coinxt mac lane drives BOTH slices through the same
+  vectors on the runner that built them. The per-member `.github/workflows/` files are kept
   for when a member is worked on in isolation, but **GitHub Actions runs only
   the root workflows in a monorepo**, so they do not fire here.
 
