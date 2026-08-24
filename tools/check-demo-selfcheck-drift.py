@@ -46,6 +46,7 @@ MASTER = os.path.join("tools", "demo-selfcheck.livecodescript")
 # Every adopter, with the prefix of the handler that drives it. A demo is added
 # here in the same change that carries the block into it - never separately.
 ADOPTERS = {
+    os.path.join("enetxt", "examples", "enet-internet-chat.livecodescript"): "ei",
     os.path.join("enetxt", "examples", "enet-lan-chat.livecodescript"): "ec",
     os.path.join("datachannelxt", "examples",
                  "datachannel-dht-chat.livecodescript"): "wx",
