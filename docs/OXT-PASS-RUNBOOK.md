@@ -544,12 +544,12 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 | Member | Committed platforms | If your platform is missing |
 |---|---|---|
 | sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` — but the mac dylib is **ABI 6, four behind the ABI 10 code**: see the warning under this table before testing sodiumxt on a Mac | n/a on Linux/Windows; on macOS the dylib needs its `lipo` rebuild |
-| torrentxt | four (Linux x64/x86, Windows x64/x86); `universal-mac/` holds only a `README.md` (**no macOS dylib**) | build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
-| enetxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `enetxt/tools/package-extension.py` |
-| datachannelxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build locally, then `datachannelxt/tools/package-extension.py` |
-| box2dxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` - the only member whose committed mac dylib is not knowingly ABI-stale, and it is a genuine two-architecture Mach-O (x86_64 + arm64). But **no gate in this tree has ever read its export table and no Mac has ever loaded it**: `tools/check-binary-freshness.py`'s `MAC_MEMBER_NOTE` calls that row "UNVERIFIED here rather than confirmed - do not read this skip as evidence either way". Verified statically; needs an OXT pass on a Mac | n/a on Linux/Windows. On macOS it is the one member worth TRYING - `put b2Version()`, which the 2026-08-17 Windows preflight READ as 4 rather than inferring it - but treat a throw there as unproven-binary, not as a member bug; the rebuild is `box2dxt/docs/building.md` then `box2dxt/tools/package-extension.py` |
+| torrentxt | four (Linux x64/x86, Windows x64/x86); `universal-mac/` holds only a `README.md` (**no macOS dylib**) | dispatch `release-binaries.yml` (its `mac-lipo` job builds this member's universal dylib since 2026-08-23) or build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
+| enetxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (universal mac lane since 2026-08-23) or build locally, then `enetxt/tools/package-extension.py` |
+| datachannelxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (its `mac-lipo` job, since 2026-08-23) or build locally, then `datachannelxt/tools/package-extension.py` |
+| box2dxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` - the only member whose committed mac dylib is not knowingly ABI-stale, and it is a genuine two-architecture Mach-O (x86_64 + arm64). Since 2026-08-23 `tools/check-binary-freshness.py` READS this dylib on every gate run: 370 exports, byte-identical in both slices, matching the shim's 370 definitions and the `.lcb`'s 370 binds, with ABI 4 decoded from both slices' machine code - so the file is verified the way the ELF/PE binaries are. What is still true: **no Mac has ever loaded it**; that half needs an OXT pass on a Mac | n/a on Linux/Windows. On macOS it is the one member worth TRYING - `put b2Version()`, which the 2026-08-17 Windows preflight READ as 4 rather than inferring it - but treat a throw there as unproven-binary, not as a member bug; the rebuild is `box2dxt/docs/building.md` then `box2dxt/tools/package-extension.py` |
 | onionxt | n/a, pure LiveCodeScript | n/a |
-| coinxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | build it: `cd coinxt && sh native/build.sh pack` puts it straight into `src/code/`; see 2.4 |
+| coinxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (universal mac lane since 2026-08-23, both slices KAT-driven) or build it: `cd coinxt && sh native/build.sh pack` puts it straight into `src/code/`; see 2.4 |
 
 **On Linux (x64 or x86) and on Windows (x64 or x86), every member's library is
 already in the repo** — the 2026-08-08 release run committed all four platforms for
@@ -565,7 +565,7 @@ stock checkout.
 > is simply four ABI bumps stale (7 added the AEAD surface, 8 the ristretto255
 > group, 9 the DLEQ/batch algebra, 10 the raw ChaCha20 xor), because macOS was the one platform CI could not
 > build for and the `lipo` build was done by hand (since 2026-08-23
-> `release-binaries.yml` carries universal mac lanes for four members, so the
+> `release-binaries.yml` carries universal mac lanes for all six members, so the
 > unblock is a workflow dispatch; the committed dylib stays ABI 6 until one runs). Consequences for a pass on a Mac:
 > **every sodiumxt test, and everything downstream of it — the sealed lanes, the
 > Level 0 committed shuffle, all of holde-em's online and Level 2 play, riptide's
@@ -574,11 +574,13 @@ stock checkout.
 > Mac can actually prove (the pure-script layers, onionxt, and the UI passes). The
 > unblock is inventory row 24, and it is a build, not a debug.
 
-**macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib and
-NEITHER is proven: sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the
-warning below), and box2dxt's has never been read by any gate. torrentxt, enetxt,
-datachannelxt and coinxt need a mac dylib built (and, for torrentxt, codesigning
-and notarization). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
+**macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib:
+sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the warning below),
+and box2dxt's is - since 2026-08-23 - READ and verified by `check-binary-freshness.py`
+on every gate run (370 exports identical in both slices, ABI 4 decoded from both
+slices' machine code), though no Mac has ever loaded it. torrentxt, enetxt,
+datachannelxt and coinxt need a mac dylib built (codesign/notarize is NOT a gate on
+that: unsigned distribution was accepted 2026-08-23). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
 runners are arm64-only, so a naive automated lane would emit a thin dylib and silently
 regress sodiumxt's genuine two-architecture binary into one that fails on every Intel
 Mac. `release-binaries.yml` now carries universal mac lanes for ALL SIX members (both

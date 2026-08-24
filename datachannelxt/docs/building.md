@@ -75,7 +75,7 @@ suppressed.
 | `x86-linux` | the same under `-m32` against `libssl-dev:i386` |
 | `x86_64-win32` | MSVC + vcpkg `openssl:x64-windows-static`, static CRT (/MT), generated .def |
 | `x86-win32` | as above with `x86-windows-static` + `-A Win32` (the .def matters here) |
-| `universal-mac` | CI proves the HOST arch (arm64, Homebrew OpenSSL); the shipped universal (arm64;x86_64), codesigned + notarized dylib is a separate release build with Apple credentials — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` and a static OpenSSL for it |
+| `universal-mac` | the per-member lane proves the HOST arch (arm64, Homebrew OpenSSL); the shipped universal (arm64;x86_64) dylib is `release-binaries.yml`'s `mac-lipo` job since 2026-08-23 (per-arch pinned static OpenSSL, both slices tested, `lipo -create`; unsigned - codesign + notarize needs Apple credentials no lane holds). Manually: build each slice with its own SINGLE arch (`-DCMAKE_OSX_ARCHITECTURES=arm64`, then `=x86_64`, each against a matching static OpenSSL) and `lipo -create` the pair - one value per slice, never both, because two fat inputs share architectures and `lipo -create` refuses duplicates |
 
 In the xtalk-suite monorepo, CI is the root `.github/workflows/native-datachannelxt.yml`
 (the member's own `build.yml` is kept for isolated development but is inert

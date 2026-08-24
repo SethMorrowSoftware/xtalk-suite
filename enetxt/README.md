@@ -71,9 +71,11 @@ per-platform native library bundled under `src/code/<arch>-<platform>/`
 `x86-linux`, `x86_64-win32`, and `x86-win32`, pinned in
 `src/code/MANIFEST.sha256` (the 2026-08-08 release run landed all four, and
 the root workflow `native-enetxt.yml` builds the full matrix on every touch).
-Only `universal-mac` is absent: CI deliberately builds no macOS lane
-(arm64-only runners would emit a thin dylib), so it stays a manual build —
-`docs/building.md`. Installing the packaged extension
+Only `universal-mac` is absent: since 2026-08-23 `release-binaries.yml`
+carries a universal mac lane for this member (both slices in one
+`CMAKE_OSX_ARCHITECTURES` pass, asserted at birth), and its first dispatch is
+what lands the dylib; a manual build per `docs/building.md` remains
+equivalent. Installing the packaged extension
 makes the engine resolve the `c:enetxt>` binding automatically. See
 `docs/getting-started.md`.
 

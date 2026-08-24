@@ -433,10 +433,12 @@ monorepo**):
   because its point is that a committed binary traces to a human decision: here
   the decision is pressing "Run workflow". Since 2026-08-23 it carries **macOS lanes for all six members** (single-pass universal builds for sodiumxt, coinxt, enetxt, box2dxt; a two-slice-lipo job for torrentxt and datachannelxt, whose OpenSSL-bearing stacks cannot single-pass), building genuinely UNIVERSAL dylibs - both slices cross-compiled in one pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64 under Rosetta 2, unsigned in the distribution sense (the linker's ad-hoc signature; no notarization anywhere). No mac lane has produced a committed binary yet - the first dispatch is what proves them. The trap that kept macOS out until then: `macos-15` runners are arm64-only, so they
   would emit a thin dylib into `universal-mac` and overwrite sodiumxt's genuine
-  two-architecture binary with one that fails on every Intel Mac. macOS stays a
-  deliberate manual `lipo` build (and, for torrentxt, a codesigned and notarized
-  one), and the installer refuses a thin Mach-O so a hand-built bundle cannot
-  make that mistake either.
+  two-architecture binary with one that fails on every Intel Mac - which is why
+  the installer refuses a thin Mach-O AND a fat container missing a slice, so
+  neither a regressed lane nor a hand-built bundle can make that mistake. A
+  manual `lipo` build remains equivalent; codesign + notarize exists nowhere
+  yet (credentials CI does not hold; unsigned distribution accepted
+  2026-08-23).
 
 See `CLAUDE.md` for the suite-level workflow and `docs/README.md` for the
 cross-cutting documents.

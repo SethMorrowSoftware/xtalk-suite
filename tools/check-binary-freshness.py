@@ -375,10 +375,10 @@ MAC_KNOWN_STALE = {
 NON_LIBRARY_FILES = {"MANIFEST.sha256", "README.md"}
 
 # The one committed platform this host could actually LOAD, or None. Both halves
-# matter: a 64-bit Python cannot dlopen a 32-bit .so, and a non-Linux host has
-# no committed library it can load at all (there is no macOS lane, and the DLLs
-# are cross-built). None simply means the ABI decoder runs unconfirmed on this
-# host, which prints as a skip rather than passing silently.
+# matter: a 64-bit Python cannot dlopen a 32-bit .so, and this gate runs on
+# Linux hosts where neither the mac dylibs nor the cross-built DLLs can be
+# loaded. None simply means the ABI decoder runs unconfirmed on this host,
+# which prints as a skip rather than passing silently.
 if sys.platform.startswith("linux"):
     HOST_PLATFORM = "x86_64-linux" if struct.calcsize("P") == 8 else "x86-linux"
 else:
