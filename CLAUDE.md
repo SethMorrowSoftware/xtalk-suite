@@ -47,8 +47,12 @@ openxtalk-libraries/
                        still fails closed on an older installed sodiumxt),
                        and a websocket relay client SPLIT into
                        a second file so the suite paste never carries a
-                       second socketError definition; verified statically,
-                       vector-pinned headlessly, no engine pass yet
+                       second socketError definition; FIRST ENGINE PASS
+                       2026-08-24 (Windows x86_64, OXT 9.6.3): 274/274 in
+                       the suite paste, zero failures - every
+                       interpreter-modeled engine-semantics pin held; the
+                       relay layer's 2 skips are deliberate (not in the
+                       paste) and still need their live pass
   box2dxt/             the family ANCESTOR, folded home 2026-08-14: Box2D v3
                        physics + the pure-script b2k game Kit (sprites, input,
                        camera); its checker was the oldest pre-unification

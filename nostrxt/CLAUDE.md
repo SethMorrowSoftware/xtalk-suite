@@ -132,8 +132,15 @@ compute core IS EXECUTED headlessly on every build: `tools/check-script-vectors.
 the real shipped file through `tools/lcs-interp.py` (byte-identical with coinxt's copy,
 drift-gated), the serializer through the complete NIP-44 path, over the real committed
 sibling binaries via ctypes. That settles LOGIC, not parser behaviour, so the labels
-stand: everything here is **"verified statically; needs an OXT pass"**, and the relay
-paths add **"+ a live-relay pass"**. Do not claim a handshake works until it has shaken
+stand: everything here WAS **"verified statically; needs an OXT pass"** until
+2026-08-24, when the first engine pass ran (Windows x86_64, OXT 9.6.3): the
+member folded into the suite paste at **274 passed, 0 failed, 2 deliberate
+skips** - the whole nx* surface, the NIP-44 official vectors through the real
+sodiumxt ABI-10 cipher, and EVERY engine-semantics pin the headless
+interpreter models (the 1e3 number fold, the trailing-delimiter eat, the
+case-folding `is`, the b64 leniency traps) confirmed against the real engine.
+The relay layer keeps its stricter label, and the relay
+paths add **"+ a live-relay pass"** - and on 2026-08-24 the demo's own live leg ran: a real TLS websocket to wss://nos.lol opened (handshake complete, relay OPEN callback), an identity derived, a kind-1 note signed, verified, PUBLISHED, and the relay's ok-true came back for its id - the connect/handshake/publish/confirm path is live-proven; the REQ/subscribe receive leg was not in that run and keeps the label. Do not claim a handshake works until it has shaken
 hands with a real relay.
 
 ## Member gotchas (paid for elsewhere, carried here)
@@ -202,7 +209,9 @@ here as they are learned (that is what this section is for).
   deleted from tools/check-handler-calls.py per its own instruction, so that gate now PROVES
   the composition resolves). The complete NIP-44 path sweeps the official encrypt/decrypt
   vectors headlessly; nothing about it has met an engine, so the honesty label is unchanged:
-  verified statically; needs an OXT pass.
+  first engine pass green 2026-08-24 (274/274 in the suite paste); the relay
+  layer's connect/publish path is LIVE-PROVEN the same day (see below); the
+  REQ/subscribe receive leg still needs its observation.
 - Suite integration: the core embeds in the suite paste as a script layer; the harness folds
   under prefix nx1; the relay layer stays out of the paste (see "What this is"); the demo
   carries core + relay + harness between sync-demo-embeds sentinels.

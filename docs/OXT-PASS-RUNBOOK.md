@@ -1119,7 +1119,12 @@ every carrier of the scaffold gets it.
 The next 2026-08-20 paste came back carrying the trailer - proof the run was
 still live rather than hung - and the run after it, same build, waited and
 completed: **1981 passed, 0 failed, 1 skipped, 1982 total**, through both live
-loopbacks, the shared-budget cross-checks, teardown and the summary. So all
+loopbacks, the shared-budget cross-checks, teardown and the summary. **(The
+record moved again 2026-08-24, same platform: 2,373 passed, 0 failed, 3
+deliberate skips, 2,376 total - the growth is nostrxt's 274-check first
+engine run, coinxt's BIP-341 section, sodiumxt's ABI-10 ChaCha20, holde-em's
+v42 batch-path checks and riptide's kind-C/BTXO rails, all green on first
+contact; docs/REMAINING-WORK.md's 2026-08-24 banner carries the detail.)** So all
 three truncated pastes were early copies and nothing was ever wrong with the
 pump. Worth knowing for the next time a report stops somewhere surprising: the
 async half is the last ~27 checks and it is the only part of the run that takes

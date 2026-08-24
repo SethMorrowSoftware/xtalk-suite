@@ -19,9 +19,9 @@ One wrap covers both chains:
 - **HD wallets:** BIP-32 derivation, BIP-39 mnemonics (SLIP-39 later).
 - **Address and serialization formats:** Base58Check, Bech32 / Bech32m, hex, RLP, xprv/xpub, WIF
   (encode and fail-closed decode, mainnet and testnet, the 0x01 compressed marker), and the EIP-55
-  Ethereum checksum. (WIF shipped 2026-08-15 and is the one script surface still verified
-  statically: executed headlessly by the vector gate against the Bitcoin wiki's worked example,
-  needs an OXT pass.)
+  Ethereum checksum. (WIF shipped 2026-08-15; engine-proven 2026-08-17 in coinxt's 278/278 -
+  this parenthesis said "needs an OXT pass" for a week after that run, the
+  description-rots lesson again.)
 
 ```
 app (livecodescript)
@@ -283,8 +283,9 @@ the tapleaf extension for script-path signing - and **`cxTapLeafHash` / `cxTapBr
 tree SHAPE above one fold stays the app's loop). Pinned headlessly to the published bitcoin/bips
 wallet vectors - all seven keyPathSpending sighashes, all six script trees, every control block -
 by driving the real script through `tools/check-script-vectors.py`; no OP_CODESEPARATOR, no annex;
-**verified statically, no engine pass yet** (the ABI 6 engine claim below predates these four
-handlers and does not cover them).
+**ENGINE-PROVEN 2026-08-24** (Windows x86_64, OXT 9.6.3: all 12 BIP-341 checks green in coinxt's
+290/290 - leaf hashes including the 0xfa version, the sorted branch fold, the control block,
+both sighash paths and every refusal).
 
 Correctness: **all 19 of BIP-340's official test vectors run, ten of them NEGATIVE** (a public key
 off the curve, has_even_y(R) false, a negated message, a negated s, two infinity cases, and the
@@ -321,8 +322,9 @@ that is not `0x01`, and an out-of-range scalar each throw (both directions range
 vectors are derived by `tools/coin_reference.py` and anchored to the Bitcoin wiki's published
 worked example, which `tools/check-script-vectors.py` drives through the shipped script in both
 directions plus the refusals, and mutation testing confirmed each refusal vector catches its
-defect. **Verified statically; needs an OXT pass** - these two handlers are the only public
-surface not yet run on a real engine.
+defect. **ENGINE-PROVEN 2026-08-17** (coinxt 278/278, Windows x86_64) and reconfirmed in the
+2026-08-24 run's 290/290 - this paragraph carried "needs an OXT pass" for a week after the
+run that closed it.
 
 [SPEC.md](SPEC.md), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md), and [CLAUDE.md](CLAUDE.md) are the
 design and the running as-built log. Every deterministic path is pinned to a public known-answer vector,
