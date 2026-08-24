@@ -927,6 +927,21 @@ private command nxtTestRelayLayerOffline
    -- app it ships inside). Inside the demo, `me` IS the demo stack.
    nxrInit the long id of me
    nxtCheck the result is empty, "nxrInit accepts an owner"
+   -- THE EMBEDDABLE SOCKET SPLIT (2026-08-24). nxrSocketError /
+   -- nxrSocketClosed / nxrSocketTimeout carry what the three engine socket
+   -- messages used to do inline, and answer one question: was that socket
+   -- MINE, and did I handle it? An embedding app calls them where it would
+   -- otherwise `pass`, so "false for a socket that is not ours" is not a
+   -- detail - it IS the contract that keeps a co-embedded library's events
+   -- flowing, and getting it wrong is a SILENT HANG rather than an error.
+   -- Pinned offline with a socket id no relay owns; the true legs need a
+   -- live relay and ride the live pass.
+   nxtCheck nxrSocketError(999999, "boom") is false, \
+         "nxrSocketError disowns a socket that is not ours"
+   nxtCheck nxrSocketClosed(999999) is false, \
+         "nxrSocketClosed disowns a socket that is not ours"
+   nxtCheck nxrSocketTimeout(999999) is false, \
+         "nxrSocketTimeout disowns a socket that is not ours"
    -- unknown handles are clean errors or clean no-ops, never crashes
    nxtCheck nxrState(999999) is "unknown", "an unknown handle has unknown state"
    nxtCheck nxrUrl(999999) is empty, "and no url"

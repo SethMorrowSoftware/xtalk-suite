@@ -24,12 +24,14 @@ package.
      LAN web-editor password.
    - **OnionXT is NOT in this list, and cannot be** - it is pure LiveCodeScript with
      no packaged extension and no `org.openxtalk.*` id, so there is nothing for the
-     standalone builder to tick. To ship the Private / Tor path, copy
-     `onionxt/src/onionxt.livecodescript` into the app (or `start using` it) the way
-     you would any script library. It also needs SodiumXT, and at runtime a **local
-     Tor daemon** on the user's machine (system tor on `127.0.0.1:9051`, or Tor
-     Browser on `9151`). Listing it beside two real extension ids is the same defect
-     class as the `cryptoXT` sweep of 2026-08-17: naming a package that does not exist.
+     standalone builder to tick. It no longer needs one: since 2026-08-24 the app's
+     stack script CARRIES `onionxt/src/onionxt.livecodescript` verbatim (the
+     `tools/sync-demo-embeds.py` sentinels), so the Tor path ships with the script
+     and the copy-it-in / `start using` step this bullet used to describe is gone.
+     It still needs SodiumXT, and at runtime a **local Tor daemon** on the user's
+     machine (system tor on `127.0.0.1:9051`, or Tor Browser on `9151`). Listing it
+     beside two real extension ids would be the same defect class as the `cryptoXT`
+     sweep of 2026-08-17: naming a package that does not exist.
 3. **Include the Internet library (libURL).** It is used only for the public-IP lookup
    on the web-link path and is harmless if left out (the lookup is `try`-guarded).
 4. **Include the JSON Library** if you want end-users to be able to add their own API

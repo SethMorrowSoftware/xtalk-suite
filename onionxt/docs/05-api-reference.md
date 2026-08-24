@@ -147,11 +147,28 @@ exemptions rather than counting them as untested.
 sent to the message path, not to a handler OnionXT named, which is what makes them an integration
 concern rather than an implementation detail:
 
-| Message | What OnionXT does with it |
-|---|---|
-| `socketError pSocketID, pError` | arrives instead of `socketClosed` when a socket fails; fails the owning stream closed, or reports and disconnects the control connection. |
-| `socketClosed pSocketID` | the far side closed cleanly; delivers `closed` to the stream's app callback and forgets it, or marks control disconnected. |
-| `socketTimeout pSocketID` | REPEATS every `socketTimeoutInterval` while a read is pending, so it is fatal only during a handshake; a connected stream ignores it. |
+Each is now a THIN WRAPPER over a named function (2026-08-24): it calls the named one, exits if that
+consumed the event, and otherwise passes.
+
+| Message | Named function | What OnionXT does with it |
+|---|---|---|
+| `socketError pSocketID, pError` | `oxSocketError pSocketID, pError` | arrives instead of `socketClosed` when a socket fails; fails the owning stream closed, or reports and disconnects the control connection. |
+| `socketClosed pSocketID` | `oxSocketClosed pSocketID` | the far side closed cleanly; delivers `closed` to the stream's app callback and forgets it, or marks control disconnected. |
+| `socketTimeout pSocketID` | `oxSocketTimeout pSocketID` | REPEATS every `socketTimeoutInterval` while a read is pending, so it is fatal only during a handshake; a connected stream ignores it. |
+
+Each named function answers ONE question - *was that socket mine, and did I handle it?* - returning
+`"true"` when it consumed the event and `"false"` when the socket belongs to somebody else. An
+ordinary caller uses neither; they exist for an EMBEDDER. Because the three message names are the
+engine's, every socket library declares them, and no two copies can live in ONE script - which is
+exactly what a stack script that embeds this library builds, and is why OnionXT could previously only
+be reached through `start using` and a `pass`. With the logic behind a name of its own,
+`tools/sync-demo-embeds.py` drops the three wrappers for a registered (app, library) pair and the app
+calls `oxSocketError(...)` from its own handler precisely where it used to pass. Nothing of this
+library's logic is copied into the app, so nothing can go stale.
+`nocloud/src/nocloudquickshare.livecodescript` is the first app to carry OnionXT this way - its Tor
+path now ships with the script instead of needing a `start using` step. The split is **verified
+statically; the own-socket branches are unchanged and stay the engine-proven ones**, and the wrapper
+form needs a live-Tor re-pass.
 
 > **Integration rule: if your stack defines any of these three, it must `pass` the ones that are not
 > yours.** A stack script that handles `socketClosed` (or `socketError`, or `socketTimeout`) and does
