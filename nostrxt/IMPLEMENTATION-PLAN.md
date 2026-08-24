@@ -22,7 +22,8 @@ core (phase 2), the relay layer (phase 3), the harness and its gates (phase 4), 
 (phase 5). "Closed statically" means exactly what the honesty convention says: every gate exits 0,
 every pure-compute answer is pinned against the published BIP-340 / NIP-44 / BIP-173 / NIP-19 sets
 through `tools/nostr_reference.py`, and **nothing has run on a real OXT engine**. The member-wide
-status is "verified statically; needs an OXT pass", relay paths "verified statically; needs an OXT
+status was "verified statically; needs an OXT pass" until 2026-08-24, when the first engine pass
+ran green (274/274 in the suite paste, Windows x86_64, OXT 9.6.3); relay paths stay "verified statically; needs an OXT
 pass + a live-relay pass", and the open phases below are the order in which that changes.
 
 Two scope decisions from phase 0 are worth restating here because they shape everything after:

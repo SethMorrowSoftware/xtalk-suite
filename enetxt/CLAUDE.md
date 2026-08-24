@@ -61,6 +61,24 @@ the ENetXT member of the xtalk-suite monorepo (`enetxt/`).
 > is a single-machine engine pass 2026-08-18, and the two-machine leg needs an
 > OXT pass.
 
+## As-built note, 2026-08-24: the internet chat demo
+
+`examples/enet-internet-chat.livecodescript` is the LAN chat's sibling with
+one job: prove ENet across the REAL internet, on screen. ENet has no NAT
+traversal of its own, so the demo composes the suite for the missing half:
+the HOST runs a TorrentXT session whose only jobs are `btMapPort(session,
+port, port, FALSE)` - FALSE is load-bearing, ENet is UDP and a TCP mapping
+tests green at the router while every packet drops - and public-IP discovery
+(the `externalIp` event, which rides real DHT traffic, hence the bootstrap
+nodes). The invite is ip:port; the joiner needs only enetxt. The proof is
+fail-honest: the pill goes INTERNET LIVE only when the remote address is
+outside RFC 1918/loopback/link-local (the classifier's truth table is pinned
+in the boot self-check), so a same-LAN run cannot masquerade as the internet
+claim. Both poll dispatchers are co-embedded (the 2026-08-23 script-local
+rename is what makes that legal). Verified statically; needs a two-machine,
+two-network OXT pass - the leg the stack exists to close. Carrier-gated like
+every demo: ui-kit, selfcheck, embeds, launcher, stack-size, timer-pin.
+
 ## The rules that carry over unchanged
 
 1. **Never call script from a foreign thread** — trivially satisfied here:

@@ -107,8 +107,10 @@ exactly its feature and never another.
 
 ## Honesty status
 
-**Verified statically; needs an OXT pass. Relay paths: verified statically; needs an OXT
-pass + a live-relay pass.** Nothing in this member has run on a real OXT engine. What is
+**The nx* core is engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3; 274/274 in the suite paste). Relay paths: verified statically; needs an OXT
+pass + a live-relay pass" until 2026-08-24, when the suite paste ran the core at 274/274
+and the demo opened a live relay (wss://nos.lol: handshake, publish, ok-true) - the
+REQ/subscribe receive leg is the label that remains.** What is
 machine-verified headlessly on every build: `tools/nostr-kat.py` sweeps the full published
 BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the independent oracle
 `tools/nostr_reference.py`, and `tools/check-selftest-vectors.py` re-derives every constant

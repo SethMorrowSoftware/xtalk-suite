@@ -58,9 +58,8 @@ any more except SHA3-512 and SLIP-39.
 > unchanged because the engine counts one trailing delimiter out of existence - fixed the same
 > day, and the refusal observed green in the re-run. *Phase 5* was closed on **2026-08-12**
 > (Windows x64): the folded harness ran the whole surface at **230/230**, transactions included.
-> The one exception since: the two WIF handlers (2026-08-15) postdate those passes and are
-> **verified statically; needs an OXT pass** - executed headlessly by the vector gate against
-> the Bitcoin wiki's published worked example, never yet on an engine.
+> The two WIF handlers (2026-08-15) closed their own gap on **2026-08-17** (coinxt 278/278,
+> Windows x86_64) - this note said "never yet on an engine" for a week after that run.
 > The native side remains cross-verified on
 > every push: CoinXT reproduces four published RFC 6979 signatures byte for byte, a CoinXT
 > signature verifies in the independent Python `ecdsa` library, and recovery round-trips to
@@ -68,9 +67,10 @@ any more except SHA3-512 and SLIP-39.
 >
 > **BIP-340 / BIP-341 shipped at ABI 6 on 2026-08-16**, over a SECOND vendored library
 > (upstream bitcoin-core/secp256k1 - trezor-crypto's plain-C tree has no BIP-340; the rule
-> change is recorded in SPEC.md section 2.1). Those handlers postdate every engine pass this
-> file records, so the whole ABI-6 section below is **verified statically and executed
-> headlessly against the published vectors; it needs an OXT pass.**
+> change is recorded in SPEC.md section 2.1). The ABI-6 surface ran green on-engine
+> **2026-08-17** (coinxt 278/278: all 19 BIP-340 vectors including the 10 negatives, and the
+> BIP-341 wallet vectors), and the 2026-08-23 script-layer additions (the BIP-341 sighash
+> builder and script-path helpers) ran green on **2026-08-24** (coinxt 290/290).
 >
 > **Not shipped, and now decided rather than merely noted (2026-08-17):** `cxSha3_512` is
 > **deferred** and SPEC.md section 1 no longer advertises it. Calling it is still a
@@ -652,8 +652,8 @@ would otherwise produce a spendable-looking key for coins it cannot touch. Pass 
 > The section that stood here was headed "What is NOT here, and you will need it to
 > spend". It is here now (2026-08-23, pure script over the ABI 6 surface), pinned to
 > the published bitcoin/bips wallet vectors - all seven keyPathSpending sighashes and
-> all six script trees - through `tools/check-script-vectors.py`. Like everything in
-> this section it has NOT run on an engine yet.
+> all six script trees - through `tools/check-script-vectors.py`, and ENGINE-PROVEN
+> 2026-08-24 (Windows x86_64: all 12 harness checks green in coinxt's 290/290).
 
 The BIP-341 signature message (`SigMsg`) digest for 1-based input `pIndex`, returned
 as `Data` like the other two sighash builders. Unlike BIP-143 it commits to **every**

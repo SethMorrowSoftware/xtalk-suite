@@ -98,7 +98,8 @@ rewrite (`docs/08-open-questions.md`).
   `nxNip44Decrypt` fail closed with a capability error naming it - the key
   schedule, padding and MAC paths work either way, and the harness proves
   the MAC-before-cipher order on any install. The complete path is
-  engine-unproven (needs an OXT pass), like everything else here.
+  engine-proven since 2026-08-24, like the rest of the nx* surface (the
+  suite paste ran the member at 274/274 on Windows x86_64, OXT 9.6.3).
 
 ## Layout
 
@@ -167,8 +168,14 @@ subscription end to end.
 
 ## Gates and status
 
-**STATUS: verified statically; needs an OXT pass. Relay paths additionally:
-verified statically; needs an OXT pass + a live-relay pass.** Nothing in
+**STATUS: the nx* core is ENGINE-PROVEN 2026-08-24** (Windows x86_64, OXT
+9.6.3: 274 passed, 0 failed, 2 deliberate skips in the suite paste - both
+skips are the relay layer, which is not in the paste by design). **Relay
+paths: the connect/handshake/publish/confirm path is LIVE-PROVEN 2026-08-24 -
+the demo's boot self-check ran 9/9 green and then opened a real TLS websocket
+to wss://nos.lol, signed a kind-1 note, published it and received the relay's
+ok-true for its id; the REQ/subscribe receive leg keeps "verified statically;
+needs its live observation".** Nothing else in
 this member has run on a real OXT engine yet, and nothing here claims
 otherwise - the honesty convention is the family's law.
 

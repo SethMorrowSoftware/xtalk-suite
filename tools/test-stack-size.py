@@ -64,8 +64,9 @@ def main():
     if rc != 0:
         print("test-stack-size: the tree is not clean to begin with\n" + out)
         return 1
-    if "46 stack window dimension" not in out:
-        print("test-stack-size: expected 46 measured dimensions, got:\n" + out)
+    # 47 since 2026-08-24: enet-internet-chat landed with its own uiChrome.
+    if "47 stack window dimension" not in out:
+        print("test-stack-size: expected 47 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

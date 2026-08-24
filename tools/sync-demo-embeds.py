@@ -73,6 +73,14 @@ REGISTRY = {
         "coinxt/src/coinxt.livecodescript"],
     "enetxt/examples/enet-lan-chat.livecodescript": [
         "enetxt/examples/enet-helpers.livecodescript"],
+    # The internet chat carries BOTH poll dispatchers: enet-helpers pumps the
+    # chat transport, torrent-helpers pumps the TorrentXT session whose only
+    # jobs are the router mapping (btMapPort) and public-IP discovery (the
+    # externalIp event). The two layers' names are held disjoint by
+    # check-cross-library-names, which is what makes this co-embed legal.
+    "enetxt/examples/enet-internet-chat.livecodescript": [
+        "enetxt/examples/enet-helpers.livecodescript",
+        "torrentxt/examples/torrent-helpers.livecodescript"],
     "datachannelxt/examples/datachannel-loopback.livecodescript": [
         "datachannelxt/examples/datachannel-helpers.livecodescript"],
     "datachannelxt/examples/datachannel-dht-chat.livecodescript": [

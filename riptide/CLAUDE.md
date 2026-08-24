@@ -795,9 +795,11 @@ edits with no wire-format change, no new golden vector, and no new public
 ## The 2026-08-23 headless batch (A2 / A3 / B4 / B7 / A.9 / D14; do not re-litigate)
 
 Six backlog items closed headlessly (library 0.10.0 -> 0.11.0, seven new
-public handlers). Everything here is verified statically and vector-pinned;
-NOTHING in this batch has an engine pass, and the honesty labels say so at
-each site.
+public handlers). WRITTEN as verified-statically; the COMPUTE halves ran green
+on-engine **2026-08-24** (Windows x86_64: riptide folded at **391/391** in the
+suite paste, the phase-2b kind-C rail and the phase-7b BTXO receive path
+included). The live halves (a second machine, a tor daemon, real transports)
+keep their stricter labels at each site.
 
 - **A2, the kind-C chunked-post rail - PINNED FIRST, then built.** Kind C
   was the only unpinned riptide wire format; the oracle now derives

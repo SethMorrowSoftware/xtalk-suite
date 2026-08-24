@@ -166,6 +166,27 @@ this file stays the ledger.
 
 ---
 
+**SUPERSEDED AGAIN 2026-08-24 - the record grew by a fifth and stayed green.**
+A Windows x86_64 pass (OXT 9.6.3, NT 10.0) ran the current paste end to end:
+**2,373 passed, 0 failed, 3 skipped, 2,376 total** - the three skips all
+deliberate and explained in the report (nostrxt's relay layer twice, which is
+not in the paste by design, and onionxt's private oxh* layer, which lives in
+the demo). First engine contact for: the WHOLE nostrxt member (274/274 - every
+engine-semantics pin the headless interpreter models, confirmed on the real
+engine), coinxt's BIP-341 section (all 12 checks: both sighash paths, the
+tree, the control block, the refusals), sodiumxt's ABI-10 sxChaCha20IetfXor
+(7/7 - and on Windows, which is also the mingw-cross x86_64 DLL's first
+execution proof at ABI 10), holde-em's Level-2 batch mask fast path ("batch
+fast path and per-point fallback agree byte-for-byte") at harness v42
+(584/0), and riptide's kind-C chunked-post rail and BTXO receive path
+(391/0). The ABI-10 preflight ran first and did its job - all six members
+LOADED at expected ABIs. The same day the nostrxt DEMO opened green (boot self-check 9/9,
+first open ever) and ran its LIVE leg: a real TLS websocket to wss://nos.lol,
+a kind-1 note signed, published, and the relay's ok-true received - the relay
+layer's connect/publish path is live-proven; its REQ/subscribe receive leg,
+the two-machine legs, the live-tor legs, and this paste generation on Linux
+remain open.
+
 **SUPERSEDED 2026-08-20 - the record is now a WHOLE-RUN one.** A Windows pass
 that day finished the suite paste end to end: **1,981 passed, 0 failed, 1
 skipped, 1,982 total**, of which **1,868 are folded member checks** (sodiumxt

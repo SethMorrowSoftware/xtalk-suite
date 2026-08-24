@@ -476,8 +476,11 @@ TIMED multi-hand session on wall clocks (seats timing out for real), a multi-han
 onion table session on two machines with running tor (2f, + a real host-stream
 loss -> redial), and the Phase 3 THREE-MACHINE oracle round (two players + a
 non-playing oracle, killed mid-hand and recovered per spec 9; + live tor for an
-onion-hosted oracle); the sx* DLEQ calls have never run on an engine, and the
-re-layout's confirming eye is the OXT pass's.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
+onion-hosted oracle). The sx* DLEQ call sites RAN on-engine 2026-08-24
+(Windows x86_64: holde-em folded at 584/0 in the suite paste, sections 16 and
+19 included - the batch mask fast path agreeing with the per-point fallback
+byte-for-byte, and the DLEQ proof/refusal legs); the re-layout's confirming
+eye is still the OXT pass's.** The project was seeded from Box2Dxt's `docs/holde-em/` folder, built out in
 its own repository, and folded home into the suite 2026-08-15 (the blockquote above).
 README.md's Status section is the current authority; IMPLEMENTATION-PLAN.md carries the
 per-phase ledger.
@@ -651,8 +654,8 @@ pass owes the sx* call shapes plus the 4f deal-time budget (52 mults per shuffle
 step, deal-time only, per the playbook).
 
 **Level 2 void-and-audit + bots + DLEQ (v0.22.0, 2026-08-16 -- Phase 4d/4e +
-Phase 5's proof half; verified statically -- the sx* DLEQ calls, ABI 9, have
-never run on an engine).** The contracts to keep intact when touching the
+Phase 5's proof half; verified statically at the time -- these call sites ran
+on-engine 2026-08-24, holde-em 584/0 in the suite paste).** The contracts to keep intact when touching the
 heL2Void*/heL2Dleq* half of the L2 section:
   - **The record formats are PINNED consensus surface** (spec 6 as-built):
     shuffleStep `pos=,ck=,deck=` ("|"-joined points; ck = k*B, the DLEQ

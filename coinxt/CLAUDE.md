@@ -1428,9 +1428,11 @@ oracle cross-check and eight refusals - 340 checks, floor raised 260 -> 300.
 `check-selftest-vectors.py`'s re-derivation refused them - the exact drift it was built to
 notice, doing its job on the day the constants landed. The corrected pins agree with the model
 AND with the shipped script driven through the interpreter on the harness's exact call, checked
-both ways before the fix was accepted. Everything in this entry is verified statically and
-vector-pinned headlessly; **no OXT pass yet** - the 2026-08-17 engine claim covers the ABI 6
-surface as it stood and none of these four handlers.
+both ways before the fix was accepted. Everything in this entry ran green on-engine on
+**2026-08-24** (Windows x86_64, OXT 9.6.3): coinxt folded at **290/290** in the suite paste's
+2373/0/3, the 12-check stRunTaproot341 section included - both sighash paths, the 0xfa leaf,
+the sorted fold, the control block, and every refusal. The rest of the entry stands as the
+pre-engine record.
 
 **The same-day adversarial review found no real defect and two genuine spec edges, both now
 refused.** The reviewer independently re-fetched the BIP text and the published vector file,

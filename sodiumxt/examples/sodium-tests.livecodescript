@@ -15,7 +15,7 @@
 -- (the ASCII bytes); textDecode them here when a String is wanted. A passphrase
 -- is textEncoded to UTF-8 before it crosses.
 --
--- Engine-verified through ABI 9: the "run it in OXT to confirm" label that
+-- Engine-verified through ABI 10 (2026-08-24: 106 checks in the suite paste, the raw-ChaCha20 section included; previously through ABI 9): the "run it in OXT to confirm" label that
 -- stood here is retired by recorded passes - the complete harness ran green
 -- on-engine 2026-08-10 (68 checks, zero failures, twice in one day), again
 -- 2026-08-12 on Windows x64 (71 checks, adding the ABI-7 sxSha3_256 / FIPS 202

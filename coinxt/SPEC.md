@@ -148,7 +148,9 @@ app's loop over `cxTapBranchHash`; and the builder is a builder, not a signer - 
 32-byte digest and the app hands that to `cxSchnorrSign` with the tweaked key, per rule 3's
 signing split. All of it is verified statically and vector-pinned headlessly (the published
 bitcoin/bips wallet vectors, all seven sighashes and all six trees, through
-`tools/check-script-vectors.py`); no OXT pass yet.
+`tools/check-script-vectors.py`); ENGINE-PROVEN 2026-08-24 (Windows x86_64,
+OXT 9.6.3: all 12 BIP-341 harness checks green in coinxt's 290/290, both
+sighash paths and the refusals included).
 
 **What is NOT changed.** No cryptography is implemented in CoinXT. No operation moved from one
 library to the other. Nothing is reimplemented against both. A future maintainer moving an

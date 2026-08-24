@@ -33,6 +33,12 @@ It is deliberately literal and slow (cxBitXor alone is 31 interpreted iterations
 per call, and a bech32 checksum calls it hundreds of times). Speed is not the
 point; running the real text is.
 
+ENGINE-CONFIRMED 2026-08-24 (Windows x86_64, OXT 9.6.3): the suite paste ran
+2373/0 with every harness section that PINS these modeled divergences green -
+the 1e3 integer fold, the trailing-delimiter eat, case-folding `is`, the
+array-compares-as-array rule, script-local scope. Confirmation for the PINNED
+cases, not a proof of the whole model: an unpinned behavior is still a model.
+
 EXTENDED 2026-08-23 FOR THE NOSTRXT PORT (nostrxt/docs/08-open-questions.md
 question 9; the copy in nostrxt/tools/ is byte-identical and drift-gated).
 The additions are exactly what nostrxt/src/nostrxt.livecodescript uses beyond
