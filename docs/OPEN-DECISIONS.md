@@ -624,7 +624,9 @@ E-class").
 **Options:**
 - **Ship:** one shim export + wrapper + vectors; the real cost is the ABI
   bump, which means rebuilding every committed binary (including the stale
-  universal-mac row's manual lipo problem).
+  universal-mac row - since 2026-08-23 a `release-binaries.yml` dispatch
+  covers that too, so it is a button rather than the manual lipo problem
+  this line was written about).
 - **Strike:** docs-only edit; SHA3-256 and Keccak-256 (what Ethereum
   actually needs) remain.
 - **Decide never:** the standing AS BUILT mark is honest but permanent

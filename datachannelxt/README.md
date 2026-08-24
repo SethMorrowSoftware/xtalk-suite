@@ -132,8 +132,11 @@ DataChannelXT ships as a standard OXT extension: the LCB module plus the
 per-platform native library bundled under `src/code/<arch>-<platform>/`
 (the five-id layout: `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
 `universal-mac`). Four are committed and pinned in `src/code/MANIFEST.sha256`;
-`universal-mac` is not — CI deliberately builds no macOS lane, so it stays a
-manual build (`docs/building.md`).
+`universal-mac` is not committed yet — since 2026-08-23 the suite's
+`release-binaries.yml` carries a two-slice-lipo mac lane for this member
+(per-arch pinned static OpenSSL, both slices tested, `lipo -create`), and its
+first dispatch is what lands the dylib; a manual build per `docs/building.md`
+remains equivalent.
 Installing the packaged extension makes the engine resolve the
 `c:datachannelxt>` binding automatically — no loose library, no `sudo`, no
 `LD_LIBRARY_PATH`. See `docs/getting-started.md`.
