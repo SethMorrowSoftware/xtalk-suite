@@ -574,11 +574,13 @@ stock checkout.
 > Mac can actually prove (the pure-script layers, onionxt, and the UI passes). The
 > unblock is inventory row 24, and it is a build, not a debug.
 
-**macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib and
-NEITHER is proven: sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the
-warning below), and box2dxt's has never been read by any gate. torrentxt, enetxt,
-datachannelxt and coinxt need a mac dylib built (and, for torrentxt, codesigning
-and notarization). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
+**macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib:
+sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the warning below),
+and box2dxt's is - since 2026-08-23 - READ and verified by `check-binary-freshness.py`
+on every gate run (370 exports identical in both slices, ABI 4 decoded from both
+slices' machine code), though no Mac has ever loaded it. torrentxt, enetxt,
+datachannelxt and coinxt need a mac dylib built (codesign/notarize is NOT a gate on
+that: unsigned distribution was accepted 2026-08-23). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
 runners are arm64-only, so a naive automated lane would emit a thin dylib and silently
 regress sodiumxt's genuine two-architecture binary into one that fails on every Intel
 Mac. `release-binaries.yml` now carries universal mac lanes for ALL SIX members (both

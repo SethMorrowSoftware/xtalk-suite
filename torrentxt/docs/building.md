@@ -169,13 +169,21 @@ it exists for fast per-push feedback and its artifacts are never committed.
   which the owner accepted that day. The rest of this section is the manual
   recipe, still equivalent, and the codesign/notarize half no lane does.
 - Build **universal** with `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`; one
-  `universal-mac/torrentxt.dylib` serves Apple silicon and Intel.
-- Before public release the dylib must be **codesigned** (Developer ID) and the
-  package **notarized**. That needs an Apple Developer ID and a `notarytool`
-  keychain profile / app-specific password — credentials this repo does **not**
-  carry. The CI workflow contains a **disabled placeholder** step
-  (`codesign … && notarytool submit …`); enable it once the secrets exist. **A
-  human owns the notarization credentials and the go/no-go.**
+  `universal-mac/torrentxt.dylib` serves Apple silicon and Intel. That single
+  pass assumes your static deps (OpenSSL, Boost) are themselves universal; with
+  per-arch dependency trees - the CI route - build each slice with a SINGLE
+  arch value and `lipo -create` the pair (one value per slice, never both:
+  two fat inputs share architectures and `lipo -create` refuses duplicates).
+- Codesigning (Developer ID) + **notarization** is NO LONGER a release gate:
+  unsigned distribution was explicitly accepted 2026-08-23, and the committed
+  dylib ships with the linker's automatic ad-hoc signature (a
+  browser-downloaded zip needs its quarantine attribute cleared; a git
+  checkout does not). It remains the polish for a friction-free public
+  download, and the mechanics stand for whenever that is wanted: an Apple
+  Developer ID and a `notarytool` keychain profile / app-specific password —
+  credentials this repo does **not** carry — and the CI workflow's **disabled
+  placeholder** step (`codesign … && notarytool submit …`). **A human owns
+  those credentials and the go/no-go.**
 
 ### Windows — the module-definition for clean exports
 
