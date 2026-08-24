@@ -71,6 +71,8 @@ local sSession          -- the live session handle (0/empty = none)
 local sPolling          -- "true" while the poll/repaint loops are armed
 local sShareCode        -- the most recent file's share code (plain hash or BTXQS1:)
 local sCanEncrypt       -- "true" if SodiumXT (libsodium) is installed + working
+local sEncryptWhy       -- why the probe said no (empty while healthy); an ABI
+                        -- skew reads differently from an absent extension
 local sHasJson          -- "true" if the engine can parse JSON (JSONToArray probed once; fail-closed)
 local sUserRoutes       -- array: root -> ("METHOD /path" -> descriptor), from each folder's .qsroutes.json
 local sUserRoutesLoaded -- array: root -> "true" once that folder's .qsroutes.json has been read (or skipped)
@@ -1293,7 +1295,7 @@ command qsStart
    if sCanEncrypt then
       qsLog "No Cloud Quick Share " & kQsAppVersion & " ready. Drag a file to share it, or paste a code to download. Tip: type a passphrase first to ENCRYPT a file end-to-end."
    else
-      qsLog "No Cloud Quick Share " & kQsAppVersion & " ready. Drag a file to share it, or paste a code to download. (Encryption needs SodiumXT / org.openxtalk.library.sodium, which is not installed.)"
+      qsLog "No Cloud Quick Share " & kQsAppVersion & " ready. Drag a file to share it, or paste a code to download. (Encryption is off: " & qsEncryptAdvice() & ")"
    end if
    -- repaint the method-driven UI now that sCanEncrypt + the method flags are known:
    -- qsBuild ran qsSyncMethod BEFORE this point, when sCanEncrypt was still empty, so
@@ -2483,15 +2485,46 @@ end qsTrim
 -- closed rather than erroring.
 function qsCanEncrypt
    local tKey, tBox, tOut, tErr
+   put empty into sEncryptWhy
    try
       put sxRandomBytes(32) into tKey
       put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
       put sxSecretBoxOpen(tBox, tKey) into tOut
    catch tErr
-      return false
+      -- WHY IT FAILED IS NOT ALWAYS "NOT INSTALLED", and telling a user who
+      -- HAS installed it to install it is the worst answer available. The
+      -- `.lcb` compares _sxt_abi_version() against kSXTABIVersion on EVERY
+      -- sx* call and throws "SodiumXT ABI mismatch ... Reinstall the packaged
+      -- extension." from the FIRST one, so a MIXED package (a .lcb at one ABI
+      -- beside a binary at another - sodiumxt/CLAUDE.md's documented footgun,
+      -- and the likeliest state after an ABI bump) lands in this same catch as
+      -- a plain missing extension. Keep the text: the caller decides what to
+      -- advise, and "reinstall" is a different instruction from "install".
+      put line 1 of tErr into sEncryptWhy
+      return "false"
    end try
-   return (textDecode(tOut, "ASCII") is "probe")
+   if textDecode(tOut, "ASCII") is not "probe" then
+      put "the secretbox round trip did not return its plaintext" into sEncryptWhy
+      return "false"
+   end if
+   return "true"
 end qsCanEncrypt
+
+-- Did the probe fail because the extension is MISSING, or because it is
+-- installed and mismatched? A skew names itself in the throw; anything else
+-- (including a plain `handler not found`) reads as absent.
+function qsEncryptSkewed
+   return (sEncryptWhy contains "ABI" or sEncryptWhy contains "Reinstall")
+end qsEncryptSkewed
+
+-- The one sentence every "cannot encrypt" site should use, so the advice can
+-- never contradict itself across the log, the captions and the pills.
+function qsEncryptAdvice
+   if qsEncryptSkewed() then
+      return "SodiumXT is installed but its ABI does not match this package - REINSTALL the packaged extension (" & sEncryptWhy & ")."
+   end if
+   return "SodiumXT (org.openxtalk.library.sodium) is not installed."
+end qsEncryptAdvice
 
 -- A small helper: base64 with the line breaks stripped so a code stays one line.
 function qsB64 pData
@@ -2808,12 +2841,16 @@ command qsSyncMethod
       set the rect of field "qsSendPassCap" to "40,193,600,221"
       set the foregroundColor of field "qsSendPassCap" to kUiMuted
       put "Not encrypted - a web link opens in any browser, which cannot decrypt." into field "qsSendPassCap"
-   else if sCanEncrypt is not "true" then
+   else if not sCanEncrypt then
       set the visible of field "qsSendPass" to false
       set the visible of button "qsPassSuggest" to false
       set the rect of field "qsSendPassCap" to "40,193,600,221"
       set the foregroundColor of field "qsSendPassCap" to kUiMuted
-      put "Encrypt: install SodiumXT (org.openxtalk.library.sodium) to lock this file." into field "qsSendPassCap"
+      if qsEncryptSkewed() then
+         put "Encrypt: SodiumXT is installed but MISMATCHED - reinstall the packaged extension." into field "qsSendPassCap"
+      else
+         put "Encrypt: install SodiumXT (org.openxtalk.library.sodium) to lock this file." into field "qsSendPassCap"
+      end if
    else
       set the visible of field "qsSendPass" to true
       set the visible of button "qsPassSuggest" to true
