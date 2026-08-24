@@ -3328,11 +3328,41 @@ command qsStart
    -- (openStack fires, preOpenStack does not) THIS is what builds it, so the
    -- poll/refresh loops never run against missing fields.
    qsBuild
+   -- THE CAPABILITY PROBES RUN FIRST, BEFORE THE TORRENT SESSION, and the
+   -- ordering is a FIX (2026-08-24), not a tidy-up. They used to sit below
+   -- the btStartSession block - which `exit qsStart`s on failure - so a
+   -- TorrentXT session that would not start meant qsCanEncrypt() was never
+   -- called at all. sCanEncrypt stayed EMPTY, and empty is falsy, so every
+   -- SodiumXT-shaped caption in this app then lied in the same direction:
+   -- the encrypt row said "install SodiumXT" and the Tor chip said "Tor:
+   -- needs SodiumXT" on a machine with SodiumXT installed and working.
+   -- Reported twice from a real install; the first fix corrected how the
+   -- flag was COMPARED and could not help, because nothing ever assigned it.
+   --
+   -- libsodium, the engine's JSON decoder and OnionXT have nothing to do
+   -- with libtorrent, so nothing about them should depend on a session
+   -- starting. Probe order among the three still matters: qsHasOnion()
+   -- reads sCanEncrypt, so the crypto probe leads.
+   --
+   -- The likeliest reason the session fails is named in its own message and
+   -- is worth knowing here: libtorrent is ONE SESSION PER PROCESS, so a
+   -- second copy of this stack (or the torrent-quickshare demo) open in the
+   -- same engine takes the session, and this app comes up with no transport.
+   put qsCanEncrypt() into sCanEncrypt
+   put qsHasOnion() into sHasOnion
+   put qsCanJson() into sHasJson
+
    btStartSession
    put the result into sSession
    if sSession is 0 or sSession is empty then
       qsLog "Could not start a session (is another No Cloud Quick Share stack open?):" && btLastError()
+      qsLog "Sharing and downloading are OFF until that is resolved. This is a TorrentXT problem and says nothing about your other extensions:" && qsCapabilityLine()
       put 0 into sSession
+      uiStatus "No transport: TorrentXT would not start a session - see the log.", "bad"
+      -- paint the UI from the probes we DID take, so the captions describe
+      -- what is actually installed rather than defaulting to "missing"
+      qsSyncMethod
+      qsOnionPill
       exit qsStart
    end if
    btSetBool sSession, "enable_dht", true
@@ -3346,14 +3376,8 @@ command qsStart
    btDhtAddBootstrap sSession, "router.utorrent.com", 6881
    btDhtAddBootstrap sSession, "dht.transmissionbt.com", 6881
    put "true" into sPolling
-   -- probe SodiumXT once so the passphrase fields can fail closed when it is absent
-   put qsCanEncrypt() into sCanEncrypt
-   -- probe the engine's JSON decoder once; gates the optional user-defined API routes
-   -- (.qsroutes.json). Absent JSON simply means that one feature is off - fail closed.
-   put qsCanJson() into sHasJson
-   -- probe OnionXT and bring up the Tor control link (non-blocking). The anon path
-   -- is completely inert when OnionXT/SodiumXT/Tor are absent; nothing else changes.
-   put qsHasOnion() into sHasOnion
+   -- the three capability probes ran ABOVE, before the session, so a session
+   -- failure cannot report itself as a missing extension (see the note there)
    put "false" into sTorSend
    put "false" into sWebServe
    put "false" into sWebShare
@@ -4604,6 +4628,28 @@ function qsCanEncrypt
    return "true"
 end qsCanEncrypt
 
+-- What the three capability probes actually found, in one line. Used wherever
+-- something ELSE has failed (a torrent session, say) and the log would
+-- otherwise leave a reader to infer the extension state from a caption - the
+-- inference that made a TorrentXT failure read as a missing SodiumXT twice.
+function qsCapabilityLine
+   local tOut
+   if sCanEncrypt then
+      put "SodiumXT OK" into tOut
+   else
+      put "SodiumXT NO (" & qsEncryptAdvice() & ")" into tOut
+   end if
+   if sHasOnion then
+      put tOut & ", OnionXT OK" into tOut
+   else
+      put tOut & ", OnionXT not in the message path" into tOut
+   end if
+   if sHasJson then
+      return tOut & ", JSON OK"
+   end if
+   return tOut & ", JSON not available"
+end qsCapabilityLine
+
 -- Did the probe fail because the extension is MISSING, or because it is
 -- installed and mismatched? A skew names itself in the throw; anything else
 -- (including a plain `handler not found`) reads as absent.
@@ -4860,10 +4906,18 @@ command qsOnionPill
    -- short chip texts only (the chip is 190px wide; overflow just clips): the
    -- "how do I fix it" detail lives in the chip's tooltip and the Activity log
    if not sHasOnion then
+      -- ORDER MATTERS AND USED TO BE WRONG-BY-OMISSION: sCanEncrypt is EMPTY
+      -- (not "false") when the probe never ran, and empty is falsy, so this
+      -- chip blamed SodiumXT for anything that stopped startup early - which
+      -- is exactly what a failed TorrentXT session did. The probes now run
+      -- before the session, and an unprobed state says so rather than
+      -- accusing an extension that is installed and working.
       if sCanEncrypt then
          put "Tor: extension not installed" into tState
-      else
+      else if sCanEncrypt is "false" then
          put "Tor: needs SodiumXT" into tState
+      else
+         put "Tor: startup incomplete" into tState
       end if
       put empty into tKind
       set the disabled of button "qsMethodTor" to true
