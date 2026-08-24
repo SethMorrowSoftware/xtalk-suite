@@ -4500,27 +4500,55 @@ end nxrShutdown
 -- (the family's socketError rule; two shipping apps re-derived it).
 -- ==========================================================================
 
-on socketError pSocketID, pError
+-- THE ENGINE'S THREE SOCKET MESSAGES, SPLIT IN TWO (2026-08-24), the same
+-- way onionxt splits them and for the same reason: these names belong to the
+-- ENGINE, so every socket library in the message path declares them, and one
+-- script cannot define a name twice - which is what embedding a library into
+-- an app's stack script does (tools/sync-demo-embeds.py). The LOGIC lives in
+-- nxrSocketError / nxrSocketClosed / nxrSocketTimeout, which answer one
+-- question: was that socket MINE, and did I handle it? The `on socket*`
+-- handlers are pure dispatch. An embedder drops the three thin wrappers and
+-- calls the named function from its own handler, so this logic is never
+-- copied and cannot go stale.
+
+-- Was pSocketID one of OUR relay sockets, and did we handle the error?
+function nxrSocketError pSocketID, pError
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
    if tHandle is not empty then
       nxrFail tHandle, "socket error:" && pError
+      return "true"
+   end if
+   return "false"
+end nxrSocketError
+
+on socketError pSocketID, pError
+   if nxrSocketError(pSocketID, pError) then
       exit socketError
    end if
    pass socketError
 end socketError
 
-on socketClosed pSocketID
+-- Was pSocketID one of OUR relay sockets, and did we handle the close?
+function nxrSocketClosed pSocketID
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
    if tHandle is not empty then
       nxrTeardown tHandle, "the connection closed"
+      return "true"
+   end if
+   return "false"
+end nxrSocketClosed
+
+on socketClosed pSocketID
+   if nxrSocketClosed(pSocketID) then
       exit socketClosed
    end if
    pass socketClosed
 end socketClosed
 
-on socketTimeout pSocketID
+-- Was pSocketID one of OUR relay sockets, and did we handle the timeout?
+function nxrSocketTimeout pSocketID
    -- socketTimeout REPEATS while a read is pending, so it is fatal only
    -- during the handshake; on an open relay an idle read is normal.
    local tHandle
@@ -4529,6 +4557,13 @@ on socketTimeout pSocketID
       if sNxrRelays[tHandle]["state"] is not "open" then
          nxrFail tHandle, "the websocket handshake timed out (socket timeout)"
       end if
+      return "true"
+   end if
+   return "false"
+end nxrSocketTimeout
+
+on socketTimeout pSocketID
+   if nxrSocketTimeout(pSocketID) then
       exit socketTimeout
    end if
    pass socketTimeout
@@ -5463,6 +5498,21 @@ private command nxtTestRelayLayerOffline
    -- app it ships inside). Inside the demo, `me` IS the demo stack.
    nxrInit the long id of me
    nxtCheck the result is empty, "nxrInit accepts an owner"
+   -- THE EMBEDDABLE SOCKET SPLIT (2026-08-24). nxrSocketError /
+   -- nxrSocketClosed / nxrSocketTimeout carry what the three engine socket
+   -- messages used to do inline, and answer one question: was that socket
+   -- MINE, and did I handle it? An embedding app calls them where it would
+   -- otherwise `pass`, so "false for a socket that is not ours" is not a
+   -- detail - it IS the contract that keeps a co-embedded library's events
+   -- flowing, and getting it wrong is a SILENT HANG rather than an error.
+   -- Pinned offline with a socket id no relay owns; the true legs need a
+   -- live relay and ride the live pass.
+   nxtCheck nxrSocketError(999999, "boom") is false, \
+         "nxrSocketError disowns a socket that is not ours"
+   nxtCheck nxrSocketClosed(999999) is false, \
+         "nxrSocketClosed disowns a socket that is not ours"
+   nxtCheck nxrSocketTimeout(999999) is false, \
+         "nxrSocketTimeout disowns a socket that is not ours"
    -- unknown handles are clean errors or clean no-ops, never crashes
    nxtCheck nxrState(999999) is "unknown", "an unknown handle has unknown state"
    nxtCheck nxrUrl(999999) is empty, "and no url"

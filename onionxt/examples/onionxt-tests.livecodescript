@@ -284,6 +284,22 @@ private command testUnknownHandlesAreCleanMisses
    put the result into tResult
    oxCheck (tResult begins with "OnionXT:"), "oxWrite to an unknown/unconnected stream fails closed"
 
+   -- THE EMBEDDABLE SOCKET SPLIT (2026-08-24). oxSocketError / oxSocketClosed
+   -- / oxSocketTimeout carry what the three engine socket messages used to do
+   -- inline, and answer one question: was that socket MINE, and did I handle
+   -- it? An embedding app calls them where it would otherwise `pass`, so
+   -- "false for a socket that is not ours" is not a detail - it IS the
+   -- contract that keeps a co-embedded library's events flowing. A wrong
+   -- answer here is a SILENT HANG in the app, never an error, so it is pinned
+   -- offline where it costs nothing. (The true legs need a live stream and
+   -- ride the live-Tor pass with everything else in this file's Mode A.)
+   oxCheck (oxSocketError(tUnknown, "boom") is false), \
+         "oxSocketError disowns a socket that is not ours"
+   oxCheck (oxSocketClosed(tUnknown) is false), \
+         "oxSocketClosed disowns a socket that is not ours"
+   oxCheck (oxSocketTimeout(tUnknown) is false), \
+         "oxSocketTimeout disowns a socket that is not ours"
+
    -- The transport names reach the two guards above and nothing else: they are
    -- one-line wrappers (oxTransportSend -> oxWrite, oxTransportRecv ->
    -- oxSetStreamCallback). Both were exempted from the coverage ratchet as

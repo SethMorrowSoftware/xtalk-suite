@@ -358,13 +358,27 @@ socket id - it is self-sent, not engine-sent:
 | `nxrDeadline pRelay` | `send ... to me in` (watchdog; takes a RELAY HANDLE) | the handshake watchdog expires; a connection not yet `"open"` fails closed. |
 
 **Three engine socket MESSAGES, whose names are the engine's and so carry no `nxr`
-prefix.** The relay layer acts only on socket ids it owns and PASSES the rest:
+prefix - each now a thin wrapper over a NAMED function (2026-08-24).** The wrapper
+calls the named function, exits if it consumed the event, and otherwise passes. The
+named functions are what an EMBEDDER calls (see below); ordinary callers use
+neither.
 
-| Message | What the relay layer does with it |
-|---|---|
-| `socketError pSocketID, pError` | a socket failed: the owning relay fails closed (`"error"` callback, teardown). Not ours: passed. |
-| `socketClosed pSocketID` | the far side closed: teardown with the `"disconnected"` callback. Not ours: passed. |
-| `socketTimeout pSocketID` | REPEATS while a read is pending, so it is fatal only during the handshake; on an open relay an idle read is normal. Not ours: passed. |
+| Message | Named function | What the relay layer does with it |
+|---|---|---|
+| `socketError pSocketID, pError` | `nxrSocketError pSocketID, pError` | a socket failed: the owning relay fails closed (`"error"` callback, teardown). Not ours: passed. |
+| `socketClosed pSocketID` | `nxrSocketClosed pSocketID` | the far side closed: teardown with the `"disconnected"` callback. Not ours: passed. |
+| `socketTimeout pSocketID` | `nxrSocketTimeout pSocketID` | REPEATS while a read is pending, so it is fatal only during the handshake; on an open relay an idle read is normal. Not ours: passed. |
+
+Each named function answers ONE question - *was that socket mine, and did I handle
+it?* - returning `"true"` when it consumed the event and `"false"` when the socket
+belongs to somebody else. They exist because the three message names are the
+ENGINE's, so every socket library declares them and no two can live in one script:
+that is what a stack script EMBEDDING this layer builds. With the logic behind a
+name of its own, an embedder drops the three wrappers (`tools/sync-demo-embeds.py`
+does it, per registered demo-and-provider pair) and calls `nxrSocketError(...)` from
+its own handler exactly where it would otherwise `pass` - so this layer's logic is
+never copied and cannot go stale. OnionXT carries the identical split
+(`oxSocketError` and friends); nocloud is the first app to use it.
 
 > **Integration rule: if your stack defines any of these three messages, it must
 > `pass` the ones that are not its own.** Those three names are shared by every

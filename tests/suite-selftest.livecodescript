@@ -7151,7 +7151,7 @@ command oxShutdown
    oxDisconnectControl
 end oxShutdown
 
-on socketError pSocketID, pError
+function oxSocketError pSocketID, pError
    -- The engine's socket-failure message. If the socket closes because of an
    -- error, this arrives instead of socketClosed. Look up the owner and fail
    -- closed (docs LiveCode ref). A message for an unknown id is a clean no-op.
@@ -7159,25 +7159,29 @@ on socketError pSocketID, pError
    put sSockToStream[pSocketID] into tHandle
    if tHandle is not empty then
       oxStreamFail tHandle, "socket error: " & pError
-      exit socketError
+      return "true"
    end if
    if pSocketID is sControlSocket then
       oxStatusUpdate "control", "error: " & pError
       oxDisconnectControl
+      return "true"
+   end if
+   return "false"
+end oxSocketError
+
+on socketError pSocketID, pError
+   if oxSocketError(pSocketID, pError) then
       exit socketError
    end if
-   -- NOT OURS: pass it on (2026-08-23). These three names are the ENGINE's,
-   -- shared by every socket library in the message path, and the family rule
-   -- this file itself documents for apps (docs/05, docs/10) applies to the
-   -- library too: swallowing another library's socket event is a silent HANG
-   -- there. Found by the suite's cross-library name gate when nostrxt's
-   -- relay layer became the second library defining these. Verified
-   -- statically; needs an OXT re-pass (the own-socket branches above are
-   -- the engine-proven ones and are unchanged).
+   -- NOT OURS: pass it on (2026-08-23). The family rule this file itself
+   -- documents for apps (docs/05, docs/10) applies to the library too:
+   -- swallowing another library's socket event is a silent HANG there. Found
+   -- by the suite's cross-library name gate when nostrxt's relay layer became
+   -- the second library defining these.
    pass socketError
 end socketError
 
-on socketClosed pSocketID
+function oxSocketClosed pSocketID
    -- The remote side closed cleanly. Deliver "closed" to a stream's app callback
    -- and forget it; for the control socket, mark disconnected.
    local tHandle
@@ -7186,18 +7190,25 @@ on socketClosed pSocketID
       oxInvokeStreamCallback tHandle, "closed", empty
       delete variable sSockToStream[pSocketID]
       delete variable sStreams[tHandle]
-      exit socketClosed
+      return "true"
    end if
    if pSocketID is sControlSocket then
       oxStatusUpdate "control", "disconnected"
       oxDisconnectControl
+      return "true"
+   end if
+   return "false"
+end oxSocketClosed
+
+on socketClosed pSocketID
+   if oxSocketClosed(pSocketID) then
       exit socketClosed
    end if
    -- NOT OURS: pass it on (see socketError above).
    pass socketClosed
 end socketClosed
 
-on socketTimeout pSocketID
+function oxSocketTimeout pSocketID
    -- socketTimeout REPEATS every interval while a read/write is pending (docs
    -- LiveCode ref), so it is only fatal during a handshake; on a connected stream
    -- it is just an idle read and must be ignored. Tear down only handshakes.
@@ -7208,7 +7219,7 @@ on socketTimeout pSocketID
       if tState is not "connected" then
          oxStreamFail tHandle, "SOCKS handshake timed out"
       end if
-      exit socketTimeout
+      return "true"
    end if
    -- Control socket (ours even when authenticated - an idle timeout there
    -- is normal): only fatal before authentication completes.
@@ -7217,6 +7228,13 @@ on socketTimeout pSocketID
          oxStatusUpdate "control", "error: control handshake timed out"
          oxDisconnectControl
       end if
+      return "true"
+   end if
+   return "false"
+end oxSocketTimeout
+
+on socketTimeout pSocketID
+   if oxSocketTimeout(pSocketID) then
       exit socketTimeout
    end if
    -- NOT OURS: pass it on (see socketError above).
@@ -19907,6 +19925,22 @@ private command ox1testUnknownHandlesAreCleanMisses
    oxWrite ox1tUnknown, "x"
    put the result into ox1tResult
    ox1oxCheck (ox1tResult begins with "OnionXT:"), "oxWrite to an unknown/unconnected stream fails closed"
+
+   -- THE EMBEDDABLE SOCKET SPLIT (2026-08-24). oxSocketError / oxSocketClosed
+   -- / oxSocketTimeout carry what the three engine socket messages used to do
+   -- inline, and answer one question: was that socket MINE, and did I handle
+   -- it? An embedding app calls them where it would otherwise `pass`, so
+   -- "false for a socket that is not ours" is not a detail - it IS the
+   -- contract that keeps a co-embedded library's events flowing. A wrong
+   -- answer here is a SILENT HANG in the app, never an error, so it is pinned
+   -- offline where it costs nothing. (The true legs need a live stream and
+   -- ride the live-Tor pass with everything else in this file's Mode A.)
+   ox1oxCheck (oxSocketError(ox1tUnknown, "boom") is false), \
+         "oxSocketError disowns a socket that is not ours"
+   ox1oxCheck (oxSocketClosed(ox1tUnknown) is false), \
+         "oxSocketClosed disowns a socket that is not ours"
+   ox1oxCheck (oxSocketTimeout(ox1tUnknown) is false), \
+         "oxSocketTimeout disowns a socket that is not ours"
 
    -- The transport names reach the two guards above and nothing else: they are
    -- one-line wrappers (oxTransportSend -> oxWrite, oxTransportRecv ->
@@ -41720,6 +41754,21 @@ private command nx1nxtTestRelayLayerOffline
    -- app it ships inside). Inside the demo, `me` IS the demo stack.
    nxrInit the long id of me
    nx1nxtCheck the result is empty, "nxrInit accepts an owner"
+   -- THE EMBEDDABLE SOCKET SPLIT (2026-08-24). nxrSocketError /
+   -- nxrSocketClosed / nxrSocketTimeout carry what the three engine socket
+   -- messages used to do inline, and answer one question: was that socket
+   -- MINE, and did I handle it? An embedding app calls them where it would
+   -- otherwise `pass`, so "false for a socket that is not ours" is not a
+   -- detail - it IS the contract that keeps a co-embedded library's events
+   -- flowing, and getting it wrong is a SILENT HANG rather than an error.
+   -- Pinned offline with a socket id no relay owns; the true legs need a
+   -- live relay and ride the live pass.
+   nx1nxtCheck nxrSocketError(999999, "boom") is false, \
+         "nxrSocketError disowns a socket that is not ours"
+   nx1nxtCheck nxrSocketClosed(999999) is false, \
+         "nxrSocketClosed disowns a socket that is not ours"
+   nx1nxtCheck nxrSocketTimeout(999999) is false, \
+         "nxrSocketTimeout disowns a socket that is not ours"
    -- unknown handles are clean errors or clean no-ops, never crashes
    nx1nxtCheck nxrState(999999) is "unknown", "an unknown handle has unknown state"
    nx1nxtCheck nxrUrl(999999) is empty, "and no url"

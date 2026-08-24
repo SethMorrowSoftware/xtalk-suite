@@ -69,6 +69,12 @@ END = "-- <<< END EMBEDDED LIBRARIES <<<"
 # demo -> the libraries it needs, IN DEPENDENCY ORDER (a library that uses
 # another must come after it).
 REGISTRY = {
+    # The APP, not a demo, and the first one in this registry: nocloud is a
+    # shipped stack whose Tor half used to need a manual `start using stack
+    # "onionxt"` (README step 2). Carrying OnionXT makes it one paste with Tor
+    # included. Legal only since the socket-message split - see DROP_HANDLERS.
+    "nocloud/src/nocloudquickshare.livecodescript": [
+        "onionxt/src/onionxt.livecodescript"],
     "coinxt/examples/coinxt-demo.livecodescript": [
         "coinxt/src/coinxt.livecodescript"],
     "enetxt/examples/enet-lan-chat.livecodescript": [
@@ -145,6 +151,39 @@ NOT_EMBEDDED = {
         "would define all three twice. Merging two live bodies is a behaviour "
         "change to the inbound socket path, which has no engine pass yet "
         "(runbook S2). Keeps its optional `start using onionxt` for Tor.",
+}
+
+# THE ENGINE'S SOCKET MESSAGES, DROPPED PER EMBED (2026-08-24).
+#
+# socketError / socketClosed / socketTimeout are the ENGINE's names, so every
+# socket library declares them and no two can live in ONE script - which is
+# what an embed builds. That is what kept OnionXT out of nocloud's paste and
+# left its users a manual `start using` step.
+#
+# The libraries now keep their LOGIC behind names of their own (oxSocketError,
+# nxrSocketError, ...) with the `on socket*` handlers as thin dispatch, so an
+# embedder that has its own three can drop the provider's wrappers and call
+# the named function where it would otherwise `pass`. Nothing is copied, so
+# nothing can go stale.
+#
+# KEYED BY PAIR, NEVER BY PROVIDER, and that is the whole safety argument:
+# five other carriers embed onionxt and define no socket handlers at all (the
+# collision check proves it - they would have been refused otherwise). Dropping
+# the wrappers there would leave OnionXT's own sockets with nothing listening,
+# which is a SILENT HANG, the exact failure this file's own notes warn about.
+# So a drop is opt-in per (demo, provider), and both halves are asserted below.
+DROP_HANDLERS = {
+    ("nocloud/src/nocloudquickshare.livecodescript",
+     "onionxt/src/onionxt.livecodescript"):
+        ("socketError", "socketClosed", "socketTimeout"),
+}
+
+# What each dropped wrapper's logic is called now, so the assertion can prove
+# the replacement still exists rather than trusting the drop list.
+DROP_REPLACEMENT = {
+    "socketError": ("oxSocketError", "nxrSocketError"),
+    "socketClosed": ("oxSocketClosed", "nxrSocketClosed"),
+    "socketTimeout": ("oxSocketTimeout", "nxrSocketTimeout"),
 }
 
 DEF = re.compile(r'^(?:private\s+)?(?:command|function|on|getprop|setprop)\s+(\w+)', re.M)
@@ -232,6 +271,46 @@ def read(rel):
         return fh.read()
 
 
+def drop_handlers(text, demo_rel, provider_rel, demo_text):
+    """Cut the named `on NAME ... end NAME` blocks out of a provider, for one
+    embed, with both halves asserted.
+
+    Asserted, because a drop that silently does nothing is worse than no drop:
+    (1) the EMBEDDER must define the handler itself, or the provider's sockets
+    end up with nothing listening - a silent hang, not an error; and (2) the
+    provider must still define the NAMED replacement the embedder is expected
+    to call, so renaming oxSocketError cannot leave a stale drop behind."""
+    wanted = DROP_HANDLERS.get((demo_rel, provider_rel))
+    if not wanted:
+        return text
+    demo_h, _ = names(demo_text)
+    prov_h, _ = names(text)
+    for name in wanted:
+        if name not in prov_h:
+            raise SystemExit(
+                f"sync-demo-embeds: {provider_rel} no longer defines {name!r}, "
+                f"but {demo_rel} is registered to drop it. Update DROP_HANDLERS.")
+        if name not in demo_h:
+            raise SystemExit(
+                f"sync-demo-embeds: {demo_rel} drops {name!r} from {provider_rel} "
+                f"but does not define {name!r} itself. The provider's sockets "
+                "would have nothing listening - a silent hang, not an error.")
+        repl = [r for r in DROP_REPLACEMENT.get(name, ()) if r in prov_h]
+        if not repl:
+            raise SystemExit(
+                f"sync-demo-embeds: {provider_rel} defines {name!r} but none of "
+                f"{DROP_REPLACEMENT.get(name, ())} - the embedder has nothing to "
+                "call in its place. Split the handler before dropping it.")
+        cut = re.compile(r'^on[ \t]+' + re.escape(name) + r'\b.*?^end[ \t]+'
+                         + re.escape(name) + r'[ \t]*\n', re.M | re.S)
+        text, n = cut.subn("", text)
+        if n != 1:
+            raise SystemExit(
+                f"sync-demo-embeds: cutting {name!r} from {provider_rel} matched "
+                f"{n} blocks, expected exactly 1.")
+    return text
+
+
 def build_block(demo_rel, provider_rels, demo_text):
     """The embedded region, providers in order, collisions refused."""
     seen_h, seen_d = names(demo_text)
@@ -247,6 +326,7 @@ def build_block(demo_rel, provider_rels, demo_text):
            ""]
     for rel in provider_rels:
         text = strip_script_header(read(rel), rel)
+        text = drop_handlers(text, demo_rel, rel, demo_text)
         ph, pd = names(text)
         clash_h, clash_d = seen_h & ph, seen_d & pd
         if clash_h or clash_d:

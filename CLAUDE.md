@@ -264,6 +264,26 @@ declaration scope. This replaced `onionxt/tools/build-standalone.py` and both
 generated `*-standalone` twins: embedding in place leaves one file to open rather
 than a source and a launchable copy of it.
 
+**And the engine's OWN names needed a second answer (2026-08-24).** The gate above
+holds every LIBRARY name disjoint, which is what makes co-embedding safe - but three
+names can never be made disjoint, because they are the ENGINE's: `socketError`,
+`socketClosed`, `socketTimeout`. Every socket library declares all three, no script
+can define one twice, and an embed builds exactly one script. That is why OnionXT
+could not go inside an app that runs its own sockets, and why nocloud shipped with a
+manual `start using stack "onionxt"` step. The fix is a SPLIT, not a merge: onionxt
+and nostrxt's relay layer now keep their logic in named functions (`oxSocketError`,
+`nxrSocketError`, ...) that answer one question - *was that socket mine, and did I
+handle it?* - with the `on socket*` handlers reduced to dispatch. An embedder drops
+the three thin wrappers (`tools/sync-demo-embeds.py`'s `DROP_HANDLERS`, keyed by
+(app, library) PAIR and never by library, because the five carriers that define no
+socket handlers of their own would be left with nothing listening - a silent hang)
+and calls the named function where it would otherwise `pass`. No logic is copied, so
+nothing can go stale, and both halves are asserted: the embedder must define the
+handler it drops, and the library must still define the named replacement. nocloud
+is the first app to carry OnionXT this way. The "false for a socket that is not
+ours" contract is pinned offline in both members' harnesses, because getting it
+wrong is a hang rather than an error.
+
 **One name, one library, suite-wide (2026-08-23).** The interoperability the
 suite advertises - any libraries co-loaded, any pair co-embedded into one
 paste - puts every library's names into ONE namespace, and until 2026-08-23 no
