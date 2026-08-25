@@ -1,10 +1,13 @@
 # 05 - The Relay Client (nxr*)
 
-> STATUS: verified statically; needs an OXT pass + a live-relay pass. Nothing in
-> `src/nostr-relay.livecodescript` has run on a real engine. The ws:// path uses
-> `open socket` exactly as OnionXT's engine-proven SOCKS client does; the wss://
-> path uses `open secure socket`, which NOTHING in this suite has ever exercised.
-> The full VERIFY list is at the end of this document.
+> STATUS, split: the connect / handshake / publish / ok-confirm path is
+> **LIVE-PROVEN 2026-08-24** (Windows x86_64, OXT 9.6.3, against wss://nos.lol) -
+> which also made this the suite's first exercised `open secure socket`. The
+> RECEIVE leg (REQ/subscribe, EVENT, EOSE, CLOSED, NOTICE) and the NIP-42 auth
+> exchange keep "verified statically; needs a live-relay pass", and so does every
+> ws:// path: the proven run was secure, and the plain form still rests on
+> OnionXT's engine-proven SOCKS idioms rather than a run of its own. The full
+> VERIFY list is at the end of this document.
 
 The relay client is the stateful half of NostrXT: an RFC 6455 websocket client over
 engine sockets that speaks the NIP-01 relay protocol. It COMPOSES the pure-compute
@@ -197,31 +200,38 @@ normal and is deliberately ignored.
   framing layer, named socket ids stored verbatim - is the shape OnionXT proved on
   a real engine against a live tor daemon. That is evidence the IDIOMS work, not
   that this file does: the label stays "needs an OXT pass + a live-relay pass".
-- **wss://** (`open secure socket`): THE open transport question. Nothing in this
-  suite has ever opened a secure socket, and the suite's engine notes
-  (`OXT-ENGINE-NOTES.md` under the repository root's `docs/`) have no entry on TLS
-  sockets - so certificate verification behaviour, TLS version support, SNI, and
-  how a TLS failure is delivered (a `socketError`? which text?) are all unmeasured
-  engine questions. The code is written on the assumption that failure arrives as
-  a `socketError` message, like the plain form, and says VERIFY at the call site.
-  Most public relays are wss-only, so the first live-relay pass will meet this
-  question immediately; whatever the engine actually does must be recorded in the
-  suite engine notes, and this document updated, before any wss claim upgrades.
+- **wss://** (`open secure socket`): no longer THE open transport question, and
+  the reversal is worth stating plainly - this is now the BETTER-evidenced of the
+  two forms. On 2026-08-24 it opened against wss://nos.lol on Windows/OXT 9.6.3,
+  carried the upgrade request, the masked client frames and the relay's replies,
+  and the whole publish path completed; the assumption that failure arrives as a
+  `socketError` was not exercised, because nothing failed. Root
+  `OXT-ENGINE-NOTES.md` **6.8** records it, with the boundary drawn hard: the run
+  reached an ordinary public host, which proves the form connects and streams and
+  proves NOTHING about verification - calling that certificate "valid" would beg
+  the question, since an unverifying engine would have connected to a bad one just
+  as happily. Nobody has deliberately offered this engine an invalid certificate, so "does it refuse one?" is open in both
+  directions, as are SNI, the TLS versions negotiated, and failure delivery. The
+  VERIFY at the call site is narrowed to those, not removed.
 - A **.onion relay** over OnionXT's transport seam is the future third form (the
   anonymity path, `01-protocol-model.md`); it is a composition plan, not code.
 
 ## The engine-behaviour VERIFY list
 
-Everything socket-related here is engine-unproven; these are the specific claims
+Most things socket-related here are engine-unproven; item 2 is now partly
+answered and is kept, narrowed, rather than deleted. These are the specific claims
 an OXT pass must confirm or correct (record results in the suite engine notes and
 promote or fix the labels in the source):
 
 1. `open socket to <host:port|name> with message` connects asynchronously and
    fires the message; failure arrives as `socketError`. (OnionXT-proven idiom;
    unproven in this file's hands.)
-2. `open secure socket` - all of it: whether certificates verify by default,
-   against what store, how failure is delivered, which TLS versions negotiate.
-   Nothing in the tree has an answer.
+2. `open secure socket` - PARTLY ANSWERED 2026-08-24 (engine notes 6.8): the
+   form exists, connects asynchronously and fires its message, and streams a
+   websocket byte stream well enough to complete a handshake and a publish
+   against an ordinary public host. Still unanswered, and the security half:
+   whether an INVALID certificate is refused, against what store, whether SNI is
+   sent, how a TLS failure is delivered, which TLS versions negotiate.
 3. The persistent no-quantifier `read from socket ... with message` streams bytes
    as they arrive, chunk by chunk, without blocking to EOF (OnionXT-proven on a
    SOCKS tunnel; unproven on a websocket byte stream).

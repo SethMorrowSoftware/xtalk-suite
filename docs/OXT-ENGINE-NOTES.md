@@ -617,6 +617,62 @@ exercised, the event demonstrably is not.
 **Gate:** `tools/check-lcb-call-types.py` check 4, over every `_eventName`
 return in every module, with the historical case pinned in its test.
 
+### 6.8 `open secure socket` works, and that is NOT the same as "TLS verifies"
+**OBSERVED 2026-08-24** (Windows x86_64, OXT 9.6.3), the suite's FIRST secure
+socket of any kind. (Dated by the RUN, not by the commit that recorded it a day
+later - the rest of the tree calls this "the 2026-08-24 pass" and an entry that
+disagreed with every file citing it would be worse than the small exception. See
+the note on dates above.) `nostrxt/src/nostr-relay.livecodescript`'s `nxrConnect`
+ran its secure branch against a public Nostr relay:
+
+```
+connecting to wss://nos.lol (handle 1)
+relay 1: open
+identity ready: npub154kp062...
+signed event 33f9b9a3...
+nxEventVerify: the event verifies
+published a4a3fe9d...
+ok a4a3fe9d...: true
+```
+(The maintainer's report, elided only where it carried key material.)
+
+What that settles, and it is worth having because the form was a total unknown
+the day before: `open secure socket to <host:port> with message <name>` EXISTS,
+connects asynchronously and fires its message the way the plain form does; and
+the persistent no-quantifier `read from socket ... with message` plus
+`write to socket` carry a real byte stream over it - enough for an RFC 6455
+upgrade, masked client frames, and the relay's replies read back chunk by chunk.
+Before this, `open secure socket` appeared in no other member and this file had
+no TLS entry at all.
+
+**What it does NOT mean, which is the whole reason this entry is worded the way
+it is.** Nobody offered this engine a certificate they had any reason to doubt,
+and that is the only honest way to put it: calling the peer certificate "valid"
+would be circular, since whether it was checked is precisely the open question -
+if the engine verifies nothing, a bad certificate would have connected too. A
+connection succeeding against an ordinary public host is equally consistent with
+"the engine verified the chain" and with "the engine verified nothing"; the two
+hypotheses predict the identical observation, so this run cannot separate them.
+**Nothing has yet deliberately offered this engine a bad certificate.**
+
+Still unmeasured: whether an invalid or
+self-signed certificate is refused, against which root store, whether the
+HOSTNAME is checked, what `the sslCertificates` does here, whether SNI is sent
+(shared-hosting relays need it), which TLS versions negotiate, and how a TLS
+failure is delivered - the code assumes a `socketError` message, as with the
+plain form, and nothing failed, so that assumption is still untested.
+
+Do not promote this entry on the strength of another successful connection to a
+good host; only a deliberately bad certificate can move it. Until then, treat
+any code that would be unsafe under "no verification" as unsafe.
+
+**Related, and mildly counter-intuitive:** the ws:// (plain) branch of the same
+handler has still never run. The secure path is currently the better-evidenced
+of the two, which inverts the advice several documents used to give.
+**Gate:** none, and none is possible headlessly - this is an engine measurement.
+The narrowed question is carried in `nostrxt/docs/07-capabilities-required.md`
+gap #2 and flagged `VERIFY (on-engine)` at the call site.
+
 ---
 
 ## 7. How to add to this file

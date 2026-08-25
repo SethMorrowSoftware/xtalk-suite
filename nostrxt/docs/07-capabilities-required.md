@@ -129,39 +129,52 @@ evidence independent of libsodium agreeing with itself.
 
 ## Engine capabilities to confirm (not extension gaps)
 
-### 2. TLS / `open secure socket` - an ENGINE unknown
+### 2. TLS / `open secure socket` - an ENGINE unknown, now HALF measured
 
-**Status: OPEN, and it is nobody's extension gap - it is an unmeasured engine
-question.** Real-world Nostr relays are almost all `wss://`. The relay layer writes
-the secure path (`open secure socket to host:port with message ...` in
-`nxrConnect`), labeled `VERIFY (on-engine)` in the source, because **nothing in this
-entire suite has ever opened a secure socket**: `open secure socket` appears in no
-other member, and `docs/OXT-ENGINE-NOTES.md` at the suite root has no TLS entry of
-any kind. The ws:// path, by contrast, uses `open socket` exactly as OnionXT's
-engine-proven SOCKS client does.
+**Status: PARTLY ANSWERED 2026-08-24, and the unanswered half is the one that
+matters for security.** Real-world Nostr relays are almost all `wss://`. The relay
+layer writes the secure path (`open secure socket to host:port with message ...` in
+`nxrConnect`), and on 2026-08-24 that line ran: the demo connected to wss://nos.lol
+on Windows/OXT 9.6.3, completed the websocket handshake, published a signed event
+and read the relay's ok-true back. It was this suite's first exercised secure
+socket, and root `docs/OXT-ENGINE-NOTES.md` **6.8** records it. `open secure socket`
+still appears in no other member.
 
-The first engine session that touches wss:// must record what actually happens in
-the root `docs/OXT-ENGINE-NOTES.md`, whatever the answers are:
+The next engine session must record the rest in the same place, whatever the
+answers are. The first bullet is answered; the others are not, and the second is
+the reason this gap stays OPEN rather than closing:
 
-- Does `open secure socket ... with message` exist on OXT at all, and does it
-  connect to a public relay?
-- **Certificate verification behaviour**: is the peer certificate verified, against
-  which root store, and is the HOSTNAME checked? What does `the sslCertificates`
-  do here? An unverified TLS socket that connects anyway would be a fail-open this
-  layer must then guard, and we cannot know which until it is measured.
+- ~~Does `open secure socket ... with message` exist on OXT at all, and does it
+  connect to a public relay?~~ **ANSWERED 2026-08-24: yes to both**, and
+  `read from socket ... with message` / `write to socket` carried a full websocket
+  exchange over it.
+- **Certificate verification behaviour** - STILL OPEN, and note what the run above
+  does and does not say: it reached an ordinary public host, so a
+  connection succeeding is consistent BOTH with verification working and with there
+  being no verification at all. Nothing has yet offered this engine a bad
+  certificate. Is the peer certificate verified, against which root store, and is
+  the HOSTNAME checked? What does `the sslCertificates` do here? An unverified TLS
+  socket that connects anyway would be a fail-open this layer must then guard, and
+  we still cannot know which until someone points it at a deliberately bad cert.
 - **SNI**: is the server name sent? Shared-hosting relays will refuse the handshake
   or serve the wrong certificate without it.
 - **Failure delivery**: does a refused or failed TLS handshake arrive as a
   `socketError` message (the plain-socket behaviour the layer assumes), or some
   other way, and with what error text?
-- TLS versions accepted, and whether `read from socket ... with message` /
-  `write to socket` behave identically over a secure socket (short reads,
-  backpressure).
+- TLS versions accepted. (The second half of this bullet is answered:
+  `read from socket ... with message` and `write to socket` DID behave the
+  same over the secure socket on 2026-08-24 - short reads reassembled by the
+  framing layer, a full handshake and publish carried. Backpressure on a
+  large write is untested there, but it is untested on the plain form too,
+  so it is question 4 in `08-open-questions.md`, not a TLS question.)
 
-Until then, the honest paths for a live pass are: a local or LAN relay over ws://
-(the engine-idiom-proven path), and - the planned composition hedge - a `.onion`
-relay over OnionXT's transport seam, which needs no TLS at all because Tor provides
-the authenticated encrypted channel (`00-overview.md`, `08-open-questions.md`).
+The composition hedge stands on its own merits rather than as a workaround now: a
+`.onion` relay over OnionXT's transport seam needs no TLS at all, because Tor
+provides the authenticated encrypted channel and the onion address IS the key
+(`00-overview.md`, `08-open-questions.md`). What HAS quietly inverted is the
+fallback advice: ws:// used to be "the engine-idiom-proven path" to fall back to,
+and after 2026-08-24 it is the form with no live run of its own while wss:// has
+one.
 
 ## Non-gaps: things that look missing and are deliberate
 

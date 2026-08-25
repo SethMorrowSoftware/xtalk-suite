@@ -19,9 +19,13 @@ script "nostrxt"
 -- which embeds this file verbatim and must not carry a second definition of
 -- the engine's socketError / socketClosed / socketTimeout handlers.
 --
--- STATUS: verified statically; needs an OXT pass (relay paths in the nxr*
--- layer additionally need a live-relay pass). Nothing in this file has run on
--- a real engine yet. The pure-compute answers are pinned by
+-- STATUS: ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3). This file
+-- folded into the suite paste at 274 passed, 0 failed, 2 deliberate skips:
+-- the whole nx* surface, the NIP-44 official vectors through the real
+-- sodiumxt ABI-10 cipher, and every engine-semantics pin the headless
+-- interpreter models. The nxr* relay layer keeps its own, stricter label -
+-- see src/nostr-relay.livecodescript, where only the connect/handshake/
+-- publish half is live-proven. The pure-compute answers are pinned by
 -- tools/nostr-kat.py against the published BIP-340, NIP-44, BIP-173 and
 -- NIP-19 vector sets, and tools/check-selftest-vectors.py re-derives every
 -- constant the member harness pins.

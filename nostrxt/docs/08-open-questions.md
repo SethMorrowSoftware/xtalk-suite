@@ -15,26 +15,39 @@ LiveCode lineage to wrap its output with line breaks; every wire format here
 (NIP-44 payloads, `Sec-WebSocket-Key`, the accept derivation) is single-line, so
 `nxB64Encode` strips both break bytes unconditionally - correct whether the engine
 wraps with CRLF, LF, or not at all, since base64's alphabet contains neither byte.
-What the engine ACTUALLY emits, and at what line length, is still marked
-`VERIFY (on-engine)` in the source; the first pass should record it so the strip
-stops being a defensive guess.
+**The STRIP is proven; the EMISSION is still unrecorded.** The 2026-08-24 pass ran
+every base64 consumer in the core green (the NIP-44 payload vectors and the RFC 6455
+accept derivation, both pinned against the oracle), so whatever `base64Encode` emits
+on OXT 9.6.3/Windows, stripping both break bytes yields the right answer - the guess
+is now a measured-correct behaviour. What nobody wrote down is the raw emission
+itself: whether it wraps, with which bytes, at what line length. That is a one-line
+observation for the next session, and it stays `VERIFY (on-engine)` in the source
+until someone actually looks.
 
-**2. `textDecode` UTF-8 round-trip fidelity for non-BMP content.** The canonical
-serializer works on UTF-8 bytes via `textEncode` / `textDecode`, and event C in the
-member harness exists to measure exactly this: its content is built with
-`textDecode` over pinned bytes (a euro sign and a four-byte emoji, so both a
-three-byte and a surrogate-pair codepoint are in play) and its id is pinned. A FAIL
-on that line on a real engine is a REAL finding about engine text round-tripping,
-not harness noise - which is why the fixture bytes are constants and the harness
-file itself stays pure ASCII.
+**2. `textDecode` UTF-8 round-trip fidelity for non-BMP content. ANSWERED
+2026-08-24: faithful.** The canonical serializer works on UTF-8 bytes via
+`textEncode` / `textDecode`, and event C in the member harness existed to measure
+exactly this: its content is built with `textDecode` over pinned bytes (a euro sign
+and a four-byte emoji, so both a three-byte and a surrogate-pair codepoint are in
+play) and its id is pinned. That line ran GREEN in the suite paste on Windows
+x86_64 / OXT 9.6.3, and the check is exact - the id is a sha256 over the serialized
+bytes, so any mangling of either codepoint changes it. Scoped honestly: one engine,
+one platform, those two codepoints. The fixture bytes stay constants and the harness
+file stays pure ASCII, because that is what makes a future FAIL here a real finding
+rather than noise.
 
-**3. Secure sockets (wss://).** The big one, and it has its own entry as gap #2 in
-`07-capabilities-required.md`: `open secure socket` appears nowhere else in the
-suite, the root engine notes have no TLS entry, and the questions an engine pass
-must answer (certificate and hostname verification, SNI, failure delivery, TLS
-versions) are listed there. Until it is measured, wss:// is written, labeled, and
-unproven - and the live-relay pass should start on ws:// or plan for the `.onion`
-composition path (question 7).
+**3. Secure sockets (wss://). HALF ANSWERED 2026-08-24, and the open half is the
+security half.** It has its own entry as gap #2 in `07-capabilities-required.md`.
+What the live pass settled: `open secure socket ... with message` exists on OXT
+9.6.3, connects to a public relay, and carries a full websocket exchange - root
+`docs/OXT-ENGINE-NOTES.md` **6.8**. What it did not: the run met an
+ordinary public host, so it is equally consistent with verification working and with none
+happening at all, and nobody has offered this engine a bad one. Hostname checking,
+SNI, failure delivery and TLS versions are all still unmeasured. `open secure
+socket` still appears nowhere else in the suite. The advice this question used to
+give has inverted: ws:// is now the form with no live run behind it, so it is not
+the safer starting point - and the `.onion` composition path (question 7) is a
+design choice about anonymity, not a hedge against an unproven transport.
 
 **4. Socket write backpressure on large frames.** The relay layer writes whole
 frames with `write to socket` - fine for REQs and typical events, but a large

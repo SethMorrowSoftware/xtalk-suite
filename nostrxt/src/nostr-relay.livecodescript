@@ -15,12 +15,18 @@ script "nostr-relay"
 -- embed instead (the onion-httpd precedent), and its offline paths are
 -- exercised by probe-guarded harness sections that SKIP in the paste.
 --
--- STATUS: verified statically; needs an OXT pass + a live-relay pass.
--- Nothing here has run on a real engine. The ws:// path uses `open socket`
--- exactly as onionxt's engine-proven SOCKS client does; the wss:// path uses
--- `open secure socket`, WHICH NOTHING IN THIS SUITE HAS EVER EXERCISED -
--- docs/OXT-ENGINE-NOTES.md has no entry on TLS sockets, so wss:// is doubly
--- flagged: VERIFY (on-engine) below, and docs/07 carries the open question.
+-- STATUS, and it is SPLIT - read both halves before quoting either.
+-- LIVE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3, wss://nos.lol): connect,
+-- the websocket handshake, publish, and the relay's ok-true verdict arriving
+-- back through the app callback. That run went over TLS, so it is also this
+-- suite's FIRST exercised `open secure socket` - the wss:// path is no longer
+-- the doubly-flagged unknown this banner used to describe, and
+-- docs/OXT-ENGINE-NOTES.md 6.8 records exactly what the one run measured.
+-- STILL UNPROVEN, and keeping "verified statically; needs a live-relay pass":
+-- the whole RECEIVE leg - REQ/subscribe, the EVENT and EOSE callbacks,
+-- CLOSED, NOTICE - and the NIP-42 auth exchange. So is every ws:// path: the
+-- proven run was secure, and the plain form here still rests on onionxt's
+-- engine-proven SOCKS idioms rather than on a run of its own.
 --
 -- Conventions (see CLAUDE.md): public API nxrPascalCase; commands report
 -- through `the result` (empty on success, a "NostrXT relay: ..." string on
@@ -178,11 +184,16 @@ command nxrConnect pUrl
    put tHandle into sNxrSockToRelay[tSocketID]
    set the socketTimeoutInterval to kNxrHandshakeTimeout
    if tParsed["secure"] is true then
-      -- VERIFY (on-engine): NOTHING in this suite has ever opened a TLS
-      -- socket; certificate verification behaviour, TLS version support and
-      -- failure delivery are all unmeasured engine questions (docs/07).
-      -- Failure is expected to arrive as a socketError message, as with the
-      -- plain form.
+      -- ENGINE-ARMED 2026-08-24: this line is the suite's first and so far
+      -- only exercised `open secure socket`, and it reached an ordinary
+      -- public relay - so the form exists on OXT 9.6.3, connects, and carries
+      -- the handshake and the framing below.
+      -- VERIFY (on-engine), because "it connected" is not "it verifies": a
+      -- REJECTED certificate was never tried, so whether an invalid one is
+      -- refused or silently accepted is still unmeasured, as are the TLS
+      -- versions offered and how a TLS failure is delivered (expected: a
+      -- socketError message, as with the plain form). docs/07 gap #2 carries
+      -- that remainder; engine notes 6.8 carries what the run did settle.
       open secure socket to tSocketID with message "nxrWsOpened"
    else
       open socket to tSocketID with message "nxrWsOpened"
