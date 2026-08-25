@@ -20,15 +20,21 @@ script "NostrDemo"
 --
 -- HOW TO USE. Paste into a new stack script (or open this file as a stack),
 -- close and reopen the stack. The window builds itself. Point the relay url
--- at a relay you trust; ws:// speaks the engine-proven socket idioms, wss://
--- is written but engine-unproven (the honesty label below).
+-- at a relay you trust; wss:// is the form this stack has actually run on an
+-- engine, and ws:// is the one that has not (see the honesty label below -
+-- that ordering is the opposite of what this comment used to say).
 --
--- HONESTY (the suite convention): verified statically; needs an OXT pass +
--- a live-relay pass. Nothing in this stack has run on a real engine. The
--- pure-compute answers it shows are pinned by tools/nostr-kat.py; the boot
--- self-check prints the single-machine claim on open; the live legs (a
--- relay handshake, a subscription, a publish, wss:// TLS at all) are the
--- runbook's to close on a real engine against a real relay.
+-- HONESTY (the suite convention): this stack HAS run on a real engine, on
+-- 2026-08-24 (Windows x86_64, OXT 9.6.3). Its boot self-check came back 9/9
+-- green, and its live legs went to wss://nos.lol: the relay opened, an
+-- identity was derived, a kind-1 note was signed, verified, published, and
+-- the relay's ok-true came back for its id. What is STILL unrun, and still
+-- the runbook's to close: the receive side (subscribe, the EVENT/EOSE/
+-- CLOSED/NOTICE callbacks), NIP-42 auth, every ws:// path, and the TLS
+-- question the successful run could not answer - it met a VALID certificate,
+-- so whether a bad one would be refused is unmeasured in both directions
+-- (root docs/OXT-ENGINE-NOTES.md 6.8). The pure-compute answers it shows are
+-- pinned by tools/nostr-kat.py.
 --
 -- THE LOOK. This stack adopts the suite UI kit v2 verbatim (the marked
 -- block below); the kit block is never edited here - a look change edits
@@ -64,9 +70,13 @@ script "NostrDemo"
 -- which embeds this file verbatim and must not carry a second definition of
 -- the engine's socketError / socketClosed / socketTimeout handlers.
 --
--- STATUS: verified statically; needs an OXT pass (relay paths in the nxr*
--- layer additionally need a live-relay pass). Nothing in this file has run on
--- a real engine yet. The pure-compute answers are pinned by
+-- STATUS: ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3). This file
+-- folded into the suite paste at 274 passed, 0 failed, 2 deliberate skips:
+-- the whole nx* surface, the NIP-44 official vectors through the real
+-- sodiumxt ABI-10 cipher, and every engine-semantics pin the headless
+-- interpreter models. The nxr* relay layer keeps its own, stricter label -
+-- see src/nostr-relay.livecodescript, where only the connect/handshake/
+-- publish half is live-proven. The pure-compute answers are pinned by
 -- tools/nostr-kat.py against the published BIP-340, NIP-44, BIP-173 and
 -- NIP-19 vector sets, and tools/check-selftest-vectors.py re-derives every
 -- constant the member harness pins.
@@ -3761,12 +3771,18 @@ end nxRelayInfoParse
 -- embed instead (the onion-httpd precedent), and its offline paths are
 -- exercised by probe-guarded harness sections that SKIP in the paste.
 --
--- STATUS: verified statically; needs an OXT pass + a live-relay pass.
--- Nothing here has run on a real engine. The ws:// path uses `open socket`
--- exactly as onionxt's engine-proven SOCKS client does; the wss:// path uses
--- `open secure socket`, WHICH NOTHING IN THIS SUITE HAS EVER EXERCISED -
--- docs/OXT-ENGINE-NOTES.md has no entry on TLS sockets, so wss:// is doubly
--- flagged: VERIFY (on-engine) below, and docs/07 carries the open question.
+-- STATUS, and it is SPLIT - read both halves before quoting either.
+-- LIVE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3, wss://nos.lol): connect,
+-- the websocket handshake, publish, and the relay's ok-true verdict arriving
+-- back through the app callback. That run went over TLS, so it is also this
+-- suite's FIRST exercised `open secure socket` - the wss:// path is no longer
+-- the doubly-flagged unknown this banner used to describe, and
+-- docs/OXT-ENGINE-NOTES.md 6.8 records exactly what the one run measured.
+-- STILL UNPROVEN, and keeping "verified statically; needs a live-relay pass":
+-- the whole RECEIVE leg - REQ/subscribe, the EVENT and EOSE callbacks,
+-- CLOSED, NOTICE - and the NIP-42 auth exchange. So is every ws:// path: the
+-- proven run was secure, and the plain form here still rests on onionxt's
+-- engine-proven SOCKS idioms rather than on a run of its own.
 --
 -- Conventions (see CLAUDE.md): public API nxrPascalCase; commands report
 -- through `the result` (empty on success, a "NostrXT relay: ..." string on
@@ -3924,11 +3940,16 @@ command nxrConnect pUrl
    put tHandle into sNxrSockToRelay[tSocketID]
    set the socketTimeoutInterval to kNxrHandshakeTimeout
    if tParsed["secure"] is true then
-      -- VERIFY (on-engine): NOTHING in this suite has ever opened a TLS
-      -- socket; certificate verification behaviour, TLS version support and
-      -- failure delivery are all unmeasured engine questions (docs/07).
-      -- Failure is expected to arrive as a socketError message, as with the
-      -- plain form.
+      -- ENGINE-ARMED 2026-08-24: this line is the suite's first and so far
+      -- only exercised `open secure socket`, and it reached an ordinary
+      -- public relay - so the form exists on OXT 9.6.3, connects, and carries
+      -- the handshake and the framing below.
+      -- VERIFY (on-engine), because "it connected" is not "it verifies": a
+      -- REJECTED certificate was never tried, so whether an invalid one is
+      -- refused or silently accepted is still unmeasured, as are the TLS
+      -- versions offered and how a TLS failure is delivered (expected: a
+      -- socketError message, as with the plain form). docs/07 gap #2 carries
+      -- that remainder; engine notes 6.8 carries what the run did settle.
       open secure socket to tSocketID with message "nxrWsOpened"
    else
       open socket to tSocketID with message "nxrWsOpened"

@@ -308,16 +308,22 @@ bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
 - **A websocket relay client** (`nxr*`, a second file so the suite paste
   never carries a second `socketError` definition): RFC 6455 in pure
   script over engine sockets, verification-on-by-default event delivery,
-  NIP-42 auth, ping/pong, fail-closed framing caps. `ws://` mirrors
-  onionxt's engine-proven socket idioms; `wss://` is written and labeled —
-  nothing in this suite has ever opened a TLS socket.
+  NIP-42 auth, ping/pong, fail-closed framing caps. `wss://` is the form
+  with a live run behind it (2026-08-24, wss://nos.lol) and is this suite's
+  only exercised `open secure socket`; `ws://` mirrors onionxt's
+  engine-proven socket idioms but has still never run here.
 - Also aboard: NIP-05 and NIP-11 parsing, NIP-13 proof-of-work checks,
   NIP-21 URIs, and builders for the core kinds (metadata, replies with
   NIP-10 markers, reactions, deletions, contacts, relay lists, auth).
 - **Design**: a stateless pure-compute core (the riptide shape: no I/O,
   offline-testable, embedded in the suite paste) plus a stateful socket
   layer (the onionxt shape: handles, watchdogs, idempotent teardown).
-- **Status**: verified statically; needs an OXT pass + a live-relay pass.
+- **Status**: the `nx*` core is engine-proven 2026-08-24 (Windows x86_64,
+  OXT 9.6.3; 274/274 in the suite paste). The relay layer is split: connect,
+  handshake, publish and the ok-confirm are live-proven the same day; the
+  receive leg (subscribe, EVENT/EOSE/CLOSED/NOTICE), NIP-42 auth and every
+  `ws://` path still need a live-relay pass, as does the TLS question that
+  successful run could not settle (root `docs/OXT-ENGINE-NOTES.md` 6.8).
   Nothing has met an engine. What is machine-verified headlessly:
   `tools/nostr-kat.py` sweeps the complete published BIP-340 csv, the full
   official NIP-44 v2 vector set, the BIP-173 strings and the NIP-19

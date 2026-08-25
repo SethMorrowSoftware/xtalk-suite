@@ -175,9 +175,10 @@ paths: the connect/handshake/publish/confirm path is LIVE-PROVEN 2026-08-24 -
 the demo's boot self-check ran 9/9 green and then opened a real TLS websocket
 to wss://nos.lol, signed a kind-1 note, published it and received the relay's
 ok-true for its id; the REQ/subscribe receive leg keeps "verified statically;
-needs its live observation".** Nothing else in
-this member has run on a real OXT engine yet, and nothing here claims
-otherwise - the honesty convention is the family's law.
+needs its live observation".** What has NOT met an engine, and is not
+claimed to have: the receive leg above, the NIP-42 auth exchange, and every
+ws:// (plaintext) path - the proven run was secure. The honesty convention is
+the family's law.
 
 What IS machine-verified, headlessly, on every build:
 
@@ -207,15 +208,19 @@ What IS machine-verified, headlessly, on every build:
   byte-identical across members) and `tools/check-docs-style.py` hold the
   script and prose rules.
 
-What is NOT verified and says so in the source: every on-engine behaviour
-(the harness and both libraries carry `VERIFY (on-engine)` labels where an
-engine question is open), and above all **wss://**. The relay client writes
-the `open secure socket` path, but nothing in this whole suite has ever
-opened a TLS socket - certificate verification, TLS version support and
-failure delivery are unmeasured engine questions, flagged in the source and
-carried in `docs/08-open-questions.md`. The ws:// path mirrors the socket
-idioms OnionXT proved on-engine, which is evidence about the idioms, not
-about this file.
+What is NOT verified and says so in the source: the on-engine behaviours
+still carrying a `VERIFY (on-engine)` label in the harness and both
+libraries. **wss:// is no longer the blanket unknown this section used to
+describe.** On 2026-08-24 this member became the first thing in the suite to
+open a TLS socket, and it worked: `open secure socket` connected to
+wss://nos.lol, carried the handshake, the publish and the ok-true. What that
+one run did NOT measure is narrower and still open - a REJECTED certificate
+was never tried, so certificate verification is unproven either way, as are
+the TLS versions offered and how a TLS failure is delivered
+(`docs/08-open-questions.md`, and root `docs/OXT-ENGINE-NOTES.md` 6.8 for
+what the run did settle). The ws:// path has still never run: it mirrors the
+socket idioms OnionXT proved on-engine, which is evidence about the idioms,
+not about this file.
 
 ## Troubleshooting
 
@@ -256,11 +261,15 @@ never as unverified `"event"`s. Install CoinXT, or - eyes open, per relay -
 
 ### A `wss://` relay will not connect, or fails strangely
 
-wss:// is the suite's open TLS question (see Gates and status): the path is
-written but has never run. If the relay offers a ws:// form, prove your
-wiring against that first; whatever the engine does with `open secure
-socket`, record it - that observation is the pass `docs/08-open-questions.md`
-is waiting for.
+wss:// DOES work - it is the path the 2026-08-24 live pass ran, against
+wss://nos.lol on Windows/OXT 9.6.3 - so a failure here is about your relay,
+your network or your certificate situation, not about the path being
+unproven. Two things are still unmeasured and worth recording if you hit
+them: what the engine does with an INVALID certificate (nothing has tried
+one, so do not assume it refuses), and how a TLS failure is delivered.
+Ironically the ws:// form is the one with no live run behind it, so it is
+not the cleaner fallback it used to be. Whatever you observe, record it -
+root `docs/OXT-ENGINE-NOTES.md` 6.8 is where it goes.
 
 ### A dial hangs with no error callback at all
 

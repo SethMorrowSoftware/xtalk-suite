@@ -100,9 +100,10 @@ Two different problems, two different tools, and it is worth keeping them apart:
 
 - **wss:// hides content from the wire, not interest from the relay.** TLS to a relay
   stops a network observer reading your events and filters in flight. The relay still
-  sees everything: your IP, your filters, your publishes. (And wss:// is the suite's
-  open transport question - nothing in this tree has ever opened a secure socket; see
-  `05-relay-client.md`.)
+  sees everything: your IP, your filters, your publishes. (wss:// itself works - the
+  2026-08-24 live pass ran over it, this tree's first secure socket - but what that
+  proves is that the CHANNEL comes up, not that the certificate behind it was
+  checked; see `05-relay-client.md`.)
 - **A .onion relay over OnionXT is the anonymity path.** The relay layer's transport
   is ordinary engine sockets, the same substrate OnionXT's SOCKS client speaks, so a
   future composition dials a relay's onion address through OnionXT's transport seam

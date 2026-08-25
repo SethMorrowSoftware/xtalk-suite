@@ -158,7 +158,7 @@ verify.
 **Risk retired:** docs that overstate an unexecuted line (the family's shipped-is-not-run
 lesson, applied to prose).
 
-## Phase 6 - The first OXT engine pass - OPEN
+## Phase 6 - The first OXT engine pass - CLOSED 2026-08-24
 
 **Goal:** run the member on a real engine and flip the core's honesty label.
 
@@ -173,11 +173,20 @@ lesson, applied to prose).
 recorded and fixed), and the core's label moves from "verified statically; needs an OXT pass" to
 an engine-passed statement naming the date, platform and check count.
 
+**OUTCOME 2026-08-24 (Windows x86_64, OXT 9.6.3): met, first try, no failures.** The member
+folded into the suite paste at 274 passed / 0 failed / 2 deliberate skips (the skips are the
+relay layer, which is not in the paste by design). Every engine-semantics pin the headless
+interpreter models held against the real engine, and two of the `VERIFY (on-engine)` labels this
+phase pointed at moved: the non-BMP `textDecode` round trip is ANSWERED (event C's pinned id
+matched), and the `nxB64Encode` strip is proven CORRECT in effect - though the raw
+`base64Encode` emission it defends against was never written down, so that label survives in a
+narrowed form (`docs/08-open-questions.md` question 1).
+
 **Risk retired:** the class no headless gate can see - the engine parse and scope rules that have
 each cost this family a real engine pass (the statement-call parse, DECLARED-is-not-IN-SCOPE, the
 undeclared name evaluating to its own spelling).
 
-## Phase 7 - The live-relay pass - OPEN
+## Phase 7 - The live-relay pass - OPEN (the SEND half closed 2026-08-24)
 
 **Goal:** the relay client shakes hands with a real relay.
 
@@ -194,6 +203,17 @@ undeclared name evaluating to its own spelling).
 **Done when:** the full verb set is observed against at least one public relay over ws://, the
 wss:// question is answered either way with the observation recorded, and the relay label flips
 accordingly.
+
+**OUTCOME SO FAR, 2026-08-24: the plan's own ordering was wrong, and usefully so.** It went
+wss:// FIRST, because that is what a public relay offers. Against wss://nos.lol the demo
+connected, completed the handshake, published a signed kind-1 and read its ok-true back - so
+`open secure socket` is answered as a FORM (root `docs/OXT-ENGINE-NOTES.md` 6.8) and the send
+half of the verb set is observed. Two things this phase asked for are still owed, and neither
+is what the plan expected to be hard: the whole RECEIVE half (subscribe, EVENT, EOSE, CLOSED,
+NOTICE, the negative paths, NIP-42), and the SECURITY half of the wss:// question - the run met
+an ordinary public host, which cannot distinguish "verified" from "not verified", so a deliberately
+bad certificate is still owed. The ws:// leg the plan called the cheapest is now the one with no
+run behind it at all.
 
 **Risk retired:** RFC 6455 on a real wire (fragmentation, interleaved control frames, server
 close behaviour), and the TLS unknown that currently gates real-world relay coverage.

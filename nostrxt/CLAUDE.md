@@ -171,15 +171,22 @@ hands with a real relay.
    6-byte extended prefix with no vectors. NostrXT refuses plaintext over 65535 bytes, fail
    closed, and says so. If upstream vectors for the extended form land, that is a deliberate
    change with new KAT rows, not a quiet edit.
-7. **wss:// is written, labeled, and UNMEASURED.** `open secure socket` appears nowhere else
-   in the suite and the root engine notes have no TLS entry. The first engine session that
-   touches it must record what actually happens (verification behaviour, failure delivery,
-   TLS versions) in `docs/OXT-ENGINE-NOTES.md` at the suite root, whatever the answer is.
+7. **wss:// was written, labeled and UNMEASURED; it is now PARTLY measured, and the split
+   matters.** `open secure socket` still appears nowhere else in the suite, but this member
+   exercised it on 2026-08-24: it connected to wss://nos.lol, carried the handshake, the
+   publish and the ok-true, and root `docs/OXT-ENGINE-NOTES.md` **6.8** now exists because
+   this rule demanded it. What that run settles is the FORM (it exists, it connects, it
+   streams); what it does not settle is the SECURITY (a rejected certificate was never
+   tried, so verification is unproven in both directions), nor TLS versions, nor failure
+   delivery. Do not let "wss works" become "wss verifies" in any file here. The remaining
+   three still go into the engine notes, whatever the answer is.
 
 ## As-built notes (v0.1.0, 2026-08-23)
 
-Everything below is the initial build; nothing has met an engine yet. Record engine results
-here as they are learned (that is what this section is for).
+Everything below is the initial build. It was written before any of it had met an engine;
+the 2026-08-24 pass above is the first set of results folded back in, and the labels in this
+section are true as re-checked that day. Record engine results here as they are learned
+(that is what this section is for).
 
 - The full public surface: the core's nx* handlers and the relay layer's nxr* handlers, every
   one exercised by name in `examples/nostrxt-tests.livecodescript` (offline, deterministic,

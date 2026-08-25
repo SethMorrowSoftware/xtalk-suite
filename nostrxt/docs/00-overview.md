@@ -52,8 +52,9 @@ older than that (`07-capabilities-required.md`).
       |  composes                              |  ws://  `open socket` (the idioms
       v                                        |         OnionXT proved on-engine)
    CoinXT (cx*, ABI >= 6): sha256,             |  wss:// `open secure socket`
-     Schnorr sign/verify, x-only keys,         |         (UNPROVEN suite-wide)
-     ECDH, HMAC - the HARD dependency          v
+     Schnorr sign/verify, x-only keys,         |         (live 2026-08-24; cert
+     ECDH, HMAC - the HARD dependency          |         checks still unmeasured)
+                                               v
    SodiumXT (sx*): randomness,              Nostr relays
      constant-time compare - soft
 ```
@@ -107,16 +108,20 @@ exactly its feature and never another.
 
 ## Honesty status
 
-**The nx* core is engine-proven 2026-08-24 (Windows x86_64, OXT 9.6.3; 274/274 in the suite paste). Relay paths: verified statically; needs an OXT
-pass + a live-relay pass" until 2026-08-24, when the suite paste ran the core at 274/274
-and the demo opened a live relay (wss://nos.lol: handshake, publish, ok-true) - the
-REQ/subscribe receive leg is the label that remains.** What is
+**The nx* core is engine-proven 2026-08-24** (Windows x86_64, OXT 9.6.3; 274 passed,
+0 failed, 2 deliberate skips in the suite paste). **The relay layer is split:** the
+demo opened a live relay the same day (wss://nos.lol - handshake, publish, ok-true),
+so connect/handshake/publish/confirm is live-proven; the REQ/subscribe receive leg,
+the NIP-42 auth exchange and every ws:// path keep "verified statically; needs a
+live-relay pass". What is
 machine-verified headlessly on every build: `tools/nostr-kat.py` sweeps the full published
 BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the independent oracle
 `tools/nostr_reference.py`, and `tools/check-selftest-vectors.py` re-derives every constant
-the member harness pins, by name, both directions. The open engine questions - wss:// above
-all - are collected in `08-open-questions.md`, and the source carries a `VERIFY (on-engine)`
-label at every point where an engine behaviour is assumed rather than measured.
+the member harness pins, by name, both directions. The open engine questions are collected in
+`08-open-questions.md` - wss:// is no longer the largest of them, since the form itself
+now has a live run behind it and what remains there is the certificate half - and the
+source carries a `VERIFY (on-engine)` label at every point where an engine behaviour is
+assumed rather than measured.
 
 ## Reading order
 
