@@ -16,6 +16,8 @@ Built by composing the OXT extension family:
 | [OnionXT](../onionxt/) | optional: anonymous tables over Tor, and onion-hosted deck oracles |
 | [Box2Dxt](../box2dxt/) | the Kit: spritesheet card animation and physics chips |
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages. The design contract is [`holdem-spec.md`](holdem-spec.md); the build order is [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
+
 ## Status
 
 **Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the FULL 2e
