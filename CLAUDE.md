@@ -890,11 +890,17 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   the PINNED OpenSSL, each thin slice built and tested (arm64 native, x86_64
   under Rosetta), `lipo -create`, the same both-slices assertion - skippable
   deliberately via the `mac_lipo` dispatch input on a first run. What no
-  lane does anywhere is notarize (credentials CI does not hold) - and NO mac
-  lane has produced a
-  committed binary yet: the lanes are written, the first dispatch is what
-  proves them, and the committed universal-mac dylibs keep their current ages
-  until someone presses "Run workflow". Nor does the workflow claim an
+  lane does anywhere is notarize (credentials CI does not hold). **THE FIRST
+  DISPATCH RAN 2026-08-26 (run 5) AND ALL SIX MAC LANES WENT GREEN** - the four
+  single-pass universal builds and both two-slice-lipo jobs, on their first
+  execution ever, so the lanes are proven to build. **No mac binary is
+  committed even so**, and the reason is worth carrying: one unrelated lane
+  failed (`torrentxt x86_64-linux`, on a missing Perl module in the manylinux
+  image), and the bundle/commit stage is gated on the WHOLE matrix - so 29
+  green artifacts, the six mac ones included, were discarded. That gating is
+  correct for a release (a bundle missing a member's binary is not a release),
+  and the cost of it is a full re-dispatch. The committed universal-mac dylibs
+  keep their current ages until a dispatch reaches the commit stage. Nor does the workflow claim an
   unexecuted artifact works, which is why the coinxt Windows lane's output is
   driven through the published vectors on a Windows runner before it is
   bundled - and the coinxt mac lane drives BOTH slices through the same

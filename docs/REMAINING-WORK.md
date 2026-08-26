@@ -616,10 +616,13 @@ Built and statically verified; pending under the honesty convention.
    for sodiumxt, coinxt, enetxt and box2dxt: both slices cross-compiled in one
    pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64
    under Rosetta 2, coinxt's KATs driven through BOTH slices, unsigned (the
-   linker's ad-hoc signature; no notarization). The lanes are WRITTEN and the
-   first dispatch is what proves them - no mac lane has produced a committed
-   binary yet, so every committed dylib keeps its age until someone presses
-   "Run workflow". torrentxt and datachannelxt joined later the same day via
+   linker's ad-hoc signature; no notarization). The lanes are WRITTEN and were PROVEN
+   TO BUILD on 2026-08-26: the first dispatch (run 5) ran all six mac lanes and
+   all six went green. No mac lane has produced a committed binary even so -
+   `torrentxt x86_64-linux` failed on a missing Perl module in the manylinux
+   image, and the bundle/commit stage is gated on the whole matrix, so the run
+   discarded 29 green artifacts including every mac one. Every committed dylib
+   keeps its age until a dispatch reaches the commit stage. torrentxt and datachannelxt joined later the same day via
    the two-slice-lipo job (per-arch pinned OpenSSL, both thin slices built
    and tested, `lipo -create`; skippable deliberately via the `mac_lipo`
    dispatch input), so ALL SIX members have mac lanes. Still open:
