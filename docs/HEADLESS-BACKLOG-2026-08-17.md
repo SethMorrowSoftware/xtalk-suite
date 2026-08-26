@@ -200,6 +200,53 @@ work left" gets meaningfully cheaper to compute.
 
 ---
 
+## WHAT CLOSED 2026-08-26 - the docs sweep, and a note on reading this file at all
+
+**Closed: C7, C17, C18.** Verified mechanically, not surveyed - each item names
+a tool, and each tool now exists AND is invoked by `tools/build-all.sh`:
+
+- **C7** (harness-region coverage scanner for holde-em): shipped inside
+  `tools/check-suite-coverage.py`, which now prints the GAME/HARNESS split the
+  item asked for and arms it as a floor. Its live output is
+  `harness region: 52 handlers, 49 reachable from heSelfTest, 3
+  interactive-delivery by design`. The item's own measured figures (379 public
+  handlers, 174 named, 205 unnamed) are themselves now stale - the gate says
+  381 and reports 131/330 exercised in the game region - which is the item's own
+  point about three surveyors producing three answers, landing on the item.
+- **C17** (handle-table drift gate for the three C++ shims): shipped as
+  `tools/check-shim-scaffold-drift.py`, scoped to the handle table alone exactly
+  as the item proposed, so it pre-empts none of D-14's options.
+- **C18** (suite-level binary freshness gate): shipped as
+  `tools/check-binary-freshness.py`, one tool with a per-member table rather than
+  six carried copies, as the item asked.
+
+Also re-checked and found already closed, though the banners above had recorded
+them: A4 (`torrentxt/tests/onion_frame_golden.py` pins BTXC/BTXF), C3 (box2dxt is
+in `CMAKE_MEMBERS` and `sync-embedded-kit.py` is invoked), C21 (`ROOT_SCRIPTS`
+now carries `start-here.livecodescript` and `tools/ui-kit.livecodescript`;
+`tools/harness-scaffold.livecodescript` is deliberately in `SCRIPT_GATE_EXEMPT`
+because it is a template with holes, which is precisely the three
+undeclared-constant findings the item reported), and D1 (the `REMAINING-WORK.md`
+sweep ran, and it records the unresolvable `qsRebaseLocation` citation rather
+than quietly deleting it). Section D's D3-D15 spot-checked: the
+`EXTENSIONS-OVERVIEW.md` ratios and the coinxt ABI/handler figures are gone, it
+has a holde-em section, and `SPEC.md`'s `cxSeckeyValidate` was corrected
+2026-08-17.
+
+**D2 is the one section-D item still substantially OPEN**, and it is measurable:
+`python3 tools/check-doc-anchors.py` on 2026-08-26 re-resolves **14 anchors against
+647 bare citations it deliberately does not check** (the gate prints the current
+split; do not trust this number, run it). The gate landed; the migration
+it exists to ratchet has barely started.
+
+**HOW TO READ THIS FILE NOW.** It is a SNAPSHOT, and `docs/README.md` types it as
+one. Compiled 2026-08-17, it has had four closure sweeps written into it and is
+still not a status page: take open work from `REMAINING-WORK.md`, and read this
+one for the REASONING behind an item - which is the part that does not decay.
+The remaining items this sweep did not verify either way are B2, B5, C22, D4, D5,
+D9 and D10; nothing here should be read as evidence that any of them is still
+open.
+
 ## CLOSED IN THIS AUDIT
 
 **C1 - `check-handler-calls.py` could not see a third of nocloud, and said
