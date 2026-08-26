@@ -376,18 +376,28 @@ jobs:
         run: |
           set -euo pipefail
           # OpenSSL 3.x's Configure is a Perl program, and it needs MODULES, not
-          # just an interpreter. The guard here used to be `command -v perl`
-          # with the comment "the image ships it" - which was true, passed, and
-          # proved the wrong thing: manylinux_2_28 (AlmaLinux 8) ships a minimal
-          # perl WITHOUT IPC::Cmd, so run 5 (2026-08-26) died at
-          # `Can't locate IPC/Cmd.pm in @INC` inside Configure and took the
-          # whole 30-job dispatch's commit stage with it.
+          # just an interpreter. The guard here was once `command -v perl` with
+          # the comment "the image ships it" - true, passing, and proving the
+          # wrong thing: manylinux_2_28 (AlmaLinux 8) ships a minimal perl
+          # WITHOUT IPC::Cmd, so run 5 (2026-08-26) died at
+          # `Can't locate IPC/Cmd.pm in @INC` inside Configure.
           #
-          # Install the modules Configure loads, then ASSERT them by loading
-          # them here. A missing one now fails on this line, naming itself,
-          # instead of 200 lines into a Configure trace.
-          dnf -y install perl-IPC-Cmd perl-Data-Dumper perl-FindBin \
-                         perl-File-Compare perl-File-Copy perl-Pod-Html >/dev/null
+          # Run 6 then failed HERE, and how is the lesson: it asked dnf for
+          # perl-FindBin / perl-File-Compare / perl-File-Copy by PACKAGE name.
+          # Those are not separate RPMs on AlmaLinux 8 - their modules ship
+          # inside the base perl - and dnf fails the WHOLE transaction on one
+          # unknown name, so IPC::Cmd was not installed either. Guessing how a
+          # distribution splits its perl packages is the mistake.
+          #
+          # So: ask for the MODULE CAPABILITY. Every RPM perl package provides
+          # `perl(Foo::Bar)`, and dnf resolves that to whichever package holds
+          # it, on any RHEL-family release, however the split is drawn.
+          #
+          # The install is best-effort and the ASSERTION below is the gate. A
+          # module still missing fails on that line naming itself, which is
+          # strictly better than dnf's "Unable to find a match" - and better
+          # than 200 lines into a Configure trace.
+          dnf -y install "perl(IPC::Cmd)" "perl(Data::Dumper)" >/dev/null 2>&1 || true
           perl -MIPC::Cmd -MData::Dumper -MFindBin -MFile::Compare -MFile::Copy -e1
           curl -fsSL -o /tmp/boost.tar.gz \
             https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
