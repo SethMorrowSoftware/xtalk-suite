@@ -311,9 +311,40 @@ if(EXISTS "${TORRENTXT_SHIM_SRC}")
     # Export ONLY the btx_* ABI (plus the deliberately-exported btx::test::*
     # hooks the smoke test calls - see src/torrentxt.map for why both, and for
     # what the old "not needed" comment got wrong).
+    #
+    # NOT ON THE SYSTEM-LIBTORRENT PATH, and the reason is the whole point of
+    # the flag. `local: *` does not only hide libtorrent and Boost. This
+    # library is linked -static-libstdc++ -static-libgcc (see torrentxt_link
+    # above), and -fvisibility=hidden does NOT reach an ARCHIVE's own objects:
+    # measured on this toolchain, a trivial .so built with exactly these flags
+    # exports 781 symbols, among them 16 __cxa_* (the C++ exception ABI) and
+    # operator new/delete. The version script takes that to 1. So the script
+    # decides whether this .so carries a PRIVATE C++ runtime or shares the
+    # process's.
+    #
+    # Private is correct for the SHIPPED artifact: libtorrent, Boost and
+    # OpenSSL are static inside it and the OXT engine that dlopens it is C, so
+    # nothing else in that process has a C++ runtime to disagree with.
+    #
+    # Private is FATAL when libtorrent is a system SHARED library, because then
+    # libtorrent-rasterbar.so is a second C++ DSO bound to libstdc++.so.6:
+    # exceptions thrown inside libtorrent and caught by the firewall here would
+    # cross between two __cxa_* implementations with two sets of eh globals,
+    # two allocators and two copies of the std:: typeinfos. Observed, not
+    # theorised: on the run that added this script, torrent_smoke_test aborted
+    # in the ASan lane (the only job configured this way) while the SAME commit
+    # passed ctest on linux-x86_64 and linux-x86, which build libtorrent from
+    # source and link it statically. datachannelxt has carried the identical
+    # script for months without trouble because it has no system path at all.
+    #
+    # Approximate but on the safe side: TORRENTXT_USE_SYSTEM_LIBTORRENT could
+    # in principle find a STATIC system libtorrent (a vcpkg static triplet),
+    # where the script would have been safe. Skipping it there costs hardening
+    # on a developer build and never on a shipped one.
     include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _btx_have_check_linker_flag)
     set(_btx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/torrentxt.map")
-    if(_btx_have_check_linker_flag AND UNIX AND NOT APPLE)
+    if(_btx_have_check_linker_flag AND UNIX AND NOT APPLE
+       AND NOT TORRENTXT_USE_SYSTEM_LIBTORRENT)
         check_linker_flag(CXX "-Wl,--version-script=${_btx_version_script}"
                           BTX_HAVE_VERSION_SCRIPT)
         if(BTX_HAVE_VERSION_SCRIPT)
@@ -322,6 +353,14 @@ if(EXISTS "${TORRENTXT_SHIM_SRC}")
             set_target_properties(torrentxt PROPERTIES
                                   LINK_DEPENDS "${_btx_version_script}")
         endif()
+    elseif(UNIX AND NOT APPLE AND TORRENTXT_USE_SYSTEM_LIBTORRENT)
+        # Say so rather than leaving it silent: this build's export table is
+        # deliberately unfiltered, so a symbol-surface measurement taken here
+        # does not describe the shipped library.
+        message(STATUS "TorrentXT: NOT applying src/torrentxt.map - a system "
+                       "libtorrent is a second C++ DSO in the process and this "
+                       "library links libstdc++ statically; see the comment "
+                       "above. The shipped (static) build applies it.")
     endif()
     torrentxt_apple_export_list(torrentxt "${_btx_version_script}")
 

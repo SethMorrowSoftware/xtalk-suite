@@ -33,6 +33,24 @@
  *
  * -fvisibility=hidden stays. This is the belt to its braces, and it is the
  * only one of the two that reaches a dependency's symbols.
+ *
+ * WHERE IT MUST NOT BE APPLIED (added 2026-08-26, hours after the above, by
+ * the CI run that landed it). `local: *` hides more than the dependencies: this
+ * library links -static-libstdc++ -static-libgcc, and -fvisibility=hidden does
+ * not reach an archive's own objects, so WITHOUT this script the .so also
+ * exports a full copy of the C++ runtime - measured on the CI toolchain, 781
+ * symbols including 16 __cxa_* and operator new/delete, cut to 1 by this file.
+ * Whether that copy is private or shared is therefore this file's decision.
+ *
+ * Private is right for the shipped artifact (everything static inside it, and
+ * the OXT engine that loads it is C - no other C++ runtime in the process) and
+ * wrong when libtorrent comes from the system as a SHARED library, because
+ * libtorrent-rasterbar.so then brings libstdc++.so.6 and exceptions thrown
+ * inside libtorrent would be caught by a firewall running on a different
+ * __cxa_* implementation. torrent_smoke_test aborted with no output at all in
+ * exactly that lane while the same commit passed ctest on the two Linux lanes
+ * that build libtorrent from source. torrentxt/CMakeLists.txt therefore skips
+ * this script when TORRENTXT_USE_SYSTEM_LIBTORRENT is on, and says so.
  */
 {
     global:
