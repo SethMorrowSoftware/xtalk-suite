@@ -375,7 +375,20 @@ jobs:
         working-directory: /
         run: |
           set -euo pipefail
-          command -v perl >/dev/null    # OpenSSL's Configure needs it; the image ships it
+          # OpenSSL 3.x's Configure is a Perl program, and it needs MODULES, not
+          # just an interpreter. The guard here used to be `command -v perl`
+          # with the comment "the image ships it" - which was true, passed, and
+          # proved the wrong thing: manylinux_2_28 (AlmaLinux 8) ships a minimal
+          # perl WITHOUT IPC::Cmd, so run 5 (2026-08-26) died at
+          # `Can't locate IPC/Cmd.pm in @INC` inside Configure and took the
+          # whole 30-job dispatch's commit stage with it.
+          #
+          # Install the modules Configure loads, then ASSERT them by loading
+          # them here. A missing one now fails on this line, naming itself,
+          # instead of 200 lines into a Configure trace.
+          dnf -y install perl-IPC-Cmd perl-Data-Dumper perl-FindBin \
+                         perl-File-Compare perl-File-Copy perl-Pod-Html >/dev/null
+          perl -MIPC::Cmd -MData::Dumper -MFindBin -MFile::Compare -MFile::Copy -e1
           curl -fsSL -o /tmp/boost.tar.gz \
             https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
           echo "2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26  /tmp/boost.tar.gz" | sha256sum -c -
