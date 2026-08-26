@@ -397,8 +397,33 @@ jobs:
           # module still missing fails on that line naming itself, which is
           # strictly better than dnf's "Unable to find a match" - and better
           # than 200 lines into a Configure trace.
-          dnf -y install "perl(IPC::Cmd)" "perl(Data::Dumper)" >/dev/null 2>&1 || true
-          perl -MIPC::Cmd -MData::Dumper -MFindBin -MFile::Compare -MFile::Copy -e1
+          # Bulk first: perl-core is the RHEL-family metapackage for the whole
+          # Perl core distribution. Best-effort - if the name is wrong for this
+          # image it costs nothing, because the capability loop below is the
+          # mechanism that is PROVEN to work here (run 7 got IPC::Cmd and
+          # Data::Dumper this way and reached Makefile generation).
+          dnf -y install perl-core >/dev/null 2>&1 || true
+          for m in IPC::Cmd Data::Dumper Time::Piece; do
+            perl -M"$m" -e1 >/dev/null 2>&1 || dnf -y install "perl($m)" >/dev/null 2>&1 || true
+          done
+          # HARD gate on the three that have actually bitten: IPC::Cmd in
+          # Configure (run 5) and Time::Piece in the generated Makefile (run 7).
+          perl -MIPC::Cmd -MData::Dumper -MTime::Piece -e1
+          # DIAGNOSTIC, never fatal. Runs 5, 6 and 7 each surfaced exactly ONE
+          # missing module and cost a ~45-minute dispatch to learn it, because
+          # the only thing that reports a gap is OpenSSL hitting it. This loop
+          # turns that one-per-dispatch discovery into a single list: if a
+          # fourth module is missing, it is named HERE, in the same run, before
+          # Configure gets a chance to die on it. It must never fail the build -
+          # these are candidates, not known requirements, and failing on one
+          # that OpenSSL does not actually load would break a working lane.
+          for m in Pod::Html Getopt::Long File::Compare File::Copy File::Path \
+                   File::Spec FindBin Digest::SHA Math::BigInt Storable Carp; do
+            perl -M"$m" -e1 >/dev/null 2>&1 \
+              || echo "NOTE: perl module $m absent (not known to be required by" \
+                      "OpenSSL 3.5.4; listed so a later failure arrives with its" \
+                      "name already known)"
+          done
           curl -fsSL -o /tmp/boost.tar.gz \
             https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-b2-nodocs.tar.gz
           echo "2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26  /tmp/boost.tar.gz" | sha256sum -c -
