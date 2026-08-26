@@ -308,6 +308,31 @@ the build runs it, per this file's own mutation-test lesson. Stack-shaped
 files (demos, harnesses, the apps) are deliberately out of that corpus, with
 the reason written in the gate's docstring.
 
+**The gate added on 2026-08-26, and the rot it is standing in for.**
+`tools/check-doc-status-consistency.py` (with `tools/test-doc-status-consistency.py`
+pinning both directions) refuses a BLANKET "nothing here has run on an engine"
+that is not followed, in the same paragraph, by the dated record that closed it.
+It exists because nostrxt's first engine pass (2026-08-24, 274/274) was written
+into five documents and not into the other seven, so the member spent two days
+asserting both that its core was engine-proven and that nothing in it had ever
+met an engine - and two SUITE documents carried the same stranded sentence, one
+of them four lines under its own bullet recording the pass. **This is the
+honesty convention failing in the UNDERSTATING direction, which is why it went
+unnoticed**: that direction feels safe, and it is not. The convention's whole
+value is that a label is worth reading, and a label saying "unproven" over 274
+green checks teaches a reader to skip labels - after which the ones that matter
+stop working too. The rule turns on DIRECTION and nothing else: a negative
+followed by "...until 2026-08-24, when the first engine pass ran green" is a
+RECORD and passes; a negative with the dated positive only BEFORE it is a
+sentence that survived an edit which should have removed it, and fails. Scoped
+negatives ("the receive leg has not run on an engine") are invisible to it, and
+must be - they are what the convention REQUIRES. Both of its regressions were
+introduced while fixing the other (an em-dash bridge that flagged holde-em's
+correctly-scoped DLEQ claim; then a newline ban that blinded it to coinxt's
+hard-wrapped one), so the fixtures pin both and `build-all.sh` runs the fixture
+suite BEFORE the gate: a gate that has gone blind reports OK, and the
+discriminating test is what makes the OK mean anything.
+
 **The gates added on 2026-08-17/18, and what each one is standing in for.** All
 of them document behaviour already recorded in `docs/OXT-ENGINE-NOTES.md`; none
 of them has been through an engine pass of its own, and none upgrades an honesty
@@ -389,10 +414,10 @@ had parsed as what it had checked. Do not build the list by globbing `tools/*.py
 either. **The example this sentence used to give has expired, and how it expired
 is the better argument.** It read: `check-doc-anchors.py` sits there invoked by
 nothing, so a glob would name a gate that does not run. That tool was wired into
-the suite gate block on 2026-08-19 and today every one of the 31 files in
+the suite gate block on 2026-08-19 and today every one of the 33 files in
 `tools/` is invoked by `build-all.sh` - so the glob would now be accidentally
 right, which is worse than being wrong, because nothing would tell you when it
-stopped being. The durable reason stands: those 31 are not 31 GATES. Nine are
+stopped being. The durable reason stands: those 33 are not 33 GATES. Ten are
 fixture tests (`test-*.py`), four are generators and installers
 (`build-suite-selftest.py`, `build-preflight.py`, `sync-demo-embeds.py`,
 `install-release-binaries.py`) that WRITE the tree rather than judging it, and a

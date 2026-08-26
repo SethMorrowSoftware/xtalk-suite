@@ -403,6 +403,22 @@ if [ -f tools/check-doc-anchors.py ]; then
   python3 tools/check-doc-anchors.py -v
 fi
 
+# check-doc-status-consistency.py holds the OTHER half of doc truth: an anchor
+# gate proves a citation still points at something, this one proves a document
+# has not been left asserting a world an engine pass already ended. The fixture
+# suite runs FIRST and for the reason this file's siblings do it - a gate that
+# has gone blind reports OK, so the discriminating test is what makes the OK
+# mean anything. Both regressions it pins were introduced while fixing the
+# other, which is why they are pinned together rather than trusted to a docstring.
+if [ -f tools/test-doc-status-consistency.py ]; then
+  echo "== suite: tools/test-doc-status-consistency.py =="
+  python3 tools/test-doc-status-consistency.py
+fi
+if [ -f tools/check-doc-status-consistency.py ]; then
+  echo "== suite: tools/check-doc-status-consistency.py =="
+  python3 tools/check-doc-status-consistency.py
+fi
+
 # --- static gates for every member (always run) ---
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride

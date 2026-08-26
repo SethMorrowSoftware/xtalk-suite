@@ -579,9 +579,14 @@ compact `r`/`s` from `cxSignRecoverable`.
 ## BIP-340 Schnorr and BIP-341 Taproot (ABI 6)
 
 New on 2026-08-16, over a SECOND vendored native library (upstream bitcoin-core/secp256k1;
-see [../SPEC.md](../SPEC.md) section 2.1 for why there are now two). **Nothing in this
-section has run on an engine yet** - it is verified statically and executed headlessly
-against BIP-340's and BIP-341's own published vector files.
+see [../SPEC.md](../SPEC.md) section 2.1 for why there are now two). **This section is
+ENGINE-VERIFIED 2026-08-16** - it ran green on a real engine hours after it shipped, all
+19 published BIP-340 vectors (10 of them negative) and all 14 BIP-341 wallet vectors
+driven through the binding inside the 278-check member harness
+(`tests/coin-selftest.livecodescript`, entry point `stRun`) folded into the suite paste.
+It is additionally executed headlessly on every build against BIP-340's and BIP-341's own
+published vector files. What is still NOT here: a BIP-341 sighash builder. CoinXT signs a
+sighash it is handed and cannot compute one.
 
 ### `cxXOnlyPubkey(pSeckey)`
 
