@@ -416,11 +416,12 @@ monorepo**):
   user's machine.
 
 - **`release-binaries.yml`** — the assembly step, run by hand
-  (`workflow_dispatch`). One dispatch builds five of the six members that ship
-  committed binaries, for every platform it
-  can be built for (20 build jobs: five members x four platforms) - **box2dxt is
-  absent from that workflow with no recorded reason, so its committed libraries
-  have no dispatch that refreshes them**, asserts each artifact, runs coinxt's
+  (`workflow_dispatch`). One dispatch builds **all six** members that ship
+  committed binaries, for every platform each can be built for (30 build jobs
+  since 2026-08-23: five cmake members x five platforms, plus coinxt's own five)
+  - **box2dxt joined that workflow on 2026-08-23**, closing the gap this
+  paragraph used to record as having no reason, and the same change gave all six
+  members macOS lanes, asserts each artifact, runs coinxt's
   published vectors against the real cross-built DLL on a Windows runner,
   publishes one bundle, and then **installs each library into its own member's
   `src/code/<platform-id>/`, refreshes the manifests, and commits**. It calls
