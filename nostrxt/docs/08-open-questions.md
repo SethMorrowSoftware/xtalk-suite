@@ -1,9 +1,11 @@
 # 08 - Open Questions
 
-The honest to-do list, numbered so answers can cite what they close. Nothing in this
-member has run on a real OXT engine; every question below is either an engine
-behaviour we have assumed and labeled, a scope decision deliberately not yet made,
-or a performance question deliberately not yet optimized. When one is answered, the
+The honest to-do list, numbered so answers can cite what they close. The first
+engine pass landed 2026-08-24 and closed several of these in place (each struck
+with its date below); what remains is either an engine behaviour still assumed and
+labeled, a relay path the 2026-08-24 live run did not reach (the REQ/subscribe
+receive leg, NIP-42 auth, every ws:// path), a scope decision deliberately not yet
+made, or a performance question deliberately not yet optimized. When one is answered, the
 answer goes where the family keeps that class of fact: engine behaviour into
 `docs/OXT-ENGINE-NOTES.md` at the suite root, member consequences into
 `nostrxt/CLAUDE.md`'s as-built notes, and the question is struck here with a date.

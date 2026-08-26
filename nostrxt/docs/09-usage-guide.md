@@ -1,10 +1,14 @@
 # 09 - Usage Guide: From Zero to a Signed Event on a Relay
 
-> STATUS: verified statically; needs an OXT pass. Every relay recipe additionally
-> needs a live-relay pass. The snippets below call only handlers that exist, match
-> the member harness's style, and follow both error conventions - but none of them
-> has run on a real engine yet. The last section says exactly what that means and
-> where the runbook is.
+> STATUS: the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips in the suite paste, both of
+> them the relay layer, which is not in the paste by design). The relay recipes are SPLIT:
+> connect, handshake, publish and ok-confirm are LIVE-PROVEN the same day against
+> wss://nos.lol; a recipe that subscribes and reads events back, authenticates with
+> NIP-42, or dials ws:// keeps "verified statically; needs a live-relay pass". The
+> snippets below call only handlers that exist, match the member harness's style,
+> and follow both error conventions. The last section says exactly what that means
+> and where the runbook is.
 
 Task-oriented recipes, in the order an app grows. Each one states which extensions
 it needs; the two error conventions (core functions return empty and record for

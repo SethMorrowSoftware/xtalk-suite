@@ -1,9 +1,14 @@
 # 01 - Protocol and Trust Model
 
-> STATUS: verified statically; needs an OXT pass. Everything relay-facing additionally
-> needs a live-relay pass. Nothing described here has run on a real engine; the
-> pure-compute claims are pinned by `tools/nostr-kat.py` against the published
-> BIP-340, NIP-44, BIP-173 and NIP-19 vector sets.
+> STATUS: the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips in the suite paste, both of
+> them the relay layer, which is not in the paste by design). Everything relay-facing is
+> SPLIT: connect, handshake, publish and the relay's ok-confirm are LIVE-PROVEN the
+> same day against wss://nos.lol; the REQ/subscribe receive leg, the NIP-42 auth
+> exchange and every ws:// path keep "verified statically; needs a live-relay pass".
+> The pure-compute claims are additionally pinned headlessly by
+> `tools/nostr-kat.py` against the published BIP-340, NIP-44, BIP-173 and NIP-19
+> vector sets.
 
 ## The one-sentence version
 

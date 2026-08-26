@@ -13,13 +13,22 @@ script "coinSelfTest"
 --
 -- WHY THIS FILE EXISTS. CoinXT was the only member with no self-building
 -- harness. That is exactly why the 2026-08-08 suite pass could reach just 4 of
--- the 16 public cx* handlers: there was no paste-and-run way to drive the rest.
--- This file closes that. It calls ALL 16, by name, and checks every deterministic
--- output against the same published vector tools/coin-kat.py pins, so a green run
--- here and a green run there are the same claim at two different layers.
+-- the 16 public cx* handlers that existed then: there was no paste-and-run way
+-- to drive the rest. This file closes that. It names EVERY public cx* handler
+-- (94 as of 2026-08-26: 43 in src/coinxt.lcb and 51 in
+-- src/coinxt.livecodescript) and checks every deterministic output against the
+-- same published vector tools/coin-kat.py pins, so a green run here and a green
+-- run there are the same claim at two different layers. That count is measured,
+-- not maintained by hand: tools/check-suite-coverage.py is what proves the
+-- harness still reaches all of them, and it fails the build if one goes dark.
 --
 -- COVERAGE NOTE (honest): every public cx* handler is driven here, across all
--- three built phases. Phase 1 (the .lcb): cxCheckABI, the seven hash *Len
+-- FIVE built phases plus the ABI 6 BIP-340/BIP-341 surface. The per-phase lists
+-- below were written when three phases existed and are kept as the phase 1-3
+-- roll-call; phases 4 (BIP-39/32/44 HD wallets) and 5 (Bitcoin legacy + BIP-143
+-- SegWit, Ethereum EIP-155 + EIP-1559 transactions) and the Schnorr/Taproot
+-- sections are driven by their own sections further down this file. Phase 1
+-- (the .lcb): cxCheckABI, the seven hash *Len
 -- accessors, cxKeccak256, cxSha3_256, cxSha256, cxSha512, cxRipemd160,
 -- cxHmacSha256, cxHmacSha512, cxPbkdf2HmacSha512. Phase 2 (the .lcb):
 -- cxNewSeckey, cxSeckeyIsValid, cxPublicKey, cxPubkeyDecompress, cxSign,
@@ -40,17 +49,29 @@ script "coinSelfTest"
 -- "handler not found" while the earlier ones pass, the extension loaded and the
 -- script did not - that is a setup problem, not a defect.
 --
--- THIS FILE HAS NOT ITSELF BEEN RUN ON AN ENGINE YET, so it is verified
--- statically. Running it is what turns the 12 phase-1 handlers the 2026-08-08
--- suite pass could not reach, all 15 phase-2 handlers, and the whole phase-3
--- surface into runtime results. Phase 3's LOGIC has been executed headlessly by
--- tools/check-script-vectors.py against these same vectors; what is still
--- unobserved for it is engine PARSER behaviour, which only a real engine
--- settles.
+-- CORRECTED 2026-08-26. The three paragraphs that stood here said this file had
+-- never run on an engine, that HD wallets and mnemonics "are phase 4 and do not
+-- exist yet", and that Taproot key tweaking was unproven. All three were true
+-- when written and none has been true for a while: the STATUS line at the top of
+-- this file records a GREEN 278/278 engine run, and the file makes 92 calls into
+-- the mnemonic and HD surface and 106 into the Schnorr/Taproot one. A STATUS
+-- line was prepended above and the stale body underneath it was left standing,
+-- so the header contradicted itself. What is actually true now:
 --
--- WHAT IT DELIBERATELY DOES NOT PROVE: anything about HD wallets or mnemonics.
--- Those are phase 4 and do not exist yet. Nor Taproot key tweaking: cxBtcAddressP2TR
--- encodes an output key it is GIVEN and does not derive one (see its comment).
+-- RUN HISTORY: engine-passed. Phases 1-3 closed 2026-08-10 (207/207 on the
+-- same-day re-run, after the engine surfaced one real fail-open in
+-- cxHdDerivePath); phase 5 closed 2026-08-12 (Windows x64, 230/230); the ABI 6
+-- Schnorr/Taproot surface ran green 2026-08-16 on the day it shipped; the last
+-- full run was 278/278 on 2026-08-17. tools/check-script-vectors.py continues to
+-- execute the real .livecodescript headlessly against the same vectors on every
+-- push, so a regression between engine passes is caught by CI, not by the next
+-- paste.
+--
+-- WHAT IT STILL DOES NOT PROVE: cxBtcAddressP2TR encodes an output key it is
+-- GIVEN and does not derive one (see its comment) - the tweak itself is a
+-- separate, and now shipped, ABI 6 handler. There is no BIP-341 sighash builder
+-- anywhere in coinxt: it signs a sighash it is handed. And no transaction this
+-- file builds has been broadcast to a live network.
 --
 -- HOW TO USE: open OXT, make a one-card stack, paste THIS into the STACK script
 -- (Object > Stack Script), then close+reopen. It builds its own UI, runs every

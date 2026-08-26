@@ -1,6 +1,8 @@
 # 04 - NIP-44 v2 Encrypted Payloads
 
-> STATUS: verified statically; needs an OXT pass. The pipeline is COMPLETE
+> STATUS: the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips in the suite paste, both of
+> them the relay layer, which is not in the paste by design). The pipeline is COMPLETE
 > since 2026-08-23: the raw ChaCha20 cipher shipped upstream as SodiumXT ABI
 > 10's `sxChaCha20IetfXor`, so `nxNip44Encrypt` / `nxNip44Decrypt` run end to
 > end against a current SodiumXT and fail closed, by design, on an installed
@@ -149,9 +151,14 @@ all fail closed, in order:
 | Version byte, size floors, `#` flag, base64 strictness | exercised today by the harness's refusal checks |
 | The ChaCha20 keystream itself, end-to-end encrypt/decrypt through nx* | **composed via SodiumXT ABI 10 since 2026-08-23**; the oracle proves the construction against the full published encrypt/decrypt vectors (long-message rows included), the harness's seam section asserts the official payload vector decrypts and re-encrypts byte-identically against a current SodiumXT, and still asserts the fail-closed capability error against a pre-ABI-10 install; the complete path needs an OXT pass |
 
-And the standing labels: every "today" above means machine-verified headlessly;
-the whole pipeline still needs an OXT pass, because none of it has run on an
-engine.
+And the standing labels: every "today" above means machine-verified headlessly,
+and since 2026-08-24 the whole pipeline has ALSO run on a real engine. That pass
+(Windows x86_64, OXT 9.6.3) carried this member's harness inside the suite paste
+at 274/274, NIP-44 sections included, against a SodiumXT whose own ABI 10
+ChaCha20 section ran green the same day - so the end-to-end encrypt/decrypt path
+is engine-proven, not merely composed. What the pass did NOT cover is anything
+relay-facing: sending a NIP-44 payload as a real event to a relay and reading one
+back keeps "verified statically; needs a live-relay pass".
 
 ## The limitations NIP-44 itself documents
 

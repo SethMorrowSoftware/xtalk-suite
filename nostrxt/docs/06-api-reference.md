@@ -1,8 +1,12 @@
 # 06 - Public API Reference (`nx*` and `nxr*`)
 
-> **Status: verified statically; needs an OXT pass.** Every relay-facing handler
-> additionally needs a live-relay pass. Nothing on this page has run on a real OXT
-> engine. What IS machine-verified on every build: `tools/nostr-kat.py` sweeps the
+> **Status: the `nx*` core is ENGINE-PROVEN 2026-08-24** (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips, both of them the relay layer,
+> which is not in the suite paste by design). The `nxr*` relay surface is SPLIT:
+> `nxrConnect` through publish and the relay's ok-confirm are LIVE-PROVEN the same
+> day against wss://nos.lol; the REQ/subscribe receive leg, the NIP-42 auth
+> exchange and every ws:// path keep **"verified statically; needs a live-relay
+> pass"**. What IS machine-verified on every build: `tools/nostr-kat.py` sweeps the
 > full published BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the
 > independent oracle `tools/nostr_reference.py`, and `tools/check-selftest-vectors.py`
 > re-derives every constant the member harness pins, by name, in both directions.
