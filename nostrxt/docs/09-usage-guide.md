@@ -445,13 +445,21 @@ a fresh `nxrConnect` if you want it back.
 
 ## Where this leaves you, honestly
 
-Everything above is **verified statically; needs an OXT pass** - and every recipe
-from 6 onward **needs an OXT pass + a live-relay pass**. What stands behind the
-snippets today: `tools/nostr-kat.py` sweeps the full published BIP-340, NIP-44 v2,
-BIP-173 and NIP-19 vector sets through the independent oracle, and
-`tools/check-selftest-vectors.py` re-derives every constant the member harness pins,
-by name, on every build. What does not stand behind them yet: a real engine, a real
-relay, and the wss:// question (docs/07 gap #2).
+Everything above that calls only the `nx*` core - recipes 0 through 5, plus 9 and
+10 - is **engine-proven 2026-08-24** (Windows x86_64, OXT 9.6.3; 274 passed, 0
+failed, 2 deliberate skips in the suite paste, both of them the relay layer). The
+relay recipes are SPLIT, exactly as the status line at the top of this file says:
+connect, handshake, publish and the relay's ok-confirm are **LIVE-PROVEN the same
+day** against wss://nos.lol; the half of recipe 6 that subscribes and reads events
+back, the NIP-42 answer in recipe 8, the teardown in recipe 11 and every ws:// path
+keep **"verified statically; needs a live-relay pass"**. What stands behind the
+snippets headlessly, on every build: `tools/nostr-kat.py` sweeps the full published
+BIP-340, NIP-44 v2, BIP-173 and NIP-19 vector sets through the independent oracle,
+and `tools/check-selftest-vectors.py` re-derives every constant the member harness
+pins, by name. What still does not stand behind them: a real relay for the receive
+leg, and the SECURITY half of the wss:// question - the proven run met a valid
+certificate, so whether a bad one would be refused is unmeasured in both directions
+(docs/07 gap #2).
 
 When you sit down at an engine: the suite runbook, `docs/OXT-PASS-RUNBOOK.md` at
 the repository root, is what to do and in what order; the member harness

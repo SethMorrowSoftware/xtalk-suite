@@ -418,19 +418,28 @@ the torproject and DuckDuckGo onions re-encoded byte-exactly, a tampered address
 **OnionXT is the only member with untested public handlers, and the reasons are now
 written down rather than assumed (2026-08-09).** `tools/check-suite-coverage.py` (suite
 root) measures how much of each member's public surface the pasteable suite harness
-actually calls. Every other member is at 100%; OnionXT is at 27/45, and that is not
-laziness - eighteen of its handlers genuinely cannot run in an offline paste-into-a-stack
-harness, split into two kinds that the gate now names individually:
+actually calls. Every other member is at 100%; OnionXT is at 34/48 (that gate's own row,
+re-run 2026-08-26; it read 27/45 the day this section was written), and the shortfall is
+not laziness - fourteen of its handlers genuinely cannot run in an offline paste-into-a-stack
+harness, split into two kinds that the gate names individually:
 
 - **Eleven engine socket callbacks** (`oxCtlOpened`, `oxCtlLine`, `oxCtlDeadline`,
   `oxSocksOpened`, `oxSocksMethod`, `oxSocksReplyHead`/`Len`/`Done`, `oxStreamData`,
   `oxStreamDeadline`, `oxPeerAccepted`). The ENGINE calls these, with a socket id it
   minted. A harness cannot mint one, and driving them with a synthetic id would not
   exercise the real path - it would corrupt the state of whatever socket shared the id.
-- **Seven that need a live tor daemon** (`oxLaunchTor`, `oxStopTor`, `oxPublishService`,
-  `oxTransportDial`/`Listen`/`Send`/`Recv`). This is the second half of this member's
-  standing honesty convention, "verified statically; needs an OXT pass + a live-Tor pass",
-  made machine-readable.
+- **Three that need a live tor daemon** (`oxLaunchTor`, `oxStopTor`, `oxTransportDial`).
+  This is the second half of this member's standing honesty convention, "verified
+  statically; needs an OXT pass + a live-Tor pass", made machine-readable. It read SEVEN
+  when this section was written, and the other four went away by being WRONG rather than
+  by being closed: `oxPublishService` opens no socket and starts no process (it needs an
+  authenticated STATE, not a daemon), and `oxTransportListen`/`Send`/`Recv` are one-line
+  wrappers over `oxCreateServiceFromSeed` / `oxWrite` / `oxSetStreamCallback`, all three
+  of which this harness had been testing offline for months under the wrapped name. The
+  exemption described what the WRAPPED handler does with a live stream, not what the
+  wrapper needs in order to be exercised. All four were deleted from the gate on
+  2026-08-20, with that reasoning kept in its comment, and each now has a fail-closed
+  check by its own name in `examples/onionxt-tests.livecodescript`.
 
 **Six that were in neither category got a section.** The `oxSet*` configuration setters
 had no coverage at all, so a rename or a deletion would have been invisible to every gate

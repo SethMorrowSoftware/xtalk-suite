@@ -17,9 +17,15 @@ Thanks for pitching in! No Cloud Quick Share is a small, sharp desktop app: one 
 ```
 src/nocloudquickshare.livecodescript   the whole app: one LiveCodeScript stack
 webapp/                                 the bundled static web-app it serves
+site/                                   the standalone product landing page
+                                        (dependency-free static files, no build
+                                        step - see site/README.md)
 tools/check-livecodescript.py           static gate for the stack script
 tests/fileserver_golden.py              pure-logic reference for the file server
-docs/                                   design notes
+docs/                                   the member docs; docs/README.md indexes
+                                        them, and oxt-pass-checklist.md is the
+                                        engine pass every wire change owes
+SECURITY.md                             private reporting + the security model
 ```
 
 Almost everything lives in that one `.livecodescript` file. The web-app under `webapp/` is plain static assets (HTML/CSS/JS) that the stack serves over the local network and, optionally, over Tor.

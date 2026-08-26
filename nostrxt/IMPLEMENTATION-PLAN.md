@@ -218,7 +218,7 @@ run behind it at all.
 **Risk retired:** RFC 6455 on a real wire (fragmentation, interleaved control frames, server
 close behaviour), and the TLS unknown that currently gates real-world relay coverage.
 
-## Phase 8 - The upstream cipher and NIP-44 completion - CLOSED 2026-08-23 (engine sweep still owed)
+## Phase 8 - The upstream cipher and NIP-44 completion - CLOSED 2026-08-23 (engine sweep rode phase 6, 2026-08-24)
 
 **Goal:** encrypted payloads work end to end, with the cipher living where family law puts it.
 
@@ -242,9 +242,10 @@ close behaviour), and the TLS unknown that currently gates real-world relay cove
 plus the pinned libsodium tarball's expectation file, ASan/UBSan green, and all four non-mac
 platform binaries refreshed in the same change. NostrXT's seam, probes and harness branch
 flipped with zero code changes; the capability docs turned from "requested" to "shipped,
-ABI 10". The one deliverable this phase still owes is the ENGINE sweep of the now-complete
-path (runbook rows; the honesty label stays "verified statically; needs an OXT pass"), which
-rides the member's first OXT pass rather than standing as its own phase.
+ABI 10". The last deliverable this phase owed was the ENGINE sweep of the now-complete path,
+and it rode the member's first OXT pass rather than standing as its own phase: phase 6 ran on
+2026-08-24 with the NIP-44 sections in the paste (274 passed / 0 failed, Windows x86_64, OXT
+9.6.3, against the real sodiumxt ABI-10 cipher), so the label moved with the rest of the core.
 
 **Done when:** SodiumXT ships the primitive; `nxNip44Encrypt` / `nxNip44Decrypt` round-trip the
 official vectors on an engine (the harness's seam section goes green on its cipher branch); and

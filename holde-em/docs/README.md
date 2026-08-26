@@ -7,7 +7,7 @@ Hold'em composed from TorrentXT, SodiumXT, Box2Dxt and (optionally) OnionXT.
 deliberate, and this page exists so a reader who expects every member to have a
 `docs/README.md` finds one that says where to go. The reason they stay put:
 `IMPLEMENTATION-PLAN.md` and `holdem-spec.md` are cited by name from the game
-source, from the member CI workflow, and from six suite-level documents, and the
+source, from the member CI workflow, and from five suite-level documents, and the
 member's game and its test harness are the same file -- so the paths are load
 bearing in a way an ordinary member's docs are not.
 

@@ -19,7 +19,9 @@ House style: no em-dashes (hyphens, commas, colons, parentheses). ASCII only in 
 (MIT, plain C, no external deps, the crypto core of a hardware wallet) behind a thin C ABI and a
 livecodescript API, so an xTalk app can make keys, derive HD wallets from a mnemonic, build addresses,
 and sign and verify for both chains. It adds no cryptography of its own; every curve op and hash is
-trezor-crypto's.
+upstream's - trezor-crypto's, and since ABI 6 (2026-08-16) upstream bitcoin-core/secp256k1's for BIP-340
+Schnorr, x-only keys and the BIP-341 tweak (trezor-crypto's plain-C tree has no BIP-340; the rule change
+that admitted a SECOND vendored library is SPEC.md section 2.1).
 
 ```
 app (livecodescript)
@@ -92,9 +94,12 @@ shadow trap, the `put ... into ... after` malformation, and (for `.lcb`) a missi
 python3 tools/check-selftest-vectors.py
 ```
 `tests/coin-selftest.livecodescript` carries its expected digests as hand-copied literals. This
-re-derives all 21 of them - against `hashlib` / `hmac` where Python has an independent implementation,
-against the published table in `coin-kat.py` for Keccak-256 (Python has no Keccak) and for RIPEMD-160
-when OpenSSL 3 has moved it out of reach, saying so rather than skipping quietly. It also re-checks the
+re-derives every one it can and reports the honest split rather than a count of what it parsed (`85 of
+130 harness constant(s) re-derived, 45 are inputs` as it stands, each of those 45 listed with a written
+reason, so a constant that is neither re-derived nor excused fails the build) - against `hashlib` /
+`hmac` where Python has an independent implementation, against the published table in `coin-kat.py`
+for Keccak-256 (Python has no Keccak) and for RIPEMD-160 when OpenSSL 3 has moved it out of reach,
+saying so rather than skipping quietly. It also re-checks the
 two structural claims the harness makes beyond its fixed digests: that PBKDF2's short output prefixes
 its long one, and that the SHA3-256 and Keccak-256 constants genuinely differ. It is mutation-tested:
 a flipped hex digit, an aliased Keccak constant, a changed BIP-39 salt, a truncated digest, a swapped

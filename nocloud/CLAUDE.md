@@ -80,7 +80,9 @@ webapp/                                 a bundled static SPA you can serve over 
                                         static host + the /_qs/info live route)
 tools/check-livecodescript.py           the static linter (one of two gates)
 tests/fileserver_golden.py              the pure-logic golden (the other gate)
-docs/                                   what-it-hides, webapp, building-a-standalone
+docs/                                   README (the index), what-it-hides,
+                                        user-routes, webapp, building-a-standalone,
+                                        http-server-deep-dive, oxt-pass-checklist
 ```
 
 ## The stack it sits on (dependencies)
@@ -294,11 +296,16 @@ The app is standalone-ready:
 
 - The UI self-builds every launch (nothing needs to persist in the stackfile).
 - Downloads land in `Documents/No Cloud Quick Share` on every platform.
-- In the standalone builder: include **org.openxtalk.library.torrent** (required),
-  and **org.openxtalk.library.sodium** (SodiumXT) + **OnionXT** for the optional
-  encryption / Tor features — both fail closed when absent. Include the **Internet
-  library** for the (try-guarded) public-IP lookup. No other inclusions, externals,
-  or native resources are needed. See `docs/building-a-standalone.md`.
+- In the standalone builder: include **org.openxtalk.library.torrent** (required)
+  and **org.openxtalk.library.sodium** (SodiumXT) for the optional encryption — it
+  fails closed when absent. **OnionXT is NOT tickable** — pure LiveCodeScript, with
+  no packaged extension and no `org.openxtalk.*` id — and no longer needs to be:
+  since 2026-08-24 the stack script CARRIES `onionxt/src/onionxt.livecodescript`
+  verbatim between the `tools/sync-demo-embeds.py` sentinels, so the Tor path ships
+  with the script. It still needs SodiumXT, and at runtime a **local Tor daemon** on
+  the user's machine. Include the **Internet library** for the (try-guarded)
+  public-IP lookup. No other inclusions, externals, or native resources are needed.
+  See `docs/building-a-standalone.md`.
 
 ## Git / workflow
 

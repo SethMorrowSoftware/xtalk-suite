@@ -167,10 +167,23 @@ monorepo). Verify locally with `cd src/code && sha256sum -c MANIFEST.sha256`.
 The manifest is an integrity record, not a source-provenance proof: the shipped
 binaries are rebuilt from the pinned libsodium by the root CI's
 `native sodiumxt` workflow, which builds and tests all five platforms and
-publishes each as a downloadable artifact. It does NOT commit them: refreshing
-a committed binary stays a deliberate, human-authored change (suite rule 5), so
-a maintainer downloads the artifact and commits it alongside the change that
-motivated it. Build from source yourself when you need end-to-end assurance.
+publishes each as a downloadable artifact. That workflow does NOT commit them -
+it fires on every push, so a commit step there would land binaries nobody asked
+for on somebody else's change; a maintainer downloads the artifact and commits it
+alongside the change that motivated it. The other path, and now the usual one, is
+the root `release-binaries.yml`: a manual `workflow_dispatch` that rebuilds every
+platform it can, installs each library through
+`tools/install-release-binaries.py` (which checks the filename against the
+member, and the object format and architecture against the directory the library
+claims), refreshes the manifests, runs the whole gate set, and commits
+(`commit_mode`: `branch` / `pr` / `none`). That still satisfies suite rule 5,
+whose point is that a committed binary traces to a human decision - here the
+decision is the person pressing "Run workflow". It has already committed this
+member's rows once (run 31551536144, itself superseded by the 2026-08-23 ABI-10
+cross-builds); `CLAUDE.md`'s platform table records what each committed row was
+actually built from, and the `universal-mac` row is waiting on the first mac
+dispatch of that workflow. Build from source yourself when you need end-to-end
+assurance.
 
 ## A note on the pinned libsodium
 

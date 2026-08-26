@@ -14,7 +14,9 @@ code.
   workflow's `commit-binaries` job when SodiumXT is worked on in isolation).
 - `tests/sodium_smoke_test.c` - the C test suite (known-answer tests, round trips, and the
   tamper / wrong-key / firewall checks).
-- `tools/` - `check-livecodescript.py` (the static gate for `.lcb` / `.livecodescript`) and
+- `tools/` - `check-livecodescript.py` (the static gate for `.lcb` / `.livecodescript`),
+  `check-docs-style.py` (the house-style gate: no em/en dashes and no curly quotes in any
+  `.md` of this member, which is one of the four that declare that rule), and
   `package-extension.py`.
 - `examples/` - the demo stack and the xTalk self-test.
 - `docs/` - user documentation; `docs/development/` - the design and build internals.
@@ -26,8 +28,11 @@ code.
   risk register. Read it first.
 - **[docs/development/building.md](docs/development/building.md)** - how to build the native
   library, run the tests under sanitizers, run the static gate, and package the result.
-- **[docs/development/torrentxt-integration.md](docs/development/torrentxt-integration.md)** - a
-  proposal for replacing TorrentXT's hand-rolled crypto with SodiumXT.
+- **[docs/development/torrentxt-integration.md](docs/development/torrentxt-integration.md)** -
+  SUPERSEDED. The plan to replace TorrentXT's hand-rolled crypto with SodiumXT; the migration
+  shipped, and differently than planned there. Kept for the weak-KDF and unauthenticated-CBC
+  arguments that motivated it. The as-built record is `torrentxt/CLAUDE.md`, "Example demos:
+  SodiumXT dependency".
 - **`CLAUDE.md`** - the operational guidance and the hard-won-lesson list (FFI, OXT/LCB
   gotchas). Worth reading before touching the binding.
 

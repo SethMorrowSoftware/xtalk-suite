@@ -19,8 +19,8 @@ scope in your stacks. Confirm it is working from the message box:
 ```
 put sxVersion()
 -- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
--- (every committed binary reports the pinned 1.0.20 since the 2026-08-15
---  mingw rebuilds; the superseded vcpkg-built Windows DLLs reported 1.0.22)
+-- (every committed binary reports the pinned 1.0.20 since the 2026-08-23
+--  mingw cross-builds; the superseded vcpkg-built Windows DLLs reported 1.0.22)
 ```
 
 ## Five conventions

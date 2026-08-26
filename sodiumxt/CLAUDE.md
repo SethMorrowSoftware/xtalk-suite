@@ -194,7 +194,13 @@ our `-Wall -Wextra` (our code stays warning-clean; `/W3` on MSVC).
 
 **Static gates for the script layer.** OXT is a GUI runtime: there is **no headless way to
 compile or run `.lcb` / `.livecodescript`**. Catch what is statically catchable first by
-**porting TorrentXT's checker verbatim**:
+**running the UNIFIED family checker** - one implementation carrying the union of both
+pre-2026-08-12 lineages' checks, byte-identical in every member that ships one (this
+member's old copy was the defective side of that drift: it did not know `switch` /
+`end switch`, so it read `end switch` as closing a handler). `tools/check-checker-drift.py`
+fails the build on any divergence and `tools/test-checker.py` fixture-tests every rule in
+every copy, so a checker fix has to land in ALL copies in one change, never in this one
+alone:
 ```sh
 python3 tools/check-livecodescript.py
 ```
@@ -353,8 +359,13 @@ ops.** The rules:
   committed `src/code/<arch>-<platform>/` binary **and** its `src/code/MANIFEST.sha256` entry
   **in the same change** (the script does both; the suite CI gates fail if a committed blob is
   unlisted or does not match its recorded SHA256). The root `native sodiumxt` workflow rebuilds
-  and tests the full 5-platform matrix and uploads each library as an artifact; committing a
-  refreshed binary stays a deliberate human step, in the same change as the shim edit.
+  and tests the full 5-platform matrix and uploads each library as an artifact, and never
+  commits one; the committing path is the root `release-binaries.yml`, dispatched by hand,
+  which installs through `tools/install-release-binaries.py`, refreshes `MANIFEST.sha256`,
+  runs the gate set and commits (`commit_mode`: `branch` / `pr` / `none`) - the way the
+  platform table above records the rows being re-committed. Either route, committing a
+  refreshed binary stays a deliberate human step: by hand it belongs in the same change as
+  the shim edit, and by workflow the human step is pressing "Run workflow".
 - **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons,
   parentheses.
 - **Match the surrounding style:** this codebase, like its siblings, comments the *why*,

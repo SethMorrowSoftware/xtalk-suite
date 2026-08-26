@@ -1,9 +1,17 @@
 # Box2Dxt API Reference (`b2…`)
 
-This is the full, low-level binding exposed by `src/box2dxt.lcb`. It mirrors the
-Box2D v3 surface closely. For everyday work, the higher-level
-[Kit (`b2k…`)](kit-reference.md) is usually easier — reach for these handlers
-when you need something the Kit doesn't expose.
+This is the low-level binding exposed by `src/box2dxt.lcb`. It mirrors the
+Box2D v3 surface closely, but it is **not exhaustive**: the extension defines 376
+public `b2…` handlers and this page names 216 of them (measured 2026-08-26, by
+comparing the names written here against the `public handler b2…` lines in the
+source — no gate holds that ratio, so read it as of that date). The joint
+families arrive with their constructors and a setter or two; most of their
+accessors — `b2Distance…`, `b2Motor…`, `b2Mouse…`, `b2Weld…`, `b2Revolute…`,
+`b2Prismatic…`, `b2Wheel…` — are absent, as are 34 of the 61 `b2Shape…`
+handlers and the `b2LoadNativeLib…` trio. `src/box2dxt.lcb` is the source of
+truth; read the signature there for anything you cannot find here. For everyday
+work, the higher-level [Kit (`b2k…`)](kit-reference.md) is usually easier — reach
+for these handlers when you need something the Kit doesn't expose.
 
 **Conventions**
 

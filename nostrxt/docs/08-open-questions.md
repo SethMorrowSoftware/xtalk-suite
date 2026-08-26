@@ -111,7 +111,7 @@ unmasked per RFC 6455 - already skip it entirely). Do not take any of them until
 real engine shows a real stall: the harness pins the masked-frame bytes, so any
 optimization has a byte-exact regression net waiting.
 
-## Gates (the machinery this member does not have yet)
+## Gates (both landed; kept here as the record of what they cost)
 
 **9. Headless EXECUTION of the script layer - CLOSED 2026-08-23, exactly as
 sketched below.** The interpreter was extended IN ITS HOME (coinxt's

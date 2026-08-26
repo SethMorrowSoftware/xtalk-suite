@@ -126,13 +126,24 @@ nostrxt/                    (the NostrXT member of the xtalk-suite monorepo)
     nostr-relay.livecodescript  the relay client over engine sockets (public nxr*)
   examples/
     nostrxt-tests.livecodescript  the offline, deterministic member self-test
+    nostrxt-demo.livecodescript   the paste-and-run demo stack: carries the core,
+                                  the relay layer and the harness verbatim between
+                                  the sync-demo-embeds sentinels, so there is
+                                  nothing to `start using` first
   tools/
     nostr_reference.py      the independent Python oracle (anchored at import)
     nostr-kat.py            sweeps the full published vector sets; emits the
                             constants the harness pins, with source URLs
     check-selftest-vectors.py  re-derives every pinned harness constant by name
+    check-script-vectors.py EXECUTES the shipped core against the vectors,
+                            through lcs-interp.py, on every build
+    test-script-vectors.py  the mutation drive proving that gate fires
+    lcs-interp.py           the headless LiveCodeScript interpreter (carried
+                            from coinxt, byte-identical, drift-gated)
     check-livecodescript.py the family's static gate (carried, byte-identical)
     check-docs-style.py     the prose house-style gate (no dashes / curly quotes)
+    check-doc-handlers.py   holds 06-api-reference.md and the source in
+                            agreement on the public surface
 ```
 
 ## Install / verify

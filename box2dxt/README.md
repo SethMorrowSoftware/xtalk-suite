@@ -80,8 +80,8 @@ Kit, the raw binding, and the plans/records). The short version:
 |-----|--------------|
 | [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. |
 | [Kit guide](docs/kit-guide.md) | The friendly `b2k…` layer, taught start to finish. |
-| [Kit reference](docs/kit-reference.md) | Every `b2k…` handler, one line each. |
-| [API reference](docs/api-reference.md) | The raw `b2…` extension surface. **Incomplete: ~231 of 376 public handlers** (measured 2026-08-26); the gap is mostly joint accessors. |
+| [Kit reference](docs/kit-reference.md) | The `b2k…` handlers, one line each. **Incomplete: 242 of the Kit's 313** (measured 2026-08-26); most of the gap is internal helpers, but a few real entry points are missing too (`b2kPlayerDuckSet`, `b2kPlayerTick`, `b2kSyncAll`, `b2kEnsureNativeLib`). |
+| [API reference](docs/api-reference.md) | The raw `b2…` extension surface. **Incomplete: 216 of 376 public handlers** (measured 2026-08-26, by name against `src/box2dxt.lcb`); the gap is mostly joint accessors. |
 | [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI. |
 | [Building](docs/building.md) | Compile the native library yourself with CMake. |
 | [Platformer polish plan](docs/platformer-polish-plan.md) | The plan to take the 7-level demo to its final form (transitions, feel, scenes). |
@@ -108,9 +108,16 @@ The three layers and their conventions are in
 [docs/architecture.md](docs/architecture.md); the build is in
 [docs/building.md](docs/building.md). The Kit is the single source of truth —
 after editing `src/box2dxt-kit.livecodescript`, re-sync the embedded copies
-with `python3 tools/sync-embedded-kit.py`. Two static gates run on every change
-(and in CI): `python3 tools/check-livecodescript.py` (the script layer) and
-`python3 tools/sync-embedded-kit.py --check` (embedded-Kit drift).
+with `python3 tools/sync-embedded-kit.py`. Four static gates run on every change
+(and in CI): `python3 tools/check-livecodescript.py` (the script layer),
+`python3 tools/sync-embedded-kit.py --check` (embedded-Kit drift),
+`python3 tools/check-lcb-signatures.py` (every `binds to "c:box2dxt>…!cdecl"`
+declaration against the C definition it names — return type, arity, per-parameter
+type) and `python3 tools/package-extension.py --check` (no empty platform slot
+under `src/code/`). `python3 tools/audit-platformer.py` runs beside them in the
+same walk but is **advisory**: it prints the platformer's level-geometry findings
+and never exits non-zero, so what it actually holds is that the auditor can still
+parse the demo it audits.
 
 ## License
 

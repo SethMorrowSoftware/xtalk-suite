@@ -218,10 +218,11 @@ normal and is deliberately ignored.
 
 ## The engine-behaviour VERIFY list
 
-Most things socket-related here are engine-unproven; item 2 is now partly
-answered and is kept, narrowed, rather than deleted. These are the specific claims
-an OXT pass must confirm or correct (record results in the suite engine notes and
-promote or fix the labels in the source):
+Most things socket-related here are engine-unproven; items 2, 3 and 7 were
+answered in whole or in part by the 2026-08-24 run and are kept, narrowed, rather
+than deleted. These are the specific claims an OXT pass must confirm or correct
+(record results in the suite engine notes and promote or fix the labels in the
+source):
 
 1. `open socket to <host:port|name> with message` connects asynchronously and
    fires the message; failure arrives as `socketError`. (OnionXT-proven idiom;
@@ -234,7 +235,10 @@ promote or fix the labels in the source):
    sent, how a TLS failure is delivered, which TLS versions negotiate.
 3. The persistent no-quantifier `read from socket ... with message` streams bytes
    as they arrive, chunk by chunk, without blocking to EOF (OnionXT-proven on a
-   SOCKS tunnel; unproven on a websocket byte stream).
+   SOCKS tunnel; ANSWERED 2026-08-24 on a websocket byte stream too, engine notes
+   6.8: the RFC 6455 upgrade, the masked client frames and the relay's replies all
+   streamed over it, chunk by chunk. That was the SECURE form; the plain ws://
+   branch of the same handler has still never run).
 4. `socketTimeout` repeats while a read is pending (documented assumption,
    inherited from OnionXT, where it also remains unforced).
 5. `the socketTimeoutInterval` this layer sets at connect time is an ENGINE-GLOBAL
@@ -243,14 +247,19 @@ promote or fix the labels in the source):
    OnionXT sets the same property around its own handshakes.
 6. `base64Encode`'s exact line-wrap behaviour (`nxB64Encode` strips both break
    bytes defensively; the wrap width and presence on-engine are unmeasured).
-7. `sha1Digest` produces the RFC accept value on-engine (it is the one
-   engine-proven builtin hash in this tree - riptide relies on it - but not in
-   this composition).
+7. `sha1Digest` produces the RFC accept value on-engine - it is the one
+   engine-proven builtin hash in this tree (riptide relies on it), and ANSWERED
+   here too on 2026-08-24: `nxrProcessHandshake` compares the relay's echo
+   byte-exactly against `nxWsAcceptFor` and fails the connect on a mismatch, so
+   reaching the OPEN state against wss://nos.lol is that derivation being right.
 8. The close handshake against a real relay: whether the engine delivers the
    final `socketClosed` before or after the echoed close frame flushes, and
    whether writes to a closing socket error or vanish.
 9. The whole NIP-42 flow against a relay that actually demands auth, and the
    `"ok"` / `"closed"` reason texts real relays send.
 
-Until every line above has met an engine, the honest summary of this document is
-its status line: verified statically; needs an OXT pass + a live-relay pass.
+The honest summary of this document is its status line, not this list: connect,
+handshake, publish and the relay's ok-confirm are live-proven 2026-08-24; the
+RECEIVE leg, the NIP-42 exchange and every ws:// path stay verified statically;
+needs an OXT pass + a live-relay pass. The items above that carry no ANSWERED
+note are what the next pass owes.

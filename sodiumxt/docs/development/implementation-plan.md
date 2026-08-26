@@ -5,7 +5,10 @@ Read this before writing code. The operational as-built record and the hard-won-
 live in `CLAUDE.md`; this document is the design, the phased plan, the test strategy, and the
 risk register.
 
-> **Status (as-built):** every phase below (0 through 6) has shipped and is on-engine verified.
+> **Status (as-built):** every phase below (0 through 5) has shipped and is on-engine verified.
+> (This read "0 through 6" until 2026-08-26. There is no Phase 6: section 5 runs Phase 0 to
+> Phase 5 and section 6 is the testing strategy. The as-built convention protects a record's
+> account of what happened, not an off-by-one inside it.)
 > This document is the original design, kept as the historical spec and rationale; for the
 > current, authoritative state of the code use `CLAUDE.md` (the as-built record),
 > `docs/api-reference.md` (every shipped `sx*` handler), and `docs/development/building.md`.

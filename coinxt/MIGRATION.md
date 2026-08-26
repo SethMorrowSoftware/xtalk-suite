@@ -12,13 +12,15 @@ reaches outside it. This file is the procedure for the split and the checklist f
 Run the gates from `coinxt/` (the directory is lowercase; only the eventual repository name is
 capitalised) and confirm all NINE are green (check-script-vectors.py joined when phase 3 became
 headlessly executed). They are the same steps `.github/workflows/ci.yml`
-runs, and the same ones the suite's `tools/build-all.sh --gates` runs today:
+runs; the suite's `tools/build-all.sh --gates` runs these nine plus
+`tools/check-doc-handlers.py --check`, which the member workflow does not carry yet:
 
 ```sh
 python3 tools/check-livecodescript.py         # static gate for .lcb / .livecodescript
 python3 tools/check-docs-style.py             # house-style gate for .md
 python3 tools/coin-kat.py --check             # builds the shim, runs the known-answer vectors
 python3 tools/check-selftest-vectors.py       # the OXT self-test's vectors have not drifted
+python3 tools/check-script-vectors.py         # the SCRIPT encoders reproduce the published vectors
 python3 tools/check-binary-freshness.py       # the committed library still matches the shim
 sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd native && sha256sum -c MANIFEST.sha256 )   # vendored-source integrity

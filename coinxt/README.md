@@ -94,6 +94,9 @@ CoinXT/
                             The curve half is a CLOSURE, not a pick-list: see VENDOR.md for
                             why hasher.c, blake, groestl, base58.c and address.c are in it
   docs/
+    README.md               the index for every page of this member, the root ones included
+    getting-started.md      from zero: install, verify, run the demo, the same path as code,
+                            and the honesty caveats to build into your app
     api-reference.md        the cx* handlers that EXIST today (contrast SPEC.md, which describes
                             the whole designed API including phases not yet built)
   src/
@@ -105,8 +108,9 @@ CoinXT/
                             message path (`start using stack "coinxt"`)
   tests/
     coin-selftest.livecodescript  the OXT runtime harness: paste into a stack script, it builds
-                            its own UI and drives ALL 80 public cx* handlers against the
-                            published vectors (35 from the .lcb, 45 from the script layer)
+                            its own UI and drives ALL 94 public cx* handlers against the
+                            published vectors (43 from the .lcb, 51 from the script layer);
+                            the suite's tools/check-suite-coverage.py is what reads 94/94
   tools/
     coin-kat.py             known-answer vectors (builds the shim headless, drives it via ctypes)
     check-selftest-vectors.py  re-derives the self-test's hand-copied vectors so they cannot
@@ -144,12 +148,13 @@ sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
-All nine run in CI (`.github/workflows/ci.yml`), and the same set runs in the monorepo's
-`suite-gates.yml` via `tools/build-all.sh --gates`. OXT cannot COMPILE or LOAD a `.livecodescript`
-or a `.lcb` headlessly, so a script change still needs an on-engine pass for parser behaviour - but
-the phase-3 encoders' LOGIC is executed headlessly by `check-script-vectors.py`, so "never run" is
-no longer the state they ship in. The honest
-status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
+All nine run in CI (`.github/workflows/ci.yml`). The monorepo's `suite-gates.yml`, via
+`tools/build-all.sh --gates`, runs those nine plus `python3 tools/check-doc-handlers.py --check`
+(the docs-vs-shipped-handler-set gate, which the member workflow does not carry yet), so the nine
+above going green is not by itself proof that the suite gates will. OXT cannot COMPILE or LOAD a
+`.livecodescript` or a `.lcb` headlessly, so a script change still needs an on-engine pass for parser
+behaviour - but the phase-3 encoders' LOGIC is executed headlessly by `check-script-vectors.py`,
+so "never run" is no longer the state they ship in. The honest status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
 
 ## Status
 

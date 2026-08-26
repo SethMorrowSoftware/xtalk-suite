@@ -18,6 +18,33 @@ Built by composing the OXT extension family:
 
 > **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages. The design contract is [`holdem-spec.md`](holdem-spec.md); the build order is [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
 
+## Running it
+
+The whole game is one paste-and-run stack that builds its own UI, and hotseat play
+needs no extensions at all.
+
+1. **Install [OpenXTalk](https://openxtalk.org) (OXT).** (It also runs in LiveCode
+   9.6.3+, but OXT is the target.)
+2. **Paste the stack.** `File > New Mainstack`, then `Object > Stack Script`; open
+   [`src/holdem.livecodescript`](src/holdem.livecodescript), copy all of it, paste it
+   in, and apply/compile.
+3. **Close the stack window and reopen it.** Reopening is what builds the table: the
+   stack sizes itself to 1024x640 and opens on the lobby. Press **Leave (play hotseat)**
+   for a local game. **Close the window when done** — that is what stops the session and
+   cancels this stack's timers.
+4. **For online play, install the extensions** via `Tools > Extension Manager`:
+   **TorrentXT** (`org.openxtalk.library.torrent`) and **SodiumXT**
+   (`org.openxtalk.library.sodium`), both required before Create or Join does anything.
+   Optional: **Box2Dxt** (`org.openxtalk.box2dxt`) with its `box2dxt-kit` stack loaded,
+   for the card art and chip physics, and **OnionXT** (`start using stack "onionxt"`,
+   plus a locally running tor daemon) for onion tables. Every one is probed at the point
+   of use and fails closed with a readable reason — there is no silent fallback.
+5. **The self-test rides in the same stack.** Type `heRunSelftest` in the message box
+   for the report panel, or call `heSelfTest()` to get the same report back as a value.
+
+Everything visual and timed is "verified statically; needs an OXT pass" until a human
+confirms it in the IDE — the Status section below says which halves are still owed one.
+
 ## Status
 
 **Phase 1 hotseat + Phase 2 online play (2d) with onion tables (2f) and the FULL 2e
@@ -36,17 +63,32 @@ their own protocol-kat pins the same day). v0.24.0 is a correction pass over tha
 reviewed defects (a redial that could kill the host election, a catching-up client
 that refused every later timeout, consensus state written around folds the engine
 had refused, a table parked for sit-outs that could never resume, ghost seats for
-departed peers) fixed with **no wire change at all** — the 114 protocol pins are
-untouched, so v0.23.0 and v0.24.0 clients speak the identical protocol.** v0.24.1
-clears the three source-side blockers the suite-fold assessment named, again with no
-wire and no gameplay change: a dead `b2kSpriteOnFinish` receiver removed (it was the
-Kit's setter name, so it never fired -- and the card-flip chaining it was written for
-was never wired either), all 187 script-level declarations hoisted above the first
-handler, and a quiet `heSelfTest()` entry point added beside `heRunSelftest`. The live multi-machine passes are the pending exit gates: a
-multi-hand rp1 session on real networks (Phase 2, now including seats timing out on
-real wall clocks), a two-machine onion table over live tor (2f, + a real
-host-stream loss and redial), and a **three-machine oracle round** (Phase 3); the
-ristretto255 handlers (SodiumXT ABI 8/9) have never run on an engine.
+departed peers) fixed with **no wire change at all** — protocol-kat's 114 pins are
+untouched (132 since 2026-08-23), so v0.23.0 and v0.24.0 clients speak the identical
+protocol.** v0.24.1 clears the three source-side blockers the suite-fold assessment
+named, again with no wire and no gameplay change: a dead `b2kSpriteOnFinish` receiver
+removed (it was the Kit's setter name, so it never fired -- and the card-flip chaining
+it was written for was never wired either), all 187 script-level declarations hoisted
+above the first handler, and a quiet `heSelfTest()` entry point added beside
+`heRunSelftest`. v0.24.4 (2026-08-17) then corrected the host election itself:
+`heNetElectablePubs` scanned the seated list without ever consulting `sitOutBy`, so a
+sat-out seat could be elected — and because every client runs the same code, every
+client agrees on a successor guaranteed not to re-host, which is a deterministic table
+death rather than a divergence. It rides the live-seated scan now, filtered the way
+the rest of the liveness layer filters it; two protocol pins were ADDED beside the
+existing ones and none changed, so a v0.24.3 client and a v0.24.4 client speak the
+identical protocol. v0.24.5 fixed a display defect three hands of real hotseat play
+turned up the same day: the History line summed every seat's total commitment, so an
+uncalled all-in reported a pot of 2400 for a pot of 784. The deltas, chip conservation
+and the settlement audit were right throughout — which is why every existing gate
+stayed green over a wrong number — so it was a display defect and not a money one;
+`heAwardedPot` is the extracted rule, pinned five ways in the harness and mirrored in
+`tools/fold-kat.py`. Both stay "verified statically; needs an OXT pass". The live
+multi-machine passes are the pending exit gates: a multi-hand rp1 session on real
+networks (Phase 2, now including seats timing out on real wall clocks), a two-machine
+onion table over live tor (2f, + a real host-stream loss and redial), and a
+**three-machine oracle round** (Phase 3); the ristretto255 handlers (SodiumXT ABI
+8/9) have never run on an engine.
 `src/holdem.livecodescript` is the whole thing — the hotseat game, the online lobby, its
 self-test (`heRunSelftest` in the message box for the report panel, or `heSelfTest()`
 to get the same report back as a value), and SodiumXT/TorrentXT diagnostics
@@ -195,15 +237,27 @@ or skip-charge a blind). All of this runs headless in CI (`tools/*-kat.py` +
 ## Development
 
 There is no headless way to compile or run a `.livecodescript`; the automated safety
-net is the static gate — run it after every script edit:
+net is the static gate plus every pure-logic check that CAN run headless — run the gate
+after every script edit, and the whole set before you push:
 
 ```sh
-python3 tools/check-livecodescript.py
+python3 tools/check-livecodescript.py   # the static gate: after EVERY script edit
+python3 tools/check-docs.py             # docs smart-quote scan
+python3 tools/check-table-layout.py     # control geometry, re-derived from the builders
+python3 tools/evaluator-kat.py          # spec 8.2 evaluator vectors
+python3 tools/betting-kat.py            # spec 8.1/8.3 betting + settlement cases
+python3 tools/shuffle-kat.py            # the playable integer deal
+python3 tools/protocol-kat.py           # spec 6/7.1 wires + the 7.3 ristretto algebra
+python3 tools/fold-kat.py               # transcript fold + settlement/deal audits
+python3 tools/atlas-kat.py              # card atlas <-> frame-name mapping
+python3 tools/sounds-kat.py             # vendored WAVs <-> stack mapping
+python3 tools/logic-fuzz.py             # independent-reference fuzz (rules, not the port)
 ```
 
-Everything else (anything visual, timed, or extension-touching) is "verified
-statically; needs an OXT pass" until a human confirms it in the IDE. See CLAUDE.md for
-the full workflow.
+`.github/workflows/ci.yml` runs all of those but `check-table-layout.py`, on every push
+and PR; suite-side, `tools/build-all.sh --gates` runs every one. Everything else
+(anything visual, timed, or extension-touching) is "verified statically; needs an OXT
+pass" until a human confirms it in the IDE. See CLAUDE.md for the full workflow.
 
 ---
 

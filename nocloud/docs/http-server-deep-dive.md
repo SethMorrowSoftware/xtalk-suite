@@ -473,6 +473,15 @@ and, for anything touching the wire, an **OXT pass** before it's called "done."
   vectors.
 - **Phase 5 — editor & collab (M–L, opt-in):** upload/delete/rename/mkdir (needs streaming
   body), `shares` admin, SSE live-reload — all LAN+password, all `404`-concealed.
+  **Status: the upload/append/delete half LANDED** — a chunked upload arrives as a
+  `write` first slice plus `append` slices (so a file bigger than `kFsMaxReq` gets in),
+  bounded in total by `kEditMaxUploadBytes`, with the dotfile and folder-collision
+  refusals and a `409` when an existing file cannot be sized; `delete` is deliberately
+  file-only and non-recursive. Verified statically, its path helpers golden-pinned
+  (`edit_safe_path`/`edit_parent_dirs`/`has_dot_segment`); needs an OXT pass — the
+  checklist's §6a is that pass's script. Still OPEN: `rename`/`mkdir` as verbs of their
+  own (a write already creates its missing parent folders), the `shares` admin, and SSE
+  live-reload.
 
 Sequencing rationale: Phases 0–1 are pure upside with tiny risk; Phase 2 pays down the
 duplication debt **before** it's multiplied by new endpoints; Phases 3–5 build on the core.

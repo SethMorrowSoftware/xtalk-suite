@@ -102,7 +102,9 @@ the live `/_qs/info` backend route. See [docs/webapp.md](docs/webapp.md).
 The app is standalone-ready (self-building UI, clean shutdown on quit, per-user save
 folder). Include the TorrentXT extension (required) and SodiumXT (optional) in the
 standalone builder. **OnionXT is not an extension** and cannot be ticked there -
-see the note above; copy its script library into the app instead. See [docs/building-a-standalone.md](docs/building-a-standalone.md).
+see the note above; it no longer needs to be, because the stack script already
+CARRIES it, so a standalone gets the Tor path for free (a local Tor daemon on the
+user's machine is still a runtime requirement). See [docs/building-a-standalone.md](docs/building-a-standalone.md).
 
 ## Development
 

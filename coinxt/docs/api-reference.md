@@ -10,10 +10,12 @@ call. Hashes, the secp256k1 curve, the encodings and addresses (WIF included sin
 BIP-340 Schnorr with the BIP-341 Taproot tweak are all shipped. Nothing in SPEC.md is deferred
 any more except SHA3-512 and SLIP-39.
 
-> **Status.** **Ninety** public handlers exist across two layers: **43** in the `.lcb`
-> extension (hashes, the curve, the BIP-32 tweaks, the BIP-39 wordlist, and the BIP-340 /
-> BIP-341 surface) and **47** in `src/coinxt.livecodescript` (encodings, addresses,
-> mnemonics, HD derivation, the phase-5 transaction builders and the Taproot address path).
+> **Status.** **Ninety-four** public handlers exist across two layers (the count
+> `tools/check-doc-handlers.py` prints): **43** in the `.lcb` extension (hashes, the curve,
+> the BIP-32 tweaks, the BIP-39 wordlist, and the BIP-340 / BIP-341 surface) and **51** in
+> `src/coinxt.livecodescript` (encodings, addresses, mnemonics, HD derivation, the phase-5
+> transaction builders, the Taproot address path, and the 2026-08-23 BIP-341 sighash and
+> script-path helpers).
 > The two load differently - see the phase-3 section.
 >
 > **Phase 5 (transaction building) is ENGINE-PASSED (2026-08-12).** The Bitcoin path reproduces
@@ -78,7 +80,7 @@ any more except SHA3-512 and SLIP-39.
 > the full decision, its cost (an ABI bump plus a four-platform binary refresh) and the condition
 > for revisiting it are in that section. SLIP-39 remains a later phase.
 >
-> Nothing else in this file is in that position: every one of the 90 shipped `cx*` handlers is
+> Nothing else in this file is in that position: every one of the 94 shipped `cx*` handlers is
 > documented here, and `tools/check-doc-handlers.py` holds both directions - a shipped handler that
 > never reaches this page, and a `cx*` name in these docs that no handler defines, each fail the
 > build.
@@ -317,10 +319,11 @@ a mainnet P2PKH address starts with a `1`.
 
 Wallet Import Format: Base58Check over `version || 32-byte key || optional
 0x01 compressed marker`, version `0x80` on mainnet and `0xEF` on testnet.
-Shipped 2026-08-15; **verified statically (needs an OXT pass)** - executed
-headlessly by `tools/check-script-vectors.py` against oracle-derived vectors
-anchored to the Bitcoin wiki's published worked example, both directions plus
-the refusals, but these two handlers postdate the engine passes above.
+Shipped 2026-08-15; **ENGINE-PROVEN 2026-08-17** (coinxt 278/278, Windows
+x86_64) and reconfirmed in the 2026-08-24 run's 290/290. Both directions plus
+the refusals are also executed headlessly by `tools/check-script-vectors.py`,
+against oracle-derived vectors anchored to the Bitcoin wiki's published worked
+example.
 
 | Handler | Takes | Returns |
 |---|---|---|

@@ -125,13 +125,16 @@ The precedent is `sxSha3_256` (ABI 7): a sibling-requested primitive, argued in 
 requester's capability ledger, shipped as a thin wrap of audited code. The evidence
 standard is the house one: C KATs under ASan/UBSan cross-checked against an independent
 RFC 8439 implementation (three implementations agree on the pinned vectors), verified
-statically on the script side; the handler still needs an OXT pass.
+statically on the script side and then **OBSERVED ON AN ENGINE 2026-08-24** (Windows
+x86_64, OXT 9.6.3, reporting ABI 10): the 7-check raw-ChaCha20 section ran green inside
+the full 106-check `sxSelfTest()`, folded into the suite paste. This sentence said "still
+needs an OXT pass" until 2026-08-26, which by then denied a dated run.
 
 ## Provenance and reporting
 
 SodiumXT statically links a pinned release of libsodium, so the cryptography you run is the
 upstream audited code, unmodified. On the Linux and macOS builds that release is fetched by exact
-version and verified against a pinned SHA256 before it is compiled - and since the 2026-08-15
+version and verified against a pinned SHA256 before it is compiled - and since the 2026-08-23
 mingw cross-builds the COMMITTED Windows DLLs are built the same way, from the same pinned
 tarball (the release workflow's own Windows lanes instead link the libsodium vcpkg provides,
 held to the same 1.0.x line rather than the SHA256 pin; a dispatch of that workflow supersedes

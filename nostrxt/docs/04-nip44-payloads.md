@@ -140,7 +140,7 @@ all fail closed, in order:
 - Decoded payload shorter than **99 bytes** refuses (1 + 32 + 34 + 32).
 - A version byte other than `0x02` refuses.
 
-## What is proven today, and what awaits the cipher
+## What is proven today, and by what
 
 | Step | Status |
 |---|---|
@@ -149,7 +149,7 @@ all fail closed, in order:
 | Padding and unpadding, the 1..65535 policy | vector-pinned today: all 24 pairs, plus the invalid lengths refusing |
 | MAC-before-cipher order, constant-time compare | proven today by the harness's tamper test on the official payload |
 | Version byte, size floors, `#` flag, base64 strictness | exercised today by the harness's refusal checks |
-| The ChaCha20 keystream itself, end-to-end encrypt/decrypt through nx* | **composed via SodiumXT ABI 10 since 2026-08-23**; the oracle proves the construction against the full published encrypt/decrypt vectors (long-message rows included), the harness's seam section asserts the official payload vector decrypts and re-encrypts byte-identically against a current SodiumXT, and still asserts the fail-closed capability error against a pre-ABI-10 install; the complete path needs an OXT pass |
+| The ChaCha20 keystream itself, end-to-end encrypt/decrypt through nx* | **composed via SodiumXT ABI 10 since 2026-08-23**; the oracle proves the construction against the full published encrypt/decrypt vectors (long-message rows included), the harness's seam section asserts the official payload vector decrypts and re-encrypts byte-identically against a current SodiumXT, and still asserts the fail-closed capability error against a pre-ABI-10 install; the complete path is engine-proven 2026-08-24 (the paragraph below) |
 
 And the standing labels: every "today" above means machine-verified headlessly,
 and since 2026-08-24 the whole pipeline has ALSO run on a real engine. That pass

@@ -26,10 +26,10 @@ call.
 
 **All seven spec phases are BUILT, and phases 1-4 are DONE on two
 machines, done-criteria included** (library 0.11.0; 90 public handlers -
-83/83 exercised by the suite paste as last generated, and the seven
-2026-08-23 handlers carry their harness sections in
-tests/riptide-selftest.livecodescript, entering the 90/90 ratchet the
-moment tools/build-suite-selftest.py regenerates the paste):
+the riptide row of tools/check-suite-coverage.py reads 90/90 with nothing
+untestable, the seven 2026-08-23 handlers having entered that ratchet
+with their harness sections in tests/riptide-selftest.livecodescript when
+tools/build-suite-selftest.py regenerated the paste):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13

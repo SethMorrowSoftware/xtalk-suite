@@ -81,7 +81,16 @@ onionxt/                    (the OnionXT member of the xtalk-suite monorepo)
     onion-kat.py            known-answer vectors: base32, v3 address, ed25519 seed
                             (the demo and the spike carry their libraries; the
                             suite-wide tools/sync-demo-embeds.py does that now)
-  .github/workflows/ci.yml  the three gates above, on every push / PR
+    check-selftest-vectors.py
+                            re-derives every pinned vector in examples/onionxt-tests
+                            against onion-kat.py and the standard library, so a
+                            hand-copied literal cannot drift into a test that
+                            passes for the wrong value (suite gate; not in ci.yml)
+  templates/
+    CLAUDE.md               the portable xTalk/LCB engineering template, held
+                            byte-identical with coinxt's copy by the suite's
+                            tools/check-checker-drift.py
+  .github/workflows/ci.yml  the first three gates above, on every push / PR
   src/
     onionxt.livecodescript      the transport library (public ox* handlers)
     onion-httpd.livecodescript  the HTTP hosting layer over the accept loop (oxh*)
@@ -111,10 +120,11 @@ web page in Tor Browser (once the loopback forward port is one the OS allows bin
 [Troubleshooting](#troubleshooting)). The pure-compute paths (base32, the v3 address, the ed25519 seed
 derivation) are pinned by known-answer vectors in `tools/onion-kat.py`; exactly one behaviour stays
 flagged `VERIFY:` in the source: the optional Mode B tor launch (`oxLaunchTor` / `oxStopTor`),
-unexercised until a run against a real tor binary. In the xtalk-suite monorepo the
-suite CI runs the static gate on every push; the house-style gate, the KAT self-check, and the
-standalone-freshness check live in this member's own workflow (inert here; run when OnionXT is worked
-on in isolation) and in `tools/build-all.sh --gates`.
+unexercised until a run against a real tor binary. In the xtalk-suite monorepo the suite gate walk
+runs every gate this member ships, on every push: the static gate, the house-style docs gate, the KAT
+self-check and the harness-vector re-derivation all sit in `tools/build-all.sh --gates`, which is what
+`.github/workflows/suite-gates.yml` runs. The member's own workflow runs the first three of those and
+is inert here; it fires when OnionXT is worked on in isolation.
 
 New here? Start with [CLAUDE.md](CLAUDE.md), the [usage guide](docs/10-usage-guide.md), the
 [Troubleshooting](#troubleshooting) section below, and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md).
