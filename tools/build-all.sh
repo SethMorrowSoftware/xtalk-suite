@@ -10,6 +10,15 @@
 #   tools/build-all.sh              # Release build + native tests for every member
 #   tools/build-all.sh --gates      # static gates only (fast; python3, plus a C
 #                                   # compiler for coinxt's KAT harness)
+#   tools/build-all.sh --gates --installing
+#                                   # the same set, forwarding --installing to
+#                                   # check-binary-freshness.py. ONLY
+#                                   # release-binaries.yml passes this, straight
+#                                   # after tools/install-release-binaries.py has
+#                                   # written new libraries into the tree: it
+#                                   # lets a platform appear one run ahead of the
+#                                   # `ships` row that declares it. Every other
+#                                   # caller wants the strict gate.
 #
 # Build under gcc with sanitizers while iterating on a shim (see each member's
 # CLAUDE.md / docs/building.md); this walker does a plain Release build.
@@ -25,7 +34,16 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
 GATES_ONLY=0
-[ "${1:-}" = "--gates" ] && GATES_ONLY=1
+# Forwarded verbatim to check-binary-freshness.py; empty for every caller that
+# does not pass --installing, which is every caller but the release job.
+FRESHNESS_ARGS=""
+for _arg in "$@"; do
+  case "$_arg" in
+    --gates)      GATES_ONLY=1 ;;
+    --installing) FRESHNESS_ARGS="--installing" ;;
+    *) echo "build-all.sh: unknown argument '$_arg'" >&2; exit 2 ;;
+  esac
+done
 
 # Members that carry a CMake build (a native shim to compile). Each gates its
 # ctest registration behind <MEMBER>_BUILD_TESTS, so the walker turns that on.
@@ -370,7 +388,9 @@ fi
 # binutils: stdlib struct walks over ELF and PE.
 if [ -f tools/check-binary-freshness.py ]; then
   echo "== suite: tools/check-binary-freshness.py =="
-  python3 tools/check-binary-freshness.py
+  # Unquoted on purpose: empty must expand to NO argument, not to "".
+  # shellcheck disable=SC2086
+  python3 tools/check-binary-freshness.py $FRESHNESS_ARGS
 fi
 if [ -f tools/test-launcher-registry.py ]; then
   echo "== suite: tools/test-launcher-registry.py =="
