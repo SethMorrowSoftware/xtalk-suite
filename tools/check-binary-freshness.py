@@ -209,9 +209,15 @@ MEMBERS = [
             # list of libstdc++'s exports, which is not a thing this repo
             # should own. The BIND and SOURCE oracles still run on those two
             # libraries; only the closure is off.
-            "elf": "the Linux builds carry no version script, so they export "
-                   "5419 statically-linked libtorrent/boost/libstdc++ symbols "
-                   "beyond the shim's own (measured 2026-08-17)",
+            "elf": "the COMMITTED Linux builds predate src/torrentxt.map and "
+                   "export 5419 statically-linked libtorrent/boost/libstdc++ "
+                   "symbols beyond the shim's own (measured 2026-08-17). The "
+                   "version script landed 2026-08-26, so this skip is now "
+                   "scoped to the binaries in the tree rather than to the "
+                   "member: the next Linux rebuild should export btx_* and "
+                   "btx::test::* only, and THIS ENTRY SHOULD THEN BECOME A "
+                   "TOLERANCE LIST (or go away). Re-measure after the next "
+                   "release dispatch rather than assuming either outcome",
             # The MSVC DLLs export only what is declared, so the closure IS
             # meaningful there - it is off above for a toolchain reason, not
             # because torrentxt is exempt from the idea.

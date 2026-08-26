@@ -122,6 +122,49 @@ endif()
 # not demand a newer libstdc++.so.6 than the user's host provides (the same
 # posture as the sibling extensions; the real glibc floor is the release image).
 add_library(datachannelxt_link INTERFACE)
+
+# --------------------------------------------- the macOS export-list bridge ---
+# ld64 has no --version-script. Its equivalent is -exported_symbols_list, which
+# takes literal names and globs, and Mach-O decorates every C symbol with a
+# leading underscore (so does a C++ mangled name: _ZN3dcx4test* becomes
+# __ZN3dcx4test*).
+#
+# The list is DERIVED from the .map at configure time rather than maintained
+# beside it. Two hand-kept lists is how a symbol reaches one platform and
+# misses the other, and this member already has one such divergence on record:
+# the version script existed for ELF and nothing filtered Mach-O, so the two
+# slices of the universal dylib shipped different export sets and
+# check-binary-freshness refused the library outright (release run 9,
+# 2026-08-26). One source of truth, two link flags.
+function(datachannelxt_apple_export_list target map_file)
+    if(NOT APPLE)
+        return()
+    endif()
+    file(READ "${map_file}" _txt)
+    string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" "" _txt "${_txt}")
+    string(REGEX MATCH "global:(.*)local:" _unused "${_txt}")
+    set(_globals "${CMAKE_MATCH_1}")
+    string(REPLACE "\n" ";" _globals "${_globals}")
+    set(_lines "")
+    foreach(_tok IN LISTS _globals)
+        string(STRIP "${_tok}" _tok)
+        if(NOT _tok STREQUAL "")
+            string(APPEND _lines "_${_tok}\n")
+        endif()
+    endforeach()
+    if(_lines STREQUAL "")
+        message(FATAL_ERROR
+            "datachannelxt_apple_export_list: parsed NO symbols out of ${map_file}. An empty "
+            "-exported_symbols_list would hide the whole ABI and the library "
+            "would load with nothing bound, so this refuses rather than "
+            "shipping it.")
+    endif()
+    set(_exp "${CMAKE_CURRENT_BINARY_DIR}/datachannelxt.exported_symbols")
+    file(WRITE "${_exp}" "${_lines}")
+    target_link_options(${target} PRIVATE "-Wl,-exported_symbols_list,${_exp}")
+    set_target_properties(${target} PROPERTIES LINK_DEPENDS "${map_file}")
+endfunction()
+
 if(UNIX AND NOT APPLE)
     target_link_options(datachannelxt_link INTERFACE -static-libstdc++ -static-libgcc)
 endif()
@@ -247,6 +290,7 @@ if(EXISTS "${DATACHANNELXT_SHIM_SRC}")
                                   LINK_DEPENDS "${_dcx_version_script}")
         endif()
     endif()
+    datachannelxt_apple_export_list(datachannelxt "${_dcx_version_script}")
 
     # Record the pinned dependency version for dcx_library_version diagnostics.
     target_compile_definitions(datachannelxt PRIVATE
