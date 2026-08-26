@@ -92,11 +92,11 @@ Channels (0..channelCount-1, fixed at host create) are independent ordering
 domains: bulk-ish reliable traffic on channel 1 cannot stall real-time
 channel 0.
 
-## 5. The LAN chat demo
+## 5. The chat demos
 
-`examples/enet-lan-chat.livecodescript` is the worked example: Host on one
-machine, Join from others, lines relayed with one `enBroadcast`, presence
-from the connect/disconnect events, RTT in the status line from
+`examples/enet-lan-chat.livecodescript` is the worked example on a LAN: Host
+on one machine, Join from others, lines relayed with one `enBroadcast`,
+presence from the connect/disconnect events, RTT in the status line from
 `enPeerStatus`. It is one paste-and-run file: it carries a verbatim copy of
 the helpers between the sentinels the suite-root `tools/sync-demo-embeds.py`
 owns, so paste it into a single stack script and read it as a template on its
@@ -104,6 +104,17 @@ own - opening `enet-helpers.livecodescript` beside it buys nothing here. The
 separate helpers file is still what a REAL app puts on its message path
 (section 1); the embed exists for the shipped demo, and that file stays the
 single source of truth for both.
+
+`examples/enet-internet-chat.livecodescript` is its sibling for the case
+enetxt cannot reach on its own: two machines on DIFFERENT networks. ENet has
+no NAT traversal (section 6), so the host composes the suite for the missing
+half - a TorrentXT session opens the router's UDP port (`btMapPort`, with
+`pIsTcp` FALSE; a TCP mapping tests green at the router while every ENet
+packet drops) and learns the public IP from the `externalIp` event, and the
+invite it shows is ip:port. The chat bytes are still pure ENet, and a joiner
+needs only enetxt. It is paste-and-run too, carrying BOTH poll dispatchers
+between its sentinels. Verified statically; it needs a two-machine,
+two-network OXT pass.
 
 ## 6. Where enetxt sits in the family
 

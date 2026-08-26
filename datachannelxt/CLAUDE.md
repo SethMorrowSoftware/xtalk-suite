@@ -283,8 +283,9 @@ machinery but never leaves the host.
    `examples/datachannel-helpers.livecodescript` maps the legacy
    `dcLocalDescription` name onto the `...Ready` spelling as it drains, so an
    app runs against an extension packaged BEFORE 2026-08-18 without a
-   reinstall; sites that COMPARE `tEvent["name"]` accept both spellings
-   (`tests/datachannel-selftest.livecodescript:405-408`). The shim comes out
+   reinstall; sites that COMPARE `tEvent["name"]` accept both spellings - see
+   `tests/datachannel-selftest.livecodescript`
+   ("dcLocalDescription,dcLocalDescriptionReady"). The shim comes out
    when no supported build emits the old name.
 
 ## The single-threaded performance playbook (carried)

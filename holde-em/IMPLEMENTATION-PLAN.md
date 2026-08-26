@@ -28,9 +28,14 @@ The seed folder becomes its own repository and gains its safety net.
 2. `README.md` (done in the seed), license decision. **Decided: MIT** (the family
    default), `LICENSE` at the repo root.
 3. CI (`.github/workflows/ci.yml`): runs `tools/check-livecodescript.py`, the docs
-   smart-quote scan (`tools/check-docs.py`), and every headless KAT
-   (`tools/evaluator-kat.py`, `tools/betting-kat.py`, `tools/protocol-kat.py`) on
-   every push/PR. **Done.**
+   smart-quote scan (`tools/check-docs.py`), every headless KAT
+   (`tools/evaluator-kat.py`, `tools/betting-kat.py`, `tools/shuffle-kat.py`,
+   `tools/protocol-kat.py`, `tools/fold-kat.py`, `tools/atlas-kat.py`,
+   `tools/sounds-kat.py`), and the independent-reference fuzz
+   (`tools/logic-fuzz.py`) on every push/PR. **Done.** The list grew with the phases,
+   so read the workflow rather than this line; `tools/check-table-layout.py` (added
+   2026-08-16) is the one gate NOT in it, and it runs suite-side instead, in the
+   `tools/build-all.sh --gates` walk.
 4. Skeletons: superseded — Phase 1's pure logic landed directly (see below); the two
    stacks exist with full scaffolding and `kHeHarnessV = 1`.
 5. **Decision recorded — Kit delivery:** `start using` the installed Kit stack for now
@@ -51,12 +56,20 @@ Everything runs locally, six seats on one machine, zero networking. This phase i
 where all visual iteration happens and where the pure logic gets pinned. Build order
 inside the phase matters:
 
-**Status:** 1a/1b and the pure halves of 1e are written and machine-pinned (CI KATs
-green; the stack's own `heRunSelftest` carries the same vectors for the on-engine
-run). 1d exists as the self-building chrome in two modes — a dependency-free flat mode
-and the Kit mode scaffold (atlas loading, pre-warm, gated frame loop); animation
-polish is left for the OXT pass. Everything below stays "verified statically; needs an
-OXT pass" until the user runs the harness and plays hands in OXT.
+**Status:** 1a-1e are built and machine-pinned (CI KATs green; the stack's own
+`heRunSelftest` carries the same vectors, and the FOLDED copy of that harness has run
+on a real engine inside the suite paste — 543 passed / 0 failed / 5 skipped at stack
+v0.24.5 on 2026-08-20, then 584/0 on 2026-08-24, both Windows x86_64). The hotseat game
+itself has shipped through v0.25.0. Two things this line does not claim, both recorded
+below: 1c's CRYPTOGRAPHIC deal moved to Phase 2 in the v0.2.0 code-wins decision, so
+what ships here is the pure-integer PRNG shuffle pinned by `tools/shuffle-kat.py`; and
+1d is the self-building chrome in two modes — a dependency-free flat mode and the Kit
+mode scaffold (atlas loading, pre-warm, gated frame loop) — with the animation polish
+left for the OXT pass and the card-flip chaining not built. Hands HAVE been played in
+OXT (three heads-up hotseat hands, 2026-08-17 — they are what found the uncalled-pot
+display defect v0.24.5 fixed), but the exit below has not been met: everything visual
+and timed stays "verified statically; needs an OXT pass" until the user plays a
+complete 6-seat session.
 
 **Math + rules audit (v0.3.0).** The betting engine, side pots, settlement, evaluator,
 and PRNG were audited: property tests (an independent conserving side-pot reference vs

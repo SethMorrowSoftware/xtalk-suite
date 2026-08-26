@@ -324,7 +324,7 @@ bundled third-party code; the crypto is CoinXT (`cxSha256`, BIP-340
   receive leg (subscribe, EVENT/EOSE/CLOSED/NOTICE), NIP-42 auth and every
   `ws://` path still need a live-relay pass, as does the TLS question that
   successful run could not settle (root `docs/OXT-ENGINE-NOTES.md` 6.8).
-  Nothing has met an engine. What is machine-verified headlessly:
+  What is additionally machine-verified headlessly, on every build:
   `tools/nostr-kat.py` sweeps the complete published BIP-340 csv, the full
   official NIP-44 v2 vector set, the BIP-173 strings and the NIP-19
   examples through an independent oracle, and every constant the harness

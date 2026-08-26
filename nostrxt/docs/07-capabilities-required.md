@@ -30,12 +30,17 @@ vectors), a probe-guarded section in SodiumXT's own harness, and the written lou
 reason this ledger owed (it landed in `sodiumxt/docs/security.md`; see below).
 NostrXT's seam needed NO code change - the try-guarded call, both probes and the
 harness's round-trip branch flipped live, exactly as designed. The complete
-NIP-44 path now sweeps the official encrypt/decrypt vectors headlessly; no part
-of it has met an engine yet (the honesty label stays "verified statically; needs
-an OXT pass"). On an installed SodiumXT older than ABI 10 the seam still fails
-closed with the capability error, by design - the paragraphs below describe that
-path in the present tense because it remains a real deployment state, not a
-historical one.
+NIP-44 path sweeps the official encrypt/decrypt vectors headlessly, and since
+2026-08-24 it has ALSO run on a real engine: that pass (Windows x86_64, OXT
+9.6.3) carried the member harness inside the suite paste at 274/274, NIP-44
+sections included, against a SodiumXT whose own ABI 10 ChaCha20 section ran
+green the same day - so the end-to-end encrypt/decrypt path is engine-proven,
+not merely composed. What that pass did NOT cover is anything relay-facing: sending
+a NIP-44 payload as a real event to a relay and reading one back keeps "verified
+statically; needs a live-relay pass" (`04-nip44-payloads.md`). On an installed
+SodiumXT older than ABI 10 the seam still fails closed with the capability error,
+by design - the paragraphs below describe that path in the present tense because
+it remains a real deployment state, not a historical one.
 
 **Exactly what was requested (and shipped, signature for signature):**
 

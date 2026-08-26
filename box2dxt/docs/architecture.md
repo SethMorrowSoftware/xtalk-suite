@@ -125,8 +125,17 @@ Exposing more of Box2D is mechanical. To add a handler:
    `private foreign handler … binds to "c:box2dxt>b2lc_yourthing!cdecl"`, then a
    `public handler b2YourThing(…)` wrapper that calls it (and tolerates `0`
    handles like the rest).
-3. **Bump `LC_ABI_VERSION`** in the shim if the exported ABI changed.
-4. **Rebuild** the native library (see [building.md](building.md)), re-run
+3. **Check that the two sides agree** — run `python3 tools/check-lcb-signatures.py`.
+   It holds every `binds to "c:box2dxt>…!cdecl"` declaration against the `LC_API`
+   definition it names (return type, arity, per-parameter type), both directions,
+   and it runs in the per-member gate walk and therefore in CI — so a mismatch
+   fails the build rather than shipping. Nothing else can catch that drift: the
+   engine resolves the symbol by NAME and then calls it with whatever the
+   declaration says, so a `CInt` promised where the shim returns `double` neither
+   fails to load nor raises; it reads a garbage register and hands script a
+   plausible number.
+4. **Bump `LC_ABI_VERSION`** in the shim if the exported ABI changed.
+5. **Rebuild** the native library (see [building.md](building.md)), re-run
    `tools/package-extension.py --linux64 build/libbox2dxt.so` (or the flag for your
    platform) to refresh the bundled `src/code/<arch>-<platform>/` copy, then
    re-Package (or **Test**) the extension so the new library loads. (For
@@ -134,7 +143,10 @@ Exposing more of Box2D is mechanical. To add a handler:
    stack picks it up via `b2kEnsureNativeLib` without repackaging.)
 
 Add a smoke-test assertion in `tests/smoke_test.c` for anything non-trivial so CI
-exercises it on every platform.
+exercises it on every platform, and write the new handler up in
+[api-reference.md](api-reference.md) in the same change — no gate holds that page
+to the binding, and it is 160 handlers behind today (measured 2026-08-26), which
+is what skipping this step accumulates into.
 
 As of ABI `3` the binding already covers the full Box2D v3.1 **live-object**
 surface. The newer additions reuse a few shared shim patterns worth knowing when

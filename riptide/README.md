@@ -6,6 +6,8 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages, and points at the capstone specification, which lives at suite level in [`../docs/RIPTIDE-SOCIAL-SPEC.md`](../docs/RIPTIDE-SOCIAL-SPEC.md).
+
 ## Status: all 7 phases BUILT; phases 1-4 DONE on two machines
 
 > **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded
@@ -18,14 +20,17 @@ is knowing their key, and reaching them is verifying them.
 > the deterministic-role crypto_kx session, and the pairwise secretstream
 > over rp1 all carrying real traffic). The same day the whole phase 4-7
 > COMPUTE surface ran green in the suite selftest on a real engine.
-> **Phases 5-7 are BUILT and statically verified, their live passes
-> pending**: the dc call with its spec-6.2 typing lane (phase 5), the
-> LAN mesh with its mutual welcome AND its sync payload - drafts, feed
-> seq, presence over the admitted mesh (phase 6, built 2026-08-15),
-> plus the channel-2 decision settled 2026-08-16 (media handoff as a
-> signed channel-0 pointer at the torrent rail; channel 2 reserved,
-> dark) - and the anon persona over live Tor (phase 7).
-> `docs/two-machine-runbook.md` scripts what remains.
+> **Phase 5 is BUILT and verified statically; phases 6-7 are BUILT with
+> their COMPUTE halves ENGINE-GREEN 2026-08-20** (Windows, in the suite
+> paste, riptide 338/0/2), and every live pass is still pending: the dc
+> call with its spec-6.2 typing lane (phase 5), the LAN mesh with its
+> mutual welcome AND its sync payload - drafts, feed seq, presence over
+> the admitted mesh (phase 6, built 2026-08-15), plus the channel-2
+> decision settled 2026-08-16 (media handoff as a signed channel-0
+> pointer at the torrent rail; channel 2 reserved, dark) - and the anon
+> persona over live Tor (phase 7), whose 8.2/8.3 serving seams ran in
+> that same 2026-08-20 pass. `docs/two-machine-runbook.md` scripts what
+> remains.
 >
 > The flagship stack is `examples/riptide-social.livecodescript` (on the
 > suite UI kit): FOUR cards - Feed (identity, publish, the verified chain
@@ -91,6 +96,18 @@ What ships today, per the spec's phased roadmap (section 10.3):
     decode, then the existing seal-open verify-then-parse under the
     persona's own subkeys). The demo registers the onion-httpd routes;
     the library stays pure
+  - **the kind-C chunked-post rail and the streaming seams**
+    (2026-08-23): a post whose text outgrows the 1000-byte RSP1 direct
+    layout splits into immutable chunks named in order
+    (`rsChunkPostText` / `rsPublishChunkedPost`, with
+    `rsPostTextCapacity` publishing the D-or-C boundary so no caller
+    ever hand-copies 880), and reassembly re-hashes every part against
+    its own content address before a byte is believed (`rsIngestBlob` /
+    `rsAssembleChunkText`, which names the first missing chunk rather
+    than guessing). Alongside them the BTXO receive-path stream machine
+    (`rsBtxoStreamStep`) and the piece-deadline media plan
+    (`rsMediaStreamPlan`). Verified statically and vector-pinned; needs
+    an OXT pass.
   - **the phase-2 live feed layer**: `rsPublishHead` signs the canonical
     BEP44 buffer with SodiumXT and stores it with `btDhtPutSigned` (the
     identity secret never enters libtorrent, and libtorrent re-verifies
@@ -122,11 +139,15 @@ Run the offline gates from this directory:
 
 ```sh
 python3 tools/check-livecodescript.py       # the static script gate
+python3 tools/check-docs-style.py           # the house prose gate
 python3 tests/riptide_golden_test.py        # the byte-for-byte goldens
 python3 tools/check-selftest-vectors.py     # harness constants vs oracle
 ```
 
-All three also run in `tools/build-all.sh --gates` at the repository root.
+All four also run in `tools/build-all.sh --gates` at the repository root.
+The prose gate is the one an edit to these pages trips: every `.md` and
+`.livecodescript` here carries plain hyphens and straight quotes only,
+never em/en dashes or curly quotes.
 
 ## Extension dependencies
 
@@ -164,13 +185,14 @@ call (watch for the CONNECTED/via line, ideally `typ srflx` across two
 networks, and the spec-6.2 typing lane built 2026-08-15), the phase-6
 mesh (mutual admitted verdicts on both sides, then the full
 done-criterion: a draft typed on one device appearing on the other with
-a stranger refused - the sync payload is BUILT as of 2026-08-15,
-verified statically), phase 7 over a live tor daemon - which now includes
-spec 8.3's onion transport (the feed page, `/prekey`, and the POST `/dm`
-sealed-intro drop are BUILT as of 2026-08-15, library seams plus the
-demo's onion-httpd wiring, verified statically; the live-Tor pass is
-what remains) - and phase 3's mid-download nuance (playback visibly
-below 100%). One piece of the anon rail is deliberately unbuilt: the
+a stranger refused - the sync payload is BUILT as of 2026-08-15, its
+compute half engine-green 2026-08-20), phase 7 over a live tor daemon -
+which now includes spec 8.3's onion transport (the feed page, `/prekey`,
+and the POST `/dm` sealed-intro drop are BUILT as of 2026-08-15, library
+seams plus the demo's onion-httpd wiring; their compute half ran
+engine-green 2026-08-20 in the suite paste, and the live-Tor pass is what
+remains) - and phase 3's mid-download nuance (playback visibly below
+100%). One piece of the anon rail is deliberately unbuilt: the
 persona's REPLY over an onion stream (answering an accepted intro means
 a public-side DM to the proven sender). Labels flip only on a dated
 engine report, per the honesty convention.

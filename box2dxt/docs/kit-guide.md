@@ -34,7 +34,7 @@ and degrees** the whole way.
 20. [Building a whole game (the micro-game pattern)](#20-building-a-whole-game-the-micro-game-pattern)
 21. [Player actions: duck, drop-through, ladders, knockback, swim](#21-player-actions-duck-drop-through-ladders-knockback-swim)
 22. [xTalk gotchas worth knowing](#22-xtalk-gotchas-worth-knowing)
-23. [Complete API index](#23-complete-api-index)
+23. [API index](#23-api-index)
 
 ---
 
@@ -1250,11 +1250,14 @@ A few things that trip up LiveCode/OpenXTalk users specifically:
 
 ---
 
-## 23. Complete API index
+## 23. API index
 
-Every public handler, grouped. `[f]` marks a **function** (returns a value — call
-it with `()` / `get` / `put`); everything else is a **command** (a statement).
-Optional arguments are in `[…]`.
+The `b2k…` handlers a game reaches for, grouped — 252 of the Kit's 313 (measured
+2026-08-26); the rest are internal helpers plus a handful of entry points nobody
+has written up yet, and `src/box2dxt-kit.livecodescript` is the source of truth
+for those. `[f]` marks a **function** (returns a value — call it with `()` /
+`get` / `put`); everything else is a **command** (a statement). Optional
+arguments are in `[…]`.
 
 ### World & lifecycle
 `b2kSetup [gx, gy]` · `b2kQuickStart [gy]` · `b2kStart` · `b2kStop` ·

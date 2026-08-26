@@ -1,6 +1,8 @@
 # 03 - NIP-19 Entities: bech32 for Humans
 
-> STATUS: verified statically; needs an OXT pass. The bech32 layer is pinned
+> STATUS: the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips in the suite paste, both of
+> them the relay layer, which is not in the paste by design). The bech32 layer is additionally pinned
 > headlessly by `tools/nostr-kat.py`, which sweeps the BIP-173 valid and invalid
 > strings and the published NIP-19 examples through the independent oracle - and
 > asserts the one deliberate BIP-173 deviation ON PURPOSE (below).

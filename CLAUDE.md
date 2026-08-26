@@ -162,8 +162,10 @@ evidence.
 
 **Every demo prints its own record, from a FOURTH carried block (2026-08-20).**
 `tools/demo-selfcheck.livecodescript` is the master for the boot self-check that
-eleven runnable stacks now run on open, held byte-identical by
-`tools/check-demo-selfcheck-drift.py` in the gate set. It exists because a demo
+thirteen runnable stacks now run on open, held byte-identical by
+`tools/check-demo-selfcheck-drift.py` in the gate set (it prints the live count;
+this sentence is the kind of hand-copied number this file warns about, so trust
+the gate, not the word). It exists because a demo
 pass produced a human judgement - "the window built, it looked right" - and no
 honesty label can quote that, which made the fleet-wide demo re-pass the most
 expensive engine time in the project and the least recoverable. The block owns
@@ -236,7 +238,8 @@ here, and it works like the two above: the master is
 `<member>/src/*.livecodescript` - still the single source of truth and the right
 dependency for a real project - a verbatim copy lives between sentinels in each
 shipped demo, and `--check` is in the gate set and fails the build when a copy
-drifts. TEN demos carry a library today; nobody hand-edits inside the sentinels.
+drifts. FIFTEEN demos carry a library today (the gate prints the count; take it
+from there, not from here); nobody hand-edits inside the sentinels.
 The point is that `start using stack "coinxt"` is a wiring step most readers
 meet as an error message, so a demo stays ONE file you paste and open. **The
 embed goes ABOVE the demo's own code** (below its `script "..."` line and its
@@ -304,6 +307,31 @@ real corpus file in place and expecting the gate to fire - exercised the way
 the build runs it, per this file's own mutation-test lesson. Stack-shaped
 files (demos, harnesses, the apps) are deliberately out of that corpus, with
 the reason written in the gate's docstring.
+
+**The gate added on 2026-08-26, and the rot it is standing in for.**
+`tools/check-doc-status-consistency.py` (with `tools/test-doc-status-consistency.py`
+pinning both directions) refuses a BLANKET "nothing here has run on an engine"
+that is not followed, in the same paragraph, by the dated record that closed it.
+It exists because nostrxt's first engine pass (2026-08-24, 274/274) was written
+into five documents and not into the other seven, so the member spent two days
+asserting both that its core was engine-proven and that nothing in it had ever
+met an engine - and two SUITE documents carried the same stranded sentence, one
+of them four lines under its own bullet recording the pass. **This is the
+honesty convention failing in the UNDERSTATING direction, which is why it went
+unnoticed**: that direction feels safe, and it is not. The convention's whole
+value is that a label is worth reading, and a label saying "unproven" over 274
+green checks teaches a reader to skip labels - after which the ones that matter
+stop working too. The rule turns on DIRECTION and nothing else: a negative
+followed by "...until 2026-08-24, when the first engine pass ran green" is a
+RECORD and passes; a negative with the dated positive only BEFORE it is a
+sentence that survived an edit which should have removed it, and fails. Scoped
+negatives ("the receive leg has not run on an engine") are invisible to it, and
+must be - they are what the convention REQUIRES. Both of its regressions were
+introduced while fixing the other (an em-dash bridge that flagged holde-em's
+correctly-scoped DLEQ claim; then a newline ban that blinded it to coinxt's
+hard-wrapped one), so the fixtures pin both and `build-all.sh` runs the fixture
+suite BEFORE the gate: a gate that has gone blind reports OK, and the
+discriminating test is what makes the OK mean anything.
 
 **The gates added on 2026-08-17/18, and what each one is standing in for.** All
 of them document behaviour already recorded in `docs/OXT-ENGINE-NOTES.md`; none
@@ -386,10 +414,10 @@ had parsed as what it had checked. Do not build the list by globbing `tools/*.py
 either. **The example this sentence used to give has expired, and how it expired
 is the better argument.** It read: `check-doc-anchors.py` sits there invoked by
 nothing, so a glob would name a gate that does not run. That tool was wired into
-the suite gate block on 2026-08-19 and today every one of the 21 files in
+the suite gate block on 2026-08-19 and today every one of the 33 files in
 `tools/` is invoked by `build-all.sh` - so the glob would now be accidentally
 right, which is worse than being wrong, because nothing would tell you when it
-stopped being. The durable reason stands: those 21 are not 21 GATES. Four are
+stopped being. The durable reason stands: those 33 are not 33 GATES. Ten are
 fixture tests (`test-*.py`), four are generators and installers
 (`build-suite-selftest.py`, `build-preflight.py`, `sync-demo-embeds.py`,
 `install-release-binaries.py`) that WRITE the tree rather than judging it, and a
@@ -398,7 +426,8 @@ The paragraphs above and below name only the gates whose WHY needs prose.
 
 It is assembled from `tests/suite-selftest.core.livecodescript` (hand-maintained:
 the UI, the probe, the runner, and the cross-member sections) plus **every
-member's own deep self-test** (NINE since 2026-08-16: the six extensions,
+member's own deep self-test** (TEN since 2026-08-23, when nostrxt joined: the
+seven extensions,
 riptide's harness — which now spans phases 1-4, 6, and 7 plus the spec-8.3
 sealed-anon-DM crypto — box2dxt's, and holde-em's, folded in with each one's
 names prefixed), plus — since 2026-08-10 — **the pure-script LIBRARIES themselves**,
@@ -646,11 +675,16 @@ handler cannot leave a permanent exemption behind it. It is a floor, not a ceili
 "called by name" is not "tested well", and depth stays the member vector gates' job.
 Box2dxt's 211 were closed the same way, by 13 new sections in its own harness that
 say in their banner that they are shallow; the member is at 313/313 with zero
-exemptions, and the suite total is **841/855** (it read 724/742 until nostrxt
-folded in 2026-08-23 at 101/101 with zero exemptions - the same change that
-closed four of onionxt's old excuses - then 830/844 with sodiumxt's ABI-10
-handler the same day, and 841/855 later that day when coinxt's four BIP-341
-handlers and riptide's pre-OXT-pass wirings folded in). TWO layers are NOT in that
+exemptions, and the suite total was **847/861** when this sentence was last
+re-measured, on 2026-08-26 (it read 724/742 until nostrxt folded in 2026-08-23
+at 101/101 with zero exemptions - the same change that closed four of onionxt's
+old excuses - then 830/844 with sodiumxt's ABI-10 handler the same day, and
+841/855 later that day when coinxt's four BIP-341 handlers and riptide's
+pre-OXT-pass wirings folded in). **Do not trust that ratio; run
+`python3 tools/check-suite-coverage.py`, which prints it.** Every number in this
+paragraph was correct on the day it was written and silently wrong afterwards -
+which is this file's own recorded failure mode for hand-copied counts, landing
+on the paragraph that documents the ratchet. TWO layers are NOT in that
 ratchet, and each says so beside the `MEMBERS` list with its numbers, because
 "we did not measure it" and "we measured it and a row would lie" are different
 admissions:
@@ -704,12 +738,15 @@ admissions:
   The gate splits the ONE file into a GAME region and a HARNESS region at its
   selftest boundary - the same move as the embedded-span cut, done with a
   boundary line instead of a sentinel - and asks its own question across the
-  cut. **120/330 game handlers are named by a body REACHABLE from the selftest
-  entry point**, +1 dispatched by name = **121/330 exercised, 209 named by
-  nothing that runs** (20 live-transport, 9 engine-media, 41 host-window, 139
-  simply untested). The unrestricted closure that `check-suite-selftest.py`
-  check 7d computes over the same graph scores 265/330, and refusing that
-  inflation is exactly why the row has its own stopping rule.
+  cut. Re-measured 2026-08-26: **130/330 game handlers are named by a body
+  REACHABLE from the selftest entry point**, +1 dispatched by name = **131/330
+  exercised, 199 named by nothing that runs** (20 live-transport, 9
+  engine-media, 41 host-window, 129 simply untested). It read 120/121/209/139
+  when this paragraph was first written on 2026-08-19; the gate prints the
+  current split and is the authority. The unrestricted closure that
+  `check-suite-selftest.py` check 7d computes over the same graph scored 265/330
+  on 2026-08-19 - a figure no gate prints, so treat it as a dated measurement -
+  and refusing that inflation is exactly why the row has its own stopping rule.
 
   **TWO STRING CONVENTIONS, DELIBERATELY DIFFERENT, and the difference is two
   names.** Reachability KEEPS literals, because this harness arms its sections

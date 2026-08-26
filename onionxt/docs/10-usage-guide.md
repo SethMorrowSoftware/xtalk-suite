@@ -111,6 +111,33 @@ message-path ordering that decides which script sees a socket message first is t
 **verified statically; needs an OXT pass** to state exactly. Forwarding is safe either way - an
 unhandled `pass` costs nothing - so pass unless the socket is provably yours.
 
+**If you EMBED OnionXT rather than `start using` it, there is nothing to pass TO.** That is the shape
+`tools/sync-demo-embeds.py` builds, and what `nocloud/src/nocloudquickshare.livecodescript` has done
+since 2026-08-24: an embed builds exactly ONE script, these three names are the engine's, and no
+script can define a name twice. So OnionXT keeps its logic behind names of its own - `oxSocketError`,
+`oxSocketClosed`, `oxSocketTimeout`, each answering one question, *was that socket mine, and did I
+handle it?* - the embed drops its three thin wrappers, and your handler calls the named function
+exactly where it would otherwise have passed:
+
+```
+on socketClosed pSocketID
+   if sMySockets[pSocketID] is not empty then
+      myClean pSocketID
+      exit socketClosed
+   end if
+   if oxSocketClosed(pSocketID) then     -- OnionXT's socket, and it consumed the event
+      exit socketClosed
+   end if
+   pass socketClosed
+end socketClosed
+```
+
+Each named function reports `"false"` for a socket that is not OnionXT's, so the trailing `pass` still
+reaches anything below you. See [doc 05](05-api-reference.md), "Three engine socket MESSAGES", for the
+contract and for which wrappers the embed drops. The split is **verified statically; the wrapper form
+needs an OXT pass + a live-Tor pass** - getting it wrong is a hang, not an error, which is why the
+false-for-a-foreign-socket half is pinned offline in this member's harness.
+
 ## 3. Dial a host through Tor (outbound)
 
 `oxDial` reports a stream handle immediately; the SOCKS handshake finishes asynchronously and your

@@ -561,7 +561,7 @@ Built and statically verified; pending under the honesty convention.
 7. **torrentxt's four never-run plan gates** (medium). Real-swarm interop
    (legal ISO + hash), resume across a real restart, packaged fresh-install
    per platform, the destructive-handler manual pass.
-   — `torrentxt/docs/TorrentXT-IMPLEMENTATION-PLAN.md:480-513`
+   — `torrentxt/docs/archive/TorrentXT-IMPLEMENTATION-PLAN.md:480-513`
 
 8. **coinxt demo pass + live testnet broadcast** (medium). The phase-6 demo's
    engine pass, and the one bar left before "broadcastable": a CoinXT-built
@@ -851,7 +851,7 @@ execution or a written resolution.
    republish of followed heads). — `docs/RIPTIDE-SOCIAL-SPEC.md:637-640`
 4. **sodiumxt Windows libsodium pin** — vcpkg baseline, pinned source on
    Windows, or record the KAT-guarded status quo.
-   — `sodiumxt/docs/development/building.md:177-184`
+   — `sodiumxt/docs/building.md:177-184`
 5. **nocloud mtime probe + Phases 4-5 endpoints** — the engine finding gates
    the real conditional-GET validator; the endpoint menu waits on the §8
    priority questions and Phase 3. — `nocloud/docs/oxt-pass-checklist.md:80-83`
@@ -870,7 +870,7 @@ execution or a written resolution.
    — `box2dxt/plan.md`, `tools/check-ui-kit-drift.py:64-92`
 10. **Recorded optional milestones.** torrentxt's Phase-5 dashboard widget
     (out of v1 by decision); datachannelxt's media tracks (optional, NO_MEDIA).
-    — `torrentxt/docs/TorrentXT-IMPLEMENTATION-PLAN.md:514-519`,
+    — `torrentxt/docs/archive/TorrentXT-IMPLEMENTATION-PLAN.md:514-519`,
     `datachannelxt/docs/architecture.md:106-114`
 
 ---

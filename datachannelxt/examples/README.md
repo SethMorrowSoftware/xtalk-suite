@@ -26,7 +26,7 @@ paste it into a stack script to verify an installed extension end to end
 > as their own file headers say. The layer beneath them was already witnessed:
 > on **2026-08-08** the suite selftest ran green on a real OXT engine, including
 > a live datachannelxt loopback that negotiated, opened, and round-tripped a
-> payload byte-for-byte. The verbatim engine output is in
+> payload byte-for-byte. The verbatim engine output is in the suite's
 > [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md), sections 1.6,
 > 6.6 and 6.7.
 

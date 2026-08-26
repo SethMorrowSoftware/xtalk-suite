@@ -29,7 +29,7 @@ machines chatting across the internet with no server — that is section 6.
 > was hiding behind it - an event name and a public handler name sharing one
 > xTalk namespace, so the `dcLocalDescription` event dispatched into the
 > LIBRARY getter of the same name and had never fired once (6.7). All three
-> are fixed and gated; the verbatim engine output is in
+> are fixed and gated; the verbatim engine output is in the suite's
 > [`docs/OXT-ENGINE-NOTES.md`](../../docs/OXT-ENGINE-NOTES.md), sections 1.6,
 > 6.6 and 6.7. What has NO recorded run: the loopback demo of section 5, and
 > section 6's own two-machine flow. Treat those steps as designed behaviour.

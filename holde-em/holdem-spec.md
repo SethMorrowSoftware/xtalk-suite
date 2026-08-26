@@ -21,12 +21,14 @@ link.** The spec is explicit about what that does and does not buy (section 2, s
 
 **Goals**
 
-- A 2-9 player no-limit hold'em table with **no server**: peers meet over the BitTorrent
-  DHT, talk over the `rp1` peer-wire extension, and every game action lives in a
-  hash-chained, ed25519-signed transcript any client can replay and verify. **6-max is
-  the reference configuration** — every latency budget, pool size, and test-exit
-  criterion is stated for (at least) six seats; anything that only works heads-up is a
-  bug.
+- A 2-9 player no-limit hold'em table with **no server** (**as-built the table is
+  2-6**: `kHeMinSeats`/`kHeMaxSeats` are 2 and 6 and the layout builds six seat spots,
+  so the 7-9 range stays a spec goal with no code behind it): peers meet over the
+  BitTorrent DHT, talk over the `rp1` peer-wire extension, and every game action lives
+  in a hash-chained, ed25519-signed transcript any client can replay and verify.
+  **6-max is the reference configuration** — every latency budget, pool size, and
+  test-exit criterion is stated for (at least) six seats; anything that only works
+  heads-up is a bug.
 - A **deal protocol ladder** (section 7): the same game runs at three security levels,
   from "friendly table, rotating host" up to a **ristretto255 mental-poker deal** where
   no party — player or host — can see a card they are not entitled to, and every

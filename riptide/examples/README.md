@@ -18,8 +18,10 @@ Status, by phase (each a maintainer's dated account):
   from a fast complete transfer).
 - Phase 4 (DMs): PASSED on two machines 2026-08-15, chat both ways, no
   server.
-- Phases 5 (the call), 6 (the mesh), 7 (anon over Tor): BUILT, statically
-  verified, never run - `../docs/two-machine-runbook.md` is the script.
+- Phase 5 (the call): BUILT, verified statically, never run. Phases 6
+  (the mesh) and 7 (anon over Tor): BUILT, their COMPUTE halves
+  engine-green 2026-08-20 (Windows, in the suite paste); the live legs
+  have never run - `../docs/two-machine-runbook.md` is the script.
   Phase 5 now includes the spec-6.2 typing lane (2026-08-15): a second,
   deliberately lossy dc channel showing "the far side is typing..."
   during a call. Phase 6 now includes the SYNC PAYLOAD (2026-08-15):

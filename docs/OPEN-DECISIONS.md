@@ -352,7 +352,7 @@ crypto composes, and the canonical Windows lane runs only on the release
 workflow the owner dispatches.
 
 **Evidence (verified 2026-08-16):**
-`sodiumxt/docs/development/building.md:175-184`: Linux/macOS fetch libsodium
+`sodiumxt/docs/building.md:175-184`: Linux/macOS fetch libsodium
 by exact version against a SHA256 pin; Windows links whatever libsodium vcpkg
 supplies (same 1.0.x line, not covered by the pin); the KATs (BLAKE2b,
 Argon2id, ed25519, KDF) are the recorded guard; the doc itself names the two
@@ -731,10 +731,10 @@ so the only live question is whether the owner wants to schedule any of them.
   mechanical)": `box2dxt/plan.md:272`.
 - Snake-audit extension (audit-platformer still ignores
   `pfMakeSnake`/`pfMakeSerpent`, recorded harmless):
-  `box2dxt/docs/asset-expansion-plan.md:261-263`.
+  `box2dxt/docs/archive/asset-expansion-plan.md:261-263`.
 - True parallax parked on art (loaded scenes measured 100% opaque;
   single-layer drift is the ceiling until transparent overlay art exists):
-  `box2dxt/docs/asset-expansion-plan.md:368-370,428-429`.
+  `box2dxt/docs/archive/asset-expansion-plan.md:368-370,428-429`.
 
 **Options:** schedule an item (each is a bounded, PR-sized pass with its own
 plan already written); or let every trigger stand (zero cost; each trigger is
@@ -826,7 +826,7 @@ to carry their written resolutions already:
 
 - **torrentxt Phase-5 dashboard widget** (E.10 first half): decided
   2026-08-13, "out of v1 scope ... its absence is a decision with a date, not
-  an open item" - `torrentxt/docs/TorrentXT-IMPLEMENTATION-PLAN.md:514-519`.
+  an open item" - `torrentxt/docs/archive/TorrentXT-IMPLEMENTATION-PLAN.md:514-519`.
 - **datachannelxt media tracks** (E.10 second half): a recorded deliberate
   Phase-1 exclusion with its revisit condition written ("if media ever lands
   it will be engine-side with a separate plan") -

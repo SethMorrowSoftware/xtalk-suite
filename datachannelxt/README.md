@@ -21,6 +21,8 @@ channel to another machine — or to a web browser** — that punches through NA
 (ICE/STUN/TURN), with reliable *and* unreliable delivery modes, ordered and
 unordered, from a dozen lines of script.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member — getting started (including the signalling shapes), the full `dc*` API reference, the threading design, and the native build.
+
 ## What it can do
 
 - **Talk to browsers.** A data channel opened here is a standard WebRTC data
@@ -111,9 +113,28 @@ pipeline works; real signaling is the only thing left to add.
 > The assertions added since - the exact-code stale-handle checks, the
 > embedded-NUL refusal and its last-error clearing, and the
 > skip-on-failed-setup teardown branch - are **verified statically; needs an
-> OXT pass** on a build carrying `kErrInvalidArg`. Still open: browser interop
-> (a real Chrome/Firefox peer) and a call across two networks with real
-> NAT traversal.
+> OXT pass** on a build carrying `kErrInvalidArg`.
+>
+> On **2026-08-18** the flagship `examples/datachannel-dht-chat.livecodescript`
+> ran on a real engine - Linux, then Windows, one machine hosting a chat - and
+> three things surfaced there that no gate had caught: the duplicate
+> `local sPolling` the embed introduced, which stopped the compile outright; a
+> poll pump that died on a bad event instead of naming it; and the cause that
+> was hiding behind it - an event name and a public handler name sharing one
+> xTalk namespace, so the `dcLocalDescription` event dispatched into the
+> LIBRARY getter of the same name and had never fired once, which is why the
+> Quick taste above catches `dcLocalDescriptionReady`. All three are fixed and
+> gated; the verbatim engine output is in the suite's
+> [`docs/OXT-ENGINE-NOTES.md`](../docs/OXT-ENGINE-NOTES.md), sections 1.6, 6.6
+> and 6.7.
+>
+> That run is one machine's, and the split it leaves is exactly where a second
+> machine begins. What has NO recorded run: that demo's two-machine
+> walkthrough, and `examples/datachannel-loopback.livecodescript` - the
+> **Try it now** step above - which has no recorded engine run of its own at
+> all. Both remain **verified statically; needs an OXT pass**. Still open:
+> browser interop (a real Chrome/Firefox peer) and a call across two networks
+> with real NAT traversal.
 
 ## Then try the flagship (two machines, no server)
 

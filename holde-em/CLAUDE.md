@@ -460,7 +460,7 @@ deliberately does not parse, so the SUITE's skip total does not include them.
 "two different totals under one harness version" ambiguity above by observation
 rather than by bumping the version. See the suite's
 `docs/REMAINING-WORK.md` and `docs/OXT-PASS-RUNBOOK.md` for the full 2026-08-17
-record (this member has no `docs/` of its own, so those are repo-root paths).
+record (repo-ROOT paths: this member's own `docs/` holds only its index).
 v0.23.0 brought the table inside the suite's 720p
 budget (1024x640; the check-stack-size SKIP is gone, and since 2026-08-16 the
 control rects inside that window have their own gate,
@@ -1276,6 +1276,9 @@ CLAUDE.md                          you are here
 LICENSE                            MIT (the family default, decided Phase 0)
 holdem-spec.md                     the design contract
 IMPLEMENTATION-PLAN.md             the phased build order
+docs/README.md                     the doc index -- the one folder a reader looking
+                                   for documentation tries; it says the documents
+                                   live at the member ROOT, not here, and why
 tools/check-livecodescript.py      the suite's UNIFIED static checker (drift-gated;
                                    since 2026-08-15 it carries the hold-em lineage
                                    checks as its 13-21 - the old idiom gate is retired)

@@ -24,6 +24,8 @@ cadence where someone is reachable (LAN, port forward, rented box);
 bulk. The 60 000-byte packet budget here is the seam — when a payload stops
 being a message, move it to torrents.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member — getting started, all 23 `en*` handlers, the architecture, and the build.
+
 ## What it can do
 
 - **Hosts and peers, not sockets.** `enHostCreateServer` /
@@ -60,7 +62,11 @@ end enetReceive
 
 `docs/getting-started.md` walks the rest (the client side, delivery modes,
 the protocol-version trick); `examples/enet-lan-chat.livecodescript` is the
-complete two-machine demo.
+complete two-machine LAN demo, and `examples/enet-internet-chat.livecodescript`
+is its sibling for two machines on DIFFERENT networks — TorrentXT opens the
+router's UDP port (`btMapPort`) and discovers the public IP, and the chat bytes
+are pure ENet. That one is verified statically; it needs a two-machine,
+two-network OXT pass, which is the leg it exists to close.
 
 ## Install
 
@@ -74,9 +80,11 @@ the root workflow `native-enetxt.yml` builds the full matrix on every touch).
 Only `universal-mac` is absent: since 2026-08-23 `release-binaries.yml`
 carries a universal mac lane for this member (both slices in one
 `CMAKE_OSX_ARCHITECTURES` pass, asserted at birth), and its first dispatch is
-what lands the dylib; a manual build per `docs/building.md` remains
-equivalent. Installing the packaged extension
-makes the engine resolve the `c:enetxt>` binding automatically. See
+what lands the dylib; a manual build is equivalent only when it carries BOTH
+slices too (`-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` — the macOS section of
+`docs/building.md`), because the suite's `tools/install-release-binaries.py`
+refuses a thin Mach-O under the `universal-mac` id. Installing the packaged
+extension makes the engine resolve the `c:enetxt>` binding automatically. See
 `docs/getting-started.md`.
 
 One rule the app must follow: **call `enDeinitialize` before quitting**
@@ -119,7 +127,12 @@ selftest (`tests/enet-selftest.livecodescript`) ran green on 2026-08-07, the
 fragmentation contract, and the folded synchronous half ran green twice on
 2026-08-10 (21 checks), and the full standalone selftest — async loopback,
 live host/peer status and the statistics assertions included — ran green on
-2026-08-13. Nothing in the selftest is verified statically any more. The LAN
+2026-08-13. Everything green that day is a runtime result; what has landed in
+that file SINCE is not. The helper-layer section added 2026-08-20 (it asserts
+the `enPollLastError()` / `enPollClearError` surface the pump's guarded drain
+gained on 2026-08-18), the harness scaffold's completeness trailer and timer
+pins from the same week, and the regenerated helper embed from the 2026-08-23
+script-local rename are verified statically; they need an OXT re-pass. The LAN
 chat demo is a separate question, and it was open longer than this line used to
 admit: it first reached an engine on 2026-08-18 (Linux), on ONE machine, and it
 carried two defects that no earlier run could have missed had one ever

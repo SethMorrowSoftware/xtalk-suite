@@ -50,8 +50,28 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENETXT_BUILD_TESTS=ON
 cmake --build build --parallel && ctest --test-dir build --output-on-failure
 ```
 
-CI's mac artifact is host-arch and unsigned — the shipping universal +
-codesigned dylib is a separate release build, same as the siblings.
+That is a HOST-ARCH build — right for developing and running the tests on the
+machine in front of you. What ships under `universal-mac` must carry BOTH
+slices, and ENet has no external dependency, so one pass does it:
+
+```sh
+cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+cmake --build build-mac --parallel
+lipo -archs build-mac/enetxt.dylib     # must print: x86_64 arm64
+```
+
+Since 2026-08-23 both root workflows build it exactly that way —
+`native-enetxt.yml` (artifact only, never committed) and `release-binaries.yml`
+(the lane that can commit) pass the same flag and assert `lipo -archs` carries
+both at birth. Do not skip it by hand either: the suite's
+`tools/install-release-binaries.py` REFUSES a thin Mach-O under the
+`universal-mac` id, because such a library loads for whoever built it and fails
+only for users on the other architecture. Every mac artifact here ships
+UNSIGNED in the distribution sense (arm64 code always carries the linker's
+automatic ad-hoc signature) — codesigning and notarization exist in no lane in
+this repository, so a browser-downloaded zip needs its quarantine attribute
+cleared while a git checkout does not.
 
 ## Packaging
 

@@ -123,8 +123,16 @@ argued exception in `security.md` (read it before calling this). It exists so a 
 extension can compose a published construction that carries its own MAC - NostrXT's NIP-44
 v2 is the named consumer (`nostrxt/docs/07-capabilities-required.md` is the request that
 owed the argument). It is NOT a sealing API: to encrypt bytes, use `sxSecretBox` /
-`sxAeadEncrypt` / secretstream above. Verified statically (C KATs under ASan/UBSan,
-cross-checked against an independent RFC 8439 reference); needs an OXT pass.
+`sxAeadEncrypt` / secretstream above. The C layer's KATs (cross-checked against an
+independent RFC 8439 reference; three implementations agree on the pinned vectors) ran
+green under ASan/UBSan 2026-08-23, and the script surface is **OBSERVED ON AN ENGINE
+2026-08-24** (Windows x86_64, OXT 9.6.3, reporting ABI 10): the 7-check raw-ChaCha20
+section ran green inside the full 106-check `sxSelfTest()`, folded into the suite paste.
+**This paragraph said "needs an OXT pass" until 2026-08-26**, which by then denied a dated
+run - the direction of drift the honesty convention does not tolerate, because a stale
+"needs a pass" costs somebody a pass. The harness section still SKIPs cleanly on a
+pre-ABI-10 package, and the committed `universal-mac` dylib is one (it reports ABI 6, so
+this handler does not exist there yet).
 
 | Handler | Returns | Notes |
 |---|---|---|

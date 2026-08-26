@@ -68,8 +68,10 @@ docs assume.
 - Implement the SOCKS5 client as a callback-driven state machine (doc 02): greet `05 01 00`, expect
   `05 00`, send a CONNECT with ATYP=3 to `<host>:<port>`, parse the reply, expose the tunneled socket.
 - Public surface (doc 05): `oxDial pHost, pPort` reporting a stream handle through `the result`, with
-  `oxWrite`, `oxRead` (callback), and `oxCloseStream`. Map every non-zero SOCKS REP, including Tor's
-  0xF0..0xF6, to a clear error string.
+  `oxWrite`, an inbound-bytes callback, and `oxCloseStream`. (Planned here as `oxRead`; no such
+  handler shipped - inbound chunks reach the app through the callback armed by `oxSetStreamCallback`
+  and delivered from `oxStreamData`, which is the surface the Status block above records.) Map every
+  non-zero SOCKS REP, including Tor's 0xF0..0xF6, to a clear error string.
 - Test target: any stable v3 onion that serves bytes (a known service, or the Phase 3 listener once it
   exists; for Phase 1 use an external known-good address).
 

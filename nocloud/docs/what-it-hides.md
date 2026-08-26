@@ -96,11 +96,12 @@ authentication: the bytes are sealed, and a wrong passphrase is rejected up
 front rather than handing over a file that can't be opened. Without a passphrase
 the single-file Tor transfer still hides both IPs, but the content is not
 encrypted at the application layer beyond Tor's own transport and is not tied to
-a secret only your recipient knows. This path needs the OnionXT extension and a
-**local Tor daemon** (start Tor or Tor Browser on your machine — the app finds
-it on control port 9051 or 9151); the passphrase features additionally need
-SodiumXT. When those pieces are missing the path simply isn't offered, and the
-other two paths keep working.
+a secret only your recipient knows. This path needs a **local Tor daemon** (start
+Tor or Tor Browser on your machine — the app finds it on control port 9051 or
+9151); the passphrase features additionally need SodiumXT. The OnionXT layer
+itself is nothing you have to fetch — it is carried inside the app's own script.
+When those pieces are missing the path simply isn't offered, and the other two
+paths keep working.
 
 ## What is never hidden
 

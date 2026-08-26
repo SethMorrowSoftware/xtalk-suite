@@ -1,6 +1,8 @@
 # 02 - NIP-01 Events, Byte for Byte
 
-> STATUS: verified statically; needs an OXT pass. Every byte-level claim in this
+> STATUS: the `nx*` core is ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT
+> 9.6.3; 274 passed, 0 failed, 2 deliberate skips in the suite paste, both of
+> them the relay layer, which is not in the paste by design). Every byte-level claim in this
 > document is pinned headlessly: `tools/nostr-kat.py` derives the fixture
 > serializations, ids and signatures through the independent oracle
 > `tools/nostr_reference.py` (which sweeps the full published BIP-340 csv), and

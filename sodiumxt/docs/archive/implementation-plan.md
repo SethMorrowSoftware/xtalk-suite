@@ -1,14 +1,23 @@
 # SodiumXT Implementation Plan
 
+> **ARCHIVED / HISTORICAL (filed here 2026-08-26).** This is the original design
+> spec, and every phase in it shipped. It is kept for the rationale, not for
+> status: for the current state use [`../../CLAUDE.md`](../../CLAUDE.md) (the
+> as-built record), [`../api-reference.md`](../api-reference.md) (every shipped
+> `sx*` handler) and [`../building.md`](../building.md).
+
 The full spec for **SodiumXT**, a libsodium binding for OpenXTalk (OXT) / the xTalk family.
 Read this before writing code. The operational as-built record and the hard-won-lesson list
 live in `CLAUDE.md`; this document is the design, the phased plan, the test strategy, and the
 risk register.
 
-> **Status (as-built):** every phase below (0 through 6) has shipped and is on-engine verified.
+> **Status (as-built):** every phase below (0 through 5) has shipped and is on-engine verified.
+> (This read "0 through 6" until 2026-08-26. There is no Phase 6: section 5 runs Phase 0 to
+> Phase 5 and section 6 is the testing strategy. The as-built convention protects a record's
+> account of what happened, not an off-by-one inside it.)
 > This document is the original design, kept as the historical spec and rationale; for the
 > current, authoritative state of the code use `CLAUDE.md` (the as-built record),
-> `docs/api-reference.md` (every shipped `sx*` handler), and `docs/development/building.md`.
+> `docs/api-reference.md` (every shipped `sx*` handler), and `docs/building.md`.
 > Forward-looking wording ("future", "next up", the "open decisions" section) is preserved as it
 > was written at planning time and does not imply anything is still outstanding.
 
@@ -237,7 +246,7 @@ binary repackaged in the same change.
 - **Sanitizer build target** for local iteration (gcc).
 - **`tools/package-extension.py`** refreshes the committed
   `src/code/<arch>-<platform>/sodiumxt.*` in the same change as any native edit.
-- **`docs/development/building.md`** documents the heavy part (the libsodium acquisition), like
+- **`docs/building.md`** documents the heavy part (the libsodium acquisition), like
   TorrentXT's.
 
 ## 8. Risk register

@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working in the SodiumXT
 member of the xtalk-suite monorepo (`sodiumxt/`).
 
-> **Read `docs/development/implementation-plan.md` first.** It is the full spec (the engine
+> **Read `docs/archive/implementation-plan.md` first.** It is the full spec (the engine
 > decision, the C ABI design, the phased plan, the test strategy, the risk register). This
 > file is the operational as-built record and the hard-won-lesson list, in the same spirit
 > as the `CLAUDE.md` files in our sibling extensions Box2Dxt, ShowControl, and TorrentXT.
@@ -179,7 +179,7 @@ ctest --test-dir build --output-on-failure        # sodium_smoke_test.c (incl. k
 ```
 CMake acquires libsodium at a **pinned version** and static-links it into ONE shared library
 named with the **bare token** `sodiumxt` (`PREFIX ""`, `OUTPUT_NAME sodiumxt`). See
-`docs/development/building.md`.
+`docs/building.md`.
 
 **Always build the shim under sanitizers while iterating** (use **gcc**; clang's ASan
 runtime is not installed in this environment). A crypto binding is exactly where an
@@ -194,7 +194,13 @@ our `-Wall -Wextra` (our code stays warning-clean; `/W3` on MSVC).
 
 **Static gates for the script layer.** OXT is a GUI runtime: there is **no headless way to
 compile or run `.lcb` / `.livecodescript`**. Catch what is statically catchable first by
-**porting TorrentXT's checker verbatim**:
+**running the UNIFIED family checker** - one implementation carrying the union of both
+pre-2026-08-12 lineages' checks, byte-identical in every member that ships one (this
+member's old copy was the defective side of that drift: it did not know `switch` /
+`end switch`, so it read `end switch` as closing a handler). `tools/check-checker-drift.py`
+fails the build on any divergence and `tools/test-checker.py` fixture-tests every rule in
+every copy, so a checker fix has to land in ALL copies in one change, never in this one
+alone:
 ```sh
 python3 tools/check-livecodescript.py
 ```
@@ -353,8 +359,13 @@ ops.** The rules:
   committed `src/code/<arch>-<platform>/` binary **and** its `src/code/MANIFEST.sha256` entry
   **in the same change** (the script does both; the suite CI gates fail if a committed blob is
   unlisted or does not match its recorded SHA256). The root `native sodiumxt` workflow rebuilds
-  and tests the full 5-platform matrix and uploads each library as an artifact; committing a
-  refreshed binary stays a deliberate human step, in the same change as the shim edit.
+  and tests the full 5-platform matrix and uploads each library as an artifact, and never
+  commits one; the committing path is the root `release-binaries.yml`, dispatched by hand,
+  which installs through `tools/install-release-binaries.py`, refreshes `MANIFEST.sha256`,
+  runs the gate set and commits (`commit_mode`: `branch` / `pr` / `none`) - the way the
+  platform table above records the rows being re-committed. Either route, committing a
+  refreshed binary stays a deliberate human step: by hand it belongs in the same change as
+  the shim edit, and by workflow the human step is pressing "Run workflow".
 - **No em-dashes** in committed prose or docs (house style). Use hyphens, commas, colons,
   parentheses.
 - **Match the surrounding style:** this codebase, like its siblings, comments the *why*,

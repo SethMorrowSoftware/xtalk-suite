@@ -112,6 +112,7 @@ name below), `peer`, `channel` (0 when absent), plus event-specific keys.
 | `dcChannelError` | `error` | includes the oversized-inbound drop notice |
 | `dcBufferedLow` | `channel` | send buffer drained under the armed threshold |
 | `dcQueueOverflow` | `dropped` | the app stopped polling and the bounded queue shed that many events |
+| `dcEvent` | whatever the record carried | the fallback name for an event code this binding does not know - `code` still holds the raw number. Unreachable while `_checkABI` passes, which is what makes it rare rather than impossible; a `switch` on `name` should still have a default arm |
 
 > **Why `...Ready` and not `dcLocalDescription`?** xTalk has one message
 > namespace, and `dcLocalDescription(pPeer)` above is a public getter. An

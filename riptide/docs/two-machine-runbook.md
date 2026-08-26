@@ -10,8 +10,9 @@ Status going in: phases 1-4 are DONE on two machines (feed + follow
 2026-08-13; media, and DMs chatting both ways, 2026-08-15). Phase 5 (the
 call, now with the spec-6.2 typing lane) and phase 6 (the LAN mesh:
 welcome round AND the sync payload - drafts, feed seq, presence) are
-wired and statically verified but have never run; phase 7 needs a tor
-daemon.
+wired, with phase 6's sync-payload compute half engine-green 2026-08-20
+in the suite paste, but neither has ever run on two machines; phase 7
+needs a tor daemon.
 
 ## Setup, once per machine
 
@@ -175,7 +176,8 @@ LAN, UDP 27099 allowed.
 
 The serving is BUILT as of 2026-08-15 (the 8.2 feed page, the 8.3
 /prekey and POST /dm routes - library seams plus the demo's onion-httpd
-wiring), verified statically; this pass is what flips its label.
+wiring). Its COMPUTE half ran engine-green 2026-08-20 in the suite
+paste; this pass flips the remaining LIVE half of the label.
 
 1. Run a tor daemon with the control port enabled (see
    `onionxt/docs/03-control-port.md` for the torrc lines). Both onionxt
