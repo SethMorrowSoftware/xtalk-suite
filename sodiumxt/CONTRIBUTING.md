@@ -19,16 +19,17 @@ code.
   `.md` of this member, which is one of the four that declare that rule), and
   `package-extension.py`.
 - `examples/` - the demo stack and the xTalk self-test.
-- `docs/` - user documentation; `docs/development/` - the design and build internals.
+- `docs/` - user documentation, indexed by [`docs/README.md`](docs/README.md);
+  `docs/archive/` - executed plans and superseded designs, kept for the reasoning.
 
 ## Developer documentation
 
-- **[docs/development/implementation-plan.md](docs/development/implementation-plan.md)** - the
+- **[docs/archive/implementation-plan.md](docs/archive/implementation-plan.md)** - the
   full spec: the engine decision, the C ABI design, the phased plan, the test strategy, and the
   risk register. Read it first.
-- **[docs/development/building.md](docs/development/building.md)** - how to build the native
+- **[docs/building.md](docs/building.md)** - how to build the native
   library, run the tests under sanitizers, run the static gate, and package the result.
-- **[docs/development/torrentxt-integration.md](docs/development/torrentxt-integration.md)** -
+- **[docs/archive/torrentxt-integration.md](docs/archive/torrentxt-integration.md)** -
   SUPERSEDED. The plan to replace TorrentXT's hand-rolled crypto with SodiumXT; the migration
   shipped, and differently than planned there. Kept for the weak-KDF and unauthenticated-CBC
   arguments that motivated it. The as-built record is `torrentxt/CLAUDE.md`, "Example demos:
@@ -47,7 +48,7 @@ python3 tools/check-livecodescript.py          # the static gate for the script 
 
 Always iterate the C shim under the sanitizers (gcc ASan + UBSan) - a buffer-sizing bug in a
 crypto binding surfaces there, not in a passing round trip. See
-[docs/development/building.md](docs/development/building.md) for the sanitizer build, the
+[docs/building.md](docs/building.md) for the sanitizer build, the
 Windows/vcpkg path, and packaging.
 
 ## What "done" means

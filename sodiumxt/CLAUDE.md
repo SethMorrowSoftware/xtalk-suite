@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working in the SodiumXT
 member of the xtalk-suite monorepo (`sodiumxt/`).
 
-> **Read `docs/development/implementation-plan.md` first.** It is the full spec (the engine
+> **Read `docs/archive/implementation-plan.md` first.** It is the full spec (the engine
 > decision, the C ABI design, the phased plan, the test strategy, the risk register). This
 > file is the operational as-built record and the hard-won-lesson list, in the same spirit
 > as the `CLAUDE.md` files in our sibling extensions Box2Dxt, ShowControl, and TorrentXT.
@@ -179,7 +179,7 @@ ctest --test-dir build --output-on-failure        # sodium_smoke_test.c (incl. k
 ```
 CMake acquires libsodium at a **pinned version** and static-links it into ONE shared library
 named with the **bare token** `sodiumxt` (`PREFIX ""`, `OUTPUT_NAME sodiumxt`). See
-`docs/development/building.md`.
+`docs/building.md`.
 
 **Always build the shim under sanitizers while iterating** (use **gcc**; clang's ASan
 runtime is not installed in this environment). A crypto binding is exactly where an

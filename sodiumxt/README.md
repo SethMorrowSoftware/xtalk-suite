@@ -125,7 +125,7 @@ The full model and the reasoning are in [docs/security.md](docs/security.md).
 
 Most users never need to build anything - the extension ships with prebuilt native libraries
 for every platform. If you want to build from source, change the C shim, or contribute, see
-[CONTRIBUTING.md](CONTRIBUTING.md) and [`docs/development/`](docs/development).
+[CONTRIBUTING.md](CONTRIBUTING.md) and [`docs/README.md`](docs/README.md).
 
 ## License
 

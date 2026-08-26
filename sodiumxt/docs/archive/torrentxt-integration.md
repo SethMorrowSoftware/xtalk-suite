@@ -1,5 +1,9 @@
 # Plan: replace TorrentXT's crypto with SodiumXT
 
+> **ARCHIVED / HISTORICAL (filed here 2026-08-26).** Self-declared SUPERSEDED:
+> the migration shipped, and differently than this plan describes. Kept as the
+> record of the reasoning.
+
 Status: **SUPERSEDED - the migration SHIPPED, and differently than planned
 here.** The torrentxt demos now do their optional encryption through SodiumXT
 (Argon2id `sxPwHash` + `sxSecretBox` + `sxEncryptFile`), with the feed marker

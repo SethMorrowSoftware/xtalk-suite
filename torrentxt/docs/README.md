@@ -9,7 +9,8 @@ the `bt*` handler surface. Start with [getting-started.md](getting-started.md).
 | [api-reference.md](api-reference.md) | The complete public surface of `org.openxtalk.library.torrent`. Every entry is one `public handler bt*` in `src/torrent.lcb`, which remains the source of truth. |
 | [architecture.md](architecture.md) | The as-built map of how the pieces fit: the shim, the handle table, the event pump, the threading contract. |
 | [building.md](building.md) | The native build (C++ shim to `torrentxt.{so,dll,dylib}`), how to refresh the committed per-platform binaries, and the CI matrix. |
-| [TorrentXT-IMPLEMENTATION-PLAN.md](TorrentXT-IMPLEMENTATION-PLAN.md) | The original design brief and specification. A design record, not a status page: the as-built account lives in `../CLAUDE.md`. |
+| **Archive** — executed plans and superseded designs, kept for the reasoning | |
+| [archive/TorrentXT-IMPLEMENTATION-PLAN.md](archive/TorrentXT-IMPLEMENTATION-PLAN.md) | The original design brief and specification. A design record, not a status page: the as-built account lives in `../CLAUDE.md`. |
 | [../THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md) | The per-file license map for libtorrent-rasterbar, Boost and the rest of the vendored stack. |
 
 **Where else to look.** [`../README.md`](../README.md) is the member front door

@@ -11,9 +11,10 @@ conventions that keep a crypto call honest in xTalk. Start with
 | [api-reference.md](api-reference.md) | The complete `sx*` handler surface of `org.openxtalk.library.sodium`, as called from LiveCode Script. Every signature, every error convention. |
 | [recipes.md](recipes.md) | Copy-paste solutions for common tasks, all over the public `sx*` handlers. |
 | [security.md](security.md) | The security model: what libsodium guarantees, what this binding adds (nothing cryptographic, by design), and what an app is still responsible for. Read before shipping anything that protects a user. |
-| [development/building.md](development/building.md) | Acquiring and building libsodium, and the day-to-day loop: sanitizers, the static gate, packaging. Contributors only. |
-| [development/implementation-plan.md](development/implementation-plan.md) | The original spec and phased plan. A design record: where it differs from the code, the code wins. |
-| [development/torrentxt-integration.md](development/torrentxt-integration.md) | SUPERSEDED. The plan to replace TorrentXT's crypto with SodiumXT. The migration shipped, and differently than planned here. Kept as the record of why. |
+| [building.md](building.md) | Acquiring and building libsodium, and the day-to-day loop: sanitizers, the static gate, packaging. Contributors only. |
+| **Archive** - executed plans and superseded designs, kept for the reasoning | |
+| [archive/implementation-plan.md](archive/implementation-plan.md) | The original spec and phased plan. A design record: where it differs from the code, the code wins. |
+| [archive/torrentxt-integration.md](archive/torrentxt-integration.md) | SUPERSEDED. The plan to replace TorrentXT's crypto with SodiumXT. The migration shipped, and differently than planned here. Kept as the record of why. |
 
 **Where else to look.** [`../README.md`](../README.md) is the member front door
 (install, a short example, the honest status). [`../CLAUDE.md`](../CLAUDE.md) is

@@ -4,7 +4,7 @@
 > asset pack and the Wave 0–8 content phases. Those waves shipped (the demo grew
 > to seven levels); the as-built record is
 > [`../../CHANGELOG.md`](../../CHANGELOG.md) + [`../../plan.md`](../../plan.md), and
-> the content roadmap is [`../asset-expansion-plan.md`](../asset-expansion-plan.md).
+> the content roadmap is [`asset-expansion-plan.md`](asset-expansion-plan.md).
 > Kept for history only.
 
 The Game Kit is **done and verified** (plan.md Phases 0–5, Win32). This

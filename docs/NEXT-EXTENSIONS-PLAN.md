@@ -12,7 +12,7 @@ TorrentXT), written down so we never re-learn them.
 > wrap a native library for OXT without getting bitten" reference. Parts II-IV are
 > the per-library plans; Part V is sequencing, shared infrastructure, and risk.
 >
-> Companion to `torrentxt/docs/TorrentXT-IMPLEMENTATION-PLAN.md` (the original design brief)
+> Companion to `torrentxt/docs/archive/TorrentXT-IMPLEMENTATION-PLAN.md` (the original design brief)
 > and `torrentxt/CLAUDE.md` (the as-built record). Where those differ from the
 > code, the code wins; where this plan is not yet built, it is marked as plan,
 > not as-built.

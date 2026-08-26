@@ -85,7 +85,7 @@ Kit, the raw binding, and the plans/records). The short version:
 | [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI. |
 | [Building](docs/building.md) | Compile the native library yourself with CMake. |
 | [Platformer polish plan](docs/platformer-polish-plan.md) | The plan to take the 7-level demo to its final form (transitions, feel, scenes). |
-| [Asset expansion plan](docs/asset-expansion-plan.md) | The as-built record of how the demo grew to seven levels (Phases A–G). |
+| [Asset expansion plan](docs/archive/asset-expansion-plan.md) | The as-built record of how the demo grew to seven levels (Phases A–G). |
 
 (Pre-implementation planning docs — the Game Kit design spec and the asset-intake
 plan — are archived under [`docs/archive/`](docs/archive/) for history.)

@@ -18,7 +18,7 @@ then [kit-guide.md](kit-guide.md).
 | [architecture.md](architecture.md) | How the three layers fit, why the shim exists, and how to extend the binding. |
 | [building.md](building.md) | Building a fresh native library, or porting to a new platform. Most users can skip it: the per-platform binaries are committed. |
 | **Plans and records** | |
-| [asset-expansion-plan.md](asset-expansion-plan.md) | FROZEN. Phases A-G shipped and the demo grew from 5 to seven polished levels. Forward feature development stopped for a polish pass. |
+| [archive/asset-expansion-plan.md](archive/asset-expansion-plan.md) | ARCHIVED, and FROZEN before that. Phases A-G shipped and the demo grew from 5 to seven polished levels. Forward feature development stopped for a polish pass. |
 | [platformer-polish-plan.md](platformer-polish-plan.md) | The polish pass that asset expansion stopped for. Feature development on the platformer is frozen. |
 | [archive/game-engine-spec.md](archive/game-engine-spec.md) | ARCHIVED. The pre-implementation design spec for the Kit modules. They all shipped; kept for the reasoning. |
 | [archive/expansion-prep.md](archive/expansion-prep.md) | ARCHIVED. The pre-implementation intake plan for the asset pack and the Wave 0-8 content phases. Those waves shipped. |

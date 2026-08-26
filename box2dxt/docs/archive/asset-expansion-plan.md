@@ -1,12 +1,19 @@
 # Asset Expansion Plan — using the WHOLE spritesheet library
 
+> **ARCHIVED / HISTORICAL (filed here 2026-08-26).** Its own status line already
+> read FROZEN: Phases A-G shipped, the demo grew from 5 to seven polished levels,
+> and the once-planned Phases H/I/J are not being pursued. The forward-looking
+> document is [`../platformer-polish-plan.md`](../platformer-polish-plan.md); the
+> canonical history is [`../../CHANGELOG.md`](../../CHANGELOG.md) +
+> [`../../plan.md`](../../plan.md).
+
 > **STATUS (frozen): Phases A–G shipped — the demo grew from 5 to SEVEN polished
 > levels.** Forward feature development is now **stopped** for a polish pass (see
-> [`platformer-polish-plan.md`](platformer-polish-plan.md)). The once-planned
+> [`platformer-polish-plan.md`](../platformer-polish-plan.md)). The once-planned
 > Phases **H** (Clocktown — *attempted and rolled back*), **I** (alien-swim) and
 > **J** (stretch) are **not being pursued** and have been dropped from this plan;
 > the assets they would have used are still catalogued in §1. The canonical
-> history is [`../CHANGELOG.md`](../CHANGELOG.md) + [`../plan.md`](../plan.md).
+> history is [`../CHANGELOG.md`](../../CHANGELOG.md) + [`../plan.md`](../../plan.md).
 
 The platformer demo now ships **seven polished levels** (it shipped five when this
 roadmap was written). This document was the roadmap that grew it — an audit of
@@ -15,8 +22,8 @@ every `<SubTexture>` vs every frame-name the example references, then a plan to 
 and heroes, without losing the reliability the engine and the layout audits give.
 
 It is the **content** companion to
-[`archive/expansion-prep.md`](archive/expansion-prep.md) (the Kit/Wave 0–8 intake,
-now archived) and [`../plan.md`](../plan.md) (the as-built log).
+[`archive/expansion-prep.md`](expansion-prep.md) (the Kit/Wave 0–8 intake,
+now archived) and [`../plan.md`](../../plan.md) (the as-built log).
 
 | | |
 |---|---|
@@ -384,7 +391,7 @@ were not pursued — see Phases H–J above.)
 
 ## 6. Asset-coverage (as-built)
 
-Phases A–G shipped; the per-phase notes above and [`../CHANGELOG.md`](../CHANGELOG.md)
+Phases A–G shipped; the per-phase notes above and [`../CHANGELOG.md`](../../CHANGELOG.md)
 are the as-built coverage record. The original aspirational per-sheet checklist has
 been dropped now that feature development is frozen — much of it shipped (coin tiers,
 star, the heart HUD, character select, the dirt/stone biomes, snakes, spinners,

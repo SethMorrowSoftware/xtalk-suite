@@ -144,7 +144,7 @@ KDF) before its binary ships, which is the functional guard against any drift. T
 binaries under `src/code/` carry a `MANIFEST.sha256` that the suite CI verifies on every push,
 and the root `native sodiumxt` workflow rebuilds and tests all five platforms from the pinned
 source. For the strongest assurance you can build from source yourself (see
-`docs/development/building.md`).
+`docs/building.md`).
 
 If you believe you have found a security issue in SodiumXT's binding layer, report it privately to
 the maintainer rather than opening a public issue. Vulnerabilities in libsodium itself should go to

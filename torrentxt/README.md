@@ -235,7 +235,7 @@ A simple starter, two flagship demos, plus the shared poll-dispatcher utility:
   marshalling, the wire format, the handle table, what's verifiable where.
 - **[building.md](docs/building.md)** — building the native shim from source, the
   CMake options, the CI matrix, the platform floors.
-- **[TorrentXT-IMPLEMENTATION-PLAN.md](docs/TorrentXT-IMPLEMENTATION-PLAN.md)** — the
+- **[TorrentXT-IMPLEMENTATION-PLAN.md](docs/archive/TorrentXT-IMPLEMENTATION-PLAN.md)** — the
   original design brief, kept for the *why* (engine choice, ABI design, risk
   register).
 - **[NEXT-EXTENSIONS-PLAN.md](../docs/NEXT-EXTENSIONS-PLAN.md)** — the forward plan
