@@ -19,8 +19,18 @@
  * pattern already covers; nothing here needs editing per handler.
  *
  * GNU ld / lld only (Linux). The Windows lane controls exports with a .def
- * file and macOS uses default visibility, so CMakeLists applies this only
- * where the linker supports it.
+ * file, so CMakeLists probes for the flag before applying it.
+ *
+ * CORRECTED 2026-08-26: this comment used to end "and macOS uses default
+ * visibility", stated as though that were a decision. It was a gap. ld64 has
+ * no --version-script, nothing was ever put in its place, and the universal
+ * dylib therefore shipped the very leak this file exists to stop - release
+ * run 10 measured it: enetxt.dylib exported 70 names the shim does not define
+ * (enet_address_get_host, enet_crc32, enet_deinitialize, ...), which is the
+ * whole upstream ENet surface plus change. The gate caught it before the
+ * binary was committed. CMakeLists now DERIVES an -exported_symbols_list from
+ * the globals below at configure time, so this file is the one source of
+ * truth for both linkers and a new entry point still needs no edit here.
  */
 {
     global:

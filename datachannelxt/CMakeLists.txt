@@ -278,9 +278,23 @@ if(EXISTS "${DATACHANNELXT_SHIM_SRC}")
     # symbols were still landing in the shipped export table. A version script
     # filters at link time, which is the only place that reaches them.
     # GNU ld / lld only: Windows uses a .def file and macOS defaults.
+    #
+    # NOT ON THE SYSTEM-DEPENDENCY PATH (guard added 2026-08-26, hours after
+    # torrentxt paid for the lesson). This library links -static-libstdc++ on
+    # Linux, and `local: *` hides that runtime's __cxa_*/operator new exports
+    # too - correct when every dependency is static inside the .so, and fatal
+    # when DATACHANNELXT_USE_SYSTEM_LIBDATACHANNEL finds a SHARED
+    # libdatachannel, because that is a second C++ DSO bound to libstdc++.so.6
+    # and exceptions would cross two __cxa_* implementations. torrentxt's ASan
+    # lane aborted on exactly this shape the day its script landed; this
+    # member's Linux CI always FetchContents (so the hazard here is latent,
+    # never yet observed), but latent is not a guarantee anyone wants to ship.
+    # The mac export list below stays unconditional: macOS has no
+    # -static-libstdc++, so the dylib never carries a private C++ runtime.
     include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _dcx_have_check_linker_flag)
     set(_dcx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/datachannelxt.map")
-    if(_dcx_have_check_linker_flag AND UNIX AND NOT APPLE)
+    if(_dcx_have_check_linker_flag AND UNIX AND NOT APPLE
+       AND NOT DATACHANNELXT_USE_SYSTEM_LIBDATACHANNEL)
         check_linker_flag(CXX "-Wl,--version-script=${_dcx_version_script}"
                           DCX_HAVE_VERSION_SCRIPT)
         if(DCX_HAVE_VERSION_SCRIPT)
@@ -289,6 +303,12 @@ if(EXISTS "${DATACHANNELXT_SHIM_SRC}")
             set_target_properties(datachannelxt PROPERTIES
                                   LINK_DEPENDS "${_dcx_version_script}")
         endif()
+    elseif(UNIX AND NOT APPLE AND DATACHANNELXT_USE_SYSTEM_LIBDATACHANNEL)
+        message(STATUS "DataChannelXT: NOT applying src/datachannelxt.map - a "
+                       "system libdatachannel may be a second C++ DSO in the "
+                       "process and this library links libstdc++ statically; "
+                       "see the comment above. The shipped (static) build "
+                       "applies it.")
     endif()
     datachannelxt_apple_export_list(datachannelxt "${_dcx_version_script}")
 

@@ -76,13 +76,59 @@ if(WIN32)
   target_link_libraries(enetxt PRIVATE ws2_32 winmm)
 endif()
 
+# --------------------------------------------- the macOS export-list bridge ---
+# ld64 has no --version-script. Its equivalent is -exported_symbols_list, which
+# takes literal names and globs, and Mach-O decorates every C symbol with a
+# leading underscore (enx_* becomes _enx_*).
+#
+# The list is DERIVED from the .map at configure time rather than maintained
+# beside it. Two hand-kept lists is how a symbol reaches one platform and
+# misses the other - which is exactly the divergence this replaces: the version
+# script has filtered the ELF .so since it was written, nothing filtered
+# Mach-O, and release run 10 (2026-08-26) measured the result at 70 undefined-
+# by-the-shim exports in the universal dylib. One source of truth, two flags.
+#
+# Unconditional on Apple, unlike torrentxt's, and the difference is real rather
+# than an oversight: torrentxt skips its script when a SYSTEM (shared)
+# libtorrent is linked, because hiding a statically linked libstdc++ would give
+# this library a private C++ runtime while the shared dependency uses the
+# process's. enetxt has no system path at all (ENet is FetchContent-only, and
+# it is C), so there is no second C++ runtime to disagree with.
+function(enetxt_apple_export_list target map_file)
+  if(NOT APPLE)
+    return()
+  endif()
+  file(READ "${map_file}" _txt)
+  string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" "" _txt "${_txt}")
+  string(REGEX MATCH "global:(.*)local:" _unused "${_txt}")
+  set(_globals "${CMAKE_MATCH_1}")
+  string(REPLACE "\n" ";" _globals "${_globals}")
+  set(_lines "")
+  foreach(_tok IN LISTS _globals)
+    string(STRIP "${_tok}" _tok)
+    if(NOT _tok STREQUAL "")
+      string(APPEND _lines "_${_tok}\n")
+    endif()
+  endforeach()
+  if(_lines STREQUAL "")
+    message(FATAL_ERROR
+      "enetxt_apple_export_list: parsed NO symbols out of ${map_file}. An empty "
+      "-exported_symbols_list would hide the whole ABI and the library "
+      "would load with nothing bound, so this refuses rather than "
+      "shipping it.")
+  endif()
+  set(_exp "${CMAKE_CURRENT_BINARY_DIR}/enetxt.exported_symbols")
+  file(WRITE "${_exp}" "${_lines}")
+  target_link_options(${target} PRIVATE "-Wl,-exported_symbols_list,${_exp}")
+  set_target_properties(${target} PROPERTIES LINK_DEPENDS "${map_file}")
+endfunction()
+
 # Export ONLY the enx_* ABI. Statically linked ENet objects otherwise inherit
 # the .so's public visibility and export ~65 enet_* symbols, which another
 # extension bundling its own ENet could interpose with. -fvisibility=hidden on
 # this target cannot reach ENet (its own CMake target compiles it), so filter
-# at link time instead. GNU ld / lld only: the Windows lane uses a .def file
-# and macOS defaults, so probe before applying rather than breaking those.
-# See src/enetxt.map for the full why.
+# at link time instead. GNU ld / lld for the .so, -exported_symbols_list for
+# the dylib, a .def file on Windows. See src/enetxt.map for the full why.
 include(CheckLinkerFlag OPTIONAL RESULT_VARIABLE _enx_have_check_linker_flag)
 set(_enx_version_script "${CMAKE_CURRENT_SOURCE_DIR}/src/enetxt.map")
 if(_enx_have_check_linker_flag AND UNIX AND NOT APPLE)
@@ -95,6 +141,7 @@ if(_enx_have_check_linker_flag AND UNIX AND NOT APPLE)
     set_target_properties(enetxt PROPERTIES LINK_DEPENDS "${_enx_version_script}")
   endif()
 endif()
+enetxt_apple_export_list(enetxt "${_enx_version_script}")
 
 if(ENETXT_BUILD_TESTS)
   enable_testing()
