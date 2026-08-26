@@ -127,6 +127,14 @@ quietly stopped matching shows up as a number that moved.
 
 RUN IT: `python3 tools/check-binary-freshness.py` from anywhere (it locates the
 repo from its own path). Exit 0 green, 1 with every problem printed.
+
+  --installing   Tolerate a src/code/<platform>/ directory holding a library
+                 this file's `ships` row does not declare, instead of refusing
+                 it. ONLY release-binaries.yml's post-install gate step passes
+                 this: that job runs tools/install-release-binaries.py and then
+                 gates the tree it just wrote, so it is the one context where a
+                 platform can legitimately appear ahead of the row that
+                 declares it. Gained platforms print either way.
 """
 
 import os
@@ -138,6 +146,10 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TAG = "check-binary-freshness"
+
+# Set from --installing in main(). See the `ships` block in check_member() for
+# why the tolerance it turns on is scoped to one caller rather than always on.
+INSTALLING = False
 
 
 class ReadError(Exception):
@@ -209,14 +221,28 @@ MEMBERS = [
             # list of libstdc++'s exports, which is not a thing this repo
             # should own. The BIND and SOURCE oracles still run on those two
             # libraries; only the closure is off.
-            "elf": "the Linux builds carry no version script, so they export "
-                   "5419 statically-linked libtorrent/boost/libstdc++ symbols "
-                   "beyond the shim's own (measured 2026-08-17)",
+            "elf": "the COMMITTED Linux builds predate src/torrentxt.map and "
+                   "export 5419 statically-linked libtorrent/boost/libstdc++ "
+                   "symbols beyond the shim's own (measured 2026-08-17). The "
+                   "version script landed 2026-08-26, so this skip is now "
+                   "scoped to the binaries in the tree rather than to the "
+                   "member: the next Linux rebuild should export btx_* and "
+                   "btx::test::* only, and THIS ENTRY SHOULD THEN BECOME A "
+                   "TOLERANCE LIST (or go away). Re-measure after the next "
+                   "release dispatch rather than assuming either outcome",
             # The MSVC DLLs export only what is declared, so the closure IS
             # meaningful there - it is off above for a toolchain reason, not
             # because torrentxt is exempt from the idea.
             "pe": [r"@test@btx@@"],
-        },
+            # macho: src/torrentxt.map (new 2026-08-26) drives the mac link via
+            # -exported_symbols_list and deliberately exports btx::test::*, the
+            # hook tests/torrent_smoke_test.cpp calls on the REAL library. The
+            # source oracle only collects `extern "C"` btx_* names, so without
+            # this the mangled hooks read as unexpected exports and the leg
+            # refuses a correct dylib. Same tolerance shape as `pe` above; the
+            # reader strips Mach-O's one leading underscore, so this is the ELF
+            # spelling, not a doubled-underscore one.
+            "macho": [r"^_ZN3btx4test"]},
     },
     {
         "name": "enetxt",
@@ -228,7 +254,7 @@ MEMBERS = [
         "abi_header": "enetxt/src/enx_abi.h",
         "abi_define": "ENX_ABI_VERSION",
         "abi_symbol": "enx_abi_version",
-        "closure": {"elf": [], "pe": []},
+        "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
         "name": "datachannelxt",
@@ -250,6 +276,12 @@ MEMBERS = [
             # NEW export outside `dcx::test` is still refused.
             "elf": [r"^_ZN3dcx4test"],
             "pe": [r"@test@dcx@@"],
+            # macho: the same hooks, same reason. src/datachannelxt.map now
+            # drives the mac link too (-exported_symbols_list), so the dylib
+            # exports dcx_* AND dcx::test::* exactly as the .so does. The
+            # reader strips Mach-O's one leading underscore, so the ELF pattern
+            # is the right one here rather than a doubled-underscore variant.
+            "macho": [r"^_ZN3dcx4test"],
         },
     },
     {
@@ -294,7 +326,7 @@ MEMBERS = [
         # src/coinxt.map keeps this at exactly the 43 shim exports; without it
         # the library would leak ~61 vendored trezor-crypto symbols, which is
         # the case coinxt's own copy of this gate was written to catch.
-        "closure": {"elf": [], "pe": []},
+        "closure": {"elf": [], "pe": [], "macho": []},
     },
 ]
 
@@ -1292,14 +1324,32 @@ def check_fat_macho(member, path, where, binds, defs, want_abi,
                 f"any mac verdict on this member")
             return 1
         if decoded is not None and decoded == want_abi:
-            # The stale-excuse refusal, same as check-suite-coverage's: an
-            # allowance must not outlive the state it excuses.
-            problems.append(
+            # A stale excuse, and it must go - but NOT as a hard failure here,
+            # because of WHEN this fires. The only thing that refreshes this
+            # dylib is install-release-binaries.py, running inside a job that
+            # gates BEFORE it commits. So the refusal fired on the very run
+            # that earned its removal (release run 9, 2026-08-26: sodiumxt's
+            # mac dylib reached ABI 10 and this line blocked the commit that
+            # would have justified deleting the row), and the row could not be
+            # deleted ahead of time either - without it the still-stale ABI 6
+            # dylib fails the header comparison instead. Hard-failing here is a
+            # deadlock: the allowance can only be retired by a commit this line
+            # refuses to allow.
+            #
+            # So it reports LOUDLY and lets the run proceed. The excuse is
+            # still not allowed to outlive the state it excuses - this text
+            # keeps printing on every subsequent run until the row is deleted,
+            # and the legs below now hold the library to everything anyway, so
+            # nothing is being taken on trust in the meantime. What changed is
+            # only that the reminder no longer blocks its own resolution.
+            skips.append(
                 f"{where}: decodes ABI {decoded} == {member['abi_define']}, "
                 f"so the dylib has been REFRESHED and this member's "
-                f"MAC_KNOWN_STALE row is now a stale excuse - delete it (and "
-                f"the {stale['record']} STALE row it cites), then this "
-                f"library is simply held to every leg like the rest")
+                f"MAC_KNOWN_STALE row is now a STALE EXCUSE - delete it (and "
+                f"the {stale['record']} STALE row it cites). Reported rather "
+                f"than failed because the run that refreshes the dylib is the "
+                f"run that must be allowed to land it; the library is held to "
+                f"every leg below regardless")
             # Fall through: a refreshed dylib gets the full legs right away.
         elif decoded is not None and decoded != recorded:
             problems.append(
@@ -1504,23 +1554,70 @@ def check_member(member, problems, skips, notes, stats):
                     else:
                         stats["confirmed"] += 1
 
+    # `ships` is an INVENTORY, and the leniency below is scoped to the one run
+    # that is allowed to change the tree.
+    #
+    # Losing a platform is the failure this row exists to catch. Gaining one
+    # briefly looked like it had to be tolerated everywhere: the tables state a
+    # fact about the COMMITTED tree, the thing that changes the committed tree
+    # is install-release-binaries.py, and it runs inside a job that gates
+    # BEFORE it commits - so the first dispatch to land a member's mac dylib
+    # failed here for having landed it (release run 9, 2026-08-26: four
+    # members, "holds a library the table's `ships` list does not declare"),
+    # and no edit could be pushed ahead of the binary either, because the
+    # absent-but-declared leg above would then fire instead. A gate that can
+    # only be satisfied by a commit it refuses to let happen checks nothing.
+    #
+    # Making growth permanently silent was the wrong way out of that, and the
+    # hole is exact: the new platform never enters `ships`, so DELETING that
+    # newly shipped library afterwards is neither a missing-platform failure
+    # nor even a smaller number in the summary - the regression this row was
+    # written to catch, reintroduced for the platform most likely to be lost,
+    # the one nobody has committed twice yet. So the tolerance now lives where
+    # the growth legitimately happens and nowhere else: --installing, passed by
+    # release-binaries.yml's post-install gate step and by nothing that runs on
+    # an ordinary push. Everywhere else a gained platform is a failure naming
+    # the one-line edit that fixes it, and that edit passes on its next run
+    # because the binary is committed by then.
+    #
+    # Either way it is PRINTED. The version this replaces put gained platforms
+    # in a stats bucket nothing read, which is how a tolerance becomes
+    # invisible rather than merely permissive.
     for platform in sorted(set(member["ships"]) - found):
         problems.append(f"{name}: the table says this member ships a library "
                         f"for {platform} and src/code/{platform}/ does not "
                         f"contain one - either a committed binary was lost, or "
                         f"the platform was dropped and this row was not")
     for platform in sorted(found - set(member["ships"])):
-        problems.append(f"{name}: src/code/{platform}/ holds a library the "
-                        f"table's `ships` list does not declare - add it, so "
-                        f"the next deletion is a failure rather than a smaller "
-                        f"number in the summary line")
+        stats.setdefault("gained", []).append(f"{name}/{platform}")
+        if not INSTALLING:
+            problems.append(
+                f"{name}/src/code/{platform}/ holds a library this member's "
+                f"row does not declare. Add \"{platform}\" to the {name} row's "
+                f"`ships` list in this file, in the same change that lands the "
+                f"binary - until it is there, the floor does not cover this "
+                f"platform and deleting the library again would pass. (The "
+                f"release job's post-install gate passes --installing, which "
+                f"tolerates exactly this state for the one run that creates "
+                f"it.)")
 
     if checked_here == 0:
         problems.append(f"{name}: no committed library was actually checked - "
                         f"this member's row is passing vacuously")
 
 
-def main():
+def main(argv=()):
+    global INSTALLING
+    unknown = [a for a in argv if a != "--installing"]
+    if unknown:
+        # An unrecognised flag is refused rather than ignored: a caller that
+        # meant --installing and typed it wrong would otherwise get the strict
+        # gate and read its failure as a real one.
+        print(f"{TAG}: unknown argument(s) {unknown} - the only flag is "
+              f"--installing")
+        return 2
+    INSTALLING = "--installing" in argv
+
     problems, skips, notes = [], [], []
     stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0,
              "mac": 0}
@@ -1529,6 +1626,15 @@ def main():
     for member in MEMBERS:
         check_member(member, problems, skips, notes, stats)
 
+    # Printed BEFORE the verdict, and printed in both modes. A platform that
+    # appeared without a row is either the release job's new binary (fine, this
+    # run) or a library nothing declares (a problem, every other run) - and in
+    # neither case may it be silent, which is what the stats bucket nothing
+    # read amounted to.
+    for gained in stats.get("gained", []):
+        print(f"{TAG}: GAINED {gained} - a committed library whose platform "
+              f"this file's `ships` row does not list yet"
+              + (" (tolerated: --installing)" if INSTALLING else ""))
     for skip in skips:
         print(f"{TAG}: SKIP {skip}")
     for note in notes:
@@ -1557,4 +1663,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

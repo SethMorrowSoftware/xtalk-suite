@@ -1051,8 +1051,19 @@ jobs:
       # files the installer just refreshed, coinxt's binary-freshness gate
       # (exports and ABI against the shim source), and every other static gate.
       # If this fails, nothing is pushed.
+      #
+      # --installing is passed HERE and nowhere else, and it relaxes exactly one
+      # thing: check-binary-freshness.py's `ships` inventory refuses a
+      # src/code/<platform>/ holding a library its member row does not declare,
+      # and the step above is the one thing in the project that creates that
+      # state - the first dispatch to land a member's mac dylib failed on it
+      # (run 9, 2026-08-26). The relaxation is one-directional and one-run: a
+      # DECLARED platform that has gone missing still fails here, the gained
+      # platform is printed either way, and the next ordinary push refuses it
+      # until the row is updated - so the follow-up edit cannot be forgotten,
+      # which is what a permanently silent tolerance would have allowed.
       - name: Static gates over the updated tree
-        run: bash tools/build-all.sh --gates
+        run: bash tools/build-all.sh --gates --installing
 
       # NOTE for anyone editing below: every line of a `run: |` block must stay
       # indented. A multi-line commit message written flush-left terminates the
