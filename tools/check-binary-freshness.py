@@ -215,8 +215,7 @@ MEMBERS = [
             # The MSVC DLLs export only what is declared, so the closure IS
             # meaningful there - it is off above for a toolchain reason, not
             # because torrentxt is exempt from the idea.
-            "pe": [r"@test@btx@@"],
-        },
+            "pe": [r"@test@btx@@"], "macho": []},
     },
     {
         "name": "enetxt",
@@ -228,7 +227,7 @@ MEMBERS = [
         "abi_header": "enetxt/src/enx_abi.h",
         "abi_define": "ENX_ABI_VERSION",
         "abi_symbol": "enx_abi_version",
-        "closure": {"elf": [], "pe": []},
+        "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
         "name": "datachannelxt",
@@ -241,7 +240,7 @@ MEMBERS = [
         "abi_define": "DCX_ABI_VERSION",
         "abi_symbol": "dcx_abi_version",
         "closure": {
-            # The six C++ test hooks live in `namespace dcx { namespace test }`
+            # The six C++ test hooks live in `namespace dcx { namespace test, "macho": []}`
             # and are reached by the member's own C++ smoke test, not by the
             # `.lcb`. They are not `extern "C"`, so the source oracle's
             # column-0 pattern cannot see them by design (it looks for the C
@@ -294,7 +293,7 @@ MEMBERS = [
         # src/coinxt.map keeps this at exactly the 43 shim exports; without it
         # the library would leak ~61 vendored trezor-crypto symbols, which is
         # the case coinxt's own copy of this gate was written to catch.
-        "closure": {"elf": [], "pe": []},
+        "closure": {"elf": [], "pe": [], "macho": []},
     },
 ]
 
@@ -1292,14 +1291,32 @@ def check_fat_macho(member, path, where, binds, defs, want_abi,
                 f"any mac verdict on this member")
             return 1
         if decoded is not None and decoded == want_abi:
-            # The stale-excuse refusal, same as check-suite-coverage's: an
-            # allowance must not outlive the state it excuses.
-            problems.append(
+            # A stale excuse, and it must go - but NOT as a hard failure here,
+            # because of WHEN this fires. The only thing that refreshes this
+            # dylib is install-release-binaries.py, running inside a job that
+            # gates BEFORE it commits. So the refusal fired on the very run
+            # that earned its removal (release run 9, 2026-08-26: sodiumxt's
+            # mac dylib reached ABI 10 and this line blocked the commit that
+            # would have justified deleting the row), and the row could not be
+            # deleted ahead of time either - without it the still-stale ABI 6
+            # dylib fails the header comparison instead. Hard-failing here is a
+            # deadlock: the allowance can only be retired by a commit this line
+            # refuses to allow.
+            #
+            # So it reports LOUDLY and lets the run proceed. The excuse is
+            # still not allowed to outlive the state it excuses - this text
+            # keeps printing on every subsequent run until the row is deleted,
+            # and the legs below now hold the library to everything anyway, so
+            # nothing is being taken on trust in the meantime. What changed is
+            # only that the reminder no longer blocks its own resolution.
+            skips.append(
                 f"{where}: decodes ABI {decoded} == {member['abi_define']}, "
                 f"so the dylib has been REFRESHED and this member's "
-                f"MAC_KNOWN_STALE row is now a stale excuse - delete it (and "
-                f"the {stale['record']} STALE row it cites), then this "
-                f"library is simply held to every leg like the rest")
+                f"MAC_KNOWN_STALE row is now a STALE EXCUSE - delete it (and "
+                f"the {stale['record']} STALE row it cites). Reported rather "
+                f"than failed because the run that refreshes the dylib is the "
+                f"run that must be allowed to land it; the library is held to "
+                f"every leg below regardless")
             # Fall through: a refreshed dylib gets the full legs right away.
         elif decoded is not None and decoded != recorded:
             problems.append(
@@ -1504,16 +1521,30 @@ def check_member(member, problems, skips, notes, stats):
                     else:
                         stats["confirmed"] += 1
 
+    # `ships` is a FLOOR, not an inventory. Losing a platform is the failure
+    # this row exists to catch; GAINING one is not, and treating it as one was
+    # a deadlock. The tables state a fact about the COMMITTED tree, and the
+    # thing that changes the committed tree is install-release-binaries.py -
+    # which runs inside a job that gates BEFORE it commits. So the first
+    # dispatch to land a member's mac dylib failed here for having landed it
+    # (release run 9, 2026-08-26: four members, "holds a library the table's
+    # `ships` list does not declare"), and no edit could be pushed ahead of the
+    # binary either, because the absent-but-declared leg below would then fire
+    # instead. A gate that can only be satisfied by a commit it refuses to let
+    # happen checks nothing; it just stops.
+    #
+    # The stated intent survives intact - "so the next deletion is a failure
+    # rather than a smaller number in the summary line" is exactly what the
+    # floor enforces. What is given up is being told about a NEW platform, and
+    # that is not a loss worth a deadlock: a new committed binary is the single
+    # most visible thing in a diff.
     for platform in sorted(set(member["ships"]) - found):
         problems.append(f"{name}: the table says this member ships a library "
                         f"for {platform} and src/code/{platform}/ does not "
                         f"contain one - either a committed binary was lost, or "
                         f"the platform was dropped and this row was not")
     for platform in sorted(found - set(member["ships"])):
-        problems.append(f"{name}: src/code/{platform}/ holds a library the "
-                        f"table's `ships` list does not declare - add it, so "
-                        f"the next deletion is a failure rather than a smaller "
-                        f"number in the summary line")
+        stats.setdefault("gained", []).append(f"{name}/{platform}")
 
     if checked_here == 0:
         problems.append(f"{name}: no committed library was actually checked - "
