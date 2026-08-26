@@ -24,6 +24,8 @@ runtime.
 
 ---
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member — getting started, the full `bt*` API reference, the architecture map, the native build, and the original design brief.
+
 ## Features
 
 - **Add anything** — magnet links, `.torrent` files, and resume data; metadata is

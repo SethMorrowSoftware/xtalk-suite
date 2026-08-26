@@ -53,6 +53,8 @@ dumb websocket relays) without adding one line of cryptography of its own:
       ABI 10 package, 2026-08-23)
 ```
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes the numbered 00-09 series. If you just want to use NostrXT, jump straight to [`docs/09-usage-guide.md`](docs/09-usage-guide.md).
+
 ## Why this matters
 
 Most social and messaging platforms own three things the user should own:

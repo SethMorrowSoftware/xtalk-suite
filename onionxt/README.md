@@ -31,6 +31,8 @@ embed or ship Tor):
             +--> onion-httpd (oxh*) serves HTTP on that loop: sites, file shares, routes
 ```
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes the numbered 00-10 series. If you just want to use OnionXT, jump straight to [`docs/10-usage-guide.md`](docs/10-usage-guide.md).
+
 ## Why this matters
 
 Most peer-to-peer and messaging transports leak IP-layer metadata by default: who talks to whom, from

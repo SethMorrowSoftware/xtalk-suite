@@ -21,6 +21,8 @@ channel to another machine — or to a web browser** — that punches through NA
 (ICE/STUN/TURN), with reliable *and* unreliable delivery modes, ordered and
 unordered, from a dozen lines of script.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member — getting started (including the signalling shapes), the full `dc*` API reference, the threading design, and the native build.
+
 ## What it can do
 
 - **Talk to browsers.** A data channel opened here is a standard WebRTC data

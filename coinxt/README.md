@@ -35,6 +35,8 @@ CoinXT C shim (cnx_)   native/coinxt.c  +  vendored trezor-crypto (MIT, no exter
                             Schnorr, x-only keys, the Taproot tweak
 ```
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member, including the ones that live at the member root (SPEC, the plan, MIGRATION) so you do not have to know which is where.
+
 ## What CoinXT is NOT
 
 - **Not a wallet, node, or broadcaster.** It produces keys, addresses, and signed bytes. The app owns key

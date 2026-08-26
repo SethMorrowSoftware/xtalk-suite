@@ -6,6 +6,8 @@ design in `../docs/RIPTIDE-SOCIAL-SPEC.md`. No server, no account, no
 hosting bill: your identity is an ed25519 key you hold, following someone
 is knowing their key, and reaching them is verifying them.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages, and points at the capstone specification, which lives at suite level in [`../docs/RIPTIDE-SOCIAL-SPEC.md`](../docs/RIPTIDE-SOCIAL-SPEC.md).
+
 ## Status: all 7 phases BUILT; phases 1-4 DONE on two machines
 
 > **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded

@@ -24,6 +24,8 @@ cadence where someone is reachable (LAN, port forward, rented box);
 bulk. The 60 000-byte packet budget here is the seam — when a payload stops
 being a message, move it to torrents.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member — getting started, all 23 `en*` handlers, the architecture, and the build.
+
 ## What it can do
 
 - **Hosts and peers, not sockets.** `enHostCreateServer` /

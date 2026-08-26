@@ -19,6 +19,8 @@ gives xTalk apps the cryptography people actually need today, behind a small, fr
 It wraps the audited libsodium library, so you can delete hand-rolled crypto and just call
 `sx*` instead.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this member (getting started, the full `sx*` API reference, recipes, the security model, and the contributor build notes).
+
 ## Why
 
 The stock `encrypt ... using "aes-256-cbc" with password ...` path in xTalk has a weak key

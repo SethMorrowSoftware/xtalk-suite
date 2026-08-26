@@ -73,12 +73,15 @@ The step-by-step version (with troubleshooting) is in
 
 ## Documentation
 
+[`docs/README.md`](docs/README.md) is the full index, grouped by audience (the
+Kit, the raw binding, and the plans/records). The short version:
+
 | Doc | What's in it |
 |-----|--------------|
 | [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. |
 | [Kit guide](docs/kit-guide.md) | The friendly `b2k…` layer, taught start to finish. |
 | [Kit reference](docs/kit-reference.md) | Every `b2k…` handler, one line each. |
-| [API reference](docs/api-reference.md) | The raw `b2…` extension surface. |
+| [API reference](docs/api-reference.md) | The raw `b2…` extension surface. **Incomplete: ~231 of 376 public handlers** (measured 2026-08-26); the gap is mostly joint accessors. |
 | [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI. |
 | [Building](docs/building.md) | Compile the native library yourself with CMake. |
 | [Platformer polish plan](docs/platformer-polish-plan.md) | The plan to take the 7-level demo to its final form (transitions, feel, scenes). |

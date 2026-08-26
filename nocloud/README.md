@@ -15,6 +15,8 @@ BitTorrent DHT, with optional Tor anonymity and end-to-end encryption.
 > **[docs/what-it-hides.md](docs/what-it-hides.md)** — the honest page — before
 > sending anything sensitive.
 
+> **Documentation:** [`docs/README.md`](docs/README.md) indexes every page for this app. If you are deciding whether to trust it, start with [`docs/what-it-hides.md`](docs/what-it-hides.md) — that is the honest page.
+
 ## Three ways to share
 
 | Method | What it is | Your IP hidden? | Encrypted? | Recipient needs the app? |
