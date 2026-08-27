@@ -1127,8 +1127,31 @@ command slOpenSelected
       uiStatus "Could not open" && tName & ":" && tErr, "bad"
       exit slOpenSelected
    end try
+   -- nudge once if the card arrived empty - speaking BOTH lifecycles,
+   -- throw-proof (2026-08-27, reported from an engine: none of the six
+   -- box2dxt games launched). The games hang their build off the CARD
+   -- hooks (preOpenCard/openCard) and define no openStack at all, so the
+   -- old `send "openStack"` was a send to a handler that is not there -
+   -- which ERRORS, killing this handler before the reveal below: the
+   -- window stayed invisible, reading as "does not launch". The
+   -- stack-hook demos never hit that send (their preOpenStack/openStack
+   -- fire on the go above, so their card is never empty here), which is
+   -- why only the card-hook six failed. dispatch, never send - unhandled
+   -- is an answer, not an error - in the engine's open order; no
+   -- registry stack defines hooks from both families (measured
+   -- 2026-08-27), so only pre-before-open within a family is
+   -- load-bearing. A startup error in the demo's OWN handlers is
+   -- surfaced in red and its window still shown: an invisible
+   -- half-built stack is the one outcome worse than a red status line.
    if the number of controls of card 1 of stack tName is 0 then
-      send "openStack" to stack tName
+      try
+         dispatch "preOpenStack" to stack tName
+         dispatch "preOpenCard" to card 1 of stack tName
+         dispatch "openStack" to stack tName
+         dispatch "openCard" to card 1 of stack tName
+      catch tErr
+         uiStatus "Opening" && tName && "hit an error in its own startup:" && tErr, "bad"
+      end try
    end if
    -- a NEWLY opened window lands at the screen's center, positioned while
    -- it is still invisible so it never flickers across the move; a
