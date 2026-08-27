@@ -736,6 +736,19 @@ touching the `heNetOnion*` section:
     Outside play the old fail-closed "Join again" message stands. The redial
     hello carries the applied seq as a compatible trailing token item, so the
     reconnect replay arrives TRIMMED (the v0.23.0 contracts block below).
+  - **The library is CARRIED (2026-08-27, v0.25.2).** `start using onionxt`
+    is no longer a setup step: the stack embeds
+    `onionxt/src/onionxt.livecodescript` between `tools/sync-demo-embeds.py`
+    sentinels, with NO `DROP_HANDLERS` entry on purpose - this stack defines
+    no socket handlers of its own, so OnionXT's `on socket*` wrappers must
+    ride along or its sockets have nothing listening (a silent hang). The
+    four refusal messages name a damaged embed now instead of a missing
+    load, `heHasOnion` stays a live probe (false = damaged copy, still
+    fail-closed), and the suite fold CUTS the embedded span
+    (`build-suite-selftest.py` strip_spans on the holdem row) because the
+    paste already carries the layer once, verbatim - the coin-selftest
+    precedent. Measured at the embed: the regenerated paste diffed by ONE
+    line (the version constant), which is the cut working.
   The whole section is verified statically; the live two-machine tor session is
   the exit gate (harness section 17 pins the headless slice; section 20 pins
   the redial ordering).
@@ -982,7 +995,7 @@ user confirms in the IDE. This discipline is house law across the family.
 |---|---|---|---|---|
 | **TorrentXT** | `org.openxtalk.library.torrent` | `bt*` | Phase 2 | ABI v8+. Uses: session settings, `btAddInfohash` phantom swarms, `btDhtAnnounce`/`btDhtGetPeers`, **rp1** (`btRp1Enable/SetToken/Send/Poll`), BEP44 (`btDhtBep44SignBuf` + `btDhtPutSigned`, `btDhtGetMutable`), `btMapPort` for the optional direct-TCP upgrade. Also install its `torrent-helpers` poll dispatcher (`btStartPolling`). |
 | **SodiumXT** | `org.openxtalk.library.sodium` | `sx*` | Phase 2 (Phase 1 uses only `sxRandomBytes`/`sxHash` if installed) | Identity, sealing, commitments, randomness. **Phase 4's ristretto255 surface SHIPPED 2026-08-15** (SodiumXT ABI 8, `sxRistretto*`) **and Phase 5's DLEQ/batch surface too** (ABI 9, same day: add/sub, base-mult, batch, scalar add/mul) — cross-checked KATs green. (Corrected 2026-08-23: the "no `sxRistretto*` handler has run on an engine yet" that stood here went stale on 2026-08-17/18 - sodiumxt's ABI-9 section ran on both engines, batch included; what is still unrun is THIS member's calls to them.) |
-| **OnionXT** | script libraries `onionxt` (+ `onion-httpd`) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle: two `.livecodescript` libraries plus a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
+| **OnionXT** | script library `onionxt` (CARRIED in the stack since 2026-08-27) | `ox*` | **onion tables BUILT 2026-08-15 (2f, v0.20.0); oracle hosting BUILT 2026-08-16 (Phase 3, v0.21.0** -- the oracle's service seed derives under its own domain tag, kHeDomainOracle**)** -- optional per table (the host picks the transport at Create; a DHT table never touches it) | Not an extension bundle - and since 2026-08-27 (v0.25.2) not a separate load here either: `src/holdem.livecodescript` CARRIES `onionxt` between `tools/sync-demo-embeds.py` sentinels, so `start using onionxt` is no longer a setup step (this stack calls nothing from `onion-httpd`, so only the core library is carried - the "(+ onion-httpd)" this row used to name was never used here). The runtime requirement is a **locally running tor daemon** (SOCKS 9050, control 9051; assume-running, fail-closed). Needs SodiumXT ABI >= 6 for deterministic onions, ABI 7 (`sxSha3_256`) for the offline invite address. Verified statically; needs the two-machine live-tor pass (+ the three-machine oracle round). |
 | **Box2Dxt** | `org.openxtalk.box2dxt` + the Kit stack | `b2*` / `b2k*` | Phase 1 | Presentation only: spritesheet cards, physics chips, the `on b2kFrame` loop. The Kit is a `.livecodescript` stack (`box2dxt-kit`); whether this repo `start using`s it or embeds a synced copy between sentinels (the Box2Dxt-examples pattern) is a Phase 1 decision recorded in the plan. |
 
 Install all of them through the OXT **Extension Manager**; each bundles its native
@@ -1299,8 +1312,9 @@ tools/atlas-kat.py                 Kenney card atlas <-> frame-name mapping
 tools/sounds-kat.py                vendored casino WAVs <-> stack mapping
 tools/logic-fuzz.py                INDEPENDENT-reference fuzz (rules, not the port)
 assets/cards/, assets/sounds/      vendored Kenney CC0 art + audio (see NOTICE.md)
-src/holdem.livecodescript          the whole thing: game + self-test + sodium probe,
-                                   one self-building paste-and-run stack
+src/holdem.livecodescript          the whole thing: game + self-test + sodium probe
+                                   + the carried onionxt layer (sync-demo-embeds
+                                   sentinels), one self-building paste-and-run stack
 .github/workflows/ci.yml           the standalone mirror's CI; INERT in the suite
                                    (tools/build-all.sh --gates runs the same set here)
 ```

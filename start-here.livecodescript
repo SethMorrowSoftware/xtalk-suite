@@ -1,17 +1,28 @@
 script "SuiteStartHere"
 
 -- start-here.livecodescript - the suite's front door. Download the repo,
--- open THIS file in OpenXTalk (File > Open Stack), and you get a clickable
--- directory of every sample, demo and harness stack, listed by the relative
--- path it has in this repository. Click a path to read what it is and what
--- it needs; Open (or double-click) launches it in place.
+-- paste THIS file into a new stack script, SAVE that stack in the repository
+-- root, and reopen it: you get a clickable directory of every sample, demo
+-- and harness stack, listed by the relative path it has in this repository.
+-- Click a path to read what it is and what it needs; Open (or double-click)
+-- launches it in place.
 --
--- HOW IT RESOLVES PATHS: a script-only stack opened from disk knows its own
--- file path (`the filename of this stack`), and this file lives at the
--- REPOSITORY ROOT - so every entry is simply root + the relative path shown.
--- Nothing is copied or installed; the stacks open from where the download
--- put them. If the status line reports missing files, the download is
--- incomplete or this file was moved out of the repo root.
+-- NOT `File > Open Stack` on this file. This header said exactly that until
+-- 2026-08-27, four lines above the paragraph documenting the opposite: a
+-- script-only file is TEXT, so opening one loads the script and builds no
+-- window (docs/OXT-ENGINE-NOTES.md 5.5). The whole point of this launcher is
+-- that a reader should not have to know that, and its own front matter was
+-- the last place still teaching it.
+--
+-- HOW IT RESOLVES PATHS: the running stack knows its own file path (`the
+-- filename of this stack`), and every entry is simply that file's folder plus
+-- the relative path shown - so the stack CARRYING this script has to sit in
+-- the REPOSITORY ROOT. Save it beside README.md before you open it; an
+-- unsaved stack has no filename at all, and slProbe below says so in the
+-- status line rather than listing every demo as missing. Nothing is copied or
+-- installed; the stacks open from where the download put them. If the status
+-- line reports missing files, the download is incomplete or the host stack
+-- was saved somewhere other than the repo root.
 --
 -- WHAT OPENING DOES (the paste ritual, automated): a script-only file is
 -- TEXT - on this engine, going to the file does not produce a built
@@ -20,9 +31,12 @@ script "SuiteStartHere"
 -- script, open it. So that is exactly what Open does: read the file,
 -- CREATE an invisible host stack named by the file's own `script "..."`
 -- line, SET its script (a compile error surfaces right here, with the
--- demo's name on it), GO to it so openStack builds the window, nudge
--- openStack once if the card arrived empty, then reveal the finished
--- window. There is nothing to wire up before that: a stack that needs a
+-- demo's name on it), GO to it so its own open handlers build the window,
+-- nudge the FULL open sequence once if the card arrived empty (both
+-- lifecycles, dispatched never sent - the box2dxt games build in the CARD
+-- hooks and define no openStack; a send to a handler that is not there
+-- errors, which is exactly how they used to not launch), then reveal the
+-- finished window. There is nothing to wire up before that: a stack that needs a
 -- script library CARRIES it, embedded verbatim by tools/sync-demo-embeds.py,
 -- so not one registry row declares a helper today - and
 -- tools/check-launcher-registry.py now refuses a row that names a helper its
@@ -626,7 +640,7 @@ function slRegistry
    put "box2dxt/examples/box2dxt-contraption-builder.livecodescript||the box2dxt extension||Build machines from parts (motors, ropes, magnets, thrusters...), then hit PLAY and watch the physics run them." & return after tR
    put "box2dxt/examples/box2dxt-spike-gamekit.livecodescript||the box2dxt extension||The game-Kit capability spike: timers, keyboard, sprites, rays, camera - one button per probe." & return after tR
    put "box2dxt/examples/box2dxt-selftest.livecodescript||the box2dxt extension||box2dxt's own harness: the b2* binding surface exercised end to end." & return after tR
-   put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online.|Serverless Texas Hold'em: hotseat now, online tables over the DHT, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
+   put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables; a local tor daemon for onion tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online. Self-contained: carries onionxt.|Serverless Texas Hold'em: hotseat now, online tables over the DHT or Tor, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
    put "tests/preflight.livecodescript||every extension you have (absent ones SKIP, not fail)|GENERATED from the C shims' ABI macros. Nothing to install first, no start-using step. It TAKES the one torrent session and gives it straight back, so run it BEFORE any SESSION stack in this OXT launch.|Answers the pass's first question - can this machine run it at all? - in the first minute: one table of LOADED/ABSENT rows, each extension's own ABI guard doing the checking." & return after tR
    put "tests/suite-selftest.livecodescript||every extension you have (absent ones SKIP, not fail)|SESSION: starts the one torrent session. GENERATED from the member harnesses.|The whole suite's self-test in one window: TEN folded harnesses - the seven extension members (nostrxt joined 2026-08-23) plus riptide, box2dxt and holde-em - over the core's own cross-member sections. The 2026-08-17 Windows pass ran 1,836 folded member checks with zero failures and 7 skips; the core's sections run on top of that. Copy-results button for the pass record." & return after tR
    put "tests/suite-closing-pass.livecodescript||varies by section (each says what it needs)|Two machines for sections B-E; a tor binary for F. SESSION.|The remaining runbook legs as a checklist: ENet chat, torrent resume-from-disk, rp1 chat, DHT-signalled WebRTC, live Tor." & return after tR
@@ -689,7 +703,7 @@ command slProbe
    local tRoot, tOldDelim, tLine, tRel, tMissing, tCount
    put slRoot() into tRoot
    if tRoot is empty then
-      uiStatus "Open this stack FROM THE REPO (File > Open Stack on start-here.livecodescript) so relative paths can resolve.", "bad"
+      uiStatus "SAVE this stack in the repo root (beside README.md), then reopen it, so relative paths can resolve.", "bad"
       exit slProbe
    end if
    put 0 into tCount
@@ -1127,8 +1141,31 @@ command slOpenSelected
       uiStatus "Could not open" && tName & ":" && tErr, "bad"
       exit slOpenSelected
    end try
+   -- nudge once if the card arrived empty - speaking BOTH lifecycles,
+   -- throw-proof (2026-08-27, reported from an engine: none of the six
+   -- box2dxt games launched). The games hang their build off the CARD
+   -- hooks (preOpenCard/openCard) and define no openStack at all, so the
+   -- old `send "openStack"` was a send to a handler that is not there -
+   -- which ERRORS, killing this handler before the reveal below: the
+   -- window stayed invisible, reading as "does not launch". The
+   -- stack-hook demos never hit that send (their preOpenStack/openStack
+   -- fire on the go above, so their card is never empty here), which is
+   -- why only the card-hook six failed. dispatch, never send - unhandled
+   -- is an answer, not an error - in the engine's open order; no
+   -- registry stack defines hooks from both families (measured
+   -- 2026-08-27), so only pre-before-open within a family is
+   -- load-bearing. A startup error in the demo's OWN handlers is
+   -- surfaced in red and its window still shown: an invisible
+   -- half-built stack is the one outcome worse than a red status line.
    if the number of controls of card 1 of stack tName is 0 then
-      send "openStack" to stack tName
+      try
+         dispatch "preOpenStack" to stack tName
+         dispatch "preOpenCard" to card 1 of stack tName
+         dispatch "openStack" to stack tName
+         dispatch "openCard" to card 1 of stack tName
+      catch tErr
+         uiStatus "Opening" && tName && "hit an error in its own startup:" && tErr, "bad"
+      end try
    end if
    -- a NEWLY opened window lands at the screen's center, positioned while
    -- it is still invisible so it never flickers across the move; a

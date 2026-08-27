@@ -81,8 +81,9 @@ same stack; `docs/getting-started.md` walks the real thing.
 
 ## Try it now (no network, no setup)
 
-Open `examples/datachannel-loopback.livecodescript` as a stack script - one
-paste-and-run file, the poll dispatcher carried inside it, nothing to load
+Paste `examples/datachannel-loopback.livecodescript` into a stack script and
+reopen the stack (opening the file itself builds no window - `docs/OXT-ENGINE-NOTES.md`
+5.5 in the suite root) - one paste-and-run file, the poll dispatcher carried inside it, nothing to load
 alongside: two real WebRTC peers negotiate inside one process — offer, answer,
 ICE, DTLS, SCTP — and you chat between two panes. If that works, the whole
 pipeline works; real signaling is the only thing left to add.

@@ -449,6 +449,18 @@ MEMBERS = [
         # total namespacing exists to prevent. Prefixed, he1b2kFrame is
         # dispatched by nobody, which is exactly what happens standalone: this
         # stack calls b2kFrameTarget NOWHERE (carried gotcha 19).
+        #
+        # THE THIRD HARNESS THAT CARRIES ITS OWN LIBRARY (2026-08-27): the
+        # stack embeds onionxt/src/onionxt.livecodescript so its onion tables
+        # need no `start using onionxt` step (tools/sync-demo-embeds.py). The
+        # paste ALREADY embeds that layer once, verbatim and unprefixed, so
+        # this copy is cut before the fold - the coin-selftest precedent.
+        # Left in, the rename would prefix onionxt's whole surface (2100
+        # dead he1ox* lines) INCLUDING its `on socketError` wrappers, whose
+        # prefixed spellings the engine would never dispatch to.
+        strip_spans=((
+            "-- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>",
+            "-- <<< END EMBEDDED LIBRARIES <<<"),),
         drop_extra=(
             # The engine hooks and the bet slider's scrollbar messages - the ones
             # DROP_HANDLERS does not already cover. They are here rather than in

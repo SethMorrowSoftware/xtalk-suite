@@ -22,7 +22,11 @@ datachannelxt/ as subfolders) become mirrors. Development happens here.
 openxtalk-libraries/
   README.md            the suite front door + the honest release matrix
   start-here.livecodescript
-                       the RUNNABLE front door: open it in OXT for a
+                       the RUNNABLE front door: paste it into a stack script
+                       SAVED IN THE REPO ROOT and reopen (never `File > Open
+                       Stack` on the file itself - engine notes 5.5, which
+                       this launcher's own header taught wrongly until
+                       2026-08-27) for a
                        clickable directory of every demo/harness stack by
                        repo-relative path (launches them in place; each
                        stack now CARRIES the libraries it needs, so no
@@ -253,8 +257,9 @@ here, and it works like the two above: the master is
 `<member>/src/*.livecodescript` - still the single source of truth and the right
 dependency for a real project - a verbatim copy lives between sentinels in each
 shipped demo, and `--check` is in the gate set and fails the build when a copy
-drifts. FIFTEEN demos carry a library today (the gate prints the count; take it
-from there, not from here); nobody hand-edits inside the sentinels.
+drifts. SIXTEEN demos carry a library today (the gate prints the count; take it
+from there, not from here - holde-em joined 2026-08-27, carrying onionxt so its
+onion tables need no `start using` step); nobody hand-edits inside the sentinels.
 The point is that `start using stack "coinxt"` is a wiring step most readers
 meet as an error message, so a demo stays ONE file you paste and open. **The
 embed goes ABOVE the demo's own code** (below its `script "..."` line and its
