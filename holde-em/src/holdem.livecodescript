@@ -8,6 +8,22 @@ message box (interactive -- report panel, clipboard, msg) and heSelfTest()
 (quiet -- returns the report as a value and touches nothing). No second
 stack, no required extensions to be playable.
 
+v0.25.1 -- LEAF TRANCHE 2 (2026-08-27). NO WIRE CHANGED -- not a byte.
+kHeVersion 0.25.0 -> 0.25.1, kHeHarnessV 42 -> 43 (a new section, so a
+stale paste identifies itself); kUIVersion stays 15 (no chrome moved).
+  * SECTION 23 ADDED (heTestLeafRun2): the second tranche of the suite
+    coverage gate's no-test worklist, 27 handlers moved out of the
+    baseline (129 -> 102), written the morning of a two-machine OXT
+    session so the evening paste carries it. Same selection rule and the
+    same shallow-on-purpose banner as section 22: pure functions (card
+    faces, hand labels, the circular seat walkers, the wire splitter,
+    the rejection sampler -- its throw leg included) plus gGame-only
+    leaves driven on a synthetic gGame saved/restored around the block
+    (call/pot arithmetic, liveness, pacing, seats-alive, contributor
+    positions, turn allowances, the header/invite text, the log
+    appender). Nothing arms a timer, touches a control, plays a sound,
+    or crosses an FFI. Verified statically; needs an OXT pass.
+
 v0.25.0 -- THE BATCHED SHUFFLE-MASK STEP + THE LEAF TRANCHE (2026-08-23).
 NO WIRE CHANGED -- not a byte: every pinned record format and void string
 stands, and protocol-kat's existing pins are untouched (it grew NEW pins
@@ -1092,8 +1108,8 @@ needs an OXT pass.
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.25.0"
-constant kHeHarnessV = "42"
+constant kHeVersion = "0.25.1"
+constant kHeHarnessV = "43"
 constant kUIVersion = "15"
 
 -- card contract (mirrored in tools/evaluator-kat.py): index 1..52,
@@ -12499,6 +12515,7 @@ command heTestRunAllSections
    heRunSection "heTestLivenessRun"
    heRunSection "heTestHelpersRun"
    heRunSection "heTestLeafRun"
+   heRunSection "heTestLeafRun2"
    heRunSection "heProbeSodium"
 end heTestRunAllSections
 
@@ -15290,6 +15307,184 @@ command heTestLeafRun
    heTContains "leaf: ...and says why on the status line", gGame["statusTxt"], "hotseat"
    put tSaved into gGame
 end heTestLeafRun
+
+command heTestLeafRun2
+   -- 23: SECOND TRANCHE of the coverage worklist's no-test category,
+   -- written 2026-08-27 so tonight's OXT pass carries it. SHALLOW ON
+   -- PURPOSE and this banner says so (the section-22 precedent): a value
+   -- pin per branch, claiming "this leaf computes what its contract says"
+   -- and nothing deeper. Selection rule, same as 22: pure functions and
+   -- handlers whose only state is gGame, driven on a SYNTHETIC gGame
+   -- saved and restored around the block -- nothing here arms a timer,
+   -- touches a control, plays a sound, or crosses an FFI.
+   local tSaved, tA, tCaught, tErr, tContentExp, tEnvExp, tLine, tTxt
+   put return & "-- 23. Leaf tranche 2: no-test worklist, second pass (shallow)" & return after gRpt
+   set the itemDelimiter to comma
+
+   -- heCardFace / heSuitGlyph / heKenneyFrame: the three card-face maps
+   -- (status line, glyph, atlas frame), pinned at the corners and the
+   -- ten (the one rank that renders as two chars)
+   heTAssert "leaf2: heCardFace of 52 (As)", heCardFace(52), "A" & numToCodepoint(9824)
+   heTAssert "leaf2: heCardFace of 36 (Ts) shows 10", heCardFace(36), "10" & numToCodepoint(9824)
+   heTAssert "leaf2: heCardFace of 1 (2c)", heCardFace(1), "2" & numToCodepoint(9827)
+   heTAssert "leaf2: heSuitGlyph 1 is clubs", heSuitGlyph(1), numToCodepoint(9827)
+   heTAssert "leaf2: heSuitGlyph 2 is diamonds", heSuitGlyph(2), numToCodepoint(9830)
+   heTAssert "leaf2: heSuitGlyph 3 is hearts", heSuitGlyph(3), numToCodepoint(9829)
+   heTAssert "leaf2: heSuitGlyph 4 is spades", heSuitGlyph(4), numToCodepoint(9824)
+   heTAssert "leaf2: heSuitGlyph out of range is the ? sentinel", heSuitGlyph(7), "?"
+   heTAssert "leaf2: heKenneyFrame of 1 (2c)", heKenneyFrame(1), "cardClubs2"
+   heTAssert "leaf2: heKenneyFrame of 36 (Ts) spells 10", heKenneyFrame(36), "cardSpades10"
+   heTAssert "leaf2: heKenneyFrame of 52 (As)", heKenneyFrame(52), "cardSpadesA"
+
+   -- heHandLabel: the packed-rank category names the status line prints
+   heTAssert "leaf2: heHandLabel 08 is straight flush", heHandLabel("081400000000"), "straight flush"
+   heTAssert "leaf2: heHandLabel 06 is full house", heHandLabel("060203000000"), "full house"
+   heTAssert "leaf2: heHandLabel 04 is straight", heHandLabel("041400000000"), "straight"
+   heTAssert "leaf2: heHandLabel 00 is high card", heHandLabel("001413121109"), "high card"
+
+   -- heIsCardList: the transcript-fold guard, every refusal branch
+   heTAssert "leaf2: heIsCardList accepts an exact list", heIsCardList("1,2,52", 3), true
+   heTAssert "leaf2: heIsCardList refuses a short list", heIsCardList("1,2", 3), false
+   heTAssert "leaf2: heIsCardList refuses card 0", heIsCardList("0,2,3", 3), false
+   heTAssert "leaf2: heIsCardList refuses card 53", heIsCardList("53,2,3", 3), false
+   heTAssert "leaf2: heIsCardList refuses a fraction", heIsCardList("2.5,3,4", 3), false
+   heTAssert "leaf2: heIsCardList refuses non-numeric text", heIsCardList("x,2,3", 3), false
+
+   -- the circular seat walkers under the button/blind schedule
+   heTAssert "leaf2: heNextLiveAfterPos steps forward", heNextLiveAfterPos("1,3,5", 3), 5
+   heTAssert "leaf2: heNextLiveAfterPos wraps", heNextLiveAfterPos("1,3,5", 5), 1
+   heTAssert "leaf2: heNextLiveAfterPos from a busted position", heNextLiveAfterPos("1,3,5", 4), 5
+   heTAssert "leaf2: hePrevLiveBeforePos steps back", hePrevLiveBeforePos("1,3,5", 3), 1
+   heTAssert "leaf2: hePrevLiveBeforePos wraps", hePrevLiveBeforePos("1,3,5", 1), 5
+   heTAssert "leaf2: hePrevLiveBeforePos from a busted position", hePrevLiveBeforePos("1,3,5", 4), 3
+   heTAssert "leaf2: heRotateAfter reorders past the entry", heRotateAfter("1,3,5", 3), "5,1,3"
+   heTAssert "leaf2: heRotateAfter of the last entry is unchanged", heRotateAfter("1,3,5", 5), "1,3,5"
+   heTAssert "leaf2: heRotateAfter of an absent entry is unchanged", heRotateAfter("1,3,5", 4), "1,3,5"
+
+   -- heSpeedMult / heDeltaOfTxt / heTempPath / heLogField / the labels
+   heTAssert "leaf2: heSpeedMult fast halves", heSpeedMult("fast"), 0.5
+   heTAssert "leaf2: heSpeedMult slow stretches", heSpeedMult("slow"), 1.6
+   heTAssert "leaf2: heSpeedMult default is 1", heSpeedMult("normal"), 1.0
+   heTAssert "leaf2: heDeltaOfTxt finds a negative delta", heDeltaOfTxt("1:25|3:-25", 3), -25
+   heTAssert "leaf2: heDeltaOfTxt of an absent seat is 0", heDeltaOfTxt("1:25|3:-25", 5), 0
+   heTAssert "leaf2: heDeltaOfTxt of malformed text is 0", heDeltaOfTxt("junk", 3), 0
+   heTAssert "leaf2: heTempPath is the fixed scratch name", heTempPath(), "he_rendezvous"
+   heTAssert "leaf2: heLogField picks a tab field", heLogField("a" & tab & "b" & tab & "c", 2), "b"
+   heTAssert "leaf2: heTransportLabel onion", heTransportLabel("onion"), "Host over: Tor"
+   heTAssert "leaf2: heTransportLabel default is DHT", heTransportLabel("dht"), "Host over: DHT"
+   heTAssert "leaf2: heHostModeLabel oracle", heHostModeLabel("oracle"), "Host: ORACLE"
+   heTAssert "leaf2: heHostModeLabel default is playing", heHostModeLabel("x"), "Host: playing"
+
+   -- heDrawUniform: value+offset packing, rejection sampling, exhaustion
+   heTAssert "leaf2: heDrawUniform draws 1 from a zero word", heDrawUniform("00000000", 1, 5), "1,9"
+   heTAssert "leaf2: heDrawUniform rejects the biased top word", \
+         heDrawUniform("ffffffff" & "00000003", 1, 5), "4,17"
+   put "no throw" into tCaught
+   try
+      get heDrawUniform("00", 1, 5)
+   catch tErr
+      put tErr into tCaught
+   end try
+   heTContains "leaf2: heDrawUniform throws on an exhausted stream", tCaught, "he-stream-exhausted"
+
+   -- heEnvWireParse: the 10-field wire split plus BOTH signed spans, and
+   -- the caller's itemDelimiter restored (its stated contract)
+   put "1" & tab & "TBLHEX" & tab & "7" & tab & "3" & tab & "act" & tab & "aabb" into tContentExp
+   put tContentExp & tab & "SENDSIG" & tab & "9" & tab & "PREVHEX" into tEnvExp
+   put tEnvExp & tab & "HOSTSIG" into tLine
+   set the itemDelimiter to "|"
+   put heEnvWireParse(tLine) into tA
+   heTAssert "leaf2: heEnvWireParse restores the itemDelimiter", the itemDelimiter, "|"
+   set the itemDelimiter to comma
+   heTAssert "leaf2: heEnvWireParse from-seat field", tA["from"], 3
+   heTAssert "leaf2: heEnvWireParse type field", tA["type"], "act"
+   heTAssert "leaf2: heEnvWireParse bodyHex field", tA["bodyHex"], "aabb"
+   heTAssert "leaf2: heEnvWireParse seq field", tA["seq"], 9
+   heTAssert "leaf2: heEnvWireParse hostSig field", tA["hostSig"], "HOSTSIG"
+   heTAssert "leaf2: heEnvWireParse contentLine is items 1-6", tA["contentLine"], tContentExp
+   heTAssert "leaf2: heEnvWireParse envLine is items 1-9", tA["envLine"], tEnvExp
+
+   -- the gGame-reading leaves, on a SYNTHETIC gGame (the section-22
+   -- pattern): saved above the block, restored below it, no timer armed
+   put gGame into tSaved
+   put empty into gGame
+   put 100 into gGame["state"]["betCur"]
+   put 40 into gGame["state"]["streetBy"][3]
+   put 1000 into gGame["state"]["stackBy"][3]
+   put 0 into gGame["state"]["streetBy"][5]
+   put 25 into gGame["state"]["stackBy"][5]
+   heTAssert "leaf2: heCallAmountFor owes the difference", heCallAmountFor(3), 60
+   heTAssert "leaf2: heCallAmountFor caps at the stack", heCallAmountFor(5), 25
+   put "hand" into gGame["phase"]
+   heTAssert "leaf2: heHandLive true in the acting phase", heHandLive(), true
+   put "runout" into gGame["phase"]
+   heTAssert "leaf2: heHandLive true through the runout", heHandLive(), true
+   put "1,3" into gGame["state"]["occ"]
+   put 50 into gGame["state"]["handBy"][1]
+   put 70 into gGame["state"]["handBy"][3]
+   heTAssert "leaf2: heCurrentPot sums the live hand", heCurrentPot(), 120
+   put "between" into gGame["phase"]
+   heTAssert "leaf2: heHandLive false between hands", heHandLive(), false
+   heTAssert "leaf2: heCurrentPot is 0 between hands", heCurrentPot(), 0
+   put 250 into gGame["paceDeal"]
+   heTAssert "leaf2: hePaceMs reads the scaled beat", hePaceMs("paceDeal", 900), 250
+   heTAssert "leaf2: hePaceMs falls back to the default", hePaceMs("paceNever", 900), 900
+   put 4 into gGame["numSeats"]
+   put 100 into gGame["stacksBy"][1]
+   put 0 into gGame["stacksBy"][2]
+   put 50 into gGame["stacksBy"][3]
+   put 0 into gGame["stacksBy"][4]
+   heTAssert "leaf2: heSeatsAlive lists funded seats", heSeatsAlive(), "1,3"
+   put 0 into gGame["stacksBy"][1]
+   put 0 into gGame["stacksBy"][3]
+   heTAssert "leaf2: heSeatsAlive of a broke table is empty", heSeatsAlive(), empty
+   put 3 into gGame["oDeal"]["dealCount"]
+   heTAssert "leaf2: heNetContribCount is the dealt seats", heNetContribCount(), 3
+   put "true" into gGame["oDeal"]["oracleDeal"]
+   heTAssert "leaf2: heNetContribCount adds the oracle position", heNetContribCount(), 4
+   put "x" into gGame["oDeal"]["dealCount"]
+   heTAssert "leaf2: heNetContribCount of no deal is 0", heNetContribCount(), 0
+   put "2,5,9" into gGame["state"]["occ"]
+   heTAssert "leaf2: heNetSeatPos packs seat 5 to position 2", heNetSeatPos(5), 2
+   heTAssert "leaf2: heNetSeatPos packs seat 9 to position 3", heNetSeatPos(9), 3
+   heTAssert "leaf2: heNetSeatPos of an undealt seat is 0", heNetSeatPos(4), 0
+   put "true" into gGame["sitOutBy"][2]
+   heTAssert "leaf2: heNetTurnLimitSecs of a sat-out seat is 0", heNetTurnLimitSecs(2), 0
+   put "act=12,bank=34" into gGame["cfgBody"]
+   heTAssert "leaf2: heNetTurnLimitSecs adds the unspent bank", heNetTurnLimitSecs(3), 46
+   put "true" into gGame["oDeal"]["bankUsedBy"][4]
+   heTAssert "leaf2: heNetTurnLimitSecs after the bank is spent", heNetTurnLimitSecs(4), 12
+   put empty into gGame["cfgBody"]
+   heTAssert "leaf2: heNetTurnLimitSecs default is act+bank", heNetTurnLimitSecs(3), 90
+   put 3 into gGame["handNum"]
+   put "idle" into gGame["phase"]
+   put 10 into gGame["sb"]
+   put 20 into gGame["bb"]
+   put 0 into gGame["ante"]
+   put "off" into gGame["levelMode"]
+   put 0 into gGame["curLevel"]
+   put heHeaderTxt() into tTxt
+   heTContains "leaf2: heHeaderTxt names the hand", tTxt, "Hand 3"
+   heTContains "leaf2: heHeaderTxt names the blinds", tTxt, "Blinds 10/20"
+   heTAssert "leaf2: heHeaderTxt omits a zero ante", offset("Ante", tTxt), 0
+   put 25 into gGame["ante"]
+   heTContains "leaf2: heHeaderTxt names a live ante", heHeaderTxt(), "Ante 25"
+   put "AB12" into gGame["tableIdHex"]
+   put "onion" into gGame["transport"]
+   put "xyz.onion" into gGame["onionAddrTxt"]
+   heTAssert "leaf2: heInviteTxt carries the onion endpoint", heInviteTxt(), "AB12@xyz.onion"
+   put "dht" into gGame["transport"]
+   heTAssert "leaf2: heInviteTxt is the bare code on DHT", heInviteTxt(), "AB12"
+   put "onion" into gGame["transport"]
+   put empty into gGame["onionAddrTxt"]
+   heTAssert "leaf2: heInviteTxt falls back with no address", heInviteTxt(), "AB12"
+   put 3 into gGame["handNum"]
+   put empty into gGame["log"]
+   heLogAppend "handStart", "table", "seats=1|3"
+   heTAssert "leaf2: heLogAppend grows the log one line", the number of lines of gGame["log"], 1
+   heTContains "leaf2: ...carrying the wire type", gGame["log"], "handStart"
+   put tSaved into gGame
+end heTestLeafRun2
 
 function heTIdxOf pNamesTxt
    local tOut, tNameTxt, tNames
