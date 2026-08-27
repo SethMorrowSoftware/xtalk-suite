@@ -34,16 +34,14 @@ MAC, never a way to encrypt bytes - the argued exception in `docs/security.md`.)
 ## Requirements
 
 - OpenXTalk, or LiveCode 9.6.3+ (anything that loads LiveCode Builder extensions).
-- Desktop platforms: **Linux** (x86_64, x86) and **Windows** (64- and 32-bit) at **ABI 10**;
-  **macOS** (universal) at **ABI 6**. The matching native library ships bundled inside the
-  extension; there is nothing to install separately, and no `LD_LIBRARY_PATH` or `sudo` needed.
-- **The committed `universal-mac` dylib is four ABIs behind**, so on macOS `sxSha3_256`
-  (ABI 7), the whole `sxRistretto*` surface (ABI 8/9) and `sxChaCha20IetfXor` (ABI 10) do not
-  exist yet: that row needs the first mac dispatch of `release-binaries.yml` (its universal mac
-  lanes landed 2026-08-23) or a manual `lipo` build. Until then, do not repackage the extension
-  from this tree on macOS - a package whose `.lcb` says 10 and whose binary says 6 throws
-  `"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the FIRST call. The
-  per-platform table, with what each row was built from, is in `CLAUDE.md`.
+- Desktop platforms: **Linux** (x86_64, x86), **Windows** (64- and 32-bit) and **macOS**
+  (universal, x86_64 + arm64) - **all five at ABI 10** since release run 12 (2026-08-27),
+  which replaced the mac dylib that had sat at ABI 6. The matching native library ships
+  bundled inside the extension; there is nothing to install separately, and no
+  `LD_LIBRARY_PATH` or `sudo` needed. (A package built from a pre-run-12 tree on macOS
+  throws `"SodiumXT ABI mismatch ... Reinstall the packaged extension."` from the FIRST
+  call - repackage from the current tree rather than debugging it.) The per-platform
+  table, with what each row was built from, is in `CLAUDE.md`.
 
 ## Install
 

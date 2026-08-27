@@ -33,7 +33,7 @@ Windows x64/x86 at ABI 10: ABI 8 added the ristretto255 group surface
 2026-08-15, ABI 9, the same day, its DLEQ/batch follow-ons, and ABI 10
 (2026-08-23) the raw IETF ChaCha20 stream xor for NIP-44, on the argued
 exception in `sodiumxt/docs/security.md`;
-`universal-mac` four ABIs behind, pending the first mac dispatch of `release-binaries.yml` - its universal mac lanes landed 2026-08-23 - or a manual `lipo` build).
+`universal-mac` at ABI 10 too since release run 12, 2026-08-27, which replaced the hand-lipo'd ABI-6 dylib that had sat four behind).
 
 - **Secret-key authenticated encryption** — XChaCha20-Poly1305, with or
   without associated data: `sxSecretBox`, `sxAeadEncrypt`.
@@ -71,8 +71,9 @@ exception in `sodiumxt/docs/security.md`;
 ## torrentxt — the full BitTorrent protocol (`bt*`)
 
 Wraps **libtorrent-rasterbar 2.0.11** (+ Boost), statically linked. 85
-public handlers, ABI v11. Binaries: Linux + Windows x64/x86 (macOS needs
-a manual universal, codesigned build).
+public handlers, ABI v11. Binaries: all five platforms (`universal-mac`
+first landed by release run 12, 2026-08-27 - unsigned, per the accepted
+2026-08-23 distribution decision).
 
 - **Download and seed anything, v1 + v2** — magnets, `.torrent` files,
   bare info-hashes, resume data; create-and-seed your own:
@@ -102,7 +103,8 @@ a manual universal, codesigned build).
 ## enetxt — game-grade reliable UDP (`en*`)
 
 Wraps **ENet 1.3.18**, statically linked. 23 public handlers, ABI v2.
-Binaries: Linux + Windows x64/x86 (no macOS yet).
+Binaries: all five platforms (`universal-mac` first landed by release run 12,
+2026-08-27).
 
 - **Hosts and peers, not sockets** — server and client hosts, several per
   process: `enHostCreateServer`, `enHostCreateClient`, `enConnect`.
@@ -129,7 +131,8 @@ Binaries: Linux + Windows x64/x86 (no macOS yet).
 
 Wraps **libdatachannel 0.24.5** (with vendored libjuice for ICE and
 usrsctp for SCTP; DTLS via system OpenSSL). 31 public handlers.
-Binaries: Linux + Windows x64/x86 (no macOS yet).
+Binaries: all five platforms (`universal-mac` first landed by release run 12,
+2026-08-27).
 
 - **Peer connections with real NAT traversal** — ICE/STUN/TURN punches
   through two home NATs with no router config: `dcCreatePeer`,
@@ -242,7 +245,8 @@ five platforms**. Ships as `org.openxtalk.box2dxt` (predates the
 
 Wraps **trezor-crypto** (pinned; plain C, no external deps) plus
 **bitcoin-core/secp256k1** (vendored 2026-08-16 for BIP-340). 90 public
-handlers, ABI 6. Binaries: Linux + Windows x64/x86 (macOS pending).
+handlers, ABI 6. Binaries: all five platforms (`universal-mac` first landed
+by release run 12, 2026-08-27, both slices KAT-driven at birth).
 
 - **The hash surface both chains need** — Keccak-256 (Ethereum) vs
   SHA3-256 (NIST), SHA-256/512, RIPEMD-160, `cxHash160` / `cxHash256`,

@@ -782,13 +782,16 @@ command pfNextSection
    end try
    if tPlatform is "MacOS" then
       -- Quoted from sodiumxt/CLAUDE.md's platform table by the generator, so
-      -- these two numbers cannot drift from the member's own record of them.
+      -- these numbers cannot drift from the member's own record of them - and
+      -- the generator emits a DIFFERENT note when the recorded mac ABI matches
+      -- the binding, because "a skew here is the known state" is only true
+      -- while the record says the dylib is behind.
       stNote ""
-      stNote "MACOS: a SodiumXT ABI SKEW above is the KNOWN RECORDED STATE here,"
-      stNote "not a new defect - the committed universal-mac dylib is at ABI 6"
-      stNote "against this binding's 10 (sodiumxt/CLAUDE.md's platform table;"
-      stNote "runbook section 2.1's warning). Record it once and move to what a"
-      stNote "Mac CAN run today (runbook S5); it needs the release workflow mac dispatch or the manual lipo build."
+      stNote "MACOS: the committed universal-mac dylib is recorded CURRENT"
+      stNote "(ABI 10, matching this binding - sodiumxt/CLAUDE.md's platform"
+      stNote "table), so a SodiumXT ABI skew above is a REAL DEFECT here:"
+      stNote "a stale package or a regressed release lane, not a recorded"
+      stNote "state to shrug off. Repackage from the current tree first."
    end if
 
    stNote ""

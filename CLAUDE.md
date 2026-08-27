@@ -899,8 +899,19 @@ gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
   image), and the bundle/commit stage is gated on the WHOLE matrix - so 29
   green artifacts, the six mac ones included, were discarded. That gating is
   correct for a release (a bundle missing a member's binary is not a release),
-  and the cost of it is a full re-dispatch. The committed universal-mac dylibs
-  keep their current ages until a dispatch reaches the commit stage. Nor does the workflow claim an
+  and the cost of it is a full re-dispatch. It took three more: run 10 cleared
+  every build lane and died at the post-install gate on a real defect it was
+  right about (enetxt's mac dylib leaked 70 upstream ENet symbols - the third
+  member with the mac export gap, fixed the same night), run 11 cleared the
+  gate too and died in the Commit step's own allowlist (`[a-z]+xt` cannot
+  match a member with a digit in its name, and box2dxt's paths were the first
+  ever staged there), and **RUN 12 (2026-08-27) WENT END TO END**: the first
+  dispatch to reach its commit stage, landing the first universal-mac dylibs
+  for torrentxt, enetxt, datachannelxt and coinxt, refreshing sodiumxt's from
+  the hand-lipo'd ABI 6 to ABI 10, and rebuilding every Linux/Windows binary -
+  after which torrentxt's ELF export-closure leg switched ON (the rebuilt .so
+  exports btx_* plus the test hooks, not 5419 statically-linked symbols) and
+  sodiumxt's MAC_KNOWN_STALE allowance deleted itself by design. Nor does the workflow claim an
   unexecuted artifact works, which is why the coinxt Windows lane's output is
   driven through the published vectors on a Windows runner before it is
   bundled - and the coinxt mac lane drives BOTH slices through the same

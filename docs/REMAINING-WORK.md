@@ -147,8 +147,9 @@ open — Phase 3, the 4a-4e Level 2 layer and Phase 5's DLEQ proofs all shipped.
 
 What is actually true now: **nothing large is unstarted.** What is BUILT waits on
 the runbook's five resource-keyed sessions (S1 one machine; S2 plus a tor daemon;
-S3 two machines; S4 two machines plus tor; S5 a Mac or a Windows box), and the
-macOS binaries are the one release gap. What remains HEADLESS is no longer
+S3 two machines; S4 two machines plus tor; S5 a Mac or a Windows box); the macOS
+binaries stopped being a release gap on 2026-08-27, when release run 12 landed
+every member's universal dylib, leaving the mac ENGINE pass as ordinary S5 work. What remains HEADLESS is no longer
 unbuilt features but **measurement**: two layers ship with no ratchet at all
 (box2dxt's raw `.lcb`, holde-em's `he*` surface), and the gates that report on
 the rest have been found overstating twice in two days. See
@@ -610,24 +611,20 @@ Built and statically verified; pending under the honesty convention.
 
 ## C. Release and CI (7)
 
-1. **~~macOS universal binaries~~ CI LANES BUILT for four of six, 2026-08-23**
-   (the entry's own figures had drifted anyway - sodiumxt's dylib is FOUR ABIs
-   behind now, not one). `release-binaries.yml` carries universal mac lanes
-   for sodiumxt, coinxt, enetxt and box2dxt: both slices cross-compiled in one
-   pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64
-   under Rosetta 2, coinxt's KATs driven through BOTH slices, unsigned (the
-   linker's ad-hoc signature; no notarization). The lanes are WRITTEN and were PROVEN
-   TO BUILD on 2026-08-26: the first dispatch (run 5) ran all six mac lanes and
-   all six went green. No mac lane has produced a committed binary even so -
-   `torrentxt x86_64-linux` failed on a missing Perl module in the manylinux
-   image, and the bundle/commit stage is gated on the whole matrix, so the run
-   discarded 29 green artifacts including every mac one. Every committed dylib
-   keeps its age until a dispatch reaches the commit stage. torrentxt and datachannelxt joined later the same day via
-   the two-slice-lipo job (per-arch pinned OpenSSL, both thin slices built
-   and tested, `lipo -create`; skippable deliberately via the `mac_lipo`
-   dispatch input), so ALL SIX members have mac lanes. Still open:
-   notarization only (credentials CI does not hold; the owner accepted
-   unsigned distribution 2026-08-23), and the lanes' first execution.
+1. **~~macOS universal binaries~~ CLOSED 2026-08-27 by release run 12**, the
+   first `release-binaries.yml` dispatch to reach its commit stage: first-ever
+   universal dylibs landed for torrentxt, enetxt, datachannelxt and coinxt,
+   sodiumxt's refreshed from the hand-lipo'd ABI 6 to ABI 10, every one a
+   genuine two-slice Mach-O (built by the 2026-08-23 lanes: both slices
+   cross-compiled or two-slice-lipo'd, `lipo -archs` asserted at birth, arm64
+   tested natively and x86_64 under Rosetta 2, coinxt's KATs driven through
+   both slices, unsigned per the accepted 2026-08-23 decision) and read by
+   `check-binary-freshness.py` on every push. Getting there took runs 5-11
+   discovering one real defect each (perl modules, the ASan runtime, the
+   `ships` deadlock, enetxt's unfiltered mac export table, a commit allowlist
+   that could not spell box2dxt). Still open: notarization only (credentials
+   CI does not hold), and the mac ENGINE pass - no OXT engine has loaded any
+   of the six dylibs yet.
    — `.github/workflows/release-binaries.yml` (the header), `sodiumxt/CLAUDE.md:54-59`
 
 2. **~~box2dxt as the eighth folded harness member~~ SHIPPED statically
