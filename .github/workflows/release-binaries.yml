@@ -1089,8 +1089,16 @@ jobs:
           # rather than produced. Refusing is the whole point: run 3 committed a
           # 54.5 MB second copy of the bundle and the push succeeded, because
           # nothing between `git add -A` and `git push` ever looked at the list.
+          #
+          # [a-z0-9], not [a-z]: box2dxt has a DIGIT in its name, so the first
+          # run to reach this step with its binaries staged (run 11 - box2dxt
+          # joined the matrix 2026-08-23 and runs 9-10 died earlier) had five
+          # correct paths land in "$stray" and refused its own output one step
+          # from the finish line. The guard was written before any member name
+          # carried a digit, and nothing else in this workflow spells the
+          # member set as a character class.
           stray=$(git diff --cached --name-only \
-                  | grep -Ev '^[a-z]+xt/src/code/([^/]+/[^/]+|MANIFEST\.sha256)$' || true)
+                  | grep -Ev '^[a-z0-9]+xt/src/code/([^/]+/[^/]+|MANIFEST\.sha256)$' || true)
           if [ -n "$stray" ]; then
             echo "::error::staged paths outside <member>/src/code/ - refusing to commit:" >&2
             echo "$stray" >&2
