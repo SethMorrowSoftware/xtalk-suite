@@ -46,6 +46,9 @@ MASTER = os.path.join("tools", "demo-selfcheck.livecodescript")
 # Every adopter, with the prefix of the handler that drives it. A demo is added
 # here in the same change that carries the block into it - never separately.
 ADOPTERS = {
+    # the launcher itself, the fourteenth adopter (2026-08-27): the front
+    # door now prints its own boot record like everything it launches
+    "start-here.livecodescript": "sl",
     os.path.join("enetxt", "examples", "enet-internet-chat.livecodescript"): "ei",
     os.path.join("enetxt", "examples", "enet-lan-chat.livecodescript"): "ec",
     os.path.join("datachannelxt", "examples",

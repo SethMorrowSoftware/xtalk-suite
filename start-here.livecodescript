@@ -53,15 +53,41 @@ script "SuiteStartHere"
 --
 -- THE LOOK is the suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
--- byte-identical). Change the look in the master, never here.
+-- byte-identical). Change the look in the master, never here. Since
+-- 2026-08-27 the launcher wears the full card look the demos wear - the
+-- directory and the detail card are panels, the list groups by member,
+-- and the two traits a reader needs before clicking (holds the torrent
+-- session; self-contained) are pills instead of prose buried in a note.
+--
+-- THE TORRENT SESSION CARD (2026-08-27). The family's sharpest trap is
+-- ONE torrent session per process: a second SESSION stack fails its
+-- btStartSession while the first is open. Every session-holding stack in
+-- this registry has a closeStack teardown that calls btStopSession (all
+-- thirteen verified), so CLOSING the open one frees the session - which
+-- is exactly what the card's button does: it finds the open
+-- session-holding stacks by name and closes them, letting each run its
+-- own teardown. What it cannot fix, and says so: a stack that CRASHED
+-- past its teardown leaks the session inside the shim, and only an OXT
+-- restart clears that (the .lcb exposes no session discovery on
+-- purpose - handles are capabilities, not an enumerable table).
+--
+-- THE BOOT SELF-CHECK (2026-08-27): this stack is the fourteenth adopter
+-- of tools/demo-selfcheck.livecodescript, so opening it produces a
+-- citable record in the log (controls exist, the registry parses, the
+-- files resolve, the session index built) instead of a human judgement.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kSlUiVersion = "start-here-1"
+constant kSlUiVersion = "start-here-3"
 
 -- ---- script-local state (declared at top) ------------------------------------
-local sLineEntry        -- array: list line number -> registry line ("" = spacer)
+local sLineEntry        -- array: list line number -> registry line ("" = header/spacer)
+local sHeaderLines      -- comma list: list line numbers that are group headers
 local sSelected         -- the currently shown registry line (empty = none)
-local sTorrentOpened    -- "true" once a session-holding stack was opened
+local sSessName         -- array: SESSION relpath -> the stack name its file declares
+local sLastClosed       -- what the most recent session sweep closed (comma list)
+local sPrepAlreadyOpen  -- "true" when slPrepareStack found its stack already open
+local sExtLoaded        -- array: member token -> "true"/"false", from slExtProbe
+local sExtProbed        -- "true" once the engine ANSWERED the extension listing
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -439,7 +465,12 @@ end uiFooter
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
    slBuild
+   slSessIndex
    slProbe
+   slExtProbe
+   slSessRefresh
+   -- the self-check runs LAST: it reads the state the lines above establish
+   slScRun
 end openStack
 
 on mouseUp
@@ -455,6 +486,9 @@ on mouseUp
          break
       case "slHelp"
          slHelp
+         break
+      case "slSessClose"
+         slCloseSessionStacks
          break
       default
          pass mouseUp
@@ -478,44 +512,68 @@ command slBuild
    slClearGeneratedUI
    lock screen
    uiChrome "xTalk Suite - start here", 1200, 640
-   -- LEFT: the directory itself - every runnable stack, by repo-relative path
-   uiTable "slList", "16,58,676,596", empty
-   -- RIGHT: what the selected stack is, wants, and how to launch it
-   uiPanel "slCard", "692,58,1184,560"
-   uiWrap "slName", "Click a stack on the left.", "708,74,1168,98", 14
+   -- LEFT: the directory card - every runnable stack, grouped by member
+   uiPanel "slListCard", "16,58,676,584"
+   uiSection "slDirSec", "Every runnable stack, by repo path", "28,68,664,88"
+   uiTable "slList", "28,100,664,544", empty
+   uiCap "slListCap", "Group names are headers. Click a path for its card; double-click (or Open) launches it in place.", "28,552,664,578"
+   -- RIGHT, TOP: what the selected stack is, wants, and how to launch it
+   uiPanel "slCard", "692,58,1184,458"
+   uiWrap "slName", "Click a stack on the left.", "708,72,1168,96", 14
    set the textStyle of field "slName" to "bold"
-   uiInput "slPath", "708,106,1088,130"
+   -- the two traits worth knowing BEFORE clicking Open, as pills; built
+   -- unconditionally (the boot self-check asserts every control exists),
+   -- shown per selection
+   uiPill "slPillSession", "holds the torrent session", "708,102,878,122", "wait"
+   uiPill "slPillSelf", "self-contained", "888,102,996,122", "ok"
+   slPillShow "slPillSession", false
+   slPillShow "slPillSelf", false
+   uiInput "slPath", "708,130,1088,154"
    set the lockText of field "slPath" to true
    set the traversalOn of field "slPath" to false
    set the backgroundColor of field "slPath" to kUiCodeBg
    set the borderColor of field "slPath" to kUiCodeLine
    set the dontWrap of field "slPath" to true
-   uiButton "slCopyPath", "Copy", "1096,104,1168,132"
-   uiCap "slNeedsCap", "Needs:", "708,142,1168,158"
-   uiWrap "slNeeds", empty, "708,160,1168,212", 11
-   uiCap "slHelpersCap", "Put in use first (the launcher does this for you):", "708,220,1168,236"
-   uiWrap "slHelpers", empty, "708,238,1168,262", 11
-   set the textFont of field "slHelpers" to uiMonoFont()
-   uiWrap "slDesc", empty, "708,274,1168,380", 11
-   uiWrap "slNote", empty, "708,388,1168,472", 11
+   uiButton "slCopyPath", "Copy", "1096,128,1168,156"
+   uiCap "slNeedsCap", "Needs:", "708,164,1168,180"
+   uiWrap "slNeeds", empty, "708,182,1168,240", 11
+   uiWrap "slDesc", empty, "708,248,1168,330", 11
+   uiWrap "slNote", empty, "708,338,1168,404", 11
    set the foregroundColor of field "slNote" to kUiWarn
-   uiButton "slOpen", "Open this stack", "708,506,880,538"
-   uiButton "slHelp", "Setup help", "896,506,1010,538"
+   uiButton "slOpen", "Open this stack", "708,414,880,446"
+   uiButton "slHelp", "Setup help", "896,414,1010,446"
    set the tooltip of button "slOpen" to "Launch the selected stack from where the download put it (double-clicking its path does the same)."
    set the tooltip of button "slHelp" to "The three-step setup, in plain language."
    set the tooltip of field "slPath" to "The file's location inside the downloaded folder - click Copy to copy it."
+   -- RIGHT, BOTTOM: the one-torrent-session card + the boot/self-check log
+   uiPanel "slSessCard", "692,470,1184,584"
+   uiSection "slSessSec", "The one torrent session", "708,478,1168,498"
+   uiArea "slLog", "708,506,1000,572"
+   uiButton "slSessClose", "Close torrent stacks", "1012,506,1176,538"
+   set the tooltip of button "slSessClose" to "Close every open session-holding stack; each runs its own teardown, freeing the session. Launching a SESSION stack already does this by itself - this button frees the session without launching anything."
+   uiCap "slSessCap", "Launching a SESSION stack closes the open holder automatically; this button frees the session without launching.", "1012,544,1176,580"
    uiFooter \
-         "ONE torrent session per process: open one torrent-flavoured stack" \
-         & " (client, channels, quickshare, rp1 chat, dht chat, riptide," \
-         & " nocloud, the harnesses) per OXT launch, and restart OXT between" \
-         & " them. Extensions install via Tools > Extension Manager - each" \
-         & " member's README has the id. This launcher is verified" \
+         "ONE torrent session per process: launching a SESSION stack" \
+         & " closes the open holder first (each runs its own teardown);" \
+         & " a stack that crashed past its teardown still needs an OXT" \
+         & " restart. Extensions install via Tools > Extension Manager -" \
+         & " each member's README has the id. This launcher is verified" \
          & " statically; needs an OXT pass.", \
-         "16,604,1184,636"
+         "16,598,1184,636"
    slFillList
    set the uSlUiVersion of this stack to kSlUiVersion
    unlock screen
 end slBuild
+
+-- Show or hide one pill (a uiPill is a graphic + a field pair).
+command slPillShow pName, pOn
+   if there is a graphic (pName & "Bg") then
+      set the visible of graphic (pName & "Bg") to pOn
+   end if
+   if there is a field pName then
+      set the visible of field pName to pOn
+   end if
+end slPillShow
 
 command slClearGeneratedUI
    local tI
@@ -579,11 +637,13 @@ function slRegistry
    return tR
 end slRegistry
 
--- Fill the directory list: full repo-relative paths, mono, with a blank
--- line between top-level groups - the paths themselves ARE the layout.
+-- Fill the directory list: full repo-relative paths, mono, grouped under a
+-- header line per member (the group name, upper-cased and muted). Header and
+-- spacer lines map to no registry entry, so clicking one is a no-op.
 command slFillList
-   local tOldDelim, tLine, tRel, tGroup, tLastGroup, tLineNo, tText
+   local tOldDelim, tLine, tRel, tGroup, tLastGroup, tLineNo, tText, tH
    put empty into sLineEntry
+   put empty into sHeaderLines
    put empty into tText
    put 0 into tLineNo
    put the itemDelimiter into tOldDelim
@@ -593,12 +653,17 @@ command slFillList
       set the itemDelimiter to "/"
       put item 1 of tRel into tGroup
       set the itemDelimiter to tOldDelim
-      if tLastGroup is not empty and tGroup is not tLastGroup then
-         put return after tText
+      if tGroup is not tLastGroup then
+         if tLastGroup is not empty then
+            put return after tText
+            add 1 to tLineNo
+         end if
+         put toUpper(tGroup) & return after tText
          add 1 to tLineNo
+         put tLineNo & comma after sHeaderLines
       end if
       put tGroup into tLastGroup
-      put tRel & return after tText
+      put "  " & tRel & return after tText
       add 1 to tLineNo
       put tLine into sLineEntry[tLineNo]
    end repeat
@@ -607,6 +672,16 @@ command slFillList
       delete the last char of tText
    end if
    put tText into field "slList"
+   -- style the header lines in place: bold, muted, visually not-a-row
+   if the last char of sHeaderLines is comma then
+      delete the last char of sHeaderLines
+   end if
+   set the itemDelimiter to comma
+   repeat for each item tH in sHeaderLines
+      set the textStyle of line tH of field "slList" to "bold"
+      set the foregroundColor of line tH of field "slList" to kUiMuted
+   end repeat
+   set the itemDelimiter to tOldDelim
 end slFillList
 
 -- ---- the probe: does the tree around this file look like the repo? -----------
@@ -651,9 +726,106 @@ function slRoot
    return tRoot
 end slRoot
 
+-- ---- the extension probe: which of the suite's six are LOADED here? ----------
+-- The registry's needs prose says what a stack WANTS; this asks what this
+-- engine actually HAS, so "needs sodiumxt" can never read as "sodiumxt is
+-- missing" on a machine where it is installed. Presence only, ON PURPOSE:
+-- `the loadedExtensions` lists loaded module ids without calling into any
+-- native library, so the front door stays inert - no torrent session
+-- taken, no init run, nothing a mismatched binary could corrupt (the
+-- reasoning tools/build-preflight.py records for why its probes must be
+-- guarded; the launcher sidesteps it by not calling at all). Whether a
+-- LOADED library also WORKS (ABI match) stays each stack's own guarded
+-- probe at its open, and tests/preflight.livecodescript is the one-paste
+-- deep answer. `the loadedExtensions` is documented engine surface
+-- (LiveCode 8+) but UNEVIDENCED on OXT in this tree (no
+-- docs/OXT-ENGINE-NOTES.md entry yet): everything here is try-guarded and
+-- fails soft to "state unknown" - a surprise costs one log line, never a
+-- wrong claim.
+command slExtProbe
+   local tOldDelim, tList, tLine, tTok, tId, tHave, tMiss, tErr
+   put "false" into sExtProbed
+   put empty into sExtLoaded
+   try
+      put the loadedExtensions into tList
+   catch tErr
+      slSessLine "[extensions] this engine does not report loaded extensions - each stack still probes its own at open."
+      exit slExtProbe
+   end try
+   put "true" into sExtProbed
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to "|"
+   repeat for each line tLine in slExtRegistry()
+      put item 1 of tLine into tTok
+      put item 2 of tLine into tId
+      if tId is among the lines of tList then
+         put "true" into sExtLoaded[tTok]
+         put tTok & comma & space after tHave
+      else
+         put "false" into sExtLoaded[tTok]
+         put tTok & comma & space after tMiss
+      end if
+   end repeat
+   set the itemDelimiter to tOldDelim
+   if tMiss is empty then
+      slSessLine "[extensions] all six loaded:" && char 1 to -3 of tHave & "."
+   else if tHave is empty then
+      slSessLine "[extensions] NONE of the six suite extensions is loaded - Tools > Extension Manager installs them; each member's README has the id."
+   else
+      slSessLine "[extensions] loaded:" && char 1 to -3 of tHave && "- not loaded:" && char 1 to -3 of tMiss && "(only the stacks that name one care)."
+   end if
+end slExtProbe
+
+-- The six INSTALLABLE extensions (native-backed .lcb libraries), member
+-- token -> module id, each token spelled exactly as the registry's needs
+-- prose spells it. onionxt, nostrxt, riptide and the script HALVES of
+-- coinxt/box2dxt are FILES a demo carries, not extensions, so a row here
+-- would be meaningless for them.
+function slExtRegistry
+   return "sodiumxt|org.openxtalk.library.sodium" & return \
+         & "torrentxt|org.openxtalk.library.torrent" & return \
+         & "enetxt|org.openxtalk.library.enet" & return \
+         & "datachannelxt|org.openxtalk.library.datachannel" & return \
+         & "coinxt|org.openxtalk.library.coin" & return \
+         & "box2dxt|org.openxtalk.box2dxt"
+end slExtRegistry
+
+-- The live half of the card's Needs field: which of the extensions THIS
+-- row's prose names are loaded right now. Empty when the engine could not
+-- answer (the prose then stands alone) or when the prose names none.
+function slExtStateLine pNeeds
+   local tOldDelim, tLine, tTok, tOn, tOff
+   if sExtProbed is not "true" then
+      return empty
+   end if
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to "|"
+   repeat for each line tLine in slExtRegistry()
+      put item 1 of tLine into tTok
+      if pNeeds contains tTok then
+         if sExtLoaded[tTok] is "true" then
+            put tTok & comma & space after tOn
+         else
+            put tTok & comma & space after tOff
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tOldDelim
+   if tOn is empty and tOff is empty then
+      return empty
+   end if
+   if tOff is empty then
+      return "On this engine now: " & char 1 to -3 of tOn & " - loaded."
+   end if
+   if tOn is empty then
+      return "On this engine now: " & char 1 to -3 of tOff & " - NOT loaded (Tools > Extension Manager)."
+   end if
+   return "On this engine now: " & char 1 to -3 of tOn && "loaded;" && char 1 to -3 of tOff && "NOT loaded (Tools > Extension Manager)."
+end slExtStateLine
+
 -- ---- selection + detail ------------------------------------------------------
 command slShowDetail pLine
-   local tOldDelim, tEntry, tRel, tHelpers, tNeeds, tNote, tDesc
+   local tOldDelim, tEntry, tRel, tHelpers, tNeeds, tNote, tDesc, tLive
    if pLine is not a number or sLineEntry[pLine] is empty then
       exit slShowDetail
    end if
@@ -669,15 +841,34 @@ command slShowDetail pLine
    set the itemDelimiter to tOldDelim
    -- the name is the file's own basename; the path is the point, so it gets
    -- the code box and the Copy button
-   uiWrap "slName", slBasename(tRel), "708,74,1168,98", 14
+   uiWrap "slName", slBasename(tRel), "708,72,1168,96", 14
    set the textStyle of field "slName" to "bold"
    put tRel into field "slPath"
-   put tNeeds into field "slNeeds"
-   if tHelpers is empty then
-      put "(nothing - it is self-contained)" into field "slHelpers"
-   else
-      put tHelpers into field "slHelpers"
+   -- the two trait pills: SESSION rows hold the one torrent session while
+   -- open; "Self-contained" rows carry every script library they need
+   slPillShow "slPillSession", (tNote contains "SESSION")
+   slPillShow "slPillSelf", (tNote contains "Self-contained")
+   -- helpers fold into the Needs line: every row is self-contained today
+   -- (the embed pass), and the launcher-registry gate refuses a row naming
+   -- a helper its file already carries - but the mechanism stays for the
+   -- one recorded demo that cannot embed, so a non-empty field still shows
+   -- the LIVE half under the prose (2026-08-27): which of the named
+   -- extensions are actually loaded in this engine, so the card's "needs"
+   -- can never read as "missing" on a machine that has it. Derived from
+   -- the row's needs FIELD alone, before any helper path is appended - a
+   -- helper's repo path contains its member's token, which is a naming
+   -- coincidence, not a dependency claim.
+   put slExtStateLine(tNeeds) into tLive
+   if tHelpers is not empty then
+      put tNeeds & return & "Put in use first (the launcher does this): " \
+            & tHelpers into tNeeds
    end if
+   if tLive is not empty then
+      put tNeeds & return & tLive into tNeeds
+   end if
+   -- re-filled through uiWrap so the field re-measures to exactly hold
+   -- whatever this composed to (same idempotent call slName uses above)
+   uiWrap "slNeeds", tNeeds, "708,182,1168,240", 11
    put tDesc into field "slDesc"
    put tNote into field "slNote"
 end slShowDetail
@@ -721,6 +912,142 @@ command slCopyPath
    end try
 end slCopyPath
 
+-- ---- the one torrent session -------------------------------------------------
+-- Build the SESSION index once per open: for every registry row whose note
+-- carries the SESSION marker, the stack name its file's own `script "..."`
+-- line declares. Names, not windows: the check against the openStacks is
+-- done fresh at each use, so a stack the user closed by hand reads as
+-- closed here too.
+command slSessIndex
+   local tOldDelim, tRoot, tLine, tRel, tNote, tFirst
+   put empty into sSessName
+   put slRoot() into tRoot
+   if tRoot is empty then
+      exit slSessIndex
+   end if
+   put the itemDelimiter into tOldDelim
+   repeat for each line tLine in slRegistry()
+      set the itemDelimiter to "|"
+      put item 1 of tLine into tRel
+      put item 4 of tLine into tNote
+      set the itemDelimiter to tOldDelim
+      if tNote contains "SESSION" and there is a file (tRoot & "/" & tRel) then
+         put line 1 of url ("file:" & tRoot & "/" & tRel) into tFirst
+         put slScriptName(tFirst, tRel) into sSessName[tRel]
+      end if
+   end repeat
+end slSessIndex
+
+-- The comma list of session-holding stacks that are OPEN right now.
+function slSessOpenNames
+   local tRel, tName, tOpen
+   repeat for each line tRel in the keys of sSessName
+      put sSessName[tRel] into tName
+      if tName is not empty and there is a stack tName \
+            and tName is among the lines of the openStacks then
+         put tName & comma after tOpen
+      end if
+   end repeat
+   if the last char of tOpen is comma then
+      delete the last char of tOpen
+   end if
+   return tOpen
+end slSessOpenNames
+
+-- One line into the session/self-check log (the card's mono surface).
+-- Pinned for the family reason: nothing here arrives from a timer today,
+-- but the log is also the self-check's surface and the pin is one line.
+command slSessLine pText
+   set the defaultStack to the short name of this stack
+   if there is no field "slLog" then
+      exit slSessLine
+   end if
+   put pText & return after field "slLog"
+   set the vscroll of field "slLog" to the formattedHeight of field "slLog"
+end slSessLine
+
+-- Re-read the live state and say it in the log, in one voice.
+command slSessRefresh
+   local tOpen
+   if slRoot() is empty then
+      slSessLine "[session] repo root unknown - open this stack from the repo first."
+      exit slSessRefresh
+   end if
+   put slSessOpenNames() into tOpen
+   if tOpen is empty then
+      slSessLine "[session] free - no session-holding stack is open."
+   else
+      slSessLine "[session] held by:" && tOpen && "- launching another SESSION stack closes it automatically (or use the button on the right)."
+   end if
+end slSessRefresh
+
+-- Close every open session-holding stack, except pKeep (empty = close all).
+-- ONE implementation for both callers: the card's button (bare call) and
+-- slOpenSelected's automatic sweep before a SESSION launch, which passes
+-- the target's own name so a relaunch never closes the window it is about
+-- to raise. Closing a stack fires ITS closeStack, and every SESSION stack
+-- in this registry tears its session down there (btStopSession; all
+-- thirteen verified 2026-08-27) - so this frees the session without this
+-- launcher touching bt* at all. The one case it cannot reach is a stack
+-- that CRASHED past its teardown: the session leaks inside the shim, no
+-- public handler can find it, and the honest advice is an OXT restart -
+-- so that is what the log says. What actually closed lands in sLastClosed
+-- for the caller's own status line.
+command slCloseSessionStacks pKeep
+   local tOldDelim, tOpen, tName, tErr, tClosed, tSweep
+   put empty into sLastClosed
+   put slSessOpenNames() into tOpen
+   -- the keep-filter runs BEFORE any close, so this loop is plain chunking
+   -- (slSessOpenNames runs no teardowns and cannot move the delimiter)
+   put the itemDelimiter into tOldDelim
+   set the itemDelimiter to comma
+   put empty into tSweep
+   repeat for each item tName in tOpen
+      if tName is not pKeep then
+         put tName & comma after tSweep
+      end if
+   end repeat
+   set the itemDelimiter to tOldDelim
+   if tSweep is empty then
+      -- only the button speaks here: a pre-launch sweep with nothing to
+      -- close is the NORMAL case, and narrating it on every launch would
+      -- drown the lines worth reading (pKeep is non-empty exactly on the
+      -- launch path - slOpenSelected exits before the sweep whenever the
+      -- name index could not have filled)
+      if pKeep is empty then
+         slSessLine "[session] nothing to close - no session-holding stack is open."
+         uiStatus "No session-holding stacks are open. If a launch still cannot start a session, restart OXT (a stack that crashed past its teardown leaks it).", "ok"
+      end if
+      exit slCloseSessionStacks
+   end if
+   -- one item per turn, with the delimiter re-pinned EVERY turn: `close
+   -- stack` runs the closed demo's own teardown, and teardowns set the
+   -- global itemDelimiter (family gotcha 7) - a `repeat for each item`
+   -- spanning those calls would be chunking on whatever the last demo
+   -- left behind
+   repeat until tSweep is empty
+      set the itemDelimiter to comma
+      put item 1 of tSweep into tName
+      delete item 1 of tSweep
+      try
+         close stack tName
+         put tName & comma after tClosed
+      catch tErr
+         slSessLine "[session] could not close" && tName & ":" && tErr
+      end try
+   end repeat
+   set the itemDelimiter to tOldDelim
+   if the last char of tClosed is comma then
+      delete the last char of tClosed
+   end if
+   if tClosed is not empty then
+      put tClosed into sLastClosed
+      slSessLine "[session] closed:" && tClosed && "- each ran its own teardown; the session is free."
+      uiStatus "Closed" && tClosed & ". The torrent session is free for the next launch.", "ok"
+   end if
+   slSessRefresh
+end slCloseSessionStacks
+
 -- ---- launching ---------------------------------------------------------------
 command slOpenSelected
    local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed
@@ -744,14 +1071,19 @@ command slOpenSelected
       uiStatus tRel && "is not in the download - see the missing list above.", "bad"
       exit slOpenSelected
    end if
-   -- the one-session rule is the family's sharpest trap: warn at the moment
-   -- it is about to be walked into, not only in the footer
+   -- the one-session rule is the family's sharpest trap, so the launcher
+   -- DISSOLVES it now instead of warning about it (2026-08-27): any open
+   -- session-holding stack is closed here, through the same sweep as the
+   -- card's button, before the new stack's own openStack asks for the
+   -- session. The target's own name is kept out of the sweep, so
+   -- relaunching the holder just raises its window. Still measured from
+   -- the openStacks at this moment, never from a sticky flag (the flag
+   -- this design replaced stayed "true" after the holder was closed). A
+   -- stack whose close FAILS is named in the log and the launch proceeds
+   -- anyway: the new stack's own session start then reports the conflict
+   -- in red, the same honest end state as the old warning promised.
    if tNote contains "SESSION" then
-      if sTorrentOpened is "true" then
-         uiStatus "A session-holding stack was already opened from here - if" && slBasename(tRel) && "cannot start a session, restart OXT and open it first.", "warn"
-      else
-         put "true" into sTorrentOpened
-      end if
+      slCloseSessionStacks sSessName[tRel]
    end if
    -- helpers first, each named as it goes in use, so a failure points at
    -- the exact file rather than at the demo that later cannot find it.
@@ -798,12 +1130,26 @@ command slOpenSelected
    if the number of controls of card 1 of stack tName is 0 then
       send "openStack" to stack tName
    end if
+   -- a NEWLY opened window lands at the screen's center, positioned while
+   -- it is still invisible so it never flickers across the move; a
+   -- relaunch of a window that was already open keeps wherever the user
+   -- put it (raising is not reopening). AFTER the openStack nudge on
+   -- purpose: the demo's own build sets the stack's size, and it is the
+   -- finished geometry that should be centered.
+   if sPrepAlreadyOpen is not "true" then
+      set the loc of stack tName to the screenLoc
+   end if
    set the visible of stack tName to true
-   if sTorrentOpened is "true" and tNote contains "SESSION" then
-      uiStatus "Opened" && tName && "from" && tRel & ". Its own status line takes it from here.", "ok"
+   if tNote contains "SESSION" then
+      if sLastClosed is not empty then
+         uiStatus "Closed" && sLastClosed && "to free the one torrent session, then opened" && tName & ". Its own status line takes it from here.", "ok"
+      else
+         uiStatus "Opened" && tName && "from" && tRel & ". It owns the one torrent session while open; its own status line takes it from here.", "ok"
+      end if
    else
       uiStatus "Opened" && tName && "from" && tRel & ".", "ok"
    end if
+   slSessRefresh
 end slOpenSelected
 
 -- The heart of the launcher: turn a script-only FILE into a live, named,
@@ -811,6 +1157,13 @@ end slOpenSelected
 -- the stack's name, or empty AFTER painting the red status itself.
 function slPrepareStack pPath
    local tScript, tName, tErr
+   -- the caller's was-it-already-open question, answered as a side record
+   -- (sPrepAlreadyOpen) because by the time this returns, the stack EXISTS
+   -- and is open either way - the launch tail uses it to center only the
+   -- windows that are genuinely new. Helpers are prepared through here too,
+   -- but the demo itself is always the LAST call, so the flag the tail
+   -- reads is the demo's.
+   put "false" into sPrepAlreadyOpen
    if there is no file pPath then
       uiStatus pPath && "is missing from the download.", "bad"
       return empty
@@ -839,6 +1192,8 @@ function slPrepareStack pPath
             uiStatus "The script of" && tName && "did not compile:" && tErr, "bad"
             return empty
          end try
+      else
+         put "true" into sPrepAlreadyOpen
       end if
       return tName
    end if
@@ -875,3 +1230,240 @@ function slScriptName pLine1, pPath
    return tName
 end slScriptName
 
+
+-- ---- the boot self-check (fourteenth adopter) ---------------------------------
+-- The list is DERIVED, not hand-picked: tools/check-demo-control-lists.py
+-- re-derives it from this source on every build and fails on any drift.
+constant kSlScControls = "slCard,slCopyPath,slDesc,slDirSec,slHelp,slList,slListCap,slListCard,slLog,slName,slNeeds,slNeedsCap,slNote,slOpen,slPath,slPillSelf,slPillSession,slSessCap,slSessCard,slSessClose,slSessSec,uiFooter,uiStatus,uiTitle"
+
+command slScRun
+   local tOldDelim, tMissing, tLine, tRows, tGood, tRel, tNote
+   local tSess, tNamed, tPresent, tAbsent
+   scBegin "slLog"
+   put scMissing(kSlScControls) into tMissing
+   scAssert "all 24 controls this script names exist (missing: " \
+         & scShow(tMissing) & ")", tMissing is empty
+   -- the registry parses: five |-fields per row, no empties in the tree walk
+   put 0 into tRows
+   put 0 into tGood
+   put the itemDelimiter into tOldDelim
+   repeat for each line tLine in slRegistry()
+      add 1 to tRows
+      set the itemDelimiter to "|"
+      if the number of items of tLine is 5 then
+         add 1 to tGood
+      end if
+      set the itemDelimiter to tOldDelim
+   end repeat
+   scAssert "every registry row carries relpath|helpers|needs|note|description (" \
+         & tGood & "/" & tRows & ")", (tGood is tRows and tRows > 0)
+   scAssert "the directory list is built and mapped", \
+         (the number of lines of the keys of sLineEntry is tRows)
+   if slRoot() is empty then
+      scSkip "every registry file resolves on disk", \
+            "opened outside the repo - no filename to resolve against"
+      scSkip "every SESSION row resolved its stack name", \
+            "same reason - the index needs the repo root"
+   else
+      -- files present: absence is an incomplete DOWNLOAD (environment), so
+      -- it skips with the count; the red status line above names the files
+      put 0 into tPresent
+      put 0 into tAbsent
+      repeat for each line tLine in slRegistry()
+         set the itemDelimiter to "|"
+         put item 1 of tLine into tRel
+         set the itemDelimiter to tOldDelim
+         if there is a file (slRoot() & "/" & tRel) then
+            add 1 to tPresent
+         else
+            add 1 to tAbsent
+         end if
+      end repeat
+      if tAbsent is 0 then
+         scAssert "every registry file resolves on disk (" & tPresent & "/" \
+               & tRows & ")", true
+      else
+         scSkip "every registry file resolves on disk", \
+               tAbsent & " missing - incomplete download; the status line names them"
+      end if
+      -- the session index: every SESSION row yielded a stack name, so the
+      -- session card's close sweep can find what it needs to close
+      put 0 into tSess
+      put 0 into tNamed
+      repeat for each line tLine in slRegistry()
+         set the itemDelimiter to "|"
+         put item 1 of tLine into tRel
+         put item 4 of tLine into tNote
+         set the itemDelimiter to tOldDelim
+         if tNote contains "SESSION" then
+            add 1 to tSess
+            if sSessName[tRel] is not empty then
+               add 1 to tNamed
+            end if
+         end if
+      end repeat
+      scAssert "every SESSION row resolved its stack name (" & tNamed & "/" \
+            & tSess & ")", (tNamed is tSess and tSess > 0)
+   end if
+   scArmProbe
+end slScRun
+
+-- ==== DEMO SELF-CHECK v1 BEGIN (verbatim copy; master: tools/demo-selfcheck.livecodescript; gate: tools/check-demo-selfcheck-drift.py) ====
+-- The sentinel is a CONSTANT so the probe compares against one spelling; a
+-- literal repeated at the write and the read is a check that can pass while
+-- disagreeing with itself.
+constant kScProbe = "self-check: delayed write reached the status line"
+local sScLines          -- the whole block, kept so a Copy button has something
+local sScPassed, sScFailed, sScSkipped
+local sScLogField       -- the adopting demo's own log field, set by scBegin
+
+command scBegin pLogField
+   put pLogField into sScLogField
+   put empty into sScLines
+   put 0 into sScPassed
+   put 0 into sScFailed
+   put 0 into sScSkipped
+   scLine "== boot self-check (nothing is hosted, connected, or bound) =="
+end scBegin
+
+-- Each line is LOGGED as it is made, not accumulated and flushed at the end.
+-- The first draft did both - a flush after the synchronous half and another
+-- after the probe - which printed every synchronous line twice.
+command scLine pText
+   put pText & return after sScLines
+   -- pin the stack: scFinish reaches here from a `send ... in` tick, and the
+   -- field is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if sScLogField is empty or there is no field sScLogField then
+      exit scLine
+   end if
+   put pText & return after field sScLogField
+   set the vscroll of field sScLogField to the formattedHeight of field sScLogField
+end scLine
+
+command scAssert pName, pOk
+   if pOk then
+      add 1 to sScPassed
+      scLine "PASS  " & pName
+   else
+      add 1 to sScFailed
+      scLine "FAIL  " & pName
+   end if
+end scAssert
+
+-- SKIP, never FAIL, for an absent extension: a missing member is an
+-- environment, and only a present-and-broken member is a defect.
+command scSkip pName, pReason
+   add 1 to sScSkipped
+   scLine "SKIP  " & pName & " (" & pReason & ")"
+end scSkip
+
+-- An empty value prints as nothing, which reads as a missing check rather than
+-- an answer of empty; every observed value in a self-check goes through here.
+-- This is the playLoudness lesson (OXT-ENGINE-NOTES 5.4) as a helper: a check
+-- that reports only its own name costs a whole engine pass to diagnose.
+function scShow pValue
+   if pValue is empty then
+      return "empty"
+   end if
+   return pValue
+end scShow
+
+-- Returns the comma-list of control names in pList that do not exist, or empty.
+-- The adopter passes EVERY control name its own script references, derived from
+-- the source rather than hand-picked: a missing control is not cosmetic, it is
+-- the "Chunk: error in object expression" class, and finding it at boot beats
+-- finding it when somebody clicks.
+function scMissing pList
+   local tName, tMissing
+   set the defaultStack to the short name of this stack
+   repeat for each item tName in pList
+      -- ALL THREE CONTROL TYPES. The kit builds fields (uiLabel/uiWrap/uiCap/
+      -- uiSection/uiInput/uiArea/uiTable), buttons (uiButton/uiCheckbox) AND
+      -- GRAPHICS (uiGfx/uiPanel/uiPill). The first version of this asked only
+      -- about fields and buttons, so every uiPill a demo builds - the Tor
+      -- pills in both Quick Shares, for one - reported as a missing control on
+      -- a stack where it exists.
+      if there is no field tName and there is no button tName \
+            and there is no graphic tName then
+         put tName & comma after tMissing
+      end if
+   end repeat
+   if tMissing is empty then
+      return empty
+   end if
+   return char 1 to -2 of tMissing
+end scMissing
+
+-- Call LAST in <pfx>ScRun. It arms the probe below; 400ms lands it before the
+-- usual 800ms dashboard tick, so nothing races for the status line.
+--
+-- SAY THAT THE REPORT IS UNFINISHED, for the reason the suite harness carries a
+-- RUN NOT FINISHED trailer: a report that simply stops reads exactly like a
+-- report that ended, and the difference cost that harness a round trip on
+-- 2026-08-19. One line is cheaper than the ambiguity.
+command scArmProbe
+   scLine "      ...one delayed-write check still to come; the count line " \
+         & "below it is the end of the block"
+   send "scTickProbe" to me in 400 milliseconds
+end scArmProbe
+
+-- THE ONE CHECK THAT NEEDS A TIMER.
+--
+-- OXT-ENGINE-NOTES 5.3 says an unqualified control reference inside a delayed
+-- handler resolves against THE DEFAULTSTACK, not the stack whose script is
+-- running - and that entry is classed DOCUMENTED, not OBSERVED, because this
+-- tree has never actually watched the unpinned form fail. It also names the run
+-- that would settle it: open a second stack in front and let a `send ... in`
+-- handler write an unqualified field.
+--
+-- So this probe READS the defaultStack before pinning and PRINTS what it found.
+-- On an ordinary run that line is context. On a run with another window in front
+-- it is the measurement 5.3 is missing, taken for free and at no risk, because
+-- the pin lands immediately afterwards and the write is verified.
+command scTickProbe
+   local tWas, tPrev, tPrevColor, tGot, tErr
+   put the defaultStack into tWas
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      scSkip "a delayed handler writes the status line", "the chrome is not built"
+      scFinish
+      exit scTickProbe
+   end if
+   -- RESTORE THE COLOUR TOO, not just the text. uiStatus takes a KIND, and
+   -- handing it back "ok" would repaint a "bad" line green - so a stack whose
+   -- extension is missing would end this probe claiming to be fine.
+   put field "uiStatus" into tPrev
+   put the foregroundColor of field "uiStatus" into tPrevColor
+   try
+      uiStatus kScProbe, empty
+      put field "uiStatus" into tGot
+   catch tErr
+      put "THREW:" && tErr into tGot
+   end try
+   uiStatus tPrev, empty
+   set the foregroundColor of field "uiStatus" to tPrevColor
+   scAssert "a delayed handler writes the status line " \
+         & "(defaultStack on entry: " & scShow(tWas) & ")", (tGot is kScProbe)
+   scFinish
+end scTickProbe
+
+command scFinish
+   scLine "      " & sScPassed & " passed, " & sScFailed & " failed, " \
+         & sScSkipped & " skipped - select this block and copy it into the " \
+         & "OXT pass record"
+   if sScFailed is 0 then
+      scLine "      boot self-check GREEN (this is the single-machine claim; " \
+            & "the live legs are the runbook's)"
+      exit scFinish
+   end if
+   scLine "      boot self-check has FAILURES above - report them before " \
+         & "running any live leg"
+   -- ONLY ON FAILURE does this touch the status line, and the asymmetry is
+   -- deliberate. Green, the demo's own "Ready ..." line is the more useful
+   -- thing to be reading and the detail is in the log a few lines up. Red, the
+   -- log may be on a tab nobody has clicked - so the one surface a person is
+   -- certainly looking at has to say so. Fail loud, pass quiet.
+   uiStatus "Boot self-check: " & sScFailed & " FAILED (see the log)", "bad"
+end scFinish
+-- ==== DEMO SELF-CHECK v1 END ====
