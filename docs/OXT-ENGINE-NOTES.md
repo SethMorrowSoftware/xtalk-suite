@@ -496,6 +496,23 @@ it can drift back silently. The cheap check is a grep for `Open Stack` and
 library case above and box2dxt's `dist/INSTALL.md`, which opens a real
 `.oxtstack` binary stack and is not this rule.
 
+**The automated ritual delivers the STACK open messages but not the CARD
+ones** - OBSERVED (OXT, 2026-08-27) through the launcher itself, and the
+split in the evidence is the measurement. Via start-here's Open (create an
+invisible host stack, set its script, `go`), every stack that builds in
+`preOpenStack`/`openStack` came up built, and none of the six box2dxt games -
+which build in `preOpenCard`/`openCard` and define no stack hooks at all -
+built anything: their cards arrived empty. The launcher's empty-card nudge
+then made it WORSE in the old code, because `send "openStack"` to a stack
+with no such handler is an execution error, which killed the launch handler
+before the reveal - the window stayed invisible and the whole thing read as
+"box2d demos do not launch". Two rules fell out, both now in the launcher:
+nudge the FULL open sequence (`preOpenStack`, `preOpenCard`, `openStack`,
+`openCard`) when the card arrives empty, and `dispatch` it rather than
+`send` - unhandled is an answer to dispatch and an error to send. The
+card-message half is filed OBSERVED for this create/set-script/go ritual
+only; whether a plain `go` to a saved stack behaves the same is unmeasured.
+
 ---
 
 ## 6. Sockets and processes
