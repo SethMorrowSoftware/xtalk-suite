@@ -20,7 +20,9 @@ script "EnetInternetChat"
 --
 -- HOW TO USE (two machines on DIFFERENT networks):
 --   1. Install the enetxt AND torrentxt extensions on the HOST machine
---      (joiners need only enetxt). Open this script as a stack on both.
+--      (joiners need only enetxt). Paste this file into a stack script on
+--      both and reopen the stack; opening the file itself builds no window
+--      (docs/OXT-ENGINE-NOTES.md 5.5).
 --   2. Machine A clicks Host. Wait for the invite line to fill in (the router
 --      confirms the port, then the public IP arrives - typically seconds).
 --      Copy the invite and send it to your friend any way you like.

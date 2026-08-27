@@ -20,9 +20,10 @@ script "EnetLanChat"
 --     command form: OXT cannot compile a zero-argument `name()` statement).
 --
 -- HOW TO USE (two+ machines on a LAN, or two stacks on one machine):
---   1. Install the enetxt extension on both. Open THIS script as a stack -
---      the helpers are embedded in this file already, so there is nothing
---      else to load.
+--   1. Install the enetxt extension on both. Paste THIS file into a stack
+--      script and reopen the stack - opening the file itself builds no
+--      window (docs/OXT-ENGINE-NOTES.md 5.5). The helpers are embedded in
+--      this file already, so there is nothing else to load.
 --   2. Machine A clicks Host. Machine B types A's ip (port defaults to
 --      27099) and clicks Join. Chat.
 --

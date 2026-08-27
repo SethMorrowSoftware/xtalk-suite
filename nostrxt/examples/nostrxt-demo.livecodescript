@@ -18,11 +18,14 @@ script "NostrDemo"
 -- the self-check block at the bottom is the boot record every suite demo
 -- prints.
 --
--- HOW TO USE. Paste into a new stack script (or open this file as a stack),
--- close and reopen the stack. The window builds itself. Point the relay url
--- at a relay you trust; wss:// is the form this stack has actually run on an
--- engine, and ws:// is the one that has not (see the honesty label below -
--- that ordering is the opposite of what this comment used to say).
+-- HOW TO USE. Paste into a new stack script, then close and reopen the
+-- stack. The window builds itself. Opening this file directly does not build
+-- it (docs/OXT-ENGINE-NOTES.md 5.5). Point the relay url at a relay you
+-- trust; wss:// is the form this stack has actually run on an engine, and
+-- ws:// is the one that has not (see the honesty label below - that
+-- ordering is the opposite of what this comment used to say, and the merge
+-- resolving engine-notes 5.5 into this header kept the ENGINE-EVIDENCE
+-- ordering: the incoming side had the stale claim).
 --
 -- HONESTY (the suite convention): this stack HAS run on a real engine, on
 -- 2026-08-24 (Windows x86_64, OXT 9.6.3). Its boot self-check came back 9/9

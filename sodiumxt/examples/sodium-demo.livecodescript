@@ -17,8 +17,10 @@ script "sodiumDemo"
 -- secrecy), About (the pitch + a one-click self-test).
 --
 -- HOW TO USE (requires the SodiumXT extension installed so org.openxtalk
--- .library.sodium is loaded): open as a script-only stack, OR paste this as a
--- stack's script and `send "preOpenStack" to <that stack>`.
+-- .library.sodium is loaded): paste this into a stack's script, then close and
+-- reopen that stack (or `send "preOpenStack" to <that stack>` without closing).
+-- Opening this file itself loads the script and builds no window - that is the
+-- engine, not this demo: docs/OXT-ENGINE-NOTES.md 5.5.
 --
 -- Conventions: bytes cross as Data (textEncode/textDecode at the boundary);
 -- functions return a value, commands report; out-params pass a variable. The
