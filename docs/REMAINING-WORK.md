@@ -841,6 +841,24 @@ Built and statically verified; pending under the honesty convention.
 Recorded owner calls and explicitly-uncommitted future work; each wants either
 execution or a written resolution.
 
+> **DOCKET CLOSED 2026-08-27 (owner-delegated).** The owner delegated the open
+> calls to be decided for fastest shipping with fullest coverage, and every
+> brief in `docs/OPEN-DECISIONS.md` except D-04 now carries a dated decision:
+> ratify what is built (256 MiB warn, prune-on-restart, close-per-response,
+> the KAT-guarded libsodium status quo, the kit-chrome exemptions), defer the
+> scope growth with no consumer pulling it (SLIP-39, SHA3-512, the onionxt v2
+> menu, the nocloud polish menu, tor bundling, the brainstorm promotions, the
+> box2dxt roadmap triggers, the oracle daemon), retire oxtkit (its value is
+> already delivered by the drift gate), and record D-03 as resolved by events
+> (release run 12 built box2dxt in the shared manylinux lane). Items 1-2 and
+> 4 and 6-10 below are therefore RESOLVED - the strikes live in the briefs and
+> at the named primary sources; this section's rows stay as the map to them.
+> Still genuinely open: item 3 is DECIDED (no republish, D-06) but its spec
+> section wants the write-through; item 5's mtime probe is DECIDED YES and
+> rides tonight's pass; and ONIONXT plan section-14 item 3 (the
+> .onion-derivability claim) stays open pending the ed25519 equivalence
+> VERIFY, per its own do-not-ship-unverified rule.
+
 1. **ONIONXT plan §14: five reserved decisions.** Tor delivery; large-file
    warn-vs-block + threshold; which .onion-derivability claim ships; sign-off
    on positioning copy; Channels serve-map durability.

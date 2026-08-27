@@ -194,7 +194,13 @@ libsodium 1.0.x line but is not covered by that SHA256 pin; the known-answer
 tests (BLAKE2b, Argon2id, ed25519, KDF) run on every platform and are the guard
 against a constant or behaviour drift there. If you need the Windows binary held
 to an exact libsodium, pin the vcpkg baseline (a `vcpkg.json` manifest with a
-`builtin-baseline`) or build the pinned source on Windows too.
+`builtin-baseline`) or build the pinned source on Windows too. Decided
+2026-08-27 (owner-delegated, brief D-08): the KAT-guarded status quo is the
+recorded state, not an oversight - the KATs gate every build and the release
+lane drives the published vectors on a real Windows runner before any DLL is
+bundled, so a pin would add maintenance without adding a check. The committed
+DLLs are in any case mingw cross-builds of the SHA256-pinned source (the
+CLAUDE.md fallback recipe), which moots the vcpkg question for what ships.
 
 ## What "done" means
 

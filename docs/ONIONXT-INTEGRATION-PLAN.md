@@ -1801,6 +1801,16 @@ original demo — the core no-regression guarantee, stated to the user's face.
 
 ## 14. Open decisions for Seth
 
+> **REGISTER UPDATE, 2026-08-27 (owner-delegated closes; the briefs in
+> `docs/OPEN-DECISIONS.md` carry the rationale):** item 1 DECIDED as its
+> recommendation - document-install indefinitely, bundling revisited only for a
+> non-technical-audience product (D-07). Item 2 RATIFIED as its recommendation
+> and as built - warn at 256 MiB, never auto-downgrade (D-11). Item 4 SIGNED
+> OFF - the copy ships as written (D-05). Item 5 RATIFIED as its
+> recommendation and as built - prune-on-restart for the demos (D-12). Item 3
+> is the ONE that stays genuinely open: it turns on the ed25519 equivalence
+> VERIFY, and per its own text the strong claim does not ship unverified.
+
 Everything above is resolved into a single build-ready design except these, which are genuinely yours to make:
 
 1. **Tor delivery: document-install (11.1a) vs. bundled-tor (11.1b).** The plan ships (a) for the teaching demos and
