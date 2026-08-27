@@ -467,7 +467,9 @@ this expensive - the reader concludes the DEMO is defective and stops.
 the only shape any engine pass in this tree has ever used: `File > New
 Mainstack`, `Object > Stack Script`, paste the whole file, Apply, then CLOSE
 and REOPEN the window. `start-here.livecodescript`'s Open button automates
-exactly that - create a host stack, set its script, `go` to it - which is why
+exactly that - create a host stack, park it CLOSED, set its script, `go` to
+it (the close-and-reopen half is load-bearing; the second block of this note
+is the expensive proof) - which is why
 the launcher can open a demo that the reader could not have opened by
 double-clicking the same file.
 
@@ -496,22 +498,32 @@ it can drift back silently. The cheap check is a grep for `Open Stack` and
 library case above and box2dxt's `dist/INSTALL.md`, which opens a real
 `.oxtstack` binary stack and is not this rule.
 
-**The automated ritual delivers the STACK open messages but not the CARD
-ones** - OBSERVED (OXT, 2026-08-27) through the launcher itself, and the
-split in the evidence is the measurement. Via start-here's Open (create an
-invisible host stack, set its script, `go`), every stack that builds in
-`preOpenStack`/`openStack` came up built, and none of the six box2dxt games -
-which build in `preOpenCard`/`openCard` and define no stack hooks at all -
-built anything: their cards arrived empty. The launcher's empty-card nudge
-then made it WORSE in the old code, because `send "openStack"` to a stack
-with no such handler is an execution error, which killed the launch handler
-before the reveal - the window stayed invisible and the whole thing read as
-"box2d demos do not launch". Two rules fell out, both now in the launcher:
-nudge the FULL open sequence (`preOpenStack`, `preOpenCard`, `openStack`,
-`openCard`) when the card arrives empty, and `dispatch` it rather than
-`send` - unhandled is an answer to dispatch and an error to send. The
-card-message half is filed OBSERVED for this create/set-script/go ritual
-only; whether a plain `go` to a saved stack behaves the same is unmeasured.
+**`create` OPENS the stack it makes, so a later `go` to it is a raise that
+fires no open messages at all** - OBSERVED (OXT, 2026-08-27) through the
+launcher, over two engine reports, and this paragraph's first version drew
+the WRONG conclusion from the first report; the correction is kept in place
+of it rather than beside it because the wrong model lived here for under an
+hour. Round one: none of the six box2dxt games (card hooks only, no
+openStack) launched, while every stack-hook demo did, and the old
+empty-card nudge's `send "openStack"` was an execution error on the games -
+which killed the launch handler before the reveal, so their windows stayed
+invisible. That round was read here as "the ritual delivers stack messages
+but not card ones". Round two falsified it: with the nudge made throw-proof
+(dispatch) and widened to all four messages, the games' windows opened and
+stayed EMPTY, and closing and reopening one BY HAND built it. So no open
+message had ever fired from the launcher's `go` at all - the host stack was
+already open from the `create` - and the stack-hook demos had only ever
+been built by the nudge's hand-dispatch, which works aimed at a STACK and
+reached nothing aimed at a card: `dispatch "openCard" to card 1 of stack X`
+ran no handler, while the same dispatch `to stack X` runs its script's
+(the second observation this note carries). The launcher now parks a
+freshly prepared stack CLOSED - while still scriptless, so no handler can
+run - and `go invisible`s it: a genuine open, the engine fires the full
+preOpen/open sequence for both lifecycle families itself, and the
+hand-nudge (dispatched, stack-targeted, defaultStack pinned per 5.3)
+remains only as the belt. The close-then-reopen half is exactly the
+maintainer's observed repair, automated; `go invisible stack` as a spelling
+rides the same needs-an-OXT-pass label as the launcher around it.
 
 ---
 
