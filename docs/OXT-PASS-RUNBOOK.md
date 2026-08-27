@@ -520,7 +520,7 @@ kept as pointers so the same fact is never book-kept twice:
 | 21 | **Quick Share Channels anon, #31 / #32 / #33** - POINTERS ONLY: built 2026-08-15, registered in `docs/ONIONXT-INTEGRATION-PLAN.md` section 12.3, and ticked THERE per 4.7's rule | #31: the single-machine ON / OFF / tor-absent behaviour; #32: the card-only anon follow with the DHT off; #33: the onion-only release download with a clean capture | the three 12.3 register rows themselves | #31 S2; #32/#33 S4 |
 | 22 | **nocloud HTTP-host checklist** (`nocloud/docs/oxt-pass-checklist.md`: routes, headers, conditional GET, CORS, the editor, shutdown - over BOTH transports) | per that file's own action -> expected lines; it is its own record sheet | the checklist's intro paragraph ("verified statically; needs an OXT pass") | web-link half S1 stretch; Tor half S2 |
 | 23 | **sodiumxt mingw DLLs' Windows re-proof** (`x86_64-win32` + `x86-win32`; the pair owing the pass is now the ABI-10 one cross-built 2026-08-23, which superseded the ABI-9 pair of 2026-08-15 this row was written against - the row survives every rebuild because the debt does; the 2026-08-12 ABI-7 pass is the precedent) | the DLLs load and the full SodiumXT section - SHA3, ristretto AND the ABI-10 ChaCha20 xor - runs green on a real Windows engine | the "needs its Windows engine pass" notes on the two Windows rows of `sodiumxt/CLAUDE.md`'s ABI table | S5 |
-| 24 | **the macOS builds** - sodiumxt `universal-mac` lipo ABI 6 -> **10** (was written as 6 -> 8 before the 2026-08-15 DLEQ bump, then 6 -> 9 before the 2026-08-23 ChaCha20 bump; the gap grows every bump this row goes unbuilt, and it BLOCKS every crypto-dependent test on a Mac); first mac dylibs for torrentxt / enetxt / datachannelxt / coinxt (coinxt is now ABI 6) | a Mac stops being the one platform that cannot run the suite paste; S1 on the Mac afterwards is four members' first mac evidence | `sodiumxt/CLAUDE.md`, the mac ABI row; the section-2.1 platform table's gaps | S5 |
+| 24 | ~~**the macOS builds**~~ **CLOSED 2026-08-27, by CI rather than by hand**: release run 12 - the first `release-binaries.yml` dispatch to reach its commit stage - landed first-ever universal dylibs for torrentxt / enetxt / datachannelxt / coinxt and refreshed sodiumxt's from the hand-lipo'd ABI 6 to ABI 10, every one a genuine two-slice Mach-O read by `check-binary-freshness.py` on every push. Row kept for the record: it asked for exactly this ("sodiumxt lipo ABI 6 -> 10; first mac dylibs for the other four"), and while it stood open it blocked every crypto-dependent test on a Mac. What it un-blocks is now open work: S1 on a Mac is still four members' first mac ENGINE evidence - the binaries exist; no OXT engine has loaded them | a Mac stops being the one platform that cannot run the suite paste - TRUE since 2026-08-27; the S1-on-mac session itself remains | `sodiumxt/CLAUDE.md`, the mac ABI row (rewritten with the close); section 2.1's platform table (likewise) | **CLOSED 2026-08-27** (the builds; the mac engine pass stays open) |
 | 25 | ~~**sodiumxt ABI 9 - the DLEQ/batch algebra**~~ **CLOSED 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3): the blockquote's ristretto bullet says "ABI 8 AND ABI 9" and names the batch's atomic-failure contract observed from script - one bad point failing the whole batch, NAMING index 2 of 3, which is exactly what this row asked for. **This row has no tick line**: the ADDED block is scoped to rows 11-24 by its own header, and rows 25-32 were never given lines. Row kept for the record: **sodiumxt ABI 9 - the DLEQ/batch algebra** (`sxRistrettoAdd` / `Sub` / `ScalarMultBase` / `ScalarMultBatch` / `ScalarAdd` / `ScalarMul`, built 2026-08-15). Row 11 covers ABI 8's five handlers ONLY; these six are a separate never-marshalled surface, and holde-em's Phase 5 proofs sit directly on them | the six handlers marshal on a real engine - in particular `sxRistrettoScalarMultBatch`, whose whole point is ONE FFI crossing for all 52 card points, and whose atomic-failure contract (any bad element fails the call with a 1-based index, nothing usable in out) has never been observed from script | `sodiumxt/docs/api-reference.md`, the ABI 9 section; `sodiumxt/CLAUDE.md`'s ABI table row for 9 | **CLOSED 2026-08-17** |
 | 26 | ~~**holde-em 4d/4e - void-and-audit + the cheater bots**~~ **CLOSED 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3) - with the two halves carrying DIFFERENT strengths of evidence, and that difference is the point. The 4e half is named outright by the blockquote: "all five cheater bots detected and attributed". The 4d void-and-audit half is NOT named there; what stands behind it is that harness sections 18-19 ran inside holde-em's 538 folded checks with zero failures, which is an INFERENCE from the member total rather than a line of the record. No tick line (see row 25). Row kept for the record: **holde-em 4d/4e - void-and-audit + the cheater bots** (v0.22.0, built 2026-08-15; harness sections 18-19) | the void-and-audit state machine runs on-engine: a bad shuffle/unmask step voids the hand, bets return, and the mandatory full-reveal audit NAMES THE SIGNER of the first bad step. The five scripted attacks (deck-stacker, duplicate-point shuffler, rollback replayer, wrong-scalar unmasker, deal staller) are each detected and correctly attributed | `holde-em/IMPLEMENTATION-PLAN.md` Phase 4d/4e blockquotes; `holde-em/CLAUDE.md` v0.22.0 entry | **CLOSED 2026-08-17** (4e named; 4d inferred) |
 | 27 | ~~**holde-em Phase 5 - Chaum-Pedersen DLEQ proofs**~~ **CLOSED 2026-08-17** (Windows x86_64, NT 10.0, OXT 9.6.3): "a wrong unmask refused INSTANTLY and named, with no audit round" - which is this row's own done-criterion, in the blockquote's words. No tick line (see row 25). Row kept for the record: **holde-em Phase 5 - Chaum-Pedersen DLEQ proofs** (v0.22.0; derandomized nonce, domain-tagged Fiat-Shamir, batch verification, soundness pinned negatively) | on a `dleq=1` table a wrong unmask step is refused INSTANTLY rather than costing a void-and-audit round - the whole point of the phase - and forged proofs still verify false on a real engine | `holde-em/holdem-spec.md` 7.4; `holde-em/CLAUDE.md` Phase 5 entry | **CLOSED 2026-08-17** |
@@ -543,50 +543,40 @@ Committed binaries are uneven, and this decides what is even runnable tonight.
 
 | Member | Committed platforms | If your platform is missing |
 |---|---|---|
-| sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` — but the mac dylib is **ABI 6, four behind the ABI 10 code**: see the warning under this table before testing sodiumxt on a Mac | n/a on Linux/Windows; on macOS the dylib needs its `lipo` rebuild |
-| torrentxt | four (Linux x64/x86, Windows x64/x86); `universal-mac/` holds only a `README.md` (**no macOS dylib**) | dispatch `release-binaries.yml` (its `mac-lipo` job builds this member's universal dylib since 2026-08-23) or build it: `torrentxt/docs/building.md`, then `torrentxt/tools/package-extension.py` |
-| enetxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (universal mac lane since 2026-08-23) or build locally, then `enetxt/tools/package-extension.py` |
-| datachannelxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (its `mac-lipo` job, since 2026-08-23) or build locally, then `datachannelxt/tools/package-extension.py` |
+| sodiumxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256`, **every one at ABI 10 since release run 12 (2026-08-27)** - that run replaced the hand-lipo'd ABI-6 mac dylib this row (and the warning below it) used to flag; the freshness gate decodes 10 from both slices on every push | n/a - every platform ships current |
+| torrentxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27; the two-slice-lipo job) | n/a - every platform ships |
+| enetxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27) | n/a - every platform ships |
+| datachannelxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27; the two-slice-lipo job) | n/a - every platform ships |
 | box2dxt | all five (`x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`, `universal-mac`) + `MANIFEST.sha256` - the only member whose committed mac dylib is not knowingly ABI-stale, and it is a genuine two-architecture Mach-O (x86_64 + arm64). Since 2026-08-23 `tools/check-binary-freshness.py` READS this dylib on every gate run: 370 exports, byte-identical in both slices, matching the shim's 370 definitions and the `.lcb`'s 370 binds, with ABI 4 decoded from both slices' machine code - so the file is verified the way the ELF/PE binaries are. What is still true: **no Mac has ever loaded it**; that half needs an OXT pass on a Mac | n/a on Linux/Windows. On macOS it is the one member worth TRYING - `put b2Version()`, which the 2026-08-17 Windows preflight READ as 4 rather than inferring it - but treat a throw there as unproven-binary, not as a member bug; the rebuild is `box2dxt/docs/building.md` then `box2dxt/tools/package-extension.py` |
 | onionxt | n/a, pure LiveCodeScript | n/a |
-| coinxt | four (Linux x64/x86, Windows x64/x86) + `MANIFEST.sha256`; **no macOS** | dispatch `release-binaries.yml` (universal mac lane since 2026-08-23, both slices KAT-driven) or build it: `cd coinxt && sh native/build.sh pack` puts it straight into `src/code/`; see 2.4 |
+| coinxt | all five + `MANIFEST.sha256` - the first `universal-mac` dylib landed with release run 12 (2026-08-27), both slices driven through the published KAT vectors on the mac runner that built them | n/a - every platform ships |
 
 **On Linux (x64 or x86) and on Windows (x64 or x86), every member's library is
 already in the repo** — the 2026-08-08 release run committed all four platforms for
 all five native members, which is what made that day's suite pass possible on a
 stock checkout.
 
-> **ON A MAC, SODIUMXT WILL THROW ON EVERY CALL, AND THAT IS NOT A BUG TO REPORT.**
-> The committed `universal-mac` dylib is at **ABI 6**; `sodium.lcb` declares
-> `kSXTABIVersion is 10` and `sPrepare()` checks **strict equality**, so every `sx*`
-> handler throws
-> `"SodiumXT: ABI mismatch - the native sodium library does not match this extension"`
-> before it does any work. It is not a broken build and not a bad install: the dylib
-> is simply four ABI bumps stale (7 added the AEAD surface, 8 the ristretto255
-> group, 9 the DLEQ/batch algebra, 10 the raw ChaCha20 xor), because macOS was the one platform CI could not
-> build for and the `lipo` build was done by hand (since 2026-08-23
-> `release-binaries.yml` carries universal mac lanes for all six members, so the
-> unblock is a workflow dispatch; the committed dylib stays ABI 6 until one runs). Consequences for a pass on a Mac:
-> **every sodiumxt test, and everything downstream of it — the sealed lanes, the
-> Level 0 committed shuffle, all of holde-em's online and Level 2 play, riptide's
-> whole crypto layer — cannot run there at all.** Do not spend a Mac session on
-> them; record "blocked: sodiumxt universal-mac at ABI 6" once and move to what a
-> Mac can actually prove (the pure-script layers, onionxt, and the UI passes). The
-> unblock is inventory row 24, and it is a build, not a debug.
+> **RETIRED 2026-08-27, and kept as a record because a Mac session may still meet
+> the OLD package.** This warning said sodiumxt would throw
+> `"SodiumXT: ABI mismatch"` on every call on a Mac, because the committed
+> `universal-mac` dylib sat at ABI 6 against ABI-10 code - which was true from
+> ABI 7 (2026-08-15) until release run 12 (2026-08-27) replaced the hand-lipo'd
+> dylib with a CI-built universal one decoding 10 from both slices. A stock
+> checkout now packages clean on macOS. If a Mac STILL throws that error, the
+> extension being loaded was packaged from a pre-run-12 tree - repackage from
+> current `src/code/`, do not debug the member.
 
-**macOS is the gap for four of the six.** TWO members ship a `universal-mac` dylib:
-sodiumxt's is knowingly **ABI 6**, four behind the ABI 10 code (the warning below),
-and box2dxt's is - since 2026-08-23 - READ and verified by `check-binary-freshness.py`
-on every gate run (370 exports identical in both slices, ABI 4 decoded from both
-slices' machine code), though no Mac has ever loaded it. torrentxt, enetxt,
-datachannelxt and coinxt need a mac dylib built (codesign/notarize is NOT a gate on
-that: unsigned distribution was accepted 2026-08-23). Until 2026-08-23 CI deliberately built no macOS lane — `macos-15`
-runners are arm64-only, so a naive automated lane would emit a thin dylib and silently
-regress sodiumxt's genuine two-architecture binary into one that fails on every Intel
-Mac. `release-binaries.yml` now carries universal mac lanes for ALL SIX members (both
-slices asserted at birth; torrentxt and datachannelxt via a two-slice-lipo job) — but
-no dispatch has run them yet, so on a Mac TODAY, still expect to build (or dispatch)
-before you can run any member but sodiumxt.
+**macOS stopped being the binary gap on 2026-08-27.** The paragraph that stood here
+tracked it closing: two members shipped a dylib (sodiumxt's four ABIs stale, box2dxt's
+current), four shipped none, and the mac lanes existed but "no dispatch has run them
+yet". Release run 12 - the first dispatch to reach its commit stage - landed a
+CI-built universal dylib for every native member, all six now read by
+`check-binary-freshness.py` on every push (both slices, exports and decoded ABI).
+Unsigned distribution stands as accepted 2026-08-23 (the linker's ad-hoc signature;
+no notarization). What macOS still lacks is EXECUTION evidence on an engine: the
+dylibs' own tests ran on the mac runners that built them (arm64 native, x86_64 under
+Rosetta 2), but no OXT engine has loaded any of them - a Mac session is now an
+ordinary engine pass, not a build session.
 
 ### 2.2 The dependency graph (this is the install order)
 
@@ -727,13 +717,11 @@ coinxt installs like any other member and the run below is just a run.
 > had before. If you would rather ship a gcc-built one, running
 > `release-binaries.yml` replaces it and the same CI step will re-verify it.
 
-**macOS is the only gap**, and it is the same gap the native members share
-(box2dxt, folded home 2026-08-14, is the one already shipping all five
-platforms - it has a 2.1 row of its own now, and has been the EIGHTH folded
-harness since 2026-08-16): until 2026-08-23 CI built no macOS lane on purpose (the
-runners are arm64-only, so a naive automated lane would emit a thin dylib; the
-release workflow's universal mac lanes now exist but are dispatch-driven). Build it
-first - one command, and it puts the file where the engine expects it:
+**macOS stopped being a gap on 2026-08-27** - release run 12 landed coinxt's first
+`universal-mac` dylib, both slices KAT-driven on the mac runner that built them, so a
+stock checkout now ships all five platforms and the build below is only needed if you
+are iterating on the shim itself. For a local rebuild - one command, and it puts the
+file where the engine expects it:
 
 ```
 cd coinxt && sh native/build.sh pack
@@ -820,20 +808,21 @@ riptide (hard SodiumXT dependency), and onionxt's SAFECOOKIE / deterministic-oni
 offline-address paths with it, and the failure text points at your install rather than
 at the real cause.
 
-As of 2026-08-23 the committed binaries are at **ABI 10 everywhere except
-`universal-mac`**, which stays at **ABI 6** - now FOUR behind - until the manual
-`lipo` build (the currency table with the reasons lives in `sodiumxt/CLAUDE.md`;
-ABI 8 added the ristretto255 surface, ABI 9 the DLEQ/batch algebra, and ABI 10
-(2026-08-23) the raw ChaCha20 xor NIP-44 composes; the two Windows rows are mingw
-cross-builds per that file's proven fallback recipe, awaiting their Windows
-engine pass like the 2026-08-11 DLL before them). On an ABI-10 row: repackage
-normally and the SHA3 / offline onion-address / ristretto checks run - the
-2026-08-12 Windows x64 pass did exactly this at ABI 7, green. On the mac row:
-**do not repackage SodiumXT** - keep the older package, where `sxSha3_256` and
-`sxRistretto*` simply do not exist and every composing member degrades the way
-it was written to,
-which the harness tracks rather than hard-asserts. Either way the run is useful;
-mixing the two is what is not.
+As of 2026-08-27 the committed binaries are at **ABI 10 on every platform,
+`universal-mac` included**: it sat at ABI 6 - four behind - until release run 12
+replaced the hand-lipo'd dylib with a CI-built universal one (the currency table
+lives in `sodiumxt/CLAUDE.md`; ABI 8 added the ristretto255 surface, ABI 9 the
+DLEQ/batch algebra, and ABI 10 (2026-08-23) the raw ChaCha20 xor NIP-44 composes;
+the two Windows rows are mingw cross-builds per that file's proven fallback
+recipe - the x64 one EXECUTED green on a Windows engine 2026-08-24). On every row:
+repackage normally and the SHA3 / offline onion-address / ristretto checks run -
+the 2026-08-12 Windows x64 pass did exactly this at ABI 7, green. The paragraph
+that stood here ended "on the mac row: **do not repackage SodiumXT** - keep the
+older package, where `sxSha3_256` and `sxRistretto*` simply do not exist and
+every composing member degrades the way it was written to, which the harness
+tracks rather than hard-asserts" - sound advice for the ABI-6 dylib it was
+written about, and obsolete with it. Either way a run is useful; mixing an old
+package with a new tree is what is not.
 
 **Step 0 - the one-run entry point (do this first, always).**
 

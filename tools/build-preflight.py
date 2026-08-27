@@ -276,8 +276,12 @@ def abi_constants():
     return out
 
 
-def mac_stale_abi():
-    """The ABI the committed universal-mac sodiumxt dylib is recorded at."""
+def mac_recorded_abi():
+    """The ABI the committed universal-mac sodiumxt dylib is recorded at.
+
+    Named mac_stale_abi until 2026-08-27: release run 12 refreshed the dylib
+    to the binding's own ABI, so the recorded number stopped being a staleness
+    and the caller now COMPARES it rather than assuming it is behind."""
     text = read(os.path.join("sodiumxt", "CLAUDE.md"))
     found = MAC_ROW_RE.findall(text)
     if len(found) != 1:
@@ -824,13 +828,12 @@ command pfNextSection
    end try
    if tPlatform is "MacOS" then
       -- Quoted from sodiumxt/CLAUDE.md's platform table by the generator, so
-      -- these two numbers cannot drift from the member's own record of them.
+      -- these numbers cannot drift from the member's own record of them - and
+      -- the generator emits a DIFFERENT note when the recorded mac ABI matches
+      -- the binding, because "a skew here is the known state" is only true
+      -- while the record says the dylib is behind.
       stNote ""
-      stNote "MACOS: a SodiumXT ABI SKEW above is the KNOWN RECORDED STATE here,"
-      stNote "not a new defect - the committed universal-mac dylib is at ABI @MACABI@"
-      stNote "against this binding's @SODIUMABI@ (sodiumxt/CLAUDE.md's platform table;"
-      stNote "runbook section 2.1's warning). Record it once and move to what a"
-      stNote "Mac CAN run today (runbook S5); it needs the release workflow mac dispatch or the manual lipo build."
+@MACNOTE@
    end if
 
    stNote ""
@@ -959,8 +962,33 @@ def build():
     text = TEMPLATE
     text = text.replace("@ABICONSTANTS@", block)
     text = text.replace("@SCAFFOLD@", scaffold_block())
-    text = text.replace("@MACABI@", str(mac_stale_abi()))
-    text = text.replace("@SODIUMABI@", str(constants["sodium"]["abi"]))
+    mac_abi = mac_recorded_abi()
+    sodium_abi = constants["sodium"]["abi"]
+    if mac_abi == sodium_abi:
+        # Recorded current (true since release run 12, 2026-08-27, refreshed
+        # the dylib to the binding's ABI): a skew on a Mac is NOT expected any
+        # more, so telling the tester to shrug one off would hide a real
+        # defect - the exact inversion of the note below.
+        mac_note = "\n".join([
+            '      stNote "MACOS: the committed universal-mac dylib is recorded CURRENT"',
+            '      stNote "(ABI %d, matching this binding - sodiumxt/CLAUDE.md%s platform"'
+            % (mac_abi, "'s"),
+            '      stNote "table), so a SodiumXT ABI skew above is a REAL DEFECT here:"',
+            '      stNote "a stale package or a regressed release lane, not a recorded"',
+            '      stNote "state to shrug off. Repackage from the current tree first."',
+        ])
+    else:
+        mac_note = "\n".join([
+            '      stNote "MACOS: a SodiumXT ABI SKEW above is the KNOWN RECORDED STATE here,"',
+            '      stNote "not a new defect - the committed universal-mac dylib is at ABI %d"'
+            % mac_abi,
+            '      stNote "against this binding%s %d (sodiumxt/CLAUDE.md%s platform table;"'
+            % ("'s", sodium_abi, "'s"),
+            '      stNote "runbook section 2.1). Record it once and move to what a Mac CAN"',
+            '      stNote "run today (runbook S5); the unblock is a release-binaries.yml"',
+            '      stNote "dispatch reaching its commit stage, or a manual lipo build."',
+        ])
+    text = text.replace("@MACNOTE@", mac_note)
     # An unsubstituted @NAME@ would reach the engine as literal text inside a
     # report line, where it reads like a broken install rather than like a bug
     # in this generator - so it fails the build here instead.

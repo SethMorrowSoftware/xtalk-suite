@@ -51,12 +51,14 @@ tree whose binary for YOUR platform is stale is exactly how that mixed package g
 | `x86_64-win32` | **10** | mingw64 cross-build 2026-08-23 per the PROVEN fallback recipe below (driven through the member CMake this time, plus `-static-libgcc` - the note in the recipe paragraph); the three checks pass (124/124 `sxt_*` exports matching the Linux build, `sxt_abi_version` disassembles to `mov $0xa,%eax`, imports only KERNEL32/ADVAPI32/msvcrt, zero leaked `crypto_*`/`sodium_*`); EXECUTED 2026-08-24 on a real Windows x64 engine (OXT 9.6.3): the ABI-10 preflight accepted it and the full 106-check harness ran green in the suite paste, the 7-check raw-ChaCha20 section included - the same proof arc as the 2026-08-11 DLL's 2026-08-12 pass |
 | `x86-linux` | **10** | rebuilt 2026-08-23 with the native workflow's `-m32` recipe; its 32-bit smoke test ran green on this host |
 | `x86-win32` | **10** | mingw32 cross-build 2026-08-23, same recipe and checks as the x64 row (`_sxt_abi_version` disassembles to `mov $0xa,%eax` under the 32-bit underscore decoration) |
-| `universal-mac` | 6 | STALE, now FOUR ABIs behind: needs the first mac dispatch of `release-binaries.yml` (its universal mac lanes landed 2026-08-23 - both slices in one pass, asserted at birth; before that the workflow built no macOS lanes because a naive arm64-only build would regress the fat binary) or a manual `lipo` build |
+| `universal-mac` | **10** | refreshed by release run 12 (2026-08-27), the first dispatch to reach its commit stage: a genuinely universal dylib (both slices cross-compiled in one pass, `lipo -archs` asserted at birth, arm64 tested natively and x86_64 under Rosetta 2), and the freshness gate decodes 10 from BOTH slices' `sxt_abi_version`. This row read `6 | STALE, now FOUR ABIs behind` from the hand-lipo'd 2026-08-08 build until that run - the gate's MAC_KNOWN_STALE allowance parsed its number out of this very row, and deleting the allowance is part of the same change that rewrites it |
 
-Until the mac row is refreshed, the honest options there are (a) do not repackage, and run
-the older ABI-6 package end to end, where `sxSha3_256` and the `sxRistretto*` surface
-simply do not exist and the composing members degrade the way they were written to, or
-(b) dispatch `release-binaries.yml` (its mac lane builds this member's universal dylib since 2026-08-23) or do the manual `lipo` build. Everywhere else the tree now packages clean at ABI 10.
+The paragraph that stood here described the honest options while the mac row was four
+ABIs stale ("do not repackage" / "run the older ABI-6 package end to end" / "dispatch
+release-binaries.yml"). Release run 12 took the third option on 2026-08-27, so it no
+longer applies: the tree packages clean at ABI 10 on every platform, mac included. Mac
+execution evidence is still the dispatch's own (arm64 ctest native, x86_64 under
+Rosetta 2); no OXT engine has loaded the dylib yet - that leg stays with the runbook.
 The next `release-binaries.yml` dispatch re-commits all four non-mac rows from the
 canonical lanes (vcpkg + NMake on real Windows runners), which supersedes the mingw
 cross-builds the same way run 31551536144 superseded the 2026-08-11 one.
@@ -103,10 +105,11 @@ build overwrites it and drives the published **RFC 9496 Appendix A.1** encodings
 `scalarmult_base`, the ABI 9 batch crossing against the single one, and a refused bad
 point. The expected ABI is READ FROM `src/sodium_shim.h`, never a literal (coinxt's
 lane carried a literal and the 4 -> 5 bump turned it red for no reason but the
-workflow file). Linux `.so` lanes only: `universal-mac` is deliberately not driven
-because that hand-lipo'd blob is still recorded at ABI 6, four behind this header, so
-an assertion there would fail on a known documented state rather than on a regression.
-It starts being driven when the manual mac build lands.
+workflow file). Linux `.so` lanes only: `universal-mac` is not driven HERE because
+this job runs on a Linux host that cannot dlopen a Mach-O - not, since release run 12
+(2026-08-27), because the dylib is stale. The mac dylib's own drive-through lives in
+release-binaries.yml's mac lane, which runs both slices' tests on the runner that
+builds them, and the freshness gate decodes the ABI from both slices on every push.
 
 The C ABI is **engine-agnostic**: if we ever swap libsodium for monocypher (single-file,
 smaller), the same `sxt_*` surface is reproduced and the LCB layer is untouched.

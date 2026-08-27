@@ -202,34 +202,28 @@ MEMBERS = [
         "name": "torrentxt",
         "lib": "torrentxt",
         "lcb": ["torrentxt/src/torrent.lcb"],
-        # universal-mac exists as a directory holding only a README ("macOS
-        # build pending" in the release matrix), so it is NOT declared here:
-        # this list is the platforms that must contain a LIBRARY.
-        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32"],
+        # universal-mac held only a "macOS build pending" README until release
+        # run 12 (2026-08-27) landed the first universal dylib; declared since.
+        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32",
+                  "universal-mac"],
         "shim": "torrentxt/src/torrent_shim.cpp",
         "prefix": "btx_",
         "abi_header": "torrentxt/src/btx_abi.h",
         "abi_define": "BTX_ABI_VERSION",
         "abi_symbol": "btx_abi_version",
         "closure": {
-            # OFF for ELF, with the number. The Linux builds statically link
-            # libtorrent, boost and libstdc++ with no version script, so
-            # x86_64-linux/torrentxt.so exports 5419 names beyond the shim's 78
-            # (`_ZGTtNKSt11logic_error4whatEv` and friends). That is a real
-            # difference from every other member, not a defect this gate can
-            # act on - and a tolerance list long enough to cover it would be a
-            # list of libstdc++'s exports, which is not a thing this repo
-            # should own. The BIND and SOURCE oracles still run on those two
-            # libraries; only the closure is off.
-            "elf": "the COMMITTED Linux builds predate src/torrentxt.map and "
-                   "export 5419 statically-linked libtorrent/boost/libstdc++ "
-                   "symbols beyond the shim's own (measured 2026-08-17). The "
-                   "version script landed 2026-08-26, so this skip is now "
-                   "scoped to the binaries in the tree rather than to the "
-                   "member: the next Linux rebuild should export btx_* and "
-                   "btx::test::* only, and THIS ENTRY SHOULD THEN BECOME A "
-                   "TOLERANCE LIST (or go away). Re-measure after the next "
-                   "release dispatch rather than assuming either outcome",
+            # ON since release run 12 (2026-08-27), exactly as the skip that
+            # stood here said it should be: this entry was a skip-with-reason
+            # ("the COMMITTED Linux builds predate src/torrentxt.map and
+            # export 5419 statically-linked libtorrent/boost/libstdc++
+            # symbols beyond the shim's own") whose text promised it would
+            # BECOME A TOLERANCE LIST once a dispatch rebuilt Linux with the
+            # version script applied. That dispatch is run 12, and the
+            # measurement below confirmed it: both rebuilt .so files export
+            # btx_* plus the btx::test::* hooks and nothing else. The
+            # tolerance names the deliberately exported mangled hooks, same
+            # as `pe` and `macho`.
+            "elf": [r"^_ZN3btx4test"],
             # The MSVC DLLs export only what is declared, so the closure IS
             # meaningful there - it is off above for a toolchain reason, not
             # because torrentxt is exempt from the idea.
@@ -248,7 +242,8 @@ MEMBERS = [
         "name": "enetxt",
         "lib": "enetxt",
         "lcb": ["enetxt/src/enet.lcb"],
-        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32"],
+        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32",
+                  "universal-mac"],
         "shim": "enetxt/src/enet_shim.cpp",
         "prefix": "enx_",
         "abi_header": "enetxt/src/enx_abi.h",
@@ -260,7 +255,8 @@ MEMBERS = [
         "name": "datachannelxt",
         "lib": "datachannelxt",
         "lcb": ["datachannelxt/src/datachannel.lcb"],
-        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32"],
+        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32",
+                  "universal-mac"],
         "shim": "datachannelxt/src/datachannel_shim.cpp",
         "prefix": "dcx_",
         "abi_header": "datachannelxt/src/dcx_abi.h",
@@ -316,7 +312,8 @@ MEMBERS = [
         "name": "coinxt",
         "lib": "coinxt",
         "lcb": ["coinxt/src/coinxt.lcb"],
-        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32"],
+        "ships": ["x86-linux", "x86_64-linux", "x86-win32", "x86_64-win32",
+                  "universal-mac"],
         # coinxt is the one member whose shim lives under native/, not src/.
         "shim": "coinxt/native/coinxt.c",
         "prefix": "cnx_",
@@ -370,11 +367,11 @@ MAC_EXEMPTION = (
 # the one remaining per-member state is MAC_KNOWN_STALE below.
 MAC_MEMBER_NOTE = {
     "sodiumxt":
-        "recorded stale, and since 2026-08-23 VERIFIED stale rather than "
-        "cited: MAC_KNOWN_STALE parses the recorded ABI out of "
-        "sodiumxt/CLAUDE.md's own platform table, and the reader holds both "
-        "slices' decoded constant to that number - the SKIP that prints is a "
-        "confirmed record, not an unread claim",
+        "was recorded stale (ABI 6, the hand-lipo'd 2026-08-08 build) with a "
+        "MAC_KNOWN_STALE allowance that VERIFIED the record on every run; "
+        "release run 12 (2026-08-27) refreshed the dylib to ABI 10, the "
+        "allowance flipped to a stale excuse per its own design, and both it "
+        "and the CLAUDE.md STALE row were deleted in the same change",
     "box2dxt":
         "this entry used to say \"nothing in this tree has ever read this "
         "dylib's export table ... UNVERIFIED\". False since 2026-08-23: the "
@@ -383,25 +380,24 @@ MAC_MEMBER_NOTE = {
         "checked here rather than taken on faith",
 }
 
-# The one recorded-stale mac state. The RECORD is the member's own platform
-# table row; the number is PARSED out of it on every run, never hand-copied,
-# because a hand-copied constant goes stale silently at the next bump - the
-# exact failure build-preflight.py exists to prevent for the ABI macros, one
-# document over. The flow in check_fat_macho: decoded == recorded means the
-# KNOWN state (one SKIP, with the measured deltas); decoded == the source's
-# define means the dylib was refreshed and this row is now a stale excuse (a
-# hard failure until it is deleted); anything else is unrecorded skew (a hard
-# failure, with all three numbers named). A member with no row here gets no
-# allowance at all - its dylib is simply held to every leg.
-MAC_KNOWN_STALE = {
-    "sodiumxt": {
-        "record": "sodiumxt/CLAUDE.md",
-        # The platform table row: | `universal-mac` | 6 | STALE, ... |
-        "pattern": r"^\|\s*`universal-mac`\s*\|\s*(\d+)\s*\|\s*STALE",
-        "cite": "sodiumxt/CLAUDE.md's platform table row for universal-mac "
-                "(echoed by README.md's release matrix)",
-    },
-}
+# A recorded-stale mac state, when one exists. The RECORD is the member's own
+# platform table row; the number is PARSED out of it on every run, never
+# hand-copied, because a hand-copied constant goes stale silently at the next
+# bump - the exact failure build-preflight.py exists to prevent for the ABI
+# macros, one document over. The flow in check_fat_macho: decoded == recorded
+# means the KNOWN state (one SKIP, with the measured deltas); decoded == the
+# source's define means the dylib was refreshed and this row is now a stale
+# excuse (a hard failure until it is deleted); anything else is unrecorded
+# skew (a hard failure, with all three numbers named). A member with no row
+# here gets no allowance at all - its dylib is simply held to every leg.
+#
+# EMPTY since 2026-08-27, and the mechanism worked start to finish: sodiumxt's
+# entry allowed the hand-lipo'd ABI-6 dylib (recorded in its CLAUDE.md
+# platform table) from 2026-08-23 until release run 12 refreshed the dylib to
+# ABI 10 - at which point the gate's own SKIP text flipped to "this row is now
+# a STALE EXCUSE - delete it", which is this deletion. The dict stays so the
+# next hand-built or interim mac binary has somewhere honest to be recorded.
+MAC_KNOWN_STALE = {}
 
 # Files that legitimately sit inside src/code/ without being a library.
 NON_LIBRARY_FILES = {"MANIFEST.sha256", "README.md"}
