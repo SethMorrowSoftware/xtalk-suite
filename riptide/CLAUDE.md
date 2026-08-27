@@ -38,7 +38,17 @@ tools/build-suite-selftest.py regenerated the paste):
   and played an attached video, which necessarily exercised head publish
   -> fetch -> chain walk -> authorSig verify -> media info-hash -> swarm
   join -> playback. The mid-download nuance (playback visibly below 100%)
-  stays unmeasured; the runbook scripts it.
+  was MEASURED 2026-08-27 and came back NEGATIVE as then wired: the Play
+  mood unlocked on file-EXISTENCE, which libtorrent satisfies at metadata
+  time with a hollow allocated file, so clicking handed the player ~0%
+  real data ("streaming does not work" while feed + complete media worked
+  fully - the exact report). Fixed the same day: raMediaFrontReady floors
+  Play on rsMediaStatus's fileProgress (the CONTIGUOUS front, the
+  library's own contract) at 5%, both the feed and LAN-handoff paths, and
+  the launch messages carry the honest limit - a non-faststart video
+  keeps its index at the tail and cannot start early whatever the fetch
+  order. The runbook's re-run step scripts the criterion with a faststart
+  file named as the required input.
 - **Phase 4 (DMs): DONE 2026-08-15**, two machines, chat both ways - the
   sealed RSI1 intro, the deterministic-role crypto_kx session, and the
   pairwise secretstream over rp1 all carried real traffic with no server.
