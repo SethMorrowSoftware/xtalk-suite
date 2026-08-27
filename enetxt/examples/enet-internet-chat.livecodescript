@@ -1142,7 +1142,7 @@ command eiJoinWatch
    if sHost is empty or sHost is 0 then
       exit eiJoinWatch
    end if
-   eiLog "* still connecting. Internet causes, in order: (1) the host's router has not opened UDP - the HOST's log must say the port was confirmed (portMapped), else they forward it by hand; (2) the invite IP is stale (routers re-lease); (3) the host machine's own firewall blocks inbound UDP" && kEiPort & "; (4) a carrier-grade NAT on the host's line that no mapper can open - host from the other side instead."
+   eiLog "* still connecting. Internet causes, in order: (1) the host's router has not opened UDP - the HOST's log must say the port was confirmed (portMapped), else they forward it by hand; (2) the invite IP is stale (routers re-lease); (3) the host machine's own firewall blocks inbound UDP" && kEiPort & "; (4) a carrier-grade NAT on the host's line that no mapper can open - host from the other side instead; (5) BOTH machines are on the SAME network - the invite points at your shared router's PUBLIC ip, and most home routers refuse to hairpin that back inside (engine-reported 2026-08-27). Same network: use the LAN chat demo. The real internet leg needs the joiner on a different network (a phone hotspot is the easy one)."
 end eiJoinWatch
 
 command eiLeave
@@ -1264,7 +1264,7 @@ on enetDisconnect pEvent
       else
          -- no enetConnect ever arrived: ENet gave up on the CONNECT. Name the
          -- internet causes (the watchdog's list, now definitive).
-         eiLog "* could not connect (ENet gave up). Is the host's router port confirmed open (their log says portMapped)? Is the invite current? See the watchdog list above."
+         eiLog "* could not connect (ENet gave up). Is the host's router port confirmed open (their log says portMapped)? Is the invite current? Are you on the SAME network as the host (the public-ip invite cannot hairpin on most routers - use the LAN chat demo there)? See the watchdog list above."
          uiStatus "Connect FAILED - see the log.", "bad"
          eiPill "FAILED", "bad"
       end if

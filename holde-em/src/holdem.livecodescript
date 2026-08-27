@@ -3226,7 +3226,7 @@ end oxProcessId
 -- declaration silently evaluates to nothing at runtime)
 --------------------------------------------------------------------------
 
-constant kHeVersion = "0.25.2"
+constant kHeVersion = "0.25.3"
 constant kHeHarnessV = "43"
 constant kUIVersion = "15"
 
@@ -8352,11 +8352,18 @@ command heNetStartGame
       end if
    end repeat
    if tJoinedN < 2 then
+      -- refusals land in the LOBBY's own net feed too: the status line sits
+      -- under the overlay the host is looking at, which is how a silent
+      -- Start read as "the game is not starting" on the 2026-08-27 pass
       heUISetStatus "Need at least 2 joined players to start (have " & tJoinedN & ")."
+      put "start  refused: need at least 2 joined players (have " & tJoinedN & ")" & return after gGame["netLog"]
+      heLobbyRefresh
       exit heNetStartGame
    end if
    if tJoinedN > kHeMaxSeats then
       heUISetStatus "Too many joined players for the table (" & tJoinedN & ")."
+      put "start  refused: too many joined players (" & tJoinedN & ")" & return after gGame["netLog"]
+      heLobbyRefresh
       exit heNetStartGame
    end if
    sort lines of tPubsTxt
@@ -8604,6 +8611,15 @@ command heNetFoldGameWire pTypeTxt, pFromHex, pBodyTxt, pHandTxt
          heNetTurnMark
          heUIClearCards
          heHudMark
+         -- the lobby overlay ENDS when the first hand begins - engine-reported
+         -- 2026-08-27, the 2d live pass: joins worked, the hand folded and
+         -- dealt UNDERNEATH, and every seat was still looking at the lobby,
+         -- whose only exit is Leave (which stops the transport). Every seat
+         -- folds handStart, host included (it folds its own emission), so this
+         -- one line dismisses the overlay everywhere at the same wire. No
+         -- headless run could see the gap: the overlay's controls do not exist
+         -- in a paste, so heLobbyHide is a guarded no-op there.
+         heLobbyHide
          put "hand   #" & pHandTxt & " begins (button seat " & tSeat & ")" & return after gGame["netLog"]
          break
 
@@ -12216,14 +12232,18 @@ end heLobbyHide
 
 command heLobbySetVisible pOn
    -- toggle the whole overlay by concrete type (by-name generic "control"
-   -- references are not reliably valid in strict OXT; field/button/graphic are)
-   local tFields, tButtons, tNm
+   -- references are not reliably valid in strict OXT; field/button/graphic are).
+   -- The delimiter is pinned and RESTORED (gotcha 5): since the handStart fold
+   -- calls heLobbyHide, this runs mid-fold, where clobbering the global
+   -- itemDelimiter would corrupt whatever parse the caller resumes.
+   local tFields, tButtons, tNm, tOldDelim
    if there is a graphic "heLobbyBg" then
       set the visible of graphic "heLobbyBg" to pOn
    end if
    put "heLobbyTitle,heJoinLabel,heTorLine,heJoinCode,heLobbyId,heLobbyTable," \
          & "heRosterHdr,heNetHdr,heLobbyRoster,heLobbyNet" into tFields
    put "heBtnCreate,heBtnJoin,heBtnTransport,heBtnHostMode,heBtnCopyCode,heBtnLeave,heBtnStartGame" into tButtons
+   put the itemDelimiter into tOldDelim
    set the itemDelimiter to comma
    repeat for each item tNm in tFields
       if there is a field tNm then
@@ -12235,6 +12255,7 @@ command heLobbySetVisible pOn
          set the visible of button tNm to pOn
       end if
    end repeat
+   set the itemDelimiter to tOldDelim
 end heLobbySetVisible
 
 function heLobbyVisible
