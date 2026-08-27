@@ -18,8 +18,9 @@ script "NostrDemo"
 -- the self-check block at the bottom is the boot record every suite demo
 -- prints.
 --
--- HOW TO USE. Paste into a new stack script (or open this file as a stack),
--- close and reopen the stack. The window builds itself. Point the relay url
+-- HOW TO USE. Paste into a new stack script, then close and reopen the
+-- stack. The window builds itself. Opening this file directly does not build
+-- it (docs/OXT-ENGINE-NOTES.md 5.5). Point the relay url
 -- at a relay you trust; ws:// speaks the engine-proven socket idioms, wss://
 -- is written but engine-unproven (the honesty label below).
 --

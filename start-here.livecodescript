@@ -1,17 +1,28 @@
 script "SuiteStartHere"
 
 -- start-here.livecodescript - the suite's front door. Download the repo,
--- open THIS file in OpenXTalk (File > Open Stack), and you get a clickable
--- directory of every sample, demo and harness stack, listed by the relative
--- path it has in this repository. Click a path to read what it is and what
--- it needs; Open (or double-click) launches it in place.
+-- paste THIS file into a new stack script, SAVE that stack in the repository
+-- root, and reopen it: you get a clickable directory of every sample, demo
+-- and harness stack, listed by the relative path it has in this repository.
+-- Click a path to read what it is and what it needs; Open (or double-click)
+-- launches it in place.
 --
--- HOW IT RESOLVES PATHS: a script-only stack opened from disk knows its own
--- file path (`the filename of this stack`), and this file lives at the
--- REPOSITORY ROOT - so every entry is simply root + the relative path shown.
--- Nothing is copied or installed; the stacks open from where the download
--- put them. If the status line reports missing files, the download is
--- incomplete or this file was moved out of the repo root.
+-- NOT `File > Open Stack` on this file. This header said exactly that until
+-- 2026-08-27, four lines above the paragraph documenting the opposite: a
+-- script-only file is TEXT, so opening one loads the script and builds no
+-- window (docs/OXT-ENGINE-NOTES.md 5.5). The whole point of this launcher is
+-- that a reader should not have to know that, and its own front matter was
+-- the last place still teaching it.
+--
+-- HOW IT RESOLVES PATHS: the running stack knows its own file path (`the
+-- filename of this stack`), and every entry is simply that file's folder plus
+-- the relative path shown - so the stack CARRYING this script has to sit in
+-- the REPOSITORY ROOT. Save it beside README.md before you open it; an
+-- unsaved stack has no filename at all, and slProbe below says so in the
+-- status line rather than listing every demo as missing. Nothing is copied or
+-- installed; the stacks open from where the download put them. If the status
+-- line reports missing files, the download is incomplete or the host stack
+-- was saved somewhere other than the repo root.
 --
 -- WHAT OPENING DOES (the paste ritual, automated): a script-only file is
 -- TEXT - on this engine, going to the file does not produce a built
@@ -614,7 +625,7 @@ command slProbe
    local tRoot, tOldDelim, tLine, tRel, tMissing, tCount
    put slRoot() into tRoot
    if tRoot is empty then
-      uiStatus "Open this stack FROM THE REPO (File > Open Stack on start-here.livecodescript) so relative paths can resolve.", "bad"
+      uiStatus "SAVE this stack in the repo root (beside README.md), then reopen it, so relative paths can resolve.", "bad"
       exit slProbe
    end if
    put 0 into tCount

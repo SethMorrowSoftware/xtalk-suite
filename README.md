@@ -38,20 +38,29 @@ stays.)
 1. **Install [OpenXTalk](https://openxtalk.org)** if you have not already.
 2. **Download this repository** — the green **Code** button above, then
    **Download ZIP** — and unzip it anywhere (or `git clone` it).
-3. In OpenXTalk pick **File > Open Stack** and choose
-   [`start-here.livecodescript`](start-here.livecodescript) from the
-   unzipped folder.
+3. In OpenXTalk: `File > New Mainstack`, then `Object > Stack Script`.
+   Paste **all** of
+   [`start-here.livecodescript`](start-here.livecodescript) in, Apply, and
+   **save that stack in the unzipped folder's root** (beside this
+   `README.md`). Close its window, then open it again.
 
-That opens a clickable directory of every sample, demo and harness stack,
-listed by the path it has in this repository. Click one to read what it is
-and what it needs; **double-click (or press Open) to launch it** right from
-where the download put it — each stack carries the script libraries it needs,
-so nothing has to be wired up first, and its **Setup help** button explains
-the rest in plain language. Everything here
-is a script-only stack that builds its own window when opened, so there is
-nothing to install or copy first; a stack missing an extension says so in
-red at the top rather than breaking. (`tools/check-launcher-registry.py`
-holds the directory true to the tree on every push.)
+Do not use `File > Open Stack` on the `.livecodescript` file itself: a
+script-only file is text, so opening one loads the script and builds no
+window (`docs/OXT-ENGINE-NOTES.md` 5.5). Saving the stack in that folder is
+what lets it find everything else, because it locates each demo by a path
+relative to its own file.
+
+Reopening builds the window: a clickable directory of every sample, demo and
+harness stack, listed by the path it has in this repository. Click one to
+read what it is and what it needs; **double-click (or press Open) to launch
+it** right from where the download put it — each stack carries the script
+libraries it needs, so nothing has to be wired up first, and its **Setup
+help** button explains the rest in plain language. Every stack here builds
+its own window from its own script, which is precisely why **Open** does the
+paste ritual for you rather than opening the file; there is nothing to
+install or copy first, and a stack missing an extension says so in red at the
+top rather than breaking. (`tools/check-launcher-registry.py` holds the
+directory true to the tree on every push.)
 
 ## Release status (honest, per member)
 

@@ -22,7 +22,11 @@ datachannelxt/ as subfolders) become mirrors. Development happens here.
 openxtalk-libraries/
   README.md            the suite front door + the honest release matrix
   start-here.livecodescript
-                       the RUNNABLE front door: open it in OXT for a
+                       the RUNNABLE front door: paste it into a stack script
+                       SAVED IN THE REPO ROOT and reopen (never `File > Open
+                       Stack` on the file itself - engine notes 5.5, which
+                       this launcher's own header taught wrongly until
+                       2026-08-27) for a
                        clickable directory of every demo/harness stack by
                        repo-relative path (launches them in place; each
                        stack now CARRIES the libraries it needs, so no

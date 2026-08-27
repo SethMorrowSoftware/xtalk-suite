@@ -453,6 +453,49 @@ on a platform nobody had run before. An assertion's failure message is the
 whole product of an engine pass. Write it as though the run costs a day,
 because it does.
 
+### 5.5 A script-only stack file opened from disk does not build its GUI
+
+**OBSERVED** (OXT, 2026-08-14; the primary record is the dated maintainer note
+in `start-here.livecodescript`'s own header). A `.livecodescript` file is TEXT.
+`File > Open Stack` on one - or `go` to the file - loads the script and stops
+there: **going to the file does not produce a built window**. A demo that
+builds its whole UI in `preOpenStack` / `openStack` therefore looks broken
+rather than unopened, and the engine says nothing at all, which is what makes
+this expensive - the reader concludes the DEMO is defective and stops.
+
+**What works** is the ritual `OXT-PASS-RUNBOOK.md` 3.1 spells out, and it is
+the only shape any engine pass in this tree has ever used: `File > New
+Mainstack`, `Object > Stack Script`, paste the whole file, Apply, then CLOSE
+and REOPEN the window. `start-here.livecodescript`'s Open button automates
+exactly that - create a host stack, set its script, `go` to it - which is why
+the launcher can open a demo that the reader could not have opened by
+double-clicking the same file.
+
+**What it does NOT mean.** Getting a script-only file into the MESSAGE PATH is
+fine and is how the pure-script layers are wired by hand: load it and
+`start using stack "<name>"`, expecting no window, because there is none to
+build (`onionxt/docs/10-usage-guide.md` section 2 is the worked example). Same
+for the two function-shaped harnesses - `put sxSelfTest()`, `put oxSelfTest()`
+from the message box. The rule is about the GUI BUILD, not about loading a
+script.
+
+**What it cost.** Nothing in an engine session: it cost the front door. The
+suite's own entry point taught the wrong ritual on both ends - `README.md`
+step 3 said to open `start-here.livecodescript` with `File > Open Stack`, and
+that file's header said the same thing FOUR LINES ABOVE the paragraph
+documenting this exact behaviour and implementing the workaround. A first-time
+reader following the README got a launcher that never built its window, from
+the one file whose entire job is making the demos easy to run. Corrected
+2026-08-27 in `README.md`, `CLAUDE.md`, `start-here.livecodescript` (header
+and its `slProbe` status line), `datachannelxt/README.md`, and four demo
+headers that offered "open it as a stack" as an alternative to pasting.
+
+**No gate holds this**, and it is prose in the places a reader starts from, so
+it can drift back silently. The cheap check is a grep for `Open Stack` and
+`as a stack` across `*.md` and `*.livecodescript`; what it should find is the
+library case above and box2dxt's `dist/INSTALL.md`, which opens a real
+`.oxtstack` binary stack and is not this rule.
+
 ---
 
 ## 6. Sockets and processes
