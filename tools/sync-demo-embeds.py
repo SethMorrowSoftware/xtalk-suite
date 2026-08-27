@@ -140,6 +140,18 @@ REGISTRY = {
         "nostrxt/src/nostrxt.livecodescript",
         "nostrxt/src/nostr-relay.livecodescript",
         "nostrxt/examples/nostrxt-tests.livecodescript"],
+    # holde-em's onion tables (2f) and onion-hosted oracle used to need a
+    # manual `start using onionxt` - the one wiring step left in a stack
+    # that is otherwise one paste-and-run file, and a newcomer meets it as
+    # a refusal message. Carrying OnionXT closes that; the tor daemon stays
+    # the only thing to run. No DROP_HANDLERS entry ON PURPOSE: this stack
+    # defines no socket handlers of its own, so OnionXT's `on socket*`
+    # wrappers must ride along or its sockets have nothing listening (the
+    # keyed-by-pair argument above). The suite paste already embeds onionxt
+    # verbatim as a script layer, so build-suite-selftest.py cuts this copy
+    # back out (strip_spans on the holdem row, the coin-selftest precedent).
+    "holde-em/src/holdem.livecodescript": [
+        "onionxt/src/onionxt.livecodescript"],
 }
 
 # Demos deliberately NOT embedded, each with the reason. An entry here is a
@@ -366,7 +378,16 @@ def splice(demo_text, block):
 
     So: an optional leading `script "..."`, then the whole leading comment
     header, and the libraries go after that - purpose first, machinery second,
-    demo code last."""
+    demo code last.
+
+    THE HEADER CAN BE A `/* */` BLOCK, and the first version of this only
+    knew `--` lines - so holde-em's 926-line block-comment changelog got the
+    embed spliced ABOVE it, burying the prose this function's own rule says
+    stays on top (caught on the first holdem embed, 2026-08-27, at line 3 of
+    a 15k-line file). A leading block comment is consumed to the FIRST line
+    containing `*/` - the same first-close-wins precedence strip_comments
+    uses in the fold tools - and `--` lines are tested first, so a line
+    comment that merely mentions `/*` cannot open one."""
     if BEGIN in demo_text:
         start = demo_text.index(BEGIN)
         end = demo_text.index(END) + len(END)
@@ -377,8 +398,15 @@ def splice(demo_text, block):
         i += 1
     if i < len(lines) and re.match(r'^script\s+"', lines[i]):
         i += 1
-    while i < len(lines) and (not lines[i].strip() or lines[i].lstrip().startswith("--")):
-        i += 1
+    while i < len(lines):
+        if not lines[i].strip() or lines[i].lstrip().startswith("--"):
+            i += 1
+        elif lines[i].lstrip().startswith("/*"):
+            while i < len(lines) and "*/" not in lines[i]:
+                i += 1
+            i += 1  # the line carrying the close
+        else:
+            break
     head, tail = lines[:i], lines[i:]
     return "\n".join(head + ["", block, ""] + tail)
 

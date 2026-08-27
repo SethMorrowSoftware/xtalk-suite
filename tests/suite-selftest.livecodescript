@@ -547,7 +547,7 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.25.1"
+constant he1kHeVersion = "0.25.2"
 constant he1kHeHarnessV = "43"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
@@ -28942,10 +28942,13 @@ function he1heReadableErr pErr
 end he1heReadableErr
 
 function he1heHasOnion
-   -- OnionXT presence, probed LIVE at each use (a user can `start using
-   -- onionxt` mid-session; a cached false would wedge until reopen -- the
-   -- he1heKitReload lesson). A guarded oxVersion() call is the family probe
-   -- (nocloud's qsHasOnion). Message-rate only, never per-frame.
+   -- OnionXT presence, probed LIVE at each use. The layer is CARRIED in
+   -- this stack since v0.25.2 (tools/sync-demo-embeds.py), so a false here
+   -- means the embedded copy is damaged rather than a missed `start using`
+   -- step - and the probe stays live rather than cached because live is
+   -- how it fails CLOSED whatever the cause (the he1heKitReload lesson). A
+   -- guarded oxVersion() call is the family probe (nocloud's qsHasOnion).
+   -- Message-rate only, never per-frame.
    local he1tProbeErr, he1tVerTxt
    try
       put oxVersion() into he1tVerTxt
@@ -29060,7 +29063,7 @@ function he1heJoinRefusal pInvA, pHasOnion
       return he1tErrTxt
    end if
    if pInvA["transport"] is "onion" and pHasOnion is not true then
-      return "This is an ONION table invite: it needs the OnionXT library loaded (start using onionxt) and a running tor daemon. There is no fallback transport -- load OnionXT and Join again, or ask the host for a DHT-table invite."
+      return "This is an ONION table invite: it needs OnionXT and a running tor daemon. OnionXT is carried inside this stack, so this refusal means the embedded copy is damaged (re-download the stack, or run tools/sync-demo-embeds.py). There is no fallback transport -- ask the host for a DHT-table invite."
    end if
    return empty
 end he1heJoinRefusal
@@ -29245,7 +29248,7 @@ command he1heTableCreate
    -- silent fallback to the DHT transport -- the host chose onion).
    if he1tTransport is "onion" then
       if not he1heHasOnion() then
-         he1heUISetStatus "Onion tables need the OnionXT library loaded (start using onionxt) plus a locally running tor daemon (SOCKS 9050, control 9051). No silent fallback -- switch Host over to DHT, or load OnionXT and try again."
+         he1heUISetStatus "Onion tables need OnionXT plus a locally running tor daemon (SOCKS 9050, control 9051). OnionXT is carried inside this stack - this refusal means the embedded copy is damaged (re-download, or run tools/sync-demo-embeds.py). No silent fallback -- switch Host over to DHT."
          exit he1heTableCreate
       end if
       -- the table id is minted EARLY so the onion address -- a pure function
@@ -30221,7 +30224,7 @@ command he1heNetStartOnion
    if not he1heHasOnion() then
       -- belt: he1heTableCreate/he1heTableJoin already refused; a direct caller
       -- still fails closed with the same story
-      he1heUISetStatus "OnionXT is not loaded (start using onionxt). Onion table unavailable; hotseat still works."
+      he1heUISetStatus "The carried OnionXT layer did not answer its probe (damaged embed - re-download, or run tools/sync-demo-embeds.py). Onion table unavailable; hotseat still works."
       exit he1heNetStartOnion
    end if
    try
@@ -30811,7 +30814,7 @@ function he1heNetOnionStatusTxt
       return he1gGame["oxFailTxt"]
    end if
    if not he1heHasOnion() then
-      return "Tor: OnionXT library not loaded (start using onionxt)"
+      return "Tor: the carried OnionXT layer did not answer (damaged embed)"
    end if
    switch he1tStateTxt
       case "ctl"

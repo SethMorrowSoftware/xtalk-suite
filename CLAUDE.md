@@ -253,8 +253,9 @@ here, and it works like the two above: the master is
 `<member>/src/*.livecodescript` - still the single source of truth and the right
 dependency for a real project - a verbatim copy lives between sentinels in each
 shipped demo, and `--check` is in the gate set and fails the build when a copy
-drifts. FIFTEEN demos carry a library today (the gate prints the count; take it
-from there, not from here); nobody hand-edits inside the sentinels.
+drifts. SIXTEEN demos carry a library today (the gate prints the count; take it
+from there, not from here - holde-em joined 2026-08-27, carrying onionxt so its
+onion tables need no `start using` step); nobody hand-edits inside the sentinels.
 The point is that `start using stack "coinxt"` is a wiring step most readers
 meet as an error message, so a demo stays ONE file you paste and open. **The
 embed goes ABOVE the demo's own code** (below its `script "..."` line and its
