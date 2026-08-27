@@ -30,13 +30,14 @@ script "SuiteStartHere"
 -- every engine pass is the documented ritual: make a stack, set its
 -- script, open it. So that is exactly what Open does: read the file,
 -- CREATE an invisible host stack named by the file's own `script "..."`
--- line, SET its script (a compile error surfaces right here, with the
--- demo's name on it), GO to it so its own open handlers build the window,
--- nudge the FULL open sequence once if the card arrived empty (both
--- lifecycles, dispatched never sent - the box2dxt games build in the CARD
--- hooks and define no openStack; a send to a handler that is not there
--- errors, which is exactly how they used to not launch), then reveal the
--- finished window. There is nothing to wire up before that: a stack that needs a
+-- line, park it CLOSED (create OPENS what it makes, and a go to an
+-- already-open stack is a raise that fires nothing - the reopen turned
+-- out to be the load-bearing half of the paste ritual; engine notes
+-- 5.5), SET its script (a compile error surfaces right here, with the
+-- demo's name on it), GO to it - a genuine open, so the ENGINE fires the
+-- full preOpen/open sequence for both lifecycle families itself - nudge
+-- that same sequence by hand only if the card still arrived empty, then
+-- reveal the finished window. There is nothing to wire up before that: a stack that needs a
 -- script library CARRIES it, embedded verbatim by tools/sync-demo-embeds.py,
 -- so not one registry row declares a helper today - and
 -- tools/check-launcher-registry.py now refuses a row that names a helper its
@@ -1065,7 +1066,7 @@ end slCloseSessionStacks
 -- ---- launching ---------------------------------------------------------------
 command slOpenSelected
    local tOldDelim, tRoot, tRel, tHelpers, tNote, tHelper, tErr, tFailed
-   local tHelperName, tName
+   local tHelperName, tName, tOldDefault
    if sSelected is empty then
       uiStatus "Click a stack in the list first.", "warn"
       exit slOpenSelected
@@ -1135,37 +1136,50 @@ command slOpenSelected
    if tName is empty then
       exit slOpenSelected
    end if
+   -- a RAISE for a window that is already up; a genuine OPEN otherwise,
+   -- kept invisible so the reveal below stays flicker-free (`go invisible
+   -- stack` is the documented spelling for opening without showing; it
+   -- shares the OXT pass the rest of this launcher needs). slPrepareStack
+   -- parks a fresh stack CLOSED - see the why there - so this go is a
+   -- real open and the engine fires preOpenStack/preOpenCard/openStack/
+   -- openCard itself. That is what builds BOTH lifecycle families; the
+   -- nudge below is only the belt.
    try
-      go stack tName
+      if sPrepAlreadyOpen is "true" then
+         go stack tName
+      else
+         go invisible stack tName
+      end if
    catch tErr
       uiStatus "Could not open" && tName & ":" && tErr, "bad"
       exit slOpenSelected
    end try
-   -- nudge once if the card arrived empty - speaking BOTH lifecycles,
-   -- throw-proof (2026-08-27, reported from an engine: none of the six
-   -- box2dxt games launched). The games hang their build off the CARD
-   -- hooks (preOpenCard/openCard) and define no openStack at all, so the
-   -- old `send "openStack"` was a send to a handler that is not there -
-   -- which ERRORS, killing this handler before the reveal below: the
-   -- window stayed invisible, reading as "does not launch". The
-   -- stack-hook demos never hit that send (their preOpenStack/openStack
-   -- fire on the go above, so their card is never empty here), which is
-   -- why only the card-hook six failed. dispatch, never send - unhandled
-   -- is an answer, not an error - in the engine's open order; no
-   -- registry stack defines hooks from both families (measured
-   -- 2026-08-27), so only pre-before-open within a family is
-   -- load-bearing. A startup error in the demo's OWN handlers is
-   -- surfaced in red and its window still shown: an invisible
-   -- half-built stack is the one outcome worse than a red status line.
+   -- the BELT: only if the real open above still left the card empty,
+   -- run the open sequence by hand. Dispatched, never sent (a send to a
+   -- handler that is not there ERRORS - how the games used to die
+   -- invisibly); every message aimed at the STACK, whose script holds
+   -- the handlers - `dispatch "openCard" to card 1 of stack X` reached
+   -- nothing on the engine (2026-08-27, the plain-window report, engine
+   -- notes 5.5); and the defaultStack pinned to the demo the way a real
+   -- open would have it, because a builder's unqualified control
+   -- references resolve against the defaultStack (engine notes 5.3). No
+   -- registry stack defines hooks from both families (measured), so
+   -- only pre-before-open within a family is load-bearing. A startup
+   -- error in the demo's OWN handlers is surfaced in red and its window
+   -- still shown: an invisible half-built stack is the one outcome
+   -- worse than a red status line.
    if the number of controls of card 1 of stack tName is 0 then
+      put the defaultStack into tOldDefault
       try
+         set the defaultStack to tName
          dispatch "preOpenStack" to stack tName
-         dispatch "preOpenCard" to card 1 of stack tName
+         dispatch "preOpenCard" to stack tName
          dispatch "openStack" to stack tName
-         dispatch "openCard" to card 1 of stack tName
+         dispatch "openCard" to stack tName
       catch tErr
          uiStatus "Opening" && tName && "hit an error in its own startup:" && tErr, "bad"
       end try
+      set the defaultStack to tOldDefault
    end if
    -- a NEWLY opened window lands at the screen's center, positioned while
    -- it is still invisible so it never flickers across the move; a
@@ -1236,6 +1250,18 @@ function slPrepareStack pPath
    end if
    try
       create invisible stack tName
+      -- park it CLOSED, while it is still scriptless so no handler can
+      -- run: `create` OPENS the stack it makes, which made the later
+      -- `go` a plain raise that fires NO open messages - the card-hook
+      -- box2dxt games opened as an empty window and only built after a
+      -- close and reopen by hand, because that reopen was the first
+      -- REAL open their handlers ever got (engine-reported 2026-08-27,
+      -- twice; the stack-hook demos never showed it only because the
+      -- nudge below was rebuilding them by hand - engine notes 5.5).
+      -- Closed here, the go in slOpenSelected is a genuine open and the
+      -- ENGINE fires the full sequence itself, both lifecycle families,
+      -- in its own order.
+      close stack tName
       set the script of stack tName to tScript
    catch tErr
       uiStatus "Could not prepare" && tName & ":" && tErr, "bad"
