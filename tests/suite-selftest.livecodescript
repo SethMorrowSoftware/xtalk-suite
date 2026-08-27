@@ -547,8 +547,8 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.25.0"
-constant he1kHeHarnessV = "42"
+constant he1kHeVersion = "0.25.1"
+constant he1kHeHarnessV = "43"
 constant he1kUIVersion = "15"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
@@ -37459,6 +37459,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestLivenessRun"
    he1heRunSection "he1heTestHelpersRun"
    he1heRunSection "he1heTestLeafRun"
+   he1heRunSection "he1heTestLeafRun2"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -40265,6 +40266,184 @@ command he1heTestLeafRun
    he1heTContains "leaf: ...and says why on the status line", he1gGame["statusTxt"], "hotseat"
    put he1tSaved into he1gGame
 end he1heTestLeafRun
+
+command he1heTestLeafRun2
+   -- 23: SECOND TRANCHE of the coverage worklist's no-test category,
+   -- written 2026-08-27 so tonight's OXT pass carries it. SHALLOW ON
+   -- PURPOSE and this banner says so (the section-22 precedent): a value
+   -- pin per branch, claiming "this leaf computes what its contract says"
+   -- and nothing deeper. Selection rule, same as 22: pure functions and
+   -- handlers whose only state is he1gGame, driven on a SYNTHETIC he1gGame
+   -- saved and restored around the block -- nothing here arms a timer,
+   -- touches a control, plays a sound, or crosses an FFI.
+   local he1tSaved, he1tA, he1tCaught, he1tErr, he1tContentExp, he1tEnvExp, he1tLine, he1tTxt
+   put return & "-- 23. Leaf tranche 2: no-test worklist, second pass (shallow)" & return after he1gRpt
+   set the itemDelimiter to comma
+
+   -- he1heCardFace / he1heSuitGlyph / he1heKenneyFrame: the three card-face maps
+   -- (status line, glyph, atlas frame), pinned at the corners and the
+   -- ten (the one rank that renders as two chars)
+   he1heTAssert "leaf2: he1heCardFace of 52 (As)", he1heCardFace(52), "A" & numToCodepoint(9824)
+   he1heTAssert "leaf2: he1heCardFace of 36 (Ts) shows 10", he1heCardFace(36), "10" & numToCodepoint(9824)
+   he1heTAssert "leaf2: he1heCardFace of 1 (2c)", he1heCardFace(1), "2" & numToCodepoint(9827)
+   he1heTAssert "leaf2: he1heSuitGlyph 1 is clubs", he1heSuitGlyph(1), numToCodepoint(9827)
+   he1heTAssert "leaf2: he1heSuitGlyph 2 is diamonds", he1heSuitGlyph(2), numToCodepoint(9830)
+   he1heTAssert "leaf2: he1heSuitGlyph 3 is hearts", he1heSuitGlyph(3), numToCodepoint(9829)
+   he1heTAssert "leaf2: he1heSuitGlyph 4 is spades", he1heSuitGlyph(4), numToCodepoint(9824)
+   he1heTAssert "leaf2: he1heSuitGlyph out of range is the ? sentinel", he1heSuitGlyph(7), "?"
+   he1heTAssert "leaf2: he1heKenneyFrame of 1 (2c)", he1heKenneyFrame(1), "cardClubs2"
+   he1heTAssert "leaf2: he1heKenneyFrame of 36 (Ts) spells 10", he1heKenneyFrame(36), "cardSpades10"
+   he1heTAssert "leaf2: he1heKenneyFrame of 52 (As)", he1heKenneyFrame(52), "cardSpadesA"
+
+   -- he1heHandLabel: the packed-rank category names the status line prints
+   he1heTAssert "leaf2: he1heHandLabel 08 is straight flush", he1heHandLabel("081400000000"), "straight flush"
+   he1heTAssert "leaf2: he1heHandLabel 06 is full house", he1heHandLabel("060203000000"), "full house"
+   he1heTAssert "leaf2: he1heHandLabel 04 is straight", he1heHandLabel("041400000000"), "straight"
+   he1heTAssert "leaf2: he1heHandLabel 00 is high card", he1heHandLabel("001413121109"), "high card"
+
+   -- he1heIsCardList: the transcript-fold guard, every refusal branch
+   he1heTAssert "leaf2: he1heIsCardList accepts an exact list", he1heIsCardList("1,2,52", 3), true
+   he1heTAssert "leaf2: he1heIsCardList refuses a short list", he1heIsCardList("1,2", 3), false
+   he1heTAssert "leaf2: he1heIsCardList refuses card 0", he1heIsCardList("0,2,3", 3), false
+   he1heTAssert "leaf2: he1heIsCardList refuses card 53", he1heIsCardList("53,2,3", 3), false
+   he1heTAssert "leaf2: he1heIsCardList refuses a fraction", he1heIsCardList("2.5,3,4", 3), false
+   he1heTAssert "leaf2: he1heIsCardList refuses non-numeric text", he1heIsCardList("x,2,3", 3), false
+
+   -- the circular seat walkers under the button/blind schedule
+   he1heTAssert "leaf2: he1heNextLiveAfterPos steps forward", he1heNextLiveAfterPos("1,3,5", 3), 5
+   he1heTAssert "leaf2: he1heNextLiveAfterPos wraps", he1heNextLiveAfterPos("1,3,5", 5), 1
+   he1heTAssert "leaf2: he1heNextLiveAfterPos from a busted position", he1heNextLiveAfterPos("1,3,5", 4), 5
+   he1heTAssert "leaf2: he1hePrevLiveBeforePos steps back", he1hePrevLiveBeforePos("1,3,5", 3), 1
+   he1heTAssert "leaf2: he1hePrevLiveBeforePos wraps", he1hePrevLiveBeforePos("1,3,5", 1), 5
+   he1heTAssert "leaf2: he1hePrevLiveBeforePos from a busted position", he1hePrevLiveBeforePos("1,3,5", 4), 3
+   he1heTAssert "leaf2: he1heRotateAfter reorders past the entry", he1heRotateAfter("1,3,5", 3), "5,1,3"
+   he1heTAssert "leaf2: he1heRotateAfter of the last entry is unchanged", he1heRotateAfter("1,3,5", 5), "1,3,5"
+   he1heTAssert "leaf2: he1heRotateAfter of an absent entry is unchanged", he1heRotateAfter("1,3,5", 4), "1,3,5"
+
+   -- he1heSpeedMult / he1heDeltaOfTxt / he1heTempPath / he1heLogField / the labels
+   he1heTAssert "leaf2: he1heSpeedMult fast halves", he1heSpeedMult("fast"), 0.5
+   he1heTAssert "leaf2: he1heSpeedMult slow stretches", he1heSpeedMult("slow"), 1.6
+   he1heTAssert "leaf2: he1heSpeedMult default is 1", he1heSpeedMult("normal"), 1.0
+   he1heTAssert "leaf2: he1heDeltaOfTxt finds a negative delta", he1heDeltaOfTxt("1:25|3:-25", 3), -25
+   he1heTAssert "leaf2: he1heDeltaOfTxt of an absent seat is 0", he1heDeltaOfTxt("1:25|3:-25", 5), 0
+   he1heTAssert "leaf2: he1heDeltaOfTxt of malformed text is 0", he1heDeltaOfTxt("junk", 3), 0
+   he1heTAssert "leaf2: he1heTempPath is the fixed scratch name", he1heTempPath(), "he_rendezvous"
+   he1heTAssert "leaf2: he1heLogField picks a tab field", he1heLogField("a" & tab & "b" & tab & "c", 2), "b"
+   he1heTAssert "leaf2: he1heTransportLabel onion", he1heTransportLabel("onion"), "Host over: Tor"
+   he1heTAssert "leaf2: he1heTransportLabel default is DHT", he1heTransportLabel("dht"), "Host over: DHT"
+   he1heTAssert "leaf2: he1heHostModeLabel oracle", he1heHostModeLabel("oracle"), "Host: ORACLE"
+   he1heTAssert "leaf2: he1heHostModeLabel default is playing", he1heHostModeLabel("x"), "Host: playing"
+
+   -- he1heDrawUniform: value+offset packing, rejection sampling, exhaustion
+   he1heTAssert "leaf2: he1heDrawUniform draws 1 from a zero word", he1heDrawUniform("00000000", 1, 5), "1,9"
+   he1heTAssert "leaf2: he1heDrawUniform rejects the biased top word", \
+         he1heDrawUniform("ffffffff" & "00000003", 1, 5), "4,17"
+   put "no throw" into he1tCaught
+   try
+      get he1heDrawUniform("00", 1, 5)
+   catch he1tErr
+      put he1tErr into he1tCaught
+   end try
+   he1heTContains "leaf2: he1heDrawUniform throws on an exhausted stream", he1tCaught, "he-stream-exhausted"
+
+   -- he1heEnvWireParse: the 10-field wire split plus BOTH signed spans, and
+   -- the caller's itemDelimiter restored (its stated contract)
+   put "1" & tab & "TBLHEX" & tab & "7" & tab & "3" & tab & "act" & tab & "aabb" into he1tContentExp
+   put he1tContentExp & tab & "SENDSIG" & tab & "9" & tab & "PREVHEX" into he1tEnvExp
+   put he1tEnvExp & tab & "HOSTSIG" into he1tLine
+   set the itemDelimiter to "|"
+   put he1heEnvWireParse(he1tLine) into he1tA
+   he1heTAssert "leaf2: he1heEnvWireParse restores the itemDelimiter", the itemDelimiter, "|"
+   set the itemDelimiter to comma
+   he1heTAssert "leaf2: he1heEnvWireParse from-seat field", he1tA["from"], 3
+   he1heTAssert "leaf2: he1heEnvWireParse type field", he1tA["type"], "act"
+   he1heTAssert "leaf2: he1heEnvWireParse bodyHex field", he1tA["bodyHex"], "aabb"
+   he1heTAssert "leaf2: he1heEnvWireParse seq field", he1tA["seq"], 9
+   he1heTAssert "leaf2: he1heEnvWireParse hostSig field", he1tA["hostSig"], "HOSTSIG"
+   he1heTAssert "leaf2: he1heEnvWireParse contentLine is items 1-6", he1tA["contentLine"], he1tContentExp
+   he1heTAssert "leaf2: he1heEnvWireParse envLine is items 1-9", he1tA["envLine"], he1tEnvExp
+
+   -- the he1gGame-reading leaves, on a SYNTHETIC he1gGame (the section-22
+   -- pattern): saved above the block, restored below it, no timer armed
+   put he1gGame into he1tSaved
+   put empty into he1gGame
+   put 100 into he1gGame["state"]["betCur"]
+   put 40 into he1gGame["state"]["streetBy"][3]
+   put 1000 into he1gGame["state"]["stackBy"][3]
+   put 0 into he1gGame["state"]["streetBy"][5]
+   put 25 into he1gGame["state"]["stackBy"][5]
+   he1heTAssert "leaf2: he1heCallAmountFor owes the difference", he1heCallAmountFor(3), 60
+   he1heTAssert "leaf2: he1heCallAmountFor caps at the stack", he1heCallAmountFor(5), 25
+   put "hand" into he1gGame["phase"]
+   he1heTAssert "leaf2: he1heHandLive true in the acting phase", he1heHandLive(), true
+   put "runout" into he1gGame["phase"]
+   he1heTAssert "leaf2: he1heHandLive true through the runout", he1heHandLive(), true
+   put "1,3" into he1gGame["state"]["occ"]
+   put 50 into he1gGame["state"]["handBy"][1]
+   put 70 into he1gGame["state"]["handBy"][3]
+   he1heTAssert "leaf2: he1heCurrentPot sums the live hand", he1heCurrentPot(), 120
+   put "between" into he1gGame["phase"]
+   he1heTAssert "leaf2: he1heHandLive false between hands", he1heHandLive(), false
+   he1heTAssert "leaf2: he1heCurrentPot is 0 between hands", he1heCurrentPot(), 0
+   put 250 into he1gGame["paceDeal"]
+   he1heTAssert "leaf2: he1hePaceMs reads the scaled beat", he1hePaceMs("paceDeal", 900), 250
+   he1heTAssert "leaf2: he1hePaceMs falls back to the default", he1hePaceMs("paceNever", 900), 900
+   put 4 into he1gGame["numSeats"]
+   put 100 into he1gGame["stacksBy"][1]
+   put 0 into he1gGame["stacksBy"][2]
+   put 50 into he1gGame["stacksBy"][3]
+   put 0 into he1gGame["stacksBy"][4]
+   he1heTAssert "leaf2: he1heSeatsAlive lists funded seats", he1heSeatsAlive(), "1,3"
+   put 0 into he1gGame["stacksBy"][1]
+   put 0 into he1gGame["stacksBy"][3]
+   he1heTAssert "leaf2: he1heSeatsAlive of a broke table is empty", he1heSeatsAlive(), empty
+   put 3 into he1gGame["oDeal"]["dealCount"]
+   he1heTAssert "leaf2: he1heNetContribCount is the dealt seats", he1heNetContribCount(), 3
+   put "true" into he1gGame["oDeal"]["oracleDeal"]
+   he1heTAssert "leaf2: he1heNetContribCount adds the oracle position", he1heNetContribCount(), 4
+   put "x" into he1gGame["oDeal"]["dealCount"]
+   he1heTAssert "leaf2: he1heNetContribCount of no deal is 0", he1heNetContribCount(), 0
+   put "2,5,9" into he1gGame["state"]["occ"]
+   he1heTAssert "leaf2: he1heNetSeatPos packs seat 5 to position 2", he1heNetSeatPos(5), 2
+   he1heTAssert "leaf2: he1heNetSeatPos packs seat 9 to position 3", he1heNetSeatPos(9), 3
+   he1heTAssert "leaf2: he1heNetSeatPos of an undealt seat is 0", he1heNetSeatPos(4), 0
+   put "true" into he1gGame["sitOutBy"][2]
+   he1heTAssert "leaf2: he1heNetTurnLimitSecs of a sat-out seat is 0", he1heNetTurnLimitSecs(2), 0
+   put "act=12,bank=34" into he1gGame["cfgBody"]
+   he1heTAssert "leaf2: he1heNetTurnLimitSecs adds the unspent bank", he1heNetTurnLimitSecs(3), 46
+   put "true" into he1gGame["oDeal"]["bankUsedBy"][4]
+   he1heTAssert "leaf2: he1heNetTurnLimitSecs after the bank is spent", he1heNetTurnLimitSecs(4), 12
+   put empty into he1gGame["cfgBody"]
+   he1heTAssert "leaf2: he1heNetTurnLimitSecs default is act+bank", he1heNetTurnLimitSecs(3), 90
+   put 3 into he1gGame["handNum"]
+   put "idle" into he1gGame["phase"]
+   put 10 into he1gGame["sb"]
+   put 20 into he1gGame["bb"]
+   put 0 into he1gGame["ante"]
+   put "off" into he1gGame["levelMode"]
+   put 0 into he1gGame["curLevel"]
+   put he1heHeaderTxt() into he1tTxt
+   he1heTContains "leaf2: he1heHeaderTxt names the hand", he1tTxt, "Hand 3"
+   he1heTContains "leaf2: he1heHeaderTxt names the blinds", he1tTxt, "Blinds 10/20"
+   he1heTAssert "leaf2: he1heHeaderTxt omits a zero ante", offset("Ante", he1tTxt), 0
+   put 25 into he1gGame["ante"]
+   he1heTContains "leaf2: he1heHeaderTxt names a live ante", he1heHeaderTxt(), "Ante 25"
+   put "AB12" into he1gGame["tableIdHex"]
+   put "onion" into he1gGame["transport"]
+   put "xyz.onion" into he1gGame["onionAddrTxt"]
+   he1heTAssert "leaf2: he1heInviteTxt carries the onion endpoint", he1heInviteTxt(), "AB12@xyz.onion"
+   put "dht" into he1gGame["transport"]
+   he1heTAssert "leaf2: he1heInviteTxt is the bare code on DHT", he1heInviteTxt(), "AB12"
+   put "onion" into he1gGame["transport"]
+   put empty into he1gGame["onionAddrTxt"]
+   he1heTAssert "leaf2: he1heInviteTxt falls back with no address", he1heInviteTxt(), "AB12"
+   put 3 into he1gGame["handNum"]
+   put empty into he1gGame["log"]
+   he1heLogAppend "handStart", "table", "seats=1|3"
+   he1heTAssert "leaf2: he1heLogAppend grows the log one line", the number of lines of he1gGame["log"], 1
+   he1heTContains "leaf2: ...carrying the wire type", he1gGame["log"], "handStart"
+   put he1tSaved into he1gGame
+end he1heTestLeafRun2
 
 function he1heTIdxOf pNamesTxt
    local he1tOut, he1tNameTxt, he1tNames

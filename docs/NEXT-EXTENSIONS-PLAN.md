@@ -607,6 +607,14 @@ Events: `dcLocalDescriptionReady` (type, sdp), `dcLocalCandidate` (cand, mid),
 
 ## V.2 Shared scaffolding to extract (the highest-leverage investment)
 
+> **RETIRED 2026-08-27 (owner-delegated, brief D-14).** This section's value -
+> the handle table and scaffolding never drifting between members - is
+> delivered by `tools/check-shim-scaffold-drift.py` holding the three copies
+> byte-identical on every push, without the extraction. Executing it now would
+> be churn across three proven shims for a property the tree already enforces.
+> The section stays as the design sketch it was, for a future member written
+> from scratch; nothing plans to execute it.
+
 Factor the proven core out of TorrentXT into a shared `oxtkit/` so all three
 (and every future wrap) share one tested implementation:
 

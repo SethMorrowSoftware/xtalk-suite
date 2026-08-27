@@ -778,10 +778,13 @@ here.
 4. **Feed retention.** BEP44 items expire unless republished; how aggressively
    does a follower re-seed a followee's head to keep it alive? Recommendation: a
    follower republishes heads it follows on the DHT-channels demo's cadence.
-   **STILL OPEN — the one decision here the build did not make.** As built only
-   the OWN head republishes, on post; no follower-republish code exists. It
-   spends followers' resources to keep other people's feeds alive, which is a
-   network-citizenship call. Brief: **D-06**.
+   **DECIDED 2026-08-27 (owner-delegated, brief D-06): a follower does NOT
+   republish followed heads — the as-built behaviour is the decision, and the
+   recommendation above is overruled.** Privacy-first: republishing amplifies
+   retention of someone else's content without their consent, and a feed going
+   quiet when its author is offline is a visible, explainable failure, while
+   content outliving its author's delete is neither. Revisitable only as an
+   explicit per-follow opt-in, never a default.
 5. **Which demo to build first.** This spec's phase 1–2 (identity + public feed)
    is the smallest end-to-end slice that shows the thesis. Recommendation: build
    through phase 4 (DMs) as the first shippable milestone; it exercises four of

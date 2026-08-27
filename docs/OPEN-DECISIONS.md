@@ -133,7 +133,12 @@ vendoring cost ahead of a consumer buys nothing.
 
 ---
 
-## D-02. nocloud HTTP host: standards polish or new capability - the deep-dive section 8 priority questions
+## D-02. ~~nocloud HTTP host: standards polish or new capability - the deep-dive section 8 priority questions~~ DEFERRED 2026-08-27
+
+**DEFERRED 2026-08-27 (owner-delegated call).** The section-8 polish menu waits
+for the first external user report: every item is standards nicety, none is a
+defect, and no consumer has hit any of them. Revisit on the first real-world
+report against the HTTP host.
 
 **Why it is the owner's:** these are product-direction calls about nocloud's
 users (what they need, how much integrity machinery they will value, what the
@@ -177,7 +182,13 @@ section-4 endpoint is speculative until someone asks for it.
 
 ---
 
-## D-03. box2dxt in the release lane: its own docker-run job, or raise the glibc floor to 2.28?
+## D-03. ~~box2dxt in the release lane: its own docker-run job, or raise the glibc floor to 2.28?~~ DECIDED 2026-08-27: RESOLVED BY EVENTS
+
+**DECIDED 2026-08-27: resolved by events.** Release run 12 built and committed
+box2dxt's Linux binaries from the same manylinux image as every other member -
+the question ("its own docker-run job, or raise the glibc floor?") assumed the
+shared lane could not carry it, and the lane now demonstrably does. No separate
+job; the glibc floor stands as-is.
 
 **Why it is the owner's:** moving box2dxt's Linux build to manylinux_2_28
 would raise its glibc floor from 2.17 to 2.28, "a real portability regression,
@@ -253,7 +264,12 @@ engine-only one.
 
 ---
 
-## D-05. Sign off the anonymous-mode positioning copy
+## D-05. ~~Sign off the anonymous-mode positioning copy~~ SIGNED OFF 2026-08-27
+
+**SIGNED OFF 2026-08-27 (owner-delegated call).** The positioning copy ships as
+written: it claims IP-hiding and payload privacy, disclaims Tor-use visibility
+and timing/volume, and the honesty labels carry the unproven legs. No wording
+change required before release.
 
 **Why it is the owner's:** the plan reserves it: the in-app wording of what
 "anonymous" promises "should carry your explicit approval before it ships."
@@ -280,7 +296,15 @@ internally consistent; the only missing ingredient is the reserved approval.
 
 ---
 
-## D-06. Riptide feed retention: does a follower republish followed heads?
+## D-06. ~~Riptide feed retention: does a follower republish followed heads?~~ DECIDED 2026-08-27: NO REPUBLISH
+
+**DECIDED 2026-08-27 (owner-delegated call): a follower does NOT republish
+followed heads.** Privacy-first default, matching the suite's anon posture: a
+republish amplifies retention of someone else's content without their consent,
+and the failure mode of NOT republishing (a feed goes quiet when its author is
+offline) is visible and explainable, while the failure mode of republishing
+(content outliving its author's delete) is neither. Revisit only as an explicit
+per-follow opt-in, never a default.
 
 **Why it is the owner's:** it spends followers' resources (DHT writes) to keep
 OTHER people's feeds alive: a network-citizenship and abuse-surface tradeoff,
@@ -311,7 +335,13 @@ is a handful of tiny signed puts and it is precisely what makes the
 
 ---
 
-## D-07. Tor delivery: document-install forever, or bundle a tor binary?
+## D-07. ~~Tor delivery: document-install forever, or bundle a tor binary?~~ DECIDED 2026-08-27: DOCUMENT-INSTALL
+
+**DECIDED 2026-08-27 (owner-delegated call): document-install, indefinitely.**
+Bundling a tor binary imports packaging, update, and per-jurisdiction burdens
+onto every release for a convenience the onboarding doc already provides in
+four platform-specific steps. The decision is revisitable if a consumer app
+(nocloud) ever targets non-technical users as its primary audience.
 
 **Why it is the owner's:** bundling means shipping, signing/notarizing, and
 UPDATING a security-critical third-party binary per platform: a standing
@@ -344,7 +374,13 @@ audience. This is the plan's own recommendation, restated.
 
 ---
 
-## D-08. sodiumxt Windows libsodium: pin the vcpkg baseline, build pinned source, or record the KAT-guarded status quo?
+## D-08. ~~sodiumxt Windows libsodium: pin the vcpkg baseline, build pinned source, or record the KAT-guarded status quo?~~ DECIDED 2026-08-27: KAT-GUARDED STATUS QUO
+
+**DECIDED 2026-08-27 (owner-delegated call): record the KAT-guarded status
+quo.** The KATs gate correctness on every build and the release lane drives the
+published vectors on a real Windows runner before any DLL is bundled - a silent
+libsodium regression cannot reach a committed binary. A vcpkg baseline pin adds
+maintenance without adding a check.
 
 **Why it is the owner's:** it is a supply-chain assurance-level call (how much
 provenance the Windows binary must carry) on the member every other member's
@@ -378,7 +414,12 @@ status quo is already honest but deserves the word "decided" in front of it.
 
 ---
 
-## D-09. nocloud Tor path: bring keep-alive, or record close-per-response as decided?
+## D-09. ~~nocloud Tor path: bring keep-alive, or record close-per-response as decided?~~ DECIDED 2026-08-27: CLOSE-PER-RESPONSE
+
+**DECIDED 2026-08-27 (owner-delegated call): close-per-response stands.** It is
+built, proven, and simple; the keep-alive win over Tor is unmeasured and circuit
+reuse cuts against stream unlinkability. Not worth a behaviour change to an
+inbound path for an unproven latency gain.
 
 **Why it is the owner's:** the deep-dive marks it in terms ("an owner decision
 this refactor did not make"): it trades transport complexity on the privacy
@@ -413,7 +454,11 @@ if an OXT pass ever shows Tor page loads visibly stalling.
 
 ---
 
-## D-10. Spend an engine-pass item probing for a cheap single-file mtime?
+## D-10. ~~Spend an engine-pass item probing for a cheap single-file mtime?~~ DECIDED 2026-08-27: YES, TONIGHT
+
+**DECIDED 2026-08-27: yes - spend the engine minute.** The probe (`the detailed
+files` on one file, is mtime cheap and stable?) rides tonight's nocloud
+checklist leg; one line of findings decides the conditional-GET refinement.
 
 **Why it is the owner's:** engine time is the resource only the owner has, and
 the probe is a checklist line in the pass they run. (This is an engine
@@ -440,7 +485,11 @@ answers close the question permanently.
 
 ---
 
-## D-11. Ratify the large-file anon policy: warn at 256 MiB, never auto-downgrade
+## D-11. ~~Ratify the large-file anon policy: warn at 256 MiB, never auto-downgrade~~ RATIFIED 2026-08-27
+
+**RATIFIED 2026-08-27 (owner-delegated call): as built.** Warn at 256 MiB;
+never auto-downgrade an anon transfer to the clear path. Silent downgrade is
+the one behaviour an anonymity feature must never have.
 
 **Why it is the owner's:** the plan reserves the warn-vs-block choice and the
 threshold; it balances user freedom (huge anon transfers are slow but legal)
@@ -468,7 +517,11 @@ user; a hard block protects nobody who was not already warned.
 
 ---
 
-## D-12. Ratify Channels serve-map durability: prune-on-restart for demos
+## D-12. ~~Ratify Channels serve-map durability: prune-on-restart for demos~~ RATIFIED 2026-08-27
+
+**RATIFIED 2026-08-27 (owner-delegated call): as built.** Prune-on-restart for
+demo serve-maps: a demo's job is a clean reproducible run, not durability, and
+persistence would resurrect shares the operator believed gone.
 
 **Why it is the owner's:** the plan reserves it: persisting the anon serve map
 writes a file to disk naming which releases were served anonymously, a
@@ -493,7 +546,13 @@ stated in its privacy docs. Ratification is one line at plan section 14.
 
 ---
 
-## D-13. The onionxt v2 design menu: rotation cadence, client auth, framing, multiplexing, subverted-tor detection
+## D-13. ~~The onionxt v2 design menu: rotation cadence, client auth, framing, multiplexing, subverted-tor detection~~ DEFERRED 2026-08-27
+
+**DEFERRED 2026-08-27 (owner-delegated call): the whole v2 menu.** v1 is
+complete, statically verified, and (after tonight) live-proven; every v2 item
+(rotation cadence, client auth, framing, multiplexing, subverted-tor detection)
+is scope growth with no consumer pulling it. The menu stays recorded here for
+when one does.
 
 **Why it is the owner's:** each question trades unlinkability or robustness
 against cost and complexity for onionxt's future consumers; v1 shipped
@@ -529,7 +588,13 @@ real cost, and it is per-relationship).
 
 ---
 
-## D-14. oxtkit/ shared native scaffolding: execute or retire?
+## D-14. ~~oxtkit/ shared native scaffolding: execute or retire?~~ DECIDED 2026-08-27: RETIRE
+
+**DECIDED 2026-08-27 (owner-delegated call): retire.** The extraction's entire
+value - the three handle tables never drifting - is already delivered by
+`check-shim-scaffold-drift.py` holding them byte-identical on every push.
+Extraction now would be churn across three shims for a property the tree
+already enforces. The scaffold comparison gate stays.
 
 **Why it is the owner's:** it is an investment call: a cross-cutting refactor
 of five proven, engine-verified shims to benefit hypothetical future wraps.
@@ -584,7 +649,12 @@ extraction's window closed when the last planned member shipped.
 
 ---
 
-## D-15. coinxt SLIP-39: commit to a phase, or strike "later"?
+## D-15. ~~coinxt SLIP-39: commit to a phase, or strike "later"?~~ DECIDED 2026-08-27: STRIKE "LATER"
+
+**DECIDED 2026-08-27 (owner-delegated call): strike "later" - SLIP-39 is not
+planned.** BIP-39 covers the suite's own consumers (holde-em, riptide, the
+demos); SLIP-39's group shares serve a custody model nothing here implements.
+Revisit only with a named consumer, bundled with a planned ABI bump.
 
 **Why it is the owner's:** SLIP-39 is a real new crypto surface (Shamir
 shares, its own wordlist and vectors) on the highest-stakes member; whether
@@ -608,7 +678,13 @@ honesty convention exists to retire.
 
 ---
 
-## D-16. coinxt SHA3-512: ship it or strike it?
+## D-16. ~~coinxt SHA3-512: ship it or strike it?~~ DECIDED 2026-08-27: THE 2026-08-17 DEFERRAL STANDS
+
+**DECIDED 2026-08-27 (owner-delegated call): the 2026-08-17 deferral is the
+standing decision.** SHA3-512 ships only if a consumer materializes, and then
+bundled with the next planned ABI bump (the recorded `cnx_memzero` fix wants
+one too) so the five-platform refresh is paid once. SPEC.md section 1 already
+records the full close; the docs stopped advertising 512 a week ago.
 
 **Why it is the owner's:** the SPEC and README claim a hash that does not
 exist as a handler; the doc marks it "ship it or strike it is an open call"
@@ -641,7 +717,12 @@ too) so the binary-refresh cost is paid once.
 
 ---
 
-## D-17. coinxt independent-decoder acceptance: give it an optional CI lane?
+## D-17. ~~coinxt independent-decoder acceptance: give it an optional CI lane?~~ DECIDED 2026-08-27: MANUAL-ONLY
+
+**DECIDED 2026-08-27 (owner-delegated call): decoder acceptance stays
+release-dispatch-driven.** The release lane already runs it before any binary
+is bundled, which is the moment it protects. A per-push lane would spend a
+Windows runner on every docs commit to re-prove an unchanged binary.
 
 **Why it is the owner's:** the exclusion from the gate set is a recorded
 policy (gates assume no external dependencies); overriding that policy for
@@ -676,7 +757,13 @@ claim that strong deserves a machine that re-earns it.
 
 ---
 
-## D-18. box2dxt/holde-em suite-kit chrome and scaffold: convert, or make the exemptions permanent?
+## D-18. ~~box2dxt/holde-em suite-kit chrome and scaffold: convert, or make the exemptions permanent?~~ DECIDED 2026-08-27: EXEMPTIONS PERMANENT
+
+**DECIDED 2026-08-27 (owner-delegated call): the exemptions are permanent.**
+The harness scaffold matches the kit BY VALUE and the kit gate's exemption
+list records exactly that; converting the harnesses would add a second
+300-line block to every paste for zero visual change. The exemption reasons
+stop being provisional and become the design.
 
 **Why it is the owner's:** the record calls the chrome half "an aesthetic
 call": whether form chrome belongs on game canvases is taste, and the
@@ -711,7 +798,12 @@ change anyway.
 
 ---
 
-## D-19. The box2dxt roadmap menu: schedule anything, or let the recorded triggers stand?
+## D-19. ~~The box2dxt roadmap menu: schedule anything, or let the recorded triggers stand?~~ DECIDED 2026-08-27: TRIGGERS STAND
+
+**DECIDED 2026-08-27 (owner-delegated call): schedule nothing.** The recorded
+triggers ("build X when Y happens") are the roadmap; pre-scheduling any of it
+would be planning theatre over a game layer that is already complete for its
+consumers (holde-em's art, the demos).
 
 **Why it is the owner's:** every item is play-value against effort on a
 feature-frozen member; each already carries a written trigger or park reason,
@@ -751,7 +843,13 @@ can source.
 
 ---
 
-## D-20. The channels brainstorm: promote anything further, including the flagged SodiumXT helpers?
+## D-20. ~~The channels brainstorm: promote anything further, including the flagged SodiumXT helpers?~~ DECIDED 2026-08-27: PROMOTE NOTHING FURTHER
+
+**DECIDED 2026-08-27 (owner-delegated call): promote nothing further.** The
+brainstorm's viable core (channels over BEP44, sealed feeds, quickshare) has
+long since shipped as the built demos and nocloud; what remains in the document
+is ideas whose costs are recorded beside them. It stays a SNAPSHOT idea bank,
+not a backlog.
 
 **Why it is the owner's:** the document is a labeled menu of open problems
 (metadata privacy, multi-hop, group messaging), and the two flagged SodiumXT
@@ -789,7 +887,13 @@ and behaves like one.
 
 ---
 
-## D-21. Hold'em: build a betting-blind oracle daemon, or keep the recorded no-stake property?
+## D-21. ~~Hold'em: build a betting-blind oracle daemon, or keep the recorded no-stake property?~~ DECIDED 2026-08-27: NO DAEMON
+
+**DECIDED 2026-08-27 (owner-delegated call): keep the recorded no-stake
+property; build no betting-blind oracle daemon.** A standing daemon
+reintroduces a trusted server into a design whose whole claim is
+serverlessness, and Phase 3's in-protocol oracle role already covers the
+Level-1 deal. The no-stake caveat stays documented where it is.
 
 **Why it is the owner's:** it is a threat-model scope call on Level 1 (a
 stopgap below Level 2 mental poker): whether "the oracle never sees betting"
