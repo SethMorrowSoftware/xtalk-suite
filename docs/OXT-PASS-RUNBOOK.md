@@ -1409,6 +1409,23 @@ Once the per-member labels are updated, the last edit is the root `README.md`:
 the **Release status** table and the honesty-convention paragraph beneath it. Do that
 in the same follow-up pass, so the suite front door and the members never disagree.
 
+**The 2026-08-27 two-machine session (reported live, mid-pass).** The suite
+paste ran **2440 passed, 2 failed, 3 skipped (2445)** with every folded member
+green - holde-em at 667/0 as v0.25.3's predecessor v0.25.2 / harness v43, the
+FIRST engine run of the file that CARRIES onionxt, so the embed compiles and
+folds - and the 2 failures were both the live loopbacks stalling with the
+harness's own trap-5.5 diagnosis (UDP to 127.0.0.1 blocked on that machine);
+the cross-machine legs prove both transports work, so those two are
+environment, not code. The 3 skips are the deliberate not-in-paste rows.
+Two-machine legs observed the same evening: **rp1 chat WORKS, the
+DHT-signalled WebRTC chat WORKS** (real machines, one LAN); enet internet
+chat correctly cannot connect on ONE network (the public-ip invite cannot
+hairpin - its watchdog names the case now); and holde-em 2d found the
+session's one real defect - joins worked, the hand started and dealt
+UNDERNEATH the lobby overlay, which nothing dismissed (fixed in v0.25.3: the
+handStart fold hides it; the Start refusals also land in the lobby's own
+feed). The 2d/2e/2f live exit legs remain open pending a re-run on v0.25.3.
+
 ---
 
 ### 4.9 nostrxt (inventory items 33 and 34 - the member with NO engine evidence yet)
