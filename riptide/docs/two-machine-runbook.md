@@ -218,10 +218,20 @@ paste; this pass flips the remaining LIVE half of the label.
 - The pump-survives-navigation check: start a Fetch or media download on
   the Feed card, visit every other card, come back; the pump must still
   be live.
-- Phase 3's mid-download nuance is still unmeasured: attach a LARGE video
-  on A, fetch on B, and confirm playback starts while the progress line
-  is visibly below 100%. The 2026-08-15 pass proved the path; this proves
-  the "mid-download" word.
+- Phase 3's mid-download nuance was MEASURED 2026-08-27 (two machines) and
+  it did NOT start mid-download as then wired: the Play mood unlocked on
+  file-EXISTENCE, which libtorrent satisfies at metadata time with a
+  hollow allocated file, so the system player got ~0% real data - "the
+  feed and media work fully, streaming does not" was the exact report.
+  Fixed the same day (raMediaFrontReady: Play unlocks once the first 5%
+  of the file's CONTIGUOUS front is on disk; both the feed and the LAN
+  handoff paths). Re-run the leg on the fixed stack: attach a LARGE video
+  on A, fetch on B, wait for the "Play now" mood, and confirm playback
+  starts while the progress line is visibly below 100%. USE A FASTSTART
+  VIDEO (ffmpeg -movflags +faststart, or any web-optimized mp4): a
+  non-faststart file keeps its index at the TAIL, and no player can start
+  it early whatever the fetch order - that case playing only at 100% is
+  the recorded limit, not a defect.
 - The DM clean close (new 2026-08-17, never run): with a conversation
   open both ways, `Lock` on A. B must print
   `-- <A's short handle> closed the conversation --` and stop showing the

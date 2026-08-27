@@ -6628,6 +6628,9 @@ constant kDmIntroWindow = 600
 constant kDcTypingLabel = "riptide-typing"
 constant kDcTypingMs = 3000
 constant kDcTypingSendMs = 1000
+-- the Play-now floor: the fraction of the FILE whose contiguous front must
+-- be on disk before the demo hands it to a player (see raMediaFrontReady)
+constant kRaPlayFloor = 0.05
 -- bumped on any layout change so an existing stack rebuilds (the kit builders
 -- re-rect existing controls by name, so no deletion pass is needed)
 constant kRaUiVersion = "ra-ui-720p-9"
@@ -9964,7 +9967,7 @@ end raLanSendMedia
 -- One button, two moods (the media strip's discipline): Fetch until the
 -- offered hash's on-disk file exists, then Play - mid-download by design.
 command raLanMediaGet
-   local tHash, tH, tS, tPlayable
+   local tHash, tH, tS, tPlayable, tWaitingFront
    if sLanMediaHash is empty then
       raLanLog "No media offer yet; Send media... on another admitted device first."
       exit raLanMediaGet
@@ -9976,20 +9979,32 @@ command raLanMediaGet
    end if
    put sLanMediaHash into tHash
    put false into tPlayable
+   put false into tWaitingFront
    if sLanMediaWatch is an integer and sLanMediaWatch > 0 then
       put rsMediaStatus(sLanMediaWatch) into tS
       if tS is an array then
          if toLower(tS["infoHashV1"]) is tHash and \
                tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
-               put true into tPlayable
+               -- existence is not playability (raMediaFrontReady's story)
+               if raMediaFrontReady(tS) then
+                  put true into tPlayable
+               else
+                  put true into tWaitingFront
+               end if
             end if
          end if
       end if
    end if
    if tPlayable is true then
       launch document tS["filePath"]
-      raLanLog "handed" && tS["filePath"] && "to the system player."
+      raLanLog "handed" && tS["filePath"] && "to the system player" && \
+            "(a non-faststart video keeps its index at the tail and only plays once complete)."
+      exit raLanMediaGet
+   end if
+   if tWaitingFront is true then
+      raLanLog "the front of the file is still arriving - Play unlocks once the first" && \
+            (kRaPlayFloor * 100) & "% is on disk."
       exit raLanMediaGet
    end if
    put rsMediaFetch(sSession, tHash, raMediaFolder(), true) into tH
@@ -10046,9 +10061,12 @@ command raLanMediaPaint
    if tS["filePath"] is empty then
       put " - waiting for metadata from the swarm" after tLine
       put "Fetch + play" into tLabel
-   else
+   else if raMediaFrontReady(tS) then
       put " -" && tS["filePath"] after tLine
       put "Play now" into tLabel
+   else
+      put " - front arriving (Play unlocks at" && (kRaPlayFloor * 100) & "%)" after tLine
+      put "Fetch + play" into tLabel
    end if
    if there is a field "raLanMediaProg" of card "raDevices" then
       if the text of field "raLanMediaProg" of card "raDevices" \
@@ -10378,7 +10396,7 @@ end raAnonLog
 -- Fetching your OWN hash lands on the library's find path and plays the
 -- original file instantly (the seeder's copy is already complete).
 command raMediaGet
-   local tHash, tH, tS, tPlayable
+   local tHash, tH, tS, tPlayable, tWaitingFront
    raStartSession
    if sSession is not an integer or sSession <= 0 then
       uiStatus "No TorrentXT session: cannot fetch media.", "bad"
@@ -10390,12 +10408,21 @@ command raMediaGet
       exit raMediaGet
    end if
    put false into tPlayable
+   put false into tWaitingFront
    if sMediaWatch is an integer and sMediaWatch > 0 then
       put rsMediaStatus(sMediaWatch) into tS
       if tS is an array then
          if toLower(tS["infoHashV1"]) is tHash and tS["filePath"] is not empty then
             if there is a file tS["filePath"] then
-               put true into tPlayable
+               -- file-EXISTENCE is not playability: libtorrent allocates
+               -- the file the moment metadata arrives, so this used to
+               -- unlock Play at ~0% real data and hand the player a
+               -- hollow file (see raMediaFrontReady, the 2026-08-27 fix)
+               if raMediaFrontReady(tS) then
+                  put true into tPlayable
+               else
+                  put true into tWaitingFront
+               end if
             end if
          end if
       end if
@@ -10403,7 +10430,13 @@ command raMediaGet
    if tPlayable is true then
       launch document tS["filePath"]
       uiStatus "Handed" && tS["filePath"] && "to the system player" && \
-            "(sequential fetch, so the front of the file is there first).", "ok"
+            "(sequential fetch: the front is on disk first; a non-faststart" && \
+            "video keeps its index at the TAIL and only plays once complete).", "ok"
+      exit raMediaGet
+   end if
+   if tWaitingFront is true then
+      uiStatus "The front of the file is still arriving - Play unlocks once" && \
+            "the first" && (kRaPlayFloor * 100) & "% is on disk (the fetch is sequential).", empty
       exit raMediaGet
    end if
    put rsMediaFetch(sSession, tHash, raMediaFolder(), true) into tH
@@ -10438,9 +10471,12 @@ command raMediaPaint
    if tS["filePath"] is empty then
       put " - waiting for metadata from the swarm" after tLine
       put "Fetch + play" into tLabel
-   else
+   else if raMediaFrontReady(tS) then
       put " -" && tS["filePath"] after tLine
       put "Play now" into tLabel
+   else
+      put " - front arriving (Play unlocks at" && (kRaPlayFloor * 100) & "%)" after tLine
+      put "Fetch + play" into tLabel
    end if
    -- card-1 controls, but raMediaPaint runs every tick from any card and
    -- OUTSIDE raPoll's try; a bare reference would throw off-card and kill
@@ -10456,6 +10492,31 @@ command raMediaPaint
       end if
    end if
 end raMediaPaint
+
+-- Is enough of the FRONT of the file on disk to hand it to a player?
+-- File-EXISTENCE is not that question: libtorrent ALLOCATES the file the
+-- moment metadata arrives, so gating Play on `there is a file` unlocked
+-- it at ~0% real data - the 2026-08-27 two-machine pass clicked it, the
+-- system player got a hollow file, and the report read "streaming does
+-- not work" while the feed and complete-then-play media worked fully.
+-- The fetch is sequential and rsMediaStatus's fileProgress counts the
+-- CONTIGUOUS front (the library's own contract), so a floor on it IS a
+-- front-of-file guarantee. 5% is a primer, not a promise: a player that
+-- needs the file's tail index (a non-faststart MP4 keeps its moov atom
+-- at the END) cannot start until 100% whatever the fetch order, and the
+-- launch messages say so now.
+function raMediaFrontReady pS
+   if pS["isSeeding"] is 1 then
+      return true
+   end if
+   if pS["fileSize"] is not a number or pS["fileSize"] <= 0 then
+      return false
+   end if
+   if pS["fileProgress"] is not a number then
+      return false
+   end if
+   return pS["fileProgress"] >= pS["fileSize"] * kRaPlayFloor
+end raMediaFrontReady
 
 -- Where fetched media lands: a dedicated folder under documents, created
 -- on demand - rsMediaFetch refuses a folder that does not exist, so a
