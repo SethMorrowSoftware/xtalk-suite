@@ -34,7 +34,16 @@ openxtalk-libraries/
                        the one-session-per-process trap frees itself; every
                        such stack's closeStack teardown was verified first)
                        and became the FOURTEENTH boot self-check adopter -
-                       the front door prints its own record now; held
+                       the front door prints its own record now. Later the
+                       same day the LAUNCH became the sweep (opening a
+                       SESSION stack closes the open holder first, keeping
+                       the target itself), every newly opened demo lands at
+                       the screen's center, and the card + log say which
+                       suite extensions are actually LOADED (presence read
+                       from the engine's own loadedExtensions list in a
+                       try - the launcher still calls no native code, so a
+                       row's "needs sodiumxt" can never read as missing on
+                       a machine that has it); held
                        true to the tree by tools/check-launcher-registry.py
   CLAUDE.md            this file
   LICENSE              MIT + third-party attributions for every bundled lib
