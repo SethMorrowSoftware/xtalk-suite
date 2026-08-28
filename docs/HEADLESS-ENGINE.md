@@ -189,12 +189,12 @@ separate thing rather than as error handling inside a gate.
 
 | File | What it is | What it proves today |
 |---|---|---|
-| `tools/engine-probe.livecodescript` | ten capability probes, each in its own `try`, raw evidence dumped | Nothing yet. It passes the suite's own static gate; it has never met an engine. |
+| `tools/engine-probe.livecodescript` | twelve probe groups, each in its own `try`, raw evidence dumped; one of them is the mandatory execution check that emits the two rows the driver requires | Nothing yet. It passes the suite's own static gate; it has never met an engine. |
 | `tools/engine-lint.livecodescript` | Compiles every file in a manifest via `set the script of`, emits one record each | Nothing yet, same reason. |
 | `tools/check-engine-lint.py` | The driver: discovery, wrapper generation, report parsing, refusals | That the driver handles the report format correctly - proven by fixtures, below. |
-| `tools/test-engine-lint.py` | 20 cases against a **fake engine** that lies one way per run | That every refusal fires, and that the unmutated baseline passes. |
+| `tools/test-engine-lint.py` | 34 cases against a **fake engine** that lies one way per run | That every refusal fires, and that the unmutated baseline passes. |
 | `tools/check-lcb-compile.py` | The same shape for `lc-compile`, with a three-way control set | That the driver handles a compiler's results correctly. |
-| `tools/test-lcb-compile.py` | 9 cases against a **fake compiler** | Same. |
+| `tools/test-lcb-compile.py` | 12 cases against a **fake compiler** | Same. |
 | `.github/workflows/engine.yml` | Manual-dispatch lane: fetch an engine, probe, then lint/compile advisorily | Nothing yet - it has never been dispatched. |
 
 **The fixtures are the honest part, and their limit is the honest part of the
@@ -211,23 +211,72 @@ Both drivers have three outcomes, and the third is the one that matters:
 **SKIPPED** (no engine; exits 0 so the gate can sit in the always-on lane
 without pretending), **MEASURED**, and **REFUSED** - the report cannot account
 for itself, so the run says *nothing* about the corpus and exits non-zero
-anyway. A lane that shells out to an external binary is a fresh chance to join
-this repository's own catalogue of gates that reported OK while measuring
-nothing, so:
+anyway. Every run ends with one machine-readable line, `XT-ENGINE-STATUS: ...`,
+so CI asserts on that rather than on prose that changes when a message is
+improved.
 
-- a **known-good** and a **known-bad** control run on every invocation. The
-  known-bad for the script lane is engine note 3.3's own defect - a
-  zero-argument call in statement position. If it compiles, the engine is not
-  checking and the whole report is refused.
-- the report carries a **completeness marker with a record count**. A truncated
+A lane that shells out to an external binary is a fresh chance to join this
+repository's own catalogue of gates that reported OK while measuring nothing,
+so:
+
+- **five controls, not one.** A known-good and a known-bad pair runs *before*
+  the corpus and again *after* it under distinct names, because a single
+  pre-corpus pair cannot see an engine that degrades partway through - and a
+  degraded engine's silence is a clean report. A fifth, `known-bad-large`,
+  carries the same defect inside a synthetic 20,000-line module, because two
+  sixty-byte control strings say nothing about an engine's behaviour at the
+  1.95 MB this corpus actually reaches. The known-bad defect is engine note
+  3.3's own: a zero-argument call in statement position.
+- **a cascade detector.** If a successful `set the script of` leaves `the
+  result` *unchanged* rather than emptying it, one real compile failure becomes
+  every later file's verdict and the run reports a corpus full of defects that
+  reads like a catastrophe rather than a broken measurement. The engine-side
+  script clears the result before each compile (via a handled `send`, since an
+  assignment does not touch it); the driver additionally refuses a report whose
+  failures look like one error copied down the run. Deliberately **not** "any
+  two files agree" - in this tree two files agreeing is ordinary, because four
+  blocks are carried byte-identically into a dozen files each, so one defect in
+  a master legitimately produces the same text in sixteen demos. The signature
+  is three or more files sharing one text *and* that group being most of the
+  failures, and the refusal names the one command that tells the two apart.
+  Whether the clear is even necessary is probe row
+  `compile.resultClearedOnSuccess`.
+- **the report carries a completeness marker with a record count.** A truncated
   report reads exactly like a finished one; this tree has already spent an
   evening diagnosing three early clipboard copies as a hung pump.
-- **every requested file must come back with exactly one verdict.** A dropped
-  file is the difference between "the corpus is clean" and "the part I looked at
-  is clean".
-- **an empty read is an ERROR, not an empty script.** An empty script compiles.
-- a **corpus floor** (30) refuses a run whose discovery walk returned
-  implausibly few files.
+- **no record name may appear twice**, in any record kind. A report that can
+  carry two answers to one question cannot be trusted for either, whichever
+  answer a parser happens to keep.
+- **every requested file must come back with exactly one verdict**, and **an
+  empty read is an ERROR, not an empty script** (an empty script compiles).
+- **two independent corpus lists.** The `os.walk` has a prune list, and a prune
+  bug that silently drops four members leaves the count plausible and the run
+  green. `git ls-files` cannot be broken by the same bug, so a walk that has
+  lost something git can see is a refusal. A floor of 30 backs both up.
+- **the probe can fail.** Its first version printed its rows and exited 0
+  whatever they said, so a report in which every capability came back NO - or
+  every row came back ERROR - read as a successful probe worth committing. Two
+  **mandatory rows** now separate "this engine cannot do these things" from
+  "nothing ran": `probe.selfArithmetic` (2+2) and `probe.emitRoundTrip` (a value
+  containing a tab and a return, fed through the same emitter every other row
+  uses). The probe refuses when a mandatory row is not YES, when neither
+  `engine.environment` nor `engine.version` is present (so the report cannot be
+  pinned to a build), or when more than half the rows are ERROR - the probe
+  failing to *ask* rather than the engine failing to *do*.
+- **but a NO is not a refusal.** `compile.badIsReported: NO` means this engine
+  does not lint - which is a successful measurement of a limited engine and the
+  single most important negative result to record. It prints as a loud verdict
+  and exits 0. In the *lint*, the same shape voids the report; in the *probe* it
+  is the finding. Conflating the two would make the probe unable to report the
+  answer that most needs reporting.
+- **an unrecognised binary is classified, not guessed at.** The driver generates
+  a server-shaped `<?lc ?>` wrapper. Handed a standalone or desktop engine, the
+  resulting "no marker" refusal would read as *headless does not work* rather
+  than *wrong engine kind*, so a refusal on that path runs the binary bare and
+  with `--help` and prints the transcript.
+- **a hang surrenders what it buffered.** The timeout path carries whatever the
+  engine printed before it stopped; that partial report names the probe that did
+  not return.
 - `EXPECTED_FAILURES` is **empty on purpose**, and a stale entry is refused. It
   would be easy to guess which fragments cannot compile standalone; guessing is
   how a permanent exemption gets written for a file that would in fact have
@@ -292,6 +341,48 @@ thing the runbook says CI "can never prove".
 
 ---
 
+## 7a. Rules for the later stages, written down before anyone reaches them
+
+An adversarial review of section 7's plan produced five rules that are cheap to
+honour now and expensive to retrofit. None of them constrains anything built
+today; all of them constrain what stage 1-4 may do.
+
+**R1 - a gate may be retired only by a replacement that runs in the same lane,
+at the same cadence, and is proven non-inert on that lane.** The tempting move
+after a green stage 2 is to delete `tools/check-duplicate-declarations.py`,
+whose whole subject is a hard compile error. But it runs on every push in
+`suite-gates.yml`, and the engine lane is manual dispatch: trading the first for
+the second is a net loss of coverage that reads as progress. No retirement until
+an engine lane runs in the always-on job and a MEASURED run is recorded *from
+that lane*. "Demote" means editing a docstring, not lowering a severity.
+
+**R2 - controls are DATA, never tracked broken scripts.** A subsumption matrix
+(one specimen per checker rule, to measure what the compiler actually catches)
+must live as string constants in a `.py`, materialised to a temp directory -
+the shape `tools/check-lcb-compile.py` already uses. Forty deliberately-broken
+`.livecodescript` files in the tree would be walked by every gate that globs for
+one, would need an exemption in each, and would make the corpus count a lie.
+
+**R3 - every lint ROUTE carries its own control pair.** If the `start using
+stack` route is added for the 32 script-only stacks, its controls must travel
+that route, as real files with a `script "Name"` line. Otherwise a dead route
+returns "no failures" and a two-route diff reads route silence as route
+agreement.
+
+**R4 - engine identity is part of a claim's primary key.** A result from stock
+LiveCode Community is evidence about Community. The suite targets OXT 9.6.3, and
+a label that cites a record from a different fork is precisely the overstatement
+the honesty convention exists to prevent. If the GUI control column and the
+headless column come from different forks, builds or platforms, the comparison
+has an unresolved confound and the record must say which one.
+
+**R5 - a subsumption credit needs the engine's own words.** Before any checker
+rule is called redundant, the rejection that justifies it must be recorded
+verbatim, and two rules rejected with byte-identical text count as one reason,
+not two.
+
+---
+
 ## 8. What stays manual no matter how well this goes
 
 Written down so the proposal is not oversold, and so the runbook is not retired
@@ -340,3 +431,4 @@ The manual pass gets *smaller and better targeted*. It does not go away.
 |---|---|
 | 2026-08-27 | bwmilby's forum reply (section 1). |
 | 2026-08-28 | This document, the probe, both drivers, both fixture suites and the CI lane written. **No engine has run.** Every capability claim is DOCUMENTED or weaker. The 74 no-headless assertions elsewhere in the tree are deliberately left alone: nothing has been measured, so nothing may be rewritten. |
+| 2026-08-28 | An adversarial review of the above found two ways it could still fail open, and both are fixed here. **(1) The probe could not fail** - it printed its rows and exited 0 whatever they said, so an all-NO or all-ERROR report read as a successful probe worth committing; it now carries mandatory execution rows and refuses. **(2) Nothing cleared `the result` between the file read and the compile**, so if a successful `set the script of` leaves it unchanged, one real failure would have become every later file's verdict - a cascade reported as a corpus full of defects. Also added in the same pass: pre/post controls, a control at corpus scale, per-name uniqueness, `git ls-files` as an independent corpus list, engine-kind classification on an unrecognised report, partial output on a hang, and a machine-readable `XT-ENGINE-STATUS:` line CI asserts on. Three defects in the engine-side scripts were found by reading them against the engine notes themselves: a `catch` binding an error into the variable being built, `the itemDelimiter` left set to `/` (note 2.3), and `the number of chars of X & "..."` binding as a chunk over the concatenation. A fourth - a duplicate `local` left by an earlier tidy-up - was found by the review. |

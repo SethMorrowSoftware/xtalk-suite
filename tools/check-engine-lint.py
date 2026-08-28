@@ -118,6 +118,15 @@ MARK_PROBE_BEGIN = "XTPROBE-BEGIN"
 MARK_PROBE_END = "XTPROBE-END"
 
 
+def status(kind):
+    """The last line of every run, on every path.
+
+    CI asserted on prose before this existed, and prose is exactly what changes
+    when someone improves a message. One machine-readable line means the
+    workflow can assert MEASURED without pattern-matching an explanation."""
+    print("XT-ENGINE-STATUS: %s" % kind)
+
+
 class Refusal(Exception):
     """The report cannot account for itself. Distinct from a corpus failure:
     this means the measurement is void, not that the tree is dirty.
@@ -223,9 +232,17 @@ def run_engine(engine, script_path, timeout):
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except FileNotFoundError:
         raise Refusal("engine %s could not be executed" % engine)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        # Whatever the engine managed to print before it hung IS the finding -
+        # it names the probe that did not return. The first version discarded
+        # it, which made a hang the one failure mode that taught nothing.
+        partial = b""
+        for chunk in (exc.output, exc.stderr):
+            if chunk:
+                partial += chunk if isinstance(chunk, bytes) else chunk.encode()
         raise Refusal("engine timed out after %ds - a report that never "
-                      "finished is not a report" % timeout)
+                      "finished is not a report" % timeout,
+                      raw=partial.decode("utf-8", "replace"))
     return (proc.returncode,
             proc.stdout.decode("utf-8", "replace"),
             proc.stderr.decode("utf-8", "replace"))
@@ -234,6 +251,28 @@ def run_engine(engine, script_path, timeout):
 # --------------------------------------------------------------------------
 # report parsing - deliberately suspicious
 # --------------------------------------------------------------------------
+
+def classify_engine(engine):
+    """Ask an unrecognised binary what it is.
+
+    The driver generates a SERVER-shaped wrapper (`<?lc ... ?>`). Handed a
+    standalone or desktop engine instead, it would produce something that binary
+    cannot read, and the resulting "no marker" refusal would be read as
+    headless-does-not-work rather than as wrong-engine-kind. This runs the binary
+    bare and with --help and returns the transcript, so the refusal carries the
+    evidence that tells the two apart."""
+    out = []
+    for args in ([], ["--help"]):
+        try:
+            proc = subprocess.run([engine] + args, timeout=20,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            text = proc.stdout.decode("utf-8", "replace").strip()
+        except Exception as exc:                    # noqa: BLE001 - reporting only
+            text = "(could not run: %s)" % exc
+        out.append("$ %s %s\n%s" % (os.path.basename(engine), " ".join(args),
+                                    text[:1500] or "(no output)"))
+    return "\n\n".join(out)
+
 
 def parse_report(out, begin_mark, end_mark):
     """Return (records, count_claimed). Refuses anything it cannot account for.
@@ -273,6 +312,18 @@ def parse_report(out, begin_mark, end_mark):
         detail = parts[3] if len(parts) > 3 else ""
         records.append((kind, name, verdict, detail))
 
+    # A report that can carry two answers to one question cannot be parsed
+    # safely, whichever answer a parser happens to keep. Across every record
+    # kind, not just FILE: the control pairs are where a duplicate would be most
+    # dangerous, because one name with two verdicts hides a degradation.
+    seen_keys = set()
+    for kind, name, _v, _d in records:
+        if (kind, name) in seen_keys:
+            raise Refusal("the report carries two %s records named %r - a report "
+                          "with two answers to one question cannot be trusted "
+                          "for either" % (kind, name))
+        seen_keys.add((kind, name))
+
     tail = lines[end].split("\t")
     if len(tail) < 2 or not tail[1].strip().isdigit():
         raise Refusal("the %s marker carries no record count: %r" % (end_mark, lines[end][:200]))
@@ -284,35 +335,103 @@ def parse_report(out, begin_mark, end_mark):
 
 
 def check_controls(records):
-    """The known-good must compile and the known-bad must not.
+    """All four small controls plus the scale control must be present and behave.
 
     An engine that accepts everything and an engine that checks nothing produce
-    identical clean reports, and only the negative control separates them."""
+    identical clean reports, and only the negative control separates them. The
+    pair is emitted twice - before the corpus and after it - because a single
+    pre-corpus pair cannot see an engine that DEGRADES partway through; and the
+    scale control exists because two sixty-byte strings say nothing about an
+    engine's behaviour at the 1.95 MB this corpus actually reaches."""
     got = {}
     for kind, name, verdict, detail in records:
         if kind == "CONTROL":
             got[name] = (verdict, detail)
-    for want in ("known-good", "known-bad"):
-        if want not in got:
-            raise Refusal("the report carries no %s control - it cannot be "
-                          "trusted to have checked anything" % want)
-    gv, gd = got["known-good"]
-    bv, bd = got["known-bad"]
-    if gv != "OK":
-        raise Refusal("the KNOWN-GOOD control did not compile (%s: %s). Either "
-                      "the engine is rejecting valid script or the harness is "
-                      "broken; either way no verdict about the corpus is "
-                      "meaningful." % (gv, gd))
-    if bv == "OK":
-        raise Refusal("the KNOWN-BAD control COMPILED. The engine is not "
-                      "checking anything, so a clean corpus report here would "
-                      "be meaningless. (The known-bad is engine note 3.3's own "
-                      "defect: a zero-argument call in statement position.)")
-    return gd, bd
+
+    required = ("known-good-pre", "known-bad-pre",
+                "known-good-post", "known-bad-post", "known-bad-large")
+    missing = [w for w in required if w not in got]
+    if missing:
+        raise Refusal("the report is missing control(s) %s - it cannot be "
+                      "trusted to have checked anything. (pre and post exist so "
+                      "a partway degradation is visible; the large one because "
+                      "sixty-byte controls say nothing about an engine at corpus "
+                      "scale.)" % ", ".join(missing))
+
+    for name in ("known-good-pre", "known-good-post"):
+        verdict, detail = got[name]
+        if verdict != "OK":
+            raise Refusal("the %s control did not compile (%s: %s). Either the "
+                          "engine is rejecting valid script or the harness is "
+                          "broken; either way no verdict about the corpus is "
+                          "meaningful." % (name, verdict, detail))
+    for name in ("known-bad-pre", "known-bad-post", "known-bad-large"):
+        verdict, detail = got[name]
+        if verdict == "OK":
+            extra = ""
+            if name == "known-bad-post":
+                extra = (" It was rejected BEFORE the corpus and accepted after, "
+                         "so the engine stopped checking partway through this "
+                         "run - every clean verdict after that point is void.")
+            if name == "known-bad-large":
+                extra = (" The same defect is caught in a 60-byte script and "
+                         "missed in a 20,000-line one, so this engine's checking "
+                         "is size-dependent and the corpus's large files were not "
+                         "really checked.")
+            raise Refusal("the %s control COMPILED.%s (The defect is engine note "
+                          "3.3's own: a zero-argument call in statement "
+                          "position.)" % (name, extra))
+    return got["known-bad-pre"][1]
 
 
-# --------------------------------------------------------------------------
-# modes
+def check_no_cascade(seen):
+    """Refuse a report whose failures look like ONE error copied down the run.
+
+    If a successful `set the script of` leaves `the result` UNCHANGED, one real
+    compile failure becomes every later file's verdict, and the run reports a
+    corpus full of defects that reads like a catastrophe rather than like a
+    broken measurement. The engine-side script clears the result before each
+    compile; this is the backstop for when the clear did not work.
+
+    IT IS DELIBERATELY NOT "ANY TWO FILES AGREE", because in THIS tree two files
+    agreeing is ordinary. Four blocks are carried byte-identically into a dozen
+    files each - the ui-kit, the harness scaffold, the demo self-check, and the
+    embedded libraries - so one defect in a master legitimately produces the
+    same error text in sixteen demos. That is a real finding, not a cascade, and
+    a gate that refused it would be crying wolf on the tree's own architecture.
+
+    So the signature is narrower: three or more files sharing one text AND that
+    group being most of the failures. A carried-block defect leaves the files
+    that do not carry the block reporting something else; a stale `the result`
+    makes everything downstream identical."""
+    buckets = {}
+    failures = 0
+    for rel, (verdict, detail) in seen.items():
+        if verdict == "OK":
+            continue
+        failures += 1
+        body = detail.split("; ", 1)[1].strip() if "; " in detail else detail.strip()
+        if not body:
+            continue
+        buckets.setdefault(body, []).append(rel)
+    for body, files in buckets.items():
+        if len(files) >= 3 and len(files) * 2 > failures:
+            raise Refusal(
+                "%d of %d failing files came back with BYTE-IDENTICAL text, "
+                "which is the signature of one error copied down the run - a "
+                "stale `the result` read as each file's verdict - rather than a "
+                "corpus fact.\n  Files: %s\n  Text: %r\n"
+                "  IF THIS IS REAL: a defect in one carried block (the ui-kit, "
+                "the scaffold, the self-check, an embedded library) does produce "
+                "identical text in every carrier. Tell them apart by re-running "
+                "one file alone:\n"
+                "      python3 tools/check-engine-lint.py --only '%s'\n"
+                "  A cascade clears when the file is compiled first; a real "
+                "defect does not."
+                % (len(files), failures, ", ".join(sorted(files)[:4]), body[:200],
+                   sorted(files)[0]))
+
+
 # --------------------------------------------------------------------------
 
 def do_probe(engine, timeout, keep_temp):
@@ -338,26 +457,139 @@ def do_probe(engine, timeout, keep_temp):
     except Refusal as exc:
         print("\nPROBE REFUSED: %s\n" % exc)
         print("---- raw stdout ----")
-        print(out)
+        print(out if out.strip() else "(the engine printed nothing at all)")
         print("---- end raw stdout ----")
+        print("\n---- what this binary says it is ----")
+        print(classify_engine(engine))
+        print("---- end ----")
         print("\nThis is a RESULT, not a crash: it says this engine cannot run "
-              "the probe in this form. Record it in docs/OXT-ENGINE-NOTES.md "
-              "with the date and the engine build, and the next attempt starts "
-              "from evidence rather than from the same guess.")
+              "the probe in this form. The transcript above is the evidence for "
+              "WHICH failure it is - a server engine that could not parse the "
+              "wrapper, or a binary that is not a server engine at all. Record "
+              "it in docs/OXT-ENGINE-NOTES.md with the date and the build.")
+        status("REFUSED")
         return 1
 
+    by_name = {r[1]: (r[2], r[3]) for r in records}
     width = max(len(r[1]) for r in records) if records else 10
     for _kind, name, verdict, detail in records:
         print("  %-*s  %-6s  %s" % (width, name, verdict, detail))
-    print("\n%d rows. Commit this output under docs/ as a dated record: it is "
-          "the first OBSERVED evidence this project has about the headless "
-          "surfaces, and every other tool in this lane reads it rather than "
-          "guessing." % len(records))
+
+    # THE PROBE HAS TO BE ABLE TO FAIL.
+    #
+    # The first version of this printed the rows and exited 0 whatever they
+    # said, so a report in which every capability came back NO - or every row
+    # came back ERROR - read as a successful probe worth committing. That is the
+    # tree's own documented failure shape (a gate answering the question nobody
+    # asks twice) landing in the one tool whose entire job is producing evidence.
+    #
+    # The mandatory rows below are not capabilities. They must be YES on any
+    # engine that EXECUTED the probe at all, so they separate "this engine
+    # cannot do these things" from "nothing ran".
+    problems = []
+    for name in ("probe.selfArithmetic", "probe.emitRoundTrip"):
+        verdict = by_name.get(name, ("MISSING", ""))[0]
+        if verdict not in ("YES", "OK"):
+            problems.append("mandatory row %s is %s - this report is not "
+                            "evidence that anything executed" % (name, verdict))
+    if by_name.get("engine.environment", ("MISSING", ""))[0] == "MISSING" and \
+       by_name.get("engine.version", ("MISSING", ""))[0] == "MISSING":
+        problems.append("neither engine.environment nor engine.version is "
+                        "present, so this report cannot be pinned to a build "
+                        "and may not be cited as evidence about one")
+    # The mandatory rows are NOT capabilities and are counted separately. Summed
+    # in, they put a floor of two YES under every report, so a probe in which
+    # the engine could do nothing at all would still print a non-zero
+    # capability count - a small number that reads like a small success.
+    caps = [r for r in records if not r[1].startswith("probe.")
+            and r[2] in ("YES", "NO", "ERROR", "UNAVAILABLE")]
+    yes = sum(1 for r in caps if r[2] == "YES")
+    no = sum(1 for r in caps if r[2] == "NO")
+    err = sum(1 for r in records if r[2] in ("ERROR", "UNAVAILABLE"))
+    print("\n  capabilities: %d YES, %d NO (of %d asked); %d ERROR/UNAVAILABLE "
+          "row(s) overall; %d rows total"
+          % (yes, no, len(caps), err, len(records)))
+
+    # An engine can legitimately answer NO to everything. It cannot legitimately
+    # ERROR on everything: that is the probe failing to ask, not the engine
+    # failing to do, and the two must not be summed into one green report.
+    if records and err * 2 > len(records):
+        problems.append("%d of %d rows are ERROR/UNAVAILABLE - the probe is "
+                        "failing to ASK, which is not the same as the engine "
+                        "failing to DO, and a report that is mostly the former "
+                        "measures nothing" % (err, len(records)))
+
+    # DELIBERATELY NOT A REFUSAL, and the distinction is worth stating.
+    #
+    # In the LINT, a known-bad that compiles voids the report: every clean
+    # verdict after it is meaningless. In the PROBE, the same row is THE FINDING
+    # - it is the answer to "can this engine lint at all?", and answering "no"
+    # is a successful measurement. Refusing here would make the probe unable to
+    # report the one negative result that most needs recording. So it prints as
+    # a verdict, loudly, and exits 0.
+    bad = by_name.get("compile.badIsReported", ("MISSING", ""))
+    if bad[0] == "YES":
+        print("  VERDICT: `set the script of` reports a bad script on this "
+              "engine, so HEADLESS-ENGINE.md stage 2 (the script lint) IS "
+              "authorised.")
+    else:
+        print("  VERDICT: compile.badIsReported is %s - this engine did NOT "
+              "report a zero-argument call in statement position, so "
+              "`set the script of` is not a lint on it and stage 2 is NOT "
+              "authorised. That is a real result; record it. Check the "
+              "compile.errorFormat row for what it said instead, and note the "
+              "open question in HEADLESS-ENGINE.md section 9: the engine may be "
+              "STORING the script and deferring the parse to first execution, "
+              "in which case the idiom must be set-then-call." % bad[0])
+
+    if problems:
+        print("\nPROBE REFUSED - the report cannot be cited as evidence:")
+        for prob in problems:
+            print("  - %s" % prob)
+        status("REFUSED")
+        return 1
+
+    print("\nCommit this output under docs/ as a dated record: it is the first "
+          "OBSERVED evidence this project has about the headless surfaces, and "
+          "every other tool in this lane reads it rather than guessing.")
+    status("MEASURED")
     return 0
+
+
+def git_corpus():
+    """`git ls-files` as an INDEPENDENT list.
+
+    The os.walk in corpus() has a prune list, and a prune bug that silently drops
+    four members leaves the count plausible and the run green - a shrunken
+    denominator, which is the failure this tree has already paid for once (an
+    unterminated comment took 69 handlers out of a coverage count and turned the
+    row green at a smaller wrong number). git's index cannot be broken by the
+    same bug, so disagreement between the two is a refusal."""
+    try:
+        proc = subprocess.run(["git", "ls-files", "*.livecodescript"], cwd=ROOT,
+                              timeout=60, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL)
+    except Exception:                               # noqa: BLE001 - optional check
+        return None
+    if proc.returncode != 0:
+        return None
+    return sorted(l for l in proc.stdout.decode().split("\n") if l.strip())
 
 
 def do_lint(engine, only, timeout, keep_temp):
     files = corpus(only)
+    if only is None:
+        tracked = git_corpus()
+        if tracked is not None:
+            # Untracked files are legitimate mid-change, so only a walk that has
+            # LOST something git can see is a refusal.
+            lost = [f for f in tracked if f not in files]
+            if lost:
+                raise Refusal("`git ls-files` names %d .livecodescript file(s) "
+                              "the corpus walk did not find, starting with %s - "
+                              "the walk is broken, and a shrunken denominator "
+                              "reports green at a smaller wrong number"
+                              % (len(lost), lost[0]))
     if only is None and len(files) < CORPUS_FLOOR:
         raise Refusal("the corpus walk found %d .livecodescript files and the "
                       "floor is %d - discovery is broken, not the tree"
@@ -383,7 +615,7 @@ def do_lint(engine, only, timeout, keep_temp):
                     os.remove(p)
 
     records, _ = parse_report(out, MARK_LINT_BEGIN, MARK_LINT_END)
-    good_detail, bad_detail = check_controls(records)
+    bad_detail = check_controls(records)
 
     fatal = [r for r in records if r[0] == "FATAL"]
     if fatal:
@@ -409,6 +641,8 @@ def do_lint(engine, only, timeout, keep_temp):
     if extra:
         raise Refusal("the report covers %d file(s) that were not requested: %s"
                       % (len(extra), ", ".join(sorted(extra)[:5])))
+
+    check_no_cascade(seen)
 
     stale = [p for p in EXPECTED_FAILURES if p not in seen]
     if stale:
@@ -438,6 +672,18 @@ def do_lint(engine, only, timeout, keep_temp):
     print("controls      : known-good OK, known-bad rejected (%s)"
           % (bad_detail[:90] or "no detail"))
     print("files compiled: %d of %d" % (len(ok), len(files)))
+    # Printed because degradation should show as a NUMBER, not as an absence: an
+    # engine that quietly stops reading past some size leaves every count right
+    # and this total wrong.
+    total = 0
+    for rel in files:
+        detail = seen[rel][1]
+        if detail.startswith("chars="):
+            head = detail.split(";", 1)[0][len("chars="):].strip()
+            if head.isdigit():
+                total += int(head)
+    print("bytes compiled: %d (as reported by the engine, summed over %d files)"
+          % (total, len(files)))
     if expected:
         print("expected fail : %d" % len(expected))
         for rel, why, detail in expected:
@@ -459,10 +705,12 @@ def do_lint(engine, only, timeout, keep_temp):
 
     if failed or errored:
         print("\n%d rejected, %d errored." % (len(failed), len(errored)))
+        status("MEASURED")
         return 1
     print("\nMEASURED: every one of the %d scripts parses on this engine. That "
           "is a PARSE result and nothing more - the runtime entries in "
           "docs/OXT-ENGINE-NOTES.md are untouched by it." % len(files))
+    status("MEASURED")
     return 0
 
 
@@ -481,6 +729,7 @@ def skip_notice(why, require):
     print("  Run --probe FIRST. It asks the engine what it can actually do and")
     print("  prints the answers; every claim this lane rests on is DOCUMENTED")
     print("  until that report exists. See docs/HEADLESS-ENGINE.md.")
+    status("REQUIRED-BUT-UNAVAILABLE" if require else "SKIPPED")
     return 2 if require else 0
 
 
@@ -503,6 +752,7 @@ def main():
         engine, how = find_engine(args.engine)
     except Refusal as exc:
         print("check-engine-lint: REFUSED - %s" % exc)
+        status("REFUSED")
         return 2
     if engine is None:
         return skip_notice(how, args.require)
@@ -523,6 +773,7 @@ def main():
         print("  NOTHING about whether the corpus is clean. Fix the measurement")
         print("  first - a lane that reports on a corpus it did not read is the")
         print("  failure mode this repository has documented four times.")
+        status("REFUSED")
         return 2
 
 

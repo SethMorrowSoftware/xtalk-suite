@@ -58,6 +58,14 @@ on:
 permissions:
   contents: read
 
+# EVERY run: block below pipes a driver into `tee`. Without pipefail a pipeline
+# reports TEE's exit status, so a driver that REFUSED would look green - the
+# exact class of silent pass this lane exists to avoid. Set at job level so a
+# step added later cannot forget it.
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
 jobs:
   engine:
     name: probe, then lint the corpus
@@ -99,11 +107,32 @@ jobs:
             *.tar.gz)  tar -xzf "$out" -C engine-dist ;;
             *.tar.bz2) tar -xjf "$out" -C engine-dist ;;
           esac
+          # A marker over the EXTRACTED tree, not just the archive. The step
+          # below runs unconditionally, including on a cache hit - which is the
+          # path a download check never covers and the one a partial or evicted
+          # extract actually arrives on. The marker excludes ITSELF from the
+          # listing on both sides, so the two hashes are computed over the same
+          # set (a redirection creates its target before `find` runs, so a naive
+          # listing would include an empty marker on write and a full one on
+          # verify, and never agree).
+          find engine-dist -type f ! -name .xt-extract-ok | LC_ALL=C sort \
+            | sha256sum | cut -d' ' -f1 > engine-dist/.xt-extract-ok
 
-      # Located rather than assumed. A distribution's internal layout is exactly
-      # the sort of thing that differs between the IDE bundle and the server
-      # download, and a hard-coded path would fail as "no engine" instead of as
-      # "the engine is somewhere else".
+      - name: The engine tree is intact (runs on the cache-hit path too)
+        run: |
+          test -f engine-dist/.xt-extract-ok || {
+            echo "engine-dist has no extraction marker - a partial or evicted cache." >&2
+            exit 2
+          }
+          want=$(cat engine-dist/.xt-extract-ok)
+          got=$(find engine-dist -type f ! -name .xt-extract-ok | LC_ALL=C sort \
+                  | sha256sum | cut -d' ' -f1)
+          echo "listing hash: want=$want got=$got"
+          test "$want" = "$got" || {
+            echo "the restored engine tree does not match what was extracted." >&2
+            exit 2
+          }
+
       - name: Locate the binaries
         id: locate
         run: |
@@ -129,13 +158,28 @@ jobs:
             --engine '${{ steps.locate.outputs.engine }}' --probe \
             | tee engine-probe-report.txt
 
+      # Asserted on the driver's machine-readable LAST LINE, never on its prose.
+      # An earlier draft grepped the transcript for an explanatory phrase, which
+      # a REFUSED probe can also contain - and prose is exactly what changes
+      # when somebody improves a message.
+      - name: The probe actually measured something
+        if: steps.locate.outputs.engine != ''
+        run: |
+          last=$(grep '^XT-ENGINE-STATUS:' engine-probe-report.txt | tail -1 || true)
+          echo "status line: ${last:-<none>}"
+          test "$last" = "XT-ENGINE-STATUS: MEASURED"
+
+      # `always()` so a REFUSED probe still uploads its transcript - that
+      # transcript is the finding. Guarded on the engine having been located,
+      # because if-no-files-found is `error` and an archive carrying only a
+      # compiler would otherwise fail the job for the wrong reason.
       - name: Upload the probe report
-        if: always()
+        if: always() && steps.locate.outputs.engine != ''
         uses: actions/upload-artifact@v4
         with:
           name: engine-probe-report
           path: engine-probe-report.txt
-          if-no-files-found: warn
+          if-no-files-found: error
 
       # Advisory until the probe report has been read and committed. See the
       # header: a red X on an unproven invocation trains people to ignore the
@@ -167,4 +211,4 @@ jobs:
             engine-probe-report.txt
             engine-lint-report.txt
             lcb-compile-report.txt
-          if-no-files-found: warn
+          if-no-files-found: error

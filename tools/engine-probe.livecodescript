@@ -115,20 +115,33 @@ end xtProbeYesNo
 --    taken in a different context - which is the whole risk of running the GUI
 --    control and the headless run on the same machine and comparing columns.
 private command xtProbeIdentity
-   local tErr
-   try
-      xtProbeEmit "probe.version", "INFO", kXtProbeVersion
-      xtProbeEmit "engine.environment", "INFO", the environment
-      xtProbeEmit "engine.version", "INFO", the version
-      xtProbeEmit "engine.buildNumber", "INFO", the buildNumber
-      xtProbeEmit "engine.platform", "INFO", the platform
-      xtProbeEmit "engine.processor", "INFO", the processor
-      xtProbeEmit "engine.systemVersion", "INFO", the systemVersion
-      xtProbeEmit "engine.machine", "INFO", the machine
-   catch tErr
-      xtProbeEmit "engine.identity", "ERROR", tErr
-   end try
+   -- ONE TRY PER PROPERTY, and the reason is a real defect this file shipped
+   -- with: all eight lived in a single `try`, so an engine that does not answer
+   -- `the machine` would have cost the seven rows around it - including
+   -- `the environment` and `the version`, which are the two that pin a result
+   -- to a build. A property's absence is itself a finding worth recording.
+   xtProbeProperty "engine.environment", "the environment"
+   xtProbeProperty "engine.version", "the version"
+   xtProbeProperty "engine.buildNumber", "the buildNumber"
+   xtProbeProperty "engine.platform", "the platform"
+   xtProbeProperty "engine.processor", "the processor"
+   xtProbeProperty "engine.systemVersion", "the systemVersion"
+   xtProbeProperty "engine.machine", "the machine"
+   xtProbeEmit "probe.version", "INFO", kXtProbeVersion
 end xtProbeIdentity
+
+
+-- Read one property by name, through `do`, so the eight rows above are eight
+-- statements rather than eight copies of a try block.
+private command xtProbeProperty pName, pExpression
+   local tErr, tValue
+   try
+      do ("put" && pExpression && "into tValue")
+      xtProbeEmit pName, "INFO", tValue
+   catch tErr
+      xtProbeEmit pName, "UNAVAILABLE", tErr
+   end try
+end xtProbeProperty
 
 
 -- 1. IS THERE AN OBJECT MODEL? Everything downstream needs somewhere to PUT a
@@ -395,7 +408,6 @@ private command xtProbeLargeScript
       -- `the number of chars of (tBig && "chars...")` - a chunk expression over
       -- the concatenation, not the count of tBig - and the reported number
       -- would be quietly wrong rather than an error.
-      local tSize
       put the number of chars of tBig into tSize
       xtProbeYesNo "compile.largeScript", (tRes is empty), "20002 lines," && tSize && "chars; the result ->" && tRes
    catch tErr
@@ -403,6 +415,70 @@ private command xtProbeLargeScript
    end try
 end xtProbeLargeScript
 
+
+
+-- MANDATORY ROWS: did this engine actually EXECUTE the probe?
+--
+-- The rows below must be YES on any engine that ran this file at all, and
+-- tools/check-engine-lint.py REFUSES a report in which they are not. They exist
+-- because every capability row above can legitimately answer NO, so a report of
+-- all-NO is indistinguishable from a report produced by something that printed
+-- the scaffolding and evaluated nothing - and the first version of the driver
+-- treated that as a successful probe worth committing. These separate the two.
+--
+-- The round-trip row is the more interesting of the two: it feeds a value
+-- containing a TAB and a RETURN through the same xtProbeEmit that every other
+-- row uses, and asserts the flattening happened. A probe whose own record
+-- format is broken would otherwise report tidy rows that the Python parser
+-- silently mis-splits.
+private command xtProbeMandatory
+   local tErr, tSum, tDirty, tFlatOk
+   try
+      put 2 + 2 into tSum
+      xtProbeYesNo "probe.selfArithmetic", (tSum is 4), "2 + 2 ->" && tSum
+   catch tErr
+      xtProbeEmit "probe.selfArithmetic", "ERROR", tErr
+   end try
+   try
+      put "a" & tab & "b" & return & "c" into tDirty
+      put (tDirty contains tab) into tFlatOk
+      -- Emitted through the ordinary path; the driver checks that the record it
+      -- receives carries NO raw tab beyond the field separators and no split.
+      xtProbeEmit "probe.emitRoundTrip", "YES", tDirty
+   catch tErr
+      xtProbeEmit "probe.emitRoundTrip", "ERROR", tErr
+   end try
+end xtProbeMandatory
+
+
+-- DOES `set the script of` CLEAR `the result` ON SUCCESS?
+--
+-- This row settles the single most dangerous ambiguity in the lint idiom. If a
+-- successful `set the script of` leaves `the result` UNCHANGED rather than
+-- emptying it, then a stale error from any earlier command - the file read
+-- immediately before it, or the previous file's genuine compile failure - is
+-- read as this file's verdict, and a corpus lint cascades: one real failure
+-- makes every file after it fail with the same text. The driver carries a
+-- cascade detector for exactly that, but a detector is a backstop; this is the
+-- measurement.
+private command xtProbeResultClearing
+   local tErr, tRes, tGood
+   put "on xtProbeClean" & return & "end xtProbeClean" into tGood
+   try
+      -- Dirty `the result` deliberately. `there is a stack` does not set it, so
+      -- a command that fails is used: the point is to leave something behind.
+      try
+         delete stack "xtProbeNoSuchStackAnywhere"
+      catch tErr
+         -- expected; the throw is the dirtying
+      end try
+      set the script of stack kXtProbeHost to tGood
+      put the result into tRes
+      xtProbeYesNo "compile.resultClearedOnSuccess", (tRes is empty), "after a deliberately dirtied result, a GOOD compile left the result ->" && tRes
+   catch tErr
+      xtProbeEmit "compile.resultClearedOnSuccess", "ERROR", tErr
+   end try
+end xtProbeResultClearing
 
 -- ==================================================================== --
 --  The runner
@@ -423,6 +499,11 @@ function xtProbeRun pSelfPath
    -- merge lost six harnesses' worth of results and could not name the member
    -- it came from.
    try
+      xtProbeMandatory
+   catch tErr
+      xtProbeEmit "probe.mandatory", "ERROR", tErr
+   end try
+   try
       xtProbeIdentity
    catch tErr
       xtProbeEmit "probe.identity", "ERROR", tErr
@@ -441,6 +522,11 @@ function xtProbeRun pSelfPath
       xtProbeErrorDetail
    catch tErr
       xtProbeEmit "probe.errorDetail", "ERROR", tErr
+   end try
+   try
+      xtProbeResultClearing
+   catch tErr
+      xtProbeEmit "probe.resultClearing", "ERROR", tErr
    end try
    try
       xtProbeExplicitVars

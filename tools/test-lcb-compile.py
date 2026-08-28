@@ -119,6 +119,19 @@ def main():
         # CONTROL, which is where it must be caught - by the time a real module
         # silently produced nothing, the run would already be reporting success.
 
+        # Exactly one machine-readable status line per run, on every path -
+        # including the error paths, where a shadowed name once made the call
+        # itself raise. The fixture suite caught that; nothing else would have.
+        for mutation, want in (("", "MEASURED"), ("good-fails", "REFUSED"),
+                               ("module-fails", "MEASURED")):
+            code, out = run(fake, mutation)
+            tail = [l for l in out.strip().split("\n") if l.startswith("XT-ENGINE-STATUS:")]
+            if len(tail) != 1 or tail[0].split(": ", 1)[1] != want:
+                failures.append("status line for %r: got %r, wanted exactly one %s"
+                                % (mutation or "baseline", tail, want))
+            else:
+                print("  ok  %-16s -> %s" % ("status " + (mutation or "baseline"), tail[0]))
+
         code, out = run(fake, "", extra=["--only", "nothing-matches-this"])
         if code != 2 or "matched no module" not in out:
             failures.append("empty --only: exit %d, wanted 2\n%s" % (code, out[-1200:]))
@@ -149,6 +162,11 @@ def main():
         return 1
     print("\ntest-lcb-compile: OK - every refusal fires, and the unmutated "
           "baseline passes.")
+    print("  PROVES: the DRIVER, against a FAKE compiler.")
+    print("  DOES NOT PROVE: that lc-compile's real command line is the one the "
+          "driver builds, that a foreign binding resolves at load time rather "
+          "than compile time, or that the six modules compile. No compiler has "
+          "run. See docs/HEADLESS-ENGINE.md.")
     return 0
 
 

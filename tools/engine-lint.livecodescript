@@ -44,6 +44,13 @@ local sXtLintLines
 local sXtLintCount
 
 
+on xtLintNoop
+   -- Exists only so `send "xtLintNoop" to me` above is a HANDLED message: an
+   -- unhandled send sets the result to "Message not handled", which would dirty
+   -- the very thing the send is there to clean.
+end xtLintNoop
+
+
 private command xtLintEmit pKind, pName, pVerdict, pDetail
    local tFlat
    put pDetail into tFlat
@@ -67,6 +74,25 @@ end xtLintEmit
 private function xtLintCompileText pText
    local tErr, tRes
    try
+      -- CLEAR `the result` FIRST, and this line is load-bearing.
+      --
+      -- If a successful `set the script of` leaves `the result` UNCHANGED
+      -- rather than emptying it, then whatever the previous command left there
+      -- becomes this file's verdict - the `put url (file:...)` read three lines
+      -- up in xtLintOne, or the genuine compile error of the PREVIOUS file. The
+      -- second is the dangerous one: one real failure would make every file
+      -- after it fail with the same text, and a maintainer would read a cascade
+      -- as a corpus full of defects.
+      --
+      -- `send` to a handler that exists sets the result to empty, which is why
+      -- a no-op message is used rather than an assignment (an assignment does
+      -- not touch the result at all). Whether the clear is even NECESSARY is
+      -- the probe's compile.resultClearedOnSuccess row; it is done
+      -- unconditionally because doing it when it is unneeded costs one message
+      -- dispatch, and not doing it when it is needed costs the whole run. The
+      -- driver carries a cascade detector as well - a backstop, not a
+      -- substitute.
+      send "xtLintNoop" to me
       set the script of stack kXtLintHost to pText
       put the result into tRes
       if tRes is empty then
@@ -83,18 +109,52 @@ private function xtLintCompileText pText
 end xtLintCompileText
 
 
--- The negative control. Read the header: this must FAIL, and a run in which it
--- passes is a broken run, not a clean tree.
-private command xtLintControls
+-- The controls, and there are now three questions rather than one.
+--
+-- PRE AND POST. The first version ran the pair once, before the corpus. That
+-- cannot see an engine that degrades PARTWAY - runs out of a script-object
+-- budget, or starts accepting everything after N compiles - and a degraded
+-- engine's silence is a clean report. The pair runs again after the last file,
+-- under DISTINCT names, and the driver requires all four and refuses a report
+-- carrying any control name twice. Distinct names matter: with one name and two
+-- records, a parser that keeps the first sees the healthy answer and a parser
+-- that keeps the last sees the degraded one, and neither is a refusal.
+--
+-- AT SCALE. Both small controls are about sixty bytes. Nothing in them speaks
+-- for the sizes this corpus actually reaches - the generated suite paste is
+-- 1.95 MB and 42,014 lines - so a size-dependent degradation, where an engine
+-- silently stops checking past some threshold, would leave every small control
+-- green. The large control is a synthetic ~20,000-line module carrying the same
+-- defect, and it must be rejected too.
+private command xtLintControls pWhen
    local tGood, tBad, tVerdict
    put "on xtLintControlNoop" & return & "end xtLintControlNoop" into tGood
    put xtLintCompileText(tGood) into tVerdict
-   xtLintEmit "CONTROL", "known-good", item 1 of tVerdict, item 2 to -1 of tVerdict
+   xtLintEmit "CONTROL", "known-good-" & pWhen, item 1 of tVerdict, item 2 to -1 of tVerdict
 
    put "on xtLintControlBroken" & return & "  xtLintControlNoop()" & return & "end xtLintControlBroken" into tBad
    put xtLintCompileText(tBad) into tVerdict
-   xtLintEmit "CONTROL", "known-bad", item 1 of tVerdict, item 2 to -1 of tVerdict
+   xtLintEmit "CONTROL", "known-bad-" & pWhen, item 1 of tVerdict, item 2 to -1 of tVerdict
 end xtLintControls
+
+
+private command xtLintLargeControl
+   local tBig, tIndex, tVerdict, tErr
+   try
+      put "on xtLintBigBroken" & return into tBig
+      repeat with tIndex = 1 to 20000
+         put "  put" && tIndex && "into tScratch" & return after tBig
+      end repeat
+      -- The same defect as the small known-bad: engine note 3.3's zero-argument
+      -- call in statement position, buried 20,000 lines deep.
+      put "  xtLintControlNoop()" & return after tBig
+      put "end xtLintBigBroken" after tBig
+      put xtLintCompileText(tBig) into tVerdict
+      xtLintEmit "CONTROL", "known-bad-large", item 1 of tVerdict, item 2 to -1 of tVerdict
+   catch tErr
+      xtLintEmit "CONTROL", "known-bad-large", "ERROR", tErr
+   end try
+end xtLintLargeControl
 
 
 -- One manifest entry. The file is read as TEXT through the `file:` scheme; every
@@ -148,7 +208,8 @@ function xtLintRun pManifestPath
       return sXtLintLines
    end try
 
-   xtLintControls
+   xtLintControls "pre"
+   xtLintLargeControl
 
    put empty into tManifest
    try
@@ -171,6 +232,9 @@ function xtLintRun pManifestPath
          end if
       end repeat
    end if
+
+   -- After the corpus, so a degradation that set in partway through is visible.
+   xtLintControls "post"
 
    try
       if there is a stack kXtLintHost then

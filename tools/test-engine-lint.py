@@ -55,19 +55,9 @@ wrapper = open(sys.argv[1]).read()
 if mut == "silent":
     sys.exit(0)
 if mut == "hang":
+    sys.stdout.write("XTLINT-BEGIN\t1\nCONTROL\tknown-good-pre\tOK\t\n")
+    sys.stdout.flush()
     time.sleep(30)
-    sys.exit(0)
-
-if "xtProbeRun(" in wrapper.split("-- XT-ENGINE-ENTRY-CALL")[-1]:
-    print("XTPROBE-BEGIN\t1")
-    rows = [("engine.environment", "INFO", "server"),
-            ("engine.version", "INFO", "9.6.3"),
-            ("object.createStack", "YES", "there is a stack -> true"),
-            ("compile.goodIsClean", "YES", "the result ->"),
-            ("compile.badIsReported", "YES", "the result -> compile error")]
-    for r in rows:
-        print("PROBE\t%s\t%s\t%s" % r)
-    print("XTPROBE-END\t%d" % len(rows))
     sys.exit(0)
 
 # The entry call is found through the driver's sentinel, NOT by searching the
@@ -86,6 +76,34 @@ for i, ln in enumerate(lines):
 if call is None:
     sys.stderr.write("fake engine: the wrapper carries no entry-call sentinel\n")
     sys.exit(3)
+
+if "xtProbeRun(" in call:
+    rows = [("probe.selfArithmetic", "YES", "2 + 2 -> 4"),
+            ("probe.emitRoundTrip", "YES", "a b<NL>c"),
+            ("engine.environment", "INFO", "server"),
+            ("engine.version", "INFO", "9.6.3"),
+            ("object.createStack", "YES", "there is a stack -> true"),
+            ("compile.goodIsClean", "YES", "the result ->"),
+            ("compile.badIsReported", "YES", "the result -> compile error"),
+            ("compile.resultClearedOnSuccess", "YES", "the result ->"),
+            ("runtime.sendInTime", "YES", "ticked -> true")]
+    if mut == "probe-no-mandatory":
+        rows = [r for r in rows if r[0] != "probe.selfArithmetic"]
+    if mut == "probe-mandatory-error":
+        rows = [(r[0], "ERROR", "boom") if r[0].startswith("probe.") else r for r in rows]
+    if mut == "probe-all-no":
+        rows = [(r[0], "NO", r[2]) if (r[1] == "YES" and not r[0].startswith("probe.")) else r
+                for r in rows]
+    if mut == "probe-all-error":
+        rows = [(r[0], "ERROR", "boom") for r in rows]
+    if mut == "probe-no-identity":
+        rows = [r for r in rows if not r[0].startswith("engine.")]
+    print("XTPROBE-BEGIN\t1")
+    for r in rows:
+        print("PROBE\t%s\t%s\t%s" % r)
+    print("XTPROBE-END\t%d" % len(rows))
+    sys.exit(0)
+
 m = re.search(r'xtLintRun\("([^"]+)"\)', call)
 if not m:
     sys.stderr.write("fake engine: the entry call is not xtLintRun: %s\n" % call)
@@ -93,12 +111,18 @@ if not m:
 paths = [l.strip() for l in open(m.group(1)) if l.strip()]
 
 recs = []
-good = "OK" if mut != "good-fails" else "FAIL"
-bad = "FAIL" if mut != "bad-compiles" else "OK"
-recs.append(("CONTROL", "known-good", good, ""))
-recs.append(("CONTROL", "known-bad", bad, "line 2: zero-argument call"))
-if mut == "no-controls":
-    recs = []
+def ctl(name, verdict, detail=""):
+    recs.append(("CONTROL", name, verdict, detail))
+
+if mut != "no-controls":
+    ctl("known-good-pre", "FAIL" if mut == "good-fails" else "OK")
+    ctl("known-bad-pre", "OK" if mut == "bad-compiles" else "FAIL",
+        "line 2: zero-argument call")
+    if mut != "no-large-control":
+        ctl("known-bad-large", "OK" if mut == "big-control-ok" else "FAIL",
+            "line 20001: zero-argument call")
+    if mut == "control-dupe":
+        ctl("known-good-pre", "OK")
 if mut == "fatal":
     recs.append(("FATAL", "host-stack", "ERROR", "cannot create stack"))
 
@@ -110,45 +134,74 @@ for i, p in enumerate(paths):
         verdict = "FAIL"
     if mut == "one-errors" and i == 2:
         verdict = "ERROR"
-    detail = "chars=123; " + ("line 9: syntax error" if verdict != "OK" else "")
+    detail = "chars=%d; " % (100 + i) + ("line 9: syntax error" if verdict != "OK" else "")
+    if mut == "cascade" and i < 5:
+        verdict = "FAIL"
+        detail = "chars=%d; Handler: error in statement" % (100 + i)
+    if mut == "shared-block":
+        # two carriers of one broken block, plus two unrelated failures: the
+        # identical group is NOT a majority, so it must not be read as a cascade
+        if i in (0, 1):
+            verdict = "FAIL"
+            detail = "chars=%d; line 40: the carried block is broken" % (100 + i)
+        elif i in (2, 3):
+            verdict = "FAIL"
+            detail = "chars=%d; line %d: something else entirely" % (100 + i, i)
     recs.append(("FILE", p, verdict, detail))
 if mut == "duplicate":
-    recs.append(("FILE", paths[0], "OK", "chars=123; "))
+    recs.append(("FILE", paths[0], "OK", "chars=100; "))
 if mut == "extra":
     recs.append(("FILE", os.path.join(os.path.dirname(paths[0]), "not-requested.livecodescript"),
                  "OK", "chars=1; "))
 
-lines = []
+if mut not in ("no-controls", "no-post-controls"):
+    ctl("known-good-post", "OK")
+    ctl("known-bad-post", "OK" if mut == "post-degrades" else "FAIL",
+        "line 2: zero-argument call")
+
+out_lines = []
 if mut != "no-begin":
-    lines.append("XTLINT-BEGIN\t1")
+    out_lines.append("XTLINT-BEGIN\t1")
 for r in recs:
-    lines.append("%s\t%s\t%s\t%s" % r)
+    out_lines.append("%s\t%s\t%s\t%s" % r)
 if mut != "no-end":
     count = len(recs) + (7 if mut == "bad-count" else 0)
-    lines.append("XTLINT-END\t%d" % count)
+    out_lines.append("XTLINT-END\t%d" % count)
 if mut == "junk-record":
-    lines.insert(2, "FILE\tonly-two-fields")
-print("\n".join(lines))
+    out_lines.insert(2, "FILE\tonly-two-fields")
+print("\n".join(out_lines))
+
 '''
 
 # (mutation, expected exit, a fragment that must appear in the output)
 # expected exit 2 = REFUSED (the measurement is void); 1 = the corpus is dirty.
 CASES = [
-    ("",             0, "MEASURED"),
-    ("bad-compiles", 2, "KNOWN-BAD control COMPILED"),
-    ("good-fails",   2, "KNOWN-GOOD control did not compile"),
-    ("no-controls",  2, "no known-good control"),
-    ("no-begin",     2, "no XTLINT-BEGIN marker"),
-    ("no-end",       2, "no XTLINT-END marker"),
-    ("bad-count",    2, "records and carries"),
-    ("drop-one",     2, "came back with no verdict"),
-    ("duplicate",    2, "two verdicts in one report"),
-    ("extra",        2, "were not requested"),
-    ("junk-record",  2, "unparseable record"),
-    ("fatal",        2, "fatal condition"),
-    ("silent",       2, "no XTLINT-BEGIN marker"),
-    ("one-fails",    1, "REJECTED BY THE ENGINE"),
-    ("one-errors",   1, "ERRORED"),
+    ("",                 0, "MEASURED"),
+    ("bad-compiles",     2, "known-bad-pre control COMPILED"),
+    ("post-degrades",    2, "stopped checking partway through"),
+    ("big-control-ok",   2, "size-dependent"),
+    ("no-large-control", 2, "missing control(s) known-bad-large"),
+    ("no-post-controls", 2, "known-good-post"),
+    ("control-dupe",     2, "two CONTROL records named"),
+    ("cascade",          2, "signature of one error copied down the run"),
+    # The DISCRIMINATION that matters: two carriers of one broken block
+    # share error text legitimately (this tree carries four blocks
+    # byte-identically into a dozen files each). That must report a dirty
+    # corpus (exit 1), not refuse the measurement (exit 2).
+    ("shared-block",     1, "REJECTED BY THE ENGINE"),
+    ("good-fails",       2, "known-good-pre control did not compile"),
+    ("no-controls",      2, "missing control(s)"),
+    ("no-begin",         2, "no XTLINT-BEGIN marker"),
+    ("no-end",           2, "no XTLINT-END marker"),
+    ("bad-count",        2, "records and carries"),
+    ("drop-one",         2, "came back with no verdict"),
+    ("duplicate",        2, "two FILE records named"),
+    ("extra",            2, "were not requested"),
+    ("junk-record",      2, "unparseable record"),
+    ("fatal",            2, "fatal condition"),
+    ("silent",           2, "no XTLINT-BEGIN marker"),
+    ("one-fails",        1, "REJECTED BY THE ENGINE"),
+    ("one-errors",       1, "ERRORED"),
 ]
 
 
@@ -184,11 +237,36 @@ def main():
                 print("  ok  %-14s -> exit %d (%s)" % (label, code, want_text[:40]))
 
         # The probe path parses too, and its own end marker is enforced.
-        code, out = run(fake, "", extra=["--probe"])
-        if code != 0 or "engine capability probe" not in out:
-            failures.append("--probe: exit %d\n%s" % (code, out[-1500:]))
-        else:
-            print("  ok  %-14s -> exit 0 (probe report parsed)" % "--probe")
+        PROBE_CASES = [
+            ("",                      0, "XT-ENGINE-STATUS: MEASURED"),
+            # An engine may legitimately answer NO to every capability - that is
+            # a successful measurement of a limited engine. It may NOT produce a
+            # report that fails to prove anything executed.
+            ("probe-all-no",          0, "capabilities: 0 YES"),
+            ("probe-no-mandatory",    1, "probe.selfArithmetic is MISSING"),
+            ("probe-mandatory-error", 1, "is ERROR"),
+            ("probe-all-error",       1, "failing to ASK"),
+            ("probe-no-identity",     1, "cannot be pinned to a build"),
+        ]
+        for mutation, want_code, want_text in PROBE_CASES:
+            code, out = run(fake, mutation, extra=["--probe"])
+            label = "--probe " + (mutation or "baseline")
+            if code != want_code or want_text not in out:
+                failures.append("%s: exit %d (wanted %d) / missing %r\n%s"
+                                % (label, code, want_code, want_text, out[-1500:]))
+            else:
+                print("  ok  %-26s -> exit %d (%s)" % (label, code, want_text[:40]))
+
+        # Exactly one machine-readable status line per run, on every path. CI
+        # asserts on it; prose is what changes when a message is improved.
+        for mutation, want in (("", "MEASURED"), ("bad-compiles", "REFUSED")):
+            code, out = run(fake, mutation)
+            tail = [l for l in out.strip().split("\n") if l.startswith("XT-ENGINE-STATUS:")]
+            if len(tail) != 1 or tail[0].split(": ", 1)[1] != want:
+                failures.append("status line for %r: got %r, wanted exactly one %s"
+                                % (mutation or "baseline", tail, want))
+            else:
+                print("  ok  %-26s -> %s" % ("status-line " + (mutation or "baseline"), tail[0]))
 
         code, out = run(fake, "silent", extra=["--probe"])
         if code != 1 or "PROBE REFUSED" not in out:
@@ -239,6 +317,12 @@ def main():
     print("\ntest-engine-lint: OK - every refusal fires, and the unmutated "
           "baseline passes (so they are refusals, not a tool that refuses "
           "everything).")
+    print("  PROVES: the DRIVER, against a FAKE engine speaking the format "
+          "tools/engine-lint.livecodescript is written to emit.")
+    print("  DOES NOT PROVE: that any real engine emits that format, that "
+          "`set the script of` reports compile errors at all, or that a server "
+          "engine will run the wrapper. No engine has run. See "
+          "docs/HEADLESS-ENGINE.md.")
     return 0
 
 

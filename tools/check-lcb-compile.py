@@ -138,6 +138,11 @@ end library
 '''
 
 
+def status(kind):
+    """The last line of every run. CI asserts on this, not on prose."""
+    print("XT-ENGINE-STATUS: %s" % kind)
+
+
 class Refusal(Exception):
     """The measurement is void - not the same as the corpus being dirty."""
 
@@ -243,6 +248,7 @@ def skip_notice(why, require):
     print("")
     print("  See docs/HEADLESS-ENGINE.md. The default flags are a CLAIM until a")
     print("  first run corrects them; the tool prints the command it ran.")
+    status("REQUIRED-BUT-UNAVAILABLE" if require else "SKIPPED")
     return 2 if require else 0
 
 
@@ -264,6 +270,7 @@ def main():
         compiler, how = find_compiler(args.lc_compile)
     except Refusal as exc:
         print("check-lcb-compile: REFUSED - %s" % exc)
+        status("REFUSED")
         return 2
     if compiler is None:
         return skip_notice(how, args.require)
@@ -277,11 +284,13 @@ def main():
     if missing:
         print("check-lcb-compile: REFUSED - the module list names files that are "
               "not in the tree: %s" % ", ".join(missing))
+        status("REFUSED")
         return 2
 
     targets = [m for m in MODULES if not args.only or args.only in m]
     if not targets:
         print("check-lcb-compile: REFUSED - --only %r matched no module" % args.only)
+        status("REFUSED")
         return 2
 
     with tempfile.TemporaryDirectory() as outdir:
@@ -290,6 +299,7 @@ def main():
                                     args.timeout, args.verbose)
         except Refusal as exc:
             print("\ncheck-lcb-compile: REFUSED\n  %s" % exc)
+            status("REFUSED")
             return 2
 
         depth_ok, depth_text = controls["depth-probe"]
@@ -310,8 +320,8 @@ def main():
             src = os.path.join(ROOT, rel)
             ok, cmd, text = compile_one(compiler, src, outdir, modulepath,
                                         args.lcb_arg, args.timeout)
-            status = "compiled" if ok else "REJECTED"
-            print("  %-34s %s" % (rel, status))
+            verdict = "compiled" if ok else "REJECTED"
+            print("  %-34s %s" % (rel, verdict))
             if args.verbose:
                 print("      " + " ".join(cmd))
             if not ok:
@@ -324,12 +334,14 @@ def main():
                 for line in text.rstrip().split("\n")[:25]:
                     print("      " + line)
             print("\n%d of %d module(s) rejected." % (len(failed), len(targets)))
+            status("MEASURED")
             return 1
 
     print("\nMEASURED: all %d module(s) compile. That is a COMPILE result: it "
           "says the modules parse and satisfy whatever this compiler checks. It "
           "says nothing about whether a binding LOADS or a foreign call "
           "MARSHALS - those still need an engine." % len(targets))
+    status("MEASURED")
     return 0
 
 
