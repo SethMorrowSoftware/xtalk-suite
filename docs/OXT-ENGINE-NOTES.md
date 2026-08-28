@@ -791,7 +791,7 @@ compile result earns "parses on <engine> <version>, dated" and nothing more.
 **No gate holds this yet, deliberately.** The tooling exists
 (`tools/check-engine-lint.py`, `tools/check-lcb-compile.py`, both with fake-engine
 fixture suites, plus `.github/workflows/engine.yml`), and all of it SKIPS loudly
-because no machine in this project has an engine on it. The 74 no-headless
+because no machine in this project has an engine on it. The no-headless
 assertions elsewhere in the tree are untouched for the same reason: nothing has
 been measured, so nothing may be rewritten. When the probe runs, its report goes
 into `docs/HEADLESS-ENGINE.md` section 10 with a date, and the rewrite starts

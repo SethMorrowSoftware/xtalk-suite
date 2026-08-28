@@ -42,7 +42,7 @@ loop, and it is the one with the largest prize and the least evidence.
 
 ## 2. Why this matters more here than it would in most repositories
 
-This tree asserts the opposite premise in **74 places across 65 files** -
+This tree asserts the opposite premise **all over itself** -
 "OXT has no headless way to compile or run `.livecodescript` or `.lcb`" - and
 that premise is load-bearing, not decorative. It is the stated reason for:
 
@@ -331,8 +331,36 @@ YES *and* stage 2 green.
 The big one, and the only stage that would change an honesty label from
 "verified statically" to something stronger. Reuses `build-suite-selftest.py`'s
 existing drop/stub transform on the core.
-- *Abort if:* there is no message loop. A synchronous subset could still run,
-  and that is a separate decision with its own cost.
+
+  Measured 2026-08-28 over the assembled 42,014-line paste, which makes this
+  stage much better specified than it looked:
+
+  - **Seven of the ten folded harnesses contribute ZERO control-touching
+    statements.** The regions carrying UI are the scaffold (38, every one inside
+    a handler the generator already drops), the embedded b2k Kit (68),
+    `fold:box2dxt` (79) and `fold:holde-em` (360). Holde-em's are already proven
+    unreachable from its entry point by `check-suite-selftest.py`'s check 7d,
+    which is an armed gate rather than prose.
+  - **box2dxt is the one genuine GUI dependency, and it is structural** - the
+    Kit binds physics bodies to xTalk graphics, so 47 of its 51 test handlers
+    and roughly 415 of its 428 assertion sites need controls. A headless run
+    means running the paste *minus box2dxt's fold*, and saying so.
+  - **Exactly ONE timer chain has to fire: the core's `stPump`.** Of the 25
+    `send ... in` sites in the paste, every other one is never entered, guarded
+    off, or swept by the generator's pending-message sweep.
+  - **The async loopbacks are POLL-DRAINED, not callback-driven** (suite rule 1:
+    no native callback ever re-enters script). They need WALL-CLOCK TIME, not a
+    message loop.
+
+  That last point changes the abort criterion. The question is not really "does
+  the engine dispatch `send ... in`" but "can the run be driven forward in
+  time", and a driver that calls `stPump` in a plain `repeat` with a `wait`
+  would satisfy the loopbacks even on an engine with no timer dispatch at all.
+- *Abort if:* neither a message loop NOR a synchronous pump-and-wait driver can
+  advance the run - and note that the terminating condition already exists and
+  is unambiguous: `stReportDone` is the single write that stops
+  `stReportText()` appending its `RUN NOT FINISHED` trailer, so a headless
+  runner must require that trailer's ABSENCE rather than the absence of output.
 
 **Stage 4 - LOAD THE EXTENSIONS.** Authorised by: probe row
 `load.extensionCommand`, plus committed `x86_64-linux` libraries.
@@ -430,5 +458,7 @@ The manual pass gets *smaller and better targeted*. It does not go away.
 | Date | Event |
 |---|---|
 | 2026-08-27 | bwmilby's forum reply (section 1). |
-| 2026-08-28 | This document, the probe, both drivers, both fixture suites and the CI lane written. **No engine has run.** Every capability claim is DOCUMENTED or weaker. The 74 no-headless assertions elsewhere in the tree are deliberately left alone: nothing has been measured, so nothing may be rewritten. |
+| 2026-08-28 | This document, the probe, both drivers, both fixture suites and the CI lane written. **No engine has run.** Every capability claim is DOCUMENTED or weaker. The no-headless assertions elsewhere in the tree are deliberately left alone: nothing has been measured, so nothing may be rewritten. |
 | 2026-08-28 | An adversarial review of the above found two ways it could still fail open, and both are fixed here. **(1) The probe could not fail** - it printed its rows and exited 0 whatever they said, so an all-NO or all-ERROR report read as a successful probe worth committing; it now carries mandatory execution rows and refuses. **(2) Nothing cleared `the result` between the file read and the compile**, so if a successful `set the script of` leaves it unchanged, one real failure would have become every later file's verdict - a cascade reported as a corpus full of defects. Also added in the same pass: pre/post controls, a control at corpus scale, per-name uniqueness, `git ls-files` as an independent corpus list, engine-kind classification on an unrecognised report, partial output on a hang, and a machine-readable `XT-ENGINE-STATUS:` line CI asserts on. Three defects in the engine-side scripts were found by reading them against the engine notes themselves: a `catch` binding an error into the variable being built, `the itemDelimiter` left set to `/` (note 2.3), and `the number of chars of X & "..."` binding as a chunk over the concatenation. A fourth - a duplicate `local` left by an earlier tidy-up - was found by the review. |
+| 2026-08-28 | A second adversarial pass, on the hardened lane. Three more fail-opens closed: the engine's own `chars=` count was emitted by the instrument and **read by nobody**, so a wrapper pointed at a stale manifest or a truncated read would have produced a well-formed report full of clean verdicts - it is now cross-checked against every file on disk, exactly, because the ASCII gate makes one character one byte; `--only` narrowed the corpus *and* disabled the floor, so it is now refused under `--require` (what CI passes) and stamped into the report otherwise; and the cascade detector was widened into a discriminating one, because in this tree two files sharing an error text is ordinary - four blocks are carried byte-identically into a dozen files each. Two counts that were wrong in the tree itself: `CLAUDE.md` said **TEN** copies of the unified checker when there are **eleven** (nostrxt's fold added one and nothing swept the sentence), and the CORPUS_FLOOR comment quoted a corpus size that was stale within hours - both fixed, the second by removing the number rather than correcting it. |
+| 2026-08-28 | **Rule 22 added to the unified checker, and the premise count made a gate.** A name declared twice inside ONE handler is now refused in both dialects - neither existing gate could see it (rule 3 is `.lcb` only by deliberate measurement; `check-duplicate-declarations.py` is script-level by design) and this tooling shipped one on the day it was written. Synced across all eleven copies, five fixtures x eleven copies. Separately, `tools/check-premise-count.py` now RE-DERIVES how many places assert the no-headless premise and prints the convention that produced it, refusing prose that quotes a drifted figure. It exists because this document's own first draft said "74 places across 65 files" [stale-by-design], that figure reached seven documents inside a day, and a second measurement with a different pattern got a different answer - the hand-copied constant landing on the document that argues for measurement over approximation. The gate failed on its first run, which is the evidence it measures something. |

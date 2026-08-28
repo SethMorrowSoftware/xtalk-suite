@@ -23,6 +23,7 @@ Usage:
 
 import os
 import subprocess
+import time
 import sys
 import tempfile
 
@@ -81,6 +82,43 @@ CASES = [
     ("depth-accepted", 0, "parses but does not check call arity"),
     ("",               0, "checks call arity"),
 ]
+
+
+
+def _patch_lock(what):
+    """Serialize the in-place patch below against another copy of this suite.
+
+    Two of the fixture cases MUTATE THE REAL TOOL FILE and restore it in a
+    finally - the idiom tools/test-cross-library-names.py already uses, and the
+    right one, because a hand-built copy would prove a property of the copy. The
+    cost is that two concurrent runs corrupt each other: a background
+    `build-all.sh --gates` sweep raced an interactive run of this suite and the
+    second died on `AssertionError: the exemption table moved`, which reads like
+    a real regression and is not one.
+
+    A lock file, not a redesign. It fails LOUDLY after a bounded wait rather than
+    hanging, and the message says what is actually happening, because the whole
+    reason this exists is that the raw symptom was misleading."""
+    path = os.path.join(tempfile.gettempdir(), "xt-engine-fixture.lock")
+    for _ in range(600):                       # 60s, in 100ms steps
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return path
+        except FileExistsError:
+            time.sleep(0.1)
+    raise SystemExit(
+        "%s: another copy of this fixture suite has held the in-place-patch "
+        "lock (%s) for 60s. Two runs cannot patch the same tool file at once. "
+        "If no other run is live, delete that file." % (what, path))
+
+
+def _patch_unlock(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def run(fake, mutation, extra=()):
@@ -142,6 +180,7 @@ def main():
         # than shrink the corpus silently - the denominator-floor lesson this
         # repo learned when an unterminated comment took 69 handlers out of a
         # coverage count and turned the row green at a smaller wrong number.
+        lock = _patch_lock("test-lcb-compile")
         src = open(TOOL).read()
         assert '"enetxt/src/enet.lcb",' in src, "the module list moved"
         try:
@@ -154,6 +193,7 @@ def main():
                 print("  ok  %-16s -> exit 2 (a named module missing from the tree)" % "missing-module")
         finally:
             open(TOOL, "w").write(src)
+            _patch_unlock(lock)
 
     if failures:
         print("\ntest-lcb-compile: %d FAILURE(S)\n" % len(failures))

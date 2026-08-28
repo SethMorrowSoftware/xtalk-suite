@@ -120,8 +120,15 @@ private command xtProbeIdentity
    -- `the machine` would have cost the seven rows around it - including
    -- `the environment` and `the version`, which are the two that pin a result
    -- to a build. A property's absence is itself a finding worth recording.
-   xtProbeProperty "engine.environment", "the environment"
-   xtProbeProperty "engine.version", "the version"
+   -- THE TWO ROWS THAT PIN A RESULT TO A BUILD ARE READ DIRECTLY, not through
+   -- the `do` helper below. Every other row can afford the helper's compactness;
+   -- these two cannot, because if `do` turns out NOT to share the calling
+   -- handler's scope on this engine, `put the environment into tValue` would
+   -- assign into a variable nobody reads and the row would be emitted EMPTY -
+   -- present, well-formed, and worthless. The driver refuses a report it cannot
+   -- pin to a build, so an empty value here has to be impossible rather than
+   -- merely unlikely.
+   xtProbeDirectIdentity
    xtProbeProperty "engine.buildNumber", "the buildNumber"
    xtProbeProperty "engine.platform", "the platform"
    xtProbeProperty "engine.processor", "the processor"
@@ -131,8 +138,28 @@ private command xtProbeIdentity
 end xtProbeIdentity
 
 
--- Read one property by name, through `do`, so the eight rows above are eight
--- statements rather than eight copies of a try block.
+private command xtProbeDirectIdentity
+   local tErr, tValue
+   try
+      put the environment into tValue
+      xtProbeEmit "engine.environment", "INFO", tValue
+   catch tErr
+      xtProbeEmit "engine.environment", "UNAVAILABLE", tErr
+   end try
+   try
+      put the version into tValue
+      xtProbeEmit "engine.version", "INFO", tValue
+   catch tErr
+      xtProbeEmit "engine.version", "UNAVAILABLE", tErr
+   end try
+end xtProbeDirectIdentity
+
+
+-- Read one property by name, through `do`, so the remaining rows are single
+-- statements rather than copies of a try block. Whether `do` shares this
+-- handler's scope is not recorded anywhere in this tree; if it does not, these
+-- rows come back empty and that is itself a finding - which is why the two rows
+-- the driver depends on are read directly, above.
 private command xtProbeProperty pName, pExpression
    local tErr, tValue
    try

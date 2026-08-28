@@ -78,6 +78,7 @@ import fnmatch
 import os
 import shutil
 import subprocess
+import tempfile
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -93,10 +94,13 @@ LINT_SRC = os.path.join(HERE, "engine-lint.livecodescript")
 # installed on the machine.
 ENGINE_NAMES = ("livecode-server", "lc-server", "livecode-community-server")
 
-# Anything below this and the discovery walk is broken, not the tree. Measured
-# 2026-08-28: the tree carries 49 .livecodescript files. The floor is
-# deliberately well under that (files legitimately come and go) and well over
-# zero (which is the number a broken glob produces).
+# Anything below this and the discovery walk is broken, not the tree. The floor
+# is deliberately well under the corpus (files legitimately come and go) and
+# well over zero, which is the number a broken glob produces. NO COUNT IS
+# WRITTEN HERE: a measured-on-the-day figure in a comment is this tree's most
+# reliably-rotting artefact, and the first draft of this line said 49 against a
+# 52-file corpus within hours of being written. git_corpus() below is the
+# second, independent opinion that actually holds the number.
 CORPUS_FLOOR = 30
 
 # Files the engine is EXPECTED to reject, each with the reason and the dated run
@@ -384,6 +388,52 @@ def check_controls(records):
     return got["known-bad-pre"][1]
 
 
+def check_sizes(files, seen):
+    """Cross-check the engine's own `chars=` against the file on disk.
+
+    THE ONE CHECK THAT PROVES THE ENGINE READ THE FILE. Everything else in this
+    driver verifies the SHAPE of the report; this verifies its CONTENT against
+    something the engine did not supply. A wrapper pointed at a stale manifest, a
+    path that resolves differently inside the engine, a truncated read, an
+    encoding that silently halves the count - all of them produce a
+    well-formed report full of clean verdicts, and every other refusal here
+    passes them.
+
+    The comparison is exact, not approximate, and it can be: every script in
+    this tree is ASCII by the static gate's first rule, so one character is one
+    byte. If that ever stops being true the ASCII gate fails first and louder
+    than this one does, which is the right order.
+
+    A missing or unparseable `chars=` is itself a refusal - the field is the
+    only evidence the engine touched the bytes, and a report that omits it is
+    asking to be taken on trust."""
+    problems = []
+    for rel in files:
+        verdict, detail = seen[rel]
+        if verdict == "ERROR":
+            continue                      # the engine said it could not read it
+        if not detail.startswith("chars="):
+            problems.append("%s: no chars= field" % rel)
+            continue
+        head = detail.split(";", 1)[0][len("chars="):].strip()
+        if not head.isdigit():
+            problems.append("%s: unparseable chars= %r" % (rel, head[:40]))
+            continue
+        want = os.path.getsize(os.path.join(ROOT, rel))
+        got = int(head)
+        if got != want:
+            problems.append("%s: engine read %d chars, the file is %d bytes "
+                            "(delta %+d)" % (rel, got, want, got - want))
+    if problems:
+        raise Refusal(
+            "%d file(s) do not match on disk. The engine's own character count "
+            "is the only evidence in the report that it touched the bytes at "
+            "all, so a mismatch means the run compiled something other than "
+            "this tree:\n  %s%s"
+            % (len(problems), "\n  ".join(problems[:10]),
+               "\n  ... and %d more" % (len(problems) - 10) if len(problems) > 10 else ""))
+
+
 def check_no_cascade(seen):
     """Refuse a report whose failures look like ONE error copied down the run.
 
@@ -437,13 +487,16 @@ def check_no_cascade(seen):
 def do_probe(engine, timeout, keep_temp):
     body = strip_script_header(open(PROBE_SRC).read())
     wrapper = server_wrapper(body, 'put xtProbeRun("%s")' % PROBE_SRC.replace('"', ''))
-    path = os.path.join(ROOT, ".xt-engine-probe.lc")
+    workdir = tempfile.mkdtemp(prefix="xt-engine-")
+    path = os.path.join(workdir, "probe.lc")
     open(path, "w").write(wrapper)
     try:
         code, out, err = run_engine(engine, path, timeout)
     finally:
-        if not keep_temp and os.path.exists(path):
-            os.remove(path)
+        if keep_temp:
+            print("  (kept: %s)" % workdir)
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     print("== engine capability probe ==")
     print("engine     : %s" % engine)
@@ -492,8 +545,14 @@ def do_probe(engine, timeout, keep_temp):
         if verdict not in ("YES", "OK"):
             problems.append("mandatory row %s is %s - this report is not "
                             "evidence that anything executed" % (name, verdict))
-    if by_name.get("engine.environment", ("MISSING", ""))[0] == "MISSING" and \
-       by_name.get("engine.version", ("MISSING", ""))[0] == "MISSING":
+    def pinned(name):
+        """Present AND non-empty. A row that is present with an empty value is
+        the shape a scope bug produces - well-formed and worthless - and it must
+        not count as having pinned anything."""
+        verdict, detail = by_name.get(name, ("MISSING", ""))
+        return verdict == "INFO" and detail.strip() != ""
+
+    if not pinned("engine.environment") and not pinned("engine.version"):
         problems.append("neither engine.environment nor engine.version is "
                         "present, so this report cannot be pinned to a build "
                         "and may not be cited as evidence about one")
@@ -597,22 +656,33 @@ def do_lint(engine, only, timeout, keep_temp):
     if not files:
         raise Refusal("no files matched --only %r" % only)
 
-    manifest = os.path.join(ROOT, ".xt-engine-manifest.txt")
+    # A PRIVATE directory per run, not fixed paths in the repo root.
+    #
+    # The first version wrote .xt-engine-manifest.txt and .xt-engine-lint.lc into
+    # ROOT, which is fine until two runs overlap - and they did, immediately: the
+    # fixture suite running in a background gate sweep raced an interactive run
+    # of the same suite, each deleting the other's manifest, and one of them died
+    # in its own cleanup. That is not a test artefact. CI runs the probe and the
+    # lint in one job, a maintainer runs the lint while a gate sweep is going,
+    # and either would have produced a garbled report or a crash attributed to
+    # the engine.
+    workdir = tempfile.mkdtemp(prefix="xt-engine-")
+    manifest = os.path.join(workdir, "manifest.txt")
     with open(manifest, "w") as fh:
         for rel in files:
             fh.write(os.path.join(ROOT, rel) + "\n")
 
     body = strip_script_header(open(LINT_SRC).read())
     wrapper = server_wrapper(body, 'put xtLintRun("%s")' % manifest.replace('"', ''))
-    path = os.path.join(ROOT, ".xt-engine-lint.lc")
+    path = os.path.join(workdir, "lint.lc")
     open(path, "w").write(wrapper)
     try:
         code, out, err = run_engine(engine, path, timeout)
     finally:
-        if not keep_temp:
-            for p in (path, manifest):
-                if os.path.exists(p):
-                    os.remove(p)
+        if keep_temp:
+            print("  (kept: %s)" % workdir)
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     records, _ = parse_report(out, MARK_LINT_BEGIN, MARK_LINT_END)
     bad_detail = check_controls(records)
@@ -643,6 +713,7 @@ def do_lint(engine, only, timeout, keep_temp):
                       % (len(extra), ", ".join(sorted(extra)[:5])))
 
     check_no_cascade(seen)
+    check_sizes(files, seen)
 
     stale = [p for p in EXPECTED_FAILURES if p not in seen]
     if stale:
@@ -748,6 +819,18 @@ def main():
                     help="leave the generated wrapper and manifest in place")
     args = ap.parse_args()
 
+    if args.only and args.require:
+        # Checked BEFORE engine discovery: with no engine the skip path returns
+        # first, so a refusal placed after it never fires. --require is what CI
+        # passes; combined with --only it would narrow the corpus AND disable
+        # the floor, so a lane could report a clean tree having compiled one
+        # file - green, and measuring almost nothing.
+        print("check-engine-lint: REFUSED - --only narrows the corpus and "
+              "disables the floor, so it may not be combined with --require. "
+              "Use --only for iterating by hand.")
+        status("REFUSED")
+        return 2
+
     try:
         engine, how = find_engine(args.engine)
     except Refusal as exc:
@@ -758,6 +841,9 @@ def main():
         return skip_notice(how, args.require)
 
     print("check-engine-lint: engine from %s -> %s" % (how, engine))
+    if args.only:
+        print("  NOTE: --only %r - this run covers a SUBSET of the corpus and "
+              "its result may not be quoted as a corpus verdict." % args.only)
     try:
         if args.probe:
             return do_probe(engine, args.timeout, args.keep_temp)

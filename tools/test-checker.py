@@ -32,6 +32,42 @@ MEMBERS = ["sodiumxt", "torrentxt", "enetxt", "datachannelxt",
 # must pass CLEAN; otherwise the checker must fail AND its output must contain
 # the substring.
 FIXTURES = [
+    # -- rule 22: one name declared twice inside ONE handler ------------------
+    # Added 2026-08-28, the day this repo's own tooling shipped one: a tidy-up
+    # moved a declaration to the top of a handler in
+    # tools/engine-probe.livecodescript and left the original in place, and
+    # nothing caught it - rule 3 is .lcb only by deliberate measurement and
+    # tools/check-duplicate-declarations.py is script-level by design. The third
+    # and fourth fixtures are what make the rule mean anything: the same name in
+    # a DIFFERENT handler is ordinary and must stay quiet, and mid-handler
+    # `local` (legal LiveCodeScript, ~150 sites in engine-passed files) must not
+    # be flagged merely for being mid-handler.
+    ("duplicate local in one handler fires",
+     "t.livecodescript",
+     'on r22Handler\n   local tA, tB\n   put 1 into tA\n   local tB\n'
+     '   put 2 into tB\nend r22Handler\n',
+     "re-declares a name already declared"),
+    ("a local re-declaring a PARAMETER fires",
+     "t.livecodescript",
+     'on r22Shadow pValue\n   local pValue\n   put 1 into pValue\n'
+     'end r22Shadow\n',
+     "already declared as a parameter"),
+    ("the same name in a DIFFERENT handler is legal",
+     "t.livecodescript",
+     'on r22One\n   local tB\n   put 1 into tB\nend r22One\n\n'
+     'on r22Two\n   local tB\n   put 2 into tB\nend r22Two\n',
+     None),
+    ("a mid-handler local that is NOT a duplicate is legal",
+     "t.livecodescript",
+     'on r22Mid\n   local tA\n   put 1 into tA\n   local tB\n'
+     '   put 2 into tB\nend r22Mid\n',
+     None),
+    ("duplicate variable in one .lcb handler fires",
+     "t.lcb",
+     'library com.example.r22\n\npublic handler R22(in pX as Integer) returns Integer\n'
+     '   variable tA as Integer\n   variable tA as Integer\n   put pX into tA\n'
+     '   return tA\nend handler\n\nend library\n',
+     "re-declares a name already declared"),
     # -- the zero-arg statement-call gate (the dcCleanup() engine failure) ----
     ("zero-arg call in statement position fires",
      "t.livecodescript",

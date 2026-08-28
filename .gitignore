@@ -20,8 +20,7 @@ __pycache__/
 .idea/
 .vscode/
 
-# Scratch written by tools/check-engine-lint.py when it drives a headless
-# engine: the generated server wrapper and the corpus manifest. Both are
-# removed on a normal run and survive only under --keep-temp or a crash.
-.xt-engine-*.lc
-.xt-engine-manifest.txt
+# (tools/check-engine-lint.py used to write its wrapper and manifest here under
+# fixed names. It now uses a private tempfile.mkdtemp per run, because two
+# overlapping runs raced each other's cleanup within a day of the first version
+# being written - so there is nothing left in the tree to ignore.)

@@ -135,7 +135,9 @@ These are summarized in `README.md`; the operational point for editing is:
    token-shadow trap; literal constants before first use, both dialects;
    declarations at handler top in `.lcb` - measured, NOT enforced for
    `.livecodescript`, where mid-handler `local` is legal and stands in
-   engine-passed code; `unsafe` around foreign calls; block balance including
+   engine-passed code, though since 2026-08-28 a name declared TWICE inside
+   ONE handler is refused in both dialects, rule 22, added the day this repo's
+   own tooling shipped one that neither existing gate could see; `unsafe` around foreign calls; block balance including
    `switch`; the zero-arg-statement-call and throw-in-catch refusals; and the
    per-dialect antipattern sets). The copies are UNIFIED and byte-identical:
    `tools/check-checker-drift.py` fails the build if any copy differs, and
@@ -609,8 +611,12 @@ checkers (one lineage in sodiumxt/onionxt/coinxt/riptide, another in
 torrentxt/enetxt/datachannelxt), each with real checks the other lacked. **The
 copies are UNIFIED now (2026-08-12)**: one implementation carrying the union of
 both lineages' checks, byte-identical in every member that carries one - seven
-at unification, TEN today, because nocloud (2026-08-13), box2dxt (2026-08-14)
-and holde-em (2026-08-15) each carried the unified copy in on its own fold -
+at unification, ELEVEN today, because nocloud (2026-08-13), box2dxt
+(2026-08-14), holde-em (2026-08-15) and nostrxt (2026-08-23) each carried the
+unified copy in on its own fold. **That number read TEN until 2026-08-28**, when
+an adversarial pass counted the copies instead of the sentence: nostrxt's fold
+added an eleventh and nothing here was swept. `tools/check-checker-drift.py`
+prints the live count; take it from there, not from this paragraph -
 with `tools/check-checker-drift.py` failing the build on any divergence and
 `tools/test-checker.py` fixture-testing every rule in every copy - so "a fix
 applied to one copy is not applied to the suite" is no longer a state the tree
@@ -818,12 +824,16 @@ the tree has NOT moved yet.** This file's whole static apparatus - the unified
 checker's ~25 rules, the duplicate-declaration scan, the cross-library name
 gate, coinxt's 1,020-line Python LiveCodeScript interpreter - exists because
 "OXT has no headless way to compile or run `.livecodescript` or `.lcb`", which
-the tree asserts in **74 places across 65 files**. A reply to the suite's forum
+the tree asserts in dozens of places across the members and the suite docs
+(`python3 tools/check-premise-count.py` prints the live count with the
+convention that produced it - deliberately not written here, because the first
+version of this paragraph quoted a figure that three different greps disagreed
+about within a day). A reply to the suite's forum
 post from Brian Milby (`bwmilby`) says otherwise: that the server engine and the
 LCB compiler both run headless, and that text editors already lint
 LiveCodeScript by driving the server engine. **That is DOCUMENTED, not
 OBSERVED** - a claim from a credible source, which this tree's evidence rule
-says to treat as a claim - so none of the 74 assertions has been touched and no
+says to treat as a claim - so not one of those assertions has been touched and no
 honesty label has moved. What exists is the machinery to settle it cheaply:
 `tools/engine-probe.livecodescript` (ten probes that ASK the engine and dump
 raw answers), `tools/check-engine-lint.py` and `tools/check-lcb-compile.py`
@@ -835,8 +845,16 @@ honestly**: of the engine notes' 26 entries, SIX are compile-time (1.3-1.7 and
 explicitVariables` works; the other eighteen are runtime semantics no compiler
 sees. A green headless compile would earn "parses
 on <engine> <version>, dated" and nothing more. `docs/HEADLESS-ENGINE.md` is the
-whole argument, the staged plan with its abort criteria, and the status log the
-first probe report goes into.
+whole argument, the staged plan with its abort criteria, the five rules for the
+later stages (the first being that a gate may be retired only by a replacement
+running in the SAME LANE at the same cadence - trading an always-on gate for a
+manual-dispatch one is a net loss of coverage that reads as progress), and the
+status log the first probe report goes into. Two gates landed alongside it and
+are not about the engine at all: **rule 22** in the unified checker (one name
+declared twice inside ONE handler, both dialects - neither existing gate could
+see it, and this tooling shipped one the day it was written), and
+`tools/check-premise-count.py`, which re-derives the premise count instead of
+letting a paragraph quote it.
 
 ## Docs: member vs. suite
 

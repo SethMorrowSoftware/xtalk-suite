@@ -403,7 +403,8 @@ fi
 # THE REAL COMPILER, AND THE ONE GATE PAIR HERE THAT IS NORMALLY INERT.
 #
 # Every gate above this line is a stand-in for a compiler this project believed
-# it could not run: the tree says so in 74 places, and the unified checker's
+# it could not run: the tree says so in dozens of places (check-premise-count.py
+# below prints the count), and the unified checker's
 # twenty-odd rules, the duplicate-declaration scan and coinxt's hand-written
 # LiveCodeScript interpreter all exist because of it. On 2026-08-27 a reply to
 # the suite's forum post said the premise is wrong - that the server engine and
@@ -438,6 +439,26 @@ fi
 if [ -f tools/check-lcb-compile.py ]; then
   echo "== suite: tools/check-lcb-compile.py =="
   python3 tools/check-lcb-compile.py
+fi
+# The premise the two gates above exist to test, COUNTED rather than quoted.
+# A paragraph added on 2026-08-28 said the tree asserts it in "74 places across
+# 65 files"; the figure was correct for the pattern it was measured with, it had
+# propagated into seven documents within a day, and a second pass with a
+# different pattern got a different answer. That is the hand-copied constant -
+# this tree's most reliably-recurring failure - landing on the document arguing
+# that measurement beats approximation. The number lives in the gate now, with
+# the convention that produced it, and prose quoting a stale figure fails here.
+# Fixtures first, and this one earns it: the gate must be shown to COUNT (a new
+# site moves the number), to REFUSE drift, to ACCEPT agreement (or it is just
+# banning a phrase), and to hit its floor when its patterns are blinded rather
+# than reporting a tidy small number.
+if [ -f tools/test-premise-count.py ]; then
+  echo "== suite: tools/test-premise-count.py =="
+  python3 tools/test-premise-count.py
+fi
+if [ -f tools/check-premise-count.py ]; then
+  echo "== suite: tools/check-premise-count.py =="
+  python3 tools/check-premise-count.py
 fi
 # The anchored citations in docs/ still resolve. This gate's own docstring
 # records the failure it was built for: docs/OPEN-DECISIONS.md opened by

@@ -148,6 +148,14 @@ The checks, and the engine lesson each encodes:
       is the reliable static tell, and it is what this flags - so the LEGAL
       `"\"` (a one-backslash string, common in path normalisation) never
       false-fires. Shipped once in holde-em's heProbeKit.
+  22. One name declared TWICE inside ONE handler body (`local` in
+      .livecodescript, `variable` in .lcb; parameters count as the first
+      declaration). Neither existing gate could see this: rule 3
+      (declarations-at-top) is .lcb only by deliberate measurement, and
+      tools/check-duplicate-declarations.py is script-level by design. Added
+      2026-08-28, the day this repo's own tooling shipped one -
+      tools/engine-probe.livecodescript carried `local tSize` twice in a
+      handler after a tidy-up moved the declaration up and left the original.
 
 One hold-em lineage check is deliberately NOT here, and the reason is
 recorded so it is not "rediscovered": the chunk-of-an-array-element refusal
@@ -1229,6 +1237,87 @@ def check_stray_backslash(path, cleaned):
     return problems
 
 
+
+def check_duplicate_locals_in_handler(path, cleaned, is_script):
+    """One name declared TWICE inside ONE handler body.
+
+    RULE 22. Shipped by this repo's own tooling on 2026-08-28: a tidy-up moved a
+    declaration to a handler's top and left the original in place, so
+    `tools/engine-probe.livecodescript` carried `local tSize` twice in
+    xtProbeLargeScript. Nothing caught it. `check_declarations_at_top` is .lcb
+    only by deliberate measurement (mid-handler `local` is legal LiveCodeScript
+    and stands at ~150 sites in engine-passed files), and
+    `tools/check-duplicate-declarations.py` is SCRIPT-LEVEL by design - a
+    duplicate inside a handler body is in neither's field of view.
+
+    Engine note 1.6 records the script-level form as a HARD compile error ("name
+    shadows another variable or constant"), which takes the whole file with it
+    because a .livecodescript compiles as one unit. Whether the ENGINE rejects
+    the handler-scope form is not recorded anywhere in this tree, so this rule
+    is kept on the same footing as the UNEVIDENCED class in
+    docs/OXT-ENGINE-NOTES.md: the second declaration is redundant at best and a
+    shadow at worst, it is always a mistake, and the argument needs no engine.
+    `tools/engine-probe.livecodescript`'s compile.* rows will settle the engine
+    half.
+
+    Both dialects, each with its own keyword. Parameters count as declarations,
+    so re-declaring a parameter fires too - that is the same mistake with a
+    worse consequence, since the local silently shadows the argument."""
+    problems = []
+    decl_kw = "local" if is_script else "variable"
+    opener = (lambda s: lcs_handler_decl(s)) if is_script else None
+    in_handler = False
+    handler_name = ""
+    seen = {}
+    for lineno, line in cleaned:
+        s = line.strip()
+        if not s:
+            continue
+        toks = tokens(s)
+        if not toks:
+            continue
+        t0 = toks[0]
+        if not in_handler:
+            if is_script:
+                parsed = opener(s)
+                if parsed:
+                    in_handler = True
+                    handler_name = parsed[1]
+                    seen = {}
+                    for nm in decl_names(parsed[2]):
+                        seen[nm.lower()] = (lineno, "parameter")
+            elif t0 in ("handler", "public", "private") and " handler " in (" " + s + " "):
+                m = re.match(r"^\s*(?:public\s+|private\s+)?handler\s+([A-Za-z_][A-Za-z0-9_]*)", s)
+                if m:
+                    in_handler = True
+                    handler_name = m.group(1)
+                    seen = {}
+            continue
+        if t0 == "end":
+            in_handler = False
+            handler_name = ""
+            seen = {}
+            continue
+        if t0 == decl_kw:
+            rest = s.split(None, 1)[1] if len(s.split(None, 1)) > 1 else ""
+            if not is_script:
+                rest = re.split(r"\bas\b", rest)[0]
+            for nm in decl_names(rest):
+                key = nm.lower()
+                if key in seen:
+                    where, kind = seen[key]
+                    problems.append(Problem(path, lineno,
+                        "`%s %s` re-declares a name already declared as a %s at "
+                        "line %d of handler `%s` - one declaration per name per "
+                        "handler; the second is redundant at best and shadows "
+                        "the first at worst (the script-level form of this is a "
+                        "hard compile error, engine notes 1.6)"
+                        % (decl_kw, nm, kind, where, handler_name)))
+                else:
+                    seen[key] = (lineno, decl_kw)
+    return problems
+
+
 def check_file(path):
     with open(path, "rb") as f:
         raw = f.read()
@@ -1273,6 +1362,7 @@ def check_file(path):
     problems += check_constants_before_use(path, cleaned, is_script)
     problems += check_declarations_at_top(path, cleaned, is_script)
     problems += check_shadow_trap(path, cleaned)
+    problems += check_duplicate_locals_in_handler(path, cleaned, is_script)
     problems += check_does_not_operator(path, cleaned)
     problems += check_put_prepositions(path, cleaned)
     return problems

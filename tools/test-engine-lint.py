@@ -36,6 +36,7 @@ Usage:
 import os
 import re
 import subprocess
+import time
 import sys
 import tempfile
 
@@ -98,6 +99,10 @@ if "xtProbeRun(" in call:
         rows = [(r[0], "ERROR", "boom") for r in rows]
     if mut == "probe-no-identity":
         rows = [r for r in rows if not r[0].startswith("engine.")]
+    if mut == "probe-empty-identity":
+        # present, well-formed, and worthless - the shape a `do`-scope bug
+        # produces, and the one an absence check alone would wave through
+        rows = [(r[0], r[1], "") if r[0].startswith("engine.") else r for r in rows]
     print("XTPROBE-BEGIN\t1")
     for r in rows:
         print("PROBE\t%s\t%s\t%s" % r)
@@ -134,22 +139,29 @@ for i, p in enumerate(paths):
         verdict = "FAIL"
     if mut == "one-errors" and i == 2:
         verdict = "ERROR"
-    detail = "chars=%d; " % (100 + i) + ("line 9: syntax error" if verdict != "OK" else "")
+    size = os.path.getsize(p)
+    if mut == "chars-lie" and i == 1:
+        size = size // 2
+    if mut == "chars-missing" and i == 1:
+        detail = "no size field here"
+        recs.append(("FILE", p, verdict, detail))
+        continue
+    detail = "chars=%d; " % size + ("line 9: syntax error" if verdict != "OK" else "")
     if mut == "cascade" and i < 5:
         verdict = "FAIL"
-        detail = "chars=%d; Handler: error in statement" % (100 + i)
+        detail = "chars=%d; Handler: error in statement" % size
     if mut == "shared-block":
         # two carriers of one broken block, plus two unrelated failures: the
         # identical group is NOT a majority, so it must not be read as a cascade
         if i in (0, 1):
             verdict = "FAIL"
-            detail = "chars=%d; line 40: the carried block is broken" % (100 + i)
+            detail = "chars=%d; line 40: the carried block is broken" % size
         elif i in (2, 3):
             verdict = "FAIL"
-            detail = "chars=%d; line %d: something else entirely" % (100 + i, i)
+            detail = "chars=%d; line %d: something else entirely" % (size, i)
     recs.append(("FILE", p, verdict, detail))
 if mut == "duplicate":
-    recs.append(("FILE", paths[0], "OK", "chars=100; "))
+    recs.append(("FILE", paths[0], "OK", "chars=%d; " % os.path.getsize(paths[0])))
 if mut == "extra":
     recs.append(("FILE", os.path.join(os.path.dirname(paths[0]), "not-requested.livecodescript"),
                  "OK", "chars=1; "))
@@ -183,6 +195,8 @@ CASES = [
     ("no-large-control", 2, "missing control(s) known-bad-large"),
     ("no-post-controls", 2, "known-good-post"),
     ("control-dupe",     2, "two CONTROL records named"),
+    ("chars-lie",        2, "engine read"),
+    ("chars-missing",    2, "no chars= field"),
     ("cascade",          2, "signature of one error copied down the run"),
     # The DISCRIMINATION that matters: two carriers of one broken block
     # share error text legitimately (this tree carries four blocks
@@ -203,6 +217,43 @@ CASES = [
     ("one-fails",        1, "REJECTED BY THE ENGINE"),
     ("one-errors",       1, "ERRORED"),
 ]
+
+
+
+def _patch_lock(what):
+    """Serialize the in-place patch below against another copy of this suite.
+
+    Two of the fixture cases MUTATE THE REAL TOOL FILE and restore it in a
+    finally - the idiom tools/test-cross-library-names.py already uses, and the
+    right one, because a hand-built copy would prove a property of the copy. The
+    cost is that two concurrent runs corrupt each other: a background
+    `build-all.sh --gates` sweep raced an interactive run of this suite and the
+    second died on `AssertionError: the exemption table moved`, which reads like
+    a real regression and is not one.
+
+    A lock file, not a redesign. It fails LOUDLY after a bounded wait rather than
+    hanging, and the message says what is actually happening, because the whole
+    reason this exists is that the raw symptom was misleading."""
+    path = os.path.join(tempfile.gettempdir(), "xt-engine-fixture.lock")
+    for _ in range(600):                       # 60s, in 100ms steps
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return path
+        except FileExistsError:
+            time.sleep(0.1)
+    raise SystemExit(
+        "%s: another copy of this fixture suite has held the in-place-patch "
+        "lock (%s) for 60s. Two runs cannot patch the same tool file at once. "
+        "If no other run is live, delete that file." % (what, path))
+
+
+def _patch_unlock(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def run(fake, mutation, extra=()):
@@ -247,6 +298,7 @@ def main():
             ("probe-mandatory-error", 1, "is ERROR"),
             ("probe-all-error",       1, "failing to ASK"),
             ("probe-no-identity",     1, "cannot be pinned to a build"),
+            ("probe-empty-identity",  1, "cannot be pinned to a build"),
         ]
         for mutation, want_code, want_text in PROBE_CASES:
             code, out = run(fake, mutation, extra=["--probe"])
@@ -286,6 +338,7 @@ def main():
         # real tool file and restored, the way test-cross-library-names.py
         # mutates real corpus files: a hand-built copy would prove something
         # about the copy.
+        lock = _patch_lock("test-engine-lint")
         src = open(TOOL).read()
         assert "EXPECTED_FAILURES = {}" in src, "the exemption table moved"
         try:
@@ -300,6 +353,7 @@ def main():
                 print("  ok  %-14s -> exit 2 (stale exemption refused)" % "stale-exempt")
         finally:
             open(TOOL, "w").write(src)
+            _patch_unlock(lock)
 
         # And the corpus floor: a glob that matches almost nothing must not be
         # allowed to report a clean tree.
