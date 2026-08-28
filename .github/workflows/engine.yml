@@ -1,0 +1,170 @@
+# The engine lane: run a REAL LiveCode/OpenXTalk engine over this tree.
+#
+# WHAT IT IS FOR. Every other workflow here runs gates that APPROXIMATE a
+# compiler, because the tree asserts in 74 places that "OXT has no headless way
+# to compile or run .livecodescript or .lcb". On 2026-08-27 a reply to the
+# suite's forum post said that premise is wrong - that the server engine and the
+# LCB compiler both run headless, and that text editors already lint
+# LiveCodeScript by driving the server engine. This lane is where that claim gets
+# tested, and it is deliberately the only place in CI that depends on anything
+# downloaded from outside the repository.
+#
+# WHY IT IS NOT IN suite-gates.yml. That job is the always-on, deterministic,
+# fast one: checkout, python, gates, done. This one fetches a large third-party
+# binary over the network, which can be slow, can rot, and can change what it
+# ships between releases. Putting it in the always-on lane would trade the one
+# property suite-gates.yml has - that a red run means the TREE is wrong - for a
+# lane that is sometimes red because a download moved.
+#
+# WHY THE URL IS AN INPUT AND NOT A CONSTANT. Nobody working on this repository
+# has yet run a headless engine, so any URL committed here would be a guess
+# wearing the authority of a config file - and a wrong one would fail in a way
+# that reads like "headless does not work" rather than "we typed the wrong
+# address". Supply it at dispatch. Once a URL has been used in a run that
+# produced a probe report, pin it here with the date and the report as evidence.
+#
+# WHAT A FIRST RUN SHOULD ACHIEVE. Exactly one thing: a probe report. Everything
+# downstream - the script lint, the LCB compile, and eventually running the
+# harness itself - reads that report rather than guessing. The lint and compile
+# steps below are `continue-on-error` on purpose until the probe has been read
+# by a human and committed under docs/, because a red X on an unproven
+# invocation teaches people to ignore the lane.
+
+name: engine (headless, manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine_url:
+        description: "URL of a LiveCode/OpenXTalk server or engine archive (.tar.gz, .tar.bz2 or .zip)"
+        required: true
+        type: string
+      engine_binary:
+        description: "Name of the headless engine binary inside the archive"
+        required: false
+        default: "livecode-server"
+        type: string
+      lc_compile_binary:
+        description: "Name of the LCB compiler inside the archive, if it ships one"
+        required: false
+        default: "lc-compile"
+        type: string
+      modulepath:
+        description: "Path (inside the extracted archive) to the builtin LCB module interfaces"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: probe, then lint the corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # Keyed on the URL, so a different engine is a different cache entry and
+      # nothing is ever silently reused across versions. An engine answering for
+      # a version nobody asked about is the same class of error as this repo's
+      # hand-copied ABI numbers: correct on the day, wrong afterwards, silent
+      # either way.
+      - name: Cache the engine
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: engine-dist
+          key: engine-${{ hashFiles('.github/workflows/engine.yml') }}-${{ inputs.engine_url }}
+
+      - name: Fetch and extract
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p engine-dist
+          url='${{ inputs.engine_url }}'
+          case "$url" in
+            *.zip)     out=engine.zip ;;
+            *.tar.gz|*.tgz) out=engine.tar.gz ;;
+            *.tar.bz2) out=engine.tar.bz2 ;;
+            *) echo "Unrecognised archive extension in: $url" >&2; exit 2 ;;
+          esac
+          curl -fsSL "$url" -o "$out"
+          case "$out" in
+            *.zip)     unzip -q "$out" -d engine-dist ;;
+            *.tar.gz)  tar -xzf "$out" -C engine-dist ;;
+            *.tar.bz2) tar -xjf "$out" -C engine-dist ;;
+          esac
+
+      # Located rather than assumed. A distribution's internal layout is exactly
+      # the sort of thing that differs between the IDE bundle and the server
+      # download, and a hard-coded path would fail as "no engine" instead of as
+      # "the engine is somewhere else".
+      - name: Locate the binaries
+        id: locate
+        run: |
+          set -euo pipefail
+          echo "--- what the archive contains (top two levels) ---"
+          find engine-dist -maxdepth 2 -type f -printf '%p\n' | head -60 || true
+          engine=$(find engine-dist -type f -name '${{ inputs.engine_binary }}' -perm -u+x | head -1 || true)
+          compiler=$(find engine-dist -type f -name '${{ inputs.lc_compile_binary }}' -perm -u+x | head -1 || true)
+          echo "engine=$engine"     >> "$GITHUB_OUTPUT"
+          echo "compiler=$compiler" >> "$GITHUB_OUTPUT"
+          if [ -z "$engine" ] && [ -z "$compiler" ]; then
+            echo "Neither '${{ inputs.engine_binary }}' nor '${{ inputs.lc_compile_binary }}' was found in the archive." >&2
+            echo "That is a RESULT: record it in docs/OXT-ENGINE-NOTES.md with this archive's URL," >&2
+            echo "so the next attempt starts from evidence rather than from the same guess." >&2
+            exit 2
+          fi
+
+      # THE POINT OF THE WHOLE LANE. Everything else reads this.
+      - name: Capability probe
+        if: steps.locate.outputs.engine != ''
+        run: |
+          python3 tools/check-engine-lint.py \
+            --engine '${{ steps.locate.outputs.engine }}' --probe \
+            | tee engine-probe-report.txt
+
+      - name: Upload the probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-probe-report
+          path: engine-probe-report.txt
+          if-no-files-found: warn
+
+      # Advisory until the probe report has been read and committed. See the
+      # header: a red X on an unproven invocation trains people to ignore the
+      # lane, and this lane's whole value is that its result is believed.
+      - name: Lint the script corpus (advisory)
+        if: steps.locate.outputs.engine != ''
+        continue-on-error: true
+        run: |
+          python3 tools/check-engine-lint.py \
+            --engine '${{ steps.locate.outputs.engine }}' --require \
+            | tee engine-lint-report.txt
+
+      - name: Compile the .lcb modules (advisory)
+        if: steps.locate.outputs.compiler != ''
+        continue-on-error: true
+        env:
+          XT_LCB_MODULEPATH: ${{ inputs.modulepath }}
+        run: |
+          python3 tools/check-lcb-compile.py \
+            --lc-compile '${{ steps.locate.outputs.compiler }}' --require --verbose \
+            | tee lcb-compile-report.txt
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-reports
+          path: |
+            engine-probe-report.txt
+            engine-lint-report.txt
+            lcb-compile-report.txt
+          if-no-files-found: warn

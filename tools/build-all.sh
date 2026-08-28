@@ -400,6 +400,45 @@ if [ -f tools/check-launcher-registry.py ]; then
   echo "== suite: tools/check-launcher-registry.py =="
   python3 tools/check-launcher-registry.py
 fi
+# THE REAL COMPILER, AND THE ONE GATE PAIR HERE THAT IS NORMALLY INERT.
+#
+# Every gate above this line is a stand-in for a compiler this project believed
+# it could not run: the tree says so in 74 places, and the unified checker's
+# twenty-odd rules, the duplicate-declaration scan and coinxt's hand-written
+# LiveCodeScript interpreter all exist because of it. On 2026-08-27 a reply to
+# the suite's forum post said the premise is wrong - that the server engine and
+# the LCB compiler both run headless, and that editors already lint
+# LiveCodeScript by driving the server engine.
+#
+# These two gates are what that cashes out to. Both SKIP loudly and exit 0 when
+# no engine is configured, which is every run in this repo's CI today, so they
+# cost nothing and claim nothing - and the dedicated engine lane passes
+# --require, where absence is a hard failure instead. Nothing about the headless
+# surfaces has been OBSERVED yet; see docs/HEADLESS-ENGINE.md for exactly what
+# is claimed, by whom, and on what evidence.
+#
+# FIXTURES FIRST, as everywhere else in this block, and here it is not a
+# formality: with no engine on any machine that runs this script, the drivers'
+# control logic would otherwise NEVER execute, and a control that has never
+# fired is a control in name only. The fixture tests drive the real tools as
+# subprocesses against fake engines that lie one way per run, so the refusals
+# are proven to fire before the gates are trusted to be silent.
+if [ -f tools/test-engine-lint.py ]; then
+  echo "== suite: tools/test-engine-lint.py =="
+  python3 tools/test-engine-lint.py
+fi
+if [ -f tools/check-engine-lint.py ]; then
+  echo "== suite: tools/check-engine-lint.py =="
+  python3 tools/check-engine-lint.py
+fi
+if [ -f tools/test-lcb-compile.py ]; then
+  echo "== suite: tools/test-lcb-compile.py =="
+  python3 tools/test-lcb-compile.py
+fi
+if [ -f tools/check-lcb-compile.py ]; then
+  echo "== suite: tools/check-lcb-compile.py =="
+  python3 tools/check-lcb-compile.py
+fi
 # The anchored citations in docs/ still resolve. This gate's own docstring
 # records the failure it was built for: docs/OPEN-DECISIONS.md opened by
 # attesting that every one of its `file:line` citations had been "re-verified

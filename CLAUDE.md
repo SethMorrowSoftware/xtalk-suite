@@ -813,6 +813,31 @@ in front of the one checker that could not parse them. (Since the unification,
 that seven-way cross-run is one run: the copies are byte-identical, the drift
 gate proves it, and `build-all.sh` runs the root scripts through a single copy.)
 
+**The premise underneath every gate above was challenged on 2026-08-27, and
+the tree has NOT moved yet.** This file's whole static apparatus - the unified
+checker's ~25 rules, the duplicate-declaration scan, the cross-library name
+gate, coinxt's 1,020-line Python LiveCodeScript interpreter - exists because
+"OXT has no headless way to compile or run `.livecodescript` or `.lcb`", which
+the tree asserts in **74 places across 65 files**. A reply to the suite's forum
+post from Brian Milby (`bwmilby`) says otherwise: that the server engine and the
+LCB compiler both run headless, and that text editors already lint
+LiveCodeScript by driving the server engine. **That is DOCUMENTED, not
+OBSERVED** - a claim from a credible source, which this tree's evidence rule
+says to treat as a claim - so none of the 74 assertions has been touched and no
+honesty label has moved. What exists is the machinery to settle it cheaply:
+`tools/engine-probe.livecodescript` (ten probes that ASK the engine and dump
+raw answers), `tools/check-engine-lint.py` and `tools/check-lcb-compile.py`
+(drivers that SKIP loudly with no engine and REFUSE a report that cannot account
+for itself), each with a fake-engine fixture suite proving its refusals fire,
+and `.github/workflows/engine.yml` as a manual-dispatch lane. **Sell the size
+honestly**: of the engine notes' 26 entries, SIX are compile-time (1.3-1.7 and
+3.3) and TWO more (1.2 and 2.1, one class) turn compile-time only if `the
+explicitVariables` works; the other eighteen are runtime semantics no compiler
+sees. A green headless compile would earn "parses
+on <engine> <version>, dated" and nothing more. `docs/HEADLESS-ENGINE.md` is the
+whole argument, the staged plan with its abort criteria, and the status log the
+first probe report goes into.
+
 ## Docs: member vs. suite
 
 - **Member docs** live in `<member>/docs/` and describe that one extension

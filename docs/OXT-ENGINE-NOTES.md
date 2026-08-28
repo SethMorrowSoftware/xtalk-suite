@@ -747,6 +747,58 @@ gap #2 and flagged `VERIFY (on-engine)` at the call site.
 
 ---
 
+## 7. The headless surfaces - an OPEN QUESTION, not a finding
+
+### 7.1 The premise this whole file rests on has been challenged
+
+**DOCUMENTED** (2026-08-27, a forum reply; nothing here has been run). The
+second paragraph of this file says the suite exists because OXT has no headless
+way to compile or run `.livecodescript` or `.lcb`. On 2026-08-27 Brian Milby
+(`bwmilby`) replied to the suite's forum post:
+
+> It is possible to run both the standalone (or server build) and the lcb
+> compiler headless via script. Linting in various text editors typically use
+> the server engine to lint scripts and provide info on where errors occur.
+
+That is a claim from a credible source in the LiveCode community and it is
+DOCUMENTED under the rule at the top of this file: a claim, not a fact, and this
+tree has been wrong about a documented behaviour before. It is recorded here
+because it is the first thing an engine-session reader should know - **one
+minute of your session can settle it**, and settling it is worth more than
+almost anything else on the tick sheet.
+
+**What to run, and why it is one file.** `tools/engine-probe.livecodescript` is
+ten probes that ask the engine directly - is there an object model, does
+`set the script of` report a compile error and in what format, does the error
+carry a line number, does `the explicitVariables` turn an undeclared name into a
+compile error, is there a message loop for `send ... in`, does
+`load extension from file` exist. Every answer is dumped raw and interpreted
+nowhere. Paste it per section 3.1 of the runbook and `put xtProbeRun()`, or run
+it headless through `tools/check-engine-lint.py --probe`. **Doing both on the
+same machine is the highest-value version**: the GUI column is the known-good
+control, so a row where the two disagree is a real headless divergence rather
+than a bug in the probe.
+
+**What it would and would not buy, so nobody promotes an entry by mistake.** Of
+the 26 entries above, SIX are compile-time (1.3, 1.4, 1.5, 1.6, 1.7, 3.3) and
+TWO more (1.2 and 2.1 - one class, the undeclared name) turn compile-time only
+if `the explicitVariables` works. The other eighteen are runtime or GUI
+semantics that no compiler sees. **A green
+headless compile of the whole tree would not promote a single one of those
+eighteen**, and the design in `docs/HEADLESS-ENGINE.md` refuses to let it: a
+compile result earns "parses on <engine> <version>, dated" and nothing more.
+
+**No gate holds this yet, deliberately.** The tooling exists
+(`tools/check-engine-lint.py`, `tools/check-lcb-compile.py`, both with fake-engine
+fixture suites, plus `.github/workflows/engine.yml`), and all of it SKIPS loudly
+because no machine in this project has an engine on it. The 74 no-headless
+assertions elsewhere in the tree are untouched for the same reason: nothing has
+been measured, so nothing may be rewritten. When the probe runs, its report goes
+into `docs/HEADLESS-ENGINE.md` section 10 with a date, and the rewrite starts
+from that.
+
+---
+
 ## 7. How to add to this file
 
 When an engine run teaches you something:
