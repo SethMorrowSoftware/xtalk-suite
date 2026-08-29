@@ -496,6 +496,10 @@ constant rs1kRsGoldHeadName = "Riptide"
 constant rs1kRsGoldPrekeyTarget = "abababababababababababababababababababab"
 constant rs1kRsGoldProfileTarget = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
 constant rs1kRsGoldMediaTarget = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+constant rs1kRsGoldNostrSeq = "1"
+constant rs1kRsGoldNostrTs = "1754870800"
+constant rs1kRsGoldNostrAux = "0000000000000000000000000000000000000000000000000000000000000000"
+constant rs1kRsGoldNostrBadCand = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
 constant rs1kRsGoldIdSeedHex = "9c7b6be59e0884a1923505cf1390a1d01b5b7a258c582d9518e722c07bd8650c"
 constant rs1kRsGoldDmSeedHex = "4dca52e87fa8919a5699fd35f79d6e4a417bdf0cf3e16d5c549aac6cd8c2b391"
 constant rs1kRsGoldLanKeyHex = "fb9441aca42ca2212b3b16ea0b615d70e6d8c5ab3f6ac9a90a5e648fd58ac85f"
@@ -540,6 +544,18 @@ constant rs1kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 constant rs1kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
 constant rs1kRsGoldAnonPageHex = "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d277574662d38273e3c7469746c653e526970746964653c2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c656420444d733a20474554202f7072656b657920286d79207369676e65642052534b31207072656b6579207265636f72642c20686578292c207468656e20504f535420796f7572207365616c656420696e74726f2061732068657820746f202f646d2e3c2f703e3c2f626f64793e3c2f68746d6c3e"
 constant rs1kRsGoldAnonPrekeyBody = "52534b31643465366331343665346333623361383935363265643636396334336634626437363031613065343336316264616133333034663462656562343130616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd6c70ba04"
+constant rs1kRsGoldNostrSeckey = "292f05482814252ab3735789df0a22dc4f07d7fd35fca10d7fbabf044cf5ee01"
+constant rs1kRsGoldNostrPubkey = "87f20bf27cbbd33ba676d428329081f2b0a3cd5989ce8af1f92e1f7316b2fa1f"
+constant rs1kRsGoldNostrNpub = "npub1sleqhunuh0fnhfnk6s5r9yyp72c28n2e388g4u0e9c0hx94jlg0s4nnv5a"
+constant rs1kRsGoldNostrLadder1 = "3717939056ee94b1054210ce2b27284d9a8ac5e2880e326d53feb8d4cbb89907"
+constant rs1kRsGoldAppStateKey = "e3feb285ef2e9e21b235884df78273ad955bc4fe4ed0169cd9ffa37cf592f83d"
+constant rs1kRsGoldBridgeHex = "52534e31356135343665346665663564316237366639346463316232656465643735633434626666633930306166373436316132366438343237343533613932663232643837663230626632376362626433336261363736643432383332393038316632623061336364353938396365386166316639326531663733313662326661316600000000000000010000000068993410832fd1bde94160aa757cd37c1e3f1983c7666a33baa6d56008879dc60486175238ad45be2a14ef7e763f09a530eea22ea1021ef2cd9d278583bc8e3b4924d6083d0b3547ca7fc93011d07e8d57e8019aa35926ec3dc521171b510cef1e4d276bb995720aa2227031f3a400eabe90bcd49252f86b69dce5552bb150cdfbe2bba7"
+constant rs1kRsGoldBridgePreHex = "726970746964652d6e6f7374722d6252534e31356135343665346665663564316237366639346463316232656465643735633434626666633930306166373436316132366438343237343533613932663232643837663230626632376362626433336261363736643432383332393038316632623061336364353938396365386166316639326531663733313662326661316600000000000000010000000068993410"
+constant rs1kRsGoldBridgeEventId = "d1df953258c71225e6b7dca9a9c5a83267664eb7fdaed68b7ab7db90badd18a5"
+constant rs1kRsGoldBridgeEventSig = "4a7b1d22580e277cad711d202cae91a26faafebdafc09e14df5fa1c7d2c630a9217f3716497fed20e07574e54f5248dc776c0b4f73b399ad73b94c0ed48f1b18"
+constant rs1kRsGoldNoteEventId = "4b539f4d7b44c8a9fb64162bc5fdcba8c5d662f79c26de29de62e0fcae29e960"
+constant rs1kRsGoldNoteEventSig = "52d44848366a5cf0dbd4522057079139a91109fc0eb93dc3797670138625294a4415124ce03dfc5e92002c14f4020e1092433a108f74a94d34216788ddbca64c"
+constant rs1kRsGoldNoteMediaEventId = "7a49d188bb322c2d898a342bbf644c4804cb34bca479627bcc371fc1940f3551"
 local rs1sLog
 local rs1sPass
 local rs1sFail
@@ -1031,8 +1047,21 @@ constant kRsZeroTarget = "0000000000000000000000000000000000000000"
 constant kRsSubkeyIdentity = "1"
 constant kRsSubkeyDm = "2"
 constant kRsSubkeyLan = "3"
+constant kRsSubkeyNostr = "4"
+constant kRsSubkeyAppState = "5"
 constant kRsSubkeyAnonBase = 100
 constant kRsSubkeyAnonDmBase = 200
+constant kRsNostrMagic = "RSN1"
+constant kRsNostrDomain = "riptide-nostr-b"
+constant kRsNostrSalt = "riptide-nostr"
+constant kRsNostrBridgeLen = 276
+constant kRsNostrBridgeBody = 148
+constant kRsNostrLadderMax = 8
+constant kRsNostrBridgeKind = 30078
+constant kRsNostrBridgeDTag = "riptide.bridge"
+constant kRsMagnetPrefix = "magnet:?xt=urn:btih:"
+constant kRsAppMagic = "RIPTAPP1"
+constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
@@ -12504,6 +12533,9 @@ function rsProbeCapabilities
    put false into tCaps["hasDataChannel"]
    put false into tCaps["hasEnet"]
    put false into tCaps["hasCoin"]
+   put false into tCaps["hasNostr"]
+   put false into tCaps["hasNostrRelay"]
+   put false into tCaps["canNostrSign"]
    try
       put sxRandomBytes(32) into tKey
       put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
@@ -12537,6 +12569,37 @@ function rsProbeCapabilities
       put (cxSha3_256Len() is 32) into tCaps["hasCoin"]
    catch tIgnore
       put false into tCaps["hasCoin"]
+   end try
+   -- The phase-8 Nostr rail probes in THREE parts, because the three things
+   -- fail separately and each disables a different feature (rule 6):
+   --   hasNostr      - the nx* CORE is loaded. A real round trip, not a
+   --                   version sniff: hex-encode a known string and compare.
+   --   canNostrSign  - the core can actually reach secp256k1 through CoinXT.
+   --                   Deriving an x-only public key for a fixed valid
+   --                   scalar exercises cxXOnlyPubkey, which is what every
+   --                   signing path here needs; hasCoin alone does not
+   --                   prove the nx* composition resolves.
+   --   hasNostrRelay - the nxr* relay layer is loaded too. It is a SEPARATE
+   --                   file that an app may legitimately not carry (it
+   --                   cannot ride the suite paste beside onionxt), so the
+   --                   whole compute rail must work without it.
+   try
+      put (nxHexEncode(textEncode("probe", "ASCII")) is "70726f6265") \
+            into tCaps["hasNostr"]
+   catch tIgnore
+      put false into tCaps["hasNostr"]
+   end try
+   try
+      put (the number of chars in nxKeyPublic( \
+            "0000000000000000000000000000000000000000000000000000000000000001") \
+            is 64) into tCaps["canNostrSign"]
+   catch tIgnore
+      put false into tCaps["canNostrSign"]
+   end try
+   try
+      put (nxrVersion() is not empty) into tCaps["hasNostrRelay"]
+   catch tIgnore
+      put false into tCaps["hasNostrRelay"]
    end try
    -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
    -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
@@ -14958,10 +15021,24 @@ function rsAnonOnion pMaster, pIndex
 end rsAnonOnion
 
 function rsPersonaAllows pIsAnon, pTransport
-   local tKnown
-   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   local tKnown, tSaved, tKnownTransport
+   put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
+   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, leaking comma to
+   -- everything that ran after it. That is the C10 defect (rsMediaCreate
+   -- leaking "/" for the rest of the session) in the one handler where it
+   -- reads worst - the app's Anon card paints the guard panel by calling
+   -- this nine times in a row, so a card repaint silently reset the
+   -- delimiter under whatever the pump was doing next. Benign in practice
+   -- only because comma IS the engine default, which is exactly why it
+   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
+   -- way that one was: restore around the NARROWEST span, not at each exit,
+   -- because a restore per exit is the line the next refusal path forgets.
+   put the itemDelimiter into tSaved
    set the itemDelimiter to comma
-   if pTransport is not among the items of tKnown then
+   put (pTransport is among the items of tKnown) into tKnownTransport
+   set the itemDelimiter to tSaved
+   if not tKnownTransport then
       rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
             quote & " - refusing fail-closed"
       return false
@@ -15257,6 +15334,619 @@ function rsBtxoStreamStep pBuffer, pPhase
          quote && "or" && quote & "body" & quote
    return empty
 end rsBtxoStreamStep
+
+function rsNostrSeckeyFrom pCandidateHex
+   local tCandidate, tBin, tOk, tRung, tErr
+   put toLower(pCandidateHex) into tCandidate
+   if not rsIsHexOfLen(tCandidate, 64) then
+      rsSetError "rsNostrSeckeyFrom: the candidate must be 64 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tCandidate) into tBin
+   if tBin is empty then return empty
+   repeat with tRung = 1 to kRsNostrLadderMax
+      try
+         put cxSeckeyIsValid(tBin) into tOk
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSeckeyIsValid):" && tErr
+         return empty
+      end try
+      if tOk is true then
+         return rsBinToHexString(tBin)
+      end if
+      try
+         put cxSha256(tBin) into tBin
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSha256):" && tErr
+         return empty
+      end try
+   end repeat
+   rsSetError "rsNostrSeckeyFrom: no valid secp256k1 scalar within" && \
+         kRsNostrLadderMax && "rungs"
+   return empty
+end rsNostrSeckeyFrom
+
+private function rsNostrSeckeyHex pMaster
+   local tSub, tHex
+   put rsSubkey(pMaster, kRsSubkeyNostr) into tSub
+   if tSub is empty then return empty
+   put rsBinToHexString(tSub) into tHex
+   if tHex is empty then return empty
+   return rsNostrSeckeyFrom(tHex)
+end rsNostrSeckeyHex
+
+function rsNostrKeys pMaster
+   local tSecHex, tPub, tNpub, tOut, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxKeyPublic(tSecHex) into tPub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxKeyPublic):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsNostrKeys: nxKeyPublic did not return a 64-hex key"
+      return empty
+   end if
+   try
+      put nxNpubEncode(tPub) into tNpub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxNpubEncode):" && tErr
+      return empty
+   end try
+   if tNpub is empty then
+      rsSetError "rsNostrKeys: nxNpubEncode refused the public key"
+      return empty
+   end if
+   put tPub into tOut["pubkey"]
+   put tNpub into tOut["npub"]
+   return tOut
+end rsNostrKeys
+
+function rsNostrExportSeckey pMaster
+   return rsNostrSeckeyHex(pMaster)
+end rsNostrExportSeckey
+
+function rsNostrSignEvent pEvent, pMaster, pAuxHex
+   local tSecHex, tSigned, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxEventSign(pEvent, tSecHex, pAuxHex) into tSigned
+   catch tErr
+      rsSetError "rsNostrSignEvent needs NostrXT (nxEventSign):" && tErr
+      return empty
+   end try
+   if tSigned is empty then
+      rsSetError "rsNostrSignEvent: nxEventSign refused the event"
+      return empty
+   end if
+   return tSigned
+end rsNostrSignEvent
+
+function rsNostrNoteEvent pTimestamp, pText, pMediaList
+   local tTags, tCount, tI, tHash, tSaved, tEvent, tErr
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsNostrNoteEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrNoteEvent: the timestamp is out of range"
+      return empty
+   end if
+   if pText is empty then
+      rsSetError "rsNostrNoteEvent: an empty note is refused"
+      return empty
+   end if
+   put 0 into tCount
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   if pMediaList is not empty then
+      repeat with tI = 1 to the number of items in pMediaList
+         put rsNormalizeTarget(item tI of pMediaList) into tHash
+         if tHash is empty or tHash is kRsZeroTarget then
+            set the itemDelimiter to tSaved
+            rsSetError "rsNostrNoteEvent: media item" && tI && \
+                  "is not a 40-hex non-zero info-hash"
+            return empty
+         end if
+         add 1 to tCount
+         put "r" into tTags[tCount][1]
+         put kRsMagnetPrefix & tHash into tTags[tCount][2]
+      end repeat
+   end if
+   set the itemDelimiter to tSaved
+   if tCount > kRsMaxMedia then
+      rsSetError "rsNostrNoteEvent: at most" && kRsMaxMedia && \
+            "media attachments"
+      return empty
+   end if
+   try
+      put nxEventBuild(1, pText, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrNoteEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrNoteEvent: nxEventBuild refused the note"
+      return empty
+   end if
+   return tEvent
+end rsNostrNoteEvent
+
+function rsNostrMediaTags pEvent
+   local tValues, tSavedLine, tSavedItem, tI, tLine, tTail, tHash, tOut, tErr
+   local tPrefixLen
+   try
+      put nxTagValues(pEvent, "r") into tValues
+   catch tErr
+      rsSetError "rsNostrMediaTags needs NostrXT (nxTagValues):" && tErr
+      return empty
+   end try
+   if tValues is empty then return empty
+   put the number of chars in kRsMagnetPrefix into tPrefixLen
+   put the lineDelimiter into tSavedLine
+   put the itemDelimiter into tSavedItem
+   set the lineDelimiter to return
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of lines in tValues
+      put line tI of tValues into tLine
+      -- POSITIVE indices on purpose. `char -40 to -1` reads naturally and is
+      -- a form the headless interpreter mis-models, so it could not be
+      -- checked offline; the length is already pinned one line above, which
+      -- makes the explicit span both exact and verifiable.
+      if the number of chars in tLine is tPrefixLen + 40 then
+         if char 1 to tPrefixLen of tLine is kRsMagnetPrefix then
+            put char (tPrefixLen + 1) to (tPrefixLen + 40) of tLine into tTail
+            put rsNormalizeTarget(tTail) into tHash
+            if tHash is not empty and tHash is not kRsZeroTarget then
+               if tOut is empty then
+                  put tHash into tOut
+               else
+                  put comma & tHash after tOut
+               end if
+            end if
+         end if
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLine
+   set the itemDelimiter to tSavedItem
+   return tOut
+end rsNostrMediaTags
+
+function rsBuildBridge pSeq, pTimestamp, pMaster, pAuxHex
+   local tIdSeed, tIdKeys, tNostr, tBody, tPre, tEdSig, tDigest
+   local tSecHex, tSchSig, tAux, tErr
+   if pSeq is not an integer or pSeq < 0 or pSeq >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the seq must be a non-negative integer"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   if pAuxHex is not empty and not rsIsHexOfLen(toLower(pAuxHex), 64) then
+      rsSetError "rsBuildBridge: aux randomness must be empty or 64 hex chars"
+      return empty
+   end if
+   put rsIdentitySeed(pMaster) into tIdSeed
+   if tIdSeed is empty then return empty
+   put rsIdentityKeys(tIdSeed) into tIdKeys
+   if tIdKeys is empty then return empty
+   put rsNostrKeys(pMaster) into tNostr
+   if tNostr is empty then return empty
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   put textEncode(kRsNostrMagic, "ASCII") into tBody
+   put textEncode(tIdKeys["handle"], "ASCII") after tBody
+   put textEncode(tNostr["pubkey"], "ASCII") after tBody
+   put rsBEu64(pSeq) after tBody
+   put rsBEu64(pTimestamp) after tBody
+   if the number of bytes in tBody is not kRsNostrBridgeBody then
+      rsSetError "rsBuildBridge: assembled body is not" && \
+            kRsNostrBridgeBody && "bytes"
+      return empty
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & tBody into tPre
+   try
+      put sxSignDetached(tPre, tIdKeys["secretKey"]) into tEdSig
+   catch tErr
+      rsSetError "rsBuildBridge needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   if pAuxHex is empty then
+      put empty into tAux
+   else
+      put rsHexToBin(toLower(pAuxHex)) into tAux
+      if tAux is empty then return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrSign(rsHexToBin(tSecHex), tDigest, tAux) into tSchSig
+   catch tErr
+      rsSetError "rsBuildBridge needs CoinXT (cxSha256/cxSchnorrSign):" && tErr
+      return empty
+   end try
+   if the number of bytes in tEdSig is not 64 or \
+         the number of bytes in tSchSig is not 64 then
+      rsSetError "rsBuildBridge: a signature is not 64 bytes"
+      return empty
+   end if
+   return tBody & tEdSig & tSchSig
+end rsBuildBridge
+
+function rsParseBridge pBytes
+   local tOut, tHandle, tPub
+   if the number of bytes in pBytes is not kRsNostrBridgeLen then
+      rsSetError "rsParseBridge: an RSN1 record is exactly" && \
+            kRsNostrBridgeLen && "bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsNostrMagic then
+      rsSetError "rsParseBridge: bad magic, not an RSN1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsParseBridge: malformed riptide handle"
+      return empty
+   end if
+   put textDecode(byte 69 to 132 of pBytes, "ASCII") into tPub
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsParseBridge: malformed nostr public key"
+      return empty
+   end if
+   put tHandle into tOut["handle"]
+   put tPub into tOut["nostrPub"]
+   put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
+   put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   return tOut
+end rsParseBridge
+
+function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
+   local tRec, tPre, tOk, tPub, tDigest, tErr, tWantHandle, tWantPub
+   put rsParseBridge(pBytes) into tRec
+   if tRec is empty then return empty
+   put toLower(pExpectHandleHex) into tWantHandle
+   if tWantHandle is not empty then
+      if not rsIsHexOfLen(tWantHandle, 64) then
+         rsSetError "rsVerifyBridge: the expected handle must be 64 hex chars"
+         return empty
+      end if
+      if tRec["handle"] is not tWantHandle then
+         rsSetError "rsVerifyBridge: the record names a different handle"
+         return empty
+      end if
+   end if
+   put toLower(pExpectNostrPubHex) into tWantPub
+   if tWantPub is not empty then
+      if not rsIsHexOfLen(tWantPub, 64) then
+         rsSetError "rsVerifyBridge: the expected nostr key must be 64 hex" && \
+               "chars"
+         return empty
+      end if
+      if tRec["nostrPub"] is not tWantPub then
+         rsSetError "rsVerifyBridge: the record names a different nostr key"
+         return empty
+      end if
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & \
+         (byte 1 to kRsNostrBridgeBody of pBytes) into tPre
+   put rsHexToBin(tRec["handle"]) into tPub
+   if tPub is empty then return empty
+   try
+      put sxSignVerifyDetached(byte 149 to 212 of pBytes, tPre, tPub) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs SodiumXT (sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the riptide handle signature does not verify"
+      return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrVerify(rsHexToBin(tRec["nostrPub"]), tDigest, \
+            byte 213 to 276 of pBytes) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs CoinXT (cxSha256/cxSchnorrVerify):" && \
+            tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the nostr signature does not verify"
+      return empty
+   end if
+   return tRec
+end rsVerifyBridge
+
+function rsNostrBridgeEvent pBridgeBytes, pMaster, pTimestamp, pAuxHex
+   local tRec, tHex, tTags, tEvent, tErr
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then return empty
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrBridgeEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   put rsBinToHexString(pBridgeBytes) into tHex
+   if tHex is empty then return empty
+   put "d" into tTags[1][1]
+   put kRsNostrBridgeDTag into tTags[1][2]
+   try
+      put nxEventBuild(kRsNostrBridgeKind, tHex, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeEvent: nxEventBuild refused the event"
+      return empty
+   end if
+   return rsNostrSignEvent(tEvent, pMaster, pAuxHex)
+end rsNostrBridgeEvent
+
+function rsNostrBridgeFromEvent pEventJson
+   local tEvent, tOk, tKind, tDTag, tHex, tBytes, tErr
+   try
+      put nxEventFromJson(pEventJson) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventFromJson):" && \
+            tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeFromEvent: the event JSON did not parse"
+      return empty
+   end if
+   try
+      put nxEventVerify(tEvent) into tOk
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventVerify):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsNostrBridgeFromEvent: the event signature does not verify"
+      return empty
+   end if
+   put tEvent["kind"] into tKind
+   if tKind is not kRsNostrBridgeKind then
+      rsSetError "rsNostrBridgeFromEvent: not a kind" && kRsNostrBridgeKind && \
+            "event"
+      return empty
+   end if
+   try
+      put nxTagFirst(tEvent, "d") into tDTag
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxTagFirst):" && tErr
+      return empty
+   end try
+   -- byte-exact, because `is` folds case and a d-tag is a wire identifier
+   if not rsBytesEqual(tDTag, kRsNostrBridgeDTag) then
+      rsSetError "rsNostrBridgeFromEvent: the d tag is not" && \
+            kRsNostrBridgeDTag
+      return empty
+   end if
+   put toLower(tEvent["content"]) into tHex
+   if not rsIsHexOfLen(tHex, kRsNostrBridgeLen * 2) then
+      rsSetError "rsNostrBridgeFromEvent: the content is not" && \
+            (kRsNostrBridgeLen * 2) && "hex chars"
+      return empty
+   end if
+   put rsHexToBin(tHex) into tBytes
+   if tBytes is empty then return empty
+   return rsVerifyBridge(tBytes, empty, tEvent["pubkey"])
+end rsNostrBridgeFromEvent
+
+function rsPublishBridge pSession, pBridgeBytes, pIdentitySeed
+   local tRec, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   -- EVERY OTHER INPUT IS VALIDATED BEFORE THE SESSION IS TOUCHED - the
+   -- phase-2 decision this library records and then has to keep: it is
+   -- what lets these refusal paths run, and be tested, on a machine with
+   -- no torrentxt installed. The seed/handle check in particular has to
+   -- sit above the session check or it can only ever be reached on a
+   -- machine that has a live session, which is exactly where a harness
+   -- assertion quietly starts passing for the wrong reason.
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then
+      rsSetError "rsPublishBridge: not a valid RSN1 bridge:" && rsLastError()
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   -- A bridge names its handle INSIDE the signed span, so publishing one
+   -- under a different key would put a record on the DHT that verifies as
+   -- somebody else's linkage at a target nobody looks for. Refuse loudly.
+   if tKeys["handle"] is not tRec["handle"] then
+      rsSetError "rsPublishBridge: the signing seed is not the handle the" && \
+            "bridge names"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsBencodeBytes(pBridgeBytes) into tValue
+   put rsBep44SignBuf(kRsNostrSalt, tRec["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishBridge:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsNostrSalt, \
+            tRec["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishBridge: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishBridge: btDhtPutSigned refused (" & tCode & ")" && \
+            tWhy
+      return false
+   end if
+   return true
+end rsPublishBridge
+
+function rsRequestBridge pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestBridge: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsNostrSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestBridge: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestBridge: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestBridge
+
+function rsIngestBridge pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestBridge: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case here too; the rebuilt-canonical-buffer signature below
+   -- is what actually backstops a case-mangled salt (the rsIngestHead note)
+   if pEvent["salt"] is not kRsNostrSalt then
+      rsSetError "rsIngestBridge: the event is not a riptide-nostr item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestBridge: the event seq is not a sane integer"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestBridge: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsNostrSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestBridge:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestBridge: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   put rsVerifyBridge(pEvent["value"], tHandle, empty) into tRec
+   if tRec is empty then return empty
+   if tRec["seq"] is not tSeq then
+      rsSetError "rsIngestBridge: the BEP44 seq and the bridge's embedded" && \
+            "seq disagree"
+      return empty
+   end if
+   return tRec
+end rsIngestBridge
+
+function rsSealAppState pStateText, pMaster
+   local tKey, tBytes, tOut, tErr
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   put textEncode(pStateText, "UTF-8") into tBytes
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsSealAppState: the state is over the" && kRsAppStateMax && \
+            "byte cap"
+      return empty
+   end if
+   try
+      put textEncode(kRsAppMagic & "S", "ASCII") & sxSecretBox(tBytes, tKey) \
+            into tOut
+   catch tErr
+      rsSetError "rsSealAppState needs SodiumXT (sxSecretBox):" && tErr
+      return empty
+   end try
+   return tOut
+end rsSealAppState
+
+function rsOpenAppState pFileBytes, pMaster
+   local tKey, tHeader, tSealed, tBytes, tErr
+   if the number of bytes in pFileBytes < 10 then
+      rsSetError "rsOpenAppState: too short to be a RIPTAPP1 file"
+      return empty
+   end if
+   put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
+   if tHeader is not (kRsAppMagic & "S") then
+      rsSetError "rsOpenAppState: not a RIPTAPP1 sealed state file"
+      return empty
+   end if
+   put byte 10 to -1 of pFileBytes into tSealed
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   try
+      put sxSecretBoxOpen(tSealed, tKey) into tBytes
+   catch tErr
+      rsSetError "rsOpenAppState: wrong master seed or corrupted state file"
+      return empty
+   end try
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsOpenAppState: the sealed state is over the" && \
+            kRsAppStateMax && "byte cap"
+      return empty
+   end if
+   if not rsBytesAreUtf8(tBytes) then
+      rsSetError "rsOpenAppState: the sealed state is not valid UTF-8"
+      return empty
+   end if
+   if the number of bytes in tBytes is 0 then return empty
+   return textDecode(tBytes, "UTF-8")
+end rsOpenAppState
+
+private function rsBytesEqual pA, pB
+   local tI, tN
+   put the number of chars in pA into tN
+   if tN is not the number of chars in pB then return false
+   repeat with tI = 1 to tN
+      if byteToNum(byte tI of pA) is not byteToNum(byte tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end rsBytesEqual
 
 private function rsBytesAreUtf8 pBytes
    local tDecoded, tErr
@@ -25558,6 +26248,8 @@ function rs1rsSelfTest
       rs1rstSectionLanSync
       rs1rstSectionAnon rs1tCaps
       rs1rstSectionBtxoStream
+      rs1rstSectionAppState
+      rs1rstSectionNostr rs1tCaps
       rs1rstSectionLiveFeed rs1tCaps
       rs1rstSectionMedia rs1tCaps
    else
@@ -26463,6 +27155,268 @@ private command rs1rstSectionBtxoStream
          "an unknown phase is a caller bug (empty, rsLastError says why)"
 end rs1rstSectionBtxoStream
 
+private command rs1rstSectionAppState
+   local rs1tMaster, rs1tOther, rs1tSealed, rs1tAgain, rs1tBig, rs1tUni, rs1tTamper, rs1tI
+   rs1rstSection "phase 8 - the RIPTAPP1 app-state store"
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tMaster
+   put rs1rstBin(rs1kRsGoldConfSeedHex) into rs1tOther
+   put rsSealAppState("hello state", rs1tMaster) into rs1tSealed
+   rs1rstCheck (rs1tSealed is not empty), "a state seals"
+   rs1rstCheck (textDecode(byte 1 to 9 of rs1tSealed, "ASCII") is "RIPTAPP1S"), \
+         "the sealed file carries the RIPTAPP1 header"
+   rs1rstCheck (rsOpenAppState(rs1tSealed, rs1tMaster) is "hello state"), \
+         "and opens back to the same text"
+   -- a fresh nonce per seal, which is why no vector pins these bytes
+   put rsSealAppState("hello state", rs1tMaster) into rs1tAgain
+   rs1rstCheck (rs1tAgain is not rs1tSealed), \
+         "two seals of one state differ (a fresh nonce each time)"
+   rs1rstCheck (rsOpenAppState(rs1tAgain, rs1tMaster) is "hello state"), \
+         "and both open to the same text"
+   -- the store is keyed to the MASTER, so it opens only while unlocked
+   rs1rstCheck (rsOpenAppState(rs1tSealed, rs1tOther) is empty), \
+         "a different master cannot open it"
+   rs1rstCheck (rsOpenAppState("XIPTAPP1S" & byte 10 to -1 of rs1tSealed, \
+         rs1tMaster) is empty), "a foreign magic is refused"
+   rs1rstCheck (rsOpenAppState(byte 1 to 8 of rs1tSealed, rs1tMaster) is empty), \
+         "a truncated file is refused"
+   put rs1rstFlipByte(rs1tSealed, the number of bytes in rs1tSealed) into rs1tTamper
+   rs1rstCheck (rsOpenAppState(rs1tTamper, rs1tMaster) is empty), \
+         "a tampered file is refused (the Poly1305 tag)"
+   -- caps refuse, never truncate (rule 4), on the BUILD side too
+   -- one byte over kRsAppStateMax (1 MiB). Built by doubling rather than by
+   -- a million appends: the harness runs on the engine's one interpreted
+   -- thread and a per-byte loop here would be seconds of the run.
+   put "x" into rs1tBig
+   repeat 20 times
+      put rs1tBig after rs1tBig
+   end repeat
+   put "x" after rs1tBig
+   rs1rstCheck (the number of bytes in rs1tBig is 1048577), \
+         "the over-cap probe really is one byte over the 1 MiB cap"
+   rs1rstCheck (rsSealAppState(rs1tBig, rs1tMaster) is empty), \
+         "an over-cap state refuses rather than truncating"
+   -- UTF-8 survives, which matters because the app puts display names and
+   -- petnames in here and textDecode is LOSSY on this engine
+   put textDecode(rs1rstBin("6361666ac3a9"), "UTF-8") into rs1tUni
+   rs1rstCheck (rsOpenAppState(rsSealAppState(rs1tUni, rs1tMaster), rs1tMaster) is rs1tUni), \
+         "a non-ASCII state survives the round trip"
+   rs1rstCheck (rsOpenAppState(empty, rs1tMaster) is empty), \
+         "an empty file is refused"
+end rs1rstSectionAppState
+
+private command rs1rstSectionNostr pCaps
+   local rs1tMaster, rs1tOther, rs1tKeys, rs1tBridge, rs1tRec, rs1tEvent, rs1tSigned, rs1tJson
+   local rs1tStolen, rs1tBack, rs1tTamper, rs1tI, rs1tSavedDelim
+   rs1rstSection "phase 8 - the Nostr rail (identity bridge, notes, the guard)"
+
+   -- THE GUARD FIRST, because it is pure policy and needs no extension at
+   -- all. "nostr" joining the vocabulary is a deanonymization question:
+   -- a relay is a clearnet websocket to somebody else's server.
+   rs1rstCheck (rsPersonaAllows(true, "nostr") is false), \
+         "anon persona: a Nostr relay is REFUSED"
+   rs1rstCheck (rsPersonaAllows(false, "nostr") is true), \
+         "public persona: a Nostr relay is allowed"
+   rs1rstCheck (rsPersonaAllows(true, "nostrr") is false), \
+         "a near-miss transport name still refuses fail-closed (anon)"
+   rs1rstCheck (rsPersonaAllows(false, "nostrr") is false), \
+         "a near-miss transport name still refuses fail-closed (public)"
+
+   if pCaps["hasNostr"] is not true or pCaps["canNostrSign"] is not true then
+      rs1rstSkip "the Nostr rail: NostrXT and/or CoinXT are not installed"
+      exit rs1rstSectionNostr
+   end if
+
+   put rs1rstBin(rs1kRsGoldMasterHex) into rs1tMaster
+   put rs1rstBin(rs1kRsGoldConfSeedHex) into rs1tOther
+
+   -- the validity ladder, at the two rungs no real master seed reaches
+   rs1rstCheck (rsNostrSeckeyFrom(rs1kRsGoldNostrSeckey) is rs1kRsGoldNostrSeckey), \
+         "a valid candidate passes through the ladder unchanged"
+   rs1rstCheck (rsNostrSeckeyFrom(rs1kRsGoldNostrBadCand) is \
+         rs1kRsGoldNostrLadder1), \
+         "the group order n steps forward one rung, to SHA-256 of itself"
+   rs1rstCheck (rsNostrSeckeyFrom(rs1kRsGoldNostrBadCand) is not \
+         rs1kRsGoldNostrBadCand), "and never returns the invalid scalar"
+   rs1rstCheck (rsNostrSeckeyFrom("42") is empty), \
+         "a short candidate is refused"
+   rs1rstCheck (rsNostrSeckeyFrom("zz" & char 3 to 64 of rs1kRsGoldNostrSeckey) \
+         is empty), "a non-hex candidate is refused"
+
+   -- the identity
+   put rsNostrKeys(rs1tMaster) into rs1tKeys
+   rs1rstCheck (rs1tKeys["pubkey"] is rs1kRsGoldNostrPubkey), \
+         "the Nostr x-only public key matches golden"
+   rs1rstCheck (rs1tKeys["npub"] is rs1kRsGoldNostrNpub), "the npub matches golden"
+   rs1rstCheck (rs1tKeys["seckey"] is empty), \
+         "rsNostrKeys hands back NO secret material"
+   rs1rstCheck (rsNostrExportSeckey(rs1tMaster) is rs1kRsGoldNostrSeckey), \
+         "the exported secret key matches golden"
+   rs1rstCheck (rsNostrExportSeckey(rs1tOther) is not rs1kRsGoldNostrSeckey), \
+         "a different master gives a different Nostr key"
+
+   -- THE BRIDGE. Both signatures, or nothing.
+   put rsBuildBridge(rs1kRsGoldNostrSeq, rs1kRsGoldNostrTs, rs1tMaster, \
+         rs1kRsGoldNostrAux) into rs1tBridge
+   rs1rstCheck (rs1rstHex(rs1tBridge) is rs1kRsGoldBridgeHex), \
+         "the RSN1 bridge record matches golden byte for byte"
+   rs1rstCheck (the number of bytes in rs1tBridge is 276), \
+         "an RSN1 record is exactly 276 bytes"
+   put rsVerifyBridge(rs1tBridge, empty, empty) into rs1tRec
+   rs1rstCheck (rs1tRec["handle"] is rs1kRsGoldHandle), \
+         "verify recovers the riptide handle"
+   rs1rstCheck (rs1tRec["nostrPub"] is rs1kRsGoldNostrPubkey), \
+         "verify recovers the Nostr key"
+   rs1rstCheck (rs1tRec["seq"] is rs1kRsGoldNostrSeq), "verify recovers the seq"
+   rs1rstCheck (rs1tRec["timestamp"] is rs1kRsGoldNostrTs), \
+         "verify recovers the timestamp"
+   rs1rstCheck (rsVerifyBridge(rs1tBridge, rs1kRsGoldHandle, rs1kRsGoldNostrPubkey) \
+         is not empty), "both expectations together still verify"
+   rs1rstCheck (rsVerifyBridge(rs1tBridge, rs1kRsGoldConfPub, empty) is empty), \
+         "a wrong expected handle is refused"
+   rs1rstCheck (rsVerifyBridge(rs1tBridge, empty, rs1kRsGoldConfPub) is empty), \
+         "a wrong expected Nostr key is refused"
+   -- EVERY field of the signed span is load-bearing. A tamper anywhere
+   -- must break one signature or the other; a record that survived one
+   -- would be a linkage anybody could forge half of.
+   -- the six bytes are one per FIELD of the signed span: the handle, the
+   -- Nostr key, the seq, the timestamp, and one byte of each signature.
+   -- The delimiter is set explicitly rather than assumed: comma is the
+   -- engine default, but a harness that leans on a default is a harness
+   -- that breaks the day some earlier section forgets to restore one.
+   put the itemDelimiter into rs1tSavedDelim
+   set the itemDelimiter to comma
+   repeat for each item rs1tI in "5,69,140,148,150,214"
+      put rs1rstFlipByte(rs1tBridge, rs1tI) into rs1tTamper
+      rs1rstCheck (rsVerifyBridge(rs1tTamper, empty, empty) is empty), \
+            "a tamper at byte" && rs1tI && "is refused"
+   end repeat
+   set the itemDelimiter to rs1tSavedDelim
+   rs1rstCheck (rsParseBridge(byte 1 to 275 of rs1tBridge) is empty), \
+         "a short record is refused"
+   rs1rstCheck (rsParseBridge(rs1tBridge & "x") is empty), \
+         "a long record is refused (no trailing bytes)"
+   rs1rstCheck (rsParseBridge(textEncode("XSN1", "ASCII") & \
+         byte 5 to -1 of rs1tBridge) is empty), "a foreign magic is refused"
+   rs1rstCheck (rsBuildBridge("-1", rs1kRsGoldNostrTs, rs1tMaster, rs1kRsGoldNostrAux) \
+         is empty), "a negative seq is refused"
+   rs1rstCheck (rsBuildBridge(rs1kRsGoldNostrSeq, rs1kRsGoldNostrTs, rs1tMaster, "ab") \
+         is empty), "a malformed aux is refused"
+
+   -- kind-1 notes and the media convention
+   put rsNostrNoteEvent(rs1kRsGoldTs1, rs1kRsGoldPost1Text, empty) into rs1tEvent
+   put rsNostrSignEvent(rs1tEvent, rs1tMaster, rs1kRsGoldNostrAux) into rs1tSigned
+   rs1rstCheck (rs1tSigned["id"] is rs1kRsGoldNoteEventId), \
+         "the kind-1 note id matches golden"
+   rs1rstCheck (rs1tSigned["sig"] is rs1kRsGoldNoteEventSig), \
+         "the kind-1 note signature matches golden"
+   rs1rstCheck (nxEventVerify(rs1tSigned) is true), \
+         "and the note verifies under its own key"
+   put rsNostrNoteEvent(rs1kRsGoldTs2, rs1kRsGoldPost2Text, rs1kRsGoldMediaTarget) \
+         into rs1tEvent
+   put rsNostrSignEvent(rs1tEvent, rs1tMaster, rs1kRsGoldNostrAux) into rs1tSigned
+   rs1rstCheck (rs1tSigned["id"] is rs1kRsGoldNoteMediaEventId), \
+         "a note carrying media matches golden"
+   rs1rstCheck (rsNostrMediaTags(rs1tSigned) is rs1kRsGoldMediaTarget), \
+         "the info-hash survives the round trip through the r tag"
+   rs1rstCheck (rsNostrNoteEvent(rs1kRsGoldTs1, empty, empty) is empty), \
+         "an empty note is refused"
+   rs1rstCheck (rsNostrNoteEvent(rs1kRsGoldTs1, "x", rsZeroTarget()) is empty), \
+         "the all-zeros info-hash is refused (a post must name real content)"
+   rs1rstCheck (rsNostrNoteEvent(rs1kRsGoldTs1, "x", "not-a-hash") is empty), \
+         "a malformed info-hash is refused"
+   rs1rstCheck (rsNostrNoteEvent("-1", "x", empty) is empty), \
+         "a negative timestamp is refused"
+
+   -- the bridge as a NIP-78 event, and the attack it exists to stop
+   put rsNostrBridgeEvent(rs1tBridge, rs1tMaster, rs1kRsGoldNostrTs, \
+         rs1kRsGoldNostrAux) into rs1tEvent
+   rs1rstCheck (rs1tEvent["id"] is rs1kRsGoldBridgeEventId), \
+         "the bridge event id matches golden"
+   rs1rstCheck (rs1tEvent["sig"] is rs1kRsGoldBridgeEventSig), \
+         "the bridge event signature matches golden"
+   put nxEventToJson(rs1tEvent) into rs1tJson
+   put rsNostrBridgeFromEvent(rs1tJson) into rs1tBack
+   rs1rstCheck (rs1tBack["handle"] is rs1kRsGoldHandle), \
+         "the bridge comes back out of its own event"
+   rs1rstCheck (rs1tBack["nostrPub"] is rs1kRsGoldNostrPubkey), \
+         "...naming the same Nostr key that signed the event"
+   -- THE REPUBLISH ATTACK: anyone can copy somebody else's bridge record
+   -- into their own signed event. Requiring the record's nostrPub to BE
+   -- the event's author is what makes that copy verify as the ORIGINAL
+   -- author's bridge and never as the republisher's.
+   put rsNostrBridgeEvent(rs1tBridge, rs1tOther, rs1kRsGoldNostrTs, \
+         rs1kRsGoldNostrAux) into rs1tStolen
+   rs1rstCheck (rs1tStolen is not empty), \
+         "a stranger CAN sign an event carrying my bridge (nothing stops it)"
+   rs1rstCheck (rsNostrBridgeFromEvent(nxEventToJson(rs1tStolen)) is empty), \
+         "...but reading it back REFUSES: the record is not the author's"
+   rs1rstCheck (rsNostrBridgeFromEvent(nxEventToJson(rs1tSigned)) is empty), \
+         "a kind-1 event is not a bridge"
+   rs1rstCheck (rsNostrBridgeFromEvent("not json at all") is empty), \
+         "garbage JSON is refused, not thrown"
+   rs1rstCheck (rsNostrBridgeFromEvent(empty) is empty), \
+         "an empty body is refused"
+
+   -- THE DHT SIDE of the bridge, as a SYNTHETIC drained event (the
+   -- rs1rstSectionIngest pattern). No session and no network: the BEP44
+   -- signature is built here from the library's own canonical buffer, which
+   -- makes this a cross-check of rsBep44SignBuf at the new salt as well as
+   -- of the ingest path. rsPublishBridge / rsRequestBridge are exercised
+   -- against a real session in the live-feed section.
+   rs1rstNostrIngest rs1tBridge
+end rs1rstSectionNostr
+
+private command rs1rstNostrIngest pBridge
+   local rs1tKeys, rs1tValue, rs1tBuf, rs1tSigHex, rs1tEvent, rs1tBad, rs1tRec, rs1tSig
+   put rsIdentityKeys(rs1rstBin(rs1kRsGoldIdSeedHex)) into rs1tKeys
+   put rsBencodeBytes(pBridge) into rs1tValue
+   put rsBep44SignBuf("riptide-nostr", rs1kRsGoldNostrSeq, rs1tValue) into rs1tBuf
+   put rs1rstHex(sxSignDetached(rs1tBuf, rs1tKeys["secretKey"])) into rs1tSigHex
+   put rs1kRsGoldHandle into rs1tEvent["publicKey"]
+   put "riptide-nostr" into rs1tEvent["salt"]
+   put rs1kRsGoldNostrSeq into rs1tEvent["seq"]
+   put pBridge into rs1tEvent["value"]
+   put rs1tSigHex into rs1tEvent["signature"]
+   put rsIngestBridge(rs1tEvent, rs1kRsGoldHandle) into rs1tRec
+   rs1rstCheck (rs1tRec is not empty), "a synthetic bridge event ingests"
+   rs1rstCheck (rs1tRec["nostrPub"] is rs1kRsGoldNostrPubkey), \
+         "and hands back the Nostr key it names"
+   rs1rstCheck (rsIngestBridge(rs1tEvent, rs1kRsGoldConfPub) is empty), \
+         "an event for another handle is refused"
+   put rs1tEvent into rs1tBad
+   put rsHeadSalt() into rs1tBad["salt"]
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "the HEAD salt is refused (one rail, one salt)"
+   put rs1tEvent into rs1tBad
+   put 2 into rs1tBad["seq"]
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a seq disagreeing with the bridge's embedded seq is refused"
+   put rs1tEvent into rs1tBad
+   -- byte 150 is inside the ed25519 signature: the BEP44 layer still
+   -- passes (its signature covers the bencoded value, which changed too)
+   -- so this proves the SECOND verification is really running
+   put rs1rstFlipByte(rs1tBad["value"], 150) into rs1tBad["value"]
+   put rsBencodeBytes(rs1tBad["value"]) into rs1tValue
+   put rsBep44SignBuf("riptide-nostr", rs1kRsGoldNostrSeq, rs1tValue) into rs1tBuf
+   put rs1rstHex(sxSignDetached(rs1tBuf, rs1tKeys["secretKey"])) into rs1tBad["signature"]
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a correctly RE-SIGNED but tampered bridge is still refused"
+   put rs1tEvent into rs1tBad
+   put rs1tBad["signature"] into rs1tSig
+   if char 1 of rs1tSig is "6" then
+      put "7" into char 1 of rs1tSig
+   else
+      put "6" into char 1 of rs1tSig
+   end if
+   put rs1tSig into rs1tBad["signature"]
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a forged BEP44 signature is refused"
+   put rs1tEvent into rs1tBad
+   put textEncode("junk", "ASCII") into rs1tBad["value"]
+   rs1rstCheck (rsIngestBridge(rs1tBad, rs1kRsGoldHandle) is empty), \
+         "a value that is not an RSN1 record is refused"
+end rs1rstNostrIngest
+
 private command rs1rstSectionLan
    local rs1tKeys, rs1tChallenge, rs1tResponse, rs1tNonce2, rs1tChallenge2, rs1tName, rs1tBadName
    local rs1tBadUtf, rs1tWelcome
@@ -26974,6 +27928,22 @@ private command rs1rstSectionLiveFeed pCaps
          "rsRequestImmutable refuses the zero target"
    rs1rstCheck (rsRequestImmutable(0, rs1kRsGoldPost1Target) is false), \
          "rsRequestImmutable refuses a dead session handle"
+   -- the phase-8 bridge rides the same seam at its own salt, so its
+   -- refusal paths run here too, with no torrentxt installed
+   rs1rstCheck (rsPublishBridge(0, rs1rstBin(rs1kRsGoldBridgeHex), rs1tSeed) is false), \
+         "rsPublishBridge refuses a dead session handle"
+   rs1rstCheck (rsPublishBridge(0, textEncode("junk", "ASCII"), rs1tSeed) is \
+         false), "rsPublishBridge refuses a non-RSN1 record first"
+   rs1rstCheck (rsLastError() contains "RSN1"), "and names the parse"
+   -- the signer must BE the handle the bridge names, or a device holding
+   -- somebody else's bridge could publish it under its own key
+   rs1rstCheck (rsPublishBridge(0, rs1rstBin(rs1kRsGoldBridgeHex), \
+         rs1rstBin(rs1kRsGoldConfSeedHex)) is false), \
+         "rsPublishBridge refuses a seed that is not the bridge's handle"
+   rs1rstCheck (rsRequestBridge(0, rs1kRsGoldHandle) is false), \
+         "rsRequestBridge refuses a dead session handle"
+   rs1rstCheck (rsRequestBridge(0, "zz") is false), \
+         "rsRequestBridge refuses a malformed handle"
    if pCaps["hasTorrent"] is not true then
       rs1rstSkip "live feed puts and lookups: torrentxt is not installed"
       exit rs1rstSectionLiveFeed

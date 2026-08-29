@@ -425,8 +425,39 @@ constant kRsZeroTarget = "0000000000000000000000000000000000000000"
 constant kRsSubkeyIdentity = "1"
 constant kRsSubkeyDm = "2"
 constant kRsSubkeyLan = "3"
+-- phase 8, the Nostr rail: subkey 4 is the secp256k1 secret key, subkey 5
+-- the RIPTAPP1 app-state sealing key. Both are their own row for the reason
+-- subkey 2 is separate from subkey 1 - one seed never feeds two schemes.
+constant kRsSubkeyNostr = "4"
+constant kRsSubkeyAppState = "5"
 constant kRsSubkeyAnonBase = 100
 constant kRsSubkeyAnonDmBase = 200
+-- The RSN1 identity bridge (phase 8). The SIGNATURE domain and the BEP44
+-- SALT are different strings on purpose: they live in different namespaces
+-- and could safely collide, but the LAN rail already sets the house pattern
+-- of a suffixed domain per record kind, and one string doing two jobs makes
+-- a reader stop and work out that it is not a bug.
+constant kRsNostrMagic = "RSN1"
+constant kRsNostrDomain = "riptide-nostr-b"
+constant kRsNostrSalt = "riptide-nostr"
+constant kRsNostrBridgeLen = 276
+constant kRsNostrBridgeBody = 148
+-- the secp256k1 validity ladder's rung cap (see rsNostrSeckeyFrom)
+constant kRsNostrLadderMax = 8
+-- NIP-78 application-specific data, parameterized-replaceable: a bridge is
+-- current state, not history, so a relay keeping only the newest is exactly
+-- what the seq advancing should mean
+constant kRsNostrBridgeKind = 30078
+constant kRsNostrBridgeDTag = "riptide.bridge"
+-- riptide's media convention on the Nostr wire: an `r` tag per attachment
+-- carrying the magnet URI for its v1 info-hash. The bytes still ride the
+-- phase-3 torrent rail; the tag is a POINTER, exactly as the LAN handoff
+-- record is, and `r` because an ordinary Nostr client renders it as a link.
+constant kRsMagnetPrefix = "magnet:?xt=urn:btih:"
+-- the RIPTAPP1 app-state store: sealed under subkey 5, capped so a runaway
+-- state blob refuses instead of writing an unbounded file
+constant kRsAppMagic = "RIPTAPP1"
+constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
@@ -471,6 +502,9 @@ function rsProbeCapabilities
    put false into tCaps["hasDataChannel"]
    put false into tCaps["hasEnet"]
    put false into tCaps["hasCoin"]
+   put false into tCaps["hasNostr"]
+   put false into tCaps["hasNostrRelay"]
+   put false into tCaps["canNostrSign"]
    try
       put sxRandomBytes(32) into tKey
       put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
@@ -504,6 +538,37 @@ function rsProbeCapabilities
       put (cxSha3_256Len() is 32) into tCaps["hasCoin"]
    catch tIgnore
       put false into tCaps["hasCoin"]
+   end try
+   -- The phase-8 Nostr rail probes in THREE parts, because the three things
+   -- fail separately and each disables a different feature (rule 6):
+   --   hasNostr      - the nx* CORE is loaded. A real round trip, not a
+   --                   version sniff: hex-encode a known string and compare.
+   --   canNostrSign  - the core can actually reach secp256k1 through CoinXT.
+   --                   Deriving an x-only public key for a fixed valid
+   --                   scalar exercises cxXOnlyPubkey, which is what every
+   --                   signing path here needs; hasCoin alone does not
+   --                   prove the nx* composition resolves.
+   --   hasNostrRelay - the nxr* relay layer is loaded too. It is a SEPARATE
+   --                   file that an app may legitimately not carry (it
+   --                   cannot ride the suite paste beside onionxt), so the
+   --                   whole compute rail must work without it.
+   try
+      put (nxHexEncode(textEncode("probe", "ASCII")) is "70726f6265") \
+            into tCaps["hasNostr"]
+   catch tIgnore
+      put false into tCaps["hasNostr"]
+   end try
+   try
+      put (the number of chars in nxKeyPublic( \
+            "0000000000000000000000000000000000000000000000000000000000000001") \
+            is 64) into tCaps["canNostrSign"]
+   catch tIgnore
+      put false into tCaps["canNostrSign"]
+   end try
+   try
+      put (nxrVersion() is not empty) into tCaps["hasNostrRelay"]
+   catch tIgnore
+      put false into tCaps["hasNostrRelay"]
    end try
    -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
    -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
@@ -3436,11 +3501,32 @@ end rsAnonOnion
 -- Every send/publish branch in the app asserts through this before it
 -- selects a transport, so a violation is a refusal with a message, never a
 -- silent clearnet leak.
+-- 2026-08-28: "nostr" joins the vocabulary with the phase-8 rail, and it is
+-- the transport this guard most obviously exists for. A Nostr relay is a
+-- CLEARNET websocket to somebody else's server: it sees your IP, it sees
+-- every event you publish, and NIP-42 auth would name you to it. So an anon
+-- persona may never take it - which the existing rule already says (anon
+-- gets onion and nothing else), and which the harness now asserts as its
+-- own cell rather than leaving it to be inferred from the rule's shape.
 function rsPersonaAllows pIsAnon, pTransport
-   local tKnown
-   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   local tKnown, tSaved, tKnownTransport
+   put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
+   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, leaking comma to
+   -- everything that ran after it. That is the C10 defect (rsMediaCreate
+   -- leaking "/" for the rest of the session) in the one handler where it
+   -- reads worst - the app's Anon card paints the guard panel by calling
+   -- this nine times in a row, so a card repaint silently reset the
+   -- delimiter under whatever the pump was doing next. Benign in practice
+   -- only because comma IS the engine default, which is exactly why it
+   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
+   -- way that one was: restore around the NARROWEST span, not at each exit,
+   -- because a restore per exit is the line the next refusal path forgets.
+   put the itemDelimiter into tSaved
    set the itemDelimiter to comma
-   if pTransport is not among the items of tKnown then
+   put (pTransport is among the items of tKnown) into tKnownTransport
+   set the itemDelimiter to tSaved
+   if not tKnownTransport then
       rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
             quote & " - refusing fail-closed"
       return false
@@ -3818,8 +3904,825 @@ function rsBtxoStreamStep pBuffer, pPhase
 end rsBtxoStreamStep
 
 --------------------------------------------------------------------------
+-- phase 8 - the Nostr rail (spec section 8A)
+--
+-- WHAT THIS RAIL IS FOR. Every other rail here is sovereign: the DHT feed,
+-- rp1 DMs, the LAN mesh and the onion persona all work with nobody's server
+-- in the middle, and that is the point of the app. What they do not have is
+-- REACH - a riptide handle is meaningless to anyone who does not run
+-- riptide. Nostr is the opposite trade: somebody else's relays, an IP they
+-- can see, and an audience already there. So this rail is deliberately a
+-- BRIDGE and never a dependency. Nothing here is on the path of any other
+-- rail; with no CoinXT, no relay, or every relay down, riptide is exactly
+-- the app it was before.
+--
+-- THREE THINGS THIS LAYER OWNS, and nothing else:
+--   1. The KEY. Subkey 4 through a bounded validity ladder, so one unlock
+--      still reconstructs the whole keyring (the spec's identity-first
+--      decision) and no separate Nostr key has to be stored or backed up.
+--   2. The BRIDGE. An RSN1 record signed by BOTH keys, so "this handle and
+--      this npub are one person" is a two-sided statement rather than a
+--      claim either key-holder could make about a stranger's key.
+--   3. The MEDIA CONVENTION. riptide attachments as `r`-tag magnet URIs, in
+--      both directions, so a note keeps its media across the boundary.
+--
+-- Everything else - canonical serialization, ids, BIP-340, NIP-19, filters,
+-- the relay socket machine - is NostrXT's, called through nx*/nxr* and never
+-- re-implemented (the family's compose-never-reinvent law). Every one of
+-- those calls sits in a try, so a missing NostrXT is a clean capability
+-- refusal naming what it needs, exactly like a missing torrentxt is.
+--
+-- THE SECRET KEY IS NOT HANDED OUT CASUALLY. rsNostrKeys returns only the
+-- public halves; the secret has its own handler with "Export" in its name,
+-- so every call site that touches it reads as the deliberate act it is
+-- (a backup, or an import into another Nostr client). rsNostrSignEvent
+-- derives, signs and drops it, so ordinary publishing never holds it.
+--
+-- DELIBERATELY NOT BUILT: Nostr DMs. NIP-04 is deprecated and needs AES,
+-- which exists nowhere in this suite; NIP-17 gift wrap needs an ephemeral
+-- key layer and a metadata analysis this pass has not done. riptide already
+-- has a private DM rail that answers to nobody, and a half-built encrypted
+-- rail beside it would be worse than none. Recorded as a scope cut, not a
+-- gap to be quietly filled later.
+--------------------------------------------------------------------------
+
+-- THE SECP256K1 VALIDITY LADDER, and why it is a function of a CANDIDATE.
+--
+-- A KDF output is 32 uniform bytes; a secp256k1 secret key must be in
+-- 1..n-1. The two are not the same set, and the gap is about 2^-128 wide -
+-- which is exactly what makes the design decision easy to get wrong. No
+-- real master seed will ever land in it, so whatever rule goes here will
+-- never run in anger and can never be observed. That is an argument for
+-- making it SIMPLE and TESTABLE, not for hand-waving it.
+--
+-- Refusing outright would leave a user with an underivable identity and
+-- nothing they could do about it. Re-deriving "with the next subkey id"
+-- would silently walk into a registry row belonging to another rail. So:
+-- re-hash the candidate with SHA-256 and try again, at most
+-- kRsNostrLadderMax times, then refuse. SHA-256 adds no dependency (the
+-- rail needs CoinXT for BIP-340 anyway), the rung count is bounded so it
+-- can never spin, and the refusal is a refusal and never a weaker key.
+--
+-- Taking a CANDIDATE rather than a master is what makes it provable: no
+-- master reaches rung 2, but the all-zeros candidate and the group order n
+-- both do, and the harness pins both.
+function rsNostrSeckeyFrom pCandidateHex
+   local tCandidate, tBin, tOk, tRung, tErr
+   put toLower(pCandidateHex) into tCandidate
+   if not rsIsHexOfLen(tCandidate, 64) then
+      rsSetError "rsNostrSeckeyFrom: the candidate must be 64 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tCandidate) into tBin
+   if tBin is empty then return empty
+   repeat with tRung = 1 to kRsNostrLadderMax
+      try
+         put cxSeckeyIsValid(tBin) into tOk
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSeckeyIsValid):" && tErr
+         return empty
+      end try
+      if tOk is true then
+         return rsBinToHexString(tBin)
+      end if
+      try
+         put cxSha256(tBin) into tBin
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSha256):" && tErr
+         return empty
+      end try
+   end repeat
+   rsSetError "rsNostrSeckeyFrom: no valid secp256k1 scalar within" && \
+         kRsNostrLadderMax && "rungs"
+   return empty
+end rsNostrSeckeyFrom
+
+-- The 64-hex Nostr secret key for a master seed. PRIVATE on purpose: the
+-- two public doors are rsNostrKeys (public halves only) and
+-- rsNostrExportSeckey (named so the call site reads as a deliberate act).
+private function rsNostrSeckeyHex pMaster
+   local tSub, tHex
+   put rsSubkey(pMaster, kRsSubkeyNostr) into tSub
+   if tSub is empty then return empty
+   put rsBinToHexString(tSub) into tHex
+   if tHex is empty then return empty
+   return rsNostrSeckeyFrom(tHex)
+end rsNostrSeckeyHex
+
+-- The PUBLIC halves of the Nostr identity: the 64-hex BIP-340 x-only public
+-- key and its npub. No secret in the result, so an app can paint this
+-- anywhere without deciding whether the array is safe to log.
+function rsNostrKeys pMaster
+   local tSecHex, tPub, tNpub, tOut, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxKeyPublic(tSecHex) into tPub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxKeyPublic):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsNostrKeys: nxKeyPublic did not return a 64-hex key"
+      return empty
+   end if
+   try
+      put nxNpubEncode(tPub) into tNpub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxNpubEncode):" && tErr
+      return empty
+   end try
+   if tNpub is empty then
+      rsSetError "rsNostrKeys: nxNpubEncode refused the public key"
+      return empty
+   end if
+   put tPub into tOut["pubkey"]
+   put tNpub into tOut["npub"]
+   return tOut
+end rsNostrKeys
+
+-- The secret key as 64 hex, for a BACKUP or an import into another Nostr
+-- client. Named for what it is: the one handler here that hands a caller
+-- key material, so a reader of a call site does not have to know the KDF
+-- tree to notice. The honest limit is the family's standing one - OXT
+-- script variables are not locked memory - and it belongs to whoever calls
+-- this, not to this library.
+function rsNostrExportSeckey pMaster
+   return rsNostrSeckeyHex(pMaster)
+end rsNostrExportSeckey
+
+-- Sign an event under the Nostr identity, deriving the key inside and
+-- dropping it on the way out. This is the ONLY signing seam, so ordinary
+-- publishing never has the secret in a caller's variable.
+--
+-- pAuxHex empty draws fresh BIP-340 auxiliary randomness (the recommended
+-- default; BIP-340 signatures are not unique and every one of them
+-- verifies). A 64-hex pAuxHex makes the signature a pure function of key,
+-- message and aux - which is what the golden vectors pin, and what the
+-- fixed LAN nonce is to the admission records.
+function rsNostrSignEvent pEvent, pMaster, pAuxHex
+   local tSecHex, tSigned, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxEventSign(pEvent, tSecHex, pAuxHex) into tSigned
+   catch tErr
+      rsSetError "rsNostrSignEvent needs NostrXT (nxEventSign):" && tErr
+      return empty
+   end try
+   if tSigned is empty then
+      rsSetError "rsNostrSignEvent: nxEventSign refused the event"
+      return empty
+   end if
+   return tSigned
+end rsNostrSignEvent
+
+-- An UNSIGNED kind-1 note carrying riptide's media attachments as `r`-tag
+-- magnet URIs. Pure: no key, no I/O, so the harness proves the tag shape
+-- offline. rsNostrSignEvent completes it.
+--
+-- The media list is the same comma list rsParsePost returns, and each entry
+-- is validated as a non-zero 40-hex info-hash before it becomes a tag - a
+-- note must never advertise content nobody can fetch (the rsPublishImmutable
+-- discipline, applied to a pointer that leaves the app).
+function rsNostrNoteEvent pTimestamp, pText, pMediaList
+   local tTags, tCount, tI, tHash, tSaved, tEvent, tErr
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsNostrNoteEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrNoteEvent: the timestamp is out of range"
+      return empty
+   end if
+   if pText is empty then
+      rsSetError "rsNostrNoteEvent: an empty note is refused"
+      return empty
+   end if
+   put 0 into tCount
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   if pMediaList is not empty then
+      repeat with tI = 1 to the number of items in pMediaList
+         put rsNormalizeTarget(item tI of pMediaList) into tHash
+         if tHash is empty or tHash is kRsZeroTarget then
+            set the itemDelimiter to tSaved
+            rsSetError "rsNostrNoteEvent: media item" && tI && \
+                  "is not a 40-hex non-zero info-hash"
+            return empty
+         end if
+         add 1 to tCount
+         put "r" into tTags[tCount][1]
+         put kRsMagnetPrefix & tHash into tTags[tCount][2]
+      end repeat
+   end if
+   set the itemDelimiter to tSaved
+   if tCount > kRsMaxMedia then
+      rsSetError "rsNostrNoteEvent: at most" && kRsMaxMedia && \
+            "media attachments"
+      return empty
+   end if
+   try
+      put nxEventBuild(1, pText, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrNoteEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrNoteEvent: nxEventBuild refused the note"
+      return empty
+   end if
+   return tEvent
+end rsNostrNoteEvent
+
+-- The RECEIVE half of the media convention: the 40-hex info-hashes an
+-- inbound event advertises, as a comma list ready for rsMediaFetch.
+--
+-- Strict on the way in, exactly as on the way out: an `r` tag that is not a
+-- magnet URI is somebody else's link and is skipped silently, and one that
+-- looks like a magnet but does not carry a lowercase non-zero 40-hex hash
+-- is skipped too rather than reaching the torrent layer. A tag is untrusted
+-- text; this returns only what it could fully validate.
+function rsNostrMediaTags pEvent
+   local tValues, tSavedLine, tSavedItem, tI, tLine, tTail, tHash, tOut, tErr
+   local tPrefixLen
+   try
+      put nxTagValues(pEvent, "r") into tValues
+   catch tErr
+      rsSetError "rsNostrMediaTags needs NostrXT (nxTagValues):" && tErr
+      return empty
+   end try
+   if tValues is empty then return empty
+   put the number of chars in kRsMagnetPrefix into tPrefixLen
+   put the lineDelimiter into tSavedLine
+   put the itemDelimiter into tSavedItem
+   set the lineDelimiter to return
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of lines in tValues
+      put line tI of tValues into tLine
+      -- POSITIVE indices on purpose. `char -40 to -1` reads naturally and is
+      -- a form the headless interpreter mis-models, so it could not be
+      -- checked offline; the length is already pinned one line above, which
+      -- makes the explicit span both exact and verifiable.
+      if the number of chars in tLine is tPrefixLen + 40 then
+         if char 1 to tPrefixLen of tLine is kRsMagnetPrefix then
+            put char (tPrefixLen + 1) to (tPrefixLen + 40) of tLine into tTail
+            put rsNormalizeTarget(tTail) into tHash
+            if tHash is not empty and tHash is not kRsZeroTarget then
+               if tOut is empty then
+                  put tHash into tOut
+               else
+                  put comma & tHash after tOut
+               end if
+            end if
+         end if
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLine
+   set the itemDelimiter to tSavedItem
+   return tOut
+end rsNostrMediaTags
+
+-- THE RSN1 IDENTITY BRIDGE - the record that makes "this handle and this
+-- npub are one person" checkable rather than asserted.
+--
+-- A riptide handle is ed25519 and an npub is secp256k1. Neither key can
+-- sign for the other, so a one-signature claim is a claim ANY holder of
+-- that one key can make about somebody else's other key - which is not a
+-- linkage, it is an accusation. Both signatures over one preimage make it a
+-- two-sided statement, and either half alone is worthless.
+--
+-- Layout, 276 bytes exactly:
+--   magic(4) handle(64 ascii hex) nostrPub(64 ascii hex) seq(u64 BE)
+--   timestamp(u64 BE) edSig(64) schnorrSig(64)
+-- The signed span is the first 148 bytes, prefixed by kRsNostrDomain: the
+-- magic is INSIDE it, so a signature minted for this record can never be
+-- read as a signature for another kind, and the domain keeps it out of the
+-- LAN rail's namespace (the "riptide-lan-s" discipline).
+--
+-- The ed25519 half signs the preimage bytes; the BIP-340 half signs SHA-256
+-- OF the preimage, because CoinXT's cxSchnorrSign takes a 32-byte digest -
+-- deliberately restricted there so a caller cannot sign a blob it has not
+-- decoded.
+function rsBuildBridge pSeq, pTimestamp, pMaster, pAuxHex
+   local tIdSeed, tIdKeys, tNostr, tBody, tPre, tEdSig, tDigest
+   local tSecHex, tSchSig, tAux, tErr
+   if pSeq is not an integer or pSeq < 0 or pSeq >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the seq must be a non-negative integer"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   if pAuxHex is not empty and not rsIsHexOfLen(toLower(pAuxHex), 64) then
+      rsSetError "rsBuildBridge: aux randomness must be empty or 64 hex chars"
+      return empty
+   end if
+   put rsIdentitySeed(pMaster) into tIdSeed
+   if tIdSeed is empty then return empty
+   put rsIdentityKeys(tIdSeed) into tIdKeys
+   if tIdKeys is empty then return empty
+   put rsNostrKeys(pMaster) into tNostr
+   if tNostr is empty then return empty
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   put textEncode(kRsNostrMagic, "ASCII") into tBody
+   put textEncode(tIdKeys["handle"], "ASCII") after tBody
+   put textEncode(tNostr["pubkey"], "ASCII") after tBody
+   put rsBEu64(pSeq) after tBody
+   put rsBEu64(pTimestamp) after tBody
+   if the number of bytes in tBody is not kRsNostrBridgeBody then
+      rsSetError "rsBuildBridge: assembled body is not" && \
+            kRsNostrBridgeBody && "bytes"
+      return empty
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & tBody into tPre
+   try
+      put sxSignDetached(tPre, tIdKeys["secretKey"]) into tEdSig
+   catch tErr
+      rsSetError "rsBuildBridge needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   if pAuxHex is empty then
+      put empty into tAux
+   else
+      put rsHexToBin(toLower(pAuxHex)) into tAux
+      if tAux is empty then return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrSign(rsHexToBin(tSecHex), tDigest, tAux) into tSchSig
+   catch tErr
+      rsSetError "rsBuildBridge needs CoinXT (cxSha256/cxSchnorrSign):" && tErr
+      return empty
+   end try
+   if the number of bytes in tEdSig is not 64 or \
+         the number of bytes in tSchSig is not 64 then
+      rsSetError "rsBuildBridge: a signature is not 64 bytes"
+      return empty
+   end if
+   return tBody & tEdSig & tSchSig
+end rsBuildBridge
+
+-- Strict parse: exact length, exact magic, both key fields canonical
+-- lowercase hex. STRUCTURE ONLY - nothing here is believed until
+-- rsVerifyBridge has checked both signatures.
+function rsParseBridge pBytes
+   local tOut, tHandle, tPub
+   if the number of bytes in pBytes is not kRsNostrBridgeLen then
+      rsSetError "rsParseBridge: an RSN1 record is exactly" && \
+            kRsNostrBridgeLen && "bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsNostrMagic then
+      rsSetError "rsParseBridge: bad magic, not an RSN1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsParseBridge: malformed riptide handle"
+      return empty
+   end if
+   put textDecode(byte 69 to 132 of pBytes, "ASCII") into tPub
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsParseBridge: malformed nostr public key"
+      return empty
+   end if
+   put tHandle into tOut["handle"]
+   put tPub into tOut["nostrPub"]
+   put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
+   put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   return tOut
+end rsParseBridge
+
+-- Verify BOTH signatures, then (optionally) that the record names the keys
+-- the caller expected. Returns rsParseBridge's array or empty.
+--
+-- An empty expectation means "do not check that side", which is what a
+-- reader who found the record BY one of the keys wants: pulling it from the
+-- DHT under a handle already fixes the handle, and pulling it out of a
+-- Nostr event already fixes the npub. Passing both is the strictest form
+-- and is what an app comparing two independently-obtained copies uses.
+function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
+   local tRec, tPre, tOk, tPub, tDigest, tErr, tWantHandle, tWantPub
+   put rsParseBridge(pBytes) into tRec
+   if tRec is empty then return empty
+   put toLower(pExpectHandleHex) into tWantHandle
+   if tWantHandle is not empty then
+      if not rsIsHexOfLen(tWantHandle, 64) then
+         rsSetError "rsVerifyBridge: the expected handle must be 64 hex chars"
+         return empty
+      end if
+      if tRec["handle"] is not tWantHandle then
+         rsSetError "rsVerifyBridge: the record names a different handle"
+         return empty
+      end if
+   end if
+   put toLower(pExpectNostrPubHex) into tWantPub
+   if tWantPub is not empty then
+      if not rsIsHexOfLen(tWantPub, 64) then
+         rsSetError "rsVerifyBridge: the expected nostr key must be 64 hex" && \
+               "chars"
+         return empty
+      end if
+      if tRec["nostrPub"] is not tWantPub then
+         rsSetError "rsVerifyBridge: the record names a different nostr key"
+         return empty
+      end if
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & \
+         (byte 1 to kRsNostrBridgeBody of pBytes) into tPre
+   put rsHexToBin(tRec["handle"]) into tPub
+   if tPub is empty then return empty
+   try
+      put sxSignVerifyDetached(byte 149 to 212 of pBytes, tPre, tPub) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs SodiumXT (sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the riptide handle signature does not verify"
+      return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrVerify(rsHexToBin(tRec["nostrPub"]), tDigest, \
+            byte 213 to 276 of pBytes) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs CoinXT (cxSha256/cxSchnorrVerify):" && \
+            tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the nostr signature does not verify"
+      return empty
+   end if
+   return tRec
+end rsVerifyBridge
+
+-- The bridge as a NIP-78 parameterized-replaceable event (kind 30078,
+-- d-tag "riptide.bridge"), content = the record as lowercase hex.
+--
+-- Hex rather than base64 for the reason the anon /dm route already gives:
+-- it survives every client untouched and gives a reader an exact spelling
+-- to refuse against. Signed by the SAME Nostr key the record names, which
+-- is what rsNostrBridgeFromEvent checks - an event carrying somebody else's
+-- bridge is refused rather than relayed.
+function rsNostrBridgeEvent pBridgeBytes, pMaster, pTimestamp, pAuxHex
+   local tRec, tHex, tTags, tEvent, tErr
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then return empty
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrBridgeEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   put rsBinToHexString(pBridgeBytes) into tHex
+   if tHex is empty then return empty
+   put "d" into tTags[1][1]
+   put kRsNostrBridgeDTag into tTags[1][2]
+   try
+      put nxEventBuild(kRsNostrBridgeKind, tHex, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeEvent: nxEventBuild refused the event"
+      return empty
+   end if
+   return rsNostrSignEvent(tEvent, pMaster, pAuxHex)
+end rsNostrBridgeEvent
+
+-- The inbound half: a wire-format kind-30078 event JSON in, a VERIFIED
+-- bridge out. Four gates, in order, and the order is the point:
+--   1. structure (nxEventFromJson - untrusted text becomes an event array)
+--   2. the event's own BIP-340 signature (nxEventVerify)
+--   3. the kind and the d-tag - this is a riptide bridge, not some other
+--      app's NIP-78 blob that happens to be hex
+--   4. both bridge signatures, with the event's OWN author pinned as the
+--      expected nostr key
+--
+-- Gate 4 is what stops the obvious attack: anyone can copy somebody else's
+-- bridge record into their own signed event. Requiring the record's
+-- nostrPub to BE the event's author makes that copy verify as what it is -
+-- the original author's bridge - and never as the republisher's.
+function rsNostrBridgeFromEvent pEventJson
+   local tEvent, tOk, tKind, tDTag, tHex, tBytes, tErr
+   try
+      put nxEventFromJson(pEventJson) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventFromJson):" && \
+            tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeFromEvent: the event JSON did not parse"
+      return empty
+   end if
+   try
+      put nxEventVerify(tEvent) into tOk
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventVerify):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsNostrBridgeFromEvent: the event signature does not verify"
+      return empty
+   end if
+   put tEvent["kind"] into tKind
+   if tKind is not kRsNostrBridgeKind then
+      rsSetError "rsNostrBridgeFromEvent: not a kind" && kRsNostrBridgeKind && \
+            "event"
+      return empty
+   end if
+   try
+      put nxTagFirst(tEvent, "d") into tDTag
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxTagFirst):" && tErr
+      return empty
+   end try
+   -- byte-exact, because `is` folds case and a d-tag is a wire identifier
+   if not rsBytesEqual(tDTag, kRsNostrBridgeDTag) then
+      rsSetError "rsNostrBridgeFromEvent: the d tag is not" && \
+            kRsNostrBridgeDTag
+      return empty
+   end if
+   put toLower(tEvent["content"]) into tHex
+   if not rsIsHexOfLen(tHex, kRsNostrBridgeLen * 2) then
+      rsSetError "rsNostrBridgeFromEvent: the content is not" && \
+            (kRsNostrBridgeLen * 2) && "hex chars"
+      return empty
+   end if
+   put rsHexToBin(tHex) into tBytes
+   if tBytes is empty then return empty
+   return rsVerifyBridge(tBytes, empty, tEvent["pubkey"])
+end rsNostrBridgeFromEvent
+
+-- Publish the bridge to the DHT under the identity key, at its own salt.
+-- The head format is untouched: a new rail gets a new salt, never a new
+-- field in a record whose magic would then have to be bumped (rule 3). The
+-- BEP44 seq is the bridge's own embedded seq, the rsPublishHead discipline
+-- of one counter with one source of truth.
+function rsPublishBridge pSession, pBridgeBytes, pIdentitySeed
+   local tRec, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   -- EVERY OTHER INPUT IS VALIDATED BEFORE THE SESSION IS TOUCHED - the
+   -- phase-2 decision this library records and then has to keep: it is
+   -- what lets these refusal paths run, and be tested, on a machine with
+   -- no torrentxt installed. The seed/handle check in particular has to
+   -- sit above the session check or it can only ever be reached on a
+   -- machine that has a live session, which is exactly where a harness
+   -- assertion quietly starts passing for the wrong reason.
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then
+      rsSetError "rsPublishBridge: not a valid RSN1 bridge:" && rsLastError()
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   -- A bridge names its handle INSIDE the signed span, so publishing one
+   -- under a different key would put a record on the DHT that verifies as
+   -- somebody else's linkage at a target nobody looks for. Refuse loudly.
+   if tKeys["handle"] is not tRec["handle"] then
+      rsSetError "rsPublishBridge: the signing seed is not the handle the" && \
+            "bridge names"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsBencodeBytes(pBridgeBytes) into tValue
+   put rsBep44SignBuf(kRsNostrSalt, tRec["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishBridge:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsNostrSalt, \
+            tRec["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishBridge: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishBridge: btDhtPutSigned refused (" & tCode & ")" && \
+            tWhy
+      return false
+   end if
+   return true
+end rsPublishBridge
+
+-- Ask the DHT for a handle's bridge. Asynchronous, exactly like
+-- rsRequestHead: the value arrives as a dhtMutableItem event for
+-- rsIngestBridge.
+function rsRequestBridge pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestBridge: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsNostrSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestBridge: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestBridge: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestBridge
+
+-- Verify a drained dhtMutableItem EVENT as a handle's bridge. The same
+-- three-layer discipline rsIngestHead uses - the event is for this handle
+-- and this salt, the BEP44 signature re-verifies in SodiumXT, and the
+-- embedded seq agrees with the event's - and then, because this record
+-- carries a second signature libtorrent knows nothing about, the FULL
+-- rsVerifyBridge on top. Returns the bridge array, or empty.
+function rsIngestBridge pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestBridge: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case here too; the rebuilt-canonical-buffer signature below
+   -- is what actually backstops a case-mangled salt (the rsIngestHead note)
+   if pEvent["salt"] is not kRsNostrSalt then
+      rsSetError "rsIngestBridge: the event is not a riptide-nostr item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestBridge: the event seq is not a sane integer"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestBridge: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsNostrSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestBridge:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestBridge: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   put rsVerifyBridge(pEvent["value"], tHandle, empty) into tRec
+   if tRec is empty then return empty
+   if tRec["seq"] is not tSeq then
+      rsSetError "rsIngestBridge: the BEP44 seq and the bridge's embedded" && \
+            "seq disagree"
+      return empty
+   end if
+   return tRec
+end rsIngestBridge
+
+--------------------------------------------------------------------------
+-- the RIPTAPP1 app-state store
+--
+-- WHY THE LIBRARY OWNS THIS. Everything riptide knew about you used to die
+-- at quit: who you follow, which relays you use, the display names you had
+-- resolved, your own head seq. That is defensible in a phase demo and is
+-- not defensible in an app - a lost seq counter alone means the next head
+-- you publish is refused by every follower who already saw a higher one.
+--
+-- SEALED, NOT PLAIN, and the reason is not that a follow list is secret in
+-- the way a key is. It is that a follow list IS the social graph: who you
+-- read, which relays you talk to, which npub is yours. That is the exact
+-- material the anon persona exists to keep unlinked, so leaving it in the
+-- clear beside a sealed key file would put the interesting half of the
+-- threat model on disk in plaintext.
+--
+-- The key is subkey 5 - its own row, never a signing key - so the store
+-- opens only while unlocked, which is the same property the rest of the
+-- keyring has. The payload is opaque TEXT: the library fixes the envelope
+-- and the app owns the format inside it, because what belongs in app state
+-- is an app question and a wire format here would freeze it.
+--------------------------------------------------------------------------
+
+-- "RIPTAPP1" "S" then sxSecretBox(UTF-8 state, subkey-5 key). The box
+-- carries its own random nonce, so two seals of one state differ - which is
+-- correct and is also why no golden vector pins these bytes; what the
+-- goldens pin is the KEY, and the harness proves the round trip.
+function rsSealAppState pStateText, pMaster
+   local tKey, tBytes, tOut, tErr
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   put textEncode(pStateText, "UTF-8") into tBytes
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsSealAppState: the state is over the" && kRsAppStateMax && \
+            "byte cap"
+      return empty
+   end if
+   try
+      put textEncode(kRsAppMagic & "S", "ASCII") & sxSecretBox(tBytes, tKey) \
+            into tOut
+   catch tErr
+      rsSetError "rsSealAppState needs SodiumXT (sxSecretBox):" && tErr
+      return empty
+   end try
+   return tOut
+end rsSealAppState
+
+-- Open it. A file from a different master fails the Poly1305 tag inside
+-- sxSecretBoxOpen - it cannot silently mis-decrypt - and a truncated or
+-- foreign file is refused on the header before any crypto runs. The
+-- decoded payload is UTF-8 round-tripped, because textDecode is LOSSY on
+-- this engine and a mangled state file must refuse rather than load as
+-- replacement characters (the 2026-08-15 finding).
+function rsOpenAppState pFileBytes, pMaster
+   local tKey, tHeader, tSealed, tBytes, tErr
+   if the number of bytes in pFileBytes < 10 then
+      rsSetError "rsOpenAppState: too short to be a RIPTAPP1 file"
+      return empty
+   end if
+   put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
+   if tHeader is not (kRsAppMagic & "S") then
+      rsSetError "rsOpenAppState: not a RIPTAPP1 sealed state file"
+      return empty
+   end if
+   put byte 10 to -1 of pFileBytes into tSealed
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   try
+      put sxSecretBoxOpen(tSealed, tKey) into tBytes
+   catch tErr
+      rsSetError "rsOpenAppState: wrong master seed or corrupted state file"
+      return empty
+   end try
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsOpenAppState: the sealed state is over the" && \
+            kRsAppStateMax && "byte cap"
+      return empty
+   end if
+   if not rsBytesAreUtf8(tBytes) then
+      rsSetError "rsOpenAppState: the sealed state is not valid UTF-8"
+      return empty
+   end if
+   if the number of bytes in tBytes is 0 then return empty
+   return textDecode(tBytes, "UTF-8")
+end rsOpenAppState
+
+--------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32
 --------------------------------------------------------------------------
+
+-- Byte-exact string equality. `is` FOLDS CASE in this dialect, so every
+-- comparison of a wire identifier - a tag name, a magic, a d-tag - has to
+-- go through something like this or a non-conforming spelling is silently
+-- accepted (the coinxt canonical-form lesson, and nostrxt's own rule 2).
+private function rsBytesEqual pA, pB
+   local tI, tN
+   put the number of chars in pA into tN
+   if tN is not the number of chars in pB then return false
+   repeat with tI = 1 to tN
+      if byteToNum(byte tI of pA) is not byteToNum(byte tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end rsBytesEqual
 
 -- Is pBytes a valid UTF-8 sequence?
 --

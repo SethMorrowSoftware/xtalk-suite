@@ -898,18 +898,47 @@ def _split_chunks(s, d):
     return s.split(d)
 
 
+def _negative_index(i, count):
+    """xTalk counts a NEGATIVE chunk index from the end: -1 is the last
+    element, -2 the one before it. Fixed 2026-08-28; before that this
+    function did not exist and _chunk simply CLAMPED a negative start to 1
+    and handed a negative end straight to a Python slice, so
+    `char -3 to -1 of "abcdef"` came back "abcde" instead of "def" - wrong
+    at both ends, and silently.
+
+    It was latent rather than active: neither coinxt's nor nostrxt's shipped
+    source uses a negative range, so no gate was reading a wrong answer. It
+    surfaced when riptide's execution gate met `byte 10 to -1 of pFileBytes`,
+    the engine-proven idiom rsOpenMasterSeed has used since phase 1 - which
+    is the point worth keeping: the tool was not wrong about anything it had
+    been asked, and a member with a slightly different dialect habit was all
+    it took. Positive indices are untouched, deliberately, so nothing that
+    passed before can change."""
+    if i is None or i >= 0:
+        return i
+    return count + 1 + i
+
+
 def _chunk(unit, a, b, target):
     s = str(_disp(target))
     if unit.startswith("item") or unit.startswith("line"):
         d = ITEM_DELIMITER[0] if unit.startswith("item") else LINE_DELIMITER[0]
         parts = _split_chunks(s, d)
+        a = _negative_index(a, len(parts))
+        b = _negative_index(b, len(parts))
         if b is None:
             return parts[a - 1] if 1 <= a <= len(parts) else ""
+        if a < 1:
+            a = 1
         return d.join(parts[a - 1:b])
+    a = _negative_index(a, len(s))
+    b = _negative_index(b, len(s))
     if b is None:
         return s[a - 1] if 1 <= a <= len(s) else ""
     if a < 1:
         a = 1
+    if b < 0:
+        return ""
     return s[a - 1:b]
 
 

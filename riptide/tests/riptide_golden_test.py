@@ -590,6 +590,153 @@ check("prekey body verifies under the anon handle",
       ref["_verify_ed25519"](decoded[-64:], decoded[:-64],
                              bytes.fromhex(ANON0_HANDLE)), True)
 
+# --- phase 8: the Nostr rail ----------------------------------------------
+#
+# The secp256k1 half is nostrxt's oracle, which anchors itself to the
+# published BIP-340 / NIP-19 / BIP-173 vector sets at import. These literals
+# therefore pin a composition, not a re-implementation.
+
+check("the Nostr subkey is its own registry row", ref["SUBKEY_NOSTR"], 4)
+check("the app-state subkey is its own row too", ref["SUBKEY_APPSTATE"], 5)
+check("no phase-8 subkey collides with an existing one",
+      len({ref["SUBKEY_IDENTITY"], ref["SUBKEY_DM"], ref["SUBKEY_LAN"],
+           ref["SUBKEY_NOSTR"], ref["SUBKEY_APPSTATE"]}), 5)
+check("the bridge domain is not one of the LAN domains",
+      ref["NOSTR_DOMAIN"] in (ref["LAN_DOMAIN"], ref["LAN_SYNC_DOMAIN"]),
+      False)
+
+check("nostrSeckey", ref["nostr_seckey"](MASTER).hex(),
+      "292f05482814252ab3735789df0a22dc4f07d7fd35fca10d7fbabf044cf5ee01")
+NOSTR_PUB = ref["nostr_pubkey"](MASTER)
+check("nostrPubkey", NOSTR_PUB.hex(),
+      "87f20bf27cbbd33ba676d428329081f2b0a3cd5989ce8af1f92e1f7316b2fa1f")
+check("nostrNpub", ref["nostr_npub"](NOSTR_PUB),
+      "npub1sleqhunuh0fnhfnk6s5r9yyp72c28n2e388g4u0e9c0hx94jlg0s4nnv5a")
+check("appStateKey", ref["appstate_key"](MASTER).hex(),
+      "e3feb285ef2e9e21b235884df78273ad955bc4fe4ed0169cd9ffa37cf592f83d")
+
+# The Nostr key is a DIFFERENT key from every other one in the tree. Stated
+# as a check rather than trusted to the KDF, because the whole unlinkability
+# story of the anon persona rests on subkeys being independent.
+check("the Nostr key is not the identity seed",
+      ref["nostr_seckey"](MASTER) == ref["identity_seed"](MASTER), False)
+check("the Nostr key is not the DM seed",
+      ref["nostr_seckey"](MASTER) == ref["dm_seed"](MASTER), False)
+check("the Nostr key is not an anon persona seed",
+      ref["nostr_seckey"](MASTER) == ref["anon_seed"](MASTER, 0), False)
+check("the app-state key is not the Nostr key",
+      ref["appstate_key"](MASTER) == ref["nostr_seckey"](MASTER), False)
+
+# The validity ladder, at the two rungs no real master reaches.
+check("the ladder passes a valid candidate through unchanged",
+      ref["nostr_seckey_from"](bytes([0x42] * 32)), bytes([0x42] * 32))
+_N = ref["_NOSTR"]["N"]
+for _bad in (b"\x00" * 32, _N.to_bytes(32, "big")):
+    _stepped = ref["nostr_seckey_from"](_bad)
+    check("the ladder steps off an invalid scalar",
+          _stepped == _bad, False)
+    check("...to exactly SHA-256 of it",
+          _stepped, ref["_NOSTR"]["sha256"](_bad))
+    check("...landing on a valid scalar",
+          0 < int.from_bytes(_stepped, "big") < _N, True)
+
+BRIDGE = ref["build_bridge"](1, 1754870800, MASTER)
+check("bridge length", len(BRIDGE), 276)
+check("bridge", BRIDGE.hex(), (
+    "52534e3135613534366534666566356431623736663934646331623265646564"
+    "3735633434626666633930306166373436316132366438343237343533613932"
+    "6632326438376632306266323763626264333362613637366434323833323930"
+    "3831663262306133636435393839636538616631663932653166373331366232"
+    "6661316600000000000000010000000068993410832fd1bde94160aa757cd37c"
+    "1e3f1983c7666a33baa6d56008879dc60486175238ad45be2a14ef7e763f09a5"
+    "30eea22ea1021ef2cd9d278583bc8e3b4924d6083d0b3547ca7fc93011d07e8d"
+    "57e8019aa35926ec3dc521171b510cef1e4d276bb995720aa2227031f3a400ea"
+    "be90bcd49252f86b69dce5552bb150cdfbe2bba7"))
+check("bridge preimage carries the domain then the whole body",
+      ref["bridge_preimage"](HANDLE, NOSTR_PUB.hex(), 1, 1754870800),
+      b"riptide-nostr-b" + BRIDGE[:148])
+check("bridge verifies, naming both keys",
+      ref["verify_bridge"](BRIDGE), (HANDLE, NOSTR_PUB.hex()))
+
+# EVERY byte of the signed span is load-bearing. Not a sample: the whole
+# span, one byte at a time, because a field nobody tampers with is a field
+# that could quietly have been left outside the signature.
+_survived = []
+for _pos in range(148):
+    _bad = bytearray(BRIDGE)
+    _bad[_pos] ^= 0x01
+    try:
+        ref["verify_bridge"](bytes(_bad))
+    except ValueError:
+        continue
+    _survived.append(_pos)
+check("no byte of the 148-byte signed span can be tampered with",
+      _survived, [])
+# ...and both SIGNATURES are checked, not just one
+_sig_survived = []
+for _pos in range(148, 276):
+    _bad = bytearray(BRIDGE)
+    _bad[_pos] ^= 0x01
+    try:
+        ref["verify_bridge"](bytes(_bad))
+    except ValueError:
+        continue
+    _sig_survived.append(_pos)
+check("no byte of either signature can be tampered with", _sig_survived, [])
+
+# A bridge is only a linkage because BOTH keys signed. Splicing one half
+# from another identity's record must fail - otherwise either key-holder
+# could assert a link to somebody else's key.
+_other = ref["build_bridge"](1, 1754870800, bytes([0x43] * 32))
+check_raises("a foreign schnorr half is refused",
+             lambda: ref["verify_bridge"](BRIDGE[:212] + _other[212:]))
+check_raises("a foreign ed25519 half is refused",
+             lambda: ref["verify_bridge"](
+                 BRIDGE[:148] + _other[148:212] + BRIDGE[212:]))
+check_raises("a short record is refused",
+             lambda: ref["verify_bridge"](BRIDGE[:-1]))
+check_raises("a foreign magic is refused",
+             lambda: ref["verify_bridge"](b"XSN1" + BRIDGE[4:]))
+
+# The events. The canonical SERIALIZATION is pinned as well as the id,
+# because the id is a hash of exactly those bytes: pinning only the id says
+# that something changed, never what.
+NOTE = ref["nostr_note_event"](MASTER, 1754870400, "hello, riptide", [])
+check("note event id", NOTE["id"],
+      "4b539f4d7b44c8a9fb64162bc5fdcba8c5d662f79c26de29de62e0fcae29e960")
+check("note event sig", NOTE["sig"], (
+    "52d44848366a5cf0dbd4522057079139a91109fc0eb93dc3797670138625294a"
+    "4415124ce03dfc5e92002c14f4020e1092433a108f74a94d34216788ddbca64c"))
+check("note event verifies", ref["_NOSTR"]["verify_event"](NOTE), True)
+
+MEDIA_NOTE = ref["nostr_note_event"](MASTER, 1754870460, "second post",
+                                     ["ee" * 20])
+check("media note id", MEDIA_NOTE["id"],
+      "7a49d188bb322c2d898a342bbf644c4804cb34bca479627bcc371fc1940f3551")
+check("media note canonical serialization",
+      ref["serialize_bridge_event"](MEDIA_NOTE),
+      '[0,"87f20bf27cbbd33ba676d428329081f2b0a3cd5989ce8af1f92e1f7316b2fa1f"'
+      ',1754870460,1,[["r","magnet:?xt=urn:btih:'
+      'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]],"second post"]')
+check("the media tag is an r tag carrying a magnet URI",
+      ref["nostr_note_tags"](["ee" * 20]),
+      [["r", "magnet:?xt=urn:btih:" + "ee" * 20]])
+
+BRIDGE_EV = ref["nostr_bridge_event"](MASTER, BRIDGE, 1754870800)
+check("bridge event id", BRIDGE_EV["id"],
+      "d1df953258c71225e6b7dca9a9c5a83267664eb7fdaed68b7ab7db90badd18a5")
+check("bridge event sig", BRIDGE_EV["sig"], (
+    "4a7b1d22580e277cad711d202cae91a26faafebdafc09e14df5fa1c7d2c630a9"
+    "217f3716497fed20e07574e54f5248dc776c0b4f73b399ad73b94c0ed48f1b18"))
+check("bridge event is the NIP-78 replaceable kind", BRIDGE_EV["kind"], 30078)
+check("bridge event carries the riptide d tag",
+      BRIDGE_EV["tags"], [["d", "riptide.bridge"]])
+check("bridge event content is the record as lowercase hex",
+      BRIDGE_EV["content"], BRIDGE.hex())
+check("bridge event is authored BY the key the record names",
+      BRIDGE_EV["pubkey"], NOSTR_PUB.hex())
+check("bridge event verifies", ref["_NOSTR"]["verify_event"](BRIDGE_EV), True)
+
 # ---------------------------------------------------------------------------
 
 if FAILURES:
