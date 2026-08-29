@@ -126,7 +126,15 @@ REGISTRY = {
         "datachannelxt/examples/datachannel-helpers.livecodescript"],
     "tests/suite-closing-pass.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
+    # The capstone app, and the first carrier to embed TWO socket libraries.
+    # nostrxt's core comes first because riptide's phase-8 rail calls nx*;
+    # the relay layer follows it (it composes the core). Both of the socket
+    # libraries here define the engine's three socket messages, so the app
+    # defines its own and drops both providers' wrappers - see DROP_HANDLERS,
+    # which is keyed by PAIR precisely so this is opt-in.
     "riptide/examples/riptide-social.livecodescript": [
+        "nostrxt/src/nostrxt.livecodescript",
+        "nostrxt/src/nostr-relay.livecodescript",
         "riptide/src/riptide.livecodescript",
         "onionxt/src/onionxt.livecodescript",
         "onionxt/src/onion-httpd.livecodescript"],
@@ -187,6 +195,20 @@ NOT_EMBEDDED = {
 DROP_HANDLERS = {
     ("nocloud/src/nocloudquickshare.livecodescript",
      "onionxt/src/onionxt.livecodescript"):
+        ("socketError", "socketClosed", "socketTimeout"),
+    # riptide-social is the first carrier to embed TWO socket libraries, and
+    # it is the case the split was designed for: OnionXT serves the anon
+    # persona while the NostrXT relay layer talks to relays, in one script,
+    # where only ONE definition of each engine message can exist. The app
+    # defines all three and calls both named functions in turn - ox* first
+    # because its streams are the older path, then nxr*, then `pass`. Each
+    # answers only for its own socket ids, so the order is a reading
+    # convenience rather than a precedence rule.
+    ("riptide/examples/riptide-social.livecodescript",
+     "onionxt/src/onionxt.livecodescript"):
+        ("socketError", "socketClosed", "socketTimeout"),
+    ("riptide/examples/riptide-social.livecodescript",
+     "nostrxt/src/nostr-relay.livecodescript"):
         ("socketError", "socketClosed", "socketTimeout"),
 }
 
