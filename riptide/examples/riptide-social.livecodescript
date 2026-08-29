@@ -147,6 +147,4528 @@ script "riptideSocialApp"
 -- Libraries come FIRST because OXT resolves script-level constants
 -- and locals by lexical position.
 
+-- ---- nostrxt/src/nostrxt.livecodescript ----
+-- nostrxt.livecodescript - the NostrXT core library.
+--
+-- NostrXT is a Nostr protocol layer for OpenXTalk / the xTalk family: NIP-01
+-- events (canonical serialization, ids, BIP-340 signatures), NIP-19 bech32
+-- entities, NIP-44 v2 encrypted payloads, NIP-01 filters and relay messages,
+-- and the pure-compute half of an RFC 6455 websocket client. It adds no
+-- cryptography of its own: SHA-256, Schnorr sign/verify, x-only keys and ECDH
+-- are CoinXT calls (cx*, ABI >= 6); randomness and constant-time compare are
+-- SodiumXT calls (sx*). What this file owns in pure script is exactly the
+-- checksummed byte shuffling family law allows there: JSON bytes, bech32 bit
+-- packing, the NIP-44 key schedule and padding, websocket framing math.
+--
+-- THIS FILE DOES NO I/O AND HOLDS NO CONNECTION STATE. The relay client (the
+-- stateful websocket state machine over engine sockets) is the separate layer
+-- src/nostr-relay.livecodescript (public nxr*), which composes this one - the
+-- riptide shape: the compute library stays offline-testable, the transport
+-- owns the sockets. That split is also load-bearing for the suite paste,
+-- which embeds this file verbatim and must not carry a second definition of
+-- the engine's socketError / socketClosed / socketTimeout handlers.
+--
+-- STATUS: ENGINE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3). This file
+-- folded into the suite paste at 274 passed, 0 failed, 2 deliberate skips:
+-- the whole nx* surface, the NIP-44 official vectors through the real
+-- sodiumxt ABI-10 cipher, and every engine-semantics pin the headless
+-- interpreter models. The nxr* relay layer keeps its own, stricter label -
+-- see src/nostr-relay.livecodescript, where only the connect/handshake/
+-- publish half is live-proven. The pure-compute answers are pinned by
+-- tools/nostr-kat.py against the published BIP-340, NIP-44, BIP-173 and
+-- NIP-19 vector sets, and tools/check-selftest-vectors.py re-derives every
+-- constant the member harness pins.
+--
+-- Conventions (see CLAUDE.md): public API nxPascalCase; locals t..., params
+-- p..., script-locals s..., constants k... ERROR CONVENTION (the riptide
+-- shape): no handler in this file ever throws. Functions return empty (or
+-- false) on failure and record the reason; nxLastError() returns it. cx*/sx*
+-- failures throw, so every foreign call in here sits inside a try. Binary is
+-- byte discipline (numToByte / byteToNum / byte chunks), never char/line/word
+-- on bytes; itemDelimiter and lineDelimiter are global mutable state and are
+-- saved, set, used and restored around every chunk read.
+--
+-- EVENT SHAPE (the one record this library passes around): an event is an
+-- xTalk array with keys "id", "pubkey", "created_at", "kind", "content",
+-- "sig" (strings / integers) and "tags" (a 1-based nested array:
+-- tEvent["tags"][1][1] = "e", tEvent["tags"][1][2] = <event id>, ...; empty
+-- when there are no tags). Ids, pubkeys, seckeys and sigs cross this API as
+-- LOWERCASE HEX STRINGS; binary stays internal.
+--
+-- WIRE FORMATS pinned byte for byte (tools/nostr-kat.py, the member harness):
+--   NIP-01 canonical serialization: [0,pubkey,created_at,kind,tags,content],
+--     UTF-8, no whitespace, and EXACTLY seven escapes in strings - \" \\ \n
+--     \r \t \b \f; every other byte verbatim (json.dumps would \u-escape
+--     other controls, which is why the serializer is owned, not borrowed).
+--   NIP-19: bech32 (not m) with the BIP-173 90-char cap WAIVED (NIP-19 waives
+--     it for TLV entities; the SHOULD cap is 5000 chars).
+--   NIP-44 v2: ECDH-x -> HKDF-extract(salt "nip44-v2") conversation key;
+--     HKDF-expand(nonce, 76) message keys; u16-prefixed power-of-two padding
+--     (plaintext 1..65535 bytes - the published vectors pin the u16 path
+--     only, so longer refuses, fail closed); ChaCha20; HMAC-SHA256 over
+--     nonce||ciphertext; standard base64.
+--
+-- EXTENSION DEPENDENCIES, probed, never assumed (nxProbeCapabilities):
+--   CoinXT (HARD for signing/encryption): cxSha256, cxSchnorrSign,
+--     cxSchnorrVerify, cxXOnlyPubkey, cxEcdh, cxHmacSha256, cxSeckeyIsValid.
+--   SodiumXT (soft): sxRandomBytes (key/nonce generation), sxMemEqual
+--     (constant-time compare; a masked accumulate-loop stands in when absent).
+--   SodiumXT sxChaCha20IetfXor (SHIPPED upstream in SodiumXT ABI 10,
+--     2026-08-23; docs/07): the NIP-44 cipher. On an installed SodiumXT
+--     older than ABI 10 nxNip44Encrypt/Decrypt still fail closed with a
+--     clear capability error, by design; with ABI 10+ the full construction
+--     runs and is vector-pinned headlessly (it still needs an OXT pass).
+
+-- ==========================================================================
+-- Constants. Declared before first use (OXT resolves a constant by lexical
+-- position; a forward reference silently evaluates to nothing).
+-- ==========================================================================
+
+constant kNxVersion = "0.1.0"
+constant kNxHexAlphabet = "0123456789abcdef"
+-- BIP-173's data charset and the bech32m constant (0x2bc830a3), gated against
+-- the reference by tools/nostr-kat.py.
+constant kNxBech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+constant kNxBech32mConst = 734539939
+-- NIP-19 waives BIP-173's 90-char cap for TLV entities and says strings
+-- SHOULD stay under 5000 characters; that SHOULD is enforced, fail closed.
+constant kNxBech32MaxLen = 5000
+-- NIP-44 v2: the HKDF-extract salt and the plaintext byte cap the published
+-- vectors pin (65536+ is an invalid length there; see the header).
+constant kNxNip44Salt = "nip44-v2"
+constant kNxNip44MaxPlain = 65535
+-- RFC 6455: the handshake GUID (anchored to the python-websockets reference
+-- implementation; see tools/nostr-kat.py), the protocol version, and a frame
+-- cap so a hostile length prefix cannot balloon memory (fail closed).
+constant kNxWsGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+constant kNxWsVersion = "13"
+constant kNxWsMaxFrame = 8388608
+-- JSON parser guards: nesting depth (fail closed on hostile input) and the
+-- NIP-01 subscription-id length cap.
+constant kNxJsonMaxDepth = 64
+constant kNxSubIdMax = 64
+
+-- ==========================================================================
+-- Script-local state. This file is stateless by design bar the error surface,
+-- the cached capability probe, and the JSON parser's cursor (single-threaded
+-- scratch state: the parser never calls app code, so it cannot re-enter).
+-- ==========================================================================
+
+local sNxLastError           -- the reason the last failing nx* call recorded
+local sNxCaps                -- cached capability array (nxProbeCapabilities)
+local sNxCapsProbed          -- "true" once the probe has run
+
+-- JSON parser scratch (input bytes, 1-based cursor, error, depth counter).
+local sNxJsonBytes
+local sNxJsonPos
+local sNxJsonLen
+local sNxJsonErr
+local sNxJsonDepth
+
+-- ==========================================================================
+-- Version, errors, capabilities.
+-- ==========================================================================
+
+function nxVersion
+   return "NostrXT" && kNxVersion
+end nxVersion
+
+function nxLastError
+   return sNxLastError
+end nxLastError
+
+private command nxSetError pMessage
+   put pMessage into sNxLastError
+end nxSetError
+
+function nxProbeCapabilities
+   -- Probe ONCE into a cached array, each extension in its own try, each
+   -- probe a REAL round-trip rather than a version sniff (the riptide
+   -- rsProbeCapabilities shape). Fail closed: a missing extension disables
+   -- exactly its feature and never another.
+   local tCaps, tError, tHash, tRand, tOut
+   if sNxCapsProbed is "true" then
+      return sNxCaps
+   end if
+   put false into tCaps["hasCoin"]
+   put false into tCaps["hasSodium"]
+   put false into tCaps["canSign"]
+   put false into tCaps["canNip44Cipher"]
+   put kNxVersion into tCaps["version"]
+   try
+      -- SHA-256 of empty is the one answer every correct build agrees on.
+      put cxSha256(empty) into tHash
+      if nxHexEncode(tHash) is "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" then
+         put true into tCaps["hasCoin"]
+         put true into tCaps["canSign"]
+      end if
+   catch tError
+      put false into tCaps["hasCoin"]
+   end try
+   try
+      put sxRandomBytes(1) into tRand
+      if the number of bytes of tRand is 1 then
+         put true into tCaps["hasSodium"]
+      end if
+   catch tError
+      put false into tCaps["hasSodium"]
+   end try
+   try
+      -- The upstream NIP-44 cipher (docs/07; shipped in SodiumXT ABI 10,
+      -- 2026-08-23). Probe with a 1-byte xor; false only when the INSTALLED
+      -- SodiumXT predates ABI 10 - the probe is the seam, not a promise.
+      put sxChaCha20IetfXor(nxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"), nxHexDecode("000000000000000000000000"), numToByte(0)) into tOut
+      if the number of bytes of tOut is 1 then
+         put true into tCaps["canNip44Cipher"]
+      end if
+   catch tError
+      put false into tCaps["canNip44Cipher"]
+   end try
+   put tCaps into sNxCaps
+   put "true" into sNxCapsProbed
+   return sNxCaps
+end nxProbeCapabilities
+
+-- ==========================================================================
+-- Small pure helpers. The arithmetic bit ops exist because ^ / div / mod can
+-- misparse in compound expressions on some xTalk parsers, and bitXor's
+-- portability is exactly the kind of thing this family has been bitten by
+-- (the coinxt cxBitXor precedent). Accumulators stay far below 2^53.
+-- ==========================================================================
+
+private function nxIntDiv pA, pB
+   return trunc(pA / pB)
+end nxIntDiv
+
+private function nxIntMod pA, pB
+   return pA - pB * nxIntDiv(pA, pB)
+end nxIntMod
+
+private function nxPow2 pN
+   -- 2 to the pN as an exact integer; pN <= 52 keeps it exact.
+   local tR, tI
+   put 1 into tR
+   repeat with tI = 1 to pN
+      multiply tR by 2
+   end repeat
+   return tR
+end nxPow2
+
+private function nxBitXor31 pA, pB
+   -- Bitwise xor over the low 31 bits, built from arithmetic (see the section
+   -- header). The bech32 checksum is 30 bits, so 31 is sufficient headroom.
+   local tResult, tBit, tI, tDigitA, tDigitB
+   put 0 into tResult
+   put 1 into tBit
+   repeat with tI = 1 to 31
+      put nxIntMod(nxIntDiv(pA, tBit), 2) into tDigitA
+      put nxIntMod(nxIntDiv(pB, tBit), 2) into tDigitB
+      if tDigitA is not tDigitB then
+         add tBit to tResult
+      end if
+      multiply tBit by 2
+   end repeat
+   return tResult
+end nxBitXor31
+
+private function nxCharIndex pChar, pAlphabet
+   -- 1-based position of pChar in pAlphabet comparing BYTE VALUES, so the
+   -- answer does not depend on `the caseSensitive` (the coinxt cxCharIndex
+   -- discipline). Returns 0 if absent.
+   local tI, tCount, tWanted
+   put byteToNum(pChar) into tWanted
+   put the number of chars of pAlphabet into tCount
+   repeat with tI = 1 to tCount
+      if byteToNum(char tI of pAlphabet) is tWanted then
+         return tI
+      end if
+   end repeat
+   return 0
+end nxCharIndex
+
+private function nxSeqCount pArray
+   -- How many 1-based sequential keys pArray carries (the tag-list shape).
+   -- `is among the keys of` involves no delimiter, so this needs no guard.
+   local tN
+   put 0 into tN
+   repeat forever
+      if (tN + 1) is among the keys of pArray then
+         add 1 to tN
+      else
+         exit repeat
+      end if
+   end repeat
+   return tN
+end nxSeqCount
+
+private function nxLinesToSeq pText
+   -- Return-delimited text -> 1-based sequential array, skipping empty lines.
+   -- The lineDelimiter is global mutable state: save, set, use, restore.
+   local tSavedDelim, tOut, tI, tCount, tLine, tN
+   put the lineDelimiter into tSavedDelim
+   set the lineDelimiter to return
+   put 0 into tN
+   put the number of lines of pText into tCount
+   repeat with tI = 1 to tCount
+      put line tI of pText into tLine
+      if tLine is not empty then
+         add 1 to tN
+         put tLine into tOut[tN]
+      end if
+   end repeat
+   set the lineDelimiter to tSavedDelim
+   return tOut
+end nxLinesToSeq
+
+private function nxSeqToLines pArray
+   -- Inverse of nxLinesToSeq; builds with the `return` constant directly, so
+   -- no delimiter guard is needed.
+   local tOut, tI, tCount
+   put empty into tOut
+   put nxSeqCount(pArray) into tCount
+   repeat with tI = 1 to tCount
+      if tOut is not empty then
+         put return after tOut
+      end if
+      put pArray[tI] after tOut
+   end repeat
+   return tOut
+end nxSeqToLines
+
+function nxB64Encode pData
+   -- The engine's base64Encode wraps its output with line breaks; the wire
+   -- formats here (NIP-44 payloads, Sec-WebSocket-Key) are single-line, so
+   -- strip both break bytes. VERIFY (on-engine): the exact wrap behaviour.
+   local tOut
+   put base64Encode(pData) into tOut
+   replace numToChar(13) with empty in tOut
+   replace numToChar(10) with empty in tOut
+   return tOut
+end nxB64Encode
+
+function nxB64Decode pText
+   -- Standard base64 with padding. The engine's decoder tolerates whitespace;
+   -- refuse characters outside the alphabet FIRST so a malformed payload is
+   -- an error, not a silent partial decode (fail closed).
+   local tI, tCount, tCode, tPadFrom, tCh
+   put the number of chars of pText into tCount
+   if tCount is 0 then
+      return empty
+   end if
+   put 0 into tPadFrom
+   repeat with tI = 1 to tCount
+      put char tI of pText into tCh
+      put byteToNum(tCh) into tCode
+      if tCh is "=" then
+         if tPadFrom is 0 then
+            put tI into tPadFrom
+         end if
+         next repeat
+      end if
+      if tPadFrom is not 0 then
+         -- data after padding
+         return empty
+      end if
+      if nxCharIndex(tCh, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") is 0 then
+         return empty
+      end if
+   end repeat
+   if nxIntMod(tCount, 4) is not 0 then
+      return empty
+   end if
+   if tPadFrom is not 0 then
+      -- At most two pads, only at the very end, and the final group must
+      -- carry a legal data residue: pads + (data mod 4) is exactly 4.
+      -- Without this, strings every conforming decoder refuses (extra or
+      -- misplaced '=', a one-data-char final group) reached the engine's
+      -- LENIENT decoder and could round to a valid payload.
+      if tCount - tPadFrom + 1 > 2 then
+         return empty
+      end if
+      if nxIntMod(tPadFrom - 1, 4) + (tCount - tPadFrom + 1) is not 4 then
+         return empty
+      end if
+   end if
+   return base64Decode(pText)
+end nxB64Decode
+
+function nxUnixNow
+   -- The unix timestamp (seconds) events stamp created_at with.
+   return the seconds
+end nxUnixNow
+
+-- ==========================================================================
+-- Hex. Lowercase out; mixed case in (0-9 a-f A-F); anything else refuses.
+-- ==========================================================================
+
+function nxHexEncode pData
+   local tOut, tI, tN, tByte
+   put empty into tOut
+   put the number of bytes of pData into tN
+   repeat with tI = 1 to tN
+      put byteToNum(byte tI of pData) into tByte
+      put char (nxIntDiv(tByte, 16) + 1) of kNxHexAlphabet after tOut
+      put char (nxIntMod(tByte, 16) + 1) of kNxHexAlphabet after tOut
+   end repeat
+   return tOut
+end nxHexEncode
+
+function nxHexDecode pHex
+   -- Bytes for a hex string, or empty (with the reason recorded) on odd
+   -- length or a non-hex character. Walks with `repeat while` + `add 2`: the
+   -- engine does not honour `repeat with ... step` (family law, checker-held).
+   local tOut, tI, tCount, tHi, tLo
+   put the number of chars of pHex into tCount
+   if nxIntMod(tCount, 2) is not 0 then
+      nxSetError "nxHexDecode: hex text has odd length"
+      return empty
+   end if
+   put empty into tOut
+   put 1 into tI
+   repeat while tI < tCount
+      put nxHexNibble(char tI of pHex) into tHi
+      put nxHexNibble(char (tI + 1) of pHex) into tLo
+      if tHi < 0 or tLo < 0 then
+         nxSetError "nxHexDecode: not a hex character"
+         return empty
+      end if
+      put numToByte(tHi * 16 + tLo) after tOut
+      add 2 to tI
+   end repeat
+   return tOut
+end nxHexDecode
+
+private function nxHexNibble pChar
+   -- 0..15 for a hex digit of either case, -1 otherwise (byte-value compare).
+   local tCode
+   put byteToNum(pChar) into tCode
+   if tCode >= 48 and tCode <= 57 then
+      return tCode - 48
+   end if
+   if tCode >= 97 and tCode <= 102 then
+      return tCode - 87
+   end if
+   if tCode >= 65 and tCode <= 70 then
+      return tCode - 55
+   end if
+   return -1
+end nxHexNibble
+
+function nxIsHex pText, pLen
+   -- True when pText is entirely hex digits, and (when pLen is not empty) is
+   -- exactly pLen characters. The id/pubkey/sig validation everything uses.
+   local tI, tCount
+   put the number of chars of pText into tCount
+   if pLen is not empty and tCount is not pLen then
+      return false
+   end if
+   if tCount is 0 then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      if nxHexNibble(char tI of pText) < 0 then
+         return false
+      end if
+   end repeat
+   return true
+end nxIsHex
+
+function nxCtEqualHex pAHex, pBHex
+   -- Constant-time-ish equality for hex strings (MACs, ids). Prefers
+   -- SodiumXT's sxMemEqual (real constant-time compare over the decoded
+   -- bytes); without SodiumXT, an accumulate-loop over every character that
+   -- never exits early stands in. The honest limit either way: an
+   -- interpreter's timing is noisy, and this guards against the gross
+   -- early-exit leak, not a lab-grade side channel (the onionxt
+   -- oxConstantTimeEqual acceptability argument).
+   local tError, tA, tB, tDiff, tI, tCount, tLowA, tLowB
+   if the number of chars of pAHex is not the number of chars of pBHex then
+      return false
+   end if
+   -- ONE predicate on both paths: normalize case first, so the verdict
+   -- cannot depend on whether SodiumXT happens to be installed (the
+   -- sxMemEqual path compared decoded bytes, case-blind; the fallback
+   -- compared hex TEXT, case-sensitive - same input, opposite answers).
+   put nxToLowerAscii(pAHex) into tLowA
+   put nxToLowerAscii(pBHex) into tLowB
+   try
+      put nxHexDecode(tLowA) into tA
+      put nxHexDecode(tLowB) into tB
+      if tA is not empty and tB is not empty then
+         return sxMemEqual(tA, tB)
+      end if
+   catch tError
+      -- fall through to the pure-script loop
+   end try
+   put 0 into tDiff
+   put the number of chars of tLowA into tCount
+   repeat with tI = 1 to tCount
+      if byteToNum(char tI of tLowA) is not byteToNum(char tI of tLowB) then
+         add 1 to tDiff
+      end if
+   end repeat
+   return tDiff is 0
+end nxCtEqualHex
+
+-- ==========================================================================
+-- JSON. Owned, because NIP-01's canonical form and JSON disagree about
+-- control characters, and because nothing in the suite encodes JSON at all.
+-- The parser walks UTF-8 BYTES (structure is ASCII; multi-byte sequences
+-- only ever occur inside strings), builds nested arrays of typed nodes, and
+-- records byte spans so a message parser can slice VERBATIM sub-documents
+-- (an event arriving from a relay is re-serialized canonically for id
+-- checking, never trusted to be canonical on the wire).
+--
+-- Node shape (internal): tNode["t"] is one of "o" (object), "a" (array),
+-- "s" (string), "n" (number), "b" (boolean), "z" (null); tNode["v"] is the
+-- scalar value; tNode["k"][i] / tNode["c"][i] are 1-based key and child
+-- lists; tNode["b1"] / tNode["b2"] are the value's first and last byte
+-- positions in the input.
+-- ==========================================================================
+
+function nxJsonEscape pText
+   -- The NIP-01 escape set, exactly: \" \\ \n \r \t \b \f, everything else
+   -- verbatim (including control bytes outside the seven - that is the rule
+   -- that makes a borrowed JSON encoder produce WRONG event ids). Works on
+   -- UTF-8 bytes; multi-byte sequences pass through untouched.
+   local tBytes, tOut, tI, tN, tByte
+   put textEncode(pText, "UTF-8") into tBytes
+   put empty into tOut
+   put the number of bytes of tBytes into tN
+   repeat with tI = 1 to tN
+      put byteToNum(byte tI of tBytes) into tByte
+      if tByte is 34 then
+         put numToByte(92) & numToByte(34) after tOut
+      else if tByte is 92 then
+         put numToByte(92) & numToByte(92) after tOut
+      else if tByte is 10 then
+         put numToByte(92) & numToByte(110) after tOut
+      else if tByte is 13 then
+         put numToByte(92) & numToByte(114) after tOut
+      else if tByte is 9 then
+         put numToByte(92) & numToByte(116) after tOut
+      else if tByte is 8 then
+         put numToByte(92) & numToByte(98) after tOut
+      else if tByte is 12 then
+         put numToByte(92) & numToByte(102) after tOut
+      else
+         put byte tI of tBytes after tOut
+      end if
+   end repeat
+   return textDecode(tOut, "UTF-8")
+end nxJsonEscape
+
+private function nxJsonParseText pJson
+   -- Parse a whole JSON document; returns the root node array or empty (with
+   -- the reason in sNxJsonErr). Resets the module-local cursor state.
+   local tRoot
+   put textEncode(pJson, "UTF-8") into sNxJsonBytes
+   put 1 into sNxJsonPos
+   put the number of bytes of sNxJsonBytes into sNxJsonLen
+   put empty into sNxJsonErr
+   put 0 into sNxJsonDepth
+   put nxJsonParseValue() into tRoot
+   if sNxJsonErr is not empty then
+      return empty
+   end if
+   nxJsonSkipWs
+   if sNxJsonPos <= sNxJsonLen then
+      put "trailing bytes after the document" into sNxJsonErr
+      return empty
+   end if
+   return tRoot
+end nxJsonParseText
+
+private command nxJsonSkipWs
+   local tByte
+   repeat while sNxJsonPos <= sNxJsonLen
+      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+      if tByte is 32 or tByte is 9 or tByte is 10 or tByte is 13 then
+         add 1 to sNxJsonPos
+      else
+         exit repeat
+      end if
+   end repeat
+end nxJsonSkipWs
+
+private function nxJsonParseValue
+   local tNode, tByte, tStart
+   nxJsonSkipWs
+   if sNxJsonPos > sNxJsonLen then
+      put "unexpected end of document" into sNxJsonErr
+      return empty
+   end if
+   add 1 to sNxJsonDepth
+   if sNxJsonDepth > kNxJsonMaxDepth then
+      put "nesting deeper than" && kNxJsonMaxDepth into sNxJsonErr
+      return empty
+   end if
+   put sNxJsonPos into tStart
+   put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+   if tByte is 123 then
+      put nxJsonParseObject() into tNode
+   else if tByte is 91 then
+      put nxJsonParseArray() into tNode
+   else if tByte is 34 then
+      put nxJsonParseString() into tNode
+   else if tByte is 116 or tByte is 102 then
+      put nxJsonParseWord() into tNode
+   else if tByte is 110 then
+      put nxJsonParseWord() into tNode
+   else
+      put nxJsonParseNumber() into tNode
+   end if
+   subtract 1 from sNxJsonDepth
+   if sNxJsonErr is not empty then
+      return empty
+   end if
+   put tStart into tNode["b1"]
+   put sNxJsonPos - 1 into tNode["b2"]
+   return tNode
+end nxJsonParseValue
+
+private function nxJsonParseObject
+   -- Opening byte 123 confirmed by the caller. Builds parallel 1-based key
+   -- and child lists so key order survives (xTalk array keys do not).
+   local tNode, tByte, tN, tKeyNode, tChild, tDup
+   put "o" into tNode["t"]
+   put 0 into tN
+   add 1 to sNxJsonPos
+   nxJsonSkipWs
+   if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 125 then
+      add 1 to sNxJsonPos
+      return tNode
+   end if
+   repeat forever
+      nxJsonSkipWs
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) is not 34 then
+         put "object member is not a string key" into sNxJsonErr
+         return empty
+      end if
+      put nxJsonParseString() into tKeyNode
+      if sNxJsonErr is not empty then
+         return empty
+      end if
+      nxJsonSkipWs
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) is not 58 then
+         put "missing colon after object key" into sNxJsonErr
+         return empty
+      end if
+      add 1 to sNxJsonPos
+      put nxJsonParseValue() into tChild
+      if sNxJsonErr is not empty then
+         return empty
+      end if
+      -- Refuse duplicate member names, fail closed: first-wins readers and
+      -- last-wins readers of the same document otherwise disagree about
+      -- what it says - the classic duplicate-key desync a relay could use
+      -- to show a verifier one content and a reader another.
+      repeat with tDup = 1 to tN
+         if nxStrEqExact(tNode["k"][tDup], tKeyNode["v"]) then
+            put "duplicate object key" into sNxJsonErr
+            return empty
+         end if
+      end repeat
+      add 1 to tN
+      put tKeyNode["v"] into tNode["k"][tN]
+      put tChild into tNode["c"][tN]
+      nxJsonSkipWs
+      if sNxJsonPos > sNxJsonLen then
+         put "unterminated object" into sNxJsonErr
+         return empty
+      end if
+      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+      add 1 to sNxJsonPos
+      if tByte is 125 then
+         exit repeat
+      end if
+      if tByte is not 44 then
+         put "expected comma or closing brace in object" into sNxJsonErr
+         return empty
+      end if
+   end repeat
+   return tNode
+end nxJsonParseObject
+
+private function nxJsonParseArray
+   local tNode, tByte, tN, tChild
+   put "a" into tNode["t"]
+   put 0 into tN
+   add 1 to sNxJsonPos
+   nxJsonSkipWs
+   if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 93 then
+      add 1 to sNxJsonPos
+      return tNode
+   end if
+   repeat forever
+      put nxJsonParseValue() into tChild
+      if sNxJsonErr is not empty then
+         return empty
+      end if
+      add 1 to tN
+      put tChild into tNode["c"][tN]
+      nxJsonSkipWs
+      if sNxJsonPos > sNxJsonLen then
+         put "unterminated array" into sNxJsonErr
+         return empty
+      end if
+      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+      add 1 to sNxJsonPos
+      if tByte is 93 then
+         exit repeat
+      end if
+      if tByte is not 44 then
+         put "expected comma or closing bracket in array" into sNxJsonErr
+         return empty
+      end if
+   end repeat
+   return tNode
+end nxJsonParseArray
+
+private function nxJsonParseString
+   -- Opening quote confirmed by the caller. Collects raw bytes, decodes the
+   -- backslash escapes (including \uXXXX with surrogate pairs), and hands the
+   -- collected bytes to textDecode once, at the end.
+   local tNode, tOut, tByte, tEsc, tCode, tCodeTwo, tI, tNib
+   put "s" into tNode["t"]
+   put empty into tOut
+   add 1 to sNxJsonPos
+   repeat forever
+      if sNxJsonPos > sNxJsonLen then
+         put "unterminated string" into sNxJsonErr
+         return empty
+      end if
+      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+      add 1 to sNxJsonPos
+      if tByte is 34 then
+         exit repeat
+      end if
+      if tByte is not 92 then
+         put numToByte(tByte) after tOut
+         next repeat
+      end if
+      if sNxJsonPos > sNxJsonLen then
+         put "unterminated escape" into sNxJsonErr
+         return empty
+      end if
+      put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tEsc
+      add 1 to sNxJsonPos
+      if tEsc is 34 then
+         put numToByte(34) after tOut
+      else if tEsc is 92 then
+         put numToByte(92) after tOut
+      else if tEsc is 47 then
+         put numToByte(47) after tOut
+      else if tEsc is 110 then
+         put numToByte(10) after tOut
+      else if tEsc is 114 then
+         put numToByte(13) after tOut
+      else if tEsc is 116 then
+         put numToByte(9) after tOut
+      else if tEsc is 98 then
+         put numToByte(8) after tOut
+      else if tEsc is 102 then
+         put numToByte(12) after tOut
+      else if tEsc is 117 then
+         put nxJsonHex4() into tCode
+         if tCode < 0 then
+            return empty
+         end if
+         if tCode >= 55296 and tCode <= 56319 then
+            -- A high surrogate must pair with \uDC00..\uDFFF.
+            if sNxJsonPos + 5 > sNxJsonLen then
+               put "truncated surrogate pair" into sNxJsonErr
+               return empty
+            end if
+            if byteToNum(byte sNxJsonPos of sNxJsonBytes) is not 92 or byteToNum(byte (sNxJsonPos + 1) of sNxJsonBytes) is not 117 then
+               put "high surrogate not followed by an escape" into sNxJsonErr
+               return empty
+            end if
+            add 2 to sNxJsonPos
+            put nxJsonHex4() into tCodeTwo
+            if tCodeTwo < 56320 or tCodeTwo > 57343 then
+               put "high surrogate not followed by a low surrogate" into sNxJsonErr
+               return empty
+            end if
+            put 65536 + (tCode - 55296) * 1024 + (tCodeTwo - 56320) into tCode
+         else if tCode >= 56320 and tCode <= 57343 then
+            put "lone low surrogate" into sNxJsonErr
+            return empty
+         end if
+         put nxCodepointToUtf8(tCode) after tOut
+      else
+         put "unknown escape character" into sNxJsonErr
+         return empty
+      end if
+   end repeat
+   put textDecode(tOut, "UTF-8") into tNode["v"]
+   return tNode
+end nxJsonParseString
+
+private function nxJsonHex4
+   -- Four hex digits at the cursor -> 0..65535, or -1 (error recorded).
+   local tCode, tI, tNib
+   put 0 into tCode
+   repeat with tI = 1 to 4
+      if sNxJsonPos > sNxJsonLen then
+         put "truncated unicode escape" into sNxJsonErr
+         return -1
+      end if
+      put nxHexNibble(byte sNxJsonPos of sNxJsonBytes) into tNib
+      if tNib < 0 then
+         put "bad unicode escape digit" into sNxJsonErr
+         return -1
+      end if
+      put tCode * 16 + tNib into tCode
+      add 1 to sNxJsonPos
+   end repeat
+   return tCode
+end nxJsonHex4
+
+private function nxCodepointToUtf8 pCode
+   -- Encode one codepoint as UTF-8 bytes, by arithmetic (no engine unicode
+   -- surface is trusted with this; the byte layout is the contract).
+   local tOut
+   if pCode < 128 then
+      return numToByte(pCode)
+   end if
+   if pCode < 2048 then
+      put numToByte(192 + nxIntDiv(pCode, 64)) into tOut
+      put numToByte(128 + nxIntMod(pCode, 64)) after tOut
+      return tOut
+   end if
+   if pCode < 65536 then
+      put numToByte(224 + nxIntDiv(pCode, 4096)) into tOut
+      put numToByte(128 + nxIntMod(nxIntDiv(pCode, 64), 64)) after tOut
+      put numToByte(128 + nxIntMod(pCode, 64)) after tOut
+      return tOut
+   end if
+   put numToByte(240 + nxIntDiv(pCode, 262144)) into tOut
+   put numToByte(128 + nxIntMod(nxIntDiv(pCode, 4096), 64)) after tOut
+   put numToByte(128 + nxIntMod(nxIntDiv(pCode, 64), 64)) after tOut
+   put numToByte(128 + nxIntMod(pCode, 64)) after tOut
+   return tOut
+end nxCodepointToUtf8
+
+private function nxJsonParseWord
+   -- true / false / null, matched by BYTE VALUE: `is` folds case in this
+   -- dialect, and JSON's bare words are lowercase-only, so "tRUE" must refuse.
+   local tNode
+   if nxJsonWordAt("true") then
+      put "b" into tNode["t"]
+      put "true" into tNode["v"]
+      add 4 to sNxJsonPos
+      return tNode
+   end if
+   if nxJsonWordAt("false") then
+      put "b" into tNode["t"]
+      put "false" into tNode["v"]
+      add 5 to sNxJsonPos
+      return tNode
+   end if
+   if nxJsonWordAt("null") then
+      put "z" into tNode["t"]
+      put empty into tNode["v"]
+      add 4 to sNxJsonPos
+      return tNode
+   end if
+   put "unrecognized bare word" into sNxJsonErr
+   return empty
+end nxJsonParseWord
+
+private function nxJsonWordAt pWord
+   -- True when the exact ASCII bytes of pWord sit at the parser cursor.
+   local tI, tCount
+   put the number of chars of pWord into tCount
+   if sNxJsonPos + tCount - 1 > sNxJsonLen then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      if byteToNum(byte (sNxJsonPos + tI - 1) of sNxJsonBytes) is not byteToNum(char tI of pWord) then
+         return false
+      end if
+   end repeat
+   return true
+end nxJsonWordAt
+
+private function nxJsonParseNumber
+   -- The RFC 8259 number grammar, enforced: -?(0|[1-9][0-9]*)(.[0-9]+)?
+   -- ([eE][+-]?[0-9]+)?. The first cut of this collected any run of
+   -- number-ish bytes, which accepted "07", "1e", "1-2" and "+5" - and a
+   -- "number" like "1e" reaching `+ 0` downstream is a hard engine error
+   -- from a never-throw library (the adversarial review's trace). Collected
+   -- as TEXT so integer spellings survive verbatim.
+   local tNode, tOut, tByte
+   put "n" into tNode["t"]
+   put empty into tOut
+   if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 45 then
+      put "-" after tOut
+      add 1 to sNxJsonPos
+   end if
+   -- int part: one zero, or a nonzero digit then any digits
+   if sNxJsonPos > sNxJsonLen then
+      put "not a number" into sNxJsonErr
+      return empty
+   end if
+   put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+   if tByte is 48 then
+      put "0" after tOut
+      add 1 to sNxJsonPos
+   else if tByte >= 49 and tByte <= 57 then
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
+   else
+      put "not a number" into sNxJsonErr
+      return empty
+   end if
+   -- optional fraction: "." then at least one digit
+   if sNxJsonPos <= sNxJsonLen and byteToNum(byte sNxJsonPos of sNxJsonBytes) is 46 then
+      put "." after tOut
+      add 1 to sNxJsonPos
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) < 48 or byteToNum(byte sNxJsonPos of sNxJsonBytes) > 57 then
+         put "a fraction needs at least one digit" into sNxJsonErr
+         return empty
+      end if
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
+   end if
+   -- optional exponent: e/E, optional sign, at least one digit
+   if sNxJsonPos <= sNxJsonLen and (byteToNum(byte sNxJsonPos of sNxJsonBytes) is 101 or byteToNum(byte sNxJsonPos of sNxJsonBytes) is 69) then
+      put numToChar(byteToNum(byte sNxJsonPos of sNxJsonBytes)) after tOut
+      add 1 to sNxJsonPos
+      if sNxJsonPos <= sNxJsonLen and (byteToNum(byte sNxJsonPos of sNxJsonBytes) is 43 or byteToNum(byte sNxJsonPos of sNxJsonBytes) is 45) then
+         put numToChar(byteToNum(byte sNxJsonPos of sNxJsonBytes)) after tOut
+         add 1 to sNxJsonPos
+      end if
+      if sNxJsonPos > sNxJsonLen or byteToNum(byte sNxJsonPos of sNxJsonBytes) < 48 or byteToNum(byte sNxJsonPos of sNxJsonBytes) > 57 then
+         put "an exponent needs at least one digit" into sNxJsonErr
+         return empty
+      end if
+      repeat while sNxJsonPos <= sNxJsonLen
+         put byteToNum(byte sNxJsonPos of sNxJsonBytes) into tByte
+         if tByte >= 48 and tByte <= 57 then
+            put numToChar(tByte) after tOut
+            add 1 to sNxJsonPos
+         else
+            exit repeat
+         end if
+      end repeat
+   end if
+   put tOut into tNode["v"]
+   return tNode
+end nxJsonParseNumber
+
+private function nxJsonPathNode pJson, pPath
+   -- Walk pPath ("/"-separated: object keys by name, array elements by
+   -- 1-based index; empty path = the root) down the parsed document. Returns
+   -- the node, or empty with the reason recorded. Keys containing "/" are
+   -- not addressable through this convenience (documented limit).
+   local tSavedDelim, tRoot, tNode, tI, tCount, tStep, tJ, tKidCount, tFound
+   put nxJsonParseText(pJson) into tRoot
+   if sNxJsonErr is not empty then
+      nxSetError "nxJson: " & sNxJsonErr
+      return empty
+   end if
+   put tRoot into tNode
+   if pPath is empty then
+      return tNode
+   end if
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to "/"
+   put the number of items of pPath into tCount
+   repeat with tI = 1 to tCount
+      put item tI of pPath into tStep
+      if tNode["t"] is "o" then
+         put 0 into tFound
+         put nxSeqCount(tNode["k"]) into tKidCount
+         repeat with tJ = 1 to tKidCount
+            -- BYTE-EXACT, not `is`: `is` folds case AND compares numerically,
+            -- so "NAME" would match "name" and "1000" would match "1e3" -
+            -- the adversarial review's headline find (it broke every
+            -- single-letter tag filter through the #e/#E probe loop).
+            if nxStrEqExact(tNode["k"][tJ], tStep) then
+               put tJ into tFound
+               exit repeat
+            end if
+         end repeat
+         if tFound is 0 then
+            set the itemDelimiter to tSavedDelim
+            nxSetError "nxJson: no key" && tStep
+            return empty
+         end if
+         put tNode["c"][tFound] into tNode
+      else if tNode["t"] is "a" then
+         -- Digit runs only: "2.0" and "03" pass `is an integer` by numeric
+         -- fold, then miss the STRING-keyed child table silently.
+         if not nxIsDigits(tStep) or tStep + 0 < 1 or tStep + 0 > nxSeqCount(tNode["c"]) then
+            set the itemDelimiter to tSavedDelim
+            nxSetError "nxJson: no element" && tStep
+            return empty
+         end if
+         put tNode["c"][tStep] into tNode
+      else
+         set the itemDelimiter to tSavedDelim
+         nxSetError "nxJson: path descends into a scalar"
+         return empty
+      end if
+   end repeat
+   set the itemDelimiter to tSavedDelim
+   return tNode
+end nxJsonPathNode
+
+function nxJsonGet pJson, pPath
+   -- The scalar value at pPath: strings decoded, numbers as text, booleans
+   -- "true"/"false", null empty. An object or array at the path returns its
+   -- VERBATIM source slice, so a caller can hand a sub-document onward.
+   local tNode
+   put nxJsonPathNode(pJson, pPath) into tNode
+   if tNode is empty then
+      return empty
+   end if
+   if tNode["t"] is "o" or tNode["t"] is "a" then
+      return textDecode(byte tNode["b1"] to tNode["b2"] of sNxJsonBytes, "UTF-8")
+   end if
+   return tNode["v"]
+end nxJsonGet
+
+function nxJsonCount pJson, pPath
+   -- Element count of the array (or member count of the object) at pPath;
+   -- empty on error, 0 for an empty container, and empty (with the reason)
+   -- for a scalar.
+   local tNode
+   put nxJsonPathNode(pJson, pPath) into tNode
+   if tNode is empty then
+      return empty
+   end if
+   if tNode["t"] is "a" then
+      return nxSeqCount(tNode["c"])
+   end if
+   if tNode["t"] is "o" then
+      return nxSeqCount(tNode["k"])
+   end if
+   nxSetError "nxJsonCount: not a container at that path"
+   return empty
+end nxJsonCount
+
+function nxJsonType pJson, pPath
+   -- "object" / "array" / "string" / "number" / "boolean" / "null", or
+   -- "missing" when the path does not resolve (parse errors record why).
+   local tNode, tKind
+   put nxJsonPathNode(pJson, pPath) into tNode
+   if tNode is empty then
+      return "missing"
+   end if
+   put tNode["t"] into tKind
+   if tKind is "o" then
+      return "object"
+   end if
+   if tKind is "a" then
+      return "array"
+   end if
+   if tKind is "s" then
+      return "string"
+   end if
+   if tKind is "n" then
+      return "number"
+   end if
+   if tKind is "b" then
+      return "boolean"
+   end if
+   return "null"
+end nxJsonType
+
+-- ==========================================================================
+-- Byte-exact string equality. `is` folds case in this dialect, and Nostr tag
+-- names are case-sensitive ("p" and "P" are different tags), so every name
+-- comparison in this file goes through here.
+-- ==========================================================================
+
+private function nxIsDigits pText
+   -- True for one or more ASCII digits and nothing else.
+   local tI, tCount, tCode
+   put the number of chars of pText into tCount
+   if tCount is 0 then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode < 48 or tCode > 57 then
+         return false
+      end if
+   end repeat
+   return true
+end nxIsDigits
+
+private function nxIsCanonInt pText
+   -- The canonical integer spelling the id preimage may carry: a digit run
+   -- with no leading zero (a lone "0" is fine). "07", "1e3" and "5.0" all
+   -- coerce to integers in this dialect, and a non-canonical spelling that
+   -- reaches the serializer signs an event no conforming client recomputes.
+   local tCount
+   if not nxIsDigits(pText) then
+      return false
+   end if
+   put the number of chars of pText into tCount
+   if tCount > 1 and byteToNum(char 1 of pText) is 48 then
+      return false
+   end if
+   return true
+end nxIsCanonInt
+
+private function nxIsLowerHex pText, pLen
+   -- nxIsHex plus the wire rule: NIP-01 ids, pubkeys and sigs are
+   -- LOWERCASE hex on the wire, and this member refuses rather than
+   -- normalizing what it did not produce (fail closed).
+   local tI, tCount, tCode
+   if not nxIsHex(pText, pLen) then
+      return false
+   end if
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 70 then
+         return false
+      end if
+   end repeat
+   return true
+end nxIsLowerHex
+
+private function nxKeyCount pArray
+   -- How many keys pArray carries IN TOTAL (nxSeqCount stops at the first
+   -- gap, so the two disagreeing is how a gapped table is detected). The
+   -- keys join with the return constant; the lineDelimiter is global
+   -- mutable state, so guard the read.
+   local tSavedLineDelim, tCount
+   if pArray is not an array then
+      return 0
+   end if
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the number of lines of the keys of pArray into tCount
+   set the lineDelimiter to tSavedLineDelim
+   return tCount
+end nxKeyCount
+
+private function nxStrEqExact pA, pB
+   local tA, tB, tI, tN
+   put textEncode(pA, "UTF-8") into tA
+   put textEncode(pB, "UTF-8") into tB
+   put the number of bytes of tA into tN
+   if tN is not the number of bytes of tB then
+      return false
+   end if
+   repeat with tI = 1 to tN
+      if byteToNum(byte tI of tA) is not byteToNum(byte tI of tB) then
+         return false
+      end if
+   end repeat
+   return true
+end nxStrEqExact
+
+-- ==========================================================================
+-- Keys. Generation composes SodiumXT randomness and CoinXT validation; this
+-- file mints no randomness and validates no scalar itself (rule 1).
+-- ==========================================================================
+
+function nxKeyGenerate
+   -- A fresh secret key as 64 lowercase hex, or empty (reason recorded).
+   -- Rejection-samples: an out-of-range 32-byte draw is astronomically rare
+   -- but checked anyway, because "cannot happen" is not a validation.
+   local tError, tTry, tSeckey, tOk
+   repeat with tTry = 1 to 10
+      try
+         put sxRandomBytes(32) into tSeckey
+      catch tError
+         nxSetError "nxKeyGenerate needs SodiumXT sxRandomBytes"
+         return empty
+      end try
+      put false into tOk
+      try
+         put cxSeckeyIsValid(tSeckey) into tOk
+      catch tError
+         nxSetError "nxKeyGenerate needs CoinXT cxSeckeyIsValid"
+         return empty
+      end try
+      if tOk is true then
+         return nxHexEncode(tSeckey)
+      end if
+   end repeat
+   nxSetError "nxKeyGenerate: ten random draws in a row were invalid scalars, which points at a broken randomness source"
+   return empty
+end nxKeyGenerate
+
+function nxKeyPublic pSeckeyHex
+   -- The 64-hex x-only public key (the Nostr pubkey) for a secret key.
+   local tError, tPub
+   if not nxIsHex(pSeckeyHex, 64) then
+      nxSetError "nxKeyPublic: the secret key must be 64 hex characters"
+      return empty
+   end if
+   try
+      put cxXOnlyPubkey(nxHexDecode(pSeckeyHex)) into tPub
+   catch tError
+      nxSetError "nxKeyPublic needs CoinXT cxXOnlyPubkey:" && tError
+      return empty
+   end try
+   return nxHexEncode(tPub)
+end nxKeyPublic
+
+function nxKeyIsValid pSeckeyHex
+   local tError, tOk
+   if not nxIsHex(pSeckeyHex, 64) then
+      return false
+   end if
+   try
+      put cxSeckeyIsValid(nxHexDecode(pSeckeyHex)) into tOk
+   catch tError
+      nxSetError "nxKeyIsValid needs CoinXT cxSeckeyIsValid"
+      return false
+   end try
+   return tOk is true
+end nxKeyIsValid
+
+-- ==========================================================================
+-- Events: build, canonical serialization, id, sign, verify, JSON in and out.
+-- The canonical bytes are the contract (header WIRE FORMATS): change nothing
+-- here without re-running tools/nostr-kat.py and the member harness.
+-- ==========================================================================
+
+function nxEventBuild pKind, pContent, pTags, pCreatedAt
+   -- An unsigned event array. pTags is a nested tag array (nxTagsFromText
+   -- converts text) or empty; pCreatedAt empty means now.
+   local tEvent, tStamp
+   if pKind is not an integer or pKind < 0 or pKind > 65535 or not nxIsCanonInt(pKind) then
+      nxSetError "nxEventBuild: kind must be a plain integer between 0 and 65535"
+      return empty
+   end if
+   if pCreatedAt is empty then
+      put nxUnixNow() into tStamp
+   else
+      -- nxIsCanonInt as well as the range: "1e3" and "1700000000 " pass
+      -- `is an integer` by coercion, get stored VERBATIM, and would be
+      -- signed into a preimage no conforming client recomputes.
+      if pCreatedAt is not an integer or pCreatedAt < 0 or not nxIsCanonInt(pCreatedAt) then
+         nxSetError "nxEventBuild: created_at must be a plain non-negative integer"
+         return empty
+      end if
+      put pCreatedAt into tStamp
+   end if
+   put pKind into tEvent["kind"]
+   put tStamp into tEvent["created_at"]
+   put pContent into tEvent["content"]
+   put pTags into tEvent["tags"]
+   put empty into tEvent["id"]
+   put empty into tEvent["pubkey"]
+   put empty into tEvent["sig"]
+   if not nxEventHasValidShape(tEvent) then
+      -- nxEventHasValidShape recorded the specific reason.
+      return empty
+   end if
+   return tEvent
+end nxEventBuild
+
+private function nxTagsSerialize pTags
+   -- The tags half of the canonical form: an array of arrays of strings,
+   -- every string escaped by the NIP-01 rules.
+   local tOut, tI, tJ, tTagCount, tItemCount
+   put "[" into tOut
+   put nxSeqCount(pTags) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put "[" after tOut
+      put nxSeqCount(pTags[tI]) into tItemCount
+      repeat with tJ = 1 to tItemCount
+         if tJ > 1 then
+            put "," after tOut
+         end if
+         put quote & nxJsonEscape(pTags[tI][tJ]) & quote after tOut
+      end repeat
+      put "]" after tOut
+   end repeat
+   put "]" after tOut
+   return tOut
+end nxTagsSerialize
+
+function nxEventSerialize pEvent
+   -- The canonical [0,pubkey,created_at,kind,tags,content] string NIP-01
+   -- hashes. Refuses an event whose pubkey is not yet filled in: serializing
+   -- a half-built event would produce a well-formed WRONG preimage.
+   local tOut
+   if not nxIsLowerHex(pEvent["pubkey"], 64) then
+      nxSetError "nxEventSerialize: the event needs a 64-hex LOWERCASE pubkey (the canonical form; sign fills it in)"
+      return empty
+   end if
+   if not nxEventHasValidShape(pEvent) then
+      return empty
+   end if
+   put "[0," & quote & pEvent["pubkey"] & quote & "," into tOut
+   put pEvent["created_at"] & "," & pEvent["kind"] & "," after tOut
+   put nxTagsSerialize(pEvent["tags"]) after tOut
+   put "," & quote & nxJsonEscape(pEvent["content"]) & quote & "]" after tOut
+   return tOut
+end nxEventSerialize
+
+function nxEventId pEvent
+   -- 64-hex sha256 of the canonical serialization's UTF-8 bytes.
+   local tError, tSerialized, tHash
+   put nxEventSerialize(pEvent) into tSerialized
+   if tSerialized is empty then
+      return empty
+   end if
+   try
+      put cxSha256(textEncode(tSerialized, "UTF-8")) into tHash
+   catch tError
+      nxSetError "nxEventId needs CoinXT cxSha256:" && tError
+      return empty
+   end try
+   return nxHexEncode(tHash)
+end nxEventId
+
+function nxEventSign pEvent, pSeckeyHex, pAuxHex
+   -- Fill pubkey, id and sig; returns the completed event array or empty.
+   -- pAuxHex empty draws fresh BIP-340 auxiliary randomness inside CoinXT's
+   -- shim; a 64-hex pAuxHex makes the signature deterministic (KAT-pinnable).
+   local tError, tEvent, tAux, tEventId, tSig
+   if not nxIsHex(pSeckeyHex, 64) then
+      nxSetError "nxEventSign: the secret key must be 64 hex characters"
+      return empty
+   end if
+   if pAuxHex is empty then
+      put empty into tAux
+   else
+      if not nxIsHex(pAuxHex, 64) then
+         nxSetError "nxEventSign: aux randomness must be empty or 64 hex characters"
+         return empty
+      end if
+      put nxHexDecode(pAuxHex) into tAux
+   end if
+   put pEvent into tEvent
+   put nxKeyPublic(pSeckeyHex) into tEvent["pubkey"]
+   if tEvent["pubkey"] is empty then
+      return empty
+   end if
+   put nxEventId(tEvent) into tEventId
+   if tEventId is empty then
+      return empty
+   end if
+   put tEventId into tEvent["id"]
+   try
+      put cxSchnorrSign(nxHexDecode(pSeckeyHex), nxHexDecode(tEventId), tAux) into tSig
+   catch tError
+      nxSetError "nxEventSign needs CoinXT cxSchnorrSign:" && tError
+      return empty
+   end try
+   put nxHexEncode(tSig) into tEvent["sig"]
+   return tEvent
+end nxEventSign
+
+function nxEventVerify pEvent
+   -- True only when the id recomputes from the fields AND the signature
+   -- verifies over it. Everything else is false with the reason recorded -
+   -- an inbound event is untrusted until this says otherwise (rule 2).
+   local tError, tEventId, tOk
+   if not nxIsHex(pEvent["id"], 64) or not nxIsHex(pEvent["pubkey"], 64) or not nxIsHex(pEvent["sig"], 128) then
+      nxSetError "nxEventVerify: id, pubkey or sig missing or malformed"
+      return false
+   end if
+   put nxEventId(pEvent) into tEventId
+   if tEventId is empty then
+      return false
+   end if
+   if not nxCtEqualHex(tEventId, pEvent["id"]) then
+      nxSetError "nxEventVerify: the id does not match the serialized fields"
+      return false
+   end if
+   put false into tOk
+   try
+      put cxSchnorrVerify(nxHexDecode(pEvent["pubkey"]), nxHexDecode(tEventId), nxHexDecode(pEvent["sig"])) into tOk
+   catch tError
+      nxSetError "nxEventVerify needs CoinXT cxSchnorrVerify:" && tError
+      return false
+   end try
+   if tOk is not true then
+      nxSetError "nxEventVerify: the signature does not verify"
+      return false
+   end if
+   return true
+end nxEventVerify
+
+function nxEventHasValidShape pEvent
+   -- Structural validation, with the reason recorded: integers in range,
+   -- hex fields (when present) the right length, tags an array of arrays of
+   -- strings whose first item is non-empty.
+   local tI, tJ, tTagCount, tItemCount
+   if pEvent["kind"] is not an integer or pEvent["kind"] < 0 or pEvent["kind"] > 65535 or not nxIsCanonInt(pEvent["kind"]) then
+      nxSetError "event shape: kind must be a plain integer between 0 and 65535"
+      return false
+   end if
+   if pEvent["created_at"] is not an integer or pEvent["created_at"] < 0 or not nxIsCanonInt(pEvent["created_at"]) then
+      nxSetError "event shape: created_at must be a plain non-negative integer"
+      return false
+   end if
+   if pEvent["id"] is not empty and not nxIsHex(pEvent["id"], 64) then
+      nxSetError "event shape: id must be 64 hex characters"
+      return false
+   end if
+   if pEvent["pubkey"] is not empty and not nxIsHex(pEvent["pubkey"], 64) then
+      nxSetError "event shape: pubkey must be 64 hex characters"
+      return false
+   end if
+   if pEvent["sig"] is not empty and not nxIsHex(pEvent["sig"], 128) then
+      nxSetError "event shape: sig must be 128 hex characters"
+      return false
+   end if
+   if pEvent["content"] is an array then
+      nxSetError "event shape: content must be a string"
+      return false
+   end if
+   if pEvent["tags"] is not empty then
+      if pEvent["tags"] is not an array then
+         nxSetError "event shape: tags must be an array of arrays"
+         return false
+      end if
+      put nxSeqCount(pEvent["tags"]) into tTagCount
+      -- DENSE 1-based keys or refuse: nxSeqCount stops at the first gap, so
+      -- a 0-based or gapped caller table would sign an event with the
+      -- unreachable tags silently DROPPED (fail-open data loss).
+      if nxKeyCount(pEvent["tags"]) is not tTagCount then
+         nxSetError "event shape: tags keys must be 1-based and dense"
+         return false
+      end if
+      repeat with tI = 1 to tTagCount
+         if pEvent["tags"][tI] is not an array then
+            nxSetError "event shape: tag" && tI && "is not an array"
+            return false
+         end if
+         put nxSeqCount(pEvent["tags"][tI]) into tItemCount
+         if nxKeyCount(pEvent["tags"][tI]) is not tItemCount then
+            nxSetError "event shape: tag" && tI && "keys must be 1-based and dense"
+            return false
+         end if
+         if tItemCount < 1 or pEvent["tags"][tI][1] is empty then
+            nxSetError "event shape: tag" && tI && "has no name"
+            return false
+         end if
+         repeat with tJ = 1 to tItemCount
+            if pEvent["tags"][tI][tJ] is an array then
+               nxSetError "event shape: tag" && tI && "item" && tJ && "is not a string"
+               return false
+            end if
+         end repeat
+      end repeat
+   end if
+   return true
+end nxEventHasValidShape
+
+function nxEventToJson pEvent
+   -- The full wire-format event object (for ["EVENT", ...] and storage).
+   -- Field order is fixed for readability; the wire does not care, and the
+   -- id never depends on this form (only on nxEventSerialize's).
+   local tOut
+   if not nxEventHasValidShape(pEvent) then
+      return empty
+   end if
+   put "{" & quote & "id" & quote & ":" & quote & pEvent["id"] & quote into tOut
+   put "," & quote & "pubkey" & quote & ":" & quote & pEvent["pubkey"] & quote after tOut
+   put "," & quote & "created_at" & quote & ":" & pEvent["created_at"] after tOut
+   put "," & quote & "kind" & quote & ":" & pEvent["kind"] after tOut
+   put "," & quote & "tags" & quote & ":" & nxTagsSerialize(pEvent["tags"]) after tOut
+   put "," & quote & "content" & quote & ":" & quote & nxJsonEscape(pEvent["content"]) & quote after tOut
+   put "," & quote & "sig" & quote & ":" & quote & pEvent["sig"] & quote & "}" after tOut
+   return tOut
+end nxEventToJson
+
+function nxEventFromJson pJson
+   -- Parse a wire-format event object into the event array shape. Verifies
+   -- STRUCTURE only; call nxEventVerify before trusting the result (rule 2).
+   local tRoot, tEvent, tI, tJ, tKidCount, tKeyText, tNode, tTagNode, tTagCount, tItemCount, tN
+   put nxJsonParseText(pJson) into tRoot
+   if sNxJsonErr is not empty then
+      nxSetError "nxEventFromJson:" && sNxJsonErr
+      return empty
+   end if
+   if tRoot["t"] is not "o" then
+      nxSetError "nxEventFromJson: not a JSON object"
+      return empty
+   end if
+   put empty into tEvent["id"]
+   put empty into tEvent["pubkey"]
+   put empty into tEvent["sig"]
+   put empty into tEvent["content"]
+   put empty into tEvent["tags"]
+   put nxSeqCount(tRoot["k"]) into tKidCount
+   repeat with tI = 1 to tKidCount
+      put tRoot["k"][tI] into tKeyText
+      put tRoot["c"][tI] into tNode
+      if nxStrEqExact(tKeyText, "id") and tNode["t"] is "s" then
+         -- NIP-01: hex fields are lowercase on the wire; refuse rather
+         -- than normalize what this library did not produce.
+         if not nxIsLowerHex(tNode["v"], 64) then
+            nxSetError "nxEventFromJson: id must be 64 lowercase hex characters"
+            return empty
+         end if
+         put tNode["v"] into tEvent["id"]
+      else if nxStrEqExact(tKeyText, "pubkey") and tNode["t"] is "s" then
+         if not nxIsLowerHex(tNode["v"], 64) then
+            nxSetError "nxEventFromJson: pubkey must be 64 lowercase hex characters"
+            return empty
+         end if
+         put tNode["v"] into tEvent["pubkey"]
+      else if nxStrEqExact(tKeyText, "sig") and tNode["t"] is "s" then
+         if not nxIsLowerHex(tNode["v"], 128) then
+            nxSetError "nxEventFromJson: sig must be 128 lowercase hex characters"
+            return empty
+         end if
+         put tNode["v"] into tEvent["sig"]
+      else if nxStrEqExact(tKeyText, "content") and tNode["t"] is "s" then
+         put tNode["v"] into tEvent["content"]
+      else if nxStrEqExact(tKeyText, "created_at") and tNode["t"] is "n" then
+         -- Canonical digits only: "1e3", "1.5" and "07" coerce to integers
+         -- in this dialect, but a non-canonical number spelling must never
+         -- reach the serializer, where it would silently change the id
+         -- preimage. (The JSON grammar already refuses "07"; the check
+         -- stays here so the invariant does not depend on the parser.)
+         if not nxIsCanonInt(tNode["v"]) then
+            nxSetError "nxEventFromJson: created_at is not a plain integer"
+            return empty
+         end if
+         put tNode["v"] into tEvent["created_at"]
+      else if nxStrEqExact(tKeyText, "kind") and tNode["t"] is "n" then
+         if not nxIsCanonInt(tNode["v"]) then
+            nxSetError "nxEventFromJson: kind is not a plain integer"
+            return empty
+         end if
+         put tNode["v"] into tEvent["kind"]
+      else if nxStrEqExact(tKeyText, "tags") and tNode["t"] is "a" then
+         put tNode into tTagNode
+         put nxSeqCount(tTagNode["c"]) into tTagCount
+         repeat with tJ = 1 to tTagCount
+            if tTagNode["c"][tJ]["t"] is not "a" then
+               nxSetError "nxEventFromJson: tag" && tJ && "is not an array"
+               return empty
+            end if
+            put nxSeqCount(tTagNode["c"][tJ]["c"]) into tItemCount
+            if tItemCount is 0 then
+               -- An empty inner tag would leave a GAP in the rebuilt keys,
+               -- hiding every later tag from nxSeqCount consumers.
+               nxSetError "nxEventFromJson: tag" && tJ && "has no name"
+               return empty
+            end if
+            repeat with tN = 1 to tItemCount
+               if tTagNode["c"][tJ]["c"][tN]["t"] is not "s" then
+                  nxSetError "nxEventFromJson: tag" && tJ && "item" && tN && "is not a string"
+                  return empty
+               end if
+               put tTagNode["c"][tJ]["c"][tN]["v"] into tEvent["tags"][tJ][tN]
+            end repeat
+         end repeat
+      end if
+   end repeat
+   if tEvent["created_at"] is not an integer or tEvent["kind"] is not an integer then
+      nxSetError "nxEventFromJson: created_at or kind missing or not an integer"
+      return empty
+   end if
+   if not nxEventHasValidShape(tEvent) then
+      return empty
+   end if
+   return tEvent
+end nxEventFromJson
+
+-- ==========================================================================
+-- Tags: text form (one tag per line, items tab-separated), lookups.
+-- ==========================================================================
+
+function nxTagsFromText pText
+   -- One tag per line, items tab-separated. Empty lines skip; a line with an
+   -- empty first item refuses (a tag must have a name).
+   local tSavedLineDelim, tSavedItemDelim, tOut, tI, tJ, tLineCount, tItemCount, tLine, tN
+   put the lineDelimiter into tSavedLineDelim
+   put the itemDelimiter into tSavedItemDelim
+   set the lineDelimiter to return
+   set the itemDelimiter to tab
+   put 0 into tN
+   put the number of lines of pText into tLineCount
+   repeat with tI = 1 to tLineCount
+      put line tI of pText into tLine
+      if tLine is empty then
+         next repeat
+      end if
+      if item 1 of tLine is empty then
+         set the lineDelimiter to tSavedLineDelim
+         set the itemDelimiter to tSavedItemDelim
+         nxSetError "nxTagsFromText: line" && tI && "has an empty tag name"
+         return empty
+      end if
+      add 1 to tN
+      put the number of items of tLine into tItemCount
+      repeat with tJ = 1 to tItemCount
+         put item tJ of tLine into tOut[tN][tJ]
+      end repeat
+   end repeat
+   set the lineDelimiter to tSavedLineDelim
+   set the itemDelimiter to tSavedItemDelim
+   return tOut
+end nxTagsFromText
+
+function nxTagsToText pTags
+   -- Inverse of nxTagsFromText. A tag item containing a tab or a line break
+   -- cannot round-trip through the text form, so it refuses rather than
+   -- silently corrupting (use the array form for such tags).
+   local tOut, tI, tJ, tTagCount, tItemCount, tItemText
+   put empty into tOut
+   put nxSeqCount(pTags) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if tI > 1 then
+         put return after tOut
+      end if
+      put nxSeqCount(pTags[tI]) into tItemCount
+      repeat with tJ = 1 to tItemCount
+         put pTags[tI][tJ] into tItemText
+         if tItemText contains tab or tItemText contains numToChar(10) or tItemText contains numToChar(13) then
+            nxSetError "nxTagsToText: tag" && tI && "item" && tJ && "contains a tab or line break; use the array form"
+            return empty
+         end if
+         if tJ is tItemCount and tItemText is empty then
+            -- The engine ignores one trailing delimiter when counting
+            -- items (engine notes 2.2), so a trailing empty item cannot
+            -- round-trip through the text form: refuse, never corrupt.
+            nxSetError "nxTagsToText: tag" && tI && "ends with an empty item, which the text form cannot round-trip; use the array form"
+            return empty
+         end if
+         if tJ > 1 then
+            put tab after tOut
+         end if
+         put tItemText after tOut
+      end repeat
+   end repeat
+   return tOut
+end nxTagsToText
+
+function nxTagCount pEvent
+   return nxSeqCount(pEvent["tags"])
+end nxTagCount
+
+function nxTagItem pEvent, pIndex
+   -- Tag number pIndex (1-based) as tab-joined text, or empty.
+   local tOut, tJ, tItemCount
+   if pIndex is not an integer or pIndex < 1 or pIndex > nxSeqCount(pEvent["tags"]) then
+      nxSetError "nxTagItem: no tag" && pIndex
+      return empty
+   end if
+   put empty into tOut
+   put nxSeqCount(pEvent["tags"][pIndex]) into tItemCount
+   repeat with tJ = 1 to tItemCount
+      if tJ > 1 then
+         put tab after tOut
+      end if
+      put pEvent["tags"][pIndex][tJ] after tOut
+   end repeat
+   return tOut
+end nxTagItem
+
+function nxTagFirst pEvent, pTagName
+   -- The VALUE (second item) of the first tag named pTagName, or empty.
+   -- Byte-exact name compare: "p" and "P" are different tags.
+   local tI, tTagCount
+   put nxSeqCount(pEvent["tags"]) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pEvent["tags"][tI][1], pTagName) then
+         if 2 is among the keys of pEvent["tags"][tI] then
+            return pEvent["tags"][tI][2]
+         end if
+         return empty
+      end if
+   end repeat
+   return empty
+end nxTagFirst
+
+function nxTagValues pEvent, pTagName
+   -- Every value of every tag named pTagName, one per line.
+   local tOut, tI, tTagCount
+   put empty into tOut
+   put nxSeqCount(pEvent["tags"]) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pEvent["tags"][tI][1], pTagName) and 2 is among the keys of pEvent["tags"][tI] then
+         if tOut is not empty then
+            put return after tOut
+         end if
+         put pEvent["tags"][tI][2] after tOut
+      end if
+   end repeat
+   return tOut
+end nxTagValues
+
+-- ==========================================================================
+-- Convenience builders for the core kinds. Every one returns an UNSIGNED
+-- event array (nxEventSign completes it), so key material never threads
+-- through builders that do not need it.
+-- ==========================================================================
+
+function nxMetadataBuild pName, pAbout, pPicture, pCreatedAt
+   -- kind 0 user metadata; the content is the stringified JSON object.
+   local tContent
+   put "{" & quote & "name" & quote & ":" & quote & nxJsonEscape(pName) & quote into tContent
+   put "," & quote & "about" & quote & ":" & quote & nxJsonEscape(pAbout) & quote after tContent
+   put "," & quote & "picture" & quote & ":" & quote & nxJsonEscape(pPicture) & quote & "}" after tContent
+   return nxEventBuild(0, tContent, empty, pCreatedAt)
+end nxMetadataBuild
+
+function nxMetadataParse pEvent
+   -- The common kind-0 content fields as an array; absent fields are empty.
+   local tContent, tOut, tField, tSavedItemDelim
+   if pEvent["kind"] is not 0 then
+      nxSetError "nxMetadataParse: not a kind 0 event"
+      return empty
+   end if
+   put pEvent["content"] into tContent
+   -- `repeat for each item` reads the CURRENT itemDelimiter: guard it.
+   put the itemDelimiter into tSavedItemDelim
+   set the itemDelimiter to comma
+   repeat for each item tField in "name,about,picture,display_name,nip05,website,banner,lud16"
+      if nxJsonType(tContent, tField) is "string" then
+         put nxJsonGet(tContent, tField) into tOut[tField]
+      else
+         put empty into tOut[tField]
+      end if
+   end repeat
+   set the itemDelimiter to tSavedItemDelim
+   return tOut
+end nxMetadataParse
+
+function nxReplyBuild pParentEvent, pContent, pCreatedAt
+   -- A kind-1 reply with NIP-10 marked tags: the thread root (the parent's
+   -- own "root" e tag, or the parent itself when it has none), a "reply"
+   -- marker on the parent, and p tags for the people in the thread.
+   local tTags, tRootId, tI, tN, tTagCount, tSeen, tValueText
+   if not nxIsHex(pParentEvent["id"], 64) or not nxIsHex(pParentEvent["pubkey"], 64) then
+      nxSetError "nxReplyBuild: the parent event has no id or pubkey"
+      return empty
+   end if
+   put empty into tRootId
+   put nxSeqCount(pParentEvent["tags"]) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pParentEvent["tags"][tI][1], "e") and 4 is among the keys of pParentEvent["tags"][tI] then
+         if nxStrEqExact(pParentEvent["tags"][tI][4], "root") then
+            put pParentEvent["tags"][tI][2] into tRootId
+            exit repeat
+         end if
+      end if
+   end repeat
+   put 0 into tN
+   if tRootId is empty then
+      -- The parent IS the thread root: one marked e tag (NIP-10's direct
+      -- reply shape).
+      add 1 to tN
+      put "e" into tTags[tN][1]
+      put pParentEvent["id"] into tTags[tN][2]
+      put empty into tTags[tN][3]
+      put "root" into tTags[tN][4]
+   else
+      add 1 to tN
+      put "e" into tTags[tN][1]
+      put tRootId into tTags[tN][2]
+      put empty into tTags[tN][3]
+      put "root" into tTags[tN][4]
+      add 1 to tN
+      put "e" into tTags[tN][1]
+      put pParentEvent["id"] into tTags[tN][2]
+      put empty into tTags[tN][3]
+      put "reply" into tTags[tN][4]
+   end if
+   -- The parent's author, then the parent's own p tags, deduplicated.
+   add 1 to tN
+   put "p" into tTags[tN][1]
+   put pParentEvent["pubkey"] into tTags[tN][2]
+   put pParentEvent["pubkey"] into tSeen[pParentEvent["pubkey"]]
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pParentEvent["tags"][tI][1], "p") and 2 is among the keys of pParentEvent["tags"][tI] then
+         put pParentEvent["tags"][tI][2] into tValueText
+         if nxIsHex(tValueText, 64) and tValueText is not among the keys of tSeen then
+            add 1 to tN
+            put "p" into tTags[tN][1]
+            put tValueText into tTags[tN][2]
+            put tValueText into tSeen[tValueText]
+         end if
+      end if
+   end repeat
+   return nxEventBuild(1, pContent, tTags, pCreatedAt)
+end nxReplyBuild
+
+function nxReactionBuild pTargetEvent, pContent, pCreatedAt
+   -- kind 7 reaction (NIP-25); empty content means the conventional "+".
+   local tTags, tContent
+   if not nxIsHex(pTargetEvent["id"], 64) or not nxIsHex(pTargetEvent["pubkey"], 64) then
+      nxSetError "nxReactionBuild: the target event has no id or pubkey"
+      return empty
+   end if
+   put "e" into tTags[1][1]
+   put pTargetEvent["id"] into tTags[1][2]
+   put "p" into tTags[2][1]
+   put pTargetEvent["pubkey"] into tTags[2][2]
+   put "k" into tTags[3][1]
+   put pTargetEvent["kind"] into tTags[3][2]
+   if pContent is empty then
+      put "+" into tContent
+   else
+      put pContent into tContent
+   end if
+   return nxEventBuild(7, tContent, tTags, pCreatedAt)
+end nxReactionBuild
+
+function nxDeleteBuild pIdLines, pReason, pCreatedAt
+   -- kind 5 deletion request (NIP-09): one e tag per event id line.
+   local tTags, tIdSeq, tI, tCount
+   put nxLinesToSeq(pIdLines) into tIdSeq
+   put nxSeqCount(tIdSeq) into tCount
+   if tCount is 0 then
+      nxSetError "nxDeleteBuild: no event ids given"
+      return empty
+   end if
+   repeat with tI = 1 to tCount
+      if not nxIsHex(tIdSeq[tI], 64) then
+         nxSetError "nxDeleteBuild: line" && tI && "is not a 64-hex event id"
+         return empty
+      end if
+      put "e" into tTags[tI][1]
+      put tIdSeq[tI] into tTags[tI][2]
+   end repeat
+   return nxEventBuild(5, pReason, tTags, pCreatedAt)
+end nxDeleteBuild
+
+function nxContactsBuild pPubkeyLines, pCreatedAt
+   -- kind 3 contact list: one p tag per followed pubkey line.
+   local tTags, tSeq, tI, tCount
+   put nxLinesToSeq(pPubkeyLines) into tSeq
+   put nxSeqCount(tSeq) into tCount
+   repeat with tI = 1 to tCount
+      if not nxIsHex(tSeq[tI], 64) then
+         nxSetError "nxContactsBuild: line" && tI && "is not a 64-hex pubkey"
+         return empty
+      end if
+      put "p" into tTags[tI][1]
+      put tSeq[tI] into tTags[tI][2]
+   end repeat
+   return nxEventBuild(3, empty, tTags, pCreatedAt)
+end nxContactsBuild
+
+function nxContactsParse pEvent
+   -- The followed pubkeys of a kind 3 event, one per line.
+   if pEvent["kind"] is not 3 then
+      nxSetError "nxContactsParse: not a kind 3 event"
+      return empty
+   end if
+   return nxTagValues(pEvent, "p")
+end nxContactsParse
+
+function nxRelayListBuild pRelayLines, pCreatedAt
+   -- kind 10002 relay list (NIP-65): each line "url" (read and write) or
+   -- "url<tab>read" / "url<tab>write".
+   local tSavedItemDelim, tTags, tSeq, tI, tCount, tMarker, tUrl
+   put nxLinesToSeq(pRelayLines) into tSeq
+   put nxSeqCount(tSeq) into tCount
+   if tCount is 0 then
+      nxSetError "nxRelayListBuild: no relays given"
+      return empty
+   end if
+   put the itemDelimiter into tSavedItemDelim
+   set the itemDelimiter to tab
+   repeat with tI = 1 to tCount
+      put item 1 of tSeq[tI] into tUrl
+      put item 2 of tSeq[tI] into tMarker
+      if tUrl is empty then
+         set the itemDelimiter to tSavedItemDelim
+         nxSetError "nxRelayListBuild: line" && tI && "has no url"
+         return empty
+      end if
+      if tMarker is not empty and not nxStrEqExact(tMarker, "read") and not nxStrEqExact(tMarker, "write") then
+         set the itemDelimiter to tSavedItemDelim
+         nxSetError "nxRelayListBuild: line" && tI && "marker must be read or write"
+         return empty
+      end if
+      put "r" into tTags[tI][1]
+      put tUrl into tTags[tI][2]
+      if tMarker is not empty then
+         put tMarker into tTags[tI][3]
+      end if
+   end repeat
+   set the itemDelimiter to tSavedItemDelim
+   return nxEventBuild(10002, empty, tTags, pCreatedAt)
+end nxRelayListBuild
+
+function nxRelayListParse pEvent
+   -- The r tags of a kind 10002 event, one relay per line: "url" or
+   -- "url<tab>marker".
+   local tOut, tI, tTagCount
+   if pEvent["kind"] is not 10002 then
+      nxSetError "nxRelayListParse: not a kind 10002 event"
+      return empty
+   end if
+   put empty into tOut
+   put nxSeqCount(pEvent["tags"]) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pEvent["tags"][tI][1], "r") and 2 is among the keys of pEvent["tags"][tI] then
+         if tOut is not empty then
+            put return after tOut
+         end if
+         put pEvent["tags"][tI][2] after tOut
+         if 3 is among the keys of pEvent["tags"][tI] then
+            put tab & pEvent["tags"][tI][3] after tOut
+         end if
+      end if
+   end repeat
+   return tOut
+end nxRelayListParse
+
+function nxAuthBuild pRelayUrl, pChallenge, pCreatedAt
+   -- kind 22242 NIP-42 authentication event (sign it, then nxClientAuth).
+   local tTags
+   if pRelayUrl is empty or pChallenge is empty then
+      nxSetError "nxAuthBuild: the relay url and the challenge are both required"
+      return empty
+   end if
+   put "relay" into tTags[1][1]
+   put pRelayUrl into tTags[1][2]
+   put "challenge" into tTags[2][1]
+   put pChallenge into tTags[2][2]
+   return nxEventBuild(22242, empty, tTags, pCreatedAt)
+end nxAuthBuild
+
+-- ==========================================================================
+-- bech32 (BIP-173) and the NIP-19 entities. The 5-bit value lists flow as
+-- 1-based sequential ARRAYS, never as delimited text, so no delimiter state
+-- is touched anywhere in this section. The 90-character BIP-173 cap is
+-- deliberately WAIVED (NIP-19 waives it for TLV entities); the NIP-19
+-- SHOULD cap of 5000 characters is enforced instead, both directions.
+-- ==========================================================================
+
+private function nxConvert8To5 pData
+   -- Bytes -> 5-bit values (zero-padded tail), as a sequential array. The
+   -- accumulator is masked to its pending bits each step (exact-integer
+   -- discipline: a long buffer must never build a big integer).
+   local tOut, tBits, tValue, tI, tN, tCount
+   put 0 into tBits
+   put 0 into tValue
+   put 0 into tCount
+   put the number of bytes of pData into tN
+   repeat with tI = 1 to tN
+      put tValue * 256 + byteToNum(byte tI of pData) into tValue
+      add 8 to tBits
+      repeat while tBits >= 5
+         subtract 5 from tBits
+         add 1 to tCount
+         put nxIntMod(nxIntDiv(tValue, nxPow2(tBits)), 32) into tOut[tCount]
+      end repeat
+      put nxIntMod(tValue, nxPow2(tBits)) into tValue
+   end repeat
+   if tBits > 0 then
+      add 1 to tCount
+      put nxIntMod(tValue * nxPow2(5 - tBits), 32) into tOut[tCount]
+   end if
+   return tOut
+end nxConvert8To5
+
+private function nxConvert5To8 pValues
+   -- 5-bit values -> bytes, STRICT (BIP-173 decode rules): more than four
+   -- leftover bits, or non-zero padding bits, refuse. Returns an array with
+   -- keys "bytes" and "ok" plus "why" on refusal.
+   local tOut, tResult, tBits, tValue, tI, tN
+   put 0 into tBits
+   put 0 into tValue
+   put empty into tOut
+   put nxSeqCount(pValues) into tN
+   repeat with tI = 1 to tN
+      put tValue * 32 + pValues[tI] into tValue
+      add 5 to tBits
+      if tBits >= 8 then
+         subtract 8 from tBits
+         put numToByte(nxIntMod(nxIntDiv(tValue, nxPow2(tBits)), 256)) after tOut
+         put nxIntMod(tValue, nxPow2(tBits)) into tValue
+      end if
+   end repeat
+   if tBits >= 5 then
+      put false into tResult["ok"]
+      put "too many padding bits" into tResult["why"]
+      return tResult
+   end if
+   if tValue is not 0 then
+      put false into tResult["ok"]
+      put "non-zero padding bits" into tResult["why"]
+      return tResult
+   end if
+   put true into tResult["ok"]
+   put tOut into tResult["bytes"]
+   return tResult
+end nxConvert5To8
+
+private function nxBech32Polymod pValues
+   -- BIP-173's checksum over a sequential array of 5-bit values. The
+   -- generator constants are the BIP's (decimal spellings of the published
+   -- hex), gated against the reference by tools/nostr-kat.py.
+   local tChk, tI, tCount, tTop, tBit, tGen
+   put 996825010 into tGen[1]
+   put 642813549 into tGen[2]
+   put 513874426 into tGen[3]
+   put 1027748829 into tGen[4]
+   put 705979059 into tGen[5]
+   put 1 into tChk
+   put nxSeqCount(pValues) into tCount
+   repeat with tI = 1 to tCount
+      put nxIntDiv(tChk, 33554432) into tTop
+      put nxBitXor31(nxIntMod(tChk, 33554432) * 32, pValues[tI]) into tChk
+      repeat with tBit = 1 to 5
+         if nxIntMod(nxIntDiv(tTop, nxPow2(tBit - 1)), 2) is 1 then
+            put nxBitXor31(tChk, tGen[tBit]) into tChk
+         end if
+      end repeat
+   end repeat
+   return tChk
+end nxBech32Polymod
+
+private function nxBech32HrpExpand pHrp
+   -- The HRP contributes its high bits, a zero, then its low bits.
+   local tOut, tI, tCount, tCode, tN
+   put the number of chars of pHrp into tCount
+   put 0 into tN
+   repeat with tI = 1 to tCount
+      add 1 to tN
+      put nxIntDiv(byteToNum(char tI of pHrp), 32) into tOut[tN]
+   end repeat
+   add 1 to tN
+   put 0 into tOut[tN]
+   repeat with tI = 1 to tCount
+      add 1 to tN
+      put nxIntMod(byteToNum(char tI of pHrp), 32) into tOut[tN]
+   end repeat
+   return tOut
+end nxBech32HrpExpand
+
+private function nxBech32SpecConst pSpec
+   if pSpec is "bech32m" then
+      return kNxBech32mConst
+   end if
+   return 1
+end nxBech32SpecConst
+
+private function nxCaseKind pText
+   -- "lower", "upper", "mixed" or "none" over the ASCII letters of pText.
+   local tI, tCount, tCode, tHasLower, tHasUpper
+   put false into tHasLower
+   put false into tHasUpper
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 97 and tCode <= 122 then
+         put true into tHasLower
+      end if
+      if tCode >= 65 and tCode <= 90 then
+         put true into tHasUpper
+      end if
+   end repeat
+   if tHasLower and tHasUpper then
+      return "mixed"
+   end if
+   if tHasLower then
+      return "lower"
+   end if
+   if tHasUpper then
+      return "upper"
+   end if
+   return "none"
+end nxCaseKind
+
+private function nxToLowerAscii pText
+   -- ASCII-only lowercasing by byte value (`toLower`'s locale behaviour is
+   -- nothing this wire format wants to depend on).
+   local tOut, tI, tCount, tCode
+   put empty into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         put numToChar(tCode + 32) after tOut
+      else
+         put numToChar(tCode) after tOut
+      end if
+   end repeat
+   return tOut
+end nxToLowerAscii
+
+function nxBech32Encode pHrp, pHex, pSpec
+   -- Encode bytes (as hex) under pHrp; pSpec "bech32" (default, NIP-19) or
+   -- "bech32m". Lowercase out; an uppercase HRP refuses (uppercase the
+   -- finished string instead, which is what BIP-173 defines).
+   local tData, tValues, tCombined, tPolymod, tOut, tI, tCount, tCode, tN, tIndex
+   put the number of chars of pHrp into tCount
+   if tCount < 1 or tCount > 83 then
+      nxSetError "nxBech32Encode: the human-readable part must be 1 to 83 characters"
+      return empty
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pHrp) into tCode
+      if tCode < 33 or tCode > 126 then
+         nxSetError "nxBech32Encode: the human-readable part must be printable ASCII"
+         return empty
+      end if
+      if tCode >= 65 and tCode <= 90 then
+         nxSetError "nxBech32Encode: the human-readable part must be lowercase; uppercase the finished string instead"
+         return empty
+      end if
+   end repeat
+   if pSpec is not empty and pSpec is not "bech32" and pSpec is not "bech32m" then
+      nxSetError "nxBech32Encode: spec must be bech32 or bech32m"
+      return empty
+   end if
+   put nxHexDecode(pHex) into tData
+   if tData is empty and pHex is not empty then
+      return empty
+   end if
+   put nxConvert8To5(tData) into tValues
+   -- checksum input: hrp expansion, data, six zeros
+   put nxBech32HrpExpand(pHrp) into tCombined
+   put nxSeqCount(tCombined) into tN
+   put nxSeqCount(tValues) into tCount
+   repeat with tI = 1 to tCount
+      add 1 to tN
+      put tValues[tI] into tCombined[tN]
+   end repeat
+   repeat with tI = 1 to 6
+      add 1 to tN
+      put 0 into tCombined[tN]
+   end repeat
+   put nxBitXor31(nxBech32Polymod(tCombined), nxBech32SpecConst(pSpec)) into tPolymod
+   put pHrp & "1" into tOut
+   put nxSeqCount(tValues) into tCount
+   repeat with tI = 1 to tCount
+      put char (tValues[tI] + 1) of kNxBech32Charset after tOut
+   end repeat
+   repeat with tI = 0 to 5
+      put nxIntMod(nxIntDiv(tPolymod, nxPow2(5 * (5 - tI))), 32) into tIndex
+      put char (tIndex + 1) of kNxBech32Charset after tOut
+   end repeat
+   if the number of chars of tOut > kNxBech32MaxLen then
+      nxSetError "nxBech32Encode: the result would exceed the" && kNxBech32MaxLen & "-character NIP-19 cap"
+      return empty
+   end if
+   return tOut
+end nxBech32Encode
+
+function nxBech32Decode pText
+   -- Decode either spec. Returns an array with keys "hrp", "spec" and "hex"
+   -- (the data bytes, checksum stripped, as lowercase hex), or empty with
+   -- the reason recorded. Mixed case refuses; padding is strict.
+   local tResult, tLower, tCount, tI, tCode, tPos, tHrp, tDataText, tValues, tIndex, tCheck, tPayload, tN, tCase
+   put the number of chars of pText into tCount
+   if tCount > kNxBech32MaxLen then
+      nxSetError "nxBech32Decode: longer than the" && kNxBech32MaxLen & "-character NIP-19 cap"
+      return empty
+   end if
+   put nxCaseKind(pText) into tCase
+   if tCase is "mixed" then
+      nxSetError "nxBech32Decode: mixed case is not allowed"
+      return empty
+   end if
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode < 33 or tCode > 126 then
+         nxSetError "nxBech32Decode: character outside printable ASCII"
+         return empty
+      end if
+   end repeat
+   put nxToLowerAscii(pText) into tLower
+   -- The separator is the LAST "1" ("1" may appear inside the HRP).
+   put 0 into tPos
+   repeat with tI = tCount down to 1
+      if byteToNum(char tI of tLower) is 49 then
+         put tI into tPos
+         exit repeat
+      end if
+   end repeat
+   -- The data part must be at least the 6 checksum characters: tPos + 6,
+   -- not + 7 (the reference's 0-based pos+7 bound, re-based). The first
+   -- cut carried the 0-based spelling and refused every valid empty-
+   -- payload string, including BIP-173's own "A12UEL5L" vector.
+   if tPos < 2 or tPos + 6 > tCount then
+      nxSetError "nxBech32Decode: bad separator position"
+      return empty
+   end if
+   put char 1 to (tPos - 1) of tLower into tHrp
+   put char (tPos + 1) to tCount of tLower into tDataText
+   put the number of chars of tDataText into tN
+   repeat with tI = 1 to tN
+      put nxCharIndex(char tI of tDataText, kNxBech32Charset) into tIndex
+      if tIndex is 0 then
+         nxSetError "nxBech32Decode: character outside the bech32 charset"
+         return empty
+      end if
+      put tIndex - 1 into tValues[tI]
+   end repeat
+   -- Verify: polymod(hrpExpand + data incl checksum) is the spec constant.
+   local tCombined, tJ
+   put nxBech32HrpExpand(tHrp) into tCombined
+   put nxSeqCount(tCombined) into tJ
+   repeat with tI = 1 to tN
+      add 1 to tJ
+      put tValues[tI] into tCombined[tJ]
+   end repeat
+   put nxBech32Polymod(tCombined) into tCheck
+   if tCheck is 1 then
+      put "bech32" into tResult["spec"]
+   else if tCheck is kNxBech32mConst then
+      put "bech32m" into tResult["spec"]
+   else
+      nxSetError "nxBech32Decode: bad checksum"
+      return empty
+   end if
+   -- Strip the six checksum values, repack 5 -> 8 strictly.
+   local tDataValues, tConverted
+   repeat with tI = 1 to tN - 6
+      put tValues[tI] into tDataValues[tI]
+   end repeat
+   put nxConvert5To8(tDataValues) into tConverted
+   if tConverted["ok"] is not true then
+      nxSetError "nxBech32Decode:" && tConverted["why"]
+      return empty
+   end if
+   put tHrp into tResult["hrp"]
+   put nxHexEncode(tConverted["bytes"]) into tResult["hex"]
+   return tResult
+end nxBech32Decode
+
+private function nxBareEncode pHrp, pHex
+   -- npub / nsec / note share one shape: exactly 32 bytes, bech32 (not m).
+   if not nxIsHex(pHex, 64) then
+      nxSetError "nx" & pHrp & "Encode: the payload must be 64 hex characters"
+      return empty
+   end if
+   return nxBech32Encode(pHrp, pHex, "bech32")
+end nxBareEncode
+
+private function nxBareDecode pText, pHrp
+   -- Decode a bare entity; enforce the hrp, the spec and the 32-byte payload.
+   local tDecoded
+   put nxBech32Decode(pText) into tDecoded
+   if tDecoded is empty then
+      return empty
+   end if
+   if not nxStrEqExact(tDecoded["hrp"], pHrp) then
+      nxSetError "expected a" && pHrp && "entity, got" && tDecoded["hrp"]
+      return empty
+   end if
+   if tDecoded["spec"] is not "bech32" then
+      nxSetError pHrp && "entities are bech32, not bech32m"
+      return empty
+   end if
+   if the number of chars of tDecoded["hex"] is not 64 then
+      nxSetError pHrp && "payload is not 32 bytes"
+      return empty
+   end if
+   return tDecoded["hex"]
+end nxBareDecode
+
+function nxNpubEncode pPubkeyHex
+   return nxBareEncode("npub", pPubkeyHex)
+end nxNpubEncode
+
+function nxNpubDecode pText
+   return nxBareDecode(pText, "npub")
+end nxNpubDecode
+
+function nxNsecEncode pSeckeyHex
+   return nxBareEncode("nsec", pSeckeyHex)
+end nxNsecEncode
+
+function nxNsecDecode pText
+   return nxBareDecode(pText, "nsec")
+end nxNsecDecode
+
+function nxNoteEncode pIdHex
+   return nxBareEncode("note", pIdHex)
+end nxNoteEncode
+
+function nxNoteDecode pText
+   return nxBareDecode(pText, "note")
+end nxNoteDecode
+
+private function nxTlvAppend pPayload, pTagByte, pValueData
+   -- One TLV item (type, length, value); value must fit one length byte.
+   if the number of bytes of pValueData > 255 then
+      nxSetError "NIP-19 TLV value longer than 255 bytes"
+      return empty
+   end if
+   return pPayload & numToByte(pTagByte) & numToByte(the number of bytes of pValueData) & pValueData
+end nxTlvAppend
+
+private function nxTlvRelays pPayload, pRelayLines
+   -- Append a type-1 TLV per relay line (ascii); refuses a non-ascii url.
+   local tSeq, tI, tCount, tBytes, tOut
+   put pPayload into tOut
+   put nxLinesToSeq(pRelayLines) into tSeq
+   put nxSeqCount(tSeq) into tCount
+   repeat with tI = 1 to tCount
+      put textEncode(tSeq[tI], "UTF-8") into tBytes
+      if the number of bytes of tBytes is not the number of chars of tSeq[tI] then
+         nxSetError "NIP-19 relay urls must be ascii"
+         return empty
+      end if
+      put nxTlvAppend(tOut, 1, tBytes) into tOut
+      if tOut is empty then
+         return empty
+      end if
+   end repeat
+   return tOut
+end nxTlvRelays
+
+private function nxKindToU32 pKind
+   -- A kind as 4 big-endian bytes (the NIP-19 TLV type 3 encoding).
+   local tOut
+   put numToByte(nxIntMod(nxIntDiv(pKind, 16777216), 256)) into tOut
+   put numToByte(nxIntMod(nxIntDiv(pKind, 65536), 256)) after tOut
+   put numToByte(nxIntMod(nxIntDiv(pKind, 256), 256)) after tOut
+   put numToByte(nxIntMod(pKind, 256)) after tOut
+   return tOut
+end nxKindToU32
+
+function nxNprofileEncode pPubkeyHex, pRelayLines
+   local tPayload
+   if not nxIsHex(pPubkeyHex, 64) then
+      nxSetError "nxNprofileEncode: the pubkey must be 64 hex characters"
+      return empty
+   end if
+   put nxTlvAppend(empty, 0, nxHexDecode(pPubkeyHex)) into tPayload
+   put nxTlvRelays(tPayload, pRelayLines) into tPayload
+   if tPayload is empty then
+      return empty
+   end if
+   return nxBech32Encode("nprofile", nxHexEncode(tPayload), "bech32")
+end nxNprofileEncode
+
+function nxNprofileDecode pText
+   -- Returns an array with keys "pubkey" and "relays" (one per line).
+   local tFields
+   put nxEntityDecode(pText) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if not nxStrEqExact(tFields["type"], "nprofile") then
+      nxSetError "expected an nprofile entity, got" && tFields["type"]
+      return empty
+   end if
+   return tFields
+end nxNprofileDecode
+
+function nxNeventEncode pIdHex, pRelayLines, pAuthorHex, pKind
+   local tPayload
+   if not nxIsHex(pIdHex, 64) then
+      nxSetError "nxNeventEncode: the event id must be 64 hex characters"
+      return empty
+   end if
+   put nxTlvAppend(empty, 0, nxHexDecode(pIdHex)) into tPayload
+   put nxTlvRelays(tPayload, pRelayLines) into tPayload
+   if tPayload is empty then
+      return empty
+   end if
+   if pAuthorHex is not empty then
+      if not nxIsHex(pAuthorHex, 64) then
+         nxSetError "nxNeventEncode: the author must be 64 hex characters"
+         return empty
+      end if
+      put nxTlvAppend(tPayload, 2, nxHexDecode(pAuthorHex)) into tPayload
+   end if
+   if pKind is not empty then
+      if pKind is not an integer or pKind < 0 or pKind > 65535 then
+         nxSetError "nxNeventEncode: kind must be an integer between 0 and 65535"
+         return empty
+      end if
+      put nxTlvAppend(tPayload, 3, nxKindToU32(pKind)) into tPayload
+   end if
+   return nxBech32Encode("nevent", nxHexEncode(tPayload), "bech32")
+end nxNeventEncode
+
+function nxNeventDecode pText
+   local tFields
+   put nxEntityDecode(pText) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if not nxStrEqExact(tFields["type"], "nevent") then
+      nxSetError "expected an nevent entity, got" && tFields["type"]
+      return empty
+   end if
+   return tFields
+end nxNeventDecode
+
+function nxNaddrEncode pIdentifier, pPubkeyHex, pKind, pRelayLines
+   -- The addressable-event coordinate: identifier (the d tag; may be empty
+   -- for normal replaceable events), author pubkey and kind are REQUIRED.
+   local tPayload
+   if not nxIsHex(pPubkeyHex, 64) then
+      nxSetError "nxNaddrEncode: the pubkey must be 64 hex characters"
+      return empty
+   end if
+   if pKind is not an integer or pKind < 0 or pKind > 65535 then
+      nxSetError "nxNaddrEncode: kind must be an integer between 0 and 65535"
+      return empty
+   end if
+   put nxTlvAppend(empty, 0, textEncode(pIdentifier, "UTF-8")) into tPayload
+   if tPayload is empty then
+      -- Checked HERE, before the relay TLVs could refill the payload and
+      -- mask the refusal: an over-255-byte identifier would otherwise be
+      -- silently DROPPED from a checksum-valid naddr naming the wrong
+      -- coordinate. (An empty identifier still yields its 2-byte header,
+      -- so this guard cannot false-positive.)
+      return empty
+   end if
+   put nxTlvRelays(tPayload, pRelayLines) into tPayload
+   if tPayload is empty then
+      return empty
+   end if
+   put nxTlvAppend(tPayload, 2, nxHexDecode(pPubkeyHex)) into tPayload
+   put nxTlvAppend(tPayload, 3, nxKindToU32(pKind)) into tPayload
+   return nxBech32Encode("naddr", nxHexEncode(tPayload), "bech32")
+end nxNaddrEncode
+
+function nxNaddrDecode pText
+   local tFields
+   put nxEntityDecode(pText) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if not nxStrEqExact(tFields["type"], "naddr") then
+      nxSetError "expected an naddr entity, got" && tFields["type"]
+      return empty
+   end if
+   return tFields
+end nxNaddrDecode
+
+function nxEntityDecode pText
+   -- The generic decoder every entity handler shares: accepts any NIP-19
+   -- entity (a nostr: URI prefix is stripped first) and returns an array
+   -- keyed by "type" plus the fields that entity carries. Unknown TLV types
+   -- are IGNORED, as NIP-19 requires.
+   local tText, tDecoded, tPayload, tFields, tPos, tLen, tTagByte, tValueData, tByteCount, tRelayCount, tKindValue, tI
+   put pText into tText
+   if char 1 to 6 of tText is "nostr:" then
+      put char 7 to (the number of chars of tText) of tText into tText
+   end if
+   put nxBech32Decode(tText) into tDecoded
+   if tDecoded is empty then
+      return empty
+   end if
+   if tDecoded["spec"] is not "bech32" then
+      nxSetError "NIP-19 entities are bech32, not bech32m"
+      return empty
+   end if
+   put tDecoded["hrp"] into tFields["type"]
+   -- Bare entities: a fixed 32-byte payload.
+   if tFields["type"] is "npub" or tFields["type"] is "nsec" or tFields["type"] is "note" then
+      if the number of chars of tDecoded["hex"] is not 64 then
+         nxSetError tFields["type"] && "payload is not 32 bytes"
+         return empty
+      end if
+      if tFields["type"] is "npub" then
+         put tDecoded["hex"] into tFields["pubkey"]
+      else if tFields["type"] is "nsec" then
+         put tDecoded["hex"] into tFields["seckey"]
+      else
+         put tDecoded["hex"] into tFields["id"]
+      end if
+      return tFields
+   end if
+   if tFields["type"] is not "nprofile" and tFields["type"] is not "nevent" and tFields["type"] is not "naddr" then
+      nxSetError "nxEntityDecode: unknown entity type" && tFields["type"]
+      return empty
+   end if
+   -- TLV entities.
+   put nxHexDecode(tDecoded["hex"]) into tPayload
+   put empty into tFields["relays"]
+   put empty into tFields["pubkey"]
+   put empty into tFields["id"]
+   put empty into tFields["identifier"]
+   put empty into tFields["kind"]
+   put 0 into tRelayCount
+   put 1 into tPos
+   put the number of bytes of tPayload into tByteCount
+   repeat while tPos <= tByteCount
+      if tPos + 1 > tByteCount then
+         nxSetError "nxEntityDecode: truncated TLV header"
+         return empty
+      end if
+      put byteToNum(byte tPos of tPayload) into tTagByte
+      put byteToNum(byte (tPos + 1) of tPayload) into tLen
+      if tPos + 1 + tLen > tByteCount then
+         nxSetError "nxEntityDecode: truncated TLV value"
+         return empty
+      end if
+      if tLen is 0 then
+         put empty into tValueData
+      else
+         put byte (tPos + 2) to (tPos + 1 + tLen) of tPayload into tValueData
+      end if
+      add 2 + tLen to tPos
+      if tTagByte is 0 then
+         if tFields["type"] is "naddr" then
+            put textDecode(tValueData, "UTF-8") into tFields["identifier"]
+         else
+            if tLen is not 32 then
+               nxSetError "nxEntityDecode: the special TLV must be 32 bytes"
+               return empty
+            end if
+            if tFields["type"] is "nprofile" then
+               put nxHexEncode(tValueData) into tFields["pubkey"]
+            else
+               put nxHexEncode(tValueData) into tFields["id"]
+            end if
+         end if
+      else if tTagByte is 1 then
+         add 1 to tRelayCount
+         if tFields["relays"] is not empty then
+            put return after tFields["relays"]
+         end if
+         put textDecode(tValueData, "UTF-8") after tFields["relays"]
+      else if tTagByte is 2 then
+         if tLen is not 32 then
+            nxSetError "nxEntityDecode: the author TLV must be 32 bytes"
+            return empty
+         end if
+         put nxHexEncode(tValueData) into tFields["pubkey"]
+      else if tTagByte is 3 then
+         if tLen is not 4 then
+            nxSetError "nxEntityDecode: the kind TLV must be 4 bytes"
+            return empty
+         end if
+         put byteToNum(byte 1 of tValueData) * 16777216 into tKindValue
+         add byteToNum(byte 2 of tValueData) * 65536 to tKindValue
+         add byteToNum(byte 3 of tValueData) * 256 to tKindValue
+         add byteToNum(byte 4 of tValueData) to tKindValue
+         put tKindValue into tFields["kind"]
+      end if
+      -- Unknown TLV types fall through untouched: NIP-19 says ignore them.
+   end repeat
+   -- The required field per type.
+   if tFields["type"] is "nprofile" and tFields["pubkey"] is empty then
+      nxSetError "nxEntityDecode: nprofile carries no pubkey"
+      return empty
+   end if
+   if tFields["type"] is "nevent" and tFields["id"] is empty then
+      nxSetError "nxEntityDecode: nevent carries no id"
+      return empty
+   end if
+   if tFields["type"] is "naddr" and (tFields["pubkey"] is empty or tFields["kind"] is empty) then
+      nxSetError "nxEntityDecode: naddr needs an author and a kind"
+      return empty
+   end if
+   return tFields
+end nxEntityDecode
+
+function nxUriEncode pEntity
+   -- A NIP-21 nostr: URI for a shareable entity (never nsec, by refusal:
+   -- putting a secret key in a URI is how secret keys end up in chat logs).
+   local tFields
+   put nxEntityDecode(pEntity) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if nxStrEqExact(tFields["type"], "nsec") then
+      nxSetError "nxUriEncode: refusing to build a URI around a secret key"
+      return empty
+   end if
+   if char 1 to 6 of pEntity is "nostr:" then
+      -- Idempotent: the decoder above accepts a prefixed input, so without
+      -- this an existing URI would come back double-prefixed.
+      return pEntity
+   end if
+   return "nostr:" & pEntity
+end nxUriEncode
+
+function nxUriDecode pUri
+   -- The entity fields of a nostr: URI (nxEntityDecode already accepts the
+   -- prefix; this spelling exists so intent reads at the call site).
+   local tFields
+   if char 1 to 6 of pUri is not "nostr:" then
+      nxSetError "nxUriDecode: not a nostr: URI"
+      return empty
+   end if
+   put nxEntityDecode(pUri) into tFields
+   if tFields is empty then
+      return empty
+   end if
+   if nxStrEqExact(tFields["type"], "nsec") then
+      -- NIP-21 defines the scheme for the SHAREABLE entities; a secret key
+      -- arriving through a clicked link must refuse, the same hygiene
+      -- nxUriEncode enforces outbound.
+      nxSetError "nxUriDecode: refusing a URI that carries a secret key"
+      return empty
+   end if
+   return tFields
+end nxUriDecode
+
+-- ==========================================================================
+-- NIP-44 v2 encrypted payloads. Every step here is vector-pinned
+-- (tools/nostr-kat.py sweeps the full official set), INCLUDING the cipher
+-- since 2026-08-23: family law said the missing primitive was an UPSTREAM
+-- feature request, never a hand-rolled cipher here, and that request
+-- shipped as SodiumXT ABI 10's sxChaCha20IetfXor (docs/07). On an installed
+-- SodiumXT older than ABI 10, nxNip44Encrypt/Decrypt still fail closed with
+-- a clear capability error; the key schedule, padding and MAC work either
+-- way. The complete path is engine-unproven (needs an OXT pass).
+-- ==========================================================================
+
+function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
+   -- HKDF-extract(salt "nip44-v2", ECDH shared x) as 64 hex. The peer's
+   -- x-only key lifts even-y: prefix byte 0x02 onto it for cxEcdh, which
+   -- wants a full compressed point. cxEcdh returns the RAW 65-byte
+   -- 0x04||X||Y point; the shared x is bytes 2..33 (unhashed, as NIP-44
+   -- specifies - some libraries sha256 it, which would be wrong here).
+   local tError, tShared, tSharedX, tConv
+   if not nxIsHex(pSeckeyHex, 64) or not nxIsHex(pPubkeyHex, 64) then
+      nxSetError "nxNip44ConversationKey: keys must be 64 hex characters"
+      return empty
+   end if
+   try
+      put cxEcdh(nxHexDecode(pSeckeyHex), numToByte(2) & nxHexDecode(pPubkeyHex)) into tShared
+   catch tError
+      nxSetError "nxNip44ConversationKey needs CoinXT cxEcdh:" && tError
+      return empty
+   end try
+   if the number of bytes of tShared is not 65 then
+      nxSetError "nxNip44ConversationKey: cxEcdh returned an unexpected length"
+      return empty
+   end if
+   put byte 2 to 33 of tShared into tSharedX
+   try
+      put cxHmacSha256(textEncode(kNxNip44Salt, "UTF-8"), tSharedX) into tConv
+   catch tError
+      nxSetError "nxNip44ConversationKey needs CoinXT cxHmacSha256:" && tError
+      return empty
+   end try
+   return nxHexEncode(tConv)
+end nxNip44ConversationKey
+
+function nxNip44MessageKeys pConvKeyHex, pNonceHex
+   -- HKDF-expand(PRK conversation key, info nonce, L 76) sliced into the
+   -- three message keys; returned as an array with keys "chachaKey" (32B),
+   -- "chachaNonce" (12B) and "hmacKey" (32B), all hex.
+   local tError, tConv, tNonce, tBlockOne, tBlockTwo, tBlockThree, tOkm, tOut
+   if not nxIsHex(pConvKeyHex, 64) or not nxIsHex(pNonceHex, 64) then
+      nxSetError "nxNip44MessageKeys: the conversation key and nonce must be 64 hex characters"
+      return empty
+   end if
+   put nxHexDecode(pConvKeyHex) into tConv
+   put nxHexDecode(pNonceHex) into tNonce
+   try
+      put cxHmacSha256(tConv, tNonce & numToByte(1)) into tBlockOne
+      put cxHmacSha256(tConv, tBlockOne & tNonce & numToByte(2)) into tBlockTwo
+      put cxHmacSha256(tConv, tBlockTwo & tNonce & numToByte(3)) into tBlockThree
+   catch tError
+      nxSetError "nxNip44MessageKeys needs CoinXT cxHmacSha256:" && tError
+      return empty
+   end try
+   put tBlockOne & tBlockTwo & tBlockThree into tOkm
+   put nxHexEncode(byte 1 to 32 of tOkm) into tOut["chachaKey"]
+   put nxHexEncode(byte 33 to 44 of tOkm) into tOut["chachaNonce"]
+   put nxHexEncode(byte 45 to 76 of tOkm) into tOut["hmacKey"]
+   return tOut
+end nxNip44MessageKeys
+
+function nxNip44PaddedLen pLen
+   -- The padded length of a pLen-byte plaintext (the vectors' 24 pairs pin
+   -- this). Pure arithmetic; the 1..65535 REFUSAL lives in the pad step.
+   local tPower, tChunk
+   if pLen is not an integer or pLen < 1 then
+      nxSetError "nxNip44PaddedLen: the length must be a positive integer"
+      return empty
+   end if
+   if pLen <= 32 then
+      return 32
+   end if
+   put 1 into tPower
+   repeat while tPower < pLen
+      multiply tPower by 2
+   end repeat
+   if tPower <= 256 then
+      put 32 into tChunk
+   else
+      put nxIntDiv(tPower, 8) into tChunk
+   end if
+   return tChunk * (nxIntDiv(pLen - 1, tChunk) + 1)
+end nxNip44PaddedLen
+
+private function nxNip44Pad pPlaintext
+   -- [len u16 BE][utf8 plaintext][zeros]; plaintext 1..65535 bytes (the
+   -- published vectors pin the u16 prefix only; longer refuses, fail
+   -- closed - see the header).
+   local tBytes, tLen, tOut, tI, tPadTo
+   put textEncode(pPlaintext, "UTF-8") into tBytes
+   put the number of bytes of tBytes into tLen
+   if tLen < 1 or tLen > kNxNip44MaxPlain then
+      nxSetError "nxNip44: the plaintext must be 1 to" && kNxNip44MaxPlain && "bytes"
+      return empty
+   end if
+   put numToByte(nxIntDiv(tLen, 256)) & numToByte(nxIntMod(tLen, 256)) into tOut
+   put tBytes after tOut
+   put nxNip44PaddedLen(tLen) into tPadTo
+   repeat with tI = tLen + 1 to tPadTo
+      put numToByte(0) after tOut
+   end repeat
+   return tOut
+end nxNip44Pad
+
+private function nxNip44Unpad pPadded
+   -- Inverse of nxNip44Pad, strict: the declared length, the slice and the
+   -- computed padded length must all agree or the payload refuses.
+   local tLen, tBytes, tTotal
+   put the number of bytes of pPadded into tTotal
+   if tTotal < 3 then
+      nxSetError "nxNip44: padded data too short"
+      return empty
+   end if
+   put byteToNum(byte 1 of pPadded) * 256 + byteToNum(byte 2 of pPadded) into tLen
+   if tLen < 1 or tLen > kNxNip44MaxPlain then
+      nxSetError "nxNip44: invalid padding (declared length out of range)"
+      return empty
+   end if
+   if 2 + tLen > tTotal then
+      nxSetError "nxNip44: invalid padding (declared length exceeds the data)"
+      return empty
+   end if
+   if tTotal is not 2 + nxNip44PaddedLen(tLen) then
+      nxSetError "nxNip44: invalid padding (padded length mismatch)"
+      return empty
+   end if
+   put byte 3 to (2 + tLen) of pPadded into tBytes
+   -- UTF-8 validity by ROUND TRIP: textDecode is lossy and never throws
+   -- (the riptide rsBytesAreUtf8 lesson), so decode, re-encode, and
+   -- require byte equality - a key-holding peer sending non-UTF-8 padded
+   -- bytes gets a refusal, as every conforming implementation gives.
+   local tText
+   put textDecode(tBytes, "UTF-8") into tText
+   if textEncode(tText, "UTF-8") is not tBytes then
+      nxSetError "nxNip44: the plaintext is not valid UTF-8"
+      return empty
+   end if
+   return tText
+end nxNip44Unpad
+
+private function nxChaCha20 pKeyData, pNonceData, pData
+   -- THE CIPHER SEAM (docs/07): composes SodiumXT's sxChaCha20IetfXor
+   -- (RFC 8439 ChaCha20, 12-byte nonce, counter 0; shipped upstream in
+   -- SodiumXT ABI 10, 2026-08-23). On an installed SodiumXT older than that
+   -- the call raises and this returns empty with the capability error
+   -- recorded - the fail-closed branch is the old-install path, not dead
+   -- code. Family law forbids hand-rolling the cipher here (rule 1).
+   local tError, tOut
+   try
+      put sxChaCha20IetfXor(pKeyData, pNonceData, pData) into tOut
+   catch tError
+      nxSetError "nxNip44 needs SodiumXT sxChaCha20IetfXor (shipped in SodiumXT ABI 10; the installed SodiumXT predates it - docs/07-capabilities-required.md)"
+      return empty
+   end try
+   if the number of bytes of tOut is not the number of bytes of pData then
+      nxSetError "nxNip44: the cipher returned an unexpected length"
+      return empty
+   end if
+   return tOut
+end nxChaCha20
+
+function nxNip44HasCipher
+   -- A live probe of the cipher seam, so an upgraded SodiumXT is noticed
+   -- without restarting (unlike the cached nxProbeCapabilities row).
+   local tError, tOut
+   try
+      put sxChaCha20IetfXor(nxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"), nxHexDecode("000000000000000000000000"), numToByte(0)) into tOut
+   catch tError
+      return false
+   end try
+   return the number of bytes of tOut is 1
+end nxNip44HasCipher
+
+function nxNip44Encrypt pSeckeyHex, pPubkeyHex, pPlaintext, pNonceHex
+   -- The full NIP-44 v2 payload (standard base64), or empty with the reason.
+   -- pNonceHex empty draws 32 fresh SodiumXT bytes; a 64-hex nonce makes the
+   -- payload deterministic (KAT use ONLY - never reuse a nonce in anger).
+   local tError, tConvHex, tNonce, tKeys, tPadded, tCipher, tMac
+   put nxNip44ConversationKey(pSeckeyHex, pPubkeyHex) into tConvHex
+   if tConvHex is empty then
+      return empty
+   end if
+   if pNonceHex is empty then
+      try
+         put sxRandomBytes(32) into tNonce
+      catch tError
+         nxSetError "nxNip44Encrypt needs SodiumXT sxRandomBytes for the nonce"
+         return empty
+      end try
+   else
+      if not nxIsHex(pNonceHex, 64) then
+         nxSetError "nxNip44Encrypt: the nonce must be empty or 64 hex characters"
+         return empty
+      end if
+      put nxHexDecode(pNonceHex) into tNonce
+   end if
+   put nxNip44MessageKeys(tConvHex, nxHexEncode(tNonce)) into tKeys
+   if tKeys is empty then
+      return empty
+   end if
+   put nxNip44Pad(pPlaintext) into tPadded
+   if tPadded is empty then
+      return empty
+   end if
+   put nxChaCha20(nxHexDecode(tKeys["chachaKey"]), nxHexDecode(tKeys["chachaNonce"]), tPadded) into tCipher
+   if tCipher is empty then
+      return empty
+   end if
+   try
+      put cxHmacSha256(nxHexDecode(tKeys["hmacKey"]), tNonce & tCipher) into tMac
+   catch tError
+      nxSetError "nxNip44Encrypt needs CoinXT cxHmacSha256:" && tError
+      return empty
+   end try
+   return nxB64Encode(numToByte(2) & tNonce & tCipher & tMac)
+end nxNip44Encrypt
+
+function nxNip44Decrypt pSeckeyHex, pPubkeyHex, pPayload
+   -- Decrypt and unpad, or empty with the reason. The MAC verifies BEFORE
+   -- the cipher runs, over nonce||ciphertext, compared constant-time.
+   local tError, tConvHex, tRaw, tTotal, tNonce, tCipher, tMac, tKeys, tExpected, tPadded
+   if pPayload is empty then
+      nxSetError "nxNip44Decrypt: empty payload"
+      return empty
+   end if
+   if char 1 of pPayload is "#" then
+      nxSetError "nxNip44Decrypt: unsupported encryption version (future-format flag)"
+      return empty
+   end if
+   if the number of chars of pPayload < 132 then
+      nxSetError "nxNip44Decrypt: payload shorter than the 132-character floor"
+      return empty
+   end if
+   put nxB64Decode(pPayload) into tRaw
+   if tRaw is empty then
+      nxSetError "nxNip44Decrypt: not valid standard base64"
+      return empty
+   end if
+   put the number of bytes of tRaw into tTotal
+   if tTotal < 99 then
+      nxSetError "nxNip44Decrypt: decoded payload shorter than the 99-byte floor"
+      return empty
+   end if
+   if byteToNum(byte 1 of tRaw) is not 2 then
+      nxSetError "nxNip44Decrypt: unsupported encryption version"
+      return empty
+   end if
+   put byte 2 to 33 of tRaw into tNonce
+   put byte 34 to (tTotal - 32) of tRaw into tCipher
+   put byte (tTotal - 31) to tTotal of tRaw into tMac
+   put nxNip44ConversationKey(pSeckeyHex, pPubkeyHex) into tConvHex
+   if tConvHex is empty then
+      return empty
+   end if
+   put nxNip44MessageKeys(tConvHex, nxHexEncode(tNonce)) into tKeys
+   if tKeys is empty then
+      return empty
+   end if
+   try
+      put cxHmacSha256(nxHexDecode(tKeys["hmacKey"]), tNonce & tCipher) into tExpected
+   catch tError
+      nxSetError "nxNip44Decrypt needs CoinXT cxHmacSha256:" && tError
+      return empty
+   end try
+   if not nxCtEqualHex(nxHexEncode(tExpected), nxHexEncode(tMac)) then
+      nxSetError "nxNip44Decrypt: the MAC does not verify (wrong key or tampered payload)"
+      return empty
+   end if
+   put nxChaCha20(nxHexDecode(tKeys["chachaKey"]), nxHexDecode(tKeys["chachaNonce"]), tCipher) into tPadded
+   if tPadded is empty then
+      return empty
+   end if
+   return nxNip44Unpad(tPadded)
+end nxNip44Decrypt
+
+-- ==========================================================================
+-- NIP-01 filters and the client/relay wire messages.
+-- ==========================================================================
+
+private function nxHexListToJson pLines, pLabel
+   -- A return-delimited list of 64-hex values as a JSON string array, or
+   -- empty (reason recorded) when a line is not 64-hex.
+   local tSeq, tI, tCount, tOut
+   put nxLinesToSeq(pLines) into tSeq
+   put nxSeqCount(tSeq) into tCount
+   put "[" into tOut
+   repeat with tI = 1 to tCount
+      if not nxIsHex(tSeq[tI], 64) then
+         nxSetError "nxFilterBuild:" && pLabel && "line" && tI && "is not 64 hex characters"
+         return empty
+      end if
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put quote & tSeq[tI] & quote after tOut
+   end repeat
+   put "]" after tOut
+   return tOut
+end nxHexListToJson
+
+function nxFilterBuild pFilter
+   -- A NIP-01 filter object from an array: keys "ids" / "authors" (lines of
+   -- 64-hex), "kinds" (comma list of integers), "since" / "until" / "limit"
+   -- (integers), "search" (string), and any number of single-letter tag
+   -- filters keyed "#e", "#p", ... (lines of values). Emits a fixed field
+   -- order so output is deterministic.
+   local tSavedItemDelim, tSavedLineDelim, tOut, tPiece, tFirst, tKeyList, tI, tJ, tCount, tKeyText, tSeq, tValCount, tKindText
+   put "{" into tOut
+   put true into tFirst
+   if pFilter["ids"] is not empty then
+      put nxHexListToJson(pFilter["ids"], "ids") into tPiece
+      if tPiece is empty then
+         return empty
+      end if
+      put quote & "ids" & quote & ":" & tPiece after tOut
+      put false into tFirst
+   end if
+   if pFilter["authors"] is not empty then
+      put nxHexListToJson(pFilter["authors"], "authors") into tPiece
+      if tPiece is empty then
+         return empty
+      end if
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "authors" & quote & ":" & tPiece after tOut
+      put false into tFirst
+   end if
+   if pFilter["kinds"] is not empty then
+      put the itemDelimiter into tSavedItemDelim
+      set the itemDelimiter to comma
+      put "[" into tPiece
+      put the number of items of pFilter["kinds"] into tCount
+      repeat with tI = 1 to tCount
+         put item tI of pFilter["kinds"] into tKindText
+         if tKindText is not an integer or tKindText < 0 or tKindText > 65535 then
+            set the itemDelimiter to tSavedItemDelim
+            nxSetError "nxFilterBuild: kinds entry" && tI && "is not a kind number"
+            return empty
+         end if
+         if tI > 1 then
+            put "," after tPiece
+         end if
+         put tKindText + 0 after tPiece
+      end repeat
+      set the itemDelimiter to tSavedItemDelim
+      put "]" after tPiece
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "kinds" & quote & ":" & tPiece after tOut
+      put false into tFirst
+   end if
+   -- Tag filters, in sorted key order for determinism.
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the keys of pFilter into tKeyList
+   sort lines of tKeyList
+   put the number of lines of tKeyList into tCount
+   repeat with tI = 1 to tCount
+      put line tI of tKeyList into tKeyText
+      if char 1 of tKeyText is not "#" or the number of chars of tKeyText is not 2 then
+         next repeat
+      end if
+      put nxLinesToSeq(pFilter[tKeyText]) into tSeq
+      put nxSeqCount(tSeq) into tValCount
+      if tValCount is 0 then
+         next repeat
+      end if
+      put "[" into tPiece
+      repeat with tJ = 1 to tValCount
+         if tJ > 1 then
+            put "," after tPiece
+         end if
+         put quote & nxJsonEscape(tSeq[tJ]) & quote after tPiece
+      end repeat
+      put "]" after tPiece
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & tKeyText & quote & ":" & tPiece after tOut
+      put false into tFirst
+   end repeat
+   set the lineDelimiter to tSavedLineDelim
+   -- The scalar fields, spelled out (no delimited list to read, so no guard).
+   if pFilter["since"] is not empty then
+      if pFilter["since"] is not an integer or pFilter["since"] < 0 then
+         nxSetError "nxFilterBuild: since must be a non-negative integer"
+         return empty
+      end if
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "since" & quote & ":" & (pFilter["since"] + 0) after tOut
+      put false into tFirst
+   end if
+   if pFilter["until"] is not empty then
+      if pFilter["until"] is not an integer or pFilter["until"] < 0 then
+         nxSetError "nxFilterBuild: until must be a non-negative integer"
+         return empty
+      end if
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "until" & quote & ":" & (pFilter["until"] + 0) after tOut
+      put false into tFirst
+   end if
+   if pFilter["limit"] is not empty then
+      if pFilter["limit"] is not an integer or pFilter["limit"] < 0 then
+         nxSetError "nxFilterBuild: limit must be a non-negative integer"
+         return empty
+      end if
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "limit" & quote & ":" & (pFilter["limit"] + 0) after tOut
+      put false into tFirst
+   end if
+   if pFilter["search"] is not empty then
+      if not tFirst then
+         put "," after tOut
+      end if
+      put quote & "search" & quote & ":" & quote & nxJsonEscape(pFilter["search"]) & quote after tOut
+      put false into tFirst
+   end if
+   put "}" after tOut
+   return tOut
+end nxFilterBuild
+
+function nxFilterMatches pFilterJson, pEvent
+   -- Client-side NIP-01 matching: every present condition must hold (AND);
+   -- list conditions need one exact member match. False on any doubt.
+   local tCount, tI, tListValue, tOk, tKeyText, tJ, tValCount, tSavedLineDelim, tEventValues, tLineNo, tLineCount
+   if nxJsonType(pFilterJson, empty) is not "object" then
+      nxSetError "nxFilterMatches: the filter is not a JSON object"
+      return false
+   end if
+   if not nxEventHasValidShape(pEvent) then
+      return false
+   end if
+   -- ids
+   if nxJsonType(pFilterJson, "ids") is "array" then
+      put nxJsonCount(pFilterJson, "ids") into tCount
+      put false into tOk
+      repeat with tI = 1 to tCount
+         put nxJsonGet(pFilterJson, "ids/" & tI) into tListValue
+         if nxStrEqExact(tListValue, pEvent["id"]) then
+            put true into tOk
+            exit repeat
+         end if
+      end repeat
+      if not tOk then
+         return false
+      end if
+   end if
+   -- authors
+   if nxJsonType(pFilterJson, "authors") is "array" then
+      put nxJsonCount(pFilterJson, "authors") into tCount
+      put false into tOk
+      repeat with tI = 1 to tCount
+         put nxJsonGet(pFilterJson, "authors/" & tI) into tListValue
+         if nxStrEqExact(tListValue, pEvent["pubkey"]) then
+            put true into tOk
+            exit repeat
+         end if
+      end repeat
+      if not tOk then
+         return false
+      end if
+   end if
+   -- kinds
+   if nxJsonType(pFilterJson, "kinds") is "array" then
+      put nxJsonCount(pFilterJson, "kinds") into tCount
+      put false into tOk
+      repeat with tI = 1 to tCount
+         put nxJsonGet(pFilterJson, "kinds/" & tI) into tListValue
+         if tListValue is an integer and tListValue + 0 is pEvent["kind"] + 0 then
+            put true into tOk
+            exit repeat
+         end if
+      end repeat
+      if not tOk then
+         return false
+      end if
+   end if
+   -- since / until
+   if nxJsonType(pFilterJson, "since") is "number" then
+      if pEvent["created_at"] + 0 < nxJsonGet(pFilterJson, "since") + 0 then
+         return false
+      end if
+   end if
+   if nxJsonType(pFilterJson, "until") is "number" then
+      if pEvent["created_at"] + 0 > nxJsonGet(pFilterJson, "until") + 0 then
+         return false
+      end if
+   end if
+   -- tag filters: every "#x" key needs an intersection with the event's x
+   -- tag values.
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   -- Type each candidate single-letter tag key directly (a-z then A-Z).
+   repeat with tI = 1 to 52
+      if tI <= 26 then
+         put "#" & numToChar(96 + tI) into tKeyText
+      else
+         put "#" & numToChar(64 + tI - 26) into tKeyText
+      end if
+      if nxJsonType(pFilterJson, tKeyText) is not "array" then
+         next repeat
+      end if
+      put nxTagValues(pEvent, char 2 of tKeyText) into tEventValues
+      put nxJsonCount(pFilterJson, tKeyText) into tValCount
+      put false into tOk
+      repeat with tJ = 1 to tValCount
+         put nxJsonGet(pFilterJson, tKeyText & "/" & tJ) into tListValue
+         put the number of lines of tEventValues into tLineCount
+         repeat with tLineNo = 1 to tLineCount
+            if nxStrEqExact(line tLineNo of tEventValues, tListValue) then
+               put true into tOk
+               exit repeat
+            end if
+         end repeat
+         if tOk then
+            exit repeat
+         end if
+      end repeat
+      if not tOk then
+         set the lineDelimiter to tSavedLineDelim
+         return false
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLineDelim
+   return true
+end nxFilterMatches
+
+function nxClientReq pSubId, pFiltersJson
+   -- ["REQ", subid, filter, ...]: pFiltersJson is one filter object per
+   -- line (nxFilterBuild emits single-line objects). At least one filter.
+   local tSeq, tI, tCount, tOut
+   if pSubId is empty or the number of chars of pSubId > kNxSubIdMax then
+      nxSetError "nxClientReq: the subscription id must be 1 to" && kNxSubIdMax && "characters"
+      return empty
+   end if
+   put nxLinesToSeq(pFiltersJson) into tSeq
+   put nxSeqCount(tSeq) into tCount
+   if tCount is 0 then
+      nxSetError "nxClientReq: at least one filter is required"
+      return empty
+   end if
+   put "[" & quote & "REQ" & quote & "," & quote & nxJsonEscape(pSubId) & quote into tOut
+   repeat with tI = 1 to tCount
+      if nxJsonType(tSeq[tI], empty) is not "object" then
+         nxSetError "nxClientReq: filter" && tI && "is not a JSON object"
+         return empty
+      end if
+      put "," & tSeq[tI] after tOut
+   end repeat
+   put "]" after tOut
+   return tOut
+end nxClientReq
+
+function nxClientClose pSubId
+   if pSubId is empty or the number of chars of pSubId > kNxSubIdMax then
+      nxSetError "nxClientClose: the subscription id must be 1 to" && kNxSubIdMax && "characters"
+      return empty
+   end if
+   return "[" & quote & "CLOSE" & quote & "," & quote & nxJsonEscape(pSubId) & quote & "]"
+end nxClientClose
+
+function nxClientEvent pEvent
+   -- ["EVENT", {...}]: the event must be COMPLETE (id and sig filled in).
+   local tJson
+   if not nxIsHex(pEvent["id"], 64) or not nxIsHex(pEvent["sig"], 128) then
+      nxSetError "nxClientEvent: the event is not signed yet (nxEventSign first)"
+      return empty
+   end if
+   put nxEventToJson(pEvent) into tJson
+   if tJson is empty then
+      return empty
+   end if
+   return "[" & quote & "EVENT" & quote & "," & tJson & "]"
+end nxClientEvent
+
+function nxClientAuth pEvent
+   -- ["AUTH", {...}]: a SIGNED kind-22242 event (nxAuthBuild + nxEventSign).
+   local tJson
+   if pEvent["kind"] is not 22242 then
+      nxSetError "nxClientAuth: not a kind 22242 authentication event"
+      return empty
+   end if
+   if not nxIsHex(pEvent["id"], 64) or not nxIsHex(pEvent["sig"], 128) then
+      nxSetError "nxClientAuth: the auth event is not signed yet"
+      return empty
+   end if
+   put nxEventToJson(pEvent) into tJson
+   if tJson is empty then
+      return empty
+   end if
+   return "[" & quote & "AUTH" & quote & "," & tJson & "]"
+end nxClientAuth
+
+function nxRelayParse pWire
+   -- One relay-to-client message -> an array keyed by "type" plus fields:
+   --   "EVENT"  subId, eventJson (the VERBATIM object slice - parse it with
+   --            nxEventFromJson and verify with nxEventVerify before trust)
+   --   "OK"     eventId, accepted ("true"/"false"), reason
+   --   "EOSE"   subId
+   --   "CLOSED" subId, reason
+   --   "NOTICE" notice
+   --   "AUTH"   challenge
+   -- Anything else parses to type "unknown" with "raw" carrying the text.
+   -- Message types compare byte-exact: a relay saying "event" is NOT
+   -- speaking NIP-01 and is not treated as if it were.
+   local tRoot, tOut, tTypeText, tN, tNode
+   put nxJsonParseText(pWire) into tRoot
+   if sNxJsonErr is not empty then
+      nxSetError "nxRelayParse:" && sNxJsonErr
+      return empty
+   end if
+   if tRoot["t"] is not "a" then
+      nxSetError "nxRelayParse: a relay message must be a JSON array"
+      return empty
+   end if
+   put nxSeqCount(tRoot["c"]) into tN
+   if tN < 1 or tRoot["c"][1]["t"] is not "s" then
+      nxSetError "nxRelayParse: the first element must be the message type string"
+      return empty
+   end if
+   put tRoot["c"][1]["v"] into tTypeText
+   if nxStrEqExact(tTypeText, "EVENT") then
+      if tN < 3 or tRoot["c"][2]["t"] is not "s" or tRoot["c"][3]["t"] is not "o" then
+         nxSetError "nxRelayParse: EVENT needs a subscription id and an event object"
+         return empty
+      end if
+      put "EVENT" into tOut["type"]
+      put tRoot["c"][2]["v"] into tOut["subId"]
+      -- Slice the event object VERBATIM before anything re-parses (the
+      -- parser scratch is module state).
+      put tRoot["c"][3] into tNode
+      put textDecode(byte tNode["b1"] to tNode["b2"] of sNxJsonBytes, "UTF-8") into tOut["eventJson"]
+      return tOut
+   end if
+   if nxStrEqExact(tTypeText, "OK") then
+      if tN < 4 or tRoot["c"][2]["t"] is not "s" or tRoot["c"][3]["t"] is not "b" then
+         nxSetError "nxRelayParse: OK needs an id, a boolean and a message"
+         return empty
+      end if
+      put "OK" into tOut["type"]
+      put tRoot["c"][2]["v"] into tOut["eventId"]
+      put tRoot["c"][3]["v"] into tOut["accepted"]
+      if tN >= 4 and tRoot["c"][4]["t"] is "s" then
+         put tRoot["c"][4]["v"] into tOut["reason"]
+      else
+         put empty into tOut["reason"]
+      end if
+      return tOut
+   end if
+   if nxStrEqExact(tTypeText, "EOSE") then
+      if tN < 2 or tRoot["c"][2]["t"] is not "s" then
+         nxSetError "nxRelayParse: EOSE needs a subscription id"
+         return empty
+      end if
+      put "EOSE" into tOut["type"]
+      put tRoot["c"][2]["v"] into tOut["subId"]
+      return tOut
+   end if
+   if nxStrEqExact(tTypeText, "CLOSED") then
+      if tN < 2 or tRoot["c"][2]["t"] is not "s" then
+         nxSetError "nxRelayParse: CLOSED needs a subscription id"
+         return empty
+      end if
+      put "CLOSED" into tOut["type"]
+      put tRoot["c"][2]["v"] into tOut["subId"]
+      if tN >= 3 and tRoot["c"][3]["t"] is "s" then
+         put tRoot["c"][3]["v"] into tOut["reason"]
+      else
+         put empty into tOut["reason"]
+      end if
+      return tOut
+   end if
+   if nxStrEqExact(tTypeText, "NOTICE") then
+      put "NOTICE" into tOut["type"]
+      if tN >= 2 and tRoot["c"][2]["t"] is "s" then
+         put tRoot["c"][2]["v"] into tOut["notice"]
+      else
+         put empty into tOut["notice"]
+      end if
+      return tOut
+   end if
+   if nxStrEqExact(tTypeText, "AUTH") then
+      if tN < 2 or tRoot["c"][2]["t"] is not "s" then
+         nxSetError "nxRelayParse: AUTH needs a challenge string"
+         return empty
+      end if
+      put "AUTH" into tOut["type"]
+      put tRoot["c"][2]["v"] into tOut["challenge"]
+      return tOut
+   end if
+   put "unknown" into tOut["type"]
+   put pWire into tOut["raw"]
+   return tOut
+end nxRelayParse
+
+-- ==========================================================================
+-- RFC 6455, the pure half: url parsing, the handshake request and accept
+-- derivation, and frame encode/decode. The stateful socket machine lives in
+-- src/nostr-relay.livecodescript and composes these.
+-- ==========================================================================
+
+function nxWsUrlParse pUrl
+   -- ws:// or wss:// -> an array with keys "scheme", "secure", "host",
+   -- "port", "path". IPv6 bracket literals refuse (documented limit); a
+   -- missing port defaults to 80 / 443.
+   local tOut, tRest, tSlashPos, tHostPort, tColonPos, tI, tCount, tPortText
+   if pUrl contains " " or pUrl contains tab or pUrl contains numToChar(10) or pUrl contains numToChar(13) then
+      nxSetError "nxWsUrlParse: the url contains whitespace"
+      return empty
+   end if
+   if char 1 to 5 of pUrl is "ws://" then
+      put "ws" into tOut["scheme"]
+      put false into tOut["secure"]
+      put 80 into tOut["port"]
+      put char 6 to (the number of chars of pUrl) of pUrl into tRest
+   else if char 1 to 6 of pUrl is "wss://" then
+      put "wss" into tOut["scheme"]
+      put true into tOut["secure"]
+      put 443 into tOut["port"]
+      put char 7 to (the number of chars of pUrl) of pUrl into tRest
+   else
+      nxSetError "nxWsUrlParse: the url must start ws:// or wss://"
+      return empty
+   end if
+   if tRest is empty then
+      nxSetError "nxWsUrlParse: no host"
+      return empty
+   end if
+   if tRest contains "[" then
+      nxSetError "nxWsUrlParse: IPv6 bracket literals are not supported"
+      return empty
+   end if
+   put 0 into tSlashPos
+   put the number of chars of tRest into tCount
+   repeat with tI = 1 to tCount
+      if byteToNum(char tI of tRest) is 47 then
+         put tI into tSlashPos
+         exit repeat
+      end if
+   end repeat
+   if tSlashPos is 0 then
+      put tRest into tHostPort
+      put "/" into tOut["path"]
+   else
+      put char 1 to (tSlashPos - 1) of tRest into tHostPort
+      put char tSlashPos to tCount of tRest into tOut["path"]
+   end if
+   put 0 into tColonPos
+   put the number of chars of tHostPort into tCount
+   repeat with tI = tCount down to 1
+      if byteToNum(char tI of tHostPort) is 58 then
+         put tI into tColonPos
+         exit repeat
+      end if
+   end repeat
+   if tColonPos is 0 then
+      put tHostPort into tOut["host"]
+   else
+      put char 1 to (tColonPos - 1) of tHostPort into tOut["host"]
+      put char (tColonPos + 1) to tCount of tHostPort into tPortText
+      if not nxIsDigits(tPortText) or tPortText + 0 < 1 or tPortText + 0 > 65535 then
+         nxSetError "nxWsUrlParse: the port must be 1 to 65535"
+         return empty
+      end if
+      put tPortText + 0 into tOut["port"]
+   end if
+   if tOut["host"] is empty then
+      nxSetError "nxWsUrlParse: no host"
+      return empty
+   end if
+   return tOut
+end nxWsUrlParse
+
+function nxWsHandshakeRequest pHost, pPort, pPath, pKeyB64, pSecure
+   -- The client upgrade request, CRLF line endings, blank line terminated.
+   -- The Host header omits the port only at the SCHEME'S default (80 for
+   -- ws, 443 for wss - RFC 6455 section 4.1 defines them per scheme, so a
+   -- cross-scheme port like ws://host:443 must stay in the header or a
+   -- name-routing proxy serves the wrong vhost). pSecure true means wss.
+   local tOut, tCrlf, tHostHeader, tDefaultPort
+   if pHost is empty or pPath is empty or pKeyB64 is empty then
+      nxSetError "nxWsHandshakeRequest: host, path and key are all required"
+      return empty
+   end if
+   put numToChar(13) & numToChar(10) into tCrlf
+   if pSecure is true then
+      put 443 into tDefaultPort
+   else
+      put 80 into tDefaultPort
+   end if
+   put pHost into tHostHeader
+   if pPort is not empty and pPort is not tDefaultPort then
+      put ":" & pPort after tHostHeader
+   end if
+   put "GET " & pPath & " HTTP/1.1" & tCrlf into tOut
+   put "Host: " & tHostHeader & tCrlf after tOut
+   put "Upgrade: websocket" & tCrlf after tOut
+   put "Connection: Upgrade" & tCrlf after tOut
+   put "Sec-WebSocket-Key: " & pKeyB64 & tCrlf after tOut
+   put "Sec-WebSocket-Version: " & kNxWsVersion & tCrlf after tOut
+   put tCrlf after tOut
+   return tOut
+end nxWsHandshakeRequest
+
+function nxWsAcceptFor pKeyB64
+   -- The Sec-WebSocket-Accept a compliant server must answer with:
+   -- base64(SHA-1(key || GUID)). sha1Digest is the engine's own digest
+   -- (the one engine-proven builtin hash in this tree; riptide relies on it).
+   return nxB64Encode(sha1Digest(pKeyB64 & kNxWsGuid))
+end nxWsAcceptFor
+
+private function nxByteXor pA, pB
+   -- One-byte xor by arithmetic (see nxBitXor31's rationale).
+   local tResult, tBit, tI, tDigitA, tDigitB
+   put 0 into tResult
+   put 1 into tBit
+   repeat with tI = 1 to 8
+      put nxIntMod(nxIntDiv(pA, tBit), 2) into tDigitA
+      put nxIntMod(nxIntDiv(pB, tBit), 2) into tDigitB
+      if tDigitA is not tDigitB then
+         add tBit to tResult
+      end if
+      multiply tBit by 2
+   end repeat
+   return tResult
+end nxByteXor
+
+private function nxWsMask pPayload, pMaskData
+   -- XOR pPayload with the repeating 4-byte mask (its own inverse).
+   local tOut, tI, tN, tMaskByte
+   put empty into tOut
+   put the number of bytes of pPayload into tN
+   repeat with tI = 1 to tN
+      put byteToNum(byte (nxIntMod(tI - 1, 4) + 1) of pMaskData) into tMaskByte
+      put numToByte(nxByteXor(byteToNum(byte tI of pPayload), tMaskByte)) after tOut
+   end repeat
+   return tOut
+end nxWsMask
+
+function nxWsFrameEncode pOpcode, pPayload, pMaskHex
+   -- A single client frame: FIN set, MASKED (RFC 6455 requires a client to
+   -- mask every frame), no fragmentation. pMaskHex is exactly 8 hex chars
+   -- (the relay layer draws it fresh per frame; a fixed mask is for KATs).
+   local tMask, tOut, tLen
+   if pOpcode is not an integer or pOpcode < 0 or pOpcode > 15 then
+      nxSetError "nxWsFrameEncode: the opcode must be 0 to 15"
+      return empty
+   end if
+   if not nxIsHex(pMaskHex, 8) then
+      nxSetError "nxWsFrameEncode: the mask must be 8 hex characters"
+      return empty
+   end if
+   put the number of bytes of pPayload into tLen
+   if tLen > kNxWsMaxFrame then
+      nxSetError "nxWsFrameEncode: the payload exceeds the" && kNxWsMaxFrame & "-byte frame cap"
+      return empty
+   end if
+   if pOpcode >= 8 and tLen > 125 then
+      nxSetError "nxWsFrameEncode: a control frame's payload must be 125 bytes or fewer"
+      return empty
+   end if
+   put nxHexDecode(pMaskHex) into tMask
+   put numToByte(128 + pOpcode) into tOut
+   if tLen < 126 then
+      put numToByte(128 + tLen) after tOut
+   else if tLen <= 65535 then
+      put numToByte(128 + 126) after tOut
+      put numToByte(nxIntDiv(tLen, 256)) after tOut
+      put numToByte(nxIntMod(tLen, 256)) after tOut
+   else
+      put numToByte(128 + 127) after tOut
+      put numToByte(0) & numToByte(0) & numToByte(0) & numToByte(0) after tOut
+      put numToByte(nxIntMod(nxIntDiv(tLen, 16777216), 256)) after tOut
+      put numToByte(nxIntMod(nxIntDiv(tLen, 65536), 256)) after tOut
+      put numToByte(nxIntMod(nxIntDiv(tLen, 256), 256)) after tOut
+      put numToByte(nxIntMod(tLen, 256)) after tOut
+   end if
+   put tMask after tOut
+   put nxWsMask(pPayload, tMask) after tOut
+   return tOut
+end nxWsFrameEncode
+
+function nxWsFrameDecode pBuffer
+   -- Parse ONE frame at the head of pBuffer. Returns an array:
+   --   "complete" true/false; when false, "needMore" says how many bytes
+   --   are known to be missing (0 = unknown, read more), and nothing else
+   --   is meaningful.
+   --   when true: "fin", "opcode", "masked", "payload" (unmasked Data) and
+   --   "consumed" (bytes to drop from the buffer).
+   --   "error" non-empty means the stream is unrecoverable: fail closed and
+   --   close the socket (hostile length, reserved bits, oversized control).
+   local tOut, tTotal, tByteOne, tByteTwo, tOpcode, tFin, tMasked, tLen, tPos, tHigh, tLow, tMask, tRsv
+   put false into tOut["complete"]
+   put 0 into tOut["needMore"]
+   put empty into tOut["error"]
+   put the number of bytes of pBuffer into tTotal
+   if tTotal < 2 then
+      return tOut
+   end if
+   put byteToNum(byte 1 of pBuffer) into tByteOne
+   put byteToNum(byte 2 of pBuffer) into tByteTwo
+   put (tByteOne >= 128) into tFin
+   put nxIntMod(nxIntDiv(tByteOne, 16), 8) into tRsv
+   if tRsv is not 0 then
+      put "reserved bits set (no extension was negotiated)" into tOut["error"]
+      return tOut
+   end if
+   put nxIntMod(tByteOne, 16) into tOpcode
+   put (tByteTwo >= 128) into tMasked
+   put nxIntMod(tByteTwo, 128) into tLen
+   put 3 into tPos
+   if tLen is 126 then
+      if tTotal < 4 then
+         return tOut
+      end if
+      put byteToNum(byte 3 of pBuffer) * 256 + byteToNum(byte 4 of pBuffer) into tLen
+      put 5 into tPos
+   else if tLen is 127 then
+      if tTotal < 10 then
+         return tOut
+      end if
+      put byteToNum(byte 3 of pBuffer) * 16777216 + byteToNum(byte 4 of pBuffer) * 65536 + byteToNum(byte 5 of pBuffer) * 256 + byteToNum(byte 6 of pBuffer) into tHigh
+      put byteToNum(byte 7 of pBuffer) * 16777216 + byteToNum(byte 8 of pBuffer) * 65536 + byteToNum(byte 9 of pBuffer) * 256 + byteToNum(byte 10 of pBuffer) into tLow
+      if tHigh is not 0 or tLow > kNxWsMaxFrame then
+         put "frame length exceeds the" && kNxWsMaxFrame & "-byte cap" into tOut["error"]
+         return tOut
+      end if
+      put tLow into tLen
+      put 11 into tPos
+   end if
+   if tLen > kNxWsMaxFrame then
+      put "frame length exceeds the" && kNxWsMaxFrame & "-byte cap" into tOut["error"]
+      return tOut
+   end if
+   if tOpcode >= 8 then
+      if tLen > 125 then
+         put "control frame longer than 125 bytes" into tOut["error"]
+         return tOut
+      end if
+      if tFin is not true then
+         put "fragmented control frame" into tOut["error"]
+         return tOut
+      end if
+   end if
+   if tMasked then
+      if tTotal < tPos + 3 then
+         return tOut
+      end if
+      put byte tPos to (tPos + 3) of pBuffer into tMask
+      add 4 to tPos
+   end if
+   if tTotal < tPos + tLen - 1 then
+      put (tPos + tLen - 1) - tTotal into tOut["needMore"]
+      return tOut
+   end if
+   if tLen is 0 then
+      put empty into tOut["payload"]
+   else
+      put byte tPos to (tPos + tLen - 1) of pBuffer into tOut["payload"]
+   end if
+   if tMasked then
+      put nxWsMask(tOut["payload"], tMask) into tOut["payload"]
+   end if
+   put true into tOut["complete"]
+   put tFin into tOut["fin"]
+   put tOpcode into tOut["opcode"]
+   put tMasked into tOut["masked"]
+   put tPos + tLen - 1 into tOut["consumed"]
+   return tOut
+end nxWsFrameDecode
+
+-- ==========================================================================
+-- NIP-13 proof of work, NIP-05 identifiers, NIP-11 relay information.
+-- ==========================================================================
+
+function nxPowDifficulty pIdHex
+   -- Leading zero BITS of an event id (NIP-13's definition). Counts by hex
+   -- digit; remember digits 1..7 still contribute leading zero bits.
+   local tBits, tI, tDigit
+   if not nxIsHex(pIdHex, 64) then
+      nxSetError "nxPowDifficulty: not a 64-hex event id"
+      return empty
+   end if
+   put 0 into tBits
+   repeat with tI = 1 to 64
+      put nxHexNibble(char tI of pIdHex) into tDigit
+      if tDigit is 0 then
+         add 4 to tBits
+         next repeat
+      end if
+      if tDigit is 1 then
+         add 3 to tBits
+      else if tDigit <= 3 then
+         add 2 to tBits
+      else if tDigit <= 7 then
+         add 1 to tBits
+      end if
+      exit repeat
+   end repeat
+   return tBits
+end nxPowDifficulty
+
+function nxPowCheck pEvent, pMinBits
+   -- True when the event's id meets pMinBits AND any committed target (the
+   -- third entry of its nonce tag) is itself at least pMinBits - NIP-13
+   -- says a lucky low-target mine must be rejected against a higher bar.
+   local tBits, tI, tTagCount, tTarget
+   if pMinBits is not an integer or pMinBits < 0 or pMinBits > 256 then
+      nxSetError "nxPowCheck: pMinBits must be an integer between 0 and 256"
+      return false
+   end if
+   put nxPowDifficulty(pEvent["id"]) into tBits
+   if tBits is empty then
+      return false
+   end if
+   if tBits < pMinBits then
+      nxSetError "nxPowCheck: difficulty" && tBits && "is below" && pMinBits
+      return false
+   end if
+   put nxSeqCount(pEvent["tags"]) into tTagCount
+   repeat with tI = 1 to tTagCount
+      if nxStrEqExact(pEvent["tags"][tI][1], "nonce") and 3 is among the keys of pEvent["tags"][tI] then
+         put pEvent["tags"][tI][3] into tTarget
+         if not nxIsDigits(tTarget) or tTarget + 0 < pMinBits then
+            nxSetError "nxPowCheck: the committed target" && tTarget && "is below" && pMinBits
+            return false
+         end if
+      end if
+   end repeat
+   return true
+end nxPowCheck
+
+function nxNip05Url pIdentifier
+   -- The .well-known url for a NIP-05 identifier ("name@domain", or a bare
+   -- domain meaning "_@domain"). The FETCH is the app's (libURL or a proxy
+   -- of its choosing); this file does no I/O.
+   local tAtPos, tI, tCount, tLocalPart, tDomain
+   if pIdentifier is empty then
+      nxSetError "nxNip05Url: empty identifier"
+      return empty
+   end if
+   put 0 into tAtPos
+   put the number of chars of pIdentifier into tCount
+   repeat with tI = tCount down to 1
+      if byteToNum(char tI of pIdentifier) is 64 then
+         put tI into tAtPos
+         exit repeat
+      end if
+   end repeat
+   if tAtPos is 0 then
+      put "_" into tLocalPart
+      put pIdentifier into tDomain
+   else
+      put char 1 to (tAtPos - 1) of pIdentifier into tLocalPart
+      put char (tAtPos + 1) to tCount of pIdentifier into tDomain
+   end if
+   if tLocalPart is empty or tDomain is empty then
+      nxSetError "nxNip05Url: malformed identifier"
+      return empty
+   end if
+   if tDomain contains "/" or tDomain contains "?" or tDomain contains "#" or tDomain contains "@" then
+      nxSetError "nxNip05Url: the domain contains a url delimiter"
+      return empty
+   end if
+   return "https://" & tDomain & "/.well-known/nostr.json?name=" & tLocalPart
+end nxNip05Url
+
+function nxNip05Verify pJsonBody, pUserName, pPubkeyHex
+   -- True when the fetched nostr.json maps pUserName to pPubkeyHex. A name
+   -- containing "/" cannot be addressed through the path walk (documented
+   -- limit; NIP-05 local parts are a-z0-9-_. anyway).
+   local tFound
+   if pUserName contains "/" then
+      nxSetError "nxNip05Verify: names containing / are not supported"
+      return false
+   end if
+   if not nxIsHex(pPubkeyHex, 64) then
+      nxSetError "nxNip05Verify: the pubkey must be 64 hex characters"
+      return false
+   end if
+   if nxJsonType(pJsonBody, "names/" & pUserName) is not "string" then
+      nxSetError "nxNip05Verify: no such name in the document"
+      return false
+   end if
+   put nxJsonGet(pJsonBody, "names/" & pUserName) into tFound
+   return nxStrEqExact(nxToLowerAscii(tFound), nxToLowerAscii(pPubkeyHex))
+end nxNip05Verify
+
+function nxRelayInfoParse pJsonBody
+   -- The common NIP-11 relay-information fields as an array; absent fields
+   -- are empty; "supportedNips" is a comma list.
+   local tOut, tField, tCount, tI, tSavedItemDelim
+   if nxJsonType(pJsonBody, empty) is not "object" then
+      nxSetError "nxRelayInfoParse: not a JSON object"
+      return empty
+   end if
+   put the itemDelimiter into tSavedItemDelim
+   set the itemDelimiter to comma
+   repeat for each item tField in "name,description,pubkey,contact,software,version"
+      if nxJsonType(pJsonBody, tField) is "string" then
+         put nxJsonGet(pJsonBody, tField) into tOut[tField]
+      else
+         put empty into tOut[tField]
+      end if
+   end repeat
+   set the itemDelimiter to tSavedItemDelim
+   put empty into tOut["supportedNips"]
+   if nxJsonType(pJsonBody, "supported_nips") is "array" then
+      put nxJsonCount(pJsonBody, "supported_nips") into tCount
+      repeat with tI = 1 to tCount
+         if tOut["supportedNips"] is not empty then
+            put "," after tOut["supportedNips"]
+         end if
+         put nxJsonGet(pJsonBody, "supported_nips/" & tI) after tOut["supportedNips"]
+      end repeat
+   end if
+   return tOut
+end nxRelayInfoParse
+
+-- ---- nostrxt/src/nostr-relay.livecodescript ----
+-- nostr-relay.livecodescript - the NostrXT relay client (public nxr*).
+--
+-- The stateful half of NostrXT: a websocket (RFC 6455) client over engine
+-- sockets that speaks the NIP-01 relay protocol - REQ / CLOSE / EVENT out,
+-- EVENT / OK / EOSE / CLOSED / NOTICE / AUTH in. It COMPOSES the pure-compute
+-- core (src/nostrxt.livecodescript, nx*): url parsing, handshake and accept
+-- derivation, frame encode/decode, message build/parse, event verification.
+-- Load the core first; this file owns only sockets, buffers and handles.
+--
+-- THIS FILE IS DELIBERATELY NOT EMBEDDED IN THE SUITE PASTE: it defines the
+-- engine's socketError / socketClosed / socketTimeout handlers, which the
+-- embedded onionxt layer also defines, and the suite generator refuses (as
+-- it must) an assembly that defines one handler twice. It ships in the demo
+-- embed instead (the onion-httpd precedent), and its offline paths are
+-- exercised by probe-guarded harness sections that SKIP in the paste.
+--
+-- STATUS, and it is SPLIT - read both halves before quoting either.
+-- LIVE-PROVEN 2026-08-24 (Windows x86_64, OXT 9.6.3, wss://nos.lol): connect,
+-- the websocket handshake, publish, and the relay's ok-true verdict arriving
+-- back through the app callback. That run went over TLS, so it is also this
+-- suite's FIRST exercised `open secure socket` - the wss:// path is no longer
+-- the doubly-flagged unknown this banner used to describe, and
+-- docs/OXT-ENGINE-NOTES.md 6.8 records exactly what the one run measured.
+-- STILL UNPROVEN, and keeping "verified statically; needs a live-relay pass":
+-- the whole RECEIVE leg - REQ/subscribe, the EVENT and EOSE callbacks,
+-- CLOSED, NOTICE - and the NIP-42 auth exchange. So is every ws:// path: the
+-- proven run was secure, and the plain form here still rests on onionxt's
+-- engine-proven SOCKS idioms rather than on a run of its own.
+--
+-- Conventions (see CLAUDE.md): public API nxrPascalCase; commands report
+-- through `the result` (empty on success, a "NostrXT relay: ..." string on
+-- refusal; handle-yielding commands return the integer handle, so callers
+-- test `the result is an integer`) - the onionxt shape for a stateful
+-- layer. Async outcomes arrive through the app callback, never a blocking
+-- return. Every wire error fails closed and tears the connection down;
+-- every teardown is idempotent; the app frees what it opens (closeStack).
+--
+-- CALLBACK CONTRACT: nxrSetCallback registers <handler> per relay; it is
+-- dispatched (try-guarded; a missing handler is a clean no-op) to the owner
+-- set by nxrInit (default: the topStack) as:
+--   <handler> pRelay, pKind, pArgOne, pArgTwo
+--     pKind = "open"          handshake complete; the relay is usable
+--     pKind = "event"         pArgOne = subscription id, pArgTwo = the raw
+--                             event JSON. VERIFIED (id + signature) before
+--                             delivery unless nxrSetVerify turned that off.
+--     pKind = "invalid"       pArgOne = subscription id, pArgTwo = why the
+--                             event was refused (failed verify, or CoinXT
+--                             absent while verification is on - fail closed)
+--     pKind = "eose"          pArgOne = subscription id
+--     pKind = "ok"            pArgOne = event id, pArgTwo = "true" or
+--                             "false", then a tab, then the relay's reason
+--     pKind = "closed"        pArgOne = subscription id, pArgTwo = reason
+--     pKind = "notice"        pArgOne = the notice text
+--     pKind = "auth"          pArgOne = the NIP-42 challenge (also kept for
+--                             nxrChallenge; answer with nxAuthBuild +
+--                             nxEventSign + nxrAuth)
+--     pKind = "error"         pArgOne = the failure; the relay is torn down
+--     pKind = "disconnected"  pArgOne = the reason; the relay is gone
+
+-- ==========================================================================
+-- Constants.
+-- ==========================================================================
+
+constant kNxrHandshakeTimeout = 20000     -- milliseconds
+-- The receive buffer cap: a peer that streams bytes without ever completing
+-- a frame must hit a wall, not exhaust memory (fail closed).
+constant kNxrMaxBuffer = 16777216
+
+-- ==========================================================================
+-- Script-local state. Handle tables keyed by integer handle and by engine
+-- socket id; a stale id is a clean no-op (family rule 4's spirit).
+-- ==========================================================================
+
+local sNxrRelays             -- keyed by handle: socketID, state, url, host,
+                             -- port, path, secure, wsKey, buffer, callback,
+                             -- verify, challenge, fragOp, fragData, subs
+local sNxrSockToRelay        -- socket id -> handle
+local sNxrNextHandle         -- monotonic; 0 never valid
+local sNxrOwner              -- long id the callbacks dispatch to
+
+-- ==========================================================================
+-- Wiring.
+-- ==========================================================================
+
+function nxrVersion
+   return "NostrXT relay" && nxVersion()
+end nxrVersion
+
+command nxrInit pOwner
+   -- Set the object whose script receives the callbacks (the demo passes
+   -- `the long id of me` in preOpenStack). Idempotent.
+   put pOwner into sNxrOwner
+   return empty
+end nxrInit
+
+private function nxrCallbackTarget
+   if sNxrOwner is not empty then
+      return sNxrOwner
+   end if
+   return the topStack
+end nxrCallbackTarget
+
+private command nxrDispatch pRelay, pKind, pArgOne, pArgTwo
+   -- Deliver one callback, try-guarded: a throwing app handler must not
+   -- break the socket state machine, and a missing handler is a clean miss
+   -- (the onionxt oxDispatch shape).
+   local tError, tHandler
+   put sNxrRelays[pRelay]["callback"] into tHandler
+   if tHandler is empty then
+      exit nxrDispatch
+   end if
+   try
+      dispatch tHandler to nxrCallbackTarget() with pRelay, pKind, pArgOne, pArgTwo
+   catch tError
+      -- Swallowed on purpose: the app broke, the transport must not.
+   end try
+end nxrDispatch
+
+private function nxrAllocHandle
+   if sNxrNextHandle is empty then
+      put 0 into sNxrNextHandle
+   end if
+   add 1 to sNxrNextHandle
+   return sNxrNextHandle
+end nxrAllocHandle
+
+private function nxrRandomHex pByteCount
+   -- Hex for pByteCount random bytes. Prefers SodiumXT; falls back to the
+   -- engine's random(). ACCEPTABILITY: these bytes are websocket MASKS and
+   -- handshake nonces - RFC 6455's masking defends proxy caches, not
+   -- confidentiality - so a non-cryptographic fallback is honest here. Key
+   -- material NEVER comes through this function (nxKeyGenerate refuses
+   -- outright without SodiumXT).
+   local tError, tData, tI
+   try
+      put sxRandomBytes(pByteCount) into tData
+      if the number of bytes of tData is pByteCount then
+         return nxHexEncode(tData)
+      end if
+   catch tError
+      put empty into tData
+   end try
+   put empty into tData
+   repeat with tI = 1 to pByteCount
+      put numToByte(random(256) - 1) after tData
+   end repeat
+   return nxHexEncode(tData)
+end nxrRandomHex
+
+-- ==========================================================================
+-- Connect and the handshake state machine.
+-- ==========================================================================
+
+command nxrConnect pUrl
+   -- Returns an integer relay handle through `the result` immediately; the
+   -- handshake completes asynchronously and the callback receives "open" or
+   -- "error". States: connecting -> handshake -> open -> closing/gone.
+   local tParsed, tHandle, tSocketID, tKeyHex
+   put nxWsUrlParse(pUrl) into tParsed
+   if tParsed is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   put nxrAllocHandle() into tHandle
+   -- A named socket id so several relays at one host:port stay distinct
+   -- (the onionxt |name discipline; store the engine's id verbatim).
+   put tParsed["host"] & ":" & tParsed["port"] & "|nxr" & tHandle into tSocketID
+   put tSocketID into sNxrRelays[tHandle]["socketID"]
+   put "connecting" into sNxrRelays[tHandle]["state"]
+   put pUrl into sNxrRelays[tHandle]["url"]
+   put tParsed["host"] into sNxrRelays[tHandle]["host"]
+   put tParsed["port"] into sNxrRelays[tHandle]["port"]
+   put tParsed["path"] into sNxrRelays[tHandle]["path"]
+   put tParsed["secure"] into sNxrRelays[tHandle]["secure"]
+   put empty into sNxrRelays[tHandle]["buffer"]
+   put empty into sNxrRelays[tHandle]["callback"]
+   put true into sNxrRelays[tHandle]["verify"]
+   put empty into sNxrRelays[tHandle]["challenge"]
+   put empty into sNxrRelays[tHandle]["fragOp"]
+   put empty into sNxrRelays[tHandle]["fragData"]
+   -- The Sec-WebSocket-Key: 16 random bytes, base64.
+   put nxrRandomHex(16) into tKeyHex
+   put nxB64Encode(nxHexDecode(tKeyHex)) into sNxrRelays[tHandle]["wsKey"]
+   put tHandle into sNxrSockToRelay[tSocketID]
+   set the socketTimeoutInterval to kNxrHandshakeTimeout
+   if tParsed["secure"] is true then
+      -- ENGINE-ARMED 2026-08-24: this line is the suite's first and so far
+      -- only exercised `open secure socket`, and it reached an ordinary
+      -- public relay - so the form exists on OXT 9.6.3, connects, and carries
+      -- the handshake and the framing below.
+      -- VERIFY (on-engine), because "it connected" is not "it verifies": a
+      -- REJECTED certificate was never tried, so whether an invalid one is
+      -- refused or silently accepted is still unmeasured, as are the TLS
+      -- versions offered and how a TLS failure is delivered (expected: a
+      -- socketError message, as with the plain form). docs/07 gap #2 carries
+      -- that remainder; engine notes 6.8 carries what the run did settle.
+      open secure socket to tSocketID with message "nxrWsOpened"
+   else
+      open socket to tSocketID with message "nxrWsOpened"
+   end if
+   send ("nxrDeadline " & tHandle) to me in kNxrHandshakeTimeout milliseconds
+   return tHandle
+end nxrConnect
+
+command nxrWsOpened pSocketID
+   -- ENGINE-ARMED: TCP (or TLS) is up; send the upgrade request and start
+   -- the one persistent read. A stale id is a clean no-op.
+   local tHandle, tRequest
+   put sNxrSockToRelay[pSocketID] into tHandle
+   if tHandle is empty then
+      exit nxrWsOpened
+   end if
+   put "handshake" into sNxrRelays[tHandle]["state"]
+   put nxWsHandshakeRequest(sNxrRelays[tHandle]["host"], sNxrRelays[tHandle]["port"], sNxrRelays[tHandle]["path"], sNxrRelays[tHandle]["wsKey"], sNxrRelays[tHandle]["secure"]) into tRequest
+   if tRequest is empty then
+      nxrFail tHandle, "could not build the handshake request:" && nxLastError()
+      exit nxrWsOpened
+   end if
+   write textEncode(tRequest, "UTF-8") to socket pSocketID
+   read from socket pSocketID with message "nxrWsData"
+end nxrWsOpened
+
+command nxrWsData pSocketID, pData
+   -- ENGINE-ARMED: the persistent read delivers whatever bytes arrived;
+   -- append to the relay's buffer, run the state machine, and re-arm ONLY
+   -- if the relay still exists (the callback may have torn it down - the
+   -- onionxt oxStreamData discipline).
+   local tHandle
+   put sNxrSockToRelay[pSocketID] into tHandle
+   if tHandle is empty then
+      exit nxrWsData
+   end if
+   put pData after sNxrRelays[tHandle]["buffer"]
+   if the number of bytes of sNxrRelays[tHandle]["buffer"] > kNxrMaxBuffer then
+      nxrFail tHandle, "receive buffer exceeded" && kNxrMaxBuffer && "bytes"
+      exit nxrWsData
+   end if
+   nxrProcessBuffer tHandle
+   if sNxrSockToRelay[pSocketID] is not empty then
+      read from socket pSocketID with message "nxrWsData"
+   end if
+end nxrWsData
+
+command nxrDeadline pRelay
+   -- Self-sent watchdog: a handshake that has not reached "open" by the
+   -- deadline fails closed (a bootstrapping or stalled peer accepts TCP and
+   -- then hangs; rule: timeouts are mandatory).
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      exit nxrDeadline
+   end if
+   if sNxrRelays[pRelay]["state"] is "connecting" or sNxrRelays[pRelay]["state"] is "handshake" then
+      nxrFail pRelay, "the websocket handshake timed out"
+   end if
+end nxrDeadline
+
+private command nxrProcessBuffer pRelay
+   -- Drive whichever phase the connection is in. The handshake phase eats
+   -- the HTTP response; anything after it falls through to the frame phase.
+   if sNxrRelays[pRelay]["state"] is "handshake" then
+      nxrProcessHandshake pRelay
+   end if
+   if sNxrRelays[pRelay]["state"] is "open" or sNxrRelays[pRelay]["state"] is "closing" then
+      nxrProcessFrames pRelay
+   end if
+end nxrProcessBuffer
+
+private function nxrHeaderEnd pBuffer
+   -- The byte position just PAST the CRLFCRLF terminator, or 0.
+   local tI, tN
+   put the number of bytes of pBuffer into tN
+   repeat with tI = 1 to tN - 3
+      if byteToNum(byte tI of pBuffer) is 13 and byteToNum(byte (tI + 1) of pBuffer) is 10 and byteToNum(byte (tI + 2) of pBuffer) is 13 and byteToNum(byte (tI + 3) of pBuffer) is 10 then
+         return tI + 4
+      end if
+   end repeat
+   return 0
+end nxrHeaderEnd
+
+private command nxrProcessHandshake pRelay
+   -- Validate the 101 upgrade response: status code and the accept echo.
+   -- Fail closed on anything else - a relay that answers 200 is a web page,
+   -- not a websocket.
+   local tEnd, tHeaderText, tSavedLineDelim, tStatusLine, tAcceptValue, tLineCount, tI, tLineText, tColonPos, tHeaderName
+   put nxrHeaderEnd(sNxrRelays[pRelay]["buffer"]) into tEnd
+   if tEnd is 0 then
+      exit nxrProcessHandshake        -- headers not complete yet
+   end if
+   put textDecode(byte 1 to (tEnd - 1) of sNxrRelays[pRelay]["buffer"], "UTF-8") into tHeaderText
+   -- Consume the header bytes; whatever follows is already frame data.
+   if tEnd > the number of bytes of sNxrRelays[pRelay]["buffer"] then
+      put empty into sNxrRelays[pRelay]["buffer"]
+   else
+      put byte tEnd to (the number of bytes of sNxrRelays[pRelay]["buffer"]) of sNxrRelays[pRelay]["buffer"] into sNxrRelays[pRelay]["buffer"]
+   end if
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to numToChar(13) & numToChar(10)
+   put line 1 of tHeaderText into tStatusLine
+   put empty into tAcceptValue
+   put the number of lines of tHeaderText into tLineCount
+   repeat with tI = 2 to tLineCount
+      put line tI of tHeaderText into tLineText
+      put offset(":", tLineText) into tColonPos
+      if tColonPos < 2 then
+         next repeat
+      end if
+      put char 1 to (tColonPos - 1) of tLineText into tHeaderName
+      -- Header names are case-insensitive by HTTP's own rule, so the folded
+      -- compare `is` gives here is the CORRECT one for once.
+      if nxrToLowerAscii(tHeaderName) is "sec-websocket-accept" then
+         put char (tColonPos + 1) to (the number of chars of tLineText) of tLineText into tAcceptValue
+         repeat while char 1 of tAcceptValue is " "
+            delete char 1 of tAcceptValue
+         end repeat
+         repeat while char (the number of chars of tAcceptValue) of tAcceptValue is " "
+            delete char (the number of chars of tAcceptValue) of tAcceptValue
+         end repeat
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLineDelim
+   if not (tStatusLine contains " 101 ") then
+      nxrFail pRelay, "the server did not upgrade (status line: " & tStatusLine & ")"
+      exit nxrProcessHandshake
+   end if
+   if not nxrStrEq(tAcceptValue, nxWsAcceptFor(sNxrRelays[pRelay]["wsKey"])) then
+      nxrFail pRelay, "Sec-WebSocket-Accept mismatch (not a compliant websocket server)"
+      exit nxrProcessHandshake
+   end if
+   put "open" into sNxrRelays[pRelay]["state"]
+   nxrDispatch pRelay, "open", empty, empty
+end nxrProcessHandshake
+
+private function nxrToLowerAscii pText
+   -- ASCII lowercase by byte value. Local copy for the same reason as
+   -- nxrStrEq below: the core's nxToLowerAscii is PRIVATE to its own
+   -- script when the two files load as separate stacks, and a private
+   -- handler called cross-script is an execution error at the first
+   -- handshake (the adversarial review traced exactly that).
+   local tOut, tI, tCount, tCode
+   put empty into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put byteToNum(char tI of pText) into tCode
+      if tCode >= 65 and tCode <= 90 then
+         put numToChar(tCode + 32) after tOut
+      else
+         put numToChar(tCode) after tOut
+      end if
+   end repeat
+   return tOut
+end nxrToLowerAscii
+
+private function nxrStrEq pA, pB
+   -- Byte-exact equality (the accept value is base64: case matters and `is`
+   -- folds case). Local copy: the core's nxStrEqExact is private to its own
+   -- script when the two files load as separate stacks.
+   local tA, tB, tI, tN
+   put textEncode(pA, "UTF-8") into tA
+   put textEncode(pB, "UTF-8") into tB
+   put the number of bytes of tA into tN
+   if tN is not the number of bytes of tB then
+      return false
+   end if
+   repeat with tI = 1 to tN
+      if byteToNum(byte tI of tA) is not byteToNum(byte tI of tB) then
+         return false
+      end if
+   end repeat
+   return true
+end nxrStrEq
+
+private command nxrProcessFrames pRelay
+   -- Drain complete frames from the buffer. Client-bound frames from a
+   -- server are unmasked; nxWsFrameDecode handles either. Fragmented text
+   -- reassembles across continuation frames; control frames interleave.
+   local tFrame, tRemaining, tTotal
+   repeat forever
+      if sNxrRelays[pRelay]["socketID"] is empty then
+         exit repeat        -- torn down mid-drain
+      end if
+      put nxWsFrameDecode(sNxrRelays[pRelay]["buffer"]) into tFrame
+      if tFrame["error"] is not empty then
+         nxrFail pRelay, "websocket framing:" && tFrame["error"]
+         exit repeat
+      end if
+      if tFrame["complete"] is not true then
+         exit repeat
+      end if
+      put the number of bytes of sNxrRelays[pRelay]["buffer"] into tTotal
+      if tFrame["consumed"] >= tTotal then
+         put empty into sNxrRelays[pRelay]["buffer"]
+      else
+         put byte (tFrame["consumed"] + 1) to tTotal of sNxrRelays[pRelay]["buffer"] into sNxrRelays[pRelay]["buffer"]
+      end if
+      if tFrame["opcode"] >= 8 then
+         nxrHandleControlFrame pRelay, tFrame["opcode"], tFrame["payload"]
+      else
+         nxrHandleDataFrame pRelay, tFrame["opcode"], tFrame["fin"], tFrame["payload"]
+      end if
+   end repeat
+end nxrProcessFrames
+
+private command nxrHandleControlFrame pRelay, pOpcode, pPayload
+   local tMask, tFrame
+   if pOpcode is 8 then
+      -- Close: echo one close back (best effort), then tear down.
+      if sNxrRelays[pRelay]["state"] is "open" then
+         put "closing" into sNxrRelays[pRelay]["state"]
+         put nxrRandomHex(4) into tMask
+         put nxWsFrameEncode(8, pPayload, tMask) into tFrame
+         if tFrame is not empty then
+            write tFrame to socket sNxrRelays[pRelay]["socketID"]
+         end if
+      end if
+      nxrTeardown pRelay, "the relay closed the connection"
+   else if pOpcode is 9 then
+      -- Ping: answer with a pong carrying the same payload.
+      put nxrRandomHex(4) into tMask
+      put nxWsFrameEncode(10, pPayload, tMask) into tFrame
+      if tFrame is not empty then
+         write tFrame to socket sNxrRelays[pRelay]["socketID"]
+      end if
+   end if
+   -- Pong (10) and unknown control opcodes are ignored on purpose.
+end nxrHandleControlFrame
+
+private command nxrHandleDataFrame pRelay, pOpcode, pFin, pPayload
+   -- Text (1) and continuation (0) frames carry the relay protocol; binary
+   -- (2) is not part of NIP-01 and is ignored with a notice-level callback.
+   local tMessage
+   if pOpcode is 2 then
+      nxrDispatch pRelay, "notice", "ignored a binary websocket frame", empty
+      exit nxrHandleDataFrame
+   end if
+   if pOpcode is 1 then
+      if pFin is true then
+         nxrHandleMessage pRelay, pPayload
+         exit nxrHandleDataFrame
+      end if
+      put 1 into sNxrRelays[pRelay]["fragOp"]
+      put pPayload into sNxrRelays[pRelay]["fragData"]
+      exit nxrHandleDataFrame
+   end if
+   if pOpcode is 0 then
+      if sNxrRelays[pRelay]["fragOp"] is empty then
+         nxrFail pRelay, "continuation frame with nothing to continue"
+         exit nxrHandleDataFrame
+      end if
+      put pPayload after sNxrRelays[pRelay]["fragData"]
+      if the number of bytes of sNxrRelays[pRelay]["fragData"] > kNxrMaxBuffer then
+         nxrFail pRelay, "fragmented message exceeded" && kNxrMaxBuffer && "bytes"
+         exit nxrHandleDataFrame
+      end if
+      if pFin is true then
+         put sNxrRelays[pRelay]["fragData"] into tMessage
+         put empty into sNxrRelays[pRelay]["fragOp"]
+         put empty into sNxrRelays[pRelay]["fragData"]
+         nxrHandleMessage pRelay, tMessage
+      end if
+   end if
+end nxrHandleDataFrame
+
+private command nxrHandleMessage pRelay, pPayloadData
+   -- One complete text message: parse the relay protocol and dispatch. An
+   -- unparseable message is surfaced, never silently dropped (fail closed
+   -- in the visible sense: the app learns its relay is misbehaving).
+   local tParsed, tEvent, tReason
+   put nxRelayParse(textDecode(pPayloadData, "UTF-8")) into tParsed
+   if tParsed is empty then
+      nxrDispatch pRelay, "notice", "unparseable relay message:" && nxLastError(), empty
+      exit nxrHandleMessage
+   end if
+   if tParsed["type"] is "EVENT" then
+      if sNxrRelays[pRelay]["verify"] is true then
+         put nxEventFromJson(tParsed["eventJson"]) into tEvent
+         if tEvent is empty then
+            nxrDispatch pRelay, "invalid", tParsed["subId"], "unparseable event:" && nxLastError()
+            exit nxrHandleMessage
+         end if
+         if nxEventVerify(tEvent) is not true then
+            put nxLastError() into tReason
+            nxrDispatch pRelay, "invalid", tParsed["subId"], tReason
+            exit nxrHandleMessage
+         end if
+      end if
+      nxrDispatch pRelay, "event", tParsed["subId"], tParsed["eventJson"]
+   else if tParsed["type"] is "OK" then
+      nxrDispatch pRelay, "ok", tParsed["eventId"], tParsed["accepted"] & tab & tParsed["reason"]
+   else if tParsed["type"] is "EOSE" then
+      nxrDispatch pRelay, "eose", tParsed["subId"], empty
+   else if tParsed["type"] is "CLOSED" then
+      nxrDispatch pRelay, "closed", tParsed["subId"], tParsed["reason"]
+   else if tParsed["type"] is "NOTICE" then
+      nxrDispatch pRelay, "notice", tParsed["notice"], empty
+   else if tParsed["type"] is "AUTH" then
+      put tParsed["challenge"] into sNxrRelays[pRelay]["challenge"]
+      nxrDispatch pRelay, "auth", tParsed["challenge"], empty
+   else
+      nxrDispatch pRelay, "notice", "unknown relay message type", empty
+   end if
+end nxrHandleMessage
+
+-- ==========================================================================
+-- The client verbs.
+-- ==========================================================================
+
+private command nxrSendText pRelay, pText
+   -- Frame and send one text message; reports via `the result`.
+   local tFrame
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return "NostrXT relay: unknown relay handle" && pRelay
+   end if
+   if sNxrRelays[pRelay]["state"] is not "open" then
+      return "NostrXT relay: relay" && pRelay && "is not open (state:" && sNxrRelays[pRelay]["state"] & ")"
+   end if
+   put nxWsFrameEncode(1, textEncode(pText, "UTF-8"), nxrRandomHex(4)) into tFrame
+   if tFrame is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   write tFrame to socket sNxrRelays[pRelay]["socketID"]
+   return empty
+end nxrSendText
+
+command nxrSetCallback pRelay, pHandlerName
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return "NostrXT relay: unknown relay handle" && pRelay
+   end if
+   put pHandlerName into sNxrRelays[pRelay]["callback"]
+   return empty
+end nxrSetCallback
+
+command nxrSetVerify pRelay, pVerify
+   -- Event verification is ON by default and fails closed (no CoinXT means
+   -- events arrive as "invalid", never as unverified "event"s). An app that
+   -- explicitly wants raw delivery turns it off per relay, eyes open.
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return "NostrXT relay: unknown relay handle" && pRelay
+   end if
+   if pVerify is not true and pVerify is not false then
+      return "NostrXT relay: nxrSetVerify takes true or false"
+   end if
+   put pVerify into sNxrRelays[pRelay]["verify"]
+   return empty
+end nxrSetVerify
+
+command nxrSubscribe pRelay, pSubId, pFiltersJson
+   local tWire
+   put nxClientReq(pSubId, pFiltersJson) into tWire
+   if tWire is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   nxrSendText pRelay, tWire
+   if the result is not empty then
+      return the result
+   end if
+   put pFiltersJson into sNxrRelays[pRelay]["subs"][pSubId]
+   return empty
+end nxrSubscribe
+
+command nxrUnsubscribe pRelay, pSubId
+   local tWire
+   put nxClientClose(pSubId) into tWire
+   if tWire is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   nxrSendText pRelay, tWire
+   if the result is not empty then
+      return the result
+   end if
+   delete variable sNxrRelays[pRelay]["subs"][pSubId]
+   return empty
+end nxrUnsubscribe
+
+command nxrPublish pRelay, pEvent
+   -- Send a SIGNED event; the relay's verdict arrives as the "ok" callback
+   -- keyed by the event id.
+   local tWire
+   put nxClientEvent(pEvent) into tWire
+   if tWire is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   nxrSendText pRelay, tWire
+   return the result
+end nxrPublish
+
+command nxrAuth pRelay, pSignedEvent
+   -- Answer a NIP-42 challenge (nxAuthBuild + nxEventSign built it).
+   local tWire
+   put nxClientAuth(pSignedEvent) into tWire
+   if tWire is empty then
+      return "NostrXT relay: " & nxLastError()
+   end if
+   nxrSendText pRelay, tWire
+   return the result
+end nxrAuth
+
+command nxrSendRaw pRelay, pText
+   -- The escape hatch for NIPs this layer does not speak yet: one text
+   -- frame, verbatim. The caller owns the JSON.
+   nxrSendText pRelay, pText
+   return the result
+end nxrSendRaw
+
+command nxrPing pRelay
+   -- An RFC 6455 ping (liveness probe); a compliant peer answers with a
+   -- pong, which this layer ignores on arrival.
+   local tFrame
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return "NostrXT relay: unknown relay handle" && pRelay
+   end if
+   if sNxrRelays[pRelay]["state"] is not "open" then
+      return "NostrXT relay: relay" && pRelay && "is not open"
+   end if
+   put nxWsFrameEncode(9, textEncode("nxr", "UTF-8"), nxrRandomHex(4)) into tFrame
+   write tFrame to socket sNxrRelays[pRelay]["socketID"]
+   return empty
+end nxrPing
+
+function nxrState pRelay
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return "unknown"
+   end if
+   return sNxrRelays[pRelay]["state"]
+end nxrState
+
+function nxrUrl pRelay
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return empty
+   end if
+   return sNxrRelays[pRelay]["url"]
+end nxrUrl
+
+function nxrChallenge pRelay
+   -- The most recent NIP-42 challenge this relay sent, or empty.
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      return empty
+   end if
+   return sNxrRelays[pRelay]["challenge"]
+end nxrChallenge
+
+function nxrOpenRelays
+   -- Every live relay handle, one per line (delimiter-guarded read of the
+   -- handle table's keys).
+   local tSavedLineDelim, tOut, tKeyList, tI, tCount
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the keys of sNxrRelays into tKeyList
+   sort lines of tKeyList numeric
+   put empty into tOut
+   put the number of lines of tKeyList into tCount
+   repeat with tI = 1 to tCount
+      if tOut is not empty then
+         put return after tOut
+      end if
+      put line tI of tKeyList after tOut
+   end repeat
+   set the lineDelimiter to tSavedLineDelim
+   return tOut
+end nxrOpenRelays
+
+-- ==========================================================================
+-- Teardown: idempotent, fail closed, own the lifecycle.
+-- ==========================================================================
+
+private command nxrSafeCloseSocket pSocketID
+   -- Close only a socket the engine still lists (the onionxt idempotent-
+   -- close shape; delimiter-guarded read of the openSockets).
+   local tSavedLineDelim, tIsOpen
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put (pSocketID is among the lines of the openSockets) into tIsOpen
+   set the lineDelimiter to tSavedLineDelim
+   if tIsOpen then
+      close socket pSocketID
+   end if
+end nxrSafeCloseSocket
+
+private command nxrDispatchTo pHandler, pRelay, pKind, pArgOne, pArgTwo
+   -- nxrDispatch by EXPLICIT handler name, for callbacks delivered after
+   -- the relay's table entry is already gone (teardown saves the name
+   -- first). Same try guard, same clean-miss contract.
+   local tError
+   if pHandler is empty then
+      exit nxrDispatchTo
+   end if
+   try
+      dispatch pHandler to nxrCallbackTarget() with pRelay, pKind, pArgOne, pArgTwo
+   catch tError
+      -- Swallowed on purpose: the app broke, the transport must not.
+   end try
+end nxrDispatchTo
+
+private command nxrTeardown pRelay, pReason
+   -- Close and FORGET FIRST, tell the app once AFTER: the callback runs
+   -- app code synchronously, and an app that answers "disconnected" by
+   -- calling nxrDisconnect on the same handle must find the clean no-op
+   -- the contract promises - dispatching while the tables were still
+   -- populated re-entered a relay that looked fully open (a second close
+   -- frame on the wire, a second callback, unbounded recursion; the
+   -- adversarial review traced the loop). Safe to call twice.
+   local tSocketID, tCallback
+   put sNxrRelays[pRelay]["socketID"] into tSocketID
+   if tSocketID is empty then
+      exit nxrTeardown
+   end if
+   put sNxrRelays[pRelay]["callback"] into tCallback
+   nxrSafeCloseSocket tSocketID
+   delete variable sNxrSockToRelay[tSocketID]
+   delete variable sNxrRelays[pRelay]
+   nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
+end nxrTeardown
+
+private command nxrFail pRelay, pReason
+   -- A wire error: tear down FIRST (the reentrancy rule above), then
+   -- surface "error" and "disconnected" from the saved callback name.
+   local tSocketID, tCallback
+   put sNxrRelays[pRelay]["socketID"] into tSocketID
+   if tSocketID is empty then
+      exit nxrFail
+   end if
+   put sNxrRelays[pRelay]["callback"] into tCallback
+   nxrSafeCloseSocket tSocketID
+   delete variable sNxrSockToRelay[tSocketID]
+   delete variable sNxrRelays[pRelay]
+   nxrDispatchTo tCallback, pRelay, "error", pReason, empty
+   nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
+end nxrFail
+
+command nxrDisconnect pRelay
+   -- App-initiated close: send a close frame when the link is up, then
+   -- tear down. Idempotent; a stale handle is a clean no-op.
+   local tMask
+   if sNxrRelays[pRelay]["socketID"] is empty then
+      exit nxrDisconnect
+   end if
+   if sNxrRelays[pRelay]["state"] is "open" then
+      put nxrRandomHex(4) into tMask
+      write nxWsFrameEncode(8, numToByte(3) & numToByte(232), tMask) to socket sNxrRelays[pRelay]["socketID"]
+   end if
+   nxrTeardown pRelay, "disconnected by the app"
+end nxrDisconnect
+
+command nxrShutdown
+   -- Close every relay (closeStack calls this; there is no deterministic
+   -- unload hook in OXT, so the app frees what it opens).
+   local tSavedLineDelim, tKeyList, tI, tCount
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the keys of sNxrRelays into tKeyList
+   put the number of lines of tKeyList into tCount
+   set the lineDelimiter to tSavedLineDelim
+   repeat with tI = 1 to tCount
+      -- Re-read the key list line by line under a fresh guard each pass:
+      -- nxrDisconnect mutates the table while this walks a SNAPSHOT.
+      put the lineDelimiter into tSavedLineDelim
+      set the lineDelimiter to return
+      nxrDisconnect (line tI of tKeyList)
+      set the lineDelimiter to tSavedLineDelim
+   end repeat
+end nxrShutdown
+
+-- ==========================================================================
+-- The engine's socket messages. Act ONLY on our own socket ids and PASS the
+-- rest: these three names are shared by every socket user in a stack, and
+-- swallowing another library's message is a silent HANG no gate can see
+-- (the family's socketError rule; two shipping apps re-derived it).
+-- ==========================================================================
+
+-- THE ENGINE'S THREE SOCKET MESSAGES, SPLIT IN TWO (2026-08-24), the same
+-- way onionxt splits them and for the same reason: these names belong to the
+-- ENGINE, so every socket library in the message path declares them, and one
+-- script cannot define a name twice - which is what embedding a library into
+-- an app's stack script does (tools/sync-demo-embeds.py). The LOGIC lives in
+-- nxrSocketError / nxrSocketClosed / nxrSocketTimeout, which answer one
+-- question: was that socket MINE, and did I handle it? The `on socket*`
+-- handlers are pure dispatch. An embedder drops the three thin wrappers and
+-- calls the named function from its own handler, so this logic is never
+-- copied and cannot go stale.
+
+-- Was pSocketID one of OUR relay sockets, and did we handle the error?
+function nxrSocketError pSocketID, pError
+   local tHandle
+   put sNxrSockToRelay[pSocketID] into tHandle
+   if tHandle is not empty then
+      nxrFail tHandle, "socket error:" && pError
+      return "true"
+   end if
+   return "false"
+end nxrSocketError
+
+
+-- Was pSocketID one of OUR relay sockets, and did we handle the close?
+function nxrSocketClosed pSocketID
+   local tHandle
+   put sNxrSockToRelay[pSocketID] into tHandle
+   if tHandle is not empty then
+      nxrTeardown tHandle, "the connection closed"
+      return "true"
+   end if
+   return "false"
+end nxrSocketClosed
+
+
+-- Was pSocketID one of OUR relay sockets, and did we handle the timeout?
+function nxrSocketTimeout pSocketID
+   -- socketTimeout REPEATS while a read is pending, so it is fatal only
+   -- during the handshake; on an open relay an idle read is normal.
+   local tHandle
+   put sNxrSockToRelay[pSocketID] into tHandle
+   if tHandle is not empty then
+      if sNxrRelays[tHandle]["state"] is not "open" then
+         nxrFail tHandle, "the websocket handshake timed out (socket timeout)"
+      end if
+      return "true"
+   end if
+   return "false"
+end nxrSocketTimeout
+
 -- ---- riptide/src/riptide.livecodescript ----
 -- riptide.livecodescript - Riptide Social, phases 1-4 + 6 + 7: the identity
 -- foundation, the pure-compute feed layer, the live feed layer, the media
@@ -367,7 +4889,7 @@ script "riptideSocialApp"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.11.0"
+constant kRsVersion = "0.12.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -425,8 +4947,39 @@ constant kRsZeroTarget = "0000000000000000000000000000000000000000"
 constant kRsSubkeyIdentity = "1"
 constant kRsSubkeyDm = "2"
 constant kRsSubkeyLan = "3"
+-- phase 8, the Nostr rail: subkey 4 is the secp256k1 secret key, subkey 5
+-- the RIPTAPP1 app-state sealing key. Both are their own row for the reason
+-- subkey 2 is separate from subkey 1 - one seed never feeds two schemes.
+constant kRsSubkeyNostr = "4"
+constant kRsSubkeyAppState = "5"
 constant kRsSubkeyAnonBase = 100
 constant kRsSubkeyAnonDmBase = 200
+-- The RSN1 identity bridge (phase 8). The SIGNATURE domain and the BEP44
+-- SALT are different strings on purpose: they live in different namespaces
+-- and could safely collide, but the LAN rail already sets the house pattern
+-- of a suffixed domain per record kind, and one string doing two jobs makes
+-- a reader stop and work out that it is not a bug.
+constant kRsNostrMagic = "RSN1"
+constant kRsNostrDomain = "riptide-nostr-b"
+constant kRsNostrSalt = "riptide-nostr"
+constant kRsNostrBridgeLen = 276
+constant kRsNostrBridgeBody = 148
+-- the secp256k1 validity ladder's rung cap (see rsNostrSeckeyFrom)
+constant kRsNostrLadderMax = 8
+-- NIP-78 application-specific data, parameterized-replaceable: a bridge is
+-- current state, not history, so a relay keeping only the newest is exactly
+-- what the seq advancing should mean
+constant kRsNostrBridgeKind = 30078
+constant kRsNostrBridgeDTag = "riptide.bridge"
+-- riptide's media convention on the Nostr wire: an `r` tag per attachment
+-- carrying the magnet URI for its v1 info-hash. The bytes still ride the
+-- phase-3 torrent rail; the tag is a POINTER, exactly as the LAN handoff
+-- record is, and `r` because an ordinary Nostr client renders it as a link.
+constant kRsMagnetPrefix = "magnet:?xt=urn:btih:"
+-- the RIPTAPP1 app-state store: sealed under subkey 5, capped so a runaway
+-- state blob refuses instead of writing an unbounded file
+constant kRsAppMagic = "RIPTAPP1"
+constant kRsAppStateMax = 1048576
 constant kRsMaxDisplayName = 64
 constant kRsMaxMedia = 8
 constant kRsMaxChunks = 16
@@ -447,7 +5000,8 @@ local sRsCaps
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
+         "(phase 8: identity, feed, media, DMs, LAN mesh, anon persona," && \
+         "Nostr bridge)"
 end rsVersion
 
 function rsLastError
@@ -471,6 +5025,9 @@ function rsProbeCapabilities
    put false into tCaps["hasDataChannel"]
    put false into tCaps["hasEnet"]
    put false into tCaps["hasCoin"]
+   put false into tCaps["hasNostr"]
+   put false into tCaps["hasNostrRelay"]
+   put false into tCaps["canNostrSign"]
    try
       put sxRandomBytes(32) into tKey
       put sxSecretBox(textEncode("probe", "ASCII"), tKey) into tBox
@@ -504,6 +5061,37 @@ function rsProbeCapabilities
       put (cxSha3_256Len() is 32) into tCaps["hasCoin"]
    catch tIgnore
       put false into tCaps["hasCoin"]
+   end try
+   -- The phase-8 Nostr rail probes in THREE parts, because the three things
+   -- fail separately and each disables a different feature (rule 6):
+   --   hasNostr      - the nx* CORE is loaded. A real round trip, not a
+   --                   version sniff: hex-encode a known string and compare.
+   --   canNostrSign  - the core can actually reach secp256k1 through CoinXT.
+   --                   Deriving an x-only public key for a fixed valid
+   --                   scalar exercises cxXOnlyPubkey, which is what every
+   --                   signing path here needs; hasCoin alone does not
+   --                   prove the nx* composition resolves.
+   --   hasNostrRelay - the nxr* relay layer is loaded too. It is a SEPARATE
+   --                   file that an app may legitimately not carry (it
+   --                   cannot ride the suite paste beside onionxt), so the
+   --                   whole compute rail must work without it.
+   try
+      put (nxHexEncode(textEncode("probe", "ASCII")) is "70726f6265") \
+            into tCaps["hasNostr"]
+   catch tIgnore
+      put false into tCaps["hasNostr"]
+   end try
+   try
+      put (the number of chars in nxKeyPublic( \
+            "0000000000000000000000000000000000000000000000000000000000000001") \
+            is 64) into tCaps["canNostrSign"]
+   catch tIgnore
+      put false into tCaps["canNostrSign"]
+   end try
+   try
+      put (nxrVersion() is not empty) into tCaps["hasNostrRelay"]
+   catch tIgnore
+      put false into tCaps["hasNostrRelay"]
    end try
    -- Derived capability: SHA3-256 from EITHER provider (sodiumxt ABI 7's
    -- sxSha3_256, or coinxt's cxSha3_256) - what the offline onion
@@ -1006,7 +5594,32 @@ function rsBuildPostChunked pTimestamp, pPrevTarget, pChunkTargets, pMediaList, 
    return rsSignPost(tBody, pIdentitySeed)
 end rsBuildPostChunked
 
+-- SAVE AND RESTORE THE ITEM DELIMITER (2026-08-29). This handler set it to
+-- comma twice and never put it back, so every caller of rsBuildPost got the
+-- delimiter reset underneath it. That is the C10 defect exactly - the one
+-- rsMediaCreate had, whose symptom on an engine was a mystery about the
+-- media list rather than anything that named a delimiter - and it survived
+-- the 2026-08-17 sweep for the same reason rsPersonaAllows's copy did:
+-- comma IS the engine default, so it is invisible until some caller sets
+-- something else.
+--
+-- Restored around the WHOLE body rather than at each exit, because there are
+-- SEVEN refusal exits here and a restore per exit is the line the next
+-- refusal path forgets. The narrow-span shape rsMediaCreate uses does not
+-- fit: the delimiter is read in two separate stretches with refusals in
+-- between, so one save at the top and one restore before each `return` of
+-- the delimiter-using region would be the same trap in a different place.
 private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
+   local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsPostBodyInner(pTimestamp, pPrevTarget, pKind, pTextContent, \
+         pChunkTargets, pMediaList) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsPostBody
+
+private function rsPostBodyInner pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
    if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
       rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
@@ -1071,13 +5684,13 @@ private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunk
          put textEncode(tNorm, "ASCII") after tOut
       end repeat
    end if
-   if the number of bytes in tOut + 64 > kRsMaxRecord then
+   if (the number of bytes in tOut) + 64 > kRsMaxRecord then
       rsSetError "rsPostBody: the post record is over" && kRsMaxRecord && \
             "bytes; move the text to chunks or drop media"
       return empty
    end if
    return tOut
-end rsPostBody
+end rsPostBodyInner
 
 private function rsSignPost pBody, pIdentitySeed
    local tKeys, tSig, tErr
@@ -1287,7 +5900,19 @@ end rsChunkPostText
 -- validation would refuse valid posts split inside a sequence). Returns
 -- the full text, or empty with the first missing target named - which is
 -- how a caller renders an honest placeholder while parts are in flight.
+-- Same save-and-restore as rsPostBody, and for the same reason: this handler
+-- set the itemDelimiter and never put it back, across five refusal exits.
+-- Split rather than restored per exit, because a restore per exit is the
+-- line the next refusal path forgets.
 function rsAssembleChunkText pChunkTargets, pParts
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsAssembleChunkTextInner(pChunkTargets, pParts) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsAssembleChunkText
+
+private function rsAssembleChunkTextInner pChunkTargets, pParts
    local tCount, tItem, tNorm, tPart, tBytes, tErr
    set the itemDelimiter to comma
    put the number of items in pChunkTargets into tCount
@@ -1327,7 +5952,7 @@ function rsAssembleChunkText pChunkTargets, pParts
       rsSetError "rsAssembleChunkText:" && tErr
       return empty
    end try
-end rsAssembleChunkText
+end rsAssembleChunkTextInner
 
 --------------------------------------------------------------------------
 -- BEP44 helpers
@@ -1365,7 +5990,7 @@ private function rsBencodedByteStringLen pValue
       put byteToNum(byte tI of pValue) into tN
       if tN is 58 then
          if tDigits is 0 then return -1
-         if the number of bytes in pValue - tI is not tLen then return -1
+         if (the number of bytes in pValue) - tI is not tLen then return -1
          return tLen
       end if
       if tN < 48 or tN > 57 then return -1
@@ -2367,7 +6992,7 @@ function rsDmFrame pKind, pPayload
       rsSetError "rsDmFrame: the payload must be non-empty"
       return empty
    end if
-   if the number of bytes in pPayload + 5 > kRsFrameMax then
+   if (the number of bytes in pPayload) + 5 > kRsFrameMax then
       rsSetError "rsDmFrame: the frame is over the rp1" && kRsFrameMax && \
             "cap; a DM payload that size belongs in a torrent"
       return empty
@@ -3436,11 +8061,32 @@ end rsAnonOnion
 -- Every send/publish branch in the app asserts through this before it
 -- selects a transport, so a violation is a refusal with a message, never a
 -- silent clearnet leak.
+-- 2026-08-28: "nostr" joins the vocabulary with the phase-8 rail, and it is
+-- the transport this guard most obviously exists for. A Nostr relay is a
+-- CLEARNET websocket to somebody else's server: it sees your IP, it sees
+-- every event you publish, and NIP-42 auth would name you to it. So an anon
+-- persona may never take it - which the existing rule already says (anon
+-- gets onion and nothing else), and which the harness now asserts as its
+-- own cell rather than leaving it to be inferred from the rule's shape.
 function rsPersonaAllows pIsAnon, pTransport
-   local tKnown
-   put "onion,dht,torrent,rp1,enet,dc,feed,media" into tKnown
+   local tKnown, tSaved, tKnownTransport
+   put "onion,dht,torrent,rp1,enet,dc,feed,media,nostr" into tKnown
+   -- SAVE AND RESTORE, and this one is a fix rather than a habit: this
+   -- handler set the itemDelimiter and never put it back, leaking comma to
+   -- everything that ran after it. That is the C10 defect (rsMediaCreate
+   -- leaking "/" for the rest of the session) in the one handler where it
+   -- reads worst - the app's Anon card paints the guard panel by calling
+   -- this nine times in a row, so a card repaint silently reset the
+   -- delimiter under whatever the pump was doing next. Benign in practice
+   -- only because comma IS the engine default, which is exactly why it
+   -- survived the 2026-08-17 sweep that found the other one. Fixed the same
+   -- way that one was: restore around the NARROWEST span, not at each exit,
+   -- because a restore per exit is the line the next refusal path forgets.
+   put the itemDelimiter into tSaved
    set the itemDelimiter to comma
-   if pTransport is not among the items of tKnown then
+   put (pTransport is among the items of tKnown) into tKnownTransport
+   set the itemDelimiter to tSaved
+   if not tKnownTransport then
       rsSetError "rsPersonaAllows: unknown transport" && quote & pTransport & \
             quote & " - refusing fail-closed"
       return false
@@ -3818,8 +8464,825 @@ function rsBtxoStreamStep pBuffer, pPhase
 end rsBtxoStreamStep
 
 --------------------------------------------------------------------------
+-- phase 8 - the Nostr rail (spec section 8A)
+--
+-- WHAT THIS RAIL IS FOR. Every other rail here is sovereign: the DHT feed,
+-- rp1 DMs, the LAN mesh and the onion persona all work with nobody's server
+-- in the middle, and that is the point of the app. What they do not have is
+-- REACH - a riptide handle is meaningless to anyone who does not run
+-- riptide. Nostr is the opposite trade: somebody else's relays, an IP they
+-- can see, and an audience already there. So this rail is deliberately a
+-- BRIDGE and never a dependency. Nothing here is on the path of any other
+-- rail; with no CoinXT, no relay, or every relay down, riptide is exactly
+-- the app it was before.
+--
+-- THREE THINGS THIS LAYER OWNS, and nothing else:
+--   1. The KEY. Subkey 4 through a bounded validity ladder, so one unlock
+--      still reconstructs the whole keyring (the spec's identity-first
+--      decision) and no separate Nostr key has to be stored or backed up.
+--   2. The BRIDGE. An RSN1 record signed by BOTH keys, so "this handle and
+--      this npub are one person" is a two-sided statement rather than a
+--      claim either key-holder could make about a stranger's key.
+--   3. The MEDIA CONVENTION. riptide attachments as `r`-tag magnet URIs, in
+--      both directions, so a note keeps its media across the boundary.
+--
+-- Everything else - canonical serialization, ids, BIP-340, NIP-19, filters,
+-- the relay socket machine - is NostrXT's, called through nx*/nxr* and never
+-- re-implemented (the family's compose-never-reinvent law). Every one of
+-- those calls sits in a try, so a missing NostrXT is a clean capability
+-- refusal naming what it needs, exactly like a missing torrentxt is.
+--
+-- THE SECRET KEY IS NOT HANDED OUT CASUALLY. rsNostrKeys returns only the
+-- public halves; the secret has its own handler with "Export" in its name,
+-- so every call site that touches it reads as the deliberate act it is
+-- (a backup, or an import into another Nostr client). rsNostrSignEvent
+-- derives, signs and drops it, so ordinary publishing never holds it.
+--
+-- DELIBERATELY NOT BUILT: Nostr DMs. NIP-04 is deprecated and needs AES,
+-- which exists nowhere in this suite; NIP-17 gift wrap needs an ephemeral
+-- key layer and a metadata analysis this pass has not done. riptide already
+-- has a private DM rail that answers to nobody, and a half-built encrypted
+-- rail beside it would be worse than none. Recorded as a scope cut, not a
+-- gap to be quietly filled later.
+--------------------------------------------------------------------------
+
+-- THE SECP256K1 VALIDITY LADDER, and why it is a function of a CANDIDATE.
+--
+-- A KDF output is 32 uniform bytes; a secp256k1 secret key must be in
+-- 1..n-1. The two are not the same set, and the gap is about 2^-128 wide -
+-- which is exactly what makes the design decision easy to get wrong. No
+-- real master seed will ever land in it, so whatever rule goes here will
+-- never run in anger and can never be observed. That is an argument for
+-- making it SIMPLE and TESTABLE, not for hand-waving it.
+--
+-- Refusing outright would leave a user with an underivable identity and
+-- nothing they could do about it. Re-deriving "with the next subkey id"
+-- would silently walk into a registry row belonging to another rail. So:
+-- re-hash the candidate with SHA-256 and try again, at most
+-- kRsNostrLadderMax times, then refuse. SHA-256 adds no dependency (the
+-- rail needs CoinXT for BIP-340 anyway), the rung count is bounded so it
+-- can never spin, and the refusal is a refusal and never a weaker key.
+--
+-- Taking a CANDIDATE rather than a master is what makes it provable: no
+-- master reaches rung 2, but the all-zeros candidate and the group order n
+-- both do, and the harness pins both.
+function rsNostrSeckeyFrom pCandidateHex
+   local tCandidate, tBin, tOk, tRung, tErr
+   put toLower(pCandidateHex) into tCandidate
+   if not rsIsHexOfLen(tCandidate, 64) then
+      rsSetError "rsNostrSeckeyFrom: the candidate must be 64 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tCandidate) into tBin
+   if tBin is empty then return empty
+   repeat with tRung = 1 to kRsNostrLadderMax
+      try
+         put cxSeckeyIsValid(tBin) into tOk
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSeckeyIsValid):" && tErr
+         return empty
+      end try
+      if tOk is true then
+         return rsBinToHexString(tBin)
+      end if
+      try
+         put cxSha256(tBin) into tBin
+      catch tErr
+         rsSetError "rsNostrSeckeyFrom needs CoinXT (cxSha256):" && tErr
+         return empty
+      end try
+   end repeat
+   rsSetError "rsNostrSeckeyFrom: no valid secp256k1 scalar within" && \
+         kRsNostrLadderMax && "rungs"
+   return empty
+end rsNostrSeckeyFrom
+
+-- The 64-hex Nostr secret key for a master seed. PRIVATE on purpose: the
+-- two public doors are rsNostrKeys (public halves only) and
+-- rsNostrExportSeckey (named so the call site reads as a deliberate act).
+private function rsNostrSeckeyHex pMaster
+   local tSub, tHex
+   put rsSubkey(pMaster, kRsSubkeyNostr) into tSub
+   if tSub is empty then return empty
+   put rsBinToHexString(tSub) into tHex
+   if tHex is empty then return empty
+   return rsNostrSeckeyFrom(tHex)
+end rsNostrSeckeyHex
+
+-- The PUBLIC halves of the Nostr identity: the 64-hex BIP-340 x-only public
+-- key and its npub. No secret in the result, so an app can paint this
+-- anywhere without deciding whether the array is safe to log.
+function rsNostrKeys pMaster
+   local tSecHex, tPub, tNpub, tOut, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxKeyPublic(tSecHex) into tPub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxKeyPublic):" && tErr
+      return empty
+   end try
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsNostrKeys: nxKeyPublic did not return a 64-hex key"
+      return empty
+   end if
+   try
+      put nxNpubEncode(tPub) into tNpub
+   catch tErr
+      rsSetError "rsNostrKeys needs NostrXT (nxNpubEncode):" && tErr
+      return empty
+   end try
+   if tNpub is empty then
+      rsSetError "rsNostrKeys: nxNpubEncode refused the public key"
+      return empty
+   end if
+   put tPub into tOut["pubkey"]
+   put tNpub into tOut["npub"]
+   return tOut
+end rsNostrKeys
+
+-- The secret key as 64 hex, for a BACKUP or an import into another Nostr
+-- client. Named for what it is: the one handler here that hands a caller
+-- key material, so a reader of a call site does not have to know the KDF
+-- tree to notice. The honest limit is the family's standing one - OXT
+-- script variables are not locked memory - and it belongs to whoever calls
+-- this, not to this library.
+function rsNostrExportSeckey pMaster
+   return rsNostrSeckeyHex(pMaster)
+end rsNostrExportSeckey
+
+-- Sign an event under the Nostr identity, deriving the key inside and
+-- dropping it on the way out. This is the ONLY signing seam, so ordinary
+-- publishing never has the secret in a caller's variable.
+--
+-- pAuxHex empty draws fresh BIP-340 auxiliary randomness (the recommended
+-- default; BIP-340 signatures are not unique and every one of them
+-- verifies). A 64-hex pAuxHex makes the signature a pure function of key,
+-- message and aux - which is what the golden vectors pin, and what the
+-- fixed LAN nonce is to the admission records.
+function rsNostrSignEvent pEvent, pMaster, pAuxHex
+   local tSecHex, tSigned, tErr
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   try
+      put nxEventSign(pEvent, tSecHex, pAuxHex) into tSigned
+   catch tErr
+      rsSetError "rsNostrSignEvent needs NostrXT (nxEventSign):" && tErr
+      return empty
+   end try
+   if tSigned is empty then
+      rsSetError "rsNostrSignEvent: nxEventSign refused the event"
+      return empty
+   end if
+   return tSigned
+end rsNostrSignEvent
+
+-- An UNSIGNED kind-1 note carrying riptide's media attachments as `r`-tag
+-- magnet URIs. Pure: no key, no I/O, so the harness proves the tag shape
+-- offline. rsNostrSignEvent completes it.
+--
+-- The media list is the same comma list rsParsePost returns, and each entry
+-- is validated as a non-zero 40-hex info-hash before it becomes a tag - a
+-- note must never advertise content nobody can fetch (the rsPublishImmutable
+-- discipline, applied to a pointer that leaves the app).
+function rsNostrNoteEvent pTimestamp, pText, pMediaList
+   local tTags, tCount, tI, tHash, tSaved, tEvent, tErr
+   if pTimestamp is not an integer or pTimestamp < 0 then
+      rsSetError "rsNostrNoteEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   if pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrNoteEvent: the timestamp is out of range"
+      return empty
+   end if
+   if pText is empty then
+      rsSetError "rsNostrNoteEvent: an empty note is refused"
+      return empty
+   end if
+   put 0 into tCount
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   if pMediaList is not empty then
+      repeat with tI = 1 to the number of items in pMediaList
+         put rsNormalizeTarget(item tI of pMediaList) into tHash
+         if tHash is empty or tHash is kRsZeroTarget then
+            set the itemDelimiter to tSaved
+            rsSetError "rsNostrNoteEvent: media item" && tI && \
+                  "is not a 40-hex non-zero info-hash"
+            return empty
+         end if
+         add 1 to tCount
+         put "r" into tTags[tCount][1]
+         put kRsMagnetPrefix & tHash into tTags[tCount][2]
+      end repeat
+   end if
+   set the itemDelimiter to tSaved
+   if tCount > kRsMaxMedia then
+      rsSetError "rsNostrNoteEvent: at most" && kRsMaxMedia && \
+            "media attachments"
+      return empty
+   end if
+   try
+      put nxEventBuild(1, pText, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrNoteEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrNoteEvent: nxEventBuild refused the note"
+      return empty
+   end if
+   return tEvent
+end rsNostrNoteEvent
+
+-- The RECEIVE half of the media convention: the 40-hex info-hashes an
+-- inbound event advertises, as a comma list ready for rsMediaFetch.
+--
+-- Strict on the way in, exactly as on the way out: an `r` tag that is not a
+-- magnet URI is somebody else's link and is skipped silently, and one that
+-- looks like a magnet but does not carry a lowercase non-zero 40-hex hash
+-- is skipped too rather than reaching the torrent layer. A tag is untrusted
+-- text; this returns only what it could fully validate.
+function rsNostrMediaTags pEvent
+   local tValues, tSavedLine, tSavedItem, tI, tLine, tTail, tHash, tOut, tErr
+   local tPrefixLen
+   try
+      put nxTagValues(pEvent, "r") into tValues
+   catch tErr
+      rsSetError "rsNostrMediaTags needs NostrXT (nxTagValues):" && tErr
+      return empty
+   end try
+   if tValues is empty then return empty
+   put the number of chars in kRsMagnetPrefix into tPrefixLen
+   put the lineDelimiter into tSavedLine
+   put the itemDelimiter into tSavedItem
+   set the lineDelimiter to return
+   set the itemDelimiter to comma
+   repeat with tI = 1 to the number of lines in tValues
+      put line tI of tValues into tLine
+      -- POSITIVE indices on purpose. `char -40 to -1` reads naturally and is
+      -- a form the headless interpreter mis-models, so it could not be
+      -- checked offline; the length is already pinned one line above, which
+      -- makes the explicit span both exact and verifiable.
+      if the number of chars in tLine is tPrefixLen + 40 then
+         if char 1 to tPrefixLen of tLine is kRsMagnetPrefix then
+            put char (tPrefixLen + 1) to (tPrefixLen + 40) of tLine into tTail
+            put rsNormalizeTarget(tTail) into tHash
+            if tHash is not empty and tHash is not kRsZeroTarget then
+               if tOut is empty then
+                  put tHash into tOut
+               else
+                  put comma & tHash after tOut
+               end if
+            end if
+         end if
+      end if
+   end repeat
+   set the lineDelimiter to tSavedLine
+   set the itemDelimiter to tSavedItem
+   return tOut
+end rsNostrMediaTags
+
+-- THE RSN1 IDENTITY BRIDGE - the record that makes "this handle and this
+-- npub are one person" checkable rather than asserted.
+--
+-- A riptide handle is ed25519 and an npub is secp256k1. Neither key can
+-- sign for the other, so a one-signature claim is a claim ANY holder of
+-- that one key can make about somebody else's other key - which is not a
+-- linkage, it is an accusation. Both signatures over one preimage make it a
+-- two-sided statement, and either half alone is worthless.
+--
+-- Layout, 276 bytes exactly:
+--   magic(4) handle(64 ascii hex) nostrPub(64 ascii hex) seq(u64 BE)
+--   timestamp(u64 BE) edSig(64) schnorrSig(64)
+-- The signed span is the first 148 bytes, prefixed by kRsNostrDomain: the
+-- magic is INSIDE it, so a signature minted for this record can never be
+-- read as a signature for another kind, and the domain keeps it out of the
+-- LAN rail's namespace (the "riptide-lan-s" discipline).
+--
+-- The ed25519 half signs the preimage bytes; the BIP-340 half signs SHA-256
+-- OF the preimage, because CoinXT's cxSchnorrSign takes a 32-byte digest -
+-- deliberately restricted there so a caller cannot sign a blob it has not
+-- decoded.
+function rsBuildBridge pSeq, pTimestamp, pMaster, pAuxHex
+   local tIdSeed, tIdKeys, tNostr, tBody, tPre, tEdSig, tDigest
+   local tSecHex, tSchSig, tAux, tErr
+   if pSeq is not an integer or pSeq < 0 or pSeq >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the seq must be a non-negative integer"
+      return empty
+   end if
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsBuildBridge: the timestamp must be a non-negative integer"
+      return empty
+   end if
+   if pAuxHex is not empty and not rsIsHexOfLen(toLower(pAuxHex), 64) then
+      rsSetError "rsBuildBridge: aux randomness must be empty or 64 hex chars"
+      return empty
+   end if
+   put rsIdentitySeed(pMaster) into tIdSeed
+   if tIdSeed is empty then return empty
+   put rsIdentityKeys(tIdSeed) into tIdKeys
+   if tIdKeys is empty then return empty
+   put rsNostrKeys(pMaster) into tNostr
+   if tNostr is empty then return empty
+   put rsNostrSeckeyHex(pMaster) into tSecHex
+   if tSecHex is empty then return empty
+   put textEncode(kRsNostrMagic, "ASCII") into tBody
+   put textEncode(tIdKeys["handle"], "ASCII") after tBody
+   put textEncode(tNostr["pubkey"], "ASCII") after tBody
+   put rsBEu64(pSeq) after tBody
+   put rsBEu64(pTimestamp) after tBody
+   if the number of bytes in tBody is not kRsNostrBridgeBody then
+      rsSetError "rsBuildBridge: assembled body is not" && \
+            kRsNostrBridgeBody && "bytes"
+      return empty
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & tBody into tPre
+   try
+      put sxSignDetached(tPre, tIdKeys["secretKey"]) into tEdSig
+   catch tErr
+      rsSetError "rsBuildBridge needs SodiumXT (sxSignDetached):" && tErr
+      return empty
+   end try
+   if pAuxHex is empty then
+      put empty into tAux
+   else
+      put rsHexToBin(toLower(pAuxHex)) into tAux
+      if tAux is empty then return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrSign(rsHexToBin(tSecHex), tDigest, tAux) into tSchSig
+   catch tErr
+      rsSetError "rsBuildBridge needs CoinXT (cxSha256/cxSchnorrSign):" && tErr
+      return empty
+   end try
+   if the number of bytes in tEdSig is not 64 or \
+         the number of bytes in tSchSig is not 64 then
+      rsSetError "rsBuildBridge: a signature is not 64 bytes"
+      return empty
+   end if
+   return tBody & tEdSig & tSchSig
+end rsBuildBridge
+
+-- Strict parse: exact length, exact magic, both key fields canonical
+-- lowercase hex. STRUCTURE ONLY - nothing here is believed until
+-- rsVerifyBridge has checked both signatures.
+function rsParseBridge pBytes
+   local tOut, tHandle, tPub
+   if the number of bytes in pBytes is not kRsNostrBridgeLen then
+      rsSetError "rsParseBridge: an RSN1 record is exactly" && \
+            kRsNostrBridgeLen && "bytes"
+      return empty
+   end if
+   if textDecode(byte 1 to 4 of pBytes, "ASCII") is not kRsNostrMagic then
+      rsSetError "rsParseBridge: bad magic, not an RSN1 record"
+      return empty
+   end if
+   put textDecode(byte 5 to 68 of pBytes, "ASCII") into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsParseBridge: malformed riptide handle"
+      return empty
+   end if
+   put textDecode(byte 69 to 132 of pBytes, "ASCII") into tPub
+   if not rsIsHexOfLen(tPub, 64) then
+      rsSetError "rsParseBridge: malformed nostr public key"
+      return empty
+   end if
+   put tHandle into tOut["handle"]
+   put tPub into tOut["nostrPub"]
+   put rsReadBEu64(byte 133 to 140 of pBytes) into tOut["seq"]
+   put rsReadBEu64(byte 141 to 148 of pBytes) into tOut["timestamp"]
+   return tOut
+end rsParseBridge
+
+-- Verify BOTH signatures, then (optionally) that the record names the keys
+-- the caller expected. Returns rsParseBridge's array or empty.
+--
+-- An empty expectation means "do not check that side", which is what a
+-- reader who found the record BY one of the keys wants: pulling it from the
+-- DHT under a handle already fixes the handle, and pulling it out of a
+-- Nostr event already fixes the npub. Passing both is the strictest form
+-- and is what an app comparing two independently-obtained copies uses.
+function rsVerifyBridge pBytes, pExpectHandleHex, pExpectNostrPubHex
+   local tRec, tPre, tOk, tPub, tDigest, tErr, tWantHandle, tWantPub
+   put rsParseBridge(pBytes) into tRec
+   if tRec is empty then return empty
+   put toLower(pExpectHandleHex) into tWantHandle
+   if tWantHandle is not empty then
+      if not rsIsHexOfLen(tWantHandle, 64) then
+         rsSetError "rsVerifyBridge: the expected handle must be 64 hex chars"
+         return empty
+      end if
+      if tRec["handle"] is not tWantHandle then
+         rsSetError "rsVerifyBridge: the record names a different handle"
+         return empty
+      end if
+   end if
+   put toLower(pExpectNostrPubHex) into tWantPub
+   if tWantPub is not empty then
+      if not rsIsHexOfLen(tWantPub, 64) then
+         rsSetError "rsVerifyBridge: the expected nostr key must be 64 hex" && \
+               "chars"
+         return empty
+      end if
+      if tRec["nostrPub"] is not tWantPub then
+         rsSetError "rsVerifyBridge: the record names a different nostr key"
+         return empty
+      end if
+   end if
+   put textEncode(kRsNostrDomain, "ASCII") & \
+         (byte 1 to kRsNostrBridgeBody of pBytes) into tPre
+   put rsHexToBin(tRec["handle"]) into tPub
+   if tPub is empty then return empty
+   try
+      put sxSignVerifyDetached(byte 149 to 212 of pBytes, tPre, tPub) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs SodiumXT (sxSignVerifyDetached):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the riptide handle signature does not verify"
+      return empty
+   end if
+   try
+      put cxSha256(tPre) into tDigest
+      put cxSchnorrVerify(rsHexToBin(tRec["nostrPub"]), tDigest, \
+            byte 213 to 276 of pBytes) into tOk
+   catch tErr
+      rsSetError "rsVerifyBridge needs CoinXT (cxSha256/cxSchnorrVerify):" && \
+            tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsVerifyBridge: the nostr signature does not verify"
+      return empty
+   end if
+   return tRec
+end rsVerifyBridge
+
+-- The bridge as a NIP-78 parameterized-replaceable event (kind 30078,
+-- d-tag "riptide.bridge"), content = the record as lowercase hex.
+--
+-- Hex rather than base64 for the reason the anon /dm route already gives:
+-- it survives every client untouched and gives a reader an exact spelling
+-- to refuse against. Signed by the SAME Nostr key the record names, which
+-- is what rsNostrBridgeFromEvent checks - an event carrying somebody else's
+-- bridge is refused rather than relayed.
+function rsNostrBridgeEvent pBridgeBytes, pMaster, pTimestamp, pAuxHex
+   local tRec, tHex, tTags, tEvent, tErr
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then return empty
+   if pTimestamp is not an integer or pTimestamp < 0 or \
+         pTimestamp >= 9007199254740992 then
+      rsSetError "rsNostrBridgeEvent: the timestamp must be a non-negative" && \
+            "integer"
+      return empty
+   end if
+   put rsBinToHexString(pBridgeBytes) into tHex
+   if tHex is empty then return empty
+   put "d" into tTags[1][1]
+   put kRsNostrBridgeDTag into tTags[1][2]
+   try
+      put nxEventBuild(kRsNostrBridgeKind, tHex, tTags, pTimestamp) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeEvent needs NostrXT (nxEventBuild):" && tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeEvent: nxEventBuild refused the event"
+      return empty
+   end if
+   return rsNostrSignEvent(tEvent, pMaster, pAuxHex)
+end rsNostrBridgeEvent
+
+-- The inbound half: a wire-format kind-30078 event JSON in, a VERIFIED
+-- bridge out. Four gates, in order, and the order is the point:
+--   1. structure (nxEventFromJson - untrusted text becomes an event array)
+--   2. the event's own BIP-340 signature (nxEventVerify)
+--   3. the kind and the d-tag - this is a riptide bridge, not some other
+--      app's NIP-78 blob that happens to be hex
+--   4. both bridge signatures, with the event's OWN author pinned as the
+--      expected nostr key
+--
+-- Gate 4 is what stops the obvious attack: anyone can copy somebody else's
+-- bridge record into their own signed event. Requiring the record's
+-- nostrPub to BE the event's author makes that copy verify as what it is -
+-- the original author's bridge - and never as the republisher's.
+function rsNostrBridgeFromEvent pEventJson
+   local tEvent, tOk, tKind, tDTag, tHex, tBytes, tErr
+   try
+      put nxEventFromJson(pEventJson) into tEvent
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventFromJson):" && \
+            tErr
+      return empty
+   end try
+   if tEvent is empty then
+      rsSetError "rsNostrBridgeFromEvent: the event JSON did not parse"
+      return empty
+   end if
+   try
+      put nxEventVerify(tEvent) into tOk
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxEventVerify):" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsNostrBridgeFromEvent: the event signature does not verify"
+      return empty
+   end if
+   put tEvent["kind"] into tKind
+   if tKind is not kRsNostrBridgeKind then
+      rsSetError "rsNostrBridgeFromEvent: not a kind" && kRsNostrBridgeKind && \
+            "event"
+      return empty
+   end if
+   try
+      put nxTagFirst(tEvent, "d") into tDTag
+   catch tErr
+      rsSetError "rsNostrBridgeFromEvent needs NostrXT (nxTagFirst):" && tErr
+      return empty
+   end try
+   -- byte-exact, because `is` folds case and a d-tag is a wire identifier
+   if not rsBytesEqual(tDTag, kRsNostrBridgeDTag) then
+      rsSetError "rsNostrBridgeFromEvent: the d tag is not" && \
+            kRsNostrBridgeDTag
+      return empty
+   end if
+   put toLower(tEvent["content"]) into tHex
+   if not rsIsHexOfLen(tHex, kRsNostrBridgeLen * 2) then
+      rsSetError "rsNostrBridgeFromEvent: the content is not" && \
+            (kRsNostrBridgeLen * 2) && "hex chars"
+      return empty
+   end if
+   put rsHexToBin(tHex) into tBytes
+   if tBytes is empty then return empty
+   return rsVerifyBridge(tBytes, empty, tEvent["pubkey"])
+end rsNostrBridgeFromEvent
+
+-- Publish the bridge to the DHT under the identity key, at its own salt.
+-- The head format is untouched: a new rail gets a new salt, never a new
+-- field in a record whose magic would then have to be bumped (rule 3). The
+-- BEP44 seq is the bridge's own embedded seq, the rsPublishHead discipline
+-- of one counter with one source of truth.
+function rsPublishBridge pSession, pBridgeBytes, pIdentitySeed
+   local tRec, tKeys, tValue, tBuf, tSig, tSigHex, tCode, tWhy, tErr
+   -- EVERY OTHER INPUT IS VALIDATED BEFORE THE SESSION IS TOUCHED - the
+   -- phase-2 decision this library records and then has to keep: it is
+   -- what lets these refusal paths run, and be tested, on a machine with
+   -- no torrentxt installed. The seed/handle check in particular has to
+   -- sit above the session check or it can only ever be reached on a
+   -- machine that has a live session, which is exactly where a harness
+   -- assertion quietly starts passing for the wrong reason.
+   put rsParseBridge(pBridgeBytes) into tRec
+   if tRec is empty then
+      rsSetError "rsPublishBridge: not a valid RSN1 bridge:" && rsLastError()
+      return false
+   end if
+   put rsIdentityKeys(pIdentitySeed) into tKeys
+   if tKeys is empty then return false
+   -- A bridge names its handle INSIDE the signed span, so publishing one
+   -- under a different key would put a record on the DHT that verifies as
+   -- somebody else's linkage at a target nobody looks for. Refuse loudly.
+   if tKeys["handle"] is not tRec["handle"] then
+      rsSetError "rsPublishBridge: the signing seed is not the handle the" && \
+            "bridge names"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsPublishBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   put rsBencodeBytes(pBridgeBytes) into tValue
+   put rsBep44SignBuf(kRsNostrSalt, tRec["seq"], tValue) into tBuf
+   if tBuf is empty then return false
+   try
+      put sxSignDetached(tBuf, tKeys["secretKey"]) into tSig
+   catch tErr
+      rsSetError "rsPublishBridge:" && tErr
+      return false
+   end try
+   put rsBinToHexString(tSig) into tSigHex
+   if tSigHex is empty then return false
+   try
+      btDhtPutSigned pSession, tKeys["handle"], kRsNostrSalt, \
+            tRec["seq"], tValue, tSigHex
+      put the result into tCode
+   catch tErr
+      rsSetError "rsPublishBridge: needs torrentxt (btDhtPutSigned):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      try
+         put btLastError() into tWhy
+      catch tErr
+         put empty into tWhy
+      end try
+      rsSetError "rsPublishBridge: btDhtPutSigned refused (" & tCode & ")" && \
+            tWhy
+      return false
+   end if
+   return true
+end rsPublishBridge
+
+-- Ask the DHT for a handle's bridge. Asynchronous, exactly like
+-- rsRequestHead: the value arrives as a dhtMutableItem event for
+-- rsIngestBridge.
+function rsRequestBridge pSession, pHandleHex
+   local tHandle, tCode, tErr
+   put toLower(pHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsRequestBridge: the handle must be 64 hex chars"
+      return false
+   end if
+   if not rsValidSession(pSession) then
+      rsSetError "rsRequestBridge: pSession is not a live torrent session" && \
+            "handle"
+      return false
+   end if
+   try
+      btDhtGetMutable pSession, tHandle, kRsNostrSalt
+      put the result into tCode
+   catch tErr
+      rsSetError "rsRequestBridge: needs torrentxt (btDhtGetMutable):" && tErr
+      return false
+   end try
+   if tCode is not 0 then
+      rsSetError "rsRequestBridge: btDhtGetMutable refused (" & tCode & ")"
+      return false
+   end if
+   return true
+end rsRequestBridge
+
+-- Verify a drained dhtMutableItem EVENT as a handle's bridge. The same
+-- three-layer discipline rsIngestHead uses - the event is for this handle
+-- and this salt, the BEP44 signature re-verifies in SodiumXT, and the
+-- embedded seq agrees with the event's - and then, because this record
+-- carries a second signature libtorrent knows nothing about, the FULL
+-- rsVerifyBridge on top. Returns the bridge array, or empty.
+function rsIngestBridge pEvent, pExpectedHandleHex
+   local tHandle, tEventKey, tSeq, tRec, tSigHex, tSig, tBuf, tOk, tErr
+   put toLower(pExpectedHandleHex) into tHandle
+   if not rsIsHexOfLen(tHandle, 64) then
+      rsSetError "rsIngestBridge: the expected handle must be 64 hex chars"
+      return empty
+   end if
+   put toLower(pEvent["publicKey"]) into tEventKey
+   if not rsIsHexOfLen(tEventKey, 64) or tEventKey is not tHandle then
+      rsSetError "rsIngestBridge: the event is not for this handle"
+      return empty
+   end if
+   -- `is` folds case here too; the rebuilt-canonical-buffer signature below
+   -- is what actually backstops a case-mangled salt (the rsIngestHead note)
+   if pEvent["salt"] is not kRsNostrSalt then
+      rsSetError "rsIngestBridge: the event is not a riptide-nostr item"
+      return empty
+   end if
+   put pEvent["seq"] into tSeq
+   if tSeq is not an integer or tSeq < 0 or tSeq >= 9007199254740992 then
+      rsSetError "rsIngestBridge: the event seq is not a sane integer"
+      return empty
+   end if
+   put toLower(pEvent["signature"]) into tSigHex
+   if not rsIsHexOfLen(tSigHex, 128) then
+      rsSetError "rsIngestBridge: the event signature is not 128 hex chars"
+      return empty
+   end if
+   put rsHexToBin(tSigHex) into tSig
+   if tSig is empty then return empty
+   put rsBep44SignBuf(kRsNostrSalt, tSeq, rsBencodeBytes(pEvent["value"])) \
+         into tBuf
+   if tBuf is empty then return empty
+   try
+      put sxSignVerifyDetached(tSig, tBuf, rsHexToBin(tHandle)) into tOk
+   catch tErr
+      rsSetError "rsIngestBridge:" && tErr
+      return empty
+   end try
+   if tOk is not true then
+      rsSetError "rsIngestBridge: the BEP44 signature does not verify under" && \
+            "this handle"
+      return empty
+   end if
+   put rsVerifyBridge(pEvent["value"], tHandle, empty) into tRec
+   if tRec is empty then return empty
+   if tRec["seq"] is not tSeq then
+      rsSetError "rsIngestBridge: the BEP44 seq and the bridge's embedded" && \
+            "seq disagree"
+      return empty
+   end if
+   return tRec
+end rsIngestBridge
+
+--------------------------------------------------------------------------
+-- the RIPTAPP1 app-state store
+--
+-- WHY THE LIBRARY OWNS THIS. Everything riptide knew about you used to die
+-- at quit: who you follow, which relays you use, the display names you had
+-- resolved, your own head seq. That is defensible in a phase demo and is
+-- not defensible in an app - a lost seq counter alone means the next head
+-- you publish is refused by every follower who already saw a higher one.
+--
+-- SEALED, NOT PLAIN, and the reason is not that a follow list is secret in
+-- the way a key is. It is that a follow list IS the social graph: who you
+-- read, which relays you talk to, which npub is yours. That is the exact
+-- material the anon persona exists to keep unlinked, so leaving it in the
+-- clear beside a sealed key file would put the interesting half of the
+-- threat model on disk in plaintext.
+--
+-- The key is subkey 5 - its own row, never a signing key - so the store
+-- opens only while unlocked, which is the same property the rest of the
+-- keyring has. The payload is opaque TEXT: the library fixes the envelope
+-- and the app owns the format inside it, because what belongs in app state
+-- is an app question and a wire format here would freeze it.
+--------------------------------------------------------------------------
+
+-- "RIPTAPP1" "S" then sxSecretBox(UTF-8 state, subkey-5 key). The box
+-- carries its own random nonce, so two seals of one state differ - which is
+-- correct and is also why no golden vector pins these bytes; what the
+-- goldens pin is the KEY, and the harness proves the round trip.
+function rsSealAppState pStateText, pMaster
+   local tKey, tBytes, tOut, tErr
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   put textEncode(pStateText, "UTF-8") into tBytes
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsSealAppState: the state is over the" && kRsAppStateMax && \
+            "byte cap"
+      return empty
+   end if
+   try
+      put textEncode(kRsAppMagic & "S", "ASCII") & sxSecretBox(tBytes, tKey) \
+            into tOut
+   catch tErr
+      rsSetError "rsSealAppState needs SodiumXT (sxSecretBox):" && tErr
+      return empty
+   end try
+   return tOut
+end rsSealAppState
+
+-- Open it. A file from a different master fails the Poly1305 tag inside
+-- sxSecretBoxOpen - it cannot silently mis-decrypt - and a truncated or
+-- foreign file is refused on the header before any crypto runs. The
+-- decoded payload is UTF-8 round-tripped, because textDecode is LOSSY on
+-- this engine and a mangled state file must refuse rather than load as
+-- replacement characters (the 2026-08-15 finding).
+function rsOpenAppState pFileBytes, pMaster
+   local tKey, tHeader, tSealed, tBytes, tErr
+   if the number of bytes in pFileBytes < 10 then
+      rsSetError "rsOpenAppState: too short to be a RIPTAPP1 file"
+      return empty
+   end if
+   put textDecode(byte 1 to 9 of pFileBytes, "ASCII") into tHeader
+   if tHeader is not (kRsAppMagic & "S") then
+      rsSetError "rsOpenAppState: not a RIPTAPP1 sealed state file"
+      return empty
+   end if
+   put byte 10 to -1 of pFileBytes into tSealed
+   put rsSubkey(pMaster, kRsSubkeyAppState) into tKey
+   if tKey is empty then return empty
+   try
+      put sxSecretBoxOpen(tSealed, tKey) into tBytes
+   catch tErr
+      rsSetError "rsOpenAppState: wrong master seed or corrupted state file"
+      return empty
+   end try
+   if the number of bytes in tBytes > kRsAppStateMax then
+      rsSetError "rsOpenAppState: the sealed state is over the" && \
+            kRsAppStateMax && "byte cap"
+      return empty
+   end if
+   if not rsBytesAreUtf8(tBytes) then
+      rsSetError "rsOpenAppState: the sealed state is not valid UTF-8"
+      return empty
+   end if
+   if the number of bytes in tBytes is 0 then return empty
+   return textDecode(tBytes, "UTF-8")
+end rsOpenAppState
+
+--------------------------------------------------------------------------
 -- private: hex, big-endian integers, base32
 --------------------------------------------------------------------------
+
+-- Byte-exact string equality. `is` FOLDS CASE in this dialect, so every
+-- comparison of a wire identifier - a tag name, a magic, a d-tag - has to
+-- go through something like this or a non-conforming spelling is silently
+-- accepted (the coinxt canonical-form lesson, and nostrxt's own rule 2).
+private function rsBytesEqual pA, pB
+   local tI, tN
+   put the number of chars in pA into tN
+   if tN is not the number of chars in pB then return false
+   repeat with tI = 1 to tN
+      if byteToNum(byte tI of pA) is not byteToNum(byte tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end rsBytesEqual
 
 -- Is pBytes a valid UTF-8 sequence?
 --
@@ -5500,17 +10963,6 @@ function oxSocketError pSocketID, pError
    return "false"
 end oxSocketError
 
-on socketError pSocketID, pError
-   if oxSocketError(pSocketID, pError) then
-      exit socketError
-   end if
-   -- NOT OURS: pass it on (2026-08-23). The family rule this file itself
-   -- documents for apps (docs/05, docs/10) applies to the library too:
-   -- swallowing another library's socket event is a silent HANG there. Found
-   -- by the suite's cross-library name gate when nostrxt's relay layer became
-   -- the second library defining these.
-   pass socketError
-end socketError
 
 -- Was pSocketID one of OUR sockets, and did we handle the close?
 function oxSocketClosed pSocketID
@@ -5532,13 +10984,6 @@ function oxSocketClosed pSocketID
    return "false"
 end oxSocketClosed
 
-on socketClosed pSocketID
-   if oxSocketClosed(pSocketID) then
-      exit socketClosed
-   end if
-   -- NOT OURS: pass it on (see socketError above).
-   pass socketClosed
-end socketClosed
 
 -- Was pSocketID one of OUR sockets, and did we handle the timeout?
 function oxSocketTimeout pSocketID
@@ -5566,13 +11011,6 @@ function oxSocketTimeout pSocketID
    return "false"
 end oxSocketTimeout
 
-on socketTimeout pSocketID
-   if oxSocketTimeout(pSocketID) then
-      exit socketTimeout
-   end if
-   -- NOT OURS: pass it on (see socketError above).
-   pass socketTimeout
-end socketTimeout
 
 -- ==========================================================================
 -- Optional Mode B: launch and supervise a bundled tor (docs/07). This is a
@@ -6631,9 +12069,51 @@ constant kDcTypingSendMs = 1000
 -- the Play-now floor: the fraction of the FILE whose contiguous front must
 -- be on disk before the demo hands it to a player (see raMediaFrontReady)
 constant kRaPlayFloor = 0.05
--- bumped on any layout change so an existing stack rebuilds (the kit builders
--- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-9"
+-- phase 8, the Nostr rail. The default relays are WRITTEN INTO THE FIELD,
+-- never dialled on their own: a social app that phones a stranger's server
+-- the moment it opens has made a privacy decision on the user's behalf.
+-- Connecting is always a click.
+--
+-- They are two CONSTANTS joined by a FUNCTION (raNxDefaultRelays), not one
+-- constant holding a return, and that is not a style choice: an xTalk
+-- constant's value must be a LITERAL, so
+-- `constant kX = "a" & return & "b"` does not compile - and because a
+-- .livecodescript is ONE compilation unit, that single line takes the whole
+-- stack down and no UI is ever built. It is the same reason rsKdfContext()
+-- is a function (a constant cannot hold a NUL either).
+constant kNxDefaultRelayOne = "wss://relay.damus.io"
+constant kNxDefaultRelayTwo = "wss://nos.lol"
+constant kNxTimelineMax = 200
+constant kNxSubId = "riptide-timeline"
+constant kNxNoteMax = 8000
+-- how long a relay may sit in "connecting" before the card says so. The
+-- relay layer has its own handshake watchdog; this one is the UI's, so a
+-- stalled connect reads as stalled instead of as nothing happening.
+constant kNxConnectMs = 20000
+-- the app-state store: debounce saves so a keystroke is not a file write,
+-- and cap the follow list so a pasted junk file cannot grow unboundedly
+constant kAppSaveDebounceMs = 2000
+constant kAppMaxFollows = 500
+constant kAppMaxRelays = 20
+constant kAppStateVersion = "RIPTSTATE1"
+-- bumped on any layout change so an existing stack rebuilds. Since v11 a
+-- version change also runs raBuildReset first: the builders are
+-- create-if-missing, so on a stack an OLDER script built, chrome a newer
+-- version adds (the column panels) would be created last and sit ON TOP
+-- of every existing control, and controls the newer version no longer
+-- builds would linger, clickable and dead.
+constant kRaUiVersion = "ra-ui-720p-11"
+
+-- Every control name this script names OR builds, derived from the source with
+-- comments cut and string literals kept. Declared HERE, above its first use
+-- (raBuildResetCard walks it; OXT resolves script-level names by lexical
+-- position), and read again by the boot self-check at the file's foot.
+constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raNavAnon,raNavDevs,raNavFeed,raNavMsgs,raNavNostr,raNxBridgeBtn,raNxCompose,raNxComposeL,raNxConnect,raNxCopyNpub,raNxDisconnect,raNxExportBtn,raNxFollowBtn,raNxFollowTo,raNxFollows,raNxIdNote,raNxNpub,raNxNpubL,raNxPostBtn,raNxRelayLog,raNxRelays,raNxSec1,raNxSec2,raNxSec3,raNxSec4,raNxStatus,raNxTimeline,raPanL,raPanR,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
+
+-- Controls that older UI versions built and this one does not: the
+-- hub-and-spoke raGo* navigation buttons v11's tab bar replaced. Only
+-- raBuildResetCard reads this, so an upgraded-in-place stack sheds them.
+constant kRaScRetired = "raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoFeedFromNostr,raGoLanFromFeed,raGoNostrFromFeed"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -7144,6 +12624,25 @@ local sDcTypingSent    -- the state last sent ("1"/"0")
 local sDcTypingSentAt  -- ms of my last typing-state send
 local sDcPeerTyping    -- "true" while the far side reports typing
 local sDcPeerTypingAt  -- ms of the far side's last "typing" report
+-- phase 8 (the Nostr rail). REACH, never a dependency: every one of these
+-- may stay empty for the whole session and no other rail notices.
+local sNxNpub          -- my npub while unlocked (display + copy)
+local sNxPubkey        -- my 64-hex x-only Nostr public key while unlocked
+local sNxRelayHandle   -- relay url -> the nxr* handle while connected
+local sNxRelayState    -- relay url -> the last state word we painted
+local sNxRelaySince    -- relay url -> ms the dial started (the UI watchdog)
+local sNxSubId         -- the timeline subscription id, or empty
+local sNxSeen          -- event id -> "true", so two relays are one timeline
+local sNxCount         -- how many verified events the timeline holds
+local sNxBridgeSeq     -- monotonic seq for MY bridge record
+local sNxPendingBridge -- the built bridge bytes awaiting a relay/DHT publish
+local sNxAwaitBridge   -- the handle whose DHT bridge lookup is in flight
+-- the RIPTAPP1 store (phase 8). A follow list IS the social graph, so it
+-- is sealed under subkey 5 and only readable while unlocked.
+local sAppFollows      -- 64-hex nostr pubkey -> petname
+local sAppRelays       -- relay url -> "read"/"write"/"" (the NIP-65 marker)
+local sAppDirty        -- "true" when state has changed since the last save
+local sAppSaveAt       -- ms deadline for the debounced save, or empty
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
@@ -7159,6 +12658,8 @@ on closeStack
    raDmTeardown
    raLanLeave
    raAnonStop
+   -- before the seed is cleared, so a pending app-state save can still seal
+   raNxTeardown
    if sSession is an integer and sSession > 0 then
       try
          btStopSession sSession
@@ -7219,17 +12720,28 @@ on mouseUp
       case "raMediaGet"
          raMediaGet
          break
-      case "raGoDm"
+      -- the tab bar: the same five buttons on every card, so any card is
+      -- one click from any other. The mark call runs AFTER the go, so its
+      -- unqualified button writes land on the newly current card.
+      case "raNavFeed"
+         go to card 1
+         raNavMark "raNavFeed"
+         break
+      case "raNavMsgs"
          go to card "raMessages"
+         raNavMark "raNavMsgs"
          break
-      case "raGoFeed"
-         go to card 1
-         break
-      case "raGoLanFromFeed"
+      case "raNavDevs"
          go to card "raDevices"
+         raNavMark "raNavDevs"
          break
-      case "raGoFeedFromLan"
-         go to card 1
+      case "raNavAnon"
+         go to card "raAnon"
+         raNavMark "raNavAnon"
+         break
+      case "raNavNostr"
+         go to card "raNostr"
+         raNavMark "raNavNostr"
          break
       case "raLanHostBtn"
          raLanHost
@@ -7246,11 +12758,26 @@ on mouseUp
       case "raLanMediaGet"
          raLanMediaGet
          break
-      case "raGoAnonFromFeed"
-         go to card "raAnon"
+      case "raNxConnect"
+         raNxConnect
          break
-      case "raGoFeedFromAnon"
-         go to card 1
+      case "raNxDisconnect"
+         raNxDisconnect
+         break
+      case "raNxPostBtn"
+         raNxPost
+         break
+      case "raNxFollowBtn"
+         raNxFollow
+         break
+      case "raNxBridgeBtn"
+         raNxBridge
+         break
+      case "raNxExportBtn"
+         raNxExport
+         break
+      case "raNxCopyNpub"
+         raNxCopyNpub
          break
       case "raAnonReveal"
          raAnonReveal
@@ -7275,23 +12802,66 @@ on mouseUp
    end switch
 end mouseUp
 
+-- Return in a ONE-LINE entry field acts, so the keyboard flow a person
+-- expects (type, press Return) works everywhere a single value is entered.
+-- Multi-line fields (compose boxes, the relay and entries lists, the LAN
+-- draft) are deliberately NOT here: there Return is a newline, and the
+-- default pass keeps it one.
+on returnInField
+   switch the short name of the target
+      case "raPassphrase"
+         raUnlock
+         break
+      case "raHandle"
+         raFetch
+         break
+      case "raMediaHash"
+         raMediaGet
+         break
+      case "raDmTo"
+         raDmStart
+         break
+      case "raDmMsg"
+         raDmSend
+         break
+      case "raLanTo"
+         raLanJoin
+         break
+      case "raNxFollowTo"
+         raNxFollow
+         break
+      default
+         pass returnInField
+   end switch
+end returnInField
+
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
--- Four CARDS since phases 5-7 landed (the spec's one-stack-rails-behind-
--- tabs answer): card 1 is the feed (phases 1-3), card "raMessages" the
--- DM + call rail (phases 4-5), card "raDevices" the LAN mesh (phase 6),
--- card "raAnon" the persona (phase 7). The stack script owns every
--- handler, so navigation is just `go to card`; the pump keeps running
--- wherever you are.
+-- FIVE CARDS (the spec's one-stack-rails-behind-tabs answer): card 1 is
+-- the feed (phases 1-3), card "raMessages" the DM + call rail (phases
+-- 4-5), card "raDevices" the LAN mesh (phase 6), card "raAnon" the
+-- persona (phase 7), card "raNostr" the bridge (phase 8). Every card
+-- carries the same five-tab bar (raNavBar), so any card is one click
+-- from any other. The stack script owns every handler, so navigation is
+-- just `go to card`; the pump keeps running wherever you are.
 command raBuild
    if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild
    end if
    lock screen
+   -- an UPGRADE in place (this script pasted over a stack an older
+   -- version built) sheds the old furniture first - see kRaUiVersion
+   if the uUiVersion of this stack is not empty then
+      raBuildReset
+   end if
    raBuildFeedCard
    raBuildDmCard
    raBuildLanCard
    raBuildAnonCard
+   raBuildNostrCard
    go to card 1
+   -- the identity gate's initial state: locked, so the buttons that need
+   -- an unlocked seed start disabled instead of refusing on first click
+   raGateIdentity
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
 end raBuild
@@ -7300,10 +12870,11 @@ command raBuildFeedCard
    go to card 1
    -- two columns inside the family's 720p budget (1200 x 640, the
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
-   uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
-   uiButton "raGoDm", "Messages >", "1080,4,1192,26"
-   uiButton "raGoLanFromFeed", "Devices >", "968,4,1074,26"
-   uiButton "raGoAnonFromFeed", "Anon >", "872,4,962,26"
+   uiChrome "Riptide Social - Feed", 1200, 640
+   -- the two column panels FIRST, so they sit behind their controls
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavFeed"
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -7326,6 +12897,9 @@ command raBuildFeedCard
    uiButton "raPost", "Post", "446,292,592,316"
    uiButton "raAttach", "Attach", "446,320,592,340"
    uiArea "raMyFeed", "16,346,592,562"
+   -- newest posts go BEFORE this field's text, so the birth line below
+   -- stays at the bottom, oldest, and never needs clearing
+   put "your feed begins here - write above and Post." into field "raMyFeed"
 
    -- 3. follow
    uiSection "raSec3", "3. Follow: fetch a head, walk the chain, verify every signature", "608,58,1184,76"
@@ -7333,6 +12907,11 @@ command raBuildFeedCard
    uiInput "raHandle", "776,80,1050,100"
    uiButton "raFetch", "Fetch feed", "1056,80,1184,104"
    uiArea "raTheirFeed", "608,110,1184,508"
+   -- cleared by raFetch itself, so this guidance lives exactly until the
+   -- first fetch replaces it with a real feed
+   put "paste an author's 64-hex handle above and Fetch:" & return \
+         & "the head and every post arrive signature-verified, or not at all." \
+         into field "raTheirFeed"
 
    -- the phase-3 media strip: a walked post auto-fills the hash; Fetch
    -- joins the swarm sequentially, and the button becomes Play the moment
@@ -7360,12 +12939,15 @@ command raBuildDmCard
       set the name of this card to "raMessages"
    end if
    go to card "raMessages"
-   uiChrome "Riptide Social - Messages (phase 4: encrypted DMs over rp1)", 1200, 640
-   uiButton "raGoFeed", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Messages", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavMsgs"
 
    uiSection "raDmSec1", "1. My inbox: the phantom swarm strangers reach you in", "16,58,592,76"
    uiCap "raDmMine", "Unlock on the Feed card first; the inbox derives from your identity.", "16,82,592,124"
    uiArea "raDmLog", "16,130,592,562"
+   put "inbox log - your inbox opens when you unlock." & return into field "raDmLog"
 
    uiSection "raDmSec2", "2. Conversation: sealed first contact, then a private stream", "608,58,1184,76"
    uiLabel "raDmToL", "to handle (64 hex):", "608,80,748,98", 11
@@ -7373,6 +12955,8 @@ command raBuildDmCard
    uiButton "raDmStart", "Start DM", "1056,80,1116,104"
    uiButton "raDmCallBtn", "Call", "1122,80,1184,104"
    uiArea "raDmChat", "608,110,1184,498"
+   put "conversation - Start a DM with a handle, or answer a knock in your inbox." \
+         & return into field "raDmChat"
    uiInput "raDmMsg", "608,506,1050,528"
    uiButton "raDmSend", "Send", "1056,504,1184,528"
    -- the phase-5 typing lane paints here during a call (spec 6.2):
@@ -7401,8 +12985,10 @@ command raBuildLanCard
       set the name of this card to "raDevices"
    end if
    go to card "raDevices"
-   uiChrome "Riptide Social - Devices (phase 6: your own LAN device mesh)", 1200, 640
-   uiButton "raGoFeedFromLan", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Devices", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavDevs"
 
    uiSection "raLanSec1", "1. This device: host the mesh, or join one on your LAN", "16,58,592,76"
    uiLabel "raLanNameL", "device name:", "16,80,110,98", 11
@@ -7414,6 +13000,8 @@ command raBuildLanCard
    uiInput "raLanTo", "134,108,340,128"
    uiButton "raLanJoinBtn", "Join", "446,108,592,132"
    uiArea "raLanLog", "16,138,592,336"
+   put "mesh log - Host here, or Join your host device's IP (unlock first)." \
+         & return into field "raLanLog"
 
    -- the phase-6 sync payload: type here and every admitted device sees
    -- it (debounced on the poll timer, signed per record, absolute state)
@@ -7463,8 +13051,10 @@ command raBuildAnonCard
       set the name of this card to "raAnon"
    end if
    go to card "raAnon"
-   uiChrome "Riptide Social - Anon persona (phase 7: onion-only identity)", 1200, 640
-   uiButton "raGoFeedFromAnon", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Anon persona", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavAnon"
 
    uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
    uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
@@ -7476,6 +13066,8 @@ command raBuildAnonCard
    uiLabel "raAnonEntriesL", "anon feed entries (one per line; served at / over the onion):", "16,110,592,128", 11
    uiInput "raAnonEntries", "16,130,592,224"
    uiArea "raAnonOut", "16,230,592,562"
+   put "persona log - Reveal derives the key; Publish + serve puts it on Tor" \
+         & " (unlock first)." & return into field "raAnonOut"
 
    uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
    uiArea "raAnonGuard", "608,80,1184,562"
@@ -7497,6 +13089,193 @@ command raBuildAnonCard
          "16,572,1184,632"
 end raBuildAnonCard
 
+-- Phase 8: the Nostr rail. The one card in this app that talks to somebody
+-- else's servers, and it is laid out to say so: the relay list and its
+-- honesty note sit ABOVE the timeline, because "which strangers am I
+-- talking to" is the question this rail makes a user answer.
+--
+-- Nothing here dials on open. The default relays are typed into the field
+-- for convenience and connecting is always a click - a social app that
+-- phones a relay the moment it opens has made a privacy decision on the
+-- user's behalf.
+command raBuildNostrCard
+   if there is no card "raNostr" then
+      create card
+      set the name of this card to "raNostr"
+   end if
+   go to card "raNostr"
+   uiChrome "Riptide Social - Nostr", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavNostr"
+
+   -- 1. identity + the bridge
+   uiSection "raNxSec1", "1. Your Nostr identity: the same master seed, its own key", "16,58,592,76"
+   uiLabel "raNxNpubL", "npub:", "16,80,60,98", 11
+   uiInput "raNxNpub", "64,80,470,100"
+   uiButton "raNxCopyNpub", "Copy", "476,78,592,102"
+   uiButton "raNxBridgeBtn", "Publish identity bridge", "16,106,300,130"
+   uiButton "raNxExportBtn", "Export nsec", "308,106,450,130"
+   uiCap "raNxIdNote", \
+         "Unlock on the Feed card first. The bridge is a signed statement" \
+         & " by BOTH keys that this npub and your riptide handle are one" \
+         & " person - publishing it is what links them, so it is a click.", \
+         "16,134,592,178"
+
+   -- 2. relays
+   uiSection "raNxSec2", "2. Relays: whose servers this rail talks to", "16,184,592,202"
+   uiInput "raNxRelays", "16,206,470,268"
+   put raNxDefaultRelays() into field "raNxRelays"
+   uiButton "raNxConnect", "Connect", "476,204,592,228"
+   uiButton "raNxDisconnect", "Disconnect", "476,232,592,256"
+   uiArea "raNxRelayLog", "16,274,592,406"
+   put "relay log - nothing dials until you click Connect." & return \
+         into field "raNxRelayLog"
+
+   -- 3. follows
+   uiSection "raNxSec3", "3. Follows: npub or 64-hex, one at a time", "16,412,592,430"
+   uiInput "raNxFollowTo", "16,434,470,454"
+   uiButton "raNxFollowBtn", "Follow", "476,432,592,456"
+   uiArea "raNxFollows", "16,460,592,562"
+   put "not following anyone yet - paste an npub or 64-hex key above." \
+         into field "raNxFollows"
+
+   -- 4. the timeline
+   uiSection "raNxSec4", "4. Timeline: every event verified before it is shown", "608,58,1184,76"
+   uiArea "raNxTimeline", "608,80,1184,466"
+   put "timeline - verified notes land here once a relay is connected." \
+         & return into field "raNxTimeline"
+   uiLabel "raNxComposeL", "post a note to your relays:", "608,472,1184,490", 11
+   uiInput "raNxCompose", "608,492,1050,534"
+   uiButton "raNxPostBtn", "Post note", "1056,492,1184,516"
+   uiCap "raNxStatus", empty, "608,538,1184,564"
+
+   uiFooter \
+         "Nostr is REACH, never a dependency: with no relay reachable" \
+         & " every other rail here works exactly as before. The honest" \
+         & " costs, all of them: a relay is somebody else's server, so it" \
+         & " sees your IP and every event you publish; publishing the" \
+         & " bridge deliberately LINKS your npub to your riptide handle" \
+         & " in public, and cannot be unpublished; and the anon persona" \
+         & " may never use this rail (the 9.3 guard refuses it). DMs stay" \
+         & " on riptide's own rail - Nostr DMs are not built here." \
+         & " Verified statically; needs an OXT + live-relay pass.", \
+         "16,572,1184,632"
+end raBuildNostrCard
+
+-- ---- navigation: one tab bar, five cards -------------------------------------
+-- The same five buttons in the title band of every card, the current one
+-- held down. The hilite is script-managed (autoHilite off - the kit's
+-- checkbox discipline): a pressed look that flashed back on click would
+-- read as a broken button, not as "you are here".
+command raNavBar pCurrent
+   uiButton "raNavFeed", "Feed", "736,4,824,26"
+   uiButton "raNavMsgs", "Messages", "828,4,916,26"
+   uiButton "raNavDevs", "Devices", "920,4,1008,26"
+   uiButton "raNavAnon", "Anon", "1012,4,1100,26"
+   uiButton "raNavNostr", "Nostr", "1104,4,1192,26"
+   set the autoHilite of button "raNavFeed" to false
+   set the autoHilite of button "raNavMsgs" to false
+   set the autoHilite of button "raNavDevs" to false
+   set the autoHilite of button "raNavAnon" to false
+   set the autoHilite of button "raNavNostr" to false
+   raNavMark pCurrent
+end raNavBar
+
+-- Mark the current card's tab. Unqualified on purpose: the builders call
+-- this with their card current, and the mouseUp cases call it AFTER the
+-- go, so the writes always land on the card being looked at.
+command raNavMark pCurrent
+   set the hilite of button "raNavFeed" to (pCurrent is "raNavFeed")
+   set the hilite of button "raNavMsgs" to (pCurrent is "raNavMsgs")
+   set the hilite of button "raNavDevs" to (pCurrent is "raNavDevs")
+   set the hilite of button "raNavAnon" to (pCurrent is "raNavAnon")
+   set the hilite of button "raNavNostr" to (pCurrent is "raNavNostr")
+end raNavMark
+
+-- ---- the upgrade path: shed an older version's furniture ---------------------
+-- Runs ONLY when raBuild finds a different uUiVersion already stamped on
+-- the stack (a fresh paste has none). Walks every card this app builds
+-- and deletes each control the registry (or the retired list) names, so
+-- the builders then run against clean cards exactly as on a fresh paste -
+-- which is what keeps the z-order right: a panel created onto a card that
+-- already has controls would sit ON TOP of them.
+command raBuildReset
+   local tCard
+   repeat for each item tCard in "raMessages,raDevices,raAnon,raNostr"
+      if there is a card tCard then
+         go to card tCard
+         raBuildResetCard
+      end if
+   end repeat
+   go to card 1
+   raBuildResetCard
+end raBuildReset
+
+command raBuildResetCard
+   local tName
+   -- uiBand rides along by name: uiChrome builds it, but the registry is
+   -- derived from the demo's OWN references (check-demo-control-lists.py)
+   -- and the demo never names it, so it cannot live in kRaScControls
+   repeat for each item tName in (kRaScControls & comma & kRaScRetired & ",uiBand")
+      if there is a field tName then
+         delete field tName
+      end if
+      if there is a button tName then
+         delete button tName
+      end if
+      if there is a graphic tName then
+         delete graphic tName
+      end if
+      -- the hairline divider uiSection builds beside each header
+      if there is a graphic (tName & "Line") then
+         delete graphic (tName & "Line")
+      end if
+   end repeat
+end raBuildResetCard
+
+-- ---- the identity gate: affordance, not enforcement --------------------------
+-- Buttons that cannot work without an unlocked seed start disabled and
+-- enable on unlock, so a new user's first click cannot be a refusal.
+-- AFFORDANCE ONLY: every one of these handlers keeps its own guard, so a
+-- click that slips through still refuses with its reason. Qualified and
+-- try-wrapped per the multi-card rule - this runs from card 1, and a card
+-- that is mid-build must not throw out of the builder.
+command raGateIdentity
+   local tOn, tErr
+   put (sMasterSeed is not empty) into tOn
+   try
+      set the enabled of button "raPost" of card 1 to tOn
+      set the enabled of button "raAttach" of card 1 to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raDmStart" of card "raMessages" to tOn
+      set the enabled of button "raDmCallBtn" of card "raMessages" to tOn
+      set the enabled of button "raDmSend" of card "raMessages" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raLanHostBtn" of card "raDevices" to tOn
+      set the enabled of button "raLanJoinBtn" of card "raDevices" to tOn
+      set the enabled of button "raLanSendMedia" of card "raDevices" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raAnonReveal" of card "raAnon" to tOn
+      set the enabled of button "raAnonPublishBtn" of card "raAnon" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raNxCopyNpub" of card "raNostr" to tOn
+      set the enabled of button "raNxBridgeBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxExportBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxPostBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxFollowBtn" of card "raNostr" to tOn
+   catch tErr
+   end try
+end raGateIdentity
+
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
    local tErr
@@ -7516,7 +13295,7 @@ command raProbe
    else if sCaps["hasSha3"] is not true then
       uiStatus "Ready, minus the .onion spelling: no SHA3 provider is loaded (SodiumXT ABI 7 serves sxSha3_256; CoinXT's cxSha3_256 is the fallback).", "warn"
    else
-      uiStatus "Ready: SodiumXT + TorrentXT + SHA3 all present.", "ok"
+      uiStatus "Ready. Create or unlock your identity on this card to begin.", "ok"
    end if
 end raProbe
 
@@ -7640,6 +13419,16 @@ command raIdentityReady
    else
       put "no session: posts stay disabled until TorrentXT is available." & return after field "raIdOut"
    end if
+   -- phase 8, LAST: the Nostr key and the saved app state both derive from
+   -- the master, so they can only exist once the keyring does. Neither
+   -- publishes anything or dials anything - that stays a click.
+   raNxIdentityReady
+   raAppLoad
+   -- the status line doubles as the identity chip: one glance says who is
+   -- unlocked, from any card
+   uiStatus "Unlocked as" && raDmShort(sHandle) && \
+         "- posting, DMs, devices and Nostr are live. Lock when done.", "ok"
+   raGateIdentity
 end raIdentityReady
 
 -- Phase 4 bring-up, run once per unlock: derive the kx prekey pair,
@@ -7725,12 +13514,22 @@ end raDmShort
 command raLock
    raClearKeys
    put "LOCKED: the identity seed left memory. Unlock to publish again." & return into field "raIdOut"
+   uiStatus "Locked: the seed left memory. Unlock to act again.", "warn"
+   raGateIdentity
 end raLock
 
 command raClearKeys
    raDmTeardown
    raLanLeave
    raAnonStop
+   -- FIRST among the phase-8 steps: raNxTeardown flushes a dirty app state
+   -- while the master seed is still here to seal it with. Below the
+   -- `put empty into sMasterSeed` line it could only fail.
+   raNxTeardown
+   put empty into sAppFollows
+   put empty into sAppRelays
+   put empty into sAppDirty
+   put empty into sAppSaveAt
    put empty into sIdSeed
    put empty into sDmSeed
    put empty into sDmKeys
@@ -7943,6 +13742,16 @@ command raPoll
       if sLanHost is not empty then
          raLanPaintDevices
       end if
+      -- phase 8: the debounced app-state save and the relay connect
+      -- watchdog. On the PAINT tier, never the transport tier: neither is
+      -- latency-sensitive, and a state file written 30 times a second
+      -- would be a new performance defect rather than a fix (the B3
+      -- lesson, applied to the rail that landed after it).
+      try
+         raNxTick
+      catch tErr
+         -- a bad tick must never cost the pump; the next one retries
+      end try
    end if
    send "raPoll" to me in raPollDelay() milliseconds
 end raPoll
@@ -10387,6 +16196,831 @@ command raAnonLog pLine
    end if
 end raAnonLog
 
+-- ---- phase 8: the Nostr rail -------------------------------------------------
+-- EVERY field write here goes through one of the three guarded painters
+-- below. The relay callback runs from ENGINE SOCKET CALLBACKS, off raPoll's
+-- try and on whatever card happens to be open, so a bare reference to a
+-- control on the Nostr card would throw from a card where it does not
+-- exist - the multi-card lesson that once permanently stopped this app's
+-- pump, arriving at a new event source (the 8.2/8.3 route handlers took the
+-- same treatment for the same reason).
+
+command raNxLog pLine
+   if there is a field "raNxRelayLog" of card "raNostr" then
+      put pLine & return after field "raNxRelayLog" of card "raNostr"
+   end if
+end raNxLog
+
+command raNxNote pText
+   if there is a field "raNxStatus" of card "raNostr" then
+      put pText into field "raNxStatus" of card "raNostr"
+   end if
+end raNxNote
+
+command raNxTimelineAdd pLine
+   if there is a field "raNxTimeline" of card "raNostr" then
+      put pLine & return after field "raNxTimeline" of card "raNostr"
+   end if
+end raNxTimelineAdd
+
+-- Is the Nostr rail usable at all? Three separate answers, because the
+-- three things fail separately and each disables a different feature. Named
+-- rather than inlined so every entry point refuses the same way.
+private function raNxReady
+   if sCaps["hasNostr"] is not true then
+      raNxNote "NostrXT is not loaded - this rail is off."
+      return false
+   end if
+   if sCaps["canNostrSign"] is not true then
+      raNxNote "CoinXT is missing: install org.openxtalk.library.coinxt for" \
+            && "secp256k1. The other rails are unaffected."
+      return false
+   end if
+   return true
+end raNxReady
+
+private function raNxUnlocked
+   if sMasterSeed is empty then
+      raNxNote "Unlock on the Feed card first: the Nostr key derives from" \
+            && "the same master seed."
+      return false
+   end if
+   return true
+end raNxUnlocked
+
+-- Called from raIdentityReady, so the npub appears the moment the keyring
+-- exists. Refuses quietly when the rail is off: a missing CoinXT must not
+-- make unlocking look broken.
+command raNxIdentityReady
+   local tKeys
+   put empty into sNxNpub
+   put empty into sNxPubkey
+   if sCaps["hasNostr"] is not true or sCaps["canNostrSign"] is not true then
+      exit raNxIdentityReady
+   end if
+   -- NO try, deliberately. rs* handlers never throw (the library's rule 5):
+   -- they return empty and record the reason. A try here would be INERT,
+   -- and an inert try that encodes a false belief about what a call does is
+   -- exactly the shape of the "textDecode throws" comment that survived six
+   -- parsers and a review before an engine found it wrong.
+   put rsNostrKeys(sMasterSeed) into tKeys
+   if tKeys is empty then
+      raNxNote "could not derive the Nostr key:" && rsLastError()
+      exit raNxIdentityReady
+   end if
+   put tKeys["npub"] into sNxNpub
+   put tKeys["pubkey"] into sNxPubkey
+   if there is a field "raNxNpub" of card "raNostr" then
+      put sNxNpub into field "raNxNpub" of card "raNostr"
+   end if
+   raNxNote "identity ready. Nothing is published until you click."
+end raNxIdentityReady
+
+command raNxCopyNpub
+   if sNxNpub is empty then
+      raNxNote "no npub yet - unlock on the Feed card first."
+      exit raNxCopyNpub
+   end if
+   set the clipboardData["text"] to sNxNpub
+   uiCopyFlash "raNxCopyNpub"
+end raNxCopyNpub
+
+-- The secret key, on an explicit click, into the clipboard and NEVER into
+-- a field or the log. It is the one thing here that is worth stealing, and
+-- a field keeps it on screen for whoever walks past.
+command raNxExport
+   local tSec
+   if not raNxReady() then exit raNxExport
+   if not raNxUnlocked() then exit raNxExport
+   put rsNostrExportSeckey(sMasterSeed) into tSec
+   if tSec is empty then
+      raNxNote "export failed:" && rsLastError()
+      exit raNxExport
+   end if
+   set the clipboardData["text"] to tSec
+   put empty into tSec
+   raNxNote "secret key copied to the clipboard as 64 hex. It derives from" \
+         && "your master seed, so anyone holding it can post as you" \
+         && "forever - paste it somewhere safe and clear the clipboard."
+end raNxExport
+
+-- ---- relays ------------------------------------------------------------------
+
+-- Connect to every relay in the field that is not already connected. The
+-- list is the user's; this only ever dials what is written there.
+command raNxConnect
+   local tSaved, tI, tUrl, tLines, tHandle, tCount, tErr
+   if not raNxReady() then exit raNxConnect
+   if sCaps["hasNostrRelay"] is not true then
+      raNxNote "the NostrXT relay layer is not loaded - the compute rail" \
+            && "still works, but nothing can be sent."
+      exit raNxConnect
+   end if
+   if there is no field "raNxRelays" of card "raNostr" then
+      exit raNxConnect
+   end if
+   -- The relay layer dispatches its callbacks to the object nxrInit names.
+   -- Registered HERE, lazily, on the first click that can need it - NOT at
+   -- openStack. The 2026-08-29 boot failure taught this file its one
+   -- structural rule: the boot path stays byte-identical to the proven
+   -- one, and new work joins it only with an engine run to its name.
+   -- Idempotent, so every Connect click may repeat it.
+   try
+      nxrInit the long id of me
+   catch tErr
+      -- not loaded; the hasNostrRelay guard above already said so
+   end try
+   put field "raNxRelays" of card "raNostr" into tLines
+   put 0 into tCount
+   put the lineDelimiter into tSaved
+   set the lineDelimiter to return
+   repeat with tI = 1 to the number of lines in tLines
+      put word 1 of line tI of tLines into tUrl
+      if tUrl is not empty then
+         if tCount >= kAppMaxRelays then
+            raNxLog "refused: more than" && kAppMaxRelays && "relays"
+            exit repeat
+         end if
+         add 1 to tCount
+         raNxDial tUrl
+      end if
+   end repeat
+   set the lineDelimiter to tSaved
+   if tCount is 0 then
+      raNxNote "no relay urls in the list."
+   else
+      raAppMark
+   end if
+end raNxConnect
+
+private command raNxDial pUrl
+   local tHandle, tErr
+   if sNxRelayHandle[pUrl] is not empty then
+      raNxLog pUrl && "- already open"
+      exit raNxDial
+   end if
+   -- THE GUARD (spec 9.3), at a real transport decision. A relay is a
+   -- clearnet websocket to somebody else's server; the anon persona may
+   -- never take it. This app has no active-persona state, so the call is
+   -- a public-persona assertion - but it is a REAL branch point, and the
+   -- rule is that every new transport branch routes through the guard.
+   if not rsPersonaAllows(false, "nostr") then
+      raNxLog "refused by the persona guard:" && rsLastError()
+      exit raNxDial
+   end if
+   try
+      nxrConnect pUrl
+      put the result into tHandle
+   catch tErr
+      raNxLog pUrl && "- could not dial:" && tErr
+      exit raNxDial
+   end try
+   if tHandle is not an integer then
+      raNxLog pUrl && "- refused:" && tHandle
+      exit raNxDial
+   end if
+   put tHandle into sNxRelayHandle[pUrl]
+   put "connecting" into sNxRelayState[pUrl]
+   put the milliseconds into sNxRelaySince[pUrl]
+   try
+      nxrSetCallback tHandle, "raNxRelayEvent"
+   catch tErr
+      raNxLog pUrl && "- could not register the callback:" && tErr
+   end try
+   raNxLog pUrl && "- connecting..."
+   put pUrl into sAppRelays[pUrl]
+   raAppMark
+end raNxDial
+
+command raNxDisconnect
+   local tUrl, tErr
+   repeat for each key tUrl in sNxRelayHandle
+      try
+         nxrDisconnect sNxRelayHandle[tUrl]
+      catch tErr
+         -- a stale handle is a clean no-op in the relay layer; nothing to do
+      end try
+   end repeat
+   put empty into sNxRelayHandle
+   put empty into sNxRelayState
+   put empty into sNxRelaySince
+   put empty into sNxSubId
+   raNxLog "disconnected from every relay."
+   raNxNote "disconnected."
+end raNxDisconnect
+
+-- THE RELAY CALLBACK. Dispatched by the relay layer (try-guarded on its
+-- side, so a throw here cannot break its socket state machine - but this
+-- handler still owns not throwing, because a half-applied timeline is
+-- worse than a missed event).
+command raNxRelayEvent pRelay, pKind, pArgOne, pArgTwo
+   local tUrl
+   put raNxUrlFor(pRelay) into tUrl
+   switch pKind
+      case "open"
+         put "open" into sNxRelayState[tUrl]
+         raNxLog tUrl && "- OPEN"
+         raNxSubscribe
+         break
+      case "event"
+         raNxEventArrived pArgOne, pArgTwo
+         break
+      case "invalid"
+         -- fail-closed by the relay layer: an event that did not verify
+         -- never reaches the timeline. Worth logging, never rendering.
+         raNxLog tUrl && "- refused an event:" && pArgTwo
+         break
+      case "eose"
+         raNxLog tUrl && "- end of stored events"
+         break
+      case "ok"
+         raNxLog tUrl && "- publish" && pArgOne && "->" && pArgTwo
+         break
+      case "closed"
+         raNxLog tUrl && "- subscription closed:" && pArgTwo
+         break
+      case "notice"
+         raNxLog tUrl && "- notice:" && pArgOne
+         break
+      case "auth"
+         -- NIP-42 would name this identity to the relay, so it is never
+         -- answered automatically. Logged, and left to the user.
+         raNxLog tUrl && "- asked us to authenticate (NIP-42). Not" \
+               && "answered: that would tell this relay who you are."
+         break
+      case "error"
+         put "error" into sNxRelayState[tUrl]
+         raNxLog tUrl && "- ERROR:" && pArgOne
+         raNxForget tUrl
+         break
+      case "disconnected"
+         put "closed" into sNxRelayState[tUrl]
+         raNxLog tUrl && "- disconnected:" && pArgOne
+         raNxForget tUrl
+         break
+      default
+         raNxLog tUrl && "-" && pKind
+   end switch
+end raNxRelayEvent
+
+private function raNxUrlFor pRelay
+   local tUrl
+   repeat for each key tUrl in sNxRelayHandle
+      if sNxRelayHandle[tUrl] is pRelay then
+         return tUrl
+      end if
+   end repeat
+   return "relay" && pRelay
+end raNxUrlFor
+
+private command raNxForget pUrl
+   delete variable sNxRelayHandle[pUrl]
+   delete variable sNxRelaySince[pUrl]
+end raNxForget
+
+-- Subscribe every OPEN relay to the follow list. Re-entrant on purpose:
+-- it runs whenever a relay opens and whenever the follow list changes, and
+-- a re-sent REQ with the same id replaces the old one at the relay.
+command raNxSubscribe
+   local tFilter, tJson, tAuthors, tKey, tUrl, tErr, tCount
+   if sCaps["hasNostrRelay"] is not true then exit raNxSubscribe
+   put 0 into tCount
+   repeat for each key tKey in sAppFollows
+      add 1 to tCount
+      if tAuthors is empty then
+         put tKey into tAuthors
+      else
+         put return & tKey after tAuthors
+      end if
+   end repeat
+   if tCount is 0 then
+      raNxNote "follow somebody first - a timeline with no authors would" \
+            && "ask every relay for everything."
+      exit raNxSubscribe
+   end if
+   put tAuthors into tFilter["authors"]
+   put "1" into tFilter["kinds"]
+   put kNxTimelineMax into tFilter["limit"]
+   try
+      put nxFilterBuild(tFilter) into tJson
+   catch tErr
+      raNxLog "could not build the filter:" && tErr
+      exit raNxSubscribe
+   end try
+   if tJson is empty then
+      -- guarded like every other nx* call: this runs from the relay
+      -- callback, which is an engine socket callback and not inside
+      -- raPoll's try
+      try
+         raNxLog "could not build the filter:" && nxLastError()
+      catch tErr
+         raNxLog "could not build the filter (and NostrXT is gone)"
+      end try
+      exit raNxSubscribe
+   end if
+   put kNxSubId into sNxSubId
+   repeat for each key tUrl in sNxRelayHandle
+      if sNxRelayState[tUrl] is "open" then
+         try
+            nxrSubscribe sNxRelayHandle[tUrl], kNxSubId, tJson
+            if the result is not empty then
+               raNxLog tUrl && "- subscribe refused:" && the result
+            end if
+         catch tErr
+            raNxLog tUrl && "- subscribe threw:" && tErr
+         end try
+      end if
+   end repeat
+end raNxSubscribe
+
+-- One inbound event. The relay layer has ALREADY verified id + signature
+-- (nxrSetVerify is on by default and fails closed), so what is left here is
+-- the app's own question: have we seen it, is it from somebody we follow,
+-- and does it carry media we could fetch?
+private command raNxEventArrived pSubId, pJson
+   local tEvent, tId, tAuthor, tWho, tWhen, tMedia, tText, tErr
+   try
+      put nxEventFromJson(pJson) into tEvent
+   catch tErr
+      raNxLog "an event did not parse:" && tErr
+      exit raNxEventArrived
+   end try
+   if tEvent is empty then exit raNxEventArrived
+   put tEvent["id"] into tId
+   if tId is empty then exit raNxEventArrived
+   -- two relays carrying one event is the normal case, not an error
+   if sNxSeen[tId] is "true" then exit raNxEventArrived
+   put "true" into sNxSeen[tId]
+   put tEvent["pubkey"] into tAuthor
+   -- A relay can send anything it likes, including events from authors we
+   -- never asked for. The subscription is a request, not a guarantee.
+   if sAppFollows[tAuthor] is empty then
+      raNxLog "dropped an event from an author we do not follow"
+      exit raNxEventArrived
+   end if
+   put sAppFollows[tAuthor] into tWho
+   put tEvent["created_at"] into tWhen
+   put tEvent["content"] into tText
+   add 1 to sNxCount
+   -- A TIMELINE THAT ONLY GROWS is a leak with a UI: relays keep sending,
+   -- the field keeps growing, and the app gets slower for as long as it is
+   -- left open. Roll over at the cap rather than trimming line by line -
+   -- the field is a log, the seen-set is what actually prevents duplicates,
+   -- and saying "rolled over" is more honest than silently dropping the
+   -- oldest post out of the middle of somebody's reading.
+   if sNxCount > kNxTimelineMax then
+      put 0 into sNxCount
+      if there is a field "raNxTimeline" of card "raNostr" then
+         put empty into field "raNxTimeline" of card "raNostr"
+      end if
+      raNxTimelineAdd "-- timeline rolled over at" && kNxTimelineMax \
+            && "events; earlier ones are gone from this view --"
+      raNxTimelineAdd empty
+   end if
+   raNxTimelineAdd "--" && tWho && "(" & tWhen & ")"
+   raNxTimelineAdd tText
+   put empty into tMedia
+   try
+      put rsNostrMediaTags(tEvent) into tMedia
+   catch tErr
+      put empty into tMedia
+   end try
+   if tMedia is not empty then
+      -- a POINTER, never a fetch: joining a swarm shows this machine's IP
+      -- to its peers, so it stays the user's click on the Feed card
+      raNxTimelineAdd "   media:" && tMedia && "(paste it into the Feed" \
+            && "card's media field to fetch)"
+   end if
+   raNxTimelineAdd empty
+end raNxEventArrived
+
+-- ---- posting -----------------------------------------------------------------
+
+command raNxPost
+   local tText, tEvent, tSigned, tUrl, tErr, tSent
+   if not raNxReady() then exit raNxPost
+   if not raNxUnlocked() then exit raNxPost
+   if there is no field "raNxCompose" of card "raNostr" then exit raNxPost
+   put field "raNxCompose" of card "raNostr" into tText
+   if tText is empty then
+      raNxNote "nothing to post."
+      exit raNxPost
+   end if
+   if the number of chars in tText > kNxNoteMax then
+      raNxNote "refused: a note over" && kNxNoteMax && "characters. Nothing" \
+            && "was truncated."
+      exit raNxPost
+   end if
+   put rsNostrNoteEvent(the seconds, tText, empty) into tEvent
+   if tEvent is empty then
+      raNxNote "could not build the note:" && rsLastError()
+      exit raNxPost
+   end if
+   put rsNostrSignEvent(tEvent, sMasterSeed, empty) into tSigned
+   if tSigned is empty then
+      raNxNote "could not sign the note:" && rsLastError()
+      exit raNxPost
+   end if
+   put 0 into tSent
+   repeat for each key tUrl in sNxRelayHandle
+      if sNxRelayState[tUrl] is "open" then
+         try
+            nxrPublish sNxRelayHandle[tUrl], tSigned
+            if the result is empty then
+               add 1 to tSent
+            else
+               raNxLog tUrl && "- publish refused:" && the result
+            end if
+         catch tErr
+            raNxLog tUrl && "- publish threw:" && tErr
+         end try
+      end if
+   end repeat
+   if tSent is 0 then
+      raNxNote "signed, but no relay is open - connect one first. The note" \
+            && "was NOT sent anywhere."
+   else
+      put empty into field "raNxCompose" of card "raNostr"
+      raNxNote "sent to" && tSent && "relay(s); each will answer with an" \
+            && "ok in the relay log."
+   end if
+end raNxPost
+
+-- ---- follows -----------------------------------------------------------------
+
+command raNxFollow
+   local tRaw, tHex, tErr, tCount, tKey
+   if not raNxReady() then exit raNxFollow
+   if there is no field "raNxFollowTo" of card "raNostr" then exit raNxFollow
+   put field "raNxFollowTo" of card "raNostr" into tRaw
+   put raNxToHex(tRaw) into tHex
+   if tHex is empty then
+      raNxNote "not an npub or a 64-hex key:" && rsLastError()
+      exit raNxFollow
+   end if
+   if tHex is sNxPubkey then
+      raNxNote "that is your own key."
+      exit raNxFollow
+   end if
+   if sAppFollows[tHex] is not empty then
+      raNxNote "already following that key."
+      exit raNxFollow
+   end if
+   put 0 into tCount
+   repeat for each key tKey in sAppFollows
+      add 1 to tCount
+   end repeat
+   if tCount >= kAppMaxFollows then
+      raNxNote "refused: the follow list is at its" && kAppMaxFollows \
+            && "entry cap."
+      exit raNxFollow
+   end if
+   -- the petname is the short key until the app learns a kind-0 name; it is
+   -- never the raw text the user pasted, which could be anything
+   put char 1 to 8 of tHex & "..." into sAppFollows[tHex]
+   put empty into field "raNxFollowTo" of card "raNostr"
+   raAppMark
+   raNxPaintFollows
+   raNxSubscribe
+   raNxNote "following" && char 1 to 8 of tHex & "... - the timeline will" \
+         && "fill as relays answer."
+end raNxFollow
+
+-- npub or 64-hex in, 64-hex out, empty on anything else. Both spellings
+-- because both are what people actually paste.
+private function raNxToHex pText
+   local tTrimmed, tHex, tErr
+   put word 1 of pText into tTrimmed
+   if tTrimmed is empty then return empty
+   if char 1 to 4 of tTrimmed is "npub" then
+      try
+         put nxNpubDecode(tTrimmed) into tHex
+      catch tErr
+         return empty
+      end try
+      return tHex
+   end if
+   try
+      if nxIsHex(tTrimmed, 64) then
+         return toLower(tTrimmed)
+      end if
+   catch tErr
+      return empty
+   end try
+   return empty
+end raNxToHex
+
+command raNxPaintFollows
+   local tKey, tOut
+   if there is no field "raNxFollows" of card "raNostr" then
+      exit raNxPaintFollows
+   end if
+   repeat for each key tKey in sAppFollows
+      put sAppFollows[tKey] && "-" && tKey & return after tOut
+   end repeat
+   if tOut is empty then
+      put "no follows yet." into tOut
+   end if
+   put tOut into field "raNxFollows" of card "raNostr"
+end raNxPaintFollows
+
+-- ---- the identity bridge -----------------------------------------------------
+
+-- Build the RSN1 bridge and publish it BOTH ways: to the DHT under the
+-- riptide handle (so a riptide follower can find the npub) and as a
+-- NIP-78 event to the relays (so a Nostr follower can find the handle).
+-- Either half can fail without the other; both are reported.
+command raNxBridge
+   local tBridge, tEvent, tUrl, tOk, tSent, tErr
+   if not raNxReady() then exit raNxBridge
+   if not raNxUnlocked() then exit raNxBridge
+   -- SEED FROM THE CLOCK, NOT FROM ONE - the phase-6 counter decision,
+   -- and this rail needs it for a sharper reason than the LAN one did. A
+   -- BEP44 node REFUSES a put whose seq is below what it already holds,
+   -- so a user who loses the app-state file (a new machine, a restore, a
+   -- different key file) and restarts at 1 would find the DHT half of
+   -- their bridge silently unpublishable for as long as the old record
+   -- lives. `the seconds` is monotonic across restarts and costs nothing.
+   if sNxBridgeSeq is not an integer or sNxBridgeSeq < 1 then
+      put the seconds into sNxBridgeSeq
+   else
+      add 1 to sNxBridgeSeq
+   end if
+   put rsBuildBridge(sNxBridgeSeq, the seconds, sMasterSeed, empty) \
+         into tBridge
+   if tBridge is empty then
+      raNxNote "could not build the bridge:" && rsLastError()
+      exit raNxBridge
+   end if
+   put tBridge into sNxPendingBridge
+   raAppMark
+   -- the DHT half, when a session exists
+   raStartSession
+   if sSession is an integer and sSession > 0 then
+      put rsPublishBridge(sSession, tBridge, sIdSeed) into tOk
+      if tOk is true then
+         raNxLog "bridge published to the DHT at salt riptide-nostr, seq" \
+               && sNxBridgeSeq
+      else
+         raNxLog "DHT publish refused:" && rsLastError()
+      end if
+   else
+      raNxLog "no torrent session: the DHT half of the bridge was skipped."
+   end if
+   -- the relay half
+   put rsNostrBridgeEvent(tBridge, sMasterSeed, the seconds, empty) \
+         into tEvent
+   if tEvent is empty then
+      raNxNote "the DHT half is done; the event half failed:" \
+            && rsLastError()
+      exit raNxBridge
+   end if
+   put 0 into tSent
+   repeat for each key tUrl in sNxRelayHandle
+      if sNxRelayState[tUrl] is "open" then
+         try
+            nxrPublish sNxRelayHandle[tUrl], tEvent
+            if the result is empty then
+               add 1 to tSent
+            end if
+         catch tErr
+            raNxLog tUrl && "- bridge publish threw:" && tErr
+         end try
+      end if
+   end repeat
+   raNxNote "bridge seq" && sNxBridgeSeq && "published to" && tSent \
+         && "relay(s). This is now a PUBLIC statement linking your npub" \
+         && "and your riptide handle, and it cannot be unpublished."
+end raNxBridge
+
+-- ---- the RIPTAPP1 app-state store ---------------------------------------------
+-- The one thing that makes this an app rather than a session: follows,
+-- relays and the bridge seq survive a restart. Sealed under subkey 5, so
+-- the social graph is not sitting in the clear beside a sealed key file.
+
+private function raAppPath
+   local tFolder
+   put raMediaFolder() into tFolder
+   if tFolder is empty then return empty
+   return tFolder & "/riptide-state.dat"
+end raAppPath
+
+-- Mark state dirty and let the pump write it. Never write on the
+-- keystroke that changed it: a follow click is not a reason to touch the
+-- disk twice, and a save inside an event handler is a stall the user feels.
+command raAppMark
+   put "true" into sAppDirty
+   put the milliseconds + kAppSaveDebounceMs into sAppSaveAt
+end raAppMark
+
+command raAppSave
+   local tOut, tKey, tSealed, tPath, tErr
+   put empty into sAppDirty
+   put empty into sAppSaveAt
+   if sMasterSeed is empty then exit raAppSave
+   put raAppPath() into tPath
+   if tPath is empty then exit raAppSave
+   put kAppStateVersion & return into tOut
+   repeat for each key tKey in sAppFollows
+      put "follow" & tab & tKey & tab & sAppFollows[tKey] & return after tOut
+   end repeat
+   repeat for each key tKey in sAppRelays
+      put "relay" & tab & tKey & return after tOut
+   end repeat
+   if sNxBridgeSeq is an integer then
+      put "bridgeseq" & tab & sNxBridgeSeq & return after tOut
+   end if
+   if sSeq is an integer then
+      put "headseq" & tab & sSeq & return after tOut
+   end if
+   put rsSealAppState(tOut, sMasterSeed) into tSealed
+   if tSealed is empty then
+      raNxLog "could not seal the app state:" && rsLastError()
+      exit raAppSave
+   end if
+   try
+      put tSealed into url ("binfile:" & tPath)
+   catch tErr
+      raNxLog "could not write the app state:" && tErr
+   end try
+end raAppSave
+
+-- Load on unlock. A missing file is the normal first run, NOT an error:
+-- the app starts empty and says nothing about it.
+command raAppLoad
+   local tPath, tBytes, tText, tSaved, tSavedItem, tI, tLine, tKind, tErr
+   put empty into sAppFollows
+   put empty into sAppRelays
+   put raAppPath() into tPath
+   if tPath is empty then exit raAppLoad
+   if there is no file tPath then exit raAppLoad
+   try
+      put url ("binfile:" & tPath) into tBytes
+   catch tErr
+      raNxLog "could not read the app state:" && tErr
+      exit raAppLoad
+   end try
+   if tBytes is empty then exit raAppLoad
+   put rsOpenAppState(tBytes, sMasterSeed) into tText
+   if tText is empty then
+      raNxLog "the saved state did not open (a different master seed, or a" \
+            && "damaged file). Starting empty; nothing was overwritten."
+      exit raAppLoad
+   end if
+   -- BOTH delimiters saved and restored. Restoring the itemDelimiter to a
+   -- hard-coded comma would be right only until some caller had set it to
+   -- something else, which is exactly the C10 shape (a handler that leaves
+   -- a delimiter behind, and a mystery about lists two rails away).
+   put the lineDelimiter into tSaved
+   put the itemDelimiter into tSavedItem
+   set the lineDelimiter to return
+   set the itemDelimiter to tab
+   repeat with tI = 1 to the number of lines in tText
+      put line tI of tText into tLine
+      put item 1 of tLine into tKind
+      -- UNKNOWN KINDS ARE IGNORED, never refused: a state file written by a
+      -- newer build must not lock an older one out of its own follows.
+      switch tKind
+         case "follow"
+            if item 2 of tLine is not empty then
+               put item 3 of tLine into sAppFollows[item 2 of tLine]
+            end if
+            break
+         case "relay"
+            if item 2 of tLine is not empty then
+               put item 2 of tLine into sAppRelays[item 2 of tLine]
+            end if
+            break
+         case "bridgeseq"
+            if item 2 of tLine is an integer then
+               put item 2 of tLine into sNxBridgeSeq
+            end if
+            break
+      end switch
+   end repeat
+   set the lineDelimiter to tSaved
+   set the itemDelimiter to tSavedItem
+   raNxPaintFollows
+   raNxPaintRelayField
+end raAppLoad
+
+-- The suggested relays, as text. A function because a constant cannot hold
+-- the return between them (see the declarations).
+private function raNxDefaultRelays
+   return kNxDefaultRelayOne & return & kNxDefaultRelayTwo
+end raNxDefaultRelays
+
+-- The relay field repaint raAppLoad uses on unlock: a saved list
+-- replaces the builder's defaults. Deliberately NOT called at boot
+-- (see raNxConnect's structural rule).
+command raNxPaintRelayField
+   local tKey, tOut
+   if there is no field "raNxRelays" of card "raNostr" then
+      exit raNxPaintRelayField
+   end if
+   repeat for each key tKey in sAppRelays
+      put tKey & return after tOut
+   end repeat
+   if tOut is empty then
+      put raNxDefaultRelays() into tOut
+   end if
+   put tOut into field "raNxRelays" of card "raNostr"
+end raNxPaintRelayField
+
+-- Pump work for this rail: the debounced save, and the connect watchdog
+-- that turns a silent stall into a visible one. Both are cheap and both
+-- are guarded, because this runs from raPoll on every card.
+command raNxTick
+   local tUrl, tSince
+   if sAppDirty is "true" and sAppSaveAt is not empty then
+      if the milliseconds > sAppSaveAt then
+         raAppSave
+      end if
+   end if
+   repeat for each key tUrl in sNxRelayHandle
+      if sNxRelayState[tUrl] is "connecting" then
+         put sNxRelaySince[tUrl] into tSince
+         if tSince is an integer then
+            if the milliseconds - tSince > kNxConnectMs then
+               put "stalled" into sNxRelayState[tUrl]
+               raNxLog tUrl && "- still not open after" \
+                     && (kNxConnectMs div 1000) && "s; the relay layer's" \
+                     && "own watchdog will fail it closed."
+            end if
+         end if
+      end if
+   end repeat
+end raNxTick
+
+-- Teardown. There is no deterministic unload hook in OXT, so the app frees
+-- what it opened; nxrShutdown is idempotent and safe to call twice.
+-- ---- the engine's three socket messages ---------------------------------------
+--
+-- THIS STACK EMBEDS TWO SOCKET LIBRARIES - OnionXT (the anon persona's
+-- streams and control port) and the NostrXT relay layer (websockets to
+-- relays) - and `socketError` / `socketClosed` / `socketTimeout` are the
+-- ENGINE's names, so only ONE definition of each can exist in one script.
+-- Both libraries keep their logic behind named functions for exactly this
+-- case; tools/sync-demo-embeds.py drops their thin `on socket*` wrappers
+-- (registered per demo-and-provider PAIR) and these three call the named
+-- functions instead. No logic is copied, so nothing here can go stale.
+--
+-- Each named function answers ONE question - was that socket mine, and did
+-- I handle it? - so the order below is a reading convenience, not a
+-- precedence rule. The final `pass` is the part that matters: a stack that
+-- swallows a socket message another library was waiting for produces a
+-- HANG, not an error, and no gate in this repo can see it.
+
+on socketError pSocketID, pError
+   if oxSocketError(pSocketID, pError) then
+      exit socketError
+   end if
+   if nxrSocketError(pSocketID, pError) then
+      exit socketError
+   end if
+   pass socketError
+end socketError
+
+on socketClosed pSocketID
+   if oxSocketClosed(pSocketID) then
+      exit socketClosed
+   end if
+   if nxrSocketClosed(pSocketID) then
+      exit socketClosed
+   end if
+   pass socketClosed
+end socketClosed
+
+on socketTimeout pSocketID
+   if oxSocketTimeout(pSocketID) then
+      exit socketTimeout
+   end if
+   if nxrSocketTimeout(pSocketID) then
+      exit socketTimeout
+   end if
+   pass socketTimeout
+end socketTimeout
+
+command raNxTeardown
+   local tErr
+   if sAppDirty is "true" then
+      raAppSave
+   end if
+   try
+      nxrShutdown
+   catch tErr
+      -- the relay layer is not loaded, or already shut down
+   end try
+   put empty into sNxRelayHandle
+   put empty into sNxRelayState
+   put empty into sNxRelaySince
+   put empty into sNxSubId
+   put empty into sNxSeen
+   put empty into sNxNpub
+   put empty into sNxPubkey
+   put empty into sNxPendingBridge
+end raNxTeardown
+
 -- ---- phase 3: the media strip ------------------------------------------------
 -- One button, two moods. While the watched item is not yet openable the
 -- click is Fetch: join the swarm for the hash in the field, sequentially
@@ -10714,15 +17348,16 @@ command scFinish
 end scFinish
 -- ==== DEMO SELF-CHECK v1 END ====
 
--- Every control name this script names OR builds, derived from the source with
--- comments cut and string literals kept.
-constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoLanFromFeed,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
+-- kRaScControls (every control this script names or builds) is declared
+-- with the other demo constants ABOVE the kit block: raBuildResetCard
+-- walks it too, and OXT resolves script-level names by lexical position,
+-- so the declaration must sit above that first use.
 
 command raScRun
    local tMissing, tVer, tErr
    scBegin "raIdOut"
    put scMissing(kRaScControls) into tMissing
-   scAssert "all 75 controls this script names exist (missing: " \
+   scAssert "all 98 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    if sHaveLib is not "true" then
@@ -10740,11 +17375,29 @@ command raScRun
       -- The capability probe is what every card in this app branches on, so a
       -- missing KEY is worse than a false value: the guards would read empty
       -- and take the wrong branch silently.
-      scAssert "the capability probe answered all seven keys", \
+      scAssert "the capability probe answered all ten keys", \
             (sCaps["canCrypto"] is not empty and sCaps["hasTorrent"] is not empty \
              and sCaps["hasOnion"] is not empty and sCaps["hasDataChannel"] is not empty \
              and sCaps["hasEnet"] is not empty and sCaps["hasCoin"] is not empty \
-             and sCaps["hasSha3"] is not empty)
+             and sCaps["hasSha3"] is not empty and sCaps["hasNostr"] is not empty \
+             and sCaps["hasNostrRelay"] is not empty \
+             and sCaps["canNostrSign"] is not empty)
+      -- THE 9.3 GUARD, read live from the library rather than described.
+      -- Cheap, pure, and the highest-severity invariant in the app: if the
+      -- carried copy ever disagreed with the spec, this is where a reader
+      -- would find out, in the pasteable record, on every open.
+      scAssert "the persona guard refuses a Nostr relay for the anon" \
+            && "persona (9.3)", (rsPersonaAllows(true, "nostr") is false)
+      scAssert "...allows it for the public persona", \
+            (rsPersonaAllows(false, "nostr") is true)
+      scAssert "...and refuses an unknown transport fail-closed", \
+            (rsPersonaAllows(false, "nostrr") is false)
+      -- The five cards this app builds. A card that failed to build is a
+      -- whole rail the user cannot reach, and every painter here is
+      -- existence-guarded, so it would fail SILENTLY rather than loudly.
+      scAssert "all five cards were built", \
+            (there is a card "raMessages" and there is a card "raDevices" \
+             and there is a card "raAnon" and there is a card "raNostr")
       -- SodiumXT is the one hard dependency: identity cannot exist without it,
       -- and raProbe already says so in red. Asserting it here puts that in the
       -- pasteable record rather than only on the status line.
@@ -10760,7 +17413,27 @@ command raScRun
             & ", dataChannel " & scShow(sCaps["hasDataChannel"]) \
             & ", enet " & scShow(sCaps["hasEnet"]) \
             & ", coin " & scShow(sCaps["hasCoin"]) \
-            & ", sha3 " & scShow(sCaps["hasSha3"])
+            & ", sha3 " & scShow(sCaps["hasSha3"]) \
+            & ", nostr " & scShow(sCaps["hasNostr"]) \
+            & ", nostrSign " & scShow(sCaps["canNostrSign"]) \
+            & ", nostrRelay " & scShow(sCaps["hasNostrRelay"])
+      -- The Nostr rail is OPTIONAL by design, so a missing piece is a SKIP
+      -- with the install line, never a failure: this app must be exactly
+      -- as usable without it as it was before phase 8 existed.
+      if sCaps["hasNostr"] is not true then
+         scSkip "the Nostr rail", \
+               "the embedded NostrXT core did not answer - re-paste the " \
+               & "file, or run tools/sync-demo-embeds.py"
+      else
+         if sCaps["canNostrSign"] is not true then
+            scSkip "the Nostr rail", \
+                  "CoinXT is absent - install org.openxtalk.library.coinxt " \
+                  & "for secp256k1. Every other rail is unaffected."
+         else
+            scAssert "the Nostr rail can derive and sign", \
+                  (sCaps["canNostrSign"] is true)
+         end if
+      end if
    end if
    scArmProbe
 end raScRun

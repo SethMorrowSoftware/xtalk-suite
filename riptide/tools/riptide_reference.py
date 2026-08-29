@@ -30,6 +30,7 @@
 # tools/check-selftest-vectors.py all trace to sources outside this repo.
 
 import hashlib
+import os
 import struct
 import sys
 
@@ -155,10 +156,22 @@ def _verify_ed25519(sig, msg, pub):
     s = int.from_bytes(sig[32:], "little")
     if s >= _L:
         return False
+    # The R half of the signature needs the SAME not-a-point guard the public
+    # key gets above, and did not have it until 2026-08-28. _pt_decompress
+    # returns None for a value that is not on the curve, which _pt_add then
+    # tried to unpack: a TAMPERED signature crashed the oracle instead of
+    # being refused by it. Found by executing the phase-8 bridge's tamper
+    # cases; nothing had ever fed this function a corrupted signature before,
+    # because every earlier negative test tampered with the MESSAGE. A
+    # verifier that raises where it should answer False is the refusal-path
+    # failure shape this whole tree is organised around catching.
+    Rpt = _pt_decompress(sig[:32])
+    if Rpt is None:
+        return False
     h = int.from_bytes(_sha512(sig[:32] + pub + msg), "little") % _L
     sB = _pt_mul(s, _B)
     hA = _pt_mul(h, A)
-    RplushA = _pt_add(_pt_decompress(sig[:32]), hA)
+    RplushA = _pt_add(Rpt, hA)
     return _pt_compress(sB) == _pt_compress(RplushA)
 
 
@@ -927,6 +940,232 @@ def anon_prekey_body(master, index):
 
 
 # ---------------------------------------------------------------------------
+# Phase 8 - the Nostr rail (spec section 8A / rail 6)
+#
+# THE SECP256K1 SIDE IS BORROWED, NOT MODELLED, and that is rule 1 rather than
+# laziness. NostrXT already carries an independent pure-Python secp256k1 /
+# BIP-340 / bech32 / canonical-serializer oracle that anchors itself to the
+# PUBLISHED BIP-340, NIP-19 and BIP-173 vector sets at import and refuses to
+# load when it cannot reproduce them (nostrxt/tools/nostr_reference.py). A
+# second hand-written copy here would be a second thing to get wrong, and a
+# vector derived from it would prove only that riptide agrees with riptide.
+# So this file loads that oracle and composes it, which makes every Nostr
+# vector below trace to a published test set outside this repository - the
+# same standard the KDF, ed25519, BEP44 and onion anchors already meet.
+# ---------------------------------------------------------------------------
+
+_NOSTR = {}
+
+
+def _load_nostr_oracle():
+    """exec-load nostrxt's oracle from source, never import it.
+
+    Two reasons, both already paid for elsewhere in this tree. importlib
+    consults __pycache__, and a drift oracle must have no stale-cache path
+    (the coinxt check-selftest-vectors lesson). And this file is itself
+    exec-loaded by tools/check-selftest-vectors.py into a bare globals dict,
+    so `__file__` is NOT defined here - the fallback reads the code object's
+    own filename, which the loader sets to this file's absolute path."""
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        import inspect
+        here = os.path.dirname(os.path.abspath(
+            inspect.currentframe().f_code.co_filename))
+    path = os.path.normpath(
+        os.path.join(here, "..", "..", "nostrxt", "tools",
+                     "nostr_reference.py"))
+    ns = {}
+    with open(path, "r", encoding="utf-8") as fh:
+        exec(compile(fh.read(), path, "exec"), ns)
+    return ns
+
+
+# The riptide subkey tree gains two rows (spec section 3.2):
+#   4 - the Nostr secp256k1 secret key
+#   5 - the app-state sealing key (the RIPTAPP1 store)
+SUBKEY_NOSTR = 4
+SUBKEY_APPSTATE = 5
+
+# The SIGNATURE domain and the BEP44 SALT are deliberately different strings
+# even though both name this rail. They live in different namespaces and could
+# safely collide, but the LAN rail already sets the house pattern of a suffixed
+# domain per record kind ("riptide-lan", "-w", "-s"), and a reader who sees one
+# string doing two jobs has to work out that it is not a bug.
+NOSTR_DOMAIN = b"riptide-nostr-b"
+NOSTR_BRIDGE_MAGIC = b"RSN1"
+NOSTR_BRIDGE_SALT = "riptide-nostr"
+NOSTR_BRIDGE_KIND = 30078          # NIP-78 application-specific data
+NOSTR_BRIDGE_DTAG = "riptide.bridge"
+NOSTR_SECKEY_LADDER_MAX = 8
+APPSTATE_MAGIC = b"RIPTAPP1"
+
+
+def nostr_seckey_from(candidate):
+    """The secp256k1 VALIDITY LADDER, and why it exists.
+
+    A KDF output is 32 uniform bytes; a secp256k1 secret key must be in
+    1..n-1. The two are not the same set. The gap is about 2^-128 wide, so it
+    will never be hit by a real master seed - which is exactly the problem
+    with the alternative designs. Refusing outright would leave a whole
+    identity underivable for a user who can do nothing about it, and any
+    "just re-derive with the next subkey id" rule silently walks into a
+    registry row that belongs to another rail.
+
+    So: re-hash the candidate with SHA-256 and try again, at most
+    NOSTR_SECKEY_LADDER_MAX times, then refuse. SHA-256 because the rail
+    already requires CoinXT for BIP-340, so it adds no dependency. The rung
+    count is bounded so the ladder can never spin, and the refusal is a
+    refusal rather than a weaker key.
+
+    It is written as a function OF A CANDIDATE, not of a master, precisely so
+    it is testable: no master reaches rung 2, but the all-zeros candidate and
+    the group order n both do, and both are pinned in the harness."""
+    out = candidate
+    for _ in range(NOSTR_SECKEY_LADDER_MAX):
+        if 0 < int.from_bytes(out, "big") < _NOSTR["N"]:
+            return out
+        out = _NOSTR["sha256"](out)
+    raise ValueError("nostr_seckey_from: no valid scalar within the ladder")
+
+
+def nostr_seckey(master):
+    """The 32-byte Nostr secret key for a master seed: subkey 4 through the
+    ladder above."""
+    return nostr_seckey_from(kdf_derive(master, SUBKEY_NOSTR, 32))
+
+
+def nostr_pubkey(master):
+    """The 32-byte BIP-340 x-only public key: the Nostr pubkey (an npub's
+    payload)."""
+    return _NOSTR["pubkey_xonly"](nostr_seckey(master))
+
+
+def nostr_npub(pubkey):
+    return _NOSTR["nip19_encode"]("npub", pubkey)
+
+
+def appstate_key(master):
+    """The RIPTAPP1 store's sealing key: subkey 5.
+
+    A SEPARATE subkey from every signing key, for the reason subkey 2 is
+    separate from subkey 1 - one seed never feeds two schemes. The sealed
+    bytes themselves are not pinnable (sxSecretBox draws a fresh random
+    nonce per seal), so what the goldens pin is this key and the framing;
+    the round trip and its refusals are harness checks."""
+    return kdf_derive(master, SUBKEY_APPSTATE, 32)
+
+
+def _bridge_body(handle_hex, nostr_pub_hex, seq, timestamp):
+    """RSN1 signed span: magic(4) handle(64 ascii hex) nostrPub(64 ascii hex)
+    seq(u64 BE) timestamp(u64 BE) = 148 bytes."""
+    return (NOSTR_BRIDGE_MAGIC
+            + _hex64(handle_hex) + _hex64(nostr_pub_hex)
+            + _u64(seq) + _u64(timestamp))
+
+
+def bridge_preimage(handle_hex, nostr_pub_hex, seq, timestamp):
+    """What BOTH signatures cover: a domain tag then the whole body.
+
+    The domain is distinct from every other one this library signs under
+    ("riptide-lan", "riptide-lan-w", "riptide-lan-s"), so a signature minted
+    for one rail can never be presented as a signature for another - and the
+    kind of record is inside the signed span because the magic is."""
+    return NOSTR_DOMAIN + _bridge_body(handle_hex, nostr_pub_hex, seq,
+                                       timestamp)
+
+
+def build_bridge(seq, timestamp, master, aux=b"\x00" * 32):
+    """The RSN1 identity bridge: one record, signed BY BOTH KEYS.
+
+    This is the whole point of the rail's identity half. A riptide handle is
+    ed25519 and an npub is secp256k1; neither can sign for the other, so a
+    claim carrying only one signature is a claim anyone holding that one key
+    can make about somebody else's other key. Both signatures over one
+    preimage make the linkage a two-sided statement: the handle-holder says
+    "that npub is mine" AND the npub-holder says "that handle is mine",
+    and either half alone is worthless.
+
+    Layout (276 bytes exactly):
+      magic(4) handle(64) nostrPub(64) seq(u64) ts(u64) edSig(64) schSig(64)
+
+    The ed25519 signature is over the preimage bytes; the BIP-340 signature
+    is over SHA-256 of the same preimage, because CoinXT's cxSchnorrSign
+    signs a 32-byte digest (it is the Taproot-sighash shape, deliberately
+    restricted there so a caller cannot sign a blob it has not decoded)."""
+    id_seed = identity_seed(master)
+    handle = handle_from_identity_seed(id_seed)
+    sk = nostr_seckey(master)
+    npub_hex = _NOSTR["pubkey_xonly"](sk).hex()
+    pre = bridge_preimage(handle, npub_hex, seq, timestamp)
+    ed_sig = ed25519_sign(pre, id_seed)
+    sch_sig = _NOSTR["schnorr_sign"](_NOSTR["sha256"](pre), sk, aux)
+    return _bridge_body(handle, npub_hex, seq, timestamp) + ed_sig + sch_sig
+
+
+def verify_bridge(record):
+    """Both signatures, or nothing. Returns (handle_hex, nostr_pub_hex)."""
+    if len(record) != 276:
+        raise ValueError("bridge record must be exactly 276 bytes")
+    if record[0:4] != NOSTR_BRIDGE_MAGIC:
+        raise ValueError("bad bridge magic")
+    handle = record[4:68].decode("ascii")
+    npub_hex = record[68:132].decode("ascii")
+    pre = NOSTR_DOMAIN + record[0:148]
+    if not _verify_ed25519(record[148:212], pre, bytes.fromhex(handle)):
+        raise ValueError("the handle signature does not verify")
+    if not _NOSTR["schnorr_verify"](_NOSTR["sha256"](pre),
+                                    bytes.fromhex(npub_hex), record[212:276]):
+        raise ValueError("the nostr signature does not verify")
+    return handle, npub_hex
+
+
+def nostr_note_tags(media):
+    """riptide's media convention on the Nostr wire: one `r` tag per
+    attachment, carrying the magnet URI for its v1 info-hash.
+
+    `r` rather than a riptide-specific tag name because a reference is what
+    it IS, and an ordinary Nostr client renders it as a link a person can
+    act on. The bytes still ride the phase-3 torrent rail; the tag is a
+    pointer, exactly as the LAN handoff record is."""
+    return [["r", "magnet:?xt=urn:btih:" + h] for h in media]
+
+
+def nostr_note_event(master, timestamp, text, media, aux_hex="00" * 32):
+    """A signed kind-1 note carrying riptide's media attachments."""
+    return _NOSTR["sign_event"](nostr_seckey(master).hex(), timestamp, 1,
+                                nostr_note_tags(media), text, aux_hex)
+
+
+def nostr_bridge_event(master, record, timestamp, aux_hex="00" * 32):
+    """The bridge as a NIP-78 parameterized-replaceable event (kind 30078,
+    d-tag "riptide.bridge"), content = the record as lowercase hex.
+
+    Replaceable is the right shape: a bridge is current state, not history,
+    and a relay keeping only the newest is what you want when the seq
+    advances. Hex rather than base64 for the reason the anon /dm route
+    already gives - it survives every client untouched and gives the
+    reader an exact spelling to refuse against."""
+    return _NOSTR["sign_event"](nostr_seckey(master).hex(), timestamp,
+                                NOSTR_BRIDGE_KIND,
+                                [["d", NOSTR_BRIDGE_DTAG]], record.hex(),
+                                aux_hex)
+
+
+def serialize_bridge_event(event):
+    """The canonical NIP-01 serialization of an event - the id preimage.
+
+    Pinned as a vector in its own right because it is the INTEROP contract:
+    the id is a hash of exactly these bytes, so an escape or a field order
+    that drifts changes every id riptide ever computes and silently stops
+    other people's clients from verifying its events. Pinning only the id
+    would tell you that something changed, not what."""
+    return _NOSTR["serialize_event"](event["pubkey"], event["created_at"],
+                                     event["kind"], event["tags"],
+                                     event["content"])
+
+
+# ---------------------------------------------------------------------------
 # Import-time self-checks against the independent anchors. A model that
 # cannot reproduce a vector it did not invent must not be consulted.
 # ---------------------------------------------------------------------------
@@ -1024,7 +1263,76 @@ def _self_check():
     if not _verify_ed25519(ho[-64:], LAN_SYNC_DOMAIN + ho[:-64], lp):
         raise AssertionError("LAN handoff self-check failed (valid sig)")
 
+    # Phase 8, the Nostr rail. The secp256k1 half is nostrxt's oracle, which
+    # anchors ITSELF to the published BIP-340 / NIP-19 / BIP-173 vectors at
+    # import and refuses to load broken - so the only things worth re-proving
+    # here are the compositions this file adds on top of it.
+    #
+    # The ladder is checked at the two rungs a real master can never reach,
+    # which is the whole reason it takes a candidate rather than a master:
+    # zero is an invalid scalar, so is the group order n, and both must step
+    # forward to a valid one rather than being returned or refused.
+    if nostr_seckey_from(b"\x42" * 32) != b"\x42" * 32:
+        raise AssertionError("nostr ladder self-check failed (valid "
+                             "candidate must pass through unchanged)")
+    for bad in (b"\x00" * 32, bytes_from_int_be(_NOSTR["N"])):
+        stepped = nostr_seckey_from(bad)
+        if stepped == bad:
+            raise AssertionError("nostr ladder self-check failed (an "
+                                 "invalid scalar was returned as-is)")
+        if stepped != _NOSTR["sha256"](bad):
+            raise AssertionError("nostr ladder self-check failed (rung 1 "
+                                 "must be SHA-256 of the candidate)")
+        if not 0 < int.from_bytes(stepped, "big") < _NOSTR["N"]:
+            raise AssertionError("nostr ladder self-check failed (rung 1 "
+                                 "is not a valid scalar)")
 
+    # The bridge is only worth anything if BOTH signatures are load-bearing:
+    # a one-byte tamper anywhere in the signed span must break it, and a
+    # record carrying a valid ed25519 half with a foreign schnorr half must
+    # be refused rather than half-believed.
+    br = build_bridge(1, 1754870800, m)
+    if len(br) != 276:
+        raise AssertionError("bridge self-check failed (length)")
+    got_handle, got_npub = verify_bridge(br)
+    if got_handle != handle_from_identity_seed(identity_seed(m)):
+        raise AssertionError("bridge self-check failed (handle)")
+    if got_npub != nostr_pubkey(m).hex():
+        raise AssertionError("bridge self-check failed (nostr pubkey)")
+    for pos in (4, 68, 140, 147):
+        bad = bytearray(br)
+        bad[pos] ^= 0x01
+        try:
+            verify_bridge(bytes(bad))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("bridge self-check failed: a tamper at byte "
+                                 "%d was accepted" % pos)
+    other = build_bridge(1, 1754870800, b"\x43" * 32)
+    mixed = br[:212] + other[212:]
+    try:
+        verify_bridge(mixed)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("bridge self-check failed: a foreign schnorr "
+                             "half was accepted")
+
+    # The domain tag must be load-bearing too: the bridge's ed25519 signature
+    # must NOT verify over the bare body, or a signature minted for one rail
+    # could be replayed as another rail's.
+    if _verify_ed25519(br[148:212], br[0:148],
+                       bytes.fromhex(got_handle)):
+        raise AssertionError("bridge self-check failed (domain separation)")
+
+
+def bytes_from_int_be(value):
+    """32-byte big-endian, for the ladder self-check's out-of-range scalar."""
+    return value.to_bytes(32, "big")
+
+
+_NOSTR.update(_load_nostr_oracle())
 _self_check()
 
 
@@ -1114,6 +1422,18 @@ def golden_vectors():
     # entries) and the /prekey body (== anon0_prekey, hex)
     anon0_page = anon_feed_page("Riptide", ["hello, riptide", "second post"])
     anon0_prekey_body = anon_prekey_body(master, 0)
+    # phase 8: the Nostr rail. Aux randomness is pinned all-zero so the two
+    # BIP-340 signatures are reproducible - a real signer passes empty and
+    # CoinXT's shim draws fresh bytes (BIP-340 signatures are not unique;
+    # every one of them verifies), exactly as the LAN nonce is fixed for the
+    # golden and random in the app.
+    nostr_sk = nostr_seckey(master)
+    nostr_pk = nostr_pubkey(master)
+    bridge = build_bridge(1, 1754870800, master)
+    bridge_ev = nostr_bridge_event(master, bridge, 1754870800)
+    note_ev = nostr_note_event(master, 1754870400, "hello, riptide", [])
+    note_media_ev = nostr_note_event(master, 1754870460, "second post",
+                                     ["ee" * 20])
     return {
         "master": master.hex(),
         "idSeed": id_seed.hex(),
@@ -1168,6 +1488,21 @@ def golden_vectors():
         "anon0PrekeyBody": anon0_prekey_body,
         "btxoHeader": btxo_hdr.hex(),
         "btxoFrame": btxo_frame.hex(),
+        "nostrSeckey": nostr_sk.hex(),
+        "nostrPubkey": nostr_pk.hex(),
+        "nostrNpub": nostr_npub(nostr_pk),
+        "appStateKey": appstate_key(master).hex(),
+        "bridge": bridge.hex(),
+        "bridgePre": bridge_preimage(handle, nostr_pk.hex(), 1,
+                                     1754870800).hex(),
+        "bridgeEventId": bridge_ev["id"],
+        "bridgeEventSig": bridge_ev["sig"],
+        "bridgeEventSer": serialize_bridge_event(bridge_ev),
+        "noteEventId": note_ev["id"],
+        "noteEventSig": note_ev["sig"],
+        "noteMediaEventId": note_media_ev["id"],
+        "noteMediaEventSig": note_media_ev["sig"],
+        "noteMediaEventSer": serialize_bridge_event(note_media_ev),
     }
 
 

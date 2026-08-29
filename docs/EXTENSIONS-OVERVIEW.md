@@ -358,10 +358,24 @@ composes; `rs*` never becomes a library other members call.
   three-leg mutual handshake over enetxt.
 - **Phase 7 — anon persona**: an onion-only identity behind
   `rsPersonaAllows`, the pure-policy deanonymization guard.
-- Status: all seven phases **built**; phases 1–4 **done on two machines**
+- **Phase 8 — the Nostr bridge** (the card was built, broke `openStack`
+  on an engine, was reverted 2026-08-29 - and re-landed the same day
+  behind riptide's new headless boot gate, `openStack` byte-identical to
+  the engine-proven body): reach, never a
+  dependency. A subkey-4
+  secp256k1 identity, an `RSN1` record signed by BOTH keys so the linkage
+  between a riptide handle and an npub is a two-sided statement rather
+  than a claim, published to the DHT and to relays; riptide media crosses
+  as magnet `r` tags. The same phase added the sealed `RIPTAPP1` store, so
+  follows and counters finally survive a restart.
+- Status: phases 1–8 **built** with their UI (the phase-8 card re-landed
+  2026-08-29 behind `riptide/tools/check-demo-boot.py`, which boots the
+  shipped stack headlessly); phases 1–4 **done on two machines**
   (feed propagation 2026-08-13; media playback and both-ways DMs
   2026-08-15). The phase 4–7 compute surface is engine-verified
-  (2026-08-15); the live phase 5–7 legs are scripted in
+  (2026-08-15); the phase-8 compute surface is EXECUTED headlessly against
+  the real committed coinxt (2026-08-29) but has not met an engine. The
+  live phase 5–8 legs are scripted in
   `riptide/docs/two-machine-runbook.md`.
 
 ## nocloud — No Cloud Quick Share, the shipped app (`qs*`)

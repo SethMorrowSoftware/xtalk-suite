@@ -330,7 +330,7 @@ The members are deliberately non-overlapping, so real apps mix them:
   60000-byte packet budget is the seam: when a payload stops being a message,
   it becomes a torrent.
 - **The worked example.** `docs/RIPTIDE-SOCIAL-SPEC.md` designs a serverless
-  social app on the suite, and `riptide/` is that app: **all seven phases
+  social app on the suite, and `riptide/` is that app: **all eight phases
   built; phases 1-4 DONE on two machines.** Phases 1-2 (identity + the live
   feed) engine-passed 2026-08-12, propagation met 2026-08-13 — the suite's
   first two-machine result. **Phase 3 (media) met 2026-08-15**: a follower
@@ -350,7 +350,28 @@ The members are deliberately non-overlapping, so real apps mix them:
   session agreement, the DM secretstream round trip, the LAN admit/refuse,
   the anon guard, BTXO framing), so those paths are engine-verified;
   `riptide/docs/two-machine-runbook.md` scripts what the two boxes still
-  owe.
+  owe. **Phase 8 (2026-08-29) is the app's sixth rail and its first that
+  talks to somebody else's servers**: a Nostr bridge, deliberately built as
+  REACH and never a dependency, so with no CoinXT or no relay reachable
+  riptide is exactly the app it was at phase 7. The CARD for it broke
+  `openStack` on a real engine and was REVERTED the same day - then
+  RE-LANDED that same day, restructured so `openStack` is byte-identical
+  to the engine-proven body and gated by riptide's new
+  `tools/check-demo-boot.py`, which EXECUTES the shipped stack's boot
+  headlessly (the gap both 2026-08-29 breakages walked through: no gate
+  here ran a stack script). Its centre is an `RSN1`
+  record signed by BOTH keys — a riptide handle is ed25519 and an npub is
+  secp256k1, neither can sign for the other, so a one-signature claim is
+  something either key-holder could assert about a stranger's key —
+  published to the DHT at its own salt and as a NIP-78 event whose author
+  must BE the key the record names. The same phase gave the app a memory
+  (a sealed `RIPTAPP1` store, because a follow list is the social graph
+  rather than a preference) and gave riptide something it had never had:
+  a way to RUN. `riptide/tools/check-script-vectors.py` executes the
+  shipped script against the real committed coinxt.so, so the bridge bytes
+  and both signatures are checked as executed behaviour against an
+  independent oracle — which promotes nothing out of "verified
+  statically", since it settles logic and not parser behaviour.
   `docs/NEXT-EXTENSIONS-PLAN.md` is the roadmap that produced the members;
   `docs/ONIONXT-INTEGRATION-PLAN.md` is the anonymity-transport
   integration.

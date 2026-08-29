@@ -138,6 +138,45 @@ FIXTURES = [
      'library org.test.t\n\n/* never closed\n\nend library\n',
      "unterminated /*"),
 
+    # -- constant VALUES must be literals (check 22) -------------------------
+    # The bug this is standing in for shipped in riptide-social and took the
+    # WHOLE stack script down - a .livecodescript is one compilation unit, so
+    # the symptom was a stack that opened with no UI and no error to point at,
+    # found by opening it rather than by any gate. The legal fixtures matter
+    # as much as the firing one: the multi-declaration form is real, and
+    # box2dxt's builder writes it with commas INSIDE quoted colour values.
+    ("LCS constant with a concatenation value fires",
+     "t.livecodescript",
+     'constant kX = "a" & return & "b"\n\non tGo\n   put kX into tY\nend tGo\n',
+     "non-literal value"),
+    ("LCS constant with an arithmetic value fires",
+     "t.livecodescript",
+     'constant kX = 60 * 1000\n\non tGo\n   put kX into tY\nend tGo\n',
+     "non-literal value"),
+    ("LCS constant naming another constant fires",
+     "t.livecodescript",
+     'constant kA = 1\nconstant kB = kA\n\non tGo\n   put kB into tY\nend tGo\n',
+     "non-literal value"),
+    ("LCS string, integer, negative and decimal constants are legal",
+     "t.livecodescript",
+     'constant kS = "hi"\nconstant kI = 200\nconstant kN = -10\n'
+     'constant kD = 0.05\n\non tGo\n   put kS & kI & kN & kD into tY\nend tGo\n',
+     None),
+    ("LCS multi-declaration constants are legal",
+     "t.livecodescript",
+     'constant kA = 1500, kB = 320\n\non tGo\n   put kA + kB into tY\nend tGo\n',
+     None),
+    ("LCS a comma INSIDE a quoted constant value is not a split",
+     "t.livecodescript",
+     'constant kCol = "26,28,35", kCol2 = "44,48,58"\n\n'
+     'on tGo\n   put kCol && kCol2 into tY\nend tGo\n',
+     None),
+    ("LCB constant values are NOT checked (its own dialect, `is`)",
+     "t.lcb",
+     'library org.test.t\n\nconstant kX is 1\n\npublic handler tGo() returns '
+     'Integer\n   return kX\nend handler\n\nend library\n',
+     None),
+
     # -- constants before use, both spellings --------------------------------
     ("LCS constant used above its declaration fires",
      "t.livecodescript",

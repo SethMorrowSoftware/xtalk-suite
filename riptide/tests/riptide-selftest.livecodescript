@@ -55,6 +55,17 @@ constant kRsGoldHeadName = "Riptide"
 constant kRsGoldPrekeyTarget = "abababababababababababababababababababab"
 constant kRsGoldProfileTarget = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
 constant kRsGoldMediaTarget = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+constant kRsGoldNostrSeq = "1"
+constant kRsGoldNostrTs = "1754870800"
+-- BIP-340 aux randomness pinned all-zero so the two schnorr signatures are
+-- reproducible. A real signer passes EMPTY and CoinXT's shim draws fresh
+-- bytes; BIP-340 signatures are not unique and every one of them verifies.
+-- Same idea as the fixed LAN nonce one rail over.
+constant kRsGoldNostrAux = "0000000000000000000000000000000000000000000000000000000000000000"
+-- the secp256k1 group order n: a scalar that is invalid by exactly one, and
+-- therefore the ladder's rung-1 case. No real master seed reaches it (the
+-- gap is ~2^-128 wide), which is why the ladder takes a CANDIDATE.
+constant kRsGoldNostrBadCand = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
 
 -- derived (every one re-derived by tools/check-selftest-vectors.py)
 constant kRsGoldIdSeedHex = "9c7b6be59e0884a1923505cf1390a1d01b5b7a258c582d9518e722c07bd8650c"
@@ -101,6 +112,22 @@ constant kRsGoldBtxoFrameHex = "0000000b68656c6c6f20776f726c64"
 constant kRsGoldAnonDmKxPub = "d4e6c146e4c3b3a89562ed669c43f4bd7601a0e4361bdaa3304f4beeb410aa17"
 constant kRsGoldAnonPageHex = "3c21646f63747970652068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d277574662d38273e3c7469746c653e526970746964653c2f7469746c653e3c2f686561643e3c626f64793e3c68313e526970746964653c2f68313e3c756c3e3c6c693e68656c6c6f2c20726970746964653c2f6c693e3c6c693e7365636f6e6420706f73743c2f6c693e3c2f756c3e3c703e5365616c656420444d733a20474554202f7072656b657920286d79207369676e65642052534b31207072656b6579207265636f72642c20686578292c207468656e20504f535420796f7572207365616c656420696e74726f2061732068657820746f202f646d2e3c2f703e3c2f626f64793e3c2f68746d6c3e"
 constant kRsGoldAnonPrekeyBody = "52534b31643465366331343665346333623361383935363265643636396334336634626437363031613065343336316264616133333034663462656562343130616131375936364dfd99c3382a61d1630ea6f3229c661b67a455c850f80e1d07db832c055604386656d6354ac8802f618f4ce4cf97c6a972e7c0560190dfd2dd6c70ba04"
+-- phase 8, the Nostr rail. The secp256k1 half of every value below comes
+-- from nostrxt's oracle, which anchors ITSELF to the published BIP-340 and
+-- NIP-19 vector sets at import - so these trace outside this member, per
+-- rule 1, exactly as the KDF and ed25519 vectors do.
+constant kRsGoldNostrSeckey = "292f05482814252ab3735789df0a22dc4f07d7fd35fca10d7fbabf044cf5ee01"
+constant kRsGoldNostrPubkey = "87f20bf27cbbd33ba676d428329081f2b0a3cd5989ce8af1f92e1f7316b2fa1f"
+constant kRsGoldNostrNpub = "npub1sleqhunuh0fnhfnk6s5r9yyp72c28n2e388g4u0e9c0hx94jlg0s4nnv5a"
+constant kRsGoldNostrLadder1 = "3717939056ee94b1054210ce2b27284d9a8ac5e2880e326d53feb8d4cbb89907"
+constant kRsGoldAppStateKey = "e3feb285ef2e9e21b235884df78273ad955bc4fe4ed0169cd9ffa37cf592f83d"
+constant kRsGoldBridgeHex = "52534e31356135343665346665663564316237366639346463316232656465643735633434626666633930306166373436316132366438343237343533613932663232643837663230626632376362626433336261363736643432383332393038316632623061336364353938396365386166316639326531663733313662326661316600000000000000010000000068993410832fd1bde94160aa757cd37c1e3f1983c7666a33baa6d56008879dc60486175238ad45be2a14ef7e763f09a530eea22ea1021ef2cd9d278583bc8e3b4924d6083d0b3547ca7fc93011d07e8d57e8019aa35926ec3dc521171b510cef1e4d276bb995720aa2227031f3a400eabe90bcd49252f86b69dce5552bb150cdfbe2bba7"
+constant kRsGoldBridgePreHex = "726970746964652d6e6f7374722d6252534e31356135343665346665663564316237366639346463316232656465643735633434626666633930306166373436316132366438343237343533613932663232643837663230626632376362626433336261363736643432383332393038316632623061336364353938396365386166316639326531663733313662326661316600000000000000010000000068993410"
+constant kRsGoldBridgeEventId = "d1df953258c71225e6b7dca9a9c5a83267664eb7fdaed68b7ab7db90badd18a5"
+constant kRsGoldBridgeEventSig = "4a7b1d22580e277cad711d202cae91a26faafebdafc09e14df5fa1c7d2c630a9217f3716497fed20e07574e54f5248dc776c0b4f73b399ad73b94c0ed48f1b18"
+constant kRsGoldNoteEventId = "4b539f4d7b44c8a9fb64162bc5fdcba8c5d662f79c26de29de62e0fcae29e960"
+constant kRsGoldNoteEventSig = "52d44848366a5cf0dbd4522057079139a91109fc0eb93dc3797670138625294a4415124ce03dfc5e92002c14f4020e1092433a108f74a94d34216788ddbca64c"
+constant kRsGoldNoteMediaEventId = "7a49d188bb322c2d898a342bbf644c4804cb34bca479627bcc371fc1940f3551"
 
 local sLog
 local sPass
@@ -137,6 +164,8 @@ function rsSelfTest
       rstSectionLanSync
       rstSectionAnon tCaps
       rstSectionBtxoStream
+      rstSectionAppState
+      rstSectionNostr tCaps
       rstSectionLiveFeed tCaps
       rstSectionMedia tCaps
    else
@@ -1068,6 +1097,292 @@ private command rstSectionBtxoStream
          "an unknown phase is a caller bug (empty, rsLastError says why)"
 end rstSectionBtxoStream
 
+-- The RIPTAPP1 app-state store. Pure SodiumXT (secretbox under subkey 5),
+-- so it runs wherever the crypto sections do. No golden pins the SEALED
+-- bytes and none can: sxSecretBox draws a fresh random nonce per call, so
+-- two seals of one state differ by design. What the golden pins is the
+-- KEY; what this section proves is the envelope around it - the header,
+-- the caps, the round trip, and every refusal.
+private command rstSectionAppState
+   local tMaster, tOther, tSealed, tAgain, tBig, tUni, tTamper, tI
+   rstSection "phase 8 - the RIPTAPP1 app-state store"
+   put rstBin(kRsGoldMasterHex) into tMaster
+   put rstBin(kRsGoldConfSeedHex) into tOther
+   put rsSealAppState("hello state", tMaster) into tSealed
+   rstCheck (tSealed is not empty), "a state seals"
+   rstCheck (textDecode(byte 1 to 9 of tSealed, "ASCII") is "RIPTAPP1S"), \
+         "the sealed file carries the RIPTAPP1 header"
+   rstCheck (rsOpenAppState(tSealed, tMaster) is "hello state"), \
+         "and opens back to the same text"
+   -- a fresh nonce per seal, which is why no vector pins these bytes
+   put rsSealAppState("hello state", tMaster) into tAgain
+   rstCheck (tAgain is not tSealed), \
+         "two seals of one state differ (a fresh nonce each time)"
+   rstCheck (rsOpenAppState(tAgain, tMaster) is "hello state"), \
+         "and both open to the same text"
+   -- the store is keyed to the MASTER, so it opens only while unlocked
+   rstCheck (rsOpenAppState(tSealed, tOther) is empty), \
+         "a different master cannot open it"
+   rstCheck (rsOpenAppState("XIPTAPP1S" & byte 10 to -1 of tSealed, \
+         tMaster) is empty), "a foreign magic is refused"
+   rstCheck (rsOpenAppState(byte 1 to 8 of tSealed, tMaster) is empty), \
+         "a truncated file is refused"
+   put rstFlipByte(tSealed, the number of bytes in tSealed) into tTamper
+   rstCheck (rsOpenAppState(tTamper, tMaster) is empty), \
+         "a tampered file is refused (the Poly1305 tag)"
+   -- caps refuse, never truncate (rule 4), on the BUILD side too
+   -- one byte over kRsAppStateMax (1 MiB). Built by doubling rather than by
+   -- a million appends: the harness runs on the engine's one interpreted
+   -- thread and a per-byte loop here would be seconds of the run.
+   put "x" into tBig
+   repeat 20 times
+      put tBig after tBig
+   end repeat
+   put "x" after tBig
+   rstCheck (the number of bytes in tBig is 1048577), \
+         "the over-cap probe really is one byte over the 1 MiB cap"
+   rstCheck (rsSealAppState(tBig, tMaster) is empty), \
+         "an over-cap state refuses rather than truncating"
+   -- UTF-8 survives, which matters because the app puts display names and
+   -- petnames in here and textDecode is LOSSY on this engine
+   put textDecode(rstBin("6361666ac3a9"), "UTF-8") into tUni
+   rstCheck (rsOpenAppState(rsSealAppState(tUni, tMaster), tMaster) is tUni), \
+         "a non-ASCII state survives the round trip"
+   rstCheck (rsOpenAppState(empty, tMaster) is empty), \
+         "an empty file is refused"
+end rstSectionAppState
+
+-- PHASE 8, THE NOSTR RAIL. Everything here is pure compute: the key, the
+-- doubly-signed RSN1 bridge, the event builders and the media convention.
+-- It needs CoinXT (secp256k1 + BIP-340 + SHA-256) and the NostrXT nx*
+-- core, so it SKIPS cleanly on an install without them - which is the
+-- point of the three separate probe rows: the rail disabling itself must
+-- never disable another rail (rule 6).
+--
+-- The vectors trace OUTSIDE this member: nostrxt/tools/nostr_reference.py
+-- anchors itself to the published BIP-340, NIP-19 and BIP-173 sets at
+-- import, and riptide's oracle composes it rather than re-implementing
+-- secp256k1 (rule 1 - a vector captured from our own output proves
+-- nothing).
+private command rstSectionNostr pCaps
+   local tMaster, tOther, tKeys, tBridge, tRec, tEvent, tSigned, tJson
+   local tStolen, tBack, tTamper, tI, tSavedDelim
+   rstSection "phase 8 - the Nostr rail (identity bridge, notes, the guard)"
+
+   -- THE GUARD FIRST, because it is pure policy and needs no extension at
+   -- all. "nostr" joining the vocabulary is a deanonymization question:
+   -- a relay is a clearnet websocket to somebody else's server.
+   rstCheck (rsPersonaAllows(true, "nostr") is false), \
+         "anon persona: a Nostr relay is REFUSED"
+   rstCheck (rsPersonaAllows(false, "nostr") is true), \
+         "public persona: a Nostr relay is allowed"
+   rstCheck (rsPersonaAllows(true, "nostrr") is false), \
+         "a near-miss transport name still refuses fail-closed (anon)"
+   rstCheck (rsPersonaAllows(false, "nostrr") is false), \
+         "a near-miss transport name still refuses fail-closed (public)"
+
+   if pCaps["hasNostr"] is not true or pCaps["canNostrSign"] is not true then
+      rstSkip "the Nostr rail: NostrXT and/or CoinXT are not installed"
+      exit rstSectionNostr
+   end if
+
+   put rstBin(kRsGoldMasterHex) into tMaster
+   put rstBin(kRsGoldConfSeedHex) into tOther
+
+   -- the validity ladder, at the two rungs no real master seed reaches
+   rstCheck (rsNostrSeckeyFrom(kRsGoldNostrSeckey) is kRsGoldNostrSeckey), \
+         "a valid candidate passes through the ladder unchanged"
+   rstCheck (rsNostrSeckeyFrom(kRsGoldNostrBadCand) is \
+         kRsGoldNostrLadder1), \
+         "the group order n steps forward one rung, to SHA-256 of itself"
+   rstCheck (rsNostrSeckeyFrom(kRsGoldNostrBadCand) is not \
+         kRsGoldNostrBadCand), "and never returns the invalid scalar"
+   rstCheck (rsNostrSeckeyFrom("42") is empty), \
+         "a short candidate is refused"
+   rstCheck (rsNostrSeckeyFrom("zz" & char 3 to 64 of kRsGoldNostrSeckey) \
+         is empty), "a non-hex candidate is refused"
+
+   -- the identity
+   put rsNostrKeys(tMaster) into tKeys
+   rstCheck (tKeys["pubkey"] is kRsGoldNostrPubkey), \
+         "the Nostr x-only public key matches golden"
+   rstCheck (tKeys["npub"] is kRsGoldNostrNpub), "the npub matches golden"
+   rstCheck (tKeys["seckey"] is empty), \
+         "rsNostrKeys hands back NO secret material"
+   rstCheck (rsNostrExportSeckey(tMaster) is kRsGoldNostrSeckey), \
+         "the exported secret key matches golden"
+   rstCheck (rsNostrExportSeckey(tOther) is not kRsGoldNostrSeckey), \
+         "a different master gives a different Nostr key"
+
+   -- THE BRIDGE. Both signatures, or nothing.
+   put rsBuildBridge(kRsGoldNostrSeq, kRsGoldNostrTs, tMaster, \
+         kRsGoldNostrAux) into tBridge
+   rstCheck (rstHex(tBridge) is kRsGoldBridgeHex), \
+         "the RSN1 bridge record matches golden byte for byte"
+   rstCheck (the number of bytes in tBridge is 276), \
+         "an RSN1 record is exactly 276 bytes"
+   put rsVerifyBridge(tBridge, empty, empty) into tRec
+   rstCheck (tRec["handle"] is kRsGoldHandle), \
+         "verify recovers the riptide handle"
+   rstCheck (tRec["nostrPub"] is kRsGoldNostrPubkey), \
+         "verify recovers the Nostr key"
+   rstCheck (tRec["seq"] is kRsGoldNostrSeq), "verify recovers the seq"
+   rstCheck (tRec["timestamp"] is kRsGoldNostrTs), \
+         "verify recovers the timestamp"
+   rstCheck (rsVerifyBridge(tBridge, kRsGoldHandle, kRsGoldNostrPubkey) \
+         is not empty), "both expectations together still verify"
+   rstCheck (rsVerifyBridge(tBridge, kRsGoldConfPub, empty) is empty), \
+         "a wrong expected handle is refused"
+   rstCheck (rsVerifyBridge(tBridge, empty, kRsGoldConfPub) is empty), \
+         "a wrong expected Nostr key is refused"
+   -- EVERY field of the signed span is load-bearing. A tamper anywhere
+   -- must break one signature or the other; a record that survived one
+   -- would be a linkage anybody could forge half of.
+   -- the six bytes are one per FIELD of the signed span: the handle, the
+   -- Nostr key, the seq, the timestamp, and one byte of each signature.
+   -- The delimiter is set explicitly rather than assumed: comma is the
+   -- engine default, but a harness that leans on a default is a harness
+   -- that breaks the day some earlier section forgets to restore one.
+   put the itemDelimiter into tSavedDelim
+   set the itemDelimiter to comma
+   repeat for each item tI in "5,69,140,148,150,214"
+      put rstFlipByte(tBridge, tI) into tTamper
+      rstCheck (rsVerifyBridge(tTamper, empty, empty) is empty), \
+            "a tamper at byte" && tI && "is refused"
+   end repeat
+   set the itemDelimiter to tSavedDelim
+   rstCheck (rsParseBridge(byte 1 to 275 of tBridge) is empty), \
+         "a short record is refused"
+   rstCheck (rsParseBridge(tBridge & "x") is empty), \
+         "a long record is refused (no trailing bytes)"
+   rstCheck (rsParseBridge(textEncode("XSN1", "ASCII") & \
+         byte 5 to -1 of tBridge) is empty), "a foreign magic is refused"
+   rstCheck (rsBuildBridge("-1", kRsGoldNostrTs, tMaster, kRsGoldNostrAux) \
+         is empty), "a negative seq is refused"
+   rstCheck (rsBuildBridge(kRsGoldNostrSeq, kRsGoldNostrTs, tMaster, "ab") \
+         is empty), "a malformed aux is refused"
+
+   -- kind-1 notes and the media convention
+   put rsNostrNoteEvent(kRsGoldTs1, kRsGoldPost1Text, empty) into tEvent
+   put rsNostrSignEvent(tEvent, tMaster, kRsGoldNostrAux) into tSigned
+   rstCheck (tSigned["id"] is kRsGoldNoteEventId), \
+         "the kind-1 note id matches golden"
+   rstCheck (tSigned["sig"] is kRsGoldNoteEventSig), \
+         "the kind-1 note signature matches golden"
+   rstCheck (nxEventVerify(tSigned) is true), \
+         "and the note verifies under its own key"
+   put rsNostrNoteEvent(kRsGoldTs2, kRsGoldPost2Text, kRsGoldMediaTarget) \
+         into tEvent
+   put rsNostrSignEvent(tEvent, tMaster, kRsGoldNostrAux) into tSigned
+   rstCheck (tSigned["id"] is kRsGoldNoteMediaEventId), \
+         "a note carrying media matches golden"
+   rstCheck (rsNostrMediaTags(tSigned) is kRsGoldMediaTarget), \
+         "the info-hash survives the round trip through the r tag"
+   rstCheck (rsNostrNoteEvent(kRsGoldTs1, empty, empty) is empty), \
+         "an empty note is refused"
+   rstCheck (rsNostrNoteEvent(kRsGoldTs1, "x", rsZeroTarget()) is empty), \
+         "the all-zeros info-hash is refused (a post must name real content)"
+   rstCheck (rsNostrNoteEvent(kRsGoldTs1, "x", "not-a-hash") is empty), \
+         "a malformed info-hash is refused"
+   rstCheck (rsNostrNoteEvent("-1", "x", empty) is empty), \
+         "a negative timestamp is refused"
+
+   -- the bridge as a NIP-78 event, and the attack it exists to stop
+   put rsNostrBridgeEvent(tBridge, tMaster, kRsGoldNostrTs, \
+         kRsGoldNostrAux) into tEvent
+   rstCheck (tEvent["id"] is kRsGoldBridgeEventId), \
+         "the bridge event id matches golden"
+   rstCheck (tEvent["sig"] is kRsGoldBridgeEventSig), \
+         "the bridge event signature matches golden"
+   put nxEventToJson(tEvent) into tJson
+   put rsNostrBridgeFromEvent(tJson) into tBack
+   rstCheck (tBack["handle"] is kRsGoldHandle), \
+         "the bridge comes back out of its own event"
+   rstCheck (tBack["nostrPub"] is kRsGoldNostrPubkey), \
+         "...naming the same Nostr key that signed the event"
+   -- THE REPUBLISH ATTACK: anyone can copy somebody else's bridge record
+   -- into their own signed event. Requiring the record's nostrPub to BE
+   -- the event's author is what makes that copy verify as the ORIGINAL
+   -- author's bridge and never as the republisher's.
+   put rsNostrBridgeEvent(tBridge, tOther, kRsGoldNostrTs, \
+         kRsGoldNostrAux) into tStolen
+   rstCheck (tStolen is not empty), \
+         "a stranger CAN sign an event carrying my bridge (nothing stops it)"
+   rstCheck (rsNostrBridgeFromEvent(nxEventToJson(tStolen)) is empty), \
+         "...but reading it back REFUSES: the record is not the author's"
+   rstCheck (rsNostrBridgeFromEvent(nxEventToJson(tSigned)) is empty), \
+         "a kind-1 event is not a bridge"
+   rstCheck (rsNostrBridgeFromEvent("not json at all") is empty), \
+         "garbage JSON is refused, not thrown"
+   rstCheck (rsNostrBridgeFromEvent(empty) is empty), \
+         "an empty body is refused"
+
+   -- THE DHT SIDE of the bridge, as a SYNTHETIC drained event (the
+   -- rstSectionIngest pattern). No session and no network: the BEP44
+   -- signature is built here from the library's own canonical buffer, which
+   -- makes this a cross-check of rsBep44SignBuf at the new salt as well as
+   -- of the ingest path. rsPublishBridge / rsRequestBridge are exercised
+   -- against a real session in the live-feed section.
+   rstNostrIngest tBridge
+end rstSectionNostr
+
+-- Split out so rstSectionNostr stays inside one screen and one idea. The
+-- caller has already proved the bridge itself verifies; what is under test
+-- here is the DHT WRAPPER around it - the same three-layer discipline
+-- rsIngestHead has (right handle, right salt, BEP44 signature re-verified
+-- in SodiumXT) plus the second signature pair libtorrent knows nothing
+-- about.
+private command rstNostrIngest pBridge
+   local tKeys, tValue, tBuf, tSigHex, tEvent, tBad, tRec, tSig
+   put rsIdentityKeys(rstBin(kRsGoldIdSeedHex)) into tKeys
+   put rsBencodeBytes(pBridge) into tValue
+   put rsBep44SignBuf("riptide-nostr", kRsGoldNostrSeq, tValue) into tBuf
+   put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tSigHex
+   put kRsGoldHandle into tEvent["publicKey"]
+   put "riptide-nostr" into tEvent["salt"]
+   put kRsGoldNostrSeq into tEvent["seq"]
+   put pBridge into tEvent["value"]
+   put tSigHex into tEvent["signature"]
+   put rsIngestBridge(tEvent, kRsGoldHandle) into tRec
+   rstCheck (tRec is not empty), "a synthetic bridge event ingests"
+   rstCheck (tRec["nostrPub"] is kRsGoldNostrPubkey), \
+         "and hands back the Nostr key it names"
+   rstCheck (rsIngestBridge(tEvent, kRsGoldConfPub) is empty), \
+         "an event for another handle is refused"
+   put tEvent into tBad
+   put rsHeadSalt() into tBad["salt"]
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+         "the HEAD salt is refused (one rail, one salt)"
+   put tEvent into tBad
+   put 2 into tBad["seq"]
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+         "a seq disagreeing with the bridge's embedded seq is refused"
+   put tEvent into tBad
+   -- byte 150 is inside the ed25519 signature: the BEP44 layer still
+   -- passes (its signature covers the bencoded value, which changed too)
+   -- so this proves the SECOND verification is really running
+   put rstFlipByte(tBad["value"], 150) into tBad["value"]
+   put rsBencodeBytes(tBad["value"]) into tValue
+   put rsBep44SignBuf("riptide-nostr", kRsGoldNostrSeq, tValue) into tBuf
+   put rstHex(sxSignDetached(tBuf, tKeys["secretKey"])) into tBad["signature"]
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+         "a correctly RE-SIGNED but tampered bridge is still refused"
+   put tEvent into tBad
+   put tBad["signature"] into tSig
+   if char 1 of tSig is "6" then
+      put "7" into char 1 of tSig
+   else
+      put "6" into char 1 of tSig
+   end if
+   put tSig into tBad["signature"]
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+         "a forged BEP44 signature is refused"
+   put tEvent into tBad
+   put textEncode("junk", "ASCII") into tBad["value"]
+   rstCheck (rsIngestBridge(tBad, kRsGoldHandle) is empty), \
+         "a value that is not an RSN1 record is refused"
+end rstNostrIngest
+
 -- The phase-6 LAN admission layer. Entirely pure crypto (no transport),
 -- so it runs on SodiumXT alone - which is right: the admission proof is
 -- what MUST hold before any enet peer is trusted, and it is provable
@@ -1599,6 +1914,22 @@ private command rstSectionLiveFeed pCaps
          "rsRequestImmutable refuses the zero target"
    rstCheck (rsRequestImmutable(0, kRsGoldPost1Target) is false), \
          "rsRequestImmutable refuses a dead session handle"
+   -- the phase-8 bridge rides the same seam at its own salt, so its
+   -- refusal paths run here too, with no torrentxt installed
+   rstCheck (rsPublishBridge(0, rstBin(kRsGoldBridgeHex), tSeed) is false), \
+         "rsPublishBridge refuses a dead session handle"
+   rstCheck (rsPublishBridge(0, textEncode("junk", "ASCII"), tSeed) is \
+         false), "rsPublishBridge refuses a non-RSN1 record first"
+   rstCheck (rsLastError() contains "RSN1"), "and names the parse"
+   -- the signer must BE the handle the bridge names, or a device holding
+   -- somebody else's bridge could publish it under its own key
+   rstCheck (rsPublishBridge(0, rstBin(kRsGoldBridgeHex), \
+         rstBin(kRsGoldConfSeedHex)) is false), \
+         "rsPublishBridge refuses a seed that is not the bridge's handle"
+   rstCheck (rsRequestBridge(0, kRsGoldHandle) is false), \
+         "rsRequestBridge refuses a dead session handle"
+   rstCheck (rsRequestBridge(0, "zz") is false), \
+         "rsRequestBridge refuses a malformed handle"
    if pCaps["hasTorrent"] is not true then
       rstSkip "live feed puts and lookups: torrentxt is not installed"
       exit rstSectionLiveFeed

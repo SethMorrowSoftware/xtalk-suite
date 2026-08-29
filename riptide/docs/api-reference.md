@@ -1,10 +1,11 @@
 # Riptide API reference
 
-The public `rs*` surface of `src/riptide.livecodescript` (library 0.11.0,
-phases 1-7 plus the 8.2/8.3 onion serving seams, the phase-6 sync
-records with the media handoff, and - since 2026-08-23 - the kind-C
-chunked-post rail, the BTXO receive-path stream machine, and the media
-streaming plan). Pure LiveCodeScript over the installed suite extensions; the
+The public `rs*` surface of `src/riptide.livecodescript` (library 0.12.0,
+phases 1-8 plus the 8.2/8.3 onion serving seams, the phase-6 sync
+records with the media handoff, the kind-C chunked-post rail, the BTXO
+receive-path stream machine, the media streaming plan, and - since
+2026-08-29 - the rail-6 Nostr bridge and the `RIPTAPP1` app-state store).
+Pure LiveCodeScript over the installed suite extensions; the
 byte-exact wire layouts are documented at the top of the library and
 pinned by the oracle (`tools/riptide_reference.py`), the golden test, and
 the harness constants, with `tools/check-selftest-vectors.py` holding the
@@ -249,7 +250,7 @@ instantly).
 |---|---|---|
 | `rsAnonHandle(pMaster, pIndex)` | String | persona n's 64-hex handle (a DIFFERENT key from the public identity) |
 | `rsAnonOnion(pMaster, pIndex)` | String | its .onion, derivable offline; equals what `rsAnonCreateService` publishes |
-| `rsPersonaAllows(pIsAnon, pTransport)` | Boolean | THE 9.3 deanonymization guard, pure policy: anon may use ONLY `onion`; public anything BUT `onion`; unknown transports refused for both. Known transports: `onion,dht,torrent,rp1,enet,dc,feed,media`. Route every transport branch through it |
+| `rsPersonaAllows(pIsAnon, pTransport)` | Boolean | THE 9.3 deanonymization guard, pure policy: anon may use ONLY `onion`; public anything BUT `onion`; unknown transports refused for both. Known transports: `onion,dht,torrent,rp1,enet,dc,feed,media,nostr` (`nostr` added 2026-08-29 with rail 6 - a relay is a clearnet websocket to somebody else's server). Route every transport branch through it |
 | `rsAnonCreateService(pMaster, pIndex, pVirtualPort, pLocalPort)` | Integer | probe-gated `oxCreateServiceFromSeed`; the onionxt service handle |
 | `rsBtxoHeader(pName, pTotalSize, pFlags)` | Data | the Model C framed-file header (magic/ver/flags/nameLen/name/total) |
 | `rsBtxoParseHeader(pBytes)` | Array | `name`, `total`, `flags` |
@@ -275,6 +276,46 @@ stream. Verified statically; needs an OXT + live-Tor pass.
 | `rsAnonFeedPage(pTitle, pEntries)` | Data | the anon feed page as UTF-8 HTML bytes: title (1..64 UTF-8 bytes, the display-name budget) plus line-delimited entries, each HTML-escaped (no markup injection); blank lines skipped, one trailing CR per line tolerated; the finished page caps at 65536 bytes. Deterministic and golden-pinned - the page is a wire format, and a look change re-pins deliberately |
 | `rsAnonPrekeyBody(pMaster, pIndex)` | String | the GET `/prekey` response body: persona n's RSK1 prekey record (subkey-200+n kx public, signed by the subkey-100+n anon identity) as 264 lowercase hex chars of text. A follower decodes and MUST verify: `rsVerifyPrekey(decoded, anonHandle)` |
 | `rsAnonAcceptDm(pBody, pMaster, pIndex)` | Array | accept a POST `/dm` body: EXACTLY 632 strict lowercase hex chars (the 48-byte seal + the 268-byte RSI1 intro, times two), refused BEFORE any decode on length or a non-hex byte; then the existing `rsDmOpenIntro` verify-then-parse under the persona's subkeys. Returns the verified intro array or empty - one refusal for every failure mode (the route must not be an oracle). Freshness stays the app's policy |
+
+## Rail 6: the Nostr bridge (spec 8A, added 2026-08-29)
+
+Reach, never a dependency: with no CoinXT, no NostrXT, or every relay down,
+every other rail here behaves exactly as it did at phase 7. The protocol
+itself is NostrXT's (`nx*` / `nxr*`) and is never re-implemented; these
+handlers own only the key, the bridge, and the media convention.
+
+Verified statically, and EXECUTED headlessly against the real committed
+CoinXT by `tools/check-script-vectors.py` - which settles logic, not parser
+behaviour. Needs an OXT + a live-relay pass.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `rsNostrSeckeyFrom(pCandidateHex)` | String | the secp256k1 VALIDITY LADDER as a pure function of a candidate: return it when it is a valid scalar, else SHA-256 it and retry, at most 8 rungs, then refuse. Takes a candidate rather than a master precisely so the branch no real seed reaches is testable - the all-zeros candidate and the group order `n` are both pinned |
+| `rsNostrKeys(pMaster)` | Array | `pubkey` (64-hex x-only) and `npub`. NO secret in the result, so a caller never has to decide whether the array is safe to log |
+| `rsNostrExportSeckey(pMaster)` | String | the 64-hex secret key, for a backup or an import into another Nostr client. Named for what it is: the one handler that hands out key material. The honest limit is the family's standing one - OXT script variables are not locked memory |
+| `rsNostrSignEvent(pEvent, pMaster, pAuxHex)` | Array | the ONE signing seam: derives the key, signs, drops it, so ordinary publishing never holds the secret. `pAuxHex` empty draws fresh BIP-340 aux randomness (the recommended default); 64 hex makes the signature reproducible for a KAT |
+| `rsNostrNoteEvent(pTimestamp, pText, pMediaList)` | Array | an UNSIGNED kind-1 note carrying riptide's media as `r`-tag magnet URIs. Pure. Every info-hash is validated as a non-zero 40-hex value first: a note must never advertise content nobody can fetch |
+| `rsNostrMediaTags(pEvent)` | String | the receive half: the 40-hex info-hashes an inbound event advertises, comma-separated and ready for `rsMediaFetch`. Strict - a non-magnet `r` tag is somebody else's link and is skipped, never guessed at |
+| `rsBuildBridge(pSeq, pTimestamp, pMaster, pAuxHex)` | Data | the 276-byte `RSN1` identity bridge, signed by BOTH keys over one preimage (ed25519 over the bytes, BIP-340 over their SHA-256, domain `"riptide-nostr-b"`) |
+| `rsParseBridge(pBytes)` | Array | strict parse: exact length, exact magic, both key fields canonical lowercase hex. STRUCTURE only - nothing is believed until `rsVerifyBridge` |
+| `rsVerifyBridge(pBytes, pExpectHandleHex, pExpectNostrPubHex)` | Array | both signatures, then the expectations. An EMPTY expectation means "do not check that side", which is what a reader who found the record BY one of the keys wants; passing both is the strictest form |
+| `rsNostrBridgeEvent(pBridgeBytes, pMaster, pTimestamp, pAuxHex)` | Array | the bridge as a signed NIP-78 kind-30078 event, `d` tag `riptide.bridge`, content the record as lowercase hex. Replaceable, because a bridge is current state and not history |
+| `rsNostrBridgeFromEvent(pEventJson)` | Array | the inbound half, four gates in order: structure, the event's own BIP-340 signature, the kind and `d` tag, then both bridge signatures with the event's OWN author pinned as the expected Nostr key. That last gate is what makes a republished copy of somebody else's bridge verify as THEIRS and never as the republisher's |
+| `rsPublishBridge(pSession, pBridgeBytes, pIdentitySeed)` | Boolean | BEP44 put under the identity key at salt `"riptide-nostr"` - a new rail gets a new salt, never a new field in `RSH1`. Validates the record AND that the seed is the handle the bridge names BEFORE touching the session, so both refusals run with no torrentxt installed |
+| `rsRequestBridge(pSession, pHandleHex)` | Boolean | async lookup at that salt; the value arrives as a `dhtMutableItem` event for `rsIngestBridge` |
+| `rsIngestBridge(pEvent, pExpectedHandleHex)` | Array | the same three-layer discipline `rsIngestHead` has (right handle, right salt, BEP44 signature re-verified in SodiumXT, embedded seq agreeing), and then the FULL `rsVerifyBridge` on top - because this record carries a second signature libtorrent knows nothing about |
+
+## The app-state store (spec 8A.4, added 2026-08-29)
+
+The library fixes the envelope; the app owns the format inside it, because
+what belongs in app state is an app question and a wire format here would
+freeze it. Sealed under subkey 5 - a follow list is the social graph, not a
+preference, and it is exactly what the anon persona must stay unlinked from.
+
+| Handler | Returns | Notes |
+|---|---|---|
+| `rsSealAppState(pStateText, pMaster)` | Data | `"RIPTAPP1S"` then `sxSecretBox` of the UTF-8 text under subkey 5. Caps at 1 MiB, refusing rather than truncating. No golden pins these bytes and none can: the box draws a fresh nonce per call, so two seals of one state differ by design |
+| `rsOpenAppState(pFileBytes, pMaster)` | String | the inverse. A file from a different master fails the Poly1305 tag; a foreign or truncated file is refused on the header before any crypto runs; the payload is UTF-8 ROUND-TRIPPED, because `textDecode` is lossy on this engine and a mangled state file must refuse rather than load as replacement characters |
 
 ## What the library deliberately does NOT own
 

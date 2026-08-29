@@ -24,12 +24,12 @@ it is an APP, not an extension: nothing here is compiled, nothing here
 adds native surface, and `rs*` never becomes a library other members may
 call.
 
-**All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.11.0; 90 public handlers -
-the riptide row of tools/check-suite-coverage.py reads 90/90 with nothing
-untestable, the seven 2026-08-23 handlers having entered that ratchet
-with their harness sections in tests/riptide-selftest.livecodescript when
-tools/build-suite-selftest.py regenerated the paste):
+**All EIGHT spec phases are BUILT, and phases 1-4 are DONE on two
+machines, done-criteria included** (library 0.12.0; the riptide row of
+tools/check-suite-coverage.py reads 106/106 with nothing untestable -
+run the gate for the current number rather than trusting this sentence,
+which is the hand-copied-count failure this tree records everywhere
+else):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -108,10 +108,29 @@ tools/build-suite-selftest.py regenerated the paste):
   zero `bt*` calls in a trace), and the harness's two anon-service SKIPs
   are exactly that leg.
 
+- **Phase 8 (the Nostr bridge, spec 8A): BUILT 2026-08-29, and the first
+  riptide layer whose compute half is EXECUTED rather than only
+  re-derived.** The `rsNostr*` rail (subkey 4 through a bounded
+  secp256k1 validity ladder), the doubly-signed RSN1 identity bridge
+  published to both the DHT and relays, the kind-1 media convention, and
+  the RIPTAPP1 app-state store. `nostr` joins rsPersonaAllows, refused
+  for the anon persona. The app CARD failed at `openStack` on a real
+  engine on its first landing (`Chunk: no target found`) and was REVERTED
+  the same day - and then RE-LANDED, also the same day, together with the
+  thing whose absence caused the failure: tools/check-demo-boot.py, a
+  headless BOOT RUNNER that executes the shipped stack's whole openStack
+  chain, card builders, kit, self-check, navigation clicks and a scripted
+  identity-plus-Nostr session through the family's interpreter over a
+  modeled engine world. The re-land keeps openStack BYTE-IDENTICAL to the
+  engine-proven version (verified mechanically): the relay defaults land
+  inside the card builder (the raKeyPath precedent) and nxrInit registers
+  lazily at the first Connect click, so the boot path carries no new work
+  at all. See the reverted-card record and the boot-runner section below.
+
 What remains, in one line: the live passes for 5 (the call + typing
-lane), 6 (the mesh, through the draft-appears criterion), and 7 (tor,
-now including its built 8.2/8.3 serving) - all scripted in
-docs/two-machine-runbook.md.
+lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
+now including its built 8.2/8.3 serving) and 8 (a real relay) - all
+scripted in docs/two-machine-runbook.md.
 
 ## The rules that bind this directory
 
@@ -129,7 +148,8 @@ docs/two-machine-runbook.md.
    re-derived nor listed as an input with a written reason, and on a
    stale input entry. Never hand-edit a golden constant; regenerate from
    `python3 tools/riptide_reference.py`.
-3. **Wire formats bump their magic.** `RIPTKEY1`, `RSH1`, `RSP1`: any
+3. **Wire formats bump their magic.** `RIPTKEY1`, `RSH1`, `RSP1`, `RSN1`,
+   `RIPTAPP1`: any
    framing change mints a new magic and updates both build and parse plus
    all three vector holders in one change. Never a silent fix.
 4. **Caps refuse, never truncate**, on build AND parse, and a parse is
@@ -141,6 +161,13 @@ docs/two-machine-runbook.md.
    hard dependency. A missing optional extension disables exactly its
    feature with a clear "install org.openxtalk.library.X" story and
    never regresses another (the spec's section 3.4 matrix).
+7a. **The script now EXECUTES too** (2026-08-29):
+   `python3 tools/check-script-vectors.py` drives the shipped
+   `src/riptide.livecodescript` through the family's headless interpreter
+   against the real committed CoinXT. It settles LOGIC, not parser
+   behaviour, so it promotes nothing out of "verified statically" - but a
+   change to any pure handler is not done until it passes, and its
+   source rewrites are asserted so it cannot go quietly blind.
 7. **The static gate is law**: `python3 tools/check-livecodescript.py`
    (the onionxt/coinxt lineage; it walks this whole directory). The
    repo-wide `tools/check-handler-calls.py` knows the `rs` prefix, so
@@ -873,6 +900,238 @@ keep their stricter labels at each site.
   header and the demo scope block no longer call the 8.2/8.3 serving
   seams "verified statically" - their COMPUTE half is engine-green; what
   remains is the live-Tor leg (and, for the demo, its own route wiring).
+
+## Things decided building phase 8, the Nostr rail (2026-08-29; do not re-litigate)
+
+- **THE RAIL IS REACH, AND IT IS NOT ALLOWED TO BECOME A DEPENDENCY.**
+  Every other rail here is sovereign and that is the thesis; what none of
+  them has is an audience. Nostr buys one, at the price of somebody
+  else's server. So the rule the whole design hangs off is: nothing in
+  phase 8 sits on the path of phases 1-7. With no CoinXT, no NostrXT
+  loaded, or every relay down, this is exactly the app it was at phase 7,
+  and the boot self-check SKIPs the rail with an install line rather than
+  failing. That is why the probe splits into THREE rows (`hasNostr`,
+  `canNostrSign`, `hasNostrRelay`): the three fail separately, and each
+  disables a different feature.
+- **The protocol is composed, never re-implemented.** The canonical NIP-01
+  serializer, BIP-340, NIP-19 and the relay socket machine are `nx*`/`nxr*`
+  calls. This member owns exactly three things: the key, the bridge, and
+  the media convention. The temptation to "just build the event JSON here"
+  is the same one nostrxt's own CLAUDE.md refuses - one wrong escape byte
+  changes every event id forever - and it is refused for the same reason.
+- **Subkey 4, through a LADDER, and the ladder takes a CANDIDATE.** A KDF
+  output is 32 uniform bytes; a secp256k1 key must be in 1..n-1, and the
+  gap is ~2^-128 wide. That tiny gap is what makes the rule easy to get
+  wrong: whatever goes there can never be observed running. Re-hash with
+  SHA-256, at most 8 rungs, then refuse - bounded, no new dependency, and
+  a refusal rather than a weaker key. Exposing it as `rsNostrSeckeyFrom`
+  (of a candidate, not of a master) is what makes the untakeable branch
+  provable: the all-zeros candidate and the group order n both step
+  forward, both are golden-pinned, and both run in the harness.
+- **The bridge is signed TWICE because neither key can sign for the
+  other.** One signature is not a linkage, it is an accusation: any holder
+  of that one key could make it about a stranger's other key. Both
+  signatures over one preimage make it a two-sided statement and either
+  half alone is worthless. The domain tag `"riptide-nostr-b"` keeps it out
+  of the LAN rail's namespace and the magic sits INSIDE the signed span,
+  so no cross-kind read is expressible.
+- **The republish gate is the whole reason the reader exists.** Anyone can
+  copy somebody else's bridge into their own signed event; nothing stops
+  that and nothing should try. `rsNostrBridgeFromEvent` requires the
+  record's nostrPub to BE the event's author, so a copy verifies as the
+  ORIGINAL author's bridge and never as the republisher's. Harness-proven
+  in both directions: a stranger CAN sign such an event, and reading it
+  back refuses.
+- **A new rail gets a new SALT, never a new field.** The bridge rides
+  BEP44 at `"riptide-nostr"` rather than gaining a slot in RSH1, whose
+  magic would then have to bump and take all three vector holders and the
+  demo with it (rule 3). Cheap here, and the precedent worth keeping.
+- **Publishing the bridge is the linking act, so it is always a click.**
+  Not a consequence of connecting, not of posting. The UI says in those
+  words that it is public and cannot be unpublished. Same discipline
+  elsewhere on the card: nothing dials on open (default relays are TEXT in
+  a field), NIP-42 auth is never answered automatically (it would name
+  this identity to the relay), and inbound media is a POINTER the user
+  clicks rather than a fetch that joins a swarm and shows their IP.
+- **Nostr DMs are a SCOPE CUT with a reason, not a gap.** NIP-04 is
+  deprecated and needs AES, which exists nowhere in this suite and never
+  will; NIP-17 gift wrap needs an ephemeral-key layer and a metadata
+  analysis this pass has not done. Riptide already has a DM rail that
+  answers to nobody. A half-built encrypted rail beside it would be worse
+  than none.
+- **The app-state store is SEALED, and the reason is not that a follow
+  list is secret.** It is that a follow list IS the social graph - who you
+  read, which relays you talk to, which npub is yours - which is exactly
+  what spec 8.4 says the anon persona must stay unlinked from. Plaintext
+  beside a sealed key file would put the interesting half of the threat
+  model on disk. Subkey 5, its own row, never a signing key.
+- **rsPublishBridge validates the seed/handle match ABOVE the session
+  check**, per the phase-2 rule this file already records. A check below
+  the session gate can only ever be reached on a machine that has
+  torrentxt, which is where a harness assertion quietly starts passing for
+  the wrong reason - and it did, for exactly one edit, until the assertion
+  was written and looked at.
+
+## The phase-8 CARD was reverted (2026-08-29) - and RE-LANDED the same day, behind a runner
+
+The revert record below stands as written; what closed it is recorded
+here, in the direction the doc-status gate requires. The card is BACK as
+of later that day, restructured so that every one of the three untried
+boot additions the revert identified is GONE: openStack is byte-identical
+to the engine-proven fc1eeae version (proved mechanically at re-land, not
+eyeballed), the relay-defaults paint moved inside raBuildNostrCard as a
+plain `put ... into field` (the raKeyPath precedent, engine-proven), and
+nxrInit registers lazily on the first Connect click. The re-land shipped
+WITH tools/check-demo-boot.py in the gate set - the runner the rule below
+demanded - which boots the shipped file under two capability profiles,
+drives the Nostr card's own click paths over real libsecp256k1, and
+mutation-proves itself with the exact defect classes that shipped that
+morning. Still "verified statically + headless boot; needs an OXT pass":
+the model is not the engine, and the runbook's phase-8 section is the
+step that settles it.
+
+**The re-land MET an engine the same day (2026-08-29), and it worked.**
+The maintainer ran the re-landed five-card stack on a real engine and
+reported it working ("this now works great") - so the exact criterion the
+first landing failed, openStack completing with the phase-8 card in
+place, is MET, and the boot runner's model has its first point of
+engine agreement. The record is the maintainer's account, dated, with no
+platform detail captured (the phase-2 precedent). The detailed per-card
+offline behaviours of runbook row 35 were not itemized in that report;
+the row carries the annotation. Later the same day the v11 UI pass
+(below) reworked every card's chrome, so the CURRENT file's label is
+back to "verified statically + headless boot; needs an OXT re-pass" -
+the arc rule 8 prescribes.
+
+## The v11 UI pass (2026-08-29; the decisions, do not re-litigate)
+
+The first UI pass taken as an APP rather than a demo, made feasible by
+the boot runner (38 checks, both profiles, including these changes) plus
+the same-day engine agreement above. What changed and why:
+
+- **One five-tab bar on every card** (raNavBar/raNavMark) replaced the
+  hub-and-spoke raGo* buttons: any card is one click from any other,
+  and the current tab is held down. The hilite is SCRIPT-managed
+  (autoHilite off, the kit's checkbox discipline) and re-asserted after
+  every `go`, because an autoHilite flash would clear the "you are
+  here" state on the first click. The five buttons share names across
+  cards - legal, and what lets one `raNavMark` run unqualified against
+  whatever card is current.
+- **The kit's uiPanel finally used here**: two column panels per card
+  ("8,54,598,568" / "602,54,1192,568"), created FIRST in each builder so
+  they sit behind their controls. This is the piece of the family card
+  look riptide never adopted.
+- **The identity gate (raGateIdentity) is AFFORDANCE, not enforcement**:
+  fifteen buttons that cannot work without an unlocked seed start
+  disabled and enable on unlock, so a new user's first click cannot be a
+  refusal - but every handler KEEPS its own guard, because returnInField
+  and rebuilt cards can still reach them. Qualified + try-wrapped per
+  the multi-card rule; wired at raBuild, raIdentityReady, raLock.
+- **The status line doubles as the identity chip**: "Ready. Create or
+  unlock..." at boot, "Unlocked as 1a2b3c4d... " on unlock, "Locked:
+  ..." on lock - one glance from any card answers "who am I right now".
+- **Empty-state guidance in every log/list surface**, phrased to stay
+  true forever where the surface appends (a log's birth line) and to be
+  replaced where painters own the content (raTheirFeed clears at fetch;
+  the follows painter overwrites).
+- **returnInField acts in one-line entry fields only** - passphrase,
+  handle, media hash, DM target and message, LAN host, follow target.
+  Multi-line fields keep Return as newline via the default `pass`.
+- **kRaUiVersion bumps run raBuildReset first** (the upgrade path): the
+  builders are create-if-missing, so pasting a newer script over a stack
+  an older version built would otherwise create the panels ON TOP of
+  every existing control (a white sheet over the card) and leave retired
+  raGo* buttons lingering clickable-dead. The reset walks every card and
+  deletes what kRaScControls + kRaScRetired name, then the builders run
+  as on a fresh paste. The registry constant moved ABOVE the kit block
+  for this (lexical-position resolution); the boot runner plants a
+  legacy button + an old version stamp and proves the shed.
+
+Every item is executed by the boot runner; none has met an engine in
+this form. Label: verified statically + headless boot; needs an OXT
+re-pass.
+
+The rsNostr* library rail shipped. The Nostr card did not: written the same
+day, it failed on a real engine at `openStack` with `Chunk: no target
+found` - **the whole app, not just the new card** - and was reverted the
+same day. `examples/riptide-social.livecodescript` is byte-for-byte the
+phase-1-through-7 app again, apart from the embedded library, which carries
+the new rail unused.
+
+THREE failures, in the order they were found, because the shape is the
+lesson:
+
+1. **A non-literal `constant`.** `constant kX = "a" & return & "b"` does not
+   compile, and a .livecodescript is ONE unit, so it took every handler in
+   the file with it: no UI at all, no error to point at. Fixed, and the
+   family checker gained check 22 so it cannot recur.
+2. **The gate gap that let it ship.** The checker knew constants must be
+   declared before use and spelled with `=`, and looked at the VALUE not at
+   all. It shipped through a green gate set, five commits and a self-review.
+3. **`Chunk: no target found` at openStack - STILL UNDIAGNOSED.** Ruled out
+   by inspection: kit-call arity, `there is a card` (engine-proven in the
+   three older builders), chunk-of-object expressions, the
+   `the number of keys of` misuse of engine notes 1.7, `the target` (used at
+   exactly one site, inside `on mouseUp`), and foreign calls outside a try.
+   Not ruled out, and the standing suspects for whoever picks this up: the
+   `repeat for each key` walks over `sAppRelays` / `sNxRelayHandle` while
+   they are still UNSET rather than empty arrays, and `nxrInit the long id
+   of me` in `openStack` where NostrXT's own demo calls it from
+   `preOpenStack`.
+
+**The operational rule this pays for: DO NOT re-land the card without a way
+to run it.** Every one of the three failures was invisible to every gate in
+this repo, because no gate here executes a stack script. The library rail is
+different in kind - `tools/check-script-vectors.py` executes it - and that
+is exactly why the library half survived this and the UI half did not. A
+re-land wants either an engine in the loop for each attempt, or a headless
+way to build the cards, and guessing from a green gate set is what produced
+this section.
+
+## The phase-8 execution gate, and the three defects it found (2026-08-29)
+
+riptide could not EXECUTE at all before this change. The only thing that had
+ever read `src/riptide.livecodescript` was `check-livecodescript.py`, which
+validates balance, quoting and the token traps and cannot tell whether a
+handler computes the right bytes - the gap this member's own notes call its
+most expensive class of bug. `tools/check-script-vectors.py` closes it the way
+CoinXT and NostrXT each closed theirs: it runs the SHIPPED file through the
+family's headless interpreter against the REAL committed `coinxt.so`, so the
+phase-8 signatures under test are genuine BIP-340 over genuine libsecp256k1,
+compared against an independent oracle.
+
+It found three defects on its first run, and **not one of them was in the
+shipped rail** - which is the part worth remembering, because a new tool's
+first findings are the ones most likely to be the tool's own (nostrxt paid for
+that lesson and wrote it down: suspect the probe first, with evidence).
+
+- **The INTERPRETER clamped negative chunk ranges** instead of counting from
+  the end, so `char -3 to -1 of "abcdef"` was "abcde" - wrong at both ends,
+  silently. Latent rather than active: neither coinxt's nor nostrxt's source
+  uses the form, so no gate had ever read a wrong answer from it. It surfaced
+  on `byte 10 to -1 of pFileBytes`, the idiom rsOpenMasterSeed has used since
+  phase 1. Fixed in both copies, with both dependent members' gates re-run.
+- **The ORACLE crashed on a tampered signature**: `_verify_ed25519`
+  decompressed the signature's R point without the not-a-point guard its
+  public-key path already had, so a corrupted signature raised TypeError
+  instead of answering False. Every earlier negative test had tampered with
+  the MESSAGE, never the signature, so nothing had ever reached that line.
+- **`rsPersonaAllows` leaked the itemDelimiter** - the C10 defect, in the one
+  handler where it reads worst: the demo's Anon card paints the guard panel by
+  calling it nine times in a row, so a card repaint silently reset the
+  delimiter under whatever the pump did next. It survived the 2026-08-17 sweep
+  that found the other one because comma IS the engine default, so it is
+  benign until it is not.
+
+**The rewrites are the part to understand before touching this gate.** riptide
+uses three spellings outside the interpreter's modelled subset (`the number of
+X in Y`, the one-line `if ... then STMT`, and binaryEncode/div/mod), so the
+gate rewrites them into forms the interpreter models. Each rewrite is NAMED and
+COUNTED and must match at least once or the gate FAILS - a rewrite that
+silently stops applying would leave the gate testing a file nobody ships, which
+is this tree's own recurring failure shape. The line between what got FIXED in
+the interpreter and what gets REWRITTEN here is deliberate: a wrong ANSWER
+earns a change to shared drift-gated tooling; three missing SPELLINGS do not.
 
 ## Suite integration status
 

@@ -111,6 +111,16 @@ def main(argv):
         "kRsGoldLanMediaSeq": "chosen LAN media-handoff per-device seq",
         "kRsGoldLanFileName": "chosen handoff file leaf name",
         "kRsGoldLanFileSize": "chosen handoff file size in bytes",
+        "kRsGoldNostrSeq": "chosen RSN1 bridge seq",
+        "kRsGoldNostrTs": "chosen RSN1 bridge timestamp",
+        "kRsGoldNostrAux": "the all-zero BIP-340 auxiliary randomness that "
+                           "makes the two schnorr signatures reproducible "
+                           "(a real signer passes empty and CoinXT draws "
+                           "fresh bytes; the fixed LAN nonce is the same "
+                           "idea one rail over)",
+        "kRsGoldNostrBadCand": "the secp256k1 group order n, a scalar that "
+                               "is INVALID by one - the ladder's rung-1 "
+                               "case, which no real master seed reaches",
     }
     for name in inputs:
         if name in k:
@@ -321,6 +331,81 @@ def main(argv):
             ref["anon_handle"](master, 0):
         failures.append("the golden anon onion does not invert to the anon "
                         "handle")
+
+    # the phase-8 Nostr rail. The secp256k1 half comes from nostrxt's oracle
+    # (loaded by riptide_reference.py, which anchors it at import), so these
+    # vectors trace to the published BIP-340 / NIP-19 sets rather than to
+    # anything riptide computed for itself.
+    nostr_sk = ref["nostr_seckey"](master)
+    nostr_pk = ref["nostr_pubkey"](master)
+    want("kRsGoldNostrSeckey", nostr_sk.hex())
+    want("kRsGoldNostrPubkey", nostr_pk.hex())
+    want("kRsGoldNostrNpub", ref["nostr_npub"](nostr_pk))
+    want("kRsGoldAppStateKey", ref["appstate_key"](master).hex())
+    bridge = ref["build_bridge"](int(k["kRsGoldNostrSeq"]),
+                                 int(k["kRsGoldNostrTs"]), master,
+                                 bytes.fromhex(k["kRsGoldNostrAux"]))
+    want("kRsGoldBridgeHex", bridge.hex())
+    want("kRsGoldBridgePreHex", ref["bridge_preimage"](
+        handle, nostr_pk.hex(), int(k["kRsGoldNostrSeq"]),
+        int(k["kRsGoldNostrTs"])).hex())
+    bridge_ev = ref["nostr_bridge_event"](master, bridge,
+                                          int(k["kRsGoldNostrTs"]),
+                                          k["kRsGoldNostrAux"])
+    want("kRsGoldBridgeEventId", bridge_ev["id"])
+    want("kRsGoldBridgeEventSig", bridge_ev["sig"])
+    note_ev = ref["nostr_note_event"](master, int(k["kRsGoldTs1"]),
+                                      k["kRsGoldPost1Text"], [],
+                                      k["kRsGoldNostrAux"])
+    want("kRsGoldNoteEventId", note_ev["id"])
+    want("kRsGoldNoteEventSig", note_ev["sig"])
+    media_ev = ref["nostr_note_event"](master, int(k["kRsGoldTs2"]),
+                                       k["kRsGoldPost2Text"],
+                                       [k["kRsGoldMediaTarget"]],
+                                       k["kRsGoldNostrAux"])
+    want("kRsGoldNoteMediaEventId", media_ev["id"])
+    # NOT pinned in the harness: the two canonical SERIALIZATIONS. They
+    # contain double quotes, and a harness constant is a double-quoted
+    # single-line literal, so they cannot be expressed there at all. They
+    # are pinned in tests/riptide_golden_test.py (Python, no such limit) and
+    # EXECUTED byte-for-byte by tools/check-script-vectors.py, which is the
+    # stronger of the two anyway. Recorded here so the absence reads as a
+    # decision rather than an oversight.
+    # the ladder's rung-1 answer for the chosen invalid candidate. Pinned
+    # rather than asserted in prose because the harness runs the SAME step
+    # on the engine, and a ladder whose rungs disagree between the two would
+    # otherwise only show up as a mysteriously different key.
+    want("kRsGoldNostrLadder1",
+         ref["nostr_seckey_from"](bytes.fromhex(k["kRsGoldNostrBadCand"])
+                                  ).hex())
+
+    # STRUCTURAL, not a digest: both halves of the golden bridge must really
+    # verify, and the record must really refuse a tamper. A golden that did
+    # not verify would pin the wrong bytes perfectly.
+    try:
+        got_handle, got_npub = ref["verify_bridge"](bridge)
+    except ValueError as exc:
+        failures.append("the golden RSN1 bridge does not verify: %s" % exc)
+    else:
+        if got_handle != handle or got_npub != nostr_pk.hex():
+            failures.append("the golden RSN1 bridge names the wrong keys")
+    tampered = bytearray(bridge)
+    tampered[70] ^= 0x01
+    try:
+        ref["verify_bridge"](bytes(tampered))
+    except ValueError:
+        pass
+    else:
+        failures.append("the golden RSN1 bridge accepts a tampered nostr key")
+    # the bridge's signature domain must be distinct from the LAN rail's, or
+    # a signature minted for one could be replayed as the other
+    if ref["NOSTR_DOMAIN"] in (ref["LAN_DOMAIN"], ref["LAN_SYNC_DOMAIN"]):
+        failures.append("the nostr signature domain collides with a LAN one")
+    if k.get("kRsGoldNostrAux") != "00" * 32:
+        failures.append("kRsGoldNostrAux is not the documented all-zero aux")
+    if int(k.get("kRsGoldNostrBadCand", "0"), 16) != ref["_NOSTR"]["N"]:
+        failures.append("kRsGoldNostrBadCand is not the secp256k1 group "
+                        "order n, so the ladder vector proves nothing")
 
     # the honest split
     uncovered = sorted(set(k) - checked)

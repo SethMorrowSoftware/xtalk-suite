@@ -191,6 +191,25 @@ run_gates() {
     echo "== $m: tools/check-script-vectors.py =="
     ( cd "$m" && python3 tools/check-script-vectors.py --check )
   fi
+  # The demo BOOT runner (riptide): executes the SHIPPED stack script's
+  # whole openStack chain - card builders, kit, self-check, navigation, a
+  # scripted identity session - through the family's interpreter over a
+  # modeled engine object world. Exists because on 2026-08-29 a card
+  # shipped through a fully green gate set and broke the whole app at
+  # openStack on a real engine, twice: no other gate here EXECUTES a stack
+  # script, so "all static gates passed" never meant "the window opens".
+  # The FIXTURES run first (the fixture-before-gate law): a boot runner
+  # that has gone blind reports OK, and the seeded defects - each drawn
+  # from the class that actually shipped that day - are what make the OK
+  # mean anything.
+  if [ -f "$m/tools/test-demo-boot.py" ]; then
+    echo "== $m: tools/test-demo-boot.py =="
+    ( cd "$m" && python3 tools/test-demo-boot.py )
+  fi
+  if [ -f "$m/tools/check-demo-boot.py" ]; then
+    echo "== $m: tools/check-demo-boot.py =="
+    ( cd "$m" && python3 tools/check-demo-boot.py --check )
+  fi
   # Embedded-Kit freshness (box2dxt): the same shape as
   # tools/sync-demo-embeds.py below - src/box2dxt-kit.livecodescript is the
   # master, and each of the six example stacks carries a verbatim copy between

@@ -102,8 +102,23 @@ the whole tree:
 | `1` | **Public identity** ed25519 seed (32 B) | `btDhtKeypair` **and** `oxCreateServiceFromSeed` | your handle + feed key + public `.onion` |
 | `2` | **DM key-exchange** X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | pairwise DM session keys |
 | `3` | **LAN device** pre-shared key (32 B) | enet join auth (§7) | admits only your own devices |
+| `4` | **Nostr** secp256k1 secret key (32 B) | `cxXOnlyPubkey` / `cxSchnorrSign` | your npub and every Nostr event you sign (§8A) *(added 2026-08-29 with the rail-6 build)* |
+| `5` | **App-state sealing** key (32 B) | `sxSecretBox` | the `RIPTAPP1` store: follows, relays, counters (§8A.4) *(added 2026-08-29)* |
 | `100 + n` | **Anonymous persona** *n* ed25519 seed (32 B) | `oxCreateServiceFromSeed` only | an onion-only, unlinkable identity (§8) |
 | `200 + n` | **Anonymous persona** *n* DM key-exchange X25519 seed (32 B) | `sxKeyExchangeKeypairFromSeed` | the persona's sealed-DM prekey (§8.3) - a separate subkey for the same reason `2` is separate from `1`: one seed never feeds two cipher schemes *(added 2026-08-15 with the §8.3 build)* |
+
+Subkey `4` carries one wrinkle the others do not, and it is worth stating
+because it is the only place in this tree where a KDF output is not directly
+usable. A KDF output is 32 uniform bytes; a secp256k1 secret key must lie in
+`1..n-1`, and the two are not the same set. The gap is about 2^-128 wide, so
+no real master seed will ever land in it - which is precisely what makes the
+rule easy to get wrong, since whatever goes there can never be observed
+running. Riptide re-hashes the candidate with SHA-256 and retries, at most 8
+rungs, then refuses: bounded so it cannot spin, no new dependency (the rail
+needs CoinXT anyway), and a refusal rather than a weaker key. It is exposed
+as a function OF A CANDIDATE (`rsNostrSeckeyFrom`) rather than of a master,
+so the untakeable branch is testable: the all-zeros candidate and the group
+order `n` both step forward, and both are pinned as golden vectors.
 
 The load-bearing subtlety that makes the whole app cohere is in subkey `1`.
 
@@ -501,6 +516,152 @@ cannot remove the operator's mistakes or defeat a global observer.
 
 ---
 
+## 8A. Rail 6 - reach, over Nostr (NostrXT)
+
+*(Added 2026-08-29. The first rail this spec gained after its original five,
+and the only one that talks to somebody else's servers.)*
+
+### 8A.1 Why a sixth rail, and why it is not a dependency
+
+The five rails above are sovereign: the DHT feed, rp1 DMs, the LAN mesh and
+the onion persona all work with no server anywhere, which is the whole thesis.
+What none of them has is **reach**. A riptide handle is meaningless to anyone
+who does not run riptide, so the app's answer to "where is everybody?" was, for
+seven phases, "bring them with you."
+
+Nostr is the opposite trade and an honest one to offer: somebody else's relays,
+an IP they can see, and an audience already there. So this rail is deliberately
+a **bridge and never a dependency**. Nothing in it is on the path of any other
+rail. With no CoinXT installed, no NostrXT loaded, or every relay in the world
+down, riptide is exactly the app it was at phase 7. That is not a fallback
+story bolted on afterwards; it is the reason the rail is allowed to exist.
+
+The division of labour is the family's standing law - **compose, never
+reinvent**. NostrXT owns the protocol: the canonical NIP-01 serialization,
+BIP-340 signing, NIP-19 entities, filters, and the relay socket machine, all
+reached through `nx*` / `nxr*`. Riptide owns exactly three things:
+
+1. **The key** (§8A.2), so one unlock still reconstructs the whole keyring.
+2. **The bridge** (§8A.3), so the two identities can be tied together in a way
+   a third party can check.
+3. **The media convention** (§8A.5), so a post keeps its attachments across the
+   boundary.
+
+### 8A.2 The identity: one more subkey, no new secret to keep
+
+Subkey `4` through the validity ladder of §3.2. The point is the identity-first
+decision applied one rail further: there is no separate Nostr key to back up,
+because the master seed already reconstructs it. An `nsec` can be **exported**
+for use in another Nostr client - a deliberate, separately-named act, because
+handing out key material should read as what it is at the call site.
+
+The public halves and the secret have different doors on purpose:
+`rsNostrKeys` returns only the pubkey and the npub, so an app can paint them
+anywhere without deciding whether the array is safe to log, and
+`rsNostrSignEvent` derives the secret, signs, and drops it, so ordinary
+publishing never holds it in a caller's variable.
+
+### 8A.3 The bridge: a linkage BOTH keys signed
+
+A riptide handle is ed25519; an npub is secp256k1. Neither key can sign for the
+other. So a claim carrying only one signature is a claim **any holder of that
+one key can make about somebody else's other key** - which is not a linkage,
+it is an accusation. The `RSN1` record is therefore signed twice over one
+preimage:
+
+```
+RSN1 | handle(64 hex) | nostrPub(64 hex) | seq(u64) | timestamp(u64)
+     | edSig(64) | schnorrSig(64)                        -- 276 bytes exactly
+```
+
+The signed span is the first 148 bytes prefixed by the domain tag
+`"riptide-nostr-b"`. The magic is INSIDE it, so a signature minted for this
+record can never be read as a signature for another kind, and the domain keeps
+it out of the LAN rail's namespace (the `"riptide-lan-s"` discipline). The
+ed25519 half signs the preimage bytes; the BIP-340 half signs SHA-256 of them,
+because `cxSchnorrSign` takes a 32-byte digest.
+
+It is published **both ways**, so it is findable from either side:
+
+- **To the DHT**, as a BEP44 mutable item under the identity key at its own
+  salt `"riptide-nostr"`. A new rail gets a new salt, never a new field in
+  `RSH1`, whose magic would then have to bump (§2 rule 5).
+- **To relays**, as a NIP-78 parameterized-replaceable event (kind `30078`,
+  `d` tag `"riptide.bridge"`, content the record as lowercase hex).
+  Replaceable is the right shape: a bridge is current state, not history.
+
+The attack this shape exists to stop is the obvious one. Anyone can copy
+somebody else's bridge record into their own signed event; nothing prevents it
+and nothing should try. What the reader does instead is require the record's
+`nostrPub` to BE the event's author, so a copied bridge verifies as **the
+original author's** and never as the republisher's.
+
+**Publishing the bridge is the act that links the two identities in public,
+and it cannot be unpublished.** It is therefore always an explicit click,
+never a consequence of connecting or posting, and the UI says so in those
+words.
+
+### 8A.4 Persistence: the `RIPTAPP1` store
+
+Rail 6 is also where this app stopped being a session. Follows, relay lists and
+counters now survive a restart in a sealed store under subkey `5`.
+
+Sealed rather than plain, and the reason is not that a follow list is secret
+the way a key is. It is that a follow list IS the social graph - who you read,
+which relays you talk to, which npub is yours - and that is the exact material
+§8.4 says an anon persona must stay unlinked from. Leaving it in the clear
+beside a sealed key file would put the interesting half of the threat model on
+disk in plaintext. The library fixes the envelope (magic, cap, UTF-8 round
+trip) and the app owns the format inside it, because what belongs in app state
+is an app question and a wire format here would freeze it.
+
+### 8A.5 Media across the boundary
+
+A riptide attachment is a torrent info-hash. On the Nostr wire it rides as an
+`r` tag carrying `magnet:?xt=urn:btih:<40 hex>` - `r` because a reference is
+what it IS, and an ordinary Nostr client renders it as a link a person can act
+on. The bytes still ride the phase-3 torrent rail; the tag is a POINTER,
+exactly as the §7 channel-0 handoff record is.
+
+The receive direction is strict in both senses: an `r` tag that is not a magnet
+URI is somebody else's link and is skipped, and a client **never fetches
+automatically**. Joining a swarm shows the machine's IP to its peers, so the
+fetch stays the user's click on the Feed card.
+
+### 8A.6 What this rail deliberately does NOT do
+
+**Nostr DMs are not built.** NIP-04 is deprecated and needs AES, which exists
+nowhere in this suite and never will (libsodium does not ship CBC). NIP-17
+gift wrap needs an ephemeral-key layer and a metadata analysis this pass has
+not done. Riptide already has a DM rail that answers to nobody (§5), and a
+half-built encrypted rail beside it would be worse than none. This is a scope
+cut with a reason, not a gap to be quietly filled later.
+
+**NIP-42 relay auth is never answered automatically.** Answering it tells that
+relay who you are. It is logged and left to the user.
+
+**No relay is dialled on open.** Default relays are offered as text in a field;
+connecting is a click. An app that phones a stranger's server the moment it
+opens has made a privacy decision on the user's behalf.
+
+*(The app card described in 8A.4's UI terms was
+built on 2026-08-29, failed at `openStack` on a real engine with
+`Chunk: no target found`, and was REVERTED the same day - then RE-LANDED
+the same day, restructured so `openStack` is byte-identical to the
+engine-proven body and gated by `riptide/tools/check-demo-boot.py`, which
+boots the shipped stack headlessly; the record is in `riptide/CLAUDE.md`.
+The card's own label: verified statically + headless boot; needs an OXT
+pass.
+
+Verified statically, and EXECUTED headlessly: `riptide/tools/check-script-vectors.py`
+runs the shipped script against the real committed CoinXT through the family's
+interpreter, so the signatures under test are genuine BIP-340 over genuine
+libsecp256k1, compared against an independent oracle. That settles LOGIC, not
+parser behaviour: the label stays "verified statically; needs an OXT + a
+live-relay pass." As-built record: `riptide/CLAUDE.md`.)*
+
+---
+
 ## 9. Security model & honesty
 
 ### 9.1 What each layer buys
@@ -513,6 +674,7 @@ cannot remove the operator's mistakes or defeat a global observer.
 | dataChannel | NAT-traversed P2P, DTLS-encrypted transport | Hiding IPs (ICE reveals them); anonymity |
 | enet LAN | Device-mesh speed and simplicity | Anything off the LAN; internet reachability |
 | OnionXT | IP-metadata privacy; CA-free self-authenticating address | Defence against a global passive adversary or a compromised local tor |
+| Nostr relays (§8A) | Reach: an audience that already exists, and durable storage of your public events on servers you do not run | Anything at all. A relay sees your IP, every event you publish, and the timing of both; it can drop your events, lie by omission, or keep them after you delete. Signatures are what make its copy trustworthy, not the relay |
 
 ### 9.2 Tor hides the route, SodiumXT hides the contents
 
@@ -525,12 +687,24 @@ DM over rp1 still leaks both IPs.
 ### 9.3 The deanonymization guard
 
 The single rule that keeps the "anonymous" label honest: **an anon-persona code
-path calls no `bt*` DHT/torrent/rp1 handler, and a public-persona path never
-routes through the anon onion.** As built (attestation corrected
+path calls no `bt*` DHT/torrent/rp1 handler, no Nostr relay, and a
+public-persona path never routes through the anon onion.**
+
+*(`nostr` joined the guard's vocabulary 2026-08-29 with rail 6, and it is the
+transport the guard most obviously exists for: a relay is a clearnet websocket
+to somebody else's server, which sees the IP, the events and their timing, and
+where NIP-42 auth would name the identity outright. The existing rule already
+refused it - an anon persona gets `onion` and nothing else - but the cell is
+now asserted in its own right rather than inferred from the rule's shape,
+because "the rule implies it" is how a truth table ends up with two of its own
+transports unproven, which is exactly what the 2026-08-14 review found for
+`feed` and `media`. The app asserts it at a real branch point: the relay dial
+refuses unless `rsPersonaAllows(false, "nostr")` passes.)* As built (attestation corrected
 2026-08-23): the enforcement point is `rsPersonaAllows(isAnon, transport)`, a
 pure fail-closed policy function - an unknown transport refuses for BOTH
-personas - whose full truth table (all eight transports, both personas, plus
-the unknown-transport refusal) is asserted by the folded suite harness, and
+personas - whose full truth table (all nine transports since `nostr` joined
+2026-08-29, both personas, plus the unknown-transport refusal) is asserted by
+the folded suite harness, and
 which the demo's Anon card paints as a LIVE panel read straight from the
 function, so what the user sees cannot drift from what the code enforces. The
 demo asserts it at its two real persona decisions - the dc call dials only if
@@ -696,6 +870,29 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    half of 8.3 is deliberately unbuilt (see the 8.3 as-built note).
    Verified statically; the live-Tor pass is the milestone that remains.
    As-built: `riptide/CLAUDE.md`.)*
+8. **Nostr reach** - the §8A rail: subkey-4 identity, the doubly-signed `RSN1`
+   bridge published to both the DHT and relays, kind-1 notes carrying riptide
+   media as magnet `r` tags, and the `RIPTAPP1` store that finally lets
+   follows and counters survive a restart. *Done when* a note posted here is
+   read by an ordinary Nostr client, a note from a followed npub appears in
+   riptide's timeline, and a third party resolves the bridge in BOTH
+   directions (handle to npub off the DHT, npub to handle off a relay).
+   *(LIBRARY built 2026-08-29; the app CARD was built, broke `openStack`
+   on a real engine, was REVERTED the same day - and RE-LANDED the same
+   day behind `riptide/tools/check-demo-boot.py`, the headless boot gate,
+   with `openStack` byte-identical to the engine-proven body. The rail is
+   reachable from the UI again; the done-criterion above still needs its
+   live pass.
+   The compute half is not merely static: riptide gained
+   `tools/check-script-vectors.py`, which executes the SHIPPED script against
+   the real committed CoinXT through the family's headless interpreter - so
+   the bridge bytes, both signatures, the event ids and the media round trip
+   are checked as EXECUTED behaviour against an independent oracle rather
+   than only re-derived beside it. What that settles is logic, not parser
+   behaviour, so the label stays "verified statically; needs an OXT + a
+   live-relay pass". Deliberately unbuilt, with reasons in §8A.6: Nostr DMs,
+   automatic NIP-42 auth, and dialling anything on open. As-built:
+   `riptide/CLAUDE.md`.)*
 
 ---
 
@@ -724,6 +921,24 @@ exists in a shipping surface. Provenance:
   `dcBufferedAmount`/`dcSetBufferedLowThreshold` `dcPoll` — all in `datachannelxt/src/*.lcb`.
 - **enetxt** `enHostCreateServer`/`Client` `enConnect` `enSendText`/`enBroadcastText`
   `enPeerStatus` `enPoll` `enLibraryVersion` `enDeinitialize` — all in `enetxt/src/enet.lcb`.
+- **CoinXT** (rail 6) `cxSeckeyIsValid` `cxSha256` `cxXOnlyPubkey` `cxSchnorrSign`/`cxSchnorrVerify`
+  — all in `coinxt/src/coinxt.lcb`'s `public handler` surface.
+- **NostrXT** (rail 6) `nxKeyPublic` `nxNpubEncode`/`nxNpubDecode` `nxEventBuild`/`nxEventSign`/
+  `nxEventVerify` `nxEventToJson`/`nxEventFromJson` `nxEventSerialize` `nxTagValues`/`nxTagFirst`
+  `nxFilterBuild` `nxIsHex` `nxHexEncode` `nxLastError`; relay `nxrInit` `nxrConnect`/`nxrDisconnect`/
+  `nxrShutdown` `nxrSetCallback` `nxrSubscribe` `nxrPublish` `nxrVersion` and the three named socket
+  functions `nxrSocketError`/`nxrSocketClosed`/`nxrSocketTimeout` — all in
+  `nostrxt/src/nostrxt.livecodescript` and `nostrxt/src/nostr-relay.livecodescript`.
+
+**A note on rail 6 and the "zero compiled-extension changes" claim above.**
+It still holds, and the two members rail 6 adds were both already shipping
+when it was written: CoinXT and NostrXT are members of this monorepo, not new
+compiled surface, and NostrXT is itself pure LiveCodeScript. What DID change
+in the app is packaging rather than API: `riptide-social` now embeds two
+libraries that each define the engine's `socketError` / `socketClosed` /
+`socketTimeout`, so it defines those three itself and calls both libraries'
+named functions in turn. That is the family's socket split, used here for the
+first time by a stack carrying two socket libraries at once.
 
 **Correction to the ONIONXT integration plan.** That plan (correctly, at its
 writing) treats the `ox*` surface as "presumed, must be confirmed against the

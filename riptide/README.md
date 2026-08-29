@@ -8,7 +8,7 @@ is knowing their key, and reaching them is verifying them.
 
 > **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages, and points at the capstone specification, which lives at suite level in [`../docs/RIPTIDE-SOCIAL-SPEC.md`](../docs/RIPTIDE-SOCIAL-SPEC.md).
 
-## Status: all 7 phases BUILT; phases 1-4 DONE on two machines
+## Status: phases 1-8 BUILT with their UI (the phase-8 card re-landed behind a boot runner); phases 1-4 DONE on two machines
 
 > **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded
 > into the suite harness), their two-machine propagation criterion closed
@@ -29,13 +29,36 @@ is knowing their key, and reaching them is verifying them.
 > decision settled 2026-08-16 (media handoff as a signed channel-0
 > pointer at the torrent rail; channel 2 reserved, dark) - and the anon
 > persona over live Tor (phase 7), whose 8.2/8.3 serving seams ran in
-> that same 2026-08-20 pass. `docs/two-machine-runbook.md` scripts what
-> remains.
+> that same 2026-08-20 pass. **Phase 8, the Nostr bridge, is BUILT
+> 2026-08-29**, and its compute half is stronger than "verified
+> statically" without reaching "engine-passed": `tools/check-script-vectors.py`
+> EXECUTES the shipped library against the real committed CoinXT through
+> the family's headless interpreter, so the bridge bytes, both
+> signatures, the event ids and the media round trip are checked as
+> executed behaviour against an independent oracle. That settles LOGIC
+> and not parser behaviour, so the label stands: needs an OXT + a
+> live-relay pass. `docs/two-machine-runbook.md` scripts what remains.
 >
 > The flagship stack is `examples/riptide-social.livecodescript` (on the
-> suite UI kit): FOUR cards - Feed (identity, publish, the verified chain
+> suite UI kit): FIVE cards - Feed (identity, publish, the verified chain
 > walk, the media strip), Messages (DMs + the Call button), Devices (the
-> LAN mesh), and Anon (the persona and the live guard panel). A post
+> LAN mesh), Anon (the persona and the live guard panel), and Nostr (the
+> phase-8 bridge). The Nostr card's first landing on 2026-08-29 broke
+> `openStack` on a real engine with `Chunk: no target found` and was
+> reverted the same day - then RE-LANDED that same day, restructured so
+> `openStack` is byte-identical to the engine-proven body and every new
+> boot-time step is gone or lazy, and gated by
+> `tools/check-demo-boot.py`, which EXECUTES the shipped stack's boot
+> headlessly (the gap both breakages walked through: no gate ran a stack
+> script). The re-land then MET an engine that same day - the maintainer
+> ran the five-card stack and reported it working, closing the criterion
+> the first landing failed - after which the v11 UI pass (the five-tab
+> bar, the column-panel card look, identity-gated buttons, the
+> upgrade-in-place rebuild) reworked every card's chrome, so the current
+> file's label is: verified statically + headless boot; needs an OXT
+> re-pass.
+> The rsNostr* LIBRARY rail is executed
+> by `tools/check-script-vectors.py`. A post
 > renders only after `rsIngestHead`/`rsIngestPost` verify it, so a
 > received feed IS a verified walk. `examples/README.md` carries the run
 > procedures; run records are the maintainer's dated accounts.
@@ -155,10 +178,11 @@ Riptide probes, never assumes (`rsProbeCapabilities()`); a missing
 extension disables exactly its feature, with a clear message, and never
 another one.
 
-| Extension | Need | Role today (phases 1-7) |
+| Extension | Need | Role today (phases 1-8) |
 |---|---|---|
-| SodiumXT | required | the trust root: KDF, sealing, signing, hashing, crypto_kx, secretstream; at ABI 7 also the preferred SHA3 provider |
-| coinxt | optional | `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation |
+| SodiumXT | required | the trust root: KDF, sealing, signing, hashing, crypto_kx, secretstream; at ABI 7 also the preferred SHA3 provider. Also seals the `RIPTAPP1` app-state store |
+| coinxt | optional | two unrelated jobs: `cxSha3_256` is the fallback SHA3 provider for the offline `.onion` self-computation, and secp256k1 + BIP-340 + SHA-256 are what the phase-8 Nostr rail signs with. Without it the Nostr card disables itself with an install line and nothing else changes |
+| nostrxt | optional | the phase-8 rail's protocol layer: canonical NIP-01 events, NIP-19 entities, filters, and (in the app, not the library) the relay websocket client. The app carries both files, so no `start using` step |
 | onionxt | optional | offline onion verification, and the anon persona's service (`rsAnonCreateService` via `oxCreateServiceFromSeed`) |
 | torrentxt | optional | the live feed (BEP44 puts/lookups), media torrents, and the DM inbox swarms + rp1 transport; every live handler refuses cleanly without it |
 | enetxt | optional | the phase-6 LAN device mesh (the admission handshake rides enet channel 0) |
