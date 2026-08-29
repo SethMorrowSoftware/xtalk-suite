@@ -152,6 +152,13 @@ scripted in docs/two-machine-runbook.md.
    `RIPTAPP1`: any
    framing change mints a new magic and updates both build and parse plus
    all three vector holders in one change. Never a silent fix.
+   **Since 2026-08-29 the wire is also a PUBLISHED PROTOCOL**
+   (`docs/RIPTIDE-PROTOCOL.md` at the suite root, normative to the byte,
+   with `docs/protocol-vectors.json` as its machine-readable conformance
+   bundle) - so a framing change now also updates the spec's section and
+   regenerates the bundle (`python3 tools/export-protocol-vectors.py`;
+   its `--check` in the gate set re-executes every vector and fails on a
+   stale committed copy, so forgetting is a red build, not a drift).
 4. **Caps refuse, never truncate**, on build AND parse, and a parse is
    strict to the byte (exact total length; trailing bytes are refused).
 5. **Every foreign call sits in a try.** sx*/cx*/ox* failures throw;
