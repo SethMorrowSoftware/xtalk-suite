@@ -525,6 +525,33 @@ remains only as the belt. The close-then-reopen half is exactly the
 maintainer's observed repair, automated; `go invisible stack` as a spelling
 rides the same needs-an-OXT-pass label as the launcher around it.
 
+### 5.6 Unqualified `there is a <control>` answers for the CURRENT CARD only
+
+**OBSERVED** (OXT, 2026-08-29; the primary record is riptide-social's pasted
+boot self-check, quoted in `docs/OXT-PASS-RUNBOOK.md` row 35's annotation). On
+a green five-card boot of `riptide/examples/riptide-social.livecodescript` -
+"all five cards were built" PASS, every rail probing true - the self-check's
+control sweep reported **all 63 controls that live on cards 2-5 as missing**,
+and none of card 1's, because `raScRun` runs with card 1 current:
+
+    FAIL  all 98 controls this script names exist (missing: raAnonEntries,...)
+
+So `there is a field "x"` / `there is a button "x"` / `there is a graphic "x"`
+with no card qualifier is a question about the current card of the
+defaultStack, NOT about the stack. This was the modeled reading in
+`riptide/tools/check-demo-boot.py` (its header carried it as an unsettled
+question until this record settled it), and it is the same resolution family
+as 5.3 - the qualifier rule there is about WHICH STACK, this one is about
+WHICH CARD.
+
+**Held by**: the carried demo-selfcheck block's `scMissing` walks every card
+of the stack with card-qualified `there is` since 2026-08-29 (master
+`tools/demo-selfcheck.livecodescript`, re-carried to every adopter); on a
+single-card demo the walk is one card, exactly the old behaviour. Any OTHER
+unqualified `there is a <control>` on a multi-card stack remains a per-site
+judgement: it is correct when the answer is genuinely about the current card,
+and a bug when it means "anywhere in this stack".
+
 ---
 
 ## 6. Sockets and processes

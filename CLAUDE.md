@@ -221,7 +221,12 @@ actually produces: a demo that carries the block, ships the plumbing, and
 reports nothing because it never calls `scBegin` or never reaches its run
 handler. It was made a carried block from the START rather than after the
 drift, which is the one lesson the three blocks above were each taught the
-expensive way.
+expensive way. Since 2026-08-29 its `scMissing` walks EVERY card with
+qualified `there is`, because a real engine run of riptide's five-card boot
+reported all 63 off-card controls missing from a stack where every one
+existed - unqualified `there is a field X` answers for the CURRENT card
+only (engine notes 5.6; the first engine record ever sent back from the
+carried block, and it found the block's own defect).
 
 Two things about it generalise. **The control list is DERIVED from each source,
 not hand-picked** - and getting that derivation right took three passes, each

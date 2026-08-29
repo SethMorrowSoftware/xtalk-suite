@@ -54,9 +54,12 @@ is knowing their key, and reaching them is verifying them.
 > ran the five-card stack and reported it working, closing the criterion
 > the first landing failed - after which the v11 UI pass (the five-tab
 > bar, the column-panel card look, identity-gated buttons, the
-> upgrade-in-place rebuild) reworked every card's chrome, so the current
-> file's label is: verified statically + headless boot; needs an OXT
-> re-pass.
+> upgrade-in-place rebuild) reworked every card's chrome AND booted on
+> the engine that same day: the pasted boot record read 9 passed / 1
+> failed, the one FAIL being the boot self-check's own cross-card defect
+> (engine notes 5.6 - unqualified `there is` answers for the current
+> card only), fixed the same day in the carried block. One more paste
+> should read 10 passed, 0 failed; that re-check is what remains.
 > The rsNostr* LIBRARY rail is executed
 > by `tools/check-script-vectors.py`. A post
 > renders only after `rsIngestHead`/`rsIngestPost` verify it, so a

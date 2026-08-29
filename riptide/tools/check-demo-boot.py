@@ -42,14 +42,15 @@ discovered:
     depends on. The minimal profile is nothing more than "the bt*/ox*/dc*/
     en*/cx* natives are not installed".
   - An unqualified control reference (`field "x"`) resolves against the
-    CURRENT CARD of the defaultStack, which is this model's best reading of
-    the engine's rule. The boot report prints what the carried self-check's
-    scMissing sees under that rule as INFO rather than failing on it,
-    because the multi-card answer has never been recorded from a real
-    engine (riptide is the family's only multi-card self-check adopter);
-    the runbook asks the maintainer to read the real boot report line and
-    settle it. The GATE's own control checks are world-level - the control
-    exists on some card - and do not depend on the answer.
+    CURRENT CARD of the defaultStack. SETTLED 2026-08-29, and in the
+    model's favour: the maintainer's real five-card boot reported all 63
+    off-card controls "missing" from a stack where every one existed -
+    now engine notes 5.6, and the reason the carried self-check's
+    scMissing walks every card with qualified `there is` since the same
+    day. The boot self-check must therefore report ZERO failures here,
+    and the gate asserts exactly that. The GATE's own control checks are
+    world-level - the control exists on some card - independent of the
+    resolution rule.
   - `set the height` keeps the control's vertical center (the engine rule);
     `set the top` moves it. `the formattedHeight` returns a fixed sane
     number (14) - text metrics are the engine's, and every kit use of the
@@ -399,6 +400,13 @@ class DemoExpr(LCS._Expr):
         if m:
             self.i += m.end()
             return self.ip.obj_prop_get(m, self)
+
+        # `the number of cards of this stack` (scMissing's card walk)
+        m = re.match(r'the\s+number\s+of\s+cards\s+of\s+this\s+stack\b',
+                     rest, re.I)
+        if m:
+            self.i += m.end()
+            return len(world.cards)
 
         # bare engine `the` constants the demo reads
         m = re.match(r'the\s+(platform|milliseconds|millisecs|result|target)'
@@ -1196,16 +1204,16 @@ def boot(c, path, profile, drive=True):
             c.ck("[%s] queued boot messages deliver" % profile, False,
                  "%s: %s" % (type(exc).__name__, exc))
 
+        # The boot self-check must be GREEN in the model. This was an info
+        # line until 2026-08-29, when a real engine run showed the check's
+        # own cross-card defect (engine notes 5.6) as the one red line on a
+        # working app: scMissing walks every card now, so a modeled failure
+        # here is a real regression, not an open question.
         sc_failed = ip.globals.get("sscfailed", "")
         sc_passed = ip.globals.get("sscpassed", "")
-        c.info("[%s] boot self-check: %s passed, %s failed"
-               % (profile, sc_passed, sc_failed))
-        idout = world.anywhere("raIdOut")
-        if idout is not None and "missing:" in idout.content:
-            for ln in idout.content.split("\n"):
-                if "missing" in ln:
-                    c.info("[%s] scMissing under current-card resolution: %s"
-                           % (profile, ln.strip()[:150]))
+        c.ck("[%s] the boot self-check reports zero failures (%s passed)"
+             % (profile, sc_passed), str(sc_failed) == "0",
+             "%s failed" % sc_failed)
 
         if not drive:
             return
