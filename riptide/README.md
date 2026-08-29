@@ -8,7 +8,7 @@ is knowing their key, and reaching them is verifying them.
 
 > **Documentation:** [`docs/README.md`](docs/README.md) indexes this app's pages, and points at the capstone specification, which lives at suite level in [`../docs/RIPTIDE-SOCIAL-SPEC.md`](../docs/RIPTIDE-SOCIAL-SPEC.md).
 
-## Status: all 8 phases BUILT; phases 1-4 DONE on two machines
+## Status: phases 1-7 BUILT with their UI; phase 8's LIBRARY built, its card not landed; phases 1-4 DONE on two machines
 
 > **Honesty convention.** **Phases 1-2 ENGINE-PASSED 2026-08-12** (folded
 > into the suite harness), their two-machine propagation criterion closed
@@ -40,10 +40,13 @@ is knowing their key, and reaching them is verifying them.
 > live-relay pass. `docs/two-machine-runbook.md` scripts what remains.
 >
 > The flagship stack is `examples/riptide-social.livecodescript` (on the
-> suite UI kit): FIVE cards - Feed (identity, publish, the verified chain
+> suite UI kit): FOUR cards - Feed (identity, publish, the verified chain
 > walk, the media strip), Messages (DMs + the Call button), Devices (the
-> LAN mesh), Anon (the persona and the live guard panel), and Nostr (the
-> npub, the identity bridge, relays, follows and a verified timeline). A post
+> LAN mesh), and Anon (the persona and the live guard panel). **The phase-8
+> Nostr CARD is not landed**: it was built 2026-08-29, broke `openStack` on
+> a real engine with `Chunk: no target found`, and was reverted the same
+> day rather than left in. The rsNostr* LIBRARY rail ships and is executed
+> by `tools/check-script-vectors.py`; no UI reaches it yet. A post
 > renders only after `rsIngestHead`/`rsIngestPost` verify it, so a
 > received feed IS a verified walk. `examples/README.md` carries the run
 > procedures; run records are the maintainer's dated accounts.

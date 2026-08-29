@@ -358,13 +358,16 @@ composes; `rs*` never becomes a library other members call.
   three-leg mutual handshake over enetxt.
 - **Phase 7 — anon persona**: an onion-only identity behind
   `rsPersonaAllows`, the pure-policy deanonymization guard.
-- **Phase 8 — the Nostr bridge**: reach, never a dependency. A subkey-4
+- **Phase 8 — the Nostr bridge** (LIBRARY only; the card was built, broke
+  `openStack` on an engine, and was reverted 2026-08-29): reach, never a
+  dependency. A subkey-4
   secp256k1 identity, an `RSN1` record signed by BOTH keys so the linkage
   between a riptide handle and an npub is a two-sided statement rather
   than a claim, published to the DHT and to relays; riptide media crosses
   as magnet `r` tags. The same phase added the sealed `RIPTAPP1` store, so
   follows and counters finally survive a restart.
-- Status: all eight phases **built**; phases 1–4 **done on two machines**
+- Status: phases 1–7 **built** with their UI, phase 8's **library** built
+  and its card reverted; phases 1–4 **done on two machines**
   (feed propagation 2026-08-13; media playback and both-ways DMs
   2026-08-15). The phase 4–7 compute surface is engine-verified
   (2026-08-15); the phase-8 compute surface is EXECUTED headlessly against

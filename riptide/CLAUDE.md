@@ -114,9 +114,10 @@ else):
   secp256k1 validity ladder), the doubly-signed RSN1 identity bridge
   published to both the DHT and relays, the kind-1 media convention, and
   the RIPTAPP1 app-state store. `nostr` joins rsPersonaAllows, refused
-  for the anon persona. The app gained a fifth card and became the first
-  stack in this tree to carry TWO socket libraries at once. See the
-  as-built section below.
+  for the anon persona. **The library rail only: the app CARD is not
+  landed.** It was written the same day, failed at `openStack` on a real
+  engine with `Chunk: no target found`, and was REVERTED - see the
+  reverted-card record below. See also the as-built section.
 
 What remains, in one line: the live passes for 5 (the call + typing
 lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
@@ -962,6 +963,45 @@ keep their stricter labels at each site.
   torrentxt, which is where a harness assertion quietly starts passing for
   the wrong reason - and it did, for exactly one edit, until the assertion
   was written and looked at.
+
+## The phase-8 CARD was reverted (2026-08-29), and why that record matters
+
+The rsNostr* library rail shipped. The Nostr card did not: written the same
+day, it failed on a real engine at `openStack` with `Chunk: no target
+found` - **the whole app, not just the new card** - and was reverted the
+same day. `examples/riptide-social.livecodescript` is byte-for-byte the
+phase-1-through-7 app again, apart from the embedded library, which carries
+the new rail unused.
+
+THREE failures, in the order they were found, because the shape is the
+lesson:
+
+1. **A non-literal `constant`.** `constant kX = "a" & return & "b"` does not
+   compile, and a .livecodescript is ONE unit, so it took every handler in
+   the file with it: no UI at all, no error to point at. Fixed, and the
+   family checker gained check 22 so it cannot recur.
+2. **The gate gap that let it ship.** The checker knew constants must be
+   declared before use and spelled with `=`, and looked at the VALUE not at
+   all. It shipped through a green gate set, five commits and a self-review.
+3. **`Chunk: no target found` at openStack - STILL UNDIAGNOSED.** Ruled out
+   by inspection: kit-call arity, `there is a card` (engine-proven in the
+   three older builders), chunk-of-object expressions, the
+   `the number of keys of` misuse of engine notes 1.7, `the target` (used at
+   exactly one site, inside `on mouseUp`), and foreign calls outside a try.
+   Not ruled out, and the standing suspects for whoever picks this up: the
+   `repeat for each key` walks over `sAppRelays` / `sNxRelayHandle` while
+   they are still UNSET rather than empty arrays, and `nxrInit the long id
+   of me` in `openStack` where NostrXT's own demo calls it from
+   `preOpenStack`.
+
+**The operational rule this pays for: DO NOT re-land the card without a way
+to run it.** Every one of the three failures was invisible to every gate in
+this repo, because no gate here executes a stack script. The library rail is
+different in kind - `tools/check-script-vectors.py` executes it - and that
+is exactly why the library half survived this and the UI half did not. A
+re-land wants either an engine in the loop for each attempt, or a headless
+way to build the cards, and guessing from a green gate set is what produced
+this section.
 
 ## The phase-8 execution gate, and the three defects it found (2026-08-29)
 

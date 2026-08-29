@@ -644,7 +644,12 @@ relay who you are. It is logged and left to the user.
 connecting is a click. An app that phones a stranger's server the moment it
 opens has made a privacy decision on the user's behalf.
 
-*(Verified statically, and EXECUTED headlessly: `riptide/tools/check-script-vectors.py`
+*(THE LIBRARY RAIL ONLY. The app card described in 8A.4's UI terms was
+built on 2026-08-29, failed at `openStack` on a real engine with
+`Chunk: no target found`, and was REVERTED the same day; the record is in
+`riptide/CLAUDE.md`. What ships is the rs* surface, which no UI reaches yet.
+
+Verified statically, and EXECUTED headlessly: `riptide/tools/check-script-vectors.py`
 runs the shipped script against the real committed CoinXT through the family's
 interpreter, so the signatures under test are genuine BIP-340 over genuine
 libsecp256k1, compared against an independent oracle. That settles LOGIC, not
@@ -868,7 +873,10 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    read by an ordinary Nostr client, a note from a followed npub appears in
    riptide's timeline, and a third party resolves the bridge in BOTH
    directions (handle to npub off the DHT, npub to handle off a relay).
-   *(Built 2026-08-29. The compute half is not merely static: riptide gained
+   *(LIBRARY built 2026-08-29; the app CARD was built, broke `openStack`
+   on a real engine, and was REVERTED the same day - so none of this is
+   reachable from the UI yet, and the done-criterion above is untouched.
+   The compute half is not merely static: riptide gained
    `tools/check-script-vectors.py`, which executes the SHIPPED script against
    the real committed CoinXT through the family's headless interpreter - so
    the bridge bytes, both signatures, the event ids and the media round trip

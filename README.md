@@ -353,7 +353,10 @@ The members are deliberately non-overlapping, so real apps mix them:
   owe. **Phase 8 (2026-08-29) is the app's sixth rail and its first that
   talks to somebody else's servers**: a Nostr bridge, deliberately built as
   REACH and never a dependency, so with no CoinXT or no relay reachable
-  riptide is exactly the app it was at phase 7. Its centre is an `RSN1`
+  riptide is exactly the app it was at phase 7 - which is now literally
+  true, because the CARD for it broke `openStack` on a real engine and was
+  REVERTED the same day, so what ships is the library rail with no UI
+  reaching it. Its centre is an `RSN1`
   record signed by BOTH keys — a riptide handle is ed25519 and an npub is
   secp256k1, neither can sign for the other, so a one-signature claim is
   something either key-holder could assert about a stranger's key —
