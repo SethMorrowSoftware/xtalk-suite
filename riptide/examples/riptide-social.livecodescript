@@ -12073,7 +12073,16 @@ constant kRaPlayFloor = 0.05
 -- never dialled on their own: a social app that phones a stranger's server
 -- the moment it opens has made a privacy decision on the user's behalf.
 -- Connecting is always a click.
-constant kNxDefaultRelays = "wss://relay.damus.io" & return & "wss://nos.lol"
+--
+-- They are two CONSTANTS joined by a FUNCTION (raNxDefaultRelays), not one
+-- constant holding a return, and that is not a style choice: an xTalk
+-- constant's value must be a LITERAL, so
+-- `constant kX = "a" & return & "b"` does not compile - and because a
+-- .livecodescript is ONE compilation unit, that single line takes the whole
+-- stack down and no UI is ever built. It is the same reason rsKdfContext()
+-- is a function (a constant cannot hold a NUL either).
+constant kNxDefaultRelayOne = "wss://relay.damus.io"
+constant kNxDefaultRelayTwo = "wss://nos.lol"
 constant kNxTimelineMax = 200
 constant kNxSubId = "riptide-timeline"
 constant kNxNoteMax = 8000
@@ -16688,6 +16697,12 @@ command raAppLoad
    raNxPaintRelayField
 end raAppLoad
 
+-- The suggested relays, as text. A function because a constant cannot hold
+-- the return between them (see the declarations).
+private function raNxDefaultRelays
+   return kNxDefaultRelayOne & return & kNxDefaultRelayTwo
+end raNxDefaultRelays
+
 -- The relay field is the user's list; a saved one replaces the defaults.
 command raNxPaintRelayField
    local tKey, tOut
@@ -16698,7 +16713,7 @@ command raNxPaintRelayField
       put tKey & return after tOut
    end repeat
    if tOut is empty then
-      put kNxDefaultRelays into tOut
+      put raNxDefaultRelays() into tOut
    end if
    put tOut into field "raNxRelays" of card "raNostr"
 end raNxPaintRelayField
