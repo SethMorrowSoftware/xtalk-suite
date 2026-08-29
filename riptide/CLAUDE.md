@@ -990,6 +990,67 @@ morning. Still "verified statically + headless boot; needs an OXT pass":
 the model is not the engine, and the runbook's phase-8 section is the
 step that settles it.
 
+**The re-land MET an engine the same day (2026-08-29), and it worked.**
+The maintainer ran the re-landed five-card stack on a real engine and
+reported it working ("this now works great") - so the exact criterion the
+first landing failed, openStack completing with the phase-8 card in
+place, is MET, and the boot runner's model has its first point of
+engine agreement. The record is the maintainer's account, dated, with no
+platform detail captured (the phase-2 precedent). The detailed per-card
+offline behaviours of runbook row 35 were not itemized in that report;
+the row carries the annotation. Later the same day the v11 UI pass
+(below) reworked every card's chrome, so the CURRENT file's label is
+back to "verified statically + headless boot; needs an OXT re-pass" -
+the arc rule 8 prescribes.
+
+## The v11 UI pass (2026-08-29; the decisions, do not re-litigate)
+
+The first UI pass taken as an APP rather than a demo, made feasible by
+the boot runner (38 checks, both profiles, including these changes) plus
+the same-day engine agreement above. What changed and why:
+
+- **One five-tab bar on every card** (raNavBar/raNavMark) replaced the
+  hub-and-spoke raGo* buttons: any card is one click from any other,
+  and the current tab is held down. The hilite is SCRIPT-managed
+  (autoHilite off, the kit's checkbox discipline) and re-asserted after
+  every `go`, because an autoHilite flash would clear the "you are
+  here" state on the first click. The five buttons share names across
+  cards - legal, and what lets one `raNavMark` run unqualified against
+  whatever card is current.
+- **The kit's uiPanel finally used here**: two column panels per card
+  ("8,54,598,568" / "602,54,1192,568"), created FIRST in each builder so
+  they sit behind their controls. This is the piece of the family card
+  look riptide never adopted.
+- **The identity gate (raGateIdentity) is AFFORDANCE, not enforcement**:
+  fifteen buttons that cannot work without an unlocked seed start
+  disabled and enable on unlock, so a new user's first click cannot be a
+  refusal - but every handler KEEPS its own guard, because returnInField
+  and rebuilt cards can still reach them. Qualified + try-wrapped per
+  the multi-card rule; wired at raBuild, raIdentityReady, raLock.
+- **The status line doubles as the identity chip**: "Ready. Create or
+  unlock..." at boot, "Unlocked as 1a2b3c4d... " on unlock, "Locked:
+  ..." on lock - one glance from any card answers "who am I right now".
+- **Empty-state guidance in every log/list surface**, phrased to stay
+  true forever where the surface appends (a log's birth line) and to be
+  replaced where painters own the content (raTheirFeed clears at fetch;
+  the follows painter overwrites).
+- **returnInField acts in one-line entry fields only** - passphrase,
+  handle, media hash, DM target and message, LAN host, follow target.
+  Multi-line fields keep Return as newline via the default `pass`.
+- **kRaUiVersion bumps run raBuildReset first** (the upgrade path): the
+  builders are create-if-missing, so pasting a newer script over a stack
+  an older version built would otherwise create the panels ON TOP of
+  every existing control (a white sheet over the card) and leave retired
+  raGo* buttons lingering clickable-dead. The reset walks every card and
+  deletes what kRaScControls + kRaScRetired name, then the builders run
+  as on a fresh paste. The registry constant moved ABOVE the kit block
+  for this (lexical-position resolution); the boot runner plants a
+  legacy button + an old version stamp and proves the shed.
+
+Every item is executed by the boot runner; none has met an engine in
+this form. Label: verified statically + headless boot; needs an OXT
+re-pass.
+
 The rsNostr* library rail shipped. The Nostr card did not: written the same
 day, it failed on a real engine at `openStack` with `Chunk: no target
 found` - **the whole app, not just the new card** - and was reverted the

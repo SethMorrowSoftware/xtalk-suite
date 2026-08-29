@@ -68,12 +68,42 @@ Status, by phase (each a maintainer's dated account):
   through the family interpreter under two capability profiles, clicks
   through every card, and drives the Nostr rail end to end; it is in the
   gate set with mutation fixtures (`../tools/test-demo-boot.py`) seeded
-  from both real 2026-08-29 failures. Label: verified statically +
-  headless boot; needs an OXT pass.
+  from both real 2026-08-29 failures. The re-land then MET an engine the
+  same day: the maintainer ran the five-card stack and reported it
+  working, so the criterion the first landing failed is closed. The v11
+  UI pass later that day (below) reworked the chrome, so the current
+  file's label is: verified statically + headless boot; needs an OXT
+  re-pass.
   Nostr DMs are separately and deliberately NOT built (spec 8A.6): NIP-04
   needs AES, which this suite does not have, and NIP-17 gift wrap needs
   work this pass did not do - riptide's own DM rail already answers to
   nobody.
+
+## The v11 look (2026-08-29): an app, not a demo
+
+The same day the phase-8 card re-landed, the whole stack got its first
+UI pass taken as an APPLICATION, executed end to end by the boot gate
+(38 checks, both capability profiles) but not yet run on an engine in
+this form:
+
+- **Five tabs in the title band of every card** (Feed, Messages,
+  Devices, Anon, Nostr), the current one held down - any card is one
+  click from any other, replacing the old back-to-Feed hub.
+- **The family card look, completed**: two white column panels per card
+  behind the controls (the kit's uiPanel, which this stack had never
+  adopted).
+- **Buttons that need an unlocked identity start disabled** and enable
+  on unlock - affordance only; every handler keeps its own refusal
+  guard. The status line doubles as the identity chip: it names who is
+  unlocked, from any card.
+- **Return acts in one-line entry fields** (passphrase, handle, media
+  hash, DM target/message, LAN host, follow target); multi-line compose
+  fields keep Return as a newline.
+- **Empty surfaces say what they are for** instead of opening blank.
+- **Pasting a newer script over a stack an older version built now
+  rebuilds cleanly**: the version bump sheds the old furniture first, so
+  an upgrade-in-place looks like a fresh paste instead of stacking new
+  chrome on top of old controls.
 
 ## Setup
 

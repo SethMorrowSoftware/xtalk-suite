@@ -12096,9 +12096,24 @@ constant kAppSaveDebounceMs = 2000
 constant kAppMaxFollows = 500
 constant kAppMaxRelays = 20
 constant kAppStateVersion = "RIPTSTATE1"
--- bumped on any layout change so an existing stack rebuilds (the kit builders
--- re-rect existing controls by name, so no deletion pass is needed)
-constant kRaUiVersion = "ra-ui-720p-10"
+-- bumped on any layout change so an existing stack rebuilds. Since v11 a
+-- version change also runs raBuildReset first: the builders are
+-- create-if-missing, so on a stack an OLDER script built, chrome a newer
+-- version adds (the column panels) would be created last and sit ON TOP
+-- of every existing control, and controls the newer version no longer
+-- builds would linger, clickable and dead.
+constant kRaUiVersion = "ra-ui-720p-11"
+
+-- Every control name this script names OR builds, derived from the source with
+-- comments cut and string literals kept. Declared HERE, above its first use
+-- (raBuildResetCard walks it; OXT resolves script-level names by lexical
+-- position), and read again by the boot self-check at the file's foot.
+constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raNavAnon,raNavDevs,raNavFeed,raNavMsgs,raNavNostr,raNxBridgeBtn,raNxCompose,raNxComposeL,raNxConnect,raNxCopyNpub,raNxDisconnect,raNxExportBtn,raNxFollowBtn,raNxFollowTo,raNxFollows,raNxIdNote,raNxNpub,raNxNpubL,raNxPostBtn,raNxRelayLog,raNxRelays,raNxSec1,raNxSec2,raNxSec3,raNxSec4,raNxStatus,raNxTimeline,raPanL,raPanR,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
+
+-- Controls that older UI versions built and this one does not: the
+-- hub-and-spoke raGo* navigation buttons v11's tab bar replaced. Only
+-- raBuildResetCard reads this, so an upgraded-in-place stack sheds them.
+constant kRaScRetired = "raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoFeedFromNostr,raGoLanFromFeed,raGoNostrFromFeed"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -12705,17 +12720,28 @@ on mouseUp
       case "raMediaGet"
          raMediaGet
          break
-      case "raGoDm"
+      -- the tab bar: the same five buttons on every card, so any card is
+      -- one click from any other. The mark call runs AFTER the go, so its
+      -- unqualified button writes land on the newly current card.
+      case "raNavFeed"
+         go to card 1
+         raNavMark "raNavFeed"
+         break
+      case "raNavMsgs"
          go to card "raMessages"
+         raNavMark "raNavMsgs"
          break
-      case "raGoFeed"
-         go to card 1
-         break
-      case "raGoLanFromFeed"
+      case "raNavDevs"
          go to card "raDevices"
+         raNavMark "raNavDevs"
          break
-      case "raGoFeedFromLan"
-         go to card 1
+      case "raNavAnon"
+         go to card "raAnon"
+         raNavMark "raNavAnon"
+         break
+      case "raNavNostr"
+         go to card "raNostr"
+         raNavMark "raNavNostr"
          break
       case "raLanHostBtn"
          raLanHost
@@ -12731,18 +12757,6 @@ on mouseUp
          break
       case "raLanMediaGet"
          raLanMediaGet
-         break
-      case "raGoAnonFromFeed"
-         go to card "raAnon"
-         break
-      case "raGoFeedFromAnon"
-         go to card 1
-         break
-      case "raGoNostrFromFeed"
-         go to card "raNostr"
-         break
-      case "raGoFeedFromNostr"
-         go to card 1
          break
       case "raNxConnect"
          raNxConnect
@@ -12788,24 +12802,66 @@ on mouseUp
    end switch
 end mouseUp
 
+-- Return in a ONE-LINE entry field acts, so the keyboard flow a person
+-- expects (type, press Return) works everywhere a single value is entered.
+-- Multi-line fields (compose boxes, the relay and entries lists, the LAN
+-- draft) are deliberately NOT here: there Return is a newline, and the
+-- default pass keeps it one.
+on returnInField
+   switch the short name of the target
+      case "raPassphrase"
+         raUnlock
+         break
+      case "raHandle"
+         raFetch
+         break
+      case "raMediaHash"
+         raMediaGet
+         break
+      case "raDmTo"
+         raDmStart
+         break
+      case "raDmMsg"
+         raDmSend
+         break
+      case "raLanTo"
+         raLanJoin
+         break
+      case "raNxFollowTo"
+         raNxFollow
+         break
+      default
+         pass returnInField
+   end switch
+end returnInField
+
 -- ---- self-building UI (idempotent; the kit owns the look) --------------------
--- Four CARDS since phases 5-7 landed (the spec's one-stack-rails-behind-
--- tabs answer): card 1 is the feed (phases 1-3), card "raMessages" the
--- DM + call rail (phases 4-5), card "raDevices" the LAN mesh (phase 6),
--- card "raAnon" the persona (phase 7). The stack script owns every
--- handler, so navigation is just `go to card`; the pump keeps running
--- wherever you are.
+-- FIVE CARDS (the spec's one-stack-rails-behind-tabs answer): card 1 is
+-- the feed (phases 1-3), card "raMessages" the DM + call rail (phases
+-- 4-5), card "raDevices" the LAN mesh (phase 6), card "raAnon" the
+-- persona (phase 7), card "raNostr" the bridge (phase 8). Every card
+-- carries the same five-tab bar (raNavBar), so any card is one click
+-- from any other. The stack script owns every handler, so navigation is
+-- just `go to card`; the pump keeps running wherever you are.
 command raBuild
    if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild
    end if
    lock screen
+   -- an UPGRADE in place (this script pasted over a stack an older
+   -- version built) sheds the old furniture first - see kRaUiVersion
+   if the uUiVersion of this stack is not empty then
+      raBuildReset
+   end if
    raBuildFeedCard
    raBuildDmCard
    raBuildLanCard
    raBuildAnonCard
    raBuildNostrCard
    go to card 1
+   -- the identity gate's initial state: locked, so the buttons that need
+   -- an unlocked seed start disabled instead of refusing on first click
+   raGateIdentity
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
 end raBuild
@@ -12814,11 +12870,11 @@ command raBuildFeedCard
    go to card 1
    -- two columns inside the family's 720p budget (1200 x 640, the
    -- check-stack-size.py cap): identity + my feed left, the reading pane right
-   uiChrome "Riptide Social - identity + public feed + media (phases 1-4)", 1200, 640
-   uiButton "raGoDm", "Messages >", "1080,4,1192,26"
-   uiButton "raGoLanFromFeed", "Devices >", "968,4,1074,26"
-   uiButton "raGoAnonFromFeed", "Anon >", "872,4,962,26"
-   uiButton "raGoNostrFromFeed", "Nostr >", "778,4,866,26"
+   uiChrome "Riptide Social - Feed", 1200, 640
+   -- the two column panels FIRST, so they sit behind their controls
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavFeed"
 
    -- 1. identity
    uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
@@ -12841,6 +12897,9 @@ command raBuildFeedCard
    uiButton "raPost", "Post", "446,292,592,316"
    uiButton "raAttach", "Attach", "446,320,592,340"
    uiArea "raMyFeed", "16,346,592,562"
+   -- newest posts go BEFORE this field's text, so the birth line below
+   -- stays at the bottom, oldest, and never needs clearing
+   put "your feed begins here - write above and Post." into field "raMyFeed"
 
    -- 3. follow
    uiSection "raSec3", "3. Follow: fetch a head, walk the chain, verify every signature", "608,58,1184,76"
@@ -12848,6 +12907,11 @@ command raBuildFeedCard
    uiInput "raHandle", "776,80,1050,100"
    uiButton "raFetch", "Fetch feed", "1056,80,1184,104"
    uiArea "raTheirFeed", "608,110,1184,508"
+   -- cleared by raFetch itself, so this guidance lives exactly until the
+   -- first fetch replaces it with a real feed
+   put "paste an author's 64-hex handle above and Fetch:" & return \
+         & "the head and every post arrive signature-verified, or not at all." \
+         into field "raTheirFeed"
 
    -- the phase-3 media strip: a walked post auto-fills the hash; Fetch
    -- joins the swarm sequentially, and the button becomes Play the moment
@@ -12875,12 +12939,15 @@ command raBuildDmCard
       set the name of this card to "raMessages"
    end if
    go to card "raMessages"
-   uiChrome "Riptide Social - Messages (phase 4: encrypted DMs over rp1)", 1200, 640
-   uiButton "raGoFeed", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Messages", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavMsgs"
 
    uiSection "raDmSec1", "1. My inbox: the phantom swarm strangers reach you in", "16,58,592,76"
    uiCap "raDmMine", "Unlock on the Feed card first; the inbox derives from your identity.", "16,82,592,124"
    uiArea "raDmLog", "16,130,592,562"
+   put "inbox log - your inbox opens when you unlock." & return into field "raDmLog"
 
    uiSection "raDmSec2", "2. Conversation: sealed first contact, then a private stream", "608,58,1184,76"
    uiLabel "raDmToL", "to handle (64 hex):", "608,80,748,98", 11
@@ -12888,6 +12955,8 @@ command raBuildDmCard
    uiButton "raDmStart", "Start DM", "1056,80,1116,104"
    uiButton "raDmCallBtn", "Call", "1122,80,1184,104"
    uiArea "raDmChat", "608,110,1184,498"
+   put "conversation - Start a DM with a handle, or answer a knock in your inbox." \
+         & return into field "raDmChat"
    uiInput "raDmMsg", "608,506,1050,528"
    uiButton "raDmSend", "Send", "1056,504,1184,528"
    -- the phase-5 typing lane paints here during a call (spec 6.2):
@@ -12916,8 +12985,10 @@ command raBuildLanCard
       set the name of this card to "raDevices"
    end if
    go to card "raDevices"
-   uiChrome "Riptide Social - Devices (phase 6: your own LAN device mesh)", 1200, 640
-   uiButton "raGoFeedFromLan", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Devices", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavDevs"
 
    uiSection "raLanSec1", "1. This device: host the mesh, or join one on your LAN", "16,58,592,76"
    uiLabel "raLanNameL", "device name:", "16,80,110,98", 11
@@ -12929,6 +13000,8 @@ command raBuildLanCard
    uiInput "raLanTo", "134,108,340,128"
    uiButton "raLanJoinBtn", "Join", "446,108,592,132"
    uiArea "raLanLog", "16,138,592,336"
+   put "mesh log - Host here, or Join your host device's IP (unlock first)." \
+         & return into field "raLanLog"
 
    -- the phase-6 sync payload: type here and every admitted device sees
    -- it (debounced on the poll timer, signed per record, absolute state)
@@ -12978,8 +13051,10 @@ command raBuildAnonCard
       set the name of this card to "raAnon"
    end if
    go to card "raAnon"
-   uiChrome "Riptide Social - Anon persona (phase 7: onion-only identity)", 1200, 640
-   uiButton "raGoFeedFromAnon", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Anon persona", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavAnon"
 
    uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
    uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
@@ -12991,6 +13066,8 @@ command raBuildAnonCard
    uiLabel "raAnonEntriesL", "anon feed entries (one per line; served at / over the onion):", "16,110,592,128", 11
    uiInput "raAnonEntries", "16,130,592,224"
    uiArea "raAnonOut", "16,230,592,562"
+   put "persona log - Reveal derives the key; Publish + serve puts it on Tor" \
+         & " (unlock first)." & return into field "raAnonOut"
 
    uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
    uiArea "raAnonGuard", "608,80,1184,562"
@@ -13027,8 +13104,10 @@ command raBuildNostrCard
       set the name of this card to "raNostr"
    end if
    go to card "raNostr"
-   uiChrome "Riptide Social - Nostr (phase 8: reach, bridged to your handle)", 1200, 640
-   uiButton "raGoFeedFromNostr", "< Feed", "1080,4,1192,26"
+   uiChrome "Riptide Social - Nostr", 1200, 640
+   uiPanel "raPanL", "8,54,598,568"
+   uiPanel "raPanR", "602,54,1192,568"
+   raNavBar "raNavNostr"
 
    -- 1. identity + the bridge
    uiSection "raNxSec1", "1. Your Nostr identity: the same master seed, its own key", "16,58,592,76"
@@ -13050,16 +13129,22 @@ command raBuildNostrCard
    uiButton "raNxConnect", "Connect", "476,204,592,228"
    uiButton "raNxDisconnect", "Disconnect", "476,232,592,256"
    uiArea "raNxRelayLog", "16,274,592,406"
+   put "relay log - nothing dials until you click Connect." & return \
+         into field "raNxRelayLog"
 
    -- 3. follows
    uiSection "raNxSec3", "3. Follows: npub or 64-hex, one at a time", "16,412,592,430"
    uiInput "raNxFollowTo", "16,434,470,454"
    uiButton "raNxFollowBtn", "Follow", "476,432,592,456"
    uiArea "raNxFollows", "16,460,592,562"
+   put "not following anyone yet - paste an npub or 64-hex key above." \
+         into field "raNxFollows"
 
    -- 4. the timeline
    uiSection "raNxSec4", "4. Timeline: every event verified before it is shown", "608,58,1184,76"
    uiArea "raNxTimeline", "608,80,1184,466"
+   put "timeline - verified notes land here once a relay is connected." \
+         & return into field "raNxTimeline"
    uiLabel "raNxComposeL", "post a note to your relays:", "608,472,1184,490", 11
    uiInput "raNxCompose", "608,492,1050,534"
    uiButton "raNxPostBtn", "Post note", "1056,492,1184,516"
@@ -13077,6 +13162,119 @@ command raBuildNostrCard
          & " Verified statically; needs an OXT + live-relay pass.", \
          "16,572,1184,632"
 end raBuildNostrCard
+
+-- ---- navigation: one tab bar, five cards -------------------------------------
+-- The same five buttons in the title band of every card, the current one
+-- held down. The hilite is script-managed (autoHilite off - the kit's
+-- checkbox discipline): a pressed look that flashed back on click would
+-- read as a broken button, not as "you are here".
+command raNavBar pCurrent
+   uiButton "raNavFeed", "Feed", "736,4,824,26"
+   uiButton "raNavMsgs", "Messages", "828,4,916,26"
+   uiButton "raNavDevs", "Devices", "920,4,1008,26"
+   uiButton "raNavAnon", "Anon", "1012,4,1100,26"
+   uiButton "raNavNostr", "Nostr", "1104,4,1192,26"
+   set the autoHilite of button "raNavFeed" to false
+   set the autoHilite of button "raNavMsgs" to false
+   set the autoHilite of button "raNavDevs" to false
+   set the autoHilite of button "raNavAnon" to false
+   set the autoHilite of button "raNavNostr" to false
+   raNavMark pCurrent
+end raNavBar
+
+-- Mark the current card's tab. Unqualified on purpose: the builders call
+-- this with their card current, and the mouseUp cases call it AFTER the
+-- go, so the writes always land on the card being looked at.
+command raNavMark pCurrent
+   set the hilite of button "raNavFeed" to (pCurrent is "raNavFeed")
+   set the hilite of button "raNavMsgs" to (pCurrent is "raNavMsgs")
+   set the hilite of button "raNavDevs" to (pCurrent is "raNavDevs")
+   set the hilite of button "raNavAnon" to (pCurrent is "raNavAnon")
+   set the hilite of button "raNavNostr" to (pCurrent is "raNavNostr")
+end raNavMark
+
+-- ---- the upgrade path: shed an older version's furniture ---------------------
+-- Runs ONLY when raBuild finds a different uUiVersion already stamped on
+-- the stack (a fresh paste has none). Walks every card this app builds
+-- and deletes each control the registry (or the retired list) names, so
+-- the builders then run against clean cards exactly as on a fresh paste -
+-- which is what keeps the z-order right: a panel created onto a card that
+-- already has controls would sit ON TOP of them.
+command raBuildReset
+   local tCard
+   repeat for each item tCard in "raMessages,raDevices,raAnon,raNostr"
+      if there is a card tCard then
+         go to card tCard
+         raBuildResetCard
+      end if
+   end repeat
+   go to card 1
+   raBuildResetCard
+end raBuildReset
+
+command raBuildResetCard
+   local tName
+   -- uiBand rides along by name: uiChrome builds it, but the registry is
+   -- derived from the demo's OWN references (check-demo-control-lists.py)
+   -- and the demo never names it, so it cannot live in kRaScControls
+   repeat for each item tName in (kRaScControls & comma & kRaScRetired & ",uiBand")
+      if there is a field tName then
+         delete field tName
+      end if
+      if there is a button tName then
+         delete button tName
+      end if
+      if there is a graphic tName then
+         delete graphic tName
+      end if
+      -- the hairline divider uiSection builds beside each header
+      if there is a graphic (tName & "Line") then
+         delete graphic (tName & "Line")
+      end if
+   end repeat
+end raBuildResetCard
+
+-- ---- the identity gate: affordance, not enforcement --------------------------
+-- Buttons that cannot work without an unlocked seed start disabled and
+-- enable on unlock, so a new user's first click cannot be a refusal.
+-- AFFORDANCE ONLY: every one of these handlers keeps its own guard, so a
+-- click that slips through still refuses with its reason. Qualified and
+-- try-wrapped per the multi-card rule - this runs from card 1, and a card
+-- that is mid-build must not throw out of the builder.
+command raGateIdentity
+   local tOn, tErr
+   put (sMasterSeed is not empty) into tOn
+   try
+      set the enabled of button "raPost" of card 1 to tOn
+      set the enabled of button "raAttach" of card 1 to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raDmStart" of card "raMessages" to tOn
+      set the enabled of button "raDmCallBtn" of card "raMessages" to tOn
+      set the enabled of button "raDmSend" of card "raMessages" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raLanHostBtn" of card "raDevices" to tOn
+      set the enabled of button "raLanJoinBtn" of card "raDevices" to tOn
+      set the enabled of button "raLanSendMedia" of card "raDevices" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raAnonReveal" of card "raAnon" to tOn
+      set the enabled of button "raAnonPublishBtn" of card "raAnon" to tOn
+   catch tErr
+   end try
+   try
+      set the enabled of button "raNxCopyNpub" of card "raNostr" to tOn
+      set the enabled of button "raNxBridgeBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxExportBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxPostBtn" of card "raNostr" to tOn
+      set the enabled of button "raNxFollowBtn" of card "raNostr" to tOn
+   catch tErr
+   end try
+end raGateIdentity
 
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
@@ -13097,7 +13295,7 @@ command raProbe
    else if sCaps["hasSha3"] is not true then
       uiStatus "Ready, minus the .onion spelling: no SHA3 provider is loaded (SodiumXT ABI 7 serves sxSha3_256; CoinXT's cxSha3_256 is the fallback).", "warn"
    else
-      uiStatus "Ready: SodiumXT + TorrentXT + SHA3 all present.", "ok"
+      uiStatus "Ready. Create or unlock your identity on this card to begin.", "ok"
    end if
 end raProbe
 
@@ -13226,6 +13424,11 @@ command raIdentityReady
    -- publishes anything or dials anything - that stays a click.
    raNxIdentityReady
    raAppLoad
+   -- the status line doubles as the identity chip: one glance says who is
+   -- unlocked, from any card
+   uiStatus "Unlocked as" && raDmShort(sHandle) && \
+         "- posting, DMs, devices and Nostr are live. Lock when done.", "ok"
+   raGateIdentity
 end raIdentityReady
 
 -- Phase 4 bring-up, run once per unlock: derive the kx prekey pair,
@@ -13311,6 +13514,8 @@ end raDmShort
 command raLock
    raClearKeys
    put "LOCKED: the identity seed left memory. Unlock to publish again." & return into field "raIdOut"
+   uiStatus "Locked: the seed left memory. Unlock to act again.", "warn"
+   raGateIdentity
 end raLock
 
 command raClearKeys
@@ -17143,15 +17348,16 @@ command scFinish
 end scFinish
 -- ==== DEMO SELF-CHECK v1 END ====
 
--- Every control name this script names OR builds, derived from the source with
--- comments cut and string literals kept.
-constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoFeedFromNostr,raGoLanFromFeed,raGoNostrFromFeed,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raNxBridgeBtn,raNxCompose,raNxComposeL,raNxConnect,raNxCopyNpub,raNxDisconnect,raNxExportBtn,raNxFollowBtn,raNxFollowTo,raNxFollows,raNxIdNote,raNxNpub,raNxNpubL,raNxPostBtn,raNxRelayLog,raNxRelays,raNxSec1,raNxSec2,raNxSec3,raNxSec4,raNxStatus,raNxTimeline,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
+-- kRaScControls (every control this script names or builds) is declared
+-- with the other demo constants ABOVE the kit block: raBuildResetCard
+-- walks it too, and OXT resolves script-level names by lexical position,
+-- so the declaration must sit above that first use.
 
 command raScRun
    local tMissing, tVer, tErr
    scBegin "raIdOut"
    put scMissing(kRaScControls) into tMissing
-   scAssert "all 99 controls this script names exist (missing: " \
+   scAssert "all 98 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    if sHaveLib is not "true" then

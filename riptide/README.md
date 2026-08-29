@@ -50,7 +50,13 @@ is knowing their key, and reaching them is verifying them.
 > boot-time step is gone or lazy, and gated by
 > `tools/check-demo-boot.py`, which EXECUTES the shipped stack's boot
 > headlessly (the gap both breakages walked through: no gate ran a stack
-> script). Label: verified statically + headless boot; needs an OXT pass.
+> script). The re-land then MET an engine that same day - the maintainer
+> ran the five-card stack and reported it working, closing the criterion
+> the first landing failed - after which the v11 UI pass (the five-tab
+> bar, the column-panel card look, identity-gated buttons, the
+> upgrade-in-place rebuild) reworked every card's chrome, so the current
+> file's label is: verified statically + headless boot; needs an OXT
+> re-pass.
 > The rsNostr* LIBRARY rail is executed
 > by `tools/check-script-vectors.py`. A post
 > renders only after `rsIngestHead`/`rsIngestPost` verify it, so a

@@ -151,7 +151,13 @@ class World:
 
     # -- cards -------------------------------------------------------------
     def card_named(self, name):
-        low = str(name).lower()
+        s = str(name).strip()
+        # numeric card addressing (`of card 1`), the engine-proven form the
+        # demo's cross-card feed writes use
+        if re.fullmatch(r"\d+", s):
+            n = int(s)
+            return self.cards[n - 1] if 1 <= n <= len(self.cards) else None
+        low = s.lower()
         for c in self.cards:
             if c.name.lower() == low:
                 return c
@@ -254,7 +260,7 @@ RECT_PROPS = ("rect", "left", "top", "right", "bottom", "width", "height")
 
 _OBJ_RE = (r'(?:(field|button|graphic|card)\s+'
            r'("(?:[^"]*)"|\([^)]*\)|[A-Za-z_]\w*)'
-           r'(?:\s+of\s+card\s+("(?:[^"]*)"|\([^)]*\)|[A-Za-z_]\w*))?'
+           r'(?:\s+of\s+card\s+("(?:[^"]*)"|\([^)]*\)|[A-Za-z_]\w*|\d+))?'
            r'|(this\s+stack|this\s+card|me|the\s+target|'
            r'the\s+last\s+(?:field|button|graphic)))')
 
@@ -780,6 +786,17 @@ class DemoInterp(LCS.Interp):
             world.sends.append((msg, delay))
             return i + 1
 
+        # ---- delete a control (the upgrade path's raBuildResetCard)
+        m = re.match(r'delete\s+(field|button|graphic)\s+(.+)$', line, re.I)
+        if m:
+            name = str(LCS._disp(self.eval_expr(m.group(2), env)))
+            ctl = world.resolve(m.group(1).lower(), name)
+            if ctl is None:
+                raise Thrown('Chunk: no such object (%s "%s")'
+                             % (m.group(1).lower(), name))
+            world.current().controls.remove(ctl)
+            return i + 1
+
         # ---- delete variable (array-element teardown)
         m = re.match(r'delete\s+variable\s+(\w+)\[(.+)\]$', line, re.I)
         if m:
@@ -1098,6 +1115,15 @@ def build_source(path, fail):
     return "\n".join(out), hits
 
 
+def _bool(v):
+    """The modeled `enabled` value as a Python bool, or None when unset."""
+    if isinstance(v, bool):
+        return v
+    if str(v).lower() in ("true", "false"):
+        return str(v).lower() == "true"
+    return None
+
+
 def expected_cards(src):
     """The named cards the source itself builds - self-deriving, so a new
     card enters the expectation the day its builder lands."""
@@ -1184,10 +1210,36 @@ def boot(c, path, profile, drive=True):
         if not drive:
             return
 
-        # ---- drive the navigation clicks (every raGo* button)
+        # ---- the identity gate starts LOCKED (affordance: a fresh boot's
+        # seed-needing buttons are disabled, not click-to-refuse)
+        post = world.anywhere("raPost")
+        c.ck("[%s] identity-gated buttons start disabled" % profile,
+             post is not None and _bool(post.props.get("enabled")) is False,
+             repr(post.props.get("enabled") if post else None))
+
+        # ---- the upgrade path: a stack stamped with an OLDER uUiVersion
+        # sheds retired furniture and rebuilds clean. Planted: a legacy
+        # raGo* hub button, exactly what a pre-v11 stack would carry.
+        world.cards[0].controls.append(Control("button", "raGoDm"))
+        world.stack_props["uuiversion"] = "ra-ui-720p-10"
+        try:
+            ip.call("raBuild", [])
+            gone = world.anywhere("raGoDm") is None
+            still = [n for n in reg.split(",")
+                     if n and world.anywhere(n) is None]
+            c.ck("[%s] a version-bump rebuild sheds retired controls and "
+                 "rebuilds every registered one" % profile,
+                 gone and not still and world.locked == 0 and world.cur == 0,
+                 "raGoDm gone=%s missing=%s locked=%d cur=%d"
+                 % (gone, ",".join(still[:5]), world.locked, world.cur))
+        except Exception as exc:                        # noqa: BLE001
+            c.ck("[%s] a version-bump rebuild sheds retired controls"
+                 % profile, False, "%s: %s" % (type(exc).__name__, exc))
+
+        # ---- drive the navigation clicks (every raNav* tab, on every card)
         for card in list(world.cards):
             for ctl in list(card.controls):
-                if ctl.ctype == "button" and ctl.name.startswith("raGo"):
+                if ctl.ctype == "button" and ctl.name.startswith("raNav"):
                     world.target = ("button", ctl.name)
                     try:
                         ip.call("mouseUp", [])
@@ -1218,6 +1270,11 @@ def boot(c, path, profile, drive=True):
                 c.ck("[%s] raCreate seals a key file and survives its "
                      "degraded paths" % profile, created,
                      world.anywhere("raIdOut").content[-200:])
+                c.ck("[%s] creating an identity enables the gated buttons"
+                     % profile,
+                     _bool(world.anywhere("raPost").props.get("enabled"))
+                     is True,
+                     repr(world.anywhere("raPost").props.get("enabled")))
             except Exception as exc:                    # noqa: BLE001
                 c.ck("[%s] raCreate runs" % profile, False,
                      "%s: %s" % (type(exc).__name__, exc))
