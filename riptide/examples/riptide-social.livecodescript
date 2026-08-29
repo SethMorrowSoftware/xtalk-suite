@@ -16518,9 +16518,17 @@ command raNxBridge
    local tBridge, tEvent, tUrl, tOk, tSent, tErr
    if not raNxReady() then exit raNxBridge
    if not raNxUnlocked() then exit raNxBridge
-   add 1 to sNxBridgeSeq
+   -- SEED FROM THE CLOCK, NOT FROM ONE - the phase-6 counter decision,
+   -- and this rail needs it for a sharper reason than the LAN one did. A
+   -- BEP44 node REFUSES a put whose seq is below what it already holds,
+   -- so a user who loses the app-state file (a new machine, a restore, a
+   -- different key file) and restarts at 1 would find the DHT half of
+   -- their bridge silently unpublishable for as long as the old record
+   -- lives. `the seconds` is monotonic across restarts and costs nothing.
    if sNxBridgeSeq is not an integer or sNxBridgeSeq < 1 then
-      put 1 into sNxBridgeSeq
+      put the seconds into sNxBridgeSeq
+   else
+      add 1 to sNxBridgeSeq
    end if
    put rsBuildBridge(sNxBridgeSeq, the seconds, sMasterSeed, empty) \
          into tBridge
