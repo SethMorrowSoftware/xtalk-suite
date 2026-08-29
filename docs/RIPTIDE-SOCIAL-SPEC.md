@@ -644,10 +644,14 @@ relay who you are. It is logged and left to the user.
 connecting is a click. An app that phones a stranger's server the moment it
 opens has made a privacy decision on the user's behalf.
 
-*(THE LIBRARY RAIL ONLY. The app card described in 8A.4's UI terms was
+*(The app card described in 8A.4's UI terms was
 built on 2026-08-29, failed at `openStack` on a real engine with
-`Chunk: no target found`, and was REVERTED the same day; the record is in
-`riptide/CLAUDE.md`. What ships is the rs* surface, which no UI reaches yet.
+`Chunk: no target found`, and was REVERTED the same day - then RE-LANDED
+the same day, restructured so `openStack` is byte-identical to the
+engine-proven body and gated by `riptide/tools/check-demo-boot.py`, which
+boots the shipped stack headlessly; the record is in `riptide/CLAUDE.md`.
+The card's own label: verified statically + headless boot; needs an OXT
+pass.
 
 Verified statically, and EXECUTED headlessly: `riptide/tools/check-script-vectors.py`
 runs the shipped script against the real committed CoinXT through the family's
@@ -874,8 +878,11 @@ dc/enet session is active, ~250 ms–1 s when only the feed and DMs are live.
    riptide's timeline, and a third party resolves the bridge in BOTH
    directions (handle to npub off the DHT, npub to handle off a relay).
    *(LIBRARY built 2026-08-29; the app CARD was built, broke `openStack`
-   on a real engine, and was REVERTED the same day - so none of this is
-   reachable from the UI yet, and the done-criterion above is untouched.
+   on a real engine, was REVERTED the same day - and RE-LANDED the same
+   day behind `riptide/tools/check-demo-boot.py`, the headless boot gate,
+   with `openStack` byte-identical to the engine-proven body. The rail is
+   reachable from the UI again; the done-criterion above still needs its
+   live pass.
    The compute half is not merely static: riptide gained
    `tools/check-script-vectors.py`, which executes the SHIPPED script against
    the real committed CoinXT through the family's headless interpreter - so

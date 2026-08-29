@@ -114,10 +114,18 @@ else):
   secp256k1 validity ladder), the doubly-signed RSN1 identity bridge
   published to both the DHT and relays, the kind-1 media convention, and
   the RIPTAPP1 app-state store. `nostr` joins rsPersonaAllows, refused
-  for the anon persona. **The library rail only: the app CARD is not
-  landed.** It was written the same day, failed at `openStack` on a real
-  engine with `Chunk: no target found`, and was REVERTED - see the
-  reverted-card record below. See also the as-built section.
+  for the anon persona. The app CARD failed at `openStack` on a real
+  engine on its first landing (`Chunk: no target found`) and was REVERTED
+  the same day - and then RE-LANDED, also the same day, together with the
+  thing whose absence caused the failure: tools/check-demo-boot.py, a
+  headless BOOT RUNNER that executes the shipped stack's whole openStack
+  chain, card builders, kit, self-check, navigation clicks and a scripted
+  identity-plus-Nostr session through the family's interpreter over a
+  modeled engine world. The re-land keeps openStack BYTE-IDENTICAL to the
+  engine-proven version (verified mechanically): the relay defaults land
+  inside the card builder (the raKeyPath precedent) and nxrInit registers
+  lazily at the first Connect click, so the boot path carries no new work
+  at all. See the reverted-card record and the boot-runner section below.
 
 What remains, in one line: the live passes for 5 (the call + typing
 lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
@@ -964,7 +972,23 @@ keep their stricter labels at each site.
   the wrong reason - and it did, for exactly one edit, until the assertion
   was written and looked at.
 
-## The phase-8 CARD was reverted (2026-08-29), and why that record matters
+## The phase-8 CARD was reverted (2026-08-29) - and RE-LANDED the same day, behind a runner
+
+The revert record below stands as written; what closed it is recorded
+here, in the direction the doc-status gate requires. The card is BACK as
+of later that day, restructured so that every one of the three untried
+boot additions the revert identified is GONE: openStack is byte-identical
+to the engine-proven fc1eeae version (proved mechanically at re-land, not
+eyeballed), the relay-defaults paint moved inside raBuildNostrCard as a
+plain `put ... into field` (the raKeyPath precedent, engine-proven), and
+nxrInit registers lazily on the first Connect click. The re-land shipped
+WITH tools/check-demo-boot.py in the gate set - the runner the rule below
+demanded - which boots the shipped file under two capability profiles,
+drives the Nostr card's own click paths over real libsecp256k1, and
+mutation-proves itself with the exact defect classes that shipped that
+morning. Still "verified statically + headless boot; needs an OXT pass":
+the model is not the engine, and the runbook's phase-8 section is the
+step that settles it.
 
 The rsNostr* library rail shipped. The Nostr card did not: written the same
 day, it failed on a real engine at `openStack` with `Chunk: no target

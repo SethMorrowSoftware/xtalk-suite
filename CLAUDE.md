@@ -84,9 +84,14 @@ openxtalk-libraries/
                        implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
                        phase in pure script; structured like a member so the
                        gate machinery walks it; has its own CLAUDE.md. Gained
-                       a SIXTH rail 2026-08-29 (spec 8A), AS A LIBRARY ONLY -
-                       the card broke openStack on an engine and was reverted
-                       the same day: a Nostr bridge over
+                       a SIXTH rail 2026-08-29 (spec 8A) - the card broke
+                       openStack on an engine, was reverted the same day, and
+                       was RE-LANDED that same day with openStack
+                       byte-identical to the engine-proven body, behind
+                       riptide's tools/check-demo-boot.py, which BOOTS the
+                       shipped stack headlessly (world model + capability
+                       profiles) and mutation-proves its own fixtures: a
+                       Nostr bridge over
                        nostrxt and coinxt, built as REACH and never a
                        dependency - with no CoinXT or no relay reachable the
                        other five rails are untouched. Two things about that
