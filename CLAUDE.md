@@ -83,7 +83,25 @@ openxtalk-libraries/
   riptide/             the capstone APP (not an extension): Riptide Social,
                        implementing docs/RIPTIDE-SOCIAL-SPEC.md phase by
                        phase in pure script; structured like a member so the
-                       gate machinery walks it; has its own CLAUDE.md
+                       gate machinery walks it; has its own CLAUDE.md. Gained
+                       a SIXTH rail 2026-08-29 (spec 8A): a Nostr bridge over
+                       nostrxt and coinxt, built as REACH and never a
+                       dependency - with no CoinXT or no relay reachable the
+                       other five rails are untouched. Two things about that
+                       change generalise. It made riptide the FIRST stack in
+                       this tree to carry two socket libraries at once, which
+                       is what the 2026-08-24 socketError split was built for
+                       and had never been exercised by. And it gave riptide a
+                       way to RUN: tools/check-script-vectors.py drives the
+                       shipped library through the family's interpreter
+                       against the real committed coinxt, which found a
+                       negative-chunk-range bug in that shared interpreter
+                       (latent - no other member writes the form) and a crash
+                       in riptide's own oracle on a tampered signature. The
+                       third member to close the shipped-is-not-run gap, and
+                       the first whose gate must REWRITE the source to do it
+                       (three spellings outside the modelled subset, each
+                       rewrite asserted to fire so it cannot go blind)
   nocloud/             a SHIPPED APP (not an extension): No Cloud Quick Share,
                        one stack over torrentxt (+ optional sodiumxt/onionxt),
                        folded in from its standalone repo 2026-08-13 (that

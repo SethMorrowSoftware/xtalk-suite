@@ -213,6 +213,69 @@ paste; this pass flips the remaining LIVE half of the label.
    curl's `--data` must carry the hex EXACTLY (a trailing newline is a
    refusal - the strict 632-char gate).
 
+## Phase 8 - the Nostr rail (never run; ONE machine is enough, plus a real relay)
+
+Unlike every other section here this one needs no second machine: the
+"other side" is the public Nostr network, and a second client can be a
+web one. It DOES need CoinXT installed and outbound TLS to a relay.
+
+The rail is optional by construction, so **step 0 is to prove that**:
+open the app with CoinXT NOT installed and confirm the boot self-check
+SKIPs the Nostr rail with an install line while every other card still
+works. A failure here is worse than a broken feature - it means phase 8
+became a dependency, which is the one thing the design forbids.
+
+1. **Identity.** Unlock on the Feed card, then go to `Nostr >`. An
+   `npub1...` must appear. Copy it and paste it into any Nostr web
+   client's search: it must resolve to a valid (empty) profile rather
+   than being rejected as malformed. That is the NIP-19 encoding
+   verified by somebody else's implementation.
+2. **Lock and unlock again.** The SAME npub must come back. It derives
+   from the master seed, so this is the identity-first property one rail
+   further out; a different npub means the ladder or the subkey is not
+   deterministic and everything below is void.
+3. **Relays.** The field is pre-filled and nothing has been dialled -
+   confirm the relay log is empty before you click. Click `Connect`.
+   Each relay must log `connecting...` then `OPEN`. A relay that stalls
+   must say so within ~20 s rather than sitting silent (the UI
+   watchdog); report a silent stall as a finding.
+4. **Post.** Type a note, click `Post note`. The log must show one
+   `publish <id> -> true` per relay. Then find that note in a web client
+   by its npub. **Report the id and the relay's reason text verbatim** -
+   a `true` with an unexpected reason is still worth seeing.
+5. **Follow and read.** Paste a well-known npub (any active account)
+   into the follow field, click `Follow`. The timeline must fill with
+   VERIFIED events - and the relay log must show any refusals separately
+   as `refused an event`. Report the ratio if refusals are non-zero:
+   the relay layer verifies id and signature before delivery, so a
+   refusal is either a relay misbehaving or a bug worth chasing.
+   Confirm an event from an author you do NOT follow is dropped and
+   logged (relays send what they like; the subscription is a request).
+6. **The bridge, both directions.** Click `Publish identity bridge`.
+   The log must report the DHT half and the relay half separately.
+   Then, on the SECOND machine if you have one:
+   - **npub to handle**: fetch the kind-30078 event from a relay (any
+     client can) and confirm its content decodes to a 276-byte record
+     naming your riptide handle.
+   - **handle to npub**: this direction needs a riptide build, so it is
+     the one part of this step that wants machine B - fetch the bridge
+     off the DHT at salt `riptide-nostr` under the handle.
+   Report BOTH, and report if either half fails while the other works.
+7. **The republish refusal.** The one adversarial check, and it needs no
+   network: it is asserted in the suite paste. Confirm the two harness
+   lines pass - a stranger CAN sign an event carrying your bridge, and
+   reading it back REFUSES. If those two ever disagree, the linkage is
+   forgeable and the rail must not ship.
+8. **Persistence.** Quit the app entirely and reopen it. Unlock. Your
+   follows and relay list must come back, and the timeline must be
+   empty (it is a live view, not a store). Then unlock with a DIFFERENT
+   key file and confirm the state does NOT open, silently and without
+   overwriting anything - the log says so and the app starts empty.
+9. **The guard.** On the Anon card, confirm the live guard panel shows
+   `nostr` REFUSED for the anon persona. This is a read of the same
+   function the relay dial asserts through, so a disagreement between
+   the panel and the dial is a deanonymization finding, not a UI bug.
+
 ## Re-verifications worth repeating on any pass
 
 - The pump-survives-navigation check: start a Fetch or media download on

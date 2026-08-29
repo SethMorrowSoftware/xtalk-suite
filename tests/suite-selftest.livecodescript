@@ -1014,7 +1014,7 @@ constant kPI = 3.14159265358979
 
 -- >>> GENERATED EMBED: riptide script layer declarations >>> --
 -- ---- Riptide script layer (the real library, embedded) ----
-constant kRsVersion = "0.11.0"
+constant kRsVersion = "0.12.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -12513,7 +12513,8 @@ end b2kDispatchSensors
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
+         "(phase 8: identity, feed, media, DMs, LAN mesh, anon persona," && \
+         "Nostr bridge)"
 end rsVersion
 
 function rsLastError

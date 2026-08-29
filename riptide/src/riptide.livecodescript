@@ -218,7 +218,7 @@ script "RiptideSocial"
 --     bytes btDhtBep44SignBuf returns and torrent_shim.cpp verifies); an
 --     immutable item's target is SHA-1 of the bencoded value.
 
-constant kRsVersion = "0.11.0"
+constant kRsVersion = "0.12.0"
 constant kRsKeyMagic = "RIPTKEY1"
 constant kRsHeadMagic = "RSH1"
 constant kRsPostMagic = "RSP1"
@@ -329,7 +329,8 @@ local sRsCaps
 
 function rsVersion
    return "Riptide" && kRsVersion && \
-         "(phase 7: identity, feed, media, DMs, LAN mesh, anon persona)"
+         "(phase 8: identity, feed, media, DMs, LAN mesh, anon persona," && \
+         "Nostr bridge)"
 end rsVersion
 
 function rsLastError

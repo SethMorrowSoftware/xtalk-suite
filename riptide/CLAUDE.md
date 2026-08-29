@@ -24,12 +24,12 @@ it is an APP, not an extension: nothing here is compiled, nothing here
 adds native surface, and `rs*` never becomes a library other members may
 call.
 
-**All seven spec phases are BUILT, and phases 1-4 are DONE on two
-machines, done-criteria included** (library 0.11.0; 90 public handlers -
-the riptide row of tools/check-suite-coverage.py reads 90/90 with nothing
-untestable, the seven 2026-08-23 handlers having entered that ratchet
-with their harness sections in tests/riptide-selftest.livecodescript when
-tools/build-suite-selftest.py regenerated the paste):
+**All EIGHT spec phases are BUILT, and phases 1-4 are DONE on two
+machines, done-criteria included** (library 0.12.0; the riptide row of
+tools/check-suite-coverage.py reads 106/106 with nothing untestable -
+run the gate for the current number rather than trusting this sentence,
+which is the hand-copied-count failure this tree records everywhere
+else):
 
 - **Phases 1-2 (identity + the live feed): DONE.** Engine-passed
   2026-08-12; the two-machine propagation criterion closed 2026-08-13
@@ -108,10 +108,20 @@ tools/build-suite-selftest.py regenerated the paste):
   zero `bt*` calls in a trace), and the harness's two anon-service SKIPs
   are exactly that leg.
 
+- **Phase 8 (the Nostr bridge, spec 8A): BUILT 2026-08-29, and the first
+  riptide layer whose compute half is EXECUTED rather than only
+  re-derived.** The `rsNostr*` rail (subkey 4 through a bounded
+  secp256k1 validity ladder), the doubly-signed RSN1 identity bridge
+  published to both the DHT and relays, the kind-1 media convention, and
+  the RIPTAPP1 app-state store. `nostr` joins rsPersonaAllows, refused
+  for the anon persona. The app gained a fifth card and became the first
+  stack in this tree to carry TWO socket libraries at once. See the
+  as-built section below.
+
 What remains, in one line: the live passes for 5 (the call + typing
-lane), 6 (the mesh, through the draft-appears criterion), and 7 (tor,
-now including its built 8.2/8.3 serving) - all scripted in
-docs/two-machine-runbook.md.
+lane), 6 (the mesh, through the draft-appears criterion), 7 (tor,
+now including its built 8.2/8.3 serving) and 8 (a real relay) - all
+scripted in docs/two-machine-runbook.md.
 
 ## The rules that bind this directory
 
@@ -129,7 +139,8 @@ docs/two-machine-runbook.md.
    re-derived nor listed as an input with a written reason, and on a
    stale input entry. Never hand-edit a golden constant; regenerate from
    `python3 tools/riptide_reference.py`.
-3. **Wire formats bump their magic.** `RIPTKEY1`, `RSH1`, `RSP1`: any
+3. **Wire formats bump their magic.** `RIPTKEY1`, `RSH1`, `RSP1`, `RSN1`,
+   `RIPTAPP1`: any
    framing change mints a new magic and updates both build and parse plus
    all three vector holders in one change. Never a silent fix.
 4. **Caps refuse, never truncate**, on build AND parse, and a parse is
@@ -141,6 +152,13 @@ docs/two-machine-runbook.md.
    hard dependency. A missing optional extension disables exactly its
    feature with a clear "install org.openxtalk.library.X" story and
    never regresses another (the spec's section 3.4 matrix).
+7a. **The script now EXECUTES too** (2026-08-29):
+   `python3 tools/check-script-vectors.py` drives the shipped
+   `src/riptide.livecodescript` through the family's headless interpreter
+   against the real committed CoinXT. It settles LOGIC, not parser
+   behaviour, so it promotes nothing out of "verified statically" - but a
+   change to any pure handler is not done until it passes, and its
+   source rewrites are asserted so it cannot go quietly blind.
 7. **The static gate is law**: `python3 tools/check-livecodescript.py`
    (the onionxt/coinxt lineage; it walks this whole directory). The
    repo-wide `tools/check-handler-calls.py` knows the `rs` prefix, so
@@ -873,6 +891,122 @@ keep their stricter labels at each site.
   header and the demo scope block no longer call the 8.2/8.3 serving
   seams "verified statically" - their COMPUTE half is engine-green; what
   remains is the live-Tor leg (and, for the demo, its own route wiring).
+
+## Things decided building phase 8, the Nostr rail (2026-08-29; do not re-litigate)
+
+- **THE RAIL IS REACH, AND IT IS NOT ALLOWED TO BECOME A DEPENDENCY.**
+  Every other rail here is sovereign and that is the thesis; what none of
+  them has is an audience. Nostr buys one, at the price of somebody
+  else's server. So the rule the whole design hangs off is: nothing in
+  phase 8 sits on the path of phases 1-7. With no CoinXT, no NostrXT
+  loaded, or every relay down, this is exactly the app it was at phase 7,
+  and the boot self-check SKIPs the rail with an install line rather than
+  failing. That is why the probe splits into THREE rows (`hasNostr`,
+  `canNostrSign`, `hasNostrRelay`): the three fail separately, and each
+  disables a different feature.
+- **The protocol is composed, never re-implemented.** The canonical NIP-01
+  serializer, BIP-340, NIP-19 and the relay socket machine are `nx*`/`nxr*`
+  calls. This member owns exactly three things: the key, the bridge, and
+  the media convention. The temptation to "just build the event JSON here"
+  is the same one nostrxt's own CLAUDE.md refuses - one wrong escape byte
+  changes every event id forever - and it is refused for the same reason.
+- **Subkey 4, through a LADDER, and the ladder takes a CANDIDATE.** A KDF
+  output is 32 uniform bytes; a secp256k1 key must be in 1..n-1, and the
+  gap is ~2^-128 wide. That tiny gap is what makes the rule easy to get
+  wrong: whatever goes there can never be observed running. Re-hash with
+  SHA-256, at most 8 rungs, then refuse - bounded, no new dependency, and
+  a refusal rather than a weaker key. Exposing it as `rsNostrSeckeyFrom`
+  (of a candidate, not of a master) is what makes the untakeable branch
+  provable: the all-zeros candidate and the group order n both step
+  forward, both are golden-pinned, and both run in the harness.
+- **The bridge is signed TWICE because neither key can sign for the
+  other.** One signature is not a linkage, it is an accusation: any holder
+  of that one key could make it about a stranger's other key. Both
+  signatures over one preimage make it a two-sided statement and either
+  half alone is worthless. The domain tag `"riptide-nostr-b"` keeps it out
+  of the LAN rail's namespace and the magic sits INSIDE the signed span,
+  so no cross-kind read is expressible.
+- **The republish gate is the whole reason the reader exists.** Anyone can
+  copy somebody else's bridge into their own signed event; nothing stops
+  that and nothing should try. `rsNostrBridgeFromEvent` requires the
+  record's nostrPub to BE the event's author, so a copy verifies as the
+  ORIGINAL author's bridge and never as the republisher's. Harness-proven
+  in both directions: a stranger CAN sign such an event, and reading it
+  back refuses.
+- **A new rail gets a new SALT, never a new field.** The bridge rides
+  BEP44 at `"riptide-nostr"` rather than gaining a slot in RSH1, whose
+  magic would then have to bump and take all three vector holders and the
+  demo with it (rule 3). Cheap here, and the precedent worth keeping.
+- **Publishing the bridge is the linking act, so it is always a click.**
+  Not a consequence of connecting, not of posting. The UI says in those
+  words that it is public and cannot be unpublished. Same discipline
+  elsewhere on the card: nothing dials on open (default relays are TEXT in
+  a field), NIP-42 auth is never answered automatically (it would name
+  this identity to the relay), and inbound media is a POINTER the user
+  clicks rather than a fetch that joins a swarm and shows their IP.
+- **Nostr DMs are a SCOPE CUT with a reason, not a gap.** NIP-04 is
+  deprecated and needs AES, which exists nowhere in this suite and never
+  will; NIP-17 gift wrap needs an ephemeral-key layer and a metadata
+  analysis this pass has not done. Riptide already has a DM rail that
+  answers to nobody. A half-built encrypted rail beside it would be worse
+  than none.
+- **The app-state store is SEALED, and the reason is not that a follow
+  list is secret.** It is that a follow list IS the social graph - who you
+  read, which relays you talk to, which npub is yours - which is exactly
+  what spec 8.4 says the anon persona must stay unlinked from. Plaintext
+  beside a sealed key file would put the interesting half of the threat
+  model on disk. Subkey 5, its own row, never a signing key.
+- **rsPublishBridge validates the seed/handle match ABOVE the session
+  check**, per the phase-2 rule this file already records. A check below
+  the session gate can only ever be reached on a machine that has
+  torrentxt, which is where a harness assertion quietly starts passing for
+  the wrong reason - and it did, for exactly one edit, until the assertion
+  was written and looked at.
+
+## The phase-8 execution gate, and the three defects it found (2026-08-29)
+
+riptide could not EXECUTE at all before this change. The only thing that had
+ever read `src/riptide.livecodescript` was `check-livecodescript.py`, which
+validates balance, quoting and the token traps and cannot tell whether a
+handler computes the right bytes - the gap this member's own notes call its
+most expensive class of bug. `tools/check-script-vectors.py` closes it the way
+CoinXT and NostrXT each closed theirs: it runs the SHIPPED file through the
+family's headless interpreter against the REAL committed `coinxt.so`, so the
+phase-8 signatures under test are genuine BIP-340 over genuine libsecp256k1,
+compared against an independent oracle.
+
+It found three defects on its first run, and **not one of them was in the
+shipped rail** - which is the part worth remembering, because a new tool's
+first findings are the ones most likely to be the tool's own (nostrxt paid for
+that lesson and wrote it down: suspect the probe first, with evidence).
+
+- **The INTERPRETER clamped negative chunk ranges** instead of counting from
+  the end, so `char -3 to -1 of "abcdef"` was "abcde" - wrong at both ends,
+  silently. Latent rather than active: neither coinxt's nor nostrxt's source
+  uses the form, so no gate had ever read a wrong answer from it. It surfaced
+  on `byte 10 to -1 of pFileBytes`, the idiom rsOpenMasterSeed has used since
+  phase 1. Fixed in both copies, with both dependent members' gates re-run.
+- **The ORACLE crashed on a tampered signature**: `_verify_ed25519`
+  decompressed the signature's R point without the not-a-point guard its
+  public-key path already had, so a corrupted signature raised TypeError
+  instead of answering False. Every earlier negative test had tampered with
+  the MESSAGE, never the signature, so nothing had ever reached that line.
+- **`rsPersonaAllows` leaked the itemDelimiter** - the C10 defect, in the one
+  handler where it reads worst: the demo's Anon card paints the guard panel by
+  calling it nine times in a row, so a card repaint silently reset the
+  delimiter under whatever the pump did next. It survived the 2026-08-17 sweep
+  that found the other one because comma IS the engine default, so it is
+  benign until it is not.
+
+**The rewrites are the part to understand before touching this gate.** riptide
+uses three spellings outside the interpreter's modelled subset (`the number of
+X in Y`, the one-line `if ... then STMT`, and binaryEncode/div/mod), so the
+gate rewrites them into forms the interpreter models. Each rewrite is NAMED and
+COUNTED and must match at least once or the gate FAILS - a rewrite that
+silently stops applying would leave the gate testing a file nobody ships, which
+is this tree's own recurring failure shape. The line between what got FIXED in
+the interpreter and what gets REWRITTEN here is deliberate: a wrong ANSWER
+earns a change to shared drift-gated tooling; three missing SPELLINGS do not.
 
 ## Suite integration status
 
