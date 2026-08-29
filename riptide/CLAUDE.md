@@ -1047,9 +1047,23 @@ the same-day engine agreement above. What changed and why:
   for this (lexical-position resolution); the boot runner plants a
   legacy button + an old version stamp and proves the shed.
 
-Every item is executed by the boot runner; none has met an engine in
-this form. Label: verified statically + headless boot; needs an OXT
-re-pass.
+Every item is executed by the boot runner - and **the v11 boot MET the
+engine the same day (2026-08-29)**: the maintainer pasted the reworked
+file and sent back the boot self-check record itself - 9 passed, 1
+failed, 0 skipped, all five cards built, every capability true. The one
+FAIL was the CHECK's own defect, and it settled the open question this
+member's boot runner had carried since it was written: unqualified
+`there is a field X` answers for the CURRENT CARD only (engine notes
+5.6, with this record as the primary evidence), so scMissing reported
+all 63 off-card controls missing from a stack where every one existed.
+Fixed the same day in the carried master (`scMissing` walks every card
+with qualified `there is`; re-carried to all 14 adopters), and the boot
+runner's model - whose reading the engine CONFIRMED - now asserts the
+self-check reports zero failures instead of printing it as an open
+question. What remains for the v11 chrome is one more paste: the record
+should read 10 passed, 0 failed. Label: verified statically + headless
+boot + an engine boot record with one since-fixed check defect; the
+post-fix re-paste is the step that closes it.
 
 The rsNostr* library rail shipped. The Nostr card did not: written the same
 day, it failed on a real engine at `openStack` with `Chunk: no target

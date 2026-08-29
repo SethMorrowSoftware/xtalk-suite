@@ -83,8 +83,12 @@ Status, by phase (each a maintainer's dated account):
 
 The same day the phase-8 card re-landed, the whole stack got its first
 UI pass taken as an APPLICATION, executed end to end by the boot gate
-(38 checks, both capability profiles) but not yet run on an engine in
-this form:
+(40 checks, both capability profiles) - and BOOTED ON THE ENGINE that
+same day: the maintainer pasted the v11 file and sent back its boot
+record, 9 passed and 1 failed, where the one FAIL was the boot
+self-check's own cross-card defect (engine notes 5.6, found by exactly
+that record and fixed the same day - the next paste should read 10
+passed, 0 failed):
 
 - **Five tabs in the title band of every card** (Feed, Messages,
   Devices, Anon, Nostr), the current one held down - any card is one
