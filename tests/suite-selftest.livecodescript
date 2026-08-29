@@ -13024,6 +13024,16 @@ end rsBuildPostChunked
 
 private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsPostBodyInner(pTimestamp, pPrevTarget, pKind, pTextContent, \
+         pChunkTargets, pMediaList) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsPostBody
+
+private function rsPostBodyInner pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
+   local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
    if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
       rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
       return empty
@@ -13087,13 +13097,13 @@ private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunk
          put textEncode(tNorm, "ASCII") after tOut
       end repeat
    end if
-   if the number of bytes in tOut + 64 > kRsMaxRecord then
+   if (the number of bytes in tOut) + 64 > kRsMaxRecord then
       rsSetError "rsPostBody: the post record is over" && kRsMaxRecord && \
             "bytes; move the text to chunks or drop media"
       return empty
    end if
    return tOut
-end rsPostBody
+end rsPostBodyInner
 
 private function rsSignPost pBody, pIdentitySeed
    local tKeys, tSig, tErr
@@ -13270,6 +13280,14 @@ function rsChunkPostText pTextContent
 end rsChunkPostText
 
 function rsAssembleChunkText pChunkTargets, pParts
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsAssembleChunkTextInner(pChunkTargets, pParts) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsAssembleChunkText
+
+private function rsAssembleChunkTextInner pChunkTargets, pParts
    local tCount, tItem, tNorm, tPart, tBytes, tErr
    set the itemDelimiter to comma
    put the number of items in pChunkTargets into tCount
@@ -13309,7 +13327,7 @@ function rsAssembleChunkText pChunkTargets, pParts
       rsSetError "rsAssembleChunkText:" && tErr
       return empty
    end try
-end rsAssembleChunkText
+end rsAssembleChunkTextInner
 
 function rsBencodeBytes pData
    local tLen
@@ -13325,7 +13343,7 @@ private function rsBencodedByteStringLen pValue
       put byteToNum(byte tI of pValue) into tN
       if tN is 58 then
          if tDigits is 0 then return -1
-         if the number of bytes in pValue - tI is not tLen then return -1
+         if (the number of bytes in pValue) - tI is not tLen then return -1
          return tLen
       end if
       if tN < 48 or tN > 57 then return -1
@@ -14137,7 +14155,7 @@ function rsDmFrame pKind, pPayload
       rsSetError "rsDmFrame: the payload must be non-empty"
       return empty
    end if
-   if the number of bytes in pPayload + 5 > kRsFrameMax then
+   if (the number of bytes in pPayload) + 5 > kRsFrameMax then
       rsSetError "rsDmFrame: the frame is over the rp1" && kRsFrameMax && \
             "cap; a DM payload that size belongs in a torrent"
       return empty

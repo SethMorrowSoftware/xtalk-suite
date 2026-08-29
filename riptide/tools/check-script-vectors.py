@@ -430,6 +430,52 @@ def check_pure(c, ip, V):
          [ip.constants.get("kRsNostrBridgeBody"),
           ip.constants.get("kRsNostrBridgeLen")], [148, 276])
 
+    c.note("post building, and the delimiter discipline around it")
+    # rsBuildPost is phase-2 code, but it was SPLIT in 2026-08-29 so its
+    # inner body could set the itemDelimiter behind a save/restore. These
+    # two checks are what make that refactor safe to have done: the bytes
+    # must be unchanged, and the delimiter must survive - including across
+    # the SEVEN refusal exits, which is where a per-exit restore would have
+    # been forgotten.
+    id_seed = to_str(REF["identity_seed"](bytes([0x42] * 32)))
+    post1 = ip.call("rsBuildPost",
+                    [1754870400, REF["ZERO_TARGET"], "hello, riptide", "",
+                     id_seed])
+    c.ck("rsBuildPost still matches the golden post byte for byte",
+         to_bytes(post1).hex(), V["post1"])
+    post2 = ip.call("rsBuildPost",
+                    [1754870460, V["post1Target"], "second post", "ee" * 20,
+                     id_seed])
+    c.ck("...and with a media list too", to_bytes(post2).hex(), V["post2"])
+
+    def delim_survives(label, thunk):
+        was = LCS.set_item_delimiter("|")
+        try:
+            thunk()
+            c.ck(label, LCS.ITEM_DELIMITER[0], "|")
+        finally:
+            LCS.set_item_delimiter(was)
+
+    delim_survives("rsBuildPost leaves the itemDelimiter as it found it",
+                   lambda: ip.call("rsBuildPost",
+                                   [1754870400, REF["ZERO_TARGET"], "x", "",
+                                    id_seed]))
+    delim_survives("...even when it REFUSES (the exit a per-exit restore "
+                   "forgets)",
+                   lambda: ip.call("rsBuildPost",
+                                   [1754870400, REF["ZERO_TARGET"], "x",
+                                    "00" * 20, id_seed]))
+    delim_survives("rsAssembleChunkText leaves it alone on refusal too",
+                   lambda: ip.call("rsAssembleChunkText", ["", {}]))
+    # rsPersonaAllows had the SAME leak and was fixed in the same pass, but
+    # it cannot be driven here: it uses `is not among the items of`, which
+    # the interpreter does not model. Its delimiter discipline and its full
+    # truth table are asserted in the folded suite harness instead, which is
+    # where the guard belongs anyway. Named rather than silently omitted.
+    c.skip("rsPersonaAllows' delimiter discipline",
+           "`is among the items of` is outside the interpreter's subset; "
+           "the folded harness asserts the guard on the engine")
+
     c.note("the app-state store: framing, caps and refusals")
     sealed = ip.call("rsSealAppState", ["hello state", MASTER])
     c.ck("a sealed store carries the RIPTAPP1 header",

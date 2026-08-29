@@ -923,7 +923,32 @@ function rsBuildPostChunked pTimestamp, pPrevTarget, pChunkTargets, pMediaList, 
    return rsSignPost(tBody, pIdentitySeed)
 end rsBuildPostChunked
 
+-- SAVE AND RESTORE THE ITEM DELIMITER (2026-08-29). This handler set it to
+-- comma twice and never put it back, so every caller of rsBuildPost got the
+-- delimiter reset underneath it. That is the C10 defect exactly - the one
+-- rsMediaCreate had, whose symptom on an engine was a mystery about the
+-- media list rather than anything that named a delimiter - and it survived
+-- the 2026-08-17 sweep for the same reason rsPersonaAllows's copy did:
+-- comma IS the engine default, so it is invisible until some caller sets
+-- something else.
+--
+-- Restored around the WHOLE body rather than at each exit, because there are
+-- SEVEN refusal exits here and a restore per exit is the line the next
+-- refusal path forgets. The narrow-span shape rsMediaCreate uses does not
+-- fit: the delimiter is read in two separate stretches with refusals in
+-- between, so one save at the top and one restore before each `return` of
+-- the delimiter-using region would be the same trap in a different place.
 private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
+   local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsPostBodyInner(pTimestamp, pPrevTarget, pKind, pTextContent, \
+         pChunkTargets, pMediaList) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsPostBody
+
+private function rsPostBodyInner pTimestamp, pPrevTarget, pKind, pTextContent, pChunkTargets, pMediaList
    local tPrev, tOut, tTextBytes, tChunkCount, tMediaCount, tItem, tNorm
    if pTimestamp is an integer and pTimestamp >= 9007199254740992 then
       rsSetError "rsPostBody: the timestamp must be below 2^53 to round-trip exactly"
@@ -988,13 +1013,13 @@ private function rsPostBody pTimestamp, pPrevTarget, pKind, pTextContent, pChunk
          put textEncode(tNorm, "ASCII") after tOut
       end repeat
    end if
-   if the number of bytes in tOut + 64 > kRsMaxRecord then
+   if (the number of bytes in tOut) + 64 > kRsMaxRecord then
       rsSetError "rsPostBody: the post record is over" && kRsMaxRecord && \
             "bytes; move the text to chunks or drop media"
       return empty
    end if
    return tOut
-end rsPostBody
+end rsPostBodyInner
 
 private function rsSignPost pBody, pIdentitySeed
    local tKeys, tSig, tErr
@@ -1204,7 +1229,19 @@ end rsChunkPostText
 -- validation would refuse valid posts split inside a sequence). Returns
 -- the full text, or empty with the first missing target named - which is
 -- how a caller renders an honest placeholder while parts are in flight.
+-- Same save-and-restore as rsPostBody, and for the same reason: this handler
+-- set the itemDelimiter and never put it back, across five refusal exits.
+-- Split rather than restored per exit, because a restore per exit is the
+-- line the next refusal path forgets.
 function rsAssembleChunkText pChunkTargets, pParts
+   local tSavedDelim, tResult
+   put the itemDelimiter into tSavedDelim
+   put rsAssembleChunkTextInner(pChunkTargets, pParts) into tResult
+   set the itemDelimiter to tSavedDelim
+   return tResult
+end rsAssembleChunkText
+
+private function rsAssembleChunkTextInner pChunkTargets, pParts
    local tCount, tItem, tNorm, tPart, tBytes, tErr
    set the itemDelimiter to comma
    put the number of items in pChunkTargets into tCount
@@ -1244,7 +1281,7 @@ function rsAssembleChunkText pChunkTargets, pParts
       rsSetError "rsAssembleChunkText:" && tErr
       return empty
    end try
-end rsAssembleChunkText
+end rsAssembleChunkTextInner
 
 --------------------------------------------------------------------------
 -- BEP44 helpers
@@ -1282,7 +1319,7 @@ private function rsBencodedByteStringLen pValue
       put byteToNum(byte tI of pValue) into tN
       if tN is 58 then
          if tDigits is 0 then return -1
-         if the number of bytes in pValue - tI is not tLen then return -1
+         if (the number of bytes in pValue) - tI is not tLen then return -1
          return tLen
       end if
       if tN < 48 or tN > 57 then return -1
@@ -2284,7 +2321,7 @@ function rsDmFrame pKind, pPayload
       rsSetError "rsDmFrame: the payload must be non-empty"
       return empty
    end if
-   if the number of bytes in pPayload + 5 > kRsFrameMax then
+   if (the number of bytes in pPayload) + 5 > kRsFrameMax then
       rsSetError "rsDmFrame: the frame is over the rp1" && kRsFrameMax && \
             "cap; a DM payload that size belongs in a torrent"
       return empty
