@@ -8,6 +8,7 @@ it describes how five members compose; this folder documents what was built.
 | Document | What it is |
 |---|---|
 | [api-reference.md](api-reference.md) | The public `rs*` surface of `src/riptide.livecodescript`: phases 1-7 plus the 8.2/8.3 onion serving seams and the phase-6 sync layer. All 90 public handlers are documented. |
+| [protocol-vectors.json](protocol-vectors.json) | GENERATED - the Riptide Protocol conformance bundle: 67 golden vectors (one fixed identity, every wire record, every derivation and target) plus 31 refusal vectors, for implementations in any language. The prose half is [`../../docs/RIPTIDE-PROTOCOL.md`](../../docs/RIPTIDE-PROTOCOL.md); regenerate with `python3 tools/export-protocol-vectors.py`, whose `--check` re-executes the whole bundle in the gate set. Never edit by hand. |
 | [two-machine-runbook.md](two-machine-runbook.md) | How to drive `examples/riptide-social.livecodescript` on two OXT machines, phase by phase, and what each result proves. Written after the first passes, so it records what actually happens rather than what was expected. |
 | [../../docs/RIPTIDE-SOCIAL-SPEC.md](../../docs/RIPTIDE-SOCIAL-SPEC.md) | The capstone specification: the identity seed, the signed BEP44 feed with co-seeded torrent media, the rp1 and secretstream DMs, WebRTC live sessions, enet LAN device sync, and the onion-only anonymous persona. |
 

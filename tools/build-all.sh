@@ -210,6 +210,18 @@ run_gates() {
     echo "== $m: tools/check-demo-boot.py =="
     ( cd "$m" && python3 tools/check-demo-boot.py --check )
   fi
+  # The Riptide Protocol conformance bundle (riptide): the machine-readable
+  # golden + refusal vectors any-language implementations test against
+  # (docs/RIPTIDE-PROTOCOL.md is the prose half). --check regenerates the
+  # bundle from the oracle and requires the committed JSON to match
+  # byte-for-byte, and EXECUTES it first - every signed golden re-verifies,
+  # every target recomputes, every executed refusal vector refuses - so a
+  # bundle that stops proving what it claims fails before freshness is
+  # even compared.
+  if [ -f "$m/tools/export-protocol-vectors.py" ]; then
+    echo "== $m: tools/export-protocol-vectors.py --check =="
+    ( cd "$m" && python3 tools/export-protocol-vectors.py --check )
+  fi
   # Embedded-Kit freshness (box2dxt): the same shape as
   # tools/sync-demo-embeds.py below - src/box2dxt-kit.livecodescript is the
   # master, and each of the six example stacks carries a verbatim copy between
