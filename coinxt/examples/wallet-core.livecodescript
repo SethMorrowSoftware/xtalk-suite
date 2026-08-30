@@ -1822,3 +1822,506 @@ private function cwBranchAndBound pPool, pTargetSat, pFeeRate, pInputType, pOutp
    put "no changeless combination exists" into tOut["why"]
    return tOut
 end cwBranchAndBound
+
+-- ==============================================================================
+-- TRANSACTIONS
+--
+-- CoinXT owns the three signature-hash preimages (cxBtcSighashLegacy,
+-- cxBtcSighashSegwit, cxBtcSighashTaproot) and a transaction encoder. What is
+-- added here is what a WALLET does around them: the per-type scriptCode rules,
+-- the scriptSig and witness shapes, and a DECODER, which no signer needs and
+-- every reviewer does.
+--
+-- THE SCRIPTCODE RULES ARE WHERE THIS GOES WRONG, so they are stated once:
+--   p2pkh          the scriptCode is the P2PKH script itself (legacy preimage)
+--   p2wpkh         BIP-143's scriptCode is the P2PKH script OF THE SAME KEY,
+--                  not the witness program
+--   p2sh-p2wpkh    identical to p2wpkh; the P2SH wrapping is invisible to the
+--                  preimage and shows up only in the scriptSig
+--   p2wsh          the scriptCode is the WITNESS SCRIPT itself
+--   p2tr           there is no scriptCode at all: BIP-341 commits to every
+--                  input's scriptPubKey and amount, which is why the taproot
+--                  path needs the whole prevout set and the others do not
+-- ==============================================================================
+
+function cwTxInput pTxidHex, pVout, pSequence
+   local tIn
+   if cwHexIsClean(pTxidHex) is not true or the number of chars of pTxidHex is not 64 then
+      throw "wallet-core: cwTxInput: a txid is 32 bytes of hex."
+   end if
+   put cwLower(pTxidHex) into tIn["txid"]
+   put pVout + 0 into tIn["vout"]
+   if pSequence is "" then
+      put kCwSeqRbf into tIn["sequence"]
+   else
+      put pSequence + 0 into tIn["sequence"]
+   end if
+   return tIn
+end cwTxInput
+
+function cwTxOutput pAmountSat, pScriptHex
+   local tOut
+   put pAmountSat + 0 into tOut["value"]
+   put cwLower(pScriptHex) into tOut["script"]
+   return tOut
+end cwTxOutput
+
+function cwOutpointsHex pInputs
+   -- CoinXT's transaction API takes parallel COMMA lists of hex, so this is
+   -- where the array convention meets it. Building a comma-joined string is
+   -- safe whatever the engine's itemDelimiter is; only READING one is not.
+   local tOut, tI, tCount, tIn
+   put "" into tOut
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      put pInputs[tI] into tIn
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put cxHexEncode(cxBtcOutpoint(tIn["txid"], tIn["vout"])) after tOut
+   end repeat
+   return tOut
+end cwOutpointsHex
+
+function cwSequencesList pInputs
+   local tOut, tI, tCount, tIn
+   put "" into tOut
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      put pInputs[tI] into tIn
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put tIn["sequence"] after tOut
+   end repeat
+   return tOut
+end cwSequencesList
+
+function cwOutputsHex pOutputs
+   local tOut, tI, tCount, tRec
+   put "" into tOut
+   put cwListCount(pOutputs) into tCount
+   repeat with tI = 1 to tCount
+      put pOutputs[tI] into tRec
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put cxHexEncode(cxBtcOutput(tRec["value"], tRec["script"])) after tOut
+   end repeat
+   return tOut
+end cwOutputsHex
+
+function cwSighash pScriptType, pVersion, pInputs, pOutputs, pIndex, pLocktime, pPubkeyHex, pAmountSat, pWitnessScriptHex, pPrevScripts, pPrevAmounts
+   -- The digest to sign for input pIndex (1-based, as CoinXT counts).
+   local tOutpoints, tSeqs, tOuts, tCode, tI, tCount, tSpks, tAmts, tRec
+   put cwOutpointsHex(pInputs) into tOutpoints
+   put cwSequencesList(pInputs) into tSeqs
+   put cwOutputsHex(pOutputs) into tOuts
+   if pScriptType is "p2pkh" then
+      put cwScriptP2pkh(pPubkeyHex) into tCode
+      return cxHexEncode(cxBtcSighashLegacy(pVersion, tOutpoints, tSeqs, pIndex, \
+            tCode, tOuts, pLocktime, 1))
+   end if
+   if pScriptType is "p2wpkh" or pScriptType is "p2sh-p2wpkh" then
+      put cwScriptP2pkh(pPubkeyHex) into tCode
+      return cxHexEncode(cxBtcSighashSegwit(pVersion, tOutpoints, tSeqs, pIndex, \
+            tCode, pAmountSat, tOuts, pLocktime, 1))
+   end if
+   if pScriptType is "p2wsh" then
+      return cxHexEncode(cxBtcSighashSegwit(pVersion, tOutpoints, tSeqs, pIndex, \
+            pWitnessScriptHex, pAmountSat, tOuts, pLocktime, 1))
+   end if
+   if pScriptType is "p2tr" then
+      put "" into tSpks
+      put "" into tAmts
+      put cwListCount(pPrevScripts) into tCount
+      repeat with tI = 1 to tCount
+         if tI > 1 then
+            put "," after tSpks
+            put "," after tAmts
+         end if
+         put pPrevScripts[tI] after tSpks
+         put pPrevAmounts[tI] after tAmts
+      end repeat
+      -- BIP-341's DEFAULT sighash type is 0, which is not SIGHASH_ALL's 1 and
+      -- does not appear in the signature at all. Passing 1 here would produce
+      -- a valid but longer 65-byte signature; 0 is what a key-path spend
+      -- normally uses.
+      return cxHexEncode(cxBtcSighashTaproot(pVersion, tOutpoints, tSeqs, tAmts, \
+            tSpks, tOuts, pIndex, pLocktime, 0, ""))
+   end if
+   throw "wallet-core: cwSighash: unknown script type " & pScriptType & "."
+end cwSighash
+
+function cwSignInput pScriptType, pSeckeyHex, pDigestHex, pPubkeyHex
+   -- Returns an array with "scriptsig" (hex) and "witness" (a list of hex
+   -- items). The sighash byte appended to the DER signature is 1 (SIGHASH_ALL)
+   -- for every non-taproot type, and taproot's key-path signature carries no
+   -- type byte at all when the type is the default 0.
+   local tSig, tOut, tWit
+   put cwListNew() into tWit
+   if pScriptType is "p2tr" then
+      throw "wallet-core: cwSignInput: taproot signs with cwSignTaproot, which " & \
+            "must tweak the private key first."
+   end if
+   put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(pSeckeyHex), cxHexDecode(pDigestHex)))) \
+         & "01" into tSig
+   if pScriptType is "p2pkh" then
+      put cwPush(tSig) & cwPush(pPubkeyHex) into tOut["scriptsig"]
+      put tWit into tOut["witness"]
+      return tOut
+   end if
+   put cwListAdd(tWit, tSig) into tWit
+   put cwListAdd(tWit, pPubkeyHex) into tWit
+   put tWit into tOut["witness"]
+   if pScriptType is "p2sh-p2wpkh" then
+      put cwPush(cwRedeemP2shP2wpkh(pPubkeyHex)) into tOut["scriptsig"]
+   else
+      put "" into tOut["scriptsig"]
+   end if
+   return tOut
+end cwSignInput
+
+function cwSignTaproot pSeckeyHex, pDigestHex, pMerkleRootHex
+   -- A BIP-341 key-path spend. The private key is TWEAKED first: the key that
+   -- signs is not the derived key but that key plus the taproot tweak, and a
+   -- signature from the untweaked key verifies against nothing.
+   --
+   -- The aux randomness is 32 zero bytes. BIP-340 allows it, and the reason to
+   -- choose it here is that a wallet whose signatures cannot be reproduced
+   -- cannot be tested by anybody, including its own vector gate; the security
+   -- argument for aux randomness is about fault attacks on hardware, which is
+   -- not the threat model of a script wallet on a general-purpose desktop.
+   local tTweaked, tSig, tOut, tWit
+   put cxTaprootTweakSeckey(cxHexDecode(pSeckeyHex), cxHexDecode(pMerkleRootHex)) into tTweaked
+   put cxHexEncode(cxSchnorrSign(tTweaked, cxHexDecode(pDigestHex), \
+         cxHexDecode("0000000000000000000000000000000000000000000000000000000000000000"))) into tSig
+   put "" into tTweaked
+   put cwListNew() into tWit
+   put cwListAdd(tWit, tSig) into tWit
+   put "" into tOut["scriptsig"]
+   put tWit into tOut["witness"]
+   return tOut
+end cwSignTaproot
+
+function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
+   -- The P2WSH m-of-n witness: an empty element for CHECKMULTISIG's
+   -- off-by-one, then one signature per cosigner IN WITNESS-SCRIPT KEY ORDER,
+   -- then the witness script itself. Signatures out of key order are a SCRIPT
+   -- FAILURE, not a policy warning - the interpreter walks both lists once and
+   -- never backtracks - so the order is taken from the script rather than from
+   -- the order the keys were handed in.
+   local tKeys, tI, tJ, tCount, tKeyCount, tWit, tOut, tSig, tSk, tPub
+   put cwMultisigKeys(pWitnessScriptHex) into tKeys
+   put cwListCount(tKeys) into tKeyCount
+   put cwListCount(pSeckeys) into tCount
+   put cwListNew() into tWit
+   put cwListAdd(tWit, "") into tWit
+   repeat with tI = 1 to tKeyCount
+      repeat with tJ = 1 to tCount
+         put pSeckeys[tJ] into tSk
+         put cxHexEncode(cxPublicKey(cxHexDecode(tSk), true)) into tPub
+         if tPub is tKeys[tI] then
+            put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(tSk), cxHexDecode(pDigestHex)))) \
+                  & "01" into tSig
+            put cwListAdd(tWit, tSig) into tWit
+            exit repeat
+         end if
+      end repeat
+   end repeat
+   put cwListAdd(tWit, pWitnessScriptHex) into tWit
+   put "" into tOut["scriptsig"]
+   put tWit into tOut["witness"]
+   return tOut
+end cwSignMultisig
+
+function cwMultisigKeys pWitnessScriptHex
+   -- The public keys a bare CHECKMULTISIG script pushes, in script order.
+   local tHex, tPos, tLen, tKeys, tEnd
+   put cwLower(pWitnessScriptHex) into tHex
+   put cwListNew() into tKeys
+   put 3 into tPos
+   put the number of chars of tHex into tEnd
+   repeat while tPos < (tEnd - 3)
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+      if tLen < 1 or tLen > 65 then
+         exit repeat
+      end if
+      put cwListAdd(tKeys, char (tPos + 2) to (tPos + 1 + tLen * 2) of tHex) into tKeys
+      put tPos + 2 + tLen * 2 into tPos
+   end repeat
+   return tKeys
+end cwMultisigKeys
+
+function cwTxSerialize pVersion, pInputs, pOutputs, pLocktime, pScriptSigs, pWitnesses
+   -- The signed transaction, as hex. pScriptSigs is a list of hex scriptSigs
+   -- (one per input, possibly empty); pWitnesses is a list of witness lists,
+   -- or an empty list for a wholly non-witness transaction.
+   local tSigs, tWits, tI, tJ, tCount, tItems, tOne, tHasWitness
+   put "" into tSigs
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tSigs
+      end if
+      put pScriptSigs[tI] after tSigs
+   end repeat
+   put false into tHasWitness
+   put "" into tWits
+   if cwListCount(pWitnesses) > 0 then
+      repeat with tI = 1 to tCount
+         put pWitnesses[tI] into tItems
+         if cwListCount(tItems) > 0 then
+            put true into tHasWitness
+         end if
+      end repeat
+   end if
+   if tHasWitness is true then
+      repeat with tI = 1 to tCount
+         if tI > 1 then
+            put "," after tWits
+         end if
+         put pWitnesses[tI] into tItems
+         put "" into tOne
+         repeat with tJ = 1 to cwListCount(tItems)
+            if tJ > 1 then
+               put "," after tOne
+            end if
+            put tItems[tJ] after tOne
+         end repeat
+         put cxHexEncode(cxBtcWitness(tOne)) after tWits
+      end repeat
+   end if
+   return cxHexEncode(cxBtcTxEncode(pVersion, cwOutpointsHex(pInputs), tSigs, \
+         cwSequencesList(pInputs), tWits, cwOutputsHex(pOutputs), pLocktime))
+end cwTxSerialize
+
+function cwTxid pVersion, pInputs, pOutputs, pLocktime, pScriptSigs
+   local tSigs, tI, tCount
+   put "" into tSigs
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tSigs
+      end if
+      put pScriptSigs[tI] after tSigs
+   end repeat
+   return cxBtcTxid(pVersion, cwOutpointsHex(pInputs), tSigs, \
+         cwSequencesList(pInputs), cwOutputsHex(pOutputs), pLocktime)
+end cwTxid
+
+-- ==============================================================================
+-- TRANSACTION DECODING
+--
+-- No signer needs this and every reviewer does. A wallet that can only BUILD a
+-- transaction asks the person in front of it to trust its own summary of what
+-- it built; one that can read a raw transaction back can show them the bytes
+-- decoded independently of the code that made them, and can tell them what a
+-- transaction somebody else handed them actually does.
+-- ==============================================================================
+
+private function cwReadVarInt pHex, pPos
+   -- Returns an array with "value" and "next" (the 1-based hex character
+   -- position after the field).
+   local tFirst, tOut, tLen
+   put cwBeRead(cxHexDecode(char pPos to (pPos + 1) of pHex)) into tFirst
+   if tFirst < 253 then
+      put tFirst into tOut["value"]
+      put pPos + 2 into tOut["next"]
+      return tOut
+   end if
+   if tFirst is 253 then
+      put 2 into tLen
+   else if tFirst is 254 then
+      put 4 into tLen
+   else
+      put 8 into tLen
+   end if
+   put cwLeRead(cxHexDecode(char (pPos + 2) to (pPos + 1 + tLen * 2) of pHex)) into tOut["value"]
+   put pPos + 2 + tLen * 2 into tOut["next"]
+   return tOut
+end cwReadVarInt
+
+function cwTxDecode pRawHex
+   local tHex, tPos, tOut, tVer, tSegwit, tCount, tI, tJ, tRec, tIn, tOutRec
+   local tIns, tOuts, tLen, tWit, tItems, tStripped, tWeight, tRbf, tTotal, tEnd
+   put cwLower(cwTrim(pRawHex)) into tHex
+   if cwHexIsClean(tHex) is not true then
+      throw "wallet-core: cwTxDecode: that is not hex."
+   end if
+   put 1 into tPos
+   put cwLeRead(cxHexDecode(char 1 to 8 of tHex)) into tVer
+   put 9 into tPos
+   put false into tSegwit
+   if char 9 to 12 of tHex is "0001" then
+      put true into tSegwit
+      put 13 into tPos
+   end if
+   put cwReadVarInt(tHex, tPos) into tRec
+   put tRec["value"] into tCount
+   put tRec["next"] into tPos
+   put cwListNew() into tIns
+   repeat with tI = 1 to tCount
+      -- the outpoint's txid is stored LITTLE-endian and displayed big-endian;
+      -- the reversal is the difference between a txid a person recognises and
+      -- one that matches nothing on any explorer
+      put "" into tIn
+      put cxHexEncode(cwReverseBytes(cxHexDecode(char tPos to (tPos + 63) of tHex))) into tIn["txid"]
+      put tPos + 64 into tPos
+      put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tIn["vout"]
+      put tPos + 8 into tPos
+      put cwReadVarInt(tHex, tPos) into tRec
+      put tRec["value"] into tLen
+      put tRec["next"] into tPos
+      put char tPos to (tPos + tLen * 2 - 1) of tHex into tIn["scriptsig"]
+      put tPos + tLen * 2 into tPos
+      put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tIn["sequence"]
+      put tPos + 8 into tPos
+      put cwListNew() into tIn["witness"]
+      put cwListAdd(tIns, tIn) into tIns
+   end repeat
+   put cwReadVarInt(tHex, tPos) into tRec
+   put tRec["value"] into tCount
+   put tRec["next"] into tPos
+   put cwListNew() into tOuts
+   put 0 into tTotal
+   repeat with tI = 1 to tCount
+      put cwLeRead(cxHexDecode(char tPos to (tPos + 15) of tHex)) into tOutRec["value"]
+      add tOutRec["value"] to tTotal
+      put tPos + 16 into tPos
+      put cwReadVarInt(tHex, tPos) into tRec
+      put tRec["value"] into tLen
+      put tRec["next"] into tPos
+      put char tPos to (tPos + tLen * 2 - 1) of tHex into tOutRec["script"]
+      put tPos + tLen * 2 into tPos
+      put cwScriptKind(tOutRec["script"]) into tOutRec["kind"]
+      put cwListAdd(tOuts, tOutRec) into tOuts
+   end repeat
+   if tSegwit is true then
+      put cwListCount(tIns) into tCount
+      repeat with tI = 1 to tCount
+         put cwReadVarInt(tHex, tPos) into tRec
+         put tRec["next"] into tPos
+         put cwListNew() into tItems
+         repeat with tJ = 1 to tRec["value"]
+            put cwReadVarInt(tHex, tPos) into tWit
+            put tWit["next"] into tPos
+            put cwListAdd(tItems, char tPos to (tPos + tWit["value"] * 2 - 1) of tHex) into tItems
+            put tPos + tWit["value"] * 2 into tPos
+         end repeat
+         put tIns[tI] into tIn
+         put tItems into tIn["witness"]
+         put tIn into tIns[tI]
+      end repeat
+   end if
+   put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tOut["locktime"]
+   put tPos + 8 into tPos
+   -- the end position, taken into a local FIRST: `the number of chars of tHex
+   -- + 1` binds the addition into the chunk target, so the engine is asked
+   -- for the character count of tHex+1 rather than for one past the end
+   put the number of chars of tHex into tEnd
+   add 1 to tEnd
+   if tPos is not tEnd then
+      throw "wallet-core: cwTxDecode: " & cwIntDiv(tEnd - tPos, 2) & \
+            " trailing bytes after the transaction."
+   end if
+   put tVer into tOut["version"]
+   put tSegwit into tOut["segwit"]
+   put tIns into tOut["inputs"]
+   put tOuts into tOut["outputs"]
+   put tTotal into tOut["outputtotal"]
+   -- the txid is over the serialization WITHOUT the witness (BIP-141), which
+   -- is what makes a signature over the inputs not commit to itself
+   put cwStripWitness(tOut) into tStripped
+   put cxHexEncode(cwReverseBytes(cxHash256(cxHexDecode(tStripped)))) into tOut["txid"]
+   put cxHexEncode(cwReverseBytes(cxHash256(cxHexDecode(tHex)))) into tOut["wtxid"]
+   put cwIntDiv(the number of chars of tHex, 2) into tOut["size"]
+   put cwIntDiv(the number of chars of tStripped, 2) * 3 + tOut["size"] into tWeight
+   put tWeight into tOut["weight"]
+   put cwCeilDiv(tWeight, 4) into tOut["vsize"]
+   put false into tRbf
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      if tIn["sequence"] < kCwSeqNoRbf then
+         put true into tRbf
+      end if
+   end repeat
+   put tRbf into tOut["rbf"]
+   return tOut
+end cwTxDecode
+
+private function cwStripWitness pTx
+   local tIns, tOuts, tSigs, tI, tCount, tIn
+   put pTx["inputs"] into tIns
+   put pTx["outputs"] into tOuts
+   put cwListNew() into tSigs
+   put cwListCount(tIns) into tCount
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tIn
+      put cwListAdd(tSigs, tIn["scriptsig"]) into tSigs
+   end repeat
+   return cxHexEncode(cxBtcTxEncode(pTx["version"], cwOutpointsHex(tIns), \
+         cwSigsList(tSigs), cwSequencesList(tIns), "", cwOutputsHex(tOuts), \
+         pTx["locktime"]))
+end cwStripWitness
+
+function cwSigsList pScriptSigs
+   local tOut, tI, tCount
+   put "" into tOut
+   put cwListCount(pScriptSigs) into tCount
+   repeat with tI = 1 to tCount
+      if tI > 1 then
+         put "," after tOut
+      end if
+      put pScriptSigs[tI] after tOut
+   end repeat
+   return tOut
+end cwSigsList
+
+function cwScriptAsm pScriptHex
+   -- A script rendered as opcodes and pushes, for the transaction inspector.
+   -- Only the opcodes a wallet script uses are named; anything else prints as
+   -- OP_<n>, which is honest about what this decoder is and is not.
+   local tHex, tPos, tEnd, tOut, tByte, tLen, tRec
+   put cwLower(pScriptHex) into tHex
+   put 1 into tPos
+   put the number of chars of tHex into tEnd
+   put "" into tOut
+   repeat while tPos <= tEnd
+      put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tByte
+      add 2 to tPos
+      if tByte >= 1 and tByte <= 75 then
+         put "PUSH(" & tByte & ") " & char tPos to (tPos + tByte * 2 - 1) of tHex & " " after tOut
+         add tByte * 2 to tPos
+      else if tByte is 76 then
+         put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
+         add 2 to tPos
+         put "PUSHDATA1(" & tLen & ") " & char tPos to (tPos + tLen * 2 - 1) of tHex & " " after tOut
+         add tLen * 2 to tPos
+      else if tByte is 0 then
+         put "OP_0 " after tOut
+      else if tByte is 81 then
+         put "OP_1 " after tOut
+      else if tByte >= 82 and tByte <= 96 then
+         put "OP_" & (tByte - 80) & " " after tOut
+      else if tByte is 106 then
+         put "OP_RETURN " after tOut
+      else if tByte is 118 then
+         put "OP_DUP " after tOut
+      else if tByte is 135 then
+         put "OP_EQUAL " after tOut
+      else if tByte is 136 then
+         put "OP_EQUALVERIFY " after tOut
+      else if tByte is 169 then
+         put "OP_HASH160 " after tOut
+      else if tByte is 172 then
+         put "OP_CHECKSIG " after tOut
+      else if tByte is 174 then
+         put "OP_CHECKMULTISIG " after tOut
+      else
+         put "OP_" & tByte & " " after tOut
+      end if
+   end repeat
+   return cwTrim(tOut)
+end cwScriptAsm
