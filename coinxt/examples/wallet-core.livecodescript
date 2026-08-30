@@ -2325,3 +2325,813 @@ function cwScriptAsm pScriptHex
    end repeat
    return cwTrim(tOut)
 end cwScriptAsm
+
+-- ==============================================================================
+-- PSBT (BIP-174 version 0, with BIP-371's taproot fields)
+--
+-- The format is three runs of key/value maps - one global, one per input, one
+-- per output - each terminated by a zero-length key. A key is
+-- <compact_size keylen><keytype><keydata>; a value is <compact_size len><data>.
+--
+-- Nothing about it is clever, and that is exactly why it is dangerous: every
+-- field is a length prefix around a blob, so a wrong length does not fail, it
+-- produces a file another wallet parses into DIFFERENT MONEY. It is here
+-- because PSBT is how a wallet talks to anything that is not itself - a
+-- hardware signer, a cosigner, a coordinator, Bitcoin Core - and a wallet
+-- that can only sign its own transactions is a wallet that can only ever be
+-- used alone.
+-- ==============================================================================
+
+constant kCwPsbtMagic = "70736274ff"
+
+constant kCwPsbtGlobalUnsignedTx = 0
+constant kCwPsbtGlobalXpub = 1
+constant kCwPsbtGlobalVersion = 251
+
+constant kCwPsbtInNonWitnessUtxo = 0
+constant kCwPsbtInWitnessUtxo = 1
+constant kCwPsbtInPartialSig = 2
+constant kCwPsbtInSighashType = 3
+constant kCwPsbtInRedeemScript = 4
+constant kCwPsbtInWitnessScript = 5
+constant kCwPsbtInBip32 = 6
+constant kCwPsbtInFinalScriptSig = 7
+constant kCwPsbtInFinalScriptWitness = 8
+constant kCwPsbtInTapKeySig = 19
+constant kCwPsbtInTapBip32 = 22
+constant kCwPsbtInTapInternalKey = 23
+constant kCwPsbtInTapMerkleRoot = 24
+
+constant kCwPsbtOutRedeemScript = 0
+constant kCwPsbtOutWitnessScript = 1
+constant kCwPsbtOutBip32 = 2
+constant kCwPsbtOutTapInternalKey = 5
+constant kCwPsbtOutTapBip32 = 7
+
+function cwVarIntHex pN
+   return cxHexEncode(cxVarInt(pN))
+end cwVarIntHex
+
+private function cwPsbtEntry pType, pKeyDataHex, pValueHex
+   local tEntry
+   put pType into tEntry["type"]
+   put pKeyDataHex into tEntry["key"]
+   put pValueHex into tEntry["value"]
+   return tEntry
+end cwPsbtEntry
+
+private function cwPsbtEmitMap pEntries
+   -- Entries go out in ascending (type, keydata) order. BIP-174 does not
+   -- require it; a vector gate does, and so does anybody diffing two PSBTs
+   -- to see what a cosigner changed.
+   local tSorted, tOut, tI, tCount, tEntry, tKey
+   put cwPsbtSortEntries(pEntries) into tSorted
+   put "" into tOut
+   put cwListCount(tSorted) into tCount
+   repeat with tI = 1 to tCount
+      put tSorted[tI] into tEntry
+      put cxHexEncode(numToByte(tEntry["type"])) & tEntry["key"] into tKey
+      put cwVarIntHex(cwIntDiv(the number of chars of tKey, 2)) & tKey after tOut
+      put cwVarIntHex(cwIntDiv(the number of chars of tEntry["value"], 2)) & \
+            tEntry["value"] after tOut
+   end repeat
+   return tOut & "00"
+end cwPsbtEmitMap
+
+private function cwPsbtSortEntries pEntries
+   local tOut, tCount, tI, tJ, tValue, tA, tB
+   put pEntries into tOut
+   put cwListCount(pEntries) into tCount
+   repeat with tI = 2 to tCount
+      put tOut[tI] into tValue
+      put tI - 1 into tJ
+      repeat while tJ >= 1
+         put tOut[tJ] into tA
+         if tA["type"] < tValue["type"] then
+            exit repeat
+         end if
+         if tA["type"] is tValue["type"] and cwHexCompare(tA["key"], tValue["key"]) <= 0 then
+            exit repeat
+         end if
+         put tOut[tJ] into tOut[tJ + 1]
+         subtract 1 from tJ
+      end repeat
+      put tValue into tOut[tJ + 1]
+   end repeat
+   return tOut
+end cwPsbtSortEntries
+
+function cwPathBytes pPath
+   -- A BIP-32 path as PSBT stores it: each level a 4-byte LITTLE-endian
+   -- unsigned integer. Note the endianness. Every OTHER place BIP-32 writes a
+   -- child number it is big-endian, and this one place it is not, which is
+   -- exactly the kind of detail that produces a file that parses cleanly and
+   -- claims the wrong derivation.
+   local tLevels, tI, tCount, tOut
+   put cwParsePath(pPath) into tLevels
+   put cwListCount(tLevels) into tCount
+   put "" into tOut
+   repeat with tI = 1 to tCount
+      put cxHexEncode(cwLeBytes(tLevels[tI], 4)) after tOut
+   end repeat
+   return tOut
+end cwPathBytes
+
+function cwPathFromBytes pHex
+   local tCount, tI, tLevels, tN
+   put cwIntDiv(the number of chars of pHex, 8) into tCount
+   put cwListNew() into tLevels
+   repeat with tI = 1 to tCount
+      put cwLeRead(cxHexDecode(char (tI * 8 - 7) to (tI * 8) of pHex)) into tN
+      put cwListAdd(tLevels, tN) into tLevels
+   end repeat
+   return cwFormatPath(tLevels)
+end cwPathFromBytes
+
+function cwPsbtUnsignedTx pVersion, pInputs, pOutputs, pLocktime
+   -- The PSBT unsigned transaction: every scriptSig empty, no witness at all.
+   local tSigs, tI, tCount
+   put cwListNew() into tSigs
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      put cwListAdd(tSigs, "") into tSigs
+   end repeat
+   return cwTxSerialize(pVersion, pInputs, pOutputs, pLocktime, tSigs, cwListNew())
+end cwPsbtUnsignedTx
+
+function cwPsbtCreate pVersion, pInputs, pOutputs, pLocktime, pInMeta, pOutMeta
+   -- pInMeta[i] and pOutMeta[i] are arrays of optional per-map fields; see
+   -- cwPsbtInputEntries below for the key names they may carry.
+   local tOut, tGlobal, tI, tCount
+   put cwListNew() into tGlobal
+   put cwListAdd(tGlobal, cwPsbtEntry(kCwPsbtGlobalUnsignedTx, "", \
+         cwPsbtUnsignedTx(pVersion, pInputs, pOutputs, pLocktime))) into tGlobal
+   put kCwPsbtMagic & cwPsbtEmitMap(tGlobal) into tOut
+   put cwListCount(pInputs) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtEmitMap(cwPsbtInputEntries(pInMeta[tI])) after tOut
+   end repeat
+   put cwListCount(pOutputs) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtEmitMap(cwPsbtOutputEntries(pOutMeta[tI])) after tOut
+   end repeat
+   return cwB64Encode(tOut)
+end cwPsbtCreate
+
+private function cwPsbtInputEntries pMeta
+   local tOut, tKeys, tI, tCount, tKey, tRec
+   put cwListNew() into tOut
+   if pMeta["nonwitnessutxo"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInNonWitnessUtxo, "", \
+            pMeta["nonwitnessutxo"])) into tOut
+   end if
+   if pMeta["witnessutxoscript"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInWitnessUtxo, "", \
+            cxHexEncode(cwLeBytes(pMeta["witnessutxovalue"], 8)) & \
+            cwVarIntHex(cwIntDiv(the number of chars of pMeta["witnessutxoscript"], 2)) & \
+            pMeta["witnessutxoscript"])) into tOut
+   end if
+   if pMeta["sighash"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInSighashType, "", \
+            cxHexEncode(cwLeBytes(pMeta["sighash"], 4)))) into tOut
+   end if
+   if pMeta["redeemscript"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInRedeemScript, "", \
+            pMeta["redeemscript"])) into tOut
+   end if
+   if pMeta["witnessscript"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInWitnessScript, "", \
+            pMeta["witnessscript"])) into tOut
+   end if
+   if pMeta["tapinternalkey"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInTapInternalKey, "", \
+            pMeta["tapinternalkey"])) into tOut
+   end if
+   put pMeta["bip32"] into tRec
+   put cwListCount(tRec) into tCount
+   repeat with tI = 1 to tCount
+      put tRec[tI] into tKey
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInBip32, tKey["pubkey"], \
+            tKey["fingerprint"] & cwPathBytes(tKey["path"]))) into tOut
+   end repeat
+   put pMeta["tapbip32"] into tRec
+   put cwListCount(tRec) into tCount
+   repeat with tI = 1 to tCount
+      put tRec[tI] into tKey
+      -- a leading compact-size 0: this key is used by NO tap leaf, i.e. it is
+      -- the internal key of a key-path spend
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInTapBip32, tKey["pubkey"], \
+            "00" & tKey["fingerprint"] & cwPathBytes(tKey["path"]))) into tOut
+   end repeat
+   put pMeta["partialsigs"] into tRec
+   put cwListCount(tRec) into tCount
+   repeat with tI = 1 to tCount
+      put tRec[tI] into tKey
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInPartialSig, tKey["pubkey"], \
+            tKey["sig"])) into tOut
+   end repeat
+   if pMeta["tapkeysig"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInTapKeySig, "", pMeta["tapkeysig"])) into tOut
+   end if
+   if pMeta["finalscriptsig"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInFinalScriptSig, "", \
+            pMeta["finalscriptsig"])) into tOut
+   end if
+   if pMeta["finalscriptwitness"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtInFinalScriptWitness, "", \
+            pMeta["finalscriptwitness"])) into tOut
+   end if
+   return tOut
+end cwPsbtInputEntries
+
+private function cwPsbtOutputEntries pMeta
+   local tOut, tRec, tI, tCount, tKey
+   put cwListNew() into tOut
+   if pMeta["redeemscript"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtOutRedeemScript, "", \
+            pMeta["redeemscript"])) into tOut
+   end if
+   if pMeta["witnessscript"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtOutWitnessScript, "", \
+            pMeta["witnessscript"])) into tOut
+   end if
+   if pMeta["tapinternalkey"] is not "" then
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtOutTapInternalKey, "", \
+            pMeta["tapinternalkey"])) into tOut
+   end if
+   put pMeta["bip32"] into tRec
+   put cwListCount(tRec) into tCount
+   repeat with tI = 1 to tCount
+      put tRec[tI] into tKey
+      put cwListAdd(tOut, cwPsbtEntry(kCwPsbtOutBip32, tKey["pubkey"], \
+            tKey["fingerprint"] & cwPathBytes(tKey["path"]))) into tOut
+   end repeat
+   return tOut
+end cwPsbtOutputEntries
+
+function cwB64Encode pHex
+   -- The engine's base64Encode wraps its output at a width nobody in this
+   -- family has measured, so every line break is stripped: a PSBT is pasted
+   -- into fields and URLs where a stray newline is a corrupt file.
+   return cwStripWhitespace(base64Encode(cxHexDecode(pHex)))
+end cwB64Encode
+
+function cwB64Decode pText
+   return cxHexEncode(base64Decode(cwStripWhitespace(pText)))
+end cwB64Decode
+
+function cwStripWhitespace pText
+   local tOut, tI, tCount, tC, tCode
+   put "" into tOut
+   put the number of chars of pText into tCount
+   repeat with tI = 1 to tCount
+      put char tI of pText into tC
+      put charToNum(tC) into tCode
+      if tCode > 32 then
+         put tC after tOut
+      end if
+   end repeat
+   return tOut
+end cwStripWhitespace
+
+private function cwPsbtParseMap pHex, pPos
+   -- Returns an array with "entries" (a list) and "next". Refuses a map that
+   -- runs off the end rather than returning what it managed to read: a
+   -- truncated PSBT that parses into a shorter one is the failure mode this
+   -- format makes easiest and the most expensive to notice.
+   local tEntries, tPos, tRec, tKeyLen, tKey, tValLen, tEntry, tEnd
+   put cwListNew() into tEntries
+   put pPos into tPos
+   put the number of chars of pHex into tEnd
+   repeat while true
+      if tPos > tEnd then
+         throw "wallet-core: cwPsbtParse: a map ran off the end with no separator."
+      end if
+      put cwReadVarInt(pHex, tPos) into tRec
+      put tRec["value"] into tKeyLen
+      put tRec["next"] into tPos
+      if tKeyLen is 0 then
+         put tEntries into tEntry["entries"]
+         put tPos into tEntry["next"]
+         return tEntry
+      end if
+      if (tPos + tKeyLen * 2 - 1) > tEnd then
+         throw "wallet-core: cwPsbtParse: a key length overruns the file."
+      end if
+      put char tPos to (tPos + tKeyLen * 2 - 1) of pHex into tKey
+      put tPos + tKeyLen * 2 into tPos
+      put cwReadVarInt(pHex, tPos) into tRec
+      put tRec["value"] into tValLen
+      put tRec["next"] into tPos
+      if (tPos + tValLen * 2 - 1) > tEnd then
+         throw "wallet-core: cwPsbtParse: a value length overruns the file."
+      end if
+      put "" into tEntry
+      put cwBeRead(cxHexDecode(char 1 to 2 of tKey)) into tEntry["type"]
+      put char 3 to -1 of tKey into tEntry["key"]
+      put char tPos to (tPos + tValLen * 2 - 1) of pHex into tEntry["value"]
+      put tPos + tValLen * 2 into tPos
+      put cwListAdd(tEntries, tEntry) into tEntries
+   end repeat
+   return tEntry
+end cwPsbtParseMap
+
+function cwPsbtParse pB64
+   local tHex, tPos, tRec, tOut, tTx, tDecoded, tI, tCount, tMaps, tEnd
+   put cwB64Decode(pB64) into tHex
+   if char 1 to 10 of tHex is not kCwPsbtMagic then
+      throw "wallet-core: cwPsbtParse: that is not a PSBT (the magic bytes are wrong)."
+   end if
+   put 11 into tPos
+   put cwPsbtParseMap(tHex, tPos) into tRec
+   put tRec["entries"] into tOut["global"]
+   put tRec["next"] into tPos
+   put cwPsbtFind(tOut["global"], kCwPsbtGlobalUnsignedTx, "") into tTx
+   if tTx is "" then
+      throw "wallet-core: cwPsbtParse: this PSBT carries no unsigned transaction."
+   end if
+   put tTx into tOut["unsignedtx"]
+   put cwTxDecode(tTx) into tDecoded
+   put tDecoded into tOut["tx"]
+   put cwListNew() into tMaps
+   put cwListCount(tDecoded["inputs"]) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtParseMap(tHex, tPos) into tRec
+      put cwListAdd(tMaps, tRec["entries"]) into tMaps
+      put tRec["next"] into tPos
+   end repeat
+   put tMaps into tOut["inputs"]
+   put cwListNew() into tMaps
+   put cwListCount(tDecoded["outputs"]) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtParseMap(tHex, tPos) into tRec
+      put cwListAdd(tMaps, tRec["entries"]) into tMaps
+      put tRec["next"] into tPos
+   end repeat
+   put tMaps into tOut["outputs"]
+   put the number of chars of tHex into tEnd
+   add 1 to tEnd
+   if tPos is not tEnd then
+      throw "wallet-core: cwPsbtParse: " & cwIntDiv(tEnd - tPos, 2) & \
+            " trailing bytes after the output maps."
+   end if
+   return tOut
+end cwPsbtParse
+
+function cwPsbtFind pEntries, pType, pKeyHex
+   -- The value of the first entry of this type and key data, or empty.
+   local tI, tCount, tEntry
+   put cwListCount(pEntries) into tCount
+   repeat with tI = 1 to tCount
+      put pEntries[tI] into tEntry
+      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+         return tEntry["value"]
+      end if
+   end repeat
+   return ""
+end cwPsbtFind
+
+function cwPsbtFindAll pEntries, pType
+   local tI, tCount, tEntry, tOut
+   put cwListNew() into tOut
+   put cwListCount(pEntries) into tCount
+   repeat with tI = 1 to tCount
+      put pEntries[tI] into tEntry
+      if tEntry["type"] is pType then
+         put cwListAdd(tOut, tEntry) into tOut
+      end if
+   end repeat
+   return tOut
+end cwPsbtFindAll
+
+function cwPsbtInputAmount pInputMap
+   -- The amount an input is spending, from whichever UTXO field the PSBT
+   -- carries. A signer that cannot find it must REFUSE rather than assume:
+   -- BIP-143 commits to the amount, so a wrong one produces a signature that
+   -- verifies nowhere, and a signer that guesses has quietly wasted the
+   -- signing device's one chance to be correct.
+   local tWit, tRec
+   put cwPsbtFind(pInputMap, kCwPsbtInWitnessUtxo, "") into tWit
+   if tWit is not "" then
+      return cwLeRead(cxHexDecode(char 1 to 16 of tWit))
+   end if
+   return -1
+end cwPsbtInputAmount
+
+function cwPsbtInputScript pInputMap
+   local tWit, tRec, tLen
+   put cwPsbtFind(pInputMap, kCwPsbtInWitnessUtxo, "") into tWit
+   if tWit is "" then
+      return ""
+   end if
+   put cwReadVarInt(tWit, 17) into tRec
+   put tRec["value"] into tLen
+   return char tRec["next"] to (tRec["next"] + tLen * 2 - 1) of tWit
+end cwPsbtInputScript
+
+function cwPsbtInputType pInputMap
+   -- What kind of input this is, from the fields the PSBT carries. The order
+   -- matters: a witness script means P2WSH whatever else is present, and a
+   -- redeem script that IS a witness program means the P2SH-wrapped form.
+   local tSpk, tKind, tRedeem
+   put cwPsbtInputScript(pInputMap) into tSpk
+   put cwScriptKind(tSpk) into tKind
+   if tKind is "p2sh" then
+      put cwPsbtFind(pInputMap, kCwPsbtInRedeemScript, "") into tRedeem
+      if cwScriptKind(tRedeem) is "p2wpkh" then
+         return "p2sh-p2wpkh"
+      end if
+      return "p2sh"
+   end if
+   return tKind
+end cwPsbtInputType
+
+function cwPsbtEmit pParsed
+   -- Re-emit a parsed PSBT. Everything that MODIFIES a PSBT here goes
+   -- parse -> edit the entry lists -> emit, rather than splicing bytes into
+   -- the original: a byte splice has to get every surrounding length right
+   -- and gets no second chance, and this way the emitter is the same one code
+   -- path that cwPsbtCreate uses and is pinned by the same vectors.
+   local tOut, tI, tCount, tMaps
+   put kCwPsbtMagic & cwPsbtEmitMap(pParsed["global"]) into tOut
+   put pParsed["inputs"] into tMaps
+   put cwListCount(tMaps) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtEmitMap(tMaps[tI]) after tOut
+   end repeat
+   put pParsed["outputs"] into tMaps
+   put cwListCount(tMaps) into tCount
+   repeat with tI = 1 to tCount
+      put cwPsbtEmitMap(tMaps[tI]) after tOut
+   end repeat
+   return cwB64Encode(tOut)
+end cwPsbtEmit
+
+private function cwPsbtSetEntry pEntries, pType, pKeyHex, pValueHex
+   -- Replace an entry of this (type, key) or append it. BIP-174 requires keys
+   -- to be unique within a map, so this is the only correct way to add one.
+   local tOut, tI, tCount, tEntry
+   put pEntries into tOut
+   put cwListCount(pEntries) into tCount
+   repeat with tI = 1 to tCount
+      put tOut[tI] into tEntry
+      if tEntry["type"] is pType and tEntry["key"] is pKeyHex then
+         put pValueHex into tEntry["value"]
+         put tEntry into tOut[tI]
+         return tOut
+      end if
+   end repeat
+   return cwListAdd(tOut, cwPsbtEntry(pType, pKeyHex, pValueHex))
+end cwPsbtSetEntry
+
+function cwPsbtSign pB64, pKeys, pNetwork
+   -- Sign every input this key set can sign, and leave the rest alone. pKeys
+   -- is a list of arrays with "seckey" (hex). Returns an array with "psbt"
+   -- (the updated base64), "signed" (how many inputs gained a signature) and
+   -- "why" (a line per input that could not be signed, so a person can see
+   -- WHICH input is missing WHAT rather than being told the file failed).
+   local tP, tTx, tIns, tOuts, tCount, tI, tJ, tKeyCount, tMap, tType, tAmount
+   local tSpk, tDigest, tKey, tPub, tSig, tSigned, tWhy, tOut, tInternal
+   local tWitScript, tRedeem, tTweaked, tTapKey, tKeys, tTxIns, tTxOuts, tFound
+   put cwPsbtParse(pB64) into tP
+   put tP["tx"] into tTx
+   put tTx["inputs"] into tTxIns
+   put tTx["outputs"] into tTxOuts
+   put tP["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put cwListCount(pKeys) into tKeyCount
+   put 0 into tSigned
+   put "" into tWhy
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tMap
+      if cwPsbtFind(tMap, kCwPsbtInFinalScriptSig, "") is not "" \
+            or cwPsbtFind(tMap, kCwPsbtInFinalScriptWitness, "") is not "" then
+         put tWhy & "input " & tI & ": already finalized" & return into tWhy
+         next repeat
+      end if
+      put cwPsbtInputType(tMap) into tType
+      put cwPsbtInputAmount(tMap) into tAmount
+      put cwPsbtInputScript(tMap) into tSpk
+      if tAmount < 0 then
+         put tWhy & "input " & tI & ": no witness UTXO, so the amount BIP-143 " & \
+               "commits to is unknown - refusing to guess it" & return into tWhy
+         next repeat
+      end if
+      put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
+      put false into tFound
+      if tType is "p2tr" then
+         put cwPsbtFind(tMap, kCwPsbtInTapInternalKey, "") into tInternal
+         if tInternal is "" then
+            put tWhy & "input " & tI & ": a taproot input with no internal key" & \
+                  return into tWhy
+            next repeat
+         end if
+         put cwPsbtTaprootPrevouts(tP) into tOut
+         put cwSighash("p2tr", tTx["version"], tTxIns, tTxOuts, tI, tTx["locktime"], \
+               "", 0, "", tOut["scripts"], tOut["amounts"]) into tDigest
+         repeat with tJ = 1 to tKeyCount
+            put pKeys[tJ] into tKey
+            put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
+            if tPub is tInternal then
+               put cwSignTaproot(tKey["seckey"], tDigest, "") into tSig
+               put tSig["witness"] into tOut
+               put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tOut[1]) into tMap
+               put tMap into tIns[tI]
+               add 1 to tSigned
+               put true into tFound
+               exit repeat
+            end if
+         end repeat
+         if tFound is not true then
+            put tWhy & "input " & tI & ": no key here matches its taproot internal key" \
+                  & return into tWhy
+         end if
+         next repeat
+      end if
+      repeat with tJ = 1 to tKeyCount
+         put pKeys[tJ] into tKey
+         put cxHexEncode(cxPublicKey(cxHexDecode(tKey["seckey"]), true)) into tPub
+         if tType is "p2wsh" then
+            if tWitScript is "" then
+               next repeat
+            end if
+            if cwHexListHas(cwMultisigKeys(tWitScript), tPub) is not true then
+               next repeat
+            end if
+            put cwSighash("p2wsh", tTx["version"], tTxIns, tTxOuts, tI, \
+                  tTx["locktime"], "", tAmount, tWitScript, cwListNew(), cwListNew()) into tDigest
+         else
+            if cwScriptForPubkey(tType, tPub) is not tSpk then
+               next repeat
+            end if
+            put cwSighash(tType, tTx["version"], tTxIns, tTxOuts, tI, \
+                  tTx["locktime"], tPub, tAmount, "", cwListNew(), cwListNew()) into tDigest
+         end if
+         put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(tKey["seckey"]), \
+               cxHexDecode(tDigest)))) & "01" into tSig
+         put cwPsbtSetEntry(tMap, kCwPsbtInPartialSig, tPub, tSig) into tMap
+         put tMap into tIns[tI]
+         add 1 to tSigned
+         put true into tFound
+      end repeat
+      if tFound is not true then
+         put tWhy & "input " & tI & ": no key here unlocks it (" & tType & ")" & \
+               return into tWhy
+      end if
+   end repeat
+   put tIns into tP["inputs"]
+   put "" into tOut
+   put cwPsbtEmit(tP) into tOut["psbt"]
+   put tSigned into tOut["signed"]
+   put tWhy into tOut["why"]
+   return tOut
+end cwPsbtSign
+
+private function cwScriptForPubkey pType, pPubkeyHex
+   if pType is "p2pkh" then
+      return cwScriptP2pkh(pPubkeyHex)
+   end if
+   if pType is "p2wpkh" then
+      return cwScriptP2wpkh(pPubkeyHex)
+   end if
+   if pType is "p2sh-p2wpkh" then
+      return cwScriptP2shP2wpkh(pPubkeyHex)
+   end if
+   return ""
+end cwScriptForPubkey
+
+function cwHexListHas pList, pValue
+   local tI, tCount
+   put cwListCount(pList) into tCount
+   repeat with tI = 1 to tCount
+      if pList[tI] is pValue then
+         return true
+      end if
+   end repeat
+   return false
+end cwHexListHas
+
+private function cwPsbtTaprootPrevouts pParsed
+   -- BIP-341 commits to EVERY input's scriptPubKey and amount, so a taproot
+   -- signature cannot be produced from one input's fields alone. A PSBT that
+   -- omits any input's witness UTXO cannot be taproot-signed, and this is
+   -- where that becomes visible rather than becoming a wrong signature.
+   local tIns, tI, tCount, tMap, tScripts, tAmounts, tOut, tAmount
+   put pParsed["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put cwListNew() into tScripts
+   put cwListNew() into tAmounts
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tMap
+      put cwPsbtInputAmount(tMap) into tAmount
+      if tAmount < 0 then
+         throw "wallet-core: a taproot input cannot be signed unless EVERY input " & \
+               "in the transaction carries its witness UTXO: BIP-341 commits to " & \
+               "all of them. Input " & tI & " has none."
+      end if
+      put cwListAdd(tScripts, cwPsbtInputScript(tMap)) into tScripts
+      put cwListAdd(tAmounts, tAmount) into tAmounts
+   end repeat
+   put tScripts into tOut["scripts"]
+   put tAmounts into tOut["amounts"]
+   return tOut
+end cwPsbtTaprootPrevouts
+
+function cwPsbtFinalize pB64
+   -- Turn the partial signatures into the final scriptSig and witness for
+   -- every input that has enough of them, and return the network-ready raw
+   -- transaction. Returns an array with "raw", "txid", "complete" and "why".
+   local tP, tTx, tIns, tCount, tI, tMap, tType, tSigs, tKeys, tWitScript
+   local tOut, tScriptSigs, tWitnesses, tItems, tComplete, tWhy, tPub, tSig
+   local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem
+   put cwPsbtParse(pB64) into tP
+   put tP["tx"] into tTx
+   put tP["inputs"] into tIns
+   put cwListCount(tIns) into tCount
+   put cwListNew() into tScriptSigs
+   put cwListNew() into tWitnesses
+   put true into tComplete
+   put "" into tWhy
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tMap
+      put cwPsbtInputType(tMap) into tType
+      put cwListNew() into tItems
+      put "" into tSig
+      if tType is "p2tr" then
+         put cwPsbtFind(tMap, kCwPsbtInTapKeySig, "") into tTapSig
+         if tTapSig is "" then
+            put false into tComplete
+            put tWhy & "input " & tI & ": unsigned (taproot)" & return into tWhy
+         else
+            put cwListAdd(tItems, tTapSig) into tItems
+         end if
+         put cwListAdd(tScriptSigs, "") into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
+      put cwPsbtFindAll(tMap, kCwPsbtInPartialSig) into tSigs
+      if tType is "p2wsh" then
+         put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
+         put cwMultisigKeys(tWitScript) into tKeys
+         put cwBeRead(cxHexDecode(char 1 to 2 of tWitScript)) - kCwOpOne + 1 into tM
+         put cwListAdd(tItems, "") into tItems
+         put 0 into tHave
+         put cwListCount(tKeys) into tKeyCount
+         repeat with tJ = 1 to tKeyCount
+            put cwPsbtFind(tMap, kCwPsbtInPartialSig, tKeys[tJ]) into tSig
+            if tSig is not "" and tHave < tM then
+               put cwListAdd(tItems, tSig) into tItems
+               add 1 to tHave
+            end if
+         end repeat
+         put cwListAdd(tItems, tWitScript) into tItems
+         if tHave < tM then
+            put false into tComplete
+            put tWhy & "input " & tI & ": " & tHave & " of " & tM & \
+                  " signatures" & return into tWhy
+         end if
+         put cwListAdd(tScriptSigs, "") into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
+      if cwListCount(tSigs) is 0 then
+         put false into tComplete
+         put tWhy & "input " & tI & ": unsigned" & return into tWhy
+         put cwListAdd(tScriptSigs, "") into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
+      put tSigs[1] into tOut
+      put tOut["key"] into tPub
+      put tOut["value"] into tSig
+      if tType is "p2pkh" then
+         put cwListAdd(tScriptSigs, cwPush(tSig) & cwPush(tPub)) into tScriptSigs
+         put cwListAdd(tWitnesses, tItems) into tWitnesses
+         next repeat
+      end if
+      put cwListAdd(tItems, tSig) into tItems
+      put cwListAdd(tItems, tPub) into tItems
+      if tType is "p2sh-p2wpkh" then
+         put cwPsbtFind(tMap, kCwPsbtInRedeemScript, "") into tRedeem
+         if tRedeem is "" then
+            put cwRedeemP2shP2wpkh(tPub) into tRedeem
+         end if
+         put cwListAdd(tScriptSigs, cwPush(tRedeem)) into tScriptSigs
+      else
+         put cwListAdd(tScriptSigs, "") into tScriptSigs
+      end if
+      put cwListAdd(tWitnesses, tItems) into tWitnesses
+   end repeat
+   put tTx["inputs"] into tTxIns
+   put tTx["outputs"] into tTxOuts
+   put "" into tOut
+   put cwTxSerialize(tTx["version"], tTxIns, tTxOuts, tTx["locktime"], \
+         tScriptSigs, tWitnesses) into tOut["raw"]
+   put cwTxid(tTx["version"], tTxIns, tTxOuts, tTx["locktime"], tScriptSigs) into tOut["txid"]
+   put tComplete into tOut["complete"]
+   put tWhy into tOut["why"]
+   return tOut
+end cwPsbtFinalize
+
+function cwPsbtCombine pA, pB
+   -- Merge two PSBTs of the SAME transaction: the cosigner workflow. The
+   -- unsigned transactions must be identical, and if they are not this
+   -- REFUSES rather than picking one - two cosigners holding different
+   -- transactions is the exact situation where quietly choosing is worst.
+   local tA, tB, tI, tCount, tJ, tN, tMapA, tMapB, tEntry, tOut
+   put cwPsbtParse(pA) into tA
+   put cwPsbtParse(pB) into tB
+   if tA["unsignedtx"] is not tB["unsignedtx"] then
+      throw "wallet-core: cwPsbtCombine: these two PSBTs are for DIFFERENT " & \
+            "transactions and cannot be merged."
+   end if
+   put tA["inputs"] into tMapA
+   put tB["inputs"] into tMapB
+   put cwListCount(tMapA) into tCount
+   repeat with tI = 1 to tCount
+      put tMapA[tI] into tOut
+      put tMapB[tI] into tEntry
+      put cwPsbtMergeMap(tOut, tEntry) into tMapA[tI]
+   end repeat
+   put tMapA into tA["inputs"]
+   put tA["outputs"] into tMapA
+   put tB["outputs"] into tMapB
+   put cwListCount(tMapA) into tCount
+   repeat with tI = 1 to tCount
+      put tMapA[tI] into tOut
+      put tMapB[tI] into tEntry
+      put cwPsbtMergeMap(tOut, tEntry) into tMapA[tI]
+   end repeat
+   put tMapA into tA["outputs"]
+   put cwPsbtMergeMap(tA["global"], tB["global"]) into tA["global"]
+   return cwPsbtEmit(tA)
+end cwPsbtCombine
+
+private function cwPsbtMergeMap pInto, pFrom
+   -- Entries from pFrom that pInto does not already have. First writer wins
+   -- on a conflict, which is BIP-174's own rule.
+   local tOut, tI, tCount, tEntry
+   put pInto into tOut
+   put cwListCount(pFrom) into tCount
+   repeat with tI = 1 to tCount
+      put pFrom[tI] into tEntry
+      if cwPsbtFind(tOut, tEntry["type"], tEntry["key"]) is "" then
+         put cwListAdd(tOut, tEntry) into tOut
+      end if
+   end repeat
+   return tOut
+end cwPsbtMergeMap
+
+function cwPsbtSummary pB64, pNetwork
+   -- What this PSBT actually does, in words, for the screen a person reads
+   -- before they authorise anything. Every wallet that shows only a fee and a
+   -- total is asking to be trusted about the part it is not showing.
+   local tP, tTx, tOut, tI, tCount, tIn, tOutRec, tTotalIn, tTotalOut, tMap
+   local tAmount, tKind, tSigs, tAddr, tError
+   put cwPsbtParse(pB64) into tP
+   put tP["tx"] into tTx
+   put "PSBT: " & cwListCount(tTx["inputs"]) & " input(s), " & \
+         cwListCount(tTx["outputs"]) & " output(s), version " & tTx["version"] & \
+         ", locktime " & tTx["locktime"] & return into tOut
+   put 0 into tTotalIn
+   put cwListCount(tTx["inputs"]) into tCount
+   put tP["inputs"] into tMap
+   repeat with tI = 1 to tCount
+      put tTx["inputs"] into tIn
+      put tIn[tI] into tIn
+      put cwPsbtInputAmount(tMap[tI]) into tAmount
+      put cwPsbtFindAll(tMap[tI], kCwPsbtInPartialSig) into tSigs
+      put tOut & "  in  " & tI & ": " & char 1 to 16 of tIn["txid"] & "..:" & \
+            tIn["vout"] & "  " into tOut
+      if tAmount < 0 then
+         put "amount UNKNOWN" after tOut
+      else
+         put cwSatToBtc(tAmount) && "BTC" after tOut
+         add tAmount to tTotalIn
+      end if
+      put "  " & cwPsbtInputType(tMap[tI]) & ", " & cwListCount(tSigs) & \
+            " signature(s)" & return after tOut
+   end repeat
+   put 0 into tTotalOut
+   put cwListCount(tTx["outputs"]) into tCount
+   repeat with tI = 1 to tCount
+      put tTx["outputs"] into tOutRec
+      put tOutRec[tI] into tOutRec
+      add tOutRec["value"] to tTotalOut
+      put "unrecognised script" into tAddr
+      try
+         put cwAddressForScript(pNetwork, tOutRec["script"]) into tAddr
+      catch tError
+         put "unrecognised script" into tAddr
+      end try
+      put tOut & "  out " & tI & ": " & cwSatToBtc(tOutRec["value"]) && "BTC  ->  " & \
+            tAddr & return into tOut
+   end repeat
+   if tTotalIn > 0 then
+      put tOut & "  fee: " & cwSatToBtc(tTotalIn - tTotalOut) && "BTC (" & \
+            (tTotalIn - tTotalOut) && "sat)" & return into tOut
+   else
+      put tOut & "  fee: unknown (no input amounts in this PSBT)" & return into tOut
+   end if
+   return tOut
+end cwPsbtSummary
