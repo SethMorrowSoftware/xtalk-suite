@@ -432,19 +432,30 @@ OUTPUT_SIZE = {
 # BIP-125 rule 3 and Core's default incremental relay fee: 1 sat/vB.
 INCREMENTAL_RELAY_FEE = 1
 
-# Core's dust threshold: the output is dust if spending it would cost more
-# than a third of its value at the DUST_RELAY_FEE of 3000 sat/kvB. The
-# spend-size figures are Core's own (148 for a legacy input at 3x discount,
-# 67 for a segwit one).
-DUST_SPEND_SIZE = {
-    "p2pkh": 148, "p2sh": 148, "p2sh-p2wpkh": 91,
-    "p2wpkh": 67, "p2wsh": 67, "p2tr": 57.5,
-}
+# Core's dust threshold (GetDustThreshold in policy.cpp): an output is dust
+# when spending it would cost more than a third of its value at the 3000
+# sat/kvB dust relay fee. Core's spend-size estimate branches on ONE question -
+# is the scriptPubKey a witness program? - and nothing else:
+#
+#     witness program:  32 + 4 + 1 + (107 / 4) + 4  =  67
+#     anything else:    32 + 4 + 1 +  107      + 4  = 148
+#
+# The distinction that is NOT drawn there is the one it is natural to draw: a
+# P2SH-wrapped SegWit output has a P2SH scriptPubKey, so it is NOT a witness
+# program and costs 148, even though spending it really does use a witness.
+# Writing per-type spend sizes by hand got that wrong here in both directions
+# (91 for p2sh-p2wpkh, 57.5 for p2tr), which is why the rule is now Core's
+# own branch rather than a table.
+DUST_SPEND_WITNESS = 67
+DUST_SPEND_LEGACY = 148
+
+WITNESS_OUTPUTS = ("p2wpkh", "p2wsh", "p2tr")
 
 
 def dust_threshold(script_type: str) -> int:
-    size = OUTPUT_SIZE.get(script_type, 34) + DUST_SPEND_SIZE.get(script_type, 148)
-    return int(size * 3)
+    spend = (DUST_SPEND_WITNESS if script_type in WITNESS_OUTPUTS
+             else DUST_SPEND_LEGACY)
+    return (OUTPUT_SIZE.get(script_type, 34) + spend) * 3
 
 
 def multisig_witness_bytes(m: int, n: int) -> int:
@@ -1841,6 +1852,8 @@ def _selftest():
     assert estimate_vsize(["p2pkh"], ["p2pkh", "p2pkh"]) == 226
     assert estimate_vsize(["p2wpkh"], ["p2wpkh", "p2wpkh"]) == 141
     assert dust_threshold("p2pkh") == 546 and dust_threshold("p2wpkh") == 294
+    assert dust_threshold("p2sh") == 540 and dust_threshold("p2wsh") == 330
+    assert dust_threshold("p2tr") == 330
 
     # --- coin selection keeps its invariant on every strategy.
     coins = [{"value": 100000, "txid": "a" * 64, "vout": 0, "confirmations": 10},
