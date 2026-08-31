@@ -1199,11 +1199,31 @@ function cwXKeyEncode pNode, pVersion, pPrivate
    return cxBase58CheckEncode(tOut)
 end cwXKeyEncode
 
-function cwXKeyDecode pText
+function cwXKeyDecode pText, pPreferNetwork, pPreferType
    -- The inverse, plus the network and script type the version byte names.
    -- Refuses a version it does not know rather than guessing mainnet, because
    -- guessing here means deriving a mainnet address from a testnet key.
+   --
+   -- MOST VERSIONS DO NOT NAME ONE ANSWER, and this used to return the first
+   -- row it happened to reach. Ten of the sixteen versions this wallet knows
+   -- are shared: BIP-86 deliberately kept xpub/tpub for taproot rather than
+   -- taking a SLIP-132 pair of its own, and testnet, signet and regtest use
+   -- one set of version bytes between them. So a tpub matches
+   -- {testnet, signet, regtest} x {p2pkh, p2tr} - six rows - and answering
+   -- with the first meant a taproot key came back labelled p2pkh and a signet
+   -- key came back labelled testnet. Downstream that is not a cosmetic
+   -- mislabel: waOpenWallet either derives LEGACY addresses for a taproot
+   -- watch-only wallet, or refuses the key as belonging to another chain.
+   --
+   -- pPreferNetwork and pPreferType are the CONTEXT the caller already has -
+   -- the network and script type the person selected before pasting. A
+   -- preference is honoured only when it is genuinely among the matches, so
+   -- it can disambiguate but never override: a zpub pasted into a wallet set
+   -- to taproot still comes back p2wpkh, because zpub names one row.
+   -- tNode["ambiguous"] and tNode["candidates"] report what was actually
+   -- open, so a caller can say so rather than present a guess as a fact.
    local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
+   local tMatches, tPick, tCount, tRec, tPair
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
    put the number of bytes of tRaw into tLen
    if tLen is not 78 then
@@ -1231,6 +1251,7 @@ function cwXKeyDecode pText
       put "public" into tNode["kind"]
    end if
    put "" into tNode["network"]
+   put cwListNew() into tMatches
    repeat with tI = 1 to 4
       put cwListAt(kCwNetworks, tI) into tNet
       repeat with tJ = 1 to 5
@@ -1238,20 +1259,64 @@ function cwXKeyDecode pText
          put cwXKeyVersion(tNet, tStem, true) into tPub
          put cwXKeyVersion(tNet, tStem, false) into tPrv
          if tVersion is tPub or tVersion is tPrv then
-            put tNet into tNode["network"]
-            put cwTypeStem(tStem) into tNode["stem"]
-            put tStem into tNode["scripttype"]
-            return tNode
+            put "" into tRec
+            put tNet into tRec["network"]
+            put tStem into tRec["scripttype"]
+            put cwListAdd(tMatches, tRec) into tMatches
          end if
       end repeat
    end repeat
-   throw "wallet-core: cwXKeyDecode: extended key version " & tVersion & \
-         " belongs to no network this wallet knows."
+   put cwListCount(tMatches) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwXKeyDecode: extended key version " & tVersion & \
+            " belongs to no network this wallet knows."
+   end if
+   -- The caller's context, honoured in three steps and never as an override:
+   -- an exact (network, type) match first, then any match on the preferred
+   -- NETWORK, then the first row. Each step only picks from what the version
+   -- actually allows.
+   put tMatches[1] into tPick
+   repeat with tI = 1 to tCount
+      put tMatches[tI] into tRec
+      if tRec["network"] is pPreferNetwork and tRec["scripttype"] is pPreferType then
+         put tRec into tPick
+         exit repeat
+      end if
+   end repeat
+   if tPick["network"] is not pPreferNetwork then
+      repeat with tI = 1 to tCount
+         put tMatches[tI] into tRec
+         if tRec["network"] is pPreferNetwork then
+            put tRec into tPick
+            exit repeat
+         end if
+      end repeat
+   end if
+   put tPick["network"] into tNode["network"]
+   put tPick["scripttype"] into tNode["scripttype"]
+   put cwTypeStem(tPick["scripttype"]) into tNode["stem"]
+   put (tCount > 1) into tNode["ambiguous"]
+   put "" into tPair
+   repeat with tI = 1 to tCount
+      put tMatches[tI] into tRec
+      if tI > 1 then
+         put "," after tPair
+      end if
+      put tRec["network"] & "/" & tRec["scripttype"] after tPair
+   end repeat
+   put tPair into tNode["candidates"]
+   return tNode
 end cwXKeyDecode
 
 function cwXKeyIsPrivate pText
+   -- NO PREFERENCE, said out loud. This asks one question - does the key
+   -- carry a private half - and that answer is the same for every
+   -- (network, script type) row a shared version allows, so there is nothing
+   -- to disambiguate. Written as two empty arguments rather than omitted,
+   -- because a call that relies on missing-argument semantics reads as an
+   -- oversight and this one is a decision.
    local tNode
-   put cwXKeyDecode(pText) into tNode
+   put cwXKeyDecode(pText, "", "") into tNode
    return tNode["kind"] is "private"
 end cwXKeyIsPrivate
 
@@ -5201,8 +5266,11 @@ function cwXKeyRespell pXKey, pNetwork, pScriptType, pPublic
    -- spelling even for a wpkh() descriptor, because the wrapper already names
    -- the script type and Bitcoin Core rejects a SLIP-132 zpub inside one.
    -- Nothing about the key changes; only the four version bytes do.
+   -- No preference: the CALLER names the network and script type it wants
+   -- the key re-spelled for, so what the version bytes happen to allow is
+   -- not consulted.
    local tNode
-   put cwXKeyDecode(pXKey) into tNode
+   put cwXKeyDecode(pXKey, "", "") into tNode
    if pPublic is not true and tNode["kind"] is not "private" then
       throw "wallet-core: cwXKeyRespell: that is a public key; it cannot be " & \
             "re-spelled as a private one."

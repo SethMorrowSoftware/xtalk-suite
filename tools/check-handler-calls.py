@@ -76,7 +76,23 @@ PREFIXES = ("oxh", "nxr", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he",
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
 # a variable named "extra") out of the candidate set.
-CALL_RE = re.compile(r"\b((?:oxh|nxr|b2k|sx|bt|en|dc|ox|cx|rs|he|nx)[A-Z]\w*)\b")
+# THIS LIST AND PREFIXES MUST AGREE, and until 2026-08-31 they did not: `cw`
+# was added to PREFIXES alone, so every cw* call was filtered out HERE, before
+# prefix classification ever ran, and the gate reported OK over a surface it
+# had not looked at. A prefix in one and not the other is a silent hole, which
+# is why the two are now checked against each other below.
+CALL_RE = re.compile(r"\b((?:oxh|nxr|b2k|sx|bt|en|dc|ox|cx|rs|he|nx|cw)[A-Z]\w*)\b")
+
+_in_call_re = set(re.findall(r"[a-z0-9]+", CALL_RE.pattern.split("(?:")[1].split(")")[0]))
+if _in_call_re != set(PREFIXES):
+    raise SystemExit(
+        "check-handler-calls: PREFIXES and CALL_RE disagree - %s. A prefix in "
+        "one and not the other is not a smaller check, it is NO check for that "
+        "surface: candidates are matched by CALL_RE first, so anything missing "
+        "from it never reaches the classification PREFIXES drives."
+        % ("only in PREFIXES: %s; only in CALL_RE: %s"
+           % (sorted(set(PREFIXES) - _in_call_re),
+              sorted(_in_call_re - set(PREFIXES)))))
 
 # Handler definitions we harvest to build the "exists" set.
 LCB_PUBLIC_RE = re.compile(r"^\s*public handler\s+(\w+)\s*\(([^)]*)\)", re.M)

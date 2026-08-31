@@ -4370,11 +4370,31 @@ function cwXKeyEncode pNode, pVersion, pPrivate
    return cxBase58CheckEncode(tOut)
 end cwXKeyEncode
 
-function cwXKeyDecode pText
+function cwXKeyDecode pText, pPreferNetwork, pPreferType
    -- The inverse, plus the network and script type the version byte names.
    -- Refuses a version it does not know rather than guessing mainnet, because
    -- guessing here means deriving a mainnet address from a testnet key.
+   --
+   -- MOST VERSIONS DO NOT NAME ONE ANSWER, and this used to return the first
+   -- row it happened to reach. Ten of the sixteen versions this wallet knows
+   -- are shared: BIP-86 deliberately kept xpub/tpub for taproot rather than
+   -- taking a SLIP-132 pair of its own, and testnet, signet and regtest use
+   -- one set of version bytes between them. So a tpub matches
+   -- {testnet, signet, regtest} x {p2pkh, p2tr} - six rows - and answering
+   -- with the first meant a taproot key came back labelled p2pkh and a signet
+   -- key came back labelled testnet. Downstream that is not a cosmetic
+   -- mislabel: waOpenWallet either derives LEGACY addresses for a taproot
+   -- watch-only wallet, or refuses the key as belonging to another chain.
+   --
+   -- pPreferNetwork and pPreferType are the CONTEXT the caller already has -
+   -- the network and script type the person selected before pasting. A
+   -- preference is honoured only when it is genuinely among the matches, so
+   -- it can disambiguate but never override: a zpub pasted into a wallet set
+   -- to taproot still comes back p2wpkh, because zpub names one row.
+   -- tNode["ambiguous"] and tNode["candidates"] report what was actually
+   -- open, so a caller can say so rather than present a guess as a fact.
    local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
+   local tMatches, tPick, tCount, tRec, tPair
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
    put the number of bytes of tRaw into tLen
    if tLen is not 78 then
@@ -4402,6 +4422,7 @@ function cwXKeyDecode pText
       put "public" into tNode["kind"]
    end if
    put "" into tNode["network"]
+   put cwListNew() into tMatches
    repeat with tI = 1 to 4
       put cwListAt(kCwNetworks, tI) into tNet
       repeat with tJ = 1 to 5
@@ -4409,20 +4430,64 @@ function cwXKeyDecode pText
          put cwXKeyVersion(tNet, tStem, true) into tPub
          put cwXKeyVersion(tNet, tStem, false) into tPrv
          if tVersion is tPub or tVersion is tPrv then
-            put tNet into tNode["network"]
-            put cwTypeStem(tStem) into tNode["stem"]
-            put tStem into tNode["scripttype"]
-            return tNode
+            put "" into tRec
+            put tNet into tRec["network"]
+            put tStem into tRec["scripttype"]
+            put cwListAdd(tMatches, tRec) into tMatches
          end if
       end repeat
    end repeat
-   throw "wallet-core: cwXKeyDecode: extended key version " & tVersion & \
-         " belongs to no network this wallet knows."
+   put cwListCount(tMatches) into tCount
+   if tCount < 1 then
+      throw "wallet-core: cwXKeyDecode: extended key version " & tVersion & \
+            " belongs to no network this wallet knows."
+   end if
+   -- The caller's context, honoured in three steps and never as an override:
+   -- an exact (network, type) match first, then any match on the preferred
+   -- NETWORK, then the first row. Each step only picks from what the version
+   -- actually allows.
+   put tMatches[1] into tPick
+   repeat with tI = 1 to tCount
+      put tMatches[tI] into tRec
+      if tRec["network"] is pPreferNetwork and tRec["scripttype"] is pPreferType then
+         put tRec into tPick
+         exit repeat
+      end if
+   end repeat
+   if tPick["network"] is not pPreferNetwork then
+      repeat with tI = 1 to tCount
+         put tMatches[tI] into tRec
+         if tRec["network"] is pPreferNetwork then
+            put tRec into tPick
+            exit repeat
+         end if
+      end repeat
+   end if
+   put tPick["network"] into tNode["network"]
+   put tPick["scripttype"] into tNode["scripttype"]
+   put cwTypeStem(tPick["scripttype"]) into tNode["stem"]
+   put (tCount > 1) into tNode["ambiguous"]
+   put "" into tPair
+   repeat with tI = 1 to tCount
+      put tMatches[tI] into tRec
+      if tI > 1 then
+         put "," after tPair
+      end if
+      put tRec["network"] & "/" & tRec["scripttype"] after tPair
+   end repeat
+   put tPair into tNode["candidates"]
+   return tNode
 end cwXKeyDecode
 
 function cwXKeyIsPrivate pText
+   -- NO PREFERENCE, said out loud. This asks one question - does the key
+   -- carry a private half - and that answer is the same for every
+   -- (network, script type) row a shared version allows, so there is nothing
+   -- to disambiguate. Written as two empty arguments rather than omitted,
+   -- because a call that relies on missing-argument semantics reads as an
+   -- oversight and this one is a decision.
    local tNode
-   put cwXKeyDecode(pText) into tNode
+   put cwXKeyDecode(pText, "", "") into tNode
    return tNode["kind"] is "private"
 end cwXKeyIsPrivate
 
@@ -8372,8 +8437,11 @@ function cwXKeyRespell pXKey, pNetwork, pScriptType, pPublic
    -- spelling even for a wpkh() descriptor, because the wrapper already names
    -- the script type and Bitcoin Core rejects a SLIP-132 zpub inside one.
    -- Nothing about the key changes; only the four version bytes do.
+   -- No preference: the CALLER names the network and script type it wants
+   -- the key re-spelled for, so what the version bytes happen to allow is
+   -- not consulted.
    local tNode
-   put cwXKeyDecode(pXKey) into tNode
+   put cwXKeyDecode(pXKey, "", "") into tNode
    if pPublic is not true and tNode["kind"] is not "private" then
       throw "wallet-core: cwXKeyRespell: that is a public key; it cannot be " & \
             "re-spelled as a private one."
@@ -11807,7 +11875,7 @@ command waDeriveAccount
       -- key that belongs to the other chain. Refuse that the same way
       -- waOpenWallet does rather than showing one chain's addresses.
       if sWaAccountXpub is not empty then
-         put cwXKeyDecode(sWaAccountXpub) into tNode
+         put cwXKeyDecode(sWaAccountXpub, sWaNetwork, sWaScriptType) into tNode
          if tNode["network"] is not sWaNetwork then
             throw "the account key this wallet is watching belongs to " & \
                   tNode["network"] & ", and the wallet is now on " & \
@@ -11852,10 +11920,10 @@ function waAccountNode
    -- needs public keys keeps working; anything that needs to sign asks for
    -- the private half separately and gets a clean refusal.
    if sWaAccountXprv is not empty then
-      return cwXKeyDecode(sWaAccountXprv)
+      return cwXKeyDecode(sWaAccountXprv, sWaNetwork, sWaScriptType)
    end if
    if sWaAccountXpub is not empty then
-      return cwXKeyDecode(sWaAccountXpub)
+      return cwXKeyDecode(sWaAccountXpub, sWaNetwork, sWaScriptType)
    end if
    throw "this wallet has no account key yet. Open one on the Wallet screen."
 end waAccountNode
@@ -11878,7 +11946,8 @@ command waDeriveAddresses
       end if
       put waEmptyList() into tCosigners
       repeat with tJ = 1 to tCount
-         put cwListAdd(tCosigners, cwXKeyDecode(sWaCosigners[tJ])) into tCosigners
+         put cwListAdd(tCosigners, cwXKeyDecode(sWaCosigners[tJ], sWaNetwork, \
+               "p2wsh")) into tCosigners
       end repeat
       repeat with tJ = 0 to 1
          repeat with tI = 0 to (kWaPrefill - 1)
@@ -12313,7 +12382,13 @@ command waWalletClick pRole
    else if pRole is "kindMulti" then
       put "multisig" into sWaKind
       put "p2wsh" into sWaScriptType
-      waDropSeed
+      -- NO waDropSeed HERE, and the distinction is the whole point of the
+      -- kind. Watch-only and imported-key wallets hold somebody else's public
+      -- material and must not be carrying a seed; a MULTISIG wallet is one of
+      -- the n cosigners, so its own seed is what it signs with. Dropping it
+      -- here left a wallet that could derive every address and contribute no
+      -- signature to any of them - waCosignerKeys answers with nothing when
+      -- sWaAccountXprv is empty, and only the seed path fills that in.
       uiStatus "Paste EVERY cosigner's account key, one per line, INCLUDING " & \
             "your own - the address is a function of the whole key set - then " & \
             "set how many signatures are required.", ""
@@ -12420,7 +12495,12 @@ command waOpenWallet
    put waEmptyList() into sWaHistory
    if sWaKind is "watch" then
       put cwTrim(field "wl_xkey") into tText
-      put cwXKeyDecode(tText) into tNode
+      -- DECODED WITH THE CONTEXT THIS SCREEN ALREADY HAS. Most extended-key
+      -- versions name several (network, script type) pairs - a tpub matches
+      -- six - so without the network and type the person just chose, a signet
+      -- taproot key comes back "testnet p2pkh" and is then either refused as
+      -- belonging to another chain or watched with LEGACY addresses.
+      put cwXKeyDecode(tText, sWaNetwork, sWaScriptType) into tNode
       if tNode["network"] is not sWaNetwork then
          throw "that extended key belongs to " & tNode["network"] & \
                " and this wallet is on " & sWaNetwork & \
@@ -12432,8 +12512,16 @@ command waOpenWallet
       put tNode["scripttype"] into sWaScriptType
       put cwFingerprint(cxHexEncode(tNode["pubkey"])) into sWaFingerprint
       waDeriveAddresses
-      uiStatus "Watching " & tNode["scripttype"] & " addresses from that " & \
-            "account key. This wallet cannot sign anything.", "ok"
+      if tNode["ambiguous"] is true then
+         uiStatus "Watching " & tNode["scripttype"] & " addresses on " & \
+               sWaNetwork & ". That key's version bytes do not say which " & \
+               "of " & tNode["candidates"] & " it is, so the choice above " & \
+               "decided it - change it there if these are the wrong " & \
+               "addresses. This wallet cannot sign anything.", "warn"
+      else
+         uiStatus "Watching " & tNode["scripttype"] & " addresses from that " & \
+               "account key. This wallet cannot sign anything.", "ok"
+      end if
       exit waOpenWallet
    end if
    if sWaKind is "key" then
@@ -12477,7 +12565,7 @@ command waAddCosigners
       if tLine is "" then
          next repeat
       end if
-      put cwXKeyDecode(tLine) into tNode
+      put cwXKeyDecode(tLine, sWaNetwork, "p2wsh") into tNode
       if tNode["network"] is not sWaNetwork then
          throw "cosigner " & tI & " is a " & tNode["network"] & " key and this " & \
                "wallet is on " & sWaNetwork & ". A multisig mixing chains " & \
@@ -12498,10 +12586,28 @@ command waAddCosigners
    put tList into sWaCosigners
    put "multisig" into sWaKind
    put "p2wsh" into sWaScriptType
-   waDeriveAddresses
-   uiStatus sWaM & "-of-" & cwListCount(tList) & " multisig, " & \
-         waAddressCount() & " addresses derived. Every cosigner must derive " & \
-         "the same addresses, which BIP-67 key ordering is what guarantees.", "ok"
+   -- RE-DERIVE THIS WALLET'S OWN ACCOUNT KEY AT THE BIP-48 PATH. Switching to
+   -- multisig changes the derivation path, and whatever sWaAccountXprv held
+   -- was derived for the old script type - so without this the wallet either
+   -- holds no private half at all (and can never sign, the defect this
+   -- comment exists for) or holds one for a key that is not in the witness
+   -- script. waDeriveAccount ends by deriving the addresses, so that call
+   -- covers both; the no-seed case still just lists the multisig addresses.
+   if sWaHaveCoin is "true" and sWaMnemonic is not empty then
+      waDeriveAccount
+   else
+      waDeriveAddresses
+   end if
+   if sWaAccountXprv is empty then
+      uiStatus sWaM & "-of-" & cwListCount(tList) & " multisig, " & \
+            waAddressCount() & " addresses derived - but this wallet holds " & \
+            "no seed, so it can WATCH these addresses and cannot sign for " & \
+            "them. Open a seed wallet first if one of these keys is yours.", "warn"
+   else
+      uiStatus sWaM & "-of-" & cwListCount(tList) & " multisig, " & \
+            waAddressCount() & " addresses derived. Every cosigner must derive " & \
+            "the same addresses, which BIP-67 key ordering is what guarantees.", "ok"
+   end if
 end waAddCosigners
 
 function waBackupChecklist
@@ -12871,7 +12977,8 @@ private function waMultisigRecord pChange, pIndex
    put waEmptyList() into tCosigners
    put cwListCount(sWaCosigners) into tCount
    repeat with tJ = 1 to tCount
-      put cwListAdd(tCosigners, cwXKeyDecode(sWaCosigners[tJ])) into tCosigners
+      put cwListAdd(tCosigners, cwXKeyDecode(sWaCosigners[tJ], sWaNetwork, \
+               "p2wsh")) into tCosigners
    end repeat
    return cwMultisigAddressAt(tCosigners, sWaM, sWaNetwork, pChange, pIndex, true)
 end waMultisigRecord
@@ -13523,7 +13630,7 @@ private function waCosignerKeys pAddrRec
    if sWaAccountXprv is empty then
       return tKeys
    end if
-   put cwXKeyDecode(sWaAccountXprv) into tNode
+   put cwXKeyDecode(sWaAccountXprv, sWaNetwork, sWaScriptType) into tNode
    put cwChainNode(tNode, pAddrRec["change"], pAddrRec["index"]) into tRec
    put empty into tNode
    return cwListAdd(tKeys, cxHexEncode(tRec["seckey"]))
@@ -13615,8 +13722,8 @@ private function waOurPubkeyAt pAddrRec
       return ""
    end if
    try
-      put cwChainNode(cwXKeyDecode(sWaAccountXpub), pAddrRec["change"], \
-            pAddrRec["index"]) into tNode
+      put cwChainNode(cwXKeyDecode(sWaAccountXpub, sWaNetwork, sWaScriptType), \
+            pAddrRec["change"], pAddrRec["index"]) into tNode
    catch tError
       return ""
    end try
@@ -13813,14 +13920,15 @@ end waField
 -- ==============================================================================
 
 command waPaintHistory
-   local tI, tCount, tRec, tRows, tTab
+   local tI, tCount, tRec, tRows, tTab, tSeen
    set the defaultStack to the short name of this stack
    put numToChar(9) into tTab
    put "confs" & tTab & "txid" & tTab & "amount" & tTab & "fee" & tTab & \
          "height" & tTab & "label" & return into tRows
-   put cwListCount(sWaHistory) into tCount
+   put waHistoryRows() into tSeen
+   put cwListCount(tSeen) into tCount
    repeat with tI = 1 to tCount
-      put sWaHistory[tI] into tRec
+      put tSeen[tI] into tRec
       put tRows & tRec["confirmations"] & tTab & char 1 to 20 of tRec["txid"] & \
             ".." & tTab & waAmount(tRec["value"]) & tTab into tRows
       if tRec["fee"] is "" then
@@ -13872,6 +13980,28 @@ command waHistoryClick pRole
    waRefreshScreen
 end waHistoryClick
 
+private function waHistoryRows
+   -- sWaHistory is keyed by (txid, ADDRESS), because that is what
+   -- waUsedAddresses reads: an address is used if any transaction touched it,
+   -- and a transaction paying two of this wallet's addresses must mark both.
+   -- What a PERSON wants to read is one row per transaction, so the two views
+   -- are separated here rather than by making one of them wrong. The painter
+   -- and the row selector both go through this, or the highlighted line would
+   -- index a different transaction than the one on screen.
+   local tSeen, tList, tI, tCount, tRec
+   put empty into tSeen
+   put waEmptyList() into tList
+   put cwListCount(sWaHistory) into tCount
+   repeat with tI = 1 to tCount
+      put sWaHistory[tI] into tRec
+      if tSeen[tRec["txid"]] is not "true" then
+         put "true" into tSeen[tRec["txid"]]
+         put cwListAdd(tList, tRec) into tList
+      end if
+   end repeat
+   return tList
+end waHistoryRows
+
 function waSelectedHistory
    local tLine, tI
    set the defaultStack to the short name of this stack
@@ -13879,11 +14009,13 @@ function waSelectedHistory
    if tLine is empty or tLine < 2 then
       return ""
    end if
+   local tRows
+   put waHistoryRows() into tRows
    put tLine - 1 into tI
-   if tI < 1 or tI > cwListCount(sWaHistory) then
+   if tI < 1 or tI > cwListCount(tRows) then
       return ""
    end if
-   return sWaHistory[tI]
+   return tRows[tI]
 end waSelectedHistory
 
 function waBumpAdvice pRec
@@ -14292,13 +14424,27 @@ function waInspectRaw pHex
 end waInspectRaw
 
 function waInspectXKey pText
+   -- THE INSPECTOR TAKES NO PREFERENCE ON PURPOSE. Everywhere else in this
+   -- wallet the screen's own network and script type disambiguate a shared
+   -- version; here the whole job is to say what the KEY says, so it reports
+   -- the first row and then names every other row the version also allows.
+   -- A reader of this screen is asking what the bytes mean, not what this
+   -- wallet has decided they mean.
    local tNode, tOut
-   put cwXKeyDecode(cwTrim(pText)) into tNode
+   put cwXKeyDecode(cwTrim(pText), "", "") into tNode
    put "EXTENDED KEY" & return & return into tOut
    put "  kind        " & tNode["kind"] & return after tOut
    put "  network     " & tNode["network"] & return after tOut
    put "  script type " & tNode["scripttype"] & " (from its version bytes)" & \
          return after tOut
+   if tNode["ambiguous"] is true then
+      put "  AMBIGUOUS   those version bytes are shared. This key is one of: " & \
+            tNode["candidates"] & return & \
+            "              BIP-86 kept xpub/tpub for taproot rather than " & \
+            "taking its own pair," & return & \
+            "              and testnet, signet and regtest share one set of " & \
+            "version bytes." & return after tOut
+   end if
    put "  depth       " & tNode["depth"] & return after tOut
    put "  child index " & tNode["index"] & return after tOut
    put "  fingerprint " & cwFingerprint(cxHexEncode(tNode["pubkey"])) & return after tOut
@@ -14564,12 +14710,20 @@ command waSync
    end if
    waNetQueue "tip", ""
    waNetQueue "fees", ""
+   -- UTXOS AND HISTORY, both, per address. Unspent outputs alone answer
+   -- "what can this wallet spend" and nothing else: the History screen has
+   -- no other source, and - the sharper cost - an address whose only output
+   -- has been SPENT disappears from sWaUtxos entirely, so waUsedAddresses
+   -- calls it unused and the Receive screen offers it again. Re-using an
+   -- address is a privacy loss the person never asked for. Both request
+   -- kinds were already built by both transports and neither was ever sent.
    put cwListCount(sWaAddresses) into tCount
    repeat with tI = 1 to tCount
       put sWaAddresses[tI] into tRec
       waNetQueue "utxos", tRec["address"]
+      waNetQueue "history", tRec["address"]
    end repeat
-   uiStatus "Queued " & (tCount + 2) & " requests to " & sWaHost & ".", ""
+   uiStatus "Queued " & (tCount * 2 + 2) & " requests to " & sWaHost & ".", ""
 end waSync
 
 command waNetQueue pKind, pArg
@@ -15067,6 +15221,10 @@ private command waNetApply pKind, pArg, pBody
          waMergeUtxos pArg, tNode, "electrum"
          exit waNetApply
       end if
+      if pKind is "history" then
+         waMergeHistory pArg, tNode, "electrum"
+         exit waNetApply
+      end if
       if pKind is "broadcast" then
          put cwJsonText(tNode) into tText
          uiStatus "Broadcast. The server returned txid " & tText & ".", "ok"
@@ -15098,6 +15256,11 @@ private command waNetApply pKind, pArg, pBody
    if pKind is "utxos" then
       put cwJsonParse(tText) into tNode
       waMergeUtxos pArg, tNode, "esplora"
+      exit waNetApply
+   end if
+   if pKind is "history" then
+      put cwJsonParse(tText) into tNode
+      waMergeHistory pArg, tNode, "esplora"
       exit waNetApply
    end if
    if pKind is "tx" then
@@ -15168,6 +15331,47 @@ command waMergeUtxos pAddress, pNode, pShape
    end repeat
    put tList into sWaUtxos
 end waMergeUtxos
+
+command waMergeHistory pAddress, pNode, pShape
+   -- Replace every history row for this address, on the same reasoning
+   -- waMergeUtxos gives: the backend's answer is the whole truth about this
+   -- address, and merging would leave rows a re-org or a replacement has
+   -- taken away. Rows are keyed by txid AND address, so one transaction
+   -- touching two of this wallet's addresses appears once per address -
+   -- which is what makes waUsedAddresses right, and is why the History
+   -- screen de-duplicates by txid when it paints.
+   local tList, tI, tCount, tRec, tItem, tHeight, tConf
+   put waEmptyList() into tList
+   put cwListCount(sWaHistory) into tCount
+   repeat with tI = 1 to tCount
+      put sWaHistory[tI] into tRec
+      if tRec["address"] is not pAddress then
+         put cwListAdd(tList, tRec) into tList
+      end if
+   end repeat
+   put cwJsonCount(pNode) into tCount
+   repeat with tI = 1 to tCount
+      put cwJsonAt(pNode, tI) into tItem
+      put "" into tRec
+      put pAddress into tRec["address"]
+      if pShape is "electrum" then
+         put cwJsonGet(tItem, "tx_hash") into tRec["txid"]
+         put cwJsonGet(tItem, "height") into tHeight
+      else
+         put cwJsonGet(tItem, "txid") into tRec["txid"]
+         put cwJsonGet(tItem, "status/block_height") into tHeight
+      end if
+      if tHeight is not "" and tHeight + 0 > 0 and sWaTipHeight is not "" then
+         put sWaTipHeight - tHeight + 1 into tConf
+      else
+         put 0 into tConf
+      end if
+      put tConf into tRec["confirmations"]
+      put tHeight into tRec["height"]
+      put cwListAdd(tList, tRec) into tList
+   end repeat
+   put tList into sWaHistory
+end waMergeHistory
 
 command waBroadcast
    if sWaLastRaw is empty then
