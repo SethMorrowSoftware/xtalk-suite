@@ -1726,6 +1726,24 @@ neither shape errors.** The boot gate has `ck()` for booleans and `eq()` for
 values now, and a scan asserts no value-shaped `ck()` remains. If a third
 Checker ever appears in this member, give it the same two names.
 
+**AND THE LAST TWO DEFECTS THE FULL PASS CONFIRMED WERE BOTH INVISIBLE FOR ONE
+REASON: the script and its ORACLE had the same rule.** 66 agents, 58 findings
+judged, 2 survived - and neither could ever have failed a vector, because the
+two implementations the gate compares agreed with each other and were both
+wrong. `cwSelectCoins`'s `manual` strategy narrowed the pool to the ticked coins
+and then used the same incremental loop as the automatic strategies, returning
+on the first PREFIX that paid: ticking 100000/40000/30000 to send 10000 spent
+the 100000 and left the rest, against a contract in this file's own header and a
+promise on the Coins screen, and with consolidation - the reason anybody ticks a
+set - impossible to express. And `cwBranchAndBound` priced the change output's
+FUTURE spend at today's fee rate, where the oracle used a long-term estimate:
+two acceptance windows 345 satoshi apart at 5 sat/vB, with no vector in the
+band. **An oracle-based gate cannot see a rule both sides get wrong**, which is
+the one structural hole in this whole approach and is worth knowing before
+trusting a green run. What closes it is not another gate but the thing that
+found these: reading the shipped code against the specification rather than
+against the other implementation.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule
