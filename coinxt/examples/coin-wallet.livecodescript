@@ -12253,6 +12253,12 @@ private function waWalletAdvice
    if sWaNetwork is "mainnet" then
       return "This is MAINNET. Everything on the Send screen spends real coins."
    end if
+   if waIsPublicTestSeed() then
+      return "This is " & sWaNetwork & ", so nothing here is worth anything - " & \
+            "and this is BIP-39's PUBLISHED test seed, so every address it " & \
+            "makes is public. Fund it with test coins only. Mainnet is " & \
+            "refused until you generate or restore a seed of your own."
+   end if
    return "This is " & sWaNetwork & ", so nothing here is worth anything. That " & \
          "is the right place to learn what the buttons do."
 end waWalletAdvice
@@ -12430,6 +12436,17 @@ command waWalletClick pRole
 end waWalletClick
 
 command waSetNetwork pNetwork
+   -- REFUSED, not warned about: the published test seed must not reach
+   -- mainnet. A warning is a thing people click past, and the cost here is
+   -- somebody else's coins arriving at an address the whole world can spend
+   -- from. Generating or restoring a seed clears it, and then this opens.
+   if pNetwork is "mainnet" and waIsPublicTestSeed() then
+      uiStatus "Refused: this wallet still holds BIP-39's PUBLISHED test " & \
+            "seed. It is printed in the specification, so on mainnet anyone " & \
+            "could spend what you receive. Generate or restore a seed first.", \
+            "bad"
+      exit waSetNetwork
+   end if
    -- Changing network changes every address in the wallet, so it re-derives
    -- and drops the chain state rather than showing addresses from one network
    -- beside balances from another.
@@ -12439,6 +12456,15 @@ command waSetNetwork pNetwork
    put empty into sWaTipHeight
    if sWaHaveCoin is "true" and sWaMnemonic is not empty then
       waDeriveAccount
+   end if
+   -- Changing the network can invalidate the BACKEND as well as the addresses,
+   -- and the backend half used to go unsaid: the Esplora root moved under the
+   -- wallet's feet and a mainnet-only Electrum server stayed selected.
+   waRefreshNetState
+   if sWaNetState is "failed" then
+      uiStatus "Now on " & pNetwork & ", and the backend cannot serve it: " & \
+            sWaNetWhy, "bad"
+      exit waSetNetwork
    end if
    uiStatus "Now on " & pNetwork & ". Addresses and balances were dropped, " & \
          "because they belong to the other chain.", "warn"
@@ -12545,6 +12571,16 @@ command waOpenWallet
       exit waOpenWallet
    end if
    put cwTrim(field "wl_mnemonic") into sWaMnemonic
+   -- The same refusal from the other side. waSetNetwork guards the switch TO
+   -- mainnet; this guards typing the public seed while already there. Both
+   -- exist because either one alone leaves a two-step path to the same place.
+   if sWaNetwork is "mainnet" and waIsPublicTestSeed() then
+      put empty into sWaMnemonic
+      uiStatus "Refused: that is BIP-39's PUBLISHED test seed, printed in " & \
+            "the specification. On mainnet anyone could spend what you " & \
+            "receive. Nothing was derived.", "bad"
+      exit waOpenWallet
+   end if
    put field "wl_pass" into sWaPassphrase
    waDeriveAccount
    uiStatus "Open: " & sWaLabel & ", " & sWaScriptType & " on " & sWaNetwork & \
@@ -14691,22 +14727,54 @@ command waSetBackend pBackend
    set the defaultStack to the short name of this stack
    put sWaHost into field "nw_host"
    put sWaPort into field "nw_port"
-   if pBackend is not "offline" and sWaHaveOnion is not "true" \
-         and pBackend is not "esplora-clear" then
-      put "failed" into sWaNetState
-      put "OnionXT did not answer, so this transport cannot run here." into sWaNetWhy
-   end if
+   waRefreshNetState
    waLog "backend: " & pBackend & " (" & sWaHost & ":" & sWaPort & ")"
 end waSetBackend
+
+command waRefreshNetState
+   -- The two reasons a transport cannot run that are knowable WITHOUT talking
+   -- to anything: OnionXT is absent, or the backend does not carry the chain
+   -- this wallet is on. Both are recomputed from scratch whenever EITHER half
+   -- moves - the backend or the network - so a condition the person has just
+   -- fixed clears itself instead of leaving a stale red line, and one they
+   -- have just created appears without waiting for a sync to fail.
+   --
+   -- A live failure from waNetFail is deliberately not preserved across this:
+   -- both callers reset the state first, and both have already dropped the
+   -- chain state that failure was about.
+   local tWhy
+   put empty into tWhy
+   if sWaBackend is not "offline" and sWaHaveOnion is not "true" \
+         and sWaBackend is not "esplora-clear" then
+      -- FIRST, because when both are true this is the one to fix first.
+      put "OnionXT did not answer, so this transport cannot run here." into tWhy
+   end if
+   if tWhy is empty then
+      put waBackendChainWhy() into tWhy
+   end if
+   if tWhy is empty then
+      put "idle" into sWaNetState
+      put empty into sWaNetWhy
+   else
+      put "failed" into sWaNetState
+      put tWhy into sWaNetWhy
+   end if
+end waRefreshNetState
 
 command waSync
    -- Ask the backend about everything the wallet needs, in one batch. Each
    -- address becomes its own request because that is what both protocols
    -- offer; the queue serialises them so one slow answer does not open
    -- twenty circuits.
-   local tI, tCount, tRec
+   local tI, tCount, tRec, tWhy
    if sWaBackend is "offline" then
       throw "this wallet is offline. Choose a backend on the Network screen."
+   end if
+   -- Refuse a backend that does not carry this chain BEFORE any request is
+   -- built. Syncing anyway is what produced a green, empty, funded wallet.
+   put waBackendChainWhy() into tWhy
+   if tWhy is not empty then
+      throw tWhy
    end if
    waNetQueue "tip", ""
    waNetQueue "fees", ""
@@ -14877,27 +14945,107 @@ function waClearScheme
    return "https://"
 end waClearScheme
 
+function waEsploraRoot
+   -- ESPLORA SERVES EACH CHAIN UNDER ITS OWN ROOT, and this handler used to
+   -- emit the mainnet one for every network. This wallet DEFAULTS to testnet,
+   -- so that was the common case, not the corner: a freshly generated wallet
+   -- derived correct tb1 addresses and then asked the mainnet index about
+   -- them.
+   --
+   -- What it costs is the wrong-but-plausible answer rule 4 exists to refuse.
+   -- Esplora replies 400 for an address off its chain, and only the two Tor
+   -- transports read an HTTP status (waHttpCheckStatus); the clearnet one goes
+   -- through `load URL`, which hands waUrlDone a body and no code - so a
+   -- funded address came back as a synced wallet holding nothing. Nobody is
+   -- told their coins were looked for in the wrong place.
+   --
+   --   mainnet   /api
+   --   testnet   /testnet/api
+   --   signet    /signet/api
+   --
+   -- Regtest is not in the table because it has no public mirror: the person
+   -- runs their own single-network esplora, which serves the bare /api root.
+   -- waBackendChainWhy refuses regtest against the built-in hosts, so the
+   -- empty prefix here is only ever used with a host they typed themselves.
+   if sWaNetwork is "testnet" then
+      return "/testnet"
+   end if
+   if sWaNetwork is "signet" then
+      return "/signet"
+   end if
+   return empty
+end waEsploraRoot
+
+function waBackendChainWhy
+   -- Does the SELECTED BACKEND actually carry the chain this wallet is on?
+   -- The two failures are not equally visible, which is the whole reason this
+   -- is a guard and not a comment. Esplora answers a foreign address with a
+   -- 400 - wrong, but loud on a transport that reads the status. An Electrum
+   -- server answers a foreign SCRIPTHASH with an empty list, which is a
+   -- perfectly well-formed "this address has never been used": a testnet
+   -- wallet on a mainnet server reports itself synced, green, and empty, with
+   -- nothing anywhere saying otherwise. Fail closed and name the remedy.
+   if sWaBackend is "offline" then
+      return empty
+   end if
+   if sWaBackend is "electrum-tor" and sWaHost is kWaElectrumOnion \
+         and sWaNetwork is not "mainnet" then
+      return "the built-in Electrum server serves mainnet only, and this " & \
+            "wallet is on " & sWaNetwork & ". An Electrum server answers " & \
+            "for the wrong chain with an empty list rather than an error, " & \
+            "so this would look like a synced, empty wallet. Put a " & \
+            sWaNetwork & " server in the host field, or use an Esplora backend."
+   end if
+   if sWaNetwork is "regtest" and (sWaHost is kWaEsploraOnion \
+         or sWaHost is kWaEsploraClear or sWaHost is kWaElectrumOnion) then
+      return "regtest is a chain you run yourself, so no public backend " & \
+            "carries it. Put your own node's host in the field above."
+   end if
+   return empty
+end waBackendChainWhy
+
+function waIsPublicTestSeed
+   -- The wallet PRE-FILLS BIP-39's published test mnemonic so a person can
+   -- press every button without inventing a seed first, and on testnet that is
+   -- exactly right. It is also a loaded gun: those twelve words are in the
+   -- specification, in this repository, and in every BIP-39 test suite ever
+   -- written, so every key they derive is public. Carried to mainnet they
+   -- produce addresses anyone who has read the spec can sweep, and nothing on
+   -- the screen would look any different.
+   --
+   -- The comparison is EXACT rather than case-folded, because BIP-39 derives
+   -- the seed from the mnemonic STRING: a case variant is a genuinely
+   -- different seed, not this one. What this guard is actually for is the
+   -- pre-filled default, which is byte-identical to the constant.
+   return cwSameBytes(cxMnemonicNormalize(cwTrim(sWaMnemonic)), \
+         kWaTestMnemonic)
+end waIsPublicTestSeed
+
 function waEsploraPath pRec
-   local tKind, tArg
+   local tKind, tArg, tRoot
    put pRec["kind"] into tKind
    put pRec["arg"] into tArg
+   -- EVERY path goes through the network root. Building it once here rather
+   -- than at the six returns is deliberate: a seventh request kind added
+   -- later cannot forget it.
+   put waEsploraRoot() into tRoot
    if tKind is "tip" then
-      return "/api/blocks/tip/height"
+      return tRoot & "/api/blocks/tip/height"
    end if
    if tKind is "fees" then
-      return "/api/fee-estimates"
+      return tRoot & "/api/fee-estimates"
    end if
    if tKind is "utxos" then
-      return "/api/address/" & tArg & "/utxo"
+      return tRoot & "/api/address/" & tArg & "/utxo"
    end if
    if tKind is "history" then
-      return "/api/address/" & tArg & "/txs"
+      return tRoot & "/api/address/" & tArg & "/txs"
    end if
    if tKind is "tx" then
-      return "/api/tx/" & tArg & "/hex"
+      return tRoot & "/api/tx/" & tArg & "/hex"
    end if
    if tKind is "broadcast" then
-      return "/api/tx"
+      return tRoot & "/api/tx"
    end if
    throw "unknown request kind " & tKind & "."
 end waEsploraPath

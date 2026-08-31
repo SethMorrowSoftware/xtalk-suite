@@ -851,6 +851,83 @@ def drive(c, ip, world, sandbox):
         c.eq("and the wallet it had open is untouched",
              str(ip.globals.get("swalabel", "")), "Boot gate wallet")
 
+    # ---- the network root, and the chain the backend actually carries ----
+    # THE DEFECT THIS SECTION EXISTS FOR: a funded testnet address reported no
+    # coins, because waEsploraPath emitted the MAINNET "/api" root for every
+    # network while the wallet defaults to testnet. Esplora answers a foreign
+    # address with a 400, and only the two Tor transports read an HTTP status
+    # (waHttpCheckStatus) - the clearnet one goes through `load URL`, which
+    # hands waUrlDone a body and no code, so the refusal arrived as an empty
+    # result and the wallet called itself synced.
+    #
+    # Nothing above could see it: every check in this gate and all 461 in the
+    # vector gate are about what the wallet COMPUTES, and the address, the
+    # xpub and the derivation were all correct. The wrong half was where it
+    # asked.
+    saved = {k: ip.globals.get(k)
+             for k in ("swanetwork", "swabackend", "swahost")}
+
+    def esplora_path(kind, arg=""):
+        return str(ip.call("waEsploraPath", [{"kind": kind, "arg": arg}]))
+
+    ADDR = "tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl"
+    for net, root in (("mainnet", ""), ("testnet", "/testnet"),
+                      ("signet", "/signet")):
+        ip.globals["swanetwork"] = net
+        c.eq("%s asks its own utxo index" % net, esplora_path("utxos", ADDR),
+             root + "/api/address/" + ADDR + "/utxo")
+        c.eq("%s asks its own chain tip" % net, esplora_path("tip"),
+             root + "/api/blocks/tip/height")
+    # EVERY kind, not just the two above: the root is applied once inside the
+    # handler so a seventh request kind cannot forget it, and this is what
+    # holds that property rather than the comment claiming it.
+    ip.globals["swanetwork"] = "testnet"
+    for kind in ("tip", "fees", "utxos", "history", "tx", "broadcast"):
+        got = esplora_path(kind, ADDR)
+        c.ck("the %s request carries the testnet root" % kind,
+             got.startswith("/testnet/api"), got)
+
+    def why(backend, host, net):
+        ip.globals["swabackend"] = backend
+        ip.globals["swahost"] = host
+        ip.globals["swanetwork"] = net
+        return str(ip.call("waBackendChainWhy", []))
+
+    elec = str(ip.constants.get("kWaElectrumOnion", ""))
+    clear = str(ip.constants.get("kWaEsploraClear", ""))
+    onion = str(ip.constants.get("kWaEsploraOnion", ""))
+    # The Electrum case is the one that MUST be refused rather than attempted:
+    # a server answers for the wrong chain with an empty list, not an error,
+    # so it is indistinguishable from an unused address.
+    c.ck("the built-in Electrum server is refused off mainnet",
+         why("electrum-tor", elec, "testnet") != "")
+    c.eq("and allowed on mainnet, which it serves",
+         why("electrum-tor", elec, "mainnet"), "")
+    # The guard must not over-refuse either, or it becomes the defect.
+    c.eq("Esplora is allowed on testnet", why("esplora-clear", clear, "testnet"), "")
+    c.eq("Esplora is allowed on signet", why("esplora-tor", onion, "signet"), "")
+    c.ck("regtest is refused against every built-in host",
+         all(why(b, h, "regtest") != ""
+             for b, h in (("esplora-clear", clear), ("esplora-tor", onion),
+                          ("electrum-tor", elec))))
+    c.eq("regtest is allowed against a host the person typed themselves",
+         why("esplora-clear", "127.0.0.1:3002", "regtest"), "")
+    c.eq("offline is never a chain complaint", why("offline", clear, "regtest"), "")
+
+    # And the guard is REACHED: waSync refuses before it builds a request.
+    ip.globals["swabackend"] = "electrum-tor"
+    ip.globals["swahost"] = elec
+    ip.globals["swanetwork"] = "testnet"
+    try:
+        ip.call("waSync", [])
+        c.ck("waSync refuses a backend that cannot serve this chain", False,
+             "it queued the requests instead")
+    except LCS.Thrown as exc:
+        c.ck("waSync refuses a backend that cannot serve this chain",
+             "Electrum" in str(exc.msg), str(exc.msg)[:120])
+    for k, v in saved.items():
+        ip.globals[k] = v
+
     # ---- the log recorded all of it --------------------------------------
     click(ip, world, "nv_lg")
     c.ck("the log is not empty", len(_fld(world, "lg_text")) > 0)

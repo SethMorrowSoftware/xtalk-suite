@@ -116,6 +116,21 @@ TLS directly to a host, so it cannot perform a SOCKS handshake first. A `.onion`
 endpoint over plain HTTP is the correct shape here, not a compromise: the
 circuit is the encryption and the authentication.
 
+**Which chain a backend carries is not a detail.** Esplora serves each chain
+under its own root - `/api` for mainnet, `/testnet/api`, `/signet/api` - and the
+wallet builds that root from the network it is on. It did not always: every
+request went to the mainnet index, so a funded testnet address reported no
+coins, which is the wrong-but-plausible answer this member exists to refuse. The
+two failure modes are not equally visible, which is why there is now a guard as
+well as a fix. Esplora answers an address off its chain with a 400, and only the
+Tor transports read an HTTP status - `load URL` hands the callback a body and no
+code. An Electrum server is worse: asked about a script hash from another chain
+it answers with an empty list, a well-formed "this address has never been used",
+so a testnet wallet on a mainnet server reports itself synced, green and empty.
+The wallet now refuses a backend that does not carry the selected chain, before
+it builds a request, and says which host to change. Regtest has no public
+backend at all, so it is refused against every built-in host and needs your own.
+
 The clearnet option is offered with what it costs written on the screen rather
 than assumed away. This suite has never measured what the engine does about TLS
 certificates (`docs/OXT-ENGINE-NOTES.md` 6.8), so `https://` here carries no
