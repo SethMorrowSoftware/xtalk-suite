@@ -128,8 +128,15 @@ CoinXT/
                             it can serve as the oracle the script is checked against
     check-wallet-vectors.py the same machinery one layer up: runs the SHIPPED wallet engine
                             (examples/wallet-core.livecodescript) against wallet_reference.py
-                            with the real shim signing. 414 checks, including complete signed
-                            transactions on all five spend paths
+                            with the real shim signing - complete signed transactions on all
+                            five spend paths - and then RUNS THE WHOLE SET AGAIN with `is` and
+                            `offset()` folded to the engine's own case-insensitive default,
+                            requiring the same answers
+    check-wallet-boot.py    one layer up again: BOOTS examples/coin-wallet.livecodescript
+                            headlessly over riptide's engine object model (imported, not
+                            copied) with the COMMITTED coinxt.so under it - the card builders,
+                            the show/hide sweep, the click router, a signed spend, a PSBT
+                            round trip and the sealed wallet file. No compiler needed
     wallet_reference.py     TEST TOOLING: the wallet layer's oracle. Extends coin_reference.py
                             and anchors itself at import to the BIP-44/49/84/86 addresses,
                             BIP-49/84's account ypub and zpub, Core's descriptor checksums,
@@ -164,19 +171,25 @@ python3 tools/check-docs-style.py             # house-style gate for the docs
 python3 tools/coin-kat.py --check             # builds the shim, runs the known-answer vectors
 python3 tools/check-selftest-vectors.py       # the self-test's vectors have not drifted
 python3 tools/check-script-vectors.py         # the SCRIPT encoders reproduce the published vectors
+python3 tools/check-wallet-vectors.py         # the SHIPPED wallet engine, against its own oracle,
+                                              #   twice: once as written, once with the engine's
+                                              #   case-insensitive `is`/`offset()`
+python3 tools/check-wallet-boot.py            # the SHIPPED wallet stack, BOOTED headlessly
 python3 tools/check-binary-freshness.py       # the committed library still matches the shim
 sh native/build.sh asan                       # ASan + UBSan native self-test
 ( cd native && sha256sum -c MANIFEST.sha256 ) # vendored-source integrity
 ( cd src/code && sha256sum -c MANIFEST.sha256 ) # committed-binary integrity
 ```
 
-All nine run in CI (`.github/workflows/ci.yml`). The monorepo's `suite-gates.yml`, via
-`tools/build-all.sh --gates`, runs those nine plus `python3 tools/check-doc-handlers.py --check`
-(the docs-vs-shipped-handler-set gate, which the member workflow does not carry yet), so the nine
-above going green is not by itself proof that the suite gates will. OXT cannot COMPILE or LOAD a
+The monorepo's `suite-gates.yml`, via `tools/build-all.sh --gates`, runs every one of them plus
+`python3 tools/check-doc-handlers.py --check` (the docs-vs-shipped-handler-set gate). The member's
+own `.github/workflows/ci.yml` carries a SUBSET - it predates the two wallet gates and does not run
+them - so this list going green locally is the thing to trust, and the member workflow going green
+is not by itself proof that the suite gates will. OXT cannot COMPILE or LOAD a
 `.livecodescript` or a `.lcb` headlessly, so a script change still needs an on-engine pass for parser
 behaviour - but the phase-3 encoders' LOGIC is executed headlessly by `check-script-vectors.py`,
-so "never run" is no longer the state they ship in. The honest status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
+the wallet engine's by `check-wallet-vectors.py`, and the wallet STACK's whole openStack chain by
+`check-wallet-boot.py`, so "never run" is no longer the state any of the three ship in. The honest status until then is "designed and statically reasoned" (see [CLAUDE.md](CLAUDE.md)).
 
 ## Status
 

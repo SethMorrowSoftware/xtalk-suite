@@ -137,6 +137,14 @@ def wire_signing(lib):
         return go
 
     def boolean(fn, name):
+        """THE .lcb's OWN MAP, and it matters which way round it is.
+        src/coinxt.lcb's cxVerify and cxSchnorrVerify answer FALSE for -5
+        (BADSIG - the ordinary "this signature does not check out") and THROW
+        for everything else (a null pointer, a bad length, a malformed key, an
+        internal error). This helper had the two halves swapped: it answered
+        false where the engine throws and threw where the engine answers
+        false, so the script's refusal paths were being exercised by the wrong
+        inputs and its throw paths not at all."""
         def go(args):
             raw = [to_bytes(a) for a in args]
             flat = []
@@ -145,7 +153,7 @@ def wire_signing(lib):
             rc = getattr(lib, fn)(*flat)
             if rc == 0:
                 return True
-            if rc in (-1, -2, -4, -8):
+            if rc == -5:
                 return False
             raise LCS.Thrown("CoinXT: %s: status %d" % (name, rc))
         return go
@@ -236,8 +244,6 @@ CONSTANT_INPUTS = {
     "kCwVersion": "this layer's own version string",
     "kCwHexDigits": "checked by coinxt's own vector gate, which owns hex",
     "kCwMsgMagic": "the message prefix; its effect is checked by the digest",
-    "kCwDescCharset": "checked by the descriptor checksum vectors that use it",
-    "kCwDescInputHead": "checked by the descriptor checksum vectors that use it",
     "kCwSigBytes": "a worst-case budget, not a derivable constant; its effect "
                    "is checked by every vsize vector",
     "kCwPubkeyBytes": "same, and 33 is checked by every derived address",
@@ -249,24 +255,68 @@ CONSTANT_INPUTS = {
     "kCwQrPrim": "the QR field polynomial; checked by every QR matrix vector",
     "kCwQrFormatGen": "checked by every QR matrix vector",
     "kCwQrFormatMask": "checked by every QR matrix vector",
-    "kCwQrVersionGen": "checked by the version-7-and-up QR vectors",
+    "kCwQrVersionGen": "checked by the version-7 and version-8 QR matrix "
+                       "vectors, which are the only ones that carry a "
+                       "version-information block at all",
     "kCwPsbtMagic": "checked by every PSBT vector",
 }
 CONSTANT_INPUTS.update({("kCwOp" + n): "a script opcode; checked by the "
                         "scriptPubKey vectors that emit it"
                         for n in ("Zero", "Dup", "Equal", "EqualVerify",
                                   "Hash160", "CheckSig", "CheckMultisig", "One")})
-CONSTANT_INPUTS.update({("kCwPsbt" + n): "a BIP-174 key type; checked by the "
-                        "PSBT round-trip vectors"
-                        for n in ("GlobalUnsignedTx", "GlobalXpub", "GlobalVersion",
-                                  "InNonWitnessUtxo", "InWitnessUtxo",
-                                  "InPartialSig", "InSighashType",
-                                  "InRedeemScript", "InWitnessScript", "InBip32",
-                                  "InFinalScriptSig", "InFinalScriptWitness",
-                                  "InTapKeySig", "InTapBip32", "InTapInternalKey",
-                                  "InTapMerkleRoot", "OutRedeemScript",
-                                  "OutWitnessScript", "OutBip32",
-                                  "OutTapInternalKey", "OutTapBip32")})
+# THE PSBT KEY TYPES, NAMED ONE AT A TIME. These carried a single blanket
+# excuse - "a BIP-174 key type; checked by the PSBT round-trip vectors" - and
+# it was not true of most of them: exactly one byte-exact comparison existed,
+# over a PSBT whose metadata used three of the twenty-one, and four of the
+# names were read by no code path at all. A blanket reason is the shape this
+# member's own history calls a gate that answers the question nobody asks
+# twice; the four dead names have been deleted from the script, and each
+# survivor now says which vector puts it on the wire.
+CONSTANT_INPUTS.update({
+    "kCwPsbtGlobalUnsignedTx":
+        "byte-compared in every psbt_create vector (it is the one entry a "
+        "PSBT cannot omit)",
+    "kCwPsbtInWitnessUtxo":
+        "byte-compared in the create, output-metadata, signed and finalized "
+        "vectors",
+    "kCwPsbtInBip32": "byte-compared in the same four",
+    "kCwPsbtInNonWitnessUtxo":
+        "byte-compared in the legacy-input vector, which is the only shape "
+        "that emits it",
+    "kCwPsbtInSighashType": "byte-compared in that same legacy-input vector",
+    "kCwPsbtInPartialSig":
+        "byte-compared in the signed-PSBT vector, keyed by the pubkey and "
+        "carrying the DER signature plus its sighash byte",
+    "kCwPsbtInFinalScriptSig":
+        "byte-compared in the finalized-PSBT vector (absent for a v0 witness "
+        "input, which that vector also pins)",
+    "kCwPsbtInFinalScriptWitness": "byte-compared in the same vector",
+    "kCwPsbtInRedeemScript":
+        "emitted by the p2sh-p2wpkh sign-and-finalize vector, whose finalized "
+        "TRANSACTION is byte-compared; the entry itself is not, because the "
+        "wrapper it feeds is",
+    "kCwPsbtInWitnessScript":
+        "emitted by the 2-of-3 cosigner vectors, whose combined finalized "
+        "transaction is byte-compared; the entry itself is not",
+    "kCwPsbtInTapInternalKey":
+        "emitted by the taproot vector, whose finalized transaction is "
+        "byte-compared; the entry itself is not",
+    "kCwPsbtInTapKeySig":
+        "written by cwPsbtSign and read back by cwPsbtFinalize on the taproot "
+        "vector - the round trip is exercised, the bytes are not compared to "
+        "an independent implementation",
+    "kCwPsbtInTapBip32":
+        "NOT EXERCISED. cwPsbtCreate emits it when a caller supplies "
+        "tapbip32 metadata and no vector supplies any; the wallet does not "
+        "either, so this is declared for a caller that does not yet exist",
+    "kCwPsbtOutRedeemScript":
+        "byte-compared in the output-metadata vector",
+    "kCwPsbtOutWitnessScript": "byte-compared in the same vector",
+    "kCwPsbtOutBip32": "byte-compared in the same vector",
+    "kCwPsbtOutTapInternalKey":
+        "NOT EXERCISED, for the same reason as kCwPsbtInTapBip32: no vector "
+        "and no wallet path supplies taproot metadata on an OUTPUT",
+})
 
 
 def check_constants(c, text):
@@ -299,7 +349,6 @@ def check_constants(c, text):
     for stem, pub_name, prv_name in (("x", "kCwXpubVersions", "kCwXprvVersions"),
                                      ("y", "kCwYpubVersions", "kCwYprvVersions"),
                                      ("z", "kCwZpubVersions", "kCwZprvVersions"),
-                                     ("Y", "kCwYshPubVersions", "kCwYshPrvVersions"),
                                      ("Z", "kCwZshPubVersions", "kCwZshPrvVersions")):
         c.ck("the SLIP-132 %s public versions" % stem,
              consts.get(pub_name), row(stem + "pub"))
@@ -350,7 +399,6 @@ def check_constants(c, text):
     }
     for name in ("kCwXpubVersions", "kCwXprvVersions", "kCwYpubVersions",
                  "kCwYprvVersions", "kCwZpubVersions", "kCwZprvVersions",
-                 "kCwYshPubVersions", "kCwYshPrvVersions",
                  "kCwZshPubVersions", "kCwZshPrvVersions"):
         derived.add(name)
     for i in range(5):
@@ -366,8 +414,24 @@ def check_constants(c, text):
         c.problems.append(
             "CONSTANT_INPUTS names constants the file no longer declares "
             "(a stale excuse outlives the thing it excused): %s" % ", ".join(stale))
+    # THE SPLIT MUST ADD UP, and it did not. Two names sat in both sets, so
+    # the note printed 35 + 45 for 78 constants - a report of coverage that
+    # was, by two, a report of something else. A constant is either checked
+    # here or excused there; being both means one of the two is a lie about
+    # which, and there is no way to tell from the outside which one.
+    both = sorted((derived & parsed) & set(CONSTANT_INPUTS))
+    if both:
+        c.problems.append(
+            "these constants are BOTH re-derived and listed as an input with "
+            "a reason, so the honest split double-counts them and one of the "
+            "two claims is wrong: %s" % ", ".join(both))
+    nderived, ninput = len(derived & parsed), len(parsed & set(CONSTANT_INPUTS))
+    if nderived + ninput != len(parsed):
+        c.problems.append(
+            "the split does not add up: %d re-derived + %d listed = %d, for "
+            "%d constants" % (nderived, ninput, nderived + ninput, len(parsed)))
     c.note("  %d constant(s) parsed: %d re-derived, %d listed as inputs"
-           % (len(parsed), len(derived & parsed), len(parsed & set(CONSTANT_INPUTS))))
+           % (len(parsed), nderived, ninput))
 
 
 # ------------------------------------------------------- tier 2: the vectors
@@ -607,6 +671,11 @@ def check_selection(c, ip):
                      [x["value"] for x in want["selected"]])
                 c.ck(label + ": the fee", got["fee"], want["fee"])
                 c.ck(label + ": the change", got["change"], want["change"])
+                c.ck(label + ": the total in", got["totalin"], want["total_in"])
+                # the arithmetic identity, kept as its own assertion: the line
+                # above compares two implementations, this one states the
+                # invariant. Written as one check it was neither - both
+                # operands came out of the same cwSelectCoins call.
                 c.ck(label + ": total in == target + fee + change",
                      got["totalin"], target + got["fee"] + got["change"])
     exact = [{"value": 100550, "txid": "a" * 64, "vout": 0, "confirmations": 9}]
@@ -624,6 +693,42 @@ def check_selection(c, ip):
                                  "p2wpkh", "largest", 0, 0])
     c.true("a frozen coin is never spent",
            250000 not in [int(x["value"]) for x in unlst(got["selected"])])
+    # FROZEN AND TICKED AT ONCE - the one combination the two implementations
+    # answered differently and no vector had ever asked them about. Freezing
+    # is the more deliberate signal and must win.
+    both = [dict(x) for x in COINS]
+    both[2]["selected"] = True
+    both[2]["frozen"] = True
+    both[0]["selected"] = True
+    got = call("cwSelectCoins", [lst(both), 60000, 5, "p2wpkh", lst(["p2wpkh"]),
+                                 "p2wpkh", "manual", 0, 0])
+    want = REF.select_coins(both, 60000, 5, "p2wpkh", ["p2wpkh"], "p2wpkh",
+                            strategy="manual")
+    c.true("a coin that is both ticked and frozen is NOT spent",
+           250000 not in [int(x["value"]) for x in unlst(got["selected"])])
+    c.ck("and the oracle agrees about which coins those are",
+         [int(x["value"]) for x in unlst(got["selected"])],
+         [x["value"] for x in want["selected"]])
+
+    # THE CHANGELESS WINDOW, which nine strategy vectors all miss because each
+    # is settled by the change >= dust branch first. One 100,000-sat p2wpkh
+    # coin at 1 sat/vB: a change output costs 31 vB, so for targets just under
+    # 99,597 the change falls below the 294-sat dust threshold while the
+    # changeless surplus is above it - the band where requiring both bounds
+    # reported "insufficient funds" for an affordable spend.
+    one = [{"value": 100000, "txid": "e" * 64, "vout": 0, "confirmations": 6}]
+    for target in (99596, 99580, 99566):
+        got = call("cwSelectCoins", [lst(one), target, 1, "p2wpkh",
+                                     lst(["p2wpkh"]), "p2wpkh", "bnb", 0, 0])
+        want = REF.select_coins(one, target, 1, "p2wpkh", ["p2wpkh"], "p2wpkh",
+                                strategy="bnb")
+        lbl = "the changeless window at target %d" % target
+        c.ck(lbl + ": ok", got["ok"] is True or got["ok"] == "true", True)
+        c.ck(lbl + ": no change output", got["change"], 0)
+        c.ck(lbl + ": the whole remainder is the fee",
+             got["fee"], 100000 - target)
+        c.ck(lbl + ": and the oracle agrees", got["fee"], want["fee"])
+
     manual = [dict(x) for x in COINS]
     manual[1]["selected"] = True
     manual[3]["selected"] = True
@@ -806,6 +911,89 @@ def check_psbt(c, ip):
     c.refuses("something that is not a PSBT is refused",
               lambda: call("cwPsbtParse", ["bm90IGEgcHNidA=="]))
 
+    # ---- THE KEY TYPES, BYTE FOR BYTE -------------------------------------
+    # The end-to-end vectors below prove the finalized TRANSACTION matches,
+    # which is the thing that spends money - but a transaction can be right
+    # while the PSBT carrying it is wrong, and a PSBT is what leaves this
+    # wallet and reaches a cosigner. So the intermediate documents are
+    # byte-compared too, and between them these three vectors put every
+    # kCwPsbt* key type this file emits on the wire under an independent
+    # implementation's version of the same bytes.
+    ch = CR.bip32_path(master_py, "m/84'/0'/0'/1/0")
+    ch_spk = REF.spk_p2wpkh(ch["pubkey"]).hex()
+    nested = CR.bip32_path(master_py, "m/49'/0'/0'/1/0")
+    redeem = REF.redeem_p2sh_p2wpkh(nested["pubkey"])
+    ms = REF.multisig_script(
+        2, [CR.bip32_path(master_py, "m/48'/0'/%d'/2'/1/0" % i)["pubkey"]
+            for i in range(2)])
+    out_meta = {"redeemscript": redeem.hex(), "witnessscript": ms.hex(),
+                "bip32": lst([{"pubkey": ch["pubkey"].hex(),
+                               "fingerprint": fp, "path": "m/84'/0'/0'/1/0"}])}
+    py_outs2 = [(45000, bytes.fromhex(dest)), (4000, bytes.fromhex(ch_spk))]
+    outs2 = lst([call("cwTxOutput", [45000, dest]),
+                 call("cwTxOutput", [4000, ch_spk])])
+    got = call("cwPsbtCreate", [2, ins, outs2, 0, {"1": meta}, {"2": out_meta}])
+    want = REF.psbt_create(
+        2, py_ins, py_outs2, 0,
+        in_meta={0: {"witness_utxo": (50000, bytes.fromhex(spk)),
+                     "bip32": {node["pubkey"]: (bytes.fromhex(fp),
+                                                "m/84'/0'/0'/0/0")}}},
+        out_meta={1: {"redeem_script": redeem, "witness_script": ms,
+                      "bip32": {ch["pubkey"]: (bytes.fromhex(fp),
+                                               "m/84'/0'/0'/1/0")}}})
+    c.ck("a PSBT with OUTPUT metadata is byte-identical to the oracle's "
+         "(the three kCwPsbtOut* key types)",
+         _b64.b64decode(got).hex(), want.hex())
+
+    # a LEGACY input carries the whole previous transaction, not a witness
+    # utxo - the one branch that emits kCwPsbtInNonWitnessUtxo
+    prev = REF.tx_serialize(2, [("dd" * 32, 0, 0xFFFFFFFF)],
+                            [(50000, REF.spk_p2pkh(
+                                CR.bip32_path(master_py,
+                                              "m/44'/0'/0'/0/0")["pubkey"]))],
+                            0, [b""])
+    got = call("cwPsbtCreate", [2, ins, outs, 0,
+                                {"1": {"nonwitnessutxo": prev.hex(),
+                                       "sighash": 1}}, {}])
+    want = REF.psbt_create(2, py_ins, py_outs, 0,
+                           in_meta={0: {"non_witness_utxo": prev,
+                                        "sighash": 1}})
+    c.ck("a PSBT carrying a whole previous transaction and a sighash type "
+         "is byte-identical (kCwPsbtInNonWitnessUtxo, kCwPsbtInSighashType)",
+         _b64.b64decode(got).hex(), want.hex())
+
+    # a SIGNED and a FINALIZED PSBT, compared as documents rather than as
+    # the transaction they eventually produce
+    b64s = call("cwPsbtCreate", [2, ins, outs, 0, {"1": meta}, {}])
+    sig_res = call("cwPsbtSign", [b64s, lst([{"seckey": node["seckey"].hex()}]),
+                                  "mainnet"])
+    dgst = REF.sighash_for("p2wpkh", 2, py_ins, py_outs, 0, 0,
+                           pubkey=node["pubkey"], amount_sat=50000)
+    der = REF.der_sig(node["seckey"], dgst)
+    want = REF.psbt_create(
+        2, py_ins, py_outs, 0,
+        in_meta={0: {"witness_utxo": (50000, bytes.fromhex(spk)),
+                     "partial_sigs": {node["pubkey"]: der},
+                     "bip32": {node["pubkey"]: (bytes.fromhex(fp),
+                                                "m/84'/0'/0'/0/0")}}})
+    c.ck("a SIGNED PSBT is byte-identical to the oracle's "
+         "(kCwPsbtInPartialSig, keyed by the pubkey and carrying the "
+         "sighash byte)", _b64.b64decode(sig_res["psbt"]).hex(), want.hex())
+    fin = call("cwPsbtFinalize", [sig_res["psbt"]])
+    _ss, _wit = REF.sign_input("p2wpkh", node["seckey"], dgst, node["pubkey"])
+    # an EMPTY final scriptSig is not emitted at all (the script guards on
+    # `is not ""`), which is what a v0 witness input should look like
+    final_meta = {"witness_utxo": (50000, bytes.fromhex(spk)),
+                  "bip32": {node["pubkey"]: (bytes.fromhex(fp),
+                                             "m/84'/0'/0'/0/0")},
+                  "final_scriptwitness": REF.witness_bytes(_wit)}
+    if _ss:
+        final_meta["final_scriptsig"] = _ss
+    want = REF.psbt_create(2, py_ins, py_outs, 0, in_meta={0: final_meta})
+    c.ck("a FINALIZED PSBT is byte-identical to the oracle's "
+         "(kCwPsbtInFinalScriptSig, kCwPsbtInFinalScriptWitness)",
+         _b64.b64decode(fin["psbt"]).hex(), want.hex())
+
     for kind, path in (("p2wpkh", "m/84'/0'/0'/0/0"),
                        ("p2sh-p2wpkh", "m/49'/0'/0'/0/0"),
                        ("p2pkh", "m/44'/0'/0'/0/0")):
@@ -951,6 +1139,15 @@ def check_messages(c, ip):
          call("cwPercentDecode", [call("cwPercentEncode", ["a b/c?d=e&f"])]),
          "a b/c?d=e&f")
 
+    # THE THREE TAIL POSITIONS OF CORE'S ALPHABET - a double quote, a
+    # backslash and a space - are hand-coded returns in cwDescCharPos because
+    # they cannot go inside an ASCII constant, and nothing reached any of
+    # them. The oracle handles all 95 positions, so it is the answer key.
+    for tail, name in (('raw(de"adbeef)', "a double quote"),
+                       ("raw(de\\adbeef)", "a backslash"),
+                       ("raw(de adbeef)", "a space")):
+        c.ck("the descriptor checksum over %s" % name,
+             call("cwDescriptorChecksum", [tail]), REF.descriptor_checksum(tail))
     for desc, want in (("raw(deadbeef)", "89f8spxm"),
                        ("wpkh([d34db33f/84h/0h/0h]xpub6DJ2dNUysrn5Vt36jH2KLBT2i1a"
                         "uw1tTSSomg8PhqNiUtx8QX2SvC9nrHu81fT41fvDUnhMjEzQgXnQjKEu"
@@ -1013,14 +1210,39 @@ def check_json_and_qr(c, ip):
     for bad in ('{"a":}', '[1,2', '{"a" 1}', '{,}', 'tru', '{"a":1}x'):
         c.refuses("%r is refused as JSON" % bad, lambda b=bad: call("cwJsonParse", [b]))
 
-    for text in ("a", "HELLO WORLD", ADDRESSES["mainnet"][2]):
+    # VERSIONS 1, 3, 7 AND 8 ARE ALL BUILT, and the last two are the point.
+    # A symbol below version 7 carries no version-information block at all, so
+    # kCwQrVersionGen and the whole cwQrVersionBits/cwQrPlaceVersion path were
+    # excused as "checked by the version-7-and-up QR vectors" when the gate
+    # built nothing above version 3. Version 8 additionally has a second
+    # codeword group, which is the only thing that exercises the interleave's
+    # short-block half. A BIP-21 URI carrying an address, an amount and a
+    # message is the realistic payload at that size, which is what the wallet
+    # actually puts in a QR.
+    v7 = REF.uri_build(ADDRESSES["mainnet"][2], 123456, "Invoice 41",
+                       "thank you for the coffee and the conversation")
+    v8 = v7 + " and the second cup as well, which was also good"
+    samples = ("a", "HELLO WORLD", ADDRESSES["mainnet"][2], v7, v8)
+    seen = set()
+    for text in samples:
+        version = REF.qr_version_for(len(text))
+        seen.add(version)
         got = unlst(call("cwQrMatrix", [text]))
         want = ["".join(str(x) for x in row) for row in REF.qr_matrix(text)]
         c.ck("the QR matrix for %r (version %d)"
-             % (text[:20], REF.qr_version_for(len(text))), got, want)
+             % (text[:20], version), got, want)
+    c.ck("the QR vectors reach the version-information block (>= 7) and a "
+         "second codeword group (>= 8)",
+         (max(seen) >= 8, sorted(seen)), (True, sorted(seen)))
     c.ck("a QR version is chosen by capacity", call("cwQrVersionFor", [412]), 15)
     c.refuses("a payload too big for version 15 is refused",
               lambda: call("cwQrVersionFor", [413]))
+    # cwQrText is its OWN handler doing its own substitution, so it is
+    # compared to the oracle's anchored rendering rather than line-counted.
+    c.ck("the text rendering", call("cwQrText", ["a", "#", "."]),
+         REF.qr_text("a", None, "#", "."))
+    c.ck("with non-default on/off characters",
+         call("cwQrText", ["a", "X", " "]), REF.qr_text("a", None, "X", " "))
     c.ck("the text rendering has one line per row",
          len(call("cwQrText", ["a", "#", "."]).split("\n")), 21)
     bmp = to_bytes(call("cwQrBmp", ["a", 4, 4]))
@@ -1075,6 +1297,131 @@ def check_odds(c, ip):
 
 
 # ------------------------------------------------------------------- main
+# --------------------------------------------------------- tier 3: case folding
+#
+# THE ENGINE FOLDS CASE AND THE INTERPRETER DOES NOT, so every check above runs
+# under a comparison rule OXT does not use. `the caseSensitive` defaults to
+# FALSE, which makes `is` and `offset()` case-INSENSITIVE; tools/lcs-interp.py
+# models both case-SENSITIVELY and names the first of those as its one declared
+# divergence. That gap is not academic. It hid two real defects in this layer at
+# once - a descriptor checksum that came out wrong for every descriptor
+# containing a letter, and a multisig account key serialized with the
+# single-signature version - and it hid them behind 414 green checks, because
+# every one of those checks ran under the wrong rule.
+#
+# So the whole vector set is RUN TWICE. The second pass folds `is` and
+# `offset()` to the engine's default and requires the SAME answers. That turns
+# "does this code depend on a comparison rule the engine does not have?" from a
+# thing somebody has to remember to look for into a thing the build asks on
+# every push. A check that passes sensitively and fails folded is a check whose
+# subject reads a case-significant alphabet - Base58, WIF, a descriptor, an
+# address - with the wrong tool.
+#
+# What it does NOT fold: `contains`, `begins with`, `ends with` and `sort`,
+# which the engine also folds. Those live inside the interpreter's expression
+# parser rather than behind a module-level function, so folding them would mean
+# subclassing it here - and this layer uses none of them on case-significant
+# data (measured: every use is over hex, a lowercase HRP, or a fixed keyword).
+# When one lands on an address or a key, this comment is the reason it needs a
+# fourth tier rather than a quiet extension of this one.
+
+def _fold_case():
+    """Replace the interpreter's `is` and `offset()` with the ENGINE's default,
+    returning what to call to put them back. Both are module-level names looked
+    up at call time, which is why this can be done without touching the file."""
+    real_eq = LCS._eq
+    real_builtin = LCS._builtin_or_handler
+
+    def folded_eq(a, b):
+        if real_eq(a, b):
+            return True
+        if isinstance(a, dict) or isinstance(b, dict):
+            return False
+        if isinstance(a, bool) or isinstance(b, bool):
+            return False
+        return str(LCS._disp(a)).lower() == str(LCS._disp(b)).lower()
+
+    def folded_builtin(ip, name, args):
+        if name.lower() == "offset":
+            hay = str(LCS._disp(args[1])).lower()
+            nee = str(LCS._disp(args[0])).lower()
+            return hay.find(nee) + 1
+        return real_builtin(ip, name, args)
+
+    LCS._eq = folded_eq
+    LCS._builtin_or_handler = folded_builtin
+
+    def restore():
+        LCS._eq = real_eq
+        LCS._builtin_or_handler = real_builtin
+    return restore
+
+
+def check_case_folded(c, ip, run_all):
+    """Re-run every vector with the engine's comparison rule. Failures are
+    reported against THIS tier, so the message says which rule broke them."""
+    inner = Checker(True)
+    restore = _fold_case()
+    try:
+        run_all(inner, ip)
+    except Exception as exc:                                    # noqa: BLE001
+        restore()
+        c.ck("the vector set runs under the engine's case rule", "threw: %s: %s"
+             % (type(exc).__name__, exc), "ran")
+        return
+    finally:
+        restore()
+    # The failures are folded INTO the reported problem, not printed through
+    # note(): the build runs this gate with --check, which is terse, and a
+    # tier whose diagnostics are invisible in CI is a tier somebody has to
+    # reproduce locally before they can even see what moved.
+    detail = ""
+    if inner.problems:
+        detail = "\n      the vectors that moved:\n      " + \
+            "\n      ".join(p.replace("\n", "\n  ") for p in inner.problems[:8])
+        if len(inner.problems) > 8:
+            detail += "\n      ... and %d more" % (len(inner.problems) - 8)
+    c.ck("every vector gives the SAME answer with `is` and `offset()` folded "
+         "to the engine's default (%d re-run)%s" % (inner.count, detail),
+         "%d differing" % len(inner.problems), "0 differing")
+
+
+def check_case_folding_fires(c, ip):
+    """MUTATION: prove the tier above can still fail. A gate that has gone
+    blind reports OK, and an OK that cannot be false is worth nothing - this
+    file's own recorded lesson about a constant gate that reported what it had
+    parsed as what it had checked."""
+    restore = _fold_case()
+    try:
+        # Core's descriptor alphabet is the sharpest case-significant surface
+        # this layer touches, and cwCharIndex is what keeps it right. Under a
+        # FOLDED offset() the byte scan is unaffected, so the mutation has to
+        # be the other direction: prove that a lookup written with offset()
+        # WOULD move, using the alphabet itself rather than a fixture.
+        head = str(ip.constants.get("kCwDescInputHead", ""))
+        moved = [ch for ch in head
+                 if head.lower().find(ch.lower()) != head.find(ch)]
+        # The two the finding turned on, named rather than counted: "A" sits
+        # at 82 and folds onto "a" at 18; "w" sits at 78 and folds onto "W"
+        # at 46. A bare count would pass on an alphabet that had lost them.
+        # Compared LIKE FOR LIKE. Written as a bool against a description
+        # string this check could not pass for any input, which is the same
+        # shape of defect as a gate that reports what it parsed as what it
+        # checked - and this one is the gate that proves the tier below it
+        # can still fail, so a permanently-red check here is as useless as a
+        # permanently-green one. The two characters are NAMED rather than
+        # counted: "A" sits at 82 and folds onto "a" at 18, "w" at 78 onto
+        # "W" at 46. A bare count passes on an alphabet that lost them.
+        c.ck("the folded model moves the characters that matter",
+             ("A" in moved, "w" in moved, len(moved)),
+             (True, True, 26))
+        c.ck("and it actually changes `is` on a case-significant pair",
+             LCS._eq("Z", "z"), True)
+    finally:
+        restore()
+    c.ck("and the real model is restored afterwards", LCS._eq("Z", "z"), False)
+
+
 def main(argv):
     terse = "--check" in argv[1:]
     c = Checker(terse)
@@ -1109,15 +1456,22 @@ def main(argv):
             ip = LCS.Interp(coin + "\n" + body)
             c.note("running the shipped wallet-core (%d handlers, %d constants) "
                    "through tools/lcs-interp.py" % (len(ip.handlers), len(ip.constants)))
-            check_vectors(c, ip)
-            check_money(c, ip)
-            check_selection(c, ip)
-            check_signing(c, ip)
-            check_decode(c, ip)
-            check_psbt(c, ip)
-            check_messages(c, ip)
-            check_json_and_qr(c, ip)
-            check_odds(c, ip)
+            def run_all(ck, interp):
+                check_vectors(ck, interp)
+                check_money(ck, interp)
+                check_selection(ck, interp)
+                check_signing(ck, interp)
+                check_decode(ck, interp)
+                check_psbt(ck, interp)
+                check_messages(ck, interp)
+                check_json_and_qr(ck, interp)
+                check_odds(ck, interp)
+
+            run_all(c, ip)
+            c.note("re-running the whole set with `is` and `offset()` folded "
+                   "to the engine's default")
+            check_case_folding_fires(c, ip)
+            check_case_folded(c, ip, run_all)
 
     if c.problems:
         print("check-wallet-vectors: FAILED")
@@ -1128,7 +1482,11 @@ def main(argv):
     # look identical on the way out, and on a signing surface the second one is
     # indistinguishable from a green build. Raise it when the set grows; it is
     # here to catch collapse, not to track the exact number.
-    floor = 60 if cc is None else 400
+    # THE COMPILER-FREE FLOOR IS THE CONSTANTS TIER'S OWN SIZE. It read 60
+    # for a larger tier that has since shrunk, so the no-compiler path could
+    # not pass at all: it ran its 35 checks and then reported a collapse that
+    # had not happened. A floor that no run can clear is not a floor.
+    floor = 30 if cc is None else 400
     if c.count < floor:
         print("check-wallet-vectors: FAILED - only %d checks ran, expected at least "
               "%d. Something stopped the vector set early." % (c.count, floor))

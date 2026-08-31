@@ -203,6 +203,16 @@ run_gates() {
     echo "== $m: tools/check-wallet-vectors.py =="
     ( cd "$m" && python3 tools/check-wallet-vectors.py --check )
   fi
+  # And the layer ABOVE that one: check-wallet-boot BOOTS the shipped wallet
+  # stack, headlessly, over riptide's engine object model (imported, not
+  # copied) with the COMMITTED CoinXT under it. The vector gate never opens a
+  # window, so until this landed the ten screens, the show/hide sweep, the
+  # click router and the wallet file were verified only by reading them -
+  # this member's own recorded failure shape, one layer up.
+  if [ -f "$m/tools/check-wallet-boot.py" ]; then
+    echo "== $m: tools/check-wallet-boot.py =="
+    ( cd "$m" && python3 tools/check-wallet-boot.py --terse )
+  fi
   # The demo BOOT runner (riptide): executes the SHIPPED stack script's
   # whole openStack chain - card builders, kit, self-check, navigation, a
   # scripted identity session - through the family's interpreter over a

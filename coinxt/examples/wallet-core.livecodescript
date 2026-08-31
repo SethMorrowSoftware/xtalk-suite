@@ -115,8 +115,6 @@ constant kCwYpubVersions = "77429938,71979618,71979618,71979618"
 constant kCwYprvVersions = "77428856,71978536,71978536,71978536"
 constant kCwZpubVersions = "78792518,73342198,73342198,73342198"
 constant kCwZprvVersions = "78791436,73341116,73341116,73341116"
-constant kCwYshPubVersions = "43365439,37915119,37915119,37915119"
-constant kCwYshPrvVersions = "43364357,37914037,37914037,37914037"
 constant kCwZshPubVersions = "44728019,39277699,39277699,39277699"
 constant kCwZshPrvVersions = "44726937,39276616,39276616,39276616"
 
@@ -478,6 +476,50 @@ function cwHexIsClean pHex
    return true
 end cwHexIsClean
 
+function cwCharIndex pChar, pAlphabet
+   -- The 1-based position of pChar in pAlphabet, or 0 if absent, comparing
+   -- BYTE VALUES. This is CoinXT's cxCharIndex by another name and for the
+   -- same reason: `offset()` honours `the caseSensitive`, which defaults to
+   -- FALSE, so on a real engine it finds "A" at the position of the FIRST
+   -- "a" in the alphabet. That is harmless for a membership test over an
+   -- alphabet that carries both cases of every letter, and it is a silent
+   -- wrong answer for any alphabet where the two cases sit at DIFFERENT
+   -- positions - Base58, and Bitcoin Core's descriptor alphabet. CoinXT's own
+   -- copy is `private`, which is file scope, so this layer cannot borrow it:
+   -- wallet-core has to be usable as its own stack, not only inside a paste
+   -- that happens to carry both.
+   local tI, tCount, tWanted
+   put byteToNum(pChar) into tWanted
+   put the number of chars of pAlphabet into tCount
+   repeat with tI = 1 to tCount
+      if byteToNum(char tI of pAlphabet) is tWanted then
+         return tI
+      end if
+   end repeat
+   return 0
+end cwCharIndex
+
+function cwSameBytes pA, pB
+   -- True when two strings are the SAME BYTES. `is` honours `the
+   -- caseSensitive`, which defaults to FALSE, so on a real engine
+   -- "1c6Rc3W25vhUd3DldAMUTAQFkWQHRlRTAd" is "1C6Rc3w25VHud3dLDamutaqfKWqhrLRTaD"
+   -- answers TRUE - and Base58 is a case-significant alphabet in which those
+   -- are two different numbers, only one of which is an address anybody
+   -- holds. Anywhere this file binds a signature, a key or a script to a
+   -- particular address STRING, it binds it with this.
+   local tI, tCount
+   put the number of bytes of pA into tCount
+   if tCount is not the number of bytes of pB then
+      return false
+   end if
+   repeat with tI = 1 to tCount
+      if byteToNum(byte tI of pA) is not byteToNum(byte tI of pB) then
+         return false
+      end if
+   end repeat
+   return true
+end cwSameBytes
+
 function cwLower pText
    -- toLower is not in the subset the offline vector runner models, and this
    -- file has to be runnable there (see the header). ASCII only, which is all
@@ -618,32 +660,35 @@ function cwXKeyVersion pNetwork, pScriptType, pPublic
    -- ypub or zpub says what it is for; BIP-86 deliberately did NOT take one,
    -- so taproot answers with the plain BIP-32 xpub version and this is not an
    -- omission.
-   local tNet, tStem, tRow
+   --
+   -- SELECTED BY THE SCRIPT TYPE'S INDEX, NOT BY ITS STEM LETTER. The stems
+   -- in kCwStems are a DISPLAY convention and two of them differ only in
+   -- case ("z" for BIP-84 single-sig, "Z" for BIP-48 multisig); `is` honours
+   -- `the caseSensitive`, which defaults to FALSE, so a chain of `tStem is
+   -- "z"` tests would catch the multisig row four branches before it could
+   -- reach its own and hand a cosigner a zpub where a Zpub was meant. The
+   -- index is unambiguous whatever the engine's case setting is.
+   local tNet, tType, tRow
    put cwNetIndex(pNetwork) into tNet
-   put cwTypeStem(pScriptType) into tStem
-   if tStem is "x" then
+   put cwTypeIndex(pScriptType) into tType
+   if tType is 1 or tType is 4 then
+      -- p2pkh, and p2tr: BIP-86 took no SLIP-132 pair of its own
       if pPublic is true then
          put kCwXpubVersions into tRow
       else
          put kCwXprvVersions into tRow
       end if
-   else if tStem is "y" then
+   else if tType is 2 then
       if pPublic is true then
          put kCwYpubVersions into tRow
       else
          put kCwYprvVersions into tRow
       end if
-   else if tStem is "z" then
+   else if tType is 3 then
       if pPublic is true then
          put kCwZpubVersions into tRow
       else
          put kCwZprvVersions into tRow
-      end if
-   else if tStem is "Y" then
-      if pPublic is true then
-         put kCwYshPubVersions into tRow
-      else
-         put kCwYshPrvVersions into tRow
       end if
    else
       if pPublic is true then
@@ -708,7 +753,24 @@ function cwScriptP2sh pScriptHashHex
 end cwScriptP2sh
 
 function cwScriptP2wpkh pPubkeyHex
-   local tHash
+   -- REFUSES AN UNCOMPRESSED KEY. BIP-143 forbids uncompressed keys in a v0
+   -- witness program, so hashing one here would build a perfectly well-formed
+   -- bc1q... address whose coins nothing can ever spend - a receivable
+   -- address that is a permanent hole. Callers reach this with keys that came
+   -- from outside (a swept WIF, a pasted key), which is exactly when the
+   -- check is worth having; cwMultisigScript already refuses the same shape
+   -- for the same reason.
+   local tHash, tPrefix
+   if the number of chars of pPubkeyHex is not 66 then
+      throw "wallet-core: cwScriptP2wpkh: a v0 witness program takes a " & \
+            "COMPRESSED public key (33 bytes). BIP-143 forbids uncompressed " & \
+            "keys in segwit v0, and coins sent to one can never be spent."
+   end if
+   put cwLower(char 1 to 2 of pPubkeyHex) into tPrefix
+   if tPrefix is not "02" and tPrefix is not "03" then
+      throw "wallet-core: cwScriptP2wpkh: a compressed public key starts 02 " & \
+            "or 03; this one starts " & tPrefix & "."
+   end if
    put cxHexEncode(cxHash160(cxHexDecode(pPubkeyHex))) into tHash
    return cwOpHex(kCwOpZero) & cwPush(tHash)
 end cwScriptP2wpkh
@@ -1664,11 +1726,23 @@ function cwSelectCoins pUtxos, pTargetSat, pFeeRate, pInputType, pOutputTypes, p
       put cwSelectionResult(tSel, pTargetSat, pFeeRate, pInputType, pOutputTypes, \
             pChangeType, false, pM, pCosigners) into tResult
       put tResult["totalin"] - pTargetSat - tResult["fee"] into tSurplus
-      if tSurplus >= 0 and tSurplus < tDust then
+      -- NO UPPER BOUND ON THE SURPLUS, and the reason is a real gap this
+      -- code had. The two tests are reached in order, so this one only runs
+      -- when a change output WOULD be below dust; and the surplus always
+      -- exceeds that change by the cost of the change output itself (about
+      -- 31 vB), so requiring `tSurplus < tDust` too left a window - change
+      -- under dust, surplus over it - where NEITHER branch fired. With
+      -- another coin to try that was merely wasteful; on the last coin it
+      -- fell through to the tail below and reported "insufficient funds"
+      -- for a spend the wallet could plainly afford. Dropping the bound is
+      -- also the cheaper answer: burning at most dust+31 sats to fee costs
+      -- less than the ~68 vB of adding an input to carry the change.
+      if tSurplus >= 0 then
          put tResult["totalin"] - pTargetSat into tResult["fee"]
          put 0 into tResult["change"]
          put true into tResult["ok"]
-         put "changeless: the remainder is below the dust threshold and goes to the miner" \
+         put "changeless: a change output would be below the dust threshold, " & \
+               "so the remainder goes to the miner" \
                into tResult["why"]
          put tStrategy into tResult["strategy"]
          return tResult
@@ -2067,12 +2141,21 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
    -- FAILURE, not a policy warning - the interpreter walks both lists once and
    -- never backtracks - so the order is taken from the script rather than from
    -- the order the keys were handed in.
+   --
+   -- REPORTS HOW MANY IT PRODUCED. It answers with whatever signatures it
+   -- could make from the keys it was handed, which for a cosigner holding one
+   -- key of three is exactly one - a correct PARTIAL result, and the right
+   -- thing to put in a PSBT. What was missing was the count: the caller could
+   -- not tell a complete witness from a short one, and waSignSpend was
+   -- presenting a one-of-two witness as a signed transaction.
    local tKeys, tI, tJ, tCount, tKeyCount, tWit, tOut, tSig, tSk, tPub
+   local tHave, tM
    put cwMultisigKeys(pWitnessScriptHex) into tKeys
    put cwListCount(tKeys) into tKeyCount
    put cwListCount(pSeckeys) into tCount
    put cwListNew() into tWit
    put cwListAdd(tWit, "") into tWit
+   put 0 into tHave
    repeat with tI = 1 to tKeyCount
       repeat with tJ = 1 to tCount
          put pSeckeys[tJ] into tSk
@@ -2081,31 +2164,86 @@ function cwSignMultisig pSeckeys, pDigestHex, pWitnessScriptHex
             put cxHexEncode(cxDerEncode(cxSign(cxHexDecode(tSk), cxHexDecode(pDigestHex)))) \
                   & "01" into tSig
             put cwListAdd(tWit, tSig) into tWit
+            add 1 to tHave
             exit repeat
          end if
       end repeat
    end repeat
    put cwListAdd(tWit, pWitnessScriptHex) into tWit
+   put cwBeRead(cxHexDecode(char 1 to 2 of pWitnessScriptHex)) - kCwOpOne + 1 \
+         into tM
    put "" into tOut["scriptsig"]
    put tWit into tOut["witness"]
+   put tHave into tOut["signed"]
+   put tM into tOut["required"]
+   put (tHave >= tM) into tOut["complete"]
    return tOut
 end cwSignMultisig
 
 function cwMultisigKeys pWitnessScriptHex
    -- The public keys a bare CHECKMULTISIG script pushes, in script order.
-   local tHex, tPos, tLen, tKeys, tEnd
+   --
+   -- PARSED STRICTLY, AND THROWS RATHER THAN TRUNCATING. The loop used to
+   -- `exit repeat` on anything that was not a direct push and return the keys
+   -- it had so far - so OP_PUSHDATA1, a non-push opcode, or a script that
+   -- simply stopped mid-key all produced a SHORT LIST with no error. That
+   -- list decides signature ORDER in cwSignMultisig and both the order and
+   -- the count in cwPsbtFinalize, so a truncated parse is a wallet quietly
+   -- agreeing to a different multisig than the one on the chain. Every
+   -- structural expectation is now a refusal: the leading OP_m, one 33- or
+   -- 65-byte direct push per key, the trailing OP_n matching the count, the
+   -- CHECKMULTISIG terminator, and nothing left over.
+   local tHex, tPos, tLen, tKeys, tEnd, tM, tN, tKeyHex
    put cwLower(pWitnessScriptHex) into tHex
+   if not cwHexIsClean(tHex) then
+      throw "wallet-core: cwMultisigKeys: a witness script is hex."
+   end if
+   put the number of chars of tHex into tEnd
+   if tEnd < 8 then
+      throw "wallet-core: cwMultisigKeys: this is too short to be an " & \
+            "m-of-n multisig script."
+   end if
+   put cwBeRead(cxHexDecode(char 1 to 2 of tHex)) into tM
+   if tM < kCwOpOne or tM > (kCwOpOne + 15) then
+      throw "wallet-core: cwMultisigKeys: a multisig script begins with " & \
+            "OP_1..OP_16; this one begins with opcode " & tM & "."
+   end if
+   put tM - kCwOpOne + 1 into tM
    put cwListNew() into tKeys
    put 3 into tPos
-   put the number of chars of tHex into tEnd
-   repeat while tPos < (tEnd - 3)
+   repeat while tPos <= (tEnd - 4)
       put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tLen
-      if tLen < 1 or tLen > 65 then
+      if tLen is not 33 and tLen is not 65 then
          exit repeat
       end if
-      put cwListAdd(tKeys, char (tPos + 2) to (tPos + 1 + tLen * 2) of tHex) into tKeys
+      if (tPos + 1 + tLen * 2) > tEnd then
+         throw "wallet-core: cwMultisigKeys: a key push runs past the end " & \
+               "of the script."
+      end if
+      put char (tPos + 2) to (tPos + 1 + tLen * 2) of tHex into tKeyHex
+      put cwListAdd(tKeys, tKeyHex) into tKeys
       put tPos + 2 + tLen * 2 into tPos
    end repeat
+   -- what remains must be exactly OP_n and the terminator
+   if (tEnd - tPos + 1) is not 4 then
+      throw "wallet-core: cwMultisigKeys: this is not a BARE m-of-n " & \
+            "multisig script - " & ((tEnd - tPos + 1) / 2) & " bytes " & \
+            "remain after its key pushes."
+   end if
+   put cwBeRead(cxHexDecode(char tPos to (tPos + 1) of tHex)) into tN
+   if (tN - kCwOpOne + 1) is not cwListCount(tKeys) then
+      throw "wallet-core: cwMultisigKeys: it says " & \
+            (tN - kCwOpOne + 1) & " keys and pushes " & \
+            cwListCount(tKeys) & "."
+   end if
+   if cwBeRead(cxHexDecode(char (tPos + 2) to (tPos + 3) of tHex)) \
+         is not kCwOpCheckMultisig then
+      throw "wallet-core: cwMultisigKeys: it does not end in OP_CHECKMULTISIG."
+   end if
+   if tM > cwListCount(tKeys) then
+      throw "wallet-core: cwMultisigKeys: it requires " & tM & \
+            " signatures from " & cwListCount(tKeys) & " keys."
+   end if
    return tKeys
 end cwMultisigKeys
 
@@ -2355,6 +2493,24 @@ function cwScriptAsm pScriptHex
          add 2 to tPos
          put "PUSHDATA1(" & tLen & ") " & char tPos to (tPos + tLen * 2 - 1) of tHex & " " after tOut
          add tLen * 2 to tPos
+      else if tByte is 77 then
+         -- OP_PUSHDATA2, LITTLE-endian length. cwPush emits this for any
+         -- payload of 256..65535 bytes, so without this branch the wallet's
+         -- own encoder produces scripts its own inspector mis-frames: the
+         -- opcode prints as OP_77 and the two length bytes are then read as
+         -- opcodes, after which every byte of the rest of the script is
+         -- disassembled at the wrong offset.
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 3) of tHex)) into tLen
+         add 4 to tPos
+         put "PUSHDATA2(" & tLen & ") " & char tPos to (tPos + tLen * 2 - 1) of tHex & " " after tOut
+         add tLen * 2 to tPos
+      else if tByte is 78 then
+         -- OP_PUSHDATA4. Nothing this wallet builds reaches 64 KiB, so the
+         -- length is read and the walk STOPS rather than pretending to
+         -- render a push this decoder has never been given a real one of.
+         put cwLeRead(cxHexDecode(char tPos to (tPos + 7) of tHex)) into tLen
+         put "PUSHDATA4(" & tLen & ") <not decoded> " after tOut
+         return cwTrim(tOut)
       else if tByte is 0 then
          put "OP_0 " after tOut
       else if tByte is 81 then
@@ -2401,8 +2557,6 @@ end cwScriptAsm
 constant kCwPsbtMagic = "70736274ff"
 
 constant kCwPsbtGlobalUnsignedTx = 0
-constant kCwPsbtGlobalXpub = 1
-constant kCwPsbtGlobalVersion = 251
 
 constant kCwPsbtInNonWitnessUtxo = 0
 constant kCwPsbtInWitnessUtxo = 1
@@ -2416,13 +2570,11 @@ constant kCwPsbtInFinalScriptWitness = 8
 constant kCwPsbtInTapKeySig = 19
 constant kCwPsbtInTapBip32 = 22
 constant kCwPsbtInTapInternalKey = 23
-constant kCwPsbtInTapMerkleRoot = 24
 
 constant kCwPsbtOutRedeemScript = 0
 constant kCwPsbtOutWitnessScript = 1
 constant kCwPsbtOutBip32 = 2
 constant kCwPsbtOutTapInternalKey = 5
-constant kCwPsbtOutTapBip32 = 7
 
 function cwVarIntHex pN
    return cxHexEncode(cxVarInt(pN))
@@ -2656,6 +2808,7 @@ private function cwPsbtParseMap pHex, pPos
    -- truncated PSBT that parses into a shorter one is the failure mode this
    -- format makes easiest and the most expensive to notice.
    local tEntries, tPos, tRec, tKeyLen, tKey, tValLen, tEntry, tEnd
+   local tDup, tSeen, tJ
    put cwListNew() into tEntries
    put pPos into tPos
    put the number of chars of pHex into tEnd
@@ -2687,6 +2840,25 @@ private function cwPsbtParseMap pHex, pPos
       put char 3 to -1 of tKey into tEntry["key"]
       put char tPos to (tPos + tValLen * 2 - 1) of pHex into tEntry["value"]
       put tPos + tValLen * 2 into tPos
+      -- DUPLICATE KEYS ARE REFUSED, which BIP-174 requires in as many words.
+      -- Accepting them was not merely lax: cwPsbtFind answers with the FIRST
+      -- match and cwPsbtSetEntry updates only the first, while cwPsbtEmitMap
+      -- writes every entry it holds - so a PSBT with two partial signatures
+      -- under one pubkey survived a parse/sign/emit round trip carrying a
+      -- signature nothing would ever look at again.
+      put false into tDup
+      put cwListCount(tEntries) into tSeen
+      repeat with tJ = 1 to tSeen
+         if tEntries[tJ]["type"] is tEntry["type"] \
+               and cwSameBytes(tEntries[tJ]["key"], tEntry["key"]) then
+            put true into tDup
+            exit repeat
+         end if
+      end repeat
+      if tDup is true then
+         throw "wallet-core: cwPsbtParse: this file repeats the key type " & \
+               tEntry["type"] & " inside one map, which BIP-174 forbids."
+      end if
       put cwListAdd(tEntries, tEntry) into tEntries
    end repeat
    return tEntry
@@ -2849,6 +3021,7 @@ function cwPsbtSign pB64, pKeys, pNetwork
    local tP, tTx, tIns, tOuts, tCount, tI, tJ, tKeyCount, tMap, tType, tAmount
    local tSpk, tDigest, tKey, tPub, tSig, tSigned, tWhy, tOut, tInternal
    local tWitScript, tRedeem, tTweaked, tTapKey, tKeys, tTxIns, tTxOuts, tFound
+   local tTweak, tSighashType, tError
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tTx["inputs"] into tTxIns
@@ -2875,6 +3048,20 @@ function cwPsbtSign pB64, pKeys, pNetwork
       end if
       put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
       put false into tFound
+      -- THE SIGHASH TYPE THE PSBT ASKS FOR. BIP-174 requires a Signer to use
+      -- the value in PSBT_IN_SIGHASH_TYPE and to FAIL if it cannot; this
+      -- layer only ever produces SIGHASH_ALL, so anything else is a refusal
+      -- rather than a signature over a commitment nobody asked for. Absent
+      -- means SIGHASH_ALL, which is the only value cwPsbtCreate emits.
+      put cwPsbtFind(tMap, kCwPsbtInSighashType, "") into tSighashType
+      if tSighashType is not "" then
+         if cwLeRead(cxHexDecode(tSighashType)) is not 1 then
+            put tWhy & "input " & tI & ": it asks for sighash type " & \
+                  cwLeRead(cxHexDecode(tSighashType)) & " and this wallet " & \
+                  "signs only SIGHASH_ALL (1)." & return into tWhy
+            next repeat
+         end if
+      end if
       if tType is "p2tr" then
          put cwPsbtFind(tMap, kCwPsbtInTapInternalKey, "") into tInternal
          if tInternal is "" then
@@ -2889,6 +3076,25 @@ function cwPsbtSign pB64, pKeys, pNetwork
             put pKeys[tJ] into tKey
             put cxHexEncode(cxXOnlyPubkey(cxHexDecode(tKey["seckey"]))) into tPub
             if tPub is tInternal then
+               -- AND THE TWEAK MUST LAND ON THE OUTPUT'S OWN KEY. Matching
+               -- the internal key alone proves only that this seed produced
+               -- the key the PSBT NAMES; it does not prove the scriptPubKey
+               -- pays to the key-path tweak of it. A taproot output with a
+               -- script tree commits to a merkle root, and signing it with
+               -- the empty-root tweak produces a signature that verifies
+               -- against nothing. Every other branch here checks the script
+               -- it is about to unlock (cwScriptForPubkey ... is not tSpk);
+               -- this is the one where the check needed a tweak first, and
+               -- so was the one where it was missing.
+               put cxTaprootTweak(cxHexDecode(tInternal), "") into tTweak
+               if cwScriptP2tr(cxHexEncode(byte 2 to 33 of tTweak["outputKey"])) \
+                     is not tSpk then
+                  put tWhy & "input " & tI & ": its internal key is one of " & \
+                        "ours, but the output does not pay to the key-path " & \
+                        "tweak of it - this input commits to a script tree, " & \
+                        "which this wallet cannot spend." & return into tWhy
+                  exit repeat
+               end if
                put cwSignTaproot(tKey["seckey"], tDigest, "") into tSig
                put tSig["witness"] into tOut
                put cwPsbtSetEntry(tMap, kCwPsbtInTapKeySig, "", tOut[1]) into tMap
@@ -2911,7 +3117,16 @@ function cwPsbtSign pB64, pKeys, pNetwork
             if tWitScript is "" then
                next repeat
             end if
-            if cwHexListHas(cwMultisigKeys(tWitScript), tPub) is not true then
+            -- cwMultisigKeys REFUSES a script it cannot parse strictly, and
+            -- one bad input must not take the whole signing operation with
+            -- it: this function's contract is a why-line per input.
+            put cwListNew() into tKeys
+            try
+               put cwMultisigKeys(tWitScript) into tKeys
+            catch tError
+               put cwListNew() into tKeys
+            end try
+            if cwHexListHas(tKeys, tPub) is not true then
                next repeat
             end if
             put cwSighash("p2wsh", tTx["version"], tTxIns, tTxOuts, tI, \
@@ -2927,9 +3142,15 @@ function cwPsbtSign pB64, pKeys, pNetwork
                cxHexDecode(tDigest)))) & "01" into tSig
          put cwPsbtSetEntry(tMap, kCwPsbtInPartialSig, tPub, tSig) into tMap
          put tMap into tIns[tI]
-         add 1 to tSigned
          put true into tFound
       end repeat
+      -- COUNTED ONCE PER INPUT, not once per key. The p2wsh branch does not
+      -- exit after a match - a wallet holding two of three cosigner keys
+      -- signs twice for one input - so counting inside the loop reported
+      -- more inputs signed than the transaction has.
+      if tFound is true then
+         add 1 to tSigned
+      end if
       if tFound is not true then
          put tWhy & "input " & tI & ": no key here unlocks it (" & tType & ")" & \
                return into tWhy
@@ -2999,7 +3220,7 @@ function cwPsbtFinalize pB64
    -- transaction. Returns an array with "raw", "txid", "complete" and "why".
    local tP, tTx, tIns, tCount, tI, tMap, tType, tSigs, tKeys, tWitScript
    local tOut, tScriptSigs, tWitnesses, tItems, tComplete, tWhy, tPub, tSig
-   local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem
+   local tJ, tM, tKeyCount, tTapSig, tTxIns, tTxOuts, tHave, tRedeem, tError
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put tP["inputs"] into tIns
@@ -3028,8 +3249,41 @@ function cwPsbtFinalize pB64
       put cwPsbtFindAll(tMap, kCwPsbtInPartialSig) into tSigs
       if tType is "p2wsh" then
          put cwPsbtFind(tMap, kCwPsbtInWitnessScript, "") into tWitScript
-         put cwMultisigKeys(tWitScript) into tKeys
+         -- REFUSED BEFORE m IS DERIVED FROM IT. With the witness script
+         -- absent, cwPsbtFind answers "", cwBeRead of nothing is 0, and
+         -- m came out as 0 - 81 + 1 = -80: the completeness test `tHave < tM`
+         -- is then 0 < -80, which is FALSE, so a P2WSH input carrying no
+         -- witness script and no signatures at all was reported COMPLETE and
+         -- handed back a two-element witness of two empty strings.
+         if tWitScript is "" then
+            put false into tComplete
+            put tWhy & "input " & tI & ": this PSBT types it as p2wsh and " & \
+                  "carries no witness script, so there is nothing to " & \
+                  "finalize against" & return into tWhy
+            put cwListAdd(tScriptSigs, "") into tScriptSigs
+            put cwListAdd(tWitnesses, tItems) into tWitnesses
+            next repeat
+         end if
+         put cwListNew() into tKeys
+         try
+            put cwMultisigKeys(tWitScript) into tKeys
+         catch tError
+            put false into tComplete
+            put tWhy & "input " & tI & ": " & line 1 of tError & return into tWhy
+            put cwListAdd(tScriptSigs, "") into tScriptSigs
+            put cwListAdd(tWitnesses, tItems) into tWitnesses
+            next repeat
+         end try
          put cwBeRead(cxHexDecode(char 1 to 2 of tWitScript)) - kCwOpOne + 1 into tM
+         if tM < 1 or tM > cwListCount(tKeys) then
+            put false into tComplete
+            put tWhy & "input " & tI & ": its witness script does not read " & \
+                  "as an m-of-n multisig (m = " & tM & ", n = " & \
+                  cwListCount(tKeys) & ")" & return into tWhy
+            put cwListAdd(tScriptSigs, "") into tScriptSigs
+            put cwListAdd(tWitnesses, tItems) into tWitnesses
+            next repeat
+         end if
          put cwListAdd(tItems, "") into tItems
          put 0 into tHave
          put cwListCount(tKeys) into tKeyCount
@@ -3065,6 +3319,24 @@ function cwPsbtFinalize pB64
          put cwListAdd(tWitnesses, tItems) into tWitnesses
          next repeat
       end if
+      -- ONLY THE TWO KEY-PATH WITNESS SHAPES REACH HERE. Everything below
+      -- builds a P2WPKH-style [signature, pubkey] witness, and there used to
+      -- be no default refusal - so a LEGACY input from a conformant PSBT
+      -- (which carries only PSBT_IN_NON_WITNESS_UTXO, from which
+      -- cwPsbtInputType cannot read a script, so it types as "unknown") got
+      -- a witness it must not have, and the transaction was reported
+      -- complete. An input this function does not recognise is one it
+      -- cannot finalize, and saying so is the whole job.
+      if tType is not "p2wpkh" and tType is not "p2sh-p2wpkh" then
+         put false into tComplete
+         put tWhy & "input " & tI & ": this wallet cannot finalize a " & \
+               tType & " input. A legacy input needs its whole previous " & \
+               "transaction typed by a witness UTXO, which BIP-174 does " & \
+               "not put there." & return into tWhy
+         put cwListAdd(tScriptSigs, "") into tScriptSigs
+         put cwListAdd(tWitnesses, cwListNew()) into tWitnesses
+         next repeat
+      end if
       put cwListAdd(tItems, tSig) into tItems
       put cwListAdd(tItems, tPub) into tItems
       if tType is "p2sh-p2wpkh" then
@@ -3080,7 +3352,28 @@ function cwPsbtFinalize pB64
    end repeat
    put tTx["inputs"] into tTxIns
    put tTx["outputs"] into tTxOuts
+   -- AND THE FINALIZED PSBT ITSELF, which is BIP-174's actual Finalizer
+   -- output. Returning only the raw transaction skipped the interchange step
+   -- entirely: a coordinator collecting from several signers is handed a
+   -- PSBT, not a transaction, and PSBT_IN_FINAL_SCRIPTSIG and
+   -- PSBT_IN_FINAL_SCRIPTWITNESS are the two fields that carry the result.
+   -- They were emitted by cwPsbtInputEntries and populated by nothing.
+   repeat with tI = 1 to tCount
+      put tIns[tI] into tMap
+      if tScriptSigs[tI] is not "" then
+         put cwPsbtSetEntry(tMap, kCwPsbtInFinalScriptSig, "", \
+               tScriptSigs[tI]) into tMap
+      end if
+      put tWitnesses[tI] into tItems
+      if cwListCount(tItems) > 0 then
+         put cwPsbtSetEntry(tMap, kCwPsbtInFinalScriptWitness, "", \
+               cwWitnessBytes(tItems)) into tMap
+      end if
+      put tMap into tIns[tI]
+   end repeat
+   put tIns into tP["inputs"]
    put "" into tOut
+   put cwPsbtEmit(tP) into tOut["psbt"]
    put cwTxSerialize(tTx["version"], tTxIns, tTxOuts, tTx["locktime"], \
          tScriptSigs, tWitnesses) into tOut["raw"]
    put cwTxid(tTx["version"], tTxIns, tTxOuts, tTx["locktime"], tScriptSigs) into tOut["txid"]
@@ -3088,6 +3381,21 @@ function cwPsbtFinalize pB64
    put tWhy into tOut["why"]
    return tOut
 end cwPsbtFinalize
+
+function cwWitnessBytes pItems
+   -- A witness stack serialized the way PSBT_IN_FINAL_SCRIPTWITNESS holds it:
+   -- the item count, then each item length-prefixed. The same encoding
+   -- cwTxSerialize writes in its own witness section, factored out so the two
+   -- cannot drift.
+   local tOut, tI, tCount
+   put cwVarIntHex(cwListCount(pItems)) into tOut
+   put cwListCount(pItems) into tCount
+   repeat with tI = 1 to tCount
+      put cwVarIntHex(cwIntDiv(the number of chars of pItems[tI], 2)) & \
+            pItems[tI] after tOut
+   end repeat
+   return tOut
+end cwWitnessBytes
 
 function cwPsbtCombine pA, pB
    -- Merge two PSBTs of the SAME transaction: the cosigner workflow. The
@@ -3143,29 +3451,39 @@ function cwPsbtSummary pB64, pNetwork
    -- before they authorise anything. Every wallet that shows only a fee and a
    -- total is asking to be trusted about the part it is not showing.
    local tP, tTx, tOut, tI, tCount, tIn, tOutRec, tTotalIn, tTotalOut, tMap
-   local tAmount, tKind, tSigs, tAddr, tError
+   local tAmount, tKind, tSigs, tAddr, tError, tMissing, tSigCount
    put cwPsbtParse(pB64) into tP
    put tP["tx"] into tTx
    put "PSBT: " & cwListCount(tTx["inputs"]) & " input(s), " & \
          cwListCount(tTx["outputs"]) & " output(s), version " & tTx["version"] & \
          ", locktime " & tTx["locktime"] & return into tOut
    put 0 into tTotalIn
+   put false into tMissing
    put cwListCount(tTx["inputs"]) into tCount
    put tP["inputs"] into tMap
    repeat with tI = 1 to tCount
       put tTx["inputs"] into tIn
       put tIn[tI] into tIn
       put cwPsbtInputAmount(tMap[tI]) into tAmount
+      -- A TAPROOT KEY-PATH SIGNATURE IS NOT A PARTIAL SIG. It lives under
+      -- PSBT_IN_TAP_KEY_SIG, so counting only type 2 reported a fully signed
+      -- taproot input as carrying zero signatures - on the screen a person
+      -- reads before they authorise anything.
       put cwPsbtFindAll(tMap[tI], kCwPsbtInPartialSig) into tSigs
+      put cwListCount(tSigs) into tSigCount
+      if cwPsbtFind(tMap[tI], kCwPsbtInTapKeySig, "") is not "" then
+         add 1 to tSigCount
+      end if
       put tOut & "  in  " & tI & ": " & char 1 to 16 of tIn["txid"] & "..:" & \
             tIn["vout"] & "  " into tOut
       if tAmount < 0 then
          put "amount UNKNOWN" after tOut
+         put true into tMissing
       else
          put cwSatToBtc(tAmount) && "BTC" after tOut
          add tAmount to tTotalIn
       end if
-      put "  " & cwPsbtInputType(tMap[tI]) & ", " & cwListCount(tSigs) & \
+      put "  " & cwPsbtInputType(tMap[tI]) & ", " & tSigCount & \
             " signature(s)" & return after tOut
    end repeat
    put 0 into tTotalOut
@@ -3183,7 +3501,16 @@ function cwPsbtSummary pB64, pNetwork
       put tOut & "  out " & tI & ": " & cwSatToBtc(tOutRec["value"]) && "BTC  ->  " & \
             tAddr & return into tOut
    end repeat
-   if tTotalIn > 0 then
+   -- A FEE IS A FACT OR IT IS NOT SHOWN. Gating on `tTotalIn > 0` meant that
+   -- ONE known input amount was enough to print a fee computed from a total
+   -- that was missing the others - a number smaller than the truth, stated
+   -- without qualification, on the screen whose whole purpose is that the
+   -- person is not being asked to trust the part they cannot see.
+   if tMissing is true then
+      put tOut & "  fee: UNKNOWN - at least one input in this PSBT carries " & \
+            "no amount, so the total going in is not known and no fee can " & \
+            "be computed from it." & return into tOut
+   else if tTotalIn > 0 then
       put tOut & "  fee: " & cwSatToBtc(tTotalIn - tTotalOut) && "BTC (" & \
             (tTotalIn - tTotalOut) && "sat)" & return into tOut
    else
@@ -3253,7 +3580,7 @@ function cwMsgVerify pNetwork, pAddress, pMessage, pSigB64
    -- "why". Never throws: a Verify button that raises on a mistyped signature
    -- is a Verify button that cannot say "no".
    local tRaw, tHeader, tRecId, tCompressed, tDigest, tPub, tOut, tError
-   local tAddr, tClaim, tCand
+   local tAddr, tClaim, tCand, tSigOnly, tWant
    put false into tOut["ok"]
    put "" into tOut["kind"]
    put "" into tOut["why"]
@@ -3270,10 +3597,19 @@ function cwMsgVerify pNetwork, pAddress, pMessage, pSigB64
    put cwIntMod(tHeader - 27, 4) into tRecId
    put (tHeader >= 31) into tCompressed
    put cwMsgDigest(pMessage) into tDigest
+   put cwTrim(pAddress) into tWant
    put "" into tPub
+   -- The 65-byte recoverable signature is built into a local FIRST. Written
+   -- inline, `byte 2 to 65 of tRaw & numToByte(tRecId)` is the same binding
+   -- question this file hoists around twice elsewhere: under the loose
+   -- reading the `of` takes the whole concatenation, so the engine would
+   -- build 66 bytes and hand cxRecover the 64-byte r||s with the recovery
+   -- byte sliced off - and every message this wallet is asked to verify,
+   -- including ones it signed itself, would come back unverifiable.
+   put byte 2 to 65 of tRaw into tSigOnly
+   put tSigOnly & numToByte(tRecId) into tSigOnly
    try
-      put cxHexEncode(cxRecover(byte 2 to 65 of tRaw & numToByte(tRecId), \
-            cxHexDecode(tDigest))) into tPub
+      put cxHexEncode(cxRecover(tSigOnly, cxHexDecode(tDigest))) into tPub
    catch tError
       put "" into tPub
    end try
@@ -3296,7 +3632,7 @@ function cwMsgVerify pNetwork, pAddress, pMessage, pSigB64
             put cwAddressForScript(pNetwork, cwScriptP2wpkh(tPub)) into tAddr
             put "p2wpkh" into tOut["kind"]
          end if
-         if tAddr is cwTrim(pAddress) then
+         if cwSameBytes(tAddr, tWant) then
             put true into tOut["ok"]
             if tClaim is not tOut["kind"] then
                put "the signature is valid, but its header claims a " & tClaim & \
@@ -3310,7 +3646,7 @@ function cwMsgVerify pNetwork, pAddress, pMessage, pSigB64
    else
       put cwAddressForScript(pNetwork, cwScriptP2pkhUncompressed(tPub)) into tAddr
       put "p2pkh-uncompressed" into tOut["kind"]
-      if tAddr is cwTrim(pAddress) then
+      if cwSameBytes(tAddr, tWant) then
          put true into tOut["ok"]
          return tOut
       end if
@@ -3542,8 +3878,16 @@ private function cwDescCharPos pChar
    -- The 0-based position of a character in Core's 95-character input
    -- alphabet, or -1. The last three characters of that alphabet are a double
    -- quote, a backslash and a space, none of which can go inside the constant.
+   -- cwCharIndex, NOT offset(): this alphabet carries "abcdefgh" at 0-based
+   -- 18 and "ABCDEFGH" at 82, "IJKLMNOPQRSTUVWXYZ" at 32 and its lowercase
+   -- twin at 64. A case-folding lookup returns the earlier twin for every
+   -- character in those four runs, the low five bits survive and the class
+   -- accumulator does not, so the checksum comes out wrong for a descriptor
+   -- containing any letter at all - which is every descriptor. This is the
+   -- line CoinXT's own header calls the single most dangerous one in its
+   -- file, in the same words, about the same trap.
    local tPos
-   put offset(pChar, kCwDescInputHead) into tPos
+   put cwCharIndex(pChar, kCwDescInputHead) into tPos
    if tPos > 0 then
       return tPos - 1
    end if

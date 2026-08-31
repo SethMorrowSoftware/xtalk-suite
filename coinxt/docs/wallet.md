@@ -130,29 +130,62 @@ of that arrangement are present.
 
 ## What is proven and what is not
 
-**Proven.** `tools/check-wallet-vectors.py` runs the shipped
+There are three layers here and each has its own answer, so they are separated
+rather than averaged.
+
+**The engine layer is RUN.** `tools/check-wallet-vectors.py` drives the shipped
 `wallet-core.livecodescript` through `tools/lcs-interp.py` against
 `tools/wallet_reference.py`, an independent implementation anchored at import to
 the published BIP vectors, with the real native CoinXT library supplying every
-hash and every signature. As of 2026-08-31 it runs 414 checks and they are
-green. Among them: the BIP-44, BIP-49, BIP-84 and BIP-86 first receive addresses
-for the public test mnemonic; BIP-49's and BIP-84's own account `ypub` and
-`zpub`; every address in both directions on two networks; Bitcoin Core's two
-published descriptor checksums; the classic 226 and 141 virtual sizes; the
-546/540/330/294 dust thresholds derived from Core's own branch; and complete
-signed transactions on all five spend paths, byte-identical to the independent
-implementation's.
+hash and every signature. Among its checks: the BIP-44, BIP-49, BIP-84 and
+BIP-86 first receive addresses for the public test mnemonic; BIP-49's and
+BIP-84's own account `ypub` and `zpub`; every address in both directions on two
+networks; Bitcoin Core's two published descriptor checksums; the classic 226 and
+141 virtual sizes; the 546/540/330/294 dust thresholds derived from Core's own
+branch; and complete signed transactions on all five spend paths,
+byte-identical to the independent implementation's. Run it for the count; a
+number written here would be true on the day it was typed and quietly wrong
+afterwards.
+
+**And it is run TWICE, under two comparison rules.** `the caseSensitive`
+defaults to FALSE on OXT, which makes `is` and `offset()` case-INSENSITIVE;
+`lcs-interp.py` models both case-SENSITIVELY and says so. So the whole vector
+set runs a second time with those two folded to the engine's rule, and the same
+answers are required. That tier is not decoration: it is there because the
+first version of this layer had **two real defects of exactly that shape** - a
+descriptor checksum that came out wrong for every descriptor containing a
+letter (Core's input alphabet carries `abcdefgh` at position 18 and `ABCDEFGH`
+at 82, so a folded `offset()` returns the wrong twin), and a multisig account
+key serialized with the single-signature `zpub` version because the stems `"z"`
+and `"Z"` were told apart with `is`. Both were green under 414 checks, because
+every one of those checks ran under the rule the engine does not use.
+
+**The stack layer is BOOTED.** `tools/check-wallet-boot.py` opens the shipped
+`coin-wallet.livecodescript` headlessly - `preOpenStack`, `openStack`, the
+queued self-check tick - over riptide's engine object model (imported, not
+copied) with the COMMITTED `coinxt.so` underneath, and then drives it: every
+navigation button through the real click router, the show/hide sweep checked
+control by control across all ten screens, a real spend built and signed and
+decoded by the oracle, the same spend exported as a PSBT and round-tripped
+through the Tools screen, a message signed and verified (and refused for a
+case-mangled Base58 address), and the wallet file sealed, re-opened, and
+refused after one flipped bit. SodiumXT is modelled there and each model is
+declared in the gate; OnionXT answers its version probe and nothing else,
+because a gate that dialled a real onion would be a gate that fails when the
+network does.
 
 CoinXT itself has had two on-engine passes (2026-08-10 and 2026-08-12), so the
 cryptography under all of that is engine-observed.
 
-**Not proven.** The wallet STACK has not run on an OXT engine. What the vector
-gate settles is logic, never parser behaviour: an interpreter is an
-approximation of the engine and never the engine, and if the two disagree the
-engine is right. The three network transports have never spoken to a real
-backend from here, and the two Tor ones additionally need a live-Tor pass. No
-transaction this wallet built has been broadcast to any network, so "this would
-confirm" is a claim nobody has tested.
+**Not proven.** None of this is an OXT pass. What the two gates settle is that
+the code RUNS and what it computes; an interpreter is an approximation of the
+engine and never the engine, and where they disagree the engine is right.
+Everything in `docs/OXT-ENGINE-NOTES.md` that the interpreter models
+differently is invisible to both, the case rule above excepted. A green boot
+here does not mean a window appeared. The three network transports have never
+spoken to a real backend from here, and the two Tor ones additionally need a
+live-Tor pass. No transaction this wallet built has been broadcast to any
+network, so "this would confirm" is a claim nobody has tested.
 
 ## Custody, said plainly
 

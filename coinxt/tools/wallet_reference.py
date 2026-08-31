@@ -543,7 +543,11 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         long_term_fee_rate = 10
     spendable = [u for u in utxos if not u.get("frozen")]
     if strategy == "manual":
-        spendable = [u for u in utxos if u.get("selected")]
+        # FROZEN BEATS TICKED, and this line used to REPLACE the freeze filter
+        # rather than narrow it - so a coin carrying both flags was spent here
+        # and refused by the script, and no vector asked the two the question
+        # they answered differently. Freezing is the more deliberate signal.
+        spendable = [u for u in spendable if u.get("selected")]
 
     def _vsize(n, with_change):
         outs = list(output_types) + ([change_type] if with_change else [])
@@ -646,9 +650,16 @@ def select_coins(utxos, target_sat, fee_rate, input_type, output_types,
         # back was a real bug in this file: every candidate looked like an
         # exact match, so the FIRST coin always "won" and the fee came out
         # negative.
+        # NO UPPER BOUND ON THE SURPLUS. This test is only reached when a
+        # change output WOULD be below dust, and the surplus always exceeds
+        # that change by the cost of the change output itself (~31 vB), so
+        # requiring `surplus < dust` too left a window - change under dust,
+        # surplus over it - where neither branch fired. With another coin to
+        # try that was wasteful; on the last coin it reported "insufficient
+        # funds" for a spend that was plainly affordable.
         r0 = _result(sel, False)
         surplus = r0["total_in"] - target_sat - r0["fee"]
-        if 0 <= surplus < dust:
+        if surplus >= 0:
             r0["fee"] = r0["total_in"] - target_sat
             r0["change"] = 0
             r0.update({"ok": True, "why": "changeless: the remainder is dust "
@@ -1705,6 +1716,25 @@ def sign_input(script_type, seckey, sighash_preimage_digest, pubkey,
         # guessed at.
         raise ValueError("p2wsh signing is per-cosigner: use sign_multisig")
     raise ValueError("unknown script type %r" % script_type)
+
+
+def der_sig(seckey, digest, sighash_byte=1) -> bytes:
+    """The DER signature plus its sighash byte: what a PSBT partial-sig entry
+    holds, and the first thing sign_input builds. Its own function so a
+    partial-sig entry can be checked WITHOUT reconstructing the whole
+    scriptSig or witness that eventually carries it."""
+    return cr.der_encode(*cr.ecdsa_sign_recoverable(seckey, digest)[:2]) + \
+        bytes([sighash_byte])
+
+
+def witness_bytes(items) -> bytes:
+    """A witness stack serialized the way PSBT_IN_FINAL_SCRIPTWITNESS holds
+    it: the item count, then each item length-prefixed. Identical to the
+    per-input encoding tx_serialize writes in its witness section."""
+    out = varint(len(items))
+    for item in items:
+        out += varint(len(item)) + item
+    return out
 
 
 def sign_multisig(seckeys, digest, witness_script, sighash_byte=1):
