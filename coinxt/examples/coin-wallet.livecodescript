@@ -4305,11 +4305,12 @@ function cwXKeyDecode pText
    -- The inverse, plus the network and script type the version byte names.
    -- Refuses a version it does not know rather than guessing mainnet, because
    -- guessing here means deriving a mainnet address from a testnet key.
-   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv
+   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
-   if the number of bytes of tRaw is not 78 then
+   put the number of bytes of tRaw into tLen
+   if tLen is not 78 then
       throw "wallet-core: cwXKeyDecode: an extended key is 78 bytes; got " & \
-            the number of bytes of tRaw & "."
+            tLen & "."
    end if
    put cwBeRead(byte 1 to 4 of tRaw) into tVersion
    put tVersion into tNode["version"]
@@ -13348,14 +13349,15 @@ command waPaintTools
 end waPaintTools
 
 private function waToolsNote
-   local tOut
+   local tOut, tLen
    put "SIGN A MESSAGE to prove you hold the key to an address without " & \
          "spending anything. VERIFY to check somebody else's claim." & return & \
          return into tOut
    put "INSPECT reads a raw transaction, a PSBT, a WIF or an extended key and " & \
          "tells you what it is - paste anything and find out." & return & return after tOut
    if sWaLastPsbt is not empty then
-      put "Holding a PSBT (" & the number of chars of sWaLastPsbt & \
+      put the number of chars of sWaLastPsbt into tLen
+      put "Holding a PSBT (" & tLen & \
             " characters). Sign, Combine and Finalize act on it." after tOut
    else
       put "No PSBT held. Paste one above and press 'Hold as the current PSBT'." after tOut
@@ -14147,7 +14149,7 @@ on waStreamEvent pStream, pEvent, pData
 end waStreamEvent
 
 private command waStreamOpened
-   local tRec, tReq, tCrlf, tBody, tLine
+   local tRec, tReq, tCrlf, tBody, tLine, tLen
    put sWaInFlight into tRec
    put numToChar(13) & numToChar(10) into tCrlf
    if sWaBackend is "electrum-tor" then
@@ -14163,11 +14165,19 @@ private command waStreamOpened
    -- and there is no chunked-transfer decoder to get wrong.
    if tRec["kind"] is "broadcast" then
       put tRec["arg"] into tBody
+      -- THE LENGTH GOES INTO A LOCAL FIRST. Whether `the number of chars of
+      -- tBody & tCrlf` binds the concatenation into the chunk target is not
+      -- settled here: the family's own interpreter models it greedily and one
+      -- engine-exercised file in the tree relies on the opposite. If greedy
+      -- is what the engine does, this Content-Length would be two too many
+      -- and the server would sit waiting for bytes that never arrive - a HANG
+      -- rather than an error. A local costs one line and removes the question.
+      put the number of chars of tBody into tLen
       put "POST " & waEsploraPath(tRec) & " HTTP/1.0" & tCrlf & \
             "Host: " & sWaHost & tCrlf & \
             "User-Agent: CoinXTWallet/" & kWaVersion & tCrlf & \
             "Content-Type: text/plain" & tCrlf & \
-            "Content-Length: " & the number of chars of tBody & tCrlf & \
+            "Content-Length: " & tLen & tCrlf & \
             "Connection: close" & tCrlf & tCrlf & tBody into tReq
    else
       put "GET " & waEsploraPath(tRec) & " HTTP/1.0" & tCrlf & \
@@ -14197,10 +14207,17 @@ private command waStreamClosed
 end waStreamClosed
 
 function waHttpBody pRaw
-   -- Split an HTTP/1.0 response at the blank line. Byte operations only: this
-   -- is a network buffer, and char/line are Unicode- and delimiter-aware and
-   -- would mangle it.
-   local tCrlf, tPos, tStatus, tLen, tI
+   -- Split an HTTP/1.0 response at the blank line, in BYTES.
+   --
+   -- This is a network buffer. `char` and `line` are Unicode- and
+   -- delimiter-aware, and the family rule is that binary is indexed with
+   -- `byte` and nothing else. offset() answers in bytes on a binary value, so
+   -- byte slicing is also the only way to keep the position it returns and
+   -- the slice that uses it talking about the same thing.
+   --
+   -- The body is decoded as UTF-8 by the caller; a backend's error text is the
+   -- one place a non-ASCII byte can reach this.
+   local tCrlf, tPos, tStatus, tCode, tSeen
    put numToChar(13) & numToChar(10) into tCrlf
    put offset(tCrlf & tCrlf, pRaw) into tPos
    if tPos is 0 then
@@ -14208,21 +14225,29 @@ function waHttpBody pRaw
       -- response that is otherwise fine
       put offset(numToChar(10) & numToChar(10), pRaw) into tPos
       if tPos is 0 then
+         put the number of bytes of pRaw into tSeen
          throw "the backend's reply has no header/body boundary in " & \
-               the number of bytes of pRaw & " bytes."
+               tSeen & " bytes."
       end if
-      put char 1 to (tPos - 1) of pRaw into tStatus
-      return char (tPos + 2) to -1 of pRaw
+      put byte 1 to (tPos - 1) of pRaw into tStatus
+      waHttpCheckStatus tStatus
+      return byte (tPos + 2) to -1 of pRaw
    end if
-   put char 1 to (tPos - 1) of pRaw into tStatus
-   if char 1 to 4 of tStatus is not "HTTP" then
+   put byte 1 to (tPos - 1) of pRaw into tStatus
+   waHttpCheckStatus tStatus
+   return byte (tPos + 4) to -1 of pRaw
+end waHttpBody
+
+private command waHttpCheckStatus pStatus
+   local tCode
+   if byte 1 to 4 of pStatus is not "HTTP" then
       throw "that is not an HTTP reply."
    end if
-   if char 10 to 12 of tStatus is not "200" and char 10 to 12 of tStatus is not "201" then
-      throw "the backend answered " & cwTrim(line 1 of tStatus) & "."
+   put byte 10 to 12 of pStatus into tCode
+   if tCode is not "200" and tCode is not "201" then
+      throw "the backend answered " & cwTrim(byte 1 to 60 of pStatus) & "."
    end if
-   return char (tPos + 4) to -1 of pRaw
-end waHttpBody
+end waHttpCheckStatus
 
 function waElectrumRequest pRec
    -- JSON-RPC 2.0, one object per line. Addresses never leave this wallet on
@@ -14278,12 +14303,14 @@ end waElectrumRequest
 
 private command waElectrumMaybeComplete
    -- One JSON object per line: the answer is complete at the first newline.
+   -- Sliced in BYTES for the same reason waHttpBody is - offset() answers in
+   -- bytes and the slice must agree with it.
    local tPos, tLine
    put offset(numToChar(10), sWaBuffer) into tPos
    if tPos is 0 then
       exit waElectrumMaybeComplete
    end if
-   put char 1 to (tPos - 1) of sWaBuffer into tLine
+   put byte 1 to (tPos - 1) of sWaBuffer into tLine
    put empty into sWaBuffer
    waNetDeliver tLine
 end waElectrumMaybeComplete
@@ -14291,7 +14318,7 @@ end waElectrumMaybeComplete
 command waNetDeliver pBody
    -- One answer, whichever transport brought it. Parsed by kind, folded into
    -- the wallet's state, then the next request starts on the next tick.
-   local tRec, tKind, tError, tNode, tOut
+   local tRec, tKind, tError, tNode, tOut, tSeen
    set the defaultStack to the short name of this stack
    put sWaInFlight into tRec
    if tRec is empty then
@@ -14306,8 +14333,8 @@ command waNetDeliver pBody
       end try
       put empty into sWaStream
    end if
-   waLog "<- " & tKind & " " & tRec["arg"] & " (" & \
-         the number of chars of pBody & " chars)"
+   put the number of chars of pBody into tSeen
+   waLog "<- " & tKind & " " & tRec["arg"] & " (" & tSeen & " chars)"
    put "ok" into sWaNetState
    put "" into sWaNetWhy
    try
@@ -14324,8 +14351,20 @@ command waNetDeliver pBody
 end waNetDeliver
 
 private command waNetApply pKind, pArg, pBody
-   local tNode, tI, tCount, tItem, tRec, tList, tKey, tText, tResult
-   put cwTrim(pBody) into tText
+   -- pBody arrives as BYTES from every transport. Decoding it here, once, is
+   -- what lets everything below treat it as text - and UTF-8 is what both
+   -- protocols say their JSON is. textDecode on this engine is LOSSY rather
+   -- than throwing (docs/OXT-ENGINE-NOTES: six shipped parsers once believed
+   -- otherwise), so nothing here treats a clean decode as proof of anything;
+   -- the JSON parser refuses malformed input on its own.
+   local tNode, tI, tCount, tItem, tRec, tList, tKey, tText, tResult, tError
+   put pBody into tText
+   try
+      put textDecode(pBody, "UTF-8") into tText
+   catch tError
+      put pBody into tText
+   end try
+   put cwTrim(tText) into tText
    if sWaBackend is "electrum-tor" then
       put cwJsonParse(tText) into tNode
       put cwJsonPath(tNode, "error") into tResult
@@ -14694,7 +14733,7 @@ command waSaveWallet
 end waSaveWallet
 
 command waLoadWallet
-   local tPath, tRaw, tHeader, tBody, tPassword, tSalt, tKey, tPlain, tError, tFailed
+   local tPath, tRaw, tHeader, tBody, tPassword, tSalt, tKey, tPlain, tError, tFailed, tStart
    set the defaultStack to the short name of this stack
    put cwTrim(field "st_path") into tPath
    put URL ("binfile:" & tPath) into tRaw
@@ -14702,7 +14741,11 @@ command waLoadWallet
       throw "there is nothing at " & tPath & "."
    end if
    put line 1 of tRaw into tHeader
-   put char (the number of chars of tHeader + 2) to -1 of tRaw into tBody
+   -- same reason as the Content-Length above: the offset of the body is
+   -- computed into a local rather than inside the chunk expression
+   put the number of chars of tHeader into tStart
+   add 2 to tStart
+   put char tStart to -1 of tRaw into tBody
    if waField2(tHeader, 1) is not kWaFileMagic then
       throw "that file is not a CoinXT wallet."
    end if

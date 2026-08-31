@@ -1134,11 +1134,12 @@ function cwXKeyDecode pText
    -- The inverse, plus the network and script type the version byte names.
    -- Refuses a version it does not know rather than guessing mainnet, because
    -- guessing here means deriving a mainnet address from a testnet key.
-   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv
+   local tRaw, tNode, tVersion, tBody, tNet, tStem, tI, tJ, tPub, tPrv, tLen
    put cxBase58CheckDecode(cwTrim(pText)) into tRaw
-   if the number of bytes of tRaw is not 78 then
+   put the number of bytes of tRaw into tLen
+   if tLen is not 78 then
       throw "wallet-core: cwXKeyDecode: an extended key is 78 bytes; got " & \
-            the number of bytes of tRaw & "."
+            tLen & "."
    end if
    put cwBeRead(byte 1 to 4 of tRaw) into tVersion
    put tVersion into tNode["version"]
