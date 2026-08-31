@@ -1451,3 +1451,74 @@ control blocks, so the path cap is the script's alone). It also caught the gate
 comments calling the published two-leaf tree "scriptPubKey vector 6" when the file's own 0-based
 convention makes it vector 3 - a comment-only error, but the same one-number-two-conventions
 shape as the 245-vs-244 lesson above, so it is recorded rather than just fixed.
+
+### 2026-08-31 - the WALLET, and the third file this member can execute headlessly
+
+`examples/coin-wallet.livecodescript` is a full Electrum-class Bitcoin wallet in one
+paste-and-run stack, and `examples/wallet-core.livecodescript` is the pure calculator layer it
+is built out of. `docs/wallet.md` is the reader's document; this entry records the decisions a
+maintainer needs and would otherwise have to re-derive.
+
+**THE SPLIT IS WHAT MAKES IT CHECKABLE, and it is the same split this member already lives by.**
+CoinXT is a calculator and the app owns custody (rule 2); `wallet-core` is a calculator and
+`coin-wallet` owns custody, the window, the file and the network. The engine has NO
+script-level `local`, reads no `item` or `line` chunk, touches no control and opens nothing -
+so `tools/check-wallet-vectors.py` can drive the SHIPPED bytes of it through `lcs-interp.py`
+against `tools/wallet_reference.py` with the real shim signing. 414 checks, green, including
+complete signed transactions on all five spend paths compared byte for byte. That is the third
+file in this member the shipped-is-not-run rule no longer applies to, after `src/coinxt.livecodescript`
+and `tests/coin-selftest.livecodescript`.
+
+**NOT READING `item`/`line` AT ALL IS STRONGER THAN GUARDING THEM.** This file records nine
+handlers that a hostile `itemDelimiter` turned into wrong ANSWERS - a valid seed phrase
+reported invalid, an address built from the wrong bytes - and the answer there was a
+save/set/use/restore wrapper around each. The wrapper is correct and was the only option for
+code that already existed. `wallet-core` was written afterwards, so it takes the other option:
+lists are ARRAYS keyed 1..n, and the two places that must read a delimited string
+(`cwSplitAt`, and the app's `waField`/`waField2`) scan for the separator by hand. There is no
+delimiter dependency to guard.
+
+**THE VECTOR GATE FOUND A REAL BUG ON ITS FIRST RUN, and it was this tree's own recorded trap.**
+`cwParsePath` ACCEPTED `"m/84'/"`. The engine ignores one trailing delimiter when it counts
+chunks, so a split-then-check loop never sees the empty last level: the path parsed as a
+perfectly good one-level path. `cxHdDerivePath` carries an explicit refusal for exactly this and
+the note explaining why; the wallet layer had to learn it again. It refuses before splitting now.
+
+**IT ALSO FOUND A BUG IN ITSELF, which is the more useful half.** `"Xpub".replace("Pub", "Prv")`
+is `"Xpub"` - the lowercase `p` - so three private-key version rows were compared against the
+public constants and reported a defect in the script that was a defect in the gate. Suspect the
+probe first; the names are spelled out now.
+
+**TWO IMPLEMENTATIONS DISAGREEING IS NOT THE SAME AS ONE BEING WRONG.** The dust thresholds
+differed between the script and the oracle, and BOTH were wrong: each had a hand-written
+per-type spend size. Core's `GetDustThreshold` branches on ONE question - is the scriptPubKey a
+witness program? - and the distinction it does NOT draw is the tempting one, because a
+P2SH-wrapped SegWit output has a P2SH scriptPubKey and therefore costs the legacy 148 even
+though spending it really does use a witness. Both now derive 546/540/330/294 from Core's own
+branch instead of listing them.
+
+**THE QR ENCODER IS THE ONE PIECE WITH NO PUBLISHED VECTOR TO PIN IT TO**, so it was checked
+module-for-module against an independent encoder over 261 payloads spanning versions 1 to 15.
+Three real defects came out of that, and all three produce a symbol whose DATA is perfect and
+which no scanner can read: the format bits placed LSB-first (the natural spelling of the same
+integer), one format module never written at all (an `i < 8` that should be `i < 7`), and the
+masks scored with the format area already filled in. The last one is a genuine ambiguity in the
+standard rather than a mistake - it says to evaluate the symbol and does not say whether the
+format information is in it yet - and the two readings pick different masks on small versions,
+so the choice is now written down in the code beside the reason.
+
+**THE NETWORK'S SHAPE IS FORCED, NOT CHOSEN.** HTTPS over Tor is impossible in this engine: an
+open socket cannot be upgraded to TLS, and `open secure socket` connects TLS directly to a host
+so it cannot do a SOCKS handshake first. So the private transports are a `.onion` Esplora mirror
+over plain HTTP and a `.onion` Electrum server over plain TCP, both through OnionXT's SOCKS
+client, where the circuit IS the encryption. The clearnet transport uses the engine's own
+`load URL` and says on screen what that costs, because this suite has never measured what the
+engine does about TLS certificates. The stack defines the three engine socket messages itself
+and dispatches to OnionXT's named functions, with `sync-demo-embeds.py`'s `DROP_HANDLERS` keyed
+by (app, provider) pair so both halves are asserted.
+
+**WHAT IS STILL OPEN.** The stack has not run on an OXT engine, and the vector gate settles
+LOGIC and not parser behaviour. The three transports have never spoken to a real backend from
+here, and the two Tor ones additionally need a live-Tor pass. No transaction this wallet built
+has been broadcast to any network. The honesty labels in the file, in `docs/wallet.md` and on
+its own Settings screen all say so.

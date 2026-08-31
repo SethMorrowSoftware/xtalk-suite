@@ -126,12 +126,34 @@ CoinXT/
     coin_reference.py       TEST TOOLING, not shipped: an independent implementation of the
                             phase-3 encodings, validated against the published vectors first so
                             it can serve as the oracle the script is checked against
+    check-wallet-vectors.py the same machinery one layer up: runs the SHIPPED wallet engine
+                            (examples/wallet-core.livecodescript) against wallet_reference.py
+                            with the real shim signing. 414 checks, including complete signed
+                            transactions on all five spend paths
+    wallet_reference.py     TEST TOOLING: the wallet layer's oracle. Extends coin_reference.py
+                            and anchors itself at import to the BIP-44/49/84/86 addresses,
+                            BIP-49/84's account ypub and zpub, Core's descriptor checksums,
+                            the 226/141 vsizes, the 546/540/330/294 dust thresholds and two
+                            golden QR matrices from an independent encoder
   examples/
     coinxt-demo.livecodescript    the phase-6 demo: mnemonic -> accounts -> addresses ->
                                   sign/verify -> a decoded, signed BTC + ETH transaction
                                   (verified statically; needs its OXT pass). The offline
                                   self-test role this tree once planned for examples/ is
                                   filled by tests/coin-selftest.livecodescript
+    wallet-core.livecodescript    the WALLET ENGINE: a pure calculator layer (prefix cw) over
+                                  CoinXT. Scripts and addresses for all five standard output
+                                  types, SLIP-132 extended keys, exact satoshi arithmetic,
+                                  worst-case vsize and fees, four coin-selection strategies,
+                                  sighash dispatch and witness shapes, BIP-174 PSBT, signed
+                                  messages, BIP-21, output descriptors, transaction decoding,
+                                  JSON and QR. No state, no `item`/`line` chunks, no UI and no
+                                  I/O - which is what lets check-wallet-vectors.py run it
+    coin-wallet.livecodescript    the WALLET: ten screens over that engine in one paste-and-run
+                                  stack (carries coinxt, the engine and onionxt). Seeds,
+                                  watch-only, imported keys, multisig and taproot; coin control,
+                                  RBF, PSBT cosigning, signed messages, descriptors, QR codes,
+                                  and Esplora or Electrum over Tor. See docs/wallet.md
 ```
 
 ## The gates (run before any commit)

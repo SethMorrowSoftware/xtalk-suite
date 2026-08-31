@@ -1,0 +1,229 @@
+# The CoinXT Wallet
+
+`examples/coin-wallet.livecodescript` is a full Bitcoin wallet in one
+paste-and-run stack, modelled on Electrum. It is the largest thing built on
+CoinXT and it exists to answer one question: what does this library actually
+make possible?
+
+It is built out of `examples/wallet-core.livecodescript`, a pure calculator
+layer that holds no state, touches no control, opens no socket, and reads no
+file. That separation is the whole reason the wallet can be checked: the engine
+is executable headlessly, so `tools/check-wallet-vectors.py` runs the SHIPPED
+bytes of it against an independent implementation before anybody pastes it into
+anything.
+
+## Reading order
+
+* [Two files, and why](#two-files-and-why)
+* [What it does](#what-it-does)
+* [The network, and the shape it was forced into](#the-network-and-the-shape-it-was-forced-into)
+* [What is proven and what is not](#what-is-proven-and-what-is-not)
+* [Custody, said plainly](#custody-said-plainly)
+* [The engine API](#the-engine-api)
+* [Running it](#running-it)
+
+## Two files, and why
+
+| File | What it is |
+|---|---|
+| `examples/wallet-core.livecodescript` | The engine. Prefix `cw`. Pure functions over CoinXT: scripts, addresses, extended keys, amounts, sizes, fees, coin selection, sighash dispatch, witness shapes, PSBT, signed messages, payment URIs, output descriptors, transaction decoding, JSON and QR. |
+| `examples/coin-wallet.livecodescript` | The wallet. Prefix `wa`. Ten screens, the key custody, the wallet file, the network, and the window. Carries CoinXT, the engine above, and OnionXT, so it is one file to paste. |
+
+The engine ships under `examples/` rather than `src/` for the reason
+`enetxt/examples/enet-helpers.livecodescript` does: it is a library a demo
+carries, not part of the extension's published surface. Everything in it is
+composed from `cx*` calls and nothing is added to what CoinXT installs.
+
+Three properties of the engine are deliberate and each one buys something.
+
+**No state.** Not one script-level `local`. Every handler is a function of its
+arguments, so there is nothing to initialise, nothing to tear down, no order of
+calls to get wrong, and no way for one screen to leave another screen's answer
+stale.
+
+**No `item` and no `line` chunks.** Lists are arrays, keyed `1..n` with an `n`
+count. `the itemDelimiter` and `the lineDelimiter` are global mutable state in
+this engine family, and this member's own `CLAUDE.md` records nine handlers
+that a hostile delimiter turned into wrong ANSWERS rather than errors: a valid
+seed phrase reported invalid, an address built from the wrong bytes. CoinXT
+answered that with a save/set/use/restore wrapper around every affected handler.
+Not reading those chunks at all is the stronger answer, and it was available
+here only because this layer was written after the lesson instead of before it.
+
+**No UI and no I/O.** That is what lets the vector gate run it.
+
+## What it does
+
+**Wallet kinds.** A new seed (24 words, entropy from SodiumXT and no fallback),
+a restored seed with an optional BIP-39 passphrase, watch-only from an account
+`xpub`/`ypub`/`zpub`/`tpub`/`upub`/`vpub`, a single imported WIF key, or an
+m-of-n P2WSH multisig from cosigner account keys.
+
+**Networks.** mainnet, testnet, signet and regtest, each with its own base58
+version bytes, bech32 HRP and extended-key versions. A network change drops the
+address and balance state rather than showing addresses from one chain beside
+balances from another.
+
+**Script types.** Legacy P2PKH (BIP-44), nested SegWit P2SH-P2WPKH (BIP-49),
+native SegWit P2WPKH (BIP-84), Taproot P2TR key-path (BIP-86), and P2WSH
+multisig (BIP-48, with BIP-67 key ordering so every cosigner independently
+derives the same address).
+
+**Receive.** The next unused address, a BIP-21 URI carrying an optional amount,
+label and message, and a scannable QR code of that URI. The QR is byte mode at
+error level M, versions 1 to 15, rendered as an uncompressed BMP into an image
+control.
+
+**Addresses.** Both chains to a gap-limit window, with per-address labels, use,
+balance, and an explicit "derive twenty more" that says what going past the gap
+limit costs.
+
+**Send.** One payment or many, amounts in BTC, mBTC or satoshi, `MAX`, a fee
+rate in sat/vB with a plain-language description of what that rate means, four
+coin-selection strategies plus manual coin control, opt-in RBF, a locktime, and
+a review panel that shows every output in full, the fee, the change address and
+which coins are being spent, before anything is signed. It can also stop at an
+unsigned PSBT.
+
+**Coins.** The UTXO set with freeze and thaw, ticking for manual selection, and
+a hand-entry path so an offline wallet can be told what it owns.
+
+**History.** Transactions with confirmations, amounts and fees, a full decode of
+any of them, and the arithmetic for a BIP-125 fee bump.
+
+**Tools.** Sign and verify a message in the 2011 Bitcoin format, load, sign,
+combine and finalize a PSBT, inspect anything you paste (a raw transaction, a
+PSBT, an extended key, a WIF, an address or a URI), sweep a private key, export
+descriptors and account keys, and convert entropy to a mnemonic.
+
+**Settings.** The wallet file and its password, the display unit, the gap limit,
+and the honesty record.
+
+## The network, and the shape it was forced into
+
+There are four transports and the differences between them are real.
+
+| Transport | How | What it costs you |
+|---|---|---|
+| Esplora over Tor | A `.onion` mirror over plain HTTP through OnionXT's SOCKS client | The server learns which addresses are asked about together. Nobody else learns anything. |
+| Electrum over Tor | A `.onion` server, JSON-RPC over the same circuit | The same, except the server is asked about SCRIPT HASHES rather than addresses. |
+| Esplora over clearnet | The engine's own `load URL` | The server learns your addresses AND your IP; on `http://` so does everyone in between. |
+| Offline | Nothing | Nothing. Everything except Broadcast still works. |
+
+**HTTPS over Tor is not on that list because it cannot be.** An already-open
+socket cannot be upgraded to TLS in this engine, and `open secure socket` talks
+TLS directly to a host, so it cannot perform a SOCKS handshake first. A `.onion`
+endpoint over plain HTTP is the correct shape here, not a compromise: the
+circuit is the encryption and the authentication.
+
+The clearnet option is offered with what it costs written on the screen rather
+than assumed away. This suite has never measured what the engine does about TLS
+certificates (`docs/OXT-ENGINE-NOTES.md` 6.8), so `https://` here carries no
+claim about verification.
+
+`socketError`, `socketClosed` and `socketTimeout` are the engine's names and a
+script may define each exactly once. The wallet carries OnionXT, so the wallet
+defines all three and hands each event to OnionXT's named function first, then
+passes. `tools/sync-demo-embeds.py`'s `DROP_HANDLERS`, keyed by (app, provider)
+pair, drops OnionXT's own wrappers from the embed and asserts that both halves
+of that arrangement are present.
+
+## What is proven and what is not
+
+**Proven.** `tools/check-wallet-vectors.py` runs the shipped
+`wallet-core.livecodescript` through `tools/lcs-interp.py` against
+`tools/wallet_reference.py`, an independent implementation anchored at import to
+the published BIP vectors, with the real native CoinXT library supplying every
+hash and every signature. As of 2026-08-31 it runs 414 checks and they are
+green. Among them: the BIP-44, BIP-49, BIP-84 and BIP-86 first receive addresses
+for the public test mnemonic; BIP-49's and BIP-84's own account `ypub` and
+`zpub`; every address in both directions on two networks; Bitcoin Core's two
+published descriptor checksums; the classic 226 and 141 virtual sizes; the
+546/540/330/294 dust thresholds derived from Core's own branch; and complete
+signed transactions on all five spend paths, byte-identical to the independent
+implementation's.
+
+CoinXT itself has had two on-engine passes (2026-08-10 and 2026-08-12), so the
+cryptography under all of that is engine-observed.
+
+**Not proven.** The wallet STACK has not run on an OXT engine. What the vector
+gate settles is logic, never parser behaviour: an interpreter is an
+approximation of the engine and never the engine, and if the two disagree the
+engine is right. The three network transports have never spoken to a real
+backend from here, and the two Tor ones additionally need a live-Tor pass. No
+transaction this wallet built has been broadcast to any network, so "this would
+confirm" is a claim nobody has tested.
+
+## Custody, said plainly
+
+OXT script variables are not locked memory. A seed typed into this stack can be
+paged to disk by the operating system, and any process that can read this one's
+memory can read the key. That is the machine's trust boundary, not this file's,
+and nothing in it moves that boundary.
+
+Use it on testnet, or with an amount you would be relaxed about losing, or as
+the watch-only half of a setup whose keys live somewhere colder. The wallet file
+is sealed with XChaCha20-Poly1305 under an Argon2id key when SodiumXT is
+installed; without SodiumXT it is written in the clear and says so, because a
+password field that does nothing is worse than no password field at all.
+
+## The engine API
+
+`wallet-core.livecodescript` is a library like any other in this suite: it can
+be `start using`-ed, or embedded, and its public handlers all carry the `cw`
+prefix (`tools/check-cross-library-names.py` holds that, and holds every one of
+its names disjoint from every other library in the suite). The groups are:
+
+| Group | Handlers |
+|---|---|
+| Networks | `cwNetworks`, `cwNetHrp`, `cwNetP2pkhVersion`, `cwNetP2shVersion`, `cwNetWifVersion`, `cwNetCoinType`, `cwXKeyVersion` |
+| Script types | `cwScriptTypes`, `cwTypePurpose`, `cwTypeStem` |
+| Scripts | `cwPush`, `cwScriptP2pkh`, `cwScriptP2sh`, `cwScriptP2wpkh`, `cwScriptP2wsh`, `cwScriptP2tr`, `cwRedeemP2shP2wpkh`, `cwScriptP2shP2wpkh`, `cwMultisigScript`, `cwScriptKind`, `cwScriptAsm` |
+| Addresses | `cwAddressForScript`, `cwScriptForAddress`, `cwAddressKind`, `cwAddressIsValid`, `cwAddressProblem`, `cwElectrumScripthash` |
+| Derivation | `cwParsePath`, `cwFormatPath`, `cwAccountPath`, `cwFingerprint`, `cwXKeyEncode`, `cwXKeyDecode`, `cwXKeyIsPrivate`, `cwXKeyRespell`, `cwAccountXKey`, `cwChainNode`, `cwAddressAt`, `cwMultisigAddressAt` |
+| Amounts | `cwSatToBtc`, `cwBtcToSat`, `cwFormatAmount`, `cwParseAmount` |
+| Size and fees | `cwVarIntLen`, `cwInputBaseBytes`, `cwInputWitnessBytes`, `cwOutputBytes`, `cwEstimateVsize`, `cwSimpleInputs`, `cwFeeFor`, `cwDustThreshold`, `cwRbfMinFee`, `cwFeeRateLabel` |
+| Coin selection | `cwSelectCoins` |
+| Transactions | `cwTxInput`, `cwTxOutput`, `cwOutpointsHex`, `cwSequencesList`, `cwOutputsHex`, `cwSighash`, `cwSignInput`, `cwSignTaproot`, `cwSignMultisig`, `cwMultisigKeys`, `cwTxSerialize`, `cwTxid`, `cwTxDecode` |
+| PSBT | `cwPsbtCreate`, `cwPsbtParse`, `cwPsbtEmit`, `cwPsbtSign`, `cwPsbtFinalize`, `cwPsbtCombine`, `cwPsbtSummary`, `cwPsbtFind`, `cwPsbtFindAll`, `cwPsbtInputAmount`, `cwPsbtInputScript`, `cwPsbtInputType`, `cwPathBytes`, `cwPathFromBytes`, `cwPsbtUnsignedTx` |
+| Messages | `cwMsgDigest`, `cwMsgSign`, `cwMsgVerify` |
+| URIs | `cwUriParse`, `cwUriBuild`, `cwPercentEncode`, `cwPercentDecode` |
+| Descriptors | `cwDescriptorChecksum`, `cwDescriptor`, `cwDescriptorMultisig` |
+| JSON | `cwJsonParse`, `cwJsonType`, `cwJsonCount`, `cwJsonAt`, `cwJsonMember`, `cwJsonKeys`, `cwJsonText`, `cwJsonPath`, `cwJsonGet`, `cwJsonEscape`, `cwJsonString2` |
+| QR | `cwQrVersionFor`, `cwQrCodewords`, `cwQrMatrix`, `cwQrText`, `cwQrBmp` |
+| Lists and bytes | `cwListNew`, `cwListAdd`, `cwListCount`, `cwLeBytes`, `cwBeBytes`, `cwLeRead`, `cwBeRead`, `cwReverseBytes`, `cwHexIsClean`, `cwHexCompare`, `cwSortHexList`, `cwLower`, `cwUpper`, `cwTrim`, `cwB64Encode`, `cwB64Decode`, `cwStripWhitespace`, `cwVarIntHex`, `cwHexListHas`, `cwSigsList`, `cwWifInfo`, `cwMnemonicStrength`, `cwMnemonicWordCount`, `cwVersion` |
+
+Errors are thrown strings beginning `wallet-core: `, matching CoinXT's own
+convention. Two handlers answer a question instead of throwing, for the same
+reason `cxMnemonicValidate` does: `cwAddressIsValid` and `cwHexIsClean` are
+asked on every keystroke of a form, and a validator that raises cannot say no.
+
+## Running it
+
+Paste `examples/coin-wallet.livecodescript` into a stack script and open the
+stack. Nothing else is needed: the CoinXT script layer, the wallet engine and
+OnionXT are embedded in the file.
+
+The packaged extensions do the rest:
+
+* **coinxt** (`org.openxtalk.library.coin`) is REQUIRED. Without it the wallet
+  cannot derive, sign, or even check an address, and every screen says so.
+* **sodiumxt** (`org.openxtalk.library.sodium`) is optional. Without it,
+  Generate is disabled (there is no entropy source here fit to make a key from,
+  and there is deliberately no fallback) and the wallet file cannot be
+  encrypted.
+* **a tor daemon** is optional, and only the two Tor transports want it.
+
+The wallet opens on testnet with BIP-39's public test mnemonic already in the
+seed box, so every screen has something true to show before you type anything.
+That phrase's funds are burned by design. Do not type one that guards real coins
+into this stack.
+
+Run the vector gate with:
+
+```sh
+cd coinxt && python3 tools/check-wallet-vectors.py
+```
+
+It builds the native shim from `native/coinxt.c`, so it needs a C compiler; with
+none, it runs the constant checks and says loudly that it skipped the rest.

@@ -14,6 +14,7 @@ have to know that. Four gates read those paths by name
 | Document | What it is |
 |---|---|
 | [getting-started.md](getting-started.md) | From zero: what CoinXT gives you and the first calls to make. Read this first. |
+| [wallet.md](wallet.md) | The CoinXT Wallet: `examples/coin-wallet.livecodescript` and the pure engine it is built out of, `examples/wallet-core.livecodescript`. What the wallet does, the four network transports and why they are shaped that way, the `cw*` engine API, and what is proven about all of it. |
 | [api-reference.md](api-reference.md) | The `cx*` handlers that exist today, and nothing else. All 94 public handlers are documented, and `tools/check-doc-handlers.py` fails the build if that stops being true in either direction. This file also ships inside the packaged extension. |
 | [../SPEC.md](../SPEC.md) | The specification: what CoinXT is for, the phase boundaries, the naming rules, and the design decisions with their reasons. |
 | [../IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) | The phased build plan. Phases 1 through 5 are closed and engine-passed; this is the record of the order and why. |
