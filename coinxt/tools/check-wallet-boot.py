@@ -156,6 +156,23 @@ _CTL_OF_CARD = (r'control\s+(.+?)\s+of\s+(this\s+card|card\s+'
                 r'(?:"[^"]*"|\d+|[A-Za-z_]\w*))')
 
 
+class Checker(DB.Checker):
+    """riptide's Checker plus an explicit EQUALITY form, and the reason is a
+    defect this file shipped in its first draft. `DB.Checker.ck` is
+    `(label, ok, detail)` - a BOOLEAN and a message - while the vector gate's
+    Checker beside it is `(label, got, want)`. Nine checks here were written
+    in the second shape against the first, so `ok` was a non-empty string and
+    every one of them passed for any value at all: the account xpub, the first
+    address, the balance, the restored label. That is precisely the class the
+    adversarial pass found in check-wallet-vectors.py, reproduced one file
+    later by the person who had just fixed it. Two names now, so the shapes
+    cannot be confused: ck() takes a boolean, eq() takes two values."""
+
+    def eq(self, label, got, want):
+        self.ck(label, got == want,
+                "got:  %r\n       want: %r" % (got, want))
+
+
 # ==========================================================================
 # the engine-model delta
 # ==========================================================================
@@ -475,7 +492,7 @@ def run(c):
         # install_pure_natives wires several more (ed25519, kdf, secretbox)
         # that the wallet never calls and that riptide's own header declares.
         installed = set(k for k in LCS.HASHES if k.startswith("sx"))
-        c.ck("every declared SodiumXT stand-in is really wired (%d sx* "
+        c.eq("every declared SodiumXT stand-in is really wired (%d sx* "
              "natives present)" % len(installed),
              sorted(set(SODIUM_MODELS) - installed), [])
 
@@ -615,7 +632,7 @@ def drive(c, ip, world, sandbox):
         ctl.content = text
 
     # ---- the boot wallet is the published test seed on testnet ------------
-    c.ck("the boot wallet is on testnet", ip.globals.get("swanetwork"),
+    c.eq("the boot wallet is on testnet", ip.globals.get("swanetwork"),
          "testnet")
     REF = WV.REF
     cr = REF.cr
@@ -627,17 +644,17 @@ def drive(c, ip, world, sandbox):
     neutered["seckey"] = b""
 
     xpub = str(ip.globals.get("swaaccountxpub", ""))
-    c.ck("the account xpub is the one the oracle derives", xpub,
+    c.eq("the account xpub is the one the oracle derives", xpub,
          REF.xkey_encode(neutered,
                          REF.xkey_version("testnet", "p2wpkh", True), False))
 
     addrs = ip.globals.get("swaaddresses") or {}
     n = int(LCS._n(addrs.get("n", 0)))
-    c.ck("both chains are prefilled", n,
+    c.eq("both chains are prefilled", n,
          2 * int(LCS._n(ip.constants.get("kWaPrefill", 0))))
     first = str(addrs.get("1", {}).get("address", "")) if n else ""
     leaf = cr.bip32_ckd(cr.bip32_ckd(acct, 0), 0)
-    c.ck("the first receive address is BIP-84's published one for this seed",
+    c.eq("the first receive address is BIP-84's published one for this seed",
          first,
          REF.address_for_spk("testnet", REF.spk_p2wpkh(leaf["pubkey"])))
 
@@ -659,7 +676,7 @@ def drive(c, ip, world, sandbox):
         c.ck("the wallet has addresses to plant coins on", False)
         return
     ip.call("waRecomputeBalance", [])
-    c.ck("the balance is the planted total",
+    c.eq("the balance is the planted total",
          int(LCS._n((ip.globals.get("swabalance") or {}).get("confirmed", 0))),
          sum(u["value"] for u in UTXOS if u["confirmations"] > 0))
 
@@ -759,20 +776,20 @@ def drive(c, ip, world, sandbox):
         c.ck("and the seed is NOT in it",
              str(ip.constants.get("kWaTestMnemonic", "")).encode("latin-1")
              not in open(path, "rb").read(), "the mnemonic is in the file")
-        c.ck("and the password does not stay on the Settings screen",
+        c.eq("and the password does not stay on the Settings screen",
              _fld(world, "st_password"), "")
         click(ip, world, "st_forget")
-        c.ck("Forget returns to the demonstration wallet",
+        c.eq("Forget returns to the demonstration wallet",
              str(ip.globals.get("swalabel", "")), "Demonstration wallet")
-        c.ck("and leaves no seed, passphrase or pasted key on screen",
+        c.eq("and leaves no seed, passphrase or pasted key on screen",
              (_fld(world, "wl_mnemonic"), _fld(world, "wl_pass"),
               _fld(world, "wl_xkey")), ("", "", ""))
         put_field("st_path", path)
         put_field("st_password", "boot-gate-passphrase")
         click(ip, world, "st_load")
-        c.ck("loading it back restores the saved wallet",
+        c.eq("loading it back restores the saved wallet",
              str(ip.globals.get("swalabel", "")), "Boot gate wallet")
-        c.ck("with the same account key", str(ip.globals.get(
+        c.eq("with the same account key", str(ip.globals.get(
             "swaaccountxpub", "")), xpub)
         # tampering is CAUGHT, which is the whole point of the associated data
         blob = bytearray(open(path, "rb").read())
@@ -794,7 +811,7 @@ def main(argv):
     # `--check` too, because that is the spelling this member's other gates
     # take and the one a maintainer will reach for first.
     terse = "--terse" in argv or "--check" in argv
-    c = DB.Checker(terse)
+    c = Checker(terse)
     c.note("booting %s" % os.path.relpath(DEMO, SUITE))
     run(c)
     if c.failed:

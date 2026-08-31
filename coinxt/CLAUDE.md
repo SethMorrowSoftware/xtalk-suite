@@ -1695,6 +1695,23 @@ executing a form no other member happened to write. Note WHERE it was: a paint
 handler for a screen that is not the one the boot opens, so every gate in the
 tree had been green over code that had never run.
 
+**THE CLICK DRIVE FOUND TWO MORE, in the same shared runner, and the second is
+the one worth remembering.** riptide's `DemoExpr.p_atom` matched every branch
+against an anchored regex without skipping leading whitespace, so
+`word 1 of the name of the target` died on the space its own `of` left behind -
+reported as an unsupported expression about a form that class models perfectly
+well. And `obj_prop_get` answered `the name` of a control with its BARE name
+whatever the adjective, where the engine gives the bare name only for
+`the SHORT name` and prefixes the TYPE otherwise: `button "nv_wl"`. That is
+exactly what this wallet's click router reads to tell a button click from a
+field click - so under the model it answered "not a button" for every click and
+passed the message on, and **a gate driving clicks would have gone green over a
+stack where nothing routed at all.** A model that is wrong in the direction of
+"nothing happened" is worse than one that throws, because throwing is visible.
+Both fixed in riptide's runner, whose own fixture suite still catches its four
+seeded defects; this wallet is simply the first body in the tree to write
+either form.
+
 **WHAT IS STILL OPEN.** Neither gate is an OXT pass: they settle that the code RUNS and what it
 computes, not parser behaviour and not that a window appeared. Everything in
 `docs/OXT-ENGINE-NOTES.md` the interpreter models differently is invisible to both, the case rule
