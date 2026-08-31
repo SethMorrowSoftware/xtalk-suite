@@ -78,6 +78,17 @@ WHAT IS REAL AND WHAT IS MODELLED
     up OFFLINE here; a gate that dialled a real onion would be a gate that
     fails when the network does.
 
+HOW LONG IT TAKES, SO A SLOW RUN IS NOT READ AS A STUCK ONE
+-----------------------------------------------------------
+Twenty-five minutes or so, and almost all of it is real work: booting derives
+forty addresses through script-level BIP-32 and bech32, the Receive check
+builds a QR (eight mask evaluations plus three hundred rendered rows), and
+Forget-then-reload derives the window twice more. The output is line-buffered
+for exactly this reason. tools/test-wallet-boot.py, which is what actually
+guards this gate against going blind, cuts the address window to two and
+therefore runs in a fraction of that - which is why the build runs the
+fixtures FIRST.
+
 WHAT IT CANNOT SEE
 ------------------
 It runs the interpreter's semantics, not OXT's. Everything in
@@ -743,21 +754,28 @@ def drive(c, ip, world, sandbox):
     c.ck("a message signs to a 65-byte base64 signature",
          len(sig) == 88 and sig.endswith("="), repr(sig[:16]))
     click(ip, world, "tl_msgVerify")
-    c.ck("and the wallet verifies its own signature",
-         "VALID" in _fld(world, "tl_out").upper()
-         and "NOT" not in _fld(world, "tl_out").upper()[:40],
-         repr(_fld(world, "tl_out")[:100]))
-    # THE CASE TRAP, driven end to end: a Base58 address differing only in
-    # case is a DIFFERENT address, and the engine's `is` would call it equal.
-    addr = _fld(world, "tl_msgAddr")
-    if addr and addr[:1] in "1mn2":
-        put_field("tl_msgAddr", addr.swapcase())
-        click(ip, world, "tl_msgVerify")
-        c.ck("a case-mangled Base58 address does NOT verify",
-             "VALID" not in _fld(world, "tl_out").upper()
-             or "NOT VALID" in _fld(world, "tl_out").upper(),
-             repr(_fld(world, "tl_out")[:100]))
-        put_field("tl_msgAddr", addr)
+    # THE WALLET'S OWN WORDS. It writes "VERIFIED" or "NOT VERIFIED", and the
+    # first draft of this check looked for "VALID" - a word that appears
+    # nowhere on that screen - so it read the verified case as a failure. The
+    # negative is checked by the NOT, not by the absence of the positive,
+    # because "NOT VERIFIED" contains "VERIFIED".
+    c.eq("and the wallet verifies its own signature",
+         _fld(world, "tl_out").split("\n")[0].strip(), "VERIFIED")
+    # AND THE NEGATIVE PATH, with one character of the message changed. Not
+    # with a case-mangled address, which was this check's first draft: the
+    # wallet's default script type is p2wpkh, so waFirstAddress answers with a
+    # BECH32 address, and bech32 is case-insensitive BY SPEC - swapping its
+    # case gives the same address and the verify correctly succeeds, so the
+    # check silently skipped rather than testing anything. The Base58 case
+    # binding is cwMsgVerify's, and it is checked where it belongs: in the
+    # vector gate's folded tier, which re-runs the message vectors with `is`
+    # folded to the engine's rule.
+    msg = _fld(world, "tl_msg")
+    put_field("tl_msg", msg[:-1] + ("X" if msg[-1:] != "X" else "Y"))
+    click(ip, world, "tl_msgVerify")
+    c.eq("one changed character in the message does NOT verify",
+         _fld(world, "tl_out").split("\n")[0].strip(), "NOT VERIFIED")
+    put_field("tl_msg", msg)
 
     # ---- Settings: the wallet file, sealed and re-opened ------------------
     # THE SAVED WALLET IS MADE DISTINGUISHABLE FIRST. Forget resets to the
